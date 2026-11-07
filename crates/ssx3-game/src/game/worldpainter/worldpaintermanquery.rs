@@ -4,27 +4,11 @@
 use crate::abi;
 use crate::abi::r32;
 use crate::abi::ret;
-use crate::call::call_ptr;
-use crate::call::guest;
-use crate::call::sp;
-use crate::call::Callee;
-use crate::call::Frame;
-use crate::events;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::visualfx::worldlightman::deleting_dtor;
-pub(crate) use crate::game::visualfx::worldlightman::DELETE;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
-use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -170,18 +154,13 @@ pub fn twpigd_sun_get_azimuth(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::LOG_RESULTS;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
-    pub(crate) use crate::game::visualfx::worldlightman::tests::alloc_setup;
+
     pub(crate) use crate::game::visualfx::worldlightman::tests::dtor_case;
-    pub(crate) use crate::game::visualfx::worldlightman::tests::MEM_MUTEX;
+
     use ssx3_ee as ee;
 
     #[test]
@@ -271,11 +250,6 @@ pub(crate) mod tests {
             0x2c1460,
         );
     }
-    use crate::difftest::events::{check_events, schedule};
-    use crate::difftest::fakes::{self, covered, fake_call, FAKE, LOG_COUNT};
-    use crate::difftest::fill;
-    use ssx3_ee_rt::cpu::{reg::*, sx};
-    use ssx3_ee_rt::Cpu;
 
     #[test]
     fn twpigd_sun_get_elevation_matches() {

@@ -3,29 +3,21 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
-use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::VSlot;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::worldpainter::quadtree::create_with;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
+#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -59,35 +51,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees.
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::AI_VFX_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::BUILTIN_DELETE_2 as BUILTIN_DELETE;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::CONSOLE_CONFIG_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::EA_MEM_ALLOC;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::EMITTER_RENDER;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::GET_TRANSFORM_BOUNDS;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::GRAPHICS_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::GRAPHICS_ON_VIF1_DMA_END;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::INTC_REMOVE_HANDLER;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MEM_CARD_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MEM_CARD_INIT;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MEM_CARD_SET_STATE;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MENU_ITEM_MEASURE_ROW;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MOD_OBJ_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::PS2_SOUND_MANAGER_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SNDSTRM_GET_REQUEST_STATUS;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_FADE_OUT;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_GET_STREAM_STATUS;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_POST_EVENT;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SPEECH_INSTANCE_STOP_STREAM;
+
     pub(crate) use crate::game::worldpainter::quadtree::callee::STATS_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STRCPY;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STREAM_BUFFER_SET_FILE;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STREAM_BUFFER_STOP;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::VFX_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::WORLD_GET_SECTION_SCRIPT_FUNC;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::WORLD_OBJ_CTOR;
 }
 
 /// `void* World_GetInstancesMan(void)` (0x2d1ce0): follow the world singleton
@@ -753,37 +718,19 @@ pub fn halo_modifier_draw_quad_2(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::elf_image;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::fill;
+
     use crate::difftest::put_vec;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::SP as STACK_TOP;
-    use crate::difftest::SP as STACK;
+
     pub(crate) use crate::game::ai::ai::tests::leaf;
-    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
-    pub(crate) use crate::game::ai::ai::tests::rng;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS as SEEDS_2;
+
     pub(crate) use crate::game::object::debouncenode::tests::base;
     pub(crate) use crate::game::object::debouncenode::tests::SEEDS;
     pub(crate) use crate::game::worldpainter::quadtree::tests::alloc_machine;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::heap_init;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::pool_allocator;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::run;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::MEM_HEAP;
 
     #[test]
     fn world_get_instances_man_matches() {
@@ -909,7 +856,6 @@ pub(crate) mod tests {
             8,
         );
     }
-    use super::*;
 
     // ---------------------------------------------------- HaloModifier_DrawQuad
 

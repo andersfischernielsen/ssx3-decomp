@@ -182,7 +182,9 @@ pub fn status(c: &Cpu) -> String {
     )
 }
 
-/// Multi-line dump of every thread and semaphore.
+/// Multi-line dump of every thread and semaphore (used by the headless
+/// binary only; both binaries include this module).
+#[allow(dead_code)]
 pub fn dump(c: &Cpu) -> String {
     let mut out = String::new();
     for t in ssx3_ps2::mr!(c).kernel.threads.values() {

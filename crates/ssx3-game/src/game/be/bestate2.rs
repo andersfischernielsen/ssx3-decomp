@@ -5,14 +5,11 @@ use crate::abi;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::be::beintmission::event_check;
 pub(crate) use crate::game::be::beintmission::RIDER_STRIDE;
 pub(crate) use crate::game::be::belibrary::EA_MEM_COPY;
-use crate::guest::Addr;
+#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -301,9 +298,9 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::vtable;
+
     use crate::difftest::fill;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 

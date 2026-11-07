@@ -93,34 +93,6 @@ mod callee {
         addr: 0x003c_de68,
         f: ee::s14::SND_UtkDecode,
     };
-    pub const SND_UTK_SET_STATE: Callee = Callee {
-        addr: 0x003c_e0b8,
-        f: ee::s14::SND_UtkSetState,
-    };
-    pub const SND_UTK_SET_INPUT: Callee = Callee {
-        addr: 0x003c_dde8,
-        f: ee::s14::SND_UtkSetInput,
-    };
-    pub const SND_UTK_DECODE_FRAME: Callee = Callee {
-        addr: 0x003c_d878,
-        f: ee::s14::SND_UtkDecodeFrame,
-    };
-    pub const SND_EE_MIX_BLOCK: Callee = Callee {
-        addr: 0x003c_85d0,
-        f: ee::s14::SND_EeMixBlock,
-    };
-    pub const SND_EAXA_DECODE_BLOCKS: Callee = Callee {
-        addr: 0x003c_ca08,
-        f: ee::s14::SND_EaxaDecodeBlocks,
-    };
-    pub const SND_EAXA_SET_INPUT: Callee = Callee {
-        addr: 0x003c_cf60,
-        f: ee::s14::SND_EaxaSetInput,
-    };
-    pub const SND_EAXA_SET_HISTORY: Callee = Callee {
-        addr: 0x003c_d190,
-        f: ee::s14::SND_EaxaSetHistory,
-    };
 }
 
 /// Cross-shard calls the compiler emitted as `call_indirect` (function table).
@@ -226,12 +198,6 @@ fn sll(v: u64, n: u32) -> u64 {
 #[inline(always)]
 fn srl(v: u64, n: u32) -> u64 {
     sx((v as u32) >> (n & 31))
-}
-
-/// `sra`.
-#[inline(always)]
-fn sra(v: u64, n: u32) -> u64 {
-    sx(((v as u32) as i32 >> (n & 31)) as u32)
 }
 
 // ---------------------------------------------------------------------------
@@ -439,7 +405,6 @@ pub fn snd_dsp_insert_sorted(c: &mut Cpu) {
     c.cycles += 3;
     let mut next = lw_at(c, head, 0);
     set_reg(c, V1, next);
-    let mut prev = 0u64;
     set_reg(c, A3, 0);
     // Walk while the next node sorts before `node`.
     let mut at_end = false;
@@ -452,7 +417,7 @@ pub fn snd_dsp_insert_sorted(c: &mut Cpu) {
         set_reg(c, V0, before);
         if before != 0 {
             c.cycles += 2;
-            prev = next;
+            let mut prev = next;
             set_reg(c, A3, prev);
             loop {
                 c.cycles += 3;
@@ -1571,11 +1536,9 @@ pub fn snd_dec_utk_decode_mem(c: &mut Cpu) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::difftest::events::{check_events, driven, schedule, Events};
-    use crate::difftest::fakes::{covered, machine, ptr, FAKE, LOG_RESULTS};
-    use crate::difftest::{
-        check, check_lohi, check_paths, fill, require_paths, Rng, DATA, GAME_GP,
-    };
+    use crate::difftest::events::{check_events, driven, schedule};
+    use crate::difftest::fakes::{covered, machine, ptr};
+    use crate::difftest::{check, check_lohi, check_paths, fill, Rng, DATA};
     use ssx3_ee::{s13, s14};
 
     const SEEDS: u32 = 150;

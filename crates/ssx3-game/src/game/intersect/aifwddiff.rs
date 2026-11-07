@@ -7,19 +7,15 @@ use crate::abi::r32;
 use crate::abi::reg;
 use crate::abi::ret;
 use crate::abi::set_reg;
-use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::Unwound;
-use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-pub(crate) use crate::game::fe::feasyncfile::sw_5 as sw;
 pub(crate) use crate::game::intersect::worldsphtree::fpu;
 pub(crate) use crate::game::intersect::worldsphtree::lw;
 pub(crate) use crate::game::intersect::worldsphtree::p;
@@ -38,7 +34,6 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::float;
 use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
@@ -106,42 +101,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees.
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::render::particle::callee::ADD_DIRECTIONAL;
-    pub(crate) use crate::game::render::particle::callee::BLEND_VIEW_COLOURS;
-    pub(crate) use crate::game::render::particle::callee::COMPUTE_COLOUR_FACTOR;
+
     pub(crate) use crate::game::render::particle::callee::DELETE;
-    pub(crate) use crate::game::render::particle::callee::DYNAMIC_EMITTER_SPAWN;
-    pub(crate) use crate::game::render::particle::callee::FONT_DRAW_TEXT;
-    pub(crate) use crate::game::render::particle::callee::GET_IRRADIANCE0;
-    pub(crate) use crate::game::render::particle::callee::GET_IRRADIANCE1;
-    pub(crate) use crate::game::render::particle::callee::GET_IRRADIANCE2;
-    pub(crate) use crate::game::render::particle::callee::GET_LIGHTING28;
-    pub(crate) use crate::game::render::particle::callee::HUD_ALIGN_ELEM_POS;
-    pub(crate) use crate::game::render::particle::callee::HUD_DRAW_PANEL_SEGMENT;
-    pub(crate) use crate::game::render::particle::callee::HUD_DRAW_SPRITE;
-    pub(crate) use crate::game::render::particle::callee::HUD_GET_ELEM_COLOR;
-    pub(crate) use crate::game::render::particle::callee::HUD_GET_ELEM_POS;
-    pub(crate) use crate::game::render::particle::callee::HUD_GET_ELEM_SIZE;
-    pub(crate) use crate::game::render::particle::callee::IRRADIANCE_ADD;
-    pub(crate) use crate::game::render::particle::callee::IRRADIANCE_SCALE;
-    pub(crate) use crate::game::render::particle::callee::IRRADIANCE_SCALE_IN_PLACE;
-    pub(crate) use crate::game::render::particle::callee::IS_HULL_RESIDENT;
-    pub(crate) use crate::game::render::particle::callee::LERP_VIEW_COLOURS;
-    pub(crate) use crate::game::render::particle::callee::POINT_BOX_DISTANCE;
-    pub(crate) use crate::game::render::particle::callee::POINT_LIGHT_VECTOR;
-    pub(crate) use crate::game::render::particle::callee::RANDOM;
-    pub(crate) use crate::game::render::particle::callee::REQUEST_HULL;
-    pub(crate) use crate::game::render::particle::callee::RIDER_GET_MAIN_STATE;
-    pub(crate) use crate::game::render::particle::callee::SAMPLE_SURFACE_COLOURS;
-    pub(crate) use crate::game::render::particle::callee::SECTION_GET_EVENT_WORLD_SECTION;
+
     pub(crate) use crate::game::render::particle::callee::SPATIAL_HASH_INSERT;
     pub(crate) use crate::game::render::particle::callee::SPATIAL_HASH_MOVE;
     pub(crate) use crate::game::render::particle::callee::SPATIAL_HASH_REMOVE;
     pub(crate) use crate::game::render::particle::callee::SPATIAL_KEY_FROM_AABB;
-    pub(crate) use crate::game::render::particle::callee::SPOT_LIGHT_VECTOR;
-    pub(crate) use crate::game::render::particle::callee::STREAMER_UPDATE_VIEW_NODE;
 }
 
 // ---------------------------------------------------------------------------
@@ -1137,10 +1103,10 @@ pub fn roller_modifier_copy_matrix_block(c: &mut Cpu) {
         c.g[A3][0] = 0x7;
         'l_327cd8: loop {
             c.cycles += 7;
-            c.lq(2, (c.g[V1][0] as u32));
+            c.lq(2, c.g[V1][0] as u32);
             c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x1));
             c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
-            c.sq(2, (c.g[A2][0] as u32));
+            c.sq(2, c.g[A2][0] as u32);
             let t = (c.g[A3][0] as i64) >= 0;
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x10));
             if t {
@@ -1168,7 +1134,7 @@ pub fn roller_modifier_copy_matrix_block(c: &mut Cpu) {
                             'l_327d18: loop {
                                 c.cycles += 19;
                                 c.ldl(2, (c.g[A2][0] as u32).wrapping_add(0x7));
-                                c.ldr(2, (c.g[A2][0] as u32));
+                                c.ldr(2, c.g[A2][0] as u32);
                                 c.ldl(3, (c.g[A2][0] as u32).wrapping_add(0xf));
                                 c.ldr(3, (c.g[A2][0] as u32).wrapping_add(0x8));
                                 c.ldl(9, (c.g[A2][0] as u32).wrapping_add(0x17));
@@ -1176,7 +1142,7 @@ pub fn roller_modifier_copy_matrix_block(c: &mut Cpu) {
                                 c.ldl(10, (c.g[A2][0] as u32).wrapping_add(0x1f));
                                 c.ldr(10, (c.g[A2][0] as u32).wrapping_add(0x18));
                                 c.sdl(2, (c.g[A3][0] as u32).wrapping_add(0x7));
-                                c.sdr(2, (c.g[A3][0] as u32));
+                                c.sdr(2, c.g[A3][0] as u32);
                                 c.sdl(3, (c.g[A3][0] as u32).wrapping_add(0xf));
                                 c.sdr(3, (c.g[A3][0] as u32).wrapping_add(0x8));
                                 c.sdl(9, (c.g[A3][0] as u32).wrapping_add(0x17));
@@ -1208,11 +1174,11 @@ pub fn roller_modifier_copy_matrix_block(c: &mut Cpu) {
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x140));
                     'l_327d70: loop {
                         c.cycles += 11;
-                        c.g[V0][0] = c.ld((c.g[A2][0] as u32));
+                        c.g[V0][0] = c.ld(c.g[A2][0] as u32);
                         c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                         c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                         c.g[T2][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                        c.sd((c.g[A3][0] as u32), c.g[V0][0]);
+                        c.sd(c.g[A3][0] as u32, c.g[V0][0]);
                         c.sd((c.g[A3][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                         c.sd((c.g[A3][0] as u32).wrapping_add(0x10), c.g[T1][0]);
                         c.sd((c.g[A3][0] as u32).wrapping_add(0x18), c.g[T2][0]);
@@ -1238,7 +1204,6 @@ pub fn roller_modifier_copy_matrix_block(c: &mut Cpu) {
                 return Ok(());
             }
         }
-        Ok(())
     });
 }
 
@@ -1433,16 +1398,16 @@ pub fn c_ps2_chunk_resolve_parse_header(c: &mut Cpu) {
             let blkp = c.g[V1][0] as u32;
             c.g[V0][0] = sx((Addr(blkp.wrapping_add(0xc)).lw(c) as u32).wrapping_add(1));
             c.mult(0, A2, V0, A0); // a2 = (count + 1) * 12 (a0 = 12 at this point)
-            c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+            c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A1][0] as u32));
             c.sw(blkp.wrapping_add(0x24), c.g[A1][0]);
             c.g[A2][0] = Addr(obj.wrapping_add(0x98)).lw(c);
             let len1 = Addr(f.at(c, 0x14)).lw(c);
             let len0 = Addr(f.at(c, 0x10)).lw(c);
             c.g[A0][0] = len0;
-            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((len1 as u32)));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(len1 as u32));
             c.g[V1][0] = Addr((c.g[A2][0] as u32).wrapping_add(8)).lw(c);
             let t = c.g[V1][0] == 0;
-            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((len0 as u32)));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(len0 as u32));
             let blkp = c.g[A2][0] as u32;
             if t {
                 c.cycles += 2;
@@ -1454,7 +1419,7 @@ pub fn c_ps2_chunk_resolve_parse_header(c: &mut Cpu) {
             }
             c.cycles += 13;
             let blkp = Addr(obj.wrapping_add(0x98)).lw(c) as u32;
-            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_sub((c.g[S1][0] as u32)));
+            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[S1][0] as u32));
             c.g[AT][0] = 0x3f80_0000;
             c.mtc1(1, 2);
             c.lwc1(0, blkp.wrapping_add(0x14));
@@ -1641,7 +1606,7 @@ pub fn collide_sphere_vs_box_edges(c: &mut Cpu) {
         'b_3296b4: {
             c.cycles += 8;
             c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x2df0));
-            c.swc1(5, (c.g[T1][0] as u32));
+            c.swc1(5, c.g[T1][0] as u32);
             c.lwc1(1, (c.g[A2][0] as u32).wrapping_add(0x4));
             c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x4));
             c.c_le_s(0, 1);
@@ -1654,7 +1619,7 @@ pub fn collide_sphere_vs_box_edges(c: &mut Cpu) {
                 c.lwc1(0, (c.g[A1][0] as u32).wrapping_add(0x4));
                 c.c_le_s(1, 0);
                 if !c.fcc() {
-                    c.lwc1(1, (c.g[A2][0] as u32));
+                    c.lwc1(1, c.g[A2][0] as u32);
                     break 'b_3296b8;
                 } else {
                     c.cycles += 6;
@@ -1662,20 +1627,20 @@ pub fn collide_sphere_vs_box_edges(c: &mut Cpu) {
                     c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.c_le_s(0, 1);
                     if !c.fcc() {
-                        c.lwc1(1, (c.g[A2][0] as u32));
+                        c.lwc1(1, c.g[A2][0] as u32);
                         break 'b_3296b8;
                     } else {
                         c.cycles += 5;
                         c.lwc1(0, (c.g[A1][0] as u32).wrapping_add(0x8));
                         c.c_le_s(1, 0);
                         if !c.fcc() {
-                            c.lwc1(1, (c.g[A2][0] as u32));
+                            c.lwc1(1, c.g[A2][0] as u32);
                             break 'b_3296b8;
                         } else {
                             c.cycles += 11;
-                            c.lwc1(0, (c.g[A2][0] as u32));
-                            c.lwc1(1, (c.g[A0][0] as u32));
-                            c.lwc1(2, (c.g[A1][0] as u32));
+                            c.lwc1(0, c.g[A2][0] as u32);
+                            c.lwc1(1, c.g[A0][0] as u32);
+                            c.lwc1(2, c.g[A1][0] as u32);
                             c.sub_s(1, 0, 1);
                             c.mtc1(0, 4);
                             c.sub_s(2, 2, 0);
@@ -1689,36 +1654,36 @@ pub fn collide_sphere_vs_box_edges(c: &mut Cpu) {
                                 c.cycles += 4;
                                 c.c_le_s(4, 2);
                                 if !c.fcc() {
-                                    c.lwc1(1, (c.g[A2][0] as u32));
+                                    c.lwc1(1, c.g[A2][0] as u32);
                                     break 'b_3296b8;
                                 } else {
                                     'b_329684: {
                                         c.cycles += 4;
                                         c.c_lt_s(3, 5);
                                         if !c.fcc() {
-                                            c.lwc1(0, (c.g[T1][0] as u32));
+                                            c.lwc1(0, c.g[T1][0] as u32);
                                             break 'b_329684;
                                         } else {
                                             c.cycles += 18;
-                                            c.lq(2, (c.g[A2][0] as u32));
+                                            c.lq(2, c.g[A2][0] as u32);
                                             c.g[AT][0] = 0xffffffffbf800000;
                                             c.mtc1(1, 1);
-                                            c.sq(2, (c.g[A3][0] as u32));
+                                            c.sq(2, c.g[A3][0] as u32);
                                             c.g[V0][0] = 0x500000;
-                                            c.lwc1(0, (c.g[A0][0] as u32));
+                                            c.lwc1(0, c.g[A0][0] as u32);
                                             c.g[V0][0] =
                                                 sx((c.g[V0][0] as u32).wrapping_sub(0xec0));
-                                            c.swc1(0, (c.g[A3][0] as u32));
-                                            c.swc1(3, (c.g[T1][0] as u32));
+                                            c.swc1(0, c.g[A3][0] as u32);
+                                            c.swc1(3, c.g[T1][0] as u32);
                                             c.mfc1(3, 1);
-                                            c.lqc2(4, (c.g[V0][0] as u32));
+                                            c.lqc2(4, c.g[V0][0] as u32);
                                             c.qmtc2(3, 3);
                                             c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
                                             c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x10));
                                             c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
-                                            c.sq(2, (c.g[T0][0] as u32));
-                                            c.sq(2, (c.g[SP][0] as u32));
-                                            c.lwc1(0, (c.g[T1][0] as u32));
+                                            c.sq(2, c.g[T0][0] as u32);
+                                            c.sq(2, c.g[SP][0] as u32);
+                                            c.lwc1(0, c.g[T1][0] as u32);
                                             break 'b_329684;
                                         }
                                     }
@@ -1730,14 +1695,14 @@ pub fn collide_sphere_vs_box_edges(c: &mut Cpu) {
                                         break 'b_3296b4;
                                     } else {
                                         c.cycles += 8;
-                                        c.lq(2, (c.g[A2][0] as u32));
+                                        c.lq(2, c.g[A2][0] as u32);
                                         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xec0));
-                                        c.sq(2, (c.g[A3][0] as u32));
-                                        c.lwc1(0, (c.g[A1][0] as u32));
-                                        c.swc1(0, (c.g[A3][0] as u32));
-                                        c.swc1(2, (c.g[T1][0] as u32));
-                                        c.lq(2, (c.g[V1][0] as u32));
-                                        c.sq(2, (c.g[T0][0] as u32));
+                                        c.sq(2, c.g[A3][0] as u32);
+                                        c.lwc1(0, c.g[A1][0] as u32);
+                                        c.swc1(0, c.g[A3][0] as u32);
+                                        c.swc1(2, c.g[T1][0] as u32);
+                                        c.lq(2, c.g[V1][0] as u32);
+                                        c.sq(2, c.g[T0][0] as u32);
                                         break 'b_3296b4;
                                     }
                                 }
@@ -1748,19 +1713,19 @@ pub fn collide_sphere_vs_box_edges(c: &mut Cpu) {
             }
         }
         c.cycles += 1;
-        c.lwc1(1, (c.g[A2][0] as u32));
+        c.lwc1(1, c.g[A2][0] as u32);
         break 'b_3296b8;
     }
     'b_3297d4: {
         c.cycles += 5;
-        c.lwc1(0, (c.g[A0][0] as u32));
+        c.lwc1(0, c.g[A0][0] as u32);
         c.c_le_s(0, 1);
         if !c.fcc() {
             c.lwc1(1, (c.g[A2][0] as u32).wrapping_add(0x4));
             break 'b_3297d4;
         } else {
             c.cycles += 5;
-            c.lwc1(0, (c.g[A1][0] as u32));
+            c.lwc1(0, c.g[A1][0] as u32);
             c.c_le_s(1, 0);
             if !c.fcc() {
                 c.lwc1(1, (c.g[A2][0] as u32).wrapping_add(0x4));
@@ -1804,7 +1769,7 @@ pub fn collide_sphere_vs_box_edges(c: &mut Cpu) {
                                 } else {
                                     'b_3297a0: {
                                         c.cycles += 4;
-                                        c.lwc1(0, (c.g[T1][0] as u32));
+                                        c.lwc1(0, c.g[T1][0] as u32);
                                         c.c_lt_s(3, 0);
                                         let t = !c.fcc();
 
@@ -1812,25 +1777,25 @@ pub fn collide_sphere_vs_box_edges(c: &mut Cpu) {
                                             break 'b_3297a0;
                                         } else {
                                             c.cycles += 18;
-                                            c.lq(2, (c.g[A2][0] as u32));
+                                            c.lq(2, c.g[A2][0] as u32);
                                             c.g[AT][0] = 0xffffffffbf800000;
                                             c.mtc1(1, 1);
-                                            c.sq(2, (c.g[A3][0] as u32));
+                                            c.sq(2, c.g[A3][0] as u32);
                                             c.g[V0][0] = 0x500000;
                                             c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x4));
                                             c.g[V0][0] =
                                                 sx((c.g[V0][0] as u32).wrapping_sub(0xeb0));
                                             c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x4));
-                                            c.swc1(3, (c.g[T1][0] as u32));
+                                            c.swc1(3, c.g[T1][0] as u32);
                                             c.mfc1(3, 1);
-                                            c.lqc2(4, (c.g[V0][0] as u32));
+                                            c.lqc2(4, c.g[V0][0] as u32);
                                             c.qmtc2(3, 3);
                                             c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
                                             c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x10));
                                             c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
-                                            c.sq(2, (c.g[T0][0] as u32));
-                                            c.sq(2, (c.g[SP][0] as u32));
-                                            c.lwc1(0, (c.g[T1][0] as u32));
+                                            c.sq(2, c.g[T0][0] as u32);
+                                            c.sq(2, c.g[SP][0] as u32);
+                                            c.lwc1(0, c.g[T1][0] as u32);
                                             break 'b_3297a0;
                                         }
                                     }
@@ -1842,14 +1807,14 @@ pub fn collide_sphere_vs_box_edges(c: &mut Cpu) {
                                         break 'b_3297d0;
                                     } else {
                                         c.cycles += 8;
-                                        c.lq(2, (c.g[A2][0] as u32));
+                                        c.lq(2, c.g[A2][0] as u32);
                                         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xeb0));
-                                        c.sq(2, (c.g[A3][0] as u32));
+                                        c.sq(2, c.g[A3][0] as u32);
                                         c.lwc1(0, (c.g[A1][0] as u32).wrapping_add(0x4));
                                         c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x4));
-                                        c.swc1(2, (c.g[T1][0] as u32));
-                                        c.lq(2, (c.g[V1][0] as u32));
-                                        c.sq(2, (c.g[T0][0] as u32));
+                                        c.swc1(2, c.g[T1][0] as u32);
+                                        c.lq(2, c.g[V1][0] as u32);
+                                        c.sq(2, c.g[T0][0] as u32);
                                         break 'b_3297d0;
                                     }
                                 }
@@ -1868,29 +1833,29 @@ pub fn collide_sphere_vs_box_edges(c: &mut Cpu) {
         c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x4));
         c.c_le_s(0, 1);
         if !c.fcc() {
-            c.lwc1(1, (c.g[T1][0] as u32));
+            c.lwc1(1, c.g[T1][0] as u32);
             break 'b_3298f0;
         } else {
             c.cycles += 5;
             c.lwc1(0, (c.g[A1][0] as u32).wrapping_add(0x4));
             c.c_le_s(1, 0);
             if !c.fcc() {
-                c.lwc1(1, (c.g[T1][0] as u32));
+                c.lwc1(1, c.g[T1][0] as u32);
                 break 'b_3298f0;
             } else {
                 c.cycles += 6;
-                c.lwc1(1, (c.g[A2][0] as u32));
-                c.lwc1(0, (c.g[A0][0] as u32));
+                c.lwc1(1, c.g[A2][0] as u32);
+                c.lwc1(0, c.g[A0][0] as u32);
                 c.c_le_s(0, 1);
                 if !c.fcc() {
-                    c.lwc1(1, (c.g[T1][0] as u32));
+                    c.lwc1(1, c.g[T1][0] as u32);
                     break 'b_3298f0;
                 } else {
                     c.cycles += 5;
-                    c.lwc1(0, (c.g[A1][0] as u32));
+                    c.lwc1(0, c.g[A1][0] as u32);
                     c.c_le_s(1, 0);
                     if !c.fcc() {
-                        c.lwc1(1, (c.g[T1][0] as u32));
+                        c.lwc1(1, c.g[T1][0] as u32);
                         break 'b_3298f0;
                     } else {
                         'b_3298ec: {
@@ -1911,12 +1876,12 @@ pub fn collide_sphere_vs_box_edges(c: &mut Cpu) {
                                 c.cycles += 4;
                                 c.c_le_s(4, 2);
                                 if !c.fcc() {
-                                    c.lwc1(1, (c.g[T1][0] as u32));
+                                    c.lwc1(1, c.g[T1][0] as u32);
                                     break 'b_3298f0;
                                 } else {
                                     'b_3298bc: {
                                         c.cycles += 4;
-                                        c.lwc1(0, (c.g[T1][0] as u32));
+                                        c.lwc1(0, c.g[T1][0] as u32);
                                         c.c_lt_s(3, 0);
                                         let t = !c.fcc();
 
@@ -1924,25 +1889,25 @@ pub fn collide_sphere_vs_box_edges(c: &mut Cpu) {
                                             break 'b_3298bc;
                                         } else {
                                             c.cycles += 18;
-                                            c.lq(2, (c.g[A2][0] as u32));
+                                            c.lq(2, c.g[A2][0] as u32);
                                             c.g[AT][0] = 0xffffffffbf800000;
                                             c.mtc1(1, 1);
-                                            c.sq(2, (c.g[A3][0] as u32));
+                                            c.sq(2, c.g[A3][0] as u32);
                                             c.g[V0][0] = 0x500000;
                                             c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x8));
                                             c.g[V0][0] =
                                                 sx((c.g[V0][0] as u32).wrapping_sub(0xea0));
                                             c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x8));
-                                            c.swc1(3, (c.g[T1][0] as u32));
+                                            c.swc1(3, c.g[T1][0] as u32);
                                             c.mfc1(3, 1);
-                                            c.lqc2(4, (c.g[V0][0] as u32));
+                                            c.lqc2(4, c.g[V0][0] as u32);
                                             c.qmtc2(3, 3);
                                             c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
                                             c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x10));
                                             c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
-                                            c.sq(2, (c.g[T0][0] as u32));
-                                            c.sq(2, (c.g[SP][0] as u32));
-                                            c.lwc1(0, (c.g[T1][0] as u32));
+                                            c.sq(2, c.g[T0][0] as u32);
+                                            c.sq(2, c.g[SP][0] as u32);
+                                            c.lwc1(0, c.g[T1][0] as u32);
                                             break 'b_3298bc;
                                         }
                                     }
@@ -1954,21 +1919,21 @@ pub fn collide_sphere_vs_box_edges(c: &mut Cpu) {
                                         break 'b_3298ec;
                                     } else {
                                         c.cycles += 8;
-                                        c.lq(2, (c.g[A2][0] as u32));
+                                        c.lq(2, c.g[A2][0] as u32);
                                         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xea0));
-                                        c.sq(2, (c.g[A3][0] as u32));
+                                        c.sq(2, c.g[A3][0] as u32);
                                         c.lwc1(0, (c.g[A1][0] as u32).wrapping_add(0x8));
                                         c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x8));
-                                        c.swc1(2, (c.g[T1][0] as u32));
-                                        c.lq(2, (c.g[V1][0] as u32));
-                                        c.sq(2, (c.g[T0][0] as u32));
+                                        c.swc1(2, c.g[T1][0] as u32);
+                                        c.lq(2, c.g[V1][0] as u32);
+                                        c.sq(2, c.g[T0][0] as u32);
                                         break 'b_3298ec;
                                     }
                                 }
                             }
                         }
                         c.cycles += 1;
-                        c.lwc1(1, (c.g[T1][0] as u32));
+                        c.lwc1(1, c.g[T1][0] as u32);
                         break 'b_3298f0;
                     }
                 }
@@ -2849,35 +2814,25 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::compare;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::fake_call;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
+
     use crate::difftest::fill;
     use crate::difftest::put_vec;
     use crate::difftest::put_words;
     use crate::difftest::scramble;
-    use crate::difftest::seed_count;
+
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::SP as TEST_SP;
+
     pub(crate) use crate::game::ai::ai::tests::generic;
-    pub(crate) use crate::game::ai::ai::tests::globals_8 as globals_2;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::diff;
     pub(crate) use crate::game::fe::feasyncfile::tests::fe_base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_12 as globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_12 as heap_init;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_10 as pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::ui;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_8 as WORLD;
+
     pub(crate) use crate::game::intersect::worldsphtree::tests::f;
     pub(crate) use crate::game::intersect::worldsphtree::tests::uf;
     pub(crate) use crate::game::intersect::worldsphtree::tests::SEEDS as SEEDS_2;
@@ -3226,7 +3181,7 @@ pub(crate) mod tests {
             200,
             &|c, seed| {
                 generic(c, seed, 0x40);
-                let mut r = crate::difftest::Rng((seed as u64) ^ 0x9e37_79b9);
+                let _r = crate::difftest::Rng((seed as u64) ^ 0x9e37_79b9);
                 c.g[A0][0] = (DATA + 0x100) as u64;
                 c.g[A1][0] = (DATA + 0x800) as u64;
                 c.g[T0][0] = (DATA + 0x900) as u64;
@@ -3238,10 +3193,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-
-    use crate::difftest::fresh;
 
     /// `AIFwdDiffCache_Get`: a cache of three nodes on an LRU ring, hashed
     /// into sorted bucket chains (some unused, key -1); the source key is a
@@ -3369,7 +3320,6 @@ pub(crate) mod tests {
             &collide_sphere_vs_box_edges_setup,
         );
     }
-    use super::*;
 
     /// SpatialHash_Move on a small octree: a cell at level 2 or 3, the
     /// entry linked (with or without neighbours) under the old key, the new
@@ -3498,7 +3448,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     // -- 0x00328660 SpatialHash_InsertAtKey ------------------------------------
 
@@ -3570,7 +3519,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// Stage the VU0 microprogram at address 0 as `NOP / NOP[E]` so
     /// Vu0_LoadRegsAndCall's `vcallmsr` (CMSAR0 = 0) returns at once.

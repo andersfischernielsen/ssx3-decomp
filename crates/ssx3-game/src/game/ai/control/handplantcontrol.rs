@@ -3,7 +3,6 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -11,17 +10,13 @@ use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::Unwound;
-use crate::call::VSlot;
 use crate::events;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::ai::rider_save_state_raw;
 pub(crate) use crate::game::ai::ai::rider_state_save_forward;
 pub(crate) use crate::game::ai::ai::rider_state_save_self_bytes;
 pub(crate) use crate::game::ai::ai::virtual_call_slot;
-pub(crate) use crate::game::ai::ai::SAVE_STATE_STREAM_WRITE;
 pub(crate) use crate::game::ai::computer::fr_2 as fr;
 pub(crate) use crate::game::ai::computer::gp_2 as gp_3;
 pub(crate) use crate::game::ai::computer::ldf_2 as ldf;
@@ -43,7 +38,6 @@ pub(crate) use crate::game::ai::rider::vcall;
 pub(crate) use crate::game::ai::rider::Ops;
 pub(crate) use crate::game::ai::rider::RODATA_NORMAL2;
 pub(crate) use crate::game::ai::rider::RODATA_UP;
-pub(crate) use crate::game::fe::feasyncfile::at as at_3;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_8;
 pub(crate) use crate::game::fe::feasyncfile::lw_5 as lw_2;
 pub(crate) use crate::game::fe::feasyncfile::sw_4 as sw;
@@ -202,83 +196,21 @@ pub(crate) mod callee {
     use super::ee;
     use super::Callee;
     pub(crate) use crate::game::ai::computer::callee::BE_LIBRARY_GET_INSTANCE as BE_LIBRARY_GET_INSTANCE_2;
-    pub(crate) use crate::game::ai::computer::callee::GET_MAIN_STATE as GET_MAIN_STATE_2;
-    pub(crate) use crate::game::ai::computer::callee::GET_SUB_STATE as GET_SUB_STATE_2;
-    pub(crate) use crate::game::ai::rider::callee::ADD_BOOST;
-    pub(crate) use crate::game::ai::rider::callee::AI_GET_FRAME_COUNTER_2 as AI_GET_FRAME_COUNTER;
-    pub(crate) use crate::game::ai::rider::callee::ALIGN_STANCE_TO_RAIL;
-    pub(crate) use crate::game::ai::rider::callee::ANIM_LAYER_ANIM_ENTRY;
-    pub(crate) use crate::game::ai::rider::callee::ANIM_LAYER_SEQUENCE;
-    pub(crate) use crate::game::ai::rider::callee::ANIM_PLAY_ANIM;
-    pub(crate) use crate::game::ai::rider::callee::ANIM_ROTATE_ROOTS;
-    pub(crate) use crate::game::ai::rider::callee::BANK_TRICK_BOOST;
-    pub(crate) use crate::game::ai::rider::callee::BE_CHAR_ATTRIB5_FACTOR;
-    pub(crate) use crate::game::ai::rider::callee::BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::ai::rider::callee::BE_LIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::ai::rider::callee::BOUNCE_OFF_WALL;
-    pub(crate) use crate::game::ai::rider::callee::BUILD_WORLD_MATRIX;
-    pub(crate) use crate::game::ai::rider::callee::CAMERA_TRIGGER_UPDATE_FOR_RIDER;
-    pub(crate) use crate::game::ai::rider::callee::COLL_HULL_CTOR;
-    pub(crate) use crate::game::ai::rider::callee::COLL_HULL_DTOR;
+
     pub(crate) use crate::game::ai::rider::callee::COLL_SEGMENT_CTOR;
-    pub(crate) use crate::game::ai::rider::callee::DEFLECT_ALONG_WALL;
-    pub(crate) use crate::game::ai::rider::callee::FIND_RAIL;
-    pub(crate) use crate::game::ai::rider::callee::FIND_WALL_CONTACT;
-    pub(crate) use crate::game::ai::rider::callee::FLAGS64_TEST;
-    pub(crate) use crate::game::ai::rider::callee::GET_BUMP_STRENGTH;
-    pub(crate) use crate::game::ai::rider::callee::GET_MAIN_STATE;
-    pub(crate) use crate::game::ai::rider::callee::GET_SUB_STATE;
-    pub(crate) use crate::game::ai::rider::callee::HANDLE_IMPACT;
-    pub(crate) use crate::game::ai::rider::callee::HANDLE_WALL_RAIL_CONTACT;
-    pub(crate) use crate::game::ai::rider::callee::IS_ON_GROUND;
-    pub(crate) use crate::game::ai::rider::callee::LAND_TRICK;
-    pub(crate) use crate::game::ai::rider::callee::MATH_ATAN;
-    pub(crate) use crate::game::ai::rider::callee::MATH_SIN_COS;
-    pub(crate) use crate::game::ai::rider::callee::OVERLAP_LIST_COLLIDE_OBJECTS;
+
     pub(crate) use crate::game::ai::rider::callee::OVERLAP_LIST_COLLIDE_VOLUME;
-    pub(crate) use crate::game::ai::rider::callee::OVERLAP_LIST_FIND_NEAREST_RAIL;
-    pub(crate) use crate::game::ai::rider::callee::PLAY_WALL_HIT_SOUND;
-    pub(crate) use crate::game::ai::rider::callee::RAILSLIDE_COMPUTE_ENTRY_ANGLE;
-    pub(crate) use crate::game::ai::rider::callee::RAILSLIDE_PLAY_ENTER_ANIM;
-    pub(crate) use crate::game::ai::rider::callee::RESOLVE_RIDER_COLLISION;
-    pub(crate) use crate::game::ai::rider::callee::ROTATE_AROUND_AXIS;
-    pub(crate) use crate::game::ai::rider::callee::SET_MAIN_STATE;
-    pub(crate) use crate::game::ai::rider::callee::SET_SUB_STATE;
-    pub(crate) use crate::game::ai::rider::callee::SPHERE_TREE_INTERSECT;
-    pub(crate) use crate::game::ai::rider::callee::TRANSLATE;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::ANIM_OBJECT_GET_NODE_INTERSECT_MATRIX;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::COLLIDE_VOLUME_OBJECT_2 as COLLIDE_VOLUME_OBJECT;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::FLEX_RAIL_FIND_CLOSEST_POINT;
+
     pub(crate) use crate::game::intersect::worldsphtree::callee::FOCUS_MAN_COLLECT_OCTREE_NODE;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::INPUT_VM_READ_BUILTIN;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::INPUT_VM_READ_PAD_CHANNEL;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::RAIL_FIND_NEAREST_POINT;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::RAIL_MODIFIER_FIND_CLOSEST_POINT;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::WP_DATA_FIND_CELL_INDEX;
+
     pub(crate) use crate::game::movie::movieplayer::callee::AIR_APPLY_WIND;
     pub(crate) use crate::game::movie::movieplayer::callee::AIR_PREDICTOR_UPDATE;
-    pub(crate) use crate::game::movie::movieplayer::callee::AUDIO_GET_INSTANCE;
-    pub(crate) use crate::game::movie::movieplayer::callee::AUDIO_RESET_BOOST_PITCH;
-    pub(crate) use crate::game::movie::movieplayer::callee::BE_CHAR_ATTRIB_FACTOR;
-    pub(crate) use crate::game::movie::movieplayer::callee::BUILD_OCCLUDER_PLANES;
-    pub(crate) use crate::game::movie::movieplayer::callee::MATH_DET3X3;
+
     pub(crate) use crate::game::movie::movieplayer::callee::OVERLAP_LIST_FIND_CLOSEST;
-    pub(crate) use crate::game::movie::movieplayer::callee::PACK_POSITION;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL128_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL16_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL256_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL32_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL512_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL64_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL8_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::QSORT;
-    pub(crate) use crate::game::movie::movieplayer::callee::REMOVE_HUD_MESSAGE;
+
     pub(crate) use crate::game::movie::movieplayer::callee::RIDER_GET_SUBSTATE;
     pub(crate) use crate::game::movie::movieplayer::callee::RIDER_ORIENTATION_IMPLICIT;
     pub(crate) use crate::game::movie::movieplayer::callee::RIDER_UPDATE_ORIENTATION;
-    pub(crate) use crate::game::movie::movieplayer::callee::SET_TIMED_EVENT;
-    pub(crate) use crate::game::movie::movieplayer::callee::SHOW_HUD_NUMBER;
-    pub(crate) use crate::game::movie::movieplayer::callee::VU0_UPLOAD_OCCLUDER;
 
     pub const CAST_BOARD_RAY: Callee = Callee {
         addr: 0x0013_a7b0,
@@ -371,9 +303,9 @@ pub(crate) mod callee {
 
 /// `Contact` records (0x80 bytes) as the collision queries fill them.
 pub(crate) mod contact {
-    pub(crate) use crate::game::ai::rider::contact::DEPTH;
+
     pub(crate) use crate::game::ai::rider::contact::INSTANCE;
-    pub(crate) use crate::game::ai::rider::contact::MATERIAL;
+
     pub(crate) use crate::game::ai::rider::contact::NORMAL;
     pub(crate) use crate::game::ai::rider::contact::SIZE;
     pub(crate) use crate::game::ai::rider::contact::SURFACE;
@@ -381,23 +313,13 @@ pub(crate) mod contact {
 
 /// Rider fields this function reads or writes.
 pub(crate) mod rider {
-    pub(crate) use crate::game::ai::computer::rider::AIR_PREDICTOR;
+
     pub(crate) use crate::game::ai::computer::rider::ATTRIB_VALUE;
-    pub(crate) use crate::game::ai::computer::rider::BASE_2 as BASE;
-    pub(crate) use crate::game::ai::computer::rider::BOOST_2 as BOOST;
-    pub(crate) use crate::game::ai::computer::rider::BOOST_COUNT;
-    pub(crate) use crate::game::ai::computer::rider::BOOST_FLAG;
-    pub(crate) use crate::game::ai::computer::rider::BOOST_MASK;
-    pub(crate) use crate::game::ai::computer::rider::BOOST_STATE;
-    pub(crate) use crate::game::ai::computer::rider::BOOST_TIMER;
-    pub(crate) use crate::game::ai::computer::rider::CHAR_COMP;
-    pub(crate) use crate::game::ai::computer::rider::CHAR_ID;
-    pub(crate) use crate::game::ai::computer::rider::HEADING_2 as HEADING;
-    pub(crate) use crate::game::ai::computer::rider::METRIC_SCALE;
+
     pub(crate) use crate::game::ai::computer::rider::PLAYER;
-    pub(crate) use crate::game::ai::computer::rider::SPEED;
+
     pub(crate) use crate::game::ai::computer::rider::SPEED_FACTOR;
-    pub(crate) use crate::game::ai::computer::rider::VELOCITY_2 as VELOCITY;
+
     pub(crate) use crate::game::ai::rider::rider::FRAME_FWD;
     pub(crate) use crate::game::ai::rider::rider::FRAME_SIDE;
     pub(crate) use crate::game::ai::rider::rider::FWD_REF;
@@ -409,7 +331,7 @@ pub(crate) mod rider {
     pub(crate) use crate::game::ai::rider::rider::OVERLAP_HINT;
     pub(crate) use crate::game::ai::rider::rider::OVERLAP_LIST;
     pub(crate) use crate::game::ai::rider::rider::POS;
-    pub(crate) use crate::game::ai::rider::rider::SPHERE_TREE;
+
     pub(crate) use crate::game::ai::rider::rider::UP;
     pub(crate) use crate::game::ai::rider::rider::UP_PREV;
     pub(crate) use crate::game::ai::rider::rider::VEL;
@@ -443,18 +365,18 @@ pub(crate) mod rider {
 pub(crate) mod global {
 
     /// The `BELibrary` singleton.
+    #[cfg(test)]
     pub const BE_LIBRARY: u32 = 0x1f04;
 
     /// The race-phase index `BELibrary_GetInterface` selects.
+    #[cfg(test)]
     pub const BE_LIBRARY_INDEX: u32 = 0x1efc;
 }
 
 /// The computer rider's AI bookkeeping.
 pub(crate) mod computer {
-    pub(crate) use crate::game::ai::computer::computer::DIR;
+
     pub(crate) use crate::game::ai::computer::computer::RIDER;
-    pub(crate) use crate::game::ai::computer::computer::STUCK_TIME;
-    pub(crate) use crate::game::ai::computer::computer::WRONG_TIME;
 }
 
 // ---------------------------------------------------------------------------
@@ -535,6 +457,7 @@ pub(crate) mod air {
     pub const ORIENT: u32 = 0x1b0;
 
     /// Set while the wind force applies.
+    #[cfg(test)]
     pub const WIND: u32 = 0x874;
 }
 
@@ -564,14 +487,7 @@ pub(crate) mod anim {
 }
 
 /// `gp`-relative globals used here.
-pub(crate) mod g {
-    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
-    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
-    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
-    pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER;
-    pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER_END;
-    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
-}
+pub(crate) mod g {}
 
 /// Calls the generator emitted as `call_indirect` (cross-shard `jal`).
 pub(crate) mod target {
@@ -1085,7 +1001,7 @@ pub fn focus_man_collect_octree_node(c: &mut Cpu) {
             c.g[V0][0] = sx((c.g[V0][0] as u32) << 23);
             c.sub_s(1, 1, 3);
             c.mtc1(2, 2); // f2 = 2^(level-127) from the exponent bits
-            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
             c.lwc1(0, p(c.g[A0][0] as u32, 0x10));
             c.mul_s(1, 1, 2);
             c.c_le_s(1, 0);
@@ -1298,9 +1214,11 @@ pub(crate) const BE_LIBRARY_GET_INTERFACE: u32 = 0x0014_dd58;
 pub(crate) const BE_CHAR_ATTRIB3_FACTOR: u32 = 0x0014_8e68;
 
 /// `D_004A1140`: pointer to the four-point speed curve.
+#[cfg(test)]
 pub(crate) const SPEED_CURVE: u32 = 0x004a_1140;
 
 /// The back-end's phase-interface table (`BELibrary_GetInterface`).
+#[cfg(test)]
 pub(crate) const BE_PHASE_INTERFACES: u32 = 0x0053_08a8;
 
 /// The carve curve's `x = |b| * 0.036` scale, the edging stat's reciprocal
@@ -1732,7 +1650,7 @@ pub fn rider_air_state_update(c: &mut Cpu) {
             c.mult(0, 3, 8, 3);
             c.g[A3][0] = c.lh(p(r32(c, A2), anim::FLAGS));
             let no_flags = c.g[A3][0] == c.g[A1][0];
-            c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+            c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
             if !no_flags {
                 c.cycles += 2;
                 c.g[V0][0] = c.g[A3][0] & 0x8;
@@ -1935,7 +1853,7 @@ pub fn rider_air_state_cast_board_ray(c: &mut Cpu) {
     c.sqc2(5, p(sp(c), 0xe0));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 5);
     c.lq(2, p(sp(c), 0xe0));
-    c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+    c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[V1][0] as u32));
     c.sq(2, p(sp(c), 0xd0));
     c.lqc2(3, r32(c, T1));
     c.lqc2(4, p(sp(c), 0xd0));
@@ -3473,7 +3391,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
             c.g[A2][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x44));
             c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x780));
             c.mul_s(25, 1, 0);
-            c.g[S2][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+            c.g[S2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
             c.g[AT][0] = 0x42c80000;
             c.mtc1(1, 1);
             c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x14));
@@ -3566,8 +3484,8 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
         c.g[A1][0] = c.g[S2][0];
         c.lq(3, (c.g[SP][0] as u32).wrapping_add(0x10));
         c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
-        c.sq(3, (c.g[SP][0] as u32));
-        c.lqc2(3, (c.g[SP][0] as u32));
+        c.sq(3, c.g[SP][0] as u32);
+        c.lqc2(3, c.g[SP][0] as u32);
         c.lqc2(5, (c.g[V0][0] as u32).wrapping_add(0x370));
         c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
         c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
@@ -3576,7 +3494,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
         c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
         c.qmfc2(6, 4);
         c.mtc1(6, 31);
-        c.lqc2(3, (c.g[SP][0] as u32));
+        c.lqc2(3, c.g[SP][0] as u32);
         c.lqc2(5, (c.g[V0][0] as u32).wrapping_add(0x3a0));
         c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
         c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
@@ -3588,7 +3506,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
         c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x1f0));
         c.mov_s(24, 31);
         c.lwc1(12, (c.g[V0][0] as u32).wrapping_add(0x454));
-        c.lqc2(3, (c.g[SP][0] as u32));
+        c.lqc2(3, c.g[SP][0] as u32);
         c.lqc2(5, (c.g[V0][0] as u32).wrapping_add(0x3b0));
         c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
         c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
@@ -3614,7 +3532,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
         {
             return;
         }
-        c.lwc1(13, (c.g[S2][0] as u32));
+        c.lwc1(13, c.g[S2][0] as u32);
         c.g[A0][0] = c.g[S1][0];
         c.g[A1][0] = c.g[S2][0];
         c.mov_s(12, 20);
@@ -3677,7 +3595,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                         c.lwc1(4, (c.g[V0][0] as u32).wrapping_add(0x8));
                         c.c_lt_s(4, 3);
                         if !c.fcc() {
-                            c.lwc1(1, (c.g[V0][0] as u32));
+                            c.lwc1(1, c.g[V0][0] as u32);
                             break 'b_13db28;
                         } else {
                             'b_13db18: {
@@ -3780,7 +3698,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                     c.lwc1(4, (c.g[V0][0] as u32).wrapping_add(0x8));
                     c.c_lt_s(4, 3);
                     if !c.fcc() {
-                        c.lwc1(1, (c.g[V0][0] as u32));
+                        c.lwc1(1, c.g[V0][0] as u32);
                         break 'b_13dbc8;
                     } else {
                         'b_13dbb8: {
@@ -3903,7 +3821,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
         if call_ptr(c, 0x0031be50, 0x0013dc54).is_err() {
             return;
         }
-        c.lwc1(1, (c.g[S2][0] as u32));
+        c.lwc1(1, c.g[S2][0] as u32);
         c.add_s(3, 26, 30);
         c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
         c.lwc1(0, (c.g[SP][0] as u32).wrapping_add(0x144));
@@ -3934,7 +3852,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
         c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x40));
         c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
         c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.lwc1(0, (c.g[S2][0] as u32));
+        c.lwc1(0, c.g[S2][0] as u32);
         c.sw((c.g[SP][0] as u32).wrapping_add(0x20), 0u64);
         c.neg_s(0, 0);
         c.sw((c.g[SP][0] as u32).wrapping_add(0x24), 0u64);
@@ -4068,12 +3986,12 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                         c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x50));
                         c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
                         c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x40));
-                        c.lqc2(3, (c.g[SP][0] as u32));
+                        c.lqc2(3, c.g[SP][0] as u32);
                         c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x40));
                         c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
-                        c.sqc2(5, (c.g[SP][0] as u32));
+                        c.sqc2(5, c.g[SP][0] as u32);
                         c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
-                        c.lqc2(3, (c.g[SP][0] as u32));
+                        c.lqc2(3, c.g[SP][0] as u32);
                         c.lqc2(4, (c.g[V1][0] as u32).wrapping_add(0x3d0));
                         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                         c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x50));
@@ -4159,8 +4077,8 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
     }
     'b_13e080: {
         c.cycles += 25;
-        c.lqc2(3, (c.g[SP][0] as u32));
-        c.lqc2(5, (c.g[SP][0] as u32));
+        c.lqc2(3, c.g[SP][0] as u32);
+        c.lqc2(5, c.g[SP][0] as u32);
         c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
         c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
         c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
@@ -4224,21 +4142,21 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                     }
                     c.cycles += 17;
                     c.mfc1(2, 1);
-                    c.lqc2(4, (c.g[SP][0] as u32));
+                    c.lqc2(4, c.g[SP][0] as u32);
                     c.qmtc2(2, 3);
                     c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
-                    c.sqc2(5, (c.g[SP][0] as u32));
+                    c.sqc2(5, c.g[SP][0] as u32);
                     c.g[A0][0] = 0x500000;
                     c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xee0));
                     c.lqc2(3, (c.g[A1][0] as u32).wrapping_add(0x3d0));
-                    c.lqc2(4, (c.g[SP][0] as u32));
+                    c.lqc2(4, c.g[SP][0] as u32);
                     c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x60));
                     c.lq(3, (c.g[SP][0] as u32).wrapping_add(0x60));
                     c.sq(3, (c.g[SP][0] as u32).wrapping_add(0x50));
                     c.sq(3, (c.g[A1][0] as u32).wrapping_add(0x1e0));
-                    c.lq(2, (c.g[A0][0] as u32));
+                    c.lq(2, c.g[A0][0] as u32);
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x30));
                     break 'b_13e080;
                 }
@@ -4299,7 +4217,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
         c.lq(3, (c.g[SP][0] as u32).wrapping_add(0x60));
         c.sq(3, (c.g[SP][0] as u32).wrapping_add(0x50));
         c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
-        c.sq(3, (c.g[SP][0] as u32));
+        c.sq(3, c.g[SP][0] as u32);
         c.lqc2(3, (c.g[A0][0] as u32).wrapping_add(0x110));
         c.lqc2(5, (c.g[A0][0] as u32).wrapping_add(0x390));
         c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
@@ -4404,7 +4322,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
             c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x2d0));
             c.mtc1(0, 23);
             c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x2cc));
-            c.lqc2(3, (c.g[SP][0] as u32));
+            c.lqc2(3, c.g[SP][0] as u32);
             c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
             c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
             c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
@@ -4458,7 +4376,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
             'b_13e340: {
                 c.cycles += 37;
                 c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
-                c.lqc2(4, (c.g[SP][0] as u32));
+                c.lqc2(4, c.g[SP][0] as u32);
                 c.lqc2(5, (c.g[V0][0] as u32).wrapping_add(0x3a0));
                 c.vu0().opmula(4, 5);
                 c.vu0().opmsub(6, 5, 4);
@@ -4572,7 +4490,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                         }
                         'b_13e3d4: {
                             c.cycles += 5;
-                            c.lwc1(1, (c.g[V0][0] as u32));
+                            c.lwc1(1, c.g[V0][0] as u32);
                             c.c_lt_s(3, 1);
                             if !c.fcc() {
                                 c.lwc1(2, (c.g[V0][0] as u32).wrapping_add(0x4));
@@ -4634,7 +4552,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                             c.mul_s(5, 0, 3);
                             c.div_s(5, 5, 1);
                             if !c.fcc() {
-                                c.lwc1(1, (c.g[V0][0] as u32));
+                                c.lwc1(1, c.g[V0][0] as u32);
                                 break 'b_13e4a4;
                             } else {
                                 'b_13e494: {
@@ -4724,7 +4642,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                 c.mul_s(5, 5, 1);
                 c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
                 c.mtc1(0, 0);
-                c.lqc2(3, (c.g[SP][0] as u32));
+                c.lqc2(3, c.g[SP][0] as u32);
                 c.lqc2(5, (c.g[V1][0] as u32).wrapping_add(0x3a0));
                 c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
                 c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
@@ -4753,7 +4671,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xea0));
                     c.mul_s(0, 24, 0);
                     c.lqc2(4, (c.g[V1][0] as u32).wrapping_add(0x370));
-                    c.lqc2(5, (c.g[V0][0] as u32));
+                    c.lqc2(5, c.g[V0][0] as u32);
                     c.vu0().opmula(4, 5);
                     c.vu0().opmsub(6, 5, 4);
                     c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
@@ -4823,7 +4741,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                         c.cycles += 32;
                         c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x60));
                         c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x80));
-                        c.lqc2(3, (c.g[SP][0] as u32));
+                        c.lqc2(3, c.g[SP][0] as u32);
                         c.lqc2(5, (c.g[SP][0] as u32).wrapping_add(0x60));
                         c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
                         c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
@@ -4978,7 +4896,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                                     'b_13e89c: {
                                         'b_13e838: {
                                             c.cycles += 27;
-                                            c.lqc2(3, (c.g[SP][0] as u32));
+                                            c.lqc2(3, c.g[SP][0] as u32);
                                             c.lqc2(5, (c.g[V1][0] as u32).wrapping_add(0x370));
                                             c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
                                             c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
@@ -4995,7 +4913,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                                             c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x70));
                                             c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x70));
                                             c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x60));
-                                            c.lqc2(3, (c.g[SP][0] as u32));
+                                            c.lqc2(3, c.g[SP][0] as u32);
                                             c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x60));
                                             c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                                             c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x70));
@@ -5397,7 +5315,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
             c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
             c.lq(2, (c.g[V1][0] as u32).wrapping_add(0x1b0));
             c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
-            c.lqc2(3, (c.g[SP][0] as u32));
+            c.lqc2(3, c.g[SP][0] as u32);
             c.lqc2(5, (c.g[SP][0] as u32).wrapping_add(0x50));
             c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
             c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
@@ -5480,7 +5398,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                     }
                     'b_13eb44: {
                         c.cycles += 5;
-                        c.lwc1(1, (c.g[V0][0] as u32));
+                        c.lwc1(1, c.g[V0][0] as u32);
                         c.c_lt_s(3, 1);
                         let t = !c.fcc();
                         c.lwc1(2, (c.g[V0][0] as u32).wrapping_add(0x4));
@@ -5599,7 +5517,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x15c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0013ebf4);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.pc = t;
                     call_indirect(c, t);
                     if c.pc != 0x0013ebf4 {
@@ -5634,7 +5552,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                 'b_13eca4: {
                     c.cycles += 35;
                     c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x6fcc));
-                    c.lqc2(3, (c.g[SP][0] as u32));
+                    c.lqc2(3, c.g[SP][0] as u32);
                     c.lqc2(5, (c.g[A0][0] as u32).wrapping_add(0x370));
                     c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
                     c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
@@ -5643,7 +5561,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                     c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
                     c.qmfc2(2, 4);
                     c.mtc1(2, 0);
-                    c.lqc2(3, (c.g[SP][0] as u32));
+                    c.lqc2(3, c.g[SP][0] as u32);
                     c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
                     c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
                     c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
@@ -5688,11 +5606,11 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                 'b_13ed0c: {
                     c.cycles += 19;
                     c.mtc1(0, 0);
-                    c.lqc2(3, (c.g[SP][0] as u32));
+                    c.lqc2(3, c.g[SP][0] as u32);
                     c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x50));
                     c.vu0().add(0b1111, 5, 3, Src::Vec(4));
-                    c.sqc2(5, (c.g[SP][0] as u32));
-                    c.lqc2(3, (c.g[SP][0] as u32));
+                    c.sqc2(5, c.g[SP][0] as u32);
+                    c.lqc2(3, c.g[SP][0] as u32);
                     c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
                     c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
                     c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
@@ -5710,17 +5628,17 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                         c.cycles += 7;
                         c.div_s(0, 3, 1);
                         c.mfc1(2, 0);
-                        c.lqc2(4, (c.g[SP][0] as u32));
+                        c.lqc2(4, c.g[SP][0] as u32);
                         c.qmtc2(2, 3);
                         c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
-                        c.sqc2(5, (c.g[SP][0] as u32));
+                        c.sqc2(5, c.g[SP][0] as u32);
                         c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
                         break 'b_13ed0c;
                     }
                 }
                 c.cycles += 8;
                 c.lqc2(3, (c.g[V1][0] as u32).wrapping_add(0x3d0));
-                c.lqc2(4, (c.g[SP][0] as u32));
+                c.lqc2(4, c.g[SP][0] as u32);
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x70));
                 c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x70));
@@ -5971,7 +5889,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                             'b_13efdc: {
                                 'b_13efbc: {
                                     c.cycles += 18;
-                                    c.lqc2(3, (c.g[SP][0] as u32));
+                                    c.lqc2(3, c.g[SP][0] as u32);
                                     c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
                                     c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
                                     c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
@@ -5987,7 +5905,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                                     c.lwc1(5, (c.g[V0][0] as u32).wrapping_add(0x8));
                                     c.c_lt_s(5, 1);
                                     if !c.fcc() {
-                                        c.lwc1(4, (c.g[V0][0] as u32));
+                                        c.lwc1(4, c.g[V0][0] as u32);
                                         break 'b_13efbc;
                                     } else {
                                         'b_13efac: {
@@ -6152,7 +6070,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
             c.cycles += 25;
             c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x2c0));
             c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x6fbc));
-            c.lqc2(3, (c.g[SP][0] as u32));
+            c.lqc2(3, c.g[SP][0] as u32);
             c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
             c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
             c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
@@ -6185,25 +6103,25 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
         'b_13f0fc: {
             c.cycles += 10;
             c.mul_s(20, 3, 0);
-            c.lwc1(1, (c.g[S1][0] as u32));
+            c.lwc1(1, c.g[S1][0] as u32);
             c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x6fb4));
             c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x6fb0));
             c.mul_s(0, 20, 0);
             c.add_s(0, 1, 0);
             c.c_le_s(2, 0);
             let t = !c.fcc();
-            c.swc1(0, (c.g[S1][0] as u32));
+            c.swc1(0, c.g[S1][0] as u32);
             if t {
                 break 'b_13f0fc;
             } else {
                 c.cycles += 2;
                 c.sub_s(0, 0, 2);
-                c.swc1(0, (c.g[S1][0] as u32));
+                c.swc1(0, c.g[S1][0] as u32);
                 break 'b_13f0fc;
             }
         }
         c.cycles += 8;
-        c.lwc1(12, (c.g[S1][0] as u32));
+        c.lwc1(12, c.g[S1][0] as u32);
         if call_ptr(c, 0x0031c040, 0x0013f104).is_err() {
             return;
         }
@@ -8422,21 +8340,17 @@ pub(crate) mod tests {
     use crate::difftest::check_lohi;
     use crate::difftest::compare;
     use crate::difftest::elf_image;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
+
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::fake_call;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
+
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
+
     use crate::difftest::fill;
     use crate::difftest::put_vec;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
     use crate::difftest::seed_count;
     use crate::difftest::Rng;
@@ -8445,63 +8359,38 @@ pub(crate) mod tests {
     use crate::difftest::SP as STACK;
     use crate::difftest::SP;
     pub(crate) use crate::game::ai::ai::tests::leaf;
-    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
-    pub(crate) use crate::game::ai::ai::tests::rng as rng_3;
+
     pub(crate) use crate::game::ai::ai::tests::slot;
-    pub(crate) use crate::game::ai::ai::tests::w16;
+
     pub(crate) use crate::game::ai::ai::tests::LOAD_B0;
     pub(crate) use crate::game::ai::computer::tests::literals;
-    pub(crate) use crate::game::ai::rider::tests::f;
-    pub(crate) use crate::game::ai::rider::tests::fake_varied;
+
     pub(crate) use crate::game::ai::rider::tests::gp_f32;
     pub(crate) use crate::game::ai::rider::tests::put_contacts;
     pub(crate) use crate::game::ai::rider::tests::put_list;
     pub(crate) use crate::game::ai::rider::tests::put_rider;
-    pub(crate) use crate::game::ai::rider::tests::put_slot;
-    pub(crate) use crate::game::ai::rider::tests::put_v;
-    pub(crate) use crate::game::ai::rider::tests::rand_v;
+
     pub(crate) use crate::game::ai::rider::tests::setup_machine;
     pub(crate) use crate::game::ai::rider::tests::uf_2 as uf;
-    pub(crate) use crate::game::ai::rider::tests::BASE;
-    pub(crate) use crate::game::ai::rider::tests::INSTS;
-    pub(crate) use crate::game::ai::rider::tests::LIST;
-    pub(crate) use crate::game::ai::rider::tests::MATS;
-    pub(crate) use crate::game::ai::rider::tests::OBJS;
-    pub(crate) use crate::game::ai::rider::tests::OWNER;
-    pub(crate) use crate::game::ai::rider::tests::PARAMS;
+
     pub(crate) use crate::game::ai::rider::tests::RIDER_2 as RIDER;
     pub(crate) use crate::game::ai::rider::tests::SEEDS;
-    pub(crate) use crate::game::ai::rider::tests::SURFS;
-    pub(crate) use crate::game::ai::rider::tests::TREE;
-    pub(crate) use crate::game::ai::rider::tests::VT_HULL;
-    pub(crate) use crate::game::ai::rider::tests::VT_OWNER;
-    pub(crate) use crate::game::ai::rider::tests::VT_SUB;
-    pub(crate) use crate::game::ai::rider::tests::VT_VOL;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_9 as globals_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_9 as heap_init;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_7 as pool;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::w_4 as w_2;
     pub(crate) use crate::game::fe::festateload::tests::OBJ;
     pub(crate) use crate::game::fe::festateloadhint::tests::w32;
     pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_5;
-    pub(crate) use crate::game::fe::festateoptions::tests::rng as rng_2;
+
     pub(crate) use crate::game::fe::festateoptions::tests::setup;
     pub(crate) use crate::game::fe::festateoptions::tests::AUX;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS as SEEDS_4;
+
     pub(crate) use crate::game::sound::bankmanager::tests::rng;
     pub(crate) use crate::game::sound::bankmanager::tests::SEEDS as SEEDS_3;
     use ssx3_ee as ee;
     use ssx3_ee::s00;
     use ssx3_ee::s01;
-    use ssx3_ee::s02;
-    use ssx3_ee::s03;
-    use ssx3_ee::s08;
-    use ssx3_ee::s09;
-    use ssx3_ee::s10;
-    use ssx3_ee::s11;
-    use ssx3_ee::s12;
-    use ssx3_ee::s13;
 
     // -----------------------------------------------------------------
     // Ground probe.
@@ -9468,8 +9357,6 @@ pub(crate) mod tests {
         );
     }
 
-    pub(crate) const SEEDS_6: u32 = 200;
-
     /// The function's argument (`GroundState*`).
     pub(crate) const GS: u32 = DATA + 0x1000;
 
@@ -9653,17 +9540,10 @@ pub(crate) mod tests {
             assert!(r.lohi.is_empty(), "seed {seed} lo/hi: {:#?}", r.lohi);
         }
     }
-    use super::*;
 
-    use super::*;
-    use super::*;
-    pub(crate) use crate::game::ai::computer::tests::fake_closest_point;
-    pub(crate) use crate::game::ai::computer::tests::fake_collide_volume;
     pub(crate) use crate::game::ai::computer::tests::install_fake_slots;
     pub(crate) use crate::game::ai::computer::tests::FCC_CTRL;
     pub(crate) use crate::game::ai::computer::tests::FCC_MAGIC;
-    pub(crate) use crate::game::ai::computer::tests::UDF_CTRL;
-    pub(crate) use crate::game::ai::computer::tests::UDF_MAGIC;
 
     // ------------------------------------------------ RiderAirState_CollideWalls
 
@@ -10196,7 +10076,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// ObjPtrArray_MergeSort on -3..=24 pointers (two elements, the small
     /// halves, deep recursion, empty/negative counts), objects with keys
@@ -10428,10 +10307,6 @@ pub(crate) mod tests {
         }
     }
 
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
     pub(crate) use crate::game::ai::ai::tests::oc286_save_block_setup;
     pub(crate) use crate::game::ai::ai::tests::rider_save_state_setup;
     pub(crate) use crate::game::ai::ai::tests::rider_state_save_setup;
@@ -10478,7 +10353,6 @@ pub(crate) mod tests {
             &|c, seed| oc286_save_block_setup(c, seed, 0x13_9970, 0x0013_9970),
         );
     }
-    use super::*;
 
     /// RiderAirState_PlayLandAnim2: vertical speeds around the hard and
     /// medium thresholds and random, spin angles below -pi, above pi and in

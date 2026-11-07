@@ -1,26 +1,10 @@
 //! `src/bx/bxrandom.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
-use crate::abi;
-use crate::abi::addu;
-use crate::abi::r32;
-use crate::abi::reg;
-use crate::abi::ret;
-use crate::abi::set_fcc;
-use crate::abi::set_fpr;
 use crate::abi::set_reg;
-use crate::call;
-use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::VSlot;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -90,15 +74,12 @@ pub fn rand_next_game(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::difftest::fakes::covered;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
+
     use crate::difftest::fill;
-    use crate::difftest::put_words;
+
     use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
 
     /// `Rand_NextMain`: random generator state words (indices and table
     /// entries); the real `Rand_Next` runs.
@@ -115,8 +96,8 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::{check, check_paths, scramble};
+
+    use crate::difftest::{check, scramble};
 
     /// Random generator state (all six words random, so both carry paths
     /// of `Rand_Next` are taken).

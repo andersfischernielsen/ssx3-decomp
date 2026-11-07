@@ -3,17 +3,11 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
-use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::events::back_edge_unwinds;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::ai::rider::fcc_lt;
 pub(crate) use crate::game::ai::rider::fr_3 as fr;
 pub(crate) use crate::game::ai::rider::gp_lit;
@@ -388,24 +382,20 @@ pub fn air_predictor_step_2(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::elf_image;
+
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
+
     use crate::difftest::put_words;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::SP as STACK;
+
     pub(crate) use crate::game::ai::ai::tests::leaf;
-    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
-    pub(crate) use crate::game::ai::ai::tests::rng;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS as SEEDS_2;
+
     pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
 
     /// The predictor's `.lit4` constants (the test machine has no data image).
@@ -597,8 +587,8 @@ pub(crate) mod tests {
             22,
         );
     }
-    use super::*;
-    use crate::difftest::{fill, put_vec};
+
+    use crate::difftest::put_vec;
 
     /// `AirPredictor_Step`: random positions and velocities (rising and
     /// falling, edge floats), maximum speeds above and below the result.

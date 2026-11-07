@@ -1,13 +1,9 @@
 //! `src/render/ps2bezierman.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
-use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Frame;
-use crate::events::back_edge_unwinds;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 use crate::guest::Addr;
 use callee::*;
 use ssx3_ee as ee;
@@ -69,10 +65,8 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
+
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
 
     // -----------------------------------------------------------------------
     // 0x38aeb0 PS2BezierMan_dtor.

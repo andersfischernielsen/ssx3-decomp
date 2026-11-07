@@ -3,16 +3,10 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::events::back_edge_unwinds;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::be::bestate2::ea;
 pub(crate) use crate::game::be::bestate2::gp_lw;
 pub(crate) use crate::game::be::bestate2::gp_rel;
@@ -22,14 +16,10 @@ pub(crate) use crate::game::fe::feasyncfile::lw_r;
 pub(crate) use crate::game::fe::feasyncfile::sw_r;
 pub(crate) use crate::game::sound::soundsys::p;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -49,45 +39,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Intra-shard callees the generator called directly (its `jal` aliases).
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::fe::feasyncfile::callee::APP_MODULE_RENDER_FADE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_TRICK_METER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_WIPEOUT_LOOP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_WIPEOUT_LOOP2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUTOSAVE_UPDATE_ICON;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BANK_MONITOR_STOP_HANDLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_LIBRARY_GET_INSTANCE_2 as BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_LIBRARY_GET_INTERFACE_2 as BE_LIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_OPTION_INT_SWAP_PLAYER_FLAGS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_SCORE_INT_GET_HIGH_SCORE_TABLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_FILE_CACHE_SHUTDOWN;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_ALLOC_COPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_CTOR_COPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_LOCALE_LOAD_TABLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_UNLOAD_ANIM_DATA;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_UNLOAD_RIDER_PREVIEWS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FLEX_RAIL_SAVE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_EXPECT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_GET_CHAR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_READ_QUOTED_STRING;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MENU_HIDE_ROOM_TABS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MEMCARD_INSTALL_CALLBACKS;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::MOD_OBJ_SAVE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_9 as NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OPERATOR_NEW_NAMED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PLAYBACK_RESTORE_WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REPLAY_SET_STATE_2 as REPLAY_SET_STATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SPLINE_MODIFIER_SET_SPEED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_CTOR_2 as UI_LIST_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_RESET;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_UPDATE_ANIM;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CHUNK_RESOLVE_HOOK;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_CTOR_2 as WORLD_OBJ_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_DTOR_2 as WORLD_OBJ_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_REPLACE_WITH_DEAD_NODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_RUN_KILL_SCRIPT_2 as WORLD_OBJ_RUN_KILL_SCRIPT;
 }
 
 /// `__builtin_delete` (0x317e50).
@@ -445,38 +398,29 @@ pub fn world_obj_ctor(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
+
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::put_vec;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as TEST_RA;
-    use crate::difftest::SP;
+
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear;
     pub(crate) use crate::game::be::bestate2::tests::belib;
     pub(crate) use crate::game::be::bestate2::tests::w;
     pub(crate) use crate::game::camera::trigger::cameratriggerlist::tests::small_pointer;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
-    pub(crate) use crate::game::fe::feasyncfile::tests::h;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::slot_3 as slot;
     pub(crate) use crate::game::fe::feasyncfile::tests::world_3 as world;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as SEEDS;
     pub(crate) use crate::game::object::animnode::tests::fb;
-    pub(crate) use crate::game::sound::soundsys::tests::alloc_ready;
+
     pub(crate) use crate::game::sound::soundsys::tests::base_9 as base;
-    pub(crate) use crate::game::sound::soundsys::tests::globals_7 as globals;
-    pub(crate) use crate::game::sound::soundsys::tests::load_2 as load;
-    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool;
+
     pub(crate) use crate::game::sound::soundsys::tests::wf;
-    pub(crate) use crate::game::sound::soundsys::tests::BE;
-    pub(crate) use crate::game::sound::soundsys::tests::WORLD;
+
     use ssx3_ee as ee;
 
     #[test]
@@ -571,8 +515,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::fakes::covered;
+
     use crate::difftest::fill;
 
     /// `WorldObj_ctor`: lists 0..3 (each a process-list slot whose "pending"

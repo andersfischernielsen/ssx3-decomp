@@ -6,11 +6,7 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
-use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::VSlot;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::game::ai::rider::per_tick_60;
@@ -19,15 +15,11 @@ pub(crate) use crate::game::visualfx::boardwakefx::p;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use crate::tick;
+#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -65,9 +57,6 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 /// `cAngerFX` fields.
 pub(crate) mod anger {
 
-    /// The rider.
-    pub const RIDER: u32 = 0x00;
-
     /// Per-rider slots, 0x2c bytes each.
     pub const SLOTS: u32 = 0x04;
 
@@ -78,6 +67,7 @@ pub(crate) mod anger {
 pub(crate) mod anger_slot {
 
     /// Glow level (approaches 1 while angry, 0 otherwise).
+    #[cfg(test)]
     pub const LEVEL: u32 = 0x00;
 
     /// RGBA colour (written as a 16-byte quad).
@@ -115,78 +105,16 @@ pub(crate) mod anger_rider {
 /// resolve through the function table like the original's `jal`.
 pub(crate) mod table_callee {
     pub(crate) use crate::game::be::bedbreward::table_callee::EA_MEMSET;
-    pub(crate) use crate::game::be::bedbreward::table_callee::OPERATOR_DELETE;
-    pub(crate) use crate::game::be::bedbreward::table_callee::WORLD_CREATE_DEAD_NODE;
 }
 
 // ---------------------------------------------------------------------------
 // Callees and fixed addresses.
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AUDIO_APPLY_OUTPUT_MODE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AUDIO_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AUDIO_SET_OUTPUT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_GET_BE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_GET_INTERFACE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_INTERFACE_CALL;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BOLT_FILE_INDEX_GET_NEXT_NODE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CAM_CONTROLLER_SET_ALGORITHM;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CBXSTRING_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CHAR_EQUIP_REFRESH_BUY_INFO;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CHAR_EQUIP_REFRESH_EQUIP_INFO;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CHAR_EQUIP_UPDATE_HELP_TEXT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CROWD_MAN2D_INIT_SLOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::DYNAMIC_EMITTER_DTOR;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::DYNAMIC_EMITTER_FREE_DATA;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEM_ALLOC_NAMED_2 as EA_MEM_ALLOC_NAMED;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEM_FREE_3 as EA_MEM_FREE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FEMODULE_GET_RIDER_PREVIEW;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FE_STATE_ON_ACTIVATE_2 as FE_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FE_STATE_STATS_REFRESH_RESULTS_2 as FE_STATE_STATS_REFRESH_RESULTS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FE_STATE_UPDATE_BUTTONS_TEXT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FLOAT_TO_UINT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GAME_COMM_DESTROY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GAME_STATE_PRE_RACE_MENU_RESUME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_HASH_VALUE32;
-    pub(crate) use crate::game::dirtysock::tags2::callee::INSEQ_EVENT_TRACK_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::INSEQ_HEAP_DELETE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::INSEQ_RAMP_TRACK_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::INSEQ_SPAN_TRACK_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::KEYBOARD_POPUP_IS_KEY_ENABLED;
-    pub(crate) use crate::game::dirtysock::tags2::callee::KEYBOARD_POPUP_SHOW;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_DISCONNECT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEMITTER_FREE_DATA;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEMORY_FREE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_MESSAGE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_HANDLE_NET_EVENT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_MESSENGER_SET_PLAYER_MENU_SELECTION;
-    pub(crate) use crate::game::dirtysock::tags2::callee::OPERATOR_DELETE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::RCMP_DECODE_FRAME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::RCMP_FRAME_NUMBER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_HIGHLIGHT_SLOT_CLEAR_2 as REPLAY_HIGHLIGHT_SLOT_CLEAR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REQUEST_LINE_REFRESH_LIST;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REQUEST_LINE_UPDATE_HELP_TEXT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REQUEST_LINE_UPDATE_NOW_PLAYING;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_DATA_GET_INFO_2 as SCRIPT_DATA_GET_INFO;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_DESTROY_SCRIPT_DATABASE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_GET_INSTANCE_SCRIPT_2 as SCRIPT_ENGINE_GET_INSTANCE_SCRIPT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_REMOVE_ALL_SCRIPT_OBJS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_IS_PLAYING_SCRIPT_2 as SCRIPT_LIST_IS_PLAYING_SCRIPT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_MOVIE_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SETUP_MAN_SEND_CHARACTER_MSG;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SOUND_PLAYER_SET_BY_INDEX;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SOUND_PLAYER_START;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STRCPY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_MENU_SET_SELECTED_BY_INDEX;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_SET_VISIBLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_SCREEN_GET_OBJECT_BY_HASH_NAME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_TEXT_SET_ASCII_STRING;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_WIDGET_SLOT_0;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_WIDGET_SLOT_1;
 }
 
 // ---------------------------------------------------------------------------
@@ -475,7 +403,7 @@ pub fn anger_fx_update(c: &mut Cpu) {
                             copy_record20(c, ANGER_COLOURS[1], p(r32(c, S2), anger_slot::COLOUR));
                             break 'colour;
                         }
-                        'four: {
+                        {
                             c.cycles += 2;
                             let under2 = c.g[V1][0] != 0;
                             c.g[V0][0] = 0x004d_0000;
@@ -530,7 +458,7 @@ pub fn anger_fx_update(c: &mut Cpu) {
                                 c.mtc1(1, 1);
                                 break 'target;
                             }
-                            'rise: {
+                            {
                                 c.cycles += 4;
                                 c.lwc1(3, gp(c, -0x3d2c)); // 0.0666
                                                            // The fade-out step: 1/15 * 60/rate per tick.
@@ -567,7 +495,7 @@ pub fn anger_fx_update(c: &mut Cpu) {
                     let slot_at = r32(c, S2);
                     let due = tick::frame60_due(c, slot_at, 0);
                     't20_block: {
-                        't20: {
+                        {
                             c.cycles += 7;
                             c.swc1(1, r32(c, S2));
                             c.lwc1(0, r32(c, S2));
@@ -636,7 +564,7 @@ pub fn anger_fx_update(c: &mut Cpu) {
                         break 't24_block;
                     }
                     't28_block: {
-                        't28: {
+                        {
                             c.cycles += 2;
                             let running = (c.g[V0][0] as i64) > 0;
                             c.g[V1][0] = ((c.g[A2][0] as i64) < (c.g[A1][0] as i64)) as u64;
@@ -885,13 +813,9 @@ pub fn visual_effects_man_emitter_holder_dtor(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::fakes;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fill;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
@@ -899,15 +823,14 @@ pub(crate) mod tests {
     pub(crate) use crate::game::be::bestate2::tests::belib;
     pub(crate) use crate::game::be::bestate2::tests::w;
     pub(crate) use crate::game::bx::bxstring2::tests::game;
-    pub(crate) use crate::game::bx::bxstring2::tests::game_globals;
+
     pub(crate) use crate::game::bx::bxstring2::tests::SCRATCH;
     pub(crate) use crate::game::dirtysock::tags2::tests::base;
     pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
+
     pub(crate) use crate::game::object::animnode::tests::fb;
     pub(crate) use crate::game::object::railmodifier::tests::h;
-    pub(crate) use crate::game::render::bezierman::tests::b;
+
     pub(crate) use crate::game::visualfx::boardwakefx::tests::gp_at;
     pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS_2 as SEEDS;
 

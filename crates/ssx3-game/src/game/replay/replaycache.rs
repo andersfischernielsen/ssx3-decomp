@@ -2,17 +2,7 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::call::call_ptr;
-use crate::call::guest;
-use crate::call::sp;
-use crate::call::Callee;
-use crate::call::Frame;
-use crate::events::back_edge_unwinds;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
-use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -173,22 +163,12 @@ pub fn replay_empty_rider_hook(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::elf_image;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
-    use crate::difftest::SP as STACK;
+
     pub(crate) use crate::game::ai::ai::tests::leaf;
-    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
-    pub(crate) use crate::game::ai::ai::tests::rng;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS;
 
     #[test]
     fn world_state_stream_reset_matches() {

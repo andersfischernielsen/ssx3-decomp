@@ -1,18 +1,12 @@
 //! `src/seg/seg_1fbe38.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
-use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -422,9 +416,7 @@ pub fn world_obj_factory_attach_modifier(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::LOG_RESULTS;
+
     use crate::difftest::fill;
     use crate::difftest::DATA;
 

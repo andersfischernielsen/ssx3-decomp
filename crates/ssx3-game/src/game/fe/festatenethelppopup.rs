@@ -3,7 +3,6 @@
 
 use crate::abi;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -60,11 +59,10 @@ pub fn c_fe_state_net_help_popup_set_body_text(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
 
     #[test]
     fn c_fe_state_net_help_popup_set_button_help_matches() {

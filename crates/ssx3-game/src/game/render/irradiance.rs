@@ -3,17 +3,12 @@
 
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::Unwound;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::fe::feasyncfile::lw_8 as lw;
 pub(crate) use crate::game::fe::feasyncfile::p;
 pub(crate) use crate::game::fe::feasyncfile::sub;
 pub(crate) use crate::game::fe::feasyncfile::sw_5 as sw;
 use crate::guest::Addr;
-use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -30,10 +25,6 @@ pub(crate) mod addr {
     pub(crate) use crate::game::fe::feasyncfile::addr::MEMCPY;
     pub(crate) use crate::game::fe::feasyncfile::addr::MEM_FREE;
     pub(crate) use crate::game::fe::feasyncfile::addr::OPERATOR_NEW_NAMED;
-    pub(crate) use crate::game::fe::feasyncfile::addr::STR_HASH;
-    pub(crate) use crate::game::fe::feasyncfile::addr::UI_TEXT_SET_ASCII;
-    pub(crate) use crate::game::fe::feasyncfile::addr::UI_TEXT_SET_UNICODE;
-    pub(crate) use crate::game::fe::feasyncfile::addr::USTR_LENGTH;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,11 +147,9 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
+
     use ssx3_ee as ee;
 
     #[test]

@@ -3,13 +3,9 @@
 
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::Callee;
 use crate::call::Frame;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
-use crate::guest::Addr;
-use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
+#[cfg(test)]
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -25,46 +21,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
 // Callees and fixed addresses.
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::be::beintmission::callee::AUDIO_GET_CHANNEL_VOLUME;
-    pub(crate) use crate::game::be::beintmission::callee::AUDIO_GET_INSTANCE;
-    pub(crate) use crate::game::be::beintmission::callee::AUDIO_IS_GAME_MUSIC_ENABLED;
-    pub(crate) use crate::game::be::beintmission::callee::AUDIO_LEVEL_TO_VOLUME;
-    pub(crate) use crate::game::be::beintmission::callee::AUDIO_SET_CHANNEL_VOLUME;
-    pub(crate) use crate::game::be::beintmission::callee::AUDIO_START_PRERACE_MUSIC;
-    pub(crate) use crate::game::be::beintmission::callee::BANK_MONITOR_STOP_ALL;
+
     pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INSTANCE;
     pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INTERFACE;
     pub(crate) use crate::game::be::beintmission::callee::BE_NEW_PLAYER_GET_INBOX;
-    pub(crate) use crate::game::be::beintmission::callee::BUDDY_MAN_GET_ROSTER_ENTRY;
-    pub(crate) use crate::game::be::beintmission::callee::CAMERA_TRIGGER_MAN_UPDATE_MASK1;
-    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_RESET_STATE;
-    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_SET_ALGORITHM_2 as CHASE_CAM_SET_ALGORITHM;
-    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_SET_ALGORITHM_IMMEDIATE;
-    pub(crate) use crate::game::be::beintmission::callee::CROWD_AUDIO_STOP_ALL;
-    pub(crate) use crate::game::be::beintmission::callee::EA_MEMSET;
-    pub(crate) use crate::game::be::beintmission::callee::FIND_MISSION;
-    pub(crate) use crate::game::be::beintmission::callee::GET_RIDER_PREVIEW;
-    pub(crate) use crate::game::be::beintmission::callee::LOBBY_MENU_REQUEST_JOIN_ROOM;
-    pub(crate) use crate::game::be::beintmission::callee::MC_MANAGER_END_OPERATION;
-    pub(crate) use crate::game::be::beintmission::callee::MUSIC_PLAYER_STOP_SONG;
-    pub(crate) use crate::game::be::beintmission::callee::NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::be::beintmission::callee::POPUP_CONFIRM_CFG_RESET;
-    pub(crate) use crate::game::be::beintmission::callee::RACE_PROGRESS_RESET_ALL;
-    pub(crate) use crate::game::be::beintmission::callee::REPLAY_APPLY_CAMERA;
-    pub(crate) use crate::game::be::beintmission::callee::REWARD_GALLERY_CHECK_REWARDS_READY;
-    pub(crate) use crate::game::be::beintmission::callee::REWARD_GALLERY_POLL_SHAPE_LOAD;
-    pub(crate) use crate::game::be::beintmission::callee::RIDER_PREVIEW_SET_VISIBLE;
-    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_DEACTIVATE_BINDING;
-    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_GET_INSTANCE;
-    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_STOP_ALL_PROCESS_SEQS;
-    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_STOP_AUX_LISTS;
-    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_STOP_MAIN_LISTS;
-    pub(crate) use crate::game::be::beintmission::callee::SLOGIN_DELETE;
-    pub(crate) use crate::game::be::beintmission::callee::SND_BANK_SET_MEMORY;
-    pub(crate) use crate::game::be::beintmission::callee::UI_STATE_UPDATE;
-    pub(crate) use crate::game::be::beintmission::callee::WSCRIPT_MAN_EVENT_QUEUE_POP;
 }
 
 /// `void MessageCenter_GetInbox(Inbox* self)` (0x1e39f8): the inbox of the
@@ -92,9 +52,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fill;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_2 as be_library;

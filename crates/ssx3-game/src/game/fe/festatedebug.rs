@@ -3,14 +3,13 @@
 
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::fe::feasyncfile::p;
 pub(crate) use crate::game::fe::feasyncfile::r;
 use crate::guest::Addr;
+#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -103,16 +102,11 @@ pub(crate) mod tests {
     use super::ee;
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::base_16 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_8 as BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W_6 as W;
 
     #[test]
     fn fe_state_char_select_ctor_matches() {

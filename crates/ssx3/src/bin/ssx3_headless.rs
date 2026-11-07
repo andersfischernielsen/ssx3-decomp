@@ -78,6 +78,7 @@ fn main() {
         );
     }
     let t0 = Instant::now();
+    #[cfg(feature = "emu-gs")]
     let mut img: Vec<u32> = Vec::new();
     // Scripted input: SSX3_INPUT="300:4000:10,400:0008:10" presses Cross (0x4000)
     // at frame 300 for 10 frames, then Start (0x0008) at frame 400. An optional
@@ -100,6 +101,7 @@ fn main() {
     // GS trace capture: SSX3_GS_CAPTURE="2380:4:/path/a.gstrace,4050:4:/path/b.gstrace"
     // records frames 2380..2383 (and 4050..4053) for offline replay with
     // `gs_replay`.
+    #[cfg(feature = "emu-gs")]
     let captures: Vec<(u64, u64, String)> = std::env::var("SSX3_GS_CAPTURE")
         .unwrap_or_default()
         .split(',')

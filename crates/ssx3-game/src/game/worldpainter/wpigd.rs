@@ -2,21 +2,14 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::abi::addu;
 use crate::abi::reg;
-use crate::abi::ret;
-use crate::abi::set_fcc;
 use crate::abi::set_fpr;
 use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::fe::splashmanager::at;
 pub(crate) use crate::game::visualfx::boardwakefx::lh_2 as lh;
 pub(crate) use crate::game::visualfx::boardwakefx::lw_2 as lw;
@@ -27,13 +20,7 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -1201,13 +1188,11 @@ pub fn twpigd_mix_blend(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::elf_image;
-    use crate::difftest::fakes;
+
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
@@ -1403,7 +1388,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// `tWPIGD_Weather_Blend`: the weather at a random data address with
     /// 19 random `{current, target}` pairs (an edge-case float on one pair
@@ -1463,11 +1447,9 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use crate::difftest::fakes::{ptr, vtable, LOG_RESULTS};
-    use crate::difftest::{fill, fresh, put_vec};
+
+    use crate::difftest::fakes::vtable;
+    use crate::difftest::fill;
 
     // -- 0x002bd378 tWPIGD_Sun_Blend -----------------------------------------
 
@@ -1606,7 +1588,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// Lighting compare: random records where each field is either copied
     /// from the other side or left different, so every early-out (pair 1-4,
@@ -1659,8 +1640,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::events::driven;
 
     /// `tWPIGD_Lighting_PairDiffers` with equal pairs and either word
     /// differing.
@@ -1692,7 +1671,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// `tWPIGD_MusicTrigger_Blend`: blend factors in [0, 1] or edge values,
     /// random integer parameters (small or full range) on both sides, the
@@ -1745,7 +1723,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// tWPIGD_Mix_Blend: random integer values and blend factors (edge
     /// floats), the vtable slot a fake.

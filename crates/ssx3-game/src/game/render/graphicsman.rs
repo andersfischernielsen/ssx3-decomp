@@ -2,7 +2,6 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::reg;
 use crate::abi::ret;
@@ -13,8 +12,6 @@ use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::VSlot;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -23,7 +20,6 @@ pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_3;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::gpa;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lh_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::ofs;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
 pub(crate) use crate::game::fe::festateload::at as at_2;
@@ -31,7 +27,6 @@ pub(crate) use crate::game::fe::festaterewards::r;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw as lw_2;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
 pub(crate) use crate::game::object::railmodifier::reset_vtable_and_delete;
-pub(crate) use crate::game::object::railmodifier::DELETE;
 pub(crate) use crate::game::render::particle::at;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2;
 pub(crate) use crate::game::visualfx::boardwakefx::copy_render_state;
@@ -45,7 +40,6 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
@@ -183,211 +177,27 @@ pub(crate) mod ctx {
 /// pointer (`gp-0x848`) whose `+0x84 -> +0x84 -> +0x14` is the active rider.
 #[allow(dead_code)]
 pub(crate) mod globals {
-    pub(crate) use crate::game::visualfx::boardwakefx::globals::AM_CTX;
-    pub(crate) use crate::game::visualfx::boardwakefx::globals::BONE_MATRICES;
-    pub(crate) use crate::game::visualfx::boardwakefx::globals::BONE_MATRICES_SHADOW;
+    #[cfg(test)]
     pub(crate) use crate::game::visualfx::boardwakefx::globals::EMITTER_BLEND;
-    pub(crate) use crate::game::visualfx::boardwakefx::globals::FLAG_MANAGER;
-    pub(crate) use crate::game::visualfx::boardwakefx::globals::FLAG_STATE;
-    pub(crate) use crate::game::visualfx::boardwakefx::globals::FLAG_TABLE;
-    pub(crate) use crate::game::visualfx::boardwakefx::globals::IDENTITY_MAT;
-    pub(crate) use crate::game::visualfx::boardwakefx::globals::WORLD;
 }
 
 // ---------------------------------------------------------------------------
 // Direct-call targets (the generated body's `c.pc = addr; Name(c)` calls).
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    use super::*;
-    pub(crate) use crate::game::ai::rider::callee::COMM_SYSTEM_UPDATE;
+
     pub(crate) use crate::game::ai::rider::callee::EMITTER_ADVANCE_DESC_TIME;
-    pub(crate) use crate::game::ai::rider::callee::EMITTER_RENDER;
+
     pub(crate) use crate::game::ai::rider::callee::EMITTER_UPDATE_DESCRIPTOR;
-    pub(crate) use crate::game::ai::rider::callee::INPUT_PAD_UPDATE;
-    pub(crate) use crate::game::ai::rider::callee::MATH_SIN_COS_2 as MATH_SIN_COS;
-    pub(crate) use crate::game::ai::rider::callee::MODIFIER_BLOCK_GET_TRANSFORM_BOUNDS;
-    pub(crate) use crate::game::ai::rider::callee::PAD_QUEUE_ADVANCE_WRITE;
-    pub(crate) use crate::game::ai::rider::callee::PAD_QUEUE_GET_PAD_DATA;
-    pub(crate) use crate::game::ai::rider::callee::PAD_QUEUE_GET_PAD_STATUS;
-    pub(crate) use crate::game::ai::rider::callee::USB_KEYBOARD_UPDATE;
-    pub(crate) use crate::game::ai::rider::callee::VU0_RESTORE_CONTEXT;
-    pub(crate) use crate::game::ai::rider::callee::VU0_SAVE_CONTEXT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::AVALANCHE_GET_OBJECT_MATRIX;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_RIDER_CHARACTER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_RIDER_PROFILE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_TRACK_INFO;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_LIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_MISSION_SET_COLLECTED;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_SET_CHARACTER_BY_SLOT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUDDY_GET_ROSTER_COUNT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUDDY_GET_ROSTER_ENTRY;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUY_POPUP_RESET;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::CLEAR_NEW_REWARDS;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::DYNAMIC_EMITTER_RESET;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_MEM_ALLOC_NAMED_2 as EA_MEM_ALLOC_NAMED;
+
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_THREAD_YIELD;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_TIMER_SERVICE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::FE_ASYNC_SET_STATE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GAME_MODULE_REQUEST_STATE_2 as GAME_MODULE_REQUEST_STATE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GAME_PROCESS_DTOR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GROW_LINES;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::INIT_FROM_RIDER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::INSTANCE_GET_NODE_MATRIX;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOAD_INDICATOR_RENDER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOBBY_API_SEND;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOBBY_GET_ROOM_NAME;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_END_OPERATION;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_ON_OPERATION_DONE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MEM_REPORT_STATS_LOCKED;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MSG_PRINTF;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::OPERATOR_NEW_NAMED;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::POPUP_CONFIRM_REBUILD;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::QSORT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RESET_FOR_RIDER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_ADD_BOOST_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_APPLY_SCRIPT_TRACK;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_GATHER_CAM_STATE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_GET_MAIN_STATE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_RECORD_BEST_JUMP;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_UPDATE_SCRIPT_SOUNDS;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SECTION_SELECT_PEAK_LIGHTING;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SERIALIZE_READ_U32;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SET_ITEM_YEAR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SNOW_BOX_DTOR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_GET_INSTANCE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_IS_TRACK_GROUP5;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_PLAY_MUSIC;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_RESUME_SFX;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STOP_LOADING_SCREEN_LOOP;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STREAM_FILE_QUEUE_RANGE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STRLEN;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STR_HASH;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STR_LEN;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_COPY;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_SET_RAW;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_SET_STRING;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TEX_MAN_INIT_TABLE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_CTOR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_SET_CREATE_ANIM;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_SET_CREATE_ANIM_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LISTBOX_SET_ITEM_TEXT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_FIRST;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_FIRST_WRAPPER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_NODE_SENTINEL;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_OBJECT_FIND_BY_ID;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_OBJECT_SET_ANIM;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_SCREEN_FIND_OBJECT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_STATE_CTOR_2_2 as UI_STATE_CTOR_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_STATE_MGR_PUSH_POPUP;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_ASCII;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_EVENT_STAT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_STRING;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_TEXT_ID;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::USTR_CPY;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::USTR_LEN;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::VRAM_HEAP_INIT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::WORLD_GET_INSTANCE;
-    pub(crate) use crate::game::fe::festaterewards::callee::BECHAR_GET_OVERALL_RATING;
-    pub(crate) use crate::game::fe::festaterewards::callee::BENEWPLAYER_GET_SLOT;
-    pub(crate) use crate::game::fe::festaterewards::callee::BENEWPLAYER_IS_SHARING_CHAR_RECORD;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_ECON_GET_MONEY;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_ECON_SPEND_MONEY;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_GET_RIDER_PROFILE_2;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_LIBRARY_INSTANCE;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_LIBRARY_INTERFACE;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_REWARD_GET_FILE;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_REWARD_SET_BIT;
-    pub(crate) use crate::game::fe::festaterewards::callee::BRAGGING_RIGHTS_UPDATE_ROW_COLORS;
-    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_OPPONENT_DISCONNECTED;
-    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_SERVER_TIMEOUT;
-    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_SHOW_CANCEL;
-    pub(crate) use crate::game::fe::festaterewards::callee::GET_LANGUAGE_MASK_2 as GET_LANGUAGE_MASK;
-    pub(crate) use crate::game::fe::festaterewards::callee::IS_ARCADE_SPEECH_ON;
-    pub(crate) use crate::game::fe::festaterewards::callee::IS_DJ_SPEECH_ON_2 as IS_DJ_SPEECH_ON;
-    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_IS_FLAG_SET;
-    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_POST;
-    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_SET_FLAG;
-    pub(crate) use crate::game::fe::festaterewards::callee::MOD_OBJ_RUN_SCRIPT_EVENT;
-    pub(crate) use crate::game::fe::festaterewards::callee::REWARD_GALLERY_REGISTER_TEXTURES;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_POP_FREE_NODE;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_PUSH_FREE_NODE;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_START_SCRIPT;
-    pub(crate) use crate::game::fe::festaterewards::callee::SPEECH_SET_EVENT_CONTEXT;
-    pub(crate) use crate::game::fe::festaterewards::callee::SPEECH_STOP_INSTANCE;
-    pub(crate) use crate::game::fe::festaterewards::callee::TAG_FIELD_COPY_TAG;
-    pub(crate) use crate::game::fe::festaterewards::callee::TAG_FIELD_SET_RAW as TAG_FIELD_SET_RAW_2;
-    pub(crate) use crate::game::fe::festaterewards::callee::TEXFLIP_SET_FRAME;
+
     pub(crate) use crate::game::fe::festaterewards::callee::VFX_PLANTS_GET_SWAY_MATRIX;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ACTIVE_CAMERA_TRIGGER_LIST_CLEAR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::AI_CREATE_ACTOR_RIDERS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::APP_VSYNC_CALLBACK;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BE_NEW_PLAYER_INT_GET_SLOT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CAMERA_TRIGGER_MAN_CLEAR_DATA;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CAMERA_TRIGGER_MAN_REMOVE_ALL_TRIGGERS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CAMERA_TRIGGER_STACK_CLEAR_2 as CAMERA_TRIGGER_STACK_CLEAR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CFE_LOAD_STATE_SETUP_RESULT_WIDGET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CFE_STATE_NET_ACCOUNT_MEM_SET_STATE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CFE_STATE_OPTIONS_CONTROLLER_SET_VIBRATION;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CHASE_CAM_CONTROLLER_RESET_STATE;
+
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::DYNAMIC_EMITTER_FREE_DATA_2 as DYNAMIC_EMITTER_FREE_DATA;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::EVENT_SELECT_ON_WIDGET_ACTION;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::FE_LOCALE_UNLOAD_ALL_TABLES;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::INPUT_PREPROC_WRITE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::IN_SEQ_STOP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MODIFIER_BLOCK_FREE_BOOST;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MODIFIER_BLOCK_FREE_TEX_FLIP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MOD_OBJ_CREATE_MODIFIER_BLOCK;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MULTI_PARTICLE_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::NET_FE_STATE_DTOR_3 as NET_FE_STATE_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::PLAYBACK_MAN_STOP_PLAYBACK;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::PLAYBACK_MAN_STOP_RECORDING;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RCMP_DECODER_RELEASE_CODEC;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_CACHE_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_ADD_BOOST;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_METRIX_AWARD_BONUS_POINTS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_METRIX_AWARD_POINTS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_METRIX_SHOW_HUD_NUMBER_2 as RIDER_METRIX_SHOW_HUD_NUMBER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_DESTROY_SCRIPT_DATABASE_2 as SCRIPT_ENGINE_DESTROY_SCRIPT_DATABASE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_EXIT_SCRIPT_MODE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_GET_PROCESS_2 as SCRIPT_ENGINE_GET_PROCESS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_GET_SEQ_PROCESS_ID;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_GET_TARGET_OBJECT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_OBJ_TABLE_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_ON_SEQ_END;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_STOP_2 as SCRIPT_LIST_STOP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_BANK_UNLOAD_MEMORY_2 as SND_BANK_UNLOAD_MEMORY;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WORLD_OBJ_CTOR as WORLD_OBJ_CTOR_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WORLD_OBJ_DTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::AI_VFX_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::BUILTIN_DELETE_2 as BUILTIN_DELETE;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::CONSOLE_CONFIG_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::EA_MEM_ALLOC;
+
     pub(crate) use crate::game::worldpainter::quadtree::callee::EMITTER_RENDER as EMITTER_RENDER_2;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::GET_TRANSFORM_BOUNDS;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::GRAPHICS_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::GRAPHICS_ON_VIF1_DMA_END;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::INTC_REMOVE_HANDLER;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MEM_CARD_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MEM_CARD_INIT;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MEM_CARD_SET_STATE;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MENU_ITEM_MEASURE_ROW;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MOD_OBJ_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::PS2_SOUND_MANAGER_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SNDSTRM_GET_REQUEST_STATUS;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_FADE_OUT;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_GET_STREAM_STATUS;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_POST_EVENT;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SPEECH_INSTANCE_STOP_STREAM;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STATS_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STRCPY;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STREAM_BUFFER_SET_FILE;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STREAM_BUFFER_STOP;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::VFX_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::WORLD_GET_SECTION_SCRIPT_FUNC;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::WORLD_OBJ_CTOR;
 }
 
 // ---------------------------------------------------------------------------
@@ -409,26 +219,11 @@ pub(crate) mod emitter {
 }
 
 /// `gp`-relative globals used here.
-pub(crate) mod g {
-    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
-    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
-    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
-    pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER;
-    pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER_END;
-    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
-}
+pub(crate) mod g {}
 
 /// Cross-shard call targets (the generator emits `call_indirect` for them).
 pub(crate) mod table {
     pub(crate) use crate::game::ai::computer::table::DELETE;
-    pub(crate) use crate::game::ai::computer::table::EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::ai::computer::table::EA_MEM_FREE;
-    pub(crate) use crate::game::ai::computer::table::OPERATOR_NEW_NAMED;
-    pub(crate) use crate::game::ai::computer::table::SLEEP_THREAD;
-    pub(crate) use crate::game::ai::computer::table::SSX_AUDIO_SYSTEM_GET_INSTANCE;
-    pub(crate) use crate::game::ai::computer::table::STR_HASH;
-    pub(crate) use crate::game::ai::computer::table::WAIT_SEMA;
-    pub(crate) use crate::game::ai::computer::table::WAKEUP_THREAD;
 }
 
 /// `void DeferredDelete_Push(void *obj)` (0x36a1c0): append `obj` to the
@@ -1047,9 +842,9 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, at(c, SP, 0x20));
         c.lq(2, at(c, SP, 0x20));
-        c.sq(2, (c.g[SP][0] as u32));
+        c.sq(2, c.g[SP][0] as u32);
         c.sq(2, at(c, A1, 0x10));
-        c.sq(2, (c.g[A1][0] as u32));
+        c.sq(2, c.g[A1][0] as u32);
         c.mfc1(3, 2);
         c.lqc2(4, at(c, A0, 0xc0));
         c.qmtc2(3, 3);
@@ -1068,12 +863,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, at(c, SP, 0x30));
         c.lq(2, at(c, SP, 0x30));
-        c.lwc1(0, (c.g[A1][0] as u32));
-        c.sq(2, (c.g[SP][0] as u32));
-        c.lwc1(1, (c.g[SP][0] as u32));
+        c.lwc1(0, c.g[A1][0] as u32);
+        c.sq(2, c.g[SP][0] as u32);
+        c.lwc1(1, c.g[SP][0] as u32);
         c.c_lt_s(1, 0);
         if c.fcc() {
-            c.swc1(1, (c.g[A1][0] as u32));
+            c.swc1(1, c.g[A1][0] as u32);
             break 'b_36d5d0;
         } else {
             break 'b_36d5d0;
@@ -1105,7 +900,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
     }
     'b_36d618: {
         c.cycles += 6;
-        c.lwc1(1, (c.g[SP][0] as u32));
+        c.lwc1(1, c.g[SP][0] as u32);
         c.lwc1(0, at(c, A1, 0x10));
         c.c_lt_s(0, 1);
         if c.fcc() {
@@ -1159,12 +954,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, at(c, SP, 0x30));
         c.lq(2, at(c, SP, 0x30));
-        c.lwc1(0, (c.g[A1][0] as u32));
-        c.sq(2, (c.g[SP][0] as u32));
-        c.lwc1(1, (c.g[SP][0] as u32));
+        c.lwc1(0, c.g[A1][0] as u32);
+        c.sq(2, c.g[SP][0] as u32);
+        c.lwc1(1, c.g[SP][0] as u32);
         c.c_lt_s(1, 0);
         if c.fcc() {
-            c.swc1(1, (c.g[A1][0] as u32));
+            c.swc1(1, c.g[A1][0] as u32);
             break 'b_36d6ac;
         } else {
             break 'b_36d6ac;
@@ -1196,7 +991,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
     }
     'b_36d6f4: {
         c.cycles += 6;
-        c.lwc1(1, (c.g[SP][0] as u32));
+        c.lwc1(1, c.g[SP][0] as u32);
         c.lwc1(0, at(c, A1, 0x10));
         c.c_lt_s(0, 1);
         if c.fcc() {
@@ -1257,12 +1052,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, at(c, SP, 0x40));
         c.lq(2, at(c, SP, 0x40));
-        c.lwc1(0, (c.g[A1][0] as u32));
-        c.sq(2, (c.g[SP][0] as u32));
-        c.lwc1(1, (c.g[SP][0] as u32));
+        c.lwc1(0, c.g[A1][0] as u32);
+        c.sq(2, c.g[SP][0] as u32);
+        c.lwc1(1, c.g[SP][0] as u32);
         c.c_lt_s(1, 0);
         if c.fcc() {
-            c.swc1(1, (c.g[A1][0] as u32));
+            c.swc1(1, c.g[A1][0] as u32);
             break 'b_36d7a4;
         } else {
             break 'b_36d7a4;
@@ -1294,7 +1089,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
     }
     'b_36d7ec: {
         c.cycles += 6;
-        c.lwc1(1, (c.g[SP][0] as u32));
+        c.lwc1(1, c.g[SP][0] as u32);
         c.lwc1(0, at(c, A1, 0x10));
         c.c_lt_s(0, 1);
         if c.fcc() {
@@ -1348,7 +1143,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, at(c, SP, 0x40));
         c.lq(2, at(c, SP, 0x40));
-        c.lwc1(0, (c.g[A0][0] as u32));
+        c.lwc1(0, c.g[A0][0] as u32);
         c.cvt_s_w(0, 0);
         c.sq(2, at(c, SP, 0x10));
         c.mfc1(3, 0);
@@ -1363,12 +1158,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, at(c, SP, 0x50));
         c.lq(2, at(c, SP, 0x50));
-        c.lwc1(0, (c.g[A1][0] as u32));
-        c.sq(2, (c.g[SP][0] as u32));
-        c.lwc1(1, (c.g[SP][0] as u32));
+        c.lwc1(0, c.g[A1][0] as u32);
+        c.sq(2, c.g[SP][0] as u32);
+        c.lwc1(1, c.g[SP][0] as u32);
         c.c_lt_s(1, 0);
         if c.fcc() {
-            c.swc1(1, (c.g[A1][0] as u32));
+            c.swc1(1, c.g[A1][0] as u32);
             break 'b_36d8bc;
         } else {
             break 'b_36d8bc;
@@ -1400,7 +1195,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
     }
     'b_36d904: {
         c.cycles += 6;
-        c.lwc1(1, (c.g[SP][0] as u32));
+        c.lwc1(1, c.g[SP][0] as u32);
         c.lwc1(0, at(c, A1, 0x10));
         c.c_lt_s(0, 1);
         if c.fcc() {
@@ -1454,7 +1249,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, at(c, SP, 0x40));
         c.lq(2, at(c, SP, 0x40));
-        c.lwc1(0, (c.g[A0][0] as u32));
+        c.lwc1(0, c.g[A0][0] as u32);
         c.cvt_s_w(0, 0);
         c.sq(2, at(c, SP, 0x10));
         c.mfc1(3, 0);
@@ -1469,12 +1264,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, at(c, SP, 0x50));
         c.lq(2, at(c, SP, 0x50));
-        c.lwc1(0, (c.g[A1][0] as u32));
-        c.sq(2, (c.g[SP][0] as u32));
-        c.lwc1(1, (c.g[SP][0] as u32));
+        c.lwc1(0, c.g[A1][0] as u32);
+        c.sq(2, c.g[SP][0] as u32);
+        c.lwc1(1, c.g[SP][0] as u32);
         c.c_lt_s(1, 0);
         if c.fcc() {
-            c.swc1(1, (c.g[A1][0] as u32));
+            c.swc1(1, c.g[A1][0] as u32);
             break 'b_36d9d4;
         } else {
             break 'b_36d9d4;
@@ -1506,7 +1301,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
     }
     'b_36da1c: {
         c.cycles += 6;
-        c.lwc1(1, (c.g[SP][0] as u32));
+        c.lwc1(1, c.g[SP][0] as u32);
         c.lwc1(0, at(c, A1, 0x10));
         c.c_lt_s(0, 1);
         if c.fcc() {
@@ -1567,7 +1362,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, at(c, SP, 0x50));
         c.lq(2, at(c, SP, 0x50));
-        c.lwc1(0, (c.g[A0][0] as u32));
+        c.lwc1(0, c.g[A0][0] as u32);
         c.cvt_s_w(0, 0);
         c.sq(2, at(c, SP, 0x10));
         c.mfc1(3, 0);
@@ -1582,12 +1377,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, at(c, SP, 0x60));
         c.lq(2, at(c, SP, 0x60));
-        c.sq(2, (c.g[SP][0] as u32));
-        c.lwc1(1, (c.g[SP][0] as u32));
-        c.lwc1(0, (c.g[A1][0] as u32));
+        c.sq(2, c.g[SP][0] as u32);
+        c.lwc1(1, c.g[SP][0] as u32);
+        c.lwc1(0, c.g[A1][0] as u32);
         c.c_lt_s(1, 0);
         if c.fcc() {
-            c.swc1(1, (c.g[A1][0] as u32));
+            c.swc1(1, c.g[A1][0] as u32);
             break 'b_36db08;
         } else {
             break 'b_36db08;
@@ -1619,7 +1414,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
     }
     'b_36db50: {
         c.cycles += 6;
-        c.lwc1(1, (c.g[SP][0] as u32));
+        c.lwc1(1, c.g[SP][0] as u32);
         c.lwc1(0, at(c, A1, 0x10));
         c.c_lt_s(0, 1);
         if c.fcc() {
@@ -1656,9 +1451,9 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
     'b_36dc5c: {
         c.cycles += 55;
         c.lq(3, at(c, A1, 0x10));
-        c.lq(2, (c.g[A1][0] as u32));
+        c.lq(2, c.g[A1][0] as u32);
         c.sq(3, at(c, SP, 0x10));
-        c.sq(2, (c.g[SP][0] as u32));
+        c.sq(2, c.g[SP][0] as u32);
         c.lqc2(3, at(c, A0, 0x70));
         c.lqc2(4, at(c, A0, 0x80));
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
@@ -2419,7 +2214,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.lq(2, at(c, SP, 0x90));
         c.sq(2, at(c, SP, 0x80));
         c.mul_s(1, 1, 0);
-        c.lqc2(3, (c.g[SP][0] as u32));
+        c.lqc2(3, c.g[SP][0] as u32);
         c.lqc2(4, at(c, SP, 0x80));
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, at(c, SP, 0x90));
@@ -2439,10 +2234,10 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.lq(2, at(c, SP, 0xa0));
         c.sq(2, at(c, SP, 0x60));
         c.lwc1(2, at(c, SP, 0x60));
-        c.lwc1(0, (c.g[A1][0] as u32));
+        c.lwc1(0, c.g[A1][0] as u32);
         c.c_lt_s(2, 0);
         if c.fcc() {
-            c.swc1(2, (c.g[A1][0] as u32));
+            c.swc1(2, c.g[A1][0] as u32);
             break 'b_36e3e4;
         } else {
             break 'b_36e3e4;
@@ -2517,7 +2312,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.sqc2(5, at(c, SP, 0x90));
         c.lq(2, at(c, SP, 0x90));
         c.sq(2, at(c, SP, 0x80));
-        c.lqc2(3, (c.g[SP][0] as u32));
+        c.lqc2(3, c.g[SP][0] as u32);
         c.lqc2(4, at(c, SP, 0x80));
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, at(c, SP, 0x90));
@@ -2535,12 +2330,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, at(c, SP, 0xa0));
         c.lq(2, at(c, SP, 0xa0));
-        c.lwc1(0, (c.g[A1][0] as u32));
+        c.lwc1(0, c.g[A1][0] as u32);
         c.sq(2, at(c, SP, 0x60));
         c.lwc1(2, at(c, SP, 0x60));
         c.c_lt_s(2, 0);
         if c.fcc() {
-            c.swc1(2, (c.g[A1][0] as u32));
+            c.swc1(2, c.g[A1][0] as u32);
             break 'b_36e4dc;
         } else {
             break 'b_36e4dc;
@@ -2633,12 +2428,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, at(c, SP, 0xa0));
         c.lq(2, at(c, SP, 0xa0));
-        c.lwc1(0, (c.g[A1][0] as u32));
+        c.lwc1(0, c.g[A1][0] as u32);
         c.sq(2, at(c, SP, 0x60));
         c.lwc1(2, at(c, SP, 0x60));
         c.c_lt_s(2, 0);
         if c.fcc() {
-            c.swc1(2, (c.g[A1][0] as u32));
+            c.swc1(2, c.g[A1][0] as u32);
             break 'b_36e5d4;
         } else {
             break 'b_36e5d4;
@@ -2731,12 +2526,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, at(c, SP, 0xa0));
         c.lq(2, at(c, SP, 0xa0));
-        c.lwc1(0, (c.g[A1][0] as u32));
+        c.lwc1(0, c.g[A1][0] as u32);
         c.sq(2, at(c, SP, 0x60));
         c.lwc1(1, at(c, SP, 0x60));
         c.c_lt_s(1, 0);
         if c.fcc() {
-            c.swc1(1, (c.g[A1][0] as u32));
+            c.swc1(1, c.g[A1][0] as u32);
             break 'b_36e6cc;
         } else {
             break 'b_36e6cc;
@@ -2859,7 +2654,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.lq(2, at(c, SP, 0x90));
                 c.sq(2, at(c, SP, 0x80));
                 c.add_s(1, 1, 10);
-                c.lqc2(3, (c.g[SP][0] as u32));
+                c.lqc2(3, c.g[SP][0] as u32);
                 c.lqc2(4, at(c, SP, 0x80));
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0x90));
@@ -2878,12 +2673,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36e874;
                 } else {
                     break 'b_36e874;
@@ -2958,7 +2753,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.sqc2(5, at(c, SP, 0x90));
                 c.lq(2, at(c, SP, 0x90));
                 c.sq(2, at(c, SP, 0x80));
-                c.lqc2(3, (c.g[SP][0] as u32));
+                c.lqc2(3, c.g[SP][0] as u32);
                 c.lqc2(4, at(c, SP, 0x80));
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0x90));
@@ -2976,12 +2771,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36e96c;
                 } else {
                     break 'b_36e96c;
@@ -3074,12 +2869,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36ea64;
                 } else {
                     break 'b_36ea64;
@@ -3172,12 +2967,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36eb5c;
                 } else {
                     break 'b_36eb5c;
@@ -3267,7 +3062,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.lq(2, at(c, SP, 0x90));
                 c.sq(2, at(c, SP, 0x80));
                 c.add_s(1, 1, 2);
-                c.lqc2(3, (c.g[SP][0] as u32));
+                c.lqc2(3, c.g[SP][0] as u32);
                 c.lqc2(4, at(c, SP, 0x80));
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0x90));
@@ -3286,12 +3081,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36ec80;
                 } else {
                     break 'b_36ec80;
@@ -3366,7 +3161,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.sqc2(5, at(c, SP, 0x90));
                 c.lq(2, at(c, SP, 0x90));
                 c.sq(2, at(c, SP, 0x80));
-                c.lqc2(3, (c.g[SP][0] as u32));
+                c.lqc2(3, c.g[SP][0] as u32);
                 c.lqc2(4, at(c, SP, 0x80));
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0x90));
@@ -3384,12 +3179,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36ed78;
                 } else {
                     break 'b_36ed78;
@@ -3482,12 +3277,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36ee70;
                 } else {
                     break 'b_36ee70;
@@ -3580,12 +3375,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36ef68;
                 } else {
                     break 'b_36ef68;
@@ -3679,7 +3474,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.lq(2, at(c, SP, 0x90));
                 c.sq(2, at(c, SP, 0x80));
                 c.add_s(1, 1, 2);
-                c.lqc2(3, (c.g[SP][0] as u32));
+                c.lqc2(3, c.g[SP][0] as u32);
                 c.lqc2(4, at(c, SP, 0x80));
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0x90));
@@ -3698,12 +3493,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36f08c;
                 } else {
                     break 'b_36f08c;
@@ -3778,7 +3573,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.sqc2(5, at(c, SP, 0x90));
                 c.lq(2, at(c, SP, 0x90));
                 c.sq(2, at(c, SP, 0x80));
-                c.lqc2(3, (c.g[SP][0] as u32));
+                c.lqc2(3, c.g[SP][0] as u32);
                 c.lqc2(4, at(c, SP, 0x80));
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0x90));
@@ -3796,12 +3591,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36f184;
                 } else {
                     break 'b_36f184;
@@ -3894,12 +3689,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36f27c;
                 } else {
                     break 'b_36f27c;
@@ -3992,12 +3787,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36f374;
                 } else {
                     break 'b_36f374;
@@ -4086,7 +3881,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
             c.lq(2, at(c, SP, 0x90));
             c.sq(2, at(c, SP, 0x80));
             c.add_s(1, 1, 2);
-            c.lqc2(3, (c.g[SP][0] as u32));
+            c.lqc2(3, c.g[SP][0] as u32);
             c.lqc2(4, at(c, SP, 0x80));
             c.vu0().add(0b1111, 5, 3, Src::Vec(4));
             c.sqc2(5, at(c, SP, 0x90));
@@ -4116,7 +3911,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.lq(2, at(c, SP, 0x90));
                 c.sq(2, at(c, SP, 0x80));
                 c.add_s(1, 1, 2);
-                c.lqc2(3, (c.g[SP][0] as u32));
+                c.lqc2(3, c.g[SP][0] as u32);
                 c.lqc2(4, at(c, SP, 0x80));
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0x90));
@@ -4135,12 +3930,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36f8a4;
                 } else {
                     break 'b_36f8a4;
@@ -4215,7 +4010,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.sqc2(5, at(c, SP, 0x90));
                 c.lq(2, at(c, SP, 0x90));
                 c.sq(2, at(c, SP, 0x80));
-                c.lqc2(3, (c.g[SP][0] as u32));
+                c.lqc2(3, c.g[SP][0] as u32);
                 c.lqc2(4, at(c, SP, 0x80));
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0x90));
@@ -4233,12 +4028,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36f99c;
                 } else {
                     break 'b_36f99c;
@@ -4331,12 +4126,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36fa94;
                 } else {
                     break 'b_36fa94;
@@ -4429,12 +4224,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36fb8c;
                 } else {
                     break 'b_36fb8c;
@@ -4524,7 +4319,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.lq(2, at(c, SP, 0x90));
                 c.sq(2, at(c, SP, 0x80));
                 c.add_s(1, 1, 2);
-                c.lqc2(3, (c.g[SP][0] as u32));
+                c.lqc2(3, c.g[SP][0] as u32);
                 c.lqc2(4, at(c, SP, 0x80));
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0x90));
@@ -4543,12 +4338,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36fcb0;
                 } else {
                     break 'b_36fcb0;
@@ -4623,7 +4418,7 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.sqc2(5, at(c, SP, 0x90));
                 c.lq(2, at(c, SP, 0x90));
                 c.sq(2, at(c, SP, 0x80));
-                c.lqc2(3, (c.g[SP][0] as u32));
+                c.lqc2(3, c.g[SP][0] as u32);
                 c.lqc2(4, at(c, SP, 0x80));
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0x90));
@@ -4641,12 +4436,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36fda8;
                 } else {
                     break 'b_36fda8;
@@ -4739,12 +4534,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36fea0;
                 } else {
                     break 'b_36fea0;
@@ -4837,12 +4632,12 @@ pub fn emitter_compute_desc_bounds(c: &mut Cpu) {
                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                 c.sqc2(5, at(c, SP, 0xa0));
                 c.lq(2, at(c, SP, 0xa0));
-                c.lwc1(0, (c.g[A1][0] as u32));
+                c.lwc1(0, c.g[A1][0] as u32);
                 c.sq(2, at(c, SP, 0x60));
                 c.lwc1(1, at(c, SP, 0x60));
                 c.c_lt_s(1, 0);
                 if c.fcc() {
-                    c.swc1(1, (c.g[A1][0] as u32));
+                    c.swc1(1, c.g[A1][0] as u32);
                     break 'b_36ff98;
                 } else {
                     break 'b_36ff98;
@@ -5023,7 +4818,7 @@ pub fn emitter_set_desc_path_coeffs(c: &mut Cpu) {
     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x30));
     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x30));
     c.sq(2, (c.g[A0][0] as u32).wrapping_add(0xb0));
-    c.sq(2, (c.g[SP][0] as u32));
+    c.sq(2, c.g[SP][0] as u32);
     c.mfc1(3, 0);
     c.lqc2(4, c.g[A2][0] as u32);
     c.qmtc2(3, 3);
@@ -5031,7 +4826,7 @@ pub fn emitter_set_desc_path_coeffs(c: &mut Cpu) {
     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x10));
     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
     c.sq(2, (c.g[A0][0] as u32).wrapping_add(0xc0));
-    c.sq(2, (c.g[SP][0] as u32));
+    c.sq(2, c.g[SP][0] as u32);
     c.mfc1(3, 0);
     c.lqc2(4, c.g[A3][0] as u32);
     c.qmtc2(3, 3);
@@ -5039,7 +4834,7 @@ pub fn emitter_set_desc_path_coeffs(c: &mut Cpu) {
     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x10));
     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
     c.sq(2, (c.g[A0][0] as u32).wrapping_add(0xd0));
-    c.sq(2, (c.g[SP][0] as u32));
+    c.sq(2, c.g[SP][0] as u32);
     let ra = c.g[RA][0] as u32;
     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
     c.pc = ra;
@@ -5135,7 +4930,6 @@ pub fn ps2_graphics_man_v94(c: &mut Cpu) {
 pub(crate) trait RegMem {
     fn pa(&self, base: usize, off: i32) -> u32;
     fn ldw_2(&mut self, base: usize, off: i32) -> u64;
-    fn ldwu(&mut self, base: usize, off: i32) -> u64;
     fn ldh_2(&mut self, base: usize, off: i32) -> u64;
     fn ldhu_2(&mut self, base: usize, off: i32) -> u64;
     fn ldb(&mut self, base: usize, off: i32) -> u64;
@@ -5156,11 +4950,6 @@ impl RegMem for Cpu {
     fn ldw_2(&mut self, base: usize, off: i32) -> u64 {
         let a = self.pa(base, off);
         Addr(a).lw(self)
-    }
-    #[inline(always)]
-    fn ldwu(&mut self, base: usize, off: i32) -> u64 {
-        let a = self.pa(base, off);
-        Addr(a).lwu(self)
     }
     #[inline(always)]
     fn ldh_2(&mut self, base: usize, off: i32) -> u64 {
@@ -5530,9 +5319,9 @@ pub fn ps2_graphics_man_match_blended_matrix(c: &mut Cpu) {
                                     c.g[V0][0] = c.ldh_2(T1, 0);
                                     c.g[V1][0] = c.ldh_2(T2, 0);
                                     c.g[V0][0] =
-                                        sx((c.g[V0][0] as u32).wrapping_sub((c.g[V1][0] as u32)));
+                                        sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
                                     if (c.g[V0][0] as i64) < 0 {
-                                        c.g[V0][0] = sx(0u32.wrapping_sub((c.g[V0][0] as u32)));
+                                        c.g[V0][0] = sx(0u32.wrapping_sub(c.g[V0][0] as u32));
                                         break 'b_369b4c;
                                     } else {
                                         break 'b_369b4c;
@@ -5550,10 +5339,9 @@ pub fn ps2_graphics_man_match_blended_matrix(c: &mut Cpu) {
                                         c.g[V0][0] = c.ldh_2(T1, 0x4);
                                         c.g[V1][0] = c.ldh_2(T2, 0x4);
                                         c.g[V0][0] =
-                                            sx((c.g[V0][0] as u32)
-                                                .wrapping_sub((c.g[V1][0] as u32)));
+                                            sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
                                         if (c.g[V0][0] as i64) < 0 {
-                                            c.g[V0][0] = sx(0u32.wrapping_sub((c.g[V0][0] as u32)));
+                                            c.g[V0][0] = sx(0u32.wrapping_sub(c.g[V0][0] as u32));
                                             break 'b_369b6c;
                                         } else {
                                             break 'b_369b6c;
@@ -5570,11 +5358,12 @@ pub fn ps2_graphics_man_match_blended_matrix(c: &mut Cpu) {
                                             c.cycles += 5;
                                             c.g[V0][0] = c.ldh_2(T1, 0x8);
                                             c.g[V1][0] = c.ldh_2(T2, 0x8);
-                                            c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                .wrapping_sub((c.g[V1][0] as u32)));
+                                            c.g[V0][0] =
+                                                sx((c.g[V0][0] as u32)
+                                                    .wrapping_sub(c.g[V1][0] as u32));
                                             if (c.g[V0][0] as i64) < 0 {
                                                 c.g[V0][0] =
-                                                    sx(0u32.wrapping_sub((c.g[V0][0] as u32)));
+                                                    sx(0u32.wrapping_sub(c.g[V0][0] as u32));
                                                 break 'b_369b8c;
                                             } else {
                                                 break 'b_369b8c;
@@ -5618,9 +5407,9 @@ pub fn ps2_graphics_man_match_blended_matrix(c: &mut Cpu) {
                                 c.g[V0][0] = c.ldh_2(T1, 0);
                                 c.g[V1][0] = c.ldh_2(T2, 0);
                                 c.g[V0][0] =
-                                    sx((c.g[V0][0] as u32).wrapping_sub((c.g[V1][0] as u32)));
+                                    sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
                                 if (c.g[V0][0] as i64) < 0 {
-                                    c.g[V0][0] = sx(0u32.wrapping_sub((c.g[V0][0] as u32)));
+                                    c.g[V0][0] = sx(0u32.wrapping_sub(c.g[V0][0] as u32));
                                     break 'b_369bcc;
                                 } else {
                                     break 'b_369bcc;
@@ -5638,9 +5427,9 @@ pub fn ps2_graphics_man_match_blended_matrix(c: &mut Cpu) {
                                     c.g[V0][0] = c.ldh_2(T1, 0x8);
                                     c.g[V1][0] = c.ldh_2(T2, 0x4);
                                     c.g[V0][0] =
-                                        sx((c.g[V0][0] as u32).wrapping_sub((c.g[V1][0] as u32)));
+                                        sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
                                     if (c.g[V0][0] as i64) < 0 {
-                                        c.g[V0][0] = sx(0u32.wrapping_sub((c.g[V0][0] as u32)));
+                                        c.g[V0][0] = sx(0u32.wrapping_sub(c.g[V0][0] as u32));
                                         break 'b_369bec;
                                     } else {
                                         break 'b_369bec;
@@ -5658,10 +5447,9 @@ pub fn ps2_graphics_man_match_blended_matrix(c: &mut Cpu) {
                                         c.g[V1][0] = c.ldh_2(T1, 0x4);
                                         c.g[A0][0] = c.ldh_2(T2, 0x8);
                                         c.g[V1][0] =
-                                            sx((c.g[V1][0] as u32)
-                                                .wrapping_sub((c.g[A0][0] as u32)));
+                                            sx((c.g[V1][0] as u32).wrapping_sub(c.g[A0][0] as u32));
                                         if (c.g[V1][0] as i64) < 0 {
-                                            c.g[V1][0] = sx(0u32.wrapping_sub((c.g[V1][0] as u32)));
+                                            c.g[V1][0] = sx(0u32.wrapping_sub(c.g[V1][0] as u32));
                                             break 'b_369c0c;
                                         } else {
                                             break 'b_369c0c;
@@ -6670,88 +6458,61 @@ pub fn emitter_init_descriptor(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
+
     use crate::difftest::compare;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
-    use crate::difftest::fakes;
+
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
+
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
+
     use crate::difftest::fill;
     use crate::difftest::put_vec;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
-    use crate::difftest::seed_count;
+
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::RA as RET;
-    use crate::difftest::RA as SENTINEL;
-    use crate::difftest::SP as STACK_TOP;
-    pub(crate) use crate::game::ai::ai::tests::be_library;
+
     pub(crate) use crate::game::ai::ai::tests::SEEDS_2 as SEEDS_3;
     pub(crate) use crate::game::be::beintoption::tests::slot;
     pub(crate) use crate::game::be::beintoption::tests::VT;
     pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base;
-    pub(crate) use crate::game::bx::bxstring2::tests::gp_at;
-    pub(crate) use crate::game::bx::bxstring2::tests::BE_2 as BE;
-    pub(crate) use crate::game::bx::bxstring2::tests::DB;
-    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
-    pub(crate) use crate::game::bx::bxstring2::tests::RM;
+
     pub(crate) use crate::game::bx::bxstring2::tests::SCRATCH;
-    pub(crate) use crate::game::bx::bxstring2::tests::VTS;
-    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W;
+
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::fe_render_fixture;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::world_2 as world;
+
     pub(crate) use crate::game::fe::festateload::tests::clear;
     pub(crate) use crate::game::fe::festateload::tests::OBJ;
     pub(crate) use crate::game::fe::festaterewards::tests::base_9 as base_2;
-    pub(crate) use crate::game::fe::festaterewards::tests::hook;
+
     pub(crate) use crate::game::fe::festaterewards::tests::strict;
     pub(crate) use crate::game::fe::festaterewards::tests::w;
-    pub(crate) use crate::game::fe::festaterewards::tests::BE_7 as BE_2;
-    pub(crate) use crate::game::fe::festaterewards::tests::HOOKS;
-    pub(crate) use crate::game::fe::festaterewards::tests::KEEP_F0;
-    pub(crate) use crate::game::fe::festaterewards::tests::W as W_2;
+
     pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
+
     pub(crate) use crate::game::object::railmodifier::tests::destructor_setup;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::alloc;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::heap_init;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::run;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::ARENA;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::ARENA_SIZE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::MEM_HEAP;
+
     pub(crate) use crate::game::sound::bankmanager::tests::rng;
     pub(crate) use crate::game::sound::bankmanager::tests::SEEDS as SEEDS_2;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::ctx_at;
+
     pub(crate) use crate::game::visualfx::boardwakefx::tests::f;
     pub(crate) use crate::game::visualfx::boardwakefx::tests::put_ctx;
     pub(crate) use crate::game::visualfx::boardwakefx::tests::BASE;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::CTX;
+
     pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS_3 as SEEDS;
     pub(crate) use crate::game::visualfx::boardwakefx::tests::TEX;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::TOP;
+
     use ssx3_ee as ee;
-    use ssx3_ee::s00;
-    use ssx3_ee::s01;
-    use ssx3_ee::s02;
-    use ssx3_ee::s03;
-    use ssx3_ee::s08;
-    use ssx3_ee::s09;
-    use ssx3_ee::s10;
-    use ssx3_ee::s11;
+
     use ssx3_ee::s12;
-    use ssx3_ee::s13;
-    use ssx3_ee_rt::cpu::reg::*;
+
     use ssx3_ee_rt::cpu::sx;
 
     #[test]
@@ -7301,7 +7062,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// Emitter_UpdateDescriptor: no emission due, one, or up to five
     /// (count * interval against the advanced time; positive intervals).
@@ -7339,8 +7099,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::elf_image;
 
     /// DeferredDelete_AdvanceFrame: bucket indices -6..5 (both remainder
     /// forms), buckets with 0-3 queued objects whose destructors are fakes.
@@ -7376,8 +7134,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::game::visualfx::renderstateman::tests::table_getter_setup;
 
     /// Random defaults in `.sdata`, set index 0..7 on a random object.
     #[test]
@@ -7400,8 +7156,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
 
     /// Emitter_Save: random description fields; the stream's write is a
     /// fake (it logs the record pointer and size; some calls unwind).
@@ -7499,7 +7253,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// Emitter_RandomizeDescSeeds: the real Rand_NextMain on a random
     /// generator state; random f20 (saved and restored).
@@ -7521,9 +7274,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
+
     pub(crate) use crate::game::object::effectlink::tests::emitter_def_setup;
 
     /// `Emitter_Setup` with the real descriptor init/build on

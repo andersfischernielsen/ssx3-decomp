@@ -64,7 +64,6 @@ pub(crate) mod tests {
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
 
     #[test]
     fn big_file_ctor_matches() {

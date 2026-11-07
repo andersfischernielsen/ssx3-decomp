@@ -94,50 +94,6 @@ mod callee {
         addr: 0x0027_0628,
         f: ssx3_ee::s07::f_00270628,
     };
-    pub const REPLAY_SAVE_RESUME_SNAPSHOT: Callee = Callee {
-        addr: 0x0026_f7f8,
-        f: ssx3_ee::s07::f_0026f7f8,
-    };
-    pub const REPLAY_SEEK_TO_SNAPSHOT: Callee = Callee {
-        addr: 0x0027_02f8,
-        f: ssx3_ee::s07::f_002702f8,
-    };
-    pub const REPLAY_STEP_FRAME: Callee = Callee {
-        addr: 0x0027_03f0,
-        f: ssx3_ee::s07::f_002703f0,
-    };
-    pub const F_0026EF30: Callee = Callee {
-        addr: 0x0026_ef30,
-        f: ssx3_ee::s07::f_0026ef30,
-    };
-    pub const F_0026EF80: Callee = Callee {
-        addr: 0x0026_ef80,
-        f: ssx3_ee::s07::f_0026ef80,
-    };
-    pub const REPLAY_ENABLE_REPLAY_CAMERAS: Callee = Callee {
-        addr: 0x0026_ee68,
-        f: ssx3_ee::s07::f_0026ee68,
-    };
-    pub const REPLAY_RESTORE_GAME_CAMERAS: Callee = Callee {
-        addr: 0x0026_eea0,
-        f: ssx3_ee::s07::f_0026eea0,
-    };
-    pub const REPLAY_RESTORE_RESUME_SNAPSHOT: Callee = Callee {
-        addr: 0x0026_f850,
-        f: ssx3_ee::s07::f_0026f850,
-    };
-    pub const SSX_AUDIO_SYSTEM_GET_INSTANCE: Callee = Callee {
-        addr: 0x0028_b180,
-        f: ssx3_ee::s07::f_0028b180,
-    };
-    pub const SSX_AUDIO_SYSTEM_ON_REPLAY_BEGIN: Callee = Callee {
-        addr: 0x0028_f200,
-        f: ssx3_ee::s07::f_0028f200,
-    };
-    pub const SSX_AUDIO_SYSTEM_ON_REPLAY_END: Callee = Callee {
-        addr: 0x0028_f2c0,
-        f: ssx3_ee::s07::f_0028f2c0,
-    };
     pub const F_0026D4D8: Callee = Callee {
         addr: 0x0026_d4d8,
         f: ssx3_ee::s07::f_0026d4d8,
@@ -563,7 +519,7 @@ pub fn wscript_man_call_func(c: &mut Cpu) {
         c.g[A0][0] = c.g[S2][0];
         Addr(crate::call::sp(c)).off(0x10).sw(c, 0);
         c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
         c.g[S1][0] = Addr(c.g[S0][0] as u32).off(0x3cc).lw(c);
         call_ptr(c, 0x0022_24a8, 0x0030_9ce0)?;
         c.g[S0][0] = sx(crate::call::sp(c).wrapping_add(0x10));

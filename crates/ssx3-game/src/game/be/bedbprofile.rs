@@ -3,29 +3,18 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::object::flexrailnode::at_3 as at;
 pub(crate) use crate::game::object::flexrailnode::r32v;
 pub(crate) use crate::game::object::flexrailnode::spa;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -97,7 +86,7 @@ pub fn be_record_char_profile_event_score(c: &mut Cpu) {
                 c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                 c.g[S0][0] = c.g[A2][0];
                 c.g[A0][0] = c.g[A1][0];
-                c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                 c.g[S1][0] = c.g[A3][0];
                 c.g[RA][0] = sx(0x0015248c);
                 c.g[A1][0] = c.g[S0][0];
@@ -118,7 +107,7 @@ pub fn be_record_char_profile_event_score(c: &mut Cpu) {
                             c.cycles += 6;
                             c.g[V0][0] = sx((c.g[V1][0] as u32) << 3);
                             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xad0));
-                            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
                             c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
                             let t = c.g[V1][0] == 0u64;
                             c.g[V0][0] = 0x4;
@@ -225,11 +214,10 @@ pub fn be_record_char_profile_event_score(c: &mut Cpu) {
         c.cycles += 5;
         c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
         c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
         c.pc = t;
-        return Ok(());
         Ok(())
     })
 }
@@ -403,17 +391,12 @@ pub fn be_test_char_profile_flag(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
+
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
-    use crate::difftest::RA as SENTINEL;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::gp_at;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_10 as BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RM_3 as RM;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W_7 as W;
+
     use ssx3_ee as ee;
 
     /// A strict differential run: every GPR (including caller-saved scratch),
@@ -460,9 +443,8 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::fakes::{self, covered};
-    use crate::difftest::{check_lohi, fill, scramble};
+
+    use crate::difftest::scramble;
 
     // --------------------------------------------------- profile flags
 

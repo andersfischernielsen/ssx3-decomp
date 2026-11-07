@@ -2,23 +2,15 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::abi::addu;
 use crate::abi::r32;
-use crate::abi::reg;
 use crate::abi::ret;
-use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
-use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::VSlot;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::be::belibrary::EA_MEM_FREE;
-pub(crate) use crate::game::fe::festateriderbio::SOUND_MANAGER_REF_DTOR;
 use crate::guest::Addr;
+#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -35,9 +27,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
 /// Direct calls through the generated function (which dispatches into the
 /// replacement when one is installed).
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::fe::festateriderbio::callee::C_FE_STATE_ON_ACTIVATE;
+
     pub(crate) use crate::game::fe::festateriderbio::callee::SOUND_MANAGER_REF_DTOR;
 }
 
@@ -140,15 +130,10 @@ pub fn snd_play_params_dtor(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fill;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
 
     /// SndPlayParams_SetRadiusVanish: random slot and tables, edge-case
     /// radii (negative, zero, -0, NaN-like) for both branches.

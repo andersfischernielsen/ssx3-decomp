@@ -2,14 +2,10 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 use crate::guest::Addr;
+#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -24,36 +20,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] =
 // Callees.
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::APP_MODULE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BANK_MONITOR_PAUSE_ALL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CHAT_ROOM_REFRESH_PLAYER_LIST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::IN_SEQ_INSTANCE_PAUSE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::IN_SEQ_INSTANCE_SET_USER_DATA;
-    pub(crate) use crate::game::fe::feasyncfile::callee::IN_SEQ_INSTANCE_UPDATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MC_MANAGER_UPDATE_MODE1;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MC_MANAGER_UPDATE_STATES;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_IS_DISABLED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_IS_VISIBLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_ACCOUNT_MEM_SET_STATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_DISCONNECT_ALL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_4 as NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_ON_CHILD_EVENT_4 as NET_FE_STATE_ON_CHILD_EVENT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OV_MESSAGE_CENTER_REFRESH_LIST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OV_MESSAGE_CENTER_UPDATE_COUNT_TEXT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REPLAY_CACHE_RESET;
-    pub(crate) use crate::game::fe::feasyncfile::callee::RIDER_SAY_20D3;
-    pub(crate) use crate::game::fe::feasyncfile::callee::RIDER_SAY_20D4;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_CMD_QUEUE_IS_FULL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_ENGINE_ACTIVATE_BINDING;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_ENGINE_ALLOC_PROCESS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_ENGINE_GET_INSTANCE_2 as SCRIPT_ENGINE_GET_INSTANCE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_ENGINE_GET_PROCESS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_LIST_STOP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::USTR_COPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_STATE_WRITE;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,10 +59,9 @@ pub fn start_screen_ctor(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::fakes;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 

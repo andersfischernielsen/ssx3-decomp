@@ -43,11 +43,9 @@ pub fn audio_debug_printf(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
 
     #[test]
     fn audio_debug_printf_matches() {

@@ -3,23 +3,14 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
-use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
-use crate::events;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::visualfx::worldlightman::deleting_dtor;
-pub(crate) use crate::game::visualfx::worldlightman::DELETE;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::float;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
@@ -114,18 +105,14 @@ pub fn input_binding_eval_bool(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::LOG_RESULTS;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    pub(crate) use crate::game::visualfx::worldlightman::tests::alloc_setup;
+
     pub(crate) use crate::game::visualfx::worldlightman::tests::dtor_case;
-    pub(crate) use crate::game::visualfx::worldlightman::tests::MEM_MUTEX;
+
     use ssx3_ee as ee;
 
     #[test]
@@ -148,7 +135,6 @@ pub(crate) mod tests {
     fn ps2_exec_man_v01_matches() {
         dtor_case(ee::s10::f_00320ad8__generated, ps2_exec_man_v01, 0x320ad8);
     }
-    use super::*;
 
     /// InputBinding_EvalBool through the real InputMap_EvalBool and a VM
     /// program that stops at once (the camera tests' input map), with the

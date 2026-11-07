@@ -1,20 +1,13 @@
 //! `src/be/beprepoststate.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
-use crate::abi;
 use crate::call;
-use crate::call::call_ptr;
-use crate::call::Callee;
 use crate::call::Frame;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::be::bedbreward::POST_RACE_GP;
 pub(crate) use crate::game::be::bedbreward::PRE_RACE_GP;
 pub(crate) use crate::game::be::beintreward::alloc_named;
-pub(crate) use crate::game::be::beintreward::EA_MEM_ALLOC_NAMED;
 use crate::guest::Addr;
 use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 

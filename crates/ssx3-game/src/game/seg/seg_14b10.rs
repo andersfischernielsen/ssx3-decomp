@@ -1,25 +1,15 @@
 //! `src/seg/seg_14b10.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
-use crate::abi;
 use crate::abi::r32;
 use crate::abi::ret;
 use crate::call;
-use crate::call::call_ptr;
-use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
-use crate::call::Unwound;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-use crate::game::animation::animsequencer::ASL_PUSH_NEW;
-use crate::game::animation::animsequencer::ASL_SET_TRACK_ANIM;
-use crate::game::animation::animsequencer::ASL_SET_TRACK_LOOP;
-use crate::game::animation::animsequencer::ASL_SET_TRACK_TIME;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
+#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -316,16 +306,11 @@ pub fn trick_build_name(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::schedule;
-    use crate::difftest::events::Events;
-    use crate::difftest::fakes::covered;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fill;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
+
     pub(crate) use crate::game::ai::ai::tests::race_state_table;
     pub(crate) use crate::game::lib::kernel::tests::SEEDS;
 
@@ -352,8 +337,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::{RA as RET_ADDR, SP as STACK_TOP};
 
     /// Trick_BuildName: random trick ids into name-part tables
     /// whose slots point at empty or short strings (both copy shapes), and

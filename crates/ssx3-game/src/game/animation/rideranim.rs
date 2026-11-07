@@ -3,14 +3,11 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
-use crate::call::Target;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -21,11 +18,6 @@ use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -118,10 +110,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees.
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::ai::ai::callee::EA_FILE_FREE_FILE_HANDLE;
-    pub(crate) use crate::game::ai::ai::callee::EA_FILE_FREE_REQUEST;
+
     pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE00;
     pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE01;
     pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE02;
@@ -133,8 +122,6 @@ pub(crate) mod callee {
     pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE08;
     pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE09;
     pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE0A;
-    pub(crate) use crate::game::ai::ai::callee::RIDER_WIPEOUT_UPDATE_ANIM_SPEED;
-    pub(crate) use crate::game::ai::ai::callee::SPCH_FIND_BANK_TYPE;
 }
 
 // ---------------------------------------------------------------------------
@@ -1987,11 +1974,9 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::elf_image;
-    use crate::difftest::fakes::covered;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::put_vec;
+
     use crate::difftest::put_words;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
@@ -2289,7 +2274,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     // ------------------------------------------------ RiderAnim_UpdateSeqType02
 
@@ -2335,10 +2319,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use crate::difftest::events::driven;
-    use crate::difftest::fakes::FAKE;
 
     // ------------------------------------------------------- RiderAnim_BlendSeq4
 
@@ -2455,9 +2435,8 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
+
     use crate::difftest::fakes::ptr;
-    use crate::difftest::fill;
 
     // ------------------------------------------------ RiderAnim_UpdateSeqType00
 
@@ -2502,7 +2481,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// `RiderAnim_BlendSeq2`: random keys into an id bank, v around 0
     /// (positive, zero, negative, edge cases), random sequence times and
@@ -2564,11 +2542,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use crate::difftest::check_lohi;
-    use crate::difftest::fakes::{self};
+
     pub(crate) use crate::game::ai::ai::tests::oc258_w32;
 
     /// `RiderAnim_UpdateSeqType01`: the real track advance, weight fade and
@@ -2715,7 +2689,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// RiderAnim_PlaySeqThenLoop: track 0 plays the intro key (or not), the
     /// intro reaches its end (or not) after the real AdvanceTrack, the real
@@ -2776,7 +2749,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// RiderAnim_SaveState: the stream's write is a fake (some calls
     /// unwind); the real AnimSeqList_Save runs on six lists with no items

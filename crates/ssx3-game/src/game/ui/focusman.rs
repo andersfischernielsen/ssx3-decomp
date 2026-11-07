@@ -3,20 +3,15 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::Target;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -1528,7 +1523,6 @@ pub(crate) mod tests {
             assert_eq!(rescans_in_one_second(hz), 3, "{hz} Hz");
         }
     }
-    use super::*;
 
     /// `FocusMan_CollectNodeObjects`: a random tree of up to 10 nodes (kid
     /// slots null or a later node, so no cycles; the root sometimes with no
@@ -1616,19 +1610,8 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::elf_image;
-    use crate::difftest::events::{check_events, driven, schedule};
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fill;
+
     pub(crate) use crate::game::lib::gcc::tests::focus_man_setup;
-    pub(crate) use crate::game::lib::gcc::tests::FOCUS;
-    pub(crate) use crate::game::lib::gcc::tests::FOCUS_STREAM;
-    pub(crate) use crate::game::lib::gcc::tests::FOCUS_STREAM_VT;
-    use crate::game::scripter::ssxscriptengine::tests::{
-        alloc as uv_scroll_alloc, heap_init as uv_scroll_heap_init,
-    };
 
     /// `FocusMan_SaveState`: empty, negative and 1..4 counts for both lists;
     /// fakes unwind at random calls.

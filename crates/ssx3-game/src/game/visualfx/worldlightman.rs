@@ -3,7 +3,6 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -11,10 +10,7 @@ use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::Target;
 use crate::call::Unwound;
-use crate::call::VSlot;
-use crate::events;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -23,19 +19,14 @@ pub(crate) use crate::game::ai::rider::fcc_lt;
 pub(crate) use crate::game::ai::rider::fr_3 as fr_2;
 pub(crate) use crate::game::ai::rider::gp_lit;
 pub(crate) use crate::game::ai::rider::set_fr;
-pub(crate) use crate::game::animation::rideranimbase::sw as sw_2;
 pub(crate) use crate::game::be::bedbreward::BUILTIN_DELETE_ADDR;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::r;
-pub(crate) use crate::game::fe::feasyncfile::lw_7 as lw_2;
 pub(crate) use crate::game::fe::feasyncfile::lw_9 as lw_3;
-pub(crate) use crate::game::fe::feasyncfile::p_7 as p_2;
 pub(crate) use crate::game::fe::feasyncfile::sw_7 as sw_3;
 pub(crate) use crate::game::intersect::worldsphtree::forward_to_arg_vtable;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 pub(crate) use crate::game::render::lightman::addu;
 pub(crate) use crate::game::render::lightman::off;
 pub(crate) use crate::game::render::lightman::Oc49Mem;
-pub(crate) use crate::game::render::particle::at;
 pub(crate) use crate::game::render::particle::eq;
 pub(crate) use crate::game::render::particle::fconst;
 pub(crate) use crate::game::render::particle::ldf;
@@ -49,11 +40,9 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
@@ -283,23 +272,8 @@ pub(crate) mod light {
 // Callees and field offsets.
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::render::lightman::callee::DMA_WAIT_FROM_SCRATCHPAD;
-    pub(crate) use crate::game::render::lightman::callee::DMA_WAIT_TO_SCRATCHPAD;
-    pub(crate) use crate::game::render::lightman::callee::EA_MEMSET;
-    pub(crate) use crate::game::render::lightman::callee::FLAG_MANAGER_GROUP_COMPUTE_VERTS;
-    pub(crate) use crate::game::render::lightman::callee::INTERSECT_INFO_EVALUATE;
+
     pub(crate) use crate::game::render::lightman::callee::LIGHT_CONTRIBUTION;
-    pub(crate) use crate::game::render::lightman::callee::LUNO_TABLE_DTOR;
-    pub(crate) use crate::game::render::lightman::callee::MATH_SIN_COS;
-    pub(crate) use crate::game::render::lightman::callee::MULTI_SPLINE_MODIFIER_DEBUG_DRAW_PATH;
-    pub(crate) use crate::game::render::lightman::callee::SPATIAL_HASH_UPDATE;
-    pub(crate) use crate::game::render::lightman::callee::SYNC_PROCESS_SAVE;
-    pub(crate) use crate::game::render::lightman::callee::TYPED_PROCESS_SAVE;
-    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_AI_FRAME_COUNT;
-    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_FLAG_MANAGER;
-    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_NASH;
 }
 
 /// `WorldLightMan` fields.
@@ -1560,7 +1534,7 @@ pub fn avalanche_destroy_all(c: &mut Cpu) {
             c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
             c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
             c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-            c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
             c.g[RA][0] = sx(0x002d9b5c);
             call_ptr(c, 0x002d9a80, 0x002d9b5c)?;
             c.g[S1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x9c0));
@@ -1656,13 +1630,11 @@ pub fn avalanche_destroy_all(c: &mut Cpu) {
         c.cycles += 6;
         c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
         c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
         c.sw((c.g[GP][0] as u32).wrapping_add(0x9cc), 0u64);
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
         c.pc = t;
-        return Ok(());
-
         Ok(())
     })
 }
@@ -2000,13 +1972,9 @@ pub(crate) mod cheat {
     /// Event and progress bits (bit 1: the cheat's variant flag).
     pub const FLAGS: u32 = 0x07;
 
-    pub const STATE_2: u32 = 0x4;
-
     pub const STEP: u32 = 0x5;
 
     pub const COUNT: u32 = 0x6;
-
-    pub const FLAGS_2: u32 = 0x7;
 
     /// The code: presses per step (9 signed bytes at 0x445e30).
     pub const CODE: u32 = 0x0044_5e30;
@@ -2107,6 +2075,7 @@ pub(crate) mod cheat_callee {
 pub(crate) mod attack_fx {
 
     /// `RiderBase* owner`.
+    #[cfg(test)]
     pub const OWNER: u32 = 0x00;
 
     /// `vec4 pos[4]`: the four spark positions.
@@ -2939,6 +2908,7 @@ pub(crate) const GP_NEG_99999: u32 = 0x38b4;
 /// The irradiance table and the "resolved" tag of an irradiance reference.
 pub(crate) const IRRADIANCE_TABLE: u32 = 0x0050_47f8;
 
+#[cfg(test)]
 pub(crate) const IRRADIANCE_RESOLVED: u64 = 0x12_3400;
 
 pub(crate) const WLM_EVICT_OLDEST: Callee = Callee {
@@ -3653,47 +3623,33 @@ pub fn rider_base_save_cheat_code(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::compare;
-    use crate::difftest::elf_image;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
-    use crate::difftest::events::Events;
+
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
+
     use crate::difftest::fill;
     use crate::difftest::put_vec;
     use crate::difftest::put_words;
     use crate::difftest::scramble;
-    use crate::difftest::seed_count;
+
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::RA as TEST_RA;
-    use crate::difftest::SP as TEST_SP;
-    use crate::difftest::SP as STACK_TOP;
-    use crate::difftest::SP as STACK;
+
     pub(crate) use crate::game::ai::ai::tests::leaf;
-    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
-    pub(crate) use crate::game::ai::ai::tests::rng;
+
     pub(crate) use crate::game::ai::aianimeventmap::tests::alloc_setup;
-    pub(crate) use crate::game::ai::aianimeventmap::tests::MEM_MUTEX;
+
     pub(crate) use crate::game::bx::bxstring::tests::alloc_ready;
-    pub(crate) use crate::game::bx::bxstring::tests::step;
+
     pub(crate) use crate::game::dirtysock::tags2::tests::pool8;
-    pub(crate) use crate::game::dirtysock::tags2::tests::slot_8 as slot;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::strict;
     pub(crate) use crate::game::fe::fepopup::tests::f_2;
     pub(crate) use crate::game::input::inputmap::tests::put_f32;
     pub(crate) use crate::game::intersect::worldsphtree::tests::forward_setup;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS as SEEDS_4;
+
     pub(crate) use crate::game::render::graphicsman::tests::same;
     pub(crate) use crate::game::render::particle::tests::base;
     pub(crate) use crate::game::render::particle::tests::put_vec3;
@@ -3704,14 +3660,12 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ui::uiengine::tests::POOL0;
     pub(crate) use crate::game::world::worldcache::tests::check_all;
     pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::put_vtable;
+
     pub(crate) use crate::game::wscript::wscriptman::tests::base_6 as base_2;
     pub(crate) use crate::game::wscript::wscriptman::tests::clear_5 as clear_2;
-    pub(crate) use crate::game::wscript::wscriptman::tests::globals_3 as globals;
+
     pub(crate) use crate::game::wscript::wscriptman::tests::w;
-    pub(crate) use crate::game::wscript::wscriptman::tests::BE_3 as BE;
-    pub(crate) use crate::game::wscript::wscriptman::tests::GAME;
-    pub(crate) use crate::game::wscript::wscriptman::tests::WORLD_3 as WORLD;
+
     use ssx3_ee as ee;
 
     #[test]
@@ -4363,8 +4317,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
 
     // ---------------------------------------- RiderBase_UpdateCheatCode
 
@@ -4641,7 +4593,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// `WorldLightMan_GetInstanceLighting`: a light manager with 0..=32
     /// cached nodes in consistent hash chains, overlap regions sharing one
@@ -4808,7 +4759,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// RiderBase_MatchCheatCode: every state (-2, -1, 0, 1, 2), flag bytes
     /// with and without flag 1 and the event bits (0x60 exactly too), counts
@@ -4857,7 +4807,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
+
     pub(crate) use crate::game::ai::ai::tests::stream_save_setup;
 
     /// `RiderBase_SaveCheatCode`.

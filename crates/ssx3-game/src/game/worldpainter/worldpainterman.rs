@@ -3,8 +3,6 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
-use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
@@ -14,17 +12,10 @@ use crate::events::event_due;
 pub(crate) use crate::game::camera::camera::gp_at;
 pub(crate) use crate::game::visualfx::boardwakefx::copy_render_state_2 as copy_render_state;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -59,10 +50,10 @@ pub fn cworld_painter_man_ctor(c: &mut Cpu) {
 }
 
 pub(crate) mod rctx {
-    pub(crate) use crate::game::visualfx::boardwakefx::rctx::GET_VIEW;
-    pub(crate) use crate::game::visualfx::boardwakefx::rctx::STATE_TOP;
-    pub(crate) use crate::game::visualfx::boardwakefx::rctx::TEX;
+    #[cfg(test)]
     pub(crate) use crate::game::visualfx::boardwakefx::rctx::VPTR;
+
+    pub(crate) use crate::game::visualfx::boardwakefx::rctx::STATE_TOP;
 }
 
 // ---------------------------------------------------------------------------
@@ -345,7 +336,7 @@ pub fn c_world_painter_man_debug_draw(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
@@ -364,9 +355,9 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
+
     use crate::difftest::fakes::{covered, machine, FAKE};
-    use crate::difftest::{elf_image, fill, put_vec, put_words, SP};
+    use crate::difftest::fill;
 
     /// cWorldPainterMan_DebugDrawCurrent: overlay off/on; no paint sets or
     /// a null set; every layer-clamp case (wanted layer <= 0, in range, past
@@ -447,8 +438,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::fakes::{self};
 
     // ------------------------------------------------ cWorldPainterMan_DebugDraw
 

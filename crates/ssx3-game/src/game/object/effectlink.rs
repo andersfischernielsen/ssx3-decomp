@@ -5,7 +5,6 @@ use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::reg;
-use crate::abi::ret;
 use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -14,10 +13,6 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
-use crate::events;
-use crate::events::back_edge_unwinds;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::lh_2 as lh;
 pub(crate) use crate::game::ai::computer::sd;
 pub(crate) use crate::game::fe::feasyncfile::at_2 as at;
@@ -30,8 +25,6 @@ pub(crate) use crate::game::fe::fepopup::sw_4 as sw;
 pub(crate) use crate::game::fe::fereal::close;
 pub(crate) use crate::game::fe::fereal::gp as gp_2;
 pub(crate) use crate::game::fe::fereal::open;
-use crate::game::lib::snd;
-pub(crate) use crate::game::sound::asyncsys::lw as lw_2;
 pub(crate) use crate::game::visualfx::boardwakefx::fcc;
 pub(crate) use crate::game::visualfx::boardwakefx::gp;
 pub(crate) use crate::game::visualfx::boardwakefx::ldf_2 as ldf;
@@ -43,7 +36,6 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::float;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
@@ -134,167 +126,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees (direct calls, same shard or cross-shard through the table).
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ACTIVE_CAMERA_TRIGGER_LIST_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_ON_FX_CLEAR_EMITTERS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_ON_FX_INIT_HANDLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BX_STRING_ALLOC_BUFFER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_LIST_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_STACK_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CAM_CONTROLLER_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CHASE_CAMERA_ALGORITHM_INIT_FROM_RIDER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CHASE_CAMERA_ALGORITHM_RESET_FOR_RIDER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STATE_CREATE_DUPLICATE_ON_CREATED_POPUP_EVENT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STATE_CREATE_DUPLICATE_ON_ERROR_POPUP_EVENT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STATE_CREATE_DUPLICATE_ON_SAVE_ACCOUNT_ANSWER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STATE_LOBBY_MENU_REFRESH_PLAYER_LIST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STATE_LOBBY_MENU_SHOW_ROOM_TAB;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STATE_LOBBY_MENU_UPDATE_PLAYERS_IN_ROOM;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::FLEX_BRIDGE_BUILD_MESH;
     pub(crate) use crate::game::fe::feasyncfile::callee::FLEX_BRIDGE_SPRINGS_LOAD;
     pub(crate) use crate::game::fe::feasyncfile::callee::FLEX_BRIDGE_UPDATE_VERTS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_ANIM_MAP_SET_HANDLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_STATE_FINISH_CLEAR_FLAG40;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_NEXT_SECTION;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INSTANCE_GET_NODE_MATRIX;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_SEND_REQUEST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LUNO_VM_REGISTER_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MESSAGE_CENTER_EMPTY_TRIGGER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MESSAGE_CENTER_IS_FLAG_SET;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_INIT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_ON_CHILD_EVENT_9 as NET_FE_STATE_ON_CHILD_EVENT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_UPDATE_3 as NET_FE_STATE_UPDATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PS2_MEM_CARD_CLEAR_DIR_CACHE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_BINDING_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_CMD_QUEUE_AT_3 as SCRIPT_CMD_QUEUE_AT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_ENGINE_GET_PROCESS_STATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_LIST_IS_MOVIE_ENTRY_2 as SCRIPT_LIST_IS_MOVIE_ENTRY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_OBJ_ACTIVATE_2 as SCRIPT_OBJ_ACTIVATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_OBJ_CAM_BUILD_MATRIX_FROM_SCRIPT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_OBJ_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SECTION_TABLE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_ANIM_SET_CREATE_ANIM;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_FIRST_4 as UI_LIST_FIRST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_NODE_IS_SENTINEL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_SET_ANIM;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_UPDATE_ANIM_2 as UI_OBJECT_UPDATE_ANIM;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_FIND_OBJECT_2 as UI_SCREEN_FIND_OBJECT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_BLOCK_POOL_INIT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_MEMMAN_CREATE_SECTION_ALLOCATOR;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_CTOR_2_2 as WORLD_OBJ_CTOR_2;
-    pub(crate) use crate::game::fe::fepopup::callee::C00113f88;
-    pub(crate) use crate::game::fe::fepopup::callee::C00115ab0;
-    pub(crate) use crate::game::fe::fepopup::callee::C0011fe78;
-    pub(crate) use crate::game::fe::fepopup::callee::C0011fe98;
-    pub(crate) use crate::game::fe::fepopup::callee::C0011fec8;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014a080;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014a0e0;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014bdb8;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014d448;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014d988;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014d998;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014dc80;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014dd58;
-    pub(crate) use crate::game::fe::fepopup::callee::C00150b48;
-    pub(crate) use crate::game::fe::fepopup::callee::C00151c48;
-    pub(crate) use crate::game::fe::fepopup::callee::C001535c0;
-    pub(crate) use crate::game::fe::fepopup::callee::C001543e0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00156a60;
-    pub(crate) use crate::game::fe::fepopup::callee::C001577e0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00157bf0;
-    pub(crate) use crate::game::fe::fepopup::callee::C001589b0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00158a50;
-    pub(crate) use crate::game::fe::fepopup::callee::C00158af0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00158c80;
-    pub(crate) use crate::game::fe::fepopup::callee::C00158d58;
-    pub(crate) use crate::game::fe::fepopup::callee::C00159cd0;
-    pub(crate) use crate::game::fe::fepopup::callee::C0015a2e0;
-    pub(crate) use crate::game::fe::fepopup::callee::C0016c6b0;
-    pub(crate) use crate::game::fe::fepopup::callee::C0016c718;
-    pub(crate) use crate::game::fe::fepopup::callee::C0017f500;
-    pub(crate) use crate::game::fe::fepopup::callee::C0019e2b0;
-    pub(crate) use crate::game::fe::fepopup::callee::C0019f878;
-    pub(crate) use crate::game::fe::fepopup::callee::C001bb9b0;
-    pub(crate) use crate::game::fe::fepopup::callee::C001c84a8;
-    pub(crate) use crate::game::fe::fepopup::callee::C001c8568;
-    pub(crate) use crate::game::fe::fepopup::callee::C001c9b68;
-    pub(crate) use crate::game::fe::fepopup::callee::C001cb9b0;
-    pub(crate) use crate::game::fe::fepopup::callee::C001cbc48;
-    pub(crate) use crate::game::fe::fepopup::callee::C001cbce8;
-    pub(crate) use crate::game::fe::fepopup::callee::C001cbfc0;
-    pub(crate) use crate::game::fe::fepopup::callee::C001ce560;
-    pub(crate) use crate::game::fe::fepopup::callee::C001d32e0;
-    pub(crate) use crate::game::fe::fepopup::callee::C001e1a30;
-    pub(crate) use crate::game::fe::fepopup::callee::C001e3388;
-    pub(crate) use crate::game::fe::fepopup::callee::C001e91a8;
-    pub(crate) use crate::game::fe::fepopup::callee::C001e91f8;
-    pub(crate) use crate::game::fe::fepopup::callee::C001e9290;
-    pub(crate) use crate::game::fe::fepopup::callee::C001f10f8;
-    pub(crate) use crate::game::fe::fepopup::callee::C0020e900;
-    pub(crate) use crate::game::fe::fepopup::callee::C00224c78;
-    pub(crate) use crate::game::fe::fepopup::callee::C00224da0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00224df0;
-    pub(crate) use crate::game::fe::fepopup::callee::C002259a8;
-    pub(crate) use crate::game::fe::fepopup::callee::C00227f80;
-    pub(crate) use crate::game::fe::fepopup::callee::C00231f80;
-    pub(crate) use crate::game::fe::fepopup::callee::C00238bf8;
-    pub(crate) use crate::game::fe::fepopup::callee::C0026d4d8;
-    pub(crate) use crate::game::fe::fepopup::callee::C0026db88;
-    pub(crate) use crate::game::fe::fepopup::callee::C0026e448;
-    pub(crate) use crate::game::fe::fepopup::callee::C0026f4a0;
-    pub(crate) use crate::game::fe::fepopup::callee::C002702f8;
-    pub(crate) use crate::game::fe::fepopup::callee::C002703f0;
-    pub(crate) use crate::game::fe::fepopup::callee::C002758c0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00275b98;
-    pub(crate) use crate::game::fe::fepopup::callee::C00275cf8;
-    pub(crate) use crate::game::fe::fepopup::callee::C00278e50;
-    pub(crate) use crate::game::fe::fepopup::callee::C00278f38;
-    pub(crate) use crate::game::fe::fepopup::callee::C00278f68;
-    pub(crate) use crate::game::fe::fepopup::callee::C00281ed8;
-    pub(crate) use crate::game::fe::fepopup::callee::C002837c8;
-    pub(crate) use crate::game::fe::fepopup::callee::C0028b180;
-    pub(crate) use crate::game::fe::fepopup::callee::C0028bb10;
-    pub(crate) use crate::game::fe::fepopup::callee::C0028e8c0;
-    pub(crate) use crate::game::fe::fepopup::callee::C002913d8;
-    pub(crate) use crate::game::fe::fepopup::callee::C003457c8;
-    pub(crate) use crate::game::fe::fepopup::callee::C003625c0;
-    pub(crate) use crate::game::fe::fepopup::callee::C003626d8;
-    pub(crate) use crate::game::fe::fepopup::callee::C003627a8;
-    pub(crate) use crate::game::fe::fepopup::callee::C00364cd0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00366ce0;
-    pub(crate) use crate::game::fe::fepopup::callee::C003684f0;
-    pub(crate) use crate::game::fe::fepopup::callee::C0038f460;
-    pub(crate) use crate::game::fe::fepopup::callee::C0038f668;
-    pub(crate) use crate::game::fe::fepopup::callee::C0039c870;
-    pub(crate) use crate::game::fe::fepopup::callee::C0039ff78;
-    pub(crate) use crate::game::fe::fepopup::callee::C003b1300;
-    pub(crate) use crate::game::fe::fepopup::callee::C003b2360;
-    pub(crate) use crate::game::fe::fepopup::callee::C00125108;
-    pub(crate) use crate::game::fe::fepopup::callee::C00150928;
-    pub(crate) use crate::game::fe::fepopup::callee::C00156988;
-    pub(crate) use crate::game::fe::fepopup::callee::C00158910;
-    pub(crate) use crate::game::fe::fepopup::callee::C00159170;
-    pub(crate) use crate::game::fe::fepopup::callee::C00176890;
-    pub(crate) use crate::game::fe::fepopup::callee::C00225068;
-    pub(crate) use crate::game::fe::fepopup::callee::C00275498;
-    pub(crate) use crate::game::fe::fepopup::callee::C00278308;
-    pub(crate) use crate::game::fe::fepopup::callee::C00283228;
-    pub(crate) use crate::game::fe::fepopup::callee::C00283518;
-    pub(crate) use crate::game::fe::fepopup::callee::C00358020;
-    pub(crate) use crate::game::fe::fepopup::callee::C00362478;
-    pub(crate) use crate::game::fe::fepopup::callee::C00362660;
-    pub(crate) use crate::game::fe::fepopup::callee::C00368170;
-    pub(crate) use crate::game::fe::fepopup::callee::C00368970;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::ANIM_SEQ_LIST_GET_AT;
+
+    pub(crate) use crate::game::fe::fepopup::callee::C003457C8;
+
     pub(crate) use crate::game::visualfx::boardwakefx::callee::EMITTER_UPDATE;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::FLAGS64_TEST;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::MATH_COS;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::RIDER_COMPUTE_LOD;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::RIDER_MODEL_RENDER;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::TRANSITION_EFFECT_UPDATE_SCREEN_RECT;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::WORLD_PAINTER_QUERY_RESET_ALL;
 }
 
 // ---------------------------------------------------------------------------
@@ -560,7 +401,7 @@ pub fn particle_modifier_base_dtor(c: &mut Cpu) {
         c.g[V1][0] = c.lw(gp_2(c, 0xf04));
         c.g[S1][0] = c.g[A0][0];
         c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
-        c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
         c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
         c.g[S0][0] = c.g[A1][0];
@@ -581,7 +422,7 @@ pub fn particle_modifier_base_dtor(c: &mut Cpu) {
         }
         c.cycles += 4;
         c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
         close(c, 0x30);
         Ok(())
     })
@@ -597,7 +438,7 @@ pub fn halo_modifier_ctor_2(c: &mut Cpu) {
         c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
         c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
         c.g[S0][0] = c.g[A1][0];
-        c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
         c.g[RA][0] = sx(0x0034_61dc);
         c.g[S1][0] = c.g[A0][0];
         call_ptr(c, 0x0034_57c8, 0x0034_61dc)?;
@@ -606,19 +447,19 @@ pub fn halo_modifier_ctor_2(c: &mut Cpu) {
         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1220));
         c.g[A2][0] = 0x30;
         c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V1][0]);
-        c.g[V0][0] = c.lw((c.g[S0][0] as u32));
+        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
         c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
         c.g[A3][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
         let target = c.g[A3][0] as u32;
         c.g[RA][0] = sx(0x0034_6204);
-        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
         call_ptr(c, target, 0x0034_6204)?;
         c.g[V1][0] = c.lw(gp_2(c, 0xf10));
         c.g[V0][0] = c.g[S1][0];
         c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
         c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
         c.sw(gp_2(c, 0xf10), c.g[V1][0]);
         close(c, 0x30);
         Ok(())
@@ -767,7 +608,7 @@ pub fn particle_modifier_ctor_2(c: &mut Cpu) {
             sd(c, r32(c, SP), c.g[RA][0]);
             c.g[RA][0] = sx(0x003459cc);
             c.g[S2][0] = c.g[A1][0];
-            if callee::C003457c8.call(c, 0x003459cc).is_err() {
+            if callee::C003457C8.call(c, 0x003459cc).is_err() {
                 return;
             }
             c.g[S3][0] = sx(at_2(c, S1, 0x50));
@@ -1526,59 +1367,44 @@ pub fn halo_modifier_save(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::compare;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
+
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
     use crate::difftest::fill;
-    use crate::difftest::put_vec;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as RET;
-    use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::SP as STACK_TOP;
+
     pub(crate) use crate::game::animation::animmodel::tests::SEEDS_4;
     pub(crate) use crate::game::bx::bxstring::tests::SEEDS as SEEDS_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_4 as base_3;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::clear_4 as clear;
     pub(crate) use crate::game::fe::feasyncfile::tests::gp_at;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_4 as heap_init;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_5 as pool_allocator;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_7 as pool_allocator_2;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::run_4 as run;
     pub(crate) use crate::game::fe::feasyncfile::tests::w_2 as w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_2 as BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::MEM_HEAP;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RM;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W;
+
     pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_4;
     pub(crate) use crate::game::fe::fepopup::tests::check_all_3 as check_all;
-    pub(crate) use crate::game::fe::fepopup::tests::AUX;
-    pub(crate) use crate::game::fe::fepopup::tests::BEL;
-    pub(crate) use crate::game::fe::fepopup::tests::RACE;
-    pub(crate) use crate::game::fe::fepopup::tests::RMAN_2 as RMAN;
-    pub(crate) use crate::game::fe::fepopup::tests::SYS;
-    pub(crate) use crate::game::fe::fepopup::tests::WORLD_4 as WORLD;
+
     pub(crate) use crate::game::fe::fereal::tests::base as base_2;
     pub(crate) use crate::game::object::debouncenode::tests::vtable_2;
     pub(crate) use crate::game::visualfx::boardwakefx::tests::f;
     pub(crate) use crate::game::visualfx::boardwakefx::tests::BASE;
     pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS_3 as SEEDS;
     pub(crate) use crate::game::visualfx::worldlightman::tests::alloc_setup;
-    pub(crate) use crate::game::visualfx::worldlightman::tests::MEM_MUTEX;
+
     pub(crate) use crate::game::world::worldview::tests::pick;
     pub(crate) use crate::game::world::worldview::tests::word;
     pub(crate) use crate::game::world::worldview::tests::SEEDS_5 as SEEDS_3;
     use ssx3_ee as ee;
-    use ssx3_ee_rt::funcs::GuestFn;
 
     #[test]
     fn modifier_list_push_front_matches() {
@@ -1883,8 +1709,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::{elf_image, fresh, require_paths};
+
     use ssx3_ee_rt::Cpu;
 
     /// DynamicParticleModifier_Update: finished; continuous emitter with
@@ -1938,8 +1763,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
 
     // ------------------------------------------ DynamicParticleModifier_Render
 
@@ -2032,7 +1855,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// `HaloModifier_Render`: the real `Instance_GetNodeMatrix` (no owner;
     /// node -1, the root or a node with one or two parents; the instance
@@ -2111,8 +1933,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::game::lib::snd::tests as snd_tests;
 
     /// `ParticleModifier_Save`: the real `ParticleModifier_BaseSave` and
     /// `Emitter_Save`, the stream's writers fakes (some calls unwind);
@@ -2142,7 +1962,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// ParticleModifier_BaseSave: a stream whose vtable slot 0x28 is a fake
     /// (random `this` delta) that unwinds on some seeds.
@@ -2167,8 +1986,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::events::{check_events, schedule};
+
     use crate::difftest::RA as SENTINEL;
 
     /// A dynamic particle modifier (static or not) and a stream whose
@@ -2212,7 +2030,6 @@ pub(crate) mod tests {
             &dpm_save_fixture,
         );
     }
-    use super::*;
 
     /// An emitter at `emitter` and its definition at `def` that the real
     /// `Emitter_InitDescriptor`/`Emitter_BuildDescriptor` handle quickly:
@@ -2293,7 +2110,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// HaloModifier_Save: the real BaseSave; the stream's writers (vtable
     /// +0x8 block write, +0x28 object write) are fakes, some unwind.

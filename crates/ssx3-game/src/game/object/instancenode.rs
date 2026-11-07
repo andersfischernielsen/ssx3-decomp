@@ -3,22 +3,14 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::Unwound;
-use crate::call::VSlot;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-use crate::game::animation::animsequencer::ASL_PUSH_NEW;
-use crate::game::animation::animsequencer::ASL_SET_TRACK_ANIM;
-use crate::game::animation::animsequencer::ASL_SET_TRACK_LOOP;
-use crate::game::animation::animsequencer::ASL_SET_TRACK_TIME;
 pub(crate) use crate::game::be::beintplayer::lh;
 pub(crate) use crate::game::fe::feasyncfile::lw_3 as lw;
 pub(crate) use crate::game::fe::feasyncfile::p_5 as p;
@@ -27,11 +19,9 @@ pub(crate) use crate::game::render::lightman::addu;
 pub(crate) use crate::game::render::lightman::off;
 pub(crate) use crate::game::render::lightman::Oc49Mem;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
@@ -67,23 +57,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees and field offsets.
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::render::lightman::callee::DMA_WAIT_FROM_SCRATCHPAD;
-    pub(crate) use crate::game::render::lightman::callee::DMA_WAIT_TO_SCRATCHPAD;
-    pub(crate) use crate::game::render::lightman::callee::EA_MEMSET;
-    pub(crate) use crate::game::render::lightman::callee::FLAG_MANAGER_GROUP_COMPUTE_VERTS;
-    pub(crate) use crate::game::render::lightman::callee::INTERSECT_INFO_EVALUATE;
-    pub(crate) use crate::game::render::lightman::callee::LIGHT_CONTRIBUTION;
-    pub(crate) use crate::game::render::lightman::callee::LUNO_TABLE_DTOR;
-    pub(crate) use crate::game::render::lightman::callee::MATH_SIN_COS;
-    pub(crate) use crate::game::render::lightman::callee::MULTI_SPLINE_MODIFIER_DEBUG_DRAW_PATH;
-    pub(crate) use crate::game::render::lightman::callee::SPATIAL_HASH_UPDATE;
+
     pub(crate) use crate::game::render::lightman::callee::SYNC_PROCESS_SAVE;
-    pub(crate) use crate::game::render::lightman::callee::TYPED_PROCESS_SAVE;
-    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_AI_FRAME_COUNT;
-    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_FLAG_MANAGER;
-    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_NASH;
 }
 
 /// `void WorldObj_Save(WorldObj *self, void *stream)` (0x0034fe90):
@@ -788,29 +763,21 @@ pub fn world_obj_kill(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
-    use crate::difftest::events::Events;
+
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::put_words;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::clear_4 as clear;
-    pub(crate) use crate::game::fe::feasyncfile::tests::gp_at;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_5 as pool_allocator;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::w_2 as w;
     pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
+
     pub(crate) use crate::game::object::debouncenode::tests::vtable_2;
     pub(crate) use crate::game::sound::bankmonitor::tests::SEEDS_4 as SEEDS;
     use ssx3_ee as ee;
@@ -906,8 +873,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::{put_vec, scramble};
 
     /// Instance_GetNodeMatrix: no owner, or an owner (fake v-table) that
     /// has the node's matrix or not; node -1, the root node or a node with
@@ -967,8 +932,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::{RA as RET_ADDR, SP as STACK_TOP};
 
     /// WorldObj_dtor: an object at DATA whose instance (DATA+0x100, random
     /// flags) points back at it or not; the real base destructors run
@@ -1007,7 +970,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// `WorldObj_Kill`: an object with a node whose flags word is random
     /// (high half sign bit set or not) and a vtable whose slot +8 is a fake;

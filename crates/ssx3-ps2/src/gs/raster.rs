@@ -115,12 +115,6 @@ impl SurfRow {
         }
     }
 
-    /// `Surface::write` of pixel (x, this row).
-    #[inline(always)]
-    pub(crate) fn write(&self, m: Mem, x: u32, value: u32) {
-        self.write_at(m, self.locate(x), value)
-    }
-
     #[inline(always)]
     fn write_at(&self, m: Mem, (w, s): (usize, u32), value: u32) {
         let slot = m.rd(w);

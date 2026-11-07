@@ -6,11 +6,7 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
-use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::events::back_edge_unwinds;
-use crate::events::deliver_event;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::fe::debugfe::at;
@@ -24,15 +20,11 @@ pub(crate) use crate::game::object::flexrailnode::spa;
 pub(crate) use crate::game::render::bezierman::f;
 pub(crate) use crate::game::render::bezierman::gp;
 use crate::guest::Addr;
+#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -68,29 +60,15 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees and fixed addresses.
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::render::bezierman::callee::CULL_AGAINST_LIGHTS;
+
     pub(crate) use crate::game::render::bezierman::callee::PROJECT_RIDER;
     pub(crate) use crate::game::render::bezierman::callee::RIDER_GET_DIST_TO_FINISH;
-    pub(crate) use crate::game::render::bezierman::callee::RIDER_SPHERE_TREE_CTOR;
-    pub(crate) use crate::game::render::bezierman::callee::RIDER_SPHERE_TREE_GET_BOUNDS;
-    pub(crate) use crate::game::render::bezierman::callee::SND_LOCK;
-    pub(crate) use crate::game::render::bezierman::callee::SND_STATUS;
-    pub(crate) use crate::game::render::bezierman::callee::SND_STREAM_INFO;
-    pub(crate) use crate::game::render::bezierman::callee::SND_STREAM_POSITION;
-    pub(crate) use crate::game::render::bezierman::callee::SND_SUB_STATE;
-    pub(crate) use crate::game::render::bezierman::callee::SND_SUB_STATUS;
-    pub(crate) use crate::game::render::bezierman::callee::SND_SUB_TIME;
-    pub(crate) use crate::game::render::bezierman::callee::SND_UNLOCK;
 }
 
 /// The race-progress state: the rider slots (`0x4d0000-0x7438`, stride 0x18),
 /// the zone/course-segment table at `gp-0x99c`, the course at `gp-0x9a0` and
 /// the world at `gp-0x848`.
 pub(crate) mod progress {
-
-    pub const SLOTS: u32 = 0x004c_8bc8;
 
     pub const ZONES: i32 = -0x99c;
 
@@ -100,8 +78,6 @@ pub(crate) mod progress {
 
     /// The step limit (138.8889) at `gp-0x54ac`.
     pub const STEP_LIMIT: i32 = -0x54ac;
-
-    pub const ACTIVE: u32 = 0x0;
 
     pub const SEG: u32 = 0x4;
 
@@ -130,10 +106,6 @@ pub(crate) mod progress {
     pub const RIDER_COUNT: u32 = 0x78;
 
     pub const RIDER_POS: u32 = 0x6c0;
-
-    pub const RIDER_DIST: u32 = 0x4d0;
-
-    pub const ZONE_SX: u32 = 0x0;
 
     pub const ZONE_SY: u32 = 0x4;
 
@@ -676,36 +648,26 @@ pub fn hud_meter_set_rect(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
+
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::vtable;
+
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::fill;
-    use crate::difftest::put_vec;
-    use crate::difftest::scramble;
-    use crate::difftest::seed_count;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     pub(crate) use crate::game::be::beintstat::tests::allocator;
-    pub(crate) use crate::game::be::beintstat::tests::call;
-    pub(crate) use crate::game::be::beintstat::tests::pool_allocator as pool_allocator_2;
-    pub(crate) use crate::game::be::beintstat::tests::MEM_HEAP;
+
     pub(crate) use crate::game::fe::debugfe::tests::pool_allocator;
     pub(crate) use crate::game::fe::debugfe::tests::w;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ2;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ3;
     pub(crate) use crate::game::fe::festaterewards::tests::base_9 as base;
-    pub(crate) use crate::game::fe::festaterewards::tests::hook;
+
     pub(crate) use crate::game::fe::festaterewards::tests::strict;
     pub(crate) use crate::game::fe::festaterewards::tests::w as w_2;
-    pub(crate) use crate::game::fe::festaterewards::tests::BE_7 as BE;
-    pub(crate) use crate::game::fe::festaterewards::tests::HOOKS;
-    pub(crate) use crate::game::fe::festaterewards::tests::KEEP_F0;
-    pub(crate) use crate::game::fe::festaterewards::tests::W;
 
     // RaceProgress_ProjectRider ------------------------------------------
 

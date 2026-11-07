@@ -2,7 +2,6 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::reg;
 use crate::abi::ret;
@@ -14,14 +13,11 @@ use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::Unwound;
-use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::aianimeventmap::BUILTIN_DELETE;
 pub(crate) use crate::game::animation::animmodel::EA_MEM_FREE_ADDR;
-pub(crate) use crate::game::fe::feasyncfile::lw_7 as lw_2;
 pub(crate) use crate::game::visualfx::boardwakefx::lh;
 pub(crate) use crate::game::visualfx::boardwakefx::lw;
 pub(crate) use crate::game::visualfx::boardwakefx::p;
@@ -31,11 +27,6 @@ use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -130,36 +121,26 @@ pub(crate) mod trigger {
 
 /// Direct-call targets of the animation functions (shard s10).
 pub(crate) mod anim_callee {
-    use super::Callee;
-    pub(crate) use crate::game::animation::animmodel::anim_callee::ALLOC_CHAN_CACHE;
-    pub(crate) use crate::game::animation::animmodel::anim_callee::DECODE_CHAN_CACHE;
-    pub(crate) use crate::game::animation::animmodel::anim_callee::EVAL_CHAN_CURVES;
+
     pub(crate) use crate::game::animation::animmodel::anim_callee::FIRE_END_TRIGGERS;
     pub(crate) use crate::game::animation::animmodel::anim_callee::FIRE_TRIGGERS_AT_TIME;
     pub(crate) use crate::game::animation::animmodel::anim_callee::FIRE_TRIGGERS_IN_RANGE;
-    pub(crate) use crate::game::animation::animmodel::anim_callee::GET_TRACK_BLEND_WEIGHT;
-    use ssx3_ee::s10 as ee;
 }
 
 /// `AnimSequence` layout used here (tracks of 0x1c bytes from +0).
 pub(crate) mod seq {
-    pub(crate) use crate::game::animation::animsequencer::seq::BLEND_A;
-    pub(crate) use crate::game::animation::animsequencer::seq::BLEND_B;
+
     pub(crate) use crate::game::animation::animsequencer::seq::DIRTY;
     pub(crate) use crate::game::animation::animsequencer::seq::END_FLAG;
     pub(crate) use crate::game::animation::animsequencer::seq::FIRED_MASK;
-    pub(crate) use crate::game::animation::animsequencer::seq::FLAGS;
-    pub(crate) use crate::game::animation::animsequencer::seq::LAYER;
-    pub(crate) use crate::game::animation::animsequencer::seq::NEXT;
+
     pub(crate) use crate::game::animation::animsequencer::seq::RATE;
     pub(crate) use crate::game::animation::animsequencer::seq::TRACK_SIZE;
-    pub(crate) use crate::game::animation::animsequencer::seq::T_ACTIVE;
-    pub(crate) use crate::game::animation::animsequencer::seq::T_ANIM;
+
     pub(crate) use crate::game::animation::animsequencer::seq::T_LENGTH;
     pub(crate) use crate::game::animation::animsequencer::seq::T_MODE;
     pub(crate) use crate::game::animation::animsequencer::seq::T_RATE;
     pub(crate) use crate::game::animation::animsequencer::seq::T_TIME;
-    pub(crate) use crate::game::animation::animsequencer::seq::USER;
 }
 
 /// `AnimDataBase_EvalChanCurves` entry points and jump tables.
@@ -180,16 +161,10 @@ pub(crate) mod eval {
 
 #[allow(dead_code)]
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
+
     pub(crate) use crate::game::visualfx::boardwakefx::callee::ANIM_SEQ_LIST_GET_AT;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::EMITTER_UPDATE;
+
     pub(crate) use crate::game::visualfx::boardwakefx::callee::FLAGS64_TEST;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::MATH_COS;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::RIDER_COMPUTE_LOD;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::RIDER_MODEL_RENDER;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::TRANSITION_EFFECT_UPDATE_SCREEN_RECT;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::WORLD_PAINTER_QUERY_RESET_ALL;
 }
 
 pub(crate) const ANIM_SEQ_LIST_CLEAR: Callee = Callee {
@@ -1663,7 +1638,7 @@ pub fn anim_controller_play_anim_direct(c: &mut Cpu) {
             c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
             c.mov_s(20, 12);
             c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
-            c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
             c.g[RA][0] = sx(0x00312a18);
             c.g[A0][0] = c.g[S1][0];
             call_ptr(c, 0x003115c8, 0x00312a18)?;
@@ -1687,31 +1662,29 @@ pub fn anim_controller_play_anim_direct(c: &mut Cpu) {
         c.g[S0][0] = sx((c.g[S3][0] as u32) << 2);
         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x27f8));
         c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x50));
-        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
         c.g[A1][0] = sx((c.g[S3][0] as u32) << 3);
-        c.g[T1][0] = c.lw((c.g[V0][0] as u32));
+        c.g[T1][0] = c.lw(c.g[V0][0] as u32);
         c.g[A2][0] = c.g[S1][0];
         c.g[A3][0] = c.g[S4][0];
         c.mov_s(12, 20);
         c.g[A0][0] = c.g[S2][0];
-        c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+        c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
         c.g[RA][0] = sx(0x00312a70);
         c.g[T0][0] = 0x1;
         call_ptr(c, 0x00311f00, 0x00312a70)?;
-        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S0][0] as u32));
         c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
-        c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+        c.sw(c.g[S0][0] as u32, c.g[V0][0]);
         c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
         c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
         c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
         c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
         c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x60));
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
         c.pc = t;
-        return Ok(());
-
         Ok(())
     })
 }
@@ -2248,26 +2221,24 @@ pub fn rider_anim_clear_flags_and_play_anim(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
+
     use crate::difftest::events::check_events;
     use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
-    use crate::difftest::fakes::covered;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
+
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fakes::*;
+
     use crate::difftest::fill;
-    use crate::difftest::put_vec;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     pub(crate) use crate::game::ai::aianimeventmap::tests::alloc_setup;
-    pub(crate) use crate::game::ai::aianimeventmap::tests::MEM_MUTEX;
+
     pub(crate) use crate::game::animation::animmodel::tests::channel;
     pub(crate) use crate::game::animation::animmodel::tests::curves;
     pub(crate) use crate::game::animation::animmodel::tests::eval_constants;
@@ -2376,7 +2347,7 @@ pub(crate) mod tests {
             anim_controller_clear_layer,
             SEEDS,
             &|c, seed| {
-                let mut r = machine(c, seed, 0x1e38, 0);
+                let _r = machine(c, seed, 0x1e38, 0);
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 4) as u64;
                 // A layer's sequence list: head at +4 (empty keeps the free path
@@ -2700,7 +2671,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// AnimDataBase_DecodeChanCache: an anim database at DATA with its
     /// channel array at DATA+0x1000; a header of 0..=12 channels (0: the
@@ -2751,7 +2721,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// AnimController_TransformRoots fixture: six layer lists of 0..3
     /// sequences (0xd0 bytes, linked at +0xc8) with random root transforms,
@@ -2807,7 +2776,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// Flags64_MoveToSecond runs for real; PlayAnim runs for real with its
     /// layer lookup a fake: 0x207 (no layer: returns) or a layer, where the

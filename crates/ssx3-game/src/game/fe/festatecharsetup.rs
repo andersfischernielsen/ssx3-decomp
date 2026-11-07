@@ -2,14 +2,9 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
-use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::fe::feasyncfile::at_2 as at;
@@ -22,15 +17,9 @@ pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw;
 pub(crate) use crate::game::wscript::wscriptman::p;
 pub(crate) use crate::game::wscript::wscriptman::sw;
 use crate::guest::Addr;
-use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -62,49 +51,14 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees.
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::fe::festateload::callee::BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::fe::festateload::callee::BE_LIBRARY_GET_SAVE_DATA_SIZE;
-    pub(crate) use crate::game::fe::festateload::callee::BOLT_FILE_CACHE_INIT;
-    pub(crate) use crate::game::fe::festateload::callee::CHAR_SELECT_UPDATE_RIDER_PREVIEW;
+
     pub(crate) use crate::game::fe::festateload::callee::CHAR_SETUP_UPDATE_RIDER_PREVIEW;
-    pub(crate) use crate::game::fe::festateload::callee::EA_MEM_FREE;
-    pub(crate) use crate::game::fe::festateload::callee::EVENT_SELECT_ON_ACTIVATE;
-    pub(crate) use crate::game::fe::festateload::callee::EVENT_SELECT_ON_SHUTDOWN;
-    pub(crate) use crate::game::fe::festateload::callee::EVENT_SELECT_ON_UPDATE;
-    pub(crate) use crate::game::fe::festateload::callee::I_SIGNAL_SEMA;
-    pub(crate) use crate::game::fe::festateload::callee::MEM_CARD_BASE_DTOR;
-    pub(crate) use crate::game::fe::festateload::callee::MENU_SYS_ITEM_ON_FOCUS;
-    pub(crate) use crate::game::fe::festateload::callee::MENU_SYS_PAGE_VALIDATE_SELECTION;
-    pub(crate) use crate::game::fe::festateload::callee::MODIFIER_BLOCK_FORWARD_V42;
-    pub(crate) use crate::game::fe::festateload::callee::MODIFIER_BLOCK_FORWARD_V43;
-    pub(crate) use crate::game::fe::festateload::callee::MODIFIER_BLOCK_HANDLE_EVENT;
-    pub(crate) use crate::game::fe::festateload::callee::RIDER_METRIX_SET_SPIN_AMOUNT;
-    pub(crate) use crate::game::fe::festateload::callee::RIDER_PREVIEW_APPLY_TRANSFORM;
-    pub(crate) use crate::game::fe::festateload::callee::SONG_INSTANCE_PAUSE;
-    pub(crate) use crate::game::fe::festateload::callee::SONG_INSTANCE_RESUME;
-    pub(crate) use crate::game::fe::festateload::callee::STRLEN_COPY;
-    pub(crate) use crate::game::fe::festateload::callee::UI_BASE_ON_ACTIVATE;
-    pub(crate) use crate::game::fe::festateload::callee::UI_BASE_ON_SHUTDOWN;
+
     pub(crate) use crate::game::fe::festateload::callee::UI_STATE_V13;
-    pub(crate) use crate::game::fe::festateload::callee::WORLD_GET_OBJECT_SCRIPT_FUNC;
-    pub(crate) use crate::game::fe::festateload::callee::WORLD_TRIGGER_MANAGER_DTOR;
-    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_CACHE_SET_DATA;
-    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_MAN_RESET_COMMAND_QUEUE;
-    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_PROCESS_GOTO_TASK;
-    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_PROCESS_JUMP_TO_TASK;
 }
 
 /// `gp`-relative globals used here.
-pub(crate) mod g {
-    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
-    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
-    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
-    pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER;
-    pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER_END;
-    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
-}
+pub(crate) mod g {}
 
 /// `void cFEStateCharSetup_Update(cFEStateCharSetup* self)` (0x182c38): the
 /// base state's update, then the setup state's rider-preview update.
@@ -148,7 +102,7 @@ pub fn cfe_state_char_setup_set_rider_preview_active(c: &mut Cpu) {
         c.g[V0][0] = c.lw(gp(c, -0x848));
         c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
         c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
         c.g[S1][0] = c.g[A0][0];
         c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x7c));
         let no_mgr = c.g[A0][0] == 0;
@@ -179,7 +133,7 @@ pub fn cfe_state_char_setup_set_rider_preview_active(c: &mut Cpu) {
         c.cycles += 5;
         c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
         c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
         close(c, 0x30);
         Ok(())
     })
@@ -287,49 +241,27 @@ pub fn anim_controller_reset(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::elf_image;
-    use crate::difftest::fakes::covered;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fill;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as RET;
-    use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::SP as STACK_TOP;
+
     pub(crate) use crate::game::be::bestate2::tests::belib;
     pub(crate) use crate::game::be::bestate2::tests::w;
     pub(crate) use crate::game::be::bestate2::tests::SEEDS;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_4 as base_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_2 as BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RM;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W;
+
     pub(crate) use crate::game::fe::fereal::tests::base;
     pub(crate) use crate::game::fe::festateload::tests::clear;
     pub(crate) use crate::game::fe::festateload::tests::globals;
     pub(crate) use crate::game::fe::festateload::tests::OBJ;
     pub(crate) use crate::game::wscript::wscriptman::tests::base_6 as base_3;
     pub(crate) use crate::game::wscript::wscriptman::tests::clear_5 as clear_2;
-    pub(crate) use crate::game::wscript::wscriptman::tests::globals_3 as globals_2;
-    pub(crate) use crate::game::wscript::wscriptman::tests::BE_3 as BE_2;
-    pub(crate) use crate::game::wscript::wscriptman::tests::GAME;
-    pub(crate) use crate::game::wscript::wscriptman::tests::WORLD_3 as WORLD;
+
     use ssx3_ee as ee;
-    use ssx3_ee::s00;
-    use ssx3_ee::s01;
+
     use ssx3_ee::s02;
-    use ssx3_ee::s03;
-    use ssx3_ee::s08;
-    use ssx3_ee::s09;
-    use ssx3_ee::s10;
-    use ssx3_ee::s11;
-    use ssx3_ee::s12;
-    use ssx3_ee::s13;
-    use ssx3_ee_rt::funcs::GuestFn;
 
     #[test]
     fn cfe_state_char_setup_update_matches() {

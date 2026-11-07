@@ -76,7 +76,6 @@ enum Source {
 }
 
 struct OpenFile {
-    name: String,
     size: u32,
     loc: Loc,
 }
@@ -230,7 +229,6 @@ impl State {
                 });
                 let (sector, size) = hit?;
                 Some(OpenFile {
-                    name: name.to_string(),
                     size,
                     loc: Loc::Sector(sector),
                 })
@@ -240,7 +238,6 @@ impl State {
                 let f = File::open(&path).ok()?;
                 let size = f.metadata().ok()?.len() as u32;
                 Some(OpenFile {
-                    name: name.to_string(),
                     size,
                     loc: Loc::Host(f),
                 })

@@ -45,6 +45,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 "#;
 
 /// Presents a GPU GS frame: RGBA8 words in a storage buffer.
+#[cfg(feature = "emu-gs")]
 const BUFFER_SHADER: &str = r#"
 @group(0) @binding(0) var<storage, read> frame: array<u32>;
 // (width, height, 1 if the surface is sRGB)
@@ -113,6 +114,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 "#;
 
 /// The pipeline and bindings for presenting a GPU GS frame buffer.
+#[cfg(feature = "emu-gs")]
 struct BufferPath {
     pipeline: wgpu::RenderPipeline,
     bgl: wgpu::BindGroupLayout,
@@ -140,6 +142,7 @@ pub struct Presenter {
     sampler: wgpu::Sampler,
     tex: wgpu::Texture,
     tex_size: (u32, u32),
+    #[cfg(feature = "emu-gs")]
     buffer_path: BufferPath,
     /// Display aspect ratio the image is fitted to (letterboxed or
     /// pillarboxed); 0 stretches it over the whole window.
@@ -333,6 +336,7 @@ impl Presenter {
             multiview_mask: None,
             cache: None,
         });
+        #[cfg(feature = "emu-gs")]
         let buffer_path = BufferPath::new(&device, config.format);
         Self {
             surface,
@@ -345,6 +349,7 @@ impl Presenter {
             sampler,
             tex,
             tex_size: (640, 448),
+            #[cfg(feature = "emu-gs")]
             buffer_path,
             aspect: 4.0 / 3.0,
             reconfigure: false,
@@ -508,10 +513,6 @@ impl Presenter {
         self.aspect = aspect;
     }
 
-    pub fn size(&self) -> (u32, u32) {
-        (self.config.width, self.config.height)
-    }
-
     /// Upload an RGBA8 frame (`w`×`h`) and draw it to the window.
     pub fn render(&mut self, w: u32, h: u32, rgba: &[u32]) -> Result<(), PresentError> {
         if (w, h) != self.tex_size && w > 0 && h > 0 {
@@ -671,6 +672,7 @@ impl Presenter {
     }
 }
 
+#[cfg(feature = "emu-gs")]
 impl BufferPath {
     fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> BufferPath {
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

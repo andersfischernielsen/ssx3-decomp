@@ -1,7 +1,6 @@
 //! `src/ealib/seg_2dcae8.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
-use crate::abi;
 use crate::abi::r32;
 use crate::abi::ret;
 use crate::call::call_ptr;
@@ -9,7 +8,6 @@ use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::misc::add32;
@@ -782,13 +780,12 @@ pub fn strchr(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::events::driven;
+
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::put_words;
+
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
 
     /// `EATimer_ServiceCallbacks` over sixteen timers: empty, not yet due,
     /// already running, and due ones (fake callbacks, some of which unwind).
@@ -817,18 +814,10 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use crate::difftest::elf_image;
-    use crate::difftest::events::{check_events, schedule};
+
     use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::vtable;
+
     use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fill;
-    use crate::difftest::scramble;
-    use crate::game::scripter::ssxscriptengine::tests::{
-        alloc as uv_scroll_alloc, heap_init as uv_scroll_heap_init,
-    };
 
     /// A BIG archive at DATA: the header kind (unknown, `C0FB`, `BIGF`,
     /// `BIG0`..`BIG:`), 1-5 entries with random offset/size bytes and

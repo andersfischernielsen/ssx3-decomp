@@ -6,9 +6,6 @@ use crate::abi::r32;
 use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
-use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -16,13 +13,9 @@ pub(crate) use crate::game::dirtysock::tags2::at;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::p;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
-use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -353,24 +346,21 @@ pub(crate) mod tests {
     use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::FAKE;
+
     use crate::difftest::fill;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
+
     pub(crate) use crate::game::be::belibrary::tests::SRC;
     pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_10 as globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_8 as pool;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_3 as OBJ;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_5 as WORLD;
+
     pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
+
     use ssx3_ee as ee;
 
     #[test]
@@ -462,8 +452,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
+
     use crate::difftest::{scramble, RA as SENTINEL};
 
     /// A tree whose AI path array holds 0..6 entries, asked for a null path,

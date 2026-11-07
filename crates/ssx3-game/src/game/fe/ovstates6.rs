@@ -4,13 +4,10 @@
 use crate::abi;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::fe::feasyncfile::gp_3 as gp;
 use crate::guest::Addr;
+#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -63,10 +60,10 @@ pub fn ov_screen_pda_template_close(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::fakes;
+
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     pub(crate) use crate::game::fe::feasyncfile::tests::slot;

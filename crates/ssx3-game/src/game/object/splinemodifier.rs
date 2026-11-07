@@ -3,7 +3,6 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -32,7 +31,6 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::float;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
@@ -134,59 +132,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Intra-shard callees the generator called directly (its `jal` aliases).
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::fe::feasyncfile::callee::APP_MODULE_RENDER_FADE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_TRICK_METER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_WIPEOUT_LOOP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_WIPEOUT_LOOP2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUTOSAVE_UPDATE_ICON;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BANK_MONITOR_STOP_HANDLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_LIBRARY_GET_INSTANCE_2 as BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_LIBRARY_GET_INTERFACE_2 as BE_LIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_OPTION_INT_SWAP_PLAYER_FLAGS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_SCORE_INT_GET_HIGH_SCORE_TABLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_FILE_CACHE_SHUTDOWN;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_ALLOC_COPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_CTOR_COPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_LOCALE_LOAD_TABLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_UNLOAD_ANIM_DATA;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_UNLOAD_RIDER_PREVIEWS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FLEX_RAIL_SAVE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_EXPECT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_GET_CHAR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_READ_QUOTED_STRING;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MENU_HIDE_ROOM_TABS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MEMCARD_INSTALL_CALLBACKS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MOD_OBJ_SAVE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_9 as NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OPERATOR_NEW_NAMED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PLAYBACK_RESTORE_WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REPLAY_SET_STATE_2 as REPLAY_SET_STATE;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::SPLINE_MODIFIER_SET_SPEED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_CTOR_2 as UI_LIST_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_RESET;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_UPDATE_ANIM;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CHUNK_RESOLVE_HOOK;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_CTOR_2 as WORLD_OBJ_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_DTOR_2 as WORLD_OBJ_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_REPLACE_WITH_DEAD_NODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_RUN_KILL_SCRIPT_2 as WORLD_OBJ_RUN_KILL_SCRIPT;
-    pub(crate) use crate::game::render::lightman::callee::DMA_WAIT_FROM_SCRATCHPAD;
-    pub(crate) use crate::game::render::lightman::callee::DMA_WAIT_TO_SCRATCHPAD;
-    pub(crate) use crate::game::render::lightman::callee::EA_MEMSET;
-    pub(crate) use crate::game::render::lightman::callee::FLAG_MANAGER_GROUP_COMPUTE_VERTS;
-    pub(crate) use crate::game::render::lightman::callee::INTERSECT_INFO_EVALUATE;
-    pub(crate) use crate::game::render::lightman::callee::LIGHT_CONTRIBUTION;
-    pub(crate) use crate::game::render::lightman::callee::LUNO_TABLE_DTOR;
-    pub(crate) use crate::game::render::lightman::callee::MATH_SIN_COS;
+
     pub(crate) use crate::game::render::lightman::callee::MULTI_SPLINE_MODIFIER_DEBUG_DRAW_PATH;
     pub(crate) use crate::game::render::lightman::callee::SPATIAL_HASH_UPDATE;
-    pub(crate) use crate::game::render::lightman::callee::SYNC_PROCESS_SAVE;
-    pub(crate) use crate::game::render::lightman::callee::TYPED_PROCESS_SAVE;
-    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_AI_FRAME_COUNT;
-    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_FLAG_MANAGER;
+
     pub(crate) use crate::game::render::lightman::callee::WORLD_GET_NASH;
 }
 
@@ -697,7 +648,7 @@ pub fn rail_modifier_list_push_back(c: &mut Cpu) {
 pub fn spline_modifier_v22(c: &mut Cpu) {
     c.cycles += 5;
     let self_ = abi::arg(c, 0);
-    let body = abi::arg(c, 1);
+    let _body = abi::arg(c, 1);
     c.g[A2][0] = sx(self_);
     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
     c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x54));
@@ -855,7 +806,7 @@ pub fn multi_spline_modifier_alloc_node_instances(c: &mut Cpu) {
         open(c, 0x30);
         c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
         c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
         c.g[S1][0] = c.g[A0][0];
         c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
         let empty = (c.g[V0][0] as i64) <= 0;
@@ -871,8 +822,8 @@ pub fn multi_spline_modifier_alloc_node_instances(c: &mut Cpu) {
                 c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x44));
                 c.g[V1][0] = sx((c.g[S0][0] as u32) << 2);
                 c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
-                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.sw(c.g[V1][0] as u32, c.g[V0][0]);
                 c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
                 c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
                 if c.g[V0][0] == 0 {
@@ -886,7 +837,7 @@ pub fn multi_spline_modifier_alloc_node_instances(c: &mut Cpu) {
         c.cycles += 5;
         c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
         c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
         close(c, 0x30);
         Ok(())
     })
@@ -1170,7 +1121,7 @@ pub fn multisplinemodifier_v01(c: &mut Cpu) {
         }
         c.cycles += 3;
         c.g[V0][0] = Addr(p(r32(c, S1), 4)).lw(c);
-        let mut none = (c.g[V0][0] as i64) <= 0;
+        let none = (c.g[V0][0] as i64) <= 0;
         c.g[S0][0] = 0;
         if !none {
             loop {
@@ -1192,7 +1143,6 @@ pub fn multisplinemodifier_v01(c: &mut Cpu) {
                     deliver_event_here(c, 0x0035_a2b0);
                 }
             }
-            none = true;
         }
         c.cycles += 3;
         c.g[A0][0] = Addr(p(r32(c, S1), 0x44)).lw(c);
@@ -2754,67 +2704,51 @@ pub(crate) mod tests {
     use crate::difftest::check;
     use crate::difftest::check_lohi;
     use crate::difftest::elf_image;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
-    use crate::difftest::events::Events;
+
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::fill;
+
     use crate::difftest::put_vec;
     use crate::difftest::put_words;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as RET;
-    use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::RA as TEST_RA;
-    use crate::difftest::SP as STACK;
-    use crate::difftest::SP as STACK_TOP;
-    use crate::difftest::SP;
+
     pub(crate) use crate::game::ai::ai::tests::leaf;
-    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
-    pub(crate) use crate::game::ai::ai::tests::rng;
+
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear;
     pub(crate) use crate::game::camera::cameracontroller::tests::put_vtable;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
-    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_8 as be_library_2;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::env;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::gpat;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_4 as pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool_2;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::slot_6 as slot;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w16;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::w32;
     pub(crate) use crate::game::fe::feasyncfile::tests::world_3 as world;
-    pub(crate) use crate::game::fe::feasyncfile::tests::world_5 as world_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::EMPTY;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ3_2 as OBJ3;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_12 as SEEDS_4;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as SEEDS_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_6 as WORLD;
+
     pub(crate) use crate::game::fe::fereal::tests::base;
     pub(crate) use crate::game::fe::festatecredits::tests::RET_ZERO;
     pub(crate) use crate::game::fe::festaterewards2::tests::belib;
     pub(crate) use crate::game::fe::festaterewards2::tests::w;
     pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS;
     pub(crate) use crate::game::input::inputmap::tests::put_f32;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS as SEEDS_2;
-    pub(crate) use crate::game::sound::soundsys::tests::alloc_ready;
+
     pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_3;
-    pub(crate) use crate::game::sound::soundsys::tests::load_2 as load;
-    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool_3;
+
     pub(crate) use crate::game::world::worldview::tests::pick;
     pub(crate) use crate::game::world::worldview::tests::word;
     use ssx3_ee as ee;
@@ -3242,7 +3176,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// MultiSplineModifier_UpdateNodes: 0-5 nodes, every mode (0: neither
     /// angle, 1: pitch, 2: yaw, 3: both, 4: neither), with and without a
@@ -3329,7 +3262,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// SplineModifier_UpdateTransform: every mode (0: no angle, 1: pitch,
     /// 2: yaw, 3: both, 4: none), with and without a spin angle. The path is
@@ -3392,8 +3324,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
 
     /// Runs a guest function to completion as a setup step (returns v0).
     pub(crate) fn oc259_run(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
@@ -3603,7 +3533,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// `MultiSplineModifier_Save`: a stream whose vtable `Write` (+8) and
     /// `WritePtr` (+0x28) are fakes (logging every register, sometimes

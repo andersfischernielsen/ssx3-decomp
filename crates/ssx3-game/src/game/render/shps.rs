@@ -45,11 +45,10 @@ pub fn shps_get_entry_name(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
 
     #[test]
     fn shps_get_entry_name_matches() {

@@ -3,19 +3,13 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::r;
 pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -465,7 +459,7 @@ pub fn flex_bridge_springs_step(c: &mut Cpu) {
             c.g[T1][0] = sx(v);
             c.lqc2(3, r(c, A1).wrapping_sub(0x10));
             c.lqc2(4, r(c, V0));
-            let node = r(c, V0);
+            let _node = r(c, V0);
             c.vu0().add(0b1111, 5, 3, Src::Vec(4));
             c.sqc2(5, at(sp, 0x1a0));
             c.mul_s(1, 7, 1);
@@ -737,7 +731,7 @@ pub(crate) mod tests {
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    pub(crate) use crate::game::ai::rider::tests::hh;
+
     pub(crate) use crate::game::ai::rider::tests::slot_2 as slot;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::ONE;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::w;
@@ -804,8 +798,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::events::driven;
+
     use crate::difftest::RA as SENTINEL;
 
     /// A small process list at `gp + 0x2898`: a table of four list heads

@@ -3,10 +3,8 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
@@ -18,11 +16,6 @@ use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -420,20 +413,20 @@ pub fn app_vsync_callback(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
+
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     pub(crate) use crate::game::render::particle::tests::clear;
     pub(crate) use crate::game::render::particle::tests::common;
-    pub(crate) use crate::game::render::particle::tests::gp_at;
+
     pub(crate) use crate::game::render::particle::tests::vtable_2 as vtable;
     pub(crate) use crate::game::render::particle::tests::SEEDS_7 as SEEDS_2;
-    use ssx3_ee::s09;
+
     use ssx3_ee::s10;
 
     pub(crate) const SEEDS: u32 = 400;
@@ -596,9 +589,8 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
+
     use crate::difftest::fakes::covered;
-    use crate::difftest::{elf_image, fill};
 
     // ------------------------------------------------ PS2ExecMan_InvokeCallback
 
@@ -631,8 +623,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
 
     // -- 0x00317328 App_InvokeExecCallback -------------------------------------
 
@@ -709,8 +699,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::put_vec;
 
     /// App_VSyncCallback: the real App_VSyncTick on an App singleton (as in
     /// `app_vsync_tick_matches`: zero / non-zero frame step, fake vtable

@@ -136,9 +136,6 @@ fn unpack_plain<const VN: u32, const VL: u32>(
     }
 }
 
-/// Segment hash of the type-3 VU1 program (d159716b).
-const TYPE3_HASH: u64 = ssx3_render::mat3::HASH;
-
 fn native_vu1() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     // Native by default; SSX3_VU1=emu runs the translated microcode.

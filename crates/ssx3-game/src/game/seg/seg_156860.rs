@@ -3,7 +3,6 @@
 
 use crate::abi;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -49,7 +48,6 @@ pub(crate) mod tests {
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
 
     #[test]
     fn c_comm_system_get_version_tag_matches() {

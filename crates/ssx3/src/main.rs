@@ -47,6 +47,7 @@ struct App {
     gilrs: Option<gilrs::Gilrs>,
     /// Ticket of the previous frame's display request (MTGS): the window
     /// shows frame N-1 (or newer) while the GS thread finishes frame N.
+    #[cfg(feature = "emu-gs")]
     pending_display: Option<u64>,
     /// The GS's wgpu device (GPU backend).
     gpu_ctx: Option<&'static ssx3_ps2::gpu::GpuContext>,
@@ -703,6 +704,7 @@ fn main() {
         shots: 0,
         fps_mark: Instant::now(),
         keys: 0,
+        #[cfg(feature = "emu-gs")]
         pending_display: None,
         gpu_ctx: None,
         pacer: ssx3_game::tick::Pacer::default(),

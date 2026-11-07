@@ -3,21 +3,13 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::Unwound;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-use crate::game::animation::animsequencer::ASL_PUSH_NEW;
-use crate::game::animation::animsequencer::ASL_SET_TRACK_ANIM;
-use crate::game::animation::animsequencer::ASL_SET_TRACK_LOOP;
-use crate::game::animation::animsequencer::ASL_SET_TRACK_TIME;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_sll;
 pub(crate) use crate::game::scripter::ssxscriptengine::low;
@@ -28,13 +20,7 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::float;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -83,36 +69,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
 pub(crate) mod addr {
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BANK_MONITOR_ADD;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_BE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_INTERFACE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_INTERFACE_9;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::CHASE_CAMERA_RESET_FOR_RIDER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::CLOSE_UNPINNED_POPUPS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::FE_NET_SEND;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::HUD_SHOW_NUMBER_DELAYED;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MC_STATUS_TEXT;
+
     pub(crate) use crate::game::scripter::ssxscriptengine::addr::MEMSET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MEM_MAN_ALLOC;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_DTOR_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_POP_PAGE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_PUSH_PAGE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::POSITION_MODIFIER_CTOR_3;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::RIDER_PREVIEW;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::RIDER_PREVIEW_BOLTS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::SPATIAL_INSERT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::SPRINTF;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::STRCASECMP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::STRCMP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::STRLEN;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::STR_HASH;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_ENGINE_CREATE_SCREEN;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_ENGINE_TEARDOWN;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_OBJECT_BY_HASH;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_SCREEN_START_THREAD;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::WORLD_GET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::WORLD_PAINTER_2D;
 }
 
 /// `int DLHeap_LargeBinIndex(uint size)` (0x31e1d8): the free-list bin for a
@@ -2726,9 +2684,9 @@ pub fn c_csi_cubic_spline_alloc(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
@@ -2909,9 +2867,8 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::{fill, put_words};
+
+    use crate::difftest::fill;
 
     /// cCSICubicSpline_Evaluate: 1..8 segments with increasing start
     /// times, a random current segment, t at a segment start, before the
@@ -2961,7 +2918,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// Runs a generated function to completion as a setup step.
     pub(crate) fn oc238_run(c: &mut Cpu, addr: u32, f: fn(&mut Cpu), args: &[u64]) -> u64 {
@@ -3039,7 +2995,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     // --------------------------------------------------------- DLHeap_Memalign
 
@@ -3101,7 +3056,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
+
     pub(crate) use crate::game::object::splinemodifier::tests::oc259_run;
 
     /// DLHeap_Free on a real dlmalloc heap (`DLHeap_InitArena` on a 256 KiB
@@ -3171,10 +3126,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use crate::difftest::{elf_image, put_vec};
 
     /// MEM_Pool256Alloc: a non-empty free list (pop), or an empty one with
     /// the real MEM_PoolAlloc behind it: pools ready (served by the 512-byte
@@ -3342,8 +3293,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::{RA as RET_ADDR, SP as STACK_TOP};
 
     /// cCSICubicSpline_Solve: 0-12 knots (sometimes 40) with increasing x
     /// and random y, natural or clamped ends (random slopes), random other
@@ -3389,8 +3338,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
 
     /// Run a guest function from a test setup until it returns.
     pub(crate) fn oc281_run(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
@@ -3589,9 +3536,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use crate::difftest::fakes::LOG_RESULTS;
 
     /// A block on the free list (popped) or an empty list: MEM_PoolAlloc
     /// over a test heap, with the size-class pools on or off.

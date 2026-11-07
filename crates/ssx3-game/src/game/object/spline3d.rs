@@ -1,15 +1,10 @@
 //! `src/object/spline3d.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
-use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
-use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
 use crate::events::deliver_event_here;
@@ -20,15 +15,9 @@ pub(crate) use crate::game::object::movenode::ONE;
 pub(crate) use crate::game::object::railmodifier::oc308_stream_call;
 pub(crate) use crate::game::object::railmodifier::STREAM_WRITE_BYTES;
 use crate::guest::Addr;
-use crate::ps2f::vu0_scratch;
-use crate::ps2f::FpuF32;
-use crate::ps2f::Vec4;
-use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -52,35 +41,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 /// Same-shard direct callees used above.
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_GET_NEXT_NODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_GET_PREV_NODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_NODE_INDEX;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BUILD_ITEM_LIST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FEMODULE_GET_RIDER_PREVIEW_2 as FEMODULE_GET_RIDER_PREVIEW;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FEMODULE_RIDER_PREVIEW_SET_VISIBLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INPUTSYNC_IS_READY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ISEQ_HEAP_ALLOC;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ISEQ_SPAN_TRACK_ACTIVATE_KEY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ISEQ_SPAN_TRACK_NEXT_KEY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::KEYBOARD_FIND_ENABLED_FROM_TOP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::KEYBOARD_IS_KEY_ENABLED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOAD_INDICATOR_ADVANCE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_GET_INPUT_CODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_HANDLE_INPUT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_IS_DISABLED_3 as MENU_SYS_ITEM_IS_DISABLED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_ACCOUNT_SET_STATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_FIND_BANK_SLOT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_REMOVE_BANK;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PS2_GRID_MESH_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REFRESH_ITEM_LIST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::RIDER_BASE_RESET_FX;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SET_CATEGORY_TITLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SHOW_BUY_MODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SHOW_EQUIP_MODE;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::SPLINE_GET_PATH_LENGTH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::START_SCREEN_CTOR;
 }
 
 // ---------------------------------------------------------------------------
@@ -262,26 +224,20 @@ pub fn spline_modifier_save_path(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::schedule;
+
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
     use crate::difftest::fill;
-    use crate::difftest::put_vec;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as SENTINEL;
+
     pub(crate) use crate::game::bx::bxstring2::tests::f;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::gp_at;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_10 as BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RM_3 as RM;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W_7 as W;
+
     pub(crate) use crate::game::object::movenode::tests::delta;
     pub(crate) use crate::game::object::movenode::tests::slot;
     use ssx3_ee as ee;
@@ -343,7 +299,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
+
     pub(crate) use crate::game::object::railmodifier::tests::oc308_fake_stream;
 
     /// The one stream write is made (fake logs its arguments) and may unwind.

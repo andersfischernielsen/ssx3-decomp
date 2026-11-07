@@ -2,18 +2,12 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
-use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::Unwound;
-use crate::call::VSlot;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::dirtysock::tags2::p as p_2;
@@ -25,16 +19,11 @@ pub(crate) use crate::game::fe::feasyncfile::p as p_6;
 pub(crate) use crate::game::fe::feasyncfile::p as p_7;
 pub(crate) use crate::game::fe::festateload::at;
 pub(crate) use crate::game::object::railmodifier::reset_vtable_and_delete;
-pub(crate) use crate::game::object::railmodifier::DELETE;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 pub(crate) use crate::game::render::particle::copy_mat;
 pub(crate) use crate::game::render::particle::p_2 as p;
 pub(crate) use crate::game::wscript::wscriptman::p as p_3;
 use crate::guest::Addr;
-use crate::ps2f::vu0_scratch;
-use crate::ps2f::FpuF32;
-use crate::ps2f::Vec4;
-use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::call_indirect;
@@ -212,10 +201,7 @@ pub(crate) mod defer {
 
 /// One saved view (`sPtView`).
 pub(crate) mod vw {
-    pub(crate) use crate::game::render::particle::vw::DEPTH;
-    pub(crate) use crate::game::render::particle::vw::F24;
-    pub(crate) use crate::game::render::particle::vw::F28;
-    pub(crate) use crate::game::render::particle::vw::F2C;
+
     pub(crate) use crate::game::render::particle::vw::KEY;
     pub(crate) use crate::game::render::particle::vw::M120;
     pub(crate) use crate::game::render::particle::vw::M180;
@@ -248,49 +234,12 @@ pub(crate) mod trail {
 // Callees.
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::fe::festateload::callee::BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::fe::festateload::callee::BE_LIBRARY_GET_SAVE_DATA_SIZE;
-    pub(crate) use crate::game::fe::festateload::callee::BOLT_FILE_CACHE_INIT;
-    pub(crate) use crate::game::fe::festateload::callee::CHAR_SELECT_UPDATE_RIDER_PREVIEW;
-    pub(crate) use crate::game::fe::festateload::callee::CHAR_SETUP_UPDATE_RIDER_PREVIEW;
+
     pub(crate) use crate::game::fe::festateload::callee::EA_MEM_FREE;
-    pub(crate) use crate::game::fe::festateload::callee::EVENT_SELECT_ON_ACTIVATE;
-    pub(crate) use crate::game::fe::festateload::callee::EVENT_SELECT_ON_SHUTDOWN;
-    pub(crate) use crate::game::fe::festateload::callee::EVENT_SELECT_ON_UPDATE;
-    pub(crate) use crate::game::fe::festateload::callee::I_SIGNAL_SEMA;
-    pub(crate) use crate::game::fe::festateload::callee::MEM_CARD_BASE_DTOR;
-    pub(crate) use crate::game::fe::festateload::callee::MENU_SYS_ITEM_ON_FOCUS;
-    pub(crate) use crate::game::fe::festateload::callee::MENU_SYS_PAGE_VALIDATE_SELECTION;
-    pub(crate) use crate::game::fe::festateload::callee::MODIFIER_BLOCK_FORWARD_V42;
-    pub(crate) use crate::game::fe::festateload::callee::MODIFIER_BLOCK_FORWARD_V43;
-    pub(crate) use crate::game::fe::festateload::callee::MODIFIER_BLOCK_HANDLE_EVENT;
-    pub(crate) use crate::game::fe::festateload::callee::RIDER_METRIX_SET_SPIN_AMOUNT;
-    pub(crate) use crate::game::fe::festateload::callee::RIDER_PREVIEW_APPLY_TRANSFORM;
-    pub(crate) use crate::game::fe::festateload::callee::SONG_INSTANCE_PAUSE;
-    pub(crate) use crate::game::fe::festateload::callee::SONG_INSTANCE_RESUME;
-    pub(crate) use crate::game::fe::festateload::callee::STRLEN_COPY;
-    pub(crate) use crate::game::fe::festateload::callee::UI_BASE_ON_ACTIVATE;
-    pub(crate) use crate::game::fe::festateload::callee::UI_BASE_ON_SHUTDOWN;
-    pub(crate) use crate::game::fe::festateload::callee::UI_STATE_V13;
-    pub(crate) use crate::game::fe::festateload::callee::WORLD_GET_OBJECT_SCRIPT_FUNC;
-    pub(crate) use crate::game::fe::festateload::callee::WORLD_TRIGGER_MANAGER_DTOR;
-    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_CACHE_SET_DATA;
-    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_MAN_RESET_COMMAND_QUEUE;
-    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_PROCESS_GOTO_TASK;
-    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_PROCESS_JUMP_TO_TASK;
 }
 
 /// `gp`-relative globals used here.
-pub(crate) mod g {
-    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
-    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
-    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
-    pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER;
-    pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER_END;
-    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
-}
+pub(crate) mod g {}
 
 // ---------------------------------------------------------------------------
 // Deferred draw buckets.
@@ -1307,20 +1256,20 @@ pub fn font_get_char_width(c: &mut Cpu) {
             c.g[V1][0] = Addr(p_7(font as u32, 4)).lw(c);
             c.mult(0, 4, 4, 2);
             c.mult(0, 2, 7, 2);
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
             break 'done;
         }
         c.cycles += 4;
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub((c.g[A3][0] as u32)));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[A3][0] as u32));
         c.g[T2][0] = Addr(p_7(c.g[V1][0] as u32, 4)).lw(c);
         c.g[T1][0] = 0xc;
-        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[T0][0] as u32)));
-        'l: loop {
+        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[T0][0] as u32));
+        loop {
             c.cycles += 6;
             c.g[A3][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
             c.mult(0, 6, 7, 9);
-            c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+            c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[T2][0] as u32));
             c.g[A2][0] = c.lhu(c.g[V0][0] as u32);
             let hit = c.g[A0][0] == c.g[A2][0];
             if hit {
@@ -1337,7 +1286,7 @@ pub fn font_get_char_width(c: &mut Cpu) {
             c.cycles += 3;
             c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[T0][0] as i64)) as u64;
             let more = c.g[V0][0] != 0;
-            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[T0][0] as u32)));
+            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[T0][0] as u32));
             if !more {
                 c.cycles += 1;
                 c.g[V0][0] = Addr(p_7(c.g[V1][0] as u32, 8)).lw(c);
@@ -1389,20 +1338,20 @@ pub fn font_get_char_width_w(c: &mut Cpu) {
             c.g[V1][0] = Addr(p_7(font as u32, 4)).lw(c);
             c.mult(0, 4, 4, 2);
             c.mult(0, 2, 7, 2);
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
             break 'done;
         }
         c.cycles += 5;
-        c.g[T0][0] = sx((c.g[A2][0] as u32).wrapping_sub((c.g[A3][0] as u32)));
+        c.g[T0][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[A3][0] as u32));
         c.g[T2][0] = Addr(p_7(c.g[V1][0] as u32, 4)).lw(c);
         c.g[T1][0] = 0xc;
-        c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
-        'l: loop {
+        c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        loop {
             c.cycles += 6;
             c.g[A3][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
             c.mult(0, 6, 7, 9);
-            c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+            c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[T2][0] as u32));
             c.g[A2][0] = c.lhu(c.g[V0][0] as u32);
             let hit = c.g[A0][0] == c.g[A2][0];
             if hit {
@@ -1419,7 +1368,7 @@ pub fn font_get_char_width_w(c: &mut Cpu) {
             c.cycles += 3;
             c.g[V0][0] = ((c.g[T0][0] as i64) < (c.g[A1][0] as i64)) as u64;
             let more = c.g[V0][0] != 0;
-            c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+            c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A1][0] as u32));
             if !more {
                 c.cycles += 1;
                 c.g[V0][0] = Addr(p_7(c.g[V1][0] as u32, 8)).lw(c);
@@ -1609,26 +1558,24 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::compare;
+
     use crate::difftest::events::check_events;
     use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
+
     use crate::difftest::fill;
     use crate::difftest::put_vec;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as TEST_RA;
+
     use crate::difftest::SP;
-    pub(crate) use crate::game::ai::ai::tests::be_library;
+
     pub(crate) use crate::game::ai::ai::tests::CHILD;
     pub(crate) use crate::game::ai::ai::tests::SEEDS_2 as SEEDS_3;
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::SEEDS_2;
@@ -1637,24 +1584,21 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_3 as base_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_4 as be_library_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals_3;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::globals_4 as globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_5 as globals_2;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool_3;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::w as w_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::w as w_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::w_3 as w;
     pub(crate) use crate::game::fe::feasyncfile::tests::world;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_LIBRARY;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ as OBJ_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ3_2 as OBJ3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_2 as WORLD;
+
     pub(crate) use crate::game::fe::festateload::tests::clear;
     pub(crate) use crate::game::fe::festateload::tests::OBJ;
     pub(crate) use crate::game::object::railmodifier::tests::destructor_setup;
@@ -1663,18 +1607,10 @@ pub(crate) mod tests {
     pub(crate) use crate::game::render::particle::tests::SEEDS;
     pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
     pub(crate) use crate::game::wscript::wscriptman::tests::clear_3 as clear_2;
-    pub(crate) use crate::game::wscript::wscriptman::tests::load;
+
     pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS_4;
     use ssx3_ee as ee;
-    use ssx3_ee::s00;
-    use ssx3_ee::s01;
-    use ssx3_ee::s02;
-    use ssx3_ee::s03;
-    use ssx3_ee::s08;
-    use ssx3_ee::s09;
-    use ssx3_ee::s10;
-    use ssx3_ee::s11;
-    use ssx3_ee::s12;
+
     use ssx3_ee::s13;
 
     // ------------------------------------------------------------ DeferMan
@@ -2534,7 +2470,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// TexMan_InvalidateBound: the texture manager at a random address with
     /// random bound slots. Events are delivered in the two-slot loop.
@@ -2563,7 +2498,6 @@ pub(crate) mod tests {
             &setup,
         );
     }
-    use super::*;
 
     /// PS2GraphicsMan_TryAcquireFrame: the current frame buffer's state
     /// free (0), claimed (1) or busy (2); the real AcquireFrameBuffer runs.

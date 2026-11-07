@@ -3,7 +3,6 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -19,10 +18,8 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::{W, Y, Z};
 use ssx3_ee_rt::Cpu;
 
@@ -1361,8 +1358,7 @@ pub fn c_splash_manager_render(c: &mut Cpu) {
                                         c.g[V1][0] = c.lw(at(c, V0, 0x74));
                                         let t = c.g[V1][0] as u32;
                                         c.g[A0][0] =
-                                            sx((c.g[S3][0] as u32)
-                                                .wrapping_add((c.g[A0][0] as u32)));
+                                            sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                         call_ptr(c, t, 0x002f3e94)?;
                                         frame.restore(c, S0, 0x60);
                                         break 'b_2f4100;
@@ -1376,7 +1372,7 @@ pub fn c_splash_manager_render(c: &mut Cpu) {
                                     c.g[V1][0] = c.lw(at(c, V0, 0xac));
                                     let t = c.g[V1][0] as u32;
                                     c.g[A0][0] =
-                                        sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                        sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                     call_ptr(c, t, 0x002f3eb4)?;
                                     c.g[V0][0] = c.lw(at(c, S1, 0x10d8));
                                     c.g[A0][0] = c.g[SP][0];
@@ -1384,7 +1380,7 @@ pub fn c_splash_manager_render(c: &mut Cpu) {
                                     c.g[V1][0] = c.lw(at(c, V0, 0xe4));
                                     let t = c.g[V1][0] as u32;
                                     c.g[A1][0] =
-                                        sx((c.g[S1][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                                        sx((c.g[S1][0] as u32).wrapping_add(c.g[A1][0] as u32));
                                     call_ptr(c, t, 0x002f3ecc)?;
                                     c.lwc1(0, stk(c, 0));
                                     c.g[A2][0] = 0u64;
@@ -1406,14 +1402,14 @@ pub fn c_splash_manager_render(c: &mut Cpu) {
                                     c.g[V1][0] = c.lw(at(c, V0, 0xd4));
                                     let t = c.g[V1][0] as u32;
                                     c.g[A0][0] =
-                                        sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                        sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                     call_ptr(c, t, 0x002f3f1c)?;
                                     c.g[V0][0] = c.lw(at(c, S1, 0x10d8));
                                     c.g[A0][0] = c.lh(at(c, V0, 0xf8));
                                     c.g[V1][0] = c.lw(at(c, V0, 0xfc));
                                     let t = c.g[V1][0] as u32;
                                     c.g[A0][0] =
-                                        sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                        sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                     call_ptr(c, t, 0x002f3f30)?;
                                     c.g[A2][0] = c.lw(at(c, S1, 0x10d8));
                                     c.g[A1][0] = 0x500000;
@@ -1422,14 +1418,14 @@ pub fn c_splash_manager_render(c: &mut Cpu) {
                                     c.g[V0][0] = c.lw(at(c, A2, 0x114));
                                     let t = c.g[V0][0] as u32;
                                     c.g[A0][0] =
-                                        sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                        sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                     call_ptr(c, t, 0x002f3f4c)?;
                                     c.g[V1][0] = c.lw(at(c, S1, 0xe84));
                                     c.g[A0][0] = 0x500000;
                                     c.g[T2][0] = 0xfffffffffffffc1f;
                                     c.g[A1][0] = 0xfffffffffe7f0000;
                                     c.ldl(2, at(c, V1, 0x7));
-                                    c.ldr(2, (c.g[V1][0] as u32));
+                                    c.ldr(2, c.g[V1][0] as u32);
                                     c.ldl(6, at(c, V1, 0xf));
                                     c.ldr(6, at(c, V1, 0x8));
                                     c.g[A3][0] = c.lw(at(c, V1, 0x10));
@@ -1451,7 +1447,7 @@ pub fn c_splash_manager_render(c: &mut Cpu) {
                                     c.g[T0][0] = 0xffffffffe0000000;
                                     c.g[V0][0] = sx(at(c, A0, 0x1420));
                                     c.ldl(9, at(c, V0, 0x7));
-                                    c.ldr(9, (c.g[V0][0] as u32));
+                                    c.ldr(9, c.g[V0][0] as u32);
                                     c.ldl(13, at(c, V0, 0xf));
                                     c.ldr(13, at(c, V0, 0x8));
                                     c.g[T6][0] = c.lw(at(c, V0, 0x10));
@@ -1566,14 +1562,14 @@ pub fn c_splash_manager_render(c: &mut Cpu) {
                                 c.g[V1][0] = c.lw(at(c, A1, 0x104));
                                 let t = c.g[V1][0] as u32;
                                 c.g[A0][0] =
-                                    sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                    sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                 call_ptr(c, t, 0x002f40e8)?;
                                 c.g[V0][0] = c.lw(at(c, S1, 0x10d8));
                                 c.g[A0][0] = c.lh(at(c, V0, 0xb0));
                                 c.g[V1][0] = c.lw(at(c, V0, 0xb4));
                                 let t = c.g[V1][0] as u32;
                                 c.g[A0][0] =
-                                    sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                    sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                 call_ptr(c, t, 0x002f40fc)?;
                                 break 'b_2f40fc;
                             }
@@ -1788,7 +1784,7 @@ pub fn c_splash_manager_emit_pending(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
+
     use crate::difftest::elf_image;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
@@ -2342,7 +2338,7 @@ pub(crate) mod tests {
             }
         }
     }
-    use super::*;
+
     pub(crate) use crate::game::ai::ai::rider_cruise_sub_handle_input;
 
     // -- 0x00131620 RiderCruiseSub_HandleInput --------------------------------
@@ -2610,9 +2606,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::fakes::{covered, FAKE};
-    use crate::difftest::{fill, put_words};
 
     /// cSplashManager_EmitPending: pending amounts below 1 (nothing), up
     /// to ~10 emissions, a crystal chance of 0, 1 or in between, crystal

@@ -6,13 +6,9 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::VSlot;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-pub(crate) use crate::game::fe::feasyncfile::a;
 pub(crate) use crate::game::fe::feasyncfile::lw as lw_2;
 pub(crate) use crate::game::fe::feasyncfile::p;
 pub(crate) use crate::game::fe::feasyncfile::sw_6 as sw;
@@ -23,11 +19,6 @@ use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -84,55 +75,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // their override slot exactly as the generated `jal`/`call_indirect` does).
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::fe::ovstatepause::callee::AI_CREATE_COMPUTER_RIDERS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::AI_DESTROY_MISSION_RIDERS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::ANIM_CONTROLLER_GET_LAYER_ANIM_ENTRY;
-    pub(crate) use crate::game::fe::ovstatepause::callee::BE_NEW_PLAYER_INT_GET_SLOT;
-    pub(crate) use crate::game::fe::ovstatepause::callee::BE_REWARD_INT_COUNT_SET_BITS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::BUILTIN_DELETE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::CHASE_CAMERA_ALGORITHM_CTOR;
-    pub(crate) use crate::game::fe::ovstatepause::callee::CHECK_ACCOUNT_NAME;
-    pub(crate) use crate::game::fe::ovstatepause::callee::CHECK_PASSWORD;
-    pub(crate) use crate::game::fe::ovstatepause::callee::C_FE_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::C_OV_STATE_OVERLAY_SHUTDOWN;
-    pub(crate) use crate::game::fe::ovstatepause::callee::C_OV_STATE_OVERLAY_UPDATE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::EA_MEM_SET;
-    pub(crate) use crate::game::fe::ovstatepause::callee::EVENT_SELECT_POST_INPUT;
-    pub(crate) use crate::game::fe::ovstatepause::callee::FE_ASYNC_MANAGER_CANCEL;
+
     pub(crate) use crate::game::fe::ovstatepause::callee::FE_FORMAT_MONEY;
-    pub(crate) use crate::game::fe::ovstatepause::callee::FE_MODULE_RIDER_PREVIEW_UNLOAD;
-    pub(crate) use crate::game::fe::ovstatepause::callee::FE_MODULE_RIDER_PREVIEW_UPDATE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::KEYBOARD_POPUP_IS_KEY_ENABLED;
-    pub(crate) use crate::game::fe::ovstatepause::callee::KEYBOARD_POPUP_MOVE_DOWN;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MC_MANAGER_BEGIN_LOAD;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MC_MANAGER_GET;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MEM_CARD_STATE_BASE_CTOR_2;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MOUNTAIN_ROOM_POLL_IMAGE_LOAD;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MPEG2_FLUSH_BUFFER;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MPEG2_SHOW_BITS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MUSIC_PLAYER_RESUME;
-    pub(crate) use crate::game::fe::ovstatepause::callee::NET_FE_STATE_CTOR_2 as NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::fe::ovstatepause::callee::NET_FE_STATE_ON_CHILD_EVENT;
-    pub(crate) use crate::game::fe::ovstatepause::callee::OV_SCREEN_SESSION_DESTROY_INDICATORS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::PLAY_FE_SOUND;
-    pub(crate) use crate::game::fe::ovstatepause::callee::RIDER_METRIX_CLEAR_PEAK_A4;
-    pub(crate) use crate::game::fe::ovstatepause::callee::SECTION_MAN_REQUEST_ACTIVATE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::STRCPY;
-    pub(crate) use crate::game::fe::ovstatepause::callee::STRLEN;
-    pub(crate) use crate::game::fe::ovstatepause::callee::STR_HASH;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_CTOR;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_MGR_CLOSE_TOP_STATES;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_MGR_CLOSE_TOP_STATE_AND_POPUPS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_ON_ACTIVATE_2 as UI_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_POST_INPUT;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_RENDER;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_UPDATE_2 as UI_STATE_UPDATE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_TEXTURE_SET_FIND;
+
     pub(crate) use crate::game::fe::ovstatepause::callee::UI_TEXT_SET_STRING;
-    pub(crate) use crate::game::fe::ovstatepause::callee::VID_ENGINE_PLAYER_RENDER;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +148,7 @@ pub fn cfe_state_request_line_sort_song_list(c: &mut Cpu) {
             c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
             if c.g[V0][0] != 0 {
                 c.cycles += 4;
-                c.sw((c.g[V1][0] as u32), c.g[A1][0]);
+                c.sw(c.g[V1][0] as u32, c.g[A1][0]);
                 c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
                 c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
             }
@@ -228,7 +174,7 @@ pub fn cfe_state_request_line_sort_song_list(c: &mut Cpu) {
         c.cycles += 5;
         c.g[V0][0] = sx((c.g[A2][0] as u32) << 2);
         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4c));
-        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
         c.g[V0][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x160));
         loop {
             c.cycles += 6;
@@ -238,7 +184,7 @@ pub fn cfe_state_request_line_sort_song_list(c: &mut Cpu) {
             c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
             if c.g[V0][0] == 0 {
                 c.cycles += 3;
-                c.sw((c.g[A1][0] as u32), c.g[V1][0]);
+                c.sw(c.g[A1][0] as u32, c.g[V1][0]);
                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4));
             }
             c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x14c));
@@ -282,7 +228,7 @@ pub fn cfe_request_line_buy_song(c: &mut Cpu) {
             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
             c.g[V1][0] = ((c.g[A0][0] as i64) < 64) as u64;
             let more = c.g[V1][0] != 0;
-            c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+            c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
             if !more {
                 break;
             }
@@ -619,7 +565,7 @@ pub fn cfestate_request_line_on_child_event(c: &mut Cpu) {
         c.g[S1][0] = c.g[A0][0];
         let is_15 = c.g[A2][0] == c.g[V0][0];
         frame.save_ra(c, 0);
-        let mut stage = 0u32; // 0 epilogue, 1 event 0x15, 2 event 0x16
+        let stage: u32; // 1 event 0x15, 2 event 0x16
         if is_15 {
             stage = 1;
         } else {
@@ -748,7 +694,7 @@ pub fn cfestate_request_line_open_buy_popup(c: &mut Cpu) {
         c.cycles += 24;
         let frame = Frame::open(c, 0x60);
         let this = abi::arg(c, 0);
-        let song = abi::arg(c, 1);
+        let _song = abi::arg(c, 1);
         c.g[A2][0] = 0;
         frame.save(c, 20, 0x10);
         c.g[A3][0] = 0;
@@ -833,47 +779,31 @@ pub fn cfestate_request_line_open_buy_popup(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::compare;
+
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
+
     use crate::difftest::fill;
-    use crate::difftest::put_vec;
-    use crate::difftest::put_words;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as SENTINEL;
-    use crate::difftest::SP;
+
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear;
     pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base;
-    pub(crate) use crate::game::bx::bxstring2::tests::gp_at;
-    pub(crate) use crate::game::bx::bxstring2::tests::BE_2 as BE;
-    pub(crate) use crate::game::bx::bxstring2::tests::DB;
-    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
-    pub(crate) use crate::game::bx::bxstring2::tests::RM;
-    pub(crate) use crate::game::bx::bxstring2::tests::VTS;
-    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_18 as base_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_13 as globals_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_11 as pool_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::strict_2 as strict;
     pub(crate) use crate::game::fe::feasyncfile::tests::w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE as BE_2;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_17 as SEEDS_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_6 as WORLD;
     pub(crate) use crate::game::fe::festatecharequip2::tests::money_text_test;
-    pub(crate) use crate::game::sound::soundsys::tests::alloc_ready;
+
     pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_3;
-    pub(crate) use crate::game::sound::soundsys::tests::load_2 as load;
-    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool_2;
-    pub(crate) use crate::game::sound::soundsys::tests::BE as BE_3;
+
     pub(crate) use crate::game::world::worldview::tests::word;
     pub(crate) use crate::game::world::worldview::tests::SEEDS_5 as SEEDS;
     use ssx3_ee as ee;

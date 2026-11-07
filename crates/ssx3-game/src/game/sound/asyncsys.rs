@@ -3,32 +3,21 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::control::handplantcontrol::gp_4 as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::lw_3 as lw_2;
 pub(crate) use crate::game::fe::feasyncfile::p_5 as p_2;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::gp_2 as gp_3;
-pub(crate) use crate::game::wscript::wscriptman::p;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -84,119 +73,14 @@ pub(crate) mod audio {
 // Callees (same-shard direct calls; cross-shard ones stay `call_ptr`s).
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_BAKE_GROUP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_EXPORT_HISTORY_FILES;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_FREE_HISTORIES;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_LOAD_HISTORY_FILE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_INSTANCE_RESUME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_STOP_HANDLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_REWARD_INT_IS_UNLOCKED;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_DESTROY_API;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_GET_ROSTER_COUNT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_SET_PRESENCE_ADDR;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::BUILTIN_DELETE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CHAT_ROOM_UPDATE_PLAYER_QUALITY_2 as CHAT_ROOM_UPDATE_PLAYER_QUALITY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_BX_STRING_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_LUNO_TABLE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_GET_SAVE_NAME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_LIST_DIR_ALL;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_READ_SAVE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_SET_STATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_SETUP_MAN_SEND_QUIT as C_SETUP_MAN_SEND_QUIT_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEMSET;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EMPTY_CHILD_HANDLER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FE_MODULE_GET_PLAYER_PAD_MASK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::KEYBOARD_POPUP_UPDATE_CURSOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_LIST_GET_AT_3 as LOBBY_LIST_GET_AT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_END_OPERATION_2 as MC_MANAGER_END_OPERATION;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_REQUEST_CARD_INFO;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_ASCII_CHAR_TO_SJIS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_SET_USE_SAVE_TITLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT0;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT1;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT4;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT5;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT6;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_ITEM_MEASURE_ROW;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_PAGE_SELECT_NEXT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_GET_INBOX;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_CTOR_3 as NET_FE_STATE_CTOR_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_DTOR_2 as NET_FE_STATE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_ON_CHILD_EVENT_3 as NET_FE_STATE_ON_CHILD_EVENT_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_UPDATE_2 as NET_FE_STATE_UPDATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::ON_QUIT_POPUP_EVENT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::PATH_PLAT_REFRESH_STATUS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::RAND_NEXT_MAIN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_ADD_SNAPSHOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_RECORD_SNAPSHOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCE_MC_FORMAT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_OBJ_TABLE_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_RESET_PROCESS_TABLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_OBJ_CAM_SET_OWNER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SECTION_MAN_PUSH_FREE_NODE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SLOGIN_MC_GET_PORT_SLOT_2 as SLOGIN_MC_GET_PORT_SLOT;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_FREE_MEMORY_2 as SND_BANK_FREE_MEMORY;
     pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLINK;
     pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLOAD_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SNOW_BOX_RESET;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_2 as SPRINTF;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STATS_SELECT_CATEGORY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STRCPY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STREAM_BUFFER_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TROPHY_ROOM_RELEASE_IMAGES;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UIMENU_SET_SELECTION;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF as UI_OBJECT_SHOW_CLAMP_ALPHA_HALF_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_CTOR_3 as UI_STATE_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_TEXT_GET_FONT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::USTR_TO_ASCII;
-    pub(crate) use crate::game::wscript::wscriptman::callee::ALGORITHM_LIST_PUSH;
-    pub(crate) use crate::game::wscript::wscriptman::callee::APP_MODULE_UPDATE_FADE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AVALANCHE_BAKE_NODE_HISTORY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AV_PLAYER_INIT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_ADD_TIMER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_POLL_FREE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_SET_PITCH;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CAM_CONTROLLER_CLEAR_ALGORITHMS;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_CHUNK_RESOLVE_CTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_MEMCARD_SET_STATE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_CREATE_MESHES_2 as CROWD_MAN3D_GROUP_CREATE_MESHES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_FREE_MESHES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_EMPTY_CHILD_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_FLAG_MANAGER_GROUP_LOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_SETUP_MAN_SEND_QUIT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DEBUG_MENU_MODULE_UPDATE_CURSOR_TRAIL;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DISABLE_INTC;
-    pub(crate) use crate::game::wscript::wscriptman::callee::EA_FILE_MOUNT_BIG;
-    pub(crate) use crate::game::wscript::wscriptman::callee::EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLEX_RAIL_UPDATE_SPACE_NODE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLOATING_V49;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FOCUS_MAN_ADD_FOCUS_BOX;
-    pub(crate) use crate::game::wscript::wscriptman::callee::LIGHT_MAN_EMPTY_HOOK_A;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MOD_OBJ_DTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_ON_CHILD_EVENT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::RAIL_MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::REMOVE_INTC_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::SET_FADE_GAIN;
+
     pub(crate) use crate::game::wscript::wscriptman::callee::SND_BANK_UNLOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_LIST_NODE_DTOR_BODY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_GET_STATE_DATA;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SET_USER_DATA;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
-    pub(crate) use crate::game::wscript::wscriptman::callee::WSCRIPT_MAN_CALL_FUNC;
 }
 
 /// `bool SSXAudioSystem_IsInGame(void)` (0x0028b1b0): whether the game module
@@ -513,8 +397,8 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
                     c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[S1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[V0][0] as u32);
                     break 'b_28ab4c;
                 }
                 'b_28b0c8: {
@@ -564,7 +448,7 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                         }
                                     }
                                     c.cycles += 5;
-                                    c.g[A0][0] = c.lw((c.g[S0][0] as u32));
+                                    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
                                     call_ptr(c, 0x003df980, 0x0028ab80)?;
                                     c.g[V1][0] = c.g[V0][0];
                                     if c.g[V1][0] == 0u64 {
@@ -587,9 +471,9 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                     } else {
                                                         'b_28ae1c: {
                                                             c.cycles += 9;
-                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32));
+                                                            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
                                                             c.g[A1][0] = c.g[SP][0];
-                                                            c.sw((c.g[SP][0] as u32), 0u64);
+                                                            c.sw(c.g[SP][0] as u32, 0u64);
                                                             c.g[A2][0] = c.g[SP][0] | 0x4;
                                                             c.sw(
                                                                 (c.g[SP][0] as u32)
@@ -600,7 +484,7 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                             c.g[V1][0] = c.lw((c.g[SP][0] as u32)
                                                                 .wrapping_add(0x4));
                                                             let t = (c.g[V1][0] as i64) <= 0;
-                                                            c.g[A1][0] = c.lw((c.g[SP][0] as u32));
+                                                            c.g[A1][0] = c.lw(c.g[SP][0] as u32);
                                                             if t {
                                                                 break 'b_28ae1c;
                                                             } else {
@@ -616,9 +500,7 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                         let t = c.g[V0][0]
                                                                             == c.g[V1][0];
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[S0][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[S0][0] as u32);
                                                                         if t {
                                                                             break 'b_28acf8;
                                                                         } else {
@@ -640,7 +522,7 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                                         [0]
                                                                                         != c.g[A0]
                                                                                             [0];
-                                                                                    c.g[T0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                                                                                    c.g[T0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                                                                                     if t {
                                                                                         break 'b_28ac00;
                                                                                     } else {
@@ -663,11 +545,10 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                                     sx((c.g[V0][0]
                                                                                         as u32)
                                                                                         << 2);
-                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                                                                                c.g[A1][0] = c.lw(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                                                                c.g[A1][0] = c
+                                                                                    .lw(c.g[V0][0]
+                                                                                        as u32);
                                                                                 break 'b_28ac14;
                                                                             }
                                                                             'b_28ac44: {
@@ -703,11 +584,10 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                                     sx((c.g[V0][0]
                                                                                         as u32)
                                                                                         << 2);
-                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                                                                                c.g[A3][0] = c.lw(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                                                                c.g[A3][0] = c
+                                                                                    .lw(c.g[V0][0]
+                                                                                        as u32);
                                                                                 break 'b_28ac44;
                                                                             }
                                                                             'b_28aca8: {
@@ -715,8 +595,8 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                                     c.cycles += 18;
                                                                                     c.g[V0][0] = c
                                                                                         .lw(
-                                                                                        (c.g[T1][0]
-                                                                                            as u32),
+                                                                                        c.g[T1][0]
+                                                                                            as u32,
                                                                                     );
                                                                                     let t = c.g[V0]
                                                                                         [0]
@@ -732,8 +612,8 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                                     c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
                                                                                     c.g[A1][0] = c
                                                                                         .lw(
-                                                                                        (c.g[SP][0]
-                                                                                            as u32),
+                                                                                        c.g[SP][0]
+                                                                                            as u32,
                                                                                     );
                                                                                     c.g[A0][0] =
                                                                                         c.g[S2][0];
@@ -760,7 +640,7 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                                         [0]
                                                                                         != c.g[A0]
                                                                                             [0];
-                                                                                    c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                                                                                    c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                                                                                     if t {
                                                                                         break 'b_28ac94;
                                                                                     } else {
@@ -783,11 +663,10 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                                     sx((c.g[V0][0]
                                                                                         as u32)
                                                                                         << 2);
-                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                                                                                c.g[A1][0] = c.lw(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                                                                c.g[A1][0] = c
+                                                                                    .lw(c.g[V0][0]
+                                                                                        as u32);
                                                                                 break 'b_28aca8;
                                                                             }
                                                                             'b_28acd4: {
@@ -822,11 +701,10 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                                     sx((c.g[V0][0]
                                                                                         as u32)
                                                                                         << 2);
-                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                                                                                c.g[V0][0] = c.lw(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                                                                c.g[V0][0] = c
+                                                                                    .lw(c.g[V0][0]
+                                                                                        as u32);
                                                                                 break 'b_28acd4;
                                                                             }
                                                                             c.cycles += 9;
@@ -836,8 +714,8 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                                     << 6);
                                                                             c.g[A0][0] = c.g[A3][0];
                                                                             c.g[V0][0] = c
-                                                                                .lw((c.g[A2][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[A2][0]
+                                                                                    as u32);
                                                                             c.g[T0][0] =
                                                                                 sx((c.g[T0][0]
                                                                                     as u32)
@@ -852,12 +730,12 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                                 sx((c.g[S0][0]
                                                                                     as u32)
                                                                                     .wrapping_add(
-                                                                                        (c.g[T0][0]
-                                                                                            as u32),
+                                                                                        c.g[T0][0]
+                                                                                            as u32,
                                                                                     ));
                                                                             c.g[A2][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             let t = true;
                                                                             c.g[T1][0] = c.g[S2][0];
                                                                             if t {
@@ -917,8 +795,8 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                                 sx((c.g[S0][0]
                                                                                     as u32)
                                                                                     .wrapping_add(
-                                                                                        (c.g[V1][0]
-                                                                                            as u32),
+                                                                                        c.g[V1][0]
+                                                                                            as u32,
                                                                                     ));
                                                                             if t {
                                                                                 break 'b_28ad28;
@@ -948,13 +826,11 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V1][0]
-                                                                                        as u32),
+                                                                                    c.g[V1][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[A1][0] =
-                                                                            c.lw(
-                                                                                (c.g[V0][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[V0][0] as u32);
                                                                         break 'b_28ad3c;
                                                                     }
                                                                     'b_28ad68: {
@@ -1008,13 +884,11 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V1][0]
-                                                                                        as u32),
+                                                                                    c.g[V1][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[A3][0] =
-                                                                            c.lw(
-                                                                                (c.g[V0][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[V0][0] as u32);
                                                                         break 'b_28ad68;
                                                                     }
                                                                     'b_28adc0: {
@@ -1022,8 +896,8 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                             c.cycles += 15;
                                                                             c.g[A0][0] = c.g[A2][0];
                                                                             c.g[V0][0] = c
-                                                                                .lw((c.g[T0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[T0][0]
+                                                                                    as u32);
                                                                             let t =
                                                                                 c.g[V0][0] as u32;
                                                                             c.g[A2][0] = c.g[S3][0];
@@ -1032,8 +906,8 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                             )?;
                                                                             c.g[S2][0] = c.g[V0][0];
                                                                             c.g[A1][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             c.g[A0][0] = c.g[S2][0];
                                                                             call_ptr(
                                                                                 c, 0x003b6548,
@@ -1075,8 +949,8 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                                 sx((c.g[S0][0]
                                                                                     as u32)
                                                                                     .wrapping_add(
-                                                                                        (c.g[V0][0]
-                                                                                            as u32),
+                                                                                        c.g[V0][0]
+                                                                                            as u32,
                                                                                     ));
                                                                             if t {
                                                                                 break 'b_28adac;
@@ -1106,13 +980,11 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V1][0]
-                                                                                        as u32),
+                                                                                    c.g[V1][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[A1][0] =
-                                                                            c.lw(
-                                                                                (c.g[V0][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[V0][0] as u32);
                                                                         break 'b_28adc0;
                                                                     }
                                                                     'b_28adec: {
@@ -1166,13 +1038,11 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V1][0]
-                                                                                        as u32),
+                                                                                    c.g[V1][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[V0][0] =
-                                                                            c.lw(
-                                                                                (c.g[V0][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[V0][0] as u32);
                                                                         break 'b_28adec;
                                                                     }
                                                                     c.cycles += 8;
@@ -1181,16 +1051,16 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                         << 6);
                                                                     c.g[A0][0] = c.g[A3][0];
                                                                     c.g[V0][0] =
-                                                                        c.lw((c.g[A2][0] as u32));
+                                                                        c.lw(c.g[A2][0] as u32);
                                                                     c.g[T0][0] = sx((c.g[T0][0]
                                                                         as u32)
                                                                         .wrapping_add(0xc));
                                                                     c.g[A2][0] =
-                                                                        c.lw((c.g[S0][0] as u32));
+                                                                        c.lw(c.g[S0][0] as u32);
                                                                     c.g[T0][0] = sx((c.g[S0][0]
                                                                         as u32)
                                                                         .wrapping_add(
-                                                                            (c.g[T0][0] as u32),
+                                                                            c.g[T0][0] as u32,
                                                                         ));
                                                                     c.g[T1][0] = c.g[S2][0];
                                                                     c.g[T2][0] = c.g[S3][0];
@@ -1236,7 +1106,7 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                 c.g[A0][0] = sx((c.g[S0][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[V0][0] as u32),
+                                                                        c.g[V0][0] as u32,
                                                                     ));
                                                                 if t {
                                                                     break 'b_28ae44;
@@ -1259,8 +1129,8 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[V1][0] as u32)));
-                                                            c.g[A1][0] = c.lw((c.g[V0][0] as u32));
+                                                                .wrapping_add(c.g[V1][0] as u32));
+                                                            c.g[A1][0] = c.lw(c.g[V0][0] as u32);
                                                             break 'b_28ae58;
                                                         }
                                                         'b_28ae84: {
@@ -1297,19 +1167,19 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[V1][0] as u32)));
-                                                            c.g[V0][0] = c.lw((c.g[V0][0] as u32));
+                                                                .wrapping_add(c.g[V1][0] as u32));
+                                                            c.g[V0][0] = c.lw(c.g[V0][0] as u32);
                                                             break 'b_28ae84;
                                                         }
                                                         c.cycles += 8;
                                                         c.g[T0][0] = sx((c.g[V0][0] as u32) << 6);
                                                         c.g[A2][0] = 0xffffffffffffffff;
-                                                        c.g[V0][0] = c.lw((c.g[A3][0] as u32));
+                                                        c.g[V0][0] = c.lw(c.g[A3][0] as u32);
                                                         c.g[T0][0] =
                                                             sx((c.g[T0][0] as u32)
                                                                 .wrapping_add(0xc));
                                                         c.g[T0][0] = sx((c.g[S0][0] as u32)
-                                                            .wrapping_add((c.g[T0][0] as u32)));
+                                                            .wrapping_add(c.g[T0][0] as u32));
                                                         c.g[A3][0] = 0x2;
                                                         let t = true;
                                                         c.g[T1][0] = 0u64;
@@ -1343,7 +1213,7 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                 }
                             }
                             c.cycles += 4;
-                            c.g[A0][0] = c.lw((c.g[S0][0] as u32));
+                            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
                             call_ptr(c, 0x003df980, 0x0028aec0)?;
                             if c.g[V0][0] == 0u64 {
                                 c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
@@ -1363,7 +1233,7 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                     } else {
                                         'b_28af98: {
                                             c.cycles += 8;
-                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32));
+                                            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
                                             c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
                                             c.g[A2][0] = c.g[SP][0] | 0xc;
                                             c.sw((c.g[SP][0] as u32).wrapping_add(0xc), 0u64);
@@ -1401,7 +1271,7 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                                 .wrapping_add(0x198));
                                                         let t = c.g[A1][0] != c.g[A0][0];
                                                         c.g[A3][0] = sx((c.g[S0][0] as u32)
-                                                            .wrapping_add((c.g[V1][0] as u32)));
+                                                            .wrapping_add(c.g[V1][0] as u32));
                                                         if t {
                                                             break 'b_28af28;
                                                         } else {
@@ -1422,8 +1292,8 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                         c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                        .wrapping_add((c.g[V1][0] as u32)));
-                                                    c.g[A1][0] = c.lw((c.g[V0][0] as u32));
+                                                        .wrapping_add(c.g[V1][0] as u32));
+                                                    c.g[A1][0] = c.lw(c.g[V0][0] as u32);
                                                     break 'b_28af3c;
                                                 }
                                                 'b_28af68: {
@@ -1459,8 +1329,8 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                         c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                        .wrapping_add((c.g[V1][0] as u32)));
-                                                    c.g[V0][0] = c.lw((c.g[V0][0] as u32));
+                                                        .wrapping_add(c.g[V1][0] as u32));
+                                                    c.g[V0][0] = c.lw(c.g[V0][0] as u32);
                                                     break 'b_28af68;
                                                 }
                                                 c.cycles += 12;
@@ -1473,11 +1343,11 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                 c.g[T2][0] =
                                                     c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
                                                 c.g[T0][0] = sx((c.g[S0][0] as u32)
-                                                    .wrapping_add((c.g[T0][0] as u32)));
-                                                c.g[V0][0] = c.lw((c.g[T3][0] as u32));
+                                                    .wrapping_add(c.g[T0][0] as u32));
+                                                c.g[V0][0] = c.lw(c.g[T3][0] as u32);
                                                 c.g[A3][0] = 0u64;
                                                 let t = c.g[V0][0] as u32;
-                                                c.g[A2][0] = c.lw((c.g[S0][0] as u32));
+                                                c.g[A2][0] = c.lw(c.g[S0][0] as u32);
                                                 call_ptr(c, t, 0x0028af90)?;
                                                 let t = true;
                                                 c.g[V0][0] =
@@ -1506,7 +1376,7 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                                     c.lw((c.g[S0][0] as u32).wrapping_add(0x198));
                                                 let t = c.g[A1][0] != c.g[V1][0];
                                                 c.g[A0][0] = sx((c.g[S0][0] as u32)
-                                                    .wrapping_add((c.g[V0][0] as u32)));
+                                                    .wrapping_add(c.g[V0][0] as u32));
                                                 if t {
                                                     break 'b_28afc0;
                                                 } else {
@@ -1526,9 +1396,10 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                             c.g[V1][0] =
                                                 c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
                                             c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                                            c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                .wrapping_add((c.g[V1][0] as u32)));
-                                            c.g[A1][0] = c.lw((c.g[V0][0] as u32));
+                                            c.g[V0][0] =
+                                                sx((c.g[V0][0] as u32)
+                                                    .wrapping_add(c.g[V1][0] as u32));
+                                            c.g[A1][0] = c.lw(c.g[V0][0] as u32);
                                             break 'b_28afd4;
                                         }
                                         'b_28b000: {
@@ -1560,19 +1431,19 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
                                             c.g[V1][0] =
                                                 c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
                                             c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                                            c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                .wrapping_add((c.g[V1][0] as u32)));
-                                            c.g[V0][0] = c.lw((c.g[V0][0] as u32));
+                                            c.g[V0][0] =
+                                                sx((c.g[V0][0] as u32)
+                                                    .wrapping_add(c.g[V1][0] as u32));
+                                            c.g[V0][0] = c.lw(c.g[V0][0] as u32);
                                             break 'b_28b000;
                                         }
                                         c.cycles += 7;
                                         c.g[T0][0] = sx((c.g[V0][0] as u32) << 6);
                                         c.g[T1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
                                         c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0xc));
-                                        c.g[V0][0] = c.lw((c.g[A3][0] as u32));
+                                        c.g[V0][0] = c.lw(c.g[A3][0] as u32);
                                         c.g[T0][0] =
-                                            sx((c.g[S0][0] as u32)
-                                                .wrapping_add((c.g[T0][0] as u32)));
+                                            sx((c.g[S0][0] as u32).wrapping_add(c.g[T0][0] as u32));
                                         c.g[A2][0] = 0xffffffffffffffff;
                                         c.g[A3][0] = 0x2;
                                         break 'b_28b01c;
@@ -1713,42 +1584,33 @@ pub fn snd_load_queue_update(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::elf_image;
-    use crate::difftest::fakes::covered;
+
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
+
     use crate::difftest::fill;
-    use crate::difftest::put_vec;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as TEST_RA;
-    use crate::difftest::SP;
-    use crate::difftest::SP as STACK;
+
     pub(crate) use crate::game::ai::ai::tests::leaf;
-    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
-    pub(crate) use crate::game::ai::ai::tests::rng;
+
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::SEEDS_2 as SEEDS;
     pub(crate) use crate::game::animation::animmodel::tests::SEEDS_4;
     pub(crate) use crate::game::camera::cameraalgorithms::tests::world_chain;
     pub(crate) use crate::game::dirtysock::tags2::tests::common;
-    pub(crate) use crate::game::dirtysock::tags2::tests::dummy_world;
-    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
+
     pub(crate) use crate::game::dirtysock::tags2::tests::heap_block_2 as heap_block;
     pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_5 as pool_allocator;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::w_2 as w;
     pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
     pub(crate) use crate::game::wscript::wscriptman::tests::clear_3 as clear;
-    pub(crate) use crate::game::wscript::wscriptman::tests::load;
+
     pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS_2;
     use ssx3_ee as ee;
 
@@ -1958,10 +1820,6 @@ pub(crate) mod tests {
             16,
         );
     }
-    use super::*;
-
-    use crate::difftest::fresh;
-    pub(crate) use crate::game::fe::ovstatetrophy::tests::slot;
 
     // ---- SndLoadQueue_Update (0x28aaf8) ----
 

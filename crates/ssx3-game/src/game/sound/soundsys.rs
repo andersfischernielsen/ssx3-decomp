@@ -4,21 +4,16 @@
 use crate::abi;
 use crate::abi::r32;
 use crate::abi::ret;
-use crate::abi::set_fpr;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
-use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::Target;
 use crate::call::Unwound;
 use crate::call::VSlot;
-use crate::events;
 use crate::events::back_edge_unwinds;
-use crate::events::deliver_event;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::lh_2 as lh;
@@ -27,15 +22,12 @@ pub(crate) use crate::game::animation::animsequencer::dtor;
 pub(crate) use crate::game::be::beintnetwork::ldl;
 pub(crate) use crate::game::be::bestate2::ea;
 pub(crate) use crate::game::dirtysock::tags2::lw;
-pub(crate) use crate::game::fe::feasyncfile::a;
-pub(crate) use crate::game::fe::feasyncfile::at as at_3;
 pub(crate) use crate::game::fe::feasyncfile::at_2 as at;
 pub(crate) use crate::game::fe::feasyncfile::gp;
 pub(crate) use crate::game::fe::feasyncfile::gp_15 as gp_3;
 pub(crate) use crate::game::fe::feasyncfile::gp_7 as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::low_2;
 pub(crate) use crate::game::fe::feasyncfile::lw_5 as lw_3;
-pub(crate) use crate::game::fe::feasyncfile::lw_8 as lw_4;
 pub(crate) use crate::game::fe::feasyncfile::lw_at_2 as lw_at;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
 pub(crate) use crate::game::fe::feasyncfile::sw_6 as sw_2;
@@ -44,7 +36,6 @@ pub(crate) use crate::game::fe::fepopup::at as at_4;
 pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::fe::fepopup::lhu;
 pub(crate) use crate::game::fe::fepopup::sh;
-pub(crate) use crate::game::fe::festaterewards::at_4 as at_2;
 pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_2;
 pub(crate) use crate::game::fe::festaterewards2::r;
 pub(crate) use crate::game::fe::festaterewards2::Ops;
@@ -59,7 +50,6 @@ pub(crate) use crate::game::scripter::ssxscriptengine::sw_at;
 pub(crate) use crate::game::sound::bankmanager::race_type_in_range;
 pub(crate) use crate::game::sound::bankmonitor::leave;
 pub(crate) use crate::game::visualfx::boardtrailfx::p;
-pub(crate) use crate::game::world::wscriptcache::DELETE_2 as DELETE;
 pub(crate) use crate::game::worldpainter::quadtree::create_with;
 pub(crate) use crate::game::wscript::wscriptman::sw;
 use crate::guest::Addr;
@@ -71,7 +61,6 @@ use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
@@ -750,40 +739,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    use super::*;
-    pub(crate) use crate::game::ai::rider::callee::BENEW_PLAYER_INT_GET_SLOT;
-    pub(crate) use crate::game::ai::rider::callee::BUDDY_MAN_GET_ROSTER_COUNT as BUDDY_MAN_GET_ROSTER_COUNT_2;
-    pub(crate) use crate::game::ai::rider::callee::BUDDY_MAN_GET_ROSTER_ENTRY as BUDDY_MAN_GET_ROSTER_ENTRY_2;
-    pub(crate) use crate::game::ai::rider::callee::BUY_POPUP_INIT_BUY_BOLT;
-    pub(crate) use crate::game::ai::rider::callee::CODEC_POP_FREE_FRAME;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_ALL_FIELDS_FILLED;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_BACKUP_ACCOUNT;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_ACCOUNT_NAME;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_CONFIRM_PASSWORD;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_EMAIL;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_INFORM;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_PASSWORD;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_SHARE_INFO;
-    pub(crate) use crate::game::ai::rider::callee::CROWD_MAN_GROUP_FREE;
-    pub(crate) use crate::game::ai::rider::callee::GAME_UI_OPEN_SCREEN;
-    pub(crate) use crate::game::ai::rider::callee::IN_SEQ_PLAY;
-    pub(crate) use crate::game::ai::rider::callee::LOBBY_MAN_GET_LANGUAGE;
-    pub(crate) use crate::game::ai::rider::callee::LOBBY_MAN_SEND_REQUEST as LOBBY_MAN_SEND_REQUEST_2;
-    pub(crate) use crate::game::ai::rider::callee::LOGIN_ON_ACCOUNT_MEM_POPUP;
-    pub(crate) use crate::game::ai::rider::callee::LOGIN_ON_DISCONNECT_POPUP;
-    pub(crate) use crate::game::ai::rider::callee::MESSAGE_CENTER_GET_LIST_INDEX;
-    pub(crate) use crate::game::ai::rider::callee::MESSAGE_CENTER_OPEN_VIEW_POPUP;
-    pub(crate) use crate::game::ai::rider::callee::MPEG2_GET_BITS;
-    pub(crate) use crate::game::ai::rider::callee::MPEG2_MARKER_BIT;
-    pub(crate) use crate::game::ai::rider::callee::NET_ACCOUNT_MEM_CTOR;
-    pub(crate) use crate::game::ai::rider::callee::NET_FE_STATE_ON_CHILD_EVENT as NET_FE_STATE_ON_CHILD_EVENT_7;
-    pub(crate) use crate::game::ai::rider::callee::RAIL_MAN_ENABLE_RAIL;
-    pub(crate) use crate::game::ai::rider::callee::REPLAY_FREE_SNAPSHOT;
-    pub(crate) use crate::game::ai::rider::callee::RIDER_GET_START_DIST_TO_FINISH;
-    pub(crate) use crate::game::ai::rider::callee::SCRIPT_ENGINE_GET_PROCESS as SCRIPT_ENGINE_GET_PROCESS_3;
-    pub(crate) use crate::game::ai::rider::callee::SCRIPT_OBJ_DEACTIVATE;
-    pub(crate) use crate::game::ai::rider::callee::SHOW_CHAR_STATS;
-    pub(crate) use crate::game::ai::rider::callee::SHOW_CHECKING_CARD_POPUP;
+
     pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_GET_SURFACE_SOUND_TYPE;
     pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_PLAY_FE_SOUND;
     pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_START_BOARD_BASE_LOOP;
@@ -792,298 +748,51 @@ pub(crate) mod callee {
     pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_STOP_TRICK_METER_SOUND;
     pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_STOP_WIPEOUT_LOOP;
     pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_STOP_WIPEOUT_LOOP2;
-    pub(crate) use crate::game::ai::rider::callee::START_CARD_SCAN;
-    pub(crate) use crate::game::ai::rider::callee::STREAMER_GET_SECTION_COUNT;
-    pub(crate) use crate::game::ai::rider::callee::SYNC_PROCESS_DTOR;
-    pub(crate) use crate::game::ai::rider::callee::TEX_MAN_EVICT_TEXTURE;
-    pub(crate) use crate::game::ai::rider::callee::VRAM_HEAP_FREE_TEXTURE_BLOCKS;
-    pub(crate) use crate::game::ai::rider::callee::WORLD_CACHE_LOAD;
-    pub(crate) use crate::game::ai::rider::callee::WORLD_CACHE_RESET;
-    pub(crate) use crate::game::ai::rider::callee::WSCRIPT_CACHE_ALLOC;
+
     pub(crate) use crate::game::be::beintmission::callee::AUDIO_GET_CHANNEL_VOLUME;
-    pub(crate) use crate::game::be::beintmission::callee::AUDIO_GET_INSTANCE;
-    pub(crate) use crate::game::be::beintmission::callee::AUDIO_IS_GAME_MUSIC_ENABLED;
-    pub(crate) use crate::game::be::beintmission::callee::AUDIO_LEVEL_TO_VOLUME;
-    pub(crate) use crate::game::be::beintmission::callee::AUDIO_SET_CHANNEL_VOLUME;
-    pub(crate) use crate::game::be::beintmission::callee::AUDIO_START_PRERACE_MUSIC;
-    pub(crate) use crate::game::be::beintmission::callee::BANK_MONITOR_STOP_ALL;
+
     pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INSTANCE;
     pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::be::beintmission::callee::BE_NEW_PLAYER_GET_INBOX;
-    pub(crate) use crate::game::be::beintmission::callee::BUDDY_MAN_GET_ROSTER_ENTRY;
-    pub(crate) use crate::game::be::beintmission::callee::CAMERA_TRIGGER_MAN_UPDATE_MASK1;
-    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_RESET_STATE;
-    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_SET_ALGORITHM_2 as CHASE_CAM_SET_ALGORITHM;
-    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_SET_ALGORITHM_IMMEDIATE;
-    pub(crate) use crate::game::be::beintmission::callee::CROWD_AUDIO_STOP_ALL;
-    pub(crate) use crate::game::be::beintmission::callee::EA_MEMSET;
-    pub(crate) use crate::game::be::beintmission::callee::FIND_MISSION;
-    pub(crate) use crate::game::be::beintmission::callee::GET_RIDER_PREVIEW;
-    pub(crate) use crate::game::be::beintmission::callee::LOBBY_MENU_REQUEST_JOIN_ROOM;
-    pub(crate) use crate::game::be::beintmission::callee::MC_MANAGER_END_OPERATION;
-    pub(crate) use crate::game::be::beintmission::callee::MUSIC_PLAYER_STOP_SONG;
-    pub(crate) use crate::game::be::beintmission::callee::NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::be::beintmission::callee::POPUP_CONFIRM_CFG_RESET;
-    pub(crate) use crate::game::be::beintmission::callee::RACE_PROGRESS_RESET_ALL;
-    pub(crate) use crate::game::be::beintmission::callee::REPLAY_APPLY_CAMERA;
-    pub(crate) use crate::game::be::beintmission::callee::REWARD_GALLERY_CHECK_REWARDS_READY;
-    pub(crate) use crate::game::be::beintmission::callee::REWARD_GALLERY_POLL_SHAPE_LOAD;
-    pub(crate) use crate::game::be::beintmission::callee::RIDER_PREVIEW_SET_VISIBLE;
-    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_DEACTIVATE_BINDING;
-    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_GET_INSTANCE;
-    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_STOP_ALL_PROCESS_SEQS;
-    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_STOP_AUX_LISTS;
-    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_STOP_MAIN_LISTS;
-    pub(crate) use crate::game::be::beintmission::callee::SLOGIN_DELETE;
-    pub(crate) use crate::game::be::beintmission::callee::SND_BANK_SET_MEMORY;
-    pub(crate) use crate::game::be::beintmission::callee::UI_STATE_UPDATE;
-    pub(crate) use crate::game::be::beintmission::callee::WSCRIPT_MAN_EVENT_QUEUE_POP;
-    pub(crate) use crate::game::bx::bxstring2::callee::BE_GET_CHAR_PROFILE_EVENT_RECORD as BE_GET_CHAR_PROFILE_EVENT_RECORD_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::BE_GET_RIDER_PROFILE as BE_GET_RIDER_PROFILE_4;
-    pub(crate) use crate::game::bx::bxstring2::callee::CBXSTRING_CTOR_COPY;
-    pub(crate) use crate::game::bx::bxstring2::callee::CBXSTRING_DTOR;
-    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAMERA_INIT_FROM_RIDER;
-    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAMERA_RESET_FOR_RIDER;
-    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAM_CONTROLLER_RESTORE_DEFAULT;
-    pub(crate) use crate::game::bx::bxstring2::callee::CHUNK_RESOLVE_RELOCATE_DMA;
-    pub(crate) use crate::game::bx::bxstring2::callee::CROWD_MAN3D_GROUP_BUILD_MATRICES;
-    pub(crate) use crate::game::bx::bxstring2::callee::CUTSCENE_TRANSITION_MAN_FORCE_ON;
-    pub(crate) use crate::game::bx::bxstring2::callee::DEBUG_MENU_DISPATCH_ITEM_OP;
-    pub(crate) use crate::game::bx::bxstring2::callee::EA_MEM_ALLOC_NAMED_2 as EA_MEM_ALLOC_NAMED_4;
-    pub(crate) use crate::game::bx::bxstring2::callee::FLAG_MANAGER_GROUP_BUILD_MESH;
-    pub(crate) use crate::game::bx::bxstring2::callee::GAME_COMM_RECV_GAME_PACKET;
+
     pub(crate) use crate::game::bx::bxstring2::callee::INI_PARSER_SKIP_WHITESPACE;
-    pub(crate) use crate::game::bx::bxstring2::callee::MEMSET as MEMSET_3;
-    pub(crate) use crate::game::bx::bxstring2::callee::MULTIPARTICLE_CTOR;
-    pub(crate) use crate::game::bx::bxstring2::callee::MULTIPARTICLE_MAN_CLEAR;
-    pub(crate) use crate::game::bx::bxstring2::callee::MUSIC_PLAYER_SET_EVENT_STATE;
-    pub(crate) use crate::game::bx::bxstring2::callee::NET_FE_STATE_GET_POPUP as NET_FE_STATE_GET_POPUP_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::NET_FE_STATE_SHOW_POPUP as NET_FE_STATE_SHOW_POPUP_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::NET_MANAGER;
-    pub(crate) use crate::game::bx::bxstring2::callee::OPTIONS_SET_VIBRATION;
-    pub(crate) use crate::game::bx::bxstring2::callee::OV_SCREEN_PDA_TEMPLATE_CLOSE;
-    pub(crate) use crate::game::bx::bxstring2::callee::OV_STATE_OVERLAY_UPDATE;
-    pub(crate) use crate::game::bx::bxstring2::callee::POPUP_CFG_SET_OPTION_TEXT_ID;
-    pub(crate) use crate::game::bx::bxstring2::callee::POPUP_SET_WIDGET_ALIGN;
-    pub(crate) use crate::game::bx::bxstring2::callee::POPUP_SET_WRAPPED_TEXT;
-    pub(crate) use crate::game::bx::bxstring2::callee::QSORT;
-    pub(crate) use crate::game::bx::bxstring2::callee::READ_PRIVATE_MESSAGE_SET_TEXT;
-    pub(crate) use crate::game::bx::bxstring2::callee::RIDER_CAMERA_ALGORITHM_CTOR;
-    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_ENGINE_LIST_START as SCRIPT_ENGINE_LIST_START_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_ENGINE_SET_SKIP_DELAY;
-    pub(crate) use crate::game::bx::bxstring2::callee::SECTION_MAN_DEQUEUE_SECTION;
-    pub(crate) use crate::game::bx::bxstring2::callee::SECTION_MAN_POP_FREE_NODE;
+
     pub(crate) use crate::game::bx::bxstring2::callee::SPEECH_SYSTEM_SET_EVENT_CONTEXT as SPEECH_SYSTEM_SET_EVENT_CONTEXT_2;
     pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_GET_LANGUAGE_MASK;
     pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_GET_SPEECH_CONTEXT_MASK;
     pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_IS_DJ_SPEECH_ON;
-    pub(crate) use crate::game::bx::bxstring2::callee::STRLEN as STRLEN_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::STR_HASH as STR_HASH_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::SUPERPIPE_COMPUTE_DESIRED_EYE;
-    pub(crate) use crate::game::bx::bxstring2::callee::SUPERPIPE_COMPUTE_LOOK_AT;
-    pub(crate) use crate::game::bx::bxstring2::callee::UITEXT_SET_WIDE_STRING;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_LISTBOX_ADD_ITEM_STR_ID;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_LISTBOX_FIND_ITEM_BY_VALUE;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_LISTBOX_SET_SELECTION;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_MENU_FIND_FIRST_SELECTABLE;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_MENU_SET_SELECTION as UI_MENU_SET_SELECTION_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_SCREEN_FIND_OBJECT as UI_SCREEN_FIND_OBJECT_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_MGR_CLOSE_ALL_POPUPS;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_MGR_FIND_STATE as UI_STATE_MGR_FIND_STATE_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_SHUTDOWN as UI_STATE_SHUTDOWN_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_UPDATE as UI_STATE_UPDATE_3;
-    pub(crate) use crate::game::bx::bxstring2::callee::USTR_CPY;
-    pub(crate) use crate::game::bx::bxstring2::callee::USTR_FROM_ASCII_2 as USTR_FROM_ASCII;
-    pub(crate) use crate::game::bx::bxstring2::callee::USTR_LEN;
-    pub(crate) use crate::game::bx::bxstring2::callee::USTR_SPRINTF;
-    pub(crate) use crate::game::bx::bxstring2::callee::WSCRIPT_MISSION_CTOR;
-    pub(crate) use crate::game::bx::bxstring2::callee::WSCRIPT_PROCESS_LIST_PUSH_FRONT_2 as WSCRIPT_PROCESS_LIST_PUSH_FRONT_3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::ANIM_GET_LAYER_SEQUENCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_BAKE_GROUP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_EXPORT_HISTORY_FILES;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_FREE_HISTORIES;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_LOAD_HISTORY_FILE;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_ADD_TIMER_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_INSTANCE_RESUME;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_STOP_HANDLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_BAGT_INT_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_CHAR_INT_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_GET_RIDER_CHARACTER;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INSTANCE_2;
     pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INTERFACE_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_NEW_PLAYER_INT_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_RESET_PROFILE_CHARACTERS_2 as BE_RESET_PROFILE_CHARACTERS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_REWARD_INT_IS_UNLOCKED;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_COUNT_MESSAGES_FROM_AT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_FIND_ROSTER_ENTRY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_IS_BLOCKED_AT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_IS_BUDDY_AT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_IS_ONLINE_AT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_IS_SAME_PRODUCT_AT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_IS_TEMP_AT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_DESTROY_API;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_GET_ROSTER_COUNT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_SET_PRESENCE_ADDR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUILTIN_DELETE as BUILTIN_DELETE_4;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUILTIN_DELETE_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CAMERA_TRIGGER_MAN_UPDATE_TRIGGERS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CBE_GET_BE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CBE_GET_INTERFACE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CHAT_ROOM_UPDATE_PLAYER_QUALITY_2;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::CROWD_INSTANCE_PLAY_FALL;
     pub(crate) use crate::game::dirtysock::tags2::callee::CROWD_INSTANCE_PLAY_TRICK;
     pub(crate) use crate::game::dirtysock::tags2::callee::CROWD_INSTANCE_STOP_ANTICIPATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CSETUP_MAN_SEND_PACKET;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CVOIP_MAN_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CW_SCRIPT_CACHE_ALLOC;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_BX_STRING_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_LUNO_TABLE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_MEM_MAN_ALLOC;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_GET_SAVE_NAME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_LIST_DIR_ALL;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_READ_SAVE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_SET_STATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_SETUP_MAN_SEND_QUIT as C_SETUP_MAN_SEND_QUIT_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EATIMER_REMOVE_CALLBACK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEM_ALLOC as EA_MEM_ALLOC_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEM_FREE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EFFECT_ALLOC;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EFFECT_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EMPTY_CHILD_HANDLER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FE_MODULE_GET_PLAYER_PAD_MASK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FORMAT_TAGGED;
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_00152948;
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_00152BA8;
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_002C2540;
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_002C26D0;
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_0039E2A0;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GAME_CAMERA_SET_CONTROLLER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_ALT_CHAR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_CHAR_ID;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::GET_FINISH_SPEECH_MASK;
     pub(crate) use crate::game::dirtysock::tags2::callee::GET_LANGUAGE_MASK as GET_LANGUAGE_MASK_3;
     pub(crate) use crate::game::dirtysock::tags2::callee::GET_RIDER_VOICE_MASK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_TRANSITION_MAN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GM_PICK_OPPONENTS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::INSEQ_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::INSEQ_INSTANCE_START;
-    pub(crate) use crate::game::dirtysock::tags2::callee::IS_LOCAL_PLAYER;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::IS_PA_SPEECH_ON;
     pub(crate) use crate::game::dirtysock::tags2::callee::IS_RACE_TYPE_4OR5;
     pub(crate) use crate::game::dirtysock::tags2::callee::IS_REPLAY_PLAYING;
-    pub(crate) use crate::game::dirtysock::tags2::callee::KEYBOARD_POPUP_UPDATE_CURSOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBYMAN_SEND_REQUEST;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_LIST_COUNT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_LIST_GET_AT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_LIST_GET_AT_3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_LIST_VISIBLE_COUNT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_FORWARD_EVENT_TO_UI;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MENU_ON_LOBBY_EVENT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LUNO_TABLE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_GET_PRODUCT_CODE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_GET_SAVE_TYPE_TAG;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_END_OPERATION_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_REQUEST_CARD_INFO;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_SET_MODE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEASURE_PLAIN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEASURE_WRAP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEMSET_3 as MEMSET_4;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_ASCII_CHAR_TO_SJIS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_SET_USE_SAVE_TITLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT0;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT1;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT4;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT5;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT6;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_ITEM_MEASURE_ROW;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_PAGE_SELECT_NEXT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_GET_INBOX;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_IS_FLAG_SET_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_SET_FLAG_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_1;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_4;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_5;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_CTOR_3 as NET_FE_STATE_CTOR_4;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_DTOR_2 as NET_FE_STATE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_ON_CHILD_EVENT_3 as NET_FE_STATE_ON_CHILD_EVENT_4;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_UPDATE_2 as NET_FE_STATE_UPDATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FIND;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FLUSH;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_GAME_UTIL_DESTROY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_REMOVE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_RESET;
-    pub(crate) use crate::game::dirtysock::tags2::callee::ON_QUIT_POPUP_EVENT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::OPERATOR_NEW_NAMED;
-    pub(crate) use crate::game::dirtysock::tags2::callee::PATH_PLAT_REFRESH_STATUS;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::RAND_NEXT_MAIN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_ADD_SNAPSHOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_HIGHLIGHT_SLOT_CLEAR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_RECORD_SNAPSHOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_SAVE_EMIT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_SET_STATE;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::RIDER_123168;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCE_MC_FORMAT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_OBJ_TABLE_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_RESET_PROCESS_TABLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_ADD;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_SKIP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_OBJ_CAM_SET_OWNER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SECTION_MAN_PUSH_FREE_NODE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SETUPMAN_DESTROY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SLOGIN_MC_GET_PORT_SLOT_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_FREE_MEMORY_2 as SND_BANK_FREE_MEMORY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_GET_BUFFER;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_MAN_UNLOAD_BANK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLINK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLOAD_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_REMOVE_TICK_CALLBACK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SNOW_BOX_RESET;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SNPRINTF;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::SPEECH_QUEUE;
     pub(crate) use crate::game::dirtysock::tags2::callee::SPEECH_SET_EVENT_CONTEXT as SPEECH_SET_EVENT_CONTEXT_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_2 as SPRINTF_3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_6 as SPRINTF_4;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_ARCADE_SAY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_EMPTY_CROWD_HANDLER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_GET_CHANNEL_VOLUME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_HANDLE_MUSIC_EVENT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_PLAY_CHARACTER_TUNE;
+
     pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_RIDER_SAY_20B9;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_STOP_LOADING_SCREEN_LOOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STATS_SELECT_CATEGORY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STRCPY as STRCPY_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STREAM_BUFFER_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STR_HASH_4 as STR_HASH_3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STR_INTERN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TAG_FIELD_FIND;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TAG_FIELD_GET_NUMBER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TEXT_OBJ;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TRANSITION_START;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TRANSITION_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TROPHY_ROOM_RELEASE_IMAGES;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UIMENU_SET_SELECTION;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_LOAD;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF as UI_OBJECT_SHOW_CLAMP_ALPHA_HALF_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_SOUND_BASE_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_CTOR_3 as UI_STATE_CTOR_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_DTOR as UI_STATE_DTOR_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_DTOR_2 as UI_STATE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_MGR_CLOSE_TOP_STATES;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_TEXT_GET_FONT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::VID_ENGINE_PLAYER_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_DEACTIVATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_RPC_SET_PARAMS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_RPC_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_STOP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ACTIVE_CAMERA_TRIGGER_LIST_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::APP_MODULE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::APP_MODULE_RENDER_FADE;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_GET_GAME_MODULE_2 as AUDIO_GET_GAME_MODULE;
     pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_IS_TRACK_GROUP0_EVENT;
     pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_RESET_RACE_RESULT_STATE;
@@ -1091,786 +800,90 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_WIPEOUT_LOOP;
     pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_WIPEOUT_LOOP2;
     pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STORE_RACE_RESULT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUTOSAVE_UPDATE_ICON;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::BANK_MONITOR_PAUSE_ALL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_COUNT_COLLECTED_ON_PEAK;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_COUNT_COMPLETED_ON_PEAK;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_CHAR_PROFILE_EVENT_RECORD;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_INTERFACE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_RIDER_CHARACTER_2 as BE_GET_RIDER_CHARACTER_3;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_RIDER_PROFILE as BE_GET_RIDER_PROFILE_3;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_SOMETHING;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_LIBRARY_GET_INSTANCE_2 as BE_LIBRARY_GET_INSTANCE_4;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_LIBRARY_GET_INTERFACE_2 as BE_LIBRARY_GET_INTERFACE_4;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_NEW_PLAYER_INT_GET_SLOT_3 as BE_NEW_PLAYER_INT_GET_SLOT_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_OPTION_INT_SWAP_PLAYER_FLAGS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_ON_FX_CLEAR_EMITTERS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_ON_FX_INIT_HANDLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_ALLOC_BUFFER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_CTOR_COPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_RELEASE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BX_STRING_ALLOC_BUFFER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_LIST_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_MAN_FREE_TRIGGERS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_MAN_PARSE_2 as CAMERA_TRIGGER_MAN_PARSE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_STACK_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CAM_CONTROLLER_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_ALLOC_COPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_CTOR_COPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CHALLENGE_POPUP_SET_SETTINGS_LOCKED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CHASE_CAMERA_ALGORITHM_INIT_FROM_RIDER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CHASE_CAMERA_ALGORITHM_RESET_FOR_RIDER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CHAT_ROOM_REFRESH_PLAYER_LIST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_DAY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_GENDER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_LEGAL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_MONTH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_YEAR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CROWD_MAN3D_GROUP_LOAD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CROWD_MAN3D_RESET;
-    pub(crate) use crate::game::fe::feasyncfile::callee::DEAD_NODE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FEMODULE_RIDER_PREVIEW_UNLOAD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_LOCALE_LOAD_TABLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_ON_ABORT_POPUP_EVENT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_ON_EMAIL_POPUP_EVENT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_ON_LOGIN_POPUP_EVENT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_ON_SAVE_ACCOUNT_ANSWER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STATE_CREATE_DUPLICATE_ON_CREATED_POPUP_EVENT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STATE_CREATE_DUPLICATE_ON_ERROR_POPUP_EVENT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STATE_CREATE_DUPLICATE_ON_SAVE_ACCOUNT_ANSWER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STATE_LOBBY_MENU_REFRESH_PLAYER_LIST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STATE_LOBBY_MENU_SHOW_ROOM_TAB;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STATE_LOBBY_MENU_UPDATE_PLAYERS_IN_ROOM;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STRING_HASH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_UNLOAD_ANIM_DATA;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_UNLOAD_RIDER_PREVIEWS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FLEX_BRIDGE_BUILD_MESH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FLEX_BRIDGE_SPRINGS_LOAD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FLEX_BRIDGE_UPDATE_VERTS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FLEX_RAIL_SAVE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FREE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FREE2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_ANIM_MAP_SET_HANDLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_LOAD_UPDATE_PLAYER_RANKING;
-    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_STATE_FINISH_CLEAR_FLAG40;
-    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_STATE_LOAD_STATE_2;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::GET_LANGUAGE_MASK;
     pub(crate) use crate::game::fe::feasyncfile::callee::INI_GET_CHAR;
     pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_EXPECT;
     pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_GET_CHAR;
     pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_NEXT_SECTION;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_READ_QUOTED_STRING;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::INI_SKIP_WHITESPACE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_EMPTY_STUB;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_NEXT_CHAR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_WRITE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INSTANCE_GET_NODE_MATRIX;
-    pub(crate) use crate::game::fe::feasyncfile::callee::IN_SEQ_INSTANCE_PAUSE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::IN_SEQ_INSTANCE_SET_USER_DATA;
-    pub(crate) use crate::game::fe::feasyncfile::callee::IN_SEQ_INSTANCE_UPDATE;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::IS_DJ_SPEECH_ON;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LIGHT_MAN_EMPTY_HOOK_D;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_SEND_REQUEST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MENU_HIDE_ROOM_TABS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LUNO_VM_REGISTER_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MALLOC;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MC_MANAGER_ON_CARD_SCANNED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MC_MANAGER_UPDATE_MODE1;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MC_MANAGER_UPDATE_STATES;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MEMCARD_INSTALL_CALLBACKS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MEM_CARD_STATE_BASE_SHUTDOWN;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_IS_DISABLED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_IS_VISIBLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_SET_ACTIVE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MESSAGE_CENTER_EMPTY_TRIGGER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MESSAGE_CENTER_IS_FLAG_SET;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MESSAGE_CENTER_SET_FLAG_2 as MESSAGE_CENTER_SET_FLAG;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MOD_OBJ_SAVE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MPEG2_GET_BITS_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MPEG2_MARKER_BIT_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_ACCOUNT_MEM_SET_STATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_DISCONNECT_ALL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_11 as NET_FE_STATE_CTOR_6;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_12 as NET_FE_STATE_CTOR_7;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_4 as NET_FE_STATE_CTOR_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_9 as NET_FE_STATE_CTOR_5;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_DTOR_4 as NET_FE_STATE_DTOR_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_GET_POPUP_4 as NET_FE_STATE_GET_POPUP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_GET_SELECTED_USER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_INIT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_INIT_3 as NET_FE_STATE_INIT_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_ON_CHILD_EVENT_12 as NET_FE_STATE_ON_CHILD_EVENT_8;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_ON_CHILD_EVENT_4 as NET_FE_STATE_ON_CHILD_EVENT_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_ON_CHILD_EVENT_9 as NET_FE_STATE_ON_CHILD_EVENT_6;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_SHOW_POPUP_3 as NET_FE_STATE_SHOW_POPUP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_UPDATE_3 as NET_FE_STATE_UPDATE_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OPTIONS_HUD_REFRESH_SELECTION;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OV_MESSAGE_CENTER_REFRESH_LIST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OV_MESSAGE_CENTER_UPDATE_COUNT_TEXT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OV_STATE_OVERLAY_INIT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PLAYBACK_RESTORE_WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::POPUP_CONFIRM_CFG_SET_OPTION_TEXT_ID_2 as POPUP_CONFIRM_CFG_SET_OPTION_TEXT_ID;
-    pub(crate) use crate::game::fe::feasyncfile::callee::POPUP_CONFIRM_GET_SELECTION;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PROCESS_LIST_FIRST_2 as PROCESS_LIST_FIRST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PROCESS_LIST_NEXT_2 as PROCESS_LIST_NEXT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PS2_MEM_CARD_CLEAR_DIR_CACHE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REPLAY_CACHE_RESET;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REWARD_GALLERY_INIT_PAGES;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REWARD_GALLERY_REQUEST_SHAPE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::RIDER_BUILD_WORLD_MATRIX;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::RIDER_SAY_20D3;
     pub(crate) use crate::game::fe::feasyncfile::callee::RIDER_SAY_20D4;
-    pub(crate) use crate::game::fe::feasyncfile::callee::RIDER_UPDATE_BOARD_LEAN;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_BINDING_BIND;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_BINDING_CTOR as SCRIPT_BINDING_CTOR_3;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_CMD_QUEUE_AT_3;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_CMD_QUEUE_IS_FULL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_ENGINE_ACTIVATE_BINDING;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_ENGINE_ALLOC_PROCESS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_ENGINE_GET_INSTANCE_2 as SCRIPT_ENGINE_GET_INSTANCE_4;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_ENGINE_GET_PROCESS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_ENGINE_GET_PROCESS_STATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_LIST_IS_MOVIE_ENTRY_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_LIST_STOP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_OBJ_ACTIVATE_2 as SCRIPT_OBJ_ACTIVATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_OBJ_CAM_BUILD_MATRIX_FROM_SCRIPT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_OBJ_CTOR as SCRIPT_OBJ_CTOR_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SECTION_TABLE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SETUP_BUDDY_ACTION_POPUP;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::SET_EVENT_CONTEXT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SND_LOAD_QUEUE_FLUSH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SONG_INSTANCE_CTOR;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::SPEECH_NEW;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SPHERE_TREE_COLLIDE_TREE_NODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SPLINE_MODIFIER_SET_SPEED;
+
     pub(crate) use crate::game::fe::feasyncfile::callee::TRACK_TO_CATEGORY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_ANIM_SET_CREATE_ANIM;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_CTOR_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_FIRST_4 as UI_LIST_FIRST_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_NODE_IS_SENTINEL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_RESET as UI_LIST_RESET_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_SET_ANIM;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_UPDATE_ANIM;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_UPDATE_ANIM_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_FIND_OBJECT_2 as UI_SCREEN_FIND_OBJECT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::USTR_COPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::VEC3_MAX_COMPONENT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::VOIP_MAN_ACTIVATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::VOIP_MAN_DEACTIVATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_BLOCK_POOL_INIT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CACHE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CHUNK_RESOLVE_HOOK;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_MEMMAN_CREATE_SECTION_ALLOCATOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_CTOR_2 as WORLD_OBJ_CTOR_3;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_DTOR_2 as WORLD_OBJ_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_REPLACE_WITH_DEAD_NODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_RUN_KILL_SCRIPT_2 as WORLD_OBJ_RUN_KILL_SCRIPT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_STATE_WRITE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_INSTANCE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_MANAGER_LOAD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WSCRIPT_CACHE_CTOR;
-    pub(crate) use crate::game::fe::fepopup::callee::C00113f88;
-    pub(crate) use crate::game::fe::fepopup::callee::C00115ab0;
-    pub(crate) use crate::game::fe::fepopup::callee::C0011fe78;
-    pub(crate) use crate::game::fe::fepopup::callee::C0011fe98;
-    pub(crate) use crate::game::fe::fepopup::callee::C0011fec8;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014a080;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014a0e0;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014bdb8;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014d448;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014d988;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014d998;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014dc80;
-    pub(crate) use crate::game::fe::fepopup::callee::C0014dd58;
-    pub(crate) use crate::game::fe::fepopup::callee::C00150b48;
-    pub(crate) use crate::game::fe::fepopup::callee::C00151c48;
-    pub(crate) use crate::game::fe::fepopup::callee::C001535c0;
-    pub(crate) use crate::game::fe::fepopup::callee::C001543e0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00156a60;
-    pub(crate) use crate::game::fe::fepopup::callee::C001577e0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00157bf0;
-    pub(crate) use crate::game::fe::fepopup::callee::C001589b0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00158a50;
-    pub(crate) use crate::game::fe::fepopup::callee::C00158af0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00158c80;
-    pub(crate) use crate::game::fe::fepopup::callee::C00158d58;
-    pub(crate) use crate::game::fe::fepopup::callee::C00159cd0;
-    pub(crate) use crate::game::fe::fepopup::callee::C0015a2e0;
-    pub(crate) use crate::game::fe::fepopup::callee::C0016c6b0;
-    pub(crate) use crate::game::fe::fepopup::callee::C0016c718;
-    pub(crate) use crate::game::fe::fepopup::callee::C0017f500;
-    pub(crate) use crate::game::fe::fepopup::callee::C0019e2b0;
-    pub(crate) use crate::game::fe::fepopup::callee::C0019f878;
-    pub(crate) use crate::game::fe::fepopup::callee::C001bb9b0;
-    pub(crate) use crate::game::fe::fepopup::callee::C001c84a8;
-    pub(crate) use crate::game::fe::fepopup::callee::C001c8568;
-    pub(crate) use crate::game::fe::fepopup::callee::C001c9b68;
-    pub(crate) use crate::game::fe::fepopup::callee::C001cb9b0;
-    pub(crate) use crate::game::fe::fepopup::callee::C001cbc48;
-    pub(crate) use crate::game::fe::fepopup::callee::C001cbce8;
-    pub(crate) use crate::game::fe::fepopup::callee::C001cbfc0;
-    pub(crate) use crate::game::fe::fepopup::callee::C001ce560;
-    pub(crate) use crate::game::fe::fepopup::callee::C001d32e0;
-    pub(crate) use crate::game::fe::fepopup::callee::C001e1a30;
-    pub(crate) use crate::game::fe::fepopup::callee::C001e3388;
-    pub(crate) use crate::game::fe::fepopup::callee::C001e91a8;
-    pub(crate) use crate::game::fe::fepopup::callee::C001e91f8;
-    pub(crate) use crate::game::fe::fepopup::callee::C001e9290;
-    pub(crate) use crate::game::fe::fepopup::callee::C001f10f8;
-    pub(crate) use crate::game::fe::fepopup::callee::C0020e900;
-    pub(crate) use crate::game::fe::fepopup::callee::C00224c78;
-    pub(crate) use crate::game::fe::fepopup::callee::C00224da0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00224df0;
-    pub(crate) use crate::game::fe::fepopup::callee::C002259a8;
-    pub(crate) use crate::game::fe::fepopup::callee::C00227f80;
-    pub(crate) use crate::game::fe::fepopup::callee::C00231f80;
-    pub(crate) use crate::game::fe::fepopup::callee::C00238bf8;
-    pub(crate) use crate::game::fe::fepopup::callee::C0026d4d8;
-    pub(crate) use crate::game::fe::fepopup::callee::C0026db88;
-    pub(crate) use crate::game::fe::fepopup::callee::C0026e448;
-    pub(crate) use crate::game::fe::fepopup::callee::C0026f4a0;
-    pub(crate) use crate::game::fe::fepopup::callee::C002702f8;
-    pub(crate) use crate::game::fe::fepopup::callee::C002703f0;
-    pub(crate) use crate::game::fe::fepopup::callee::C002758c0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00275b98;
-    pub(crate) use crate::game::fe::fepopup::callee::C00275cf8;
-    pub(crate) use crate::game::fe::fepopup::callee::C00278e50;
-    pub(crate) use crate::game::fe::fepopup::callee::C00278f38;
-    pub(crate) use crate::game::fe::fepopup::callee::C00278f68;
-    pub(crate) use crate::game::fe::fepopup::callee::C00281ed8;
-    pub(crate) use crate::game::fe::fepopup::callee::C002837c8;
-    pub(crate) use crate::game::fe::fepopup::callee::C0028b180;
-    pub(crate) use crate::game::fe::fepopup::callee::C0028bb10;
-    pub(crate) use crate::game::fe::fepopup::callee::C0028e8c0;
-    pub(crate) use crate::game::fe::fepopup::callee::C002913d8;
-    pub(crate) use crate::game::fe::fepopup::callee::C003457c8;
-    pub(crate) use crate::game::fe::fepopup::callee::C003625c0;
-    pub(crate) use crate::game::fe::fepopup::callee::C003626d8;
-    pub(crate) use crate::game::fe::fepopup::callee::C003627a8;
-    pub(crate) use crate::game::fe::fepopup::callee::C00364cd0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00366ce0;
-    pub(crate) use crate::game::fe::fepopup::callee::C003684f0;
-    pub(crate) use crate::game::fe::fepopup::callee::C0038f460;
-    pub(crate) use crate::game::fe::fepopup::callee::C0038f668;
-    pub(crate) use crate::game::fe::fepopup::callee::C0039c870;
-    pub(crate) use crate::game::fe::fepopup::callee::C0039ff78;
-    pub(crate) use crate::game::fe::fepopup::callee::C003b1300;
-    pub(crate) use crate::game::fe::fepopup::callee::C003b2360;
-    pub(crate) use crate::game::fe::fepopup::callee::C00125108;
-    pub(crate) use crate::game::fe::fepopup::callee::C00150928;
-    pub(crate) use crate::game::fe::fepopup::callee::C00156988;
-    pub(crate) use crate::game::fe::fepopup::callee::C00158910;
-    pub(crate) use crate::game::fe::fepopup::callee::C00159170;
-    pub(crate) use crate::game::fe::fepopup::callee::C00176890;
-    pub(crate) use crate::game::fe::fepopup::callee::C00225068;
-    pub(crate) use crate::game::fe::fepopup::callee::C00275498;
-    pub(crate) use crate::game::fe::fepopup::callee::C00278308;
-    pub(crate) use crate::game::fe::fepopup::callee::C00283228;
-    pub(crate) use crate::game::fe::fepopup::callee::C00283518;
-    pub(crate) use crate::game::fe::fepopup::callee::C00358020;
-    pub(crate) use crate::game::fe::fepopup::callee::C00362478;
-    pub(crate) use crate::game::fe::fepopup::callee::C00362660;
-    pub(crate) use crate::game::fe::fepopup::callee::C00368170;
-    pub(crate) use crate::game::fe::fepopup::callee::C00368970;
-    pub(crate) use crate::game::fe::festaterewards::callee::BECHAR_GET_OVERALL_RATING;
-    pub(crate) use crate::game::fe::festaterewards::callee::BENEWPLAYER_GET_SLOT;
-    pub(crate) use crate::game::fe::festaterewards::callee::BENEWPLAYER_IS_SHARING_CHAR_RECORD;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_ECON_GET_MONEY;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_ECON_SPEND_MONEY;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_LIBRARY_INSTANCE;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_LIBRARY_INTERFACE;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_REWARD_GET_FILE;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_REWARD_SET_BIT;
-    pub(crate) use crate::game::fe::festaterewards::callee::BRAGGING_RIGHTS_UPDATE_ROW_COLORS;
-    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_OPPONENT_DISCONNECTED;
-    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_SERVER_TIMEOUT;
-    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_SHOW_CANCEL;
+
+    pub(crate) use crate::game::fe::fepopup::callee::C0028BB10;
+
+    pub(crate) use crate::game::fe::fepopup::callee::C002913D8;
+
     pub(crate) use crate::game::fe::festaterewards::callee::GET_LANGUAGE_MASK_2;
     pub(crate) use crate::game::fe::festaterewards::callee::IS_ARCADE_SPEECH_ON;
     pub(crate) use crate::game::fe::festaterewards::callee::IS_DJ_SPEECH_ON_2;
-    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_IS_FLAG_SET;
-    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_POST;
-    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_SET_FLAG;
-    pub(crate) use crate::game::fe::festaterewards::callee::MOD_OBJ_RUN_SCRIPT_EVENT;
-    pub(crate) use crate::game::fe::festaterewards::callee::REWARD_GALLERY_REGISTER_TEXTURES;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_POP_FREE_NODE;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_PUSH_FREE_NODE;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_START_SCRIPT;
+
     pub(crate) use crate::game::fe::festaterewards::callee::SPEECH_SET_EVENT_CONTEXT;
     pub(crate) use crate::game::fe::festaterewards::callee::SPEECH_STOP_INSTANCE;
-    pub(crate) use crate::game::fe::festaterewards::callee::TAG_FIELD_COPY_TAG;
-    pub(crate) use crate::game::fe::festaterewards::callee::TAG_FIELD_SET_RAW;
-    pub(crate) use crate::game::fe::festaterewards::callee::TEXFLIP_SET_FRAME;
-    pub(crate) use crate::game::fe::festaterewards::callee::VFX_PLANTS_GET_SWAY_MATRIX;
-    pub(crate) use crate::game::fe::festaterewards2::callee::ANIM_OBJECT_V36;
-    pub(crate) use crate::game::fe::festaterewards2::callee::APP_MODULE_TRY_EXIT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::CHAT_ROOM_UPDATE_PLAYER_QUALITY;
+
     pub(crate) use crate::game::fe::festaterewards2::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND;
-    pub(crate) use crate::game::fe::festaterewards2::callee::DL_HEAP_USABLE_SIZE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::DYNAMIC_EMITTER_CTOR;
-    pub(crate) use crate::game::fe::festaterewards2::callee::EA_MUTEX_LOCK;
-    pub(crate) use crate::game::fe::festaterewards2::callee::EA_MUTEX_UNLOCK;
-    pub(crate) use crate::game::fe::festaterewards2::callee::FE_STATE_LOGIN_CTOR;
-    pub(crate) use crate::game::fe::festaterewards2::callee::FE_STATE_LOGIN_ON_CHILD_EVENT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::FE_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::FE_STATE_STATS_REFRESH_RESULTS;
-    pub(crate) use crate::game::fe::festaterewards2::callee::GAME_MODULE_REQUEST_STATE;
+
     pub(crate) use crate::game::fe::festaterewards2::callee::MEMSET;
-    pub(crate) use crate::game::fe::festaterewards2::callee::MEM_GET_POOL_BLOCK_SIZE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::MEM_MAN_FREE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::MEM_REPORT_POOL_STATS;
-    pub(crate) use crate::game::fe::festaterewards2::callee::MOUNTAIN_ROOM_UPDATE_EVENT_ICONS;
-    pub(crate) use crate::game::fe::festaterewards2::callee::NET_FE_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::NET_FE_STATE_ON_CHILD_EVENT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::NET_FE_STATE_ON_DISCONNECTED_POPUP_EVENT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::NET_QUICK_PLAY_POPUP_ON_OPTIONS_EVENT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::POPUP_CONFIRM_GET_TEXT_BOX_SIZE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::PREVIEW_REWARD_POLL_IMAGE_LOAD;
-    pub(crate) use crate::game::fe::festaterewards2::callee::PS2_PAD_CREATE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_FIND_NEXT_SNAPSHOT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_FIND_PREV_SNAPSHOT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_SET_STATE_2;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_SNAP_TO_SNAPSHOT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_STREAM_CTOR;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REQUEST_LINE_UPDATE_SCROLL_ARROWS;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REQUEST_LINE_UPDATE_SONG_COUNT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REQUEST_LINE_UPDATE_SONG_ICONS;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REQUEST_LINE_UPDATE_SONG_NAMES;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SCE_USBKB_SET_ARRANGEMENT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SCE_USBKB_SET_READ_MODE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SCRIPT_CMD_QUEUE_AT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SCRIPT_ENGINE_LIST_STOP;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SCRIPT_ENGINE_UNLOAD_WORLD_SCRIPTS;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SCRIPT_LIST_ADD_MOVIE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SCRIPT_LIST_POLL_LOADING;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SECTION_MAN_FIND_LOGICAL_SECTION;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SONG_INSTANCE_GET_DUCK_TO_LOOPS;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SPRINTF;
-    pub(crate) use crate::game::fe::festaterewards2::callee::S_LOGIN_UPDATE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::TROPHY_ROOM_LOAD_TROPHY_TEXTURES;
-    pub(crate) use crate::game::fe::festaterewards2::callee::TWSCRIPT_CACHE_RELOCATE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::UI_STATE_CTOR;
-    pub(crate) use crate::game::fe::festaterewards2::callee::UI_STATE_UPDATE as UI_STATE_UPDATE_2;
-    pub(crate) use crate::game::fe::festaterewards2::callee::UI_TEXT_SCROLL_CLEAR_LINES;
-    pub(crate) use crate::game::fe::festaterewards2::callee::UI_TEXT_SCROLL_SET_WIDE_STRING;
-    pub(crate) use crate::game::fe::festaterewards2::callee::UI_TEXT_SET_STRING;
-    pub(crate) use crate::game::fe::festaterewards2::callee::USB_KB_DEFAULT_CONNECT_CB;
-    pub(crate) use crate::game::fe::festaterewards2::callee::WORLD_STATE_STREAM_RESET;
-    pub(crate) use crate::game::fe::festaterewards2::callee::WORLD_TRIGGER_MANAGER_GET_TRIGGER_INFO;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::MEMCARD_SJIS_CHAR_TO_ASCII;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::MENU_SYS_ITEM_CTOR as MENU_SYS_ITEM_CTOR_3;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::MENU_SYS_ITEM_DRAW_ROW as MENU_SYS_ITEM_DRAW_ROW_3;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::MOD_OBJ_SET_TRANSFORM_MODIFIER as MOD_OBJ_SET_TRANSFORM_MODIFIER_2;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::POSITION_MODIFIER_CTOR as POSITION_MODIFIER_CTOR_2;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::PS2_MEMCARD_SET_STATE;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::SCRIPT_ENGINE_BINDING_HAS_PROCESS;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::SCRIPT_ENGINE_GET_INSTANCE as SCRIPT_ENGINE_GET_INSTANCE_5;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::SCRIPT_ENGINE_GET_PROCESS as SCRIPT_ENGINE_GET_PROCESS_2;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::SCRIPT_ENGINE_KILL_PROCESS;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::SCRIPT_ENGINE_LAUNCH_PENDING_PROCESS;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::SCRIPT_ENGINE_STOP_PROCESS_SEQ;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::SONG_INSTANCE_GET_BEAT_MS;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::SONG_INSTANCE_GET_POSITION_MS;
+
     pub(crate) use crate::game::intersect::worldsphtree::callee::SSX_AUDIO_SYSTEM_IS_TRACK_ID_GROUP2;
     pub(crate) use crate::game::intersect::worldsphtree::callee::SSX_AUDIO_SYSTEM_IS_TRACK_ID_GROUP3;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::SSX_AUDIO_SYSTEM_RESTART_PEAK_MUSIC;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::WORLD_OBJ_CTOR_2;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::WSCRIPT_PROCESS_LIST_CONTAINS;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::WSCRIPT_PROCESS_LIST_PUSH_FRONT as WSCRIPT_PROCESS_LIST_PUSH_FRONT_2;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::WSCRIPT_PROCESS_LIST_REMOVE as WSCRIPT_PROCESS_LIST_REMOVE_2;
-    pub(crate) use crate::game::main::gamestate::callee::ADF_DATA_SOURCE_DTOR;
-    pub(crate) use crate::game::main::gamestate::callee::ANIM_DATA_BASE_FREE_CHAN_CACHES;
+
     pub(crate) use crate::game::main::gamestate::callee::BANK_MONITOR_STOP_HANDLE as BANK_MONITOR_STOP_HANDLE_2;
-    pub(crate) use crate::game::main::gamestate::callee::BE_ECON_INT_GET_TOTAL_EARNED;
-    pub(crate) use crate::game::main::gamestate::callee::BE_GET_RIDER_PROFILE;
-    pub(crate) use crate::game::main::gamestate::callee::BE_LIBRARY_GET_INSTANCE_3 as BE_LIBRARY_GET_INSTANCE_5;
-    pub(crate) use crate::game::main::gamestate::callee::BE_LIBRARY_GET_INTERFACE_3 as BE_LIBRARY_GET_INTERFACE_5;
-    pub(crate) use crate::game::main::gamestate::callee::BE_NEW_PLAYER_INT_GET_SLOT;
-    pub(crate) use crate::game::main::gamestate::callee::BOLTS_FIND_BOLT_INDEX;
-    pub(crate) use crate::game::main::gamestate::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE_5;
-    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_BRAGGING_RIGHTS_INIT_PLAYER_ROWS;
-    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_SHOW_CHAR_STATS;
-    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_SHOW_OPPONENT_CHAR;
-    pub(crate) use crate::game::main::gamestate::callee::C_GAME_COMM_RECV_GAME_PACKET;
-    pub(crate) use crate::game::main::gamestate::callee::C_KEYBOARD_POPUP_SET_KEY_ENABLED;
-    pub(crate) use crate::game::main::gamestate::callee::EA_MEM_ALLOC_NAMED_3;
-    pub(crate) use crate::game::main::gamestate::callee::EA_MEM_FREE_4 as EA_MEM_FREE_2;
-    pub(crate) use crate::game::main::gamestate::callee::GAME_ANIM_MAP_UNREGISTER_BANK;
-    pub(crate) use crate::game::main::gamestate::callee::GAME_STATE_LOAD_STATE;
-    pub(crate) use crate::game::main::gamestate::callee::INTC_TABLE_CLEAR_SLOTS;
-    pub(crate) use crate::game::main::gamestate::callee::INTC_TABLE_INSTALL_VIF_VU_HANDLERS;
-    pub(crate) use crate::game::main::gamestate::callee::MEMCARD_STATE_BASE_INSTALL_CALLBACKS;
-    pub(crate) use crate::game::main::gamestate::callee::MEM_FREE;
-    pub(crate) use crate::game::main::gamestate::callee::MEM_MOVE;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_GET_INPUT_CODE;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_HANDLE_INPUT;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_IS_DISABLED as MENU_SYS_ITEM_IS_DISABLED_2;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_SELECT_NEXT as MENU_SYS_PAGE_SELECT_NEXT_2;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_SELECT_PREV;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_VALIDATE_SELECTION;
-    pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_COUNT_GROUP_MESSAGES;
-    pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_GET_MESSAGE_COUNT;
-    pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_REMOVE_MESSAGE;
-    pub(crate) use crate::game::main::gamestate::callee::NET_FE_STATE_ON_CHILD_EVENT_3 as NET_FE_STATE_ON_CHILD_EVENT_5;
-    pub(crate) use crate::game::main::gamestate::callee::NET_FE_STATE_OPEN_KEYBOARD_TEXT_ID;
-    pub(crate) use crate::game::main::gamestate::callee::OV_SCREEN_MESSAGE_CENTER_REFRESH_LIST;
-    pub(crate) use crate::game::main::gamestate::callee::OV_SCREEN_MESSAGE_CENTER_UPDATE_COUNT_TEXT;
-    pub(crate) use crate::game::main::gamestate::callee::OV_SCREEN_MESSAGE_CENTER_UPDATE_SCROLL_ARROWS;
-    pub(crate) use crate::game::main::gamestate::callee::RIDER_CLEAR_NEARBY_LIGHTS;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_BINDING_PAUSE_SEQ;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_BINDING_RESUME_SEQ;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_CMD_QUEUE_AT_2;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_GET_PROCESS_IN_SEQ;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_GET_SCRIPT_OBJ;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_IS_OBJ_BOUND_TO_PROCESS;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_LIST_START;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_LIST_STOP_3;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_LIST_IS_MOVIE_ENTRY;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_OBJ_CAM_HAS_BINDING;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_OBJ_CAM_IS_BOUND_TO_PROCESS;
-    pub(crate) use crate::game::main::gamestate::callee::SECTION_ALLOCATOR_CTOR;
-    pub(crate) use crate::game::main::gamestate::callee::SNDSTRM_CLOSE;
+
     pub(crate) use crate::game::main::gamestate::callee::SPCH_MAKE_ID;
-    pub(crate) use crate::game::main::gamestate::callee::SPCH_SHUTDOWN;
-    pub(crate) use crate::game::main::gamestate::callee::SPEECH_INSTANCE_DTOR;
+
     pub(crate) use crate::game::main::gamestate::callee::SPEECH_SYSTEM_SET_EVENT_CONTEXT;
-    pub(crate) use crate::game::main::gamestate::callee::SPHERE_TREE_COLLIDE_AABB;
-    pub(crate) use crate::game::main::gamestate::callee::SPHERE_TREE_COLLIDE_SPHERE_TREE;
+
     pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_CHANNEL_GAIN_PTR;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE_2;
+
     pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_LANGUAGE_MASK;
     pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_IS_DJ_SPEECH_ON;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_RESET_RACE_SOUNDS;
-    pub(crate) use crate::game::main::gamestate::callee::STR_COPY;
-    pub(crate) use crate::game::main::gamestate::callee::STR_HASH;
-    pub(crate) use crate::game::main::gamestate::callee::STR_N_COPY;
-    pub(crate) use crate::game::main::gamestate::callee::TAG_FIELD_SET_STRING;
-    pub(crate) use crate::game::main::gamestate::callee::UI_LIST_FIRST_2 as UI_LIST_FIRST;
-    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_CTOR_3;
-    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_MGR_FIND_STATE;
-    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_SHUTDOWN_2 as UI_STATE_SHUTDOWN;
-    pub(crate) use crate::game::main::gamestate::callee::VD_TEXTURE_SINK_CTOR;
-    pub(crate) use crate::game::render::particle::callee::ALGORITHM_LIST_DTOR;
-    pub(crate) use crate::game::render::particle::callee::ANIM_OBJECT_BASE_DTOR;
-    pub(crate) use crate::game::render::particle::callee::AVA_SPLINE_MODIFIER_CTOR;
-    pub(crate) use crate::game::render::particle::callee::BANK_MONITOR_INSTANCE_PAUSE;
-    pub(crate) use crate::game::render::particle::callee::BELIBRARY_GET_INSTANCE as BELIBRARY_GET_INSTANCE_2;
-    pub(crate) use crate::game::render::particle::callee::BELIBRARY_GET_INTERFACE as BELIBRARY_GET_INTERFACE_2;
-    pub(crate) use crate::game::render::particle::callee::BENEW_PLAYER_INT_GET_CHARACTER_BY_SLOT;
-    pub(crate) use crate::game::render::particle::callee::BENEW_RACE_INT_IS_STATION_TRACK_BY_INDEX;
-    pub(crate) use crate::game::render::particle::callee::BEREWARD_ON_COLLECTIBLE_COLLECTED;
-    pub(crate) use crate::game::render::particle::callee::BEREWARD_ON_MISSION_COMPLETED;
-    pub(crate) use crate::game::render::particle::callee::BXSTRING_ASSIGN_COPY;
-    pub(crate) use crate::game::render::particle::callee::BXSTRING_ASSIGN_CSTR;
-    pub(crate) use crate::game::render::particle::callee::BXSTRING_CONCAT_IN_PLACE;
-    pub(crate) use crate::game::render::particle::callee::CFE_STATE_CHAR_SELECT_UPDATE_ATTRIBUTE_BARS;
-    pub(crate) use crate::game::render::particle::callee::CHASE_CAMERA_ALGORITHM_CTOR as CHASE_CAMERA_ALGORITHM_CTOR_2;
-    pub(crate) use crate::game::render::particle::callee::CPS2_CHUNK_RESOLVE_DTOR_STUB;
-    pub(crate) use crate::game::render::particle::callee::CPS2_MEM_CARD_SET_STATE;
-    pub(crate) use crate::game::render::particle::callee::CROWD_MAN3D_GROUP_REMOVE_SECTION;
-    pub(crate) use crate::game::render::particle::callee::CUT_SCENE_TRANSITION_SAVE_VIEWPORT;
-    pub(crate) use crate::game::render::particle::callee::EA_MEM_ALLOC_NAMED_2;
-    pub(crate) use crate::game::render::particle::callee::FLEX_BRIDGE_SPRINGS_SAVE;
+
     pub(crate) use crate::game::render::particle::callee::INI_PARSER_SKIP_TO_EOL;
-    pub(crate) use crate::game::render::particle::callee::ISIGNAL_SEMA;
-    pub(crate) use crate::game::render::particle::callee::LOBBY_OCCUPANT_POP;
-    pub(crate) use crate::game::render::particle::callee::LOBBY_OCCUPANT_SELECT;
-    pub(crate) use crate::game::render::particle::callee::MENU_SYS_ITEM_CTOR as MENU_SYS_ITEM_CTOR_2;
-    pub(crate) use crate::game::render::particle::callee::MENU_SYS_ITEM_DRAW_ROW_2;
-    pub(crate) use crate::game::render::particle::callee::MOD_OBJ_SET_TRANSFORM_MODIFIER;
-    pub(crate) use crate::game::render::particle::callee::PATH_POST_EVENT;
-    pub(crate) use crate::game::render::particle::callee::PATH_SET_PAUSED;
-    pub(crate) use crate::game::render::particle::callee::POSITION_MODIFIER_CTOR;
-    pub(crate) use crate::game::render::particle::callee::RIDER_ADD_BOOST;
-    pub(crate) use crate::game::render::particle::callee::RIDER_BOARD_PRESS_SUB_FINISH_PRESS;
-    pub(crate) use crate::game::render::particle::callee::RIDER_BOARD_PRESS_SUB_SETTLE_SLEW;
-    pub(crate) use crate::game::render::particle::callee::RIDER_METRIX_AWARD_POINTS;
-    pub(crate) use crate::game::render::particle::callee::RIDER_METRIX_FINISH_BOARD_PRESS;
-    pub(crate) use crate::game::render::particle::callee::RIDER_METRIX_ON_MISSION_COMPLETED;
-    pub(crate) use crate::game::render::particle::callee::SCE_MC_DELETE;
-    pub(crate) use crate::game::render::particle::callee::SCE_MC_MKDIR;
-    pub(crate) use crate::game::render::particle::callee::SCE_MC_READ;
-    pub(crate) use crate::game::render::particle::callee::SCE_MC_SEEK;
-    pub(crate) use crate::game::render::particle::callee::SCE_MC_WRITE;
-    pub(crate) use crate::game::render::particle::callee::SNDSTRM_SET_PITCH;
-    pub(crate) use crate::game::render::particle::callee::SND_LOCK;
+
     pub(crate) use crate::game::render::particle::callee::SND_SPU_MEM_SET_BASE;
-    pub(crate) use crate::game::render::particle::callee::SND_UNLOCK;
-    pub(crate) use crate::game::render::particle::callee::SONG_INSTANCE_GET_MS_TO_NEXT_BEAT;
-    pub(crate) use crate::game::render::particle::callee::SONG_INSTANCE_GET_STREAM_HANDLE;
-    pub(crate) use crate::game::render::particle::callee::STRLEN;
-    pub(crate) use crate::game::render::particle::callee::TEX_MAN_LOAD_TEXTURE as TEX_MAN_LOAD_TEXTURE_2;
-    pub(crate) use crate::game::render::particle::callee::UI_LIST_PUSH_BACK_2 as UI_LIST_PUSH_BACK;
-    pub(crate) use crate::game::render::particle::callee::UI_LIST_RESET;
-    pub(crate) use crate::game::render::particle::callee::WORLD_CREATE_DEAD_NODE;
-    pub(crate) use crate::game::render::particle::callee::WORLD_OBJ_SAVE as WORLD_OBJ_SAVE_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ANIM_OBJECT_SAVE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ATTACHED_DYNAMIC_EMITTER_CREATE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::AUDIO_SYSTEM_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BANK_MONITOR_RESET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BANK_MONITOR_RESET_INSTANCE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BELIBRARY_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BE_GET_RIDER_CHARACTER as BE_GET_RIDER_CHARACTER_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BE_GET_RIDER_PROFILE as BE_GET_RIDER_PROFILE_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BE_REWARD_INT_IS_PEAK_GOAL_COMPLETE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BUDDY_MAN_CLEAR_LOGIN;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BUDDY_MAN_CLEAR_MESSAGES;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BUDDY_MAN_DISCONNECT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BUILD_BUDDY_LIST;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CAMERA_ALGORITHM_DEFAULT_FOV;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CBX_STRING_CONCAT_COPY;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CBX_STRING_CTOR_COPY as CBX_STRING_CTOR_COPY_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CBX_STRING_DTOR as CBX_STRING_DTOR_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CHANNEL_GET_TRACK;
+
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES as CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CROWD_MAN2D_CLEAR_SLOT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::C_BX_STRING_COPY_BEFORE_WRITE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::C_FLAG_MANAGER_GROUP_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::C_TRANSITION_MAN_START;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::FE_LOCALE_UNLOAD_TABLE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::FIND_FREE_BANK_SLOT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GAME_PROCESS_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GAME_STATE_GOTO_NEXT_3 as GAME_STATE_GOTO_NEXT_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GET_CHANNEL_VOLUME;
+
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::GET_RACE_MAN;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GET_SELECTED_USER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GOTO_NEXT_STATE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::HANDLE_NET_EVENT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::INPUT_SYNC_PACK_SAMPLE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::INPUT_SYNC_UNPACK_SAMPLE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::INTC_TABLE_ADD_HANDLER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::IN_SEQ_INSTANCE_GET_REMAINING_STEPS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::KEYBOARD_POPUP_MASK_TEXT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::KEYBOARD_POPUP_UPDATE_CURSOR_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::KEYBOARD_POPUP_UPDATE_SCROLL_WINDOW;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::LEVEL_TO_VOLUME;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::LINE_STRIP_ADD_VERTEX;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::LINE_STRIP_CLOSE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::LIST_GET_ENTRY_TYPE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::LOAD_BANK_ASYNC;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MATH_EVAL_CUBIC;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MC_MANAGER_GET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MEM_CARD_BASE_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MEM_CARD_ON_CHILD_EVENT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MEM_MAN_FREE_ENTRY;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MENU_SYS_ITEM_CTOR as MENU_SYS_ITEM_CTOR_4;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MENU_SYS_ITEM_DRAW_ROW_4;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MOD_OBJ_CREATE_MODIFIER_BLOCK;
+
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::MUSIC_PLAYER_GET_SELECTED_SONG_SED_VALUE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ONLINE_CHARACTER_SELECT_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ON_CHILD_EVENT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::OV_SCREEN_PROFILE_SAVE_PDA_REFRESH_CARD_INFO;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::OV_SCREEN_PROFILE_SAVE_PDA_RESET_SLOT_LIST;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::PATH_PLAT_FIND_BANK_SLOT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RAIL_MODIFIER_LIST_PUSH_FRONT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REFRESH_PLAYER_LIST;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_END_SAVE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_SAVE_EMIT as REPLAY_SAVE_EMIT_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_SET_CONTROLLER_INDEX;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_STREAM_REWIND_READ;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REQUEST_IMAGE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_HAS_RENDER_SLOT;
+
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_SAY_20B9;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_BINDING_CTOR_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_BINDING_CTOR_4;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_DATA_GET_INFO;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_DATA_GET_INFO_4 as SCRIPT_DATA_GET_INFO_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_GET_INSTANCE_SCRIPT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_LIST_STOP_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_CAN_SKIP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_GET_PLAY_STATUS_2 as SCRIPT_LIST_GET_PLAY_STATUS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_IS_PLAYING_SCRIPT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_IS_PLAYING_SCRIPT_3 as SCRIPT_LIST_IS_PLAYING_SCRIPT_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_START;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_START_TRANSITION;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_OBJ_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_OBJ_CTOR_3;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SEND_PACKET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SETUP_MAN_SEND_CHARACTER_MSG;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SETUP_MAN_SET_LOCAL_CHARACTER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SET_CHANNEL_VOLUME;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SET_SELECTED_USER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SHOW_BUDDY_ACTION_POPUP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_BANK_IS_LOADED_WITH_NAME;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_BANK_LOAD;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_BANK_UNLOAD as SND_BANK_UNLOAD_3;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_LOAD_QUEUE_CANCEL_BANK;
+
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::SPEECH_SYSTEM_CANCEL_PENDING_INSTANCE;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::SSX_AUDIO_SYSTEM_DJ_SAY_20E5;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::START_RIDER_BOARD_LOOPS;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::STOP_BOARD_LOOPS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::STOP_TRANSITION;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SYNC_PROCESS_SAVE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::TRANSITION_MAN_SCRIPT_SET_OWNER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::TRANSITION_MAN_STOP_TRANSITION;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_ASCII_TO_WIDE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_CTOR_2 as UI_LIST_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_DELETE_ALL;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_FIRST_5 as UI_LIST_FIRST_3;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_NODE_DTOR_BODY as UI_LIST_NODE_DTOR_BODY_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_MENU_SET_SELECTION;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_STATE_CTOR_2_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_TEXT_SET_WIDE_STRING_INTERNAL;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::VEC3_NEG_DOT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::VID_ENGINE_INSTALL_MEM_HOOKS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::VID_ENGINE_PLAYER_INIT_OPEN_PARAMS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WORLD_OBJ_REPLACE_WITH_DEAD_NODE as WORLD_OBJ_REPLACE_WITH_DEAD_NODE_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WORLD_OBJ_SAVE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WSCRIPT_MAN_DEACTIVATE_PROCESS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WSCRIPT_MAN_UNLOAD_SECTION;
-    pub(crate) use crate::game::sound::bankmonitor::callee::ADF_DATA_SOURCE_SET_DATA;
-    pub(crate) use crate::game::sound::bankmonitor::callee::AUDIO_RAND;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BANK_MONITOR_TIMER_KILL;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BE_GET_EVENT_RECORD_INDEX;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BE_LIBRARY_GET_INSTANCE_3;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BE_LIBRARY_GET_INTERFACE as BE_LIBRARY_GET_INTERFACE_3;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BE_MISSION_INT_GET_COLLECTED_COUNT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BOLTS_FREE_DB;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BUDDY_MAN_CONNECT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE_3;
-    pub(crate) use crate::game::sound::bankmonitor::callee::CROWD_MAN3D_GROUP_CREATE_MESHES;
-    pub(crate) use crate::game::sound::bankmonitor::callee::EA_FILE_LOAD_DECOMPRESSED;
-    pub(crate) use crate::game::sound::bankmonitor::callee::GAME_ANIM_MAP_FIND_HASH;
-    pub(crate) use crate::game::sound::bankmonitor::callee::GAME_STATE_GOTO_NEXT_2 as GAME_STATE_GOTO_NEXT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::LOBBY_LIST_GET_AT as LOBBY_LIST_GET_AT_2;
-    pub(crate) use crate::game::sound::bankmonitor::callee::MEMCARD_REQUEST_GET_INFO_NOW;
-    pub(crate) use crate::game::sound::bankmonitor::callee::MEMSET_2;
-    pub(crate) use crate::game::sound::bankmonitor::callee::MENU_SYS_ITEM_DRAW_ROW;
+
     pub(crate) use crate::game::sound::bankmonitor::callee::MUSIC_PLAYER_GET_SONG_TAG;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_FLOAT_2 as PATH_DATA_READ_FLOAT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_INT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_VEC3;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PS2_MEMCARD_CREATE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::RIDER_METRIX_CLEAR_PEAK_A4;
-    pub(crate) use crate::game::sound::bankmonitor::callee::RIDER_METRIX_SHOW_HUD_NUMBER;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_BINDING_CTOR;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_ENGINE_GET_INSTANCE as SCRIPT_ENGINE_GET_INSTANCE_2;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_ENGINE_POLL_ASYNC_LOADS;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_LIST_ADD_CHOICE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SECTION_ALLOCATOR_DTOR;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SLOGIN_MC_GET_PORT_SLOT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SNDSTRM_SET_PREBUFFER;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SND_BANK_MAN_UNLOAD_MEMORY_BANK;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SONG_INSTANCE_GET_REQUEST_STATUS;
+
     pub(crate) use crate::game::sound::bankmonitor::callee::SPEECH_SYSTEM_STOP_INSTANCE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SSX_AUDIO_SYSTEM_END_SCRIPT_MUSIC;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::STREAM_FILE_RELEASE_CHUNK;
-    pub(crate) use crate::game::sound::bankmonitor::callee::STR_CASE_CMP;
-    pub(crate) use crate::game::sound::bankmonitor::callee::TEX_MAN_FREE_TEXTURE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::UI_LIST_COUNT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::UI_MENU_SET_NAV_BUTTONS;
-    pub(crate) use crate::game::sound::bankmonitor::callee::USTR_TO_ASCII;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WORLD_PAINTER_SET_SCRIPT_SURFACE_MODE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_MAN_CALL_TASK_FUNC;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_PROCESS_LIST_PUSH_FRONT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_PROCESS_LIST_REMOVE;
-    pub(crate) use crate::game::world::wscriptcache::callee::ACTIVE_CAMERA_TRIGGER_LIST_CLEAR;
-    pub(crate) use crate::game::world::wscriptcache::callee::BANK_MONITOR_DELETE_INSTANCE;
-    pub(crate) use crate::game::world::wscriptcache::callee::BELIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::world::wscriptcache::callee::BELIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::world::wscriptcache::callee::BE_NEW_RACE_INT_GET_TRACK_INFO;
-    pub(crate) use crate::game::world::wscriptcache::callee::BE_SCORE_INT_GET_HIGH_SCORE_TABLE;
-    pub(crate) use crate::game::world::wscriptcache::callee::BOLT_FILE_CACHE_SHUTDOWN;
-    pub(crate) use crate::game::world::wscriptcache::callee::CAMERA_RESET_CHASE_CONTROLLER_SWITCHES;
-    pub(crate) use crate::game::world::wscriptcache::callee::CAMERA_TRIGGER_STACK_CLEAR;
-    pub(crate) use crate::game::world::wscriptcache::callee::CHASE_CAMERA_ALGORITHM_CTOR_2 as CHASE_CAMERA_ALGORITHM_CTOR;
-    pub(crate) use crate::game::world::wscriptcache::callee::CINSTANCE_NODE_CTOR_V;
+
     pub(crate) use crate::game::world::wscriptcache::callee::CROWD_AUDIO_FREE_SAMPLE_LIST;
-    pub(crate) use crate::game::world::wscriptcache::callee::CUT_SCENE_TRANSITION_MAN_BASE_CTOR;
-    pub(crate) use crate::game::world::wscriptcache::callee::CUT_SCENE_TRANSITION_MAN_INIT;
-    pub(crate) use crate::game::world::wscriptcache::callee::C_WORLD_CACHE_STREAMER_DTOR_STUB;
-    pub(crate) use crate::game::world::wscriptcache::callee::DELETE;
-    pub(crate) use crate::game::world::wscriptcache::callee::FONT_FREE;
-    pub(crate) use crate::game::world::wscriptcache::callee::INPUT_PREPROC_WRITE_STRING;
-    pub(crate) use crate::game::world::wscriptcache::callee::MDF_FILE_FREE;
-    pub(crate) use crate::game::world::wscriptcache::callee::MPEG2_FLUSH_BUFFER_3 as MPEG2_FLUSH_BUFFER;
-    pub(crate) use crate::game::world::wscriptcache::callee::MPEG2_GET_BITS1;
-    pub(crate) use crate::game::world::wscriptcache::callee::PS2_SONY_CODEC_INTERNAL_CTOR;
-    pub(crate) use crate::game::world::wscriptcache::callee::RCMP_SYSTEM_CTOR;
-    pub(crate) use crate::game::world::wscriptcache::callee::RIDER_SET_MAIN_STATE;
-    pub(crate) use crate::game::world::wscriptcache::callee::RIDER_SET_SUB_STATE;
-    pub(crate) use crate::game::world::wscriptcache::callee::SCRIPT_ENGINE_GET_INSTANCE as SCRIPT_ENGINE_GET_INSTANCE_3;
-    pub(crate) use crate::game::world::wscriptcache::callee::SCRIPT_SOUND_BANK_MAN_FIND_BANK;
-    pub(crate) use crate::game::world::wscriptcache::callee::SECTION_ALLOCATOR_FREE_ALL;
-    pub(crate) use crate::game::world::wscriptcache::callee::SND_BANK_MONITOR_MEM_SIZE;
-    pub(crate) use crate::game::world::wscriptcache::callee::SPRINTF_2;
-    pub(crate) use crate::game::world::wscriptcache::callee::SSX_AUDIO_SYSTEM_IS_TRACK_ID_GROUP5;
-    pub(crate) use crate::game::world::wscriptcache::callee::SSX_AUDIO_SYSTEM_PAUSE;
-    pub(crate) use crate::game::world::wscriptcache::callee::UI_ANIM_ADVANCE;
-    pub(crate) use crate::game::world::wscriptcache::callee::UI_ANIM_APPLY;
-    pub(crate) use crate::game::world::wscriptcache::callee::WSCRIPT_MAN_COLLECT_SET_ADD_ITEMS;
-    pub(crate) use crate::game::world::wscriptcache::callee::WSCRIPT_MAN_COLLECT_SET_GET_COUNT;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::AI_VFX_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::BUILTIN_DELETE_2 as BUILTIN_DELETE;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::CONSOLE_CONFIG_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::EA_MEM_ALLOC;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::EMITTER_RENDER;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::GET_TRANSFORM_BOUNDS;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::GRAPHICS_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::GRAPHICS_ON_VIF1_DMA_END;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::INTC_REMOVE_HANDLER;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MEM_CARD_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MEM_CARD_INIT;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MEM_CARD_SET_STATE;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MENU_ITEM_MEASURE_ROW;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MOD_OBJ_CTOR;
+
     pub(crate) use crate::game::worldpainter::quadtree::callee::PS2_SOUND_MANAGER_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SNDSTRM_GET_REQUEST_STATUS;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_FADE_OUT;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_GET_STREAM_STATUS;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_POST_EVENT;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SPEECH_INSTANCE_STOP_STREAM;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STATS_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STRCPY;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STREAM_BUFFER_SET_FILE;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STREAM_BUFFER_STOP;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::VFX_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::WORLD_GET_SECTION_SCRIPT_FUNC;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::WORLD_OBJ_CTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::ALGORITHM_LIST_PUSH;
-    pub(crate) use crate::game::wscript::wscriptman::callee::APP_MODULE_UPDATE_FADE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AVALANCHE_BAKE_NODE_HISTORY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AV_PLAYER_INIT;
+
     pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_ADD_TIMER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_POLL_FREE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_SET_PITCH;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CAM_CONTROLLER_CLEAR_ALGORITHMS;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_CHUNK_RESOLVE_CTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_MEMCARD_SET_STATE;
+
     pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES;
     pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND as CROWD_AUDIO_INSTANCE_STOP_SOUND_2;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_CREATE_MESHES_2;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_FREE_MESHES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_EMPTY_CHILD_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_FLAG_MANAGER_GROUP_LOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_SETUP_MAN_SEND_QUIT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DEBUG_MENU_MODULE_UPDATE_CURSOR_TRAIL;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DISABLE_INTC;
-    pub(crate) use crate::game::wscript::wscriptman::callee::EA_FILE_MOUNT_BIG;
-    pub(crate) use crate::game::wscript::wscriptman::callee::EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLEX_RAIL_UPDATE_SPACE_NODE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLOATING_V49;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FOCUS_MAN_ADD_FOCUS_BOX;
-    pub(crate) use crate::game::wscript::wscriptman::callee::LIGHT_MAN_EMPTY_HOOK_A;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MOD_OBJ_DTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_CTOR as NET_FE_STATE_CTOR_3;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_ON_CHILD_EVENT as NET_FE_STATE_ON_CHILD_EVENT_3;
-    pub(crate) use crate::game::wscript::wscriptman::callee::RAIL_MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::REMOVE_INTC_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::SET_FADE_GAIN;
-    pub(crate) use crate::game::wscript::wscriptman::callee::SND_BANK_UNLOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_LIST_NODE_DTOR_BODY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_GET_STATE_DATA;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SET_USER_DATA;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
-    pub(crate) use crate::game::wscript::wscriptman::callee::WSCRIPT_MAN_CALL_FUNC;
 
     /// `Rider_GetMainState(Rider*)`: `*(*(rider + 0x77c) + 0xde0)`.
     pub const RIDER_GET_MAIN_STATE: Callee = Callee {
@@ -1916,54 +929,13 @@ pub(crate) mod callee {
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
 pub(crate) mod table {
-    pub(crate) use crate::game::fe::feasyncfile::table::ASYNC_FILE_GET_RESULT;
+
     pub(crate) use crate::game::fe::feasyncfile::table::AUDIO_GET_RACE_MAN;
-    pub(crate) use crate::game::fe::feasyncfile::table::BE_GET_INSTANCE;
-    pub(crate) use crate::game::fe::feasyncfile::table::BE_GET_INTERFACE;
-    pub(crate) use crate::game::fe::feasyncfile::table::BE_NEW_RACE_SET_EVENT_TYPE;
-    pub(crate) use crate::game::fe::feasyncfile::table::BE_NEW_RACE_SET_GAME_MODE;
-    pub(crate) use crate::game::fe::feasyncfile::table::BXSTRING_ASSIGN;
-    pub(crate) use crate::game::fe::feasyncfile::table::BXSTRING_RELEASE;
-    pub(crate) use crate::game::fe::feasyncfile::table::COLL_HULL_TRIANGLE;
-    pub(crate) use crate::game::fe::feasyncfile::table::COLL_HULL_TRIANGLE2;
-    pub(crate) use crate::game::fe::feasyncfile::table::COLL_SPHERE_CALC;
-    pub(crate) use crate::game::fe::feasyncfile::table::COLL_SPHERE_TREE_TRIANGLE;
-    pub(crate) use crate::game::fe::feasyncfile::table::EAC_GET_UNPACKED_SIZE;
-    pub(crate) use crate::game::fe::feasyncfile::table::EAC_UNPACK;
-    pub(crate) use crate::game::fe::feasyncfile::table::EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::fe::feasyncfile::table::EA_MEM_FREE;
-    pub(crate) use crate::game::fe::feasyncfile::table::OPERATOR_NEW_TAG;
-    pub(crate) use crate::game::fe::feasyncfile::table::PATH_STOP_TRACKS;
-    pub(crate) use crate::game::fe::feasyncfile::table::PS2_MEM_CARD_CREATE;
-    pub(crate) use crate::game::fe::feasyncfile::table::REPLAY_BEGIN_PLAYBACK;
-    pub(crate) use crate::game::fe::feasyncfile::table::REPLAY_END_SAVE;
-    pub(crate) use crate::game::fe::feasyncfile::table::RIDER_MODEL_FIND;
-    pub(crate) use crate::game::fe::feasyncfile::table::SCRIPT_ENGINE_GET_RESULT_VTABLE;
-    pub(crate) use crate::game::fe::feasyncfile::table::SPRINTF;
-    pub(crate) use crate::game::fe::feasyncfile::table::STR_CASECMP;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_LIST_FIRST;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_LIST_NODE_IS_SENTINEL;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_MENU_RESET_SCROLL;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_TEXT_SET_TEXT_ID;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_TEXT_SET_WIDE_STRING;
-    pub(crate) use crate::game::fe::feasyncfile::table::VOIP_RPC_SET_PARAMS;
-    pub(crate) use crate::game::fe::feasyncfile::table::VOIP_RPC_START;
+
     pub(crate) use crate::game::wscript::wscriptman::table::BUILTIN_DELETE;
-    pub(crate) use crate::game::wscript::wscriptman::table::BUILTIN_VEC_DELETE;
-    pub(crate) use crate::game::wscript::wscriptman::table::BXFILE_EXISTS;
+
     pub(crate) use crate::game::wscript::wscriptman::table::GET_CHANNEL_VOLUME;
     pub(crate) use crate::game::wscript::wscriptman::table::IS_REPLAY_PLAYING;
-    pub(crate) use crate::game::wscript::wscriptman::table::MEM_FREE;
-    pub(crate) use crate::game::wscript::wscriptman::table::SCE_MC_FLUSH;
-    pub(crate) use crate::game::wscript::wscriptman::table::SERIALIZE_READ_U32;
-    pub(crate) use crate::game::wscript::wscriptman::table::SERIALIZE_READ_U32_2;
-    pub(crate) use crate::game::wscript::wscriptman::table::SND_BANK_REMOVE;
-    pub(crate) use crate::game::wscript::wscriptman::table::SND_MIDI_RESUME;
-    pub(crate) use crate::game::wscript::wscriptman::table::STREAM_FILE_DESTROY;
-    pub(crate) use crate::game::wscript::wscriptman::table::STR_HASH;
-    pub(crate) use crate::game::wscript::wscriptman::table::UI_SCREEN_FIND_OBJECT;
-    pub(crate) use crate::game::wscript::wscriptman::table::WORLD_GET_OBJECT_SCRIPT_FUNC;
-    pub(crate) use crate::game::wscript::wscriptman::table::WSCRIPT_PROCESS_LIST_POP_FRONT;
 }
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -1972,97 +944,18 @@ pub(crate) mod addr {
     pub(crate) use crate::game::bx::bxstring2::addr::BE_INTERFACE_LOOKUP;
     pub(crate) use crate::game::bx::bxstring2::addr::CBE_GET_BE;
     pub(crate) use crate::game::bx::bxstring2::addr::CBE_GET_INTERFACE;
-    pub(crate) use crate::game::bx::bxstring2::addr::FMODF;
-    pub(crate) use crate::game::bx::bxstring2::addr::MC_MANAGER_GET_INFO;
-    pub(crate) use crate::game::bx::bxstring2::addr::MEM_MAN_ALLOC;
+
     pub(crate) use crate::game::bx::bxstring2::addr::MEM_MAN_FREE;
     pub(crate) use crate::game::bx::bxstring2::addr::MEM_MAN_FREE_NOSIZE;
-    pub(crate) use crate::game::bx::bxstring2::addr::SPEECH_BANK_FREE_CALLBACK;
-    pub(crate) use crate::game::bx::bxstring2::addr::SPRINTF;
-    pub(crate) use crate::game::bx::bxstring2::addr::UI_ENGINE_TEARDOWN;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BANK_MONITOR_ADD;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_BE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_INTERFACE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_INTERFACE_9;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::CHASE_CAMERA_RESET_FOR_RIDER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::CLOSE_UNPINNED_POPUPS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::FE_NET_SEND;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::HUD_SHOW_NUMBER_DELAYED;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MC_STATUS_TEXT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MEMSET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_DTOR_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_POP_PAGE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_PUSH_PAGE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::POSITION_MODIFIER_CTOR_3;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::RIDER_PREVIEW;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::RIDER_PREVIEW_BOLTS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::SPATIAL_INSERT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::STRCASECMP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::STRCMP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::STRLEN;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::STR_HASH;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_ENGINE_CREATE_SCREEN;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_OBJECT_BY_HASH;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_SCREEN_START_THREAD;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::WORLD_GET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::WORLD_PAINTER_2D;
 }
 
 /// `GetHashValue32` (0x317670) and the UI object lookups, which the generator
 /// emitted as cross-shard `call_indirect`s.
 pub(crate) mod table_callee {
-    pub(crate) use crate::game::fe::festaterewards::table_callee::AI_SET_AI_STATE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::APP_MAN_SET_NEXT_MODULE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::BENEW_PLAYER_INT_GET_CHAR_ID;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::BE_GET;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::BE_GET_INTERFACE_FV;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::BE_GET_TEXT_FROM_ID;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::BE_SET_STATE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::BUDDY_PRODUCT_COMPARE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::BUY_POPUP_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::BXSTRING_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::BXSTRING_DTOR;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::CODEC_DECODE_FRAME;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::FE_MODULE_BIG_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::FE_MODULE_SMALL_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::FE_STATE_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::GET_HASH_VALUE32;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::MUSIC_SLOT_RELEASE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::OPERATOR_DELETE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::OPERATOR_NEW;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_CHEAT_CHARS;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_CONCEPT_ARTS;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_GET_BASE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_POSTERS;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_TOYS;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_TRADING_CARDS;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_VIDEOS;
+
     pub(crate) use crate::game::fe::festaterewards::table_callee::RIDER_GET_MAIN_STATE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::RIDER_REMOVE_SCRIPT_OBJECT;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::RIDER_SCRIPT_CLEANUP;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::RIDER_SET_SCRIPT_STATE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::SECTION_TABLE_CTOR;
+
     pub(crate) use crate::game::fe::festaterewards::table_callee::SSX_AUDIO_GET_RACE_MAN;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::STRCPY;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::STRLEN;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::TAG_FIELD_FIND;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::TAG_FIELD_GET_STRING4;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::TAG_FIELD_SET_STRING;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_ENGINE_ADD_SCREEN_BY_HASH_NAME;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_ENGINE_GET_INTERFACE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_MENU_SET_SELECTED_BY_INDEX;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_OBJECT_PUSH;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_OPEN_FINISH_SCREEN;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_SCREEN_ADD_OBJECT;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_SCREEN_FIND_OBJECT;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_SCREEN_PLAY_FRAME;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_STATE_DTOR;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_TEXT_SET_ASCII_STRING;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_TEXT_SET_RICH_STRING;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_TEXT_SET_UNICODE_STRING_BY_ID;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UPLOAD_TEXTURE_PIXELS;
 }
 
 /// `u32 SSXAudioSystem_GetSurfaceBank(int index)` (0x002917b8): 1 when
@@ -2245,7 +1138,7 @@ pub fn audio_eval_curve5(c: &mut Cpu) {
             // 'b_290b90 tail
         } else {
             c.cycles += 5;
-            c.lwc1(3, (c.g[V1][0] as u32));
+            c.lwc1(3, c.g[V1][0] as u32);
             let f3 = FpuF32(c.f[3]);
             let lt = x.lt(f3);
             abi::set_fcc(c, lt);
@@ -3726,7 +2619,7 @@ pub fn ssx_audio_get_surface_sound_type(c: &mut Cpu) {
         c.g[A0][0] = c.g[S0][0];
         callee::RIDER_GET_MAIN_STATE.call(c, 0x0029_1730)?;
         c.g[V1][0] = 0x4;
-        let mut id;
+        let id;
         if c.g[V0][0] != c.g[V1][0] {
             c.g[V0][0] = Addr(r32(c, S0)).off(0x438).lw(c);
             id = c.g[V0][0];
@@ -3809,7 +2702,7 @@ pub fn ssx_audio_get_surface_group(c: &mut Cpu) {
         c.g[V0][0] = (c.g[A1][0] < 0x9) as u64;
         let out_of_range = c.g[V0][0] == 0;
         frame.save_ra(c, 0);
-        let mut result = 0u64;
+        let result: u64;
         if !out_of_range {
             c.cycles += 7;
             c.g[V0][0] = 0x0048_0000;
@@ -4037,9 +2930,8 @@ pub fn crowd_audio_instance_stop_sound(c: &mut Cpu) {
             c.swc1(1, p(this, 0x188));
         }
         c.cycles += 3;
-        let mut handle = 0u64;
         c.g[A1][0] = lw_at(c, this, 0x174);
-        handle = c.g[A1][0];
+        let handle = c.g[A1][0];
         Addr(p(this, 0x180)).sw(c, 0);
         if (handle as i64) >= 0 {
             c.cycles += 8;
@@ -4105,6 +2997,7 @@ pub fn ssx_audio_system_is_track_group0_event(c: &mut Cpu) {
 
 /// `gp + 0x608`: the SND system. (Unlike the game globals this one lives
 /// above `gp`.)
+#[cfg(test)]
 pub(crate) const SND_SYSTEM_GP: u32 = 0x608;
 
 // ---------------------------------------------------------------------------
@@ -4138,7 +3031,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
             break 'b_2a5ca4;
         } else {
             c.cycles += 11;
-            c.sw((c.g[SP][0] as u32), 0u64);
+            c.sw(c.g[SP][0] as u32, 0u64);
             c.sw((c.g[SP][0] as u32).wrapping_add(0x8c), c.g[V1][0]);
             c.g[T1][0] = 0u64;
             c.sw((c.g[SP][0] as u32).wrapping_add(0x4), 0u64);
@@ -4165,14 +3058,14 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                     c.g[S5][0] = 0x2;
                     'l_2a4f18: loop {
                         c.cycles += 11;
-                        c.sw((c.g[V0][0] as u32), 0u64);
+                        c.sw(c.g[V0][0] as u32, 0u64);
                         c.g[S5][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x1));
                         c.sw((c.g[V0][0] as u32).wrapping_add(0x4), 0u64);
                         c.sw((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
                         c.sw((c.g[V0][0] as u32).wrapping_add(0xc), 0u64);
-                        c.sw((c.g[V1][0] as u32), 0u64);
+                        c.sw(c.g[V1][0] as u32, 0u64);
                         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
-                        c.sw((c.g[A0][0] as u32), 0u64);
+                        c.sw(c.g[A0][0] as u32, 0u64);
                         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
                         let t = (c.g[S5][0] as i64) >= 0;
                         c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
@@ -4186,7 +3079,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                             c.g[V0][0] = 0xc;
                             c.mult(0, 2, 9, 2);
                             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x20));
-                            c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S7][0] as u32)));
+                            c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S7][0] as u32));
                             c.g[A3][0] = c.g[V1][0];
                             'l_2a4f58: loop {
                                 'b_2a4f78: {
@@ -4214,24 +3107,24 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                 }
                                 'b_2a51d4: {
                                     c.cycles += 16;
-                                    c.lq(4, (c.g[A0][0] as u32));
+                                    c.lq(4, c.g[A0][0] as u32);
                                     c.g[S5][0] = 0x1;
                                     c.g[A1][0] = c.lw((c.g[S7][0] as u32).wrapping_add(0xd4));
-                                    c.sq(4, (c.g[SP][0] as u32));
+                                    c.sq(4, c.g[SP][0] as u32);
                                     c.g[A1][0] = ((c.g[S5][0] as i64) < (c.g[A1][0] as i64)) as u64;
                                     c.g[V0][0] = c.lw((c.g[S6][0] as u32).wrapping_add(0x20));
                                     c.g[FP][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
                                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
                                     c.g[V0][0] =
-                                        sx((c.g[V0][0] as u32).wrapping_add((c.g[SP][0] as u32)));
+                                        sx((c.g[V0][0] as u32).wrapping_add(c.g[SP][0] as u32));
                                     c.sq(4, (c.g[V0][0] as u32).wrapping_add(0x10));
                                     c.g[V1][0] = c.lw((c.g[S6][0] as u32).wrapping_add(0x20));
                                     c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
                                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                                     c.g[V1][0] =
-                                        sx((c.g[S3][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                                        sx((c.g[S3][0] as u32).wrapping_add(c.g[V1][0] as u32));
                                     let t = c.g[A1][0] == 0u64;
-                                    c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+                                    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
                                     if t {
                                         break 'b_2a51d4;
                                     } else {
@@ -4241,12 +3134,13 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                         c.mult(0, 2, 9, 2);
                                         c.g[T4][0] = c.g[S3][0];
                                         c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x20));
-                                        c.lwc1(5, (c.g[SP][0] as u32));
+                                        c.lwc1(5, c.g[SP][0] as u32);
                                         'l_2a4fd0: loop {
                                             c.cycles += 4;
                                             c.g[T5][0] = sx((c.g[S5][0] as u32).wrapping_add(0x1));
-                                            c.g[V1][0] = sx((c.g[T0][0] as u32)
-                                                .wrapping_add((c.g[S7][0] as u32)));
+                                            c.g[V1][0] =
+                                                sx((c.g[T0][0] as u32)
+                                                    .wrapping_add(c.g[S7][0] as u32));
                                             c.g[A3][0] = c.g[V1][0];
                                             'l_2a4fe0: loop {
                                                 'b_2a5004: {
@@ -4285,9 +3179,9 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                         c.g[V0][0] = c
                                                             .lw((c.g[A3][0] as u32)
                                                                 .wrapping_add(0x4));
-                                                        c.lwc1(0, (c.g[A0][0] as u32));
+                                                        c.lwc1(0, c.g[A0][0] as u32);
                                                         c.g[V1][0] = sx((c.g[FP][0] as u32)
-                                                            .wrapping_add((c.g[V0][0] as u32)));
+                                                            .wrapping_add(c.g[V0][0] as u32));
                                                         c.mtc1(2, 4);
                                                         c.cvt_s_w(4, 4);
                                                         c.mtc1(3, 2);
@@ -4304,8 +3198,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                         c.div_s(4, 4, 2);
                                                         c.mul_s(0, 0, 4);
                                                         c.add_s(0, 5, 0);
-                                                        c.swc1(0, (c.g[SP][0] as u32));
-                                                        c.g[V0][0] = c.lw((c.g[A3][0] as u32));
+                                                        c.swc1(0, c.g[SP][0] as u32);
+                                                        c.g[V0][0] = c.lw(c.g[A3][0] as u32);
                                                         c.lwc1(
                                                             0,
                                                             (c.g[V0][0] as u32).wrapping_add(0x4),
@@ -4317,7 +3211,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             1,
                                                             (c.g[SP][0] as u32).wrapping_add(0x4),
                                                         );
-                                                        c.g[V0][0] = c.lw((c.g[A3][0] as u32));
+                                                        c.g[V0][0] = c.lw(c.g[A3][0] as u32);
                                                         c.lwc1(
                                                             0,
                                                             (c.g[V0][0] as u32).wrapping_add(0x8),
@@ -4344,7 +3238,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                         } else {
                                                             c.cycles += 3;
                                                             c.g[T2][0] = sx((c.g[T2][0] as u32)
-                                                                .wrapping_add((c.g[V0][0] as u32)));
+                                                                .wrapping_add(c.g[V0][0] as u32));
                                                             c.g[FP][0] = c.g[V1][0];
                                                             break 'b_2a5090;
                                                         }
@@ -4354,7 +3248,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                         >> 2)
                                                         as u32);
                                                     c.g[T2][0] = sx((c.g[T2][0] as u32)
-                                                        .wrapping_add((c.g[V0][0] as u32)));
+                                                        .wrapping_add(c.g[V0][0] as u32));
                                                     break 'b_2a5090;
                                                 }
                                                 'b_2a51c4: {
@@ -4385,25 +3279,25 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 c.g[V0][0] = sx((c.g[T4][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[V0][0] as u32),
+                                                                        c.g[V0][0] as u32,
                                                                     ));
                                                                 c.mtc1(6, 4);
                                                                 c.cvt_s_w(4, 4);
                                                                 c.g[A0][0] =
-                                                                    c.lw((c.g[V0][0] as u32));
+                                                                    c.lw(c.g[V0][0] as u32);
                                                                 c.g[V1][0] =
                                                                     sx((c.g[V1][0] as u32) << 4);
                                                                 c.g[V0][0] =
-                                                                    c.lw((c.g[A3][0] as u32));
+                                                                    c.lw(c.g[A3][0] as u32);
                                                                 c.g[A1][0] = sx((c.g[V1][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[SP][0] as u32),
+                                                                        c.g[SP][0] as u32,
                                                                     ));
                                                                 c.g[A0][0] = sx((c.g[A0][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[A2][0] as u32),
+                                                                        c.g[A2][0] as u32,
                                                                     ));
                                                                 c.lwc1(
                                                                     2,
@@ -4412,28 +3306,28 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 );
                                                                 c.mtc1(4, 3);
                                                                 c.cvt_s_w(3, 3);
-                                                                c.lwc1(0, (c.g[V0][0] as u32));
+                                                                c.lwc1(0, c.g[V0][0] as u32);
                                                                 c.g[V1][0] = c.g[A1][0];
                                                                 c.sub_s(0, 0, 2);
                                                                 c.g[V1][0] = sx((c.g[V1][0]
                                                                     as u32)
                                                                     .wrapping_add(0x10));
                                                                 c.div_s(4, 4, 3);
-                                                                c.lwc1(1, (c.g[V1][0] as u32));
+                                                                c.lwc1(1, c.g[V1][0] as u32);
                                                                 c.mul_s(0, 0, 4);
                                                                 c.add_s(1, 1, 0);
-                                                                c.swc1(1, (c.g[V1][0] as u32));
+                                                                c.swc1(1, c.g[V1][0] as u32);
                                                                 c.g[V0][0] = c
                                                                     .lw((c.g[S6][0] as u32)
                                                                         .wrapping_add(0x20));
                                                                 c.g[A0][0] =
-                                                                    c.lw((c.g[A3][0] as u32));
+                                                                    c.lw(c.g[A3][0] as u32);
                                                                 c.g[V0][0] =
                                                                     sx((c.g[V0][0] as u32) << 4);
                                                                 c.g[V1][0] = sx((c.g[V0][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[SP][0] as u32),
+                                                                        c.g[SP][0] as u32,
                                                                     ));
                                                                 c.lwc1(
                                                                     1,
@@ -4466,13 +3360,13 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                     .lw((c.g[S6][0] as u32)
                                                                         .wrapping_add(0x20));
                                                                 c.g[A0][0] =
-                                                                    c.lw((c.g[A3][0] as u32));
+                                                                    c.lw(c.g[A3][0] as u32);
                                                                 c.g[V1][0] =
                                                                     sx((c.g[V1][0] as u32) << 4);
                                                                 c.g[V0][0] = sx((c.g[V1][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[SP][0] as u32),
+                                                                        c.g[SP][0] as u32,
                                                                     ));
                                                                 c.lwc1(
                                                                     1,
@@ -4512,10 +3406,10 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 c.g[V1][0] = sx((c.g[T4][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[A0][0] as u32),
+                                                                        c.g[A0][0] as u32,
                                                                     ));
                                                                 c.g[V1][0] =
-                                                                    c.lw((c.g[V1][0] as u32));
+                                                                    c.lw(c.g[V1][0] as u32);
                                                                 c.g[V0][0] = ((c.g[V1][0] as i64)
                                                                     < (c.g[A1][0] as i64))
                                                                     as u64;
@@ -4531,17 +3425,17 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                     c.g[A0][0] = sx((c.g[T3][0]
                                                                         as u32)
                                                                         .wrapping_add(
-                                                                            (c.g[A0][0] as u32),
+                                                                            c.g[A0][0] as u32,
                                                                         ));
                                                                     c.g[V0][0] =
-                                                                        c.lw((c.g[A0][0] as u32));
+                                                                        c.lw(c.g[A0][0] as u32);
                                                                     c.g[V0][0] = sx((c.g[V0][0]
                                                                         as u32)
                                                                         .wrapping_add(
-                                                                            (c.g[V1][0] as u32),
+                                                                            c.g[V1][0] as u32,
                                                                         ));
                                                                     c.sw(
-                                                                        (c.g[A0][0] as u32),
+                                                                        c.g[A0][0] as u32,
                                                                         c.g[V0][0],
                                                                     );
                                                                     c.g[V1][0] = c
@@ -4556,10 +3450,10 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                     c.g[V1][0] = sx((c.g[S3][0]
                                                                         as u32)
                                                                         .wrapping_add(
-                                                                            (c.g[V1][0] as u32),
+                                                                            c.g[V1][0] as u32,
                                                                         ));
                                                                     c.sw(
-                                                                        (c.g[V1][0] as u32),
+                                                                        c.g[V1][0] as u32,
                                                                         c.g[V0][0],
                                                                     );
                                                                     break 'b_2a51c0;
@@ -4567,15 +3461,15 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             }
                                                             c.cycles += 5;
                                                             c.g[A0][0] = sx((c.g[T3][0] as u32)
-                                                                .wrapping_add((c.g[A0][0] as u32)));
+                                                                .wrapping_add(c.g[A0][0] as u32));
                                                             c.g[V1][0] = sx(((c.g[A1][0] as u32)
                                                                 as i32
                                                                 >> 2)
                                                                 as u32);
-                                                            c.g[V0][0] = c.lw((c.g[A0][0] as u32));
+                                                            c.g[V0][0] = c.lw(c.g[A0][0] as u32);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[V1][0] as u32)));
-                                                            c.sw((c.g[A0][0] as u32), c.g[V0][0]);
+                                                                .wrapping_add(c.g[V1][0] as u32));
+                                                            c.sw(c.g[A0][0] as u32, c.g[V0][0]);
                                                             break 'b_2a51c0;
                                                         }
                                                         c.cycles += 1;
@@ -4591,7 +3485,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                     < (c.g[V0][0] as i64))
                                                     as u64;
                                                 let t = c.g[V0][0] != 0u64;
-                                                c.lwc1(5, (c.g[SP][0] as u32));
+                                                c.lwc1(5, c.g[SP][0] as u32);
                                                 if t {
                                                     if event_due(c) {
                                                         deliver_event_here(c, 0x002a4fd0);
@@ -4609,8 +3503,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                         c.cycles += 5;
                                         c.g[A0][0] = c.lw((c.g[S7][0] as u32).wrapping_add(0x170));
                                         c.g[FP][0] =
-                                            sx((c.g[FP][0] as u32)
-                                                .wrapping_add((c.g[T2][0] as u32)));
+                                            sx((c.g[FP][0] as u32).wrapping_add(c.g[T2][0] as u32));
                                         c.g[V0][0] = 0x1;
                                         let t = c.g[A0][0] != c.g[V0][0];
                                         c.sw((c.g[SP][0] as u32).wrapping_add(0x78), c.g[A0][0]);
@@ -4621,7 +3514,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                             c.g[A1][0] =
                                                 c.lw((c.g[S6][0] as u32).wrapping_add(0x4));
                                             let t = (c.g[A1][0] as i64) < 0;
-                                            c.lq(2, (c.g[SP][0] as u32));
+                                            c.lq(2, c.g[SP][0] as u32);
                                             if t {
                                                 break 'b_2a5a68;
                                             } else {
@@ -4636,7 +3529,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                     (c.g[SP][0] as u32).wrapping_add(0x7c),
                                                     c.g[A3][0],
                                                 );
-                                                c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                                                c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                                                 c.g[A0][0] =
                                                     sx((c.g[A0][0] as u32).wrapping_add(0x1d8));
                                                 callee::FIND_INSTANCE.call(c, 0x002a5214)?;
@@ -4662,8 +3555,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 c.g[T0][0],
                                                             );
                                                             c.g[A2][0] = 0x8;
-                                                            c.g[S0][0] = c.lw((c.g[S2][0] as u32));
-                                                            c.g[S5][0] = c.lw((c.g[S6][0] as u32));
+                                                            c.g[S0][0] = c.lw(c.g[S2][0] as u32);
+                                                            c.g[S5][0] = c.lw(c.g[S6][0] as u32);
                                                             c.g[V0][0] = c.lw((c.g[S0][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[S1][0] = sx((c.g[S0][0] as u32)
@@ -4681,7 +3574,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 .wrapping_add(0x20));
                                                             c.mult(0, 3, 3, 4);
                                                             c.g[V1][0] = sx((c.g[V1][0] as u32)
-                                                                .wrapping_add((c.g[V0][0] as u32)));
+                                                                .wrapping_add(c.g[V0][0] as u32));
                                                             c.ldl(
                                                                 7,
                                                                 (c.g[S0][0] as u32)
@@ -4717,7 +3610,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 (c.g[V1][0] as u32)
                                                                     .wrapping_add(0x7),
                                                             );
-                                                            c.sdr(7, (c.g[V1][0] as u32));
+                                                            c.sdr(7, c.g[V1][0] as u32);
                                                             c.sdl(
                                                                 8,
                                                                 (c.g[V1][0] as u32)
@@ -4743,7 +3636,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[S0][0] as u32)
-                                                                .wrapping_add((c.g[V0][0] as u32)));
+                                                                .wrapping_add(c.g[V0][0] as u32));
                                                             c.sw(
                                                                 (c.g[V0][0] as u32)
                                                                     .wrapping_add(0x1fc),
@@ -4756,8 +3649,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V1][0] =
                                                                 sx((c.g[V1][0] as u32) << 2);
                                                             c.g[V1][0] = sx((c.g[V1][0] as u32)
-                                                                .wrapping_add((c.g[V0][0] as u32)));
-                                                            c.sw((c.g[V1][0] as u32), 0u64);
+                                                                .wrapping_add(c.g[V0][0] as u32));
+                                                            c.sw(c.g[V1][0] as u32, 0u64);
                                                             c.g[V0][0] = 0x18;
                                                             c.g[A3][0] = c.lw((c.g[S0][0] as u32)
                                                                 .wrapping_add(0x1f4));
@@ -4771,11 +3664,11 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] = c.lw((c.g[S1][0] as u32)
                                                                 .wrapping_add(0x38));
                                                             c.g[A3][0] = sx((c.g[A3][0] as u32)
-                                                                .wrapping_add((c.g[V0][0] as u32)));
+                                                                .wrapping_add(c.g[V0][0] as u32));
                                                             c.g[A0][0] = sx((c.g[A0][0] as u32)
-                                                                .wrapping_add((c.g[T0][0] as u32)));
-                                                            c.g[V1][0] = c.lb((c.g[A0][0] as u32));
-                                                            c.sw((c.g[A3][0] as u32), c.g[V1][0]);
+                                                                .wrapping_add(c.g[T0][0] as u32));
+                                                            c.g[V1][0] = c.lb(c.g[A0][0] as u32);
+                                                            c.sw(c.g[A3][0] as u32, c.g[V1][0]);
                                                             c.g[V0][0] = c.lw((c.g[S0][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[V1][0] = c.lw((c.g[S1][0] as u32)
@@ -4783,14 +3676,14 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[V1][0] as u32)));
-                                                            c.sw((c.g[V0][0] as u32), 0u64);
+                                                                .wrapping_add(c.g[V1][0] as u32));
+                                                            c.sw(c.g[V0][0] as u32, 0u64);
                                                             c.g[A0][0] = c.lw((c.g[S0][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[A0][0] =
                                                                 sx((c.g[A0][0] as u32) << 3);
                                                             c.g[A0][0] = sx((c.g[S1][0] as u32)
-                                                                .wrapping_add((c.g[A0][0] as u32)));
+                                                                .wrapping_add(c.g[A0][0] as u32));
                                                             c.g[A0][0] = sx((c.g[A0][0] as u32)
                                                                 .wrapping_add(0x40));
                                                             callee::MEMSET.call(c, 0x002a5304)?;
@@ -4804,9 +3697,9 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 sx((c.g[V1][0] as u32) << 2);
                                                             c.g[A2][0] = 0x32;
                                                             c.g[V1][0] = sx((c.g[V1][0] as u32)
-                                                                .wrapping_add((c.g[V0][0] as u32)));
+                                                                .wrapping_add(c.g[V0][0] as u32));
                                                             c.g[A3][0] = 0x7f;
-                                                            c.sw((c.g[V1][0] as u32), 0u64);
+                                                            c.sw(c.g[V1][0] as u32, 0u64);
                                                             c.g[T0][0] = 0x18;
                                                             c.g[V0][0] = c.lw((c.g[S0][0] as u32)
                                                                 .wrapping_add(0x1f4));
@@ -4815,8 +3708,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[V1][0] as u32)));
-                                                            c.sw((c.g[V0][0] as u32), 0u64);
+                                                                .wrapping_add(c.g[V1][0] as u32));
+                                                            c.sw(c.g[V0][0] as u32, 0u64);
                                                             c.g[V1][0] = c.lw((c.g[S0][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[V0][0] = c.lw((c.g[S1][0] as u32)
@@ -4824,8 +3717,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V1][0] =
                                                                 sx((c.g[V1][0] as u32) << 2);
                                                             c.g[V1][0] = sx((c.g[V1][0] as u32)
-                                                                .wrapping_add((c.g[V0][0] as u32)));
-                                                            c.sw((c.g[V1][0] as u32), 0u64);
+                                                                .wrapping_add(c.g[V0][0] as u32));
+                                                            c.sw(c.g[V1][0] as u32, 0u64);
                                                             c.g[V0][0] = c.lw((c.g[S0][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[V1][0] = c.lw((c.g[S1][0] as u32)
@@ -4833,8 +3726,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[V1][0] as u32)));
-                                                            c.sw((c.g[V0][0] as u32), 0u64);
+                                                                .wrapping_add(c.g[V1][0] as u32));
+                                                            c.sw(c.g[V0][0] as u32, 0u64);
                                                             c.g[V1][0] = c.lw((c.g[S0][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[V0][0] = c.lw((c.g[S1][0] as u32)
@@ -4842,7 +3735,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V1][0] =
                                                                 sx((c.g[V1][0] as u32) << 4);
                                                             c.g[V1][0] = sx((c.g[V1][0] as u32)
-                                                                .wrapping_add((c.g[V0][0] as u32)));
+                                                                .wrapping_add(c.g[V0][0] as u32));
                                                             c.sw(
                                                                 (c.g[V1][0] as u32)
                                                                     .wrapping_add(0x4),
@@ -4855,8 +3748,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 4);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[V1][0] as u32)));
-                                                            c.sw((c.g[V0][0] as u32), c.g[A0][0]);
+                                                                .wrapping_add(c.g[V1][0] as u32));
+                                                            c.sw(c.g[V0][0] as u32, c.g[A0][0]);
                                                             c.g[V1][0] = c.lw((c.g[S0][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[V0][0] = c.lw((c.g[S1][0] as u32)
@@ -4864,7 +3757,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V1][0] =
                                                                 sx((c.g[V1][0] as u32) << 4);
                                                             c.g[V1][0] = sx((c.g[V1][0] as u32)
-                                                                .wrapping_add((c.g[V0][0] as u32)));
+                                                                .wrapping_add(c.g[V0][0] as u32));
                                                             c.sw(
                                                                 (c.g[V1][0] as u32)
                                                                     .wrapping_add(0x8),
@@ -4877,7 +3770,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 4);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[V1][0] as u32)));
+                                                                .wrapping_add(c.g[V1][0] as u32));
                                                             c.sw(
                                                                 (c.g[V0][0] as u32)
                                                                     .wrapping_add(0xc),
@@ -4890,8 +3783,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V1][0] =
                                                                 sx((c.g[V1][0] as u32) << 2);
                                                             c.g[V1][0] = sx((c.g[V1][0] as u32)
-                                                                .wrapping_add((c.g[V0][0] as u32)));
-                                                            c.sw((c.g[V1][0] as u32), 0u64);
+                                                                .wrapping_add(c.g[V0][0] as u32));
+                                                            c.sw(c.g[V1][0] as u32, 0u64);
                                                             c.g[V0][0] = c.lw((c.g[S0][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[V1][0] = c.lw((c.g[S1][0] as u32)
@@ -4899,8 +3792,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[V1][0] as u32)));
-                                                            c.sw((c.g[V0][0] as u32), 0u64);
+                                                                .wrapping_add(c.g[V1][0] as u32));
+                                                            c.sw(c.g[V0][0] as u32, 0u64);
                                                             c.g[V1][0] = c.lw((c.g[S0][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[V0][0] = c.lw((c.g[S1][0] as u32)
@@ -4908,8 +3801,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V1][0] =
                                                                 sx((c.g[V1][0] as u32) << 2);
                                                             c.g[V1][0] = sx((c.g[V1][0] as u32)
-                                                                .wrapping_add((c.g[V0][0] as u32)));
-                                                            c.sw((c.g[V1][0] as u32), 0u64);
+                                                                .wrapping_add(c.g[V0][0] as u32));
+                                                            c.sw(c.g[V1][0] as u32, 0u64);
                                                             c.g[V0][0] = c.lw((c.g[S0][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[V1][0] = c.lw((c.g[S1][0] as u32)
@@ -4917,8 +3810,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[V1][0] as u32)));
-                                                            c.sw((c.g[V0][0] as u32), c.g[A3][0]);
+                                                                .wrapping_add(c.g[V1][0] as u32));
+                                                            c.sw(c.g[V0][0] as u32, c.g[A3][0]);
                                                             c.g[V1][0] = c.lw((c.g[S0][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[V0][0] = c.lw((c.g[S1][0] as u32)
@@ -4928,9 +3821,9 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V1][0] =
                                                                 sx((c.g[V1][0] as u32) << 2);
                                                             c.g[V1][0] = sx((c.g[V1][0] as u32)
-                                                                .wrapping_add((c.g[V0][0] as u32)));
-                                                            c.sw((c.g[V1][0] as u32), c.g[A0][0]);
-                                                            c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                                                                .wrapping_add(c.g[V0][0] as u32));
+                                                            c.sw(c.g[V1][0] as u32, c.g[A0][0]);
+                                                            c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                                                             c.g[V1][0] = c.lw((c.g[S2][0] as u32)
                                                                 .wrapping_add(0x4));
                                                             c.g[V0][0] = c.lw((c.g[A0][0] as u32)
@@ -4940,9 +3833,9 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[V1][0] as u32)));
-                                                            c.sw((c.g[V0][0] as u32), c.g[A1][0]);
-                                                            c.g[V1][0] = c.lw((c.g[S2][0] as u32));
+                                                                .wrapping_add(c.g[V1][0] as u32));
+                                                            c.sw(c.g[V0][0] as u32, c.g[A1][0]);
+                                                            c.g[V1][0] = c.lw(c.g[S2][0] as u32);
                                                             c.g[A0][0] = c.lw((c.g[S2][0] as u32)
                                                                 .wrapping_add(0x8));
                                                             c.g[V0][0] = c.lw((c.g[V1][0] as u32)
@@ -4950,25 +3843,25 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[A0][0] as u32)));
-                                                            c.sw((c.g[V0][0] as u32), c.g[S5][0]);
+                                                                .wrapping_add(c.g[A0][0] as u32));
+                                                            c.sw(c.g[V0][0] as u32, c.g[S5][0]);
                                                             c.g[A0][0] = c.lw((c.g[GP][0] as u32)
                                                                 .wrapping_add(0x608));
                                                             c.g[A2][0] = c.lw((c.g[SP][0] as u32)
                                                                 .wrapping_add(0x7c));
-                                                            c.g[V1][0] = c.lw((c.g[A0][0] as u32));
+                                                            c.g[V1][0] = c.lw(c.g[A0][0] as u32);
                                                             c.g[V0][0] = c.lw((c.g[V1][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V1][0] = sx((c.g[V1][0] as u32)
-                                                                .wrapping_add((c.g[V0][0] as u32)));
+                                                                .wrapping_add(c.g[V0][0] as u32));
                                                             c.sw(
                                                                 (c.g[V1][0] as u32)
                                                                     .wrapping_add(0x1fc),
                                                                 c.g[A2][0],
                                                             );
-                                                            c.g[A1][0] = c.lw((c.g[A0][0] as u32));
+                                                            c.g[A1][0] = c.lw(c.g[A0][0] as u32);
                                                             c.g[V0][0] = c.lw((c.g[A1][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[A2][0] = sx((c.g[A1][0] as u32)
@@ -4978,8 +3871,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[V1][0] as u32)));
-                                                            c.sw((c.g[V0][0] as u32), c.g[FP][0]);
+                                                                .wrapping_add(c.g[V1][0] as u32));
+                                                            c.sw(c.g[V0][0] as u32, c.g[FP][0]);
                                                             c.g[A0][0] = c.lw((c.g[A1][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[V1][0] = c.lw((c.g[A2][0] as u32)
@@ -4992,14 +3885,14 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[A1][0] = c.lw((c.g[A2][0] as u32)
                                                                 .wrapping_add(0x20));
                                                             c.g[V1][0] = sx((c.g[V1][0] as u32)
-                                                                .wrapping_add((c.g[A3][0] as u32)));
-                                                            c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                                                                .wrapping_add(c.g[A3][0] as u32));
+                                                            c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                                                             c.g[V0][0] = ((c.g[V0][0] as i64)
                                                                 < 127i64)
                                                                 as u64;
                                                             let t = c.g[V0][0] == 0u64;
                                                             c.g[A0][0] = sx((c.g[A0][0] as u32)
-                                                                .wrapping_add((c.g[A1][0] as u32)));
+                                                                .wrapping_add(c.g[A1][0] as u32));
                                                             if t {
                                                                 break 'b_2a54d0;
                                                             } else {
@@ -5012,10 +3905,10 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 c.g[V0][0] = sx((c.g[V0][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[A3][0] as u32),
+                                                                        c.g[A3][0] as u32,
                                                                     ));
                                                                 c.g[V1][0] =
-                                                                    c.lw((c.g[V0][0] as u32));
+                                                                    c.lw(c.g[V0][0] as u32);
                                                                 let t = (c.g[V1][0] as i64) < 0;
                                                                 c.g[V0][0] = 0u64;
                                                                 if t {
@@ -5031,8 +3924,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 .wrapping_add(0x1c));
                                                         c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                                                         c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                            .wrapping_add((c.g[A3][0] as u32)));
-                                                        c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                                                            .wrapping_add(c.g[A3][0] as u32));
+                                                        c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                                                         c.g[V1][0] =
                                                             ((c.g[V1][0] as i64) < 127i64) as u64;
                                                         if c.g[V1][0] == 0u64 {
@@ -5045,13 +3938,13 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[A3][0] as u32)));
-                                                            c.g[V0][0] = c.lbu((c.g[V0][0] as u32));
+                                                                .wrapping_add(c.g[A3][0] as u32));
+                                                            c.g[V0][0] = c.lbu(c.g[V0][0] as u32);
                                                             break 'b_2a54fc;
                                                         }
                                                     }
                                                     c.cycles += 59;
-                                                    c.sb((c.g[A0][0] as u32), c.g[V0][0]);
+                                                    c.sb(c.g[A0][0] as u32, c.g[V0][0]);
                                                     c.g[A2][0] = 0x1;
                                                     c.g[A3][0] = 0x4a0000;
                                                     c.g[A0][0] =
@@ -5062,7 +3955,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                         c.lw(
                                                             (c.g[S7][0] as u32).wrapping_add(0x17c)
                                                         );
-                                                    c.g[V1][0] = c.lw((c.g[A0][0] as u32));
+                                                    c.g[V1][0] = c.lw(c.g[A0][0] as u32);
                                                     c.g[V0][0] =
                                                         c.lw(
                                                             (c.g[V1][0] as u32).wrapping_add(0x1f4)
@@ -5073,13 +3966,13 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                         );
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                        .wrapping_add((c.g[A0][0] as u32)));
-                                                    c.sw((c.g[V0][0] as u32), c.g[A1][0]);
+                                                        .wrapping_add(c.g[A0][0] as u32));
+                                                    c.sw(c.g[V0][0] as u32, c.g[A1][0]);
                                                     c.g[V1][0] =
                                                         c.lw(
                                                             (c.g[GP][0] as u32).wrapping_add(0x608)
                                                         );
-                                                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                                                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                                                     c.g[V0][0] =
                                                         c.lw(
                                                             (c.g[A0][0] as u32).wrapping_add(0x1f4)
@@ -5090,18 +3983,18 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                         );
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                        .wrapping_add((c.g[V1][0] as u32)));
-                                                    c.sw((c.g[V0][0] as u32), c.g[A2][0]);
+                                                        .wrapping_add(c.g[V1][0] as u32));
+                                                    c.sw(c.g[V0][0] as u32, c.g[A2][0]);
                                                     c.g[V1][0] =
                                                         c.lw(
                                                             (c.g[GP][0] as u32).wrapping_add(0x608)
                                                         );
-                                                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                                                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                                                     c.g[A2][0] =
                                                         sx((c.g[A3][0] as u32)
                                                             .wrapping_add(0x3700));
                                                     c.ldl(2, (c.g[A2][0] as u32).wrapping_add(0x7));
-                                                    c.ldr(2, (c.g[A2][0] as u32));
+                                                    c.ldr(2, c.g[A2][0] as u32);
                                                     c.sdl(
                                                         2,
                                                         (c.g[SP][0] as u32).wrapping_add(0x67),
@@ -5118,7 +4011,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                         );
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
                                                     c.g[V1][0] = sx((c.g[V1][0] as u32)
-                                                        .wrapping_add((c.g[V0][0] as u32)));
+                                                        .wrapping_add(c.g[V0][0] as u32));
                                                     c.ldl(
                                                         7,
                                                         (c.g[SP][0] as u32).wrapping_add(0x67),
@@ -5139,7 +4032,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                         c.lw(
                                                             (c.g[GP][0] as u32).wrapping_add(0x608)
                                                         );
-                                                    c.g[V1][0] = c.lw((c.g[A0][0] as u32));
+                                                    c.g[V1][0] = c.lw(c.g[A0][0] as u32);
                                                     c.g[V0][0] =
                                                         c.lw(
                                                             (c.g[V1][0] as u32).wrapping_add(0x1f4)
@@ -5150,13 +4043,13 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                         );
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                        .wrapping_add((c.g[A0][0] as u32)));
-                                                    c.sw((c.g[V0][0] as u32), c.g[S7][0]);
+                                                        .wrapping_add(c.g[A0][0] as u32));
+                                                    c.sw(c.g[V0][0] as u32, c.g[S7][0]);
                                                     c.g[V1][0] =
                                                         c.lw(
                                                             (c.g[GP][0] as u32).wrapping_add(0x608)
                                                         );
-                                                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                                                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                                                     c.g[V0][0] =
                                                         c.lw(
                                                             (c.g[A0][0] as u32).wrapping_add(0x1f4)
@@ -5167,14 +4060,14 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                         );
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                        .wrapping_add((c.g[V1][0] as u32)));
-                                                    c.sw((c.g[V0][0] as u32), 0u64);
+                                                        .wrapping_add(c.g[V1][0] as u32));
+                                                    c.sw(c.g[V0][0] as u32, 0u64);
                                                     c.g[A0][0] =
                                                         c.lw(
                                                             (c.g[GP][0] as u32).wrapping_add(0x608)
                                                         );
-                                                    c.g[A1][0] = c.lw((c.g[S7][0] as u32));
-                                                    c.g[V1][0] = c.lw((c.g[A0][0] as u32));
+                                                    c.g[A1][0] = c.lw(c.g[S7][0] as u32);
+                                                    c.g[V1][0] = c.lw(c.g[A0][0] as u32);
                                                     c.g[V0][0] =
                                                         c.lw(
                                                             (c.g[V1][0] as u32).wrapping_add(0x1f4)
@@ -5185,8 +4078,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                         );
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                        .wrapping_add((c.g[A0][0] as u32)));
-                                                    c.sw((c.g[V0][0] as u32), c.g[A1][0]);
+                                                        .wrapping_add(c.g[A0][0] as u32));
+                                                    c.sw(c.g[V0][0] as u32, c.g[A1][0]);
                                                     c.g[A0][0] =
                                                         c.lw(
                                                             (c.g[GP][0] as u32).wrapping_add(0x608)
@@ -5210,8 +4103,9 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                             c.cycles += 6;
                                             c.mult(0, 2, 21, 2);
                                             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xe0));
-                                            c.g[S6][0] = sx((c.g[S7][0] as u32)
-                                                .wrapping_add((c.g[V0][0] as u32)));
+                                            c.g[S6][0] =
+                                                sx((c.g[S7][0] as u32)
+                                                    .wrapping_add(c.g[V0][0] as u32));
                                             c.g[V1][0] =
                                                 c.lw((c.g[S6][0] as u32).wrapping_add(0x8));
                                             if c.g[V1][0] == 0u64 {
@@ -5239,7 +4133,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V1][0] =
                                                                 sx((c.g[V1][0] as u32) << 4);
                                                             c.g[V1][0] = sx((c.g[V1][0] as u32)
-                                                                .wrapping_add((c.g[SP][0] as u32)));
+                                                                .wrapping_add(c.g[SP][0] as u32));
                                                             c.lq(
                                                                 2,
                                                                 (c.g[V1][0] as u32)
@@ -5250,7 +4144,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 (c.g[S6][0] as u32)
                                                                     .wrapping_add(0x10),
                                                             );
-                                                            c.g[A0][0] = c.lw((c.g[A3][0] as u32));
+                                                            c.g[A0][0] = c.lw(c.g[A3][0] as u32);
                                                             c.g[A0][0] = sx((c.g[A0][0] as u32)
                                                                 .wrapping_add(0x1d8));
                                                             callee::FIND_INSTANCE
@@ -5282,13 +4176,9 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         );
                                                                         c.g[A2][0] = 0x8;
                                                                         c.g[A3][0] =
-                                                                            c.lw(
-                                                                                (c.g[S6][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[S6][0] as u32);
                                                                         c.g[S0][0] =
-                                                                            c.lw(
-                                                                                (c.g[S2][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[S2][0] as u32);
                                                                         c.sw(
                                                                             (c.g[SP][0] as u32)
                                                                                 .wrapping_add(0x88),
@@ -5325,8 +4215,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.ldl(
                                                                             2,
@@ -5375,10 +4265,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                             (c.g[V1][0] as u32)
                                                                                 .wrapping_add(0x7),
                                                                         );
-                                                                        c.sdr(
-                                                                            2,
-                                                                            (c.g[V1][0] as u32),
-                                                                        );
+                                                                        c.sdr(2, c.g[V1][0] as u32);
                                                                         c.sdl(
                                                                             4,
                                                                             (c.g[V1][0] as u32)
@@ -5409,8 +4296,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[S0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
                                                                             (c.g[V0][0] as u32)
@@ -5433,11 +4320,11 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
-                                                                            (c.g[V1][0] as u32),
+                                                                            c.g[V1][0] as u32,
                                                                             0u64,
                                                                         );
                                                                         c.g[V0][0] = 0x18;
@@ -5464,21 +4351,19 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[A3][0] =
                                                                             sx((c.g[A3][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[A0][0] =
                                                                             sx((c.g[A0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[T0][0]
-                                                                                        as u32),
+                                                                                    c.g[T0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[V1][0] =
-                                                                            c.lb(
-                                                                                (c.g[A0][0] as u32)
-                                                                            );
+                                                                            c.lb(c.g[A0][0] as u32);
                                                                         c.sw(
-                                                                            (c.g[A3][0] as u32),
+                                                                            c.g[A3][0] as u32,
                                                                             c.g[V1][0],
                                                                         );
                                                                         c.g[V0][0] = c.lw((c.g[S0]
@@ -5495,11 +4380,11 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V1][0]
-                                                                                        as u32),
+                                                                                    c.g[V1][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             0u64,
                                                                         );
                                                                         c.g[A0][0] = c.lw((c.g[S0]
@@ -5512,8 +4397,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[A0][0] =
                                                                             sx((c.g[S1][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[A0][0]
-                                                                                        as u32),
+                                                                                    c.g[A0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[A0][0] =
                                                                             sx((c.g[A0][0] as u32)
@@ -5539,12 +4424,12 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[A3][0] = 0x7f;
                                                                         c.sw(
-                                                                            (c.g[V1][0] as u32),
+                                                                            c.g[V1][0] as u32,
                                                                             0u64,
                                                                         );
                                                                         c.g[V0][0] = c.lw((c.g[S0]
@@ -5561,11 +4446,11 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V1][0]
-                                                                                        as u32),
+                                                                                    c.g[V1][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             0u64,
                                                                         );
                                                                         c.g[V1][0] = c.lw((c.g[S0]
@@ -5582,11 +4467,11 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
-                                                                            (c.g[V1][0] as u32),
+                                                                            c.g[V1][0] as u32,
                                                                             0u64,
                                                                         );
                                                                         c.g[V0][0] = c.lw((c.g[S0]
@@ -5603,11 +4488,11 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V1][0]
-                                                                                        as u32),
+                                                                                    c.g[V1][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             0u64,
                                                                         );
                                                                         c.g[V1][0] = c.lw((c.g[S0]
@@ -5624,8 +4509,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
                                                                             (c.g[V1][0] as u32)
@@ -5646,11 +4531,11 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V1][0]
-                                                                                        as u32),
+                                                                                    c.g[V1][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             c.g[A0][0],
                                                                         );
                                                                         c.g[A0][0] = 0x1;
@@ -5668,8 +4553,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
                                                                             (c.g[V1][0] as u32)
@@ -5690,8 +4575,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V1][0]
-                                                                                        as u32),
+                                                                                    c.g[V1][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
                                                                             (c.g[V0][0] as u32)
@@ -5712,11 +4597,11 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
-                                                                            (c.g[V1][0] as u32),
+                                                                            c.g[V1][0] as u32,
                                                                             0u64,
                                                                         );
                                                                         c.g[V0][0] = c.lw((c.g[S0]
@@ -5733,11 +4618,11 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V1][0]
-                                                                                        as u32),
+                                                                                    c.g[V1][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             0u64,
                                                                         );
                                                                         c.g[V1][0] = c.lw((c.g[S0]
@@ -5754,11 +4639,11 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
-                                                                            (c.g[V1][0] as u32),
+                                                                            c.g[V1][0] as u32,
                                                                             0u64,
                                                                         );
                                                                         c.g[V0][0] = c.lw((c.g[S0]
@@ -5775,11 +4660,11 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V1][0]
-                                                                                        as u32),
+                                                                                    c.g[V1][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             c.g[A3][0],
                                                                         );
                                                                         c.g[V1][0] = c.lw((c.g[S0]
@@ -5796,17 +4681,15 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
-                                                                            (c.g[V1][0] as u32),
+                                                                            c.g[V1][0] as u32,
                                                                             c.g[A0][0],
                                                                         );
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[S2][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[S2][0] as u32);
                                                                         c.g[V1][0] = c
                                                                             .lw((c.g[S2][0]
                                                                                 as u32)
@@ -5825,17 +4708,15 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V1][0]
-                                                                                        as u32),
+                                                                                    c.g[V1][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             c.g[A1][0],
                                                                         );
                                                                         c.g[V1][0] =
-                                                                            c.lw(
-                                                                                (c.g[S2][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[S2][0] as u32);
                                                                         c.g[A0][0] = c
                                                                             .lw((c.g[S2][0]
                                                                                 as u32)
@@ -5854,11 +4735,11 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[A0][0]
-                                                                                        as u32),
+                                                                                    c.g[A0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             c.g[A2][0],
                                                                         );
                                                                         c.g[A0][0] = c.lw((c.g[GP]
@@ -5866,9 +4747,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                             as u32)
                                                                             .wrapping_add(0x608));
                                                                         c.g[V1][0] =
-                                                                            c.lw(
-                                                                                (c.g[A0][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A0][0] as u32);
                                                                         c.g[V0][0] = c.lw((c.g[V1]
                                                                             [0]
                                                                             as u32)
@@ -5879,8 +4758,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.sw(
                                                                             (c.g[V1][0] as u32)
@@ -5898,17 +4777,15 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                             as u32)
                                                                             .wrapping_add(0x20));
                                                                         c.g[A3][0] =
-                                                                            c.lw(
-                                                                                (c.g[A0][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A0][0] as u32);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 << 2);
                                                                         c.g[A2][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[T0][0] =
                                                                             sx((c.g[A3][0] as u32)
@@ -5918,21 +4795,17 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[S3][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[V1][0] = c.lw((c.g[A3]
                                                                             [0]
                                                                             as u32)
                                                                             .wrapping_add(0x1f4));
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[V0][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[V0][0] as u32);
                                                                         c.g[A1][0] =
-                                                                            c.lw(
-                                                                                (c.g[A2][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A2][0] as u32);
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 << 2);
@@ -5943,18 +4816,18 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[A0][0] =
                                                                             sx((c.g[A0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
+                                                                                    c.g[A1][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[A1][0] = 0x18;
                                                                         c.sw(
-                                                                            (c.g[V1][0] as u32),
+                                                                            c.g[V1][0] as u32,
                                                                             c.g[A0][0],
                                                                         );
                                                                         c.g[A0][0] = c.lw((c.g[A3]
@@ -5980,13 +4853,11 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
+                                                                                    c.g[A2][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[V0][0] =
-                                                                            c.lw(
-                                                                                (c.g[V1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[V1][0] as u32);
                                                                         c.g[V0][0] = ((c.g[V0][0]
                                                                             as i64)
                                                                             < 127i64)
@@ -5995,8 +4866,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[A0][0] =
                                                                             sx((c.g[A0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
+                                                                                    c.g[A1][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         if t {
                                                                             break 'b_2a5920;
@@ -6016,12 +4887,12 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                                 sx((c.g[V0][0]
                                                                                     as u32)
                                                                                     .wrapping_add(
-                                                                                        (c.g[A2][0]
-                                                                                            as u32),
+                                                                                        c.g[A2][0]
+                                                                                            as u32,
                                                                                     ));
                                                                             c.g[V1][0] = c
-                                                                                .lw((c.g[V0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[V0][0]
+                                                                                    as u32);
                                                                             let t = (c.g[V1][0]
                                                                                 as i64)
                                                                                 < 0;
@@ -6043,10 +4914,10 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                     c.g[V0][0] = sx((c.g[V0][0]
                                                                         as u32)
                                                                         .wrapping_add(
-                                                                            (c.g[A2][0] as u32),
+                                                                            c.g[A2][0] as u32,
                                                                         ));
                                                                     c.g[V1][0] =
-                                                                        c.lw((c.g[V0][0] as u32));
+                                                                        c.lw(c.g[V0][0] as u32);
                                                                     c.g[V1][0] = ((c.g[V1][0]
                                                                         as i64)
                                                                         < 127i64)
@@ -6066,20 +4937,16 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
+                                                                                    c.g[A2][0]
+                                                                                        as u32,
                                                                                 ));
-                                                                        c.g[V0][0] = c.lbu(
-                                                                            (c.g[V0][0] as u32),
-                                                                        );
+                                                                        c.g[V0][0] = c
+                                                                            .lbu(c.g[V0][0] as u32);
                                                                         break 'b_2a594c;
                                                                     }
                                                                 }
                                                                 c.cycles += 59;
-                                                                c.sb(
-                                                                    (c.g[A0][0] as u32),
-                                                                    c.g[V0][0],
-                                                                );
+                                                                c.sb(c.g[A0][0] as u32, c.g[V0][0]);
                                                                 c.g[A3][0] = 0x1;
                                                                 c.g[A2][0] = 0x4a0000;
                                                                 c.g[A0][0] = c
@@ -6089,7 +4956,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                     .lw((c.g[S7][0] as u32)
                                                                         .wrapping_add(0x17c));
                                                                 c.g[V1][0] =
-                                                                    c.lw((c.g[A0][0] as u32));
+                                                                    c.lw(c.g[A0][0] as u32);
                                                                 c.g[V0][0] = c
                                                                     .lw((c.g[V1][0] as u32)
                                                                         .wrapping_add(0x1f4));
@@ -6101,17 +4968,14 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 c.g[V0][0] = sx((c.g[V0][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[A0][0] as u32),
+                                                                        c.g[A0][0] as u32,
                                                                     ));
-                                                                c.sw(
-                                                                    (c.g[V0][0] as u32),
-                                                                    c.g[A1][0],
-                                                                );
+                                                                c.sw(c.g[V0][0] as u32, c.g[A1][0]);
                                                                 c.g[V1][0] = c
                                                                     .lw((c.g[GP][0] as u32)
                                                                         .wrapping_add(0x608));
                                                                 c.g[A0][0] =
-                                                                    c.lw((c.g[V1][0] as u32));
+                                                                    c.lw(c.g[V1][0] as u32);
                                                                 c.g[V0][0] = c
                                                                     .lw((c.g[A0][0] as u32)
                                                                         .wrapping_add(0x1f4));
@@ -6123,19 +4987,16 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 c.g[V0][0] = sx((c.g[V0][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[V1][0] as u32),
+                                                                        c.g[V1][0] as u32,
                                                                     ));
-                                                                c.sw(
-                                                                    (c.g[V0][0] as u32),
-                                                                    c.g[A3][0],
-                                                                );
+                                                                c.sw(c.g[V0][0] as u32, c.g[A3][0]);
                                                                 c.g[A0][0] = c
                                                                     .lw((c.g[GP][0] as u32)
                                                                         .wrapping_add(0x608));
                                                                 c.g[A1][0] =
-                                                                    c.lw((c.g[S7][0] as u32));
+                                                                    c.lw(c.g[S7][0] as u32);
                                                                 c.g[V1][0] =
-                                                                    c.lw((c.g[A0][0] as u32));
+                                                                    c.lw(c.g[A0][0] as u32);
                                                                 c.g[V0][0] = c
                                                                     .lw((c.g[V1][0] as u32)
                                                                         .wrapping_add(0x1f4));
@@ -6147,17 +5008,14 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 c.g[V0][0] = sx((c.g[V0][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[A0][0] as u32),
+                                                                        c.g[A0][0] as u32,
                                                                     ));
-                                                                c.sw(
-                                                                    (c.g[V0][0] as u32),
-                                                                    c.g[A1][0],
-                                                                );
+                                                                c.sw(c.g[V0][0] as u32, c.g[A1][0]);
                                                                 c.g[V1][0] = c
                                                                     .lw((c.g[GP][0] as u32)
                                                                         .wrapping_add(0x608));
                                                                 c.g[A1][0] =
-                                                                    c.lw((c.g[V1][0] as u32));
+                                                                    c.lw(c.g[V1][0] as u32);
                                                                 c.g[A0][0] = sx((c.g[A2][0]
                                                                     as u32)
                                                                     .wrapping_add(0x3700));
@@ -6166,7 +5024,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                     (c.g[A0][0] as u32)
                                                                         .wrapping_add(0x7),
                                                                 );
-                                                                c.ldr(8, (c.g[A0][0] as u32));
+                                                                c.ldr(8, c.g[A0][0] as u32);
                                                                 c.sdl(
                                                                     8,
                                                                     (c.g[SP][0] as u32)
@@ -6188,7 +5046,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 c.g[A0][0] = sx((c.g[A0][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[V0][0] as u32),
+                                                                        c.g[V0][0] as u32,
                                                                     ));
                                                                 c.ldl(
                                                                     5,
@@ -6214,7 +5072,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                     .lw((c.g[GP][0] as u32)
                                                                         .wrapping_add(0x608));
                                                                 c.g[A0][0] =
-                                                                    c.lw((c.g[V1][0] as u32));
+                                                                    c.lw(c.g[V1][0] as u32);
                                                                 c.g[V0][0] = c
                                                                     .lw((c.g[A0][0] as u32)
                                                                         .wrapping_add(0x1f4));
@@ -6226,17 +5084,14 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 c.g[V0][0] = sx((c.g[V0][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[V1][0] as u32),
+                                                                        c.g[V1][0] as u32,
                                                                     ));
-                                                                c.sw(
-                                                                    (c.g[V0][0] as u32),
-                                                                    c.g[S7][0],
-                                                                );
+                                                                c.sw(c.g[V0][0] as u32, c.g[S7][0]);
                                                                 c.g[V1][0] = c
                                                                     .lw((c.g[GP][0] as u32)
                                                                         .wrapping_add(0x608));
                                                                 c.g[A0][0] =
-                                                                    c.lw((c.g[V1][0] as u32));
+                                                                    c.lw(c.g[V1][0] as u32);
                                                                 c.g[V0][0] = c
                                                                     .lw((c.g[A0][0] as u32)
                                                                         .wrapping_add(0x1f4));
@@ -6248,9 +5103,9 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 c.g[V0][0] = sx((c.g[V0][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[V1][0] as u32),
+                                                                        c.g[V1][0] as u32,
                                                                     ));
-                                                                c.sw((c.g[V0][0] as u32), 0u64);
+                                                                c.sw(c.g[V0][0] as u32, 0u64);
                                                                 c.g[A0][0] = c
                                                                     .lw((c.g[GP][0] as u32)
                                                                         .wrapping_add(0x608));
@@ -6270,13 +5125,13 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 .wrapping_add(0x8c));
                                                         c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                                                         c.g[A1][0] = sx((c.g[V1][0] as u32)
-                                                            .wrapping_add((c.g[V0][0] as u32)));
+                                                            .wrapping_add(c.g[V0][0] as u32));
                                                         c.g[V0][0] = sx((c.g[S3][0] as u32)
-                                                            .wrapping_add((c.g[V0][0] as u32)));
-                                                        c.g[A0][0] = c.lw((c.g[A1][0] as u32));
-                                                        c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                                                            .wrapping_add(c.g[V0][0] as u32));
+                                                        c.g[A0][0] = c.lw(c.g[A1][0] as u32);
+                                                        c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                                                         c.g[V1][0] = sx((c.g[V1][0] as u32)
-                                                            .wrapping_add((c.g[A0][0] as u32)));
+                                                            .wrapping_add(c.g[A0][0] as u32));
                                                         c.sw(
                                                             (c.g[A2][0] as u32).wrapping_add(0x64),
                                                             c.g[V1][0],
@@ -6331,7 +5186,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                         );
                                                     c.g[A2][0] =
                                                         sx((c.g[SP][0] as u32).wrapping_add(0x70));
-                                                    c.g[A1][0] = c.lw((c.g[S7][0] as u32));
+                                                    c.g[A1][0] = c.lw(c.g[S7][0] as u32);
                                                     c.g[A3][0] =
                                                         sx((c.g[SP][0] as u32).wrapping_add(0x74));
                                                     c.g[V1][0] =
@@ -6342,7 +5197,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                         .lw((c.g[V1][0] as u32).wrapping_add(0x14));
                                                     let t = c.g[V0][0] as u32;
                                                     c.g[A0][0] = sx((c.g[T0][0] as u32)
-                                                        .wrapping_add((c.g[A0][0] as u32)));
+                                                        .wrapping_add(c.g[A0][0] as u32));
                                                     call_ptr(c, t, 0x002a5aa0)?;
                                                     c.g[S0][0] = c.g[V0][0];
                                                     c.g[V0][0] =
@@ -6386,7 +5241,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 .wrapping_add(0x608));
                                                         c.mult(0, 4, 16, 4);
                                                         c.g[A0][0] = sx((c.g[A0][0] as u32)
-                                                            .wrapping_add((c.g[V0][0] as u32)));
+                                                            .wrapping_add(c.g[V0][0] as u32));
                                                         c.g[A0][0] =
                                                             sx((c.g[A0][0] as u32)
                                                                 .wrapping_add(0x4c));
@@ -6415,7 +5270,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         .wrapping_add(0x10));
                                                                     c.g[A3][0] = 0x18;
                                                                     c.g[V1][0] =
-                                                                        c.lw((c.g[A2][0] as u32));
+                                                                        c.lw(c.g[A2][0] as u32);
                                                                     c.g[V0][0] = c
                                                                         .lw((c.g[V1][0] as u32)
                                                                             .wrapping_add(0x1f4));
@@ -6425,7 +5280,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                     c.g[V1][0] = sx((c.g[V1][0]
                                                                         as u32)
                                                                         .wrapping_add(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                         ));
                                                                     c.sw(
                                                                         (c.g[V1][0] as u32)
@@ -6436,7 +5291,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         .lw((c.g[SP][0] as u32)
                                                                             .wrapping_add(0x74));
                                                                     c.g[A1][0] =
-                                                                        c.lw((c.g[A2][0] as u32));
+                                                                        c.lw(c.g[A2][0] as u32);
                                                                     c.mult(0, 4, 30, 4);
                                                                     c.g[V0][0] = c
                                                                         .lw((c.g[A1][0] as u32)
@@ -6453,7 +5308,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                     c.g[V0][0] = sx((c.g[V0][0]
                                                                         as u32)
                                                                         .wrapping_add(
-                                                                            (c.g[V1][0] as u32),
+                                                                            c.g[V1][0] as u32,
                                                                         ));
                                                                     c.g[A0][0] = sx(((c.g[A0][0]
                                                                         as u32)
@@ -6461,7 +5316,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         >> 12)
                                                                         as u32);
                                                                     c.sw(
-                                                                        (c.g[V0][0] as u32),
+                                                                        c.g[V0][0] as u32,
                                                                         c.g[A0][0],
                                                                     );
                                                                     c.g[A0][0] = c
@@ -6483,10 +5338,10 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                     c.g[V1][0] = sx((c.g[V1][0]
                                                                         as u32)
                                                                         .wrapping_add(
-                                                                            (c.g[T0][0] as u32),
+                                                                            c.g[T0][0] as u32,
                                                                         ));
                                                                     c.g[V0][0] =
-                                                                        c.lw((c.g[V1][0] as u32));
+                                                                        c.lw(c.g[V1][0] as u32);
                                                                     c.g[V0][0] = ((c.g[V0][0]
                                                                         as i64)
                                                                         < 127i64)
@@ -6495,7 +5350,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                     c.g[A0][0] = sx((c.g[A0][0]
                                                                         as u32)
                                                                         .wrapping_add(
-                                                                            (c.g[A1][0] as u32),
+                                                                            c.g[A1][0] as u32,
                                                                         ));
                                                                     if t {
                                                                         break 'b_2a5b90;
@@ -6511,13 +5366,11 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[T0][0]
-                                                                                        as u32),
+                                                                                    c.g[T0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[V1][0] =
-                                                                            c.lw(
-                                                                                (c.g[V0][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[V0][0] as u32);
                                                                         let t =
                                                                             (c.g[V1][0] as i64) < 0;
                                                                         c.g[V0][0] = 0u64;
@@ -6537,10 +5390,10 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                 c.g[V0][0] = sx((c.g[V0][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[T0][0] as u32),
+                                                                        c.g[T0][0] as u32,
                                                                     ));
                                                                 c.g[V1][0] =
-                                                                    c.lw((c.g[V0][0] as u32));
+                                                                    c.lw(c.g[V0][0] as u32);
                                                                 c.g[V1][0] = ((c.g[V1][0] as i64)
                                                                     < 127i64)
                                                                     as u64;
@@ -6558,21 +5411,21 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                                     c.g[V0][0] = sx((c.g[V0][0]
                                                                         as u32)
                                                                         .wrapping_add(
-                                                                            (c.g[T0][0] as u32),
+                                                                            c.g[T0][0] as u32,
                                                                         ));
                                                                     c.g[V0][0] =
-                                                                        c.lbu((c.g[V0][0] as u32));
+                                                                        c.lbu(c.g[V0][0] as u32);
                                                                     break 'b_2a5bbc;
                                                                 }
                                                             }
                                                             c.cycles += 29;
-                                                            c.sb((c.g[A0][0] as u32), c.g[V0][0]);
+                                                            c.sb(c.g[A0][0] as u32, c.g[V0][0]);
                                                             c.g[A2][0] = 0x1;
                                                             c.g[A0][0] = c.lw((c.g[GP][0] as u32)
                                                                 .wrapping_add(0x608));
                                                             c.g[A1][0] = c.lw((c.g[S7][0] as u32)
                                                                 .wrapping_add(0x17c));
-                                                            c.g[V1][0] = c.lw((c.g[A0][0] as u32));
+                                                            c.g[V1][0] = c.lw(c.g[A0][0] as u32);
                                                             c.g[V0][0] = c.lw((c.g[V1][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[A0][0] = c.lw((c.g[V1][0] as u32)
@@ -6580,11 +5433,11 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[A0][0] as u32)));
-                                                            c.sw((c.g[V0][0] as u32), c.g[A1][0]);
+                                                                .wrapping_add(c.g[A0][0] as u32));
+                                                            c.sw(c.g[V0][0] as u32, c.g[A1][0]);
                                                             c.g[V1][0] = c.lw((c.g[GP][0] as u32)
                                                                 .wrapping_add(0x608));
-                                                            c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                                                            c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                                                             c.g[V0][0] = c.lw((c.g[A0][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[V1][0] = c.lw((c.g[A0][0] as u32)
@@ -6592,12 +5445,12 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[V1][0] as u32)));
-                                                            c.sw((c.g[V0][0] as u32), c.g[A2][0]);
+                                                                .wrapping_add(c.g[V1][0] as u32));
+                                                            c.sw(c.g[V0][0] as u32, c.g[A2][0]);
                                                             c.g[A0][0] = c.lw((c.g[GP][0] as u32)
                                                                 .wrapping_add(0x608));
-                                                            c.g[A1][0] = c.lw((c.g[S7][0] as u32));
-                                                            c.g[V1][0] = c.lw((c.g[A0][0] as u32));
+                                                            c.g[A1][0] = c.lw(c.g[S7][0] as u32);
+                                                            c.g[V1][0] = c.lw(c.g[A0][0] as u32);
                                                             c.g[V0][0] = c.lw((c.g[V1][0] as u32)
                                                                 .wrapping_add(0x1f4));
                                                             c.g[A0][0] = c.lw((c.g[V1][0] as u32)
@@ -6605,8 +5458,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[A0][0] as u32)));
-                                                            c.sw((c.g[V0][0] as u32), c.g[A1][0]);
+                                                                .wrapping_add(c.g[A0][0] as u32));
+                                                            c.sw(c.g[V0][0] as u32, c.g[A1][0]);
                                                             c.g[A0][0] = c.lw((c.g[GP][0] as u32)
                                                                 .wrapping_add(0x608));
                                                             callee::MIDI_PLAY
@@ -6647,7 +5500,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                         'b_2a5c70: {
                                             c.cycles += 7;
                                             c.g[A2][0] = 0x2;
-                                            c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                                            c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                                             c.g[A0][0] =
                                                 sx((c.g[A0][0] as u32).wrapping_add(0x1d8));
                                             callee::FIND_INSTANCE.call(c, 0x002a5c54)?;
@@ -6691,7 +5544,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                     }
                                 }
                                 c.cycles += 3;
-                                c.lq(2, (c.g[SP][0] as u32));
+                                c.lq(2, c.g[SP][0] as u32);
                                 c.sw((c.g[S7][0] as u32).wrapping_add(0x178), c.g[FP][0]);
                                 c.sq(2, (c.g[S7][0] as u32).wrapping_add(0x10));
                                 break 'b_2a5ca4;
@@ -6716,7 +5569,6 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
     let t = c.g[RA][0] as u32;
     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x130));
     c.pc = t;
-    return Ok(());
     Ok(())
 }
 
@@ -7019,7 +5871,7 @@ pub fn ini_parser_find_section(c: &mut Cpu) {
                 return Ok(());
             }
         };
-        let mut result = 0u64;
+        let result: u64;
         loop {
             match st {
                 Stage::Head => {
@@ -7939,7 +6791,7 @@ pub fn ini_parser_expect(c: &mut Cpu) {
         c.g[V0][0] = Addr(c.g[V1][0] as u32).lb(c);
         let at_end = c.g[V0][0] == 0;
         c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S2][0] as u32));
-        let mut result: u64 = 0;
+        let result: u64;
         if at_end {
             c.cycles += 1;
             result = Addr(c.g[V1][0] as u32).lb(c);
@@ -7991,9 +6843,10 @@ pub fn ini_parser_expect(c: &mut Cpu) {
                     result = Addr(c.g[V1][0] as u32).lb(c);
                     break 'expect;
                 }
-                c.g[V0][0] = result;
             }
         }
+        // 0x2a7f70: every path returns the char it loaded (or 1) in v0.
+        c.g[V0][0] = result;
         c.cycles += 7;
         frame.restore(c, S0, 0x40);
         frame.restore(c, S1, 0x30);
@@ -8083,7 +6936,6 @@ pub fn ssx_audio_system_dj_say_212c(c: &mut Cpu) {
         call_ptr(c, 0x0029_f0d8, 0x002a2ba4)?;
         let speech_off = c.g[V0][0] == 0;
         c.g[A0][0] = sx(r32(c, S2).wrapping_add(0x5560));
-        let mut last = 0u64;
         if !speech_off {
             c.cycles += 10;
             c.mtc1(0, 12);
@@ -8115,7 +6967,7 @@ pub fn ssx_audio_system_dj_say_212c(c: &mut Cpu) {
                 call_ptr(c, post, 0x002a2c0c)?;
                 c.g[V0][0] = 1;
             }
-            last = c.g[V0][0];
+            let last = c.g[V0][0];
             c.cycles += 1;
             Addr(p(r32(c, S2), 0x5780)).sw(c, last);
         }
@@ -8292,7 +7144,7 @@ pub fn ini_parser_read_quoted_string(c: &mut Cpu) {
         callee::INI_PARSER_EXPECT.call(c, 0x002a_7d2c)?;
         c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
         c.g[A0][0] = 0x22;
-        c.g[V0][0] = c.lb((c.g[V1][0] as u32));
+        c.g[V0][0] = c.lb(c.g[V1][0] as u32);
         let quoted = c.g[V0][0] == c.g[A0][0];
         c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
         if !quoted {
@@ -8302,10 +7154,10 @@ pub fn ini_parser_read_quoted_string(c: &mut Cpu) {
                 c.cycles += 8;
                 c.g[A0][0] = c.g[S1][0];
                 callee::INI_PARSER_GET_CHAR.call(c, 0x002a_7d50)?;
-                c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
-                c.sb((c.g[V1][0] as u32), c.g[V0][0]);
+                c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                c.sb(c.g[V1][0] as u32, c.g[V0][0]);
                 c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                c.g[V1][0] = c.lb((c.g[V0][0] as u32));
+                c.g[V1][0] = c.lb(c.g[V0][0] as u32);
                 let at_quote = c.g[V1][0] == c.g[S3][0];
                 c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
                 if at_quote {
@@ -8322,13 +7174,13 @@ pub fn ini_parser_read_quoted_string(c: &mut Cpu) {
         callee::INI_PARSER_EXPECT.call(c, 0x002a_7d74)?;
         c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
         c.lq(16, frame.at(c, 0x50));
-        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
         c.lq(17, frame.at(c, 0x40));
         c.lq(18, frame.at(c, 0x30));
         c.lq(19, frame.at(c, 0x20));
         c.lq(20, frame.at(c, 0x10));
         frame.restore_ra(c, 0);
-        c.sb((c.g[V1][0] as u32), 0u64);
+        c.sb(c.g[V1][0] as u32, 0u64);
         let ra = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
         c.pc = ra;
@@ -8467,9 +7319,9 @@ pub fn ssx_audio_system_store_race_result(c: &mut Cpu) {
         }
         c.cycles += 11;
         c.g[V1][0] = Addr(p(c.g[S0][0] as u32, 0x5808)).lw(c);
-        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
         c.g[RA][0] = c.ld(p(c.g[SP][0] as u32, 0));
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S1][0] as u32));
         c.sw(p(c.g[S0][0] as u32, 0x5804), c.g[V0][0]);
         c.sw(p(c.g[S0][0] as u32, 0x5808), c.g[V1][0]);
         frame.restore(c, S0, 0x30);
@@ -8691,7 +7543,7 @@ pub fn ssx_audio_system_set_fade_mode(c: &mut Cpu) {
                 c.g[S1][0] = c.g[A1][0];
                 c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x30));
                 c.mov_s(21, 12);
-                c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                 let t = c.g[S1][0] != c.g[V0][0];
                 c.mov_s(20, 13);
                 if t {
@@ -8772,7 +7624,7 @@ pub fn ssx_audio_system_set_fade_mode(c: &mut Cpu) {
     }
     c.cycles += 6;
     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
     c.lwc1(21, (c.g[SP][0] as u32).wrapping_add(0x38));
     c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x30));
     let t = c.g[RA][0] as u32;
@@ -9111,7 +7963,7 @@ pub fn ssx_audio_system_dj_say_20e9(c: &mut Cpu) {
                 c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                 c.g[S0][0] = c.g[A0][0];
                 c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                 c.g[S1][0] = c.g[A1][0];
                 call_ptr(c, 0x0029f0d8, 0x002a23f0)?;
                 let t = c.g[V0][0] == 0u64;
@@ -9151,7 +8003,7 @@ pub fn ssx_audio_system_dj_say_20e9(c: &mut Cpu) {
                                     call_ptr(c, 0x0014dd58, 0x002a244c)?;
                                     c.g[A0][0] = c.g[V0][0];
                                     call_ptr(c, 0x00144bc0, 0x002a2454)?;
-                                    c.g[A1][0] = c.lw((c.g[V0][0] as u32));
+                                    c.g[A1][0] = c.lw(c.g[V0][0] as u32);
                                     let t = true;
                                     c.g[A0][0] = c.g[S0][0];
                                     if t {
@@ -9195,11 +8047,10 @@ pub fn ssx_audio_system_dj_say_20e9(c: &mut Cpu) {
         c.cycles += 5;
         c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
         c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
         c.pc = t;
-        return Ok(());
         Ok(())
     });
 }
@@ -9554,7 +8405,7 @@ pub fn crowd_audio_instance_remove_source(c: &mut Cpu) {
                 c.g[V0][0] = 0xc;
                 c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x20));
                 c.mult(0, 5, 5, 2);
-                c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
                 c.g[V0][0] = c.ldw_2(A0, 0);
                 let t = c.g[V0][0] == 0u64;
                 c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x28));
@@ -9564,7 +8415,7 @@ pub fn crowd_audio_instance_remove_source(c: &mut Cpu) {
                     'b_2a6390: {
                         c.cycles += 11;
                         c.g[V0][0] = c.ldw_2(S0, 0xd4);
-                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
                         c.g[S1][0] = c.ldw_2(V1, 0);
                         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
                         c.stw_2(S0, 0xd4, c.g[V0][0]);
@@ -9719,7 +8570,7 @@ pub fn crowd_audio_push_play_params(c: &mut Cpu) {
     c.g[V1][0] = c.ldw_2(S0, 0x1f4);
     c.g[V0][0] = c.ldw_2(S1, 0x20);
     c.mult(0, 3, 3, 9);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.ldl(2, c.pa(S0, 0x1e3));
     c.ldr(2, c.pa(S0, 0x1dc));
     c.ldl(4, c.pa(S0, 0x1eb));
@@ -9734,12 +8585,12 @@ pub fn crowd_audio_push_play_params(c: &mut Cpu) {
     c.sdr(7, c.pa(V1, 0x10));
     c.g[V0][0] = c.ldw_2(S0, 0x1f4);
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.stw_2(V0, 0x1fc, 0u64);
     c.g[V1][0] = c.ldw_2(S0, 0x1f4);
     c.g[V0][0] = c.ldw_2(S1, 0x34);
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.stw_2(V1, 0, 0u64);
     c.g[A3][0] = c.ldw_2(S0, 0x1f4);
     c.g[A0][0] = c.ldw_2(S0, 0x1f4);
@@ -9747,18 +8598,18 @@ pub fn crowd_audio_push_play_params(c: &mut Cpu) {
     c.g[A3][0] = sx((c.g[A3][0] as u32) << 2);
     c.mult(0, 4, 4, 9);
     c.g[V0][0] = c.ldw_2(S1, 0x38);
-    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[T0][0] as u32)));
+    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
     c.g[V1][0] = c.ldb(A0, 0);
     c.stw_2(A3, 0, c.g[V1][0]);
     c.g[V0][0] = c.ldw_2(S0, 0x1f4);
     c.g[V1][0] = c.ldw_2(S1, 0x3c);
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
     c.stw_2(V0, 0, 0u64);
     c.g[A0][0] = c.ldw_2(S0, 0x1f4);
     c.g[A0][0] = sx((c.g[A0][0] as u32) << 3);
-    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
     c.g[RA][0] = sx(0x002a754c);
     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
     c.pc = 0x00416210;
@@ -9772,70 +8623,70 @@ pub fn crowd_audio_push_play_params(c: &mut Cpu) {
     c.g[A1][0] = 0x5a;
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
     c.g[A2][0] = 0x32;
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.g[A3][0] = 0x7f;
     c.stw_2(V1, 0, 0u64);
     c.g[T0][0] = 0x1;
     c.g[V0][0] = c.ldw_2(S0, 0x1f4);
     c.g[V1][0] = c.ldw_2(S1, 0x64);
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
     c.stw_2(V0, 0, 0u64);
     c.g[V1][0] = c.ldw_2(S0, 0x1f4);
     c.g[V0][0] = c.ldw_2(S1, 0x68);
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.stw_2(V1, 0, 0u64);
     c.g[V0][0] = c.ldw_2(S0, 0x1f4);
     c.g[V1][0] = c.ldw_2(S1, 0x6c);
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
     c.stw_2(V0, 0, 0u64);
     c.g[V1][0] = c.ldw_2(S0, 0x1f4);
     c.g[V0][0] = c.ldw_2(S1, 0x70);
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.stw_2(V1, 0x4, 0u64);
     c.g[V0][0] = c.ldw_2(S0, 0x1f4);
     c.g[V1][0] = c.ldw_2(S1, 0x70);
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
     c.stw_2(V0, 0, c.g[A0][0]);
     c.g[V1][0] = c.ldw_2(S0, 0x1f4);
     c.g[V0][0] = c.ldw_2(S1, 0x70);
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.stw_2(V1, 0x8, c.g[A1][0]);
     c.g[V0][0] = c.ldw_2(S0, 0x1f4);
     c.g[V1][0] = c.ldw_2(S1, 0x70);
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
     c.stw_2(V0, 0xc, c.g[A2][0]);
     c.g[V1][0] = c.ldw_2(S0, 0x1f4);
     c.g[V0][0] = c.ldw_2(S1, 0x74);
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.stw_2(V1, 0, 0u64);
     c.g[V0][0] = c.ldw_2(S0, 0x1f4);
     c.g[V1][0] = c.ldw_2(S1, 0x80);
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
     c.stw_2(V0, 0, 0u64);
     c.g[V1][0] = c.ldw_2(S0, 0x1f4);
     c.g[V0][0] = c.ldw_2(S1, 0x84);
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.stw_2(V1, 0, 0u64);
     c.g[V0][0] = c.ldw_2(S0, 0x1f4);
     c.g[V1][0] = c.ldw_2(S1, 0x78);
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
     c.stw_2(V0, 0, c.g[A3][0]);
     c.g[V1][0] = c.ldw_2(S0, 0x1f4);
     c.g[V0][0] = c.ldw_2(S1, 0x7c);
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
     c.lq(16, c.pa(SP, 0x20));
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.lq(17, c.pa(SP, 0x10));
     c.g[RA][0] = c.ldd(SP, 0);
     c.stw_2(V1, 0, c.g[T0][0]);
@@ -9866,11 +8717,11 @@ pub fn midi_banks_push_play_params(c: &mut Cpu) {
     c.g[S2][0] = c.g[A0][0];
     c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
     c.g[S3][0] = c.g[A1][0];
-    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
     c.g[S4][0] = c.g[A2][0];
     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
     c.g[A1][0] = 0u64;
-    c.g[S0][0] = c.lw((c.g[S2][0] as u32));
+    c.g[S0][0] = c.lw(c.g[S2][0] as u32);
     c.g[A2][0] = 0x8;
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1d8));
@@ -9879,7 +8730,7 @@ pub fn midi_banks_push_play_params(c: &mut Cpu) {
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
     c.mult(0, 3, 3, 9);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.ldl(2, (c.g[S0][0] as u32).wrapping_add(0x1e3));
     c.ldr(2, (c.g[S0][0] as u32).wrapping_add(0x1dc));
     c.ldl(4, (c.g[S0][0] as u32).wrapping_add(0x1eb));
@@ -9887,38 +8738,38 @@ pub fn midi_banks_push_play_params(c: &mut Cpu) {
     c.ldl(7, (c.g[S0][0] as u32).wrapping_add(0x1f3));
     c.ldr(7, (c.g[S0][0] as u32).wrapping_add(0x1ec));
     c.sdl(2, (c.g[V1][0] as u32).wrapping_add(0x7));
-    c.sdr(2, (c.g[V1][0] as u32));
+    c.sdr(2, c.g[V1][0] as u32);
     c.sdl(4, (c.g[V1][0] as u32).wrapping_add(0xf));
     c.sdr(4, (c.g[V1][0] as u32).wrapping_add(0x8));
     c.sdl(7, (c.g[V1][0] as u32).wrapping_add(0x17));
     c.sdr(7, (c.g[V1][0] as u32).wrapping_add(0x10));
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.sw((c.g[V0][0] as u32).wrapping_add(0x1fc), 0u64);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x34));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sw((c.g[V1][0] as u32), 0u64);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(c.g[V1][0] as u32, 0u64);
     c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
     c.g[A3][0] = sx((c.g[A3][0] as u32) << 2);
     c.mult(0, 4, 4, 9);
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x38));
-    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[T0][0] as u32)));
-    c.g[V1][0] = c.lb((c.g[A0][0] as u32));
-    c.sw((c.g[A3][0] as u32), c.g[V1][0]);
+    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+    c.g[V1][0] = c.lb(c.g[A0][0] as u32);
+    c.sw(c.g[A3][0] as u32, c.g[V1][0]);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x3c));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), 0u64);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, 0u64);
     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[A0][0] = sx((c.g[A0][0] as u32) << 3);
-    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
     c.g[RA][0] = sx(0x002a854c);
     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
     c.pc = 0x00416210;
@@ -9932,86 +8783,86 @@ pub fn midi_banks_push_play_params(c: &mut Cpu) {
     c.g[A1][0] = 0x5a;
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
     c.g[A2][0] = 0x32;
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.g[A3][0] = 0x7f;
-    c.sw((c.g[V1][0] as u32), 0u64);
+    c.sw(c.g[V1][0] as u32, 0u64);
     c.g[T0][0] = 0x1;
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x64));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), 0u64);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, 0u64);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sw((c.g[V1][0] as u32), 0u64);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(c.g[V1][0] as u32, 0u64);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6c));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), 0u64);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, 0u64);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.sw((c.g[V1][0] as u32).wrapping_add(0x4), 0u64);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), c.g[A0][0]);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, c.g[A0][0]);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[A1][0]);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
     c.sw((c.g[V0][0] as u32).wrapping_add(0xc), c.g[A2][0]);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x74));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sw((c.g[V1][0] as u32), 0u64);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(c.g[V1][0] as u32, 0u64);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x80));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), 0u64);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, 0u64);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x84));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sw((c.g[V1][0] as u32), 0u64);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(c.g[V1][0] as u32, 0u64);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x78));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), c.g[A3][0]);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, c.g[A3][0]);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x7c));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
-    c.sw((c.g[V1][0] as u32), c.g[T0][0]);
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
-    c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+    c.sw(c.g[V1][0] as u32, c.g[T0][0]);
+    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+    c.g[A0][0] = c.lw(c.g[S2][0] as u32);
     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x10));
     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), c.g[S3][0]);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, c.g[S3][0]);
     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.g[V1][0] = c.lw((c.g[S2][0] as u32));
+    c.g[V1][0] = c.lw(c.g[S2][0] as u32);
     c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x10));
     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1f4));
     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
     c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[S4][0]);
     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
@@ -10035,11 +8886,11 @@ pub fn ssx_audio_system_play_sound(c: &mut Cpu) {
     c.g[S2][0] = c.g[A0][0];
     c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
     c.g[S3][0] = c.g[A1][0];
-    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
     c.g[S4][0] = c.g[A2][0];
     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
     c.g[A1][0] = 0u64;
-    c.g[S0][0] = c.lw((c.g[S2][0] as u32));
+    c.g[S0][0] = c.lw(c.g[S2][0] as u32);
     c.g[A2][0] = 0x8;
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1d8));
@@ -10048,7 +8899,7 @@ pub fn ssx_audio_system_play_sound(c: &mut Cpu) {
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
     c.mult(0, 3, 3, 9);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.ldl(2, (c.g[S0][0] as u32).wrapping_add(0x1e3));
     c.ldr(2, (c.g[S0][0] as u32).wrapping_add(0x1dc));
     c.ldl(4, (c.g[S0][0] as u32).wrapping_add(0x1eb));
@@ -10056,38 +8907,38 @@ pub fn ssx_audio_system_play_sound(c: &mut Cpu) {
     c.ldl(7, (c.g[S0][0] as u32).wrapping_add(0x1f3));
     c.ldr(7, (c.g[S0][0] as u32).wrapping_add(0x1ec));
     c.sdl(2, (c.g[V1][0] as u32).wrapping_add(0x7));
-    c.sdr(2, (c.g[V1][0] as u32));
+    c.sdr(2, c.g[V1][0] as u32);
     c.sdl(4, (c.g[V1][0] as u32).wrapping_add(0xf));
     c.sdr(4, (c.g[V1][0] as u32).wrapping_add(0x8));
     c.sdl(7, (c.g[V1][0] as u32).wrapping_add(0x17));
     c.sdr(7, (c.g[V1][0] as u32).wrapping_add(0x10));
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.sw((c.g[V0][0] as u32).wrapping_add(0x1fc), 0u64);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x34));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sw((c.g[V1][0] as u32), 0u64);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(c.g[V1][0] as u32, 0u64);
     c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
     c.g[A3][0] = sx((c.g[A3][0] as u32) << 2);
     c.mult(0, 4, 4, 9);
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x38));
-    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[T0][0] as u32)));
-    c.g[V1][0] = c.lb((c.g[A0][0] as u32));
-    c.sw((c.g[A3][0] as u32), c.g[V1][0]);
+    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+    c.g[V1][0] = c.lb(c.g[A0][0] as u32);
+    c.sw(c.g[A3][0] as u32, c.g[V1][0]);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x3c));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), 0u64);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, 0u64);
     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[A0][0] = sx((c.g[A0][0] as u32) << 3);
-    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
     c.g[RA][0] = sx(0x00290dbc);
     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
     c.pc = 0x00416210;
@@ -10101,9 +8952,9 @@ pub fn ssx_audio_system_play_sound(c: &mut Cpu) {
     c.g[T0][0] = 0x5a;
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
     c.g[T1][0] = 0x32;
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.g[T2][0] = 0x7f;
-    c.sw((c.g[V1][0] as u32), 0u64);
+    c.sw(c.g[V1][0] as u32, 0u64);
     c.g[T3][0] = 0x1;
     c.g[A0][0] = c.g[S2][0];
     c.g[A1][0] = 0x5;
@@ -10111,75 +8962,75 @@ pub fn ssx_audio_system_play_sound(c: &mut Cpu) {
     c.g[A2][0] = 0u64;
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x64));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sw((c.g[V1][0] as u32), 0u64);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(c.g[V1][0] as u32, 0u64);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), 0u64);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, 0u64);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6c));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sw((c.g[V1][0] as u32), 0u64);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(c.g[V1][0] as u32, 0u64);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
     c.sw((c.g[V0][0] as u32).wrapping_add(0x4), 0u64);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sw((c.g[V1][0] as u32), c.g[A3][0]);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(c.g[V1][0] as u32, c.g[A3][0]);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
     c.sw((c.g[V0][0] as u32).wrapping_add(0x8), c.g[T0][0]);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.sw((c.g[V1][0] as u32).wrapping_add(0xc), c.g[T1][0]);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x74));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), 0u64);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, 0u64);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x80));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sw((c.g[V1][0] as u32), 0u64);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(c.g[V1][0] as u32, 0u64);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x84));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), 0u64);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, 0u64);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x78));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sw((c.g[V1][0] as u32), c.g[T2][0]);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(c.g[V1][0] as u32, c.g[T2][0]);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x7c));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), c.g[T3][0]);
-    c.g[V1][0] = c.lw((c.g[S2][0] as u32));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, c.g[T3][0]);
+    c.g[V1][0] = c.lw(c.g[S2][0] as u32);
     c.g[A3][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A3][0] as u32)));
-    c.sw((c.g[V0][0] as u32), c.g[S3][0]);
-    c.g[V1][0] = c.lw((c.g[S2][0] as u32));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+    c.sw(c.g[V0][0] as u32, c.g[S3][0]);
+    c.g[V1][0] = c.lw(c.g[S2][0] as u32);
     c.g[A3][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A3][0] as u32)));
-    c.sw((c.g[V0][0] as u32), c.g[S4][0]);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+    c.sw(c.g[V0][0] as u32, c.g[S4][0]);
     c.g[RA][0] = sx(0x00290f18);
     c.g[S0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x118));
     c.pc = 0x00287968;
@@ -10187,14 +9038,14 @@ pub fn ssx_audio_system_play_sound(c: &mut Cpu) {
     if c.pc != 0x00290f18 {
         return;
     }
-    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
     c.g[A0][0] = c.g[S2][0];
     c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x1f4));
     c.g[A2][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x214));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
     c.g[RA][0] = sx(0x00290f38);
-    c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
     c.pc = 0x002906b8;
     ee::s07::Audio_PlayPushedSound(c);
     if c.pc != 0x00290f38 {
@@ -10205,7 +9056,7 @@ pub fn ssx_audio_system_play_sound(c: &mut Cpu) {
     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
     abi::ret(c);
 }
@@ -10224,7 +9075,7 @@ pub fn ssx_audio_system_play_rail_change_sound(c: &mut Cpu) {
     c.g[S3][0] = c.g[A0][0];
     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
     c.g[RA][0] = sx(0x00299b94);
     c.g[S0][0] = c.g[A1][0];
     c.pc = 0x00288ae0;
@@ -10247,7 +9098,7 @@ pub fn ssx_audio_system_play_rail_change_sound(c: &mut Cpu) {
         c.g[T1][0] = 0x18;
         if c.g[A1][0] != 0 {
             c.cycles += 148;
-            c.g[S0][0] = c.lw((c.g[S3][0] as u32));
+            c.g[S0][0] = c.lw(c.g[S3][0] as u32);
             c.g[A1][0] = 0u64;
             c.g[A2][0] = 0x8;
             c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
@@ -10258,7 +9109,7 @@ pub fn ssx_audio_system_play_rail_change_sound(c: &mut Cpu) {
             c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
             c.mult(0, 3, 3, 9);
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
             c.ldl(2, (c.g[S0][0] as u32).wrapping_add(0x1e3));
             c.ldr(2, (c.g[S0][0] as u32).wrapping_add(0x1dc));
             c.ldl(4, (c.g[S0][0] as u32).wrapping_add(0x1eb));
@@ -10266,38 +9117,38 @@ pub fn ssx_audio_system_play_rail_change_sound(c: &mut Cpu) {
             c.ldl(7, (c.g[S0][0] as u32).wrapping_add(0x1f3));
             c.ldr(7, (c.g[S0][0] as u32).wrapping_add(0x1ec));
             c.sdl(2, (c.g[V1][0] as u32).wrapping_add(0x7));
-            c.sdr(2, (c.g[V1][0] as u32));
+            c.sdr(2, c.g[V1][0] as u32);
             c.sdl(4, (c.g[V1][0] as u32).wrapping_add(0xf));
             c.sdr(4, (c.g[V1][0] as u32).wrapping_add(0x8));
             c.sdl(7, (c.g[V1][0] as u32).wrapping_add(0x17));
             c.sdr(7, (c.g[V1][0] as u32).wrapping_add(0x10));
             c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
             c.sw((c.g[V0][0] as u32).wrapping_add(0x1fc), 0u64);
             c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x34));
             c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-            c.sw((c.g[V1][0] as u32), 0u64);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw(c.g[V1][0] as u32, 0u64);
             c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
             c.g[A3][0] = sx((c.g[A3][0] as u32) << 2);
             c.mult(0, 4, 4, 9);
             c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x38));
-            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[T0][0] as u32)));
-            c.g[V1][0] = c.lb((c.g[A0][0] as u32));
-            c.sw((c.g[A3][0] as u32), c.g[V1][0]);
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+            c.g[V1][0] = c.lb(c.g[A0][0] as u32);
+            c.sw(c.g[A3][0] as u32, c.g[V1][0]);
             c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x3c));
             c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-            c.sw((c.g[V0][0] as u32), 0u64);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.sw(c.g[V0][0] as u32, 0u64);
             c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[A0][0] = sx((c.g[A0][0] as u32) << 3);
-            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
             c.g[RA][0] = sx(0x00299c8c);
             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
             c.pc = 0x00416210;
@@ -10311,9 +9162,9 @@ pub fn ssx_audio_system_play_rail_change_sound(c: &mut Cpu) {
             c.g[T0][0] = 0x5a;
             c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
             c.g[T1][0] = 0x32;
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
             c.g[T2][0] = 0x7f;
-            c.sw((c.g[V1][0] as u32), 0u64);
+            c.sw(c.g[V1][0] as u32, 0u64);
             c.g[T3][0] = 0x1;
             c.g[A0][0] = c.g[S3][0];
             c.g[A1][0] = 0x9;
@@ -10321,75 +9172,75 @@ pub fn ssx_audio_system_play_rail_change_sound(c: &mut Cpu) {
             c.g[A2][0] = 0u64;
             c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x64));
             c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-            c.sw((c.g[V1][0] as u32), 0u64);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw(c.g[V1][0] as u32, 0u64);
             c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
             c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-            c.sw((c.g[V0][0] as u32), 0u64);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.sw(c.g[V0][0] as u32, 0u64);
             c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6c));
             c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-            c.sw((c.g[V1][0] as u32), 0u64);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw(c.g[V1][0] as u32, 0u64);
             c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
             c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
-            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
             c.sw((c.g[V0][0] as u32).wrapping_add(0x4), 0u64);
             c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
             c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-            c.sw((c.g[V1][0] as u32), c.g[A3][0]);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw(c.g[V1][0] as u32, c.g[A3][0]);
             c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
             c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
-            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
             c.sw((c.g[V0][0] as u32).wrapping_add(0x8), c.g[T0][0]);
             c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
             c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
             c.sw((c.g[V1][0] as u32).wrapping_add(0xc), c.g[T1][0]);
             c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x74));
             c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-            c.sw((c.g[V0][0] as u32), 0u64);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.sw(c.g[V0][0] as u32, 0u64);
             c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x80));
             c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-            c.sw((c.g[V1][0] as u32), 0u64);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw(c.g[V1][0] as u32, 0u64);
             c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x84));
             c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-            c.sw((c.g[V0][0] as u32), 0u64);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.sw(c.g[V0][0] as u32, 0u64);
             c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x78));
             c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-            c.sw((c.g[V1][0] as u32), c.g[T2][0]);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw(c.g[V1][0] as u32, c.g[T2][0]);
             c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
             c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x7c));
             c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-            c.sw((c.g[V0][0] as u32), c.g[T3][0]);
-            c.g[V1][0] = c.lw((c.g[S3][0] as u32));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.sw(c.g[V0][0] as u32, c.g[T3][0]);
+            c.g[V1][0] = c.lw(c.g[S3][0] as u32);
             c.g[A3][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
             c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1f4));
             c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A3][0] as u32)));
-            c.sw((c.g[V0][0] as u32), 0u64);
-            c.g[V1][0] = c.lw((c.g[S3][0] as u32));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+            c.sw(c.g[V0][0] as u32, 0u64);
+            c.g[V1][0] = c.lw(c.g[S3][0] as u32);
             c.g[A3][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
             c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1f4));
             c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A3][0] as u32)));
-            c.sw((c.g[V0][0] as u32), c.g[S2][0]);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+            c.sw(c.g[V0][0] as u32, c.g[S2][0]);
             c.g[RA][0] = sx(0x00299de8);
             c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x118));
             c.pc = 0x00287968;
@@ -10397,14 +9248,14 @@ pub fn ssx_audio_system_play_rail_change_sound(c: &mut Cpu) {
             if c.pc != 0x00299de8 {
                 return;
             }
-            c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+            c.g[A1][0] = c.lw(c.g[S0][0] as u32);
             c.g[A0][0] = c.g[S3][0];
             c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x1f4));
             c.g[A2][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x214));
             c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
             c.g[RA][0] = sx(0x00299e08);
-            c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+            c.sw(c.g[V1][0] as u32, c.g[V0][0]);
             c.pc = 0x002906b8;
             call_indirect(c, 0x002906b8);
             if c.pc != 0x00299e08 {
@@ -10418,7 +9269,7 @@ pub fn ssx_audio_system_play_rail_change_sound(c: &mut Cpu) {
     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
     abi::ret(c);
 }
@@ -10436,12 +9287,12 @@ pub fn ssx_audio_system_start_loop_sfx(c: &mut Cpu) {
     c.g[S3][0] = c.g[A0][0];
     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
     c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x6c74));
     c.g[T1][0] = 0x18;
     if c.g[V0][0] != 0 {
         c.cycles += 149;
-        c.g[S0][0] = c.lw((c.g[S3][0] as u32));
+        c.g[S0][0] = c.lw(c.g[S3][0] as u32);
         c.g[A1][0] = 0u64;
         c.g[A2][0] = 0x8;
         c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
@@ -10452,7 +9303,7 @@ pub fn ssx_audio_system_start_loop_sfx(c: &mut Cpu) {
         c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
         c.mult(0, 3, 3, 9);
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
         c.ldl(2, (c.g[S0][0] as u32).wrapping_add(0x1e3));
         c.ldr(2, (c.g[S0][0] as u32).wrapping_add(0x1dc));
         c.ldl(4, (c.g[S0][0] as u32).wrapping_add(0x1eb));
@@ -10460,38 +9311,38 @@ pub fn ssx_audio_system_start_loop_sfx(c: &mut Cpu) {
         c.ldl(7, (c.g[S0][0] as u32).wrapping_add(0x1f3));
         c.ldr(7, (c.g[S0][0] as u32).wrapping_add(0x1ec));
         c.sdl(2, (c.g[V1][0] as u32).wrapping_add(0x7));
-        c.sdr(2, (c.g[V1][0] as u32));
+        c.sdr(2, c.g[V1][0] as u32);
         c.sdl(4, (c.g[V1][0] as u32).wrapping_add(0xf));
         c.sdr(4, (c.g[V1][0] as u32).wrapping_add(0x8));
         c.sdl(7, (c.g[V1][0] as u32).wrapping_add(0x17));
         c.sdr(7, (c.g[V1][0] as u32).wrapping_add(0x10));
         c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
         c.sw((c.g[V0][0] as u32).wrapping_add(0x1fc), 0u64);
         c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x34));
         c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-        c.sw((c.g[V1][0] as u32), 0u64);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[V1][0] as u32, 0u64);
         c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
         c.g[A3][0] = sx((c.g[A3][0] as u32) << 2);
         c.mult(0, 4, 4, 9);
         c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x38));
-        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[T0][0] as u32)));
-        c.g[V1][0] = c.lb((c.g[A0][0] as u32));
-        c.sw((c.g[A3][0] as u32), c.g[V1][0]);
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+        c.g[V1][0] = c.lb(c.g[A0][0] as u32);
+        c.sw(c.g[A3][0] as u32, c.g[V1][0]);
         c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x3c));
         c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-        c.sw((c.g[V0][0] as u32), 0u64);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, 0u64);
         c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[A0][0] = sx((c.g[A0][0] as u32) << 3);
-        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
         c.g[RA][0] = sx(0x0029d46c);
         c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
         c.pc = 0x00416210;
@@ -10505,9 +9356,9 @@ pub fn ssx_audio_system_start_loop_sfx(c: &mut Cpu) {
         c.g[T0][0] = 0x5a;
         c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
         c.g[T1][0] = 0x32;
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
         c.g[T2][0] = 0x7f;
-        c.sw((c.g[V1][0] as u32), 0u64);
+        c.sw(c.g[V1][0] as u32, 0u64);
         c.g[T3][0] = 0x1;
         c.g[A1][0] = 0x5;
         c.g[A2][0] = 0u64;
@@ -10515,75 +9366,75 @@ pub fn ssx_audio_system_start_loop_sfx(c: &mut Cpu) {
         c.g[A0][0] = c.g[S3][0];
         c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x64));
         c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-        c.sw((c.g[V1][0] as u32), 0u64);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[V1][0] as u32, 0u64);
         c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
         c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-        c.sw((c.g[V0][0] as u32), 0u64);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, 0u64);
         c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6c));
         c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-        c.sw((c.g[V1][0] as u32), 0u64);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[V1][0] as u32, 0u64);
         c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
         c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
-        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
         c.sw((c.g[V0][0] as u32).wrapping_add(0x4), 0u64);
         c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
         c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-        c.sw((c.g[V1][0] as u32), c.g[A3][0]);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[V1][0] as u32, c.g[A3][0]);
         c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
         c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
-        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
         c.sw((c.g[V0][0] as u32).wrapping_add(0x8), c.g[T0][0]);
         c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
         c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
         c.sw((c.g[V1][0] as u32).wrapping_add(0xc), c.g[T1][0]);
         c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x74));
         c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-        c.sw((c.g[V0][0] as u32), 0u64);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, 0u64);
         c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x80));
         c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-        c.sw((c.g[V1][0] as u32), 0u64);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[V1][0] as u32, 0u64);
         c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x84));
         c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-        c.sw((c.g[V0][0] as u32), 0u64);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, 0u64);
         c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x78));
         c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-        c.sw((c.g[V1][0] as u32), c.g[T2][0]);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[V1][0] as u32, c.g[T2][0]);
         c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
         c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x7c));
         c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-        c.sw((c.g[V0][0] as u32), c.g[T3][0]);
-        c.g[V1][0] = c.lw((c.g[S3][0] as u32));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, c.g[T3][0]);
+        c.g[V1][0] = c.lw(c.g[S3][0] as u32);
         c.g[A3][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
         c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1f4));
         c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A3][0] as u32)));
-        c.sw((c.g[V0][0] as u32), c.g[S2][0]);
-        c.g[V1][0] = c.lw((c.g[S3][0] as u32));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+        c.sw(c.g[V0][0] as u32, c.g[S2][0]);
+        c.g[V1][0] = c.lw(c.g[S3][0] as u32);
         c.g[A3][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
         c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1f4));
         c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A3][0] as u32)));
-        c.sw((c.g[V0][0] as u32), 0u64);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+        c.sw(c.g[V0][0] as u32, 0u64);
         c.g[RA][0] = sx(0x0029d5c8);
         c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x118));
         c.pc = 0x00287968;
@@ -10591,14 +9442,14 @@ pub fn ssx_audio_system_start_loop_sfx(c: &mut Cpu) {
         if c.pc != 0x0029d5c8 {
             return;
         }
-        c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+        c.g[A1][0] = c.lw(c.g[S0][0] as u32);
         c.g[A0][0] = c.g[S3][0];
         c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x1f4));
         c.g[A2][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x214));
         c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
         c.g[RA][0] = sx(0x0029d5e8);
-        c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+        c.sw(c.g[V1][0] as u32, c.g[V0][0]);
         c.pc = 0x002906b8;
         call_indirect(c, 0x002906b8);
         if c.pc != 0x0029d5e8 {
@@ -10613,7 +9464,7 @@ pub fn ssx_audio_system_start_loop_sfx(c: &mut Cpu) {
     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
     abi::ret(c);
 }
@@ -10738,7 +9589,7 @@ pub fn midi_banks_base_dtor(c: &mut Cpu) {
             c.g[A0][0] = lw(c, r32(c, S0));
             c.g[RA][0] = sx(0x0028ffdc);
             c.g[A1][0] = 0u64;
-            if callee::C0028bb10.call(c, 0x0028ffdc).is_err() {
+            if callee::C0028BB10.call(c, 0x0028ffdc).is_err() {
                 return;
             }
             c.g[V0][0] = lw(c, r32(c, S0));
@@ -10788,7 +9639,7 @@ pub fn ssx_audio_system_stop_board_loops(c: &mut Cpu) {
         sd(c, r32(c, SP), c.g[RA][0]);
         c.g[RA][0] = sx(0x00292b5c);
         c.g[S0][0] = c.g[A0][0];
-        if callee::C002913d8.call(c, 0x00292b5c).is_err() {
+        if callee::C002913D8.call(c, 0x00292b5c).is_err() {
             return;
         }
         c.g[V1][0] = lw(c, at_4(c, S0, 0x118));
@@ -10929,9 +9780,8 @@ pub fn ssx_audio_system_pa_say20c5(c: &mut Cpu) {
         frame.save_ra(c, 0);
         c.g[S3][0] = abi::arg64(c, 1);
 
-        let mut out = false;
         callee::IS_PA_SPEECH_ON.call(c, 0x002a_372c)?;
-        out = c.g[V0][0] == 0;
+        let mut out = c.g[V0][0] == 0;
         if !out {
             c.cycles += 4;
             c.g[A0][0] = c.g[S0][0];
@@ -10960,14 +9810,14 @@ pub fn ssx_audio_system_pa_say20c5(c: &mut Cpu) {
             c.g[S1][0] = 0x004a_0000;
             c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x38));
             c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x36e8));
-            c.g[S0][0] = c.lw((c.g[V0][0] as u32));
+            c.g[S0][0] = c.lw(c.g[V0][0] as u32);
             c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x3c));
             c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
             let f = c.g[V0][0] as u32;
             c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1d8));
             crate::call::call_ptr(c, f, 0x002a_378c)?;
             c.ldl(6, (c.g[S1][0] as u32).wrapping_add(7));
-            c.ldr(6, (c.g[S1][0] as u32));
+            c.ldr(6, c.g[S1][0] as u32);
             c.g[A0][0] = c.g[S0][0];
             c.g[T0][0] = c.g[V0][0];
             c.g[A1][0] = 0x3e8;
@@ -11364,7 +10214,6 @@ pub(crate) mod speech_callee {
             };
         };
     }
-    pub(crate) use callee;
 
     callee!(DJ_SAY_20E5, 0x002a_26f0, SSXAudioSystem_DJSay20E5);
 
@@ -13714,6 +12563,7 @@ pub fn ssx_audio_system_start_boost_sound(c: &mut Cpu) {
 
 /// The group-1 pitch and volume curves (`.rodata`, five points each, copied
 /// to the stack).
+#[cfg(test)]
 pub(crate) const SURFACE_LOOP1_PITCH_CURVE: u32 = 0x0048_2bc8;
 
 pub(crate) const SURFACE_LOOP1_VOLUME_CURVE: u32 = 0x0048_2bf0;
@@ -14662,7 +13512,7 @@ pub(crate) fn play_object_sound_body(c: &mut Cpu) -> Result<bool, crate::call::U
     // Push a play record (the inlined PushPlayParams), bank s5, sound s4;
     // then the channel volume clamped to 0..=127 into the record's first byte.
     c.cycles += 154;
-    c.g[S0][0] = c.lw((c.g[S3][0] as u32));
+    c.g[S0][0] = c.lw(c.g[S3][0] as u32);
     c.g[S2][0] = 0x18;
     c.g[A1][0] = 0u64;
     c.g[A2][0] = 0x8;
@@ -14673,7 +13523,7 @@ pub(crate) fn play_object_sound_body(c: &mut Cpu) -> Result<bool, crate::call::U
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
     c.mult(0, 3, 3, 18);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.ldl(2, (c.g[S0][0] as u32).wrapping_add(0x1e3));
     c.ldr(2, (c.g[S0][0] as u32).wrapping_add(0x1dc));
     c.ldl(4, (c.g[S0][0] as u32).wrapping_add(0x1eb));
@@ -14681,38 +13531,38 @@ pub(crate) fn play_object_sound_body(c: &mut Cpu) -> Result<bool, crate::call::U
     c.ldl(7, (c.g[S0][0] as u32).wrapping_add(0x1f3));
     c.ldr(7, (c.g[S0][0] as u32).wrapping_add(0x1ec));
     c.sdl(2, (c.g[V1][0] as u32).wrapping_add(0x7));
-    c.sdr(2, (c.g[V1][0] as u32));
+    c.sdr(2, c.g[V1][0] as u32);
     c.sdl(4, (c.g[V1][0] as u32).wrapping_add(0xf));
     c.sdr(4, (c.g[V1][0] as u32).wrapping_add(0x8));
     c.sdl(7, (c.g[V1][0] as u32).wrapping_add(0x17));
     c.sdr(7, (c.g[V1][0] as u32).wrapping_add(0x10));
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.sw((c.g[V0][0] as u32).wrapping_add(0x1fc), 0u64);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x34));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sw((c.g[V1][0] as u32), 0u64);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(c.g[V1][0] as u32, 0u64);
     c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
     c.g[A3][0] = sx((c.g[A3][0] as u32) << 2);
     c.mult(0, 4, 4, 18);
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x38));
-    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[T0][0] as u32)));
-    c.g[V1][0] = c.lb((c.g[A0][0] as u32));
-    c.sw((c.g[A3][0] as u32), c.g[V1][0]);
+    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+    c.g[V1][0] = c.lb(c.g[A0][0] as u32);
+    c.sw(c.g[A3][0] as u32, c.g[V1][0]);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x3c));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), 0u64);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, 0u64);
     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[A0][0] = sx((c.g[A0][0] as u32) << 3);
-    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
     call_ptr(c, 0x00416210, 0x0029764c)?;
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
@@ -14721,101 +13571,101 @@ pub(crate) fn play_object_sound_body(c: &mut Cpu) -> Result<bool, crate::call::U
     c.g[A1][0] = 0x5a;
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
     c.g[A2][0] = 0x32;
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.g[A3][0] = 0x7f;
-    c.sw((c.g[V1][0] as u32), 0u64);
+    c.sw(c.g[V1][0] as u32, 0u64);
     c.g[T0][0] = 0x1;
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x64));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), 0u64);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, 0u64);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sw((c.g[V1][0] as u32), 0u64);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(c.g[V1][0] as u32, 0u64);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6c));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), 0u64);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, 0u64);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.sw((c.g[V1][0] as u32).wrapping_add(0x4), 0u64);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), c.g[A0][0]);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, c.g[A0][0]);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[A1][0]);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
     c.sw((c.g[V0][0] as u32).wrapping_add(0xc), c.g[A2][0]);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x74));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sw((c.g[V1][0] as u32), 0u64);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(c.g[V1][0] as u32, 0u64);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x80));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), 0u64);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, 0u64);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x84));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sw((c.g[V1][0] as u32), 0u64);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(c.g[V1][0] as u32, 0u64);
     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x78));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), c.g[A3][0]);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, c.g[A3][0]);
     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x7c));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sw((c.g[V1][0] as u32), c.g[T0][0]);
-    c.g[A0][0] = c.lw((c.g[S3][0] as u32));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.sw(c.g[V1][0] as u32, c.g[T0][0]);
+    c.g[A0][0] = c.lw(c.g[S3][0] as u32);
     c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), c.g[S5][0]);
-    c.g[V1][0] = c.lw((c.g[S3][0] as u32));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, c.g[S5][0]);
+    c.g[V1][0] = c.lw(c.g[S3][0] as u32);
     c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-    c.sw((c.g[V0][0] as u32), c.g[S4][0]);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    c.sw(c.g[V0][0] as u32, c.g[S4][0]);
     c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x118));
-    c.g[A1][0] = c.lw((c.g[V1][0] as u32));
+    c.g[A1][0] = c.lw(c.g[V1][0] as u32);
     c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x1f4));
     c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1d8));
     c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x38));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), c.g[A3][0]);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw(c.g[V0][0] as u32, c.g[A3][0]);
     c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x1f4));
     c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x1c));
     c.g[A3][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x38));
     c.mult(0, 4, 4, 18);
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
     c.g[A1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x20));
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A3][0] as u32)));
-    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
     c.g[V0][0] = ((c.g[V0][0] as i64) < 127i64) as u64;
     let at_least_max = c.g[V0][0] == 0u64;
-    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
     let mut negative = false;
     if !at_least_max {
         c.cycles += 6;
@@ -14846,13 +13696,13 @@ pub(crate) fn play_object_sound_body(c: &mut Cpu) -> Result<bool, crate::call::U
     // Channel gain, 3D source (position on the frame), radius 300 / no
     // vanish, listener, priority 0x50; play and track it against the object.
     c.cycles += 64;
-    c.sb((c.g[A0][0] as u32), c.g[V0][0]);
+    c.sb(c.g[A0][0] as u32, c.g[V0][0]);
     c.g[A2][0] = 0u64;
     c.g[A1][0] = 0x5;
     c.g[A0][0] = c.g[S3][0];
     c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x118));
     call_ptr(c, 0x00287968, 0x0029783c)?;
-    c.g[A0][0] = c.lw((c.g[S0][0] as u32));
+    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
     c.g[A2][0] = 0x1;
     c.g[AT][0] = 0x43960000;
     c.mtc1(1, 12);
@@ -14861,23 +13711,23 @@ pub(crate) fn play_object_sound_body(c: &mut Cpu) -> Result<bool, crate::call::U
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
     c.g[AT][0] = 0xffffffffbf800000;
     c.mtc1(1, 13);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A1][0] as u32)));
-    c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
     c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x118));
-    c.g[V1][0] = c.lw((c.g[A0][0] as u32));
+    c.g[V1][0] = c.lw(c.g[A0][0] as u32);
     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1f4));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.sw((c.g[V1][0] as u32).wrapping_add(0x1fc), c.g[SP][0]);
     c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x118));
-    c.g[V1][0] = c.lw((c.g[A0][0] as u32));
+    c.g[V1][0] = c.lw(c.g[A0][0] as u32);
     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1f4));
     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x20c));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-    c.sw((c.g[V0][0] as u32), c.g[A2][0]);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    c.sw(c.g[V0][0] as u32, c.g[A2][0]);
     c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x118));
-    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1d8));
     Callee {
         addr: 0x002a9988,
@@ -14888,27 +13738,27 @@ pub(crate) fn play_object_sound_body(c: &mut Cpu) -> Result<bool, crate::call::U
     c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x118));
     c.g[A0][0] = c.g[S3][0];
     call_ptr(c, 0x00288940, 0x002978bc)?;
-    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
     c.g[A0][0] = c.g[S3][0];
     c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x1f4));
     c.g[A2][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x23c));
     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
-    c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
     c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x118));
-    c.g[V1][0] = c.lw((c.g[A1][0] as u32));
+    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1f4));
     c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x250));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
     c.g[V1][0] = 0x50;
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
-    c.sw((c.g[V0][0] as u32), c.g[V1][0]);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    c.sw(c.g[V0][0] as u32, c.g[V1][0]);
     call_ptr(c, 0x002906b8, 0x002978fc)?;
     c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x118));
     c.g[A2][0] = c.g[V0][0];
     c.g[A0][0] = c.g[S3][0];
     c.g[A1][0] = c.g[S6][0];
-    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
     c.g[T0][0] = 0u64;
     c.g[T1][0] = 0u64;
     c.g[A3][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x260));
@@ -16209,7 +15059,6 @@ pub(crate) fn rs207d_post(
 /// lines 0x2080/0x207d), posts a line for each rider with its speech mask
 /// and the gap class (1, or 2 beyond the "far" limit).
 pub fn ssx_audio_system_rider_say_207d(c: &mut Cpu) {
-    use rs207d::*;
     let frame = Frame { size: 0xc0 };
     guest(c, |c| {
         c.cycles += 17;
@@ -18142,39 +16991,33 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::compare;
+
     use crate::difftest::elf_image;
     use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
+
     use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
     use crate::difftest::fakes;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::fake_call;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
+
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
     use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::fakes::*;
+
     use crate::difftest::fill;
     use crate::difftest::put_vec;
     use crate::difftest::put_words;
     use crate::difftest::scramble;
-    use crate::difftest::seed_count;
+
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::RA as TEST_RA;
-    use crate::difftest::RA as SENTINEL;
-    use crate::difftest::SP as STACK_TOP;
-    use crate::difftest::SP as STACK;
-    use crate::difftest::SP;
+
     pub(crate) use crate::game::ai::ai::tests::fake_check;
     pub(crate) use crate::game::ai::ai::tests::generic;
-    pub(crate) use crate::game::ai::ai::tests::globals_8 as globals_10;
+
     pub(crate) use crate::game::ai::ai::tests::wf;
     pub(crate) use crate::game::ai::ai::tests::RIDER;
     pub(crate) use crate::game::ai::rider::tests::put_world_2 as put_world;
@@ -18183,16 +17026,11 @@ pub(crate) mod tests {
     pub(crate) use crate::game::bx::bxstring::tests::SEEDS as SEEDS_2;
     pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_6;
     pub(crate) use crate::game::bx::bxstring2::tests::f;
-    pub(crate) use crate::game::bx::bxstring2::tests::BE_2 as BE_3;
-    pub(crate) use crate::game::bx::bxstring2::tests::DB;
-    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
-    pub(crate) use crate::game::bx::bxstring2::tests::RM as RM_2;
-    pub(crate) use crate::game::bx::bxstring2::tests::VTS;
-    pub(crate) use crate::game::bx::bxstring2::tests::W_2;
+
     pub(crate) use crate::game::camera::cameracontroller::tests::put_vtable;
     pub(crate) use crate::game::dirtysock::tags2::tests::belib_3 as belib_2;
     pub(crate) use crate::game::dirtysock::tags2::tests::common;
-    pub(crate) use crate::game::dirtysock::tags2::tests::dummy_world as dummy_world_2;
+
     pub(crate) use crate::game::dirtysock::tags2::tests::world_2;
     pub(crate) use crate::game::dirtysock::tags2::tests::zero;
     pub(crate) use crate::game::dirtysock::tags2::tests::SCRATCH;
@@ -18212,93 +17050,58 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::diff;
     pub(crate) use crate::game::fe::feasyncfile::tests::fe_base;
     pub(crate) use crate::game::fe::feasyncfile::tests::game_globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_10 as globals_5;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals_6;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_12 as globals_8;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_13 as globals_9;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::globals_4 as globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_5 as globals_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_9 as globals_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init as heap_init_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_12 as heap_init_7;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_4 as heap_init_3;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_5 as heap_init_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_9 as heap_init_6;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_10 as pool_8;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_11 as pool_9;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_7 as pool_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_8 as pool_5;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool_6;
-    pub(crate) use crate::game::fe::feasyncfile::tests::run as run_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::run_4 as run_3;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::slot;
     pub(crate) use crate::game::fe::feasyncfile::tests::slot_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::strict_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::string_2 as string;
-    pub(crate) use crate::game::fe::feasyncfile::tests::ui;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::w_3 as w_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::w_4 as w_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::world;
     pub(crate) use crate::game::fe::feasyncfile::tests::world_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::world_4;
     pub(crate) use crate::game::fe::feasyncfile::tests::BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_10 as BE_6;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_8 as BE_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_9 as BE_5;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_LIBRARY;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ3;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ3_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ4;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RIDER as RIDER_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RIDERS_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RM;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RMAN;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RM_3;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_11 as SEEDS_14;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_16 as SEEDS_15;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as SEEDS_12;
     pub(crate) use crate::game::fe::feasyncfile::tests::VT;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_2 as WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_7 as WORLD_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W_6 as W_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W_7 as W_4;
+
     pub(crate) use crate::game::fe::fememcard::tests::put_slot;
     pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_12;
     pub(crate) use crate::game::fe::fepopup::tests::check_all_3 as check_all_2;
-    pub(crate) use crate::game::fe::fepopup::tests::AUX;
-    pub(crate) use crate::game::fe::fepopup::tests::BEL;
-    pub(crate) use crate::game::fe::fepopup::tests::RACE;
-    pub(crate) use crate::game::fe::fepopup::tests::RMAN_2;
-    pub(crate) use crate::game::fe::fepopup::tests::SYS as SYS_3;
-    pub(crate) use crate::game::fe::fepopup::tests::WORLD_4 as WORLD_3;
+
     pub(crate) use crate::game::fe::festateloadscreen::tests::r32_seed;
     pub(crate) use crate::game::fe::festaterewards::tests::base_4;
     pub(crate) use crate::game::fe::festaterewards::tests::base_9 as base_10;
-    pub(crate) use crate::game::fe::festaterewards::tests::globals_3;
-    pub(crate) use crate::game::fe::festaterewards::tests::heap_init_3 as heap_init_5;
-    pub(crate) use crate::game::fe::festaterewards::tests::hook;
-    pub(crate) use crate::game::fe::festaterewards::tests::pool_4 as pool_3;
+
     pub(crate) use crate::game::fe::festaterewards::tests::slot_2 as slot_3;
     pub(crate) use crate::game::fe::festaterewards::tests::strict;
-    pub(crate) use crate::game::fe::festaterewards::tests::w16;
-    pub(crate) use crate::game::fe::festaterewards::tests::BE_7;
-    pub(crate) use crate::game::fe::festaterewards::tests::HOOKS;
-    pub(crate) use crate::game::fe::festaterewards::tests::KEEP_F0;
+
     pub(crate) use crate::game::fe::festaterewards::tests::W as W_5;
     pub(crate) use crate::game::fe::festaterewards2::tests::belib;
     pub(crate) use crate::game::fe::festaterewards2::tests::w;
     pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_4;
     pub(crate) use crate::game::fe::ovtemplatedialog::tests::ZERO_STUB;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS as SEEDS_10;
+
     pub(crate) use crate::game::main::gamemode::tests::SEEDS as SEEDS_3;
     pub(crate) use crate::game::main::gamestate::tests::base_3;
     pub(crate) use crate::game::main::gamestate::tests::SEEDS_5 as SEEDS_13;
@@ -18313,8 +17116,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::gp_at;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_10 as SEEDS_11;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_4 as SEEDS_6;
-    pub(crate) use crate::game::sound::bankmanager::tests::be_library_2 as be_library;
-    pub(crate) use crate::game::sound::bankmanager::tests::mixed;
+
     pub(crate) use crate::game::sound::bankmanager::tests::race_type_test;
     pub(crate) use crate::game::sound::bankmanager::tests::rng;
     pub(crate) use crate::game::sound::bankmanager::tests::track_id;
@@ -18322,15 +17124,11 @@ pub(crate) mod tests {
     pub(crate) use crate::game::sound::bankmanager::tests::SYS;
     pub(crate) use crate::game::sound::bankmonitor::tests::SEEDS_4 as SEEDS_5;
     pub(crate) use crate::game::worldpainter::quadtree::tests::alloc_machine;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::heap_init;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::pool_allocator;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::run;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::MEM_HEAP;
+
     pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
     pub(crate) use crate::game::wscript::wscriptman::tests::dummy_world;
-    pub(crate) use crate::game::wscript::wscriptman::tests::load;
+
     use ssx3_ee as ee;
-    use ssx3_ee_rt::funcs::GuestFn;
 
     #[test]
     fn ssx_audio_system_get_surface_bank_matches() {
@@ -19499,16 +18297,6 @@ pub(crate) mod tests {
         );
     }
 
-    /// A Rider with a main-state word the (real) `Rider_GetMainState` callee
-    /// reads: `rider + 0x77c -> + 0xde0`.
-    pub(crate) fn rider_state(c: &mut Cpu, r: &mut Rng, state: u32) -> u32 {
-        let rider = DATA + 0x800;
-        c.bus.write32(rider + 0x77c, DATA + 0x900);
-        c.bus.write32(DATA + 0x900 + 0xde0, state);
-        c.bus.write32(rider + 0x438, r.next_u32() % 24);
-        rider
-    }
-
     /// The shipped surface sound-type table at [`SURFACE_SOUND_TABLE`].
     pub(crate) const SURFACE_SOUND_HANDLERS: [u32; 21] = [
         0x0029_17a0,
@@ -20197,7 +18985,7 @@ pub(crate) mod tests {
             ini_parser_find_section_prefix,
             SEEDS_14,
             &|c, seed| {
-                let mut r = machine(c, seed, 0x2a7c68, 4);
+                let _r = machine(c, seed, 0x2a7c68, 4);
                 be_library_4(c);
                 world_4(c);
                 let parser = DATA + 0x100;
@@ -20605,10 +19393,6 @@ pub(crate) mod tests {
 
     pub(crate) const SYS_2: u32 = DATA + 0x10_0000;
 
-    pub(crate) const ARR_2: u32 = DATA + 0x11_0000;
-
-    pub(crate) const SI_2: u32 = DATA + 0x11_1000;
-
     /// The BELibrary singleton (a zeroed dummy, so nothing reads the disc)
     /// and the world (`gp_4 - 0x848`), game module and race manager.
     pub(crate) fn globals_7(c: &mut Cpu) {
@@ -20644,18 +19428,6 @@ pub(crate) mod tests {
             w(c, p + head, base_9);
             w(c, GAME_GP + slot, p);
         }
-    }
-
-    /// A tiny trampoline for setup calls into guest code.
-    pub(crate) fn load_2(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
-        for (i, a) in args.iter().enumerate() {
-            c.g[[A0, A1, A2, A3, T0, T1][i]][0] = *a;
-        }
-        c.g[RA][0] = 0x0012_3450;
-        c.pc = addr;
-        f(c);
-        assert_eq!(c.pc, 0x0012_3450, "setup call {addr:#x} did not return");
-        c.g[V0][0]
     }
 
     pub(crate) fn base_9(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
@@ -20716,7 +19488,7 @@ pub(crate) mod tests {
             ssx_audio_system_dj_say_20e9,
             40,
             &|c, seed| {
-                let mut r = fe_base(c, seed, 0x2a_23d0);
+                let _r = fe_base(c, seed, 0x2a_23d0);
                 c.g[A0][0] = sx(DATA);
                 c.g[A1][0] = if seed % 2 == 0 {
                     0xffff_ffff_ffff_ffff
@@ -20822,7 +19594,7 @@ pub(crate) mod tests {
             crowd_audio_unload,
             SEEDS,
             &|c, seed| {
-                let mut r = base_11(c, seed, 0x6f38);
+                let _r = base_11(c, seed, 0x6f38);
                 let this = DATA + 0x1000;
                 // No instance array and no samples: StopAll and the per-bank
                 // free loops all return at once.
@@ -21088,7 +19860,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// `SSXAudioSystem_UpdateTrackedSounds`: rings of several sizes (also
     /// 0, read walking up to write 0: empty pops), records with negative,
@@ -21181,8 +19952,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
 
     /// SSXAudioSystem_FlushPendingSpeech: no request, each single request,
     /// several at once (the first in priority order plays), and the rider
@@ -21374,9 +20143,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
 
     /// SSXAudioSystem_UpdateUberSpeech: the real IsReplayPlaying (no game
     /// module, no replay, replay state 0 / playing), the real FindRider over
@@ -21578,9 +20344,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use crate::difftest::check_paths;
 
     /// 0..3 instances (sometimes a negative count); the instances are
     /// inactive (+0xd4 = 0), so the real `CrowdAudio_UpdateInstance` takes
@@ -21756,7 +20519,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     // -- 0x00294678 SSXAudioSystem_UpdateRiderAirState ------------------------
 
@@ -21881,10 +20643,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
 
     // ------------------------------------------------------ SSXAudioSystem
 
@@ -22263,10 +21021,8 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
+
     // audio is defined in this module
-    use super::*;
-    use super::*;
 
     /// Views for `FindViewInRange` / `GetListenerCount`.
     pub(crate) const PWI_VIEWS: u32 = DATA + 0x28_0000;
@@ -22452,12 +21208,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
+
     pub(crate) use crate::game::ealib::seg_2dcae8::strchr;
 
     /// `SSXAudioSystem_StartObjectLoop` on the audio world fixture of the
@@ -23089,10 +21840,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use crate::difftest::check_paths_lohi;
 
     /// SSXAudioSystem_StartWipeoutLoop on the MIDI-bank fixture of the
     /// PlaySound tests (real record arrays, real GetChannelGainPtr,

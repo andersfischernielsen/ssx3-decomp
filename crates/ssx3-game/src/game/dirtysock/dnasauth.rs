@@ -3,9 +3,7 @@
 
 use crate::abi;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
@@ -35,7 +33,6 @@ pub(crate) mod tests {
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
 
     #[test]
     fn dnasauth_init_matches() {

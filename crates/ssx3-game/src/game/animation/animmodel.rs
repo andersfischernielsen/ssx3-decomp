@@ -10,9 +10,6 @@ use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::Unwound;
-use crate::call::VSlot;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::aianimeventmap::BUILTIN_DELETE;
@@ -29,7 +26,6 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
@@ -228,8 +224,7 @@ pub(crate) mod eval {
 /// texture-id table (`+0xf50`).
 #[allow(dead_code)]
 pub(crate) mod ctx {
-    pub(crate) use crate::game::visualfx::boardwakefx::ctx::TEX_IDS;
-    pub(crate) use crate::game::visualfx::boardwakefx::ctx::TOP;
+
     pub(crate) use crate::game::visualfx::boardwakefx::ctx::VTABLE;
 }
 
@@ -241,13 +236,17 @@ pub(crate) mod model {
     pub(crate) use crate::game::ai::rider::model::BONE_TABLE_A_SHADOW;
     pub(crate) use crate::game::ai::rider::model::BONE_TABLE_B;
     pub(crate) use crate::game::ai::rider::model::HAS_PARTS;
+    #[cfg(test)]
     pub(crate) use crate::game::ai::rider::model::LOD_INFO;
+    #[cfg(test)]
+    pub(crate) use crate::game::ai::rider::model::PART_STRIDE;
+
     pub(crate) use crate::game::ai::rider::model::NUM_BONES;
     pub(crate) use crate::game::ai::rider::model::NUM_PARTS;
     pub(crate) use crate::game::ai::rider::model::PARTS;
     pub(crate) use crate::game::ai::rider::model::PART_LODS;
     pub(crate) use crate::game::ai::rider::model::PART_REF_INDEX;
-    pub(crate) use crate::game::ai::rider::model::PART_STRIDE;
+
     pub(crate) use crate::game::ai::rider::model::SCALE_Y;
 }
 
@@ -255,57 +254,10 @@ pub(crate) mod model {
 // Callees.
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
+
     pub(crate) use crate::game::sound::bankmonitor::callee::ADF_DATA_SOURCE_SET_DATA;
-    pub(crate) use crate::game::sound::bankmonitor::callee::AUDIO_RAND;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BANK_MONITOR_TIMER_KILL;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BE_GET_EVENT_RECORD_INDEX;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BE_LIBRARY_GET_INSTANCE_3 as BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BE_LIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BE_MISSION_INT_GET_COLLECTED_COUNT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BOLTS_FREE_DB;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BUDDY_MAN_CONNECT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::CROWD_MAN3D_GROUP_CREATE_MESHES;
+
     pub(crate) use crate::game::sound::bankmonitor::callee::EA_FILE_LOAD_DECOMPRESSED;
-    pub(crate) use crate::game::sound::bankmonitor::callee::GAME_ANIM_MAP_FIND_HASH;
-    pub(crate) use crate::game::sound::bankmonitor::callee::GAME_STATE_GOTO_NEXT_2 as GAME_STATE_GOTO_NEXT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::LOBBY_LIST_GET_AT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::MEMCARD_REQUEST_GET_INFO_NOW;
-    pub(crate) use crate::game::sound::bankmonitor::callee::MEMSET_2 as MEMSET;
-    pub(crate) use crate::game::sound::bankmonitor::callee::MENU_SYS_ITEM_DRAW_ROW;
-    pub(crate) use crate::game::sound::bankmonitor::callee::MUSIC_PLAYER_GET_SONG_TAG;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_FLOAT_2 as PATH_DATA_READ_FLOAT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_INT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_VEC3;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PS2_MEMCARD_CREATE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::RIDER_METRIX_CLEAR_PEAK_A4;
-    pub(crate) use crate::game::sound::bankmonitor::callee::RIDER_METRIX_SHOW_HUD_NUMBER;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_BINDING_CTOR;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_ENGINE_GET_INSTANCE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_ENGINE_POLL_ASYNC_LOADS;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_LIST_ADD_CHOICE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SECTION_ALLOCATOR_DTOR;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SLOGIN_MC_GET_PORT_SLOT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SNDSTRM_SET_PREBUFFER;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SND_BANK_MAN_UNLOAD_BANK;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SND_BANK_MAN_UNLOAD_MEMORY_BANK;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SONG_INSTANCE_GET_REQUEST_STATUS;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SPEECH_SYSTEM_STOP_INSTANCE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SSX_AUDIO_SYSTEM_END_SCRIPT_MUSIC;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::STREAM_FILE_RELEASE_CHUNK;
-    pub(crate) use crate::game::sound::bankmonitor::callee::STR_CASE_CMP;
-    pub(crate) use crate::game::sound::bankmonitor::callee::TEX_MAN_FREE_TEXTURE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::UI_LIST_COUNT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::UI_MENU_SET_NAV_BUTTONS;
-    pub(crate) use crate::game::sound::bankmonitor::callee::UI_OBJECT_LOAD;
-    pub(crate) use crate::game::sound::bankmonitor::callee::USTR_TO_ASCII;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WORLD_PAINTER_SET_SCRIPT_SURFACE_MODE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_MAN_CALL_TASK_FUNC;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_PROCESS_LIST_PUSH_FRONT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_PROCESS_LIST_REMOVE;
 }
 
 // ---------------------------------------------------------------------------
@@ -846,10 +798,10 @@ pub fn rider_model_render(c: &mut Cpu) {
     c.g[S1][0] = c.g[A0][0];
     frame.save(c, S6, 0xb0);
     frame.save(c, S7, 0xa0);
-    let y = r32(c, A3);
+    let _y = r32(c, A3);
     c.g[S6][0] = c.g[A3][0];
     frame.save(c, S0, 0x110);
-    let x = r32(c, A2);
+    let _x = r32(c, A2);
     c.g[S7][0] = c.g[A2][0];
     frame.save(c, S3, 0xe0);
     frame.save(c, S4, 0xd0);
@@ -1121,10 +1073,10 @@ pub fn rider_model_render_shadow(c: &mut Cpu) {
     c.g[S1][0] = c.g[A0][0];
     frame.save(c, S6, 0xb0);
     frame.save(c, S7, 0xa0);
-    let y = r32(c, A3);
+    let _y = r32(c, A3);
     c.g[S6][0] = c.g[A3][0];
     frame.save(c, S0, 0x110);
-    let x = r32(c, A2);
+    let _x = r32(c, A2);
     c.g[S7][0] = c.g[A2][0];
     frame.save(c, S3, 0xe0);
     frame.save(c, S4, 0xd0);
@@ -1602,11 +1554,10 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                         c.g[V0][0] = sx((c.g[S7][0] as u32) << 2);
                                         c.g[V1][0] = c.g[A0][0];
                                         c.g[V0][0] =
-                                            sx((c.g[V0][0] as u32)
-                                                .wrapping_add((c.g[A2][0] as u32)));
+                                            sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
                                         'l_30f3a8: loop {
                                             c.cycles += 7;
-                                            c.sw((c.g[V0][0] as u32), 0u64);
+                                            c.sw(c.g[V0][0] as u32, 0u64);
                                             c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
                                             let t = c.g[V1][0] != 0u64;
                                             c.g[V0][0] =
@@ -1709,7 +1660,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                             }
                             'b_30f4e4: {
                                 c.cycles += 16;
-                                c.g[A0][0] = c.lw((c.g[T3][0] as u32));
+                                c.g[A0][0] = c.lw(c.g[T3][0] as u32);
                                 c.g[V0][0] = 0x14;
                                 c.g[A2][0] = c.lw(frame.at(c, 0x4c8c));
                                 c.g[T1][0] = 0u64;
@@ -1718,12 +1669,12 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                 c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                                 c.g[A0][0] = sx((c.g[A0][0] as u32) >> 8);
                                 c.g[V1][0] =
-                                    sx((c.g[A2][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                                    sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
                                 c.mult(0, 4, 4, 2);
-                                c.g[V1][0] = c.lw((c.g[V1][0] as u32));
+                                c.g[V1][0] = c.lw(c.g[V1][0] as u32);
                                 c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
                                 c.g[A0][0] =
-                                    sx((c.g[A0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                                    sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                                 c.g[A1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                                 let t = c.g[A1][0] == 0u64;
                                 c.g[T2][0] = c.ld((c.g[T3][0] as u32).wrapping_add(0x10));
@@ -1741,11 +1692,11 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                     c.g[T0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x14));
                                     c.g[A3][0] = sx((c.g[A0][0] as u32) << 3);
                                     c.g[A1][0] =
-                                        sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                                        sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                                     'l_30f4a0: loop {
                                         'b_30f4dc: {
                                             c.cycles += 4;
-                                            c.g[A0][0] = c.lbu((c.g[A1][0] as u32));
+                                            c.g[A0][0] = c.lbu(c.g[A1][0] as u32);
                                             c.g[V0][0] =
                                                 ((c.g[T0][0] as i64) < (c.g[A0][0] as i64)) as u64;
                                             if c.g[V0][0] != 0u64 {
@@ -1759,8 +1710,8 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                         .lw((c.g[S5][0] as u32).wrapping_add(0x1c));
                                                     c.g[V0][0] = sx((c.g[A0][0] as u32) << 2);
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                        .wrapping_add((c.g[V1][0] as u32)));
-                                                    c.g[V0][0] = c.lw((c.g[V0][0] as u32));
+                                                        .wrapping_add(c.g[V1][0] as u32));
+                                                    c.g[V0][0] = c.lw(c.g[V0][0] as u32);
                                                     let t = (c.g[V0][0] as i64) < 0;
                                                     c.mult(0, 4, 2, 12);
                                                     if t {
@@ -1771,7 +1722,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                             .lw((c.g[S5][0] as u32)
                                                                 .wrapping_add(0xc));
                                                         c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                            .wrapping_add((c.g[A0][0] as u32)));
+                                                            .wrapping_add(c.g[A0][0] as u32));
                                                         c.g[V1][0] = c
                                                             .ld((c.g[V0][0] as u32)
                                                                 .wrapping_add(0x10));
@@ -1788,8 +1739,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                         c.cycles += 2;
                                         let t = c.g[A2][0] != 0u64;
                                         c.g[A1][0] =
-                                            sx((c.g[A1][0] as u32)
-                                                .wrapping_add((c.g[A3][0] as u32)));
+                                            sx((c.g[A1][0] as u32).wrapping_add(c.g[A3][0] as u32));
                                         if t {
                                             if event_due(c) {
                                                 deliver_event_here(c, 0x0030f4a0);
@@ -1832,15 +1782,15 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                 c.g[T4][0] = c.g[T0][0];
                                 c.g[T2][0] = 0u64;
                                 c.g[FP][0] =
-                                    sx((c.g[A2][0] as u32).wrapping_add((c.g[T6][0] as u32)));
+                                    sx((c.g[A2][0] as u32).wrapping_add(c.g[T6][0] as u32));
                                 c.g[S1][0] =
-                                    sx((c.g[S0][0] as u32).wrapping_add((c.g[T7][0] as u32)));
+                                    sx((c.g[S0][0] as u32).wrapping_add(c.g[T7][0] as u32));
                                 c.g[S6][0] = c.g[V1][0];
                                 'l_30f530: loop {
                                     'b_30f668: {
                                         'b_30f55c: {
                                             c.cycles += 5;
-                                            c.g[V0][0] = c.ld((c.g[S0][0] as u32));
+                                            c.g[V0][0] = c.ld(c.g[S0][0] as u32);
                                             c.g[V1][0] = !(0u64 | c.g[T1][0]);
                                             c.g[S2][0] = c.g[V0][0] & c.g[T1][0];
                                             let t = c.g[S2][0] != 0u64;
@@ -1850,13 +1800,13 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                             } else {
                                                 c.cycles += 6;
                                                 c.g[V0][0] = sx((c.g[S7][0] as u32) << 2);
-                                                c.sd((c.g[S0][0] as u32), c.g[V1][0]);
+                                                c.sd(c.g[S0][0] as u32, c.g[V1][0]);
                                                 c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                    .wrapping_add((c.g[T2][0] as u32)));
+                                                    .wrapping_add(c.g[T2][0] as u32));
                                                 c.g[V0][0] = sx((c.g[T0][0] as u32)
-                                                    .wrapping_add((c.g[V0][0] as u32)));
+                                                    .wrapping_add(c.g[V0][0] as u32));
                                                 let t = true;
-                                                c.sw((c.g[V0][0] as u32), 0u64);
+                                                c.sw(c.g[V0][0] as u32, 0u64);
                                                 if t {
                                                     break 'b_30f668;
                                                 } else {
@@ -1874,11 +1824,11 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                             } else {
                                                 'b_30f5e4: {
                                                     c.cycles += 9;
-                                                    c.sd((c.g[S1][0] as u32), c.g[V1][0]);
+                                                    c.sd(c.g[S1][0] as u32, c.g[V1][0]);
                                                     c.g[V0][0] = sx((c.g[S4][0] as u32)
-                                                        .wrapping_add((c.g[A3][0] as u32)));
+                                                        .wrapping_add(c.g[A3][0] as u32));
                                                     c.g[V0][0] = sx((c.g[T0][0] as u32)
-                                                        .wrapping_add((c.g[V0][0] as u32)));
+                                                        .wrapping_add(c.g[V0][0] as u32));
                                                     c.lwc1(
                                                         0,
                                                         (c.g[S0][0] as u32).wrapping_add(0x108),
@@ -1896,7 +1846,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                         (c.g[S1][0] as u32).wrapping_add(0x10c),
                                                     );
                                                     let t = c.g[S7][0] == 0u64;
-                                                    c.sw((c.g[V0][0] as u32), 0u64);
+                                                    c.sw(c.g[V0][0] as u32, 0u64);
                                                     if t {
                                                         break 'b_30f5e4;
                                                     } else {
@@ -1951,7 +1901,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                 c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0x108));
                                                 c.g[AT][0] = 0x3f800000;
                                                 c.mtc1(1, 3);
-                                                c.sd((c.g[S0][0] as u32), c.g[S2][0]);
+                                                c.sd(c.g[S0][0] as u32, c.g[S2][0]);
                                                 c.sub_s(0, 3, 0);
                                                 c.lwc1(2, (c.g[S0][0] as u32).wrapping_add(0x10c));
                                                 c.lwc1(1, (c.g[T3][0] as u32).wrapping_add(0xc));
@@ -1968,7 +1918,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                     c.mtc1(0, 1);
                                                     let t = true;
                                                     c.g[V0][0] = sx((c.g[S4][0] as u32)
-                                                        .wrapping_add((c.g[T2][0] as u32)));
+                                                        .wrapping_add(c.g[T2][0] as u32));
                                                     if t {
                                                         break 'b_30f660;
                                                     } else {
@@ -1988,15 +1938,15 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                 }
                                             }
                                             c.cycles += 1;
-                                            c.g[V0][0] = sx((c.g[S4][0] as u32)
-                                                .wrapping_add((c.g[T2][0] as u32)));
+                                            c.g[V0][0] =
+                                                sx((c.g[S4][0] as u32)
+                                                    .wrapping_add(c.g[T2][0] as u32));
                                             break 'b_30f660;
                                         }
                                         c.cycles += 2;
                                         c.g[V0][0] =
-                                            sx((c.g[S3][0] as u32)
-                                                .wrapping_add((c.g[V0][0] as u32)));
-                                        c.swc1(1, (c.g[V0][0] as u32));
+                                            sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                        c.swc1(1, c.g[V0][0] as u32);
                                         break 'b_30f668;
                                     }
                                     c.cycles += 5;
@@ -2068,9 +2018,9 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                     c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
                                     c.mtc1(0, 0);
                                     c.g[V0][0] =
-                                        sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                        sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                     c.sw(frame.at(c, 0x4ca4), c.g[A2][0]);
-                                    c.g[V1][0] = sx(sp(c).wrapping_add((c.g[V0][0] as u32)));
+                                    c.g[V1][0] = sx(sp(c).wrapping_add(c.g[V0][0] as u32));
                                     c.lwc1(20, (c.g[V1][0] as u32).wrapping_add(0x848));
                                     c.c_eq_s(20, 0);
                                     if c.fcc() {
@@ -2085,19 +2035,21 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                             c.g[S2][0] = 0u64;
                                             c.lo[0] = c.g[V1][0];
                                             c.madd(0, 19, 5, 2);
-                                            c.g[V1][0] = c.lw((c.g[S3][0] as u32));
+                                            c.g[V1][0] = c.lw(c.g[S3][0] as u32);
                                             c.g[V0][0] = c.g[V1][0] & 0xff;
                                             c.g[V1][0] = sx((c.g[V1][0] as u32) >> 8);
                                             c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                                             c.mult(0, 3, 3, 4);
                                             c.g[A0][0] = c.lw(frame.at(c, 0x4c8c));
-                                            c.g[V0][0] = sx((c.g[A0][0] as u32)
-                                                .wrapping_add((c.g[V0][0] as u32)));
-                                            c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                                            c.g[V0][0] =
+                                                sx((c.g[A0][0] as u32)
+                                                    .wrapping_add(c.g[V0][0] as u32));
+                                            c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                                             c.g[A1][0] =
                                                 c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
-                                            c.g[V1][0] = sx((c.g[V1][0] as u32)
-                                                .wrapping_add((c.g[A1][0] as u32)));
+                                            c.g[V1][0] =
+                                                sx((c.g[V1][0] as u32)
+                                                    .wrapping_add(c.g[A1][0] as u32));
                                             c.g[V1][0] =
                                                 c.lhu((c.g[V1][0] as u32).wrapping_add(0x8));
                                             let t = c.g[V1][0] == 0u64;
@@ -2106,7 +2058,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                 break 'b_30ffa4;
                                             } else {
                                                 c.cycles += 2;
-                                                c.g[A1][0] = c.lw((c.g[S3][0] as u32));
+                                                c.g[A1][0] = c.lw(c.g[S3][0] as u32);
                                                 'l_30f740: loop {
                                                     'b_30ff94: {
                                                         'b_30ff90: {
@@ -2121,15 +2073,15 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 2);
                                                             c.g[V0][0] = sx((c.g[A2][0] as u32)
-                                                                .wrapping_add((c.g[V0][0] as u32)));
+                                                                .wrapping_add(c.g[V0][0] as u32));
                                                             c.mult(0, 5, 5, 3);
-                                                            c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                                                            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                                                             c.g[A0][0] = c.lw((c.g[V1][0] as u32)
                                                                 .wrapping_add(0x8));
                                                             c.g[A2][0] = c.lw((c.g[V1][0] as u32)
                                                                 .wrapping_add(0xc));
                                                             c.g[A0][0] = sx((c.g[A0][0] as u32)
-                                                                .wrapping_add((c.g[A1][0] as u32)));
+                                                                .wrapping_add(c.g[A1][0] as u32));
                                                             c.g[V1][0] = c.lhu(
                                                                 (c.g[A0][0] as u32)
                                                                     .wrapping_add(0xa),
@@ -2138,11 +2090,11 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                 .wrapping_add(0x4));
                                                             c.mult(0, 3, 18, 3);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[V1][0] as u32)));
+                                                                .wrapping_add(c.g[V1][0] as u32));
                                                             c.g[V0][0] =
                                                                 sx((c.g[V0][0] as u32) << 3);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[A2][0] as u32)));
+                                                                .wrapping_add(c.g[A2][0] as u32));
                                                             c.g[V0][0] = c.lbu(
                                                                 (c.g[V0][0] as u32)
                                                                     .wrapping_add(0x4),
@@ -2165,10 +2117,10 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                 c.g[V0][0] = sx((c.g[V0][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[V1][0] as u32),
+                                                                        c.g[V1][0] as u32,
                                                                     ));
                                                                 c.g[V0][0] =
-                                                                    c.lw((c.g[V0][0] as u32));
+                                                                    c.lw(c.g[V0][0] as u32);
                                                                 let t = (c.g[V0][0] as i64) < 0;
                                                                 c.g[A0][0] = 0x58;
                                                                 if t {
@@ -2186,15 +2138,15 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                     c.g[V1][0] = sx((c.g[V0][0]
                                                                         as u32)
                                                                         .wrapping_add(
-                                                                            (c.g[A2][0] as u32),
+                                                                            c.g[A2][0] as u32,
                                                                         ));
                                                                     c.g[FP][0] = c.g[V0][0];
                                                                     c.g[V1][0] =
-                                                                        c.ld((c.g[V1][0] as u32));
+                                                                        c.ld(c.g[V1][0] as u32);
                                                                     c.g[S6][0] = sx((c.g[A1][0]
                                                                         as u32)
                                                                         .wrapping_add(
-                                                                            (c.g[A0][0] as u32),
+                                                                            c.g[A0][0] as u32,
                                                                         ));
                                                                     c.g[V0][0] = c
                                                                         .ld((c.g[S6][0] as u32)
@@ -2220,7 +2172,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                 } else {
                                                                                     c.cycles += 8;
                                                                                     c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x10));
-                                                                                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S7][0] as u32)));
+                                                                                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S7][0] as u32));
                                                                                     c.g[V0][0] = c
                                                                                         .g[V1][0]
                                                                                         >> (c.g
@@ -2261,7 +2213,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                                                                                                     c.g[S4][0] = c.g[V0][0];
                                                                                                     let t = true;
-                                                                                                    c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                                                                                                    c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                                                                                                     if t {
     break 'b_30f848;
     } else {
@@ -2273,7 +2225,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                             c.g[V1][0] = sx((c.g[V0][0] as u32) << 2);
                                                                                             c.g[V0][0] = sx(frame.at(c, 0x20));
                                                                                             c.g[S4][0] = c.g[V1][0];
-                                                                                            c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                                                                                            c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                                                                                             break 'b_30f848;
                                                                                         }
                                                                                         'b_30f914: {
@@ -2287,14 +2239,14 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                                     break 'b_30f8d8;
                                                                                                 } else {
                                                                                                     c.cycles += 17;
-                                                                                                    c.g[V0][0] = c.lbu((c.g[S3][0] as u32));
+                                                                                                    c.g[V0][0] = c.lbu(c.g[S3][0] as u32);
                                                                                                     c.g[V1][0] = c.lw(frame.at(c, 0x4c8c));
                                                                                                     c.g[A1][0] = sx(frame.at(c, 0x220));
                                                                                                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                                                                                                     c.g[A2][0] = c.g[S3][0];
-                                                                                                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                                                                                                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                                                                                                     c.g[A3][0] = c.g[S2][0];
-                                                                                                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                                                                                                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                                                                                                     c.g[T0][0] = 0u64;
                                                                                                     frame.save(c, 13, 0x4d10);
                                                                                                     c.g[T1][0] = c.g[S0][0];
@@ -2316,13 +2268,13 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     c.g[V0][0] = c.lw((c.g[S6][0] as u32).wrapping_add(0x40));
     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.g[A0][0] = ((c.g[A1][0] as i64) < (c.g[S0][0] as i64)) as u64;
-    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.lwc1(0, (c.g[V0][0] as u32));
-    c.swc1(0, (c.g[A2][0] as u32));
+    c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.lwc1(0, c.g[V0][0] as u32);
+    c.swc1(0, c.g[A2][0] as u32);
     let t = c.g[A0][0] != 0u64;
     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4));
     if t {
@@ -2342,14 +2294,14 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                                 }
                                                                                             }
                                                                                             c.cycles += 15;
-                                                                                            c.g[V0][0] = c.lbu((c.g[S3][0] as u32));
+                                                                                            c.g[V0][0] = c.lbu(c.g[S3][0] as u32);
                                                                                             c.g[A0][0] = c.lw(frame.at(c, 0x4c8c));
                                                                                             c.g[A1][0] = c.g[S1][0];
                                                                                             c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                                                                                             c.g[A2][0] = c.g[S3][0];
-                                                                                            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                                                                                            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                                                                                             c.g[A3][0] = c.g[S2][0];
-                                                                                            c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                                                                                            c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                                                                                             c.g[T0][0] = 0u64;
                                                                                             frame.save(c, 13, 0x4d10);
                                                                                             c.g[T1][0] = c.g[S0][0];
@@ -2378,7 +2330,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                                 c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(sp(c)));
                                                                                                 c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x820));
                                                                                                 let t = true;
-                                                                                                c.sw((c.g[V0][0] as u32), c.g[V1][0]);
+                                                                                                c.sw(c.g[V0][0] as u32, c.g[V1][0]);
                                                                                                 if t
                                                                                                 {
                                                                                                     break 'b_30f980;
@@ -2398,7 +2350,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                             [S0][0]
                                                                                             as i64)
                                                                                             <= 0;
-                                                                                        c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                                                                                        c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
                                                                                         if t {
                                                                                             break 'b_30f980;
                                                                                         } else {
@@ -2407,14 +2359,14 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                             c.g[T1][0] = c.g[S0][0];
                                                                                             'l_30f958: loop {
                                                                                                 c.cycles += 10;
-                                                                                                c.lwc1(1, (c.g[V0][0] as u32));
+                                                                                                c.lwc1(1, c.g[V0][0] as u32);
                                                                                                 c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_sub(0x1));
-                                                                                                c.lwc1(0, (c.g[A1][0] as u32));
+                                                                                                c.lwc1(0, c.g[A1][0] as u32);
                                                                                                 c.mul_s(1, 2, 1);
                                                                                                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4));
                                                                                                 c.mul_s(0, 20, 0);
                                                                                                 c.add_s(1, 1, 0);
-                                                                                                c.swc1(1, (c.g[V0][0] as u32));
+                                                                                                c.swc1(1, c.g[V0][0] as u32);
                                                                                                 let t = c.g[T1][0] != 0u64;
                                                                                                 c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
                                                                                                 if t
@@ -2449,8 +2401,8 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                             } else {
                                                                                 c.cycles += 14;
                                                                                 c.g[V0][0] = c.lbu(
-                                                                                    (c.g[S3][0]
-                                                                                        as u32),
+                                                                                    c.g[S3][0]
+                                                                                        as u32,
                                                                                 );
                                                                                 c.g[V1][0] =
                                                                                     c.lw(frame.at(
@@ -2466,12 +2418,11 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                         << 2);
                                                                                 c.g[A2][0] =
                                                                                     c.g[S3][0];
-                                                                                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                                                                                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                                                                                 c.g[T0][0] = 0u64;
-                                                                                c.g[A0][0] = c.lw(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[V0][0]
+                                                                                        as u32);
                                                                                 c.g[T1][0] = 0x80;
                                                                                 frame.save(
                                                                                     c, 13, 0x4d10,
@@ -2507,8 +2458,8 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                         c.g[V0][0] =
                                                                             sx((c.g[T0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[V0][0] = ((c.g[T0][0]
                                                                             as i64)
@@ -2554,8 +2505,8 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                 sx((c.g[A0][0]
                                                                                     as u32)
                                                                                     .wrapping_add(
-                                                                                        (c.g[FP][0]
-                                                                                            as u32),
+                                                                                        c.g[FP][0]
+                                                                                            as u32,
                                                                                     ));
                                                                             c.g[T7][0] = 0x1;
                                                                             c.g[T3][0] =
@@ -2569,8 +2520,8 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                     c.cycles += 5;
                                                                                     c.g[V0][0] = c
                                                                                         .ld(
-                                                                                        (c.g[T6][0]
-                                                                                            as u32),
+                                                                                        c.g[T6][0]
+                                                                                            as u32,
                                                                                     );
                                                                                     c.g[V0][0] = c
                                                                                         .g[V0][0]
@@ -2599,11 +2550,11 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                                 } else {
                                                                                                     c.cycles += 6;
                                                                                                     c.g[V0][0] = c.lh((c.g[A3][0] as u32).wrapping_add(0x16));
-                                                                                                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                                                                                                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                                                                                                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                                                                                                     c.g[A0][0] = c.g[V1][0];
                                                                                                     let t = true;
-                                                                                                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                                                                                                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                                                                                                     if t {
     break 'b_30fa5c;
     } else {
@@ -2613,20 +2564,20 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                             }
                                                                                             c.cycles += 3;
                                                                                             c.g[V0][0] = sx((c.g[T0][0] as u32) << 2);
-                                                                                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                                                                                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                                                                                             c.g[A0][0] = c.g[V1][0];
                                                                                             break 'b_30fa5c;
                                                                                         }
                                                                                         'b_30fc28: {
                                                                                             c.cycles += 8;
-                                                                                            c.g[A1][0] = c.lw((c.g[V0][0] as u32));
+                                                                                            c.g[A1][0] = c.lw(c.g[V0][0] as u32);
                                                                                             c.g[V0][0] = sx((c.g[T2][0] as u32) << 2);
                                                                                             c.g[V1][0] = c.lhu((c.g[A3][0] as u32).wrapping_add(0x14));
-                                                                                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                                                                                            c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                                                                                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                                                                            c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                                                                                             c.g[V1][0] = c.g[V1][0] & 0x1;
                                                                                             let t = c.g[V1][0] == 0u64;
-                                                                                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub((c.g[A0][0] as u32)));
+                                                                                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[A0][0] as u32));
                                                                                             if t {
                                                                                                 break 'b_30fc28;
                                                                                             } else {
@@ -2642,7 +2593,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     c.cycles += 3;
     c.g[V1][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x24));
     let t = true;
-    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     if t {
     break 'b_30fa9c;
     } else {
@@ -2658,17 +2609,17 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                                     c.cycles += 18;
                                                                                                     c.g[V0][0] = sx((c.g[A1][0] as u32) << 2);
                                                                                                     c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
-                                                                                                    c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                                                                                                    c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                                                                                                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-                                                                                                    c.lwc1(5, (c.g[V0][0] as u32));
-                                                                                                    c.g[V1][0] = sx((c.g[T1][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                                                                                                    c.lwc1(5, c.g[V0][0] as u32);
+                                                                                                    c.g[V1][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[V1][0] as u32));
                                                                                                     c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2));
-                                                                                                    c.swc1(5, (c.g[A0][0] as u32));
+                                                                                                    c.swc1(5, c.g[A0][0] as u32);
                                                                                                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                                                                                                    c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                                                                                                    c.lwc1(3, (c.g[V1][0] as u32));
+                                                                                                    c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                                                                                    c.lwc1(3, c.g[V1][0] as u32);
                                                                                                     c.swc1(3, (c.g[A0][0] as u32).wrapping_add(0x4));
-                                                                                                    c.lwc1(4, (c.g[V0][0] as u32));
+                                                                                                    c.lwc1(4, c.g[V0][0] as u32);
                                                                                                     c.swc1(6, (c.g[A0][0] as u32).wrapping_add(0xc));
                                                                                                     c.swc1(4, (c.g[A0][0] as u32).wrapping_add(0x8));
                                                                                                     c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x40));
@@ -2690,7 +2641,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     frame.save_fpr(c, 2, 0x4c48);
     frame.save_fpr(c, 3, 0x4c4c);
     frame.restore(c, 2, 0x4c40);
-    c.sq(2, (c.g[A0][0] as u32));
+    c.sq(2, c.g[A0][0] as u32);
     break 'b_30fb18;
     }
                                                                                                 }
@@ -2715,7 +2666,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     } else {
     c.cycles += 15;
     c.lqc2(4, (c.g[S3][0] as u32).wrapping_add(0x30));
-    c.lqc2(5, (c.g[A0][0] as u32));
+    c.lqc2(5, c.g[A0][0] as u32);
     c.vu0().sub(0b0001, 8, 8, Src::Vec(8));
     c.vu0().opmula(4, 5);
     c.vu0().opmsub(6, 5, 4);
@@ -2737,7 +2688,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     }
     }
     c.cycles += 26;
-    c.lqc2(3, (c.g[A0][0] as u32));
+    c.lqc2(3, c.g[A0][0] as u32);
     c.lqc2(4, (c.g[S1][0] as u32).wrapping_sub(0xed0));
     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
     c.sqc2(5, frame.at(c, 0x4c70));
@@ -2768,7 +2719,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     c.cycles += 3;
     frame.save(c, 2, 0x4c40);
     frame.restore(c, 2, 0x4c40);
-    c.sq(2, (c.g[A0][0] as u32));
+    c.sq(2, c.g[A0][0] as u32);
     break 'b_30fbe8;
     }
                                                                                                 }
@@ -2781,7 +2732,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     } else {
     c.cycles += 2;
     let t = true;
-    c.sw((c.g[T4][0] as u32), c.g[T7][0]);
+    c.sw(c.g[T4][0] as u32, c.g[T7][0]);
     if t {
     break 'b_30fc28;
     } else {
@@ -2791,15 +2742,15 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                                 }
                                                                                                 c.cycles += 10;
                                                                                                 c.g[V1][0] = sx((c.g[T0][0] as u32) << 4);
-                                                                                                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                                                                                                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                                                                                                 c.mfc1(2, 20);
-                                                                                                c.lqc2(4, (c.g[V1][0] as u32));
+                                                                                                c.lqc2(4, c.g[V1][0] as u32);
                                                                                                 c.qmtc2(2, 3);
-                                                                                                c.lqc2(5, (c.g[A0][0] as u32));
+                                                                                                c.lqc2(5, c.g[A0][0] as u32);
                                                                                                 c.vu0().mula(0b1111, 4, Src::Bc(0, W));
                                                                                                 c.vu0().msuba(0b1111, 4, Src::Bc(3, X));
                                                                                                 c.vu0().madd(0b1111, 4, 5, Src::Bc(3, X));
-                                                                                                c.sqc2(4, (c.g[V1][0] as u32));
+                                                                                                c.sqc2(4, c.g[V1][0] as u32);
                                                                                                 break 'b_30fc28;
                                                                                             }
                                                                                         }
@@ -2830,7 +2781,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     c.cycles += 3;
     c.g[V1][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x28));
     let t = true;
-    c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
     if t {
     break 'b_30fc58;
     } else {
@@ -2845,10 +2796,10 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                             'b_30fe98: {
                                                                                                 c.cycles += 85;
                                                                                                 c.g[V0][0] = sx((c.g[A1][0] as u32) << 2);
-                                                                                                c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                                                                                                c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                                                                                                 c.lwc1(2, (c.g[V0][0] as u32).wrapping_add(0x8));
                                                                                                 c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0x4));
-                                                                                                c.lwc1(0, (c.g[V0][0] as u32));
+                                                                                                c.lwc1(0, c.g[V0][0] as u32);
                                                                                                 frame.save_fpr(c, 1, 0x4c44);
                                                                                                 frame.save_fpr(c, 2, 0x4c48);
                                                                                                 frame.save_fpr(c, 0, 0x4c40);
@@ -2921,7 +2872,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                                 frame.restore_fpr(c, 3, 0x4c60);
                                                                                                 c.mul_s(1, 0, 1);
                                                                                                 c.mul_s(4, 4, 2);
-                                                                                                c.swc1(3, (c.g[A2][0] as u32));
+                                                                                                c.swc1(3, c.g[A2][0] as u32);
                                                                                                 c.mul_s(0, 0, 5);
                                                                                                 c.swc1(1, (c.g[A2][0] as u32).wrapping_add(0x4));
                                                                                                 c.swc1(4, (c.g[A2][0] as u32).wrapping_add(0x8));
@@ -2943,9 +2894,9 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     } else {
     c.cycles += 4;
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
     let t = true;
-    c.lwc1(3, (c.g[V0][0] as u32));
+    c.lwc1(3, c.g[V0][0] as u32);
     if t {
     break 'b_30fde0;
     } else {
@@ -2956,8 +2907,8 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     c.cycles += 5;
     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.lwc1(0, (c.g[V0][0] as u32));
+    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.lwc1(0, c.g[V0][0] as u32);
     c.neg_s(3, 0);
     break 'b_30fde0;
     }
@@ -2973,9 +2924,9 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     } else {
     c.cycles += 4;
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
     let t = true;
-    c.lwc1(2, (c.g[V0][0] as u32));
+    c.lwc1(2, c.g[V0][0] as u32);
     if t {
     break 'b_30fe14;
     } else {
@@ -2986,8 +2937,8 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     c.cycles += 5;
     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.lwc1(0, (c.g[V0][0] as u32));
+    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.lwc1(0, c.g[V0][0] as u32);
     c.neg_s(2, 0);
     break 'b_30fe14;
     }
@@ -3003,9 +2954,9 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     } else {
     c.cycles += 4;
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
     let t = true;
-    c.lwc1(1, (c.g[V0][0] as u32));
+    c.lwc1(1, c.g[V0][0] as u32);
     if t {
     break 'b_30fe48;
     } else {
@@ -3016,8 +2967,8 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     c.cycles += 5;
     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.lwc1(0, (c.g[V0][0] as u32));
+    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.lwc1(0, c.g[V0][0] as u32);
     c.neg_s(1, 0);
     break 'b_30fe48;
     }
@@ -3033,9 +2984,9 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     } else {
     c.cycles += 4;
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
     let t = true;
-    c.lwc1(0, (c.g[V0][0] as u32));
+    c.lwc1(0, c.g[V0][0] as u32);
     if t {
     break 'b_30fe7c;
     } else {
@@ -3046,8 +2997,8 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     c.cycles += 5;
     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4));
     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.lwc1(0, (c.g[V0][0] as u32));
+    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.lwc1(0, c.g[V0][0] as u32);
     c.neg_s(0, 0);
     break 'b_30fe7c;
     }
@@ -3057,7 +3008,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     frame.save_fpr(c, 1, 0x4c44);
     frame.save_fpr(c, 0, 0x4c48);
     frame.restore(c, 2, 0x4c40);
-    c.sq(2, (c.g[A2][0] as u32));
+    c.sq(2, c.g[A2][0] as u32);
     c.g[V0][0] = c.lh((c.g[A3][0] as u32).wrapping_add(0x10));
     break 'b_30fe98;
     }
@@ -3072,7 +3023,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                                 } else {
                                                                                                     c.cycles += 15;
                                                                                                     c.lqc2(4, (c.g[S3][0] as u32).wrapping_add(0x30));
-                                                                                                    c.lqc2(5, (c.g[A2][0] as u32));
+                                                                                                    c.lqc2(5, c.g[A2][0] as u32);
                                                                                                     c.vu0().mul(0b1111, 7, 4, Src::Vec(5));
                                                                                                     c.vu0().opmula(4, 5);
                                                                                                     c.vu0().opmsub(6, 5, 4);
@@ -3085,7 +3036,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                                     c.sqc2(8, frame.at(c, 0x4c50));
                                                                                                     frame.restore(c, 2, 0x4c50);
                                                                                                     frame.save(c, 2, 0x4c40);
-                                                                                                    c.sq(2, (c.g[A2][0] as u32));
+                                                                                                    c.sq(2, c.g[A2][0] as u32);
                                                                                                     break 'b_30fedc;
                                                                                                 }
                                                                                             }
@@ -3099,7 +3050,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     } else {
     c.cycles += 2;
     let t = true;
-    c.sw((c.g[T3][0] as u32), c.g[T7][0]);
+    c.sw(c.g[T3][0] as u32, c.g[T7][0]);
     if t {
     break 'b_30ff70;
     } else {
@@ -3109,11 +3060,11 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                                 }
                                                                                                 c.cycles += 31;
                                                                                                 c.g[V0][0] = sx((c.g[T0][0] as u32) << 4);
-                                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                                                                                                 c.mfc1(4, 20);
-                                                                                                c.lqc2(4, (c.g[V0][0] as u32));
+                                                                                                c.lqc2(4, c.g[V0][0] as u32);
                                                                                                 c.qmtc2(4, 3);
-                                                                                                c.lqc2(5, (c.g[A2][0] as u32));
+                                                                                                c.lqc2(5, c.g[A2][0] as u32);
                                                                                                 c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
                                                                                                 c.vu0().mul(0b1111, 7, 4, Src::Vec(5));
                                                                                                 c.vu0().adda(0b1000, 7, Src::Bc(7, Y));
@@ -3138,7 +3089,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                                 c.vu0().rsqrt(0, 3, 4, 0);
                                                                                                 c.vu0().waitq();
                                                                                                 c.vu0().mul(0b1111, 5, 3, Src::Q);
-                                                                                                c.sqc2(5, (c.g[V0][0] as u32));
+                                                                                                c.sqc2(5, c.g[V0][0] as u32);
                                                                                                 break 'b_30ff70;
                                                                                             }
                                                                                             c.cycles += 1;
@@ -3151,7 +3102,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                                                 c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
                                                                                 c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(0x4));
                                                                                 c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_add(0x4));
-                                                                                c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                                                                                c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[V0][0] as u32));
                                                                                 c.g[V0][0] = ((c.g
                                                                                     [T0][0]
                                                                                     as i64)
@@ -3186,7 +3137,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                                         < (c.g[V1][0] as i64))
                                                         as u64;
                                                     if c.g[V0][0] != 0u64 {
-                                                        c.g[A1][0] = c.lw((c.g[S3][0] as u32));
+                                                        c.g[A1][0] = c.lw(c.g[S3][0] as u32);
                                                         if event_due(c) {
                                                             deliver_event_here(c, 0x0030f740);
                                                         }
@@ -3253,7 +3204,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                         c.g[T0][0] = 0u64;
                         c.g[S0][0] = sx((c.g[T1][0] as u32).wrapping_add(0x1));
                         c.g[A2][0] = c.g[A1][0];
-                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
                         c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x44));
                         let t = (c.g[V0][0] as i64) <= 0;
                         c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x38));
@@ -3270,17 +3221,17 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                 'b_310050: {
                                     c.cycles += 8;
                                     c.g[V0][0] =
-                                        sx((c.g[T2][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                                        sx((c.g[T2][0] as u32).wrapping_add(c.g[A1][0] as u32));
                                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
                                     c.g[A2][0] =
-                                        sx((c.g[T0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                                        sx((c.g[T0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                                     c.g[A1][0] = sx((c.g[A2][0] as u32) << 2);
                                     c.g[V0][0] =
-                                        sx((c.g[T4][0] as u32).wrapping_add((c.g[A1][0] as u32)));
-                                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                                        sx((c.g[T4][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                                     let t = c.g[V1][0] != 0u64;
                                     c.g[V0][0] =
-                                        sx((c.g[T3][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                                        sx((c.g[T3][0] as u32).wrapping_add(c.g[A1][0] as u32));
                                     if t {
                                         break 'b_310050;
                                     } else {
@@ -3289,18 +3240,16 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                         c.g[V1][0] = sx((c.g[A2][0] as u32) << 4);
                                         c.lq(4, (c.g[A3][0] as u32).wrapping_sub(0x10));
                                         c.g[V1][0] =
-                                            sx((c.g[V1][0] as u32)
-                                                .wrapping_add((c.g[V0][0] as u32)));
-                                        c.sq(4, (c.g[V1][0] as u32));
+                                            sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                        c.sq(4, c.g[V1][0] as u32);
                                         c.g[V0][0] =
-                                            sx((c.g[T3][0] as u32)
-                                                .wrapping_add((c.g[A1][0] as u32)));
+                                            sx((c.g[T3][0] as u32).wrapping_add(c.g[A1][0] as u32));
                                         break 'b_310050;
                                     }
                                 }
                                 'b_310074: {
                                     c.cycles += 3;
-                                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                                     if c.g[V1][0] != 0u64 {
                                         c.g[A1][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0xc));
                                         break 'b_310074;
@@ -3308,11 +3257,10 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                         c.cycles += 6;
                                         c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x28));
                                         c.g[V1][0] = sx((c.g[A2][0] as u32) << 4);
-                                        c.lq(4, (c.g[A3][0] as u32));
+                                        c.lq(4, c.g[A3][0] as u32);
                                         c.g[V1][0] =
-                                            sx((c.g[V1][0] as u32)
-                                                .wrapping_add((c.g[V0][0] as u32)));
-                                        c.sq(4, (c.g[V1][0] as u32));
+                                            sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                        c.sq(4, c.g[V1][0] as u32);
                                         c.g[A1][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0xc));
                                         break 'b_310074;
                                     }
@@ -3321,7 +3269,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                 c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
                                 c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x50));
                                 c.g[V1][0] =
-                                    sx((c.g[T2][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                                    sx((c.g[T2][0] as u32).wrapping_add(c.g[A1][0] as u32));
                                 c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x44));
                                 c.g[V0][0] = ((c.g[T0][0] as i64) < (c.g[V0][0] as i64)) as u64;
                                 let t = c.g[V0][0] != 0u64;
@@ -3341,7 +3289,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                         'b_3100d8: {
                             c.cycles += 5;
                             c.mult(0, 2, 9, 17);
-                            c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                            c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
                             c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0xc));
                             let t = (c.g[V0][0] as i64) < 0;
                             c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
@@ -3351,7 +3299,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                 c.cycles += 5;
                                 c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(sp(c)));
                                 c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x820));
-                                c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                                 if c.g[V1][0] != 0u64 {
                                     c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x8));
                                     break 'b_3100dc;
@@ -3365,7 +3313,7 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
                                     c.g[A2][0] = sx((c.g[A2][0] as u32) << 2);
                                     c.g[RA][0] = sx(0x003100d8);
                                     c.g[A0][0] =
-                                        sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                        sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                     call_ptr(c, 0x003e6448, 0x003100d8)?;
                                     break 'b_3100d8;
                                 }
@@ -3404,7 +3352,6 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
         frame.restore_ra(c, 0x4d50);
         frame.restore_fpr(c, 20, 0x4df0);
         frame.close(c);
-        return Ok(());
         Ok(())
     })
 }
@@ -3745,16 +3692,12 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::elf_image;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
-    use crate::difftest::fakes::covered;
+
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
+
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
+
     use crate::difftest::fill;
     use crate::difftest::put_vec;
     use crate::difftest::put_words;
@@ -3762,49 +3705,38 @@ pub(crate) mod tests {
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::RA as TEST_RA;
-    use crate::difftest::SP as STACK_TOP;
-    use crate::difftest::SP;
+
     pub(crate) use crate::game::ai::aianimeventmap::tests::alloc_setup;
-    pub(crate) use crate::game::ai::aianimeventmap::tests::MEM_MUTEX;
+
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear_3;
     pub(crate) use crate::game::ai::rider::tests::MODEL_2 as MODEL;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_7 as be_library;
     pub(crate) use crate::game::fe::feasyncfile::tests::clear_4 as clear;
-    pub(crate) use crate::game::fe::feasyncfile::tests::gp_at;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_5 as pool_allocator;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::w as w_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::w_2 as w;
     pub(crate) use crate::game::fe::feasyncfile::tests::world_4 as world;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_11 as SEEDS_5;
-    pub(crate) use crate::game::sound::soundsys::tests::alloc_ready;
+
     pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_3;
-    pub(crate) use crate::game::sound::soundsys::tests::globals_7 as globals_2;
-    pub(crate) use crate::game::sound::soundsys::tests::load_2 as load;
-    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool;
+
     pub(crate) use crate::game::sound::soundsys::tests::w as w_4;
-    pub(crate) use crate::game::sound::soundsys::tests::BE as BE_2;
-    pub(crate) use crate::game::sound::soundsys::tests::WORLD as WORLD_2;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::ctx_at;
+
     pub(crate) use crate::game::visualfx::boardwakefx::tests::put_ctx;
     pub(crate) use crate::game::visualfx::boardwakefx::tests::uf;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::CTX;
+
     pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS_3 as SEEDS_2;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::TEX;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::TOP;
+
     pub(crate) use crate::game::visualfx::worldlightman::tests::f;
     pub(crate) use crate::game::world::worldview::tests::word;
     pub(crate) use crate::game::world::worldview::tests::SEEDS_5 as SEEDS_3;
     pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
     pub(crate) use crate::game::wscript::wscriptman::tests::base_6 as base_2;
     pub(crate) use crate::game::wscript::wscriptman::tests::clear_5 as clear_2;
-    pub(crate) use crate::game::wscript::wscriptman::tests::globals_3 as globals;
+
     pub(crate) use crate::game::wscript::wscriptman::tests::w as w_3;
-    pub(crate) use crate::game::wscript::wscriptman::tests::BE_3 as BE;
-    pub(crate) use crate::game::wscript::wscriptman::tests::GAME;
-    pub(crate) use crate::game::wscript::wscriptman::tests::WORLD_3 as WORLD;
+
     use ssx3_ee as ee;
 
     #[test]

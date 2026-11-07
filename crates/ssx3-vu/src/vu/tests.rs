@@ -662,7 +662,9 @@ fn segments_track_mpg_runs() {
 
 // --- oracle: translated code vs the reference interpreter -------------------
 
+#[cfg(feature = "microcode")]
 struct Rng(u64);
+#[cfg(feature = "microcode")]
 impl Rng {
     fn next(&mut self) -> u32 {
         self.0 ^= self.0 << 13;
@@ -681,6 +683,7 @@ impl Rng {
     }
 }
 
+#[cfg(feature = "microcode")]
 fn seed_state(vu: &mut Vu, seed: u64, entries: &[u32]) {
     let mut r = Rng(seed | 1);
     for i in 0..vu.data.len() / 4 {
@@ -702,6 +705,7 @@ fn seed_state(vu: &mut Vu, seed: u64, entries: &[u32]) {
     vu.vif_itop = 0x20;
 }
 
+#[cfg(feature = "microcode")]
 fn snapshot(vu: &Vu) -> String {
     format!(
         "vf={:?} vi={:?} acc={:?} q={:x} p={:x} i={:x} r={:x} mac={:x} st={:x} clip={:x} tpc={:x} cyc={} errs={}",

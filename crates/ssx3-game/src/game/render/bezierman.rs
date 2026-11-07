@@ -9,23 +9,16 @@ use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::bestate2::ea;
 pub(crate) use crate::game::fe::debugfe::at as at_2;
 pub(crate) use crate::game::fe::festateload::at;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -94,14 +87,7 @@ pub(crate) mod callee {
 }
 
 /// `gp`-relative globals used here.
-pub(crate) mod g {
-    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
-    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
-    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
-    pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER;
-    pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER_END;
-    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
-}
+pub(crate) mod g {}
 
 // ---------------------------------------------------------------------------
 // Register and memory helpers.
@@ -346,7 +332,7 @@ pub fn ps2_bezier_man_v22(c: &mut Cpu) {
         abi::ret(c);
         return;
     }
-    let mut kind;
+    let kind;
     c.cycles += 11;
     c.g[V1][0] = sx(ea(c.g[A3][0], 1));
     // `mult a3, v0` (the generator routes the LO product through v0).
@@ -882,12 +868,12 @@ pub fn ps2_bezier_man_build_patch_packet(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
+
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::put_vec;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
@@ -899,16 +885,8 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::festateload::tests::clear;
     pub(crate) use crate::game::fe::festateload::tests::OBJ;
     pub(crate) use crate::game::object::railmodifier::tests::h;
-    use ssx3_ee::s00;
-    use ssx3_ee::s01;
-    use ssx3_ee::s02;
-    use ssx3_ee::s03;
-    use ssx3_ee::s08;
-    use ssx3_ee::s09;
-    use ssx3_ee::s10;
-    use ssx3_ee::s11;
+
     use ssx3_ee::s12;
-    use ssx3_ee::s13;
 
     // PS2BezierMan_v21 -----------------------------------------------------
 
@@ -1029,8 +1007,8 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::{fakes, fill, put_words};
+
+    use crate::difftest::fill;
 
     /// `PS2BezierMan_RenderPatchFX` with its real callees: FX off, stale view
     /// matrices (the real `UpdateViewMatrices` on random data), 0..3 type-8

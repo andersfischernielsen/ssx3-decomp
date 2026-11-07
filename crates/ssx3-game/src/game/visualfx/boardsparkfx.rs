@@ -1,12 +1,10 @@
 //! `src/visualfx/boardsparkfx.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
-use crate::abi;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
-use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
@@ -24,16 +22,11 @@ pub(crate) use crate::game::visualfx::boardwakefx::p;
 pub(crate) use crate::game::visualfx::boardwakefx::vadd;
 pub(crate) use crate::game::visualfx::boardwakefx::vmul_bc;
 pub(crate) use crate::game::visualfx::boardwakefx::APP;
-use crate::ps2f::FpuF32;
+#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -106,7 +99,7 @@ pub(crate) mod spark {
 
 /// The renderer object (`cGfx`) at gp-0x854.
 pub(crate) mod gfx {
-    pub(crate) use crate::game::visualfx::boardwakefx::gfx::F1030;
+
     pub(crate) use crate::game::visualfx::boardwakefx::gfx::STATE_TOP;
     pub(crate) use crate::game::visualfx::boardwakefx::gfx::VTABLE;
 }
@@ -997,8 +990,7 @@ pub(crate) mod tests {
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
     use crate::difftest::fill;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     pub(crate) use crate::game::visualfx::boardwakefx::tests::delta;

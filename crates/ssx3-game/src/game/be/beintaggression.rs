@@ -1,13 +1,9 @@
 //! `src/be/beintaggression.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
-use crate::abi::r32;
-use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -543,11 +539,9 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use crate::difftest::events::{check_events, schedule};
-    use crate::difftest::fakes::{covered, FAKE, LOG_RESULTS};
-    use crate::difftest::{scramble, RA as SENTINEL};
+
+    use crate::difftest::fakes::{covered, FAKE};
+    use crate::difftest::RA as SENTINEL;
 
     /// `BEAggressionInt_SaveState`: rider count -1..4 at 0x5305e0, the
     /// rider index table (0x5305b0) pointing at rider records (0x535b20,

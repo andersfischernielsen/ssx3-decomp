@@ -5,32 +5,19 @@ use crate::abi;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
-use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::fe::fepopup2::fe_state_screen_init;
 pub(crate) use crate::game::fe::festateoptions::call_object_a2;
 pub(crate) use crate::game::fe::festateoptions::screen_object;
 pub(crate) use crate::game::fe::festateoptions::ui_state_epilogue;
 pub(crate) use crate::game::fe::festateoptions::ui_state_frame;
-pub(crate) use crate::game::fe::festateoptions::STR_HASH;
-pub(crate) use crate::game::fe::festateoptions::UI_SCREEN_FIND_OBJECT;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::p;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
 use crate::guest::Addr;
-use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -76,27 +63,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees, under the names the generated bodies give them.
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::camera::camera::callee::BEBAGT_RESET_PROFILE;
-    pub(crate) use crate::game::camera::camera::callee::BENEWPLAYER_GET_SLOT;
-    pub(crate) use crate::game::camera::camera::callee::BE_LIBRARY_RESET_PROFILE;
-    pub(crate) use crate::game::camera::camera::callee::BE_OPTION_GET_MAX_HANDICAP;
-    pub(crate) use crate::game::camera::camera::callee::CAMERA_TRIGGER_FREE_TRIGGERS;
-    pub(crate) use crate::game::camera::camera::callee::CAMERA_TRIGGER_RESET_HEADER;
-    pub(crate) use crate::game::camera::camera::callee::CAM_CONTROLLER_RESET;
-    pub(crate) use crate::game::camera::camera::callee::CHASE_CAMERA_ALGORITHM_CTOR;
-    pub(crate) use crate::game::camera::camera::callee::CHASE_CAM_SET_ALGORITHM_2 as CHASE_CAM_SET_ALGORITHM;
+
     pub(crate) use crate::game::camera::camera::callee::FE_REFRESH_PROFILE_LIST;
     pub(crate) use crate::game::camera::camera::callee::FE_REFRESH_SLOTS;
-    pub(crate) use crate::game::camera::camera::callee::MANUAL_CAM_ALGO_BASE_CTOR;
-    pub(crate) use crate::game::camera::camera::callee::MEASURE_ROW;
-    pub(crate) use crate::game::camera::camera::callee::MEMCARD_SET_STATE;
-    pub(crate) use crate::game::camera::camera::callee::SPHERE_TREE_RESET_TRANSFORM;
-    pub(crate) use crate::game::camera::camera::callee::TRANSITION_MAN_START;
-    pub(crate) use crate::game::camera::camera::callee::UI_STATE_CTOR;
-    pub(crate) use crate::game::camera::camera::callee::UI_TEXTURE_SET_FIND;
-    pub(crate) use crate::game::camera::camera::callee::WSCRIPT_DELETE_ALL;
 }
 
 /// `void cFEStateProfileLoad_v26(this)` (0x18f278): refresh the profile list
@@ -200,7 +169,7 @@ pub fn cfe_state_profile_load_v38(c: &mut Cpu) {
             c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x48));
             c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4c));
             let target = c.g[A2][0] as u32;
-            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
             call_ptr(c, target, 0x0018_f114)?;
             c.g[A0][0] = 0x4a0000;
             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1460));
@@ -213,7 +182,7 @@ pub fn cfe_state_profile_load_v38(c: &mut Cpu) {
             c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x48));
             c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4c));
             let target = c.g[A2][0] as u32;
-            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
             call_ptr(c, target, 0x0018_f144)?;
         }
         c.cycles += 8;
@@ -243,7 +212,7 @@ pub fn cfe_state_profile_load_on_widget_notify(c: &mut Cpu) {
         c.g[A0][0] = Addr(p(r32(c, GP), 0xffff_f7b8)).lw(c);
         let msg = c.g[A2][0];
         c.g[S0][0] = msg;
-        let mut result = 0;
+        let result: u64;
         'outer: {
             'b58: {
                 'b54: {
@@ -359,7 +328,7 @@ pub fn fescreen_select_profile_on_widget_action(c: &mut Cpu) {
         c.g[S1][0] = c.g[A0][0]; // self
         'skip: {
             if !no_menu {
-                'actions: {
+                {
                     'item: {
                         c.cycles += 3;
                         c.g[V0][0] = 2;
@@ -705,51 +674,35 @@ pub fn c_fe_state_profile_load_v33(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
+
     use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
     use crate::difftest::fill;
-    use crate::difftest::put_words;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as SENTINEL;
-    use crate::difftest::SP;
+
     pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base;
-    pub(crate) use crate::game::bx::bxstring2::tests::f;
+
     pub(crate) use crate::game::bx::bxstring2::tests::gp_at;
-    pub(crate) use crate::game::bx::bxstring2::tests::run;
+
     pub(crate) use crate::game::bx::bxstring2::tests::slot_2 as slot;
-    pub(crate) use crate::game::bx::bxstring2::tests::BE_2 as BE;
-    pub(crate) use crate::game::bx::bxstring2::tests::DB;
-    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
-    pub(crate) use crate::game::bx::bxstring2::tests::RM;
-    pub(crate) use crate::game::bx::bxstring2::tests::VTS;
-    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE as BE_2;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_6 as WORLD;
+
     pub(crate) use crate::game::fe::fememcard2::tests::hash_screen;
-    pub(crate) use crate::game::fe::fememcard2::tests::str_hash;
-    pub(crate) use crate::game::fe::festateoptions::tests::belib;
+
     pub(crate) use crate::game::fe::festateoptions::tests::fe_state_setup;
-    pub(crate) use crate::game::fe::festateoptions::tests::screen_fixture;
+
     pub(crate) use crate::game::fe::festateoptions::tests::state_switch_setup;
-    pub(crate) use crate::game::fe::festateoptions::tests::str_hash_2;
-    pub(crate) use crate::game::fe::festateoptions::tests::RET;
+
     pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
+
     use ssx3_ee as ee;
 
     #[test]

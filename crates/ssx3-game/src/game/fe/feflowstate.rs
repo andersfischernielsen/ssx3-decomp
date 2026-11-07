@@ -2,13 +2,9 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Frame;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::fe::feasyncfile::p;
 use crate::guest::Addr;
 use ssx3_ee_rt::cpu::reg::*;
@@ -98,19 +94,19 @@ pub fn fe_flow_state_init(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
+
     use crate::difftest::fakes;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::globals_4 as globals;
     pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_6 as pool_allocator;
     pub(crate) use crate::game::fe::feasyncfile::tests::w_3 as w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_LIBRARY;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ4;
+
     use ssx3_ee as ee;
 
     #[test]

@@ -2,13 +2,8 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::call;
-use crate::call::Callee;
-use crate::call::Frame;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
@@ -30,11 +25,10 @@ pub fn chudfx_ctor(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
 
     #[test]
     fn chudfx_ctor_matches() {

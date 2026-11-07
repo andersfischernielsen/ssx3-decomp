@@ -3,24 +3,15 @@
 
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::events::deliver_event;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::fe::festaterewards::p;
 pub(crate) use crate::game::fe::festaterewards::r;
 use crate::guest::Addr;
+#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -126,21 +117,13 @@ pub fn ovscreen_pause_freeride_play_icon_anim(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::difftest::fakes;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::seed_count;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
+
     pub(crate) use crate::game::fe::festaterewards::tests::base_9 as base;
-    pub(crate) use crate::game::fe::festaterewards::tests::hook;
+
     pub(crate) use crate::game::fe::festaterewards::tests::strict;
     pub(crate) use crate::game::fe::festaterewards::tests::w;
-    pub(crate) use crate::game::fe::festaterewards::tests::BE_7 as BE;
-    pub(crate) use crate::game::fe::festaterewards::tests::HOOKS;
-    pub(crate) use crate::game::fe::festaterewards::tests::KEEP_F0;
-    pub(crate) use crate::game::fe::festaterewards::tests::W;
 
     // ----------------------------------------------------------- pause menu
 

@@ -4,26 +4,16 @@
 use crate::abi;
 use crate::abi::r32;
 use crate::abi::ret;
-use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
-use crate::call::VSlot;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -42,23 +32,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees.
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
+
     pub(crate) use crate::game::ai::ai::callee::EA_FILE_FREE_FILE_HANDLE;
     pub(crate) use crate::game::ai::ai::callee::EA_FILE_FREE_REQUEST;
-    pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE00;
-    pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE01;
-    pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE02;
-    pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE03;
-    pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE04;
-    pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE05;
-    pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE06;
-    pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE07;
-    pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE08;
-    pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE09;
-    pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE0A;
-    pub(crate) use crate::game::ai::ai::callee::RIDER_WIPEOUT_UPDATE_ANIM_SPEED;
-    pub(crate) use crate::game::ai::ai::callee::SPCH_FIND_BANK_TYPE;
 }
 
 // ---------------------------------------------------------------------------
@@ -310,6 +286,7 @@ pub fn eafile_str_icmp(c: &mut Cpu) {
 
 /// The EAFile request pool (`0x519ab0`): slot count at +0, its mutex at
 /// +0x14, the slot array (0x30 bytes each) at +0x28.
+#[cfg(test)]
 pub(crate) const EAFILE_POOL: u32 = 0x0051_9ab0;
 
 pub(crate) const EAFILE_POOL_SLOTS: u32 = 0x28;
@@ -571,19 +548,13 @@ pub fn ea_file_queue_read(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::elf_image;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
+
     use crate::difftest::SP as STACK;
     pub(crate) use crate::game::ai::ai::tests::fake_check;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS;
 
     // -------------------------------------------------- EAFile_ReleaseRequest
 
@@ -608,9 +579,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::{fill, put_vec};
 
     /// EAFile_StrICmp: strings of 0..5 characters over a mixed-case
     /// alphabet, often `b` a case-flipped copy of `a` (equal, end reached),
@@ -661,8 +629,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
 
     /// EAFile_AllocRequest: pools of 1..6 slots with the first free one
     /// anywhere (or a negative count: no scan), serials near the wrap; the

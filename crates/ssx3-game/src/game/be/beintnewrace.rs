@@ -15,22 +15,15 @@ use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::bedbreward::destroy_instance;
-pub(crate) use crate::game::be::bedbreward::BUILTIN_DELETE;
 pub(crate) use crate::game::be::beintnetwork::NEW_RACE_GP;
 pub(crate) use crate::game::fe::festateload::at;
 pub(crate) use crate::game::sound::soundsys::gp_4 as gp;
 pub(crate) use crate::game::sound::soundsys::p;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -190,15 +183,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::object::debouncenode::callee::EVAL_SEGMENT;
+
     pub(crate) use crate::game::object::debouncenode::callee::GET_CHARACTER;
     pub(crate) use crate::game::object::debouncenode::callee::GET_HUMAN_RIDER;
-    pub(crate) use crate::game::object::debouncenode::callee::GET_OBJECT_SLOT;
+
     pub(crate) use crate::game::object::debouncenode::callee::GET_PLAYER_INSTANCE;
     pub(crate) use crate::game::object::debouncenode::callee::GET_TRACK_PEAK;
-    pub(crate) use crate::game::object::debouncenode::callee::GET_TRANSFORM_BOUNDS;
-    pub(crate) use crate::game::object::debouncenode::callee::HAS_OBJECT_SCRIPT1;
-    pub(crate) use crate::game::object::debouncenode::callee::HAS_OBJECT_SCRIPT3;
+
     /// `BENewRaceInt_SetNumHumanPlayers` (0x144aa8).
     pub(crate) const SET_NUM_HUMAN_PLAYERS: Callee = Callee {
         addr: 0x0014_4aa8,
@@ -237,14 +228,7 @@ pub(crate) mod callee {
 }
 
 /// `gp`-relative globals used here.
-pub(crate) mod g {
-    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
-    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
-    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
-    pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER;
-    pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER_END;
-    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
-}
+pub(crate) mod g {}
 
 // ---------------------------------------------------------------------------
 // New race.
@@ -1182,6 +1166,7 @@ pub fn benew_race_int_get_special_event_field6(c: &mut Cpu) {
 // BENewRaceInt track lookups and BE_CopyProfile.
 
 /// Base of the 23-entry race-entry table (`D_0043D950`).
+#[cfg(test)]
 pub(crate) const RACE_TABLE: u32 = 0x0043_d950;
 
 /// Entry stride: `D_0043D950 + 0x8fc` is the one-past-the-end address.
@@ -1235,12 +1220,12 @@ pub fn be_new_race_int_get_special_event_score(c: &mut Cpu) {
     c.g[A3][0] = 0x14;
     c.g[V0][0] = sx((c.g[A1][0] as u32) << 1);
     c.g[V1][0] = 0x0044_0000;
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xd18));
-    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.g[A0][0] = 0x64;
     c.mult(0, 6, 6, 7);
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
     c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x12)).lhu(c);
     let ret = c.g[RA][0] as u32;
     c.mult(0, 2, 2, 4);
@@ -1255,13 +1240,13 @@ pub fn be_new_race_int_get_special_event_value(c: &mut Cpu) {
     c.g[A0][0] = 0x14;
     c.g[V0][0] = sx((c.g[A1][0] as u32) << 1);
     c.g[A3][0] = sx((c.g[A3][0] as u32) << 1);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
     c.g[V1][0] = 0x0044_0000;
-    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xd18));
     c.mult(0, 6, 6, 4);
-    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A2][0] as u32)));
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A3][0] as u32)));
+    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A2][0] as u32));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
     let ret = c.g[RA][0] as u32;
     c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x8)).lhu(c);
     c.pc = ret;
@@ -1403,7 +1388,7 @@ pub fn benew_race_int_get_event_record_target(c: &mut Cpu) {
     }
     c.cycles += 2;
     let row_below_14 = c.g[V0][0] != 0;
-    let mut base_path = false;
+    let base_path: bool;
     if !row_below_14 {
         // Row >= 14: only modes 4 and 5 are valid.
         c.g[V0][0] = 0x4;
@@ -1425,7 +1410,7 @@ pub fn benew_race_int_get_event_record_target(c: &mut Cpu) {
             c.g[V0][0] = 0x440000;
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xe80));
             c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 14) as u32);
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
             c.g[A0][0] = 0x64;
             c.g[V0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0xe));
             c.mult(0, 2, 2, 4);
@@ -1444,7 +1429,7 @@ pub fn benew_race_int_get_event_record_target(c: &mut Cpu) {
             c.g[V1][0] = 0x440000;
             c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 14) as u32);
             c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xe80));
-            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
             c.g[A0][0] = 0x64;
             c.g[V0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x2));
             c.mult(0, 2, 2, 4);
@@ -1457,7 +1442,7 @@ pub fn benew_race_int_get_event_record_target(c: &mut Cpu) {
         c.g[V1][0] = 0x440000;
         c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 14) as u32);
         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xe80));
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
         c.g[V0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x2));
         abi::ret(c);
     }
@@ -1635,58 +1620,36 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::fakes;
-    use crate::difftest::fakes::covered;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
+
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fill;
-    use crate::difftest::put_vec;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     use crate::difftest::RA as SENTINEL;
-    use crate::difftest::SP;
+
     pub(crate) use crate::game::ai::ai::tests::be_library;
     pub(crate) use crate::game::ai::ai::tests::SEEDS_2 as SEEDS_3;
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear;
     pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_2;
-    pub(crate) use crate::game::bx::bxstring2::tests::gp_at;
-    pub(crate) use crate::game::bx::bxstring2::tests::BE_2 as BE;
-    pub(crate) use crate::game::bx::bxstring2::tests::DB;
-    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
-    pub(crate) use crate::game::bx::bxstring2::tests::RM;
-    pub(crate) use crate::game::bx::bxstring2::tests::VTS;
-    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W;
+
     pub(crate) use crate::game::object::debouncenode::tests::base;
     pub(crate) use crate::game::object::debouncenode::tests::SEEDS;
     pub(crate) use crate::game::sound::bankmanager::tests::mixed;
     pub(crate) use crate::game::sound::bankmanager::tests::rng;
     pub(crate) use crate::game::sound::bankmanager::tests::SEEDS as SEEDS_2;
-    pub(crate) use crate::game::sound::soundsys::tests::alloc_ready;
+
     pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_3;
-    pub(crate) use crate::game::sound::soundsys::tests::globals_7 as globals;
-    pub(crate) use crate::game::sound::soundsys::tests::load_2 as load;
-    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool;
+
     pub(crate) use crate::game::sound::soundsys::tests::w;
-    pub(crate) use crate::game::sound::soundsys::tests::BE as BE_2;
-    pub(crate) use crate::game::sound::soundsys::tests::WORLD;
+
     pub(crate) use crate::game::world::worldview::tests::word;
     use ssx3_ee as ee;
-    use ssx3_ee::s00;
+
     use ssx3_ee::s01;
-    use ssx3_ee::s02;
-    use ssx3_ee::s03;
-    use ssx3_ee::s08;
-    use ssx3_ee::s09;
-    use ssx3_ee::s10;
-    use ssx3_ee::s11;
-    use ssx3_ee::s12;
-    use ssx3_ee::s13;
 
     #[test]
     fn be_new_race_int_get_track_peak_by_index_matches() {

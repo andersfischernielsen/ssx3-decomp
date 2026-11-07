@@ -3,33 +3,20 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::VSlot;
-use crate::events::back_edge_unwinds;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 pub(crate) use crate::game::main::gamestate::gw;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
 pub(crate) use crate::game::main::gamestate::vslot;
 pub(crate) use crate::game::movie::movieplayer::p;
 pub(crate) use crate::game::util::menu::gp_5 as gp;
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -42,35 +29,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees.
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::movie::movieplayer::callee::AIR_APPLY_WIND;
-    pub(crate) use crate::game::movie::movieplayer::callee::AIR_PREDICTOR_UPDATE;
-    pub(crate) use crate::game::movie::movieplayer::callee::AUDIO_GET_INSTANCE;
-    pub(crate) use crate::game::movie::movieplayer::callee::AUDIO_RESET_BOOST_PITCH;
-    pub(crate) use crate::game::movie::movieplayer::callee::BE_CHAR_ATTRIB_FACTOR;
-    pub(crate) use crate::game::movie::movieplayer::callee::BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::movie::movieplayer::callee::BE_LIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::movie::movieplayer::callee::BUILD_OCCLUDER_PLANES;
-    pub(crate) use crate::game::movie::movieplayer::callee::COLL_SEGMENT_CTOR;
+
     pub(crate) use crate::game::movie::movieplayer::callee::MATH_DET3X3;
-    pub(crate) use crate::game::movie::movieplayer::callee::OVERLAP_LIST_FIND_CLOSEST;
-    pub(crate) use crate::game::movie::movieplayer::callee::PACK_POSITION;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL128_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL16_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL256_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL32_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL512_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL64_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL8_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::QSORT;
-    pub(crate) use crate::game::movie::movieplayer::callee::REMOVE_HUD_MESSAGE;
-    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_GET_SUBSTATE;
-    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_ORIENTATION_IMPLICIT;
-    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_UPDATE_ORIENTATION;
-    pub(crate) use crate::game::movie::movieplayer::callee::SET_TIMED_EVENT;
-    pub(crate) use crate::game::movie::movieplayer::callee::SHOW_HUD_NUMBER;
-    pub(crate) use crate::game::movie::movieplayer::callee::VU0_UPLOAD_OCCLUDER;
 }
 
 // ---------------------------------------------------------------------------
@@ -673,7 +633,6 @@ pub(crate) mod tests {
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
 
     #[test]
     fn mat4_adjoint_matches() {
@@ -692,9 +651,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::fakes::{covered, machine, FAKE};
-    use crate::difftest::{put_words, SP as STACK_TOP};
 
     /// Random and edge-case matrices; the real Math_Det3x3 computes the
     /// minors.

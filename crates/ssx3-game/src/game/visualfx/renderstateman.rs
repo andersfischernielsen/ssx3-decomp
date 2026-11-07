@@ -3,7 +3,6 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -11,9 +10,7 @@ use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::Unwound;
 use crate::call::VSlot;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::bx::memblockman::gp_2 as gp_3;
@@ -35,44 +32,26 @@ pub(crate) use crate::game::visualfx::boardtrailfx::shl32_2 as shl32;
 pub(crate) use crate::game::visualfx::boardwakefx::addiu;
 pub(crate) use crate::game::visualfx::boardwakefx::at;
 pub(crate) use crate::game::visualfx::boardwakefx::back_edge;
-pub(crate) use crate::game::visualfx::boardwakefx::copy_quad;
 pub(crate) use crate::game::visualfx::boardwakefx::copy_record;
 pub(crate) use crate::game::visualfx::boardwakefx::draw;
 pub(crate) use crate::game::visualfx::boardwakefx::gfx;
-pub(crate) use crate::game::visualfx::boardwakefx::gfx_method;
 pub(crate) use crate::game::visualfx::boardwakefx::gs_field;
 pub(crate) use crate::game::visualfx::boardwakefx::pop_record;
 pub(crate) use crate::game::visualfx::boardwakefx::streamer_segment;
-pub(crate) use crate::game::visualfx::boardwakefx::streamer_vertex;
-pub(crate) use crate::game::visualfx::boardwakefx::vadd;
 pub(crate) use crate::game::visualfx::boardwakefx::vmul_bc;
 pub(crate) use crate::game::visualfx::boardwakefx::Streamer;
-pub(crate) use crate::game::visualfx::boardwakefx::DRAW;
-pub(crate) use crate::game::visualfx::boardwakefx::GFX_MAN;
-pub(crate) use crate::game::visualfx::boardwakefx::GFX_VTABLE;
 pub(crate) use crate::game::visualfx::boardwakefx::GS_DEFAULT;
 pub(crate) use crate::game::visualfx::boardwakefx::GS_TOP;
-pub(crate) use crate::game::visualfx::boardwakefx::LENS_FX_SLOTS;
 pub(crate) use crate::game::visualfx::boardwakefx::RECORD;
 pub(crate) use crate::game::visualfx::lensfx::lens_slot_virtual_float;
 pub(crate) use crate::game::visualfx::lensfx::world_painter_float_getter_207;
 pub(crate) use crate::game::visualfx::lensfx::world_painter_slot_float;
 pub(crate) use crate::game::visualfx::lensfx::world_painter_weather_float_getter;
 pub(crate) use crate::game::visualfx::lensfx::wp_view_get_float;
-pub(crate) use crate::game::visualfx::lensfx::LENS_FX_SLOT_SIZE;
-pub(crate) use crate::game::visualfx::lensfx::WP_GET_VIEWS;
-pub(crate) use crate::game::visualfx::lensfx::WP_GET_VIEWS_NEG;
-pub(crate) use crate::game::visualfx::lensfx::WP_GET_VIEW_SIZE;
-pub(crate) use crate::game::visualfx::lensfx::WP_OBJ_VTABLE;
-pub(crate) use crate::game::visualfx::lensfx::WP_SLOTS;
-pub(crate) use crate::game::visualfx::lensfx::WP_SLOT_SIZE;
-pub(crate) use crate::game::visualfx::lensfx::WP_STRIDE_207;
-pub(crate) use crate::game::visualfx::lensfx::WP_TABLE_207;
 pub(crate) use crate::game::worldpainter::quadtree::create_with;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use crate::tick;
-use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -317,9 +296,6 @@ pub(crate) mod air {
 /// `cAirStreamerFX` (a wake ribbon attached to a rider) fields.
 pub(crate) mod air_streamer {
 
-    /// The owner entity.
-    pub const OWNER: u32 = 0;
-
     /// The ring of ribbon points (25 slots of two vec4s).
     pub const RING: u32 = 0x4;
 
@@ -352,9 +328,6 @@ pub(crate) mod rsm_obj {
 /// `gp` globals the world-painter copy reads (`D_0050xxxx` and friends).
 pub(crate) mod painter {
 
-    /// Painter descriptor array base; accessors index it with a0.
-    pub const DESCS: u32 = 0x004f_a370;
-
     /// Graphics manager (`*(gp + 0x2a90)`).
     pub const GFX: i32 = 0x2a90;
 
@@ -366,56 +339,12 @@ pub(crate) mod painter {
 
 /// Callees and fixed addresses.
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
+
     pub(crate) use crate::game::fe::festaterewards::callee::AI_VISUAL_EFFECTS_MAN_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::callee::CUI_TEXT_SCROLL_SET_NAV_BUTTONS;
-    pub(crate) use crate::game::fe::festaterewards::callee::FE_STATE_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::callee::GET_SEQ_PROCESS_ID;
-    pub(crate) use crate::game::fe::festaterewards::callee::IN_SEQ_INSTANCE_SETUP;
-    pub(crate) use crate::game::fe::festaterewards::callee::LIGHT_MAN_EMPTY_HOOK;
-    pub(crate) use crate::game::fe::festaterewards::callee::MENU_FORMAT_FLOAT;
-    pub(crate) use crate::game::fe::festaterewards::callee::MENU_ITEM_DRAW_ROW;
-    pub(crate) use crate::game::fe::festaterewards::callee::MENU_ITEM_GET_INPUT_CODE;
-    pub(crate) use crate::game::fe::festaterewards::callee::MENU_ITEM_HANDLE_INPUT;
-    pub(crate) use crate::game::fe::festaterewards::callee::MENU_ITEM_IS_DISABLED;
-    pub(crate) use crate::game::fe::festaterewards::callee::MENU_PAGE_VALIDATE_SELECTION;
-    pub(crate) use crate::game::fe::festaterewards::callee::MENU_PUSH_PAGE;
-    pub(crate) use crate::game::fe::festaterewards::callee::REWARD_GALLERY_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_BINDING_CLEAR_LISTENER;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_LIST_ON_SEQ_START;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_LIST_ON_SEQ_STOPPED;
-    pub(crate) use crate::game::fe::festaterewards::callee::SEQ_LISTENER_ON_START;
-    pub(crate) use crate::game::fe::festaterewards::callee::SEQ_LISTENER_ON_STOP;
-    pub(crate) use crate::game::fe::festaterewards::callee::UI_LIST_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::callee::UI_OBJECT_CTOR;
+
     pub(crate) use crate::game::worldpainter::quadtree::callee::AI_VFX_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::BUILTIN_DELETE_2 as BUILTIN_DELETE;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::CONSOLE_CONFIG_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::EA_MEM_ALLOC;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::EMITTER_RENDER;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::GET_TRANSFORM_BOUNDS;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::GRAPHICS_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::GRAPHICS_ON_VIF1_DMA_END;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::INTC_REMOVE_HANDLER;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MEM_CARD_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MEM_CARD_INIT;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MEM_CARD_SET_STATE;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MENU_ITEM_MEASURE_ROW;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MOD_OBJ_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::PS2_SOUND_MANAGER_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SNDSTRM_GET_REQUEST_STATUS;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_FADE_OUT;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_GET_STREAM_STATUS;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_POST_EVENT;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SPEECH_INSTANCE_STOP_STREAM;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STATS_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STRCPY;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STREAM_BUFFER_SET_FILE;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STREAM_BUFFER_STOP;
+
     pub(crate) use crate::game::worldpainter::quadtree::callee::VFX_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::WORLD_GET_SECTION_SCRIPT_FUNC;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::WORLD_OBJ_CTOR;
 }
 
 /// `void cAirStreamerFX_Reset(cAirStreamerFX *this)` (0x2ef6a0): reset the
@@ -826,10 +755,7 @@ pub(crate) fn air_streamer_at(c: &mut Cpu, frame: Frame, pc: u32) -> Flow {
         0x002e_f908 => air_start_increase(c, frame),
         0x002e_f918 => air_start_clamp(c, frame),
         0x002e_f934 => air_start_subtract(c, frame),
-        0x002e_f940 => {
-            air_exit(c, frame);
-            Ok(())
-        }
+        0x002e_f940 => air_exit(c, frame),
         other => {
             c.jump_out(other, 0x002e_f6d0, 0x002e_f94c);
             Ok(())
@@ -1110,8 +1036,7 @@ pub(crate) fn air_start_clamp(c: &mut Cpu, frame: Frame) -> Flow {
     c.c_lt_s(1, 0);
     if !c.fcc() {
         frame.restore(c, S0, 0x80);
-        air_exit(c, frame);
-        return Ok(());
+        return air_exit(c, frame);
     }
     air_start_subtract(c, frame)
 }
@@ -1205,8 +1130,10 @@ pub fn world_painter_get_lighting30(c: &mut Cpu) {
 
 /// The table of world-painter view records (`D_004FA370`); each entry is
 /// 0xf0 bytes.
+#[cfg(test)]
 pub(crate) const WP_VIEWS: u32 = 0x004f_a370;
 
+#[cfg(test)]
 pub(crate) const WP_ENTRY_SIZE: u32 = 0xf0;
 
 /// The screen tint/fill overrides switch (`D_004A3B60`, `gp+0xa70`).
@@ -1813,7 +1740,7 @@ pub fn ps2_visual_effects_man_apply_world_painter(c: &mut Cpu) {
             wp::WorldPainter_GetScreenFillBlue,
         )?;
 
-        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S0][0] as u32));
         frame.restore(c, S1, 0x30);
         let dst = at(c.g[S0][0], 0x24c);
         c.swc1(0, dst);
@@ -2382,17 +2309,14 @@ pub fn world_painter_save_view_state(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
+
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
+
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
+
     use crate::difftest::fill;
     use crate::difftest::put_vec;
     use crate::difftest::put_words;
@@ -2400,23 +2324,17 @@ pub(crate) mod tests {
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::RA as TEST_RA;
-    use crate::difftest::SP;
-    use crate::difftest::SP as STACK_TOP;
-    pub(crate) use crate::game::ai::ai::tests::slot as slot_2;
-    pub(crate) use crate::game::ai::ai::tests::w16;
+
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::SEEDS_2;
     pub(crate) use crate::game::ai::rider::tests::put_world_2 as put_world;
     pub(crate) use crate::game::bx::memblockman::tests::fake_slot;
     pub(crate) use crate::game::camera::cameracontroller::tests::pool;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
-    pub(crate) use crate::game::fe::feasyncfile::tests::h;
-    pub(crate) use crate::game::fe::feasyncfile::tests::slot_3;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::w;
     pub(crate) use crate::game::fe::feasyncfile::tests::world_3 as world;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as SEEDS_6;
-    pub(crate) use crate::game::fe::festateloadhint::tests::w32;
+
     pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_5;
     pub(crate) use crate::game::render::particle::tests::clear;
     pub(crate) use crate::game::render::particle::tests::common;
@@ -2425,16 +2343,13 @@ pub(crate) mod tests {
     pub(crate) use crate::game::render::particle::tests::SEEDS_7 as SEEDS_4;
     pub(crate) use crate::game::sound::bankmanager::tests::rng;
     pub(crate) use crate::game::sound::bankmanager::tests::SEEDS as SEEDS_3;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::delta;
+
     pub(crate) use crate::game::visualfx::boardwakefx::tests::gfx_fixture;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::slot;
+
     pub(crate) use crate::game::visualfx::boardwakefx::tests::streamer_rider;
     pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS;
     pub(crate) use crate::game::worldpainter::quadtree::tests::alloc_machine;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::heap_init;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::pool_allocator;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::run;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::MEM_HEAP;
+
     use ssx3_ee as ee;
 
     #[test]
@@ -3081,19 +2996,11 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use crate::difftest::check_paths;
+
     // table_getter_setup is defined in this module
-    use super::*;
+
     // (fakes imported above)
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use crate::difftest::elf_image;
-    pub(crate) use crate::game::ai::ai::tests::oc258_w32;
+
     pub(crate) use crate::game::visualfx::lensfx::tests::oc258_lens_slot;
     pub(crate) use crate::game::visualfx::lensfx::tests::world_painter_slot_setup;
     pub(crate) use crate::game::visualfx::lensfx::tests::world_painter_weather_setup;
@@ -3307,8 +3214,6 @@ pub(crate) mod tests {
             &|c, seed| world_painter_weather_setup(c, seed, 0x002e_e978, 0x1e8),
         );
     }
-    use super::*;
-    use super::*;
 
     /// PS2AIVisualEffectsMan_Render: the wrapped manager's render method is
     /// a fake (random this-delta; unwinding on some seeds).
@@ -3354,7 +3259,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// `WorldPainter_SaveViewState`: the six `RenderStateMan` entries at
     /// 0x4fa370 point (+0x20) at slots holding objects whose vtable (+4)

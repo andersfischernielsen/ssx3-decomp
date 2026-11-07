@@ -3,11 +3,8 @@
 
 use crate::abi;
 use crate::abi::r32;
-use crate::abi::ret;
-use crate::abi::set_fpr;
 use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
@@ -22,7 +19,6 @@ pub(crate) use crate::game::visualfx::boardwakefx::copy_quad;
 pub(crate) use crate::game::visualfx::boardwakefx::vadd;
 pub(crate) use crate::game::visualfx::boardwakefx::vmul_bc;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -281,7 +277,7 @@ pub fn attached_emitter_fx_ctor_2(c: &mut Cpu) {
         let frame = Frame::open(c, 0x20);
         let this = abi::arg(c, 0);
         let index = abi::arg64(c, 1);
-        let ty = abi::arg64(c, 2);
+        let _ty = abi::arg64(c, 2);
         c.g[V0][0] = 0x0049_0000;
         frame.save(c, S0, 0x10);
         let vtable = 0x0049_0000u32.wrapping_sub(0x7e30);
@@ -1105,7 +1101,7 @@ pub fn attached_emitter_fx_render(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
+
     use crate::difftest::events::check_events;
     use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
@@ -1365,7 +1361,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// `AttachedEmitterFX_Render`: empty and filled slots, with/without
     /// rider and info, negative/positive levels, every visibility case.

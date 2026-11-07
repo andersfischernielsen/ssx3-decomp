@@ -6,19 +6,14 @@ use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::reg;
 use crate::abi::ret;
-use crate::abi::set_fcc;
 use crate::abi::set_fpr;
 use crate::abi::set_reg;
-use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
-use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::Target;
-use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -26,20 +21,15 @@ use crate::events::Resume;
 pub(crate) use crate::game::ai::ai::at as at_2;
 use crate::game::lib::snd;
 pub(crate) use crate::game::misc::SND_EVENT_TABLE;
-use crate::game::misc::STATUS_EIE;
 use crate::game::visualfx::boardwakefx as bw;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -6595,12 +6585,6 @@ pub(crate) fn slt_2(a: u64, b: u64) -> u64 {
     ((a as i64) < (b as i64)) as u64
 }
 
-/// `addiu_2`-style 32-bit add of an immediate, sign-extended.
-#[inline]
-pub(crate) fn addiu_2(a: u64, k: i32) -> u64 {
-    sx((a as u32).wrapping_add(k as u32))
-}
-
 /// `void SND_ReleaseFinishedVoices(void)` (0x3c1298): walks both channel
 /// groups of the SND driver and releases the voices of every channel whose
 /// hardware voice has finished. For each channel `i` with a non-zero key in
@@ -7081,6 +7065,7 @@ pub(crate) mod sndstrm_release {
     /// from 0x5157c0; slot buffers `Buffer*[]` at 0x5157b8 + 0x304.
     pub const QUEUE: u32 = 0x0051_57b8;
 
+    #[cfg(test)]
     pub const BUFFERS: u32 = QUEUE + 0x304;
 
     /// Buffer: the reader id (signed byte), bytes held, release
@@ -8642,6 +8627,7 @@ pub(crate) mod ee_mix {
     pub const SET: u32 = 0x1e0;
 
     /// The dry mix buffer.
+    #[cfg(test)]
     pub const DRY_BUFFER: u32 = 0x0051_5d80;
 
     /// `SND_MixAddRamp16`.
@@ -12853,8 +12839,8 @@ pub fn snd_next_voice_group(c: &mut Cpu) {
         c.g[T3][0] = 1;
         c.g[T1][0] = sx(SND_VOICE_GROUPS + SND_VOICE_GROUP_MASKS);
         let mut v0 = sx((v1 as u32) << 1);
-        let mut a0 = c.g[A0][0];
-        let mut a3 = c.g[A3][0];
+        let mut a0: u64;
+        let mut a3: u64;
         let mut masks = c.g[T1][0] as u32;
         let mut table = c.g[T2][0] as u32;
         let mut one = c.g[T3][0];
@@ -12947,10 +12933,6 @@ pub fn snd_next_voice_group(c: &mut Cpu) {
                 c.g[A3][0] = a3;
                 deliver_event_here(c, SND_NEXT_VOICE_GROUP_LOOP);
                 v0 = c.g[V0][0];
-                v1 = c.g[V1][0];
-                a0 = c.g[A0][0];
-                a2 = c.g[A2][0];
-                a3 = c.g[A3][0];
                 idx_ptr = Addr(c.g[T0][0] as u32);
                 masks = c.g[T1][0] as u32;
                 table = c.g[T2][0] as u32;
@@ -15009,20 +14991,16 @@ pub(crate) mod tests {
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
+
     use crate::difftest::fill;
-    use crate::difftest::put_vec;
+
     use crate::difftest::put_words;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::SP as STACK;
+
     pub(crate) use crate::game::ai::ai::tests::leaf;
-    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
-    pub(crate) use crate::game::ai::ai::tests::rng;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS;
 
     #[test]
     fn snd_add_tick_callback_matches() {
@@ -15573,7 +15551,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     // ----------------------------------------------- SND_UtkDecodeFrame
 
@@ -15638,7 +15615,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     // ---------------------------------------------------- SND_UtkDecode
 
@@ -15798,19 +15774,14 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use crate::difftest::fakes::{ptr, FAKE, LOG_RESULTS};
-    use crate::difftest::fresh;
+
+    use crate::difftest::fakes::FAKE;
 
     pub(crate) use crate::game::ai::ai::ai_render;
     pub(crate) use crate::game::ai::ai::rider_prewind_sub_handle_input;
     pub(crate) use crate::game::ai::ai::rider_spin_sub_update_trick;
     pub(crate) use crate::game::ai::control::handplantcontrol::rider_ground_state_compute_boost_accel;
     pub(crate) use crate::game::ai::rider::rider_begin_frame;
-    pub(crate) use crate::game::camera::camera::tests::f;
 
     /// SND_DecEaxa_DecodeStream: an empty ADPCM decoder that is refilled
     /// from a real stream (`SNDSTRM_PopBlock` on a one-stream fixture whose
@@ -15969,7 +15940,7 @@ pub(crate) mod tests {
     pub(crate) mod update_trick_fixture {
         use super::*;
         use crate::difftest::fakes::{fake_call, machine, FAKE};
-        use crate::difftest::{check, elf_image, Rng, DATA, GAME_GP};
+        use crate::difftest::{check, elf_image, DATA, GAME_GP};
 
         /// The objects (zeroed RAM except the fields written below).
         const THIS: u32 = DATA + 0x5_0000;
@@ -16301,7 +16272,7 @@ pub(crate) mod tests {
         use super::*;
         use crate::difftest::check_lohi;
         use crate::difftest::fakes::FAKE;
-        use crate::difftest::{Rng, DATA, GAME_GP};
+        use crate::difftest::{DATA, GAME_GP};
         use crate::game::ai::ridermetrix::tests::target_speed_fixture;
 
         /// The rider of `Rider_UpdateTargetSpeed`'s fixture (random fields,
@@ -16549,7 +16520,7 @@ pub(crate) mod tests {
 
     pub(crate) mod ai_render_fixture {
         use super::*;
-        use crate::difftest::fakes::{machine, vtable, FAKE};
+        use crate::difftest::fakes::{machine, FAKE};
         use crate::difftest::{check_lohi, Rng, DATA, GAME_GP};
 
         const THIS: u32 = DATA + 0xa_0000;
@@ -16873,13 +16844,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use crate::difftest::check_paths;
-    use crate::game::visualfx::boardwakefx::tests::{gp_at, put_spray_slot};
 
     /// `SND_PanLookup`'s sine table (`0x450000 - 0x2288`).
     pub(crate) const PAN_SINES: u32 = 0x0044_dd78;
@@ -17298,14 +17262,9 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
+
     use crate::difftest::events::{check_events, schedule, Events};
-    use crate::difftest::require_paths;
-    use crate::difftest::SP;
+
     use ssx3_ee_rt::Cpu;
 
     /// SNDSTRM_ConsumeCallback: 1..3 queued requests of the stream, `n`
@@ -17620,11 +17579,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
 
     /// The SNDSTRM_IsPrebuffering fixture: a stream at DATA with its file
     /// handle (StreamFile magic, or a bad one so the real getters answer 0),
@@ -18007,12 +17961,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
 
     /// SND_RunChangeCallbacks: counter unchanged, changed with an empty
     /// list, and changed with 1-4 callbacks (fakes).
@@ -18510,9 +18458,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
 
     /// `SND_ChannelStartVoices`: SPU / IOP DSP / EE channels (snd's channel
     /// fixture, `seed % 3`) with 0-4 voices, output mode 2 or not, a random
@@ -18609,10 +18554,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
+
     use crate::game::lib::snd::tests as snd_tests;
 
     // -- 0x003d85c8 SPCH_MatchConditions ---------------------------------------
@@ -19024,16 +18966,8 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
+
     use crate::difftest::events::driven;
-    use crate::game::be::beintreward::tests::world;
-    use crate::game::bx::bxstring::tests::{alloc, heap};
-    use crate::game::bx::bxstring2::tests::be_library;
 
     /// The sound library's state block for SND_ParseStreamHeader: an empty
     /// SND heap (`STATE+0x234`) for the data tags, the output layout byte and
@@ -19641,10 +19575,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
+
     use crate::difftest::RA as SENTINEL;
 
     /// `SPCH_HistoryFind`: empty or 1..12-entry histories with random
@@ -19883,10 +19814,6 @@ pub(crate) mod tests {
             &sndstrm_queue_fixture,
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
 
     /// `SND_EeVoiceStop`: voices 0..7 with random levels and scale, 0..5
     /// mixer channels, 1..4 nodes whose stop callback is a fake (some
@@ -20148,11 +20075,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
+
     use crate::difftest::check_paths_lohi;
 
     /// Every codec of the chain, plus unknown ones, with random rates and

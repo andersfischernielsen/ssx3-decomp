@@ -6,33 +6,22 @@ use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::reg;
 use crate::abi::ret;
-use crate::abi::set_fcc;
-use crate::abi::set_fpr;
 use crate::abi::set_reg;
 use crate::call;
-use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
-use crate::call::Unwound;
-use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::misc::lit;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -2638,11 +2627,6 @@ pub(crate) mod fp_number {
 
     pub const CLASS_INFINITY: u64 = 4;
 
-    /// `+0x0` class: 0/1 NaN, 2 zero, 3 normal, 4 infinity.
-    pub const CLASS_2: u32 = 0x0;
-
-    pub const SIGN_2: u32 = 0x4;
-
     pub const EXP: u32 = 0x8;
 
     /// Fraction bits below the binary point.
@@ -4327,8 +4311,6 @@ pub(crate) mod softfp {
 
     /// The frame: unpacked a at 0, unpacked b at 0x20, the sum at 0x40,
     /// the packed arguments at 0x60 / 0x68.
-    pub const A_PARTS: u32 = 0x0;
-
     pub const B_PARTS: u32 = 0x20;
 
     pub const SUM_PARTS: u32 = 0x40;
@@ -4968,7 +4950,7 @@ pub(crate) mod tests {
     use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
     use crate::difftest::fill;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
@@ -5866,7 +5848,6 @@ pub(crate) mod tests {
             div_setup(c, seed, 0x0049_af18)
         });
     }
-    use super::*;
 
     // ------------------------------------------------------------ __unpack_d
 
@@ -5904,8 +5885,6 @@ pub(crate) mod tests {
             c.g[A1][0] = sx(DST);
         });
     }
-    use super::*;
-    use super::*;
 
     // -------------------------------------------------------------- __pack_d
 
@@ -6044,9 +6023,6 @@ pub(crate) mod tests {
             c.pc = 0x0041_1fd8;
         });
     }
-    use super::*;
-    use crate::difftest::put_vec;
-    pub(crate) use crate::game::camera::camera::tests::f;
 
     /// __kernel_tanf: x in f12 from tiny (zero, 1e-10, values that do not
     /// truncate to 0 cannot be tiny, so also NaN/inf edges), the middle range
@@ -6100,10 +6076,8 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
+
     use crate::difftest::elf_image;
-    use crate::difftest::{check_lohi, check_paths};
 
     /// Two unpacked doubles covering every class pair (NaN, zero, normal,
     /// infinity, and an out-of-range negative class), both signs, and
@@ -6184,12 +6158,9 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
+
     use crate::difftest::events::driven;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::{fresh, require_paths};
+
     use ssx3_ee_rt::Cpu;
 
     /// __fixunsdfsi: zero, NaN, negative, infinity, |x| < 1, x >= 2^32 and
@@ -6312,9 +6283,7 @@ pub(crate) mod tests {
             c.pc = 0x0041_3068;
         });
     }
-    use super::*;
-    use super::*;
-    use super::*;
+
     pub(crate) use crate::game::visualfx::boardwakefx::tests::oc238_uf;
 
     /// The __fixunssfsi argument: edge cases, NaN / infinity bit patterns,
@@ -6440,7 +6409,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     // -------------------------------------------------------------- __adddf3
 
@@ -6476,12 +6444,9 @@ pub(crate) mod tests {
             c.g[A1][0] = b;
         });
     }
-    use super::*;
-    use crate::difftest::fakes::vtable;
+
     pub(crate) use crate::game::object::debouncenode::crowd_man3d_save_state;
-    use crate::game::scripter::ssxscriptengine::tests::{
-        alloc as uv_scroll_alloc, heap_init as uv_scroll_heap_init,
-    };
+
     pub(crate) use crate::game::ui::focusman::focus_man_save_state;
 
     pub(crate) const FOCUS: u32 = DATA;

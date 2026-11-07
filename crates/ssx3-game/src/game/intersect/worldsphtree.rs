@@ -4,7 +4,6 @@
 use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
-use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -22,7 +21,6 @@ pub(crate) use crate::game::ai::computer::sd;
 pub(crate) use crate::game::be::beintplayer::lh;
 pub(crate) use crate::game::be::bestate2::ea;
 pub(crate) use crate::game::fe::feasyncfile::at_2;
-pub(crate) use crate::game::fe::feasyncfile::lw_5 as lw_3;
 pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::fe::fepopup::lq;
 pub(crate) use crate::game::fe::fepopup::sq;
@@ -33,8 +31,6 @@ pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_at;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_sll;
 pub(crate) use crate::game::intersect::riderspheretree::coll_sphere_tree_common;
-pub(crate) use crate::game::intersect::riderspheretree::collision_direction;
-pub(crate) use crate::game::intersect::riderspheretree::frame_restore_s0;
 pub(crate) use crate::game::main::gamemode::lh_r;
 pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::lw_r;
@@ -46,7 +42,6 @@ pub(crate) use crate::game::render::graphicsman::RegMem;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
-use callee::*;
 use gather_callee::*;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -217,158 +212,15 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::be::beintmission::callee::BUY_ATTRIB_UPDATE_BARS;
-    pub(crate) use crate::game::be::beintmission::callee::CAMERA_TRIGGER_EMPTY_STUB;
-    pub(crate) use crate::game::be::beintmission::callee::CAREER_STATS_SHOW_HIGHLIGHTS;
-    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_SET_ALGORITHM;
-    pub(crate) use crate::game::be::beintmission::callee::MEMCARD_SCAN_STEP;
-    pub(crate) use crate::game::be::beintmission::callee::MISSION_COUNT;
-    pub(crate) use crate::game::be::beintmission::callee::MISSION_NTH;
-    pub(crate) use crate::game::be::beintmission::callee::MPEG2_ERROR;
-    pub(crate) use crate::game::be::beintmission::callee::NET_FE_STATE_ON_WIDGET_ACTION;
-    pub(crate) use crate::game::be::beintmission::callee::REWARDS_FILE_LOAD;
-    pub(crate) use crate::game::be::beintmission::callee::UBER_TRICK_REFRESH;
-    pub(crate) use crate::game::be::beintmission::callee::UITEXT_SET_WIDE_STRING_INTERNAL;
-    pub(crate) use crate::game::be::beintmission::callee::VIEW_POPUP_SHOW_MESSAGE;
+
     pub(crate) use crate::game::be::beintmission::callee::WORLD_OBJ_RUN_KILL_SCRIPT;
-    pub(crate) use crate::game::main::gamestate::callee::ADF_DATA_SOURCE_DTOR;
-    pub(crate) use crate::game::main::gamestate::callee::ANIM_DATA_BASE_FREE_CHAN_CACHES;
-    pub(crate) use crate::game::main::gamestate::callee::BANK_MONITOR_STOP_HANDLE;
-    pub(crate) use crate::game::main::gamestate::callee::BE_ECON_INT_GET_TOTAL_EARNED;
-    pub(crate) use crate::game::main::gamestate::callee::BE_GET_RIDER_PROFILE;
-    pub(crate) use crate::game::main::gamestate::callee::BE_LIBRARY_GET_INSTANCE_3 as BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::main::gamestate::callee::BE_LIBRARY_GET_INTERFACE_3 as BE_LIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::main::gamestate::callee::BE_NEW_PLAYER_INT_GET_SLOT;
-    pub(crate) use crate::game::main::gamestate::callee::BOLTS_FIND_BOLT_INDEX;
-    pub(crate) use crate::game::main::gamestate::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE;
-    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_BRAGGING_RIGHTS_INIT_PLAYER_ROWS;
-    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_SHOW_CHAR_STATS;
-    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_SHOW_OPPONENT_CHAR;
-    pub(crate) use crate::game::main::gamestate::callee::C_GAME_COMM_RECV_GAME_PACKET;
-    pub(crate) use crate::game::main::gamestate::callee::C_KEYBOARD_POPUP_SET_KEY_ENABLED;
-    pub(crate) use crate::game::main::gamestate::callee::EA_MEM_ALLOC_NAMED_3 as EA_MEM_ALLOC_NAMED_2;
-    pub(crate) use crate::game::main::gamestate::callee::EA_MEM_FREE_4 as EA_MEM_FREE;
-    pub(crate) use crate::game::main::gamestate::callee::GAME_ANIM_MAP_UNREGISTER_BANK;
-    pub(crate) use crate::game::main::gamestate::callee::GAME_STATE_LOAD_STATE;
-    pub(crate) use crate::game::main::gamestate::callee::INTC_TABLE_CLEAR_SLOTS;
-    pub(crate) use crate::game::main::gamestate::callee::INTC_TABLE_INSTALL_VIF_VU_HANDLERS;
-    pub(crate) use crate::game::main::gamestate::callee::MEMCARD_STATE_BASE_INSTALL_CALLBACKS;
-    pub(crate) use crate::game::main::gamestate::callee::MEM_FREE;
-    pub(crate) use crate::game::main::gamestate::callee::MEM_MOVE;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_GET_INPUT_CODE;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_HANDLE_INPUT;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_IS_DISABLED;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_SELECT_NEXT;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_SELECT_PREV;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_VALIDATE_SELECTION;
-    pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_COUNT_GROUP_MESSAGES;
-    pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_GET_MESSAGE_COUNT;
-    pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_REMOVE_MESSAGE;
-    pub(crate) use crate::game::main::gamestate::callee::NET_FE_STATE_OPEN_KEYBOARD_TEXT_ID;
-    pub(crate) use crate::game::main::gamestate::callee::OV_SCREEN_MESSAGE_CENTER_REFRESH_LIST;
-    pub(crate) use crate::game::main::gamestate::callee::OV_SCREEN_MESSAGE_CENTER_UPDATE_COUNT_TEXT;
-    pub(crate) use crate::game::main::gamestate::callee::OV_SCREEN_MESSAGE_CENTER_UPDATE_SCROLL_ARROWS;
-    pub(crate) use crate::game::main::gamestate::callee::RIDER_CLEAR_NEARBY_LIGHTS;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_BINDING_PAUSE_SEQ;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_BINDING_RESUME_SEQ;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_CMD_QUEUE_AT_2 as SCRIPT_CMD_QUEUE_AT;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_GET_PROCESS_IN_SEQ;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_GET_SCRIPT_OBJ;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_IS_OBJ_BOUND_TO_PROCESS;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_LIST_START;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_LIST_IS_MOVIE_ENTRY;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_OBJ_CAM_HAS_BINDING;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_OBJ_CAM_IS_BOUND_TO_PROCESS;
-    pub(crate) use crate::game::main::gamestate::callee::SECTION_ALLOCATOR_CTOR;
-    pub(crate) use crate::game::main::gamestate::callee::SNDSTRM_CLOSE;
-    pub(crate) use crate::game::main::gamestate::callee::SPCH_MAKE_ID;
-    pub(crate) use crate::game::main::gamestate::callee::SPCH_SHUTDOWN;
-    pub(crate) use crate::game::main::gamestate::callee::SPEECH_INSTANCE_DTOR;
-    pub(crate) use crate::game::main::gamestate::callee::SPEECH_SYSTEM_SET_EVENT_CONTEXT;
+
     pub(crate) use crate::game::main::gamestate::callee::SPHERE_TREE_COLLIDE_AABB;
     pub(crate) use crate::game::main::gamestate::callee::SPHERE_TREE_COLLIDE_SPHERE_TREE;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_CHANNEL_GAIN_PTR;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE_2 as SSX_AUDIO_SYSTEM_GET_INSTANCE;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_LANGUAGE_MASK;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_IS_DJ_SPEECH_ON;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_RESET_RACE_SOUNDS;
-    pub(crate) use crate::game::main::gamestate::callee::STR_COPY;
-    pub(crate) use crate::game::main::gamestate::callee::STR_HASH;
-    pub(crate) use crate::game::main::gamestate::callee::STR_N_COPY;
-    pub(crate) use crate::game::main::gamestate::callee::TAG_FIELD_SET_STRING;
-    pub(crate) use crate::game::main::gamestate::callee::UI_LIST_FIRST_2 as UI_LIST_FIRST;
-    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_CTOR_3 as UI_STATE_CTOR;
-    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_MGR_FIND_STATE;
-    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_SHUTDOWN_2 as UI_STATE_SHUTDOWN;
-    pub(crate) use crate::game::main::gamestate::callee::VD_TEXTURE_SINK_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ANIM_OBJECT_SAVE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BANK_MONITOR_RESET_INSTANCE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BUDDY_MAN_CLEAR_LOGIN;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BUDDY_MAN_CLEAR_MESSAGES;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BUDDY_MAN_DISCONNECT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::C_BX_STRING_COPY_BEFORE_WRITE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::C_TRANSITION_MAN_START;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GAME_STATE_GOTO_NEXT_3 as GAME_STATE_GOTO_NEXT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::INTC_TABLE_ADD_HANDLER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MOD_OBJ_CREATE_MODIFIER_BLOCK;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MUSIC_PLAYER_GET_SELECTED_SONG_SED_VALUE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::OV_SCREEN_PROFILE_SAVE_PDA_REFRESH_CARD_INFO;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::OV_SCREEN_PROFILE_SAVE_PDA_RESET_SLOT_LIST;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RAIL_MODIFIER_LIST_PUSH_FRONT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_SAVE_EMIT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_BINDING_CTOR_2 as SCRIPT_BINDING_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_DATA_GET_INFO;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_GET_INSTANCE_SCRIPT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_LIST_STOP_2 as SCRIPT_ENGINE_LIST_STOP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_IS_PLAYING_SCRIPT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_OBJ_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SPEECH_SYSTEM_CANCEL_PENDING_INSTANCE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SSX_AUDIO_SYSTEM_DJ_SAY_20E5;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SYNC_PROCESS_SAVE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::VID_ENGINE_INSTALL_MEM_HOOKS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::VID_ENGINE_PLAYER_INIT_OPEN_PARAMS;
+
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::WORLD_OBJ_SAVE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WSCRIPT_MAN_DEACTIVATE_PROCESS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WSCRIPT_MAN_UNLOAD_SECTION;
-    pub(crate) use crate::game::wscript::wscriptman::callee::ALGORITHM_LIST_PUSH;
-    pub(crate) use crate::game::wscript::wscriptman::callee::APP_MODULE_UPDATE_FADE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AVALANCHE_BAKE_NODE_HISTORY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AV_PLAYER_INIT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_ADD_TIMER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_POLL_FREE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_SET_PITCH;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CAM_CONTROLLER_CLEAR_ALGORITHMS;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_CHUNK_RESOLVE_CTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_MEMCARD_SET_STATE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_CREATE_MESHES_2 as CROWD_MAN3D_GROUP_CREATE_MESHES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_FREE_MESHES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_EMPTY_CHILD_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_FLAG_MANAGER_GROUP_LOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_SETUP_MAN_SEND_QUIT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DEBUG_MENU_MODULE_UPDATE_CURSOR_TRAIL;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DISABLE_INTC;
-    pub(crate) use crate::game::wscript::wscriptman::callee::EA_FILE_MOUNT_BIG;
+
     pub(crate) use crate::game::wscript::wscriptman::callee::EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLEX_RAIL_UPDATE_SPACE_NODE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLOATING_V49;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FOCUS_MAN_ADD_FOCUS_BOX;
-    pub(crate) use crate::game::wscript::wscriptman::callee::LIGHT_MAN_EMPTY_HOOK_A;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MOD_OBJ_DTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_ON_CHILD_EVENT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::RAIL_MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::REMOVE_INTC_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::SET_FADE_GAIN;
-    pub(crate) use crate::game::wscript::wscriptman::callee::SND_BANK_UNLOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_LIST_NODE_DTOR_BODY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_GET_STATE_DATA;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SET_USER_DATA;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
-    pub(crate) use crate::game::wscript::wscriptman::callee::WSCRIPT_MAN_CALL_FUNC;
 
     pub const COLLIDE_VOLUME_OBJECT: Callee = Callee {
         addr: 0x0033_4888,
@@ -539,31 +391,6 @@ pub(crate) mod callee {
         addr: 0x002a_4238,
         f: ee::s08::f_002a4238,
     };
-
-    /// `Cell_CollideInstance(ctx, instance)` (0x00335960).
-    pub const COLLIDE_INSTANCE: Callee = Callee {
-        addr: 0x0033_5960,
-        f: ee::s11::Cell_CollideInstance,
-    };
-
-    /// `Cell_CollideObject(ctx, object)` (0x00335b90).
-    pub const COLLIDE_OBJECT: Callee = Callee {
-        addr: 0x0033_5b90,
-        f: ee::s11::Cell_CollideObject,
-    };
-
-    /// `Cell_CollideVolumeSubtree(tree, ctx)` (0x00340fa0): collects a whole
-    /// subtree that lies inside the volume.
-    pub const COLLIDE_VOLUME_SUBTREE: Callee = Callee {
-        addr: 0x0034_0fa0,
-        f: ee::s11::Cell_CollideVolumeSubtree,
-    };
-
-    /// This function itself.
-    pub const COLLIDE_VOLUME_RECURSIVE: Callee = Callee {
-        addr: 0x0033_ccf8,
-        f: ee::s11::Cell_CollideVolumeRecursive,
-    };
 }
 
 /// Contact record (0x80 bytes) fields written here.
@@ -630,62 +457,13 @@ pub(crate) mod obj {
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
 pub(crate) mod table {
     pub(crate) use crate::game::ai::computer::table::DELETE;
-    pub(crate) use crate::game::ai::computer::table::EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::ai::computer::table::EA_MEM_FREE;
-    pub(crate) use crate::game::ai::computer::table::OPERATOR_NEW_NAMED;
-    pub(crate) use crate::game::ai::computer::table::SLEEP_THREAD;
-    pub(crate) use crate::game::ai::computer::table::SSX_AUDIO_SYSTEM_GET_INSTANCE;
-    pub(crate) use crate::game::ai::computer::table::STR_HASH;
-    pub(crate) use crate::game::ai::computer::table::WAIT_SEMA;
-    pub(crate) use crate::game::ai::computer::table::WAKEUP_THREAD;
-    pub(crate) use crate::game::fe::feasyncfile::table::ASYNC_FILE_GET_RESULT;
-    pub(crate) use crate::game::fe::feasyncfile::table::AUDIO_GET_RACE_MAN;
-    pub(crate) use crate::game::fe::feasyncfile::table::BE_GET_INSTANCE;
-    pub(crate) use crate::game::fe::feasyncfile::table::BE_GET_INTERFACE;
-    pub(crate) use crate::game::fe::feasyncfile::table::BE_NEW_RACE_SET_EVENT_TYPE;
-    pub(crate) use crate::game::fe::feasyncfile::table::BE_NEW_RACE_SET_GAME_MODE;
-    pub(crate) use crate::game::fe::feasyncfile::table::BUILTIN_DELETE;
-    pub(crate) use crate::game::fe::feasyncfile::table::BXSTRING_ASSIGN;
-    pub(crate) use crate::game::fe::feasyncfile::table::BXSTRING_RELEASE;
+
     pub(crate) use crate::game::fe::feasyncfile::table::COLL_HULL_TRIANGLE;
-    pub(crate) use crate::game::fe::feasyncfile::table::COLL_HULL_TRIANGLE2;
-    pub(crate) use crate::game::fe::feasyncfile::table::COLL_SPHERE_CALC;
+
     pub(crate) use crate::game::fe::feasyncfile::table::COLL_SPHERE_TREE_TRIANGLE;
-    pub(crate) use crate::game::fe::feasyncfile::table::EAC_GET_UNPACKED_SIZE;
-    pub(crate) use crate::game::fe::feasyncfile::table::EAC_UNPACK;
-    pub(crate) use crate::game::fe::feasyncfile::table::OPERATOR_NEW_TAG;
-    pub(crate) use crate::game::fe::feasyncfile::table::PATH_STOP_TRACKS;
-    pub(crate) use crate::game::fe::feasyncfile::table::PS2_MEM_CARD_CREATE;
-    pub(crate) use crate::game::fe::feasyncfile::table::REPLAY_BEGIN_PLAYBACK;
-    pub(crate) use crate::game::fe::feasyncfile::table::REPLAY_END_SAVE;
-    pub(crate) use crate::game::fe::feasyncfile::table::RIDER_MODEL_FIND;
-    pub(crate) use crate::game::fe::feasyncfile::table::SCRIPT_ENGINE_GET_RESULT_VTABLE;
-    pub(crate) use crate::game::fe::feasyncfile::table::SPRINTF;
-    pub(crate) use crate::game::fe::feasyncfile::table::STR_CASECMP;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_LIST_FIRST;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_LIST_NODE_IS_SENTINEL;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_MENU_RESET_SCROLL;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_SCREEN_FIND_OBJECT;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_TEXT_SET_TEXT_ID;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_TEXT_SET_WIDE_STRING;
-    pub(crate) use crate::game::fe::feasyncfile::table::VOIP_RPC_SET_PARAMS;
-    pub(crate) use crate::game::fe::feasyncfile::table::VOIP_RPC_START;
 }
 
-pub(crate) mod addr {
-    pub(crate) use crate::game::bx::bxstring2::addr::BANK_MONITOR_TIMER_RESET;
-    pub(crate) use crate::game::bx::bxstring2::addr::BE_INTERFACE_LOOKUP;
-    pub(crate) use crate::game::bx::bxstring2::addr::CBE_GET_BE;
-    pub(crate) use crate::game::bx::bxstring2::addr::CBE_GET_INTERFACE;
-    pub(crate) use crate::game::bx::bxstring2::addr::FMODF;
-    pub(crate) use crate::game::bx::bxstring2::addr::MC_MANAGER_GET_INFO;
-    pub(crate) use crate::game::bx::bxstring2::addr::MEM_MAN_ALLOC;
-    pub(crate) use crate::game::bx::bxstring2::addr::MEM_MAN_FREE;
-    pub(crate) use crate::game::bx::bxstring2::addr::MEM_MAN_FREE_NOSIZE;
-    pub(crate) use crate::game::bx::bxstring2::addr::SPEECH_BANK_FREE_CALLBACK;
-    pub(crate) use crate::game::bx::bxstring2::addr::SPRINTF;
-    pub(crate) use crate::game::bx::bxstring2::addr::UI_ENGINE_TEARDOWN;
-}
+pub(crate) mod addr {}
 
 /// The other gathers this function calls (through their generated aliases).
 pub(crate) mod gather_callee {
@@ -1783,7 +1561,7 @@ pub fn overlap_list_collide_objects(c: &mut Cpu) {
             c.g[V0][0] = sx((c.g[S3][0] as u32) << 2);
             loop {
                 c.cycles += 6;
-                c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
                 c.g[S0][0] = Addr(p(c.g[V0][0] as u32, 0xc)).lw(c); // node
                 c.g[V1][0] = Addr(p(c.g[S0][0] as u32, 8)).lw(c); // flags
                 c.g[V0][0] = c.g[V1][0] & 0x20;
@@ -1821,7 +1599,7 @@ pub fn overlap_list_collide_objects(c: &mut Cpu) {
                     c.g[A2][0] = sx((c.g[S2][0] as u32) << 7);
                     if !apart {
                         c.cycles += 2;
-                        c.g[A3][0] = sx((c.g[S5][0] as u32).wrapping_sub((c.g[S2][0] as u32)));
+                        c.g[A3][0] = sx((c.g[S5][0] as u32).wrapping_sub(c.g[S2][0] as u32));
                         collide = true;
                     }
                 } else {
@@ -1838,7 +1616,7 @@ pub fn overlap_list_collide_objects(c: &mut Cpu) {
                         c.g[A0][0] = Addr(p(c.g[V1][0] as u32, 0x160)).lh(c);
                         c.g[V0][0] = Addr(p(c.g[V1][0] as u32, 0x164)).lw(c);
                         let target = c.g[V0][0] as u32;
-                        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                         crate::call::call_ptr(c, target, 0x0033_4578)?;
                         if c.g[V0][0] == 0 {
                             c.g[V0][0] = Addr(p(c.g[S4][0] as u32, 8)).lw(c);
@@ -1851,7 +1629,7 @@ pub fn overlap_list_collide_objects(c: &mut Cpu) {
                             c.g[A0][0] = Addr(p(c.g[V1][0] as u32, 0x168)).lh(c);
                             c.g[V0][0] = Addr(p(c.g[V1][0] as u32, 0x16c)).lw(c);
                             let target = c.g[V0][0] as u32;
-                            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                             crate::call::call_ptr(c, target, 0x0033_4598)?;
                             let bx = c.g[V0][0] as u32;
                             let mut overlap = 0u64;
@@ -1880,7 +1658,7 @@ pub fn overlap_list_collide_objects(c: &mut Cpu) {
                             if !apart {
                                 c.cycles += 1;
                                 c.g[A3][0] =
-                                    sx((c.g[S5][0] as u32).wrapping_sub((c.g[S2][0] as u32)));
+                                    sx((c.g[S5][0] as u32).wrapping_sub(c.g[S2][0] as u32));
                                 collide = true;
                             }
                         }
@@ -1889,11 +1667,11 @@ pub fn overlap_list_collide_objects(c: &mut Cpu) {
                 if collide {
                     c.cycles += 6;
                     c.g[A1][0] = c.g[S0][0];
-                    c.g[A2][0] = sx((c.g[S6][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[A2][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     c.g[A0][0] = c.g[S1][0];
                     c.g[T0][0] = c.g[S7][0];
                     callee::COLLIDE_VOLUME_OBJECT_2.call(c, 0x0033_4638)?;
-                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
                 }
                 if !short {
                     c.cycles += 1;
@@ -3310,7 +3088,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[A0][0] = c.g[S4][0];
                     COLLIDE_INSTANCE.call(c, 0x0033cd50)?;
-                    c.g[S0][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
                     let t = c.g[S0][0] != 0u64;
                     c.g[A1][0] = c.g[S0][0];
                     if t {
@@ -3328,7 +3106,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
             c.cycles += 3;
             c.g[S0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x20));
             if c.g[S0][0] == 0u64 {
-                c.g[A1][0] = c.lw((c.g[S1][0] as u32));
+                c.g[A1][0] = c.lw(c.g[S1][0] as u32);
                 break 'b_33cd88;
             } else {
                 c.cycles += 2;
@@ -3337,7 +3115,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[A0][0] = c.g[S4][0];
                     COLLIDE_OBJECT.call(c, 0x0033cd78)?;
-                    c.g[S0][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[S0][0] = c.lw(c.g[S0][0] as u32);
                     let t = c.g[S0][0] != 0u64;
                     c.g[A1][0] = c.g[S0][0];
                     if t {
@@ -3347,7 +3125,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                         continue 'l_33cd70;
                     } else {
                         c.cycles += 1;
-                        c.g[A1][0] = c.lw((c.g[S1][0] as u32));
+                        c.g[A1][0] = c.lw(c.g[S1][0] as u32);
                         break 'b_33cd88;
                     }
                 }
@@ -3377,7 +3155,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                         c.cvt_s_w(0, 0);
                         c.mtc1(2, 1);
                         c.cvt_s_w(1, 1);
-                        c.lwc1(3, (c.g[S3][0] as u32));
+                        c.lwc1(3, c.g[S3][0] as u32);
                         c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
                         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
                         c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
@@ -3385,7 +3163,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                         c.add_s(1, 1, 2);
                         c.g[V1][0] = sx((c.g[V1][0] as u32) << 1);
                         c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
-                        c.sw((c.g[SP][0] as u32), c.g[A1][0]);
+                        c.sw(c.g[SP][0] as u32, c.g[A1][0]);
                         c.g[FP][0] = 0u64;
                         c.mul_s(15, 0, 4);
                         c.mul_s(16, 1, 4);
@@ -3419,7 +3197,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
                         c.mtc1(2, 0);
                         c.cvt_s_w(0, 0);
-                        c.lwc1(2, (c.g[S3][0] as u32));
+                        c.lwc1(2, c.g[S3][0] as u32);
                         c.add_s(1, 1, 3);
                         c.mov_s(13, 2);
                         c.sub_s(0, 0, 3);
@@ -3763,7 +3541,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                     }
                     'b_33d254: {
                         c.cycles += 3;
-                        c.g[S1][0] = c.lw((c.g[S5][0] as u32));
+                        c.g[S1][0] = c.lw(c.g[S5][0] as u32);
                         let t = c.g[S1][0] == 0u64;
                         c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
                         if t {
@@ -3832,8 +3610,8 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 c, 0x0033d158,
                                                                             )?;
                                                                             c.g[S0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             let t =
                                                                                 c.g[S0][0] != 0u64;
                                                                             c.g[A1][0] = c.g[S0][0];
@@ -3854,9 +3632,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                     c.cycles += 2;
                                                                     if c.g[S0][0] == 0u64 {
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[S1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[S1][0] as u32);
                                                                         break 'b_33d190;
                                                                     } else {
                                                                         c.cycles += 2;
@@ -3868,8 +3644,8 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 c, 0x0033d180,
                                                                             )?;
                                                                             c.g[S0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             let t =
                                                                                 c.g[S0][0] != 0u64;
                                                                             c.g[A1][0] = c.g[S0][0];
@@ -3880,10 +3656,9 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 continue 'l_33d178;
                                                                             } else {
                                                                                 c.cycles += 1;
-                                                                                c.g[A0][0] = c.lw(
-                                                                                    (c.g[S1][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[S1][0]
+                                                                                        as u32);
                                                                                 break 'b_33d190;
                                                                             }
                                                                         }
@@ -4148,8 +3923,8 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 c, 0x0033d2b0,
                                                                             )?;
                                                                             c.g[S0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             let t =
                                                                                 c.g[S0][0] != 0u64;
                                                                             c.g[A1][0] = c.g[S0][0];
@@ -4170,9 +3945,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                     c.cycles += 2;
                                                                     if c.g[S0][0] == 0u64 {
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[S1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[S1][0] as u32);
                                                                         break 'b_33d2e8;
                                                                     } else {
                                                                         c.cycles += 2;
@@ -4184,8 +3957,8 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 c, 0x0033d2d8,
                                                                             )?;
                                                                             c.g[S0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             let t =
                                                                                 c.g[S0][0] != 0u64;
                                                                             c.g[A1][0] = c.g[S0][0];
@@ -4196,10 +3969,9 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 continue 'l_33d2d0;
                                                                             } else {
                                                                                 c.cycles += 1;
-                                                                                c.g[A0][0] = c.lw(
-                                                                                    (c.g[S1][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[S1][0]
+                                                                                        as u32);
                                                                                 break 'b_33d2e8;
                                                                             }
                                                                         }
@@ -4464,8 +4236,8 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 c, 0x0033d408,
                                                                             )?;
                                                                             c.g[S0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             let t =
                                                                                 c.g[S0][0] != 0u64;
                                                                             c.g[A1][0] = c.g[S0][0];
@@ -4486,9 +4258,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                     c.cycles += 2;
                                                                     if c.g[S0][0] == 0u64 {
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[S1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[S1][0] as u32);
                                                                         break 'b_33d440;
                                                                     } else {
                                                                         c.cycles += 2;
@@ -4500,8 +4270,8 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 c, 0x0033d430,
                                                                             )?;
                                                                             c.g[S0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             let t =
                                                                                 c.g[S0][0] != 0u64;
                                                                             c.g[A1][0] = c.g[S0][0];
@@ -4512,10 +4282,9 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 continue 'l_33d428;
                                                                             } else {
                                                                                 c.cycles += 1;
-                                                                                c.g[A0][0] = c.lw(
-                                                                                    (c.g[S1][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[S1][0]
+                                                                                        as u32);
                                                                                 break 'b_33d440;
                                                                             }
                                                                         }
@@ -4780,8 +4549,8 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 c, 0x0033d560,
                                                                             )?;
                                                                             c.g[S0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             let t =
                                                                                 c.g[S0][0] != 0u64;
                                                                             c.g[A1][0] = c.g[S0][0];
@@ -4802,9 +4571,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                     c.cycles += 2;
                                                                     if c.g[S0][0] == 0u64 {
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[S1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[S1][0] as u32);
                                                                         break 'b_33d598;
                                                                     } else {
                                                                         c.cycles += 2;
@@ -4816,8 +4583,8 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 c, 0x0033d588,
                                                                             )?;
                                                                             c.g[S0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             let t =
                                                                                 c.g[S0][0] != 0u64;
                                                                             c.g[A1][0] = c.g[S0][0];
@@ -4828,10 +4595,9 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 continue 'l_33d580;
                                                                             } else {
                                                                                 c.cycles += 1;
-                                                                                c.g[A0][0] = c.lw(
-                                                                                    (c.g[S1][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[S1][0]
+                                                                                        as u32);
                                                                                 break 'b_33d598;
                                                                             }
                                                                         }
@@ -5097,8 +4863,8 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 c, 0x0033d6b8,
                                                                             )?;
                                                                             c.g[S0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             let t =
                                                                                 c.g[S0][0] != 0u64;
                                                                             c.g[A1][0] = c.g[S0][0];
@@ -5119,9 +4885,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                     c.cycles += 2;
                                                                     if c.g[S0][0] == 0u64 {
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[S1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[S1][0] as u32);
                                                                         break 'b_33d6f0;
                                                                     } else {
                                                                         c.cycles += 2;
@@ -5133,8 +4897,8 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 c, 0x0033d6e0,
                                                                             )?;
                                                                             c.g[S0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             let t =
                                                                                 c.g[S0][0] != 0u64;
                                                                             c.g[A1][0] = c.g[S0][0];
@@ -5145,10 +4909,9 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 continue 'l_33d6d8;
                                                                             } else {
                                                                                 c.cycles += 1;
-                                                                                c.g[A0][0] = c.lw(
-                                                                                    (c.g[S1][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[S1][0]
+                                                                                        as u32);
                                                                                 break 'b_33d6f0;
                                                                             }
                                                                         }
@@ -5414,8 +5177,8 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 c, 0x0033d810,
                                                                             )?;
                                                                             c.g[S0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             let t =
                                                                                 c.g[S0][0] != 0u64;
                                                                             c.g[A1][0] = c.g[S0][0];
@@ -5436,9 +5199,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                     c.cycles += 2;
                                                                     if c.g[S0][0] == 0u64 {
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[S1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[S1][0] as u32);
                                                                         break 'b_33d848;
                                                                     } else {
                                                                         c.cycles += 2;
@@ -5450,8 +5211,8 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 c, 0x0033d838,
                                                                             )?;
                                                                             c.g[S0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             let t =
                                                                                 c.g[S0][0] != 0u64;
                                                                             c.g[A1][0] = c.g[S0][0];
@@ -5462,10 +5223,9 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 continue 'l_33d830;
                                                                             } else {
                                                                                 c.cycles += 1;
-                                                                                c.g[A0][0] = c.lw(
-                                                                                    (c.g[S1][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[S1][0]
+                                                                                        as u32);
                                                                                 break 'b_33d848;
                                                                             }
                                                                         }
@@ -5731,8 +5491,8 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 c, 0x0033d968,
                                                                             )?;
                                                                             c.g[S0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             let t =
                                                                                 c.g[S0][0] != 0u64;
                                                                             c.g[A1][0] = c.g[S0][0];
@@ -5753,9 +5513,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                     c.cycles += 2;
                                                                     if c.g[S0][0] == 0u64 {
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[S1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[S1][0] as u32);
                                                                         break 'b_33d9a0;
                                                                     } else {
                                                                         c.cycles += 2;
@@ -5767,8 +5525,8 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 c, 0x0033d990,
                                                                             )?;
                                                                             c.g[S0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             let t =
                                                                                 c.g[S0][0] != 0u64;
                                                                             c.g[A1][0] = c.g[S0][0];
@@ -5779,10 +5537,9 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                                 continue 'l_33d988;
                                                                             } else {
                                                                                 c.cycles += 1;
-                                                                                c.g[A0][0] = c.lw(
-                                                                                    (c.g[S1][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[S1][0]
+                                                                                        as u32);
                                                                                 break 'b_33d9a0;
                                                                             }
                                                                         }
@@ -6042,7 +5799,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                     COLLIDE_INSTANCE
                                                                         .call(c, 0x0033dac0)?;
                                                                     c.g[S0][0] =
-                                                                        c.lw((c.g[S0][0] as u32));
+                                                                        c.lw(c.g[S0][0] as u32);
                                                                     let t = c.g[S0][0] != 0u64;
                                                                     c.g[A1][0] = c.g[S0][0];
                                                                     if t {
@@ -6067,7 +5824,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                             c.cycles += 2;
                                                             if c.g[S0][0] == 0u64 {
                                                                 c.g[A0][0] =
-                                                                    c.lw((c.g[S1][0] as u32));
+                                                                    c.lw(c.g[S1][0] as u32);
                                                                 break 'b_33daf8;
                                                             } else {
                                                                 c.cycles += 2;
@@ -6078,7 +5835,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                     COLLIDE_OBJECT
                                                                         .call(c, 0x0033dae8)?;
                                                                     c.g[S0][0] =
-                                                                        c.lw((c.g[S0][0] as u32));
+                                                                        c.lw(c.g[S0][0] as u32);
                                                                     let t = c.g[S0][0] != 0u64;
                                                                     c.g[A1][0] = c.g[S0][0];
                                                                     if t {
@@ -6091,9 +5848,7 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
                                                                     } else {
                                                                         c.cycles += 1;
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[S1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[S1][0] as u32);
                                                                         break 'b_33daf8;
                                                                     }
                                                                 }
@@ -6342,7 +6097,7 @@ pub fn cell_gather_all_recursive(c: &mut Cpu) {
                     'b_33b828: {
                         c.cycles += 6;
                         c.lwc1(1, (c.g[A2][0] as u32).wrapping_add(0x164));
-                        c.lwc1(0, (c.g[V0][0] as u32));
+                        c.lwc1(0, c.g[V0][0] as u32);
                         c.c_le_s(0, 1);
                         let t = !c.fcc();
                         c.g[V1][0] = 0u64;
@@ -6404,19 +6159,19 @@ pub fn cell_gather_all_recursive(c: &mut Cpu) {
                     'b_33b854: {
                         c.cycles += 2;
                         if c.g[V1][0] == 0u64 {
-                            c.g[A2][0] = c.lw((c.g[A2][0] as u32));
+                            c.g[A2][0] = c.lw(c.g[A2][0] as u32);
                             break 'b_33b854;
                         } else {
                             c.cycles += 9;
                             c.g[A1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
-                            c.g[A0][0] = c.lw((c.g[A3][0] as u32));
-                            c.g[V1][0] = c.lw((c.g[A1][0] as u32));
+                            c.g[A0][0] = c.lw(c.g[A3][0] as u32);
+                            c.g[V1][0] = c.lw(c.g[A1][0] as u32);
                             c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
-                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                             c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
-                            c.sw((c.g[V0][0] as u32), c.g[A2][0]);
-                            c.sw((c.g[A1][0] as u32), c.g[V1][0]);
-                            c.g[A2][0] = c.lw((c.g[A2][0] as u32));
+                            c.sw(c.g[V0][0] as u32, c.g[A2][0]);
+                            c.sw(c.g[A1][0] as u32, c.g[V1][0]);
+                            c.g[A2][0] = c.lw(c.g[A2][0] as u32);
                             break 'b_33b854;
                         }
                     }
@@ -6445,14 +6200,14 @@ pub fn cell_gather_all_recursive(c: &mut Cpu) {
                 c.g[A1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
                 'l_33b870: loop {
                     c.cycles += 10;
-                    c.g[A0][0] = c.lw((c.g[A3][0] as u32));
-                    c.g[V1][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[A3][0] as u32);
+                    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
                     c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
-                    c.sw((c.g[V0][0] as u32), c.g[A2][0]);
-                    c.sw((c.g[A1][0] as u32), c.g[V1][0]);
-                    c.g[A2][0] = c.lw((c.g[A2][0] as u32));
+                    c.sw(c.g[V0][0] as u32, c.g[A2][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[V1][0]);
+                    c.g[A2][0] = c.lw(c.g[A2][0] as u32);
                     if c.g[A2][0] != 0u64 {
                         c.g[A1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
                         if event_due(c) {
@@ -6471,7 +6226,7 @@ pub fn cell_gather_all_recursive(c: &mut Cpu) {
         'b_33ccc8: {
             'b_33ccc4: {
                 c.cycles += 4;
-                c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                 c.g[V0][0] = 0xb;
                 let t = c.g[A1][0] == c.g[V0][0];
                 c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7e));
@@ -6490,7 +6245,7 @@ pub fn cell_gather_all_recursive(c: &mut Cpu) {
                         c.cvt_s_w(0, 0);
                         c.mtc1(2, 1);
                         c.cvt_s_w(1, 1);
-                        c.lwc1(3, (c.g[S2][0] as u32));
+                        c.lwc1(3, c.g[S2][0] as u32);
                         c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
                         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
                         c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
@@ -6498,7 +6253,7 @@ pub fn cell_gather_all_recursive(c: &mut Cpu) {
                         c.add_s(1, 1, 2);
                         c.g[V1][0] = sx((c.g[V1][0] as u32) << 1);
                         c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
-                        c.sw((c.g[SP][0] as u32), c.g[A1][0]);
+                        c.sw(c.g[SP][0] as u32, c.g[A1][0]);
                         c.g[S7][0] = 0u64;
                         c.mul_s(15, 0, 4);
                         c.mul_s(16, 1, 4);
@@ -6532,7 +6287,7 @@ pub fn cell_gather_all_recursive(c: &mut Cpu) {
                         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
                         c.mtc1(2, 0);
                         c.cvt_s_w(0, 0);
-                        c.lwc1(2, (c.g[S2][0] as u32));
+                        c.lwc1(2, c.g[S2][0] as u32);
                         c.add_s(1, 1, 3);
                         c.mov_s(13, 2);
                         c.sub_s(0, 0, 3);
@@ -6875,7 +6630,7 @@ pub fn cell_gather_all_recursive(c: &mut Cpu) {
                     }
                     'b_33be20: {
                         c.cycles += 3;
-                        c.g[S0][0] = c.lw((c.g[S3][0] as u32));
+                        c.g[S0][0] = c.lw(c.g[S3][0] as u32);
                         let t = c.g[S0][0] == 0u64;
                         c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
                         if t {
@@ -6955,7 +6710,7 @@ pub fn cell_gather_all_recursive(c: &mut Cpu) {
                                                                             );
                                                                             c.lwc1(
                                                                                 0,
-                                                                                (c.g[V0][0] as u32),
+                                                                                c.g[V0][0] as u32,
                                                                             );
                                                                             c.c_le_s(0, 1);
                                                                             let t = !c.fcc();
@@ -7023,42 +6778,38 @@ break 'b_33bce8;
                                                                         'b_33bd14: {
                                                                             c.cycles += 2;
                                                                             if c.g[V1][0] == 0u64 {
-                                                                                c.g[A2][0] = c.lw(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A2][0] = c
+                                                                                    .lw(c.g[A2][0]
+                                                                                        as u32);
                                                                                 break 'b_33bd14;
                                                                             } else {
                                                                                 c.cycles += 9;
                                                                                 c.g[A1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
-                                                                                c.g[A0][0] = c.lw(
-                                                                                    (c.g[T0][0]
-                                                                                        as u32),
-                                                                                );
-                                                                                c.g[V1][0] = c.lw(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[T0][0]
+                                                                                        as u32);
+                                                                                c.g[V1][0] = c
+                                                                                    .lw(c.g[A1][0]
+                                                                                        as u32);
                                                                                 c.g[V0][0] =
                                                                                     sx((c.g[V1][0]
                                                                                         as u32)
                                                                                         << 2);
-                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                                                                 c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
                                                                                 c.sw(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                     c.g[A2][0],
                                                                                 );
                                                                                 c.sw(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
+                                                                                    c.g[A1][0]
+                                                                                        as u32,
                                                                                     c.g[V1][0],
                                                                                 );
-                                                                                c.g[A2][0] = c.lw(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A2][0] = c
+                                                                                    .lw(c.g[A2][0]
+                                                                                        as u32);
                                                                                 break 'b_33bd14;
                                                                             }
                                                                         }
@@ -7087,7 +6838,7 @@ break 'b_33bce8;
                                                                         .wrapping_add(0x28));
                                                                 if c.g[A2][0] == 0u64 {
                                                                     c.g[A0][0] =
-                                                                        c.lw((c.g[S0][0] as u32));
+                                                                        c.lw(c.g[S0][0] as u32);
                                                                     break 'b_33bd5c;
                                                                 } else {
                                                                     c.cycles += 2;
@@ -7097,37 +6848,31 @@ break 'b_33bce8;
                                                                     'l_33bd30: loop {
                                                                         c.cycles += 10;
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[A3][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A3][0] as u32);
                                                                         c.g[V1][0] =
-                                                                            c.lw(
-                                                                                (c.g[A1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A1][0] as u32);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 << 2);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[A0][0]
-                                                                                        as u32),
+                                                                                    c.g[A0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(0x1));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             c.g[A2][0],
                                                                         );
                                                                         c.sw(
-                                                                            (c.g[A1][0] as u32),
+                                                                            c.g[A1][0] as u32,
                                                                             c.g[V1][0],
                                                                         );
                                                                         c.g[A2][0] =
-                                                                            c.lw(
-                                                                                (c.g[A2][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A2][0] as u32);
                                                                         if c.g[A2][0] != 0u64 {
                                                                             c.g[A1][0] = c.lw((c.g
                                                                                 [A3][0]
@@ -7142,8 +6887,8 @@ break 'b_33bce8;
                                                                         } else {
                                                                             c.cycles += 1;
                                                                             c.g[A0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             break 'b_33bd5c;
                                                                         }
                                                                     }
@@ -7401,7 +7146,7 @@ break 'b_33bce8;
                                                                             );
                                                                             c.lwc1(
                                                                                 0,
-                                                                                (c.g[V0][0] as u32),
+                                                                                c.g[V0][0] as u32,
                                                                             );
                                                                             c.c_le_s(0, 1);
                                                                             let t = !c.fcc();
@@ -7469,42 +7214,38 @@ break 'b_33bf00;
                                                                         'b_33bf2c: {
                                                                             c.cycles += 2;
                                                                             if c.g[V1][0] == 0u64 {
-                                                                                c.g[A2][0] = c.lw(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A2][0] = c
+                                                                                    .lw(c.g[A2][0]
+                                                                                        as u32);
                                                                                 break 'b_33bf2c;
                                                                             } else {
                                                                                 c.cycles += 9;
                                                                                 c.g[A1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
-                                                                                c.g[A0][0] = c.lw(
-                                                                                    (c.g[T0][0]
-                                                                                        as u32),
-                                                                                );
-                                                                                c.g[V1][0] = c.lw(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[T0][0]
+                                                                                        as u32);
+                                                                                c.g[V1][0] = c
+                                                                                    .lw(c.g[A1][0]
+                                                                                        as u32);
                                                                                 c.g[V0][0] =
                                                                                     sx((c.g[V1][0]
                                                                                         as u32)
                                                                                         << 2);
-                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                                                                 c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
                                                                                 c.sw(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                     c.g[A2][0],
                                                                                 );
                                                                                 c.sw(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
+                                                                                    c.g[A1][0]
+                                                                                        as u32,
                                                                                     c.g[V1][0],
                                                                                 );
-                                                                                c.g[A2][0] = c.lw(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A2][0] = c
+                                                                                    .lw(c.g[A2][0]
+                                                                                        as u32);
                                                                                 break 'b_33bf2c;
                                                                             }
                                                                         }
@@ -7533,7 +7274,7 @@ break 'b_33bf00;
                                                                         .wrapping_add(0x28));
                                                                 if c.g[A2][0] == 0u64 {
                                                                     c.g[A0][0] =
-                                                                        c.lw((c.g[S0][0] as u32));
+                                                                        c.lw(c.g[S0][0] as u32);
                                                                     break 'b_33bf74;
                                                                 } else {
                                                                     c.cycles += 2;
@@ -7543,37 +7284,31 @@ break 'b_33bf00;
                                                                     'l_33bf48: loop {
                                                                         c.cycles += 10;
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[A3][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A3][0] as u32);
                                                                         c.g[V1][0] =
-                                                                            c.lw(
-                                                                                (c.g[A1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A1][0] as u32);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 << 2);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[A0][0]
-                                                                                        as u32),
+                                                                                    c.g[A0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(0x1));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             c.g[A2][0],
                                                                         );
                                                                         c.sw(
-                                                                            (c.g[A1][0] as u32),
+                                                                            c.g[A1][0] as u32,
                                                                             c.g[V1][0],
                                                                         );
                                                                         c.g[A2][0] =
-                                                                            c.lw(
-                                                                                (c.g[A2][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A2][0] as u32);
                                                                         if c.g[A2][0] != 0u64 {
                                                                             c.g[A1][0] = c.lw((c.g
                                                                                 [A3][0]
@@ -7588,8 +7323,8 @@ break 'b_33bf00;
                                                                         } else {
                                                                             c.cycles += 1;
                                                                             c.g[A0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             break 'b_33bf74;
                                                                         }
                                                                     }
@@ -7847,7 +7582,7 @@ break 'b_33bf00;
                                                                             );
                                                                             c.lwc1(
                                                                                 0,
-                                                                                (c.g[V0][0] as u32),
+                                                                                c.g[V0][0] as u32,
                                                                             );
                                                                             c.c_le_s(0, 1);
                                                                             let t = !c.fcc();
@@ -7915,42 +7650,38 @@ break 'b_33c118;
                                                                         'b_33c144: {
                                                                             c.cycles += 2;
                                                                             if c.g[V1][0] == 0u64 {
-                                                                                c.g[A2][0] = c.lw(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A2][0] = c
+                                                                                    .lw(c.g[A2][0]
+                                                                                        as u32);
                                                                                 break 'b_33c144;
                                                                             } else {
                                                                                 c.cycles += 9;
                                                                                 c.g[A1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
-                                                                                c.g[A0][0] = c.lw(
-                                                                                    (c.g[T0][0]
-                                                                                        as u32),
-                                                                                );
-                                                                                c.g[V1][0] = c.lw(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[T0][0]
+                                                                                        as u32);
+                                                                                c.g[V1][0] = c
+                                                                                    .lw(c.g[A1][0]
+                                                                                        as u32);
                                                                                 c.g[V0][0] =
                                                                                     sx((c.g[V1][0]
                                                                                         as u32)
                                                                                         << 2);
-                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                                                                 c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
                                                                                 c.sw(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                     c.g[A2][0],
                                                                                 );
                                                                                 c.sw(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
+                                                                                    c.g[A1][0]
+                                                                                        as u32,
                                                                                     c.g[V1][0],
                                                                                 );
-                                                                                c.g[A2][0] = c.lw(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A2][0] = c
+                                                                                    .lw(c.g[A2][0]
+                                                                                        as u32);
                                                                                 break 'b_33c144;
                                                                             }
                                                                         }
@@ -7979,7 +7710,7 @@ break 'b_33c118;
                                                                         .wrapping_add(0x28));
                                                                 if c.g[A2][0] == 0u64 {
                                                                     c.g[A0][0] =
-                                                                        c.lw((c.g[S0][0] as u32));
+                                                                        c.lw(c.g[S0][0] as u32);
                                                                     break 'b_33c18c;
                                                                 } else {
                                                                     c.cycles += 2;
@@ -7989,37 +7720,31 @@ break 'b_33c118;
                                                                     'l_33c160: loop {
                                                                         c.cycles += 10;
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[A3][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A3][0] as u32);
                                                                         c.g[V1][0] =
-                                                                            c.lw(
-                                                                                (c.g[A1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A1][0] as u32);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 << 2);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[A0][0]
-                                                                                        as u32),
+                                                                                    c.g[A0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(0x1));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             c.g[A2][0],
                                                                         );
                                                                         c.sw(
-                                                                            (c.g[A1][0] as u32),
+                                                                            c.g[A1][0] as u32,
                                                                             c.g[V1][0],
                                                                         );
                                                                         c.g[A2][0] =
-                                                                            c.lw(
-                                                                                (c.g[A2][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A2][0] as u32);
                                                                         if c.g[A2][0] != 0u64 {
                                                                             c.g[A1][0] = c.lw((c.g
                                                                                 [A3][0]
@@ -8034,8 +7759,8 @@ break 'b_33c118;
                                                                         } else {
                                                                             c.cycles += 1;
                                                                             c.g[A0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             break 'b_33c18c;
                                                                         }
                                                                     }
@@ -8293,7 +8018,7 @@ break 'b_33c118;
                                                                             );
                                                                             c.lwc1(
                                                                                 0,
-                                                                                (c.g[V0][0] as u32),
+                                                                                c.g[V0][0] as u32,
                                                                             );
                                                                             c.c_le_s(0, 1);
                                                                             let t = !c.fcc();
@@ -8361,42 +8086,38 @@ break 'b_33c330;
                                                                         'b_33c35c: {
                                                                             c.cycles += 2;
                                                                             if c.g[V1][0] == 0u64 {
-                                                                                c.g[A2][0] = c.lw(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A2][0] = c
+                                                                                    .lw(c.g[A2][0]
+                                                                                        as u32);
                                                                                 break 'b_33c35c;
                                                                             } else {
                                                                                 c.cycles += 9;
                                                                                 c.g[A1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
-                                                                                c.g[A0][0] = c.lw(
-                                                                                    (c.g[T0][0]
-                                                                                        as u32),
-                                                                                );
-                                                                                c.g[V1][0] = c.lw(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[T0][0]
+                                                                                        as u32);
+                                                                                c.g[V1][0] = c
+                                                                                    .lw(c.g[A1][0]
+                                                                                        as u32);
                                                                                 c.g[V0][0] =
                                                                                     sx((c.g[V1][0]
                                                                                         as u32)
                                                                                         << 2);
-                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                                                                 c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
                                                                                 c.sw(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                     c.g[A2][0],
                                                                                 );
                                                                                 c.sw(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
+                                                                                    c.g[A1][0]
+                                                                                        as u32,
                                                                                     c.g[V1][0],
                                                                                 );
-                                                                                c.g[A2][0] = c.lw(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A2][0] = c
+                                                                                    .lw(c.g[A2][0]
+                                                                                        as u32);
                                                                                 break 'b_33c35c;
                                                                             }
                                                                         }
@@ -8425,7 +8146,7 @@ break 'b_33c330;
                                                                         .wrapping_add(0x28));
                                                                 if c.g[A2][0] == 0u64 {
                                                                     c.g[A0][0] =
-                                                                        c.lw((c.g[S0][0] as u32));
+                                                                        c.lw(c.g[S0][0] as u32);
                                                                     break 'b_33c3a4;
                                                                 } else {
                                                                     c.cycles += 2;
@@ -8435,37 +8156,31 @@ break 'b_33c330;
                                                                     'l_33c378: loop {
                                                                         c.cycles += 10;
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[A3][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A3][0] as u32);
                                                                         c.g[V1][0] =
-                                                                            c.lw(
-                                                                                (c.g[A1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A1][0] as u32);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 << 2);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[A0][0]
-                                                                                        as u32),
+                                                                                    c.g[A0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(0x1));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             c.g[A2][0],
                                                                         );
                                                                         c.sw(
-                                                                            (c.g[A1][0] as u32),
+                                                                            c.g[A1][0] as u32,
                                                                             c.g[V1][0],
                                                                         );
                                                                         c.g[A2][0] =
-                                                                            c.lw(
-                                                                                (c.g[A2][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A2][0] as u32);
                                                                         if c.g[A2][0] != 0u64 {
                                                                             c.g[A1][0] = c.lw((c.g
                                                                                 [A3][0]
@@ -8480,8 +8195,8 @@ break 'b_33c330;
                                                                         } else {
                                                                             c.cycles += 1;
                                                                             c.g[A0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             break 'b_33c3a4;
                                                                         }
                                                                     }
@@ -8740,7 +8455,7 @@ break 'b_33c330;
                                                                             );
                                                                             c.lwc1(
                                                                                 0,
-                                                                                (c.g[V0][0] as u32),
+                                                                                c.g[V0][0] as u32,
                                                                             );
                                                                             c.c_le_s(0, 1);
                                                                             let t = !c.fcc();
@@ -8808,42 +8523,38 @@ break 'b_33c548;
                                                                         'b_33c574: {
                                                                             c.cycles += 2;
                                                                             if c.g[V1][0] == 0u64 {
-                                                                                c.g[A2][0] = c.lw(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A2][0] = c
+                                                                                    .lw(c.g[A2][0]
+                                                                                        as u32);
                                                                                 break 'b_33c574;
                                                                             } else {
                                                                                 c.cycles += 9;
                                                                                 c.g[A1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
-                                                                                c.g[A0][0] = c.lw(
-                                                                                    (c.g[T0][0]
-                                                                                        as u32),
-                                                                                );
-                                                                                c.g[V1][0] = c.lw(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[T0][0]
+                                                                                        as u32);
+                                                                                c.g[V1][0] = c
+                                                                                    .lw(c.g[A1][0]
+                                                                                        as u32);
                                                                                 c.g[V0][0] =
                                                                                     sx((c.g[V1][0]
                                                                                         as u32)
                                                                                         << 2);
-                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                                                                 c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
                                                                                 c.sw(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                     c.g[A2][0],
                                                                                 );
                                                                                 c.sw(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
+                                                                                    c.g[A1][0]
+                                                                                        as u32,
                                                                                     c.g[V1][0],
                                                                                 );
-                                                                                c.g[A2][0] = c.lw(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A2][0] = c
+                                                                                    .lw(c.g[A2][0]
+                                                                                        as u32);
                                                                                 break 'b_33c574;
                                                                             }
                                                                         }
@@ -8872,7 +8583,7 @@ break 'b_33c548;
                                                                         .wrapping_add(0x28));
                                                                 if c.g[A2][0] == 0u64 {
                                                                     c.g[A0][0] =
-                                                                        c.lw((c.g[S0][0] as u32));
+                                                                        c.lw(c.g[S0][0] as u32);
                                                                     break 'b_33c5bc;
                                                                 } else {
                                                                     c.cycles += 2;
@@ -8882,37 +8593,31 @@ break 'b_33c548;
                                                                     'l_33c590: loop {
                                                                         c.cycles += 10;
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[A3][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A3][0] as u32);
                                                                         c.g[V1][0] =
-                                                                            c.lw(
-                                                                                (c.g[A1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A1][0] as u32);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 << 2);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[A0][0]
-                                                                                        as u32),
+                                                                                    c.g[A0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(0x1));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             c.g[A2][0],
                                                                         );
                                                                         c.sw(
-                                                                            (c.g[A1][0] as u32),
+                                                                            c.g[A1][0] as u32,
                                                                             c.g[V1][0],
                                                                         );
                                                                         c.g[A2][0] =
-                                                                            c.lw(
-                                                                                (c.g[A2][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A2][0] as u32);
                                                                         if c.g[A2][0] != 0u64 {
                                                                             c.g[A1][0] = c.lw((c.g
                                                                                 [A3][0]
@@ -8927,8 +8632,8 @@ break 'b_33c548;
                                                                         } else {
                                                                             c.cycles += 1;
                                                                             c.g[A0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             break 'b_33c5bc;
                                                                         }
                                                                     }
@@ -9187,7 +8892,7 @@ break 'b_33c548;
                                                                             );
                                                                             c.lwc1(
                                                                                 0,
-                                                                                (c.g[V0][0] as u32),
+                                                                                c.g[V0][0] as u32,
                                                                             );
                                                                             c.c_le_s(0, 1);
                                                                             let t = !c.fcc();
@@ -9255,42 +8960,38 @@ break 'b_33c760;
                                                                         'b_33c78c: {
                                                                             c.cycles += 2;
                                                                             if c.g[V1][0] == 0u64 {
-                                                                                c.g[A2][0] = c.lw(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A2][0] = c
+                                                                                    .lw(c.g[A2][0]
+                                                                                        as u32);
                                                                                 break 'b_33c78c;
                                                                             } else {
                                                                                 c.cycles += 9;
                                                                                 c.g[A1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
-                                                                                c.g[A0][0] = c.lw(
-                                                                                    (c.g[T0][0]
-                                                                                        as u32),
-                                                                                );
-                                                                                c.g[V1][0] = c.lw(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[T0][0]
+                                                                                        as u32);
+                                                                                c.g[V1][0] = c
+                                                                                    .lw(c.g[A1][0]
+                                                                                        as u32);
                                                                                 c.g[V0][0] =
                                                                                     sx((c.g[V1][0]
                                                                                         as u32)
                                                                                         << 2);
-                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                                                                 c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
                                                                                 c.sw(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                     c.g[A2][0],
                                                                                 );
                                                                                 c.sw(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
+                                                                                    c.g[A1][0]
+                                                                                        as u32,
                                                                                     c.g[V1][0],
                                                                                 );
-                                                                                c.g[A2][0] = c.lw(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A2][0] = c
+                                                                                    .lw(c.g[A2][0]
+                                                                                        as u32);
                                                                                 break 'b_33c78c;
                                                                             }
                                                                         }
@@ -9319,7 +9020,7 @@ break 'b_33c760;
                                                                         .wrapping_add(0x28));
                                                                 if c.g[A2][0] == 0u64 {
                                                                     c.g[A0][0] =
-                                                                        c.lw((c.g[S0][0] as u32));
+                                                                        c.lw(c.g[S0][0] as u32);
                                                                     break 'b_33c7d4;
                                                                 } else {
                                                                     c.cycles += 2;
@@ -9329,37 +9030,31 @@ break 'b_33c760;
                                                                     'l_33c7a8: loop {
                                                                         c.cycles += 10;
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[A3][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A3][0] as u32);
                                                                         c.g[V1][0] =
-                                                                            c.lw(
-                                                                                (c.g[A1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A1][0] as u32);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 << 2);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[A0][0]
-                                                                                        as u32),
+                                                                                    c.g[A0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(0x1));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             c.g[A2][0],
                                                                         );
                                                                         c.sw(
-                                                                            (c.g[A1][0] as u32),
+                                                                            c.g[A1][0] as u32,
                                                                             c.g[V1][0],
                                                                         );
                                                                         c.g[A2][0] =
-                                                                            c.lw(
-                                                                                (c.g[A2][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A2][0] as u32);
                                                                         if c.g[A2][0] != 0u64 {
                                                                             c.g[A1][0] = c.lw((c.g
                                                                                 [A3][0]
@@ -9374,8 +9069,8 @@ break 'b_33c760;
                                                                         } else {
                                                                             c.cycles += 1;
                                                                             c.g[A0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             break 'b_33c7d4;
                                                                         }
                                                                     }
@@ -9634,7 +9329,7 @@ break 'b_33c760;
                                                                             );
                                                                             c.lwc1(
                                                                                 0,
-                                                                                (c.g[V0][0] as u32),
+                                                                                c.g[V0][0] as u32,
                                                                             );
                                                                             c.c_le_s(0, 1);
                                                                             let t = !c.fcc();
@@ -9702,42 +9397,38 @@ break 'b_33c978;
                                                                         'b_33c9a4: {
                                                                             c.cycles += 2;
                                                                             if c.g[V1][0] == 0u64 {
-                                                                                c.g[A2][0] = c.lw(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A2][0] = c
+                                                                                    .lw(c.g[A2][0]
+                                                                                        as u32);
                                                                                 break 'b_33c9a4;
                                                                             } else {
                                                                                 c.cycles += 9;
                                                                                 c.g[A1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
-                                                                                c.g[A0][0] = c.lw(
-                                                                                    (c.g[T0][0]
-                                                                                        as u32),
-                                                                                );
-                                                                                c.g[V1][0] = c.lw(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A0][0] = c
+                                                                                    .lw(c.g[T0][0]
+                                                                                        as u32);
+                                                                                c.g[V1][0] = c
+                                                                                    .lw(c.g[A1][0]
+                                                                                        as u32);
                                                                                 c.g[V0][0] =
                                                                                     sx((c.g[V1][0]
                                                                                         as u32)
                                                                                         << 2);
-                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                                                                 c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
                                                                                 c.sw(
-                                                                                    (c.g[V0][0]
-                                                                                        as u32),
+                                                                                    c.g[V0][0]
+                                                                                        as u32,
                                                                                     c.g[A2][0],
                                                                                 );
                                                                                 c.sw(
-                                                                                    (c.g[A1][0]
-                                                                                        as u32),
+                                                                                    c.g[A1][0]
+                                                                                        as u32,
                                                                                     c.g[V1][0],
                                                                                 );
-                                                                                c.g[A2][0] = c.lw(
-                                                                                    (c.g[A2][0]
-                                                                                        as u32),
-                                                                                );
+                                                                                c.g[A2][0] = c
+                                                                                    .lw(c.g[A2][0]
+                                                                                        as u32);
                                                                                 break 'b_33c9a4;
                                                                             }
                                                                         }
@@ -9766,7 +9457,7 @@ break 'b_33c978;
                                                                         .wrapping_add(0x28));
                                                                 if c.g[A2][0] == 0u64 {
                                                                     c.g[A0][0] =
-                                                                        c.lw((c.g[S0][0] as u32));
+                                                                        c.lw(c.g[S0][0] as u32);
                                                                     break 'b_33c9ec;
                                                                 } else {
                                                                     c.cycles += 2;
@@ -9776,37 +9467,31 @@ break 'b_33c978;
                                                                     'l_33c9c0: loop {
                                                                         c.cycles += 10;
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[A3][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A3][0] as u32);
                                                                         c.g[V1][0] =
-                                                                            c.lw(
-                                                                                (c.g[A1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A1][0] as u32);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 << 2);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[A0][0]
-                                                                                        as u32),
+                                                                                    c.g[A0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(0x1));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             c.g[A2][0],
                                                                         );
                                                                         c.sw(
-                                                                            (c.g[A1][0] as u32),
+                                                                            c.g[A1][0] as u32,
                                                                             c.g[V1][0],
                                                                         );
                                                                         c.g[A2][0] =
-                                                                            c.lw(
-                                                                                (c.g[A2][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A2][0] as u32);
                                                                         if c.g[A2][0] != 0u64 {
                                                                             c.g[A1][0] = c.lw((c.g
                                                                                 [A3][0]
@@ -9821,8 +9506,8 @@ break 'b_33c978;
                                                                         } else {
                                                                             c.cycles += 1;
                                                                             c.g[A0][0] = c
-                                                                                .lw((c.g[S0][0]
-                                                                                    as u32));
+                                                                                .lw(c.g[S0][0]
+                                                                                    as u32);
                                                                             break 'b_33c9ec;
                                                                         }
                                                                     }
@@ -10072,7 +9757,7 @@ break 'b_33c978;
                                                                         (c.g[A2][0] as u32)
                                                                             .wrapping_add(0x164),
                                                                     );
-                                                                    c.lwc1(0, (c.g[V0][0] as u32));
+                                                                    c.lwc1(0, c.g[V0][0] as u32);
                                                                     c.c_le_s(0, 1);
                                                                     let t = !c.fcc();
                                                                     c.g[V1][0] = 0u64;
@@ -10161,9 +9846,7 @@ break 'b_33c978;
                                                                     c.cycles += 2;
                                                                     if c.g[V1][0] == 0u64 {
                                                                         c.g[A2][0] =
-                                                                            c.lw(
-                                                                                (c.g[A2][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A2][0] as u32);
                                                                         break 'b_33cbbc;
                                                                     } else {
                                                                         c.cycles += 9;
@@ -10172,37 +9855,31 @@ break 'b_33c978;
                                                                                 as u32)
                                                                                 .wrapping_add(0x4));
                                                                         c.g[A0][0] =
-                                                                            c.lw(
-                                                                                (c.g[T0][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[T0][0] as u32);
                                                                         c.g[V1][0] =
-                                                                            c.lw(
-                                                                                (c.g[A1][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A1][0] as u32);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 << 2);
                                                                         c.g[V0][0] =
                                                                             sx((c.g[V0][0] as u32)
                                                                                 .wrapping_add(
-                                                                                    (c.g[A0][0]
-                                                                                        as u32),
+                                                                                    c.g[A0][0]
+                                                                                        as u32,
                                                                                 ));
                                                                         c.g[V1][0] =
                                                                             sx((c.g[V1][0] as u32)
                                                                                 .wrapping_add(0x1));
                                                                         c.sw(
-                                                                            (c.g[V0][0] as u32),
+                                                                            c.g[V0][0] as u32,
                                                                             c.g[A2][0],
                                                                         );
                                                                         c.sw(
-                                                                            (c.g[A1][0] as u32),
+                                                                            c.g[A1][0] as u32,
                                                                             c.g[V1][0],
                                                                         );
                                                                         c.g[A2][0] =
-                                                                            c.lw(
-                                                                                (c.g[A2][0] as u32)
-                                                                            );
+                                                                            c.lw(c.g[A2][0] as u32);
                                                                         break 'b_33cbbc;
                                                                     }
                                                                 }
@@ -10229,7 +9906,7 @@ break 'b_33c978;
                                                             .lw((c.g[S0][0] as u32)
                                                                 .wrapping_add(0x28));
                                                         if c.g[A2][0] == 0u64 {
-                                                            c.g[A0][0] = c.lw((c.g[S0][0] as u32));
+                                                            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
                                                             break 'b_33cc04;
                                                         } else {
                                                             c.cycles += 2;
@@ -10238,29 +9915,23 @@ break 'b_33c978;
                                                             'l_33cbd8: loop {
                                                                 c.cycles += 10;
                                                                 c.g[A0][0] =
-                                                                    c.lw((c.g[A3][0] as u32));
+                                                                    c.lw(c.g[A3][0] as u32);
                                                                 c.g[V1][0] =
-                                                                    c.lw((c.g[A1][0] as u32));
+                                                                    c.lw(c.g[A1][0] as u32);
                                                                 c.g[V0][0] =
                                                                     sx((c.g[V1][0] as u32) << 2);
                                                                 c.g[V0][0] = sx((c.g[V0][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[A0][0] as u32),
+                                                                        c.g[A0][0] as u32,
                                                                     ));
                                                                 c.g[V1][0] = sx((c.g[V1][0]
                                                                     as u32)
                                                                     .wrapping_add(0x1));
-                                                                c.sw(
-                                                                    (c.g[V0][0] as u32),
-                                                                    c.g[A2][0],
-                                                                );
-                                                                c.sw(
-                                                                    (c.g[A1][0] as u32),
-                                                                    c.g[V1][0],
-                                                                );
+                                                                c.sw(c.g[V0][0] as u32, c.g[A2][0]);
+                                                                c.sw(c.g[A1][0] as u32, c.g[V1][0]);
                                                                 c.g[A2][0] =
-                                                                    c.lw((c.g[A2][0] as u32));
+                                                                    c.lw(c.g[A2][0] as u32);
                                                                 if c.g[A2][0] != 0u64 {
                                                                     c.g[A1][0] = c
                                                                         .lw((c.g[A3][0] as u32)
@@ -10274,7 +9945,7 @@ break 'b_33c978;
                                                                 } else {
                                                                     c.cycles += 1;
                                                                     c.g[A0][0] =
-                                                                        c.lw((c.g[S0][0] as u32));
+                                                                        c.lw(c.g[S0][0] as u32);
                                                                     break 'b_33cc04;
                                                                 }
                                                             }
@@ -12424,19 +12095,7 @@ pub(crate) fn gather_all_object_overlaps(c: &mut Cpu, obj: u32, bx: u32) {
     }
 }
 
-pub(crate) mod dist {
-    pub(crate) use crate::game::ai::rider::dist::CLOSEST_POINT;
-    pub(crate) use crate::game::ai::rider::dist::DIST;
-    pub(crate) use crate::game::ai::rider::dist::PATH;
-    pub(crate) use crate::game::ai::rider::dist::PATH_HINT;
-    pub(crate) use crate::game::ai::rider::dist::PATH_LENGTH;
-    pub(crate) use crate::game::ai::rider::dist::PATH_VTABLE;
-    pub(crate) use crate::game::ai::rider::dist::POSITION;
-    pub(crate) use crate::game::ai::rider::dist::PREV_DIST;
-    pub(crate) use crate::game::ai::rider::dist::SEGMENT;
-    pub(crate) use crate::game::ai::rider::dist::SEGMENT_RESULT;
-    pub(crate) use crate::game::ai::rider::dist::SPLITS;
-}
+pub(crate) mod dist {}
 
 pub(crate) mod nash {
 
@@ -12938,7 +12597,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x130));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x134));
                     let t = c.g[V0][0] as u32;
-                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x003348ec)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A1][0] = c.g[S2][0];
@@ -12954,7 +12613,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                         c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x138));
                         c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x13c));
                         let t = c.g[V0][0] as u32;
-                        c.g[A0][0] = sx((c.g[T1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                        c.g[A0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                         call_ptr(c, t, 0x00334918)?;
                         let t = true;
                         c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x27b0));
@@ -12971,7 +12630,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x88));
                     c.g[V1][0] = 0x3;
-                    c.g[FP][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[FP][0] = c.lw(c.g[V0][0] as u32);
                     let t = c.g[FP][0] == c.g[V1][0];
                     c.g[V0][0] = 0x1;
                     if t {
@@ -13026,7 +12685,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xd4));
                                     let t = c.g[V0][0] as u32;
                                     c.g[A0][0] =
-                                        sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                        sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                     call_ptr(c, t, 0x00334998)?;
                                     let t = c.g[V0][0] == 0u64;
                                     c.g[A1][0] = c.g[S1][0];
@@ -13040,8 +12699,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                         c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xe4));
                                         let t = c.g[V0][0] as u32;
                                         c.g[A0][0] =
-                                            sx((c.g[S0][0] as u32)
-                                                .wrapping_add((c.g[A0][0] as u32)));
+                                            sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                         call_ptr(c, t, 0x003349b8)?;
                                         let t = true;
                                         c.g[S3][0] = c.g[V0][0];
@@ -13058,7 +12716,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                 c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xcc));
                                 let t = c.g[V0][0] as u32;
                                 c.g[A0][0] =
-                                    sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                    sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                 call_ptr(c, t, 0x003349d4)?;
                                 c.sw((c.g[SP][0] as u32).wrapping_add(0x26f8), c.g[V0][0]);
                                 break 'b_3349d8;
@@ -13108,7 +12766,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                             } else {
                                                 'b_334ba0: {
                                                     c.cycles += 3;
-                                                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                                                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                                                     let t = c.g[A1][0] == c.g[V0][0];
                                                     c.g[A1][0] = sx((c.g[A1][0] as u32) << 6);
                                                     if t {
@@ -13123,8 +12781,8 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                             (c.g[SP][0] as u32).wrapping_add(0x600),
                                                         );
                                                         c.g[A1][0] = sx((c.g[A1][0] as u32)
-                                                            .wrapping_add((c.g[SP][0] as u32)));
-                                                        c.lq(2, (c.g[A0][0] as u32));
+                                                            .wrapping_add(c.g[SP][0] as u32));
+                                                        c.lq(2, c.g[A0][0] as u32);
                                                         c.lwc1(
                                                             6,
                                                             (c.g[SP][0] as u32).wrapping_add(0x604),
@@ -13225,7 +12883,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                             2,
                                                             (c.g[SP][0] as u32).wrapping_add(0x680),
                                                         );
-                                                        c.lqc2(4, (c.g[A1][0] as u32));
+                                                        c.lqc2(4, c.g[A1][0] as u32);
                                                         c.lqc2(
                                                             5,
                                                             (c.g[A1][0] as u32).wrapping_add(0x10),
@@ -13238,7 +12896,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                             7,
                                                             (c.g[A1][0] as u32).wrapping_add(0x30),
                                                         );
-                                                        c.lqc2(8, (c.g[A0][0] as u32));
+                                                        c.lqc2(8, c.g[A0][0] as u32);
                                                         c.lqc2(
                                                             9,
                                                             (c.g[A0][0] as u32).wrapping_add(0x10),
@@ -13267,7 +12925,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                         c.vu0().madda(0b1111, 5, Src::Bc(11, Y));
                                                         c.vu0().madda(0b1111, 6, Src::Bc(11, Z));
                                                         c.vu0().madd(0b1111, 15, 7, Src::Bc(11, W));
-                                                        c.sqc2(12, (c.g[V1][0] as u32));
+                                                        c.sqc2(12, c.g[V1][0] as u32);
                                                         c.sqc2(
                                                             13,
                                                             (c.g[V1][0] as u32).wrapping_add(0x10),
@@ -13282,7 +12940,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                         );
                                                         c.g[A1][0] = c.lw((c.g[SP][0] as u32)
                                                             .wrapping_add(0x2704));
-                                                        c.lqc2(1, (c.g[V1][0] as u32));
+                                                        c.lqc2(1, c.g[V1][0] as u32);
                                                         c.lqc2(
                                                             2,
                                                             (c.g[V1][0] as u32).wrapping_add(0x10),
@@ -13295,7 +12953,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                             4,
                                                             (c.g[V1][0] as u32).wrapping_add(0x30),
                                                         );
-                                                        c.sqc2(1, (c.g[A1][0] as u32));
+                                                        c.sqc2(1, c.g[A1][0] as u32);
                                                         c.sqc2(
                                                             2,
                                                             (c.g[A1][0] as u32).wrapping_add(0x10),
@@ -13310,8 +12968,8 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                         );
                                                         c.g[V0][0] = sx((c.g[S5][0] as u32) << 6);
                                                         c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                            .wrapping_add((c.g[SP][0] as u32)));
-                                                        c.lqc2(1, (c.g[A1][0] as u32));
+                                                            .wrapping_add(c.g[SP][0] as u32));
+                                                        c.lqc2(1, c.g[A1][0] as u32);
                                                         c.lqc2(
                                                             2,
                                                             (c.g[A1][0] as u32).wrapping_add(0x10),
@@ -13324,7 +12982,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                             4,
                                                             (c.g[A1][0] as u32).wrapping_add(0x30),
                                                         );
-                                                        c.sqc2(1, (c.g[V0][0] as u32));
+                                                        c.sqc2(1, c.g[V0][0] as u32);
                                                         c.sqc2(
                                                             2,
                                                             (c.g[V0][0] as u32).wrapping_add(0x10),
@@ -13352,7 +13010,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                 c.g[A0][0] =
                                                     c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
                                                 c.lwc1(6, (c.g[SP][0] as u32).wrapping_add(0x600));
-                                                c.lq(2, (c.g[A0][0] as u32));
+                                                c.lq(2, c.g[A0][0] as u32);
                                                 c.lwc1(7, (c.g[SP][0] as u32).wrapping_add(0x604));
                                                 c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x690));
                                                 c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x650));
@@ -13386,11 +13044,11 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                 c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x680));
                                                 c.g[V0][0] =
                                                     c.lw((c.g[SP][0] as u32).wrapping_add(0x270c));
-                                                c.lqc2(4, (c.g[T7][0] as u32));
+                                                c.lqc2(4, c.g[T7][0] as u32);
                                                 c.lqc2(5, (c.g[T7][0] as u32).wrapping_add(0x10));
                                                 c.lqc2(6, (c.g[T7][0] as u32).wrapping_add(0x20));
                                                 c.lqc2(7, (c.g[T7][0] as u32).wrapping_add(0x30));
-                                                c.lqc2(8, (c.g[V0][0] as u32));
+                                                c.lqc2(8, c.g[V0][0] as u32);
                                                 c.lqc2(9, (c.g[V0][0] as u32).wrapping_add(0x10));
                                                 c.lqc2(10, (c.g[V0][0] as u32).wrapping_add(0x20));
                                                 c.lqc2(11, (c.g[V0][0] as u32).wrapping_add(0x30));
@@ -13410,28 +13068,28 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                 c.vu0().madda(0b1111, 5, Src::Bc(11, Y));
                                                 c.vu0().madda(0b1111, 6, Src::Bc(11, Z));
                                                 c.vu0().madd(0b1111, 15, 7, Src::Bc(11, W));
-                                                c.sqc2(12, (c.g[T6][0] as u32));
+                                                c.sqc2(12, c.g[T6][0] as u32);
                                                 c.sqc2(13, (c.g[T6][0] as u32).wrapping_add(0x10));
                                                 c.sqc2(14, (c.g[T6][0] as u32).wrapping_add(0x20));
                                                 c.sqc2(15, (c.g[T6][0] as u32).wrapping_add(0x30));
                                                 c.g[V1][0] =
                                                     c.lw((c.g[SP][0] as u32).wrapping_add(0x2704));
-                                                c.lqc2(1, (c.g[T6][0] as u32));
+                                                c.lqc2(1, c.g[T6][0] as u32);
                                                 c.lqc2(2, (c.g[T6][0] as u32).wrapping_add(0x10));
                                                 c.lqc2(3, (c.g[T6][0] as u32).wrapping_add(0x20));
                                                 c.lqc2(4, (c.g[T6][0] as u32).wrapping_add(0x30));
-                                                c.sqc2(1, (c.g[V1][0] as u32));
+                                                c.sqc2(1, c.g[V1][0] as u32);
                                                 c.sqc2(2, (c.g[V1][0] as u32).wrapping_add(0x10));
                                                 c.sqc2(3, (c.g[V1][0] as u32).wrapping_add(0x20));
                                                 c.sqc2(4, (c.g[V1][0] as u32).wrapping_add(0x30));
                                                 c.g[V0][0] = sx((c.g[S5][0] as u32) << 6);
                                                 c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                    .wrapping_add((c.g[SP][0] as u32)));
-                                                c.lqc2(1, (c.g[V1][0] as u32));
+                                                    .wrapping_add(c.g[SP][0] as u32));
+                                                c.lqc2(1, c.g[V1][0] as u32);
                                                 c.lqc2(2, (c.g[V1][0] as u32).wrapping_add(0x10));
                                                 c.lqc2(3, (c.g[V1][0] as u32).wrapping_add(0x20));
                                                 c.lqc2(4, (c.g[V1][0] as u32).wrapping_add(0x30));
-                                                c.sqc2(1, (c.g[V0][0] as u32));
+                                                c.sqc2(1, c.g[V0][0] as u32);
                                                 c.sqc2(2, (c.g[V0][0] as u32).wrapping_add(0x10));
                                                 c.sqc2(3, (c.g[V0][0] as u32).wrapping_add(0x20));
                                                 c.sqc2(4, (c.g[V0][0] as u32).wrapping_add(0x30));
@@ -13478,7 +13136,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                                 c.g[V0][0] = sx((c.g[V0][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[V1][0] as u32),
+                                                                        c.g[V1][0] as u32,
                                                                     ));
                                                                 c.g[A0][0] = c
                                                                     .lh((c.g[V0][0] as u32)
@@ -13518,7 +13176,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                                 .wrapping_add(0x88));
                                                             c.mult(0, 2, 21, 15);
                                                             c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                                .wrapping_add((c.g[V1][0] as u32)));
+                                                                .wrapping_add(c.g[V1][0] as u32));
                                                             c.g[A0][0] = c.lh((c.g[V0][0] as u32)
                                                                 .wrapping_add(0x1a));
                                                             c.g[V0][0] = 0xffffffffffffffff;
@@ -13574,7 +13232,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                     c.g[A2][0] =
                                                         sx((c.g[SP][0] as u32).wrapping_add(0x650));
                                                     c.g[V1][0] = 0xffffffffffffffff;
-                                                    c.lqc2(1, (c.g[S4][0] as u32));
+                                                    c.lqc2(1, c.g[S4][0] as u32);
                                                     c.lqc2(
                                                         2,
                                                         (c.g[S4][0] as u32).wrapping_add(0x10),
@@ -13587,7 +13245,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                         4,
                                                         (c.g[S4][0] as u32).wrapping_add(0x30),
                                                     );
-                                                    c.sqc2(1, (c.g[A0][0] as u32));
+                                                    c.sqc2(1, c.g[A0][0] as u32);
                                                     c.sqc2(
                                                         2,
                                                         (c.g[A0][0] as u32).wrapping_add(0x10),
@@ -13689,7 +13347,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                         8,
                                                         (c.g[SP][0] as u32).wrapping_add(0x650),
                                                     );
-                                                    c.lqc2(4, (c.g[A0][0] as u32));
+                                                    c.lqc2(4, c.g[A0][0] as u32);
                                                     c.lqc2(
                                                         5,
                                                         (c.g[A0][0] as u32).wrapping_add(0x10),
@@ -13747,7 +13405,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                         c.lw((c.g[A2][0] as u32).wrapping_add(0xc));
                                                     let t = c.g[V1][0] as u32;
                                                     c.g[A0][0] = sx((c.g[S2][0] as u32)
-                                                        .wrapping_add((c.g[A0][0] as u32)));
+                                                        .wrapping_add(c.g[A0][0] as u32));
                                                     call_ptr(c, t, 0x00334e78)?;
                                                     c.g[V0][0] = 0x2;
                                                     let t = c.g[FP][0] != c.g[V0][0];
@@ -13775,7 +13433,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                                 .wrapping_add(0xc));
                                                         let t = c.g[V0][0] as u32;
                                                         c.g[A0][0] = sx((c.g[S2][0] as u32)
-                                                            .wrapping_add((c.g[A0][0] as u32)));
+                                                            .wrapping_add(c.g[A0][0] as u32));
                                                         call_ptr(c, t, 0x00334ea4)?;
                                                         let t = true;
                                                         c.g[S3][0] = c.g[V0][0];
@@ -13798,7 +13456,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                         sx((c.g[A1][0] as u32).wrapping_add(0xc));
                                                     let t = c.g[V0][0] as u32;
                                                     c.g[A0][0] = sx((c.g[S2][0] as u32)
-                                                        .wrapping_add((c.g[A0][0] as u32)));
+                                                        .wrapping_add(c.g[A0][0] as u32));
                                                     call_ptr(c, t, 0x00334ec4)?;
                                                     let t = c.g[V0][0] == 0u64;
                                                     c.g[V0][0] = 0x3;
@@ -13846,7 +13504,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                                 c.g[A0][0] = sx((c.g[S2][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[A0][0] as u32),
+                                                                        c.g[A0][0] as u32,
                                                                     ));
                                                                 call_ptr(c, t, 0x00334f0c)?;
                                                                 let t = true;
@@ -13895,8 +13553,9 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                             c.g[V1][0] =
                                                 c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
                                             let t = c.g[V1][0] as u32;
-                                            c.g[A0][0] = sx((c.g[S2][0] as u32)
-                                                .wrapping_add((c.g[A0][0] as u32)));
+                                            c.g[A0][0] =
+                                                sx((c.g[S2][0] as u32)
+                                                    .wrapping_add(c.g[A0][0] as u32));
                                             call_ptr(c, t, 0x00334f64)?;
                                             let t = (c.g[S3][0] as i64) <= 0;
                                             c.g[A1][0] = 0u64;
@@ -13919,13 +13578,13 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                     c.g[T0][0] =
                                                         sx((c.g[A1][0] as u32).wrapping_add(0x1));
                                                     c.g[V0][0] = sx((c.g[V0][0] as u32)
-                                                        .wrapping_add((c.g[SP][0] as u32)));
+                                                        .wrapping_add(c.g[SP][0] as u32));
                                                     c.g[A0][0] = sx((c.g[S7][0] as u32) << 7);
                                                     c.lqc2(
                                                         8,
                                                         (c.g[V0][0] as u32).wrapping_add(0x700),
                                                     );
-                                                    c.lqc2(4, (c.g[S4][0] as u32));
+                                                    c.lqc2(4, c.g[S4][0] as u32);
                                                     c.lqc2(
                                                         5,
                                                         (c.g[S4][0] as u32).wrapping_add(0x10),
@@ -13963,7 +13622,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                         (c.g[SP][0] as u32).wrapping_add(0x650),
                                                     );
                                                     c.g[A0][0] = sx((c.g[A0][0] as u32)
-                                                        .wrapping_add((c.g[A1][0] as u32)));
+                                                        .wrapping_add(c.g[A1][0] as u32));
                                                     c.sq(
                                                         3,
                                                         (c.g[V0][0] as u32).wrapping_add(0x700),
@@ -13972,12 +13631,12 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                         sx((c.g[V0][0] as u32).wrapping_add(0x6f0));
                                                     'l_334fe4: loop {
                                                         c.cycles += 7;
-                                                        c.lq(14, (c.g[A1][0] as u32));
+                                                        c.lq(14, c.g[A1][0] as u32);
                                                         c.lq(
                                                             15,
                                                             (c.g[A1][0] as u32).wrapping_add(0x10),
                                                         );
-                                                        c.sq(14, (c.g[A0][0] as u32));
+                                                        c.sq(14, c.g[A0][0] as u32);
                                                         c.sq(
                                                             15,
                                                             (c.g[A0][0] as u32).wrapping_add(0x10),
@@ -14008,14 +13667,14 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                                 c.g[A0][0] = sx((c.g[A3][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[A1][0] as u32),
+                                                                        c.g[A1][0] as u32,
                                                                     ));
                                                                 c.lwc1(
                                                                     1,
                                                                     (c.g[SP][0] as u32)
                                                                         .wrapping_add(0x608),
                                                                 );
-                                                                c.lwc1(2, (c.g[A0][0] as u32));
+                                                                c.lwc1(2, c.g[A0][0] as u32);
                                                                 c.lwc1(
                                                                     6,
                                                                     (c.g[SP][0] as u32)
@@ -14070,7 +13729,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                                     (c.g[SP][0] as u32)
                                                                         .wrapping_add(0x660),
                                                                 );
-                                                                c.lqc2(4, (c.g[S4][0] as u32));
+                                                                c.lqc2(4, c.g[S4][0] as u32);
                                                                 c.lqc2(
                                                                     5,
                                                                     (c.g[S4][0] as u32)
@@ -14122,7 +13781,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                                         .wrapping_add(0x44),
                                                                     c.g[T5][0],
                                                                 );
-                                                                c.sq(3, (c.g[A0][0] as u32));
+                                                                c.sq(3, c.g[A0][0] as u32);
                                                                 c.sw(
                                                                     (c.g[A0][0] as u32)
                                                                         .wrapping_add(0x50),
@@ -14151,13 +13810,13 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                                     (c.g[SP][0] as u32)
                                                                         .wrapping_add(0x650),
                                                                 );
-                                                                c.lq(2, (c.g[T3][0] as u32));
+                                                                c.lq(2, c.g[T3][0] as u32);
                                                                 c.sq(
                                                                     2,
                                                                     (c.g[A0][0] as u32)
                                                                         .wrapping_add(0x20),
                                                                 );
-                                                                c.lq(3, (c.g[T3][0] as u32));
+                                                                c.lq(3, c.g[T3][0] as u32);
                                                                 c.sw(
                                                                     (c.g[A0][0] as u32)
                                                                         .wrapping_add(0x54),
@@ -14174,7 +13833,7 @@ pub fn collide_volume_object(c: &mut Cpu) {
                                                                 c.g[V0][0] = sx((c.g[V0][0]
                                                                     as u32)
                                                                     .wrapping_add(
-                                                                        (c.g[T4][0] as u32),
+                                                                        c.g[T4][0] as u32,
                                                                     ));
                                                                 c.g[V0][0] = c
                                                                     .lh((c.g[V0][0] as u32)
@@ -15634,34 +15293,26 @@ pub fn anim_object_dtor(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::compare;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
-    use crate::difftest::fakes;
+
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::fake_call;
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
+
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::fakes::*;
+
     use crate::difftest::fill;
     use crate::difftest::put_vec;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::RA as TEST_RA;
+
     use crate::difftest::SP as STACK_TOP;
-    use crate::difftest::SP as STACK;
+
     pub(crate) use crate::game::ai::ai::tests::generic;
-    pub(crate) use crate::game::ai::ai::tests::globals_8 as globals_3;
+
     pub(crate) use crate::game::ai::ai::tests::wf;
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::put;
     pub(crate) use crate::game::be::beintmission::tests::SEEDS as SEEDS_3;
@@ -15671,42 +15322,24 @@ pub(crate) mod tests {
     pub(crate) use crate::game::bx::bxstring2::tests::fbits;
     pub(crate) use crate::game::camera::trigger::cameratriggerlist::tests::small_pointer;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base_3;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_4 as base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_10 as globals_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_9 as globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_4 as heap_init_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_9 as heap_init_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_7 as pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_8 as pool_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_7 as pool_allocator;
-    pub(crate) use crate::game::fe::feasyncfile::tests::run_4 as run_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w_4 as w_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE as BE_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_2 as BE;
+
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_3 as OBJ2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_3 as OBJ;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RM;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_5 as WORLD;
+
     pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_5;
     pub(crate) use crate::game::fe::fepopup::tests::check_all_3 as check_all;
-    pub(crate) use crate::game::fe::fepopup::tests::AUX as AUX_2;
-    pub(crate) use crate::game::fe::fepopup::tests::BEL;
-    pub(crate) use crate::game::fe::fepopup::tests::RACE;
+
     pub(crate) use crate::game::fe::fepopup::tests::RMAN_2 as RMAN;
-    pub(crate) use crate::game::fe::fepopup::tests::SYS;
-    pub(crate) use crate::game::fe::fepopup::tests::WORLD_4 as WORLD_2;
-    pub(crate) use crate::game::fe::festateoptions::tests::rng;
+
     pub(crate) use crate::game::fe::festateoptions::tests::setup;
     pub(crate) use crate::game::fe::festateoptions::tests::AUX;
     pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup as setup_2;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
+
     pub(crate) use crate::game::intersect::riderspheretree::tests::coll_args;
     pub(crate) use crate::game::main::gamemode::tests::be_library;
-    pub(crate) use crate::game::main::gamemode::tests::h;
+
     pub(crate) use crate::game::main::gamemode::tests::slot;
     pub(crate) use crate::game::main::gamemode::tests::SEEDS_2 as SEEDS_8;
     pub(crate) use crate::game::main::gamestate::tests::base_3 as base_2;
@@ -15715,15 +15348,12 @@ pub(crate) mod tests {
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::alloc;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::heap_init;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::run;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::ARENA;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::ARENA_SIZE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::MEM_HEAP;
+
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_4;
     pub(crate) use crate::game::util::menu::tests::wf_2;
     pub(crate) use crate::game::worldpainter::quadtree::tests::put_vtable;
     pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
-    pub(crate) use crate::game::wscript::wscriptman::tests::load;
+
     pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS_5;
     use ssx3_ee as ee;
     use ssx3_ee_rt::funcs::GuestFn;
@@ -16996,7 +16626,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// `OverlapList_GatherAll` against the generated body, with the real
     /// callees (`SpatialKey_ClassifyAABB`, `Cell_GatherObjects`,
@@ -17105,21 +16734,11 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
-    use super::*;
-    use super::*;
-
-    use super::*;
-    use crate::difftest::fresh;
-
-    pub(crate) use crate::game::ai::computer::tests::fake_closest_point;
-    pub(crate) use crate::game::ai::computer::tests::fake_collide_volume;
     pub(crate) use crate::game::ai::computer::tests::install_fake_slots;
     pub(crate) use crate::game::ai::computer::tests::FCC_CTRL;
     pub(crate) use crate::game::ai::computer::tests::FCC_MAGIC;
-    pub(crate) use crate::game::ai::computer::tests::UDF_CTRL;
-    pub(crate) use crate::game::ai::computer::tests::UDF_MAGIC;
+
     pub(crate) use crate::game::camera::camera::tests::f as f_2;
     pub(crate) use crate::game::fe::ovstatetrophy::tests::RET0;
     pub(crate) use crate::game::fe::ovstatetrophy::tests::RET1;
@@ -17452,10 +17071,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use crate::difftest::{elf_image, require_paths};
-    pub(crate) use crate::game::fe::ovstatehud::tests::obj;
+
     use ssx3_ee_rt::Cpu;
 
     /// Nash_FindClosestContact over the real `Nash_CollideVolume`: eight
@@ -17596,7 +17212,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// `OverlapList_GatherType2` against the generated body, with the real
     /// callees (`SpatialKey_ClassifyAABB`, `Cell_GatherType2Subtree`,
@@ -17691,7 +17306,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// `AnimObject_ctor` with the real constructor chain
     /// (`AnimObject_BaseCtor` -> `ModObj_ctor` -> `WorldObj_ctor` on the
@@ -17801,7 +17415,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// A stream whose vtable has a fake in every slot (AnimObject_BaseSave,
     /// ModObj_Save and WorldObj_Save write through several of them).

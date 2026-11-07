@@ -3494,10 +3494,10 @@ fn countdown(c: &mut Cpu, frame: Frame, sys: u64) -> Flow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::difftest::events::{check_events, driven, schedule};
+
     use crate::difftest::fakes::{covered, machine, FAKE, LOG_RESULTS};
     use crate::difftest::{check, check_lohi, elf_image, fill, Rng, DATA, GAME_GP};
-    use ssx3_ee::{s07, s08};
+    use ssx3_ee::s08;
 
     const SEEDS: u32 = 150;
     /// The `SND_Lock` / `SND_Unlock` hooks.

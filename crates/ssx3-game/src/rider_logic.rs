@@ -680,17 +680,6 @@ mod vu {
     pub const X: u8 = 8;
     pub const XYZW: u8 = 0xf;
 
-    /// A VF register.
-    pub fn vf(c: &Cpu, reg: usize) -> Vec4 {
-        let v = c.bus.plat.vf(reg);
-        Vec4 {
-            x: VuF32(v[0]),
-            y: VuF32(v[1]),
-            z: VuF32(v[2]),
-            w: VuF32(v[3]),
-        }
-    }
-
     /// `lqc2 vf, addr`: load and leave the register set.
     pub fn lqc2(c: &mut Cpu, reg: usize, addr: u32) -> Vec4 {
         let v = crate::guest::Addr(addr).read_vec4(c);
@@ -1370,7 +1359,7 @@ mod tests {
     //! virtual calls land in the fakes of `difftest::fakes`, which log the
     //! registers at the call and unwind at a chosen call index. Branches
     //! are chosen by the seed so every path is taken.
-    use crate::difftest::events::{check_events, schedule, Events};
+    use crate::difftest::events::{check_events, schedule};
     use crate::difftest::fakes::*;
     use crate::difftest::{check, check_paths, elf_image, fresh, put_words, Rng, GAME_GP, RA};
     use ssx3_ee_rt::cpu::reg::*;

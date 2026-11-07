@@ -22,10 +22,6 @@ use crate::events::event_due;
 pub(crate) use crate::game::ai::ai::gp;
 use crate::game::ai::rider::q_rotate;
 use crate::game::ai::rider::quat_mul_vu0;
-use crate::game::animation::animsequencer::ASL_PUSH_NEW;
-use crate::game::animation::animsequencer::ASL_SET_TRACK_ANIM;
-use crate::game::animation::animsequencer::ASL_SET_TRACK_LOOP;
-use crate::game::animation::animsequencer::ASL_SET_TRACK_TIME;
 pub(crate) use crate::game::fe::ovstatehud::oc224_gp;
 pub(crate) use crate::game::fe::ovstatehud::oc224_ld_u;
 pub(crate) use crate::game::fe::ovstatehud::oc224_sd_u;
@@ -46,7 +42,6 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
@@ -1748,13 +1743,13 @@ pub fn c_anger_fx_render(c: &mut Cpu) {
                 c.sd((c.g[SP][0] as u32).wrapping_add(0x160), c.g[RA][0]);
                 c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0x198));
                 c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x190));
-                c.g[A0][0] = c.lw((c.g[S0][0] as u32));
+                c.g[A0][0] = c.lw(c.g[S0][0] as u32);
                 c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x6c0));
                 c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6c0));
                 c.g[A1][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x40));
                 c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x44));
                 let t = c.g[V0][0] as u32;
-                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                 call_ptr(c, t, 0x002d5080)?;
                 if c.g[V0][0] != 0u64 {
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x180));
@@ -1771,8 +1766,8 @@ pub fn c_anger_fx_render(c: &mut Cpu) {
                     c.mtc1(1, 21);
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
                     c.mult(0, 2, 2, 4);
-                    c.g[S1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.lwc1(0, (c.g[S1][0] as u32));
+                    c.g[S1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.lwc1(0, c.g[S1][0] as u32);
                     c.c_eq_s(0, 20);
                     if c.fcc() {
                         c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x180));
@@ -1784,19 +1779,19 @@ pub fn c_anger_fx_render(c: &mut Cpu) {
                         c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x118));
                         c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x11c));
                         let t = c.g[V0][0] as u32;
-                        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                         call_ptr(c, t, 0x002d50e0)?;
                         c.g[T4][0] = c.g[V0][0];
-                        c.g[V0][0] = c.lw((c.g[S0][0] as u32));
+                        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
                         c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x780));
                         c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8a8));
                         c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x30));
                         c.g[V1][0] = sx((c.g[V1][0] as u32) << 6);
-                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                         c.lq(2, (c.g[A0][0] as u32).wrapping_add(0x30));
-                        c.sq(2, (c.g[SP][0] as u32));
-                        c.lqc2(8, (c.g[SP][0] as u32));
-                        c.lqc2(4, (c.g[T4][0] as u32));
+                        c.sq(2, c.g[SP][0] as u32);
+                        c.lqc2(8, c.g[SP][0] as u32);
+                        c.lqc2(4, c.g[T4][0] as u32);
                         c.lqc2(5, (c.g[T4][0] as u32).wrapping_add(0x10));
                         c.lqc2(6, (c.g[T4][0] as u32).wrapping_add(0x20));
                         c.lqc2(7, (c.g[T4][0] as u32).wrapping_add(0x30));
@@ -1844,7 +1839,7 @@ pub fn c_anger_fx_render(c: &mut Cpu) {
                                     }
                                 }
                                 c.cycles += 252;
-                                c.lwc1(0, (c.g[T4][0] as u32));
+                                c.lwc1(0, c.g[T4][0] as u32);
                                 c.g[T1][0] = 0x500000;
                                 c.lwc1(1, (c.g[T4][0] as u32).wrapping_add(0x10));
                                 c.g[A2][0] = 0xffffffffffbf0000;
@@ -1883,7 +1878,7 @@ pub fn c_anger_fx_render(c: &mut Cpu) {
                                 c.g[AT][0] = 0x41100000;
                                 c.mtc1(1, 1);
                                 c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
-                                c.lqc2(3, (c.g[SP][0] as u32));
+                                c.lqc2(3, c.g[SP][0] as u32);
                                 c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x50));
                                 c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                                 c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x60));
@@ -1913,7 +1908,7 @@ pub fn c_anger_fx_render(c: &mut Cpu) {
                                 c.sq(3, (c.g[SP][0] as u32).wrapping_add(0x60));
                                 c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xe84));
                                 c.ldl(3, (c.g[V0][0] as u32).wrapping_add(0x7));
-                                c.ldr(3, (c.g[V0][0] as u32));
+                                c.ldr(3, c.g[V0][0] as u32);
                                 c.ldl(5, (c.g[V0][0] as u32).wrapping_add(0xf));
                                 c.ldr(5, (c.g[V0][0] as u32).wrapping_add(0x8));
                                 c.g[T7][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x10));
@@ -1929,12 +1924,12 @@ pub fn c_anger_fx_render(c: &mut Cpu) {
                                 c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xe84));
                                 c.g[T7][0] = sx((c.g[T1][0] as u32).wrapping_add(0x1420));
                                 c.ldl(3, (c.g[T7][0] as u32).wrapping_add(0x7));
-                                c.ldr(3, (c.g[T7][0] as u32));
+                                c.ldr(3, c.g[T7][0] as u32);
                                 c.ldl(4, (c.g[T7][0] as u32).wrapping_add(0xf));
                                 c.ldr(4, (c.g[T7][0] as u32).wrapping_add(0x8));
                                 c.g[A1][0] = c.lw((c.g[T7][0] as u32).wrapping_add(0x10));
                                 c.sdl(3, (c.g[V0][0] as u32).wrapping_add(0x7));
-                                c.sdr(3, (c.g[V0][0] as u32));
+                                c.sdr(3, c.g[V0][0] as u32);
                                 c.sdl(4, (c.g[V0][0] as u32).wrapping_add(0xf));
                                 c.sdr(4, (c.g[V0][0] as u32).wrapping_add(0x8));
                                 c.sw((c.g[V0][0] as u32).wrapping_add(0x10), c.g[A1][0]);
@@ -2091,7 +2086,7 @@ pub fn c_anger_fx_render(c: &mut Cpu) {
                                 c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x23c));
                                 let t = c.g[V1][0] as u32;
                                 c.g[A0][0] =
-                                    sx((c.g[T0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                    sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                 call_ptr(c, t, 0x002d556c)?;
                                 c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
                                 c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xe84));
@@ -2162,7 +2157,7 @@ pub fn rider_base_render_attack_fx(c: &mut Cpu) {
                 c.g[T0][0] = c.g[T0][0] | 0xffff;
                 c.g[T1][0] = 0xfffffffffff00000;
                 c.ldl(4, at(c, V0, 0x7));
-                c.ldr(4, (c.g[V0][0] as u32));
+                c.ldr(4, c.g[V0][0] as u32);
                 c.ldl(7, at(c, V0, 0xf));
                 c.ldr(7, at(c, V0, 0x8));
                 c.g[T2][0] = c.lw(at(c, V0, 0x10));
@@ -2191,12 +2186,12 @@ pub fn rider_base_render_attack_fx(c: &mut Cpu) {
                 c.mtc1(1, 20);
                 c.g[A0][0] = sx(at(c, A1, 0x1420));
                 c.ldl(16, at(c, A0, 0x7));
-                c.ldr(16, (c.g[A0][0] as u32));
+                c.ldr(16, c.g[A0][0] as u32);
                 c.ldl(17, at(c, A0, 0xf));
                 c.ldr(17, at(c, A0, 0x8));
                 c.g[V1][0] = c.lw(at(c, A0, 0x10));
                 c.sdl(16, at(c, V0, 0x7));
-                c.sdr(16, (c.g[V0][0] as u32));
+                c.sdr(16, c.g[V0][0] as u32);
                 c.sdl(17, at(c, V0, 0xf));
                 c.sdr(17, at(c, V0, 0x8));
                 c.sw(at(c, V0, 0x10), c.g[V1][0]);
@@ -2212,9 +2207,9 @@ pub fn rider_base_render_attack_fx(c: &mut Cpu) {
                 c.sh(at(c, V1, 0x10), c.g[V0][0]);
                 c.g[A1][0] = c.lw(gpo(c, -0x854));
                 c.g[V1][0] = c.lw(at(c, A1, 0xe84));
-                c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                 c.g[V0][0] = c.g[V0][0] | 0xc;
-                c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+                c.sw(c.g[V1][0] as u32, c.g[V0][0]);
                 c.g[A0][0] = c.lw(at(c, A1, 0xe84));
                 c.g[V0][0] = c.lw(at(c, A0, 0x4));
                 c.g[V0][0] = c.g[V0][0] & c.g[A2][0];
@@ -2256,7 +2251,7 @@ pub fn rider_base_render_attack_fx(c: &mut Cpu) {
                 'l_2f16d0: loop {
                     c.cycles += 23;
                     c.g[A1][0] = c.g[S2][0];
-                    c.lwc1(0, (c.g[S0][0] as u32));
+                    c.lwc1(0, c.g[S0][0] as u32);
                     c.g[T1][0] = c.g[S1][0];
                     c.g[V1][0] = c.lw(at(c, V0, 0x10d8));
                     c.g[A2][0] = c.g[SP][0];
@@ -2267,7 +2262,7 @@ pub fn rider_base_render_attack_fx(c: &mut Cpu) {
                     c.swc1(0, stk(c, 0x4));
                     c.g[S0][0] = sx(at(c, S0, 0x4));
                     c.swc1(0, stk(c, 0));
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.sw(stk(c, 0x10), 0u64);
                     c.g[S2][0] = sx(at(c, S2, 0x10));
                     c.sw(stk(c, 0x14), 0u64);
@@ -2610,8 +2605,7 @@ pub(crate) mod rider_lights {
 }
 
 pub(crate) mod renderer {
-    pub(crate) use crate::game::fe::ovstatehud::renderer::CONTEXT_ID;
-    pub(crate) use crate::game::fe::ovstatehud::renderer::GP;
+
     pub(crate) use crate::game::fe::ovstatehud::renderer::STATE;
     pub(crate) use crate::game::fe::ovstatehud::renderer::VTABLE;
 }
@@ -10268,9 +10262,6 @@ pub fn wscript_fn_add_uv_scroll_modifier(c: &mut Cpu) {
     })
 }
 
-/// Frame arrays (256 floats each) relative to sp.
-pub(crate) const CSP_X: u32 = 0x000;
-
 // ---------------------------------------------------------------------------
 // StreamFile_StartNextRequest (0x3e0270, seg_2DCAE8.c)
 
@@ -13063,6 +13054,7 @@ pub(crate) mod sample_part_xf {
     pub const IDENTITY_XF: u32 = 0x0050_0000 - 0xdd0;
 
     /// The origin the root position is taken relative to (`0x500000 - 0xed0`).
+    #[cfg(test)]
     pub const ROOT_ORIGIN: u32 = 0x0050_0000 - 0xed0;
 
     // AnimDataBase: +8 clip table (0x14-byte clips), +0xc chunk descriptors.
@@ -14869,7 +14861,6 @@ pub(crate) const SFQR_START_NEXT_REQUEST: Callee = Callee {
 /// (at the urgent priority when the urgent flag is set). Returns the
 /// request's id.
 pub fn stream_file_queue_range(c: &mut Cpu) {
-    use sfqr::*;
     let frame = Frame { size: 0x60 };
     guest(c, |c| {
         c.cycles += 14;
@@ -16705,6 +16696,7 @@ pub(crate) const PARTICLE_CONTROL_WORLD: u32 = 0xce8;
 pub(crate) const PARTICLE_CONTROL_DEFAULTS: u32 = 0x004f_bc30;
 
 /// The static "no value" result (0x4d0000 - 0x6f68).
+#[cfg(test)]
 pub(crate) const PARTICLE_CONTROL_RESULT_NONE: u32 = 0x004c_9098;
 
 /// `WScriptResult WScriptFn_ParticleControl(int argc, WScriptArg* args)`
@@ -17365,8 +17357,7 @@ pub fn wscript_fn_start_object_loop(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::schedule;
+
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::fake_call;
@@ -17591,7 +17582,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
+
     use crate::difftest::fakes::LOG_UNWIND_AT;
     use crate::difftest::{elf_image, put_vec};
 
@@ -17922,15 +17913,10 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use crate::difftest::fakes::{ptr, vtable, LOG_RESULTS};
+
+    use crate::difftest::fakes::{vtable, LOG_RESULTS};
     use crate::difftest::{check_lohi, fresh, put_words};
 
-    pub(crate) use crate::game::fe::ovstatetrophy::tests::slot;
     pub(crate) use crate::game::fe::ovstatetrophy::tests::RET0;
     pub(crate) use crate::game::fe::ovstatetrophy::tests::RET1;
 
@@ -18308,15 +18294,8 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use crate::difftest::check_paths;
+
     pub(crate) use crate::game::fe::ovstatehud::tests::gpa;
-    use crate::game::visualfx::boardwakefx::tests::{gp_at, put_spray_slot};
 
     /// Centred, bottom and top alignment (align 0, positive, negative with
     /// the upper half set) over edge-case floats.
@@ -18906,15 +18885,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::Events;
+
     use crate::difftest::require_paths;
     use crate::difftest::SP as STACK_TOP;
     pub(crate) use crate::game::fe::ovstatehud::tests::obj;
@@ -19586,11 +19557,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
+
     pub(crate) use crate::game::visualfx::boardwakefx::tests::oc238_uf;
 
     /// WScriptFn_GetObjectSlot32: defaults initialised or not; 0..3 passed
@@ -20012,7 +19979,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
 
     /// `memcmp`: lengths 0..80, aligned or misaligned pointers, equal
     /// buffers or one differing byte anywhere (inside or past `n`).
@@ -20052,11 +20018,6 @@ pub(crate) mod tests {
             c.g[A2][0] = n as u64;
         });
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use crate::game::visualfx::renderstateman::tests::table_getter_setup;
 
     /// Stream file fixture: handle at DATA -> header at DATA+0x1000 (starting
     /// with the magic 'MRTS'), buffer DATA+0x2000..DATA+0x3000, chunk inside or outside it.
@@ -20516,12 +20477,8 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
+
     // (fakes imported above)
-    use super::*;
 
     /// StreamFile_ClassifyChunk: entry counts -1..5, chunk ids that match
     /// the first, a later or no entry (masks of all, some or no bits).
@@ -20986,15 +20943,8 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
+
     use crate::difftest::RA as RET_ADDR;
-    use crate::game::be::beintreward::tests::world;
-    use crate::game::bx::bxstring::tests::{alloc, heap};
-    use crate::game::bx::bxstring2::tests::be_library;
 
     /// A random RefPack stream: header (3- or 4-byte sizes, with or without
     /// the packed-size field), then every command form with random
@@ -21778,10 +21728,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
+
     use crate::difftest::fakes::{
         self as bow_fakes, covered as bow_covered, machine as bow_machine, FAKE as BOW_FAKE,
     };
@@ -22129,7 +22076,7 @@ pub(crate) mod tests {
                     return bow_fake(c, $addr);
                 }
                 let p = $prev.load(Ordering::Relaxed);
-                if p == 0 || p == $name as usize {
+                if p == 0 || p == $name as *const () as usize {
                     return $gen(c);
                 }
                 // SAFETY: `p` was read from the same slot (a `fn(&mut Cpu)`).
@@ -22138,7 +22085,6 @@ pub(crate) mod tests {
             }
         };
     }
-    pub(crate) use bow_gated;
 
     bow_gated!(
         bow_fake_sub_state,
@@ -22533,19 +22479,9 @@ pub(crate) mod tests {
             &quantize_stick_fixture,
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
+
     use crate::difftest::SP;
     use crate::game::animation::animmodel::tests::sample_setup;
-    use crate::game::scripter::ssxscriptengine::tests::{
-        alloc as uv_scroll_alloc, heap_init as uv_scroll_heap_init,
-    };
 
     // ------------------------------------------------------ Rider_StartWipeout
 
@@ -22610,7 +22546,6 @@ pub(crate) mod tests {
             }
         };
     }
-    pub(crate) use wipe_gated;
 
     wipe_gated!(
         wipe_fake_0010e098,
@@ -23872,12 +23807,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    use super::*;
-    pub(crate) use crate::game::sound::ssxaudio::ssx_audio_system_is_any_view_in_range;
 
     /// `WScriptFn_MakeDeadNode`: the static defaults initialised or not;
     /// -1..3 parameters (the first always sets slot 1, the dead-node mode;
@@ -24469,17 +24398,7 @@ pub(crate) mod tests {
 }
 
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
-    pub(crate) use crate::game::main::ssxapp::callee::NASH_CLASSIFY_EFFECTS;
-    pub(crate) use crate::game::main::ssxapp::callee::NASH_CLASSIFY_INSTANCES;
-    pub(crate) use crate::game::main::ssxapp::callee::NASH_CLASSIFY_PATCHES;
-    pub(crate) use crate::game::main::ssxapp::callee::NASH_COLLECT_EFFECTS;
-    pub(crate) use crate::game::main::ssxapp::callee::NASH_COLLECT_INSTANCES;
-    pub(crate) use crate::game::main::ssxapp::callee::NASH_COLLECT_PATCHES;
-    pub(crate) use crate::game::main::ssxapp::callee::NASH_CULL_NODE;
-    pub(crate) use crate::game::main::ssxapp::callee::NASH_EMPTY_HOOK;
-    pub(crate) use crate::game::main::ssxapp::callee::VU0_UPLOAD_MATRIX_PAIR;
+
     pub(crate) use crate::game::main::ssxapp::callee::WORLD_PAINTER_GET_SUN_AZIMUTH;
     pub(crate) use crate::game::main::ssxapp::callee::WORLD_PAINTER_GET_SUN_ELEVATION;
     pub(crate) use crate::game::main::ssxapp::callee::WORLD_PAINTER_GET_SUN_TEXTURE;
@@ -24487,7 +24406,6 @@ pub(crate) mod callee {
 
 pub(crate) mod table_callee {
     pub(crate) use crate::game::main::ssxapp::table_callee::MATH_SIN_COS;
-    pub(crate) use crate::game::main::ssxapp::table_callee::OCCLUSION_MAN_BUILD_VISIBLE;
 }
 
 pub(crate) mod lens {

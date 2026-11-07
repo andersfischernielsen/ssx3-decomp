@@ -2,12 +2,9 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::abi::r32;
 use crate::abi::ret;
 use crate::call;
-use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::back_edge_unwinds;
@@ -18,17 +15,10 @@ pub(crate) use crate::game::lib::gcc::frame_ld;
 pub(crate) use crate::game::lib::gcc::frame_sd;
 pub(crate) use crate::game::lib::gcc::MULDF3;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -61,18 +51,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::ai::computer::callee::EA_MEM_SET;
-    pub(crate) use crate::game::ai::computer::callee::GET_SUB_STATE_2 as GET_SUB_STATE;
-    pub(crate) use crate::game::ai::computer::callee::RUBBER_BAND;
-    pub(crate) use crate::game::ai::computer::callee::SET_ANIM_TIME_SCALE;
-    pub(crate) use crate::game::ai::computer::callee::THINK_BOARD_PRESS;
-    pub(crate) use crate::game::ai::computer::callee::THINK_CRUISE;
-    pub(crate) use crate::game::ai::computer::callee::THINK_GATE;
-    pub(crate) use crate::game::ai::computer::callee::THINK_NATURAL_AIR;
-    pub(crate) use crate::game::ai::computer::callee::THINK_PREWIND;
-    pub(crate) use crate::game::ai::computer::callee::THINK_RAILSLIDE;
-    pub(crate) use crate::game::ai::computer::callee::THINK_SPIN;
-    pub(crate) use crate::game::ai::computer::callee::THINK_WIPEOUT;
+
     pub(crate) use crate::game::ai::computer::callee::VFIPRINTF_R;
     pub(crate) use crate::game::ai::computer::callee::VFPRINTF_R;
 
@@ -696,6 +675,7 @@ pub fn mprec_log10(c: &mut Cpu) {
 
 /// The conversion table the original indexes with the specifier: word
 /// `c - 'E'` is the address of the handler block (0x450000 + 0x6a30).
+#[cfg(test)]
 pub(crate) const SPEC_TABLE: u32 = 0x0045_6a30;
 
 pub(crate) const SPEC_FIRST: u32 = 0x45;
@@ -1603,7 +1583,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 0x0041_caf4 => {
                     c.cycles += 2;
                     let t = c.g[V0][0] != c.g[S2][0];
-                    c.g[S7][0] = sx((c.g[S7][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[S7][0] = sx((c.g[S7][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     if t { if back_edge_unwinds(c, 0x0041_cac8) { return Ok(()); } pc = 0x0041_cac8; continue; }
                     pc = 0x0041_cafc; continue;
                 }
@@ -1616,7 +1596,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 // n = fmt - cp, the literal run before the conversion.
                 0x0041_cb00 => {
                     c.cycles += 3;
-                    c.g[S2][0] = sx((c.g[S7][0] as u32).wrapping_sub((c.g[S4][0] as u32)));
+                    c.g[S2][0] = sx((c.g[S7][0] as u32).wrapping_sub(c.g[S4][0] as u32));
                     let t = c.g[S2][0] == 0u64;
                     if t { pc = 0x0041_cba8; continue; }
                     pc = 0x0041_cb0c; continue;
@@ -1640,15 +1620,15 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 }
                 0x0041_cb2c => {
                     c.cycles += 10;
-                    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[RA][0] = sx(0x0041cb38);
                     c.g[A2][0] = c.g[S2][0];
                     callee::MEMCPY.call(c, 0x0041_cb38)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S2][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub((c.g[S2][0] as u32)));
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[S2][0] as u32));
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     let t = true;
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     if t { pc = 0x0041_cb9c; continue; }
@@ -1656,16 +1636,16 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 }
                 0x0041_cb54 => {
                     c.cycles += 9;
-                    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[RA][0] = sx(0x0041cb60);
                     c.g[A1][0] = c.g[S4][0];
                     callee::MEMCPY.call(c, 0x0041_cb60)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     if t { pc = 0x0041_cb9c; continue; }
                     pc = 0x0041_cb78; continue;
                 }
@@ -1695,7 +1675,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 0x0041_cb9c => {
                     c.cycles += 3;
                     c.g[V0][0] = c.lw(sp + WRITTEN);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
                     c.sw(sp + WRITTEN, c.g[V0][0]);
                     pc = 0x0041_cba8; continue;
                 }
@@ -1738,7 +1718,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 // Read the conversion character.
                 0x0041_cbe4 => {
                     c.cycles += 1;
-                    c.g[S5][0] = c.lb((c.g[S7][0] as u32));
+                    c.g[S5][0] = c.lb(c.g[S7][0] as u32);
                     pc = 0x0041_cbe8; continue;
                 }
                 0x0041_cbe8 => {
@@ -1761,8 +1741,8 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x59e0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
                     pc = t; continue;
                 }
@@ -1770,7 +1750,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 0x0041_cc14 => {
                     c.cycles += 3;
                     c.g[V0][0] = c.lb(sp + SIGN);
-                    if c.g[V0][0] != 0u64 { c.g[S5][0] = c.lb((c.g[S7][0] as u32)); if back_edge_unwinds(c, 0x0041_cbe8) { return Ok(()); } pc = 0x0041_cbe8; continue; }
+                    if c.g[V0][0] != 0u64 { c.g[S5][0] = c.lb(c.g[S7][0] as u32); if back_edge_unwinds(c, 0x0041_cbe8) { return Ok(()); } pc = 0x0041_cbe8; continue; }
                     pc = 0x0041_cc20; continue;
                 }
                 0x0041_cc20 => {
@@ -1810,7 +1790,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 // A negative width means left justification.
                 0x0041_cc4c => {
                     c.cycles += 2;
-                    c.g[V1][0] = sx(0u32.wrapping_sub((c.g[V1][0] as u32)));
+                    c.g[V1][0] = sx(0u32.wrapping_sub(c.g[V1][0] as u32));
                     c.sw(sp + WIDTH, c.g[V1][0]);
                     pc = 0x0041_cc54; continue;
                 }
@@ -1834,7 +1814,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 // '.'  precision: '*' from the argument, or decimal digits.
                 0x0041_cc68 => {
                     c.cycles += 4;
-                    c.g[S5][0] = c.lb((c.g[S7][0] as u32));
+                    c.g[S5][0] = c.lb(c.g[S7][0] as u32);
                     c.g[V0][0] = 0x2a;
                     let t = c.g[S5][0] != c.g[V0][0];
                     c.g[S7][0] = sx((c.g[S7][0] as u32).wrapping_add(0x1));
@@ -1872,8 +1852,8 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.cycles += 8;
                     c.mult(0, 2, 16, 3);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x30));
-                    c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S5][0] as u32)));
-                    c.g[S5][0] = c.lb((c.g[S7][0] as u32));
+                    c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S5][0] as u32));
+                    c.g[S5][0] = c.lb(c.g[S7][0] as u32);
                     c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x30));
                     c.g[V0][0] = (c.g[V0][0] < 0xau64) as u64;
                     let t = c.g[V0][0] != 0u64;
@@ -1910,8 +1890,8 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.cycles += 8;
                     c.mult(0, 2, 16, 3);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x30));
-                    c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S5][0] as u32)));
-                    c.g[S5][0] = c.lb((c.g[S7][0] as u32));
+                    c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S5][0] as u32));
+                    c.g[S5][0] = c.lb(c.g[S7][0] as u32);
                     c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x30));
                     c.g[V0][0] = (c.g[V0][0] < 0xau64) as u64;
                     let t = c.g[V0][0] != 0u64;
@@ -1937,7 +1917,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 // 'l'  long, or 'll' for long long.
                 0x0041_cd20 => {
                     c.cycles += 4;
-                    c.g[V1][0] = c.lb((c.g[S7][0] as u32));
+                    c.g[V1][0] = c.lb(c.g[S7][0] as u32);
                     c.g[V0][0] = 0x6c;
                     if c.g[V1][0] != c.g[V0][0] { c.g[S2][0] = c.g[S2][0] | LONGINT; if back_edge_unwinds(c, 0x0041_cbe4) { return Ok(()); } pc = 0x0041_cbe4; continue; }
                     pc = 0x0041_cd30; continue;
@@ -2056,7 +2036,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_sub(0x8));
                     let t = true;
-                    c.sd((c.g[V0][0] as u32), c.g[A1][0]);
+                    c.sd(c.g[V0][0] as u32, c.g[A1][0]);
                     if t { if back_edge_unwinds(c, 0x0041_cac0) { return Ok(()); } pc = 0x0041_cac0; continue; }
                     pc = 0x0041_cdd8; continue;
                 }
@@ -2073,7 +2053,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_sub(0x8));
                     let t = true;
-                    c.sd((c.g[V0][0] as u32), c.g[A2][0]);
+                    c.sd(c.g[V0][0] as u32, c.g[A2][0]);
                     if t { if back_edge_unwinds(c, 0x0041_cac0) { return Ok(()); } pc = 0x0041_cac0; continue; }
                     pc = 0x0041_cdf4; continue;
                 }
@@ -2090,7 +2070,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_sub(0x8));
                     let t = true;
-                    c.sh((c.g[V0][0] as u32), c.g[V1][0]);
+                    c.sh(c.g[V0][0] as u32, c.g[V1][0]);
                     if t { if back_edge_unwinds(c, 0x0041_cac0) { return Ok(()); } pc = 0x0041_cac0; continue; }
                     pc = 0x0041_ce10; continue;
                 }
@@ -2100,7 +2080,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[A0][0] = c.lw(sp + WRITTEN);
                     c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_sub(0x8));
                     let t = true;
-                    c.sw((c.g[V0][0] as u32), c.g[A0][0]);
+                    c.sw(c.g[V0][0] as u32, c.g[A0][0]);
                     if t { if back_edge_unwinds(c, 0x0041_cac0) { return Ok(()); } pc = 0x0041_cac0; continue; }
                     pc = 0x0041_ce24; continue;
                 }
@@ -2207,7 +2187,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[A2][0] = c.g[FP][0];
                     callee::MEMCHR.call(c, 0x0041_ceb4)?;
                     let t = c.g[V0][0] == 0u64;
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub((c.g[S4][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[S4][0] as u32));
                     if t { pc = 0x0041_cec8; continue; }
                     pc = 0x0041_cebc; continue;
                 }
@@ -2465,7 +2445,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[S0][0] = c.g[S0][0] >> 3;
                     c.g[V0][0] = c.g[V0][0] & 0xff;
                     let t = c.g[S0][0] != 0u64;
-                    c.sb((c.g[S4][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[S4][0] as u32, c.g[V0][0]);
                     if t { if back_edge_unwinds(c, 0x0041_d000) { return Ok(()); } pc = 0x0041_d000; continue; }
                     pc = 0x0041_d01c; continue;
                 }
@@ -2487,7 +2467,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x1));
                     let t = true;
-                    c.sb((c.g[S4][0] as u32), c.g[V1][0]);
+                    c.sb(c.g[S4][0] as u32, c.g[V1][0]);
                     if t { pc = 0x0041_d0f8; continue; }
                     pc = 0x0041_d038; continue;
                 }
@@ -2517,7 +2497,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0] & 0xff;
                     c.g[A1][0] = 0xa;
                     c.g[RA][0] = sx(0x0041d074);
-                    c.sb((c.g[S4][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[S4][0] as u32, c.g[V0][0]);
                     callee::UDIVDI3.call(c, 0x0041_d074)?;
                     c.g[S0][0] = c.g[V0][0];
                     c.g[V0][0] = (c.g[S0][0] < 0xau64) as u64;
@@ -2533,7 +2513,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x1));
                     c.g[V0][0] = c.g[V0][0] & 0xff;
                     let t = true;
-                    c.sb((c.g[S4][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[S4][0] as u32, c.g[V0][0]);
                     if t { pc = 0x0041_d0f4; continue; }
                     pc = 0x0041_d098; continue;
                 }
@@ -2552,11 +2532,11 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0] << 32;
                     c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
                     c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x1));
-                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[S0][0] = c.g[S0][0] >> 4;
-                    c.g[V1][0] = c.lbu((c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
                     let t = c.g[S0][0] != 0u64;
-                    c.sb((c.g[S4][0] as u32), c.g[V1][0]);
+                    c.sb(c.g[S4][0] as u32, c.g[V1][0]);
                     if t { if back_edge_unwinds(c, 0x0041_d0a8) { return Ok(()); } pc = 0x0041_d0a8; continue; }
                     pc = 0x0041_d0d0; continue;
                 }
@@ -2621,7 +2601,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 }
                 0x0041_d128 => {
                     c.cycles += 3;
-                    c.g[V1][0] = sx(sp.wrapping_sub((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx(sp.wrapping_sub(c.g[V0][0] as u32));
                     let t = true;
                     c.sw(sp + LEN, c.g[V1][0]);
                     if t { pc = 0x0041_d158; continue; }
@@ -2675,7 +2655,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.cycles += 4;
                     c.g[A1][0] = c.lw(sp + PAD);
                     c.g[V0][0] = c.g[S2][0] & HASHX;
-                    c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.sw(sp + PAD, c.g[A1][0]);
                     pc = 0x0041_d190; continue;
                 }
@@ -2691,7 +2671,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[A2][0] = c.lw(sp + WIDTH);
                     c.g[V0][0] = c.lw(sp + PAD);
-                    c.g[S0][0] = sx((c.g[A2][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[V0][0] as u32));
                     let t = (c.g[S0][0] as i64) <= 0;
                     c.g[V0][0] = ((c.g[S0][0] as i64) < 17i64) as u64;
                     if t { pc = 0x0041_d2fc; continue; }
@@ -2720,26 +2700,26 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.cycles += 4;
                     c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = ((c.g[A2][0] as i64) < 17i64) as u64;
-                    if c.g[V0][0] != 0u64 { c.g[A0][0] = c.lw((c.g[S1][0] as u32)); pc = 0x0041_d218; continue; }
+                    if c.g[V0][0] != 0u64 { c.g[A0][0] = c.lw(c.g[S1][0] as u32); pc = 0x0041_d218; continue; }
                     pc = 0x0041_d1d4; continue;
                 }
                 0x0041_d1d4 => {
                     c.cycles += 17;
-                    c.g[V0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[A2][0] = sx((c.g[S6][0] as u32).wrapping_sub(0x5a60));
                     c.ldl(3, (c.g[A2][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[A2][0] as u32));
+                    c.ldr(3, c.g[A2][0] as u32);
                     c.ldl(4, (c.g[A2][0] as u32).wrapping_add(0xf));
                     c.ldr(4, (c.g[A2][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[V0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[V0][0] as u32));
+                    c.sdr(3, c.g[V0][0] as u32);
                     c.sdl(4, (c.g[V0][0] as u32).wrapping_add(0xf));
                     c.sdr(4, (c.g[V0][0] as u32).wrapping_add(0x8));
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     let t = true;
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     if t { pc = 0x0041_d25c; continue; }
@@ -2751,12 +2731,12 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0041d220);
                     c.g[A1][0] = sx((c.g[S6][0] as u32).wrapping_sub(0x5a60));
                     callee::MEMCPY.call(c, 0x0041_d220)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     if t { pc = 0x0041_d25c; continue; }
                     pc = 0x0041_d238; continue;
                 }
@@ -2806,15 +2786,15 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 }
                 0x0041_d28c => {
                     c.cycles += 10;
-                    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[RA][0] = sx(0x0041d298);
                     c.g[A2][0] = c.g[S0][0];
                     callee::MEMCPY.call(c, 0x0041_d298)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub((c.g[S0][0] as u32)));
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[S0][0] as u32));
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     let t = true;
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     if t { pc = 0x0041_d2fc; continue; }
@@ -2822,16 +2802,16 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 }
                 0x0041_d2b4 => {
                     c.cycles += 9;
-                    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[RA][0] = sx(0x0041d2c0);
                     c.g[A1][0] = sx((c.g[S6][0] as u32).wrapping_sub(0x5a60));
                     callee::MEMCPY.call(c, 0x0041_d2c0)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     if t { pc = 0x0041_d2fc; continue; }
                     pc = 0x0041_d2d8; continue;
                 }
@@ -2880,14 +2860,14 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.cycles += 4;
                     c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = ((c.g[A2][0] as i64) < 2i64) as u64;
-                    if c.g[V0][0] != 0u64 { c.g[A0][0] = c.lw((c.g[S1][0] as u32)); pc = 0x0041_d344; continue; }
+                    if c.g[V0][0] != 0u64 { c.g[A0][0] = c.lw(c.g[S1][0] as u32); pc = 0x0041_d344; continue; }
                     pc = 0x0041_d328; continue;
                 }
                 0x0041_d328 => {
                     c.cycles += 7;
-                    c.g[V0][0] = c.lw((c.g[S1][0] as u32));
-                    c.sb((c.g[V0][0] as u32), c.g[V1][0]);
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                    c.sb(c.g[V0][0] as u32, c.g[V1][0]);
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
                     let t = true;
@@ -2948,17 +2928,17 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.cycles += 4;
                     c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = ((c.g[A2][0] as i64) < 3i64) as u64;
-                    if c.g[V0][0] != 0u64 { c.g[A0][0] = c.lw((c.g[S1][0] as u32)); pc = 0x0041_d3d8; continue; }
+                    if c.g[V0][0] != 0u64 { c.g[A0][0] = c.lw(c.g[S1][0] as u32); pc = 0x0041_d3d8; continue; }
                     pc = 0x0041_d3a8; continue;
                 }
                 0x0041_d3a8 => {
                     c.cycles += 9;
-                    c.g[V0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V1][0] = c.lb(sp + PREFIXBUF);
                     c.g[A0][0] = c.lb(sp + PREFIXBUF + 1);
-                    c.sb((c.g[V0][0] as u32), c.g[V1][0]);
+                    c.sb(c.g[V0][0] as u32, c.g[V1][0]);
                     c.sb((c.g[V0][0] as u32).wrapping_add(0x1), c.g[A0][0]);
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2));
@@ -2966,7 +2946,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 }
                 0x0041_d3cc => {
                     c.cycles += 3;
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     let t = true;
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     if t { pc = 0x0041_d424; continue; }
@@ -2981,12 +2961,12 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.cycles += 8;
                     c.g[RA][0] = sx(0x0041d3e4);
                     callee::MEMCPY.call(c, 0x0041_d3e4)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     if t { pc = 0x0041_d424; continue; }
                     pc = 0x0041_d3fc; continue;
                 }
@@ -3029,7 +3009,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[V0][0] = c.lw(sp + WIDTH);
                     c.g[V1][0] = c.lw(sp + PAD);
-                    c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_sub((c.g[V1][0] as u32)));
+                    c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
                     let t = (c.g[S0][0] as i64) <= 0;
                     c.g[V0][0] = ((c.g[S0][0] as i64) < 17i64) as u64;
                     if t { pc = 0x0041_d594; continue; }
@@ -3059,26 +3039,26 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.cycles += 4;
                     c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = ((c.g[A2][0] as i64) < 17i64) as u64;
-                    if c.g[V0][0] != 0u64 { c.g[A0][0] = c.lw((c.g[S1][0] as u32)); pc = 0x0041_d4b8; continue; }
+                    if c.g[V0][0] != 0u64 { c.g[A0][0] = c.lw(c.g[S1][0] as u32); pc = 0x0041_d4b8; continue; }
                     pc = 0x0041_d474; continue;
                 }
                 0x0041_d474 => {
                     c.cycles += 17;
-                    c.g[V0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x5a50));
                     c.ldl(4, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(4, (c.g[V1][0] as u32));
+                    c.ldr(4, c.g[V1][0] as u32);
                     c.ldl(5, (c.g[V1][0] as u32).wrapping_add(0xf));
                     c.ldr(5, (c.g[V1][0] as u32).wrapping_add(0x8));
                     c.sdl(4, (c.g[V0][0] as u32).wrapping_add(0x7));
-                    c.sdr(4, (c.g[V0][0] as u32));
+                    c.sdr(4, c.g[V0][0] as u32);
                     c.sdl(5, (c.g[V0][0] as u32).wrapping_add(0xf));
                     c.sdr(5, (c.g[V0][0] as u32).wrapping_add(0x8));
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     let t = true;
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     if t { pc = 0x0041_d4f4; continue; }
@@ -3089,12 +3069,12 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0041d4c0);
                     c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x5a50));
                     callee::MEMCPY.call(c, 0x0041_d4c0)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     if t { pc = 0x0041_d4f4; continue; }
                     pc = 0x0041_d4d8; continue;
                 }
@@ -3139,15 +3119,15 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 }
                 0x0041_d524 => {
                     c.cycles += 10;
-                    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[RA][0] = sx(0x0041d530);
                     c.g[A2][0] = c.g[S0][0];
                     callee::MEMCPY.call(c, 0x0041_d530)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub((c.g[S0][0] as u32)));
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[S0][0] as u32));
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     let t = true;
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     if t { pc = 0x0041_d594; continue; }
@@ -3155,16 +3135,16 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 }
                 0x0041_d54c => {
                     c.cycles += 9;
-                    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[RA][0] = sx(0x0041d558);
                     c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x5a50));
                     callee::MEMCPY.call(c, 0x0041_d558)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     if t { pc = 0x0041_d594; continue; }
                     pc = 0x0041_d570; continue;
                 }
@@ -3198,7 +3178,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 0x0041_d598 => {
                     c.cycles += 4;
                     c.g[A0][0] = c.lw(sp + PREC);
-                    c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
                     let t = (c.g[S0][0] as i64) <= 0;
                     c.g[V0][0] = ((c.g[S0][0] as i64) < 17i64) as u64;
                     if t { pc = 0x0041_d6f4; continue; }
@@ -3228,26 +3208,26 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.cycles += 4;
                     c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = ((c.g[A2][0] as i64) < 17i64) as u64;
-                    if c.g[V0][0] != 0u64 { c.g[A0][0] = c.lw((c.g[S1][0] as u32)); pc = 0x0041_d618; continue; }
+                    if c.g[V0][0] != 0u64 { c.g[A0][0] = c.lw(c.g[S1][0] as u32); pc = 0x0041_d618; continue; }
                     pc = 0x0041_d5d4; continue;
                 }
                 0x0041_d5d4 => {
                     c.cycles += 17;
-                    c.g[V0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x5a50));
                     c.ldl(5, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.ldr(5, (c.g[A0][0] as u32));
+                    c.ldr(5, c.g[A0][0] as u32);
                     c.ldl(6, (c.g[A0][0] as u32).wrapping_add(0xf));
                     c.ldr(6, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.sdl(5, (c.g[V0][0] as u32).wrapping_add(0x7));
-                    c.sdr(5, (c.g[V0][0] as u32));
+                    c.sdr(5, c.g[V0][0] as u32);
                     c.sdl(6, (c.g[V0][0] as u32).wrapping_add(0xf));
                     c.sdr(6, (c.g[V0][0] as u32).wrapping_add(0x8));
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     let t = true;
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     if t { pc = 0x0041_d654; continue; }
@@ -3258,12 +3238,12 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0041d620);
                     c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x5a50));
                     callee::MEMCPY.call(c, 0x0041_d620)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     if t { pc = 0x0041_d654; continue; }
                     pc = 0x0041_d638; continue;
                 }
@@ -3307,15 +3287,15 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 }
                 0x0041_d684 => {
                     c.cycles += 10;
-                    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[RA][0] = sx(0x0041d690);
                     c.g[A2][0] = c.g[S0][0];
                     callee::MEMCPY.call(c, 0x0041_d690)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub((c.g[S0][0] as u32)));
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[S0][0] as u32));
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     let t = true;
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     if t { pc = 0x0041_d6f4; continue; }
@@ -3323,16 +3303,16 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 }
                 0x0041_d6ac => {
                     c.cycles += 9;
-                    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[RA][0] = sx(0x0041d6b8);
                     c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x5a50));
                     callee::MEMCPY.call(c, 0x0041_d6b8)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     if t { pc = 0x0041_d6f4; continue; }
                     pc = 0x0041_d6d0; continue;
                 }
@@ -3371,7 +3351,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V1][0] as i64)) as u64;
                     let t = c.g[V0][0] == 0u64;
-                    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
                     if t { pc = 0x0041_d73c; continue; }
                     pc = 0x0041_d714; continue;
                 }
@@ -3381,11 +3361,11 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[A1][0] = c.g[S4][0];
                     callee::MEMCPY.call(c, 0x0041_d71c)?;
                     c.g[A0][0] = c.lw(sp + LEN);
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub((c.g[A0][0] as u32)));
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     let t = true;
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     if t { pc = 0x0041_d788; continue; }
@@ -3397,12 +3377,12 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0041d748);
                     c.g[A1][0] = c.g[S4][0];
                     callee::MEMCPY.call(c, 0x0041_d748)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     if t { pc = 0x0041_d788; continue; }
                     pc = 0x0041_d760; continue;
                 }
@@ -3439,7 +3419,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 0x0041_d794 => {
                     c.cycles += 4;
                     c.g[V0][0] = c.lw(sp + PAD);
-                    c.g[S0][0] = sx((c.g[A2][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[V0][0] as u32));
                     let t = (c.g[S0][0] as i64) <= 0;
                     c.g[V0][0] = ((c.g[S0][0] as i64) < 17i64) as u64;
                     if t { pc = 0x0041_d8f4; continue; }
@@ -3469,26 +3449,26 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.cycles += 4;
                     c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = ((c.g[A2][0] as i64) < 17i64) as u64;
-                    if c.g[V0][0] != 0u64 { c.g[A0][0] = c.lw((c.g[S1][0] as u32)); pc = 0x0041_d818; continue; }
+                    if c.g[V0][0] != 0u64 { c.g[A0][0] = c.lw(c.g[S1][0] as u32); pc = 0x0041_d818; continue; }
                     pc = 0x0041_d7d4; continue;
                 }
                 0x0041_d7d4 => {
                     c.cycles += 17;
-                    c.g[V0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[A2][0] = sx((c.g[S6][0] as u32).wrapping_sub(0x5a60));
                     c.ldl(3, (c.g[A2][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[A2][0] as u32));
+                    c.ldr(3, c.g[A2][0] as u32);
                     c.ldl(4, (c.g[A2][0] as u32).wrapping_add(0xf));
                     c.ldr(4, (c.g[A2][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[V0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[V0][0] as u32));
+                    c.sdr(3, c.g[V0][0] as u32);
                     c.sdl(4, (c.g[V0][0] as u32).wrapping_add(0xf));
                     c.sdr(4, (c.g[V0][0] as u32).wrapping_add(0x8));
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     let t = true;
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     if t { pc = 0x0041_d854; continue; }
@@ -3499,12 +3479,12 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0041d820);
                     c.g[A1][0] = sx((c.g[S6][0] as u32).wrapping_sub(0x5a60));
                     callee::MEMCPY.call(c, 0x0041_d820)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     if t { pc = 0x0041_d854; continue; }
                     pc = 0x0041_d838; continue;
                 }
@@ -3548,15 +3528,15 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 }
                 0x0041_d884 => {
                     c.cycles += 10;
-                    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[RA][0] = sx(0x0041d890);
                     c.g[A2][0] = c.g[S0][0];
                     callee::MEMCPY.call(c, 0x0041_d890)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub((c.g[S0][0] as u32)));
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[S0][0] as u32));
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     let t = true;
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     if t { pc = 0x0041_d8f4; continue; }
@@ -3564,16 +3544,16 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                 }
                 0x0041_d8ac => {
                     c.cycles += 9;
-                    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[RA][0] = sx(0x0041d8b8);
                     c.g[A1][0] = sx((c.g[S6][0] as u32).wrapping_sub(0x5a60));
                     callee::MEMCPY.call(c, 0x0041_d8b8)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     if t { pc = 0x0041_d8f4; continue; }
                     pc = 0x0041_d8d0; continue;
                 }
@@ -3634,7 +3614,7 @@ pub fn vfiprintf_r(c: &mut Cpu) {
                     c.g[A1][0] = c.lw(sp + WRITTEN);
                     c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
                     if c.g[V0][0] == 0 { c.g[A0][0] = c.g[V1][0]; }
-                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     let t = true;
                     c.sw(sp + WRITTEN, c.g[A1][0]);
                     if t { if back_edge_unwinds(c, 0x0041_cac0) { return Ok(()); } pc = 0x0041_cac0; continue; }
@@ -4010,11 +3990,7 @@ pub(crate) mod tests {
     use crate::difftest::events::Events;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fill;
-    use crate::difftest::put_vec;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
     use crate::difftest::seed_count;
     use crate::difftest::Rng;
@@ -4584,7 +4560,6 @@ pub(crate) mod tests {
             assert!(r.lohi.is_empty(), "seed {seed} (LO/HI): {:#?}", r.lohi);
         }
     }
-    use super::*;
 
     // -- 0x00411cd8 _fpadd_parts_d --------------------------------------------
 

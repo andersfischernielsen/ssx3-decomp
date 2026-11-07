@@ -29,7 +29,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 /// Direct/indirect call targets used by this package.
 mod callee {
     use super::Callee;
-    use ssx3_ee::{s08, s13, s14};
+    use ssx3_ee::{s13, s14};
 
     pub const SNDSTRM_QUEUE_REQUEST: Callee = Callee {
         addr: 0x003b_76e8,
@@ -70,10 +70,6 @@ mod callee {
     pub const EAFILE_CD_READ: Callee = Callee {
         addr: 0x003e_4648,
         f: s14::EAFile_CdRead,
-    };
-    pub const PATH_PLAT_GET_TIME_MS: Callee = Callee {
-        addr: 0x002a_f370,
-        f: s08::PATH_PlatGetTimeMs,
     };
 }
 

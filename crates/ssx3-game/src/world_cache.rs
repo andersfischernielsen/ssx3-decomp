@@ -159,35 +159,6 @@ mod callee {
         addr: 0x003a_a028,
         f: ee::s13::f_003aa028,
     };
-    pub const STREAMER_POINT_BOX_DISTANCE: Callee = Callee {
-        addr: 0x003a_9e50,
-        f: ee::s13::cWorldCache_PointBoxDistance,
-    };
-    pub const STREAMER_IS_HULL_RESIDENT: Callee = Callee {
-        addr: 0x003a_8618,
-        f: ee::s13::cWorldCache_IsHullResident,
-    };
-    pub const STREAMER_REQUEST_HULL: Callee = Callee {
-        addr: 0x003a_8448,
-        f: ee::s13::cWorldCache_RequestHull,
-    };
-
-    pub const RIDER_GET_MAIN_STATE: Callee = Callee {
-        addr: 0x0011_fe98,
-        f: ee::s00::Rider_GetMainState,
-    };
-    pub const RIDER_GET_SUB_STATE: Callee = Callee {
-        addr: 0x0011_fee8,
-        f: ee::s00::Rider_GetSubState,
-    };
-    pub const ANIM_SEQ_FIRE_TRIGGERS_AT_TIME: Callee = Callee {
-        addr: 0x0031_3938,
-        f: ee::s10::AnimSequence_FireTriggersAtTime,
-    };
-    pub const ANIM_SEQ_FIRE_END_TRIGGERS: Callee = Callee {
-        addr: 0x0031_39a8,
-        f: ee::s10::AnimSequence_FireEndTriggers,
-    };
 
     pub const MULTI_SPLINE_MODIFIER_UPDATE_NODES: Callee = Callee {
         addr: 0x0035_ac20,
@@ -315,13 +286,9 @@ pub fn streamer_get_view_clearance(c: &mut Cpu) {
 /// two bounding boxes, the range, the clearance found and its minimum.
 mod view {
     pub const ACTIVE: u32 = 0x240;
-    pub const POSITION: u32 = 0x250;
-    pub const BOX_MIN: u32 = 0x260;
-    pub const BOX_MAX: u32 = 0x270;
     pub const RANGE: u32 = 0x280;
     pub const CLEARANCE: u32 = 0x284;
     pub const MINIMUM: u32 = 0x288;
-    pub const VIEW_BYTES: u32 = 0x50;
 }
 
 /// `void cWorldCache_StreamerUpdateView(streamer, view)` (0x3a9d60):

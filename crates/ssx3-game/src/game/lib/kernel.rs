@@ -2,30 +2,16 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::abi::r32;
-use crate::abi::ret;
-use crate::call;
-use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -484,25 +470,17 @@ pub fn sync_dcache_2(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::elf_image;
+
     use crate::difftest::events::check_events;
     use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::fill;
-    use crate::difftest::put_vec;
-    use crate::difftest::put_words;
+
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
-    use crate::difftest::SP as STACK;
+
     pub(crate) use crate::game::lib::sif::tests::syscall_test as syscall_test_2;
     pub(crate) use crate::game::world::wscriptcache::tests::SEEDS as SEEDS_2;
 
@@ -698,7 +676,6 @@ pub(crate) mod tests {
     fn poll_sema_matches() {
         syscall_test_2(ssx3_ee::s15::f_00423df0__generated, poll_sema, 37);
     }
-    use super::*;
 
     /// Data-cache invalidate: interrupts enabled or not on entry (Status
     /// bit 16, with other Status bits random), random ranges.
@@ -726,9 +703,6 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::SP;
 
     /// SyncDCache: interrupts enabled or not on entry (Status bit 16, other
     /// Status bits random), random ranges; the real DIntr/_SyncDCache/EIntr.

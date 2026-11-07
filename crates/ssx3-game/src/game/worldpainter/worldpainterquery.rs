@@ -2,19 +2,12 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::call::call_ptr;
-use crate::call::guest;
-use crate::call::Callee;
-use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::dirtysock::tags2::gp_3 as gp;
 pub(crate) use crate::game::fe::festaterewards2::r;
 pub(crate) use crate::game::fe::festaterewards2::Ops;
-use crate::guest::Addr;
-use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
@@ -59,11 +52,9 @@ pub fn world_painter_query_reset_list(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::put_vec;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     pub(crate) use crate::game::fe::festaterewards2::tests::belib;

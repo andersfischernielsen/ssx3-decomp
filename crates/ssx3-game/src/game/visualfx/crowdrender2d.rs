@@ -4,23 +4,14 @@
 use crate::abi;
 use crate::abi::r32;
 use crate::abi::ret;
-use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 use crate::guest::Addr;
-use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -566,7 +557,7 @@ pub(crate) mod tests {
             assert_eq!(steps, 20, "{hz} Hz");
         }
     }
-    use super::*;
+
     use crate::difftest::fakes::machine;
 
     /// `cCrowdAnim2D_StepFrame`: modes 0..4 and out of range, one-frame and

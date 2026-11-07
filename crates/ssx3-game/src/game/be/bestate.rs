@@ -1,25 +1,21 @@
 //! `src/be/bestate.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
-use crate::abi;
-use crate::abi::r32;
-use crate::call;
-use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+#[cfg(test)]
 pub(crate) use crate::game::be::bedbreward::POST_RACE_GP;
+#[cfg(test)]
 pub(crate) use crate::game::be::bedbreward::PRE_RACE_GP;
 pub(crate) use crate::game::be::bedbreward::RACE_GP;
-pub(crate) use crate::game::be::beintreward::alloc_named;
-pub(crate) use crate::game::be::beintreward::EA_MEM_ALLOC_NAMED;
+#[cfg(test)]
 pub(crate) use crate::game::be::beintreward::REWARD_GP;
 pub(crate) use crate::game::be::beprepoststate::get_instance;
 pub(crate) use crate::game::be::beprepoststate::Arg;
-pub(crate) use crate::game::sound::asyncsys::lw;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -286,20 +282,15 @@ pub fn be_race_get_interface(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::fakes::covered;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::put_vec;
+
     use crate::difftest::put_words;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
+
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     pub(crate) use crate::game::be::beintnetwork::tests::alloc_setup;
-    pub(crate) use crate::game::be::beintnetwork::tests::MEM_MUTEX;
+
     pub(crate) use crate::game::be::beintreward::be_reward_int_get_instance;
     pub(crate) use crate::game::be::beprepoststate::be_post_race_get_instance;
     pub(crate) use crate::game::be::beprepoststate::be_pre_race_get_instance;

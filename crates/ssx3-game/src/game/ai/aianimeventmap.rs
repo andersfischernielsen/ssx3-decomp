@@ -1,17 +1,10 @@
 //! `src/ai/aianimeventmap.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
-use crate::abi;
-use crate::abi::r32;
-use crate::abi::ret;
 use crate::call;
-use crate::call::call_ptr;
 use crate::call::guest;
-use crate::call::sp;
 use crate::call::Callee;
-use crate::call::Flow;
 use crate::call::Frame;
-use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
@@ -375,11 +368,9 @@ pub fn ai_anim_event_map_pick_anim(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::check_lohi;
-    use crate::difftest::fakes::covered;
+
     use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
+
     use crate::difftest::fakes::LOG_RESULTS;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
@@ -414,7 +405,7 @@ pub(crate) mod tests {
                     let v = if (i + seed) % 7 == 0 {
                         0x1b6
                     } else {
-                        (r.next_u32() % 0x1b6)
+                        r.next_u32() % 0x1b6
                     };
                     c.bus.write32(0x489d60 + i * 4, v);
                 }
@@ -453,8 +444,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use super::*;
-    use crate::difftest::fakes::FAKE;
+
     use crate::difftest::fill;
 
     /// AIAnimEventMap_PickAnim: ranges of count 1 (direct pick), 0 or
