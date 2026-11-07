@@ -32,6 +32,7 @@ pub(crate) use crate::game::fe::feasyncfile::p as p_7;
 pub(crate) use crate::game::fe::fepopup::at as at_4;
 pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw_2;
+use crate::game::misc::vu0_length_vf3;
 pub(crate) use crate::game::render::particle::p as p_2;
 pub(crate) use crate::game::ui::uivector::p as p_3;
 pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw;
@@ -242,6 +243,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0017_7ef8,
         spoke_chase_camera_algorithm_get_focus_point,
         "SpokeChaseCameraAlgorithm_GetFocusPoint",
+    ),
+    (
+        0x0017_7fc0,
+        spoke_chase_camera_algorithm_compute_desired_eye,
+        "SpokeChaseCameraAlgorithm_ComputeDesiredEye",
     ),
     (
         0x0017_8520,
@@ -579,6 +585,11 @@ pub(crate) mod callee {
     pub const SSX_AUDIO_PLAY_MUSIC: Callee = Callee {
         addr: 0x0028_cf98,
         f: ee::s07::f_0028cf98,
+    };
+
+    pub const SPOKE_CHASE_GET_FOCUS_POINT: Callee = Callee {
+        addr: 0x0017_7ef8,
+        f: ee::s02::f_00177ef8,
     };
 
     // Cross-shard calls the generator emitted through the function table.
@@ -2651,6 +2662,202 @@ pub fn spoke_chase_camera_algorithm_get_focus_point(c: &mut Cpu) {
     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
     c.pc = t;
     return;
+}
+
+/// `Vec4* SpokeChaseCameraAlgorithm_ComputeDesiredEye(out, this, dir)`
+/// (0x177fc0): the spoke camera's eye. The direction is the target's
+/// `+0x50` vector while the rider handplants (main state 5), else `*dir`;
+/// it is normalized, or, shorter than 0.01, replaced as it is by the
+/// target's `+0x20` vector. The heading (`this + 0x390`) becomes the
+/// normalized `0.96 * heading + 0.04 * direction` (the direction itself when
+/// that is shorter than 0.02), and the eye sits 30 above the focus point
+/// (the up vector at 0x4ff160) and 250 behind it along the heading.
+pub fn spoke_chase_camera_algorithm_compute_desired_eye(c: &mut Cpu) {
+    use crate::game::camera::camera::chase;
+    const RIG_RIDER: u32 = 4;
+    const SPOKE_HEADING: u32 = 0x390;
+    const GET_HANDPLANT_DIRECTION: u32 = 0x50;
+    const GET_FORWARD: u32 = 0x20;
+    const DIRECTION: u32 = 0;
+    const HEADING: u32 = 0x10;
+    const SAVED_RA: u32 = 0x80;
+    const SAVED_OUTPUT: u32 = 0x90;
+    const SAVED_DIRECTION: u32 = 0xa0;
+    const SAVED_CAMERA: u32 = 0xb0;
+    /// gp-0x5e04: 0.01, direction length below which the rig supplies a fallback.
+    const GP_MIN_DIRECTION: u32 = 0x5e04;
+    /// gp-0x5e00: 0.96, retained heading share at 60 Hz.
+    const GP_HEADING_RETAINED: u32 = 0x5e00;
+    /// gp-0x5dfc: 0.04000002, incoming direction share at 60 Hz.
+    const GP_HEADING_INCOMING: u32 = 0x5dfc;
+    /// gp-0x5df8: 0.02, blended heading length below which direction wins.
+    const GP_MIN_HEADING: u32 = 0x5df8;
+    // Stack +0x20..+0x70: reused VU vector-expression spills; preserve every store.
+    c.cycles += 14;
+    let frame = Frame::open(c, 0xc0);
+    frame.save(c, S0, SAVED_CAMERA);
+    frame.save(c, S1, SAVED_DIRECTION);
+    c.g[S0][0] = c.g[A1][0];
+    frame.save(c, S2, SAVED_OUTPUT);
+    c.g[S1][0] = c.g[A2][0];
+    frame.save_ra(c, SAVED_RA);
+    c.g[S2][0] = c.g[A0][0];
+    // The rider's main state.
+    c.g[V0][0] = Addr(r32(c, S0).wrapping_add(chase::RIG)).lw(c);
+    c.g[A0][0] = Addr(r32(c, V0).wrapping_add(RIG_RIDER)).lw(c);
+    if call_ptr(c, callee::RIDER_GET_MAIN_STATE.addr, 0x0017_7fec).is_err() {
+        return;
+    }
+    c.g[V1][0] = 0x5;
+    if c.g[V0][0] != c.g[V1][0] {
+        c.lq(2, c.g[S1][0] as u32);
+        c.cycles += 1;
+        c.sq(2, frame.at(c, DIRECTION));
+    } else {
+        // Handplant: the target's +0x50 vector.
+        c.cycles += 9;
+        c.g[A1][0] = Addr(r32(c, S0).wrapping_add(chase::RIG)).lw(c);
+        c.g[V1][0] = Addr(r32(c, A1)).lw(c);
+        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(GET_HANDPLANT_DIRECTION)).lh(c);
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(GET_HANDPLANT_DIRECTION + 4)).lw(c);
+        let target_method = r32(c, V0);
+        c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+        if call_ptr(c, target_method, 0x0017_8010).is_err() {
+            return;
+        }
+        c.lq(3, c.g[V0][0] as u32);
+        c.sq(3, frame.at(c, DIRECTION));
+    }
+    // Normalize the direction, or take the target's +0x20 vector.
+    c.cycles += 15;
+    c.lwc1(0, r32(c, GP).wrapping_sub(GP_MIN_DIRECTION));
+    c.lqc2(3, frame.at(c, DIRECTION));
+    vu0_length_vf3(c);
+    c.cfc2(2, 22);
+    c.mtc1(2, 1);
+    c.c_lt_s(1, 0);
+    let direction_has_length = !c.fcc();
+    c.g[A0][0] = sx(frame.at(c, HEADING));
+    if direction_has_length {
+        c.cycles += 7;
+        c.mfc1(2, 1);
+        c.qmtc2(2, 3);
+        c.vu0().div(0, 3, 3, 0);
+        c.lqc2(4, frame.at(c, DIRECTION));
+        c.vu0().waitq();
+        c.vu0().mul(0b1111, 5, 4, Src::Q);
+        c.sqc2(5, frame.at(c, DIRECTION));
+    } else {
+        c.cycles += 9;
+        c.g[A2][0] = Addr(r32(c, S0).wrapping_add(chase::RIG)).lw(c);
+        c.g[V0][0] = Addr(r32(c, A2)).lw(c);
+        c.g[A1][0] = Addr(r32(c, V0).wrapping_add(GET_FORWARD)).lh(c);
+        c.g[V1][0] = Addr(r32(c, V0).wrapping_add(GET_FORWARD + 4)).lw(c);
+        let target_method = r32(c, V1);
+        c.g[A1][0] = sx(r32(c, A2).wrapping_add(r32(c, A1)));
+        if call_ptr(c, target_method, 0x0017_8074).is_err() {
+            return;
+        }
+        c.lq(2, frame.at(c, HEADING));
+        c.sq(2, frame.at(c, DIRECTION));
+    }
+    // heading = 0.96 * heading + 0.04 * direction, normalized.
+    c.cycles += 37;
+    c.lwc1(0, r32(c, GP).wrapping_sub(GP_HEADING_RETAINED));
+    c.mfc1(2, 0);
+    c.lqc2(4, r32(c, S0).wrapping_add(SPOKE_HEADING));
+    c.qmtc2(2, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, 0x30));
+    c.lwc1(1, r32(c, GP).wrapping_sub(GP_HEADING_INCOMING));
+    c.lq(2, frame.at(c, 0x30));
+    c.lwc1(0, r32(c, GP).wrapping_sub(GP_MIN_HEADING));
+    c.sq(2, frame.at(c, 0x20));
+    c.mfc1(3, 1);
+    c.lqc2(4, frame.at(c, DIRECTION));
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, 0x40));
+    c.lq(2, frame.at(c, 0x40));
+    c.sq(2, frame.at(c, 0x30));
+    c.lqc2(3, frame.at(c, 0x20));
+    c.lqc2(4, frame.at(c, 0x30));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, frame.at(c, 0x40));
+    c.lq(2, frame.at(c, 0x40));
+    c.sq(2, frame.at(c, HEADING));
+    c.lqc2(3, frame.at(c, HEADING));
+    vu0_length_vf3(c);
+    c.cfc2(3, 22);
+    c.mtc1(3, 1);
+    c.c_lt_s(1, 0);
+    let heading_has_length = !c.fcc();
+    c.lq(2, frame.at(c, DIRECTION));
+    if heading_has_length {
+        c.cycles += 7;
+        c.mfc1(2, 1);
+        c.qmtc2(2, 3);
+        c.vu0().div(0, 3, 3, 0);
+        c.lqc2(4, frame.at(c, HEADING));
+        c.vu0().waitq();
+        c.vu0().mul(0b1111, 5, 4, Src::Q);
+        c.sqc2(5, frame.at(c, HEADING));
+    } else {
+        c.cycles += 2;
+        c.sq(2, frame.at(c, HEADING));
+    }
+    // eye = focus + 30 * up - 250 * heading.
+    c.cycles += 45;
+    c.lq(2, frame.at(c, HEADING));
+    c.g[A1][0] = c.g[S0][0];
+    c.g[A0][0] = sx(frame.at(c, 0x40));
+    c.sq(2, r32(c, S0).wrapping_add(SPOKE_HEADING));
+    if callee::SPOKE_CHASE_GET_FOCUS_POINT
+        .call(c, 0x0017_8168)
+        .is_err()
+    {
+        return;
+    }
+    c.g[A0][0] = 0x50_0000;
+    c.g[AT][0] = 0x41f0_0000;
+    c.mtc1(1, 0);
+    // 0x4ff160: world up; preserve the original split address construction.
+    c.g[A0][0] = sx(r32(c, A0).wrapping_sub(0xea0));
+    c.g[AT][0] = 0x437a_0000;
+    c.mtc1(1, 1);
+    c.mfc1(3, 0);
+    c.lqc2(4, c.g[A0][0] as u32);
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, 0x60));
+    c.g[V0][0] = c.g[S2][0];
+    c.lq(3, frame.at(c, 0x60));
+    frame.restore(c, S0, SAVED_CAMERA);
+    c.sq(3, frame.at(c, 0x50));
+    c.lqc2(3, frame.at(c, 0x40));
+    c.lqc2(4, frame.at(c, 0x50));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, frame.at(c, 0x60));
+    frame.restore(c, S1, SAVED_DIRECTION);
+    c.lq(3, frame.at(c, 0x60));
+    frame.restore_ra(c, SAVED_RA);
+    c.sq(3, frame.at(c, 0x30));
+    c.mfc1(4, 1);
+    c.lqc2(4, frame.at(c, HEADING));
+    c.qmtc2(4, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, 0x70));
+    c.lq(3, frame.at(c, 0x70));
+    c.sq(3, frame.at(c, 0x60));
+    c.lqc2(3, frame.at(c, 0x30));
+    c.lqc2(4, frame.at(c, 0x60));
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, frame.at(c, 0x70));
+    c.lq(3, frame.at(c, 0x70));
+    c.sq(3, c.g[S2][0] as u32);
+    frame.restore(c, S2, SAVED_OUTPUT);
+    c.sq(3, frame.at(c, 0x20));
+    frame.close(c);
 }
 
 // ---------------------------------------------------------------------------
@@ -6172,6 +6379,180 @@ pub(crate) mod tests {
                 c.bus.write32(o, vt2);
             },
         );
+    }
+
+    /// The spoke camera (`this`), its target (`+0x30`), the target's rider
+    /// (`+4`) and that rider's owner. Fixed addresses and vtable deltas keep
+    /// each path's cost (fake calls included) the same over seeds.
+    const SPOKE: u32 = DATA + 0x4_0000;
+
+    const SPOKE_TARGET: u32 = SPOKE + 0x400;
+
+    const SPOKE_RIDER: u32 = SPOKE + 0x1000;
+
+    const SPOKE_OWNER: u32 = SPOKE + 0x2000;
+
+    /// `dir`, the vector the handplant virtual returns, and `out`.
+    const SPOKE_DIR: u32 = SPOKE + 0x700;
+
+    const SPOKE_HAND: u32 = SPOKE + 0x710;
+
+    const SPOKE_OUT: u32 = SPOKE + 0x720;
+
+    /// Where the target's `+0x20` virtual writes its vector (`sp + 0x10`).
+    const SPOKE_FALLBACK: u32 = crate::difftest::SP - 0xb0;
+
+    /// A vector of four-lane length `len`.
+    fn spoke_vec(r: &mut Rng, len: f64) -> [f64; 4] {
+        let v = [0; 4].map(|_| f32::from_bits(r.f32(1.0)) as f64 + 0.01);
+        let n = v.iter().map(|x| x * x).sum::<f64>().sqrt();
+        v.map(|x| x * len / n)
+    }
+
+    fn spoke_put(c: &mut Cpu, at: u32, v: [f64; 4]) {
+        put_vec(c, at, v.map(|x| (x as f32).to_bits()));
+    }
+
+    /// Real `Rider_GetMainState` and `SpokeChaseCameraAlgorithm_GetFocusPoint`;
+    /// the target's and the rider's virtual methods are fakes. The camera's
+    /// up vector (0x4ff160) is set; every pool constant is the game's.
+    fn spoke_eye_objects(c: &mut Cpu, main_state: u32) {
+        let w16 = |c: &mut Cpu, at: u32, v: u16| c.bus.write16(at, v);
+        c.bus.write32(SPOKE + 0x30, SPOKE_TARGET);
+        let vt = SPOKE + 0x500;
+        c.bus.write32(SPOKE_TARGET, vt);
+        c.bus.write32(SPOKE_TARGET + 4, SPOKE_RIDER);
+        for (i, (slot, delta)) in [(8u32, 0x18u16), (0x20, 0xffc0), (0x50, 0x30)]
+            .into_iter()
+            .enumerate()
+        {
+            w16(c, vt + slot, delta);
+            c.bus.write32(vt + slot + 4, FAKE + 0x10 * i as u32);
+        }
+        let vt_rider = SPOKE + 0x600;
+        c.bus.write32(SPOKE_RIDER + 0x6c0, vt_rider);
+        w16(c, vt_rider + 0x28, 8);
+        c.bus.write32(vt_rider + 0x2c, FAKE + 0x30);
+        c.bus.write32(SPOKE_RIDER + 0x77c, SPOKE_OWNER);
+        c.bus.write32(SPOKE_OWNER + 0xde0, main_state);
+        put_vec(c, 0x004f_f160, [0, 1.0f32.to_bits(), 0, 0]);
+        for (neg, bits) in [
+            (0x5e0c, 0x3e4c_cccc),
+            (0x5e08, 0x3f4c_cccd),
+            (0x5e04, 0x3c23_d70a),
+            (0x5e00, 0x3f75_c28f),
+            (0x5dfc, 0x3d23_d710),
+            (0x5df8, 0x3ca3_d70a),
+        ] {
+            c.bus.write32(GAME_GP - neg, bits);
+        }
+        c.g[A0][0] = SPOKE_OUT as u64;
+        c.g[A1][0] = SPOKE as u64;
+        c.g[A2][0] = SPOKE_DIR as u64;
+    }
+
+    /// Seed bits 0 to 2: handplant (main state 5), a direction shorter than
+    /// the 0.01 floor (the `+0x20` fallback), and a blend shorter than 0.02.
+    /// Every pool slot this function and its focus point read takes one of
+    /// three values.
+    fn spoke_eye_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x177fc0, 4);
+        let (hand, short, degenerate) = (seed & 1 != 0, seed & 2 != 0, seed & 4 != 0);
+        let states = [0, 1, 2, 3, 4, 6];
+        let state = if hand {
+            5
+        } else {
+            states[(r.next_u32() % 6) as usize]
+        };
+        spoke_eye_objects(c, state);
+        let pick = |r: &mut Rng, v: [f32; 3]| v[(r.next_u32() % 3) as usize];
+        let floor = pick(&mut r, [0.01, 0.005, 0.03]);
+        let keep = pick(&mut r, [0.96, 0.9, 0.98]);
+        let add = pick(&mut r, [0.04, 0.1, 0.02]);
+        for (neg, v) in [
+            (0x5e0c, pick(&mut r, [0.2, 0.3, 0.6])),
+            (0x5e08, pick(&mut r, [0.8, 0.7, 0.4])),
+            (0x5e04, floor),
+            (0x5e00, keep),
+            (0x5dfc, add),
+            (0x5df8, pick(&mut r, [0.02, 0.015, 0.05])),
+        ] {
+            c.bus.write32(GAME_GP - neg, v.to_bits());
+        }
+        let up = spoke_vec(&mut r, 1.0);
+        spoke_put(c, 0x004f_f160, up);
+        // Long directions are 0.5 to 50; short ones under 0.004, below
+        // every floor.
+        let len = if short {
+            0.004 * (0.05 + 0.9 * (r.next_u32() % 1000) as f64 / 1000.0)
+        } else {
+            0.5 + (r.next_u32() % 1000) as f64 / 20.0
+        };
+        let d = spoke_vec(&mut r, len);
+        let other = spoke_vec(&mut r, 3.0);
+        let (at_dir, at_hand) = if hand { (other, d) } else { (d, other) };
+        spoke_put(c, SPOKE_DIR, at_dir);
+        spoke_put(c, SPOKE_HAND, at_hand);
+        if hand {
+            c.bus.write32(LOG_RESULTS, SPOKE_HAND);
+        }
+        let fallback = spoke_vec(&mut r, if degenerate { 0.003 } else { 1.5 });
+        spoke_put(c, SPOKE_FALLBACK, fallback);
+        // A blend shorter than every 0.02 variant: the heading cancels the
+        // normalized direction (or both are tiny); otherwise a unit heading.
+        let heading = if !degenerate {
+            spoke_vec(&mut r, 1.0)
+        } else if short {
+            spoke_vec(&mut r, 0.003)
+        } else {
+            let (k, b) = (keep as f64, add as f64);
+            let noise = spoke_vec(&mut r, 0.002);
+            [0, 1, 2, 3].map(|i| -b / k * d[i] / len + noise[i])
+        };
+        spoke_put(c, SPOKE + 0x390, heading);
+    }
+
+    #[test]
+    fn spoke_chase_camera_algorithm_compute_desired_eye_matches() {
+        covered(
+            ee::s02::f_00177fc0__generated,
+            spoke_chase_camera_algorithm_compute_desired_eye,
+            192,
+            &spoke_eye_setup,
+        );
+        // Seeds 0 to 7 take the eight branch combinations without an unwind;
+        // seeds 0 and 4, which differ only in the blend floor, share a cost.
+        const PATHS: &[u64] = &[186, 208, 200, 218, 207, 196, 209];
+        crate::difftest::require_paths(
+            ee::s02::f_00177fc0__generated,
+            192,
+            PATHS,
+            &spoke_eye_setup,
+        );
+        // So the branches are also read from the generated body's outputs: the
+        // fakes called (the target's +0x50 and +0x20 virtuals) and whether the
+        // heading is the direction itself (the frame's `sp + 0`).
+        let mut seen = [false; 8];
+        for seed in 0..192 {
+            let mut c = crate::difftest::fresh();
+            spoke_eye_setup(&mut c, seed);
+            crate::difftest::run_generated(&mut c, ee::s02::f_00177fc0__generated);
+            if c.pc != TEST_RA {
+                continue;
+            }
+            let calls = c.bus.read32(fakes::LOG_COUNT);
+            let called = |c: &mut Cpu, f: u32| {
+                (0..calls).any(|n| c.bus.read32(fakes::LOG_START + 0x220 * n) == f)
+            };
+            let hand = called(&mut c, FAKE + 0x20);
+            let short = called(&mut c, FAKE + 0x10);
+            let dir = c.bus.read128(crate::difftest::SP - 0xc0);
+            let degenerate = c.bus.read128(SPOKE + 0x390) == dir;
+            let taken = hand as usize | (short as usize) << 1 | (degenerate as usize) << 2;
+            assert_eq!(taken, (seed & 7) as usize, "seed {seed}");
+            seen[taken] = true;
+        }
+        assert!(seen.iter().all(|&s| s), "{seen:?}");
     }
 
     /// The `BELibrary` singleton (`gp - 0x1f04`) and the world (`gp - 0x848`).
