@@ -140,12 +140,19 @@ pub const PER_TICK: &[(u32, u32, PerTick)] = &[
     // (rider +0x1fc; `CARVE` / `rider_anim::SUB_BLEND`), which also gates
     // the landing animation; consumed once per update by Rider_UpdateSlewedParams.
     (0x0049_b95c, 0x3d08_8889, PerTick::Step),
-    // RiderRailslideState_PostUpdate (0x13bfa8): leaving a rail, the return
-    // step for rider +0x22c; consumed once per update by Rider_UpdateSlewedParams.
-    (0x0049_bfdc, 0x3d08_8889, PerTick::Step),
     // RiderFinishLineSub_HandleInput (0x12c678): past the line, the return
     // step for rider +0x1fc; consumed once per update by Rider_UpdateSlewedParams.
     (0x0049_b8f8, 0x3d08_8889, PerTick::Step),
+    // RiderUberGrindSub_HandleInput (0x136508): the enter, ground, rail and
+    // exit pose steps for rider +0x238, 3.5/s; consumed once per update by
+    // Rider_UpdateSlewedParams.
+    (0x0049_be1c, 0x3d6e_eef0, PerTick::Step),
+    (0x0049_be20, 0x3d6e_eef0, PerTick::Step),
+    (0x0049_be24, 0x3d6e_eef0, PerTick::Step),
+    (0x0049_be2c, 0x3d6e_eef0, PerTick::Step),
+    // RiderRailslideState_PostUpdate (0x13bfa8): leaving a rail, the return
+    // step for rider +0x22c; consumed once per update by Rider_UpdateSlewedParams.
+    (0x0049_bfdc, 0x3d08_8889, PerTick::Step),
     // Rider_HandleBoostInput (0x114130): the boost meter (rider +0x2f8)
     // drains 0.0015068 per tick while boost is held.
     (0x0049_b4fc, 0x3ac5_7fcc, PerTick::Step),

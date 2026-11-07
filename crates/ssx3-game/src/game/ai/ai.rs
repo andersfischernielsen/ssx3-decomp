@@ -1673,6 +1673,7 @@ mod uber_input {
 
 /// `RiderUberGrindSub_HandleInput(sub, input)` (0x136508): advance the
 /// enter/hold/exit animation phases and award the completed grind's boost.
+/// Its four pose steps (rider +0x23c) are [`crate::tick::PER_TICK`] entries.
 pub fn rider_uber_grind_sub_handle_input(c: &mut Cpu) {
     guest(c, |c| {
         const SAVED_RA: u32 = 0;
@@ -19587,6 +19588,34 @@ pub(crate) mod tests {
                 target,
                 "pose target seed {seed}"
             );
+        }
+    }
+
+    /// All four pose steps (enter, ground, rail, exit) move the same way per
+    /// game time.
+    #[test]
+    fn rider_uber_grind_sub_poses_follow_the_rate() {
+        for (seed, step) in [
+            (3, 0x0049_be1cu32),
+            (9, 0x0049_be20),
+            (10, 0x0049_be24),
+            (19, 0x0049_be2c),
+        ] {
+            crate::tick::assert_slew_follows_the_rate(crate::difftest::DATA + 0x1238, &|hz| {
+                let mut c = crate::difftest::fresh();
+                uber_grind_input_setup(&mut c, seed);
+                c.bus
+                    .write32(step, crate::tick::per_tick_at(hz, step, 0x3d6e_eef0));
+                crate::difftest::run_generated(&mut c, rider_uber_grind_sub_handle_input);
+                assert_eq!(c.pc, crate::difftest::RA);
+                let at = crate::difftest::DATA + 0x123c;
+                assert_eq!(
+                    c.bus.read32(at),
+                    crate::tick::per_tick_at(hz, step, 0x3d6e_eef0),
+                    "seed {seed} did not load {step:#x}"
+                );
+                c
+            });
         }
     }
 
