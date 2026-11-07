@@ -59,6 +59,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RiderWipeoutState_PostUpdateAir",
     ),
     (
+        0x0013_7550,
+        rider_wipeout_state_build_board_spheres,
+        "RiderWipeoutState_BuildBoardSpheres",
+    ),
+    (
         0x0013_7750,
         rider_wipeout_state_update_air,
         "RiderWipeoutState_UpdateAir",
@@ -80,6 +85,131 @@ pub fn rider_wipeout_state_load_state(c: &mut Cpu) {
 pub fn rider_wipeout_state_exit(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
+}
+
+/// `RiderWipeoutState_BuildBoardSpheres(state)` (0x137550): four collision
+/// spheres along the board bone's scaled axis. The 70/30 offsets are lengths.
+pub fn rider_wipeout_state_build_board_spheres(c: &mut Cpu) {
+    guest(c, |c| {
+        // Fields from the matching BuildBoardSpheres C++ reference (0x137550).
+        const SPHERE_TREE: u32 = 0x44;
+        const MODEL: u32 = 0x780;
+        const BOARD_BONE_INDEX: u32 = 0x8a4;
+        const BONES: u32 = 0x2c;
+        const MODEL_SCALE: u32 = 0x140;
+        const BONE_ROTATION: u32 = 0x10;
+        // Stack vectors are reused exactly as in the compiled body.
+        const POINTS: u32 = 0;
+        const RADII: u32 = 0x40;
+        const SCALED_AXIS: u32 = 0x50;
+        const AXIS_OR_POINT: u32 = 0x60;
+        const OFFSET: u32 = 0x70;
+        const VECTOR_RESULT: u32 = 0x80;
+        const SAVED_RA: u32 = 0x90;
+        c.cycles += 127;
+        let frame = Frame::open(c, 0xa0);
+        c.g[T1][0] = c.g[A0][0];
+        frame.save_ra(c, SAVED_RA);
+        c.g[V0][0] = 3;
+        c.g[A3][0] = sx(frame.at(c, RADII));
+        c.g[V1][0] = u64::MAX;
+        c.g[T0][0] = Addr(r32(c, T1)).off(WIPEOUT_STATE_RIDER).lw(c);
+        c.g[V0][0] = 0x460000;
+        // 0x458220: the four board-sphere radii.
+        c.g[A2][0] = sx(r32(c, V0).wrapping_sub(0x7de0));
+        // Preserve the unaligned copy and its register effects.
+        c.ldl(V1, r32(c, A2).wrapping_add(7));
+        c.ldr(V1, r32(c, A2));
+        c.ldl(A0, r32(c, A2).wrapping_add(15));
+        c.ldr(A0, r32(c, A2).wrapping_add(8));
+        c.sdl(V1, frame.at(c, RADII + 7));
+        c.sdr(V1, frame.at(c, RADII));
+        c.sdl(A0, frame.at(c, RADII + 15));
+        c.sdr(A0, frame.at(c, RADII + 8));
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 9);
+        c.g[A1][0] = 4;
+        c.g[V1][0] = Addr(r32(c, T0)).off(MODEL).lw(c);
+        c.g[A2][0] = c.g[SP][0];
+        c.g[V0][0] = Addr(r32(c, T0)).off(BOARD_BONE_INDEX).lw(c);
+        c.g[A0][0] = Addr(r32(c, V1)).off(BONES).lw(c);
+        c.g[V0][0] = sx(r32(c, V0) << 5);
+        c.lwc1(11, r32(c, V1).wrapping_add(MODEL_SCALE));
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+        c.g[AT][0] = 0x428c_0000;
+        c.mtc1(AT, 10);
+        // Quaternion's first rotation axis, with the original FPU ordering.
+        c.lwc1(5, r32(c, A0).wrapping_add(BONE_ROTATION + 4));
+        c.g[T0][0] = c.g[A0][0];
+        c.lwc1(4, r32(c, A0).wrapping_add(BONE_ROTATION + 8));
+        c.lwc1(0, r32(c, A0).wrapping_add(BONE_ROTATION));
+        c.mul_s(3, 5, 5);
+        c.lwc1(2, r32(c, A0).wrapping_add(BONE_ROTATION + 12));
+        c.mul_s(6, 4, 4);
+        c.mul_s(1, 0, 4);
+        c.sw(frame.at(c, AXIS_OR_POINT + 12), 0);
+        c.mul_s(7, 2, 5);
+        c.g[AT][0] = 0x41f0_0000;
+        c.mtc1(AT, 8);
+        c.add_s(3, 3, 6);
+        c.g[AT][0] = 0x42b4_0000;
+        c.mtc1(AT, 13);
+        c.mul_s(0, 0, 5);
+        c.mul_s(2, 2, 4);
+        c.sub_s(1, 1, 7);
+        c.add_s(3, 3, 3);
+        c.add_s(0, 0, 2);
+        c.add_s(1, 1, 1);
+        c.sub_s(9, 9, 3);
+        c.add_s(0, 0, 0);
+        c.swc1(1, frame.at(c, AXIS_OR_POINT + 8));
+        c.swc1(9, frame.at(c, AXIS_OR_POINT));
+        c.swc1(0, frame.at(c, AXIS_OR_POINT + 4));
+        c.mfc1(V1, 11);
+        c.lqc2(4, frame.at(c, AXIS_OR_POINT));
+        c.qmtc2(V1, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, frame.at(c, OFFSET));
+        c.lq(V0, frame.at(c, OFFSET));
+        c.sq(V0, frame.at(c, SCALED_AXIS));
+        // +70, +30, -30, -70 along that axis. Keep scratch stores intact.
+        for (sphere, scale_register) in [10, 8, 8, 10].into_iter().enumerate() {
+            c.mfc1(V1, scale_register);
+            c.lqc2(4, frame.at(c, SCALED_AXIS));
+            c.qmtc2(V1, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, frame.at(c, VECTOR_RESULT));
+            c.lq(V0, frame.at(c, VECTOR_RESULT));
+            c.sq(V0, frame.at(c, OFFSET));
+            c.lqc2(3, r32(c, A0));
+            c.lqc2(4, frame.at(c, OFFSET));
+            if sphere < 2 {
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            } else {
+                c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            }
+            c.sqc2(5, frame.at(c, VECTOR_RESULT));
+            c.lq(V0, frame.at(c, VECTOR_RESULT));
+            if sphere == 3 {
+                c.g[V1][0] = Addr(r32(c, T1)).off(WIPEOUT_STATE_RIDER).lw(c);
+            }
+            if sphere < 2 {
+                c.sq(V0, frame.at(c, AXIS_OR_POINT));
+                c.sq(V0, frame.at(c, POINTS + 0x10 * sphere as u32));
+            } else {
+                c.sq(V0, frame.at(c, POINTS + 0x10 * sphere as u32));
+                c.sq(V0, frame.at(c, AXIS_OR_POINT));
+            }
+        }
+        c.g[V0][0] = Addr(r32(c, V1)).off(MODEL).lw(c);
+        c.g[A0][0] = Addr(r32(c, T1)).off(SPHERE_TREE).lw(c);
+        c.lwc1(12, r32(c, V0).wrapping_add(MODEL_SCALE));
+        c.mul_s(12, 12, 13);
+        call_ptr(c, 0x0032_9a90, 0x0013_7740)?;
+        frame.restore_ra(c, SAVED_RA);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1119,6 +1249,82 @@ pub(crate) mod tests {
             rider_wipeout_state_exit,
             15,
         );
+    }
+
+    fn wipeout_board_spheres_setup(c: &mut Cpu, seed: u32) {
+        use crate::difftest::put_vec;
+
+        const RIDER: u32 = DATA + 0x1000;
+
+        const MODEL: u32 = DATA + 0x2000;
+
+        const BONES: u32 = DATA + 0x3000;
+
+        const TREE: u32 = DATA + 0x4000;
+
+        let mut rng = machine(c, seed, 0x137550, 0);
+        c.pc = 0x0013_7550;
+        c.g[A0][0] = DATA as u64;
+        c.bus.write32(DATA + 0x40, RIDER);
+        c.bus.write32(DATA + 0x44, TREE);
+        c.bus.write32(RIDER + 0x780, MODEL);
+        c.bus.write32(RIDER + 0x8a4, seed % 4);
+        c.bus.write32(MODEL + 0x2c, BONES);
+        c.bus.write32(
+            MODEL + 0x140,
+            [0.0f32, 0.5, 1.0, 1.5, -1.0][(seed / 4 % 5) as usize].to_bits(),
+        );
+        for i in 0..4 {
+            put_vec(
+                c,
+                BONES + i * 0x20,
+                [
+                    rng.f32(100.0),
+                    rng.f32(100.0),
+                    rng.f32(100.0),
+                    1.0f32.to_bits(),
+                ],
+            );
+            put_vec(
+                c,
+                BONES + i * 0x20 + 0x10,
+                [rng.f32(1.0), rng.f32(1.0), rng.f32(1.0), rng.f32(1.0)],
+            );
+            // All four table entries are live memory inputs, not baked radii.
+            c.bus.write32(0x458220 + i * 4, rng.f32(10.0));
+        }
+    }
+
+    #[test]
+    fn rider_wipeout_state_build_board_spheres_matches() {
+        crate::difftest::check(
+            ee::s01::f_00137550__generated,
+            rider_wipeout_state_build_board_spheres,
+            160,
+            &wipeout_board_spheres_setup,
+        );
+        // The caller is straight-line; its real SetSpheres callee visits all
+        // four children and the root on every seed (127 + 3 + 1 + 44 + 4).
+        crate::difftest::require_paths(
+            ee::s01::f_00137550__generated,
+            160,
+            &[179],
+            &wipeout_board_spheres_setup,
+        );
+        for seed in 0..20 {
+            let mut c = crate::difftest::fresh();
+            wipeout_board_spheres_setup(&mut c, seed);
+            crate::difftest::run_generated(&mut c, rider_wipeout_state_build_board_spheres);
+            assert_eq!(c.pc, crate::difftest::RA);
+            let tree = crate::difftest::DATA + 0x4000;
+            assert_eq!(c.bus.read32(tree + 0x2c), 4);
+            for i in 0..4 {
+                assert_eq!(
+                    c.bus.read32(tree + 0x40 + i * 0x20),
+                    c.bus.read32(0x458220 + i * 4)
+                );
+            }
+        }
     }
 
     // ------------------------------------------------------ rider wipeout
