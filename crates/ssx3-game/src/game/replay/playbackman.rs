@@ -121,6 +121,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_state_write_objects,
         "WorldState_WriteObjects",
     ),
+    (0x0026_d760, replay_record_snapshot, "Replay_RecordSnapshot"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1880,6 +1881,78 @@ pub fn world_state_write_objects(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod record_snapshot {
+    use crate::call::Callee;
+    use ssx3_ee as ee;
+
+    /// Replay manager: +0x3c8 the replay frame counter.
+    pub const MGR_FRAME: u32 = 0x3c8;
+
+    /// Snapshot: +0x1c the 4-byte frame descriptor, +0x30 the frame number.
+    pub const SNAP_DESC: u32 = 0x1c;
+
+    pub const SNAP_FRAME: u32 = 0x30;
+
+    pub const ALLOC_SNAPSHOT: Callee = Callee {
+        addr: 0x0027_0130,
+        f: ee::s07::f_00270130,
+    };
+
+    pub const WORLD_STATE_WRITE: Callee = Callee {
+        addr: 0x0026_d818,
+        f: ee::s07::f_0026d818,
+    };
+
+    pub const SNAPSHOT_HOOK_A: Callee = Callee {
+        addr: 0x0026_ed88,
+        f: ee::s07::f_0026ed88,
+    };
+}
+
+/// `Snapshot* Replay_RecordSnapshot(ReplayMan* self, const FrameDesc* desc)`
+/// (0x26d760): take a free snapshot (`Replay_AllocSnapshot`), copy the
+/// 4-byte frame descriptor into it (unaligned, `+0x1c`), write the world
+/// state into it, stamp it with the manager's frame counter (`+0x30`), run
+/// the (empty) snapshot hook and return it.
+pub fn replay_record_snapshot(c: &mut Cpu) {
+    use record_snapshot as k;
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x30);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A1][0];
+        k::ALLOC_SNAPSHOT.call(c, 0x0026_d780)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S1][0];
+        let desc = abi::r32(c, S2);
+        let snap = abi::r32(c, S0);
+        c.lwl(2, desc.wrapping_add(3));
+        c.lwr(2, desc);
+        c.swl(2, snap.wrapping_add(k::SNAP_DESC + 3));
+        c.swr(2, snap.wrapping_add(k::SNAP_DESC));
+        c.g[A1][0] = c.g[S0][0];
+        k::WORLD_STATE_WRITE.call(c, 0x0026_d7a0)?;
+        let mgr = abi::r32(c, S1);
+        c.g[V0][0] = Addr(mgr.wrapping_add(k::MGR_FRAME)).lw(c);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        let snap = abi::r32(c, S0);
+        Addr(snap.wrapping_add(k::SNAP_FRAME)).sw(c, c.g[V0][0]);
+        k::SNAPSHOT_HOOK_A.call(c, 0x0026_d7b4)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2624,6 +2697,48 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA);
                 c.g[A1][0] = sx(STREAM);
                 c.g[A2][0] = list as u64;
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::{check_paths, check_paths_lohi};
+
+    /// A replay manager whose free list holds one snapshot; for some seeds
+    /// the free count is 0 so `Replay_AllocSnapshot` first recycles (an
+    /// empty used list: a short pass). The descriptor is unaligned for some
+    /// seeds. Fixture as `world_state_save_matches` (fakes for the world
+    /// state's virtual writers, the dummy world).
+    #[test]
+    fn replay_record_snapshot_matches() {
+        use crate::game::fe::feasyncfile::tests::call_machine;
+        use crate::game::fe::fepopup3::tests::dummy_world;
+        check(
+            ee::s07::f_0026d760__generated,
+            replay_record_snapshot,
+            40,
+            &|c, seed| {
+                let mut r = call_machine(c, seed, 0x26d7_60, 2);
+                dummy_world(c);
+                c.pc = 0x0026_d760;
+                let this = DATA + 0x100;
+                let snap = DATA + 0x800;
+                for off in (0x3a0..0x3d0).step_by(4) {
+                    c.bus.write32(this + off, 0);
+                }
+                // free list (head, tail, count) at +0x3bc; used list at +0x3ac
+                c.bus.write32(this + 0x3bc, snap);
+                c.bus.write32(this + 0x3c0, snap);
+                c.bus
+                    .write32(this + 0x3c4, if seed % 4 == 0 { 0 } else { 1 + seed % 3 });
+                c.bus.write32(this + 0x3c8, r.next_u32());
+                for off in (0..0x40).step_by(4) {
+                    c.bus.write32(snap + off, 0);
+                }
+                c.bus.write32(snap + 0x1c, 0xdead_beef);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(DATA + 0x300 + (seed & 3));
+                c.bus.write32(DATA + 0x300, r.next_u32());
+                c.bus.write32(DATA + 0x304, r.next_u32());
             },
         );
     }

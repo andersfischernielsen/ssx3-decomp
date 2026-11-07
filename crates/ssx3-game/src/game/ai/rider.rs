@@ -257,6 +257,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Rider_IsOnGround_Wrapper",
     ),
     (0x0012_78e8, player_update_rumble, "Player_UpdateRumble"),
+    (0x0011_5168, rider_toggle_stance, "Rider_ToggleStance"),
+    (0x0012_3128, rider_get_character, "Rider_GetCharacter"),
+    (
+        0x0012_3168,
+        rider_get_player_character_info,
+        "Rider_GetPlayerCharacterInfo",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -12424,6 +12431,280 @@ pub fn rider_update_sphere_tree(c: &mut Cpu) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Rider_GetCharacter (0x123128)
+
+/// `Rider`: its AI / player index (`mAIIndex`, `+0x86c`).
+pub(crate) const OC305_RIDER_AI_INDEX: u32 = 0x86c;
+
+/// `BELibrary_GetInstance` (0x14dc80), `BELibrary_GetInterface` (0x14dd58)
+/// and `BENewPlayerInt_GetRiderCharID` (0x147398).
+pub(crate) const OC305_BE_LIBRARY_GET_INSTANCE: u32 = 0x0014_dc80;
+
+pub(crate) const OC305_BE_LIBRARY_GET_INTERFACE: u32 = 0x0014_dd58;
+
+pub(crate) const OC305_BE_NEW_PLAYER_GET_RIDER_CHAR_ID: u32 = 0x0014_7398;
+
+/// `int Rider_GetCharacter(Rider* self)` (0x123128): the rider's character
+/// id from the new-player back-end interface
+/// (`BELibrary_GetInstance()->GetInterface(1)->GetRiderCharID(self->mAIIndex)`).
+pub fn rider_get_character(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, OC305_BE_LIBRARY_GET_INSTANCE, 0x0012_313c)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 1;
+        call_ptr(c, OC305_BE_LIBRARY_GET_INTERFACE, 0x0012_3148)?;
+        c.g[A1][0] = Addr(r32(c, S0)).off(OC305_RIDER_AI_INDEX).lw(c);
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, OC305_BE_NEW_PLAYER_GET_RIDER_CHAR_ID, 0x0012_3154)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Rider fields: the stance flag +0x320 (1 = switch), the animation
+/// controller +0x784, two direction quadwords +0x3a0/+0x3b0 flipped on a
+/// stance change, and the lateral velocity / orientation components negated
+/// with them.
+pub(crate) const STANCE_FLAG: u32 = 0x320;
+
+pub(crate) const STANCE_ANIM: u32 = 0x784;
+
+pub(crate) const STANCE_DIR_A: u32 = 0x3a0;
+
+pub(crate) const STANCE_DIR_B: u32 = 0x3b0;
+
+/// The negated floats in the order the original loads them (into f5, f7,
+/// f8, f6, f4, f3, f2, f0, f1), then +0x288.
+pub(crate) const STANCE_NEGATED: [(u32, usize); 9] = [
+    (0x1f0, 5),
+    (0x1f8, 7),
+    (0x214, 8),
+    (0x21c, 6),
+    (0x208, 4),
+    (0x210, 3),
+    (0x1fc, 2),
+    (0x204, 0),
+    (0x280, 1),
+];
+
+pub(crate) const STANCE_NEGATED_LAST: u32 = 0x288;
+
+/// Animation controller fields: root translation +0x30 and rotation
+/// quaternion +0x40, and the stance copy +0x18.
+pub(crate) const STANCE_ANIM_ROOT_POS: u32 = 0x30;
+
+pub(crate) const STANCE_ANIM_ROOT_ROT: u32 = 0x40;
+
+pub(crate) const STANCE_ANIM_STANCE: u32 = 0x18;
+
+/// gp-relative `.lit4`: the half turn pi (rotate roots by it) and the
+/// switch-stance root half angle pi/2.
+pub(crate) const STANCE_GP_PI: u32 = 0x7b88;
+
+pub(crate) const STANCE_GP_HALF_ANGLE: u32 = 0x7b84;
+
+/// The zero root translation and the root rotation axis (0x4ff130,
+/// 0x4ff160).
+pub(crate) const STANCE_ROOT_TRANSLATION: u32 = 0x004f_f130;
+
+pub(crate) const STANCE_ROOT_AXIS: u32 = 0x004f_f160;
+
+/// `AnimController_RotateRoots(ctrl, angle)`, `Math_SinCos(angle, &sin,
+/// &cos)` (through the function table).
+pub(crate) const STANCE_ROTATE_ROOTS: u32 = 0x0031_1b48;
+
+pub(crate) const STANCE_SIN_COS: u32 = 0x0031_be50;
+
+/// Write the root quaternion `{axis * sin, cos}` (sin/cos at `sin_at`,
+/// `sin_at + 4` on the stack, the axis read through `axis` (+0, +4, +8))
+/// to `ctrl + 0x40`, through the stack at 0(sp) as the original does.
+pub(crate) fn stance_store_root_rotation(
+    c: &mut Cpu,
+    sin_at: u32,
+    axis: u32,
+    axis_x: u32,
+    ctrl: u32,
+) {
+    let axis_z = Addr(axis.wrapping_add(8)).read_fpu(c);
+    let sin = Addr(sp(c).wrapping_add(sin_at)).read_fpu(c);
+    let ax = Addr(axis_x).read_fpu(c);
+    let ay = Addr(axis.wrapping_add(4)).read_fpu(c);
+    c.f[4] = ay.0;
+    let qz = sin * axis_z;
+    let qx = sin * ax;
+    let cos = Addr(sp(c).wrapping_add(sin_at + 4)).read_fpu(c);
+    let qy = sin * ay;
+    c.f[1] = qz.0;
+    c.f[2] = qx.0;
+    c.f[3] = cos.0;
+    c.f[0] = qy.0;
+    let q = sp(c);
+    Addr(q + 0xc).write_fpu(c, cos);
+    Addr(q + 8).write_fpu(c, qz);
+    Addr(q).write_fpu(c, qx);
+    Addr(q + 4).write_fpu(c, qy);
+    c.lq(V0, q);
+    c.sq(V0, ctrl.wrapping_add(STANCE_ANIM_ROOT_ROT));
+}
+
+/// `void Rider_ToggleStance(Rider *rider)` (0x115168): switch between
+/// regular and switch stance. Flip the stance flag, rotate the animation
+/// roots by a half turn, reset the root transform (zero translation; the
+/// rotation about the root axis by the stance's angle, pi or -0), copy the
+/// stance to the controller, and mirror the rider's direction quadwords
+/// (scaled by -1 on VU0) and the lateral velocity / orientation floats.
+pub fn rider_toggle_stance(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x80);
+        c.f[12] = Addr(r32(c, GP).wrapping_sub(STANCE_GP_PI)).read_u32(c);
+        frame.save(c, S3, 0x40);
+        frame.save(c, S0, 0x70);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S1, 0x60);
+        frame.save(c, S2, 0x50);
+        frame.save_ra(c, 0x30);
+        let rider = r32(c, S3);
+        let stance = Addr(rider.wrapping_add(STANCE_FLAG)).lw(c) ^ 1;
+        c.g[A0][0] = Addr(rider.wrapping_add(STANCE_ANIM)).lw(c);
+        c.g[V0][0] = stance;
+        Addr(rider.wrapping_add(STANCE_FLAG)).sw(c, stance);
+        call_ptr(c, STANCE_ROTATE_ROOTS, 0x0011_519c)?;
+
+        let rider = r32(c, S3);
+        let switch = Addr(rider.wrapping_add(STANCE_FLAG)).lw(c) != 0;
+        c.g[V0][0] = 0x50_0000;
+        c.cycles += 25;
+        if switch {
+            let ctrl = Addr(rider.wrapping_add(STANCE_ANIM)).lw(c);
+            c.g[S2][0] = ctrl;
+            c.g[V0][0] = sx(STANCE_ROOT_TRANSLATION);
+            c.f[12] = Addr(r32(c, GP).wrapping_sub(STANCE_GP_HALF_ANGLE)).read_u32(c);
+            c.lq(V1, STANCE_ROOT_TRANSLATION);
+            c.g[S1][0] = 0x50_0000;
+            c.g[A0][0] = sx(frame.at(c, 0x20));
+            c.g[A1][0] = sx(frame.at(c, 0x24));
+            c.sq(V1, (ctrl as u32).wrapping_add(STANCE_ANIM_ROOT_POS));
+            c.g[S0][0] = sx(STANCE_ROOT_AXIS);
+            call_ptr(c, STANCE_SIN_COS, 0x0011_51d0)?;
+            let axis = r32(c, S0);
+            let axis_x = r32(c, S1).wrapping_sub(0xea0);
+            let ctrl = r32(c, S2);
+            stance_store_root_rotation(c, 0x20, axis, axis_x, ctrl);
+        } else {
+            c.f[12] = 0;
+            c.g[V0][0] = sx(STANCE_ROOT_TRANSLATION);
+            let ctrl = Addr(rider.wrapping_add(STANCE_ANIM)).lw(c);
+            c.g[S1][0] = ctrl;
+            c.lq(V1, STANCE_ROOT_TRANSLATION);
+            c.f[12] ^= 0x8000_0000;
+            c.g[A0][0] = sx(frame.at(c, 0x28));
+            c.g[A1][0] = sx(frame.at(c, 0x2c));
+            c.sq(V1, (ctrl as u32).wrapping_add(STANCE_ANIM_ROOT_POS));
+            c.g[S0][0] = 0x50_0000;
+            call_ptr(c, STANCE_SIN_COS, 0x0011_5234)?;
+            let axis = r32(c, S0).wrapping_sub(0xea0);
+            c.g[V0][0] = sx(axis);
+            let ctrl = r32(c, S1);
+            stance_store_root_rotation(c, 0x28, axis, axis, ctrl);
+        }
+
+        c.cycles += 58;
+        let rider = r32(c, S3);
+        let stance = Addr(rider.wrapping_add(STANCE_FLAG)).lw(c);
+        c.g[V0][0] = stance;
+        let ctrl = Addr(rider.wrapping_add(STANCE_ANIM)).lw(c);
+        c.g[V1][0] = ctrl;
+        // -1.0
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.f[0] = 0xbf80_0000;
+        Addr((ctrl as u32).wrapping_add(STANCE_ANIM_STANCE)).sw(c, stance);
+        // Both direction quadwords scaled by -1 (VU0 mul by vf3.x).
+        let scratch = frame.at(c, 0x10);
+        c.mfc1(A0, 0);
+        c.lqc2(4, rider.wrapping_add(STANCE_DIR_A));
+        c.qmtc2(A0, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, scratch);
+        c.lq(V0, scratch);
+        c.sq(V0, rider.wrapping_add(STANCE_DIR_A));
+        c.sq(V0, sp(c));
+        c.mfc1(V1, 0);
+        c.lqc2(4, rider.wrapping_add(STANCE_DIR_B));
+        c.qmtc2(V1, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, scratch);
+        for &(off, f) in STANCE_NEGATED.iter() {
+            c.f[f] = Addr(rider.wrapping_add(off)).read_u32(c) ^ 0x8000_0000;
+        }
+        c.lq(V0, scratch);
+        let store = |c: &mut Cpu, i: usize| {
+            let (off, f) = STANCE_NEGATED[i];
+            let v = c.f[f];
+            Addr(rider.wrapping_add(off)).write_u32(c, v);
+        };
+        store(c, 0);
+        c.sq(V0, rider.wrapping_add(STANCE_DIR_B));
+        for i in 1..8 {
+            store(c, i);
+        }
+        c.sq(V0, sp(c));
+        store(c, 8);
+        let last = Addr(rider.wrapping_add(STANCE_NEGATED_LAST)).read_u32(c);
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore_ra(c, 0x30);
+        let last = last ^ 0x8000_0000;
+        c.f[0] = last;
+        Addr(rider.wrapping_add(STANCE_NEGATED_LAST)).write_u32(c, last);
+        frame.restore(c, S3, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Rider_GetPlayerCharacterInfo (0x123168)
+
+/// Rider: its AI / player index (+0x86c).
+pub(crate) const RIDER_GET_PLAYER_CHARACTER_INFO_AI_INDEX: u32 = 0x86c;
+
+/// `int Rider_GetPlayerCharacterInfo(Rider* self)` (0x123168): the
+/// alternate-character byte of the rider's player slot, from the BE
+/// new-player interface (`BENewPlayerInt_GetAltCharacter(
+/// BELibrary_GetInterface(BELibrary_GetInstance(), 1), self->aiIndex)`).
+pub fn rider_get_player_character_info(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0014_dc80, 0x0012_317c)?; // BELibrary_GetInstance
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 1;
+        call_ptr(c, 0x0014_dd58, 0x0012_3188)?; // BELibrary_GetInterface
+        c.g[A1][0] = Addr(r32(c, S0))
+            .off(RIDER_GET_PLAYER_CHARACTER_INFO_AI_INDEX)
+            .lw(c);
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x0014_7410, 0x0012_3194)?; // BENewPlayerInt_GetAltCharacter
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15719,6 +16000,127 @@ pub(crate) mod tests {
                 for i in 0..6 {
                     c.bus.write32(TREE + 0x44 + 0x20 * i, r.next_u32() % 16);
                 }
+                c.g[A0][0] = sx(RIDER);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+
+    /// `Rider_GetCharacter`: a BELibrary dummy instance, the phase's
+    /// interface table entry with a fake `GetInterface` method (sometimes
+    /// unwinding), and the real `GetRiderCharID` over the player slot table
+    /// (`0x5305b0`) and the character records (`0x534fe0`, 0x1c bytes, id
+    /// byte at +0x11).
+    #[test]
+    fn rider_get_character_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE};
+        use crate::difftest::{fill, DATA, GAME_GP};
+        const IFACE: u32 = DATA + 0x2000;
+        const VT: u32 = DATA + 0x2100;
+        covered(
+            ee::s00::f_00123128__generated,
+            rider_get_character,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x12_3128, 1);
+                c.pc = 0x0012_3128;
+                c.bus.write32(GAME_GP - 0x1f04, DATA + 0x4000);
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                c.bus.write32(0x0053_08a8, IFACE);
+                c.bus.write32(IFACE + 4, VT);
+                c.bus.write16(VT + 8, (4 * (r.next_u32() % 4)) as u16);
+                c.bus.write32(VT + 0xc, FAKE);
+                for i in 0..8 {
+                    c.bus.write32(0x0053_05b0 + 4 * i, r.next_u32() % 8);
+                }
+                fill(c, &mut r, 0x0053_4fe0, 8 * 0x1c / 4);
+                let rider = DATA;
+                c.bus
+                    .write32(rider + OC305_RIDER_AI_INDEX, r.next_u32() % 8);
+                c.g[A0][0] = sx(rider);
+            },
+        );
+    }
+
+    /// Rider_ToggleStance: both stance directions; the real RotateRoots
+    /// walks an anim controller with empty layer lists, SinCos is real.
+    #[test]
+    fn rider_toggle_stance_matches() {
+        check(
+            ee::s00::f_00115168__generated,
+            rider_toggle_stance,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1151_6800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0011_5168;
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                fill(c, &mut r, crate::difftest::SP - 0x100, 0x40);
+                let gp = crate::difftest::GAME_GP;
+                c.bus
+                    .write32(gp - STANCE_GP_PI, std::f32::consts::PI.to_bits());
+                c.bus.write32(
+                    gp - STANCE_GP_HALF_ANGLE,
+                    std::f32::consts::FRAC_PI_2.to_bits(),
+                );
+                // Root translation and rotation axis (0x4ff130..0x4ff170).
+                for i in 0..16 {
+                    c.bus.write32(STANCE_ROOT_TRANSLATION + 4 * i, r.f32(2.0));
+                }
+                let rider = DATA;
+                let ctrl = DATA + 0x2000;
+                let lists = DATA + 0x2400;
+                for i in 0..0x100 {
+                    c.bus.write32(rider + 0x1c0 + 4 * i, r.f32(100.0));
+                }
+                c.bus.write32(rider + STANCE_FLAG, seed % 2);
+                c.bus.write32(rider + STANCE_ANIM, ctrl);
+                fill(c, &mut r, ctrl, 0x20);
+                c.bus.write32(ctrl + 0x50, lists);
+                // Empty layer lists: TransformRoots walks nothing.
+                for layer in 0..8 {
+                    c.bus.write32(lists + 8 * layer, 0);
+                    c.bus.write32(lists + 8 * layer + 4, 0);
+                }
+                c.g[A0][0] = rider as u64;
+            },
+        );
+    }
+
+    /// Rider_GetPlayerCharacterInfo: a built BELibrary whose interface
+    /// method is a fake (unwinding for some seeds); the real GetSlot /
+    /// GetAltCharacter read the slot table and the player records.
+    #[test]
+    fn rider_get_player_character_info_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE};
+        use crate::difftest::{fill, DATA, GAME_GP};
+        const RIDER: u32 = DATA + 0x1000;
+        const LIB: u32 = DATA + 0x8000;
+        const IFACE: u32 = DATA + 0x8100;
+        const IFACE_VT: u32 = DATA + 0x8200;
+        covered(
+            ee::s00::f_00123168__generated,
+            rider_get_player_character_info,
+            150,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x12_3168, 1);
+                c.pc = 0x0012_3168;
+                c.bus.write32(GAME_GP - 0x1f04, LIB);
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                c.bus.write32(0x0053_08a8, IFACE);
+                c.bus.write32(IFACE + 4, IFACE_VT);
+                c.bus
+                    .write16(IFACE_VT + 8, (r.next_u32() as i16 as i32 & !3) as u16);
+                c.bus.write32(IFACE_VT + 0xc, FAKE);
+                // Player slots (0x5305b0) and records (0x534fe0, 0x1c each).
+                for i in 0..8 {
+                    c.bus.write32(0x0053_05b0 + 4 * i, r.next_u32() % 8);
+                }
+                fill(c, &mut r, 0x0053_4fe0, 0x1c * 8 / 4);
+                c.bus
+                    .write32(RIDER + RIDER_GET_PLAYER_CHARACTER_INFO_AI_INDEX, seed % 8);
                 c.g[A0][0] = sx(RIDER);
             },
         );

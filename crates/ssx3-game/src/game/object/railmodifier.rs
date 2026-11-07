@@ -352,6 +352,17 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ModifierBlock_FreeParticles",
     ),
     (0x0036_0840, sync_process_id_equals, "SyncProcess_IdEquals"),
+    (
+        0x0035_3118,
+        modifier_block_free_uv_scroll,
+        "ModifierBlock_FreeUVScroll",
+    ),
+    (
+        0x0035_3150,
+        modifier_block_free_tex_flip,
+        "ModifierBlock_FreeTexFlip",
+    ),
+    (0x0035_c540, rail_modifier_v02, "RailModifier_v02"),
 ];
 
 /// The matrix record table of `DeferMan_InternMatrixRecord`.
@@ -6093,6 +6104,133 @@ pub fn sync_process_id_equals(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// ModifierBlock_FreeTexFlip (0x353150)
+
+/// `ModifierBlock`: the owned texture-flip modifier (`+0x8`).
+pub(crate) const OC305_MODIFIER_BLOCK_TEX_FLIP: u32 = 0x8;
+
+/// `__builtin_delete` (0x317e50).
+pub(crate) const OC305_BUILTIN_DELETE: u32 = 0x0031_7e50;
+
+/// `void ModifierBlock_FreeTexFlip(ModifierBlock* self)` (0x353150): delete
+/// the block's texture-flip modifier (`+0x8`), if any, and clear the field.
+pub fn modifier_block_free_tex_flip(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = Addr(r32(c, S0)).off(OC305_MODIFIER_BLOCK_TEX_FLIP).lw(c);
+        if c.g[A0][0] != 0 {
+            c.cycles += 4;
+            call_ptr(c, OC305_BUILTIN_DELETE, 0x0035_3174)?;
+            Addr(r32(c, S0)).off(OC305_MODIFIER_BLOCK_TEX_FLIP).sw(c, 0);
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ----------------------------------------------- ModifierBlock_FreeUVScroll
+
+/// ModifierBlock: +0x4 the UV-scroll modifier (a plain heap block).
+pub(crate) const MODIFIER_BLOCK_UV_SCROLL: u32 = 0x4;
+
+/// `void ModifierBlock_FreeUVScroll(ModifierBlock* self)` (0x353118): when
+/// the block has a UV-scroll modifier, free it (`__builtin_delete`) and
+/// clear the slot.
+pub fn modifier_block_free_uv_scroll(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let block = abi::r32(c, S0);
+        c.g[A0][0] = Addr(block.wrapping_add(MODIFIER_BLOCK_UV_SCROLL)).lw(c);
+        if c.g[A0][0] != 0 {
+            c.cycles += 4;
+            call_ptr(c, 0x0031_7e50, 0x0035_313c)?;
+            let block = abi::r32(c, S0);
+            Addr(block.wrapping_add(MODIFIER_BLOCK_UV_SCROLL)).sw(c, 0);
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// Rail modifier: the saved block (0x30 bytes at +0x10) and the instance
+/// pointer (+0x40) written to the stream.
+pub(crate) const RAIL_MODIFIER_BLOCK: u32 = 0x10;
+
+pub(crate) const RAIL_MODIFIER_INSTANCE: u32 = 0x40;
+
+/// Stream vtable slots (`{i16 delta, fn}`): write bytes (+0x8) and write a
+/// pointer (+0x28).
+pub(crate) const STREAM_WRITE_BYTES: u32 = 0x8;
+
+pub(crate) const STREAM_WRITE_PTR: u32 = 0x28;
+
+/// A `jalr` through the stream's vtable slot `slot` (`{i16 delta, fn}`):
+/// `a0 = stream + delta`, target the slot's function, return to `ret`.
+/// Leaves v1 = vtable, v0 = target, as the compiled sequence does.
+pub(crate) fn oc308_stream_call(
+    c: &mut Cpu,
+    stream_reg: usize,
+    slot: u32,
+    ret: u32,
+) -> crate::call::Flow {
+    let stream = r32(c, stream_reg);
+    c.g[V1][0] = c.lw(stream);
+    let vt = c.g[V1][0] as u32;
+    c.g[A0][0] = c.lh(vt.wrapping_add(slot));
+    c.g[V0][0] = c.lw(vt.wrapping_add(slot + 4));
+    c.g[A0][0] = sx(stream.wrapping_add(c.g[A0][0] as u32));
+    let target = c.g[V0][0] as u32;
+    call_ptr(c, target, ret)
+}
+
+/// `void RailModifier_v02(RailModifier* self, cStream* stream)` (0x35c540):
+/// save the rail modifier: its 0x30-byte block at +0x10 through
+/// `stream->WriteBytes`, then its instance pointer (+0x40) through
+/// `stream->WritePtr`.
+pub fn rail_modifier_v02(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x30);
+        c.g[A2][0] = 0x30;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A1][0] = sx(r32(c, S1).wrapping_add(RAIL_MODIFIER_BLOCK));
+        oc308_stream_call(c, S0, STREAM_WRITE_BYTES, 0x0035_c574)?;
+        // Registers at the call: v1 = vtable, a1 = instance, a0 = stream + delta.
+        let vt = c.lw(r32(c, S0));
+        c.g[V1][0] = vt;
+        c.g[A1][0] = c.lw(r32(c, S1).wrapping_add(RAIL_MODIFIER_INSTANCE));
+        c.g[A0][0] = c.lh((vt as u32).wrapping_add(STREAM_WRITE_PTR));
+        c.g[V0][0] = c.lw((vt as u32).wrapping_add(STREAM_WRITE_PTR + 4));
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(c.g[A0][0] as u32));
+        let target = c.g[V0][0] as u32;
+        call_ptr(c, target, 0x0035_c58c)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8464,6 +8602,115 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(obj);
                 c.pc = 0x0036_0840;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::{check_paths, check_paths_lohi};
+
+    /// `ModifierBlock_FreeTexFlip`: no modifier, or one allocated from a real
+    /// dlmalloc arena and freed by the real `__builtin_delete`.
+    #[test]
+    fn modifier_block_free_tex_flip_matches() {
+        use crate::game::object::animnode::tests::heap_block;
+        use crate::game::wscript::wscriptman::tests::alloc_ready;
+        crate::difftest::check(
+            ee::s11::f_00353150__generated,
+            modifier_block_free_tex_flip,
+            200,
+            &|c, seed| {
+                let _ = crate::difftest::fakes::machine(c, seed, 0x3531_50, 0);
+                alloc_ready(c);
+                let this = crate::difftest::DATA + 0x100;
+                for i in 0..4 {
+                    c.bus.write32(this + 4 * i, 0x1111_0000 + i);
+                }
+                let owned = if seed % 2 == 0 {
+                    0
+                } else {
+                    heap_block(c, 0x20 + 0x10 * (seed % 4))
+                };
+                c.bus.write32(this + OC305_MODIFIER_BLOCK_TEX_FLIP, owned);
+                c.g[A0][0] = sx(this);
+                c.g[RA][0] = crate::difftest::RA as u64;
+                c.pc = 0x0035_3150;
+            },
+        );
+    }
+
+    /// No UV-scroll block, or one really allocated (a pool-sized one or a
+    /// heap one) that `__builtin_delete` frees.
+    #[test]
+    fn modifier_block_free_uv_scroll_matches() {
+        use crate::game::fe::feasyncfile::tests::{call_machine, run};
+        check(
+            ee::s11::f_00353118__generated,
+            modifier_block_free_uv_scroll,
+            60,
+            &|c, seed| {
+                let mut r = call_machine(c, seed, 0x35_3118, 0);
+                let block = DATA + 0x100;
+                c.bus.write32(block, r.next_u32());
+                let uv = if seed % 3 == 0 {
+                    0
+                } else {
+                    let size = if seed % 3 == 1 { 0x30 } else { 0x400 };
+                    run(
+                        c,
+                        0x0031_7e30,
+                        ee::s10::operator_new_named,
+                        &[size, 0x0048_15a0, 0, 0],
+                    ) as u32
+                };
+                c.bus.write32(block + MODIFIER_BLOCK_UV_SCROLL, uv);
+                c.g[A0][0] = sx(block);
+                c.pc = 0x0035_3118;
+            },
+        );
+    }
+
+    /// A stream object at `stream` whose vtable (at `vt`) has fake methods
+    /// in the slots `slots` with random `this` deltas.
+    pub(crate) fn oc308_fake_stream(
+        c: &mut Cpu,
+        r: &mut crate::difftest::Rng,
+        stream: u32,
+        vt: u32,
+        slots: &[u32],
+    ) {
+        c.bus.write32(stream, vt);
+        for (i, &off) in slots.iter().enumerate() {
+            let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+            c.bus.write16(vt + off, delta as u16);
+            c.bus.write32(vt + off + 4, FAKE + 0x10 * i as u32);
+        }
+    }
+
+    /// Both stream calls are made (fakes log their arguments), and either may
+    /// unwind.
+    #[test]
+    fn rail_modifier_v02_matches() {
+        covered(
+            ee::s11::f_0035c540__generated,
+            rail_modifier_v02,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_c540, 2);
+                let self_ = DATA;
+                let stream = DATA + 0x1000;
+                oc308_fake_stream(
+                    c,
+                    &mut r,
+                    stream,
+                    DATA + 0x2000,
+                    &[STREAM_WRITE_BYTES, STREAM_WRITE_PTR],
+                );
+                c.bus.write32(self_ + RAIL_MODIFIER_INSTANCE, r.next_u32());
+                c.g[A0][0] = sx(self_);
+                c.g[A1][0] = sx(stream);
+                c.pc = 0x0035_c540;
             },
         );
     }

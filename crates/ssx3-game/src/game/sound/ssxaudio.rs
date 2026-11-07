@@ -269,6 +269,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_find_view_in_range,
         "SSXAudioSystem_FindViewInRange",
     ),
+    (
+        0x0028_8ac0,
+        ssx_audio_get_view_pos,
+        "SSXAudioSystem_GetViewPos",
+    ),
+    (
+        0x0028_8c08,
+        ssx_audio_system_is_any_view_in_range,
+        "SSXAudioSystem_IsAnyViewInRange",
+    ),
 ];
 
 /// gp-relative `.lit4` constants.
@@ -3986,6 +3996,177 @@ pub fn ssx_audio_system_get_rider_listener_index(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_IsAnyViewInRange (0x288c08)
+
+/// Entry of `SSXAudioSystem_IsAnyViewInRange`.
+pub(crate) const OC305_VIEW_IN_RANGE_ENTRY: u32 = 0x0028_8c08;
+
+/// Loop head (the per-view body), where the function resumes after an
+/// unwind at the back-edge event check.
+pub(crate) const OC305_VIEW_IN_RANGE_HEAD: u32 = 0x0028_8c48;
+
+/// End of the function (for `jump_out`).
+pub(crate) const OC305_VIEW_IN_RANGE_END: u32 = 0x0028_8ce8;
+
+/// Metres to world units (100.0f).
+pub(crate) const OC305_VIEW_IN_RANGE_UNITS: u32 = 0x42c8_0000;
+
+/// `SSXAudioSystem_GetViewPos` (0x288ac0).
+pub(crate) const OC305_SSX_AUDIO_GET_VIEW_POS: Callee = Callee {
+    addr: 0x0028_8ac0,
+    f: ee::s07::SSXAudioSystem_GetViewPos,
+};
+
+/// `SSXAudioSystem_GetListenerCount` (0x288ce8).
+pub(crate) const OC305_SSX_AUDIO_GET_LISTENER_COUNT: Callee = Callee {
+    addr: 0x0028_8ce8,
+    f: ee::s07::SSXAudioSystem_GetListenerCount,
+};
+
+/// `bool SSXAudioSystem_IsAnyViewInRange(SSXAudioSystem* self, const Vec4*
+/// pos, float radius)` (0x288c08): whether any listener view lies within
+/// `radius` metres (`radius * 100` units, compared squared) of `pos` with
+/// the view in front of it (`(view - pos).z > 0`). Frame 0x70 (ra at 0x20,
+/// s0..s2 at 0x50/0x40/0x30, f20/f21 at 0x60/0x68; the difference vector
+/// spilled at 0x10 and 0x0). Loop state: s0 = view index, s1 = self, s2 =
+/// pos, f20 = radius squared, f21 = 0. Dispatcher-shaped: re-entered at
+/// [`OC305_VIEW_IN_RANGE_HEAD`] after an unwind at the loop's event check.
+pub fn ssx_audio_system_is_any_view_in_range(c: &mut Cpu) {
+    use crate::abi::{c_lt_s, set_fpr};
+    use crate::ps2f::FpuF32;
+    use ssx3_ee_rt::vu0::{Src, W, Y, Z};
+    guest(c, |c| {
+        let frame = Frame { size: 0x70 };
+        // Entering at the head resumes inside the loop body.
+        let mut at_head = match c.pc {
+            OC305_VIEW_IN_RANGE_ENTRY => {
+                c.cycles += 16;
+                let frame = Frame::open(c, 0x70);
+                c.g[AT][0] = sx(OC305_VIEW_IN_RANGE_UNITS);
+                c.f[0] = OC305_VIEW_IN_RANGE_UNITS;
+                frame.save_fpr(c, 20, 0x60);
+                let r = crate::abi::farg(c, 0) * FpuF32(c.f[0]);
+                set_fpr(c, 20, r);
+                frame.save_fpr(c, 21, 0x68);
+                frame.save(c, S0, 0x50);
+                frame.save(c, S1, 0x40);
+                c.g[S0][0] = 0;
+                set_fpr(c, 20, r * r);
+                frame.save(c, S2, 0x30);
+                c.f[21] = 0;
+                c.g[S1][0] = c.g[A0][0];
+                frame.save_ra(c, 0x20);
+                c.g[S2][0] = c.g[A1][0];
+                false
+            }
+            OC305_VIEW_IN_RANGE_HEAD => true,
+            pc => {
+                c.jump_out(pc, OC305_VIEW_IN_RANGE_ENTRY, OC305_VIEW_IN_RANGE_END);
+                return Ok(());
+            }
+        };
+        let mut found = false;
+        loop {
+            if !at_head {
+                // 0x288cb0: more views?
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S1][0];
+                OC305_SSX_AUDIO_GET_LISTENER_COUNT.call(c, 0x0028_8cb8)?;
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[A0][0] = c.g[S1][0];
+                if event_due(c) && crate::events::back_edge_unwinds(c, OC305_VIEW_IN_RANGE_HEAD) {
+                    return Ok(());
+                }
+            }
+            at_head = false;
+            // 0x288c48: d = view position - pos; |d|^2 through VU0.
+            c.cycles += 21;
+            c.g[A1][0] = c.g[S0][0];
+            OC305_SSX_AUDIO_GET_VIEW_POS.call(c, 0x0028_8c50)?;
+            let view = r32(c, V0);
+            let pos = r32(c, S2);
+            let spill_hi = frame.at(c, 0x10);
+            let spill = frame.at(c, 0);
+            c.lqc2(3, view);
+            c.lqc2(4, pos);
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, spill_hi);
+            c.lq(V0, spill_hi);
+            c.sq(V0, spill);
+            c.lqc2(3, spill);
+            c.lqc2(5, spill);
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.qmfc2(V1, 4);
+            c.f[0] = c.g[V1][0] as u32;
+            let near = c_lt_s(c, FpuF32(c.f[0]), FpuF32(c.f[20]));
+            c.lwc1(0, spill + 8);
+            if near {
+                // 0x288c9c: in front of the listener?
+                c.cycles += 4;
+                let ahead = c_lt_s(c, FpuF32(c.f[21]), FpuF32(c.f[0]));
+                c.g[V0][0] = 1;
+                if ahead {
+                    found = true;
+                    break;
+                }
+            }
+            // 0x288cac
+            c.cycles += 1;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+        }
+        if !found {
+            // 0x288cc4
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        // 0x288cc8
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.restore_fpr(c, 21, 0x68);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ------------------------------------------------ SSXAudioSystem_GetViewPos
+
+pub(crate) const VIEW_POS_GET_VIEW: Callee = Callee {
+    addr: 0x0028_b210,
+    f: ee::s07::SSXAudioSystem_GetView,
+};
+
+/// View: +0x20 the camera position (a 4-vector).
+pub(crate) const VIEW_POS_OFFSET: u32 = 0x20;
+
+/// `sSndVec4* SSXAudioSystem_GetViewPos(void* self, int index)` (0x288ac0):
+/// the position of listener view `index` (`SSXAudioSystem_GetView(index)
+/// + 0x20`).
+pub fn ssx_audio_get_view_pos(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        VIEW_POS_GET_VIEW.call(c, 0x0028_8ad0)?;
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(VIEW_POS_OFFSET));
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5289,6 +5470,128 @@ pub(crate) mod tests {
                 let vt = vtable(c, &mut r, &[0x28]);
                 c.bus.write32(RIDER + RLI_POS_OBJECT, vt);
                 fill(c, &mut r, DATA, 0x10);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::check_paths_lohi;
+
+    /// The audio world for `SSXAudioSystem_IsAnyViewInRange`: the world at
+    /// `gp-0x848` (`+0x84` the game module, or none), the module's view list
+    /// (`+0x84`: count at `+0x10`, views from `+0x4`), each view's position
+    /// at `+0x20` near `pos` or far, in front of it or behind; a radius
+    /// argument in f12.
+    pub(crate) fn oc305_view_in_range_fixture(c: &mut Cpu, seed: u32, min_views: u32) {
+        use crate::difftest::{fill, scramble, Rng, DATA, GAME_GP};
+        let mut r = Rng(0x288c_0800 ^ seed as u64);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        let world = DATA;
+        let module = DATA + 0x100;
+        let views = DATA + 0x200;
+        c.bus.write32(GAME_GP - 0x848, world);
+        c.bus
+            .write32(world + 0x84, if seed % 9 == 0 { 0 } else { module });
+        c.bus.write32(module + 0x84, views);
+        // At most 3: the view pointers sit at +0x4..+0xc, right below the
+        // count at +0x10 (a fourth pointer would overwrite the count).
+        let count = min_views + seed / 2 % (4 - min_views);
+        c.bus.write32(views + 0x10, count);
+        let pos = DATA + 0x1000;
+        let mut coord = || f32::from_bits(r.f32(5000.0));
+        let base = [coord(), coord(), coord()];
+        for (k, v) in base.iter().enumerate() {
+            c.bus.write32(pos + 4 * k as u32, v.to_bits());
+        }
+        c.bus.write32(pos + 12, r.next_u32());
+        let radius = 0.5 + f32::from_bits(r.f32(10.0)).abs();
+        c.f[12] = radius.to_bits();
+        for i in 0..count {
+            let view = DATA + 0x2000 + 0x100 * i;
+            fill(c, &mut r, view, 0x40);
+            c.bus.write32(views + 4 + 4 * i, view);
+            let near = r.next_u32() % 2 == 0;
+            let reach = radius * 100.0 * if near { 0.5 } else { 1.5 };
+            let dz = if r.next_u32() % 3 == 0 {
+                -reach * 0.5
+            } else {
+                reach * 0.5
+            };
+            let d = [reach * 0.5, -reach * 0.5, dz];
+            for k in 0..3 {
+                c.bus
+                    .write32(view + 0x20 + 4 * k as u32, (base[k] + d[k]).to_bits());
+            }
+        }
+        c.g[A0][0] = sx(DATA + 0x3000);
+        c.g[A1][0] = sx(pos);
+        c.g[RA][0] = crate::difftest::RA as u64;
+        c.pc = OC305_VIEW_IN_RANGE_ENTRY;
+    }
+
+    /// `SSXAudioSystem_IsAnyViewInRange`: 0..3 views, near or far, in
+    /// front or behind, no game module (one view); then events off,
+    /// delivered, or unwinding at the loop's back edge and re-entering at
+    /// the head.
+    crate::difftest::events::driven!(oc305_gen_view_in_range, ee::s07::f_00288c08__generated);
+    crate::difftest::events::driven!(
+        oc305_hand_view_in_range,
+        ssx_audio_system_is_any_view_in_range
+    );
+
+    #[test]
+    fn ssx_audio_system_is_any_view_in_range_matches() {
+        use crate::difftest::events::{check_events, schedule, Events};
+        crate::difftest::check(
+            ee::s07::f_00288c08__generated,
+            ssx_audio_system_is_any_view_in_range,
+            240,
+            &|c, seed| oc305_view_in_range_fixture(c, seed, 0),
+        );
+        check_events(
+            oc305_gen_view_in_range,
+            oc305_hand_view_in_range,
+            150,
+            &|c, seed| {
+                // At least two views so the back edge is taken.
+                oc305_view_in_range_fixture(c, seed, 2);
+                let mut r = crate::difftest::Rng(0x288c_0801 ^ seed as u64);
+                let mode = schedule(c, &mut r, seed, OC305_VIEW_IN_RANGE_ENTRY);
+                if mode != Events::Off {
+                    c.next_event = c.cycles + (r.next_u32() % 40) as u64;
+                }
+                mode
+            },
+        );
+    }
+
+    /// The audio app's listener list with three views; index 0..2.
+    #[test]
+    fn ssx_audio_get_view_pos_matches() {
+        use crate::difftest::GAME_GP;
+        check(
+            ee::s07::f_00288ac0__generated,
+            ssx_audio_get_view_pos,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x288a_c0d1 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0028_8ac0;
+                c.g[GP][0] = sx(GAME_GP);
+                let world = DATA;
+                let app = DATA + 0x100;
+                let list = DATA + 0x200;
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, app);
+                c.bus.write32(app + 0x84, list);
+                c.bus.write32(list + 0x10, 3);
+                for i in 0..3 {
+                    c.bus
+                        .write32(list + 4 + i * 4, DATA + 0x1000 + (r.next_u32() & 0xff0));
+                }
+                c.g[A0][0] = sx(DATA + 0x800);
+                c.g[A1][0] = sx(seed % 3);
             },
         );
     }

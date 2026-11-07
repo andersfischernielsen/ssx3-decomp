@@ -127,6 +127,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "DynamicParticleModifier_Save",
     ),
     (0x0034_58c0, particle_modifier_ctor, "ParticleModifier_ctor"),
+    (0x0034_6300, halo_modifier_save, "HaloModifier_Save"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1476,6 +1477,51 @@ pub fn particle_modifier_ctor(c: &mut Cpu) {
     })
 }
 
+/// `ParticleModifier_BaseSave(self, stream)` (0x345890).
+pub(crate) const HALO_BASE_SAVE: Callee = Callee {
+    addr: 0x0034_5890,
+    f: ee::s11::f_00345890,
+};
+
+/// The halo modifier's saved block: 0x30 bytes at +0x10.
+pub(crate) const HALO_SAVE_BLOCK: u32 = 0x10;
+
+pub(crate) const HALO_SAVE_BLOCK_SIZE: u64 = 0x30;
+
+/// Stream vtable slot `Write(this, data, size)` (+0x8 this delta, +0xc
+/// function).
+pub(crate) const HALO_STREAM_WRITE: u32 = 0x8;
+
+/// `void HaloModifier_Save(HaloModifier *self, Stream *stream)` (0x346300):
+/// the base particle modifier's save, then the 0x30-byte block at +0x10.
+pub fn halo_modifier_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        HALO_BASE_SAVE.call(c, 0x0034_631c)?;
+        let stream = r32(c, S0);
+        let vt = Addr(stream).lw(c);
+        c.g[V1][0] = vt;
+        c.g[A1][0] = sx(r32(c, S1).wrapping_add(HALO_SAVE_BLOCK));
+        c.g[A2][0] = HALO_SAVE_BLOCK_SIZE;
+        let delta = Addr((vt as u32).wrapping_add(HALO_STREAM_WRITE)).lh(c);
+        let write = Addr((vt as u32).wrapping_add(HALO_STREAM_WRITE + 4)).lw(c);
+        c.g[V0][0] = write;
+        c.g[A0][0] = sx(stream.wrapping_add(delta as u32));
+        call_ptr(c, write as u32, 0x0034_6338)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2244,6 +2290,30 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(ME);
                 c.g[A1][0] = sx(DEF);
                 c.g[A2][0] = sx(OWNER);
+            },
+        );
+    }
+    use super::*;
+
+    /// HaloModifier_Save: the real BaseSave; the stream's writers (vtable
+    /// +0x8 block write, +0x28 object write) are fakes, some unwind.
+    #[test]
+    fn halo_modifier_save_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        covered(
+            ee::s11::f_00346300__generated,
+            halo_modifier_save,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_6300, 2);
+                c.pc = 0x0034_6300;
+                let this = DATA;
+                let stream = DATA + 0x400;
+                fill(c, &mut r, this, 0x20);
+                let vt = vtable(c, &mut r, &[HALO_STREAM_WRITE, 0x28]);
+                c.bus.write32(stream, vt);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = stream as u64;
             },
         );
     }

@@ -291,6 +291,57 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "StreamFile_QueueRange",
     ),
     (0x0040_d610, libm_log, "log"),
+    (
+        0x0010_c1d0,
+        computer_actor_rider_roll_skip_tricks,
+        "ComputerActorRider_RollSkipTricks",
+    ),
+    (
+        0x0010_c258,
+        computer_actor_rider_roll_uber_trick,
+        "ComputerActorRider_RollUberTrick",
+    ),
+    (
+        0x0010_c320,
+        computer_actor_rider_roll_fitted_trick,
+        "ComputerActorRider_RollFittedTrick",
+    ),
+    (
+        0x002f_c420,
+        wscript_fn_make_dead_node,
+        "WScriptFn_MakeDeadNode",
+    ),
+    (
+        0x0030_00a8,
+        wscript_fn_start_object_loop,
+        "WScriptFn_StartObjectLoop",
+    ),
+    (
+        0x0030_2490,
+        wscript_fn_particle_control,
+        "WScriptFn_ParticleControl",
+    ),
+    (
+        0x003d_fcd8,
+        stream_file_alloc_request,
+        "StreamFile_AllocRequest",
+    ),
+    (
+        0x003d_fd58,
+        stream_file_enqueue_request,
+        "StreamFile_EnqueueRequest",
+    ),
+    (
+        0x003d_fe18,
+        stream_file_free_request,
+        "StreamFile_FreeRequest",
+    ),
+    (
+        0x003e_14c8,
+        stream_file_get_channel_bytes,
+        "StreamFile_GetChannelBytes",
+    ),
+    (0x003e_1530, stream_file_is_idle, "StreamFile_IsIdle"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -16083,6 +16134,1207 @@ pub fn wscript_fn_play_object_sound(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// WScriptFn_MakeDeadNode (0x2fc420)
+
+/// gp-relative guard of the static default parameter block.
+pub(crate) const OC305_DEAD_NODE_DEFAULTS_READY_GP: u32 = 0x24f4;
+
+/// The static default parameter block `{id = -1, 0, tag}` (12 bytes;
+/// `0x50_0000 - 0x4b00`).
+pub(crate) const OC305_DEAD_NODE_DEFAULTS: u32 = 0x004f_b500;
+
+/// gp-relative: parameter kinds by slot (`D_004A3C00`); kind 2 is a float.
+pub(crate) const OC305_DEAD_NODE_KINDS_GP: u32 = 0xb10;
+
+pub(crate) const OC305_DEAD_NODE_KIND_FLOAT: u64 = 2;
+
+/// gp-relative: the world-object directory and the world (its default
+/// object at `+0x290`).
+pub(crate) const OC305_DEAD_NODE_DIRECTORY_GP: u32 = 0x16c8;
+
+pub(crate) const OC305_DEAD_NODE_WORLD_GP: u32 = 0xce8;
+
+pub(crate) const OC305_DEAD_NODE_WORLD_DEFAULT_OBJECT: u32 = 0x290;
+
+/// Object: its active node (`+0xc`).
+pub(crate) const OC305_DEAD_NODE_OBJECT_NODE: u32 = 0xc;
+
+/// The factory's result value (12 bytes, returned by copy; `0x4d_0000 -
+/// 0x6f68`).
+pub(crate) const OC305_DEAD_NODE_RESULT: u32 = 0x004c_9098;
+
+/// `EA_MemCopy` (0x3e6574).
+pub(crate) const OC305_EA_MEM_COPY: u32 = 0x003e_6574;
+
+/// `WorldObjFactory_AttachModifier` (0x2fae38).
+pub(crate) const OC305_WOF_ATTACH_MODIFIER: Callee = Callee {
+    addr: 0x002f_ae38,
+    f: ee::s10::WorldObjFactory_AttachModifier,
+};
+
+/// `WorldObjFactory_DeadNode` (0x2fc2c0).
+pub(crate) const OC305_WOF_DEAD_NODE: Callee = Callee {
+    addr: 0x002f_c2c0,
+    f: ee::s10::WorldObjFactory_DeadNode,
+};
+
+/// `Result WScriptFn_MakeDeadNode(Param* params, int count)` (0x2fc420; a0
+/// = the hidden result slot, a1 = count, a2 = params): fill a 3-word
+/// parameter block from the static defaults and the `{slot, value, -, kind}`
+/// parameters (an int given for a float slot is converted), look the object
+/// id up (-1: the world's default object), and unless the object's active
+/// node already takes a kind-6 modifier for these parameters, make it a
+/// dead node (`WorldObjFactory_DeadNode(object, block)`). Returns the
+/// factory's result value. Frame 0x80 (ra at 0x20, s4..s0 at
+/// 0x30..0x70, the block at 0x10).
+pub fn wscript_fn_make_dead_node(c: &mut Cpu) {
+    use crate::ps2f::FpuF32;
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x80);
+        let gp = c.g[GP][0] as u32;
+        let ready = Addr(gp).off(OC305_DEAD_NODE_DEFAULTS_READY_GP).lw(c);
+        c.g[V0][0] = ready;
+        frame.save(c, S3, 0x40);
+        frame.save(c, S0, 0x70);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, S2, 0x50);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x60);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S4, 0x30);
+        c.g[A2][0] = 0x50_0000;
+        frame.save_ra(c, 0x20);
+        let defaults = Addr(OC305_DEAD_NODE_DEFAULTS);
+        if ready == 0 {
+            // First use: initialise the static defaults (guarded local).
+            c.cycles += 10;
+            c.g[V1][0] = sx(defaults.0);
+            c.g[V0][0] = u64::MAX;
+            let tag = defaults.off(8).lbu(c);
+            c.g[A1][0] = tag;
+            defaults.sw(c, u64::MAX);
+            c.g[A0][0] = 1;
+            defaults.off(8).sb(c, tag);
+            Addr(gp).off(OC305_DEAD_NODE_DEFAULTS_READY_GP).sw(c, 1);
+            defaults.off(4).sw(c, 0);
+            Addr(sp(c)).sb(c, tag);
+        }
+        // The parameter block at 0x10(sp), copied from the defaults.
+        c.cycles += 11;
+        c.g[V0][0] = u64::MAX;
+        let block = frame.at(c, 0x10);
+        c.g[S1][0] = sx(block);
+        c.g[A1][0] = sx(defaults.0);
+        c.g[A2][0] = 0xc;
+        Addr(block).sw(c, u64::MAX);
+        c.g[A0][0] = sx(block);
+        c.g[S4][0] = 0x4d_0000;
+        call_ptr(c, OC305_EA_MEM_COPY, 0x002f_c4a0)?;
+        c.g[A2][0] = c.g[S3][0];
+        if (c.g[S0][0] as i64) > 0 {
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[T0][0] = sx((c.g[GP][0] as u32).wrapping_add(OC305_DEAD_NODE_KINDS_GP));
+            c.g[A3][0] = OC305_DEAD_NODE_KIND_FLOAT;
+            loop {
+                // Param cursor a2, count a1 (an event at the head sees them).
+                c.cycles += 8;
+                let param = Addr(r32(c, A2));
+                let slot4 = (param.lw(c) as u32) << 2;
+                let given_kind = param.off(0xc).lw(c);
+                c.g[V1][0] = given_kind;
+                let dest = Addr(slot4.wrapping_add(r32(c, S1)));
+                c.g[A0][0] = sx(dest.0);
+                let kind = Addr(slot4.wrapping_add(r32(c, T0))).lw(c);
+                c.g[V0][0] = kind;
+                if given_kind != kind && kind == c.g[A3][0] {
+                    // An int for a float slot.
+                    c.cycles += 2 + 4;
+                    let value = param.off(4).lw(c) as u32;
+                    let converted = FpuF32::from_i32(value as i32);
+                    c.f[0] = converted.0;
+                    dest.write_fpu(c, converted);
+                } else {
+                    c.cycles += if given_kind == kind { 1 } else { 2 + 1 };
+                    let value = param.off(4).lw(c);
+                    c.g[V0][0] = value;
+                    dest.sw(c, value);
+                }
+                c.cycles += 3;
+                let left = r32(c, A1).wrapping_sub(1);
+                c.g[A1][0] = sx(left);
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x10));
+                if left == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_c4b8);
+                }
+            }
+        }
+        // Look the object up.
+        c.cycles += 4;
+        let gp = c.g[GP][0] as u32;
+        let id = Addr(r32(c, S1)).lw(c);
+        c.g[A2][0] = id;
+        c.g[V0][0] = !id;
+        let directory = Addr(gp).off(OC305_DEAD_NODE_DIRECTORY_GP).lw(c);
+        c.g[A1][0] = directory;
+        if !id == 0 {
+            c.cycles += 3;
+            let world = Addr(gp).off(OC305_DEAD_NODE_WORLD_GP).lw(c);
+            c.g[V0][0] = world;
+            c.g[S0][0] = Addr(world as u32)
+                .off(OC305_DEAD_NODE_WORLD_DEFAULT_OBJECT)
+                .lw(c);
+        } else {
+            c.cycles += 8;
+            let id = id as u32;
+            let sections = Addr(directory as u32).lw(c);
+            let table = Addr(sections as u32).off(8).lw(c);
+            c.g[A0][0] = table;
+            let at = ((id & 0xff) << 2).wrapping_add(table as u32);
+            c.g[V0][0] = sx(at);
+            let section = Addr(at).lw(c);
+            c.g[V1][0] = section;
+            let object = if section != 0 {
+                c.cycles += 8;
+                let entries = Addr(section as u32).off(0x1c).lw(c);
+                c.g[A0][0] = entries;
+                let entry = Addr(((id >> 8) << 2).wrapping_add(entries as u32)).lw(c);
+                c.g[V1][0] = entry;
+                let index = (entry as u32) >> 8;
+                let object = if index != 0 {
+                    sx(index << 2)
+                } else {
+                    c.cycles += 1;
+                    0
+                };
+                c.g[V0][0] = object;
+                c.cycles += 1;
+                object
+            } else {
+                0
+            };
+            c.g[A0][0] = object;
+            c.cycles += 1;
+            c.g[S0][0] = object;
+        }
+        c.cycles += 2;
+        if c.g[S0][0] != 0 {
+            c.cycles += 3;
+            let node = Addr(r32(c, S0)).off(OC305_DEAD_NODE_OBJECT_NODE).lw(c);
+            c.g[A0][0] = node;
+            c.g[A1][0] = 6;
+            let mut kill = true;
+            if node != 0 {
+                c.cycles += 4;
+                c.g[A2][0] = c.g[S1][0];
+                OC305_WOF_ATTACH_MODIFIER.call(c, 0x002f_c584)?;
+                kill = c.g[V0][0] == 0;
+            }
+            if kill {
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[S1][0];
+                OC305_WOF_DEAD_NODE.call(c, 0x002f_c598)?;
+            }
+        }
+        // Return the factory's result value by copy.
+        c.cycles += 16;
+        let result = Addr(r32(c, S4).wrapping_sub(0x4d_0000 - OC305_DEAD_NODE_RESULT));
+        c.g[A1][0] = sx(result.0);
+        let head = result.read_u64_unaligned(c);
+        let tail = result.off(8).lw(c);
+        c.g[V1][0] = tail;
+        let out = Addr(r32(c, S2));
+        out.write_u64_unaligned(c, head);
+        out.off(8).sw(c, tail);
+        c.g[V0][0] = c.g[S2][0];
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `StreamFile_Validate(file, &header, &handle)` (0x3dfbd0): 0 when the
+/// stream file is valid (and the out parameters are written), else 1.
+pub(crate) const SFILE_VALIDATE: Callee = Callee {
+    addr: 0x003d_fbd0,
+    f: ee::s14::f_003dfbd0,
+};
+
+/// The stream handle's buffered byte count for its channel.
+pub(crate) const SFILE_HANDLE_CHANNEL_BYTES: u32 = 0x8;
+
+/// `int StreamFile_GetChannelBytes(StreamFile *file)` (0x3e14c8): the bytes
+/// buffered for the stream file's channel (handle +0x8), or 0 when the file
+/// does not validate.
+pub fn stream_file_get_channel_bytes(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save_ra(c, 0x10);
+        // Out parameters: header at 0(sp), handle at 4(sp).
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = c.g[SP][0] | 0x4;
+        SFILE_VALIDATE.call(c, 0x003e_14dc)?;
+        let invalid = c.g[V0][0] != 0;
+        c.g[V0][0] = 0;
+        if !invalid {
+            c.cycles += 2;
+            let handle = Addr(frame.at(c, 4)).lw(c);
+            c.g[V1][0] = handle;
+            c.g[V0][0] = Addr((handle as u32).wrapping_add(SFILE_HANDLE_CHANNEL_BYTES)).lw(c);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The stream header's read state (0 = idle).
+pub(crate) const SFILE_HEADER_READ_STATE: u32 = 0x38;
+
+/// `bool StreamFile_IsIdle(StreamFile *file)` (0x3e1530): whether a valid
+/// stream file has no read in flight (header read state 0) and no bytes
+/// buffered for its channel; false for an invalid file.
+pub fn stream_file_is_idle(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save_ra(c, 0x10);
+        // Out parameters: header at 0(sp), handle at 4(sp).
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = c.g[SP][0] | 0x4;
+        SFILE_VALIDATE.call(c, 0x003e_1544)?;
+        let invalid = c.g[V0][0] != 0;
+        c.g[V0][0] = 0;
+        if !invalid {
+            c.cycles += 5;
+            let header = Addr(frame.at(c, 0)).lw(c);
+            c.g[V1][0] = header;
+            c.g[A0][0] = 0;
+            let state = Addr((header as u32).wrapping_add(SFILE_HEADER_READ_STATE)).lw(c);
+            c.g[V0][0] = 0;
+            if state == 0 {
+                c.cycles += 4;
+                let handle = Addr(frame.at(c, 4)).lw(c);
+                let bytes = Addr((handle as u32).wrapping_add(SFILE_HANDLE_CHANNEL_BYTES)).lw(c);
+                c.g[V1][0] = bytes;
+                let idle = (bytes == 0) as u64;
+                c.g[A0][0] = idle;
+                c.g[V0][0] = idle;
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// StreamFile_AllocRequest (0x3dfcd8)
+
+/// The stream-file request serial counter (`0x520000 - 0x63e8`); bumped by
+/// 0x100 per request, never 0, kept in the request's tag word above the
+/// low byte.
+pub(crate) const STREAM_FILE_REQUEST_SERIAL: u32 = 0x0051_9c18;
+
+pub(crate) const STREAM_FILE_FREE_REQUESTS: u32 = 0x68;
+
+/// Request field: the next request in the free list.
+pub(crate) const STREAM_FILE_REQUEST_NEXT: u32 = 0xc;
+
+/// `StreamFileRequest* StreamFile_AllocRequest(StreamFile* sf)` (0x3dfcd8):
+/// under the stream file's mutex, pops a request off the free list, gives it
+/// the next serial (`serial += 0x100`, skipping 0) in its tag word (keeping
+/// the low byte); returns it, or null when the list is empty.
+pub fn stream_file_alloc_request(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(STREAM_FILE_MUTEX));
+        Callee {
+            addr: 0x003e_5700,
+            f: ee::s14::EAMutex_Lock,
+        }
+        .call(c, 0x003d_fcf4)?;
+        let sf = r32(c, S0);
+        c.g[V0][0] = Addr(sf + STREAM_FILE_FREE_REQUESTS).lw(c);
+        c.g[S1][0] = 0;
+        if c.g[V0][0] != 0 {
+            c.cycles += 8;
+            let req = c.g[V0][0];
+            c.g[S1][0] = req;
+            c.g[A0][0] = 0x52_0000;
+            let serial = Addr(STREAM_FILE_REQUEST_SERIAL).lw(c);
+            let next = Addr((req as u32).wrapping_add(STREAM_FILE_REQUEST_NEXT)).lw(c);
+            c.g[V1][0] = next;
+            let serial = sx((serial as u32).wrapping_add(0x100));
+            c.g[V0][0] = serial;
+            Addr(sf + STREAM_FILE_FREE_REQUESTS).sw(c, next);
+            Addr(STREAM_FILE_REQUEST_SERIAL).sw(c, serial);
+            if serial == 0 {
+                c.cycles += 2;
+                c.g[V0][0] = 0x100;
+                Addr(STREAM_FILE_REQUEST_SERIAL).sw(c, 0x100);
+            }
+            c.cycles += 4;
+            let serial = Addr(STREAM_FILE_REQUEST_SERIAL).lw(c);
+            c.g[V1][0] = serial;
+            let tag = Addr(req as u32).lbu(c) | serial;
+            c.g[V0][0] = tag;
+            Addr(req as u32).sw(c, tag);
+        }
+        c.cycles += 8;
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(STREAM_FILE_MUTEX));
+        Callee {
+            addr: 0x003e_5760,
+            f: ee::s14::EAMutex_Unlock,
+        }
+        .call(c, 0x003d_fd40)?;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// StreamFile_FreeRequest (0x3dfe18)
+
+/// Stream file: the request list's head (+0x5c), current (+0x60) and tail
+/// (+0x64), and the free-request list (+0x68).
+pub(crate) const STREAM_FILE_FREE_REQUEST_HEAD: u32 = 0x5c;
+
+pub(crate) const STREAM_FILE_FREE_REQUEST_CURRENT: u32 = 0x60;
+
+pub(crate) const STREAM_FILE_FREE_REQUEST_TAIL: u32 = 0x64;
+
+pub(crate) const STREAM_FILE_FREE_REQUEST_FREE: u32 = 0x68;
+
+/// Request: in-use word (+4), previous (+8) and next (+0xc) links.
+pub(crate) const STREAM_FILE_FREE_REQUEST_BUSY: u32 = 0x4;
+
+pub(crate) const STREAM_FILE_FREE_REQUEST_PREV: u32 = 0x8;
+
+pub(crate) const STREAM_FILE_FREE_REQUEST_NEXT: u32 = 0xc;
+
+/// `void StreamFile_FreeRequest(StreamFile* file, Request* req)`
+/// (0x3dfe18): unlinks `req` from the file's doubly linked request list
+/// (fixing head / tail, and moving the current request to its neighbour,
+/// next first), marks it unused and pushes it on the free list.
+pub fn stream_file_free_request(c: &mut Cpu) {
+    const PREV: u32 = STREAM_FILE_FREE_REQUEST_PREV;
+    const NEXT: u32 = STREAM_FILE_FREE_REQUEST_NEXT;
+    let file = Addr(c.g[A0][0] as u32);
+    let req_word = c.g[A1][0];
+    let req = Addr(req_word as u32);
+
+    // prev->next = next (or head = next).
+    c.cycles += 3;
+    c.g[V0][0] = file.off(STREAM_FILE_FREE_REQUEST_HEAD).lw(c);
+    if req_word != c.g[V0][0] {
+        c.g[V1][0] = req.off(PREV).lw(c);
+        c.cycles += 2;
+        c.g[V0][0] = req.off(NEXT).lw(c);
+        let next = c.g[V0][0];
+        Addr(c.g[V1][0] as u32).off(NEXT).sw(c, next);
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = req.off(NEXT).lw(c);
+        let next = c.g[V0][0];
+        file.off(STREAM_FILE_FREE_REQUEST_HEAD).sw(c, next);
+    }
+
+    // next->prev = prev (or tail = prev).
+    c.cycles += 3;
+    c.g[V0][0] = file.off(STREAM_FILE_FREE_REQUEST_TAIL).lw(c);
+    if req_word != c.g[V0][0] {
+        c.g[V1][0] = req.off(NEXT).lw(c);
+        c.cycles += 2;
+        c.g[V0][0] = req.off(PREV).lw(c);
+        let prev = c.g[V0][0];
+        Addr(c.g[V1][0] as u32).off(PREV).sw(c, prev);
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = req.off(PREV).lw(c);
+        let prev = c.g[V0][0];
+        file.off(STREAM_FILE_FREE_REQUEST_TAIL).sw(c, prev);
+    }
+
+    // The current request moves to the next one, else the previous one.
+    c.cycles += 3;
+    c.g[V0][0] = file.off(STREAM_FILE_FREE_REQUEST_CURRENT).lw(c);
+    if req_word == c.g[V0][0] {
+        c.cycles += 3;
+        c.g[V0][0] = req.off(NEXT).lw(c);
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = req.off(PREV).lw(c);
+        }
+        c.cycles += 2;
+        let current = c.g[V0][0];
+        file.off(STREAM_FILE_FREE_REQUEST_CURRENT).sw(c, current);
+    }
+    req.off(STREAM_FILE_FREE_REQUEST_BUSY).sw(c, 0);
+
+    // Push on the free list.
+    c.cycles += 4;
+    c.g[V0][0] = file.off(STREAM_FILE_FREE_REQUEST_FREE).lw(c);
+    let free = c.g[V0][0];
+    req.off(NEXT).sw(c, free);
+    file.off(STREAM_FILE_FREE_REQUEST_FREE).sw(c, req_word);
+    abi::ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// ComputerActorRider_RollSkipTricks (0x10c1d0)
+
+/// Computer actor: the chance (0..1) of doing tricks (+0xdfc).
+pub(crate) const ROLL_SKIP_TRICKS_CHANCE: u32 = 0xdfc;
+
+/// `bool ComputerActorRider_RollSkipTricks(ComputerActorRider* self)`
+/// (0x10c1d0): rolls a game random number in 0..99 and returns whether
+/// `chance * 100 <= roll`, i.e. whether the AI skips its tricks this time.
+pub fn computer_actor_rider_roll_skip_tricks(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0031_7810, 0x0010_c1e4)?; // Rand_NextGame
+        c.g[V1][0] = 100;
+        let chance = Addr(r32(c, S0)).off(ROLL_SKIP_TRICKS_CHANCE).read_fpu(c);
+        let rand = r32(c, V0);
+        let (_, roll) = abi::divu(c, rand, 100);
+        c.g[AT][0] = 0x42c8_0000;
+        let hundred = FpuF32(0x42c8_0000);
+
+        c.cycles += 3;
+        c.g[V0][0] = sx(roll);
+        let threshold = chance * hundred;
+        let rolled = if (c.g[V0][0] as i64) < 0 {
+            // Unsigned to float (never taken: the remainder is below 100).
+            c.cycles += 6;
+            let v = c.g[V0][0];
+            c.g[V1][0] = sx((v as u32) >> 1);
+            c.g[V0][0] = (v & 1) | c.g[V1][0];
+            let half = FpuF32::from_i32(c.g[V0][0] as u32 as i32);
+            half + half
+        } else {
+            c.cycles += 4;
+            FpuF32::from_i32(roll as i32)
+        };
+        abi::set_fpr(c, 1, threshold);
+        abi::set_fpr(c, 0, rolled);
+
+        c.cycles += 4;
+        let skip = threshold.le(rolled);
+        abi::set_fcc(c, skip);
+        c.g[V0][0] = 1;
+        if !skip {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// WScriptFn_ParticleControl (0x302490)
+
+/// gp+: the static-defaults guard; the argument type table; the handle
+/// tables; the world.
+pub(crate) const PARTICLE_CONTROL_INIT_GUARD: u32 = 0x2644;
+
+pub(crate) const PARTICLE_CONTROL_ARG_TYPES: u32 = 0xbd8;
+
+pub(crate) const PARTICLE_CONTROL_HANDLE_TABLES: u32 = 0x16c8;
+
+pub(crate) const PARTICLE_CONTROL_WORLD: u32 = 0xce8;
+
+/// The static default argument buffer (3 words: handle, mode, tag byte).
+pub(crate) const PARTICLE_CONTROL_DEFAULTS: u32 = 0x004f_bc30;
+
+/// The static "no value" result (0x4d0000 - 0x6f68).
+pub(crate) const PARTICLE_CONTROL_RESULT_NONE: u32 = 0x004c_9098;
+
+/// `WScriptResult WScriptFn_ParticleControl(int argc, WScriptArg* args)`
+/// (0x302490, hidden result pointer in a0): the world-script command that
+/// resets (mode 0) or prunes (mode 1) the particles of an object's
+/// modifier block. The arguments (16 bytes each: slot index, value, -,
+/// type) fill a 3-word buffer initialised from a static default (`{-1, -1,
+/// tag}`, set up on first use); an int given for a float slot is
+/// converted. `buf[0]` is the object handle (-1: the world's default
+/// object); the object's model (`+0xc`) must answer its "has particles"
+/// virtual (slot 0x80) before its modifier block (`+0x1c`) is touched.
+/// Returns the static "no value" result.
+pub fn wscript_fn_particle_control(c: &mut Cpu) {
+    const DEFAULT_OBJECT: u32 = 0x290;
+    const MODEL: u32 = 0xc;
+    const MODIFIERS: u32 = 0x1c;
+    const FLOAT_ARG: u64 = 2;
+    const LOOP_HEAD: u32 = 0x0030_2520;
+    guest(c, |c| {
+        let gp = c.g[GP][0] as u32;
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x70);
+        c.g[V0][0] = Addr(gp.wrapping_add(PARTICLE_CONTROL_INIT_GUARD)).lw(c);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S0, 0x60);
+        c.g[S2][0] = c.g[A2][0]; // args
+        frame.save(c, S3, 0x30);
+        c.g[S0][0] = c.g[A1][0]; // argc
+        frame.save(c, S1, 0x50);
+        c.g[S3][0] = c.g[A0][0]; // result
+        frame.save_ra(c, 0x20);
+        c.g[A2][0] = 0x0050_0000;
+        if c.g[V0][0] == 0 {
+            // Guarded static init of the default argument buffer.
+            c.cycles += 11;
+            c.g[V1][0] = sx(PARTICLE_CONTROL_DEFAULTS);
+            c.g[V0][0] = u64::MAX;
+            let tag = Addr(PARTICLE_CONTROL_DEFAULTS + 8).lbu(c);
+            c.g[A1][0] = tag;
+            Addr(PARTICLE_CONTROL_DEFAULTS).sw(c, u64::MAX);
+            c.g[A0][0] = u64::MAX;
+            Addr(PARTICLE_CONTROL_DEFAULTS + 8).sb(c, tag);
+            c.g[V0][0] = 1;
+            Addr(PARTICLE_CONTROL_DEFAULTS + 4).sw(c, u64::MAX);
+            Addr(gp.wrapping_add(PARTICLE_CONTROL_INIT_GUARD)).sw(c, 1);
+            Addr(sp(c)).sb(c, tag);
+        }
+
+        // buf = defaults (buf[0] = -1 first).
+        c.cycles += 10;
+        c.g[V0][0] = u64::MAX;
+        let buf = sp(c).wrapping_add(0x10);
+        c.g[S1][0] = sx(buf);
+        c.g[A1][0] = sx(PARTICLE_CONTROL_DEFAULTS);
+        c.g[A2][0] = 0xc;
+        Addr(buf).sw(c, u64::MAX);
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, 0x003e_6574, 0x0030_250c)?; // memcpy
+        c.g[A2][0] = c.g[S2][0];
+        if (c.g[S0][0] as i64) > 0 {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[T0][0] = sx(gp.wrapping_add(PARTICLE_CONTROL_ARG_TYPES));
+            c.g[A3][0] = FLOAT_ARG;
+            loop {
+                c.cycles += 8;
+                let arg = Addr(c.g[A2][0] as u32);
+                let slot = arg.lw(c);
+                c.g[V1][0] = arg.off(0xc).lw(c);
+                let off = (slot as u32) << 2;
+                c.g[A0][0] = sx(off.wrapping_add(c.g[S1][0] as u32));
+                let ty_addr = off.wrapping_add(c.g[T0][0] as u32);
+                c.g[V0][0] = sx(ty_addr);
+                c.g[V0][0] = Addr(ty_addr).lw(c);
+                let dst = c.g[A0][0] as u32;
+                let convert = if c.g[V1][0] == c.g[V0][0] {
+                    false
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] == c.g[A3][0]
+                };
+                if convert {
+                    c.cycles += 4;
+                    let v = FpuF32::from_i32(arg.off(4).lw(c) as i32);
+                    abi::set_fpr(c, 0, v);
+                    Addr(dst).write_fpu(c, v);
+                } else {
+                    let v = arg.off(4).lw(c);
+                    c.g[V0][0] = v;
+                    c.cycles += 1;
+                    Addr(dst).sw(c, v);
+                }
+                c.cycles += 3;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x10));
+                if c.g[A1][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, LOOP_HEAD);
+                }
+            }
+        }
+
+        // Resolve the object handle.
+        c.cycles += 4;
+        let buf = Addr(c.g[S1][0] as u32);
+        let id = buf.lw(c);
+        c.g[A2][0] = id;
+        c.g[V0][0] = !id;
+        c.g[A1][0] = Addr(gp.wrapping_add(PARTICLE_CONTROL_HANDLE_TABLES)).lw(c);
+        if c.g[V0][0] == 0 {
+            c.cycles += 3;
+            let world = Addr(gp.wrapping_add(PARTICLE_CONTROL_WORLD)).lw(c);
+            c.g[V0][0] = world;
+            c.g[S0][0] = Addr(world as u32).off(DEFAULT_OBJECT).lw(c);
+        } else {
+            c.cycles += 8;
+            let tables = Addr(c.g[A1][0] as u32).lw(c);
+            c.g[V1][0] = tables;
+            let sets = Addr(tables as u32).off(8).lw(c);
+            c.g[A0][0] = sets;
+            let set_addr = ((id as u32 & 0xff) << 2).wrapping_add(sets as u32);
+            c.g[V0][0] = sx(set_addr);
+            let set = Addr(set_addr).lw(c);
+            c.g[V1][0] = set;
+            c.g[V0][0] = sx((id as u32) >> 8);
+            let mut found = false;
+            if set != 0 {
+                c.cycles += 7;
+                let entries = Addr(set as u32).off(0x1c).lw(c);
+                c.g[A0][0] = entries;
+                let entry_addr = ((c.g[V0][0] as u32) << 2).wrapping_add(entries as u32);
+                c.g[V0][0] = sx(entry_addr);
+                let entry = Addr(entry_addr).lw(c);
+                c.g[V1][0] = entry;
+                let index = (entry as u32) >> 8;
+                c.g[V0][0] = sx(index << 2);
+                found = index != 0;
+            }
+            if !found {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+            c.cycles += 1;
+            c.g[S0][0] = c.g[V0][0];
+        }
+
+        // The object's model, its "has particles" virtual, the mode.
+        c.cycles += 2;
+        c.g[V1][0] = 0x004d_0000;
+        if c.g[S0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = Addr(r32(c, S0)).off(MODEL).lw(c);
+            c.g[S1][0] = Addr(r32(c, S1)).off(4).lw(c); // mode
+            if c.g[A1][0] != 0 {
+                c.cycles += 7;
+                let model = r32(c, A1);
+                let vt = Addr(model).off(0xc).lw(c);
+                c.g[V1][0] = vt;
+                let delta = Addr(vt as u32).off(0x80).lh(c);
+                let target = Addr(vt as u32).off(0x84).lw(c);
+                c.g[V0][0] = target;
+                c.g[A0][0] = sx(model.wrapping_add(delta as u32));
+                call_ptr(c, target as u32, 0x0030_25f0)?;
+                let has_particles = c.g[V0][0] != 0;
+                c.g[V1][0] = 0x004d_0000;
+                if has_particles {
+                    c.cycles += 2;
+                    let mode = c.g[S1][0];
+                    c.g[V1][0] = Addr(r32(c, S0)).off(MODEL).lw(c);
+                    let call = if mode == 0 {
+                        c.cycles += 3;
+                        c.g[A0][0] = Addr(r32(c, V1)).off(MODIFIERS).lw(c);
+                        Some((0x0035_3228, 0x0030_2628, 4)) // ModifierBlock_ResetParticles
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = 1;
+                        if mode == 1 {
+                            c.g[A0][0] = Addr(r32(c, V1)).off(MODIFIERS).lw(c);
+                            c.cycles += 2;
+                            Some((0x0035_3278, 0x0030_2640, 3)) // ModifierBlock_RemoveDeadParticles
+                        } else {
+                            c.cycles += 2;
+                            None
+                        }
+                    };
+                    c.g[V1][0] = 0x004d_0000;
+                    if let Some((f, ret_to, cost)) = call {
+                        if c.g[A0][0] != 0 {
+                            c.cycles += cost;
+                            call_ptr(c, f, ret_to)?;
+                            c.g[V1][0] = 0x004d_0000;
+                        }
+                    }
+                }
+            }
+        }
+
+        // *result = the static "no value" result (12 bytes, unaligned copy).
+        c.cycles += 15;
+        let result = c.g[S3][0] as u32;
+        c.g[V0][0] = c.g[S3][0];
+        c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6f68));
+        let src = c.g[A3][0] as u32;
+        let head = Addr(src).read_u64_unaligned(c);
+        c.g[A0][0] = head;
+        let tail = Addr(src).off(8).lw(c);
+        c.g[A1][0] = tail;
+        Addr(result).write_u64_unaligned(c, head);
+        Addr(result).off(8).sw(c, tail);
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Rider ability flags; bit 0: uber tricks unlocked.
+pub(crate) const CAR_RIDER_ABILITY_FLAGS: u32 = 0xb2c;
+
+/// The AI rider's trick skill (0..1 float) in the computer actor.
+pub(crate) const CAR_TRICK_SKILL: u32 = 0xdfc;
+
+/// `BENewRaceInt_GetTrack` result that forbids uber tricks.
+pub(crate) const CAR_NO_UBER_TRACK: u64 = 0xe;
+
+/// 100.0f.
+pub(crate) const CAR_HUNDRED: u32 = 0x42c8_0000;
+
+/// `bool ComputerActorRider_RollUberTrick(ComputerActorRider* self)`
+/// (0x10c258): whether the AI rider tries an uber trick now. Only riders
+/// with uber tricks unlocked (rider flags bit 0), never on track 0xe
+/// (`BENewRaceInt_GetTrack` of the race interface); then a dice roll:
+/// `Rand_NextGame() % 100 < chance * 100`.
+pub fn computer_actor_rider_roll_uber_trick(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let me = c.g[S0][0] as u32;
+        c.g[V1][0] = Addr(me.wrapping_add(CAR_RIDER)).lw(c);
+        let flags = Addr((c.g[V1][0] as u32).wrapping_add(CAR_RIDER_ABILITY_FLAGS)).lw(c);
+        c.g[V0][0] = 0;
+        if flags & 1 != 0 {
+            // BELibrary_GetInterface(BELibrary_GetInstance(), 0) -> GetTrack.
+            c.cycles += 10;
+            call_ptr(c, 0x0014_dc80, 0x0010_c284)?;
+            c.g[A1][0] = 0;
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x0014_dd58, 0x0010_c290)?;
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x0014_4be0, 0x0010_c298)?;
+            c.g[V1][0] = CAR_NO_UBER_TRACK;
+            let track = c.g[V0][0];
+            c.g[V0][0] = 0;
+            if track != CAR_NO_UBER_TRACK {
+                car_roll_against_chance(c)?;
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The dice roll of `ComputerActorRider_RollUberTrick` (0x10c2a4..):
+/// `v0 = (float)(Rand_NextGame() % 100u) < self->chance * 100.0f`.
+pub(crate) fn car_roll_against_chance(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 9;
+    call_ptr(c, 0x0031_7810, 0x0010_c2ac)?;
+    c.g[V1][0] = 100;
+    let me = c.g[S0][0] as u32;
+    let chance = Addr(me.wrapping_add(CAR_TRICK_SKILL)).read_fpu(c);
+    c.f[1] = chance.0;
+    let roll_raw = c.g[V0][0] as u32;
+    abi::divu(c, roll_raw, 100);
+    c.g[AT][0] = CAR_HUNDRED as u64;
+    let hundred = FpuF32(CAR_HUNDRED);
+    c.f[0] = hundred.0;
+
+    c.cycles += 3;
+    c.g[V0][0] = c.hi[0];
+    let threshold = chance * hundred;
+    c.f[1] = threshold.0;
+    let roll = car_u32_to_float(c);
+    c.f[0] = roll.0;
+
+    c.cycles += 4;
+    let hit = abi::c_lt_s(c, roll, threshold);
+    c.g[V0][0] = 1;
+    if !hit {
+        c.cycles += 1;
+        c.g[V0][0] = 0;
+    }
+    Ok(())
+}
+
+/// gcc's `(float)(unsigned)v0` (the trick rolls): `cvt.s.w` directly, or for
+/// values >= 2^31 halve (keeping the low bit), convert and double. Leaves
+/// v0/v1 as the original does.
+pub(crate) fn car_u32_to_float(c: &mut Cpu) -> FpuF32 {
+    if (c.g[V0][0] as i64) < 0 {
+        c.cycles += 6;
+        c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
+        c.g[V0][0] = (c.g[V0][0] & 1) | c.g[V1][0];
+        let half = FpuF32::from_i32(c.g[V0][0] as u32 as i32);
+        half + half
+    } else {
+        c.cycles += 4;
+        FpuF32::from_i32(c.g[V0][0] as u32 as i32)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ComputerActorRider_RollFittedTrick (0x10c320)
+
+/// 70.0f and 30.0f.
+pub(crate) const CAR_SEVENTY: u32 = 0x428c_0000;
+
+pub(crate) const CAR_THIRTY: u32 = 0x41f0_0000;
+
+/// `bool ComputerActorRider_RollFittedTrick(ComputerActorRider* self)`
+/// (0x10c320): whether the AI rider picks a trick fitted to the jump: a
+/// dice roll `Rand_NextGame() % 100 < chance * 70 + 30` (so at least 30%).
+pub fn computer_actor_rider_roll_fitted_trick(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0031_7810, 0x0010_c334)?;
+        c.g[V1][0] = 100;
+        let me = c.g[S0][0] as u32;
+        let chance = Addr(me.wrapping_add(CAR_TRICK_SKILL)).read_fpu(c);
+        c.f[0] = chance.0;
+        let roll_raw = c.g[V0][0] as u32;
+        abi::divu(c, roll_raw, 100);
+        let (seventy, thirty) = (FpuF32(CAR_SEVENTY), FpuF32(CAR_THIRTY));
+        c.f[1] = seventy.0;
+        c.g[AT][0] = CAR_THIRTY as u64;
+        c.f[2] = thirty.0;
+
+        c.cycles += 4;
+        let scaled = chance * seventy;
+        c.g[V0][0] = c.hi[0];
+        let threshold = scaled + thirty;
+        c.f[0] = threshold.0;
+        let roll = car_u32_to_float(c);
+        c.f[1] = roll.0;
+
+        c.cycles += 4;
+        let hit = abi::c_lt_s(c, roll, threshold);
+        c.g[V0][0] = 1;
+        if !hit {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// StreamFile_EnqueueRequest (0x3dfd58)
+
+/// StreamFile: its mutex (+4) and the request list: head (+0x5c), current
+/// (+0x60) and tail (+0x64).
+pub(crate) const SFQ_MUTEX: u32 = 0x4;
+
+pub(crate) const SFQ_HEAD: u32 = 0x5c;
+
+pub(crate) const SFQ_CURRENT: u32 = 0x60;
+
+pub(crate) const SFQ_TAIL: u32 = 0x64;
+
+/// Request: state (+4), previous (+8), next (+0xc).
+pub(crate) const SFQ_REQ_STATE: u32 = 0x4;
+
+pub(crate) const SFQ_REQ_PREV: u32 = 0x8;
+
+pub(crate) const SFQ_REQ_NEXT: u32 = 0xc;
+
+pub(crate) const SFQ_MUTEX_LOCK: Callee = Callee {
+    addr: 0x003e_5700,
+    f: ee::s14::EAMutex_Lock,
+};
+
+pub(crate) const SFQ_MUTEX_UNLOCK: Callee = Callee {
+    addr: 0x003e_5760,
+    f: ee::s14::EAMutex_Unlock,
+};
+
+/// `void StreamFile_EnqueueRequest(StreamFile* sf, Request* req)`
+/// (0x3dfd58): mark the request queued (state 1, no next) and append it to
+/// the stream file's doubly linked request list under the file's mutex. An
+/// empty list makes it head, current and tail at once.
+pub fn stream_file_enqueue_request(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x1;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        let (sf, req) = (Addr(c.g[S1][0] as u32), Addr(c.g[S0][0] as u32));
+        req.off(SFQ_REQ_NEXT).sw(c, 0);
+        c.g[A0][0] = sx(sf.off(SFQ_MUTEX).0);
+        req.off(SFQ_REQ_STATE).sw(c, 1);
+        SFQ_MUTEX_LOCK.call(c, 0x003d_fd84)?;
+
+        let (sf, req) = (Addr(c.g[S1][0] as u32), Addr(c.g[S0][0] as u32));
+        c.g[V0][0] = sf.off(SFQ_TAIL).lw(c);
+        if c.g[V0][0] != 0 {
+            // Append after the tail.
+            let tail = c.g[V0][0];
+            req.off(SFQ_REQ_PREV).sw(c, tail);
+            c.cycles += 3;
+            c.g[V0][0] = sf.off(SFQ_TAIL).lw(c);
+            Addr((c.g[V0][0] as u32).wrapping_add(SFQ_REQ_NEXT)).sw(c, req.0 as u64);
+            sf.off(SFQ_TAIL).sw(c, req.0 as u64);
+        } else {
+            c.cycles += 5;
+            req.off(SFQ_REQ_PREV).sw(c, 0);
+            sf.off(SFQ_TAIL).sw(c, req.0 as u64);
+            sf.off(SFQ_HEAD).sw(c, req.0 as u64);
+            sf.off(SFQ_CURRENT).sw(c, req.0 as u64);
+        }
+
+        c.cycles += 7;
+        c.g[A0][0] = sx(sf.off(SFQ_MUTEX).0);
+        SFQ_MUTEX_UNLOCK.call(c, 0x003d_fdb8)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// WScriptFn_StartObjectLoop (0x3000a8)
+
+/// `gp` word: the static parameter defaults are initialised.
+pub(crate) const SOL_DEFAULTS_READY_GP: u32 = 0x2578;
+
+/// The static parameter defaults (object id, sound, volume?, tag byte at
+/// +0xc; 0x4fbb18), copied as a 16-byte block.
+pub(crate) const SOL_DEFAULTS: u32 = 0x004f_bb18;
+
+/// The kind of each parameter slot (2 = float).
+pub(crate) const SOL_PARAM_KINDS: u32 = 0x0044_6550;
+
+pub(crate) const SOL_KIND_FLOAT: u64 = 2;
+
+/// `gp` words: the object directory, the world (its default object at
+/// `+0x290`).
+pub(crate) const SOL_DIRECTORY_GP: u32 = 0x16c8;
+
+pub(crate) const SOL_WORLD_GP: u32 = 0xce8;
+
+pub(crate) const SOL_WORLD_DEFAULT_OBJECT: u32 = 0x290;
+
+/// The script functions' shared result value (12 bytes at 0x4c9098).
+pub(crate) const SOL_RESULT: u32 = 0x004c_9098;
+
+/// `Result WScriptFn_StartObjectLoop(Param* params, int count)` (0x3000a8;
+/// a0 = the hidden result slot, a1 = count, a2 = params): fills a 4-word
+/// parameter block (object id, sound, arg) from the defaults and the
+/// `{slot, value, -, kind}` parameters (an int given for a float slot is
+/// converted), looks the object up (id -1: the world's default object) and,
+/// if there is one, starts the looping sound on it
+/// (`SSXAudioSystem_StartObjectLoop(GetInstance(), obj, sound, arg)`).
+/// Returns the shared script result.
+pub fn wscript_fn_start_object_loop(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x70);
+        let gp = r32(c, GP);
+        let ready = Addr(gp).off(SOL_DEFAULTS_READY_GP).lw(c);
+        c.g[V0][0] = ready;
+        frame.save(c, S1, 0x50);
+        c.g[A3][0] = 0x50_0000;
+        frame.save(c, S2, 0x40);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x30);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S0, 0x60);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        let defaults = Addr(SOL_DEFAULTS);
+        if ready == 0 {
+            // First use: initialise the static defaults (guarded local).
+            c.cycles += 12;
+            c.g[V1][0] = sx(SOL_DEFAULTS);
+            c.g[V0][0] = u64::MAX;
+            let tag = defaults.off(0xc).lbu(c);
+            c.g[A2][0] = tag;
+            defaults.sw(c, u64::MAX);
+            c.g[A0][0] = u64::MAX;
+            defaults.off(0xc).sb(c, tag);
+            c.g[A1][0] = 1;
+            defaults.off(4).sw(c, u64::MAX);
+            defaults.off(8).sw(c, u64::MAX);
+            Addr(gp).off(SOL_DEFAULTS_READY_GP).sw(c, 1);
+            Addr(sp(c)).sb(c, tag);
+        }
+        // The parameter block at 0x10(sp), copied from the defaults.
+        c.cycles += 10;
+        c.g[V0][0] = u64::MAX;
+        let block = frame.at(c, 0x10);
+        c.g[S0][0] = sx(block);
+        c.g[A2][0] = 0x10;
+        c.g[A1][0] = sx(SOL_DEFAULTS);
+        Addr(block).sw(c, u64::MAX);
+        c.g[A0][0] = sx(block);
+        call_ptr(c, 0x003e_6574, 0x0030_0128)?; // memcpy
+        c.g[A2][0] = c.g[S2][0];
+        if (c.g[S1][0] as i64) > 0 {
+            c.cycles += 4;
+            c.g[V0][0] = 0x44_0000;
+            c.g[A1][0] = c.g[S1][0];
+            c.g[T0][0] = sx(SOL_PARAM_KINDS);
+            c.g[A3][0] = SOL_KIND_FLOAT;
+            loop {
+                c.cycles += 8;
+                let param = Addr(r32(c, A2));
+                let slot4 = (param.lw(c) as u32) << 2;
+                let given_kind = param.off(0xc).lw(c);
+                c.g[V1][0] = given_kind;
+                let dest = Addr(slot4.wrapping_add(r32(c, S0)));
+                c.g[A0][0] = sx(dest.0);
+                let kind = Addr(slot4.wrapping_add(r32(c, T0))).lw(c);
+                c.g[V0][0] = kind;
+                if given_kind != kind && kind == c.g[A3][0] {
+                    // An int for a float slot.
+                    c.cycles += 2 + 4;
+                    let value = param.off(4).lw(c) as u32;
+                    let converted = FpuF32::from_i32(value as i32);
+                    c.f[0] = converted.0;
+                    dest.write_fpu(c, converted);
+                } else {
+                    c.cycles += if given_kind == kind { 1 } else { 2 + 1 };
+                    let value = param.off(4).lw(c);
+                    c.g[V0][0] = value;
+                    dest.sw(c, value);
+                }
+                c.cycles += 3;
+                let left = r32(c, A1).wrapping_sub(1);
+                c.g[A1][0] = sx(left);
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x10));
+                if left == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0030_0140);
+                }
+            }
+        }
+        // Look the object up.
+        c.cycles += 4;
+        let id = Addr(r32(c, S0)).lw(c);
+        c.g[A2][0] = id;
+        c.g[V0][0] = !id;
+        let directory = Addr(r32(c, GP)).off(SOL_DIRECTORY_GP).lw(c);
+        c.g[A1][0] = directory;
+        if !id == 0 {
+            c.cycles += 3;
+            let world = Addr(r32(c, GP)).off(SOL_WORLD_GP).lw(c);
+            c.g[V0][0] = world;
+            c.g[S2][0] = Addr(world as u32).off(SOL_WORLD_DEFAULT_OBJECT).lw(c);
+        } else {
+            c.cycles += 8;
+            let id = id as u32;
+            c.g[V0][0] = sx((id & 0xff) << 2);
+            let sections = Addr(directory as u32).lw(c);
+            c.g[V1][0] = sections;
+            let table = Addr(sections as u32).off(8).lw(c);
+            c.g[A0][0] = table;
+            let at = ((id & 0xff) << 2).wrapping_add(table as u32);
+            c.g[V0][0] = sx(at);
+            let section = Addr(at).lw(c);
+            c.g[V1][0] = section;
+            let object = if section != 0 {
+                c.cycles += 7;
+                let entries = Addr(section as u32).off(0x1c).lw(c);
+                c.g[A0][0] = entries;
+                let entry = Addr(((id >> 8) << 2).wrapping_add(entries as u32)).lw(c);
+                c.g[V1][0] = entry;
+                let index = (entry as u32) >> 8;
+                let object = if index != 0 {
+                    sx(index << 2)
+                } else {
+                    c.cycles += 1;
+                    0
+                };
+                c.g[V0][0] = object;
+                c.cycles += 1;
+                object
+            } else {
+                c.cycles += 2;
+                0
+            };
+            c.g[A1][0] = object;
+            c.cycles += 1;
+            c.g[S2][0] = object;
+        }
+        c.cycles += 2;
+        c.g[V1][0] = 0x4d_0000;
+        if c.g[S2][0] != 0 {
+            // SSXAudioSystem_StartObjectLoop(GetInstance(), obj, sound, arg).
+            c.cycles += 9;
+            c.g[S1][0] = Addr(r32(c, S0)).off(8).lw(c);
+            c.g[S0][0] = Addr(r32(c, S0)).off(4).lw(c);
+            call_ptr(c, 0x0028_b180, 0x0030_0208)?; // SSXAudioSystem_GetInstance
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A2][0] = c.g[S0][0];
+            c.g[A3][0] = c.g[S1][0];
+            call_ptr(c, 0x0029_7950, 0x0030_021c)?; // SSXAudioSystem_StartObjectLoop
+            c.g[V1][0] = 0x4d_0000;
+        }
+        // *result = the shared script result (12 bytes).
+        c.cycles += 15;
+        c.g[V0][0] = c.g[S3][0];
+        c.g[A3][0] = sx(SOL_RESULT);
+        let out = r32(c, S3);
+        c.ldl(4, SOL_RESULT.wrapping_add(0x7));
+        c.ldr(4, SOL_RESULT);
+        c.g[A1][0] = Addr(SOL_RESULT).off(8).lw(c);
+        c.sdl(4, out.wrapping_add(0x7));
+        c.sdr(4, out);
+        let tail = c.g[A1][0];
+        Addr(out).off(8).sw(c, tail);
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -22504,6 +23756,600 @@ pub(crate) mod tests {
                 w(c, GAME_GP + 0x410, AUDIO);
                 w(c, AUDIO + 0x62a8, r.next_u32() & 0x7fff_ffff);
                 crate::difftest::fill(c, &mut r, OC300_POS_RESULT, 3);
+                c.g[A0][0] = sx(RESULT_SLOT);
+                c.g[A1][0] = count as i32 as i64 as u64;
+                c.g[A2][0] = sx(PARAMS);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    pub(crate) use crate::game::sound::ssxaudio::ssx_audio_system_is_any_view_in_range;
+
+    /// `WScriptFn_MakeDeadNode`: the static defaults initialised or not;
+    /// -1..3 parameters (the first always sets slot 1, the dead-node mode;
+    /// others random slots/kinds, ints into float slots converted; slot 0 is
+    /// the object id); the id is -1 (the world's default object, sometimes
+    /// none) or a section/object pair whose section or entry may be empty.
+    /// Found objects have no node (the real `WorldObjFactory_DeadNode` runs
+    /// with a mode that sets the object's dead flags or returns at once) or
+    /// a node whose modifier check is a fake returning non-zero (nothing
+    /// done; sometimes unwinding). Not reached: a node whose modifier check
+    /// fails (needs a zero result through the real AttachModifier chain),
+    /// and the dead-node modes 0/3 that allocate.
+    #[test]
+    fn wscript_fn_make_dead_node_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::{fill, DATA, GAME_GP};
+        const RESULT_SLOT: u32 = DATA + 0x3000;
+        const PARAMS: u32 = DATA + 0x1000;
+        const DIR: u32 = DATA + 0x20_0000;
+        const SECTIONS: u32 = DIR + 0x100;
+        const TABLE: u32 = DIR + 0x200;
+        const SECTION: u32 = DIR + 0x300;
+        const ENTRIES: u32 = DIR + 0x400;
+        const WORLD: u32 = DIR + 0xa00;
+        const NODE: u32 = DIR + 0xc00;
+        const VT: u32 = DIR + 0xd00;
+        const OBJS: u32 = DIR + 0x2000;
+        crate::difftest::check(
+            ee::s10::f_002fc420__generated,
+            wscript_fn_make_dead_node,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f_c420, 1);
+                c.pc = 0x002f_c420;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                // Dead-node modes that return or only set flags.
+                const MODES: [u32; 5] = [1, 2, 5, u32::MAX, 0x7fff];
+                let count: u32 = if seed % 11 == 0 { u32::MAX } else { seed % 4 };
+                let ready = seed % 4 != 0 || (count as i32) <= 0;
+                w(c, GAME_GP + OC305_DEAD_NODE_DEFAULTS_READY_GP, ready as u32);
+                fill(c, &mut r, OC305_DEAD_NODE_DEFAULTS, 3);
+                if ready {
+                    let id = if seed % 3 == 0 {
+                        u32::MAX
+                    } else {
+                        (r.next_u32() % 4) | (r.next_u32() % 4) << 8
+                    };
+                    w(c, OC305_DEAD_NODE_DEFAULTS, id);
+                    w(
+                        c,
+                        OC305_DEAD_NODE_DEFAULTS + 4,
+                        MODES[(r.next_u32() % 5) as usize],
+                    );
+                }
+                let kinds = GAME_GP + OC305_DEAD_NODE_KINDS_GP;
+                w(c, kinds, 0);
+                w(c, kinds + 4, r.next_u32() % 4);
+                w(c, kinds + 8, r.next_u32() % 4);
+                // Directory: sections 0..2 present, 3 empty; entries 0..2 objects, 3 empty.
+                w(c, GAME_GP + OC305_DEAD_NODE_DIRECTORY_GP, DIR);
+                w(c, DIR, SECTIONS);
+                w(c, SECTIONS + 8, TABLE);
+                for i in 0..4 {
+                    w(c, TABLE + 4 * i, if i == 3 { 0 } else { SECTION });
+                    let obj = OBJS + 0x100 * i;
+                    let entry = if i == 3 {
+                        r.next_u32() & 0xff
+                    } else {
+                        (obj >> 2) << 8 | (r.next_u32() & 0xff)
+                    };
+                    w(c, ENTRIES + 4 * i, entry);
+                    fill(c, &mut r, obj, 0x10);
+                    let node = if (seed / 4) % 3 == 0 { NODE } else { 0 };
+                    w(c, obj + OC305_DEAD_NODE_OBJECT_NODE, node);
+                }
+                w(c, SECTION + 0x1c, ENTRIES);
+                w(c, GAME_GP + OC305_DEAD_NODE_WORLD_GP, WORLD);
+                w(
+                    c,
+                    WORLD + OC305_DEAD_NODE_WORLD_DEFAULT_OBJECT,
+                    if seed % 7 == 0 { 0 } else { OBJS + 0x100 },
+                );
+                // The node's modifier check: a fake (non-zero result).
+                w(c, NODE + 0xc, VT);
+                c.bus.write16(VT + 0x50, 0);
+                w(c, VT + 0x54, FAKE);
+                // The result value.
+                fill(c, &mut r, OC305_DEAD_NODE_RESULT, 3);
+                // Parameters: {slot, value, -, kind}.
+                for i in 0..3 {
+                    let p = PARAMS + 0x10 * i;
+                    let slot = if i == 0 { 1 } else { r.next_u32() % 3 };
+                    let value = match slot {
+                        0 => match r.next_u32() % 4 {
+                            0 => u32::MAX,
+                            _ => (r.next_u32() % 4) | (r.next_u32() % 4) << 8,
+                        },
+                        1 => MODES[(r.next_u32() % 5) as usize],
+                        _ => r.next_u32(),
+                    };
+                    w(c, p, slot);
+                    w(c, p + 4, value);
+                    w(c, p + 8, r.next_u32());
+                    w(c, p + 0xc, if slot == 0 { 0 } else { r.next_u32() % 4 });
+                }
+                c.g[A0][0] = sx(RESULT_SLOT + 4 * (seed % 2));
+                c.g[A1][0] = sx(count);
+                c.g[A2][0] = sx(PARAMS);
+            },
+        );
+    }
+
+    /// The stream header magic `StreamFile_Validate` checks.
+    pub(crate) const SFILE_MAGIC: u32 = 0x4d52_5453;
+
+    #[test]
+    fn stream_file_get_channel_bytes_matches() {
+        check(
+            ee::s14::f_003e14c8__generated,
+            stream_file_get_channel_bytes,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3e14_c800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003e_14c8;
+                let (file, header) = (DATA + 0x100, DATA + 0x200);
+                fill(c, &mut r, DATA, 0x400 / 4);
+                fill(c, &mut r, crate::difftest::SP - 0x40, 0x10);
+                c.bus.write32(file, header);
+                // file = 0, bad magic, or valid.
+                c.bus.write32(
+                    header,
+                    if seed % 3 == 0 {
+                        r.next_u32()
+                    } else {
+                        SFILE_MAGIC
+                    },
+                );
+                c.g[A0][0] = if seed % 5 == 0 { 0 } else { file as u64 };
+            },
+        );
+    }
+
+    #[test]
+    fn stream_file_is_idle_matches() {
+        check(
+            ee::s14::f_003e1530__generated,
+            stream_file_is_idle,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3e15_3000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003e_1530;
+                let (file, header) = (DATA + 0x100, DATA + 0x200);
+                fill(c, &mut r, DATA, 0x400 / 4);
+                fill(c, &mut r, crate::difftest::SP - 0x40, 0x10);
+                c.bus.write32(file, header);
+                c.bus.write32(
+                    header,
+                    if seed % 7 == 0 {
+                        r.next_u32()
+                    } else {
+                        SFILE_MAGIC
+                    },
+                );
+                if seed % 3 != 0 {
+                    c.bus.write32(header + SFILE_HEADER_READ_STATE, 0);
+                }
+                if seed % 2 == 0 {
+                    c.bus.write32(file + SFILE_HANDLE_CHANNEL_BYTES, 0);
+                }
+                c.g[A0][0] = if seed % 11 == 0 { 0 } else { file as u64 };
+            },
+        );
+    }
+
+    /// `StreamFile_AllocRequest`: the real mutex lock/unlock (the fake
+    /// GetThreadId returns 0x41: the owner, so the fast path, or another
+    /// thread, so the semaphore path through fakes); an empty or non-empty
+    /// free list; a serial that wraps to 0.
+    #[test]
+    fn stream_file_alloc_request_matches() {
+        covered(
+            ee::s14::f_003dfcd8__generated,
+            stream_file_alloc_request,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003d_fcd8, 4);
+                c.pc = 0x003d_fcd8;
+                let sf = DATA + 0x400 + (r.next_u32() % 0x40) * 4;
+                fill(c, &mut r, sf, 0x20);
+                let mutex = sf + STREAM_FILE_MUTEX;
+                c.bus.write32(mutex + 4, 0x40 + seed % 3);
+                c.bus.write32(mutex + 8, 1 + seed % 2);
+                c.bus.write32(mutex, r.next_u32() & 0xff);
+                for i in 0..4 {
+                    c.bus.write32(LOG_RESULTS + 4 * i, 0x41);
+                }
+                let req = DATA + 0x2000 + (r.next_u32() % 0x40) * 4;
+                fill(c, &mut r, req, 8);
+                let head = if seed % 4 == 0 { 0 } else { req };
+                c.bus.write32(sf + STREAM_FILE_FREE_REQUESTS, head);
+                let serial = if seed % 5 == 1 {
+                    0xffff_ff00
+                } else {
+                    r.next_u32()
+                };
+                c.bus.write32(STREAM_FILE_REQUEST_SERIAL, serial);
+                c.g[A0][0] = sx(sf);
+            },
+        );
+    }
+
+    /// StreamFile_FreeRequest: the request at the head, the tail, the middle
+    /// or alone in the list, current or not, with and without a next
+    /// neighbour (current falls back to the previous one).
+    #[test]
+    fn stream_file_free_request_matches() {
+        use crate::difftest::{check, scramble, Rng, DATA};
+        const FILE: u32 = DATA;
+        const REQS: u32 = DATA + 0x100;
+        check(
+            ee::s14::f_003dfe18__generated,
+            stream_file_free_request,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x003d_fe18 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x003d_fe18;
+                // A list of 1..4 requests (0x20 apart), doubly linked.
+                let n = 1 + seed % 4;
+                let at = |i: u32| REQS + 0x20 * i;
+                for i in 0..n {
+                    c.bus.write32(at(i) + 4, r.next_u32());
+                    c.bus.write32(at(i) + 8, if i == 0 { 0 } else { at(i - 1) });
+                    c.bus
+                        .write32(at(i) + 0xc, if i + 1 == n { 0 } else { at(i + 1) });
+                }
+                c.bus.write32(FILE + 0x5c, at(0));
+                c.bus.write32(FILE + 0x64, at(n - 1));
+                let pick = (seed / 4) % n;
+                let current = match r.next_u32() % 3 {
+                    0 => at(pick),
+                    1 => at(r.next_u32() % n),
+                    _ => 0,
+                };
+                c.bus.write32(FILE + 0x60, current);
+                c.bus
+                    .write32(FILE + 0x68, if seed % 2 == 0 { 0 } else { DATA + 0x400 });
+                c.g[A0][0] = sx(FILE);
+                c.g[A1][0] = sx(at(pick));
+            },
+        );
+    }
+
+    /// ComputerActorRider_RollSkipTricks: the real game random number
+    /// generator from a random state, trick chances from edge-case floats,
+    /// fractions of 1 and exact multiples of 1/100 (ties with the roll).
+    #[test]
+    fn computer_actor_rider_roll_skip_tricks_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA};
+        const RAND_STATE: u32 = 0x004f_f030;
+        check(
+            ee::s00::f_0010c1d0__generated,
+            computer_actor_rider_roll_skip_tricks,
+            250,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10_c1d0, 0);
+                c.pc = 0x0010_c1d0;
+                fill(c, &mut r, RAND_STATE, 0x10);
+                let chance = match seed % 4 {
+                    0 => r.edge_f32(),
+                    1 => ((r.next_u32() % 101) as f32 / 100.0).to_bits(),
+                    _ => (r.next_u32() as f32 / u32::MAX as f32).to_bits(),
+                };
+                c.bus.write32(DATA + ROLL_SKIP_TRICKS_CHANCE, chance);
+                c.g[A0][0] = sx(DATA);
+            },
+        );
+    }
+
+    /// WScriptFn_ParticleControl: the static defaults initialised or not;
+    /// 0..4 extra arguments over the handle and mode arguments (or none at
+    /// all), int arguments for a float slot converted; the handle -1 (the
+    /// world's default object, present or not), an empty handle set, an
+    /// empty entry, or a found object; no model, a model whose "has
+    /// particles" virtual says no (a real leaf returning 0) or yes (a fake);
+    /// modes 0 / 1 / other with and without a modifier block (the real
+    /// reset / prune see an empty particle list).
+    #[test]
+    fn wscript_fn_particle_control_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::{check, fill, DATA, GAME_GP};
+        check(
+            ee::s10::f_00302490__generated,
+            wscript_fn_particle_control,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x30_2490, 0);
+                let gp = GAME_GP;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                // Static defaults: fresh, or already set up (handle -1).
+                w(c, gp + PARTICLE_CONTROL_INIT_GUARD, seed % 2);
+                fill(c, &mut r, PARTICLE_CONTROL_DEFAULTS, 3);
+                w(c, PARTICLE_CONTROL_DEFAULTS, u32::MAX);
+                w(c, PARTICLE_CONTROL_DEFAULTS + 4, r.next_u32() % 3);
+                let types = gp + PARTICLE_CONTROL_ARG_TYPES;
+                w(c, types, 0);
+                w(c, types + 4, 0);
+                w(c, types + 8, r.next_u32() % 3);
+                fill(c, &mut r, PARTICLE_CONTROL_RESULT_NONE, 3);
+                // Handle tables: gp+0x16c8 -> P -> Q; Q+8 -> sets.
+                let (p, q, sets) = (DATA + 0x2000, DATA + 0x2100, DATA + 0x2200);
+                let (set, entries, obj) = (DATA + 0x2800, DATA + 0x2900, DATA + 0x3000);
+                let (world, model, vt, mods) =
+                    (DATA + 0x3800, DATA + 0x4000, DATA + 0x4100, DATA + 0x4200);
+                w(c, gp + PARTICLE_CONTROL_HANDLE_TABLES, p);
+                w(c, p, q);
+                w(c, q + 8, sets);
+                w(c, sets + 4 * 3, set);
+                w(c, sets + 4 * 7, 0);
+                w(c, set + 0x1c, entries);
+                let found = (obj >> 2) << 8 | (r.next_u32() & 0xff);
+                w(
+                    c,
+                    entries + 4 * 5,
+                    if seed / 2 % 4 == 2 {
+                        r.next_u32() & 0xff
+                    } else {
+                        found
+                    },
+                );
+                w(c, gp + PARTICLE_CONTROL_WORLD, world);
+                w(c, world + 0x290, if seed % 9 == 4 { 0 } else { obj });
+                // The model and its "has particles" virtual (slot 0x80).
+                w(c, obj + 0xc, if seed % 7 == 3 { 0 } else { model });
+                w(c, model + 0xc, vt);
+                c.bus
+                    .write16(vt + 0x80, (r.next_u32() as i16 as i32 & !3) as u16);
+                w(c, vt + 0x84, if seed % 5 == 1 { 0x0014_06c0 } else { FAKE });
+                w(c, model + 0x1c, if seed % 6 == 5 { 0 } else { mods });
+                w(c, mods + 0x10, 0); // no particles
+                let id = match seed / 2 % 4 {
+                    0 => u32::MAX,
+                    1 => 5 << 8 | 7,
+                    _ => 5 << 8 | 3,
+                };
+                let mode = match seed / 8 % 4 {
+                    3 => r.next_u32() % 16,
+                    m => m % 2,
+                };
+                // Arguments (16 bytes: slot, value, -, type).
+                let args = DATA + 0x100;
+                let extra = seed / 3 % 5;
+                let mut n = 0;
+                let mut put = |c: &mut Cpu, slot: u32, val: u32, ty: u32| {
+                    let a = args + 0x10 * n;
+                    c.bus.write32(a, slot);
+                    c.bus.write32(a + 4, val);
+                    c.bus.write32(a + 8, 0x5555);
+                    c.bus.write32(a + 0xc, ty);
+                    n += 1;
+                };
+                put(c, 0, id, 0);
+                put(c, 1, mode, 0);
+                for _ in 0..extra {
+                    let val = r.next_u32();
+                    let ty = r.next_u32() % 3;
+                    put(c, 2, val, ty);
+                }
+                let argc = match seed % 11 {
+                    0 => 0,
+                    5 => sx(0xffff_fffe),
+                    _ => n as u64,
+                };
+                c.g[A0][0] = sx(DATA + 0x10);
+                c.g[A1][0] = argc;
+                c.g[A2][0] = sx(args);
+                c.pc = 0x0030_2490;
+            },
+        );
+    }
+
+    /// ComputerActorRider_RollUberTrick: uber tricks locked or unlocked,
+    /// track 0xe or another, chances from 0 to 1 (and edge floats); real
+    /// BELibrary_GetInstance/GetInterface/GetTrack/Rand_NextGame, the race
+    /// interface's method a fake (sometimes unwinding).
+    #[test]
+    fn computer_actor_rider_roll_uber_trick_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE};
+        use crate::difftest::GAME_GP;
+        covered(
+            ee::s00::f_0010c258__generated,
+            computer_actor_rider_roll_uber_trick,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10c258, 1);
+                c.pc = 0x0010_c258;
+                let (me, rider, lib, iface, vt) = (
+                    DATA,
+                    DATA + 0x2000,
+                    DATA + 0x4000,
+                    DATA + 0x5000,
+                    DATA + 0x5100,
+                );
+                c.g[A0][0] = me as u64;
+                c.bus.write32(me + CAR_RIDER, rider);
+                let flags = r.next_u32() & !1 | (seed % 4 != 0) as u32;
+                c.bus.write32(rider + CAR_RIDER_ABILITY_FLAGS, flags);
+                let chance = if seed % 5 == 0 {
+                    r.edge_f32()
+                } else {
+                    (r.next_u32() as f32 / u32::MAX as f32).to_bits()
+                };
+                c.bus.write32(me + CAR_TRICK_SKILL, chance);
+                // BELibrary built; interface 0's GetTrack-provider method is a fake.
+                c.bus.write32(GAME_GP - 0x1f04, lib);
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                c.bus.write32(0x0053_08a8, iface);
+                c.bus.write32(iface + 4, vt);
+                c.bus.write16(vt + 8, (r.next_u32() as i16 & !3) as u16);
+                c.bus.write32(vt + 0xc, FAKE);
+                // BENewRaceInt's track.
+                let track = if seed % 3 == 0 {
+                    0xe
+                } else {
+                    r.next_u32() % 0x20
+                };
+                c.bus.write32(0x0053_5c08, track);
+                // Rand_NextGame's generator state.
+                fill(c, &mut r, 0x0050_0000 - 0xfd0, 8);
+            },
+        );
+    }
+
+    /// StreamFile_EnqueueRequest into an empty list or after a tail; the
+    /// real EAMutex lock / unlock (syscalls faked, some unwinding), the
+    /// mutex owned by the caller or not.
+    #[test]
+    fn stream_file_enqueue_request_matches() {
+        use crate::difftest::fakes::{covered, machine};
+        use crate::difftest::put_words;
+        covered(
+            ee::s14::f_003dfd58__generated,
+            stream_file_enqueue_request,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003d_fd58, 3);
+                c.pc = 0x003d_fd58;
+                let (sf, req, tail) = (DATA, DATA + 0x1000, DATA + 0x2000);
+                fill(c, &mut r, sf, 0x20);
+                fill(c, &mut r, req, 4);
+                fill(c, &mut r, tail, 4);
+                c.bus
+                    .write32(sf + SFQ_TAIL, if seed % 3 == 0 { 0 } else { tail });
+                // The mutex: owner thread id (+4), lock count (+8), semaphore (+0xc).
+                put_words(
+                    c,
+                    sf + SFQ_MUTEX + 4,
+                    &[r.next_u32() % 4, r.next_u32() % 3, r.next_u32() % 16],
+                );
+                c.g[A0][0] = sx(sf);
+                c.g[A1][0] = sx(req);
+            },
+        );
+    }
+
+    /// ComputerActorRider_RollFittedTrick: chances from 0 to 1 (and edge
+    /// floats) against the real Rand_NextGame on random generator states.
+    #[test]
+    fn computer_actor_rider_roll_fitted_trick_matches() {
+        crate::difftest::check_lohi(
+            ee::s00::f_0010c320__generated,
+            computer_actor_rider_roll_fitted_trick,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0010_c320 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0010_c320;
+                let chance = if seed % 4 == 0 {
+                    r.edge_f32()
+                } else {
+                    (r.next_u32() as f32 / u32::MAX as f32).to_bits()
+                };
+                c.bus.write32(DATA + CAR_TRICK_SKILL, chance);
+                fill(c, &mut r, 0x0050_0000 - 0xfd0, 8);
+                c.g[A0][0] = sx(DATA);
+            },
+        );
+    }
+
+    /// `WScriptFn_StartObjectLoop`: defaults initialised or not (default id
+    /// -1 or random), 0..3 parameters (or a negative count) of matching,
+    /// mismatching and int-for-float kinds, object ids -1 (the world's
+    /// default object, present or not), sections present or empty, entries
+    /// with and without an object; when an object is found, the real
+    /// `GetInstance` and `StartObjectLoop` (sound 0, or object sounds
+    /// suppressed: its early exits).
+    #[test]
+    fn wscript_fn_start_object_loop_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::GAME_GP;
+        const RESULT_SLOT: u32 = DATA + 0x3000;
+        const PARAMS: u32 = DATA + 0x1000;
+        const AUDIO: u32 = DATA + 0x8000;
+        const DIR: u32 = DATA + 0x20_0000;
+        const SECTIONS: u32 = DIR + 0x100;
+        const TABLE: u32 = DIR + 0x200;
+        const SECTION: u32 = DIR + 0x300;
+        const ENTRIES: u32 = DIR + 0x400;
+        const WORLD: u32 = DIR + 0xa00;
+        const OBJS: u32 = DIR + 0x2000;
+        check(
+            ee::s10::f_003000a8__generated,
+            wscript_fn_start_object_loop,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x30_00a8, 0);
+                c.pc = 0x0030_00a8;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                // Static defaults.
+                let ready = seed % 4 != 0;
+                w(c, GAME_GP + SOL_DEFAULTS_READY_GP, ready as u32);
+                fill(c, &mut r, SOL_DEFAULTS, 4);
+                let id = match seed % 5 {
+                    0 => u32::MAX,
+                    k => (r.next_u32() % 4) << 8 | (k - 1),
+                };
+                w(c, SOL_DEFAULTS, id);
+                // Sound 0 or a non-0x66 one (suppressed below).
+                let sound = if seed % 3 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 0x60
+                };
+                w(c, SOL_DEFAULTS + 4, sound);
+                for i in 0..4 {
+                    w(c, SOL_PARAM_KINDS + 4 * i, r.next_u32() % 4);
+                }
+                // Parameters: never slot 0 (the id) or a 0x66 sound.
+                let count = match seed % 7 {
+                    6 => (r.next_u32() % 3).wrapping_neg(),
+                    k => k % 4,
+                };
+                for i in 0..4u32 {
+                    let p = PARAMS + 0x10 * i;
+                    w(c, p, 1 + r.next_u32() % 3);
+                    w(c, p + 4, 1 + r.next_u32() % 0x60);
+                    w(c, p + 8, r.next_u32());
+                    w(c, p + 0xc, r.next_u32() % 4);
+                }
+                // Directory: sections 0..2 present, 3 empty; entries 0..2
+                // objects, 3 empty.
+                w(c, GAME_GP + SOL_DIRECTORY_GP, DIR);
+                w(c, DIR, SECTIONS);
+                w(c, SECTIONS + 8, TABLE);
+                for i in 0..4 {
+                    w(c, TABLE + 4 * i, if i == 3 { 0 } else { SECTION });
+                    let obj = OBJS + 0x100 * i;
+                    w(
+                        c,
+                        ENTRIES + 4 * i,
+                        if i == 3 {
+                            r.next_u32() & 0xff
+                        } else {
+                            (obj >> 2) << 8 | (r.next_u32() & 0xff)
+                        },
+                    );
+                    fill(c, &mut r, obj, 0x20);
+                }
+                w(c, SECTION + 0x1c, ENTRIES);
+                w(c, GAME_GP + SOL_WORLD_GP, WORLD);
+                w(
+                    c,
+                    WORLD + SOL_WORLD_DEFAULT_OBJECT,
+                    if seed % 10 == 5 { 0 } else { OBJS + 0x100 },
+                );
+                // The audio system: object sounds suppressed (non-negative).
+                w(c, GAME_GP + 0x410, AUDIO);
+                w(c, AUDIO + 0x62a8, r.next_u32() & 0x7fff_ffff);
+                fill(c, &mut r, SOL_RESULT, 3);
                 c.g[A0][0] = sx(RESULT_SLOT);
                 c.g[A1][0] = count as i32 as i64 as u64;
                 c.g[A2][0] = sx(PARAMS);

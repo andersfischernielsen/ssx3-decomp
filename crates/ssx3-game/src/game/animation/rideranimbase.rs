@@ -103,6 +103,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         anim_controller_transform_roots,
         "AnimController_TransformRoots",
     ),
+    (
+        0x0031_2bd0,
+        rider_anim_clear_flags_and_play_anim,
+        "RiderAnim_ClearFlagsAndPlayAnim",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2194,6 +2199,51 @@ pub fn anim_controller_transform_roots(c: &mut Cpu) {
     })
 }
 
+/// Rider: the 64-bit flag pair at +0xb0 and the flag moved to the second
+/// word (0x3f).
+pub(crate) const RIDER_ANIM_FLAGS: u32 = 0xb0;
+
+pub(crate) const RIDER_ANIM_FLAG_BIT: u64 = 0x3f;
+
+/// `Flags64_MoveToSecond` (another shard: through the table).
+pub(crate) const OC308_FLAGS64_MOVE_TO_SECOND: u32 = 0x0014_4670;
+
+pub(crate) const ANIM_CONTROLLER_PLAY_ANIM: Callee = Callee {
+    addr: 0x0031_28e8,
+    f: ee::s10::AnimController_PlayAnim,
+};
+
+/// `void RiderAnim_ClearFlagsAndPlayAnim(AnimController* ctrl, _, Rider*
+/// rider, int anim)` (0x312bd0): move flag 63 of the rider's flags (+0xb0)
+/// to the second word, then `AnimController_PlayAnim(ctrl, anim, 0, -1.0)`
+/// (blend -1: the anim table's default).
+pub fn rider_anim_clear_flags_and_play_anim(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x30);
+        c.g[A1][0] = RIDER_ANIM_FLAG_BIT;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A3][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(r32(c, A2).wrapping_add(RIDER_ANIM_FLAGS));
+        call_ptr(c, OC308_FLAGS64_MOVE_TO_SECOND, 0x0031_2bf4)?;
+        // blend = -1.0f (0xbf800000 through at).
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(AT, 12);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = 0;
+        ANIM_CONTROLLER_PLAY_ANIM.call(c, 0x0031_2c0c)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2754,6 +2804,54 @@ pub(crate) mod tests {
                 scramble(c, &mut r);
                 c.pc = 0x0031_1bf0;
                 act_fixture(c, &mut r, seed);
+            },
+        );
+    }
+    use super::*;
+
+    /// Flags64_MoveToSecond runs for real; PlayAnim runs for real with its
+    /// layer lookup a fake: 0x207 (no layer: returns) or a layer, where the
+    /// next fake (inside PlayAnimImpl) unwinds.
+    #[test]
+    fn rider_anim_clear_flags_and_play_anim_matches() {
+        use crate::difftest::fakes::{LOG_RESULTS, LOG_UNWIND_AT};
+        use crate::difftest::GAME_GP;
+        crate::difftest::check(
+            ee::s10::f_00312bd0__generated,
+            rider_anim_clear_flags_and_play_anim,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x31_2bd0, 1);
+                let ctrl = DATA + 0x4000;
+                let rider = DATA + 0x8000;
+                let anim = r.next_u32() % 64;
+                crate::difftest::fill(c, &mut r, rider + RIDER_ANIM_FLAGS, 4);
+                let vt = DATA + 0xc000;
+                c.bus
+                    .write16(vt + 0x20, ((r.next_u32() % 0x40) & !3) as u16);
+                c.bus.write32(vt + 0x24, FAKE);
+                c.bus.write32(ctrl + 0x58, vt);
+                let layer = if seed % 3 == 0 {
+                    1 + r.next_u32() % 3
+                } else {
+                    0x207
+                };
+                c.bus.write32(LOG_RESULTS, layer);
+                if layer != 0x207 {
+                    c.bus.write32(LOG_UNWIND_AT, 1);
+                }
+                let tables = DATA + 0x10000;
+                c.bus.write32(GAME_GP + 0xd8c, tables);
+                c.bus.write32(tables + 4 * layer + 0x1030, DATA + 0x14000);
+                let entry = 0x0044_6990 + 0x1c * anim;
+                c.bus.write32(entry + 0xc, r.next_u32() % 4);
+                c.bus.write32(entry + 0x10, r.f32(2.0));
+                c.bus.write32(ctrl + 0x50, DATA + 0x18000);
+                c.g[A0][0] = sx(ctrl);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = sx(rider);
+                c.g[A3][0] = anim as u64;
+                c.pc = 0x0031_2bd0;
             },
         );
     }

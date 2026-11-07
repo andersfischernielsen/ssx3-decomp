@@ -31,6 +31,10 @@ pub(crate) use crate::game::movie::movieplayer::at;
 pub(crate) use crate::game::movie::movieplayer::gp;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::object::deadfadenode::ctor_with_vtable;
+pub(crate) use crate::game::object::flagset::FLAG_GROUP_MEMBERS;
+pub(crate) use crate::game::object::flagset::FLAG_GROUP_SIZE;
+pub(crate) use crate::game::object::flagset::FLAG_MANAGER_GROUPS;
+pub(crate) use crate::game::object::flagset::FLAG_MANAGER_GROUP_COUNT_2 as FLAG_MANAGER_GROUP_COUNT;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 pub(crate) use crate::game::visualfx::worldlightman::deleting_dtor;
 pub(crate) use crate::game::visualfx::worldlightman::DELETE;
@@ -101,6 +105,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_flag_manager_group_remove_flag,
         "cFlagManager_GroupRemoveFlag",
     ),
+    (0x0034_aea0, flag_dtor, "Flag_dtor"),
+    (0x0034_aef8, flag_save, "Flag_Save"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1708,6 +1714,75 @@ pub fn c_flag_manager_group_remove_flag(c: &mut Cpu) {
     })
 }
 
+/// Flag: the vtable word at +0xc and the flag's instance at +0x18 (what the
+/// flag manager tracks).
+pub(crate) const FLAG_DTOR_VPTR: u32 = 0xc;
+
+pub(crate) const FLAG_DTOR_INSTANCE: u32 = 0x18;
+
+/// The vtable the destructor installs (0x48fc10).
+pub(crate) const FLAG_DTOR_VTABLE: u32 = 0x0048_fc10;
+
+/// `World_GetFlagManager` (another shard: through the table).
+pub(crate) const OC308_WORLD_GET_FLAG_MANAGER: u32 = 0x002d_1cb0;
+
+pub(crate) const C_FLAG_MANAGER_REMOVE_FLAG: Callee = Callee {
+    addr: 0x0034_c600,
+    f: ee::s11::cFlagManager_RemoveFlag,
+};
+
+pub(crate) const OC308_WORLD_OBJ_DTOR: Callee = Callee {
+    addr: 0x0034_fbf0,
+    f: ee::s11::WorldObj_dtor,
+};
+
+/// `void Flag_dtor(Flag* self, int flags)` (0x34aea0): reset the vtable
+/// (+0xc), take the flag's instance (+0x18) out of the world's flag manager,
+/// then destroy the WorldObj base (which frees on `flags & 1`).
+pub fn flag_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = sx(FLAG_DTOR_VTABLE);
+        frame.save(c, S0, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        let this = r32(c, S0);
+        c.sw(this.wrapping_add(FLAG_DTOR_VPTR), c.g[V0][0]);
+        call_ptr(c, OC308_WORLD_GET_FLAG_MANAGER, 0x0034_aec8)?;
+        c.g[A1][0] = c.lw(r32(c, S0).wrapping_add(FLAG_DTOR_INSTANCE));
+        c.g[A0][0] = c.g[V0][0];
+        C_FLAG_MANAGER_REMOVE_FLAG.call(c, 0x0034_aed4)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        OC308_WORLD_OBJ_DTOR.call(c, 0x0034_aee0)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x0034aef8 Flag_Save
+
+/// `void Flag_Save(Flag* self, Stream* stream)` (0x34aef8): a flag saves
+/// only its world-object state (`WorldObj_Save`).
+pub fn flag_save(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Direct(Callee {
+            addr: 0x0034_fe90,
+            f: ee::s11::WorldObj_Save,
+        }),
+        0x0034_af08,
+    );
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2252,6 +2327,76 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(GROUP);
                 c.g[A1][0] = sx(RIDER);
                 c.pc = 0x0034_b168;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::fakes::covered;
+    pub(crate) use crate::game::object::flagset::tests::oc308_flag_manager;
+
+    /// The world's flag manager (World at gp-0x848, +0x84, +0x70) with the
+    /// flag's instance in some groups; the WorldObj base destructor runs for
+    /// real (no free: `flags & 1` clear).
+    #[test]
+    fn flag_dtor_matches() {
+        use crate::difftest::GAME_GP;
+        crate::difftest::check(
+            ee::s11::f_0034aea0__generated,
+            flag_dtor,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_aea0, 0);
+                let obj = DATA;
+                let inst = DATA + 0x100;
+                let world = DATA + 0x3_0000;
+                let ai = DATA + 0x3_1000;
+                let mgr = DATA + 0x4_0000;
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, ai);
+                c.bus.write32(ai + 0x70, mgr);
+                oc308_flag_manager(c, &mut r, mgr, inst);
+                // WorldObj part (as in WorldObj_dtor's test).
+                crate::difftest::fill(c, &mut r, obj, 8);
+                c.bus.write16(obj + 0x10, (r.next_u32() % 8) as u16);
+                if seed % 3 == 0 {
+                    c.bus.write32(obj + 4, 0);
+                } else {
+                    c.bus.write32(obj + 4, DATA + 0x200);
+                    c.bus
+                        .write32(obj + 8, if seed % 3 == 1 { 0 } else { DATA + 0x300 });
+                }
+                c.bus.write32(obj + FLAG_DTOR_INSTANCE, inst);
+                c.bus.write32(inst + 0x8, r.next_u32());
+                c.bus
+                    .write32(inst + 0xc, if seed % 2 == 0 { obj } else { r.next_u32() });
+                c.g[A0][0] = sx(obj);
+                c.g[A1][0] = (r.next_u32() & !1) as u64;
+                c.pc = 0x0034_aea0;
+            },
+        );
+    }
+
+    /// `Flag_Save`: the real `WorldObj_Save` / `SyncProcess_Save` on a
+    /// random object; the stream's write methods are fakes, some unwinding
+    /// (fixture as in `mod_obj_save_matches`).
+    #[test]
+    fn flag_save_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::{fill, DATA};
+        covered(
+            ee::s11::f_0034aef8__generated,
+            flag_save,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0034_aef8, 4);
+                c.pc = 0x0034_aef8;
+                let (this, stream) = (DATA + 0x100, DATA + 0x400);
+                fill(c, &mut r, this, 0x10);
+                let vt = vtable(c, &mut r, &[8, 0x30]);
+                c.bus.write32(stream, vt);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(stream);
             },
         );
     }

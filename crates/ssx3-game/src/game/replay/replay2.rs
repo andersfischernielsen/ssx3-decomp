@@ -342,6 +342,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Replay_FindRiderIndex",
     ),
     (0x0027_07e0, replay_on_rider_launch, "Replay_OnRiderLaunch"),
+    (0x0027_0130, replay_alloc_snapshot, "Replay_AllocSnapshot"),
+    (0x0027_0538, replay_prune_snapshots, "Replay_PruneSnapshots"),
+    (0x0027_0870, replay_on_rider_land, "Replay_OnRiderLand"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5431,6 +5434,245 @@ pub fn replay_on_rider_launch(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Replay_OnRiderLand (0x270870)
+
+/// `Replay` flags that block highlight bookkeeping on landing: `+0x61c`
+/// (playing back), `+0x620` (instant replay), then the replay state at `+0`.
+pub(crate) const OC305_REPLAY_LAND_BUSY_FLAGS: [u32; 3] = [0x61c, 0x620, 0x0];
+
+/// `Replay_FindRiderIndex` (0x270730).
+pub(crate) const OC305_REPLAY_FIND_RIDER_INDEX: Callee = Callee {
+    addr: 0x0027_0730,
+    f: ee::s07::Replay_FindRiderIndex,
+};
+
+/// `Replay_EndHighlight` (0x270ce8).
+pub(crate) const OC305_REPLAY_END_HIGHLIGHT: Callee = Callee {
+    addr: 0x0027_0ce8,
+    f: ee::s07::Replay_EndHighlight,
+};
+
+/// `Replay_CheckInstantReplay` (0x2705b0).
+pub(crate) const OC305_REPLAY_CHECK_INSTANT_REPLAY: Callee = Callee {
+    addr: 0x0027_05b0,
+    f: ee::s07::Replay_CheckInstantReplay,
+};
+
+/// `void Replay_OnRiderLand(Replay* self, int riderId, void* data)`
+/// (0x270870): when the replay is idle (none of `+0x61c`, `+0x620`, `+0`
+/// set), find the rider's index and, when found, close its highlight
+/// (`Replay_EndHighlight(self, index, data, 1)`) and check whether the
+/// landing earns an instant replay (`Replay_CheckInstantReplay(self, data,
+/// 1)`).
+pub fn replay_on_rider_land(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        let this = r32(c, S0);
+        c.g[V0][0] = Addr(this).off(OC305_REPLAY_LAND_BUSY_FLAGS[0]).lw(c);
+        c.g[S1][0] = c.g[A2][0];
+        // The first flag set (or the full path): one more cycle at the tail.
+        let mut tail = c.g[V0][0] != 0;
+        if !tail {
+            let mut busy = false;
+            for off in OC305_REPLAY_LAND_BUSY_FLAGS[1..].iter().copied() {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(this).off(off).lw(c);
+                if c.g[V0][0] != 0 {
+                    busy = true;
+                    break;
+                }
+            }
+            if !busy {
+                tail = true;
+                c.cycles += 4;
+                OC305_REPLAY_FIND_RIDER_INDEX.call(c, 0x0027_08b4)?;
+                let found = (c.g[V0][0] as i64) >= 0;
+                c.g[A1][0] = c.g[V0][0];
+                if found {
+                    c.cycles += 8;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A2][0] = c.g[S1][0];
+                    c.g[A3][0] = 1;
+                    OC305_REPLAY_END_HIGHLIGHT.call(c, 0x0027_08cc)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[A2][0] = 1;
+                    OC305_REPLAY_CHECK_INSTANT_REPLAY.call(c, 0x0027_08dc)?;
+                }
+            }
+        }
+        if tail {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Replay_PruneSnapshots (0x270538)
+
+/// `Replay` live snapshot list head (`+0x3b0`).
+pub(crate) const OC305_REPLAY_LIVE_SNAPSHOTS: u32 = 0x3b0;
+
+/// Snapshot node: next (`+0x14`), and the keep markers: a halfword at
+/// `+0x1c` and bytes at `+0x1f` and `+0x1e`.
+pub(crate) const OC305_SNAPSHOT_NEXT: u32 = 0x14;
+
+pub(crate) const OC305_SNAPSHOT_KEEP_HALF: u32 = 0x1c;
+
+pub(crate) const OC305_SNAPSHOT_KEEP_B: u32 = 0x1f;
+
+pub(crate) const OC305_SNAPSHOT_KEEP_A: u32 = 0x1e;
+
+/// `Replay_FreeSnapshot` (0x270238).
+pub(crate) const OC305_REPLAY_FREE_SNAPSHOT: Callee = Callee {
+    addr: 0x0027_0238,
+    f: ee::s07::Replay_FreeSnapshot,
+};
+
+/// `void Replay_PruneSnapshots(Replay* self)` (0x270538): walk the live
+/// snapshot list and free (`Replay_FreeSnapshot(self, node)`) every snapshot
+/// nothing keeps (its halfword at `+0x1c` and bytes at `+0x1f`/`+0x1e` all
+/// zero). The next pointer is read before the free unlinks the node.
+pub fn replay_prune_snapshots(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = Addr(r32(c, S1)).off(OC305_REPLAY_LIVE_SNAPSHOTS).lw(c);
+        frame.restore(c, S0, 0x20);
+        if c.g[A1][0] != 0 {
+            c.cycles += 2;
+            c.g[V0][0] = Addr(r32(c, A1)).off(OC305_SNAPSHOT_KEEP_HALF).lhu(c);
+            loop {
+                // The node and its keep halfword live in a1/v0 (an event at
+                // the loop head sees them there).
+                let node = Addr(r32(c, A1));
+                c.cycles += 2;
+                c.g[S0][0] = node.off(OC305_SNAPSHOT_NEXT).lw(c);
+                if c.g[V0][0] != 0 {
+                    c.cycles += 1;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = node.off(OC305_SNAPSHOT_KEEP_B).lbu(c);
+                    if c.g[V0][0] == 0 {
+                        c.cycles += 3;
+                        c.g[V0][0] = node.off(OC305_SNAPSHOT_KEEP_A).lbu(c);
+                        if c.g[V0][0] == 0 {
+                            c.cycles += 2;
+                            c.g[A0][0] = c.g[S1][0];
+                            OC305_REPLAY_FREE_SNAPSHOT.call(c, 0x0027_0588)?;
+                            c.cycles += 1;
+                        }
+                    }
+                }
+                c.g[A1][0] = c.g[S0][0];
+                c.cycles += 2;
+                if c.g[A1][0] == 0 {
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x20);
+                    break;
+                }
+                c.g[V0][0] = Addr(r32(c, A1)).off(OC305_SNAPSHOT_KEEP_HALF).lhu(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_0560);
+                }
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Replay: the free-snapshot list (head +0x3bc, tail +0x3c0, count +0x3c4).
+pub(crate) const REPLAY_FREE_LIST: u32 = 0x3bc;
+
+pub(crate) const REPLAY_FREE_COUNT: u32 = 0x3c4;
+
+/// Snapshot fields reset on allocation.
+pub(crate) const SNAPSHOT_DESC: u32 = 0x1c;
+
+pub(crate) const SNAPSHOT_FRAME_A: u32 = 0x20;
+
+pub(crate) const SNAPSHOT_FRAME_B: u32 = 0x24;
+
+pub(crate) const SNAPSHOT_USED: u32 = 0x30;
+
+pub(crate) const SNAPSHOT_INDEX: u32 = 0x34;
+
+pub(crate) const REPLAY_RECYCLE_OLDEST_SNAPSHOT: Callee = Callee {
+    addr: 0x0027_01a0,
+    f: ee::s07::Replay_RecycleOldestSnapshot,
+};
+
+pub(crate) const SNAPSHOT_LIST_POP_FRONT: Callee = Callee {
+    addr: 0x0026_e670,
+    f: ee::s07::SnapshotList_PopFront,
+};
+
+/// `Snapshot* Replay_AllocSnapshot(Replay* self)` (0x270130): take a
+/// snapshot from the free list (recycling the oldest one first when the list
+/// is empty) and reset it: the 4-byte descriptor at +0x1c cleared, the frame
+/// links (+0x20, +0x24) and index (+0x34) set to -1, +0x30 cleared.
+pub fn replay_alloc_snapshot(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0x10);
+        let replay = r32(c, A0);
+        c.g[V0][0] = c.lw(replay.wrapping_add(REPLAY_FREE_COUNT));
+        let have_free = (c.g[V0][0] as i64) > 0;
+        c.g[S0][0] = sx(replay.wrapping_add(REPLAY_FREE_LIST));
+        if !have_free {
+            c.cycles += 2;
+            REPLAY_RECYCLE_OLDEST_SNAPSHOT.call(c, 0x0027_0150)?;
+        }
+        c.cycles += 19;
+        c.g[A0][0] = c.g[S0][0];
+        SNAPSHOT_LIST_POP_FRONT.call(c, 0x0027_0158)?;
+        c.g[V1][0] = c.g[V0][0];
+        let snapshot = r32(c, V1);
+        // The zeroed 4-byte descriptor is built on the stack and copied
+        // with an unaligned word move (lwl/lwr, swl/swr), as compiled.
+        let tmp = sp(c);
+        c.sh(tmp, 0);
+        c.sb(tmp.wrapping_add(2), 0);
+        c.g[A0][0] = u64::MAX;
+        c.sb(tmp.wrapping_add(3), 0);
+        c.lwl(A1, tmp.wrapping_add(3));
+        c.lwr(A1, tmp);
+        c.swl(A1, snapshot.wrapping_add(SNAPSHOT_DESC + 3));
+        c.swr(A1, snapshot.wrapping_add(SNAPSHOT_DESC));
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0x10);
+        c.sw(snapshot.wrapping_add(SNAPSHOT_INDEX), u64::MAX);
+        c.sw(snapshot.wrapping_add(SNAPSHOT_FRAME_A), u64::MAX);
+        c.sw(snapshot.wrapping_add(SNAPSHOT_FRAME_B), u64::MAX);
+        c.sw(snapshot.wrapping_add(SNAPSHOT_USED), 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7527,6 +7769,151 @@ pub(crate) mod tests {
                 c.g[A1][0] = id;
                 c.g[A2][0] = sx(data);
                 c.pc = 0x0027_07e0;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    /// `Replay_OnRiderLand`: the find-rider world of `Replay_FindRiderIndex`'s
+    /// test (found, not found, no riders, fakes unwinding), each busy flag
+    /// set or all clear, the rider's highlight slot free (the real
+    /// `Replay_EndHighlight` returns early), and the real
+    /// `Replay_CheckInstantReplay` with instant replays armed or not, one or
+    /// more riders, the landing time close to or past the last one.
+    #[test]
+    fn replay_on_rider_land_matches() {
+        use crate::game::replay::replay2::tests::replay_find_rider_fixture;
+        crate::difftest::check(
+            ee::s07::f_00270870__generated,
+            replay_on_rider_land,
+            300,
+            &|c, seed| {
+                replay_find_rider_fixture(c, seed);
+                let id = c.g[A0][0];
+                let mut r = crate::difftest::Rng(0x2708_7000 ^ seed as u64);
+                let this = crate::difftest::DATA + 0x3_0000;
+                let data = crate::difftest::DATA + 0x3_9000;
+                let busy = seed / 2 % 5;
+                for (i, off) in OC305_REPLAY_LAND_BUSY_FLAGS.into_iter().enumerate() {
+                    let set = busy as usize == i + 1;
+                    c.bus
+                        .write32(this + off, if set { 1 + r.next_u32() % 4 } else { 0 });
+                }
+                // Highlight slots: all free.
+                for k in 0..5u32 {
+                    c.bus.write32(this + 0x494 + 0xb4 * k + 0xb0, 0);
+                }
+                // Instant replay armed (`+0x3d4`), last times `+0x474/+0x47c`.
+                c.bus.write32(this + 0x3d4, (seed % 3 != 0) as u32);
+                let last = r.next_u32() % 5000;
+                c.bus.write32(this + 0x474, last);
+                c.bus.write32(this + 0x47c, last);
+                let now = last.wrapping_add(if seed % 4 < 2 { 500 } else { 1500 });
+                c.bus.write32(data + 0x9c, now);
+                c.bus.write32(data + 0xa4, now);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = id;
+                c.g[A2][0] = sx(data);
+                c.pc = 0x0027_0870;
+            },
+        );
+    }
+
+    /// `Replay_PruneSnapshots`: a live list of 0..6 snapshots (doubly
+    /// linked, with count) and a free list, each node kept by its halfword,
+    /// either byte, or nothing (freed through the real `Replay_FreeSnapshot`:
+    /// unlink, stream reset, push onto the free list); events off, delivered,
+    /// or unwinding at the loop head.
+    #[test]
+    fn replay_prune_snapshots_matches() {
+        use crate::difftest::events::{check_events, schedule, Events};
+        check_events(
+            ee::s07::f_00270538__generated,
+            replay_prune_snapshots,
+            240,
+            &|c, seed| {
+                let mut r = crate::difftest::Rng(0x2705_3800 ^ seed as u64);
+                crate::difftest::scramble(c, &mut r);
+                let this = crate::difftest::DATA;
+                let n = seed / 3 % 7;
+                let node_at = |i: u32| crate::difftest::DATA + 0x1000 + 0x100 * i;
+                for i in 0..n {
+                    let node = node_at(i);
+                    crate::difftest::fill(c, &mut r, node, 0x40);
+                    let next = if i + 1 < n { node_at(i + 1) } else { 0 };
+                    let prev = if i > 0 { node_at(i - 1) } else { 0 };
+                    c.bus.write32(node + OC305_SNAPSHOT_NEXT, next);
+                    c.bus.write32(node + 0x18, prev);
+                    let keep = r.next_u32() % 4;
+                    let v = 1 + r.next_u32() % 0xff;
+                    c.bus.write16(
+                        node + OC305_SNAPSHOT_KEEP_HALF,
+                        if keep == 1 { v as u16 } else { 0 },
+                    );
+                    c.bus.write8(
+                        node + OC305_SNAPSHOT_KEEP_B,
+                        if keep == 2 { v as u8 } else { 0 },
+                    );
+                    c.bus.write8(
+                        node + OC305_SNAPSHOT_KEEP_A,
+                        if keep == 3 { v as u8 } else { 0 },
+                    );
+                }
+                let live = this + OC305_REPLAY_LIVE_SNAPSHOTS;
+                c.bus.write32(live, if n > 0 { node_at(0) } else { 0 });
+                c.bus
+                    .write32(live + 4, if n > 0 { node_at(n - 1) } else { 0 });
+                c.bus.write32(live + 8, n);
+                // Free list at +0x3bc: empty or one node.
+                let spare = crate::difftest::DATA + 0x2000;
+                let has_spare = seed % 2 == 0;
+                c.bus
+                    .write32(this + 0x3bc, if has_spare { spare } else { 0 });
+                c.bus
+                    .write32(this + 0x3c0, if has_spare { spare } else { 0 });
+                c.bus.write32(this + 0x3c4, has_spare as u32);
+                c.bus.write32(spare + OC305_SNAPSHOT_NEXT, 0);
+                c.bus.write32(spare + 0x18, 0);
+                c.g[A0][0] = sx(this);
+                let mode = schedule(c, &mut r, seed, 0x0027_0538);
+                if mode != Events::Off {
+                    c.next_event = c.cycles + (r.next_u32() % 20) as u64;
+                }
+                mode
+            },
+        );
+    }
+
+    /// Free list with one snapshot (count > 0: popped directly) or a
+    /// non-positive count (the recycle pass runs first; its ring is empty, so
+    /// it only walks twice and returns).
+    #[test]
+    fn replay_alloc_snapshot_matches() {
+        crate::difftest::check(
+            ee::s07::f_00270130__generated,
+            replay_alloc_snapshot,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x27_0130, 0);
+                let replay = DATA;
+                let node = DATA + 0x1000;
+                let count = match seed % 3 {
+                    0 => 0,
+                    1 => (r.next_u32() % 5) + 1,
+                    _ => (r.next_u32() | 0x8000_0000),
+                };
+                c.bus.write32(replay + REPLAY_FREE_COUNT, count);
+                c.bus.write32(replay + REPLAY_FREE_LIST, node);
+                c.bus.write32(replay + REPLAY_FREE_LIST + 4, node);
+                // Recycle ring: current (+0x3ac) and start (+0x3b0) empty.
+                c.bus.write32(replay + 0x3ac, 0);
+                c.bus.write32(replay + 0x3b0, 0);
+                crate::difftest::fill(c, &mut r, node, 0x10);
+                c.bus.write32(node + 0x14, 0);
+                c.bus.write32(node + 0x18, 0);
+                c.g[A0][0] = sx(replay);
+                c.pc = 0x0027_0130;
             },
         );
     }

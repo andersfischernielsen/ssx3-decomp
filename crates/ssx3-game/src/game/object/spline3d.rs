@@ -4,8 +4,10 @@
 use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
@@ -15,6 +17,8 @@ use crate::events::event_due;
 pub(crate) use crate::game::fe::feasyncfile::p_6 as p;
 pub(crate) use crate::game::object::movenode::GFX_MAN;
 pub(crate) use crate::game::object::movenode::ONE;
+pub(crate) use crate::game::object::railmodifier::oc308_stream_call;
+pub(crate) use crate::game::object::railmodifier::STREAM_WRITE_BYTES;
 use crate::guest::Addr;
 use crate::ps2f::vu0_scratch;
 use crate::ps2f::FpuF32;
@@ -38,6 +42,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0034_5638,
         spline_modifier_is_node_visible,
         "SplineModifier_IsNodeVisible",
+    ),
+    (
+        0x0034_5538,
+        spline_modifier_save_path,
+        "SplineModifier_SavePath",
     ),
 ];
 
@@ -231,6 +240,24 @@ pub fn spline_modifier_load_path(c: &mut Cpu) {
     })
 }
 
+/// `void SplineModifier_SavePath(SplineModifier* self, cStream* stream)`
+/// (0x345538): write the path's first 8 bytes (the object itself) through
+/// `stream->WriteBytes(self, 8)`.
+pub fn spline_modifier_save_path(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A0][0];
+        c.g[A2][0] = 0x8;
+        oc308_stream_call(c, A3, STREAM_WRITE_BYTES, 0x0034_5560)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -313,6 +340,26 @@ pub(crate) mod tests {
                 c.bus.write32(DATA + 0x3300 + 0x64, DATA + 0x3300);
                 c.bus.write32(DATA + 0x3400 + 0xc, f(1.5));
                 c.bus.write32(DATA + 0x3400 + 0x84, f(2.5));
+            },
+        );
+    }
+    use super::*;
+    pub(crate) use crate::game::object::railmodifier::tests::oc308_fake_stream;
+
+    /// The one stream write is made (fake logs its arguments) and may unwind.
+    #[test]
+    fn spline_modifier_save_path_matches() {
+        covered(
+            ee::s11::f_00345538__generated,
+            spline_modifier_save_path,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_5538, 1);
+                let stream = DATA + 0x1000;
+                oc308_fake_stream(c, &mut r, stream, DATA + 0x2000, &[STREAM_WRITE_BYTES]);
+                c.g[A0][0] = sx(DATA + (r.next_u32() & 0xff0));
+                c.g[A1][0] = sx(stream);
+                c.pc = 0x0034_5538;
             },
         );
     }

@@ -440,6 +440,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0037_c8c0, ps2_graphics_man_v46, "PS2GraphicsMan_v46"),
     (0x0037_0dc8, dynamic_emitter_setup, "DynamicEmitter_Setup"),
+    (0x0037_12b8, dynamic_emitter_save, "DynamicEmitter_Save"),
 ];
 
 /// Same-shard direct callees used above.
@@ -11940,6 +11941,57 @@ pub fn dynamic_emitter_setup(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// 0x003712b8 DynamicEmitter_Save
+
+/// `DynamicEmitter` fields saved: the time (+0), the rate (+0x28, floats),
+/// two counters (+0x170, +0x174) and the state (+0x17c).
+pub(crate) const DYN_EMITTER_SAVE_RATE: u32 = 0x28;
+
+pub(crate) const DYN_EMITTER_SAVE_COUNT_A: u32 = 0x170;
+
+pub(crate) const DYN_EMITTER_SAVE_COUNT_B: u32 = 0x174;
+
+pub(crate) const DYN_EMITTER_SAVE_STATE: u32 = 0x17c;
+
+/// `void DynamicEmitter_Save(DynamicEmitter* self, Stream* stream)`
+/// (0x3712b8): write a 20-byte record `{time, rate, countB, countA, state}`
+/// with the stream's write method (`stream->vtable` slot +0x8).
+pub fn dynamic_emitter_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x30);
+        c.g[A3][0] = c.g[A1][0]; // stream
+        frame.save_ra(c, 0x20);
+        let rec = sp(c);
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0x14;
+        let this = c.g[A0][0] as u32;
+        c.g[T0][0] = c.lw(this.wrapping_add(DYN_EMITTER_SAVE_STATE));
+        c.lwc1(1, this);
+        c.lwc1(0, this.wrapping_add(DYN_EMITTER_SAVE_RATE));
+        c.g[V1][0] = c.lw(this.wrapping_add(DYN_EMITTER_SAVE_COUNT_B));
+        c.g[V0][0] = c.lw(this.wrapping_add(DYN_EMITTER_SAVE_COUNT_A));
+        c.swc1(1, rec);
+        c.swc1(0, rec.wrapping_add(0x4));
+        c.sw(rec.wrapping_add(0x8), c.g[V1][0]);
+        c.sw(rec.wrapping_add(0x10), c.g[T0][0]);
+        c.sw(rec.wrapping_add(0xc), c.g[V0][0]);
+        // stream->Write(&rec, 0x14)
+        let stream = c.g[A3][0] as u32;
+        c.g[V0][0] = c.lw(stream);
+        let vt = c.g[V0][0] as u32;
+        c.g[A0][0] = c.lh(vt.wrapping_add(0x8));
+        c.g[V1][0] = c.lw(vt.wrapping_add(0xc));
+        c.g[A0][0] = sx(stream.wrapping_add(c.g[A0][0] as u32));
+        let write = c.g[V1][0] as u32;
+        call_ptr(c, write, 0x0037_1308)?;
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15506,6 +15558,35 @@ pub(crate) mod tests {
                 } else {
                     time
                 };
+            },
+        );
+    }
+    use super::*;
+
+    /// `DynamicEmitter_Save`: random fields (floats as bit patterns); the
+    /// stream's write method is a fake that sometimes unwinds.
+    #[test]
+    fn dynamic_emitter_save_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::DATA;
+        covered(
+            ee::s12::f_003712b8__generated,
+            dynamic_emitter_save,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0037_12b8, 1);
+                c.pc = 0x0037_12b8;
+                let (this, stream) = (DATA + 0x100, DATA + 0x400);
+                c.bus.write32(this, r.edge_f32());
+                c.bus.write32(this + DYN_EMITTER_SAVE_RATE, r.f32(100.0));
+                c.bus.write32(this + DYN_EMITTER_SAVE_COUNT_A, r.next_u32());
+                c.bus.write32(this + DYN_EMITTER_SAVE_COUNT_B, r.next_u32());
+                c.bus
+                    .write32(this + DYN_EMITTER_SAVE_STATE, r.next_u32() % 4);
+                let vt = vtable(c, &mut r, &[8]);
+                c.bus.write32(stream, vt);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(stream);
             },
         );
     }

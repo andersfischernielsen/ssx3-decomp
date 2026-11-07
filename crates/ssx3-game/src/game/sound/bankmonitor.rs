@@ -497,6 +497,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002a_e7a8, path_plat_queue, "PATH_PlatQueue"),
     (0x003d_37a0, path_select_branch, "PATH_SelectBranch"),
     (0x003d_54c8, path_update_tick20, "PATH_UpdateTick20"),
+    (
+        0x002a_d5f0,
+        bank_monitor_stop_handle,
+        "BankMonitor_StopHandle",
+    ),
+    (
+        0x002b_04d8,
+        speech_instance_play_event,
+        "SpeechInstance_PlayEvent",
+    ),
 ];
 
 /// Same-shard direct callees used above.
@@ -7945,6 +7955,387 @@ pub fn path_plat_queue(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// SpeechInstance_PlayEvent (0x2b04d8)
+
+/// The speech system (`*(gp + 0x6c4)`): the stream array (+0), the
+/// instance table (+4), per-language path prefixes (0x14 bytes each from
+/// +0x158) and the speech player object (+0x1bc vtable).
+pub(crate) const SPEECH_PLAY_SYSTEM_GP: u32 = 0x6c4;
+
+pub(crate) const SPEECH_PLAY_LANG_PREFIXES: u64 = 0x158;
+
+pub(crate) const SPEECH_PLAY_PLAYER_VTABLE: u32 = 0x1bc;
+
+/// The bank monitor: `*(*system) + 0x1d8` (the stream array's first word).
+pub(crate) const SPEECH_PLAY_MONITOR: u32 = 0x1d8;
+
+/// A speech instance: its id (+0), stream slot (+4), bank count (+0xf0)
+/// and bank pointers (+0xf4), and the play parameters (+0x8c8..+0x8fc).
+pub(crate) const SPEECH_PLAY_STREAM: u32 = 0x4;
+
+pub(crate) const SPEECH_PLAY_BANK_COUNT: u32 = 0xf0;
+
+pub(crate) const SPEECH_PLAY_BANKS: u32 = 0xf4;
+
+/// An event: id (+0), argument (+4), context key (u16 +0xc).
+pub(crate) const SPEECH_PLAY_EVENT_ARG: u32 = 0x4;
+
+pub(crate) const SPEECH_PLAY_EVENT_KEY: u32 = 0xc;
+
+/// `"%s%s%s.dat"` and `"data/"`; the two timer parameter blocks.
+pub(crate) const SPEECH_PLAY_FORMAT: u64 = 0x0048_32f8;
+
+pub(crate) const SPEECH_PLAY_DATA_DIR: u64 = 0x004a_3590;
+
+pub(crate) const SPEECH_PLAY_TIMER_PLAYING: u32 = 0x004a_37d8;
+
+pub(crate) const SPEECH_PLAY_TIMER_IDLE: u32 = 0x004a_37e0;
+
+pub(crate) const SPEECH_PLAY_HAS_ID: Callee = Callee {
+    addr: 0x002a_fa58,
+    f: ee::s08::SpeechBank_HasId,
+};
+
+/// The speech system pointer (`lw gp+0x6c4`).
+pub(crate) fn speech_play_system(c: &mut Cpu) -> u64 {
+    let gp = r32(c, GP);
+    Addr(gp.wrapping_add(SPEECH_PLAY_SYSTEM_GP)).lw(c)
+}
+
+/// The player's start call (vtable slot 8) with the instance's play
+/// parameters; `t1` is the timer argument (-1, or the instance's +0x8c8).
+/// The registers the two call sites leave differ only in `t1`.
+pub(crate) fn speech_play_start(
+    c: &mut Cpu,
+    system: u64,
+    t1: Option<u64>,
+    ret: u32,
+) -> crate::call::Flow {
+    let inst = r32(c, S2);
+    let event = r32(c, S4);
+    let params = sp(c);
+    c.g[A2][0] = sx(params.wrapping_add(0x10));
+    let gain = Addr(inst.wrapping_add(0x8fc)).lw(c);
+    c.g[V0][0] = gain;
+    let vt = Addr((system as u32).wrapping_add(SPEECH_PLAY_PLAYER_VTABLE)).lw(c);
+    c.g[V1][0] = vt;
+    c.g[A3][0] = Addr(event.wrapping_add(SPEECH_PLAY_EVENT_ARG)).lw(c);
+    Addr(params).sw(c, gain);
+    let slot = crate::call::VSlot::read(c, vt, 8);
+    c.g[A0][0] = slot.this(system);
+    c.g[A1][0] = Addr(inst.wrapping_add(SPEECH_PLAY_STREAM)).lw(c);
+    c.g[V0][0] = slot.func;
+    c.g[T0][0] = Addr(inst.wrapping_add(0x8cc)).lw(c);
+    c.g[T1][0] = match t1 {
+        Some(v) => v,
+        None => Addr(inst.wrapping_add(0x8c8)).lw(c),
+    };
+    c.g[T2][0] = Addr(inst.wrapping_add(0x8d0)).lw(c);
+    c.lwc1(12, inst.wrapping_add(0x8f4));
+    c.g[T3][0] = Addr(inst.wrapping_add(0x8f8)).lw(c);
+    call_ptr(c, slot.func as u32, ret)
+}
+
+/// `int SpeechInstance_PlayEvent(SpeechInstance* self, SpeechEvent* ev)`
+/// (0x2b04d8): finds the bank holding the event id (the bank at index `id`
+/// first, else the last of the instance's banks whose id matches), applies
+/// the event context (`SpeechSystem_ApplyEventContext`); with neither,
+/// returns -1. Otherwise it builds the bank's stream path (`sprintf(buf,
+/// "%s%s%s.dat", "data/", lang prefix, bank name)`, the language from the
+/// name's suffix), asks the player for a stream handle, and:
+/// - stream slot idle: sets the stream's volume scale pointer (when the
+///   player gives one) and returns the player's start call (slot 8) with
+///   the instance's timer argument;
+/// - stream busy: starts with timer -1 and, on success, queues a bank
+///   monitor timer for the queued start (playing: time remaining as the
+///   delay, else 200), returning the start result.
+///
+/// Frame 0x170 (s0..s4; the path buffer at sp+0x10).
+pub fn speech_instance_play_event(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x170);
+        frame.save(c, S1, 0x150);
+        frame.save(c, S2, 0x140);
+        frame.save(c, S3, 0x130);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S4, 0x120);
+        c.g[S1][0] = sx(r32(c, S2).wrapping_add(SPEECH_PLAY_BANKS));
+        frame.save(c, S0, 0x160);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save_ra(c, 0x110);
+        c.g[S3][0] = u64::MAX;
+        // The bank at index `id` first.
+        let id = Addr(r32(c, S4)).lw(c);
+        c.g[A1][0] = id;
+        let at = r32(c, S1).wrapping_add((id as u32) << 2);
+        c.g[V0][0] = sx(at);
+        c.g[A0][0] = Addr(at).lw(c);
+        SPEECH_PLAY_HAS_ID.call(c, 0x002b_0518)?;
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            c.g[S3][0] = Addr(r32(c, S4)).lw(c);
+        } else {
+            // Else scan every bank; the last match wins.
+            c.g[V0][0] = Addr(r32(c, S2).wrapping_add(SPEECH_PLAY_BANK_COUNT)).lw(c);
+            c.cycles += 2;
+            c.g[S0][0] = 0;
+            if (c.g[V0][0] as i64) > 0 {
+                c.cycles += 2;
+                c.g[A0][0] = Addr(r32(c, S1)).lw(c);
+                loop {
+                    c.cycles += 9;
+                    c.g[A1][0] = Addr(r32(c, S4)).lw(c);
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(4));
+                    SPEECH_PLAY_HAS_ID.call(c, 0x002b_0544)?;
+                    if c.g[V0][0] != 0 {
+                        c.g[S3][0] = c.g[S0][0];
+                    }
+                    let count = Addr(r32(c, S2).wrapping_add(SPEECH_PLAY_BANK_COUNT)).lw(c);
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (count as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        break;
+                    }
+                    c.g[A0][0] = Addr(r32(c, S1)).lw(c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002b_0538);
+                    }
+                }
+            }
+        }
+        c.cycles += 2;
+        c.g[A0][0] = speech_play_system(c);
+        let mut found = (c.g[S3][0] as i64) >= 0;
+        if found {
+            c.cycles += 5;
+            let inst = r32(c, S2);
+            c.g[A1][0] = Addr(inst).lw(c);
+            c.g[A2][0] = Addr(r32(c, S4).wrapping_add(SPEECH_PLAY_EVENT_KEY)).lhu(c);
+            Callee {
+                addr: 0x002b_1520,
+                f: ee::s08::SpeechSystem_ApplyEventContext,
+            }
+            .call(c, 0x002b_0570)?;
+            found = c.g[V0][0] != 0;
+            c.g[V0][0] = sx(r32(c, S3) << 2);
+        }
+        if !found {
+            c.cycles += 1;
+            c.g[V0][0] = u64::MAX;
+            c.cycles += 1;
+            frame.restore(c, S0, 0x160);
+        } else {
+            // The stream path: "data/" + language prefix + bank name + ".dat".
+            c.cycles += 40;
+            let bank_slot = r32(c, S2)
+                .wrapping_add(SPEECH_PLAY_BANKS)
+                .wrapping_add(r32(c, V0));
+            c.g[S0][0] = sx(bank_slot);
+            let bank = Addr(bank_slot).lw(c);
+            c.g[A0][0] = sx((bank as u32).wrapping_add(4));
+            Callee {
+                addr: 0x002b_03b8,
+                f: ee::s08::Speech_GetLanguageFromSuffix,
+            }
+            .call(c, 0x002b_058c)?;
+            c.g[V1][0] = 0x14;
+            let system = speech_play_system(c);
+            c.mult(0, V0, V0, V1);
+            let bank = Addr(r32(c, S0)).lw(c);
+            c.g[A1][0] = SPEECH_PLAY_FORMAT;
+            c.g[A2][0] = SPEECH_PLAY_DATA_DIR;
+            c.g[A0][0] = sx(sp(c).wrapping_add(0x10));
+            c.g[T0][0] = sx((bank as u32).wrapping_add(4));
+            let prefix = sx(r32(c, V0).wrapping_add(SPEECH_PLAY_LANG_PREFIXES as u32));
+            c.g[V0][0] = prefix;
+            c.g[A3][0] = sx((system as u32).wrapping_add(prefix as u32));
+            call_ptr(c, 0x0041_7828, 0x002b_05c0)?; // sprintf
+                                                    // The player's stream handle for the path.
+            let system = speech_play_system(c);
+            c.g[A3][0] = system;
+            let bank = Addr(r32(c, S0)).lw(c);
+            let vt = Addr((system as u32).wrapping_add(SPEECH_PLAY_PLAYER_VTABLE)).lw(c);
+            c.g[V1][0] = vt;
+            c.g[A2][0] = Addr((bank as u32).wrapping_add(0x40)).lw(c);
+            let slot = crate::call::VSlot::read(c, vt, 0x10);
+            c.g[V0][0] = slot.func;
+            c.g[A1][0] = Addr(r32(c, S2)).lw(c);
+            c.g[A0][0] = slot.this(system);
+            call_ptr(c, slot.func as u32, 0x002b_05e4)?;
+            c.g[S1][0] = c.g[V0][0];
+            // Time left on the instance's stream slot, and its state.
+            c.g[A1][0] = Addr(r32(c, S2).wrapping_add(SPEECH_PLAY_STREAM)).lw(c);
+            let system = speech_play_system(c);
+            c.g[V0][0] = system;
+            c.g[A0][0] = Addr(system as u32).lw(c);
+            Callee {
+                addr: 0x002a_ae78,
+                f: ee::s08::StreamArray_GetTimeRemaining,
+            }
+            .call(c, 0x002b_05f8)?;
+            c.f[1] = FpuF32(c.f[0]).to_i32() as u32;
+            c.g[S3][0] = sx(c.f[1]);
+            c.g[A1][0] = Addr(r32(c, S2).wrapping_add(SPEECH_PLAY_STREAM)).lw(c);
+            let system = speech_play_system(c);
+            c.g[V0][0] = system;
+            c.g[A0][0] = Addr(system as u32).lw(c);
+            Callee {
+                addr: 0x002a_ae08,
+                f: ee::s08::StreamArray_GetState,
+            }
+            .call(c, 0x002b_0610)?;
+            let busy = c.g[V0][0] != 0;
+            c.g[V0][0] = speech_play_system(c);
+            if busy {
+                c.cycles += 5;
+                c.g[A1][0] = Addr(r32(c, S2).wrapping_add(SPEECH_PLAY_STREAM)).lw(c);
+                c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+                Callee {
+                    addr: 0x002a_b028,
+                    f: ee::s08::StreamArray_IsPlaying,
+                }
+                .call(c, 0x002b_0624)?;
+                let playing = c.g[V0][0] != 0;
+                let system = speech_play_system(c);
+                c.g[T0][0] = system;
+                c.cycles += 18;
+                let ret = if playing { 0x002b_0668 } else { 0x002b_06d0 };
+                speech_play_start(c, system, Some(u64::MAX), ret)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[V0][0] = 0x4a_0000;
+                if (c.g[S0][0] as i64) >= 0 {
+                    // Queue the bank-monitor timer for the start.
+                    let system = speech_play_system(c);
+                    c.g[V1][0] = system;
+                    if playing {
+                        c.cycles += 8;
+                        c.g[A2][0] = Addr(SPEECH_PLAY_TIMER_PLAYING).read_u64_unaligned(c);
+                        c.g[A1][0] = c.g[S3][0];
+                    } else {
+                        c.cycles += 7;
+                        c.g[A2][0] = Addr(SPEECH_PLAY_TIMER_IDLE).read_u64_unaligned(c);
+                        c.g[A1][0] = 0xc8;
+                    }
+                    c.g[V0][0] = Addr(system as u32).lw(c);
+                    c.g[A3][0] = c.g[S2][0];
+                    c.g[T1][0] = c.g[S1][0];
+                    c.cycles += 6;
+                    c.g[T0][0] = c.g[S0][0];
+                    let streams = Addr(r32(c, V0)).lw(c);
+                    c.g[T2][0] = 0;
+                    c.g[T3][0] = 0;
+                    c.g[A0][0] = sx((streams as u32).wrapping_add(SPEECH_PLAY_MONITOR));
+                    Callee {
+                        addr: 0x002a_dca0,
+                        f: ee::s08::BankMonitor_AddTimer,
+                    }
+                    .call(c, 0x002b_0710)?;
+                }
+                c.cycles += 2;
+                c.g[V0][0] = c.g[S0][0];
+                c.cycles += 1;
+                frame.restore(c, S0, 0x160);
+            } else {
+                // Idle slot: the volume scale pointer, then start.
+                c.cycles += 12;
+                let system = speech_play_system(c);
+                c.g[T0][0] = system;
+                c.g[A2][0] = c.g[S1][0];
+                let inst = r32(c, S2);
+                c.g[A1][0] = Addr(inst).lw(c);
+                let vt = Addr((system as u32).wrapping_add(SPEECH_PLAY_PLAYER_VTABLE)).lw(c);
+                c.g[V1][0] = vt;
+                c.g[A3][0] = Addr(inst.wrapping_add(0x8d0)).lw(c);
+                let slot = crate::call::VSlot::read(c, vt, 0x18);
+                c.g[V0][0] = slot.func;
+                c.g[A0][0] = slot.this(system);
+                call_ptr(c, slot.func as u32, 0x002b_073c)?;
+                c.g[A2][0] = c.g[V0][0];
+                c.g[V0][0] = speech_play_system(c);
+                if c.g[A2][0] != 0 {
+                    c.cycles += 3;
+                    c.g[A1][0] = Addr(r32(c, S2).wrapping_add(SPEECH_PLAY_STREAM)).lw(c);
+                    c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+                    Callee {
+                        addr: 0x002a_b0d0,
+                        f: ee::s08::StreamArray_SetVolumeScalePtr,
+                    }
+                    .call(c, 0x002b_0754)?;
+                }
+                c.cycles += 18;
+                let system = speech_play_system(c);
+                speech_play_start(c, system, None, 0x002b_0794)?;
+                frame.restore(c, S0, 0x160);
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S1, 0x150);
+        frame.restore(c, S2, 0x140);
+        frame.restore(c, S3, 0x130);
+        frame.restore(c, S4, 0x120);
+        frame.restore_ra(c, 0x110);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x002ad5f0 BankMonitor_StopHandle
+
+/// `void BankMonitor_StopHandle(BankMonitor* bm, int id, int kind, float
+/// fade)` (0x2ad5f0): find the playing instance `(kind, id)`; fade it out
+/// over `fade` (`BankMonitorInstance_FadeVolume(inst, -1, 1, fade)`) or,
+/// for no fade, stop it at once (`BankMonitorInstance_Reset`).
+pub fn bank_monitor_stop_handle(c: &mut Cpu) {
+    use crate::ps2f::FpuF32;
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save_fpr(c, 20, 0x10);
+        frame.save_ra(c, 0);
+        c.f[20] = c.f[12]; // fade
+        Callee {
+            addr: 0x002a_d550,
+            f: ee::s08::BankMonitor_FindInstance,
+        }
+        .call(c, 0x002a_d604)?;
+        frame.restore_ra(c, 0);
+        if c.g[V0][0] != 0 {
+            c.cycles += 5;
+            c.f[0] = 0;
+            let no_fade = FpuF32(c.f[20]).eq_s(FpuF32(c.f[0]));
+            crate::abi::set_fcc(c, no_fade);
+            c.g[A0][0] = c.g[V0][0];
+            if !no_fade {
+                c.cycles += 6;
+                c.f[12] = c.f[20];
+                c.g[A1][0] = u64::MAX;
+                c.g[A2][0] = 0x1;
+                Callee {
+                    addr: 0x002a_cb80,
+                    f: ee::s08::BankMonitorInstance_FadeVolume,
+                }
+                .call(c, 0x002a_d630)?;
+            } else {
+                c.cycles += 3;
+                c.g[A0][0] = c.g[V0][0];
+                Callee {
+                    addr: 0x002a_bb38,
+                    f: ee::s08::BankMonitorInstance_Reset,
+                }
+                .call(c, 0x002a_d640)?;
+            }
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 3;
+        frame.restore_fpr(c, 20, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11197,6 +11588,230 @@ pub(crate) mod tests {
                         }
                     }
                 }
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    /// `SpeechInstance_PlayEvent`: the event id's own bank matching or a
+    /// scan over 0-8 banks (some matching), no event context or a matching
+    /// one (the real `SpeechSystem_ApplyEventContext`), the real path
+    /// `sprintf` over the game image, the player's vtable slots on fakes
+    /// (some failing, some unwinding), and the real stream array calls over
+    /// a stream slot that is empty, idle, busy or playing (the SND lock
+    /// hooks on fakes, the SNDSTRM stream and its current request in test
+    /// RAM).
+    #[test]
+    fn speech_instance_play_event_matches() {
+        use crate::difftest::elf_image;
+        use crate::difftest::fakes::FAKE;
+        use crate::difftest::GAME_GP;
+        const SYSTEM: u32 = DATA + 0x1000;
+        const INSTANCES: u32 = DATA + 0x1800;
+        const STREAMS: u32 = DATA + 0x3000;
+        const SLOTS: u32 = DATA + 0x3100;
+        const BUFFER: u32 = DATA + 0x3800;
+        const INST: u32 = DATA + 0x4000;
+        const BANKS: u32 = DATA + 0x5000;
+        const EVENT: u32 = DATA + 0x6000;
+        const STREAM: u32 = DATA + 0x7000;
+        const REQUEST: u32 = DATA + 0x7400;
+        const MONITOR: u32 = DATA + 0xa000;
+        covered(
+            ee::s08::f_002b04d8__generated,
+            speech_instance_play_event,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2b_04d8, 8);
+                elf_image(c);
+                c.pc = 0x002b_04d8;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                // SND_Lock / SND_Unlock through fakes.
+                w(c, 0x0044_c46c, FAKE + 0x100);
+                w(c, 0x0044_c470, FAKE + 0x110);
+                // The speech system.
+                w(c, GAME_GP + SPEECH_PLAY_SYSTEM_GP, SYSTEM);
+                for i in 0..0x200 {
+                    w(c, SYSTEM + 4 * i, 0);
+                }
+                w(c, SYSTEM, STREAMS);
+                w(c, SYSTEM + 4, INSTANCES);
+                for k in 0..5u32 {
+                    let at = SYSTEM + SPEECH_PLAY_LANG_PREFIXES as u32 + 0x14 * k;
+                    for (i, b) in b"lang0/\0".iter().enumerate() {
+                        c.bus
+                            .write8(at + i as u32, if i == 4 { b'0' + k as u8 } else { *b });
+                    }
+                }
+                // The player's vtable: slot 8 (start) on a fake or on a real
+                // getter returning `*(system + 0x414)` (to reach a failed,
+                // negative start), slot 0x10 (stream handle) on a fake, slot
+                // 0x18 (volume scale pointer) on a fake or on a real leaf
+                // returning 0.
+                const VT: u32 = DATA + 0x9000;
+                c.bus.write16(VT + 8, 0x400);
+                w(c, VT + 0xc, if seed % 2 == 0 { 0x0016_94b0 } else { FAKE });
+                c.bus.write16(VT + 0x10, (r.next_u32() & 0xfc) as u16);
+                w(c, VT + 0x14, FAKE + 0x10);
+                c.bus.write16(VT + 0x18, (r.next_u32() & 0xfc) as u16);
+                w(
+                    c,
+                    VT + 0x1c,
+                    if seed % 4 == 1 {
+                        0x0014_06c0
+                    } else {
+                        FAKE + 0x20
+                    },
+                );
+                w(c, SYSTEM + SPEECH_PLAY_PLAYER_VTABLE, VT);
+                w(
+                    c,
+                    SYSTEM + 0x414,
+                    if seed % 3 == 1 {
+                        0x8000_0000 | r.next_u32()
+                    } else {
+                        r.next_u32() & 0xffff
+                    },
+                );
+                // The instance and its banks.
+                let id = seed % 4;
+                for i in 0..4 {
+                    w(c, INSTANCES + 4 * i, INST);
+                }
+                fill(c, &mut r, INST, 0x240);
+                w(c, INST, id);
+                let slot = r.next_u32() % 4;
+                w(c, INST + SPEECH_PLAY_STREAM, slot);
+                let count = match seed / 4 % 5 {
+                    0 => 0,
+                    1 => 0xffff_ffff,
+                    _ => 1 + r.next_u32() % 8,
+                };
+                w(c, INST + SPEECH_PLAY_BANK_COUNT, count);
+                let names: [&[u8]; 6] = [
+                    b"bank_eng",
+                    b"bank_fre",
+                    b"bnk_ger",
+                    b"x_ita",
+                    b"bank",
+                    b"s_spa",
+                ];
+                for k in 0..8u32 {
+                    let bank = BANKS + 0x80 * k;
+                    w(c, INST + SPEECH_PLAY_BANKS + 4 * k, bank);
+                    w(c, bank, r.next_u32() % 10);
+                    let name = names[(r.next_u32() % 6) as usize];
+                    for (i, b) in name.iter().chain(b"\0").enumerate() {
+                        c.bus.write8(bank + 4 + i as u32, *b);
+                    }
+                    w(c, bank + 0x40, r.next_u32());
+                }
+                // The event.
+                fill(c, &mut r, EVENT, 8);
+                let event_id = r.next_u32() % 8;
+                w(c, EVENT, event_id);
+                if seed % 3 == 0 {
+                    w(c, BANKS + 0x80 * event_id, event_id);
+                }
+                let key = r.next_u32() as u16;
+                c.bus.write16(EVENT + SPEECH_PLAY_EVENT_KEY, key);
+                // An event context (10 slots of 0x20 from +0x18).
+                if seed % 5 != 0 {
+                    let ctx = SYSTEM + 0x20 * (r.next_u32() % 10);
+                    w(c, ctx + 0x18, 1);
+                    w(c, ctx + 0x20, id);
+                    w(c, ctx + 0x24, key as u32);
+                    w(c, ctx + 0x2c, r.next_u32());
+                    w(c, ctx + 0x30, r.f32(2.0));
+                    w(c, ctx + 0x34, if seed % 2 == 0 { 0 } else { r.next_u32() });
+                }
+                // The stream array, its slot's buffer, the SNDSTRM stream.
+                for i in 0..0x400 {
+                    w(c, MONITOR + 4 * i, 0);
+                }
+                w(c, STREAMS, MONITOR);
+                w(c, STREAMS + 8, SLOTS);
+                for i in 0..4 {
+                    w(c, SLOTS + 4 * i, if seed / 2 % 7 == 0 { 0 } else { BUFFER });
+                }
+                let handle = r.next_u32() % 8;
+                w(c, BUFFER + 8, handle);
+                c.bus.write8(0x0050_a92e, 8);
+                for i in 0..8 {
+                    w(c, 0x0050_a0a0 + 4 * i, STREAM);
+                }
+                for i in 0..0x80 {
+                    w(c, STREAM + 4 * i, 0);
+                }
+                w(
+                    c,
+                    STREAM + 0x124,
+                    if seed / 3 % 3 == 0 {
+                        0
+                    } else {
+                        1 + r.next_u32() % 4
+                    },
+                );
+                w(c, STREAM + 0x11c, REQUEST);
+                c.bus.write16(STREAM + 0x18, r.next_u32() as u16);
+                fill(c, &mut r, REQUEST, 0x10);
+                w(c, REQUEST, 0);
+                w(c, REQUEST + 0xc, (r.next_u32() & 0x7fff_ff00) | handle);
+                c.bus.write8(REQUEST + 0x24, (seed / 7 % 2) as u8);
+                c.g[A0][0] = sx(INST);
+                c.g[A1][0] = sx(EVENT);
+            },
+        );
+    }
+
+    /// `BankMonitor_StopHandle`: the real `BankMonitor_FindInstance` over
+    /// 64 instances (no match, a match among decoys with the wrong id), a
+    /// zero (also -0.0) or non-zero fade: the real `FadeVolume` / `Reset` on
+    /// instance states (4.., negative) that need no SND call.
+    #[test]
+    fn bank_monitor_stop_handle_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, DATA};
+        const MONITOR: u32 = DATA + 0x100;
+        const INSTANCES: u32 = DATA + 0x1000;
+        check(
+            ee::s08::f_002ad5f0__generated,
+            bank_monitor_stop_handle,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_d5f0, 0);
+                c.pc = 0x002a_d5f0;
+                c.bus.write32(MONITOR + 0x8ec, INSTANCES);
+                for a in (INSTANCES..INSTANCES + 64 * 0xc0).step_by(4) {
+                    c.bus.write32(a, 0);
+                }
+                let kind = if seed % 5 == 0 {
+                    (1 + r.next_u32() % 8).wrapping_neg()
+                } else {
+                    4 + r.next_u32() % 6
+                };
+                let id = r.next_u32() % 50;
+                // Decoys: same kind, other id.
+                for _ in 0..3 {
+                    let k = r.next_u32() % 64;
+                    c.bus.write32(INSTANCES + 0xc0 * k, kind);
+                    c.bus.write32(INSTANCES + 0xc0 * k + 4, id + 1);
+                }
+                if seed % 4 != 0 {
+                    let k = r.next_u32() % 64;
+                    c.bus.write32(INSTANCES + 0xc0 * k, kind);
+                    c.bus.write32(INSTANCES + 0xc0 * k + 4, id);
+                    c.bus.write32(INSTANCES + 0xc0 * k + 0x54, r.next_u32() % 2);
+                }
+                c.g[A0][0] = sx(MONITOR);
+                c.g[A1][0] = sx(id);
+                c.g[A2][0] = sx(kind);
+                c.f[12] = match seed % 6 {
+                    0 => 0,
+                    1 => 0x8000_0000,
+                    _ => r.f32(5.0),
+                };
             },
         );
     }

@@ -111,6 +111,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cFlagManager_GroupSave",
     ),
     (0x0034_dba8, anim_object_base_dtor, "AnimObject_BaseDtor"),
+    (
+        0x0034_c600,
+        c_flag_manager_remove_flag,
+        "cFlagManager_RemoveFlag",
+    ),
+    (0x0034_c848, c_flag_manager_save, "cFlagManager_Save"),
+    (0x0034_d9b0, anim_object_base_ctor, "AnimObject_BaseCtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3274,6 +3281,260 @@ pub fn anim_object_base_dtor(c: &mut Cpu) {
     })
 }
 
+/// `cFlagManager`: 15 flag groups of 0x188 bytes from +0x20; a group's
+/// item count is at +0x5c.
+pub(crate) const FLAG_MANAGER_GROUPS: u32 = 0x20;
+
+pub(crate) const FLAG_MANAGER_GROUP_SIZE: u32 = 0x188;
+
+pub(crate) const FLAG_MANAGER_GROUP_COUNT: u32 = 0x5c;
+
+/// `cFlagManager_GroupSave(group, stream)` (0x34c2e0).
+pub(crate) const FLAG_MANAGER_GROUP_SAVE: Callee = Callee {
+    addr: 0x0034_c2e0,
+    f: ee::s11::f_0034c2e0,
+};
+
+/// `void cFlagManager_Save(cFlagManager *self, Stream *stream)` (0x34c848):
+/// save the 15 flag groups that follow the header.
+pub fn c_flag_manager_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = sx(r32(c, A0).wrapping_add(FLAG_MANAGER_GROUPS));
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = 0xe;
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A1][0];
+        loop {
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S2][0];
+            FLAG_MANAGER_GROUP_SAVE.call(c, 0x0034_c874)?;
+            c.g[S1][0] = sx(r32(c, S1).wrapping_sub(1));
+            let more = (c.g[S1][0] as i64) >= 0;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(FLAG_MANAGER_GROUP_SIZE));
+            if !more {
+                c.cycles += 6;
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0034_c868);
+            }
+        }
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const FLAG_MANAGER_GROUP_COUNT_2: u32 = 15;
+
+pub(crate) const FLAG_GROUP_SIZE: u32 = 0x188;
+
+pub(crate) const FLAG_GROUP_MEMBERS: u32 = 0x5c;
+
+pub(crate) const C_FLAG_MANAGER_GROUP_REMOVE_FLAG: Callee = Callee {
+    addr: 0x0034_b168,
+    f: ee::s11::cFlagManager_GroupRemoveFlag,
+};
+
+/// `void cFlagManager_RemoveFlag(cFlagManager* self, Flag* flag)`
+/// (0x34c600): offer the flag to each used group in turn
+/// (`cFlagManager_GroupRemoveFlag`) until one removes it.
+pub fn c_flag_manager_remove_flag(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = sx(r32(c, A0).wrapping_add(FLAG_MANAGER_GROUPS));
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A1][0];
+        loop {
+            c.cycles += 3;
+            let group = r32(c, S0);
+            c.g[V0][0] = c.lw(group.wrapping_add(FLAG_GROUP_MEMBERS));
+            c.g[A0][0] = c.g[S0][0];
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[A1][0] = c.g[S2][0];
+                C_FLAG_MANAGER_GROUP_REMOVE_FLAG.call(c, 0x0034_c634)?;
+                if c.g[V0][0] != 0 {
+                    frame.restore(c, S0, 0x30);
+                    break;
+                }
+            }
+            c.cycles += 4;
+            c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+            let more = (c.g[S1][0] as i64) < FLAG_MANAGER_GROUP_COUNT_2 as i64;
+            c.g[V0][0] = more as u64;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(FLAG_GROUP_SIZE));
+            if !more {
+                c.cycles += 1;
+                frame.restore(c, S0, 0x30);
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0034_c620);
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// AnimObject_BaseCtor (0x34d9b0)
+
+/// AnimObject: current and start time (+0, +4), window start / end
+/// (+8, +0xc, "never" = 1e10), the active flag (+0x10), the embedded
+/// ModObj (+0x14; its vtable at +0x20, its node at +0x2c), the node-slot
+/// array (+0x44) and the mesh instances (+0x48).
+pub(crate) const ANIM_OBJECT_BASE_CTOR_MOD: u32 = 0x14;
+
+pub(crate) const ANIM_OBJECT_BASE_CTOR_SLOTS: u32 = 0x44;
+
+pub(crate) const ANIM_OBJECT_BASE_CTOR_MESHES: u32 = 0x48;
+
+/// The AnimObject ModObj vtable (`D_00490CC8`) and the slot array's
+/// allocation name (`D_0048E758`).
+pub(crate) const ANIM_OBJECT_BASE_CTOR_VTABLE: u32 = 0x0049_0cc8;
+
+pub(crate) const ANIM_OBJECT_BASE_CTOR_SLOT_NAME: u32 = 0x0048_e758;
+
+/// gp-relative 1e10 ("no window").
+pub(crate) const ANIM_OBJECT_BASE_CTOR_NEVER_GP: u32 = 0x2aa8;
+
+/// `AnimObject* AnimObject_BaseCtor(AnimObject* self, int list, int kind,
+/// Node* node, int force)` (0x34d9b0): constructs the embedded ModObj on
+/// `node`, sets the AnimObject vtable, allocates one 64-byte slot per node
+/// definition, builds the mesh instances (`AnimObject_AllocNodeInfo`),
+/// starts at time 0 with the duration of the first mesh, an open window
+/// (1e10), active; when `force` or the node's flag bit 0 is set, the node
+/// flags get bit 2 instead of bit 1. Finally evaluates the meshes
+/// (`AnimObject_v52`). Returns `self`.
+pub fn anim_object_base_ctor(c: &mut Cpu) {
+    const MOD_OBJ_CTOR: Callee = Callee {
+        addr: 0x0035_5280,
+        f: ee::s11::ModObj_ctor,
+    };
+    const ALLOC_NODE_INFO: Callee = Callee {
+        addr: 0x0034_e448,
+        f: ee::s11::AnimObject_AllocNodeInfo,
+    };
+    const GET_DURATION: Callee = Callee {
+        addr: 0x0035_1508,
+        f: ee::s11::IntersectInfo_GetDuration,
+    };
+    const V52: Callee = Callee {
+        addr: 0x0034_e348,
+        f: ee::s11::AnimObject_v52,
+    };
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        frame.save(c, S3, 0x10);
+        c.g[S0][0] = sx(r32(c, S1).wrapping_add(ANIM_OBJECT_BASE_CTOR_MOD));
+        frame.save(c, S2, 0x20);
+        c.g[A0][0] = c.g[S0][0];
+        frame.save_ra(c, 0);
+        c.g[S3][0] = c.g[T0][0]; // force
+        MOD_OBJ_CTOR.call(c, 0x0034_d9dc)?;
+
+        // The node-slot array: new (name, 0x20000000, 0) Slot[definitions].
+        let me = r32(c, S1);
+        c.g[S2][0] = sx(me.wrapping_add(ANIM_OBJECT_BASE_CTOR_SLOTS));
+        c.g[V1][0] = sx(ANIM_OBJECT_BASE_CTOR_VTABLE);
+        c.g[A1][0] = sx(ANIM_OBJECT_BASE_CTOR_SLOT_NAME);
+        Addr(me).off(0x20).sw(c, sx(ANIM_OBJECT_BASE_CTOR_VTABLE));
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        c.g[V0][0] = Addr(r32(c, S0)).off(0x18).lw(c); // node
+        c.g[V1][0] = Addr(r32(c, V0)).off(0x80).lw(c); // node definitions
+        c.g[S0][0] = Addr(r32(c, V1)).off(4).lw(c); // definition count
+        c.g[A0][0] = sx(r32(c, S0) << 6);
+        call_ptr(c, 0x0031_7e30, 0x0034_da10)?; // operator_new_named
+        c.g[V1][0] = sx(r32(c, S0).wrapping_sub(1));
+        if c.g[S0][0] != 0 {
+            c.cycles += 2;
+            c.g[A0][0] = u64::MAX;
+        }
+        c.cycles += 7;
+        c.g[A0][0] = c.g[S1][0];
+        let slots = c.g[V0][0];
+        Addr(r32(c, S2)).sw(c, slots);
+        ALLOC_NODE_INFO.call(c, 0x0034_da2c)?;
+
+        // Start time: the first mesh's duration, else 0.
+        c.g[A0][0] = Addr(r32(c, S1)).off(ANIM_OBJECT_BASE_CTOR_MESHES).lw(c);
+        c.f[1] = 0;
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            GET_DURATION.call(c, 0x0034_da44)?;
+            c.f[1] = c.f[0];
+        }
+
+        c.cycles += 9;
+        let me = r32(c, S1);
+        let gp = r32(c, GP);
+        c.f[0] = Addr(gp.wrapping_sub(ANIM_OBJECT_BASE_CTOR_NEVER_GP))
+            .read_fpu(c)
+            .0;
+        c.g[V0][0] = 1;
+        let (start, never) = (c.f[1], c.f[0]);
+        Addr(me).off(4).sw(c, start as u64);
+        c.g[A0][0] = sx(me.wrapping_add(ANIM_OBJECT_BASE_CTOR_MOD));
+        Addr(me).off(0x10).sw(c, 1);
+        Addr(me).off(0xc).sw(c, never as u64);
+        Addr(me).sw(c, start as u64);
+        Addr(me).off(8).sw(c, never as u64);
+        let set = if c.g[S3][0] != 0 {
+            true
+        } else {
+            c.cycles += 5;
+            c.g[V1][0] = Addr(r32(c, A0)).off(0x18).lw(c);
+            c.g[V0][0] = Addr(r32(c, V1)).off(8).lw(c) & 1;
+            c.g[V0][0] != 0
+        };
+        if set {
+            // Node flags: clear bit 1, set bit 2.
+            c.cycles += 7;
+            c.g[A0][0] = Addr(r32(c, A0)).off(0x18).lw(c);
+            c.g[V1][0] = 0xffff_ffff_ffff_fffd;
+            let flags = (Addr(r32(c, A0)).off(8).lw(c) & !2) | 4;
+            c.g[V0][0] = flags;
+            Addr(r32(c, A0)).off(8).sw(c, flags);
+        }
+
+        c.cycles += 10;
+        c.g[A0][0] = c.g[S1][0];
+        V52.call(c, 0x0034_daa4)?;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4388,6 +4649,236 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(me);
                 c.g[A1][0] = (r.next_u32() & 0xff) as u64;
                 c.pc = 0x0034_dba8;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+
+    /// cFlagManager_Save: the real GroupSave on 15 groups of 0..2 items;
+    /// the stream's two writers (vtable +0x8 and +0x28) are fakes, some
+    /// unwind.
+    #[test]
+    fn c_flag_manager_save_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        covered(
+            ee::s11::f_0034c848__generated,
+            c_flag_manager_save,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_c848, 30);
+                c.pc = 0x0034_c848;
+                let this = DATA;
+                let stream = DATA + 0x2000;
+                let vt = vtable(c, &mut r, &[0x8, 0x28]);
+                c.bus.write32(stream, vt);
+                for i in 0..15 {
+                    let group = this + FLAG_MANAGER_GROUPS + i * FLAG_MANAGER_GROUP_SIZE;
+                    let count = match r.next_u32() % 4 {
+                        0 => 0u32.wrapping_sub(1),
+                        1 => 0,
+                        _ => 1 + r.next_u32() % 2,
+                    };
+                    c.bus.write32(group + FLAG_MANAGER_GROUP_COUNT, count);
+                    fill(c, &mut r, group + 0x94, 2);
+                }
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = stream as u64;
+            },
+        );
+    }
+
+    /// A flag manager at `mgr` with its 15 groups: most unused, some with
+    /// 1..4 members on the flag's track or another one; `flag` (its id at
+    /// +0x78, its track cell at +0x80) is a member of some. Groups have no
+    /// mesh or buffer, so a group emptied frees nothing.
+    pub(crate) fn oc308_flag_manager(
+        c: &mut Cpu,
+        r: &mut crate::difftest::Rng,
+        mgr: u32,
+        flag: u32,
+    ) {
+        let track_cell = DATA + 0x2_0000;
+        let members = DATA + 0x2_1000;
+        let track = r.next_u32();
+        c.bus.write32(flag + 0x80, track_cell);
+        c.bus.write32(track_cell, track);
+        c.bus.write32(flag + 0x78, r.next_u32() % 4);
+        for i in 0..FLAG_MANAGER_GROUP_COUNT {
+            let g = mgr + FLAG_MANAGER_GROUPS + FLAG_GROUP_SIZE * i;
+            let count = if r.next_u32() % 3 == 0 {
+                1 + r.next_u32() % 4
+            } else {
+                0
+            };
+            c.bus.write32(g + FLAG_GROUP_MEMBERS, count);
+            c.bus.write32(
+                g + 0x58,
+                if r.next_u32() % 3 == 0 {
+                    track ^ 1
+                } else {
+                    track
+                },
+            );
+            c.bus.write32(g + 0x60, 0);
+            c.bus.write32(g + 0x74, 0);
+            for k in 0..6u32 {
+                let m = members + 0x100 * k;
+                c.bus.write32(g + 0x94 + 4 * k, m);
+                c.bus.write32(m + 0x78, r.next_u32() % 4);
+            }
+        }
+    }
+
+    /// Groups used or not, the flag found in one of them (stops) or none.
+    #[test]
+    fn c_flag_manager_remove_flag_matches() {
+        crate::difftest::check(
+            ee::s11::f_0034c600__generated,
+            c_flag_manager_remove_flag,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_c600, 0);
+                let mgr = DATA;
+                let flag = DATA + 0x1_0000;
+                oc308_flag_manager(c, &mut r, mgr, flag);
+                c.g[A0][0] = sx(mgr);
+                c.g[A1][0] = sx(flag);
+                c.pc = 0x0034_c600;
+            },
+        );
+    }
+
+    /// Events due inside the group loop (all groups unused: the loop runs
+    /// its 15 iterations).
+    #[test]
+    fn c_flag_manager_remove_flag_events() {
+        use crate::difftest::events::{check_events, schedule, Events};
+        check_events(
+            ee::s11::f_0034c600__generated,
+            c_flag_manager_remove_flag,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_c6e0, 0);
+                let mgr = DATA;
+                let flag = DATA + 0x1_0000;
+                oc308_flag_manager(c, &mut r, mgr, flag);
+                if seed % 2 == 0 {
+                    for i in 0..FLAG_MANAGER_GROUP_COUNT {
+                        c.bus.write32(
+                            mgr + FLAG_MANAGER_GROUPS + FLAG_GROUP_SIZE * i + FLAG_GROUP_MEMBERS,
+                            0,
+                        );
+                    }
+                }
+                c.g[A0][0] = sx(mgr);
+                c.g[A1][0] = sx(flag);
+                schedule(c, &mut r, seed, 0x0034_c600)
+            },
+        );
+    }
+
+    /// AnimObject_BaseCtor: the ModObj_ctor fixture (process lists, world ->
+    /// focus manager, node flags with or without bit 0 / 0x100) plus 0..4
+    /// node definitions with or without mesh sources (so the mesh duration
+    /// branch runs or not), durations from a clip or none, `force` on or
+    /// off; every callee (operator_new_named on the test pools / heap,
+    /// AllocNodeInfo, GetDuration, v52 -> IntersectInfo_EvaluateMatrix) runs
+    /// for real on the ELF image.
+    #[test]
+    fn anim_object_base_ctor_matches() {
+        use crate::difftest::{check, elf_image, fill, DATA, GAME_GP};
+        use crate::game::worldpainter::quadtree::tests::alloc_machine;
+        const SELF: u32 = DATA + 0x100;
+        const NODE: u32 = DATA + 0x200;
+        const DEF: u32 = DATA + 0x400;
+        const ENTRIES: u32 = DATA + 0x500;
+        const SOURCES: u32 = DATA + 0x600;
+        const CURVES: u32 = DATA + 0x800;
+        const ACTION: u32 = DATA + 0x840;
+        const CLIP: u32 = DATA + 0x880;
+        const PROCS: u32 = DATA + 0x1000;
+        const TAILS: u32 = DATA + 0x1400;
+        const WORLD: u32 = DATA + 0x2000;
+        const FOCUS: u32 = DATA + 0x3000;
+        check(
+            ee::s11::f_0034d9b0__generated,
+            anim_object_base_ctor,
+            120,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = alloc_machine(c, seed, 0x34_d9b0);
+                c.pc = 0x0034_d9b0;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                for i in 0..0x40 {
+                    w(c, SELF + 4 * i, 0);
+                }
+                fill(c, &mut r, NODE, 0x20);
+                let flags = r.next_u32();
+                w(
+                    c,
+                    NODE + 0x8,
+                    if seed % 4 == 0 {
+                        flags | 0x100
+                    } else {
+                        flags & !0x100
+                    },
+                );
+                w(c, NODE + 0x80, DEF);
+                let defs = seed % 5;
+                w(c, DEF + 4, defs);
+                w(c, DEF + 8, ENTRIES);
+                for i in 0..defs {
+                    let src = if seed % 7 == 1 || r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        SOURCES + 0x40 * i
+                    };
+                    w(c, ENTRIES + 0x10 * i + 8, src);
+                    for k in 0..6 {
+                        w(c, SOURCES + 0x40 * i + 4 * k, r.f32(100.0));
+                    }
+                    w(c, SOURCES + 0x40 * i + 0x18, 0); // no animated channel
+                    w(c, SOURCES + 0x40 * i + 0x20, CURVES);
+                }
+                w(c, CURVES, if seed % 3 == 0 { 0 } else { ACTION });
+                w(c, ACTION + 4, if seed % 5 == 2 { 0 } else { CLIP });
+                w(c, CLIP + 0x10, r.f32(30.0));
+                // The ModObj_ctor fixture: process lists, world -> focus.
+                let list = seed % 4;
+                w(c, GAME_GP + 0x2898 + 4, PROCS);
+                for i in 0..4 {
+                    w(c, PROCS + 0x44 * i, r.next_u32());
+                    w(c, PROCS + 0x44 * i + 8, TAILS + 0x40 * i);
+                    w(c, PROCS + 0x44 * i + 0x28, TAILS + 0x40 * i + 0x20);
+                }
+                let kind = match (seed / 4) % 6 {
+                    0 => 6,
+                    1 => 0x10,
+                    2 => 0x16,
+                    _ => r.next_u32() % 0x20,
+                };
+                fill(c, &mut r, 0x0044_aff0, 0x20);
+                w(c, GAME_GP - 0x848, WORLD);
+                w(c, WORLD + 0x84, WORLD + 0x100);
+                w(c, WORLD + 0x100 + 0xc, WORLD + 0x200);
+                w(c, WORLD + 0x200 + 0xa4, FOCUS);
+                w(
+                    c,
+                    FOCUS + 0xd4,
+                    if seed % 3 == 0 { 0 } else { r.next_u32() },
+                );
+                w(c, FOCUS + 0xd8, r.next_u32() % 8);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(list);
+                c.g[A2][0] = sx(kind);
+                c.g[A3][0] = sx(NODE);
+                c.g[T0][0] = if seed % 3 == 1 {
+                    sx(r.next_u32() | 1)
+                } else {
+                    0
+                };
             },
         );
     }

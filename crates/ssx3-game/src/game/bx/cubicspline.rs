@@ -72,6 +72,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_eee8, dlheap_consolidate, "DLHeap_Consolidate"),
     (0x0032_02f8, mem_pool16_alloc, "MEM_Pool16Alloc"),
     (0x0032_03b8, mem_pool128_alloc, "MEM_Pool128Alloc"),
+    (
+        0x0031_d660,
+        c_csi_cubic_spline_alloc,
+        "cCSICubicSpline_Alloc",
+    ),
+    (0x0031_e2d8, dlheap_sys_alloc, "DLHeap_SysAlloc"),
+    (0x0032_0330, mem_pool32_alloc, "MEM_Pool32Alloc"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -2190,6 +2197,531 @@ pub fn mem_pool16_alloc(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod oc308_av {
+
+    /// `max_fast`; bit 1 (2): fast chunks present.
+    pub const MAX_FAST: u32 = 0x0;
+
+    pub const TOP: u32 = 0x30;
+
+    pub const TRIM_THRESHOLD: u32 = 0x344;
+
+    pub const TOP_PAD: u32 = 0x348;
+
+    pub const PAGESIZE: u32 = 0x35c;
+
+    /// Bit 0: MORECORE_CONTIGUOUS.
+    pub const MORECORE_PROPERTIES: u32 = 0x360;
+
+    pub const MMAPPED_MEM: u32 = 0x364;
+
+    pub const SBRKED_MEM: u32 = 0x368;
+
+    pub const MAX_SBRKED_MEM: u32 = 0x36c;
+
+    pub const MAX_TOTAL_MEM: u32 = 0x374;
+}
+
+/// The 32-byte pool's free list head (`pool + 0x6000`).
+pub(crate) const MEM_POOL32_FREE: u32 = 0x6000;
+
+pub(crate) const MEM_POOL32_FALLBACK: Callee = Callee {
+    addr: 0x0031_9e48,
+    f: ee::s10::MEM_PoolAlloc,
+};
+
+/// `void* MEM_Pool32Alloc(Pool32* pool)` (0x320330): pop a block off the
+/// 32-byte pool's free list (`pool + 0x6000`); when it is empty fall back
+/// to `MEM_PoolAlloc(0x24, a1)` (a1 is whatever the caller left there).
+pub fn mem_pool32_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let head = r32(c, A0).wrapping_add(MEM_POOL32_FREE);
+        c.g[V0][0] = c.lw(head);
+        if c.g[V0][0] != 0 {
+            c.g[V1][0] = c.lw(r32(c, V0)); // next free block
+            c.cycles += 2;
+            c.sw(head, c.g[V1][0]);
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = 0x24;
+            MEM_POOL32_FALLBACK.call(c, 0x0032_034c)?;
+        }
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const DLHEAP_CONSOLIDATE_2: Callee = Callee {
+    addr: 0x0031_eee8,
+    f: ee::s10::DLHeap_Consolidate,
+};
+
+pub(crate) const DLHEAP_MALLOC_2: Callee = Callee {
+    addr: 0x0031_e818,
+    f: ee::s10::DLHeap_Malloc,
+};
+
+pub(crate) const DLHEAP_MORE_CORE: Callee = Callee {
+    addr: 0x0031_ffd8,
+    f: ee::s10::DLHeap_MoreCore,
+};
+
+pub(crate) const DLHEAP_FREE_2: Callee = Callee {
+    addr: 0x0031_ed60,
+    f: ee::s10::DLHeap_Free,
+};
+
+/// `__errno` (another shard: through the table).
+pub(crate) const OC308_ERRNO: u32 = 0x0041_5fb8;
+
+/// `void* DLHeap_SysAlloc(mspace* ms, size_t nb, malloc_state* av)`
+/// (0x31e2d8): dlmalloc's `sYSMALLOc` without mmap. With fast chunks
+/// pending, consolidate and retry `DLHeap_Malloc(nb - 15)`. Otherwise grow
+/// the heap through `DLHeap_MoreCore` (page-rounded `nb + top_pad + 16`,
+/// less the old top when contiguous): extend the top chunk in place, or
+/// (foreign or non-contiguous break) align the new space, fetch the
+/// correction with a second MoreCore call, make it the new top and fence
+/// off and free the old top. Update the sbrk statistics and split `nb`
+/// off the top; on failure `errno = ENOMEM` and return 0.
+///
+/// Stack locals: +0 nb, +4 old top, +8 size, +0xc ~pagemask.
+pub fn dlheap_sys_alloc(c: &mut Cpu) {
+    use oc308_av::*;
+    const ALL_ONES: u64 = u64::MAX;
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S1, 0x90);
+        frame.save(c, S6, 0x40);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, FP, 0x20);
+        c.g[S6][0] = c.g[A0][0];
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S2, 0x80);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S4, 0x60);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S7, 0x30);
+        frame.save_ra(c, 0x10);
+        let av = r32(c, S1);
+        let local = |c: &Cpu, off: u32| sp(c).wrapping_add(off);
+        c.g[V1][0] = c.lw(av.wrapping_add(PAGESIZE));
+        let nb_slot = local(c, 0);
+        c.sw(nb_slot, c.g[A1][0]);
+        c.g[V0][0] = c.lw(av.wrapping_add(MAX_FAST)) & 2;
+        // fp = pagemask
+        c.g[FP][0] = sx(r32(c, V1).wrapping_sub(1));
+        'done: {
+            if c.g[V0][0] != 0 {
+                // Fast chunks pending: consolidate, then malloc again.
+                c.cycles += 8;
+                c.g[A1][0] = c.g[S1][0];
+                DLHEAP_CONSOLIDATE_2.call(c, 0x0031_e32c)?;
+                c.g[V0][0] = c.lw(local(c, 0));
+                c.g[A0][0] = c.g[S6][0];
+                c.g[A1][0] = sx(r32(c, V0).wrapping_sub(0xf));
+                DLHEAP_MALLOC_2.call(c, 0x0031_e33c)?;
+                frame.restore(c, S0, 0xa0);
+                break 'done;
+            }
+
+            // size = nb + top_pad + 16 (less old_size when contiguous).
+            c.cycles += 22;
+            c.g[V1][0] = c.lw(av.wrapping_add(TOP));
+            c.g[S2][0] = ALL_ONES; // snd_brk = MORECORE_FAILURE
+            c.g[A2][0] = c.lw(local(c, 0));
+            c.g[S3][0] = ALL_ONES; // brk = MORECORE_FAILURE
+            let old_top_slot = local(c, 4);
+            c.sw(old_top_slot, c.g[V1][0]);
+            c.g[V1][0] = 0xffff_ffff_ffff_fffc;
+            c.g[A0][0] = c.lw(local(c, 4));
+            c.g[V0][0] = c.lw(av.wrapping_add(TOP_PAD));
+            c.g[A1][0] = c.lw(r32(c, A0).wrapping_add(4));
+            c.g[V0][0] = sx(r32(c, A2).wrapping_add(r32(c, V0)));
+            c.g[A0][0] = c.lw(av.wrapping_add(MORECORE_PROPERTIES));
+            c.g[S4][0] = c.g[A1][0] & c.g[V1][0]; // old_size
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x10));
+            c.g[V1][0] = c.lw(local(c, 4));
+            c.g[V0][0] <<= 32;
+            c.g[S0][0] = c.g[V0][0] >> 32; // size
+            c.g[A0][0] &= 1;
+            c.g[S5][0] = sx(r32(c, V1).wrapping_add(r32(c, S4))); // old_end
+            if c.g[A0][0] != 0 {
+                c.cycles += 3;
+                c.g[V0][0] = r32(c, S4) as u64;
+                c.g[S0][0] = c.g[S0][0].wrapping_sub(c.g[V0][0]);
+            }
+
+            // Round to pages; brk = MoreCore(size) when size > 0.
+            c.cycles += 10;
+            c.g[V0][0] = !c.g[FP][0];
+            c.g[V1][0] = c.g[FP][0] << 32;
+            let notmask_slot = local(c, 0xc);
+            c.sw(notmask_slot, c.g[V0][0]);
+            c.g[V1][0] >>= 32;
+            c.g[V0][0] <<= 32;
+            c.g[V1][0] = c.g[S0][0].wrapping_add(c.g[V1][0]);
+            c.g[V0][0] >>= 32;
+            c.g[S0][0] = c.g[V1][0] & c.g[V0][0];
+            let positive = (c.g[S0][0] as i64) > 0;
+            c.g[A0][0] = c.g[S6][0];
+            if positive {
+                c.cycles += 3;
+                c.g[A1][0] = c.g[S0][0];
+                DLHEAP_MORE_CORE.call(c, 0x0031_e3d8)?;
+                c.g[S3][0] = c.g[V0][0];
+            }
+
+            'split: {
+                c.cycles += 2;
+                'fail: {
+                    if c.g[S3][0] == c.g[S2][0] {
+                        break 'fail;
+                    }
+                    'stats: {
+                        'foreign: {
+                            // sbrked_mem += size; extend the top in place?
+                            c.cycles += 7;
+                            c.g[V0][0] = c.lw(av.wrapping_add(SBRKED_MEM));
+                            c.g[V1][0] = sx(r32(c, S0));
+                            let size_slot = local(c, 8);
+                            c.sw(size_slot, c.g[V1][0]);
+                            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                            let extends = c.g[S3][0] == c.g[S5][0];
+                            c.sw(av.wrapping_add(SBRKED_MEM), c.g[V0][0]);
+                            if !extends {
+                                break 'foreign;
+                            }
+                            c.cycles += 10;
+                            c.g[V0][0] = r32(c, S4) as u64;
+                            c.g[V1][0] = 1;
+                            c.g[A0][0] = c.lw(local(c, 4));
+                            c.g[V0][0] = c.g[S0][0].wrapping_add(c.g[V0][0]);
+                            c.g[V0][0] |= c.g[V1][0];
+                            c.g[V0][0] = sx(r32(c, V0));
+                            c.sw(r32(c, A0).wrapping_add(4), c.g[V0][0]);
+                            break 'stats;
+                        }
+                        'new_top: {
+                            'got_snd: {
+                                'non_contiguous: {
+                                    // s0 = correction, s7 = aligned_brk.
+                                    c.cycles += 5;
+                                    c.g[V1][0] = c.lw(av.wrapping_add(MORECORE_PROPERTIES));
+                                    c.g[S0][0] = 0;
+                                    c.g[V0][0] = c.g[V1][0] & 1;
+                                    c.g[S7][0] = c.g[S3][0];
+                                    if c.g[V0][0] == 0 {
+                                        break 'non_contiguous;
+                                    }
+                                    // A break below the old end: not contiguous after all.
+                                    'reload: {
+                                        'clear: {
+                                            c.cycles += 2;
+                                            let no_old = c.g[S4][0] == 0;
+                                            c.g[V0][0] = (c.g[S7][0] < c.g[S5][0]) as u64;
+                                            if no_old {
+                                                break 'clear;
+                                            }
+                                            c.cycles += 2;
+                                            if c.g[V0][0] == 0 {
+                                                c.g[V0][0] =
+                                                    c.lw(av.wrapping_add(MORECORE_PROPERTIES));
+                                                break 'reload;
+                                            }
+                                            c.cycles += 4;
+                                            c.g[V0][0] = 0xffff_ffff_ffff_fffe;
+                                            c.g[V0][0] &= c.g[V1][0];
+                                            c.sw(av.wrapping_add(MORECORE_PROPERTIES), c.g[V0][0]);
+                                        }
+                                        c.cycles += 1;
+                                        c.g[V0][0] = c.lw(av.wrapping_add(MORECORE_PROPERTIES));
+                                    }
+                                    c.cycles += 3;
+                                    c.g[V0][0] &= 1;
+                                    if c.g[V0][0] == 0 {
+                                        break 'non_contiguous;
+                                    }
+                                    // Contiguous: count the foreign gap.
+                                    c.cycles += 2;
+                                    c.g[V1][0] = sx(r32(c, S3).wrapping_sub(r32(c, S5)));
+                                    if c.g[S4][0] != 0 {
+                                        c.cycles += 3;
+                                        c.g[V0][0] = c.lw(av.wrapping_add(SBRKED_MEM));
+                                        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                                        c.sw(av.wrapping_add(SBRKED_MEM), c.g[V0][0]);
+                                    }
+                                    // Front misalignment.
+                                    c.cycles += 4;
+                                    c.g[V0][0] = sx(r32(c, S3).wrapping_add(8));
+                                    c.g[V1][0] = c.g[V0][0] & 0xf;
+                                    c.g[V0][0] = 0x10;
+                                    if c.g[V1][0] != 0 {
+                                        c.cycles += 6;
+                                        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(r32(c, V1)));
+                                        c.g[V0][0] <<= 32;
+                                        c.g[S0][0] = c.g[V0][0] >> 32;
+                                        c.g[V1][0] = sx(r32(c, S0));
+                                        c.g[S7][0] = sx(r32(c, S3).wrapping_add(r32(c, V1)));
+                                    }
+                                    // correction += old_size + end page rounding;
+                                    // snd_brk = MoreCore(correction).
+                                    c.cycles += 23;
+                                    c.g[V0][0] = r32(c, S4) as u64;
+                                    c.g[A1][0] = c.lw(local(c, 8));
+                                    c.g[A2][0] = c.lw(local(c, 0xc));
+                                    c.g[S0][0] = c.g[S0][0].wrapping_add(c.g[V0][0]);
+                                    c.g[S5][0] = sx(r32(c, S3).wrapping_add(r32(c, A1)));
+                                    c.g[V1][0] = sx(r32(c, S0));
+                                    c.g[A0][0] = c.g[S6][0];
+                                    c.g[V1][0] = sx(r32(c, S5).wrapping_add(r32(c, V1)));
+                                    c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, FP)));
+                                    c.g[V0][0] &= c.g[A2][0];
+                                    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(r32(c, V1)));
+                                    c.g[V0][0] = r32(c, V0) as u64;
+                                    c.g[S0][0] = c.g[S0][0].wrapping_add(c.g[V0][0]);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    DLHEAP_MORE_CORE.call(c, 0x0031_e4f0)?;
+                                    c.g[V1][0] = ALL_ONES;
+                                    c.g[S2][0] = c.g[V0][0];
+                                    let failed = c.g[S2][0] == c.g[V1][0];
+                                    c.g[V0][0] = (c.g[S2][0] < c.g[S3][0]) as u64;
+                                    if failed {
+                                        c.cycles += 6;
+                                        c.g[A0][0] = c.g[S6][0];
+                                        c.g[A1][0] = 0;
+                                        DLHEAP_MORE_CORE.call(c, 0x0031_e510)?;
+                                        c.g[S0][0] = 0;
+                                        c.g[S2][0] = c.g[V0][0];
+                                        break 'got_snd;
+                                    }
+                                    c.cycles += 2;
+                                    if c.g[V0][0] != 0 {
+                                        // snd_brk below brk: give up contiguity.
+                                        c.cycles += 8;
+                                        c.g[V1][0] = c.lw(av.wrapping_add(MORECORE_PROPERTIES));
+                                        c.g[V0][0] = 0xffff_ffff_ffff_fffe;
+                                        c.g[S2][0] = c.g[S5][0];
+                                        c.g[V1][0] &= c.g[V0][0];
+                                        c.g[S0][0] = 0;
+                                        c.sw(av.wrapping_add(MORECORE_PROPERTIES), c.g[V1][0]);
+                                    }
+                                    break 'got_snd;
+                                }
+                                // Not contiguous: snd_brk = MoreCore(0).
+                                c.cycles += 4;
+                                c.g[V0][0] = ALL_ONES;
+                                let have_snd = c.g[S2][0] != c.g[V0][0];
+                                c.g[V1][0] = sx(r32(c, S2).wrapping_sub(r32(c, S7)));
+                                if have_snd {
+                                    break 'new_top;
+                                }
+                                c.cycles += 10;
+                                c.g[A0][0] = c.g[S6][0];
+                                c.g[A1][0] = 0;
+                                DLHEAP_MORE_CORE.call(c, 0x0031_e560)?;
+                                c.g[A0][0] = c.lw(local(c, 8));
+                                c.g[S2][0] = c.g[V0][0];
+                                c.g[V1][0] = c.lw(av.wrapping_add(SBRKED_MEM));
+                                c.g[V0][0] = sx(r32(c, S2).wrapping_sub(r32(c, S3)));
+                                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(r32(c, A0)));
+                                c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+                                c.sw(av.wrapping_add(SBRKED_MEM), c.g[V1][0]);
+                            }
+                            c.cycles += 4;
+                            c.g[V0][0] = ALL_ONES;
+                            let no_snd = c.g[S2][0] == c.g[V0][0];
+                            c.g[V1][0] = sx(r32(c, S2).wrapping_sub(r32(c, S7)));
+                            if no_snd {
+                                break 'stats;
+                            }
+                        }
+                        // top = aligned_brk, size (snd_brk - aligned_brk + correction) | 1.
+                        c.cycles += 13;
+                        c.g[V0][0] = 1;
+                        c.g[V1][0] = c.g[V1][0].wrapping_add(c.g[S0][0]);
+                        c.sw(av.wrapping_add(TOP), c.g[S7][0]);
+                        c.g[V1][0] |= c.g[V0][0];
+                        c.g[A0][0] = sx(r32(c, S0));
+                        c.g[V1][0] = sx(r32(c, V1));
+                        c.sw(r32(c, S7).wrapping_add(4), c.g[V1][0]);
+                        c.g[V0][0] = c.lw(av.wrapping_add(SBRKED_MEM));
+                        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                        let no_old = c.g[S4][0] == 0;
+                        c.sw(av.wrapping_add(SBRKED_MEM), c.g[V0][0]);
+                        if no_old {
+                            break 'stats;
+                        }
+                        // Shrink the old top, fence it off (two size-4|1 words).
+                        c.cycles += 13;
+                        c.g[V0][0] = 0xffff_ffff_ffff_fff0;
+                        c.g[A0][0] = sx(r32(c, S4).wrapping_sub(0xc));
+                        c.g[A2][0] = c.lw(local(c, 4));
+                        c.g[S4][0] = c.g[A0][0] & c.g[V0][0];
+                        c.g[A1][0] = 5;
+                        c.g[V1][0] = c.g[S4][0] | 1;
+                        c.g[V0][0] = sx(r32(c, A2).wrapping_add(r32(c, S4)));
+                        c.sw(r32(c, A2).wrapping_add(4), c.g[V1][0]);
+                        c.g[A0][0] = (c.g[S4][0] < 0x10) as u64;
+                        c.sw(r32(c, V0).wrapping_add(8), c.g[A1][0]);
+                        let small = c.g[A0][0] != 0;
+                        c.sw(r32(c, V0).wrapping_add(4), c.g[A1][0]);
+                        if small {
+                            break 'stats;
+                        }
+                        // Free the old top with trimming off.
+                        c.cycles += 8;
+                        c.g[V0][0] = ALL_ONES;
+                        c.g[S0][0] = c.lw(av.wrapping_add(TRIM_THRESHOLD));
+                        c.g[A0][0] = c.g[S6][0];
+                        c.sw(av.wrapping_add(TRIM_THRESHOLD), c.g[V0][0]);
+                        c.g[A1][0] = sx(r32(c, A2).wrapping_add(8));
+                        DLHEAP_FREE_2.call(c, 0x0031_e610)?;
+                        c.sw(av.wrapping_add(TRIM_THRESHOLD), c.g[S0][0]);
+                    }
+                    // Statistics.
+                    c.cycles += 5;
+                    c.g[A0][0] = c.lw(av.wrapping_add(SBRKED_MEM));
+                    c.g[V0][0] = c.lw(av.wrapping_add(MAX_SBRKED_MEM));
+                    c.g[V0][0] = (c.g[V0][0] < c.g[A0][0]) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.sw(av.wrapping_add(MAX_SBRKED_MEM), c.g[A0][0]);
+                    }
+                    c.cycles += 6;
+                    c.g[V1][0] = c.lw(av.wrapping_add(MMAPPED_MEM));
+                    c.g[V0][0] = c.lw(av.wrapping_add(MAX_TOTAL_MEM));
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                    c.g[V0][0] = (c.g[V0][0] < c.g[A0][0]) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.sw(av.wrapping_add(MAX_TOTAL_MEM), c.g[A0][0]);
+                    }
+                    // Split nb off the top if it is big enough.
+                    c.cycles += 12;
+                    c.g[V1][0] = c.lw(local(c, 0));
+                    c.g[V0][0] = 0xffff_ffff_ffff_fffc;
+                    c.g[A1][0] = c.lw(av.wrapping_add(TOP));
+                    c.g[A0][0] = sx(r32(c, V1).wrapping_add(0x10));
+                    c.g[V1][0] = c.lw(r32(c, A1).wrapping_add(4));
+                    c.g[V1][0] &= c.g[V0][0];
+                    c.g[V1][0] = sx(r32(c, V1));
+                    c.g[A0][0] = (c.g[V1][0] < c.g[A0][0]) as u64;
+                    let too_small = c.g[A0][0] != 0;
+                    c.g[A2][0] = c.lw(local(c, 0));
+                    if too_small {
+                        break 'fail;
+                    }
+                    c.cycles += 9;
+                    c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A2)));
+                    c.g[V0][0] = c.g[A2][0] | 1;
+                    c.sw(av.wrapping_add(TOP), c.g[A0][0]);
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_sub(r32(c, A2)));
+                    c.sw(r32(c, A1).wrapping_add(4), c.g[V0][0]);
+                    c.g[V1][0] |= 1;
+                    c.sw(r32(c, A0).wrapping_add(4), c.g[V1][0]);
+                    c.g[V0][0] = sx(r32(c, A1).wrapping_add(8));
+                    break 'split;
+                }
+                // errno = ENOMEM; return 0.
+                c.cycles += 5;
+                call_ptr(c, OC308_ERRNO, 0x0031_e69c)?;
+                c.g[V1][0] = 0xc;
+                c.sw(r32(c, V0), c.g[V1][0]);
+                c.g[V0][0] = 0;
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0xa0);
+        }
+        c.cycles += 11;
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// cCSICubicSpline_Alloc (0x31d660)
+
+/// `cCSICubicSpline`: the flags word at +0 (bits 11..18: segment count,
+/// bit 1: allocated, bits 3..10 cleared on alloc), the segment array at +8.
+pub(crate) const SPLINE_ALLOC_DATA: u32 = 0x8;
+
+/// The allocation name (`0x490000 - 0x24c8`).
+pub(crate) const SPLINE_ALLOC_NAME: u64 = 0x0048_db38;
+
+/// `void cCSICubicSpline_Alloc(cCSICubicSpline* self, int points)`
+/// (0x31d660): frees the old segment array (`cCSICubicSpline_Free`), stores
+/// `points - 1` as the 8-bit segment count in the flags, allocates
+/// `count * 0x14` bytes (`operator_new_named`) and marks the spline
+/// allocated (bit 1 set, bits 3..10 cleared). Frame 0x30 (s0 = self, s1 =
+/// points).
+pub fn c_csi_cubic_spline_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(SPLINE_ALLOC_DATA)).lw(c);
+        c.g[S1][0] = c.g[A1][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            Callee {
+                addr: 0x0031_d790,
+                f: ee::s10::cCSICubicSpline_Free,
+            }
+            .call(c, 0x0031_d688)?;
+        }
+        c.cycles += 30;
+        let spline = r32(c, S0);
+        let flags = Addr(spline).lw(c);
+        let count = sx(r32(c, S1).wrapping_sub(1)) & 0xff;
+        c.g[V0][0] = 0xffff_ffff_fff8_07ff;
+        let count_bits = sx((count as u32) << 11);
+        c.g[V1][0] = count_bits;
+        let flags = (flags & 0xffff_ffff_fff8_07ff) | count_bits;
+        c.g[A2][0] = flags;
+        c.g[A3][0] = 0x14;
+        Addr(spline).sw(c, flags);
+        c.g[A0][0] = sx((flags as u32) >> 11) & 0xff;
+        c.g[A1][0] = SPLINE_ALLOC_NAME;
+        c.mult(0, 0, A0, A3);
+        c.g[A2][0] = 0;
+        c.g[A0][0] = c.lo[0];
+        c.g[A3][0] = 0;
+        Callee {
+            addr: 0x0031_7e30,
+            f: ee::s10::operator_new_named,
+        }
+        .call(c, 0x0031_d6d4)?;
+        let spline = r32(c, S0);
+        c.g[A0][0] = 0xffff_ffff_ffff_f807;
+        let data = c.g[V0][0];
+        let flags = (Addr(spline).lw(c) | 2) & 0xffff_ffff_ffff_f807;
+        Addr(spline.wrapping_add(SPLINE_ALLOC_DATA)).sw(c, data);
+        c.g[V1][0] = flags;
+        Addr(spline).sw(c, flags);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3054,6 +3586,192 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(pool16);
                 c.g[A1][0] = [0u64, 4, 8, 16, 32, 64, 128][(r.next_u32() % 7) as usize];
                 c.pc = 0x0032_02f8;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::fakes::LOG_RESULTS;
+
+    /// A block on the free list (popped) or an empty list: MEM_PoolAlloc
+    /// over a test heap, with the size-class pools on or off.
+    #[test]
+    fn mem_pool32_alloc_matches() {
+        use crate::difftest::GAME_GP;
+        use crate::game::bx::cubicspline::tests::oc238_run;
+        crate::difftest::check(
+            ee::s10::f_00320330__generated,
+            mem_pool32_alloc,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x32_0330, 0);
+                let pool32 = DATA + 0x20_0000;
+                if seed % 3 != 0 {
+                    let block = DATA + 0x30_0000 + 0x20 * (r.next_u32() % 16);
+                    c.bus.write32(pool32 + MEM_POOL32_FREE, block);
+                    c.bus
+                        .write32(block, if seed % 2 == 0 { 0 } else { block + 0x20 });
+                } else {
+                    c.bus.write32(pool32 + MEM_POOL32_FREE, 0);
+                    oc238_run(
+                        c,
+                        0x0031_ff60,
+                        ee::s10::f_0031ff60,
+                        &[0x004f_f250, (DATA + 0x40000) as u64, 0x40000],
+                    );
+                    if seed % 2 == 0 {
+                        c.bus.write32(GAME_GP + 0xdd8, 1);
+                        const POOLS: [(u32, u32, u32); 7] = [
+                            (0x2a70, 0x800, 0x40),
+                            (0x2a60, 0x2000, 0x40),
+                            (0x2a6c, 0x6000, 0x40),
+                            (0x2a7c, 0x32000, 0x40),
+                            (0x2a84, 0x25800, 0x80),
+                            (0x2a78, 0x20000, 0x100),
+                            (0x2a68, 0x20000, 0x200),
+                        ];
+                        let mut pool = DATA + 0xc_0000;
+                        let mut base = DATA + 0x8_0000;
+                        for (slot, head, stride) in POOLS {
+                            for n in 0..64u32 {
+                                let node = base + stride * n;
+                                c.bus.write32(node, if n == 63 { 0 } else { node + stride });
+                            }
+                            c.bus.write32(pool + head, base);
+                            c.bus.write32(GAME_GP + slot, pool);
+                            pool += 0x100;
+                            base += 0x8000;
+                        }
+                    } else {
+                        c.bus.write32(GAME_GP + 0xdd8, 0);
+                    }
+                }
+                c.g[A0][0] = sx(pool32);
+                c.g[A1][0] = [0u64, 4, 8, 16, 32, 64, 128][(r.next_u32() % 7) as usize];
+                c.pc = 0x0032_0330;
+            },
+        );
+    }
+
+    /// DLHeap_SysAlloc on the game's heap (mspace 0x4ff250) brought up over
+    /// test memory by DLHeap_InitArena and two real allocations. Per seed:
+    /// the plain contiguous extension of the top; fast chunks pending
+    /// (consolidate + malloc); a foreign break (alignment correction, second
+    /// MoreCore, old top fenced and freed); not contiguous (MoreCore(0)); a
+    /// break below the old end (contiguity dropped); a request beyond the
+    /// arena (errno); a limit that fails only the second MoreCore; an old top
+    /// of size 16 or 0 (no free / no fence).
+    #[test]
+    fn dlheap_sys_alloc_matches() {
+        use super::oc308_av::*;
+        use crate::difftest::GAME_GP;
+        use crate::game::bx::cubicspline::tests::oc238_run;
+        const MS: u32 = 0x004f_f250;
+        crate::difftest::check(
+            ee::s10::f_0031e2d8__generated,
+            dlheap_sys_alloc,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x31_e2d8, 0);
+                c.bus.write32(GAME_GP + 0xdd8, 0);
+                oc238_run(
+                    c,
+                    0x0031_ff60,
+                    ee::s10::f_0031ff60,
+                    &[MS as u64, (DATA + 0x40000) as u64, 0x40000],
+                );
+                for size in [0x40u64, 0x100 + (r.next_u32() % 0x400) as u64] {
+                    oc238_run(c, 0x0031_9e48, ee::s10::f_00319e48, &[size, 0]);
+                }
+                let av = c.bus.read32(MS);
+                let mut nb = 0x10 * (1 + r.next_u32() % 0x200);
+                let shift_brk = |c: &mut Cpu, delta: i32| {
+                    let brk = c.bus.read32(MS + 8);
+                    c.bus.write32(MS + 8, brk.wrapping_add(delta as u32));
+                };
+                let foreign = 4 * (1 + r.next_u32() % 0x40) as i32;
+                match seed % 9 {
+                    0 => {}
+                    1 => {
+                        let mf = c.bus.read32(av + MAX_FAST);
+                        c.bus.write32(av + MAX_FAST, mf | 2);
+                    }
+                    2 => shift_brk(c, foreign),
+                    3 => {
+                        let p = c.bus.read32(av + MORECORE_PROPERTIES);
+                        c.bus.write32(av + MORECORE_PROPERTIES, p & !1);
+                        if seed % 2 == 0 {
+                            shift_brk(c, foreign);
+                        }
+                    }
+                    4 => shift_brk(c, -0x100),
+                    5 => nb = 0x8_0000,
+                    6 => {
+                        // The first MoreCore succeeds exactly, the second fails.
+                        shift_brk(c, foreign);
+                        let top = c.bus.read32(av + TOP);
+                        let old_size = c.bus.read32(top + 4) & !3;
+                        let mask = c.bus.read32(av + PAGESIZE).wrapping_sub(1);
+                        let size = nb
+                            .wrapping_add(c.bus.read32(av + TOP_PAD))
+                            .wrapping_add(16)
+                            .wrapping_sub(old_size);
+                        let size = size.wrapping_add(mask) & !mask;
+                        let brk = c.bus.read32(MS + 8);
+                        let base = c.bus.read32(MS + 4);
+                        c.bus.write32(
+                            MS + 0xc,
+                            brk.wrapping_add(size).wrapping_add(4).wrapping_sub(base),
+                        );
+                    }
+                    7 => {
+                        shift_brk(c, foreign);
+                        let top = c.bus.read32(av + TOP);
+                        c.bus.write32(top + 4, if seed % 2 == 0 { 0x11 } else { 1 });
+                    }
+                    _ => nb = 0x10 * (1 + r.next_u32() % 4),
+                }
+                c.g[A0][0] = sx(MS);
+                c.g[A1][0] = nb as u64;
+                c.g[A2][0] = sx(av);
+                c.pc = 0x0031_e2d8;
+            },
+        );
+    }
+
+    /// `cCSICubicSpline_Alloc`: no old array, or an old array from the real
+    /// heap (freed by the real `cCSICubicSpline_Free`); point counts 0..300
+    /// (the 8-bit count wraps), random flags; the real `operator_new_named`
+    /// over a test arena.
+    #[test]
+    fn c_csi_cubic_spline_alloc_matches() {
+        use crate::game::be::beintreward::tests::world;
+        use crate::game::bx::bxstring::tests::{alloc, heap};
+        use crate::game::bx::bxstring2::tests::be_library;
+        crate::difftest::check_lohi(
+            ee::s10::f_0031d660__generated,
+            c_csi_cubic_spline_alloc,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x31_d660, 0);
+                be_library(c);
+                world(c);
+                heap(c);
+                let old = if seed % 3 == 0 {
+                    0
+                } else {
+                    alloc(c, 0x14 * (1 + r.next_u32() % 16))
+                };
+                let spline = DATA + 0x100 + (r.next_u32() % 0x40) * 4;
+                fill(c, &mut r, spline, 8);
+                c.bus.write32(spline + SPLINE_ALLOC_DATA, old);
+                c.g[A0][0] = sx(spline);
+                c.g[A1][0] = match seed % 5 {
+                    0 => 0,
+                    1 => 1,
+                    _ => (r.next_u32() % 300) as u64,
+                };
+                c.pc = 0x0031_d660;
             },
         );
     }

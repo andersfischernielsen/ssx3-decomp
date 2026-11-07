@@ -221,6 +221,31 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_metrix_interrupt_trick,
         "RiderMetrix_InterruptTrick",
     ),
+    (
+        0x0011_7638,
+        rider_metrix_add_combo_points,
+        "RiderMetrix_AddComboPoints",
+    ),
+    (
+        0x0011_9068,
+        rider_metrix_add_trick_history,
+        "RiderMetrix_AddTrickHistory",
+    ),
+    (
+        0x0011_90f0,
+        rider_metrix_count_trick_repeats,
+        "RiderMetrix_CountTrickRepeats",
+    ),
+    (
+        0x0011_97d8,
+        rider_metrix_complete_trick,
+        "RiderMetrix_CompleteTrick",
+    ),
+    (
+        0x0011_b1a8,
+        trick_lookup_bonus_trick,
+        "Trick_LookupBonusTrick",
+    ),
 ];
 
 /// Direct calls (same shard; these go through the shard's override slots, so
@@ -5428,6 +5453,587 @@ pub fn rider_metrix_bank_combo(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod combo_points {
+    use crate::call::Callee;
+    use ssx3_ee as ee;
+
+    /// RiderMetrix: +0x9c combo count, +0xa0 combo score, +0xa4 peak (-1:
+    /// reset), +0x1b0 the HUD effects object.
+    pub const COMBO_COUNT: u32 = 0x9c;
+
+    pub const COMBO_SCORE: u32 = 0xa0;
+
+    pub const PEAK: u32 = 0xa4;
+
+    pub const HUD: u32 = 0x1b0;
+
+    /// HUD effects: +0x1d4 the combo-number effect (its first word the
+    /// state, 0x34 while showing), +0x1e8 its current value.
+    pub const HUD_COMBO_FX: u32 = 0x1d4;
+
+    pub const HUD_COMBO_VALUE: u32 = 0x1e8;
+
+    pub const FX_SHOWING: u64 = 0x34;
+
+    /// `gp-0x7b14`: 0.05, the multiplier step per combo.
+    pub const GP_STEP: u32 = 0x7b14;
+
+    pub const SHOW_NUMBER_DELAYED: Callee = Callee {
+        addr: 0x0011_71a8,
+        f: ee::s00::cHUDFX_ShowNumberDelayed,
+    };
+}
+
+/// `void RiderMetrix_AddComboPoints(RiderMetrix* self, int points)`
+/// (0x117638): for positive points, bump the combo count `n`, add `points *
+/// clamp((n + 10) * 0.05, 0.5, 2.0)` (truncated) to the combo score, reset
+/// the peak to -1, and show the combo count on the HUD (type 3, with the
+/// effect's value unless it is already showing, no delay).
+pub fn rider_metrix_add_combo_points(c: &mut Cpu) {
+    use combo_points as k;
+    guest(c, |c| {
+        c.cycles += 3;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        if (c.g[A1][0] as i64) > 0 {
+            c.cycles += 18;
+            let this = abi::arg(c, 0);
+            let gp = r32(c, GP);
+            // f0 = (n + 10) * 0.05 with n the new combo count (a3)
+            c.g[V0][0] = Addr(this.wrapping_add(k::COMBO_COUNT)).lw(c);
+            c.g[AT][0] = 0x4120_0000; // 10.0
+            c.mtc1(AT, 3);
+            c.g[A3][0] = sx(r32(c, V0).wrapping_add(1));
+            c.lwc1(2, gp.wrapping_sub(k::GP_STEP));
+            c.mtc1(A3, 0);
+            c.cvt_s_w(0, 0);
+            c.g[AT][0] = 0x3f00_0000; // 0.5
+            c.mtc1(AT, 1);
+            Addr(this.wrapping_add(k::COMBO_COUNT)).sw(c, c.g[A3][0]);
+            c.g[AT][0] = 0x4000_0000; // 2.0
+            c.mtc1(AT, 4);
+            c.add_s(0, 0, 3);
+            c.mul_s(0, 0, 2);
+            // f5 = clamp(f0, 0.5, 2.0)
+            c.c_le_s(1, 0);
+            c.mov_s(5, 1);
+            if c.fcc() {
+                c.cycles += 1;
+                c.min_s(5, 0, 4);
+            }
+            // score += (int)(points * f5); peak = -1
+            c.cycles += 13;
+            c.mtc1(A1, 0);
+            c.cvt_s_w(0, 0);
+            c.g[AT][0] = 0xffff_ffff_bf80_0000; // -1.0
+            c.mtc1(AT, 1);
+            c.g[V1][0] = Addr(this.wrapping_add(k::COMBO_SCORE)).lw(c);
+            c.swc1(1, this.wrapping_add(k::PEAK));
+            c.mul_s(0, 0, 5);
+            c.g[A1][0] = Addr(this.wrapping_add(k::HUD)).lw(c);
+            c.cvt_w_s(1, 0);
+            c.mfc1(V0, 1);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+            Addr(this.wrapping_add(k::COMBO_SCORE)).sw(c, c.g[V1][0]);
+            if c.g[A1][0] != 0 {
+                c.cycles += 5;
+                let hud = r32(c, A1);
+                c.g[V0][0] = Addr(hud.wrapping_add(k::HUD_COMBO_FX)).lw(c) ^ k::FX_SHOWING;
+                c.g[A2][0] = 0;
+                c.g[A0][0] = sx(hud.wrapping_add(k::HUD_COMBO_FX));
+                if c.g[V0][0] != 0 {
+                    c.cycles += 1;
+                    c.g[A2][0] = Addr(hud.wrapping_add(k::HUD_COMBO_VALUE)).lw(c);
+                }
+                c.cycles += 3;
+                c.mtc1(0, 12);
+                c.g[A1][0] = 3;
+                k::SHOW_NUMBER_DELAYED.call(c, 0x0011_76e8)?;
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------- RiderMetrix_AddTrickHistory
+
+/// RiderMetrix: +0x60 the three most recent trick ids (0: empty).
+pub(crate) const TRICK_HISTORY: u32 = 0x60;
+
+/// The loop head of `RiderMetrix_AddTrickHistory` (the back-edge event pc).
+pub(crate) const TRICK_HISTORY_LOOP: u32 = 0x0011_908c;
+
+/// `void RiderMetrix_AddTrickHistory(RiderMetrix* self, int trick)`
+/// (0x119068): record `trick` in the first empty one of the three recent
+/// slots at `+0x60`; a repeat of the last recorded trick (the slot holding
+/// it is followed by an empty one) is stored over itself instead. A full
+/// history is left unchanged.
+pub fn rider_metrix_add_trick_history(c: &mut Cpu) {
+    c.cycles += 3;
+    let this = abi::arg(c, 0);
+    c.g[V0][0] = Addr(this.wrapping_add(TRICK_HISTORY)).lw(c);
+    c.g[T1][0] = 0;
+    if c.g[V0][0] == 0 {
+        // empty history: the trick goes into the first slot
+        c.cycles += 2;
+        Addr(this.wrapping_add(TRICK_HISTORY)).sw(c, c.g[A1][0]);
+        ret(c);
+        return;
+    }
+    c.cycles += 1;
+    c.g[V0][0] = sx(this.wrapping_add(TRICK_HISTORY));
+    // t1 = slot index, t0 = the history, a3 = &history[t1], a2 = t1 + 1
+    loop {
+        c.cycles += 6;
+        c.g[V1][0] = sx(r32(c, T1) << 2);
+        c.g[A3][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+        c.g[T0][0] = c.g[V0][0];
+        c.g[V1][0] = Addr(r32(c, A3)).lw(c);
+        c.g[A2][0] = sx(r32(c, T1).wrapping_add(1));
+        if c.g[V1][0] == c.g[A1][0] {
+            // the same trick again: if the next slot is empty, store over it
+            c.cycles += 3;
+            let not_last = (c.g[T1][0] as i64) < 2;
+            c.g[V0][0] = sx(r32(c, A2) << 2);
+            if not_last {
+                c.cycles += 4;
+                c.g[V0][0] = sx(r32(c, T0).wrapping_add(r32(c, V0)));
+                c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+                if c.g[V1][0] == 0 {
+                    c.cycles += 2;
+                    Addr(r32(c, A3)).sw(c, c.g[A1][0]);
+                    ret(c);
+                    return;
+                }
+            }
+        }
+        c.cycles += 3;
+        let more = (c.g[A2][0] as i64) < 3;
+        c.g[V0][0] = more as u64;
+        c.g[T1][0] = c.g[A2][0];
+        if !more {
+            break;
+        }
+        c.cycles += 5;
+        c.g[V0][0] = sx(r32(c, T0).wrapping_add(r32(c, A2) << 2));
+        c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+        if c.g[V1][0] == 0 {
+            // the next slot is free: record the trick there
+            c.cycles += 1;
+            Addr(r32(c, V0)).sw(c, c.g[A1][0]);
+            break;
+        }
+        c.g[V0][0] = sx(r32(c, A0).wrapping_add(TRICK_HISTORY));
+        if event_due(c) {
+            deliver_event_here(c, TRICK_HISTORY_LOOP);
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// The bonus-trick table (24 entries of 16 bytes): +0 grade (stored into
+/// the trick id's top 5 bits), +4 points, +8..+0xe the trick-id fields to
+/// match.
+pub(crate) const BONUS_TRICKS: u32 = 0x0043_d608;
+
+pub(crate) const BONUS_TRICK_COUNT: i64 = 24;
+
+pub(crate) const BONUS_TRICK_SIZE: u32 = 0x10;
+
+pub(crate) const BONUS_TRICK_GRADE: u32 = 0x0;
+
+pub(crate) const BONUS_TRICK_POINTS: u32 = 0x4;
+
+/// `EA_MemSet(dst, value, n)` (0x3e6448, through the function table).
+pub(crate) const BONUS_TRICK_MEM_SET: u32 = 0x003e_6448;
+
+/// The bonus-table loop head (event checks resume there).
+pub(crate) const BONUS_TRICK_LOOP: u32 = 0x0011_b1d8;
+
+/// How one bonus-table entry compared with the trick id.
+pub(crate) enum BonusTrickCmp {
+    /// A field before the last one differed.
+    Miss,
+    /// Only the last field (word 1 bits 11..17) differed.
+    LastMiss,
+    /// Every field matched.
+    Hit,
+}
+
+/// Compare the entry at s0 with the trick id at s1 (a1 counts entries).
+pub(crate) fn bonus_trick_compare(c: &mut Cpu) -> BonusTrickCmp {
+    c.cycles += 6;
+    let entry = r32(c, S0);
+    let w0 = Addr(r32(c, S1)).lw(c);
+    c.g[A0][0] = w0;
+    // Word 0: bits 10..11, 12..15, 16..18, 19..21 against bytes +8..+0xb.
+    for (i, &(shift, mask, off)) in [
+        (10, 0x3, 0x8),
+        (12, 0xf, 0x9),
+        (16, 0x7, 0xa),
+        (19, 0x7, 0xb),
+    ]
+    .iter()
+    .enumerate()
+    {
+        if i > 0 {
+            c.cycles += 5;
+        }
+        c.g[V1][0] = Addr(entry.wrapping_add(off)).lbu(c);
+        c.g[V0][0] = sx((w0 as u32) >> shift) & mask;
+        if c.g[V0][0] != c.g[V1][0] {
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+            return BonusTrickCmp::Miss;
+        }
+    }
+    // Bits 28..31 against +0xc (the counter steps either way).
+    c.cycles += 4;
+    c.g[V1][0] = Addr(entry.wrapping_add(0xc)).lbu(c);
+    c.g[V0][0] = sx((w0 as u32) >> 28);
+    c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+    if c.g[V0][0] != c.g[V1][0] {
+        return BonusTrickCmp::Miss;
+    }
+    // Word 1: bits 3..9 against +0xd, bits 11..17 against +0xe.
+    c.cycles += 6;
+    let w1 = Addr(r32(c, S1).wrapping_add(4)).lw(c);
+    c.g[A0][0] = w1;
+    c.g[V1][0] = Addr(entry.wrapping_add(0xd)).lbu(c);
+    c.g[V0][0] = sx((w1 as u32) >> 3) & 0x7f;
+    if c.g[V0][0] != c.g[V1][0] {
+        return BonusTrickCmp::Miss;
+    }
+    c.cycles += 5;
+    c.g[V0][0] = sx((w1 as u32) >> 11) & 0x7f;
+    c.g[V1][0] = Addr(entry.wrapping_add(0xe)).lbu(c);
+    if c.g[V0][0] != c.g[V1][0] {
+        return BonusTrickCmp::LastMiss;
+    }
+    BonusTrickCmp::Hit
+}
+
+/// `int Trick_LookupBonusTrick(RiderMetrix *self, sTrickId *id)` (0x11b1a8):
+/// look the trick id up in the 24-entry bonus-trick table; on a match clear
+/// the id's first 8 bytes, store the entry's grade into the id's top 5 bits
+/// and return the entry's points; 0 when no entry matches.
+pub fn trick_lookup_bonus_trick(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = 0x44_0000;
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S0, 0x30);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = sx(BONUS_TRICKS);
+        c.g[A1][0] = 0;
+        c.g[S2][0] = 0x07ff_ffff;
+        loop {
+            match bonus_trick_compare(c) {
+                BonusTrickCmp::Hit => {
+                    c.cycles += 12;
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A1][0] = 0;
+                    c.g[A2][0] = 0x8;
+                    call_ptr(c, BONUS_TRICK_MEM_SET, 0x0011_b278)?;
+                    let entry = r32(c, S0);
+                    let id = r32(c, S1);
+                    let grade = Addr(entry.wrapping_add(BONUS_TRICK_GRADE)).lw(c);
+                    let w1 = Addr(id.wrapping_add(4)).lw(c);
+                    c.g[V1][0] = sx((grade as u32) << 27);
+                    let w1 = (w1 & c.g[S2][0]) | c.g[V1][0];
+                    c.g[V0][0] = w1;
+                    Addr(id.wrapping_add(4)).sw(c, w1);
+                    c.g[V0][0] = Addr(entry.wrapping_add(BONUS_TRICK_POINTS)).lw(c);
+                    break;
+                }
+                cmp => {
+                    if let BonusTrickCmp::Miss = cmp {
+                        c.cycles += 1;
+                    }
+                    c.g[V0][0] = ((c.g[A1][0] as i64) < BONUS_TRICK_COUNT) as u64;
+                }
+            }
+            c.cycles += 2;
+            let more = c.g[V0][0] != 0;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(BONUS_TRICK_SIZE));
+            if !more {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, BONUS_TRICK_LOOP);
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `RiderMetrix` fields: the running trick's score +0x40 (-1 when none),
+/// the score total +0x44, the best single score +0x48, completed-trick
+/// counters (small +0x4c, medium +0x50, big +0x54, big while the rider's
+/// level is >= 6 +0x58), a combo flag +0x5c, the rider +0x1ac.
+pub(crate) const METRIX_TRICK_SCORE: u32 = 0x40;
+
+pub(crate) const METRIX_SCORE_TOTAL: u32 = 0x44;
+
+pub(crate) const METRIX_BEST_SCORE: u32 = 0x48;
+
+pub(crate) const METRIX_SMALL_TRICKS: u32 = 0x4c;
+
+pub(crate) const METRIX_MEDIUM_TRICKS: u32 = 0x50;
+
+pub(crate) const METRIX_BIG_TRICKS: u32 = 0x54;
+
+pub(crate) const METRIX_BIG_TRICKS_HIGH: u32 = 0x58;
+
+pub(crate) const METRIX_COMBO_FLAG: u32 = 0x5c;
+
+pub(crate) const METRIX_RIDER: u32 = 0x1ac;
+
+/// The rider's level field and the level from which big tricks also
+/// count in +0x58.
+pub(crate) const METRIX_RIDER_LEVEL: u32 = 0x2f4;
+
+pub(crate) const METRIX_HIGH_LEVEL: i64 = 6;
+
+/// Trick ids from 19 are medium, from 35 big.
+pub(crate) const METRIX_MEDIUM_ID: i64 = 19;
+
+pub(crate) const METRIX_BIG_ID: i64 = 35;
+
+/// `RiderMetrix_AddTrickHistory(metrix, id)` (0x119068).
+pub(crate) const METRIX_ADD_TRICK_HISTORY: Callee = Callee {
+    addr: 0x0011_9068,
+    f: ee::s00::f_00119068,
+};
+
+/// `float RiderMetrix_CompleteTrick(RiderMetrix *m, int id)` (0x1197d8):
+/// record the trick in the history, count it as small / medium / big (big
+/// ones also in +0x58 when the rider's level is at least 6), then fold the
+/// running score into the best score and the total, reset it to -1, clear
+/// the combo flag; returns 0.0.
+pub fn rider_metrix_complete_trick(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        METRIX_ADD_TRICK_HISTORY.call(c, 0x0011_97f4)?;
+        let m = r32(c, S0);
+        let id = c.g[S1][0] as i64;
+        c.g[V0][0] = (id < METRIX_MEDIUM_ID) as u64;
+        // Bump the counter at m + off (v0 = the new count).
+        let bump = |c: &mut Cpu, off: u32| {
+            let n = sx((Addr(m.wrapping_add(off)).lw(c) as u32).wrapping_add(1));
+            c.g[V0][0] = n;
+            Addr(m.wrapping_add(off)).sw(c, n);
+        };
+        let mut joined = true;
+        if id >= METRIX_BIG_ID {
+            c.cycles += 8;
+            let rider = Addr(m.wrapping_add(METRIX_RIDER)).lw(c);
+            c.g[A0][0] = rider;
+            bump(c, METRIX_BIG_TRICKS);
+            let level = Addr((rider as u32).wrapping_add(METRIX_RIDER_LEVEL)).lw(c) as i64;
+            c.g[V1][0] = (level < METRIX_HIGH_LEVEL) as u64;
+            if level < METRIX_HIGH_LEVEL {
+                joined = false;
+            } else {
+                c.cycles += 4;
+                bump(c, METRIX_BIG_TRICKS_HIGH);
+            }
+        } else {
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                bump(c, METRIX_SMALL_TRICKS);
+            } else {
+                c.cycles += 4;
+                bump(c, METRIX_MEDIUM_TRICKS);
+            }
+        }
+        if joined {
+            c.cycles += 1;
+        }
+        let score = Addr(m.wrapping_add(METRIX_TRICK_SCORE)).read_fpu(c);
+
+        c.cycles += 16;
+        let total = Addr(m.wrapping_add(METRIX_SCORE_TOTAL)).read_fpu(c);
+        let best = Addr(m.wrapping_add(METRIX_BEST_SCORE)).read_fpu(c);
+        c.f[2] = best.0;
+        let total = total + score;
+        c.f[1] = total.0;
+        // -1.0
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.f[3] = 0xbf80_0000;
+        let best = score.max(best);
+        Addr(m.wrapping_add(METRIX_COMBO_FLAG)).sw(c, 0);
+        Addr(m.wrapping_add(METRIX_BEST_SCORE)).write_fpu(c, best);
+        Addr(m.wrapping_add(METRIX_SCORE_TOTAL)).write_fpu(c, total);
+        Addr(m.wrapping_add(METRIX_TRICK_SCORE)).write_u32(c, 0xbf80_0000);
+        c.f[0] = 0;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RiderMetrix_CountTrickRepeats (0x1190f0)
+
+/// Rider metrics: the 10-entry history of recent trick ids (8 bytes each).
+pub(crate) const COUNT_TRICK_REPEATS_HIST: u32 = 0xa8;
+
+/// Rider metrics: next history slot (0..9).
+pub(crate) const COUNT_TRICK_REPEATS_HIST_IDX: u32 = 0xf8;
+
+/// Rider metrics: the state words that suspend trick counting when set.
+pub(crate) const COUNT_TRICK_REPEATS_BUSY: [u32; 5] = [0x08, 0x20, 0x70, 0x7c, 0x28];
+
+/// `int RiderMetrix_CountTrickRepeats(RiderMetrix* self, sTrickId* id)`
+/// (0x1190f0): how often the 8-byte trick id already appears in the
+/// rider's 10-entry recent-trick history (0 for a few trick classes that
+/// never count as repeats), then records it at the history cursor and
+/// advances the cursor modulo 10. Returns 0 without recording while any of
+/// the busy state words is set.
+pub fn rider_metrix_count_trick_repeats(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[A3][0] = c.g[A0][0];
+    c.g[T3][0] = c.g[A1][0];
+    let me = c.g[A3][0] as u32;
+    let id = c.g[T3][0] as u32;
+    let mut busy = 0u64;
+    for (k, off) in COUNT_TRICK_REPEATS_BUSY.into_iter().enumerate() {
+        if k > 0 {
+            c.cycles += 3;
+        }
+        busy = Addr(me.wrapping_add(off)).lw(c);
+        if busy != 0 {
+            break;
+        }
+    }
+    if busy != 0 {
+        c.cycles += 2;
+        c.g[V0][0] = 0;
+        abi::ret(c);
+        return;
+    }
+
+    // Trick classes that are never counted as repeats.
+    c.cycles += 7;
+    let word1 = Addr(id.wrapping_add(4)).lw(c);
+    c.g[V1][0] = 0x3f800;
+    c.g[T2][0] = 0; // repeats found
+    c.g[V0][0] = word1 & 0x3f800;
+    c.g[A0][0] = 0x800;
+    c.g[T5][0] = Addr(me.wrapping_add(COUNT_TRICK_REPEATS_HIST_IDX)).lw(c);
+    if word1 & 0x3f800 != 0x800 {
+        c.cycles += 6;
+        let word0 = Addr(id).lw(c);
+        c.g[A0][0] = 0x400000;
+        c.g[V0][0] = word0 & 0xfc0_0000;
+        c.g[V1][0] = 0; // history index
+        if word0 & 0xfc0_0000 != 0x40_0000 {
+            c.cycles += 3;
+            c.g[T4][0] = u64::MAX;
+            c.g[V0][0] = 0; // index * 8
+            count_trick_repeats_scan(c);
+        }
+    }
+
+    // Record the id at the cursor; cursor = (cursor + 1) % 10.
+    c.cycles += 14;
+    let me = c.g[A3][0] as u32;
+    let src = c.g[T3][0] as u32;
+    let entry = ((c.g[T5][0] as u32) << 3).wrapping_add(me);
+    c.g[A0][0] = sx(entry);
+    c.g[A1][0] = 10;
+    c.g[V0][0] = c.g[T2][0];
+    let trick = Addr(src).read_u64_unaligned(c);
+    c.g[V1][0] = trick;
+    Addr(entry.wrapping_add(COUNT_TRICK_REPEATS_HIST)).write_u64_unaligned(c, trick);
+    let cursor = (Addr(me.wrapping_add(COUNT_TRICK_REPEATS_HIST_IDX)).lw(c) as u32).wrapping_add(1);
+    c.g[V1][0] = sx(cursor);
+    abi::div(c, cursor, 10);
+    Addr(me.wrapping_add(COUNT_TRICK_REPEATS_HIST_IDX)).sw(c, sx(cursor));
+    c.cycles += 3;
+    let wrapped = c.hi[0];
+    c.g[A0][0] = wrapped;
+    Addr(me.wrapping_add(COUNT_TRICK_REPEATS_HIST_IDX)).sw(c, wrapped);
+    abi::ret(c);
+}
+
+/// The repeat scan of [`rider_metrix_count_trick_repeats`]: byte-compares
+/// the id (t3) with each of the 10 history entries, counting matches in t2.
+/// Works on the registers (v1 = index, v0 = index * 8, a3 = self) so the
+/// back-edge event checks see the original's state.
+pub(crate) fn count_trick_repeats_scan(c: &mut Cpu) {
+    loop {
+        c.cycles += 6;
+        c.g[T1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+        c.g[A1][0] = c.g[T3][0];
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(COUNT_TRICK_REPEATS_HIST));
+        c.g[A2][0] = 7;
+        c.g[T0][0] = sx((c.g[T2][0] as u32).wrapping_add(1));
+        // 8-byte compare (a2 counts 7..-1).
+        loop {
+            c.cycles += 4;
+            let a = c.lbu(c.g[A1][0] as u32);
+            let b = c.lbu(c.g[A0][0] as u32);
+            c.g[V1][0] = a;
+            c.g[V0][0] = 0;
+            if a != b {
+                break;
+            }
+            c.cycles += 4;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(1));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+            if c.g[A2][0] != c.g[T4][0] {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0011_9190);
+                }
+                continue;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 1;
+            break;
+        }
+        c.cycles += 5;
+        c.g[V1][0] = c.g[T1][0];
+        if c.g[V0][0] != 0 {
+            c.g[T2][0] = c.g[T0][0];
+        }
+        let more = (c.g[V1][0] as i64) < 10;
+        c.g[V0][0] = sx((c.g[V1][0] as u32) << 3);
+        if !more {
+            return;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0011_9178);
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6951,6 +7557,273 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(m);
                 c.pc = 0x0011_7718;
             },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::check_paths_lohi;
+
+    /// Zero/negative/positive points, combo counts on both sides of the
+    /// clamp (multiplier below 0.5, inside, above 2.0), with no HUD, or a
+    /// HUD whose combo effect is showing (0x34) or not.
+    #[test]
+    fn rider_metrix_add_combo_points_matches() {
+        use crate::difftest::GAME_GP;
+        use combo_points as k;
+        check(
+            ee::s00::f_00117638__generated,
+            rider_metrix_add_combo_points,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x1176_3800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0011_7638;
+                c.g[GP][0] = sx(GAME_GP);
+                c.bus.write32(GAME_GP - k::GP_STEP, 0x3d4c_cccd); // 0.05
+                let this = DATA + 0x100;
+                let hud = DATA + 0x400;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = match seed % 5 {
+                    0 => 0,
+                    1 => sx(r.next_u32() | 0x8000_0000),
+                    2 => sx(r.next_u32() % 100 + 1),
+                    _ => sx(r.next_u32() % 100_000 + 1),
+                };
+                let count = match (seed / 5) % 4 {
+                    0 => (r.next_u32() % 20) as i32 - 20,   // multiplier < 0.5
+                    1 => (r.next_u32() % 30) as i32,        // inside
+                    2 => 30 + (r.next_u32() % 1000) as i32, // > 2.0
+                    _ => r.next_u32() as i32,
+                };
+                c.bus.write32(this + k::COMBO_COUNT, count as u32);
+                c.bus.write32(this + k::COMBO_SCORE, r.next_u32());
+                c.bus.write32(this + k::PEAK, r.f32(10.0));
+                c.bus
+                    .write32(this + k::HUD, if seed % 3 == 0 { 0 } else { hud });
+                c.bus.write32(
+                    hud + k::HUD_COMBO_FX,
+                    if seed % 2 == 0 {
+                        0x34
+                    } else {
+                        r.next_u32() % 0x40
+                    },
+                );
+                c.bus.write32(hud + k::HUD_COMBO_VALUE, r.next_u32());
+            },
+        );
+    }
+
+    /// Histories of 0..3 entries drawn from a small id set (so repeats of the
+    /// trick, at the last entry or earlier, happen), and a full history.
+    #[test]
+    fn rider_metrix_add_trick_history_matches() {
+        check(
+            ee::s00::f_00119068__generated,
+            rider_metrix_add_trick_history,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x1190_6800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0011_9068;
+                let this = DATA + 0x100;
+                let filled = seed % 4;
+                for i in 0..3 {
+                    let v = if i < filled { 1 + r.next_u32() % 3 } else { 0 };
+                    c.bus.write32(this + TRICK_HISTORY + 4 * i, v);
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(1 + r.next_u32() % 3);
+            },
+        );
+    }
+
+    /// The same with events falling due at the loop's back edge (off,
+    /// delivered, or a VBlank requesting an unwind): two or three entries,
+    /// mostly a new trick so the walk reaches the back edges.
+    #[test]
+    fn rider_metrix_add_trick_history_events() {
+        use crate::difftest::events::{check_events, schedule};
+        check_events(
+            ee::s00::f_00119068__generated,
+            rider_metrix_add_trick_history,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1190_6801 ^ seed as u64);
+                scramble(c, &mut r);
+                let this = DATA + 0x100;
+                for i in 0..3 {
+                    let v = if i < 2 + (seed / 3) % 2 {
+                        1 + r.next_u32() % 2
+                    } else {
+                        0
+                    };
+                    c.bus.write32(this + TRICK_HISTORY + 4 * i, v);
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(if seed % 4 == 0 { 1 } else { 3 });
+                schedule(c, &mut r, seed, 0x0011_9068)
+            },
+        );
+    }
+
+    #[test]
+    fn trick_lookup_bonus_trick_matches() {
+        check(
+            ee::s00::f_0011b1a8__generated,
+            trick_lookup_bonus_trick,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x11b1_a800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0011_b1a8;
+                fill(c, &mut r, crate::difftest::SP - 0x80, 0x20);
+                let id = DATA + 0x40;
+                let (w0, w1) = (r.next_u32(), r.next_u32());
+                c.bus.write32(id, w0);
+                c.bus.write32(id + 4, w1);
+                let fields = [
+                    (w0 >> 10) & 0x3,
+                    (w0 >> 12) & 0xf,
+                    (w0 >> 16) & 0x7,
+                    (w0 >> 19) & 0x7,
+                    w0 >> 28,
+                    (w1 >> 3) & 0x7f,
+                    (w1 >> 11) & 0x7f,
+                ];
+                // The matching entry (24: none); the others match a prefix
+                // of the fields and differ at the next one.
+                let target = seed % 25;
+                for i in 0..24u32 {
+                    let e = BONUS_TRICKS + i * BONUS_TRICK_SIZE;
+                    c.bus.write32(e + BONUS_TRICK_GRADE, r.next_u32());
+                    c.bus.write32(e + BONUS_TRICK_POINTS, r.next_u32());
+                    let same = if i == target { 7 } else { r.next_u32() % 7 };
+                    for (k, &f) in fields.iter().enumerate() {
+                        let k = k as u32;
+                        let b = if k < same {
+                            f
+                        } else if k == same {
+                            f ^ 1
+                        } else {
+                            r.next_u32() & 0xff
+                        };
+                        c.bus.write8(e + 8 + k, b as u8);
+                    }
+                    c.bus.write8(e + 0xf, r.next_u32() as u8);
+                }
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = id as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn rider_metrix_complete_trick_matches() {
+        check(
+            ee::s00::f_001197d8__generated,
+            rider_metrix_complete_trick,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x1197_d800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0011_97d8;
+                fill(c, &mut r, crate::difftest::SP - 0x80, 0x20);
+                let m = DATA;
+                let rider = DATA + 0x400;
+                fill(c, &mut r, m, 0x80);
+                // Trick history (+0x60..+0x6c): small ids, some empty slots.
+                for i in 0..4 {
+                    let v = if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        r.next_u32() % 50
+                    };
+                    c.bus.write32(m + 0x60 + 4 * i, v);
+                }
+                for off in [METRIX_TRICK_SCORE, METRIX_SCORE_TOTAL, METRIX_BEST_SCORE] {
+                    let v = if r.next_u32() % 4 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(5000.0)
+                    };
+                    c.bus.write32(m + off, v);
+                }
+                c.bus.write32(m + METRIX_RIDER, rider);
+                c.bus.write32(
+                    rider + METRIX_RIDER_LEVEL,
+                    (r.next_u32() % 12).wrapping_sub(2),
+                );
+                let id = match seed % 5 {
+                    0 => r.next_u32() % 19,
+                    1 => 19 + r.next_u32() % 16,
+                    2 => r.next_u32(),
+                    _ => 35 + r.next_u32() % 20,
+                };
+                c.g[A0][0] = m as u64;
+                c.g[A1][0] = sx(id);
+            },
+        );
+    }
+
+    /// RiderMetrix_CountTrickRepeats: busy states, the two never-counted
+    /// trick classes, and histories with exact copies, near misses (one byte
+    /// off) and random entries; events delivered inside the byte-compare
+    /// loops.
+    #[test]
+    fn rider_metrix_count_trick_repeats_matches() {
+        use crate::difftest::events::{check_events, schedule, Events};
+        use crate::difftest::{scramble, Rng, DATA};
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = Rng(0x0011_90f0 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            let me = DATA;
+            let id = DATA + 0x200 + 4 * (seed % 2);
+            let mut w0 = r.next_u32();
+            let mut w1 = r.next_u32();
+            match r.next_u32() % 8 {
+                0 => w0 = (w0 & !0x0fc0_0000) | 0x0040_0000,
+                1 => w1 = (w1 & !0x0003_f800) | 0x800,
+                _ => {
+                    // Keep both classes countable.
+                    if w0 & 0x0fc0_0000 == 0x0040_0000 {
+                        w0 ^= 0x0100_0000;
+                    }
+                    if w1 & 0x0003_f800 == 0x800 {
+                        w1 ^= 0x1000;
+                    }
+                }
+            }
+            c.bus.write32(id, w0);
+            c.bus.write32(id + 4, w1);
+            let trick = (w1 as u64) << 32 | w0 as u64;
+            for off in COUNT_TRICK_REPEATS_BUSY {
+                c.bus.write32(me + off, 0);
+            }
+            if r.next_u32() % 6 == 0 {
+                let off = COUNT_TRICK_REPEATS_BUSY[(r.next_u32() % 5) as usize];
+                c.bus.write32(me + off, r.next_u32() | 1);
+            }
+            for i in 0..10u32 {
+                let e = me + COUNT_TRICK_REPEATS_HIST + 8 * i;
+                let v = match r.next_u32() % 3 {
+                    0 => trick,
+                    1 => trick ^ (1u64 << (8 * (r.next_u32() % 8) + r.next_u32() % 8)),
+                    _ => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+                };
+                c.bus.write64(e, v);
+            }
+            c.bus
+                .write32(me + COUNT_TRICK_REPEATS_HIST_IDX, r.next_u32() % 10);
+            c.g[A0][0] = sx(me);
+            c.g[A1][0] = sx(id);
+            schedule(c, &mut r, seed, 0x0011_90f0)
+        };
+        check_events(
+            ee::s00::f_001190f0__generated,
+            rider_metrix_count_trick_repeats,
+            150,
+            &setup,
         );
     }
 }

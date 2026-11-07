@@ -266,6 +266,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_update_peak_music,
         "SSXAudioSystem_UpdatePeakMusic",
     ),
+    (
+        0x002a_3fe8,
+        ssx_audio_system_is_track_group4,
+        "SSXAudioSystem_IsTrackGroup4",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3810,6 +3815,46 @@ pub(crate) fn music_finish(c: &mut Cpu, frame: Frame, extra: bool) -> Flow {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_IsTrackGroup4 (0x2a3fe8)
+
+/// The current track index (`BENewRaceInt`, 0x535c08) and the track info
+/// table it indexes (0x64-byte records from 0x43d950, track id first).
+pub(crate) const TRACK_GROUP4_TRACK: u32 = 0x0053_5c08;
+
+pub(crate) const TRACK_GROUP4_INFOS: u32 = 0x0043_d950;
+
+/// `bool SSXAudioSystem_IsTrackGroup4(SSXAudioSystem* self)` (0x2a3fe8):
+/// whether the current race's track id (`BENewRaceInt_GetTrackInfo` of the
+/// BE library's interface 0) is in the group 0xe..0x10
+/// (`SSXAudioSystem_IsTrackIdGroup4`). Frame 0x20 (s0 = self).
+pub fn ssx_audio_system_is_track_group4(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0014_dc80, 0x002a_3ffc)?; // BELibrary_GetInstance
+        c.g[A1][0] = 0;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x0014_dd58, 0x002a_4008)?; // BELibrary_GetInterface
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x0014_4bc0, 0x002a_4010)?; // BENewRaceInt_GetTrackInfo
+        c.g[A1][0] = Addr(r32(c, V0)).lw(c);
+        c.g[A0][0] = c.g[S0][0];
+        Callee {
+            addr: 0x002a_4030,
+            f: ee::s08::SSXAudioSystem_IsTrackIdGroup4,
+        }
+        .call(c, 0x002a_401c)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5153,6 +5198,39 @@ pub(crate) mod tests {
             ssx_audio_system_update_music_intensity,
             300,
             &|c, seed| music_fixture(c, seed),
+        );
+    }
+    use super::*;
+
+    /// `SSXAudioSystem_IsTrackGroup4`: the real BE library lookups with the
+    /// interface's vtable slot on a fake (unwinding on some seeds), track
+    /// ids around the 0xe..0x10 group.
+    #[test]
+    fn ssx_audio_system_is_track_group4_matches() {
+        use crate::difftest::fakes::FAKE;
+        use crate::difftest::GAME_GP;
+        covered(
+            ee::s08::f_002a3fe8__generated,
+            ssx_audio_system_is_track_group4,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_3fe8, 1);
+                c.pc = 0x002a_3fe8;
+                let idx = seed % 4;
+                fill(c, &mut r, DATA + 0x400, 0x40);
+                c.bus.write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x400);
+                c.bus.write32(GAME_GP.wrapping_sub(0x1efc), idx);
+                c.bus.write32(0x0053_08a8 + 4 * idx, DATA + 0x600);
+                c.bus.write32(DATA + 0x600 + 4, DATA + 0x700);
+                c.bus
+                    .write16(DATA + 0x700 + 8, (r.next_u32() as u16) & 0xfc);
+                c.bus.write32(DATA + 0x700 + 0xc, FAKE);
+                let track = r.next_u32() % 12;
+                c.bus.write32(TRACK_GROUP4_TRACK, track);
+                c.bus
+                    .write32(TRACK_GROUP4_INFOS + 0x64 * track, 0xb + seed % 8);
+                c.g[A0][0] = sx(DATA + 0x100);
+            },
         );
     }
 }

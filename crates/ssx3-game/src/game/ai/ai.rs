@@ -480,6 +480,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RiderUberGrindSub_SaveState",
     ),
     (0x0013_1c30, rider_cruise_sub_exit, "RiderCruiseSub_Exit"),
+    (
+        0x0012_f620,
+        rider_natural_air_sub_enter,
+        "RiderNaturalAirSub_Enter",
+    ),
+    (
+        0x0013_5b30,
+        rider_spin_sub_set_spin_direction,
+        "RiderSpinSub_SetSpinDirection",
+    ),
 ];
 
 /// `gp`-relative globals used here.
@@ -15434,6 +15444,260 @@ pub fn rider_cruise_sub_exit(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod spin_direction {
+
+    /// RiderSpinSub: +0x10 spin rate (±2π or 0), +0x14 flip rate (±π or 0),
+    /// +0x18/+0x1c/+0x20/+0x24 accumulated angles, +0x28/+0x2c pending
+    /// spin/flip deltas (folded in and cleared).
+    pub const SPIN_RATE: u32 = 0x10;
+
+    pub const FLIP_RATE: u32 = 0x14;
+
+    pub const FLIP_ACC: u32 = 0x18;
+
+    pub const SPIN_ACC: u32 = 0x1c;
+
+    pub const SPIN_ACC2: u32 = 0x20;
+
+    pub const FLIP_ACC2: u32 = 0x24;
+
+    pub const PENDING_SPIN: u32 = 0x28;
+
+    pub const PENDING_FLIP: u32 = 0x2c;
+
+    /// `gp-0x734c` π, `gp-0x7348` -π, `gp-0x7344` 2π, `gp-0x7340` -2π.
+    pub const GP_PI: u32 = 0x734c;
+
+    pub const GP_NEG_PI: u32 = 0x7348;
+
+    pub const GP_TWO_PI: u32 = 0x7344;
+
+    pub const GP_NEG_TWO_PI: u32 = 0x7340;
+}
+
+/// `void RiderSpinSub_SetSpinDirection(RiderSpinSub* self, float spin,
+/// float flip)` (0x135b30): set the flip rate from the sign of `flip`
+/// (π, -π or 0) and the spin rate from the sign of `spin` (2π, -2π or 0),
+/// then fold the pending spin/flip deltas into the accumulated angles and
+/// clear them.
+pub fn rider_spin_sub_set_spin_direction(c: &mut Cpu) {
+    use spin_direction as k;
+    let this = abi::arg(c, 0);
+    let gp = r32(c, GP);
+    // the sign of f13 (flip) picks the flip rate, f12 (spin) the spin rate
+    for (arg, field, pos, neg) in [
+        (13, k::FLIP_RATE, k::GP_PI, k::GP_NEG_PI),
+        (12, k::SPIN_RATE, k::GP_TWO_PI, k::GP_NEG_TWO_PI),
+    ] {
+        c.cycles += 4;
+        c.mtc1(0, 0);
+        c.c_lt_s(0, arg);
+        if c.fcc() {
+            c.cycles += 3;
+            c.lwc1(0, gp.wrapping_sub(pos));
+        } else {
+            c.cycles += 4;
+            c.c_lt_s(arg, 0);
+            if c.fcc() {
+                c.cycles += 2;
+                c.lwc1(0, gp.wrapping_sub(neg));
+            }
+        }
+        c.swc1(0, this.wrapping_add(field));
+    }
+    c.cycles += 17;
+    c.lwc1(4, this.wrapping_add(k::PENDING_SPIN));
+    c.lwc1(5, this.wrapping_add(k::PENDING_FLIP));
+    c.lwc1(1, this.wrapping_add(k::SPIN_ACC));
+    c.lwc1(2, this.wrapping_add(k::FLIP_ACC));
+    c.lwc1(3, this.wrapping_add(k::SPIN_ACC2));
+    c.add_s(1, 1, 4);
+    c.lwc1(0, this.wrapping_add(k::FLIP_ACC2));
+    c.add_s(2, 2, 5);
+    c.add_s(3, 3, 4);
+    c.sw(this.wrapping_add(k::PENDING_FLIP), 0);
+    c.add_s(0, 0, 5);
+    c.swc1(1, this.wrapping_add(k::SPIN_ACC));
+    c.swc1(2, this.wrapping_add(k::FLIP_ACC));
+    c.swc1(3, this.wrapping_add(k::SPIN_ACC2));
+    c.swc1(0, this.wrapping_add(k::FLIP_ACC2));
+    c.sw(this.wrapping_add(k::PENDING_SPIN), 0);
+    ret(c);
+}
+
+/// `RiderNaturalAirSub` fields: heading angle +0x0, speed +0x4, two
+/// flags +0x8/+0xc (set to 1), a timer +0x10 (set to -1), the rider +0x14.
+pub(crate) const NAT_AIR_ANGLE: u32 = 0x0;
+
+pub(crate) const NAT_AIR_SPEED: u32 = 0x4;
+
+pub(crate) const NAT_AIR_FLAG_A: u32 = 0x8;
+
+pub(crate) const NAT_AIR_FLAG_B: u32 = 0xc;
+
+pub(crate) const NAT_AIR_TIMER: u32 = 0x10;
+
+pub(crate) const NAT_AIR_RIDER: u32 = 0x14;
+
+/// Rider fields: the horizontal (x) and vertical (y) air velocity
+/// components, and two (step, counter) pairs reset on entry.
+pub(crate) const NAT_AIR_RIDER_VX: u32 = 0x1f0;
+
+pub(crate) const NAT_AIR_RIDER_VY: u32 = 0x220;
+
+pub(crate) const NAT_AIR_RIDER_STEP_A: u32 = 0x2a8;
+
+pub(crate) const NAT_AIR_RIDER_COUNT_A: u32 = 0x2ac;
+
+pub(crate) const NAT_AIR_RIDER_STEP_B: u32 = 0x2b4;
+
+pub(crate) const NAT_AIR_RIDER_COUNT_B: u32 = 0x2b8;
+
+/// gp-relative `.lit4` constants: -pi/2 (x = 0, y < 0), pi/2 (x = 0,
+/// y >= 0), the +pi / -pi quadrant fixes for x < 0, and the step 1/30.
+pub(crate) const NAT_AIR_GP_DOWN: u32 = 0x7718;
+
+pub(crate) const NAT_AIR_GP_UP: u32 = 0x7714;
+
+pub(crate) const NAT_AIR_GP_PLUS_PI: u32 = 0x7710;
+
+pub(crate) const NAT_AIR_GP_MINUS_PI: u32 = 0x770c;
+
+pub(crate) const NAT_AIR_GP_STEP: u32 = 0x7708;
+
+/// `Math_Atan(x)` (0x31c228, through the function table).
+pub(crate) const NAT_AIR_MATH_ATAN: u32 = 0x0031_c228;
+
+/// A gp-relative float constant at gp - `off`.
+pub(crate) fn nat_air_gp_const(c: &mut Cpu, off: u32) -> FpuF32 {
+    Addr(r32(c, GP).wrapping_sub(off)).read_fpu(c)
+}
+
+/// `void RiderNaturalAirSub_Enter(RiderNaturalAirSub *self)` (0x12f620):
+/// entering the natural-air sub-state. Speed = max(|vx|, vy), heading =
+/// atan2(vy, vx) (computed with `Math_Atan` and quadrant fixes), both flags
+/// 1, the timer -1, and the rider's two (step, counter) pairs reset to
+/// (1/30, 0).
+pub fn rider_natural_air_sub_enter(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 22, 0x30);
+        frame.save_fpr(c, 21, 0x28);
+        frame.save_fpr(c, 20, 0x20);
+        let this = r32(c, S0);
+        let rider = Addr(this.wrapping_add(NAT_AIR_RIDER)).lw(c);
+        c.g[V0][0] = rider;
+        let rider = rider as u32;
+        let vy = Addr(rider.wrapping_add(NAT_AIR_RIDER_VY)).read_fpu(c);
+        c.f[1] = vy.0;
+        let mut speed = Addr(rider.wrapping_add(NAT_AIR_RIDER_VX)).read_fpu(c).abs();
+        if abi::c_lt_s(c, speed, vy) {
+            speed = vy;
+        }
+        c.f[0] = speed.0;
+
+        c.cycles += 7;
+        Addr(this.wrapping_add(NAT_AIR_SPEED)).write_fpu(c, speed);
+        let zero = FpuF32(0);
+        c.f[22] = 0;
+        let vx = Addr(rider.wrapping_add(NAT_AIR_RIDER_VX)).read_fpu(c);
+        c.f[20] = vx.0;
+        let vertical = vx.eq_s(zero);
+        abi::set_fcc(c, vertical);
+        let vy = Addr(rider.wrapping_add(NAT_AIR_RIDER_VY)).read_fpu(c);
+        c.f[21] = vy.0;
+
+        // Where the original rejoins: whether a0 (the rider) still has to be
+        // reloaded, and whether v1 = 1 is still to be set.
+        let (reload_rider, set_flag) = if vertical {
+            // Straight up or down (or no velocity at all).
+            c.cycles += 4;
+            let still = vy.eq_s(zero);
+            abi::set_fcc(c, still);
+            c.f[12] = vy.0;
+            if still {
+                (true, true)
+            } else {
+                c.cycles += 4;
+                let up = zero.le(vy);
+                abi::set_fcc(c, up);
+                c.f[12] = nat_air_gp_const(c, NAT_AIR_GP_DOWN).0;
+                c.g[A0][0] = Addr(this.wrapping_add(NAT_AIR_RIDER)).lw(c);
+                if !up {
+                    (false, true)
+                } else {
+                    c.cycles += 3;
+                    c.f[12] = nat_air_gp_const(c, NAT_AIR_GP_UP).0;
+                    c.g[V1][0] = 1;
+                    (false, false)
+                }
+            }
+        } else {
+            c.cycles += 7;
+            c.f[12] = vy.div(vx).0;
+            call_ptr(c, NAT_AIR_MATH_ATAN, 0x0012_f6b0)?;
+            let (vx, zero, vy) = (FpuF32(c.f[20]), FpuF32(c.f[22]), FpuF32(c.f[21]));
+            let backwards = abi::c_lt_s(c, vx, zero);
+            c.f[12] = c.f[0];
+            if backwards {
+                c.cycles += 3;
+                let fix = if abi::c_lt_s(c, zero, vy) {
+                    c.cycles += 3;
+                    let pi = nat_air_gp_const(c, NAT_AIR_GP_PLUS_PI);
+                    c.f[0] = pi.0;
+                    FpuF32(c.f[12]) + pi
+                } else {
+                    c.cycles += 2;
+                    let pi = nat_air_gp_const(c, NAT_AIR_GP_MINUS_PI);
+                    c.f[0] = pi.0;
+                    FpuF32(c.f[12]) - pi
+                };
+                c.f[12] = fix.0;
+            }
+            (true, true)
+        };
+        if reload_rider {
+            c.cycles += 1;
+            c.g[A0][0] = Addr(this.wrapping_add(NAT_AIR_RIDER)).lw(c);
+        }
+        if set_flag {
+            c.cycles += 1;
+            c.g[V1][0] = 1;
+        }
+
+        c.cycles += 18;
+        let this = r32(c, S0);
+        let step = nat_air_gp_const(c, NAT_AIR_GP_STEP);
+        c.f[0] = step.0;
+        c.g[V0][0] = u64::MAX;
+        Addr(this.wrapping_add(NAT_AIR_TIMER)).sw(c, u64::MAX);
+        let angle = FpuF32(c.f[12]);
+        Addr(this.wrapping_add(NAT_AIR_ANGLE)).write_fpu(c, angle);
+        let one = c.g[V1][0];
+        Addr(this.wrapping_add(NAT_AIR_FLAG_B)).sw(c, one);
+        Addr(this.wrapping_add(NAT_AIR_FLAG_A)).sw(c, one);
+        let rider = r32(c, A0);
+        Addr(rider.wrapping_add(NAT_AIR_RIDER_STEP_A)).write_fpu(c, step);
+        Addr(rider.wrapping_add(NAT_AIR_RIDER_COUNT_A)).sw(c, 0);
+        frame.restore_ra(c, 0);
+        let rider = Addr(this.wrapping_add(NAT_AIR_RIDER)).lw(c);
+        c.g[V0][0] = rider;
+        frame.restore(c, S0, 0x10);
+        frame.restore_fpr(c, 22, 0x30);
+        frame.restore_fpr(c, 21, 0x28);
+        frame.restore_fpr(c, 20, 0x20);
+        let rider = rider as u32;
+        Addr(rider.wrapping_add(NAT_AIR_RIDER_STEP_B)).write_fpu(c, step);
+        Addr(rider.wrapping_add(NAT_AIR_RIDER_COUNT_B)).sw(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -18876,6 +19140,96 @@ pub(crate) mod tests {
                 c.bus.write32(LISTS + 8 + 4, SEQ);
                 c.bus.write32(SEQ + 0xc8, 0);
                 c.bus.write32(SEQ + 0x90, r.next_u32());
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::check_paths_lohi;
+
+    /// Spin and flip of every sign (and zero, and the odd edge values), the
+    /// rate literals at their gp slots, random angles and pending deltas.
+    #[test]
+    fn rider_spin_sub_set_spin_direction_matches() {
+        use crate::difftest::GAME_GP;
+        use spin_direction as k;
+        check_paths(
+            ee::s01::f_00135b30__generated,
+            rider_spin_sub_set_spin_direction,
+            300,
+            &[
+                4 + 3 + 4 + 3 + 17,
+                4 + 4 + 2 + 4 + 4 + 17,
+                4 + 4 + 4 + 4 + 17,
+            ],
+            &|c, seed| {
+                let mut r = Rng(0x135b_3000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0013_5b30;
+                c.g[GP][0] = sx(GAME_GP);
+                for (slot, v) in [
+                    (k::GP_PI, 0x4049_0fdbu32),
+                    (k::GP_NEG_PI, 0xc049_0fdb),
+                    (k::GP_TWO_PI, 0x40c9_0fdb),
+                    (k::GP_NEG_TWO_PI, 0xc0c9_0fdb),
+                ] {
+                    c.bus.write32(GAME_GP - slot, v);
+                }
+                let sign = |r: &mut Rng, m: u32| match m % 4 {
+                    0 => r.f32(10.0) & 0x7fff_ffff,
+                    1 => r.f32(10.0) | 0x8000_0000,
+                    2 => 0,
+                    _ => r.edge_f32(),
+                };
+                c.f[12] = sign(&mut r, seed);
+                c.f[13] = sign(&mut r, seed / 4);
+                let this = DATA + 0x100;
+                c.g[A0][0] = sx(this);
+                for off in (0..0x30).step_by(4) {
+                    c.bus.write32(this + off, r.f32(100.0));
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn rider_natural_air_sub_enter_matches() {
+        check(
+            ee::s00::f_0012f620__generated,
+            rider_natural_air_sub_enter,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x12f6_2000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0012_f620;
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                fill(c, &mut r, crate::difftest::SP - 0x80, 0x20);
+                let gp = crate::difftest::GAME_GP;
+                for (off, v) in [
+                    (NAT_AIR_GP_DOWN, -std::f32::consts::FRAC_PI_2),
+                    (NAT_AIR_GP_UP, std::f32::consts::FRAC_PI_2),
+                    (NAT_AIR_GP_PLUS_PI, std::f32::consts::PI),
+                    (NAT_AIR_GP_MINUS_PI, std::f32::consts::PI),
+                    (NAT_AIR_GP_STEP, 1.0 / 30.0),
+                ] {
+                    c.bus.write32(gp - off, v.to_bits());
+                }
+                let this = DATA;
+                let rider = DATA + 0x1000;
+                fill(c, &mut r, this, 0x8);
+                fill(c, &mut r, rider + 0x1e0, 0x40);
+                c.bus.write32(this + NAT_AIR_RIDER, rider);
+                // Zero (both signs), edge cases, or ordinary velocities.
+                let comp = |r: &mut Rng, k: u32| match k % 4 {
+                    0 => (r.next_u32() & 1) << 31,
+                    1 => r.edge_f32(),
+                    _ => r.f32(50.0),
+                };
+                let vx = comp(&mut r, seed);
+                let vy = comp(&mut r, seed / 4);
+                c.bus.write32(rider + NAT_AIR_RIDER_VX, vx);
+                c.bus.write32(rider + NAT_AIR_RIDER_VY, vy);
+                c.g[A0][0] = this as u64;
             },
         );
     }

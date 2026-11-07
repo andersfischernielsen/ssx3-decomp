@@ -216,6 +216,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_sound_compute_falloff,
         "WorldSound_ComputeFalloff",
     ),
+    (
+        0x002b_5f60,
+        world_trigger_manager_play_trigger_sound,
+        "WorldTriggerManager_PlayTriggerSound",
+    ),
 ];
 
 /// Direct-call targets (dossier callees, found by address in `generated/ee`).
@@ -3433,6 +3438,365 @@ pub fn world_sound_compute_falloff(c: &mut Cpu) {
     abi::ret(c);
 }
 
+// ---------------------------------------------------------------------------
+// 0x002b5f60 WorldTriggerManager_PlayTriggerSound
+
+/// `WorldTriggerManager.triggers` (+0x33c): 8-byte entries `{type, info}`;
+/// type 3 is a trigger that never plays.
+pub(crate) const WTM_PLAY_TRIGGERS: u32 = 0x33c;
+
+/// `WorldTriggerManager.lastEvent` (+0x328): the last event that played.
+pub(crate) const WTM_PLAY_LAST_EVENT: u32 = 0x328;
+
+/// `WorldTriggerManager.triggerCount` (+0x340).
+pub(crate) const WTM_PLAY_TRIGGER_COUNT: u32 = 0x340;
+
+/// The trigger type that is never played.
+pub(crate) const WTM_PLAY_TYPE_MUTED: u64 = 3;
+
+/// One `queue.table[count] = value` store of the inlined push (the
+/// original's register pair; `s0` = monitor, `s1` = queue).
+pub(crate) fn wtm_play_store(
+    c: &mut Cpu,
+    regs: (usize, usize),
+    table: u32,
+    shift: u32,
+    extra: u32,
+    value: u64,
+) {
+    crate::game::sound::soundsys::boost_empty_store_entry(c, regs, table, shift, extra, value);
+}
+
+/// `int WorldTriggerManager_PlayTriggerSound(WorldTriggerManager* m, void*
+/// event, int id, Rider* rider, int volume)` (0x2b5f60): play world trigger
+/// `id`. Muted triggers (type 3) return -1. A new `event` different from the
+/// last one first marks its flagged triggers as played. The trigger's info
+/// (`WorldTriggerManager_GetTriggerInfo`) gives the bank and sample; it is
+/// pushed on the audio system's bank-monitor queue (defaults: pan 100, 90,
+/// 50, priority 127), with `volume` clamped to 0..127, the channel-7 gain,
+/// and for a rider its position source and listener; then
+/// `Audio_PlayPushedSound`. Returns the play handle or -1.
+pub fn world_trigger_manager_play_trigger_sound(c: &mut Cpu) {
+    guest(c, |c| {
+        const GET_INSTANCE: u32 = 0x0028_b180; // SSXAudioSystem_GetInstance
+        c.cycles += 21;
+        let frame = Frame::open(c, 0xa0);
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save_ra(c, 0x10);
+        c.g[S0][0] = c.g[A1][0]; // event
+        c.g[S1][0] = c.g[A0][0]; // manager
+        c.g[S2][0] = c.g[A2][0]; // id
+        c.g[S6][0] = c.g[A3][0]; // rider
+        c.g[S7][0] = c.g[T0][0]; // volume
+        let mgr = c.g[S1][0] as u32;
+        c.g[V1][0] = sx((c.g[S2][0] as u32) << 3);
+        c.g[V0][0] = c.lw(mgr.wrapping_add(WTM_PLAY_TRIGGERS));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+        c.g[V0][0] = WTM_PLAY_TYPE_MUTED;
+
+        // 0: v0 = -1 and restore s0 (muted, no info); 1: restore s0 (v0
+        // already -1, the info's third word set); 2: played.
+        let exit: u8 = 'body: {
+            if c.g[A0][0] == WTM_PLAY_TYPE_MUTED {
+                break 'body 0;
+            }
+            // A new event: mark its flagged triggers played.
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S1][0];
+            if c.g[S0][0] != 0 {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(mgr.wrapping_add(WTM_PLAY_LAST_EVENT));
+                if c.g[S0][0] != c.g[V0][0] {
+                    c.cycles += 4;
+                    c.g[A1][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x002b_6740,
+                        f: ee::s08::WorldTriggerManager_AnyTriggerFlagged,
+                    }
+                    .call(c, 0x002b_5fd0)?;
+                    let flagged = c.g[V0][0] != 0;
+                    c.g[A0][0] = c.g[S1][0];
+                    if flagged {
+                        c.cycles += 2;
+                        c.g[A1][0] = c.g[S0][0];
+                        Callee {
+                            addr: 0x002b_6868,
+                            f: ee::s08::WorldTriggerManager_MarkPlayed,
+                        }
+                        .call(c, 0x002b_5fe0)?;
+                    }
+                    c.cycles += 2;
+                    c.sw(mgr.wrapping_add(WTM_PLAY_LAST_EVENT), c.g[S0][0]);
+                    c.g[A0][0] = c.g[S1][0];
+                } else {
+                    c.sw(mgr.wrapping_add(WTM_PLAY_LAST_EVENT), c.g[S0][0]);
+                }
+            }
+
+            // GetTriggerInfo(m, id, &bank, &sample, &extra, 1, 0).
+            c.cycles += 9;
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A2][0] = c.g[SP][0];
+            c.g[A3][0] = c.g[SP][0] | 0x4;
+            c.g[T0][0] = c.g[SP][0] | 0x8;
+            c.g[T1][0] = 0x1;
+            c.g[T2][0] = 0;
+            Callee {
+                addr: 0x002b_63d0,
+                f: ee::s08::WorldTriggerManager_GetTriggerInfo,
+            }
+            .call(c, 0x002b_6004)?;
+            let found = c.g[V0][0] != 0;
+            c.g[V0][0] = c.lw(sp(c).wrapping_add(0x8));
+            if !found {
+                break 'body 0;
+            }
+            c.cycles += 2;
+            let extra = c.g[V0][0] != 0;
+            c.g[V0][0] = u64::MAX;
+            if extra {
+                break 'body 1;
+            }
+
+            // Push a new entry on the monitor's queue.
+            c.cycles += 159;
+            c.g[S3][0] = 0x18; // record size
+            call_ptr(c, GET_INSTANCE, 0x002b_601c)?;
+            c.g[S2][0] = c.g[V0][0]; // sys
+            c.g[S4][0] = c.lw(sp(c)); // bank
+            c.g[S0][0] = c.lw(c.g[S2][0] as u32); // monitor
+            c.g[A1][0] = 0;
+            c.g[S5][0] = c.lw(sp(c).wrapping_add(0x4)); // sample
+            c.g[A2][0] = 0x8;
+            let monitor = c.g[S0][0] as u32;
+            c.g[V0][0] = c.lw(monitor.wrapping_add(0x1f4));
+            c.g[S1][0] = sx(monitor.wrapping_add(0x1d8)); // queue
+            let queue = c.g[S1][0] as u32;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+            c.sw(monitor.wrapping_add(0x1f4), c.g[V0][0]);
+            // queue.records[count] = the 24-byte template (monitor + 0x1dc).
+            c.g[V1][0] = c.lw(monitor.wrapping_add(0x1f4));
+            c.g[V0][0] = c.lw(queue.wrapping_add(0x20));
+            c.mult(0, V1, V1, S3);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.ldl(2, monitor.wrapping_add(0x1e3));
+            c.ldr(2, monitor.wrapping_add(0x1dc));
+            c.ldl(4, monitor.wrapping_add(0x1eb));
+            c.ldr(4, monitor.wrapping_add(0x1e4));
+            c.ldl(7, monitor.wrapping_add(0x1f3));
+            c.ldr(7, monitor.wrapping_add(0x1ec));
+            let record = c.g[V1][0] as u32;
+            c.sdl(2, record.wrapping_add(0x7));
+            c.sdr(2, record);
+            c.sdl(4, record.wrapping_add(0xf));
+            c.sdr(4, record.wrapping_add(0x8));
+            c.sdl(7, record.wrapping_add(0x17));
+            c.sdr(7, record.wrapping_add(0x10));
+            // monitor.handles[count] = 0 (inline at +0x1fc).
+            c.g[V0][0] = c.lw(monitor.wrapping_add(0x1f4));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V0][0] = sx(monitor.wrapping_add(c.g[V0][0] as u32));
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x1fc), 0);
+            wtm_play_store(c, (V1, V0), 0x34, 2, 0, 0);
+            // table 0x38[count] = the record's first byte (sign-extended).
+            c.g[A3][0] = c.lw(monitor.wrapping_add(0x1f4));
+            c.g[A0][0] = c.lw(monitor.wrapping_add(0x1f4));
+            c.g[T0][0] = c.lw(queue.wrapping_add(0x20));
+            c.g[A3][0] = sx((c.g[A3][0] as u32) << 2);
+            c.mult(0, A0, A0, S3);
+            c.g[V0][0] = c.lw(queue.wrapping_add(0x38));
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+            c.g[V1][0] = c.lb(c.g[A0][0] as u32);
+            c.sw(c.g[A3][0] as u32, c.g[V1][0]);
+            wtm_play_store(c, (V0, V1), 0x3c, 2, 0, 0);
+            // memset(&queue.slots[count] (+0x40, 8 bytes), 0, 8).
+            c.g[A0][0] = c.lw(monitor.wrapping_add(0x1f4));
+            c.g[A0][0] = sx((c.g[A0][0] as u32) << 3);
+            c.g[A0][0] = sx(queue.wrapping_add(c.g[A0][0] as u32));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
+            call_ptr(c, 0x0041_6210, 0x002b_60f8)?;
+
+            // The entry's parameters.
+            c.g[A0][0] = 0x64;
+            c.g[A1][0] = 0x5a;
+            c.g[A2][0] = 0x32;
+            c.g[A3][0] = 0x7f;
+            c.g[T0][0] = 0x1;
+            wtm_play_store(c, (V1, V0), 0x60, 2, 0, 0);
+            wtm_play_store(c, (V0, V1), 0x64, 2, 0, 0);
+            wtm_play_store(c, (V1, V0), 0x68, 2, 0, 0);
+            wtm_play_store(c, (V0, V1), 0x6c, 2, 0, 0);
+            wtm_play_store(c, (V1, V0), 0x70, 4, 0x4, 0);
+            wtm_play_store(c, (V0, V1), 0x70, 4, 0x0, 0x64);
+            wtm_play_store(c, (V1, V0), 0x70, 4, 0x8, 0x5a);
+            wtm_play_store(c, (V0, V1), 0x70, 4, 0xc, 0x32);
+            wtm_play_store(c, (V1, V0), 0x74, 2, 0, 0);
+            wtm_play_store(c, (V0, V1), 0x80, 2, 0, 0);
+            wtm_play_store(c, (V1, V0), 0x84, 2, 0, 0);
+            wtm_play_store(c, (V0, V1), 0x78, 2, 0, 0x7f);
+            wtm_play_store(c, (V1, V0), 0x7c, 2, 0, 0x1);
+
+            // sys->pushBank[count] = bank; sys->pushSample[count] = sample.
+            let sys = c.g[S2][0] as u32;
+            c.g[A0][0] = c.lw(sys);
+            c.g[V1][0] = c.lw(sys.wrapping_add(0x4));
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1f4));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.sw(c.g[V0][0] as u32, c.g[S4][0]);
+            c.g[V1][0] = c.lw(sys);
+            c.g[A0][0] = c.lw(sys.wrapping_add(0x8));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1f4));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.sw(c.g[V0][0] as u32, c.g[S5][0]);
+
+            // queue.volume[count] = volume; record.volume = clamp(volume, 0, 127).
+            call_ptr(c, GET_INSTANCE, 0x002b_6244)?;
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x118));
+            c.g[A1][0] = c.lw(c.g[V1][0] as u32);
+            let monitor = c.g[A1][0] as u32;
+            c.g[V0][0] = c.lw(monitor.wrapping_add(0x1f4));
+            c.g[A2][0] = sx(monitor.wrapping_add(0x1d8));
+            let queue = c.g[A2][0] as u32;
+            c.g[V1][0] = c.lw(queue.wrapping_add(0x38));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.sw(c.g[V0][0] as u32, c.g[S7][0]);
+            c.g[A0][0] = c.lw(monitor.wrapping_add(0x1f4));
+            c.g[V1][0] = c.lw(queue.wrapping_add(0x1c));
+            c.g[A3][0] = c.lw(queue.wrapping_add(0x38));
+            c.mult(0, A0, A0, S3);
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[A1][0] = c.lw(queue.wrapping_add(0x20));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+            c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+            c.g[V0][0] = ((c.g[V0][0] as i64) < 127) as u64;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            let volume_at = |c: &mut Cpu| -> u32 {
+                let i = c.lw(queue.wrapping_add(0x1c)) as u32;
+                (i << 2).wrapping_add(c.g[A3][0] as u32)
+            };
+            'clamped: {
+                if c.g[V0][0] != 0 {
+                    c.cycles += 6;
+                    let at = volume_at(c);
+                    c.g[V0][0] = sx(at);
+                    c.g[V1][0] = c.lw(at);
+                    let negative = (c.g[V1][0] as i64) < 0;
+                    c.g[V0][0] = 0;
+                    if negative {
+                        break 'clamped;
+                    }
+                }
+                c.cycles += 7;
+                let at = volume_at(c);
+                c.g[V0][0] = sx(at);
+                c.g[V1][0] = c.lw(at);
+                c.g[V1][0] = ((c.g[V1][0] as i64) < 127) as u64;
+                if c.g[V1][0] == 0 {
+                    c.g[V0][0] = 0x7f;
+                } else {
+                    c.cycles += 4;
+                    let at = volume_at(c);
+                    c.g[V0][0] = c.lbu(at);
+                }
+            }
+            c.cycles += 15;
+            c.sb(c.g[A0][0] as u32, c.g[V0][0]);
+
+            // queue.gain[count] = SSXAudioSystem_GetChannelGainPtr(sys, 7, 0).
+            call_ptr(c, GET_INSTANCE, 0x002b_62dc)?;
+            c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x118));
+            call_ptr(c, GET_INSTANCE, 0x002b_62e4)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0x7;
+            c.g[A2][0] = 0;
+            call_ptr(c, 0x0028_7968, 0x002b_62f4)?;
+            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+            c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1f4));
+            c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x214));
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+
+            if c.g[S6][0] != 0 {
+                // A rider: the position source (rider + 0x110), its
+                // listener, and the "positional" flag.
+                c.cycles += 30;
+                call_ptr(c, GET_INSTANCE, 0x002b_6318)?;
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x118));
+                c.g[A1][0] = sx((c.g[S6][0] as u32).wrapping_add(0x110));
+                c.g[V1][0] = c.lw(c.g[A0][0] as u32);
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1f4));
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x1fc), c.g[A1][0]);
+                call_ptr(c, GET_INSTANCE, 0x002b_6338)?;
+                c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x118));
+                call_ptr(c, GET_INSTANCE, 0x002b_6340)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S6][0];
+                call_ptr(c, 0x0028_8a20, 0x002b_634c)?; // GetRiderListenerIndex
+                c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1f4));
+                c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x23c));
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                call_ptr(c, GET_INSTANCE, 0x002b_6368)?;
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x118));
+                c.g[A1][0] = 0x1;
+                c.g[V1][0] = c.lw(c.g[A0][0] as u32);
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1f4));
+                c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x20c));
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.sw(c.g[V0][0] as u32, c.g[A1][0]);
+            }
+            // return Audio_PlayPushedSound(sys).
+            c.cycles += 6;
+            call_ptr(c, GET_INSTANCE, 0x002b_6390)?;
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x0029_06b8, 0x002b_6398)?;
+            frame.restore(c, S0, 0x90);
+            2
+        };
+        match exit {
+            0 => {
+                c.cycles += 2;
+                c.g[V0][0] = u64::MAX;
+                frame.restore(c, S0, 0x90);
+            }
+            1 => {
+                c.cycles += 1;
+                frame.restore(c, S0, 0x90);
+            }
+            _ => {}
+        }
+        c.cycles += 10;
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4734,6 +5098,94 @@ pub(crate) mod tests {
                     _ => (r.next_u32() as f32 / u32::MAX as f32).to_bits(),
                 };
                 c.pc = 0x002b_82b8;
+            },
+        );
+    }
+    use super::*;
+
+    /// `WorldTriggerManager_PlayTriggerSound`: muted (type 3), special
+    /// (type 0: the real GetSpecialTriggerInfo's no-info path) and playable
+    /// (type 1) triggers, ids inside and past the count; no event, the last
+    /// event again, or a new one whose trigger ids (real
+    /// cWorldSound_GetTriggerIds on an empty list, ids taken from the stack
+    /// slots) are flagged or not (the real MarkPlayed); volumes below 0,
+    /// inside, at and above 127; with or without a rider (the real
+    /// GetRiderListenerIndex, in game or not). The push runs on the audio
+    /// test world (real memset, gain lookup and `Audio_PlayPushedSound` with
+    /// no bank). Not reached: a non-zero third info word (only trigger 0x4d,
+    /// whose special path plays speech).
+    #[test]
+    fn world_trigger_manager_play_trigger_sound_matches() {
+        use crate::difftest::{check, GAME_GP, SP as STACK_TOP};
+        use crate::game::sound::soundsys::tests::audio;
+        const MGR: u32 = audio::SYS + 0x8_0000;
+        const TRIGGERS: u32 = MGR + 0x1000;
+        const INFOS: u32 = MGR + 0x2000;
+        const EVENT: u32 = MGR + 0x4000;
+        const RIDER: u32 = MGR + 0x6000;
+        check(
+            ee::s08::f_002b5f60__generated,
+            world_trigger_manager_play_trigger_sound,
+            200,
+            &|c, seed| {
+                let mut r = audio::world(c, seed, 0x2b_5f60, 0x002b_5f60);
+                c.bus.write32(GAME_GP + 0x410, audio::SYS); // SSXAudioSystem_GetInstance
+                                                            // The manager: six triggers, nothing played yet.
+                for i in 0..0x100 {
+                    c.bus.write32(MGR + 4 * i, 0);
+                }
+                c.bus.write32(MGR + WTM_PLAY_TRIGGERS, TRIGGERS);
+                c.bus.write32(MGR + WTM_PLAY_TRIGGER_COUNT, 6);
+                c.bus.write32(MGR + WTM_PLAY_LAST_EVENT, EVENT + 0x100);
+                c.bus.write32(MGR + 0x32c, 0x7777); // last played id
+                for i in 0..8u32 {
+                    let ty = match (seed + i) % 7 {
+                        0 => 3,
+                        1 => 0,
+                        _ => 1,
+                    };
+                    let info = INFOS + 0x40 * i;
+                    c.bus.write32(TRIGGERS + 8 * i, ty);
+                    c.bus.write32(TRIGGERS + 8 * i + 4, info);
+                    c.bus.write32(info + 4, (r.next_u32() % 2 == 0) as u32); // flag
+                    c.bus.write32(info + 0x10, r.next_u32() % 4); // bank (none loaded)
+                    c.bus.write32(info + 0x14, r.next_u32() % 256); // sample
+                }
+                // The event's trigger list (empty) and the stack slots
+                // AnyTriggerFlagged reads the ids from.
+                c.bus.write32(EVENT + 0x8c, EVENT + 0x200);
+                c.bus.write32(EVENT + 0x200 + 0x10, EVENT + 0x300);
+                c.bus.write32(EVENT + 0x300, 0);
+                c.bus.write32(EVENT + 0x304, 0);
+                let ids = STACK_TOP - 0xe0;
+                for k in 0..4 {
+                    c.bus.write32(ids + 4 * k, 0);
+                }
+                c.bus.write32(ids + 4 * (seed % 4), r.next_u32() % 8);
+                // The rider: a fixed listener.
+                c.bus.write32(RIDER + 0x874, 1);
+                c.bus.write32(RIDER + 0x87c, 1);
+                c.bus.write32(RIDER + 0x870, 3);
+                // Arguments.
+                c.g[A0][0] = sx(MGR);
+                c.g[A1][0] = match seed % 4 {
+                    0 => 0,
+                    1 => sx(EVENT + 0x100),
+                    _ => sx(EVENT),
+                };
+                c.g[A2][0] = (if seed % 5 == 4 {
+                    r.next_u32() % 8
+                } else {
+                    r.next_u32() % 6
+                }) as u64;
+                c.g[A3][0] = if seed % 3 == 0 { 0 } else { sx(RIDER) };
+                c.g[T0][0] = sx(match seed % 6 {
+                    0 => (r.next_u32() % 100).wrapping_neg(),
+                    1 => 127 + r.next_u32() % 100,
+                    2 => 127,
+                    3 => 0,
+                    _ => r.next_u32() % 127,
+                });
             },
         );
     }

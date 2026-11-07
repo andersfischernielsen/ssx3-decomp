@@ -302,6 +302,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         computer_actor_rider_pick_uber_trick,
         "ComputerActorRider_PickUberTrick",
     ),
+    (
+        0x0010_e228,
+        rider_report_rider_hit0,
+        "Rider_ReportRiderHit0",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -9282,6 +9287,85 @@ pub(crate) fn pick_fitted_try(c: &mut Cpu) -> crate::call::Flow {
     Ok(())
 }
 
+/// Table callees of `Rider_ReportRiderHit0`: `SSXAudioSystem_GetInstance`,
+/// `SSXAudioSystem_PlayRiderCollisionSound(audio, a, b)`,
+/// `SSXAudioSystem_SpeechRiderCollision(audio, b, a, 1, 0)`,
+/// `BEAggressionInt_GetInstance`, `BEAggressionInt_AddAggression(agg,
+/// rider, rival, 0)`.
+pub(crate) const HIT_AUDIO_INSTANCE: u32 = 0x0028_b180;
+
+pub(crate) const HIT_PLAY_COLLISION_SOUND: u32 = 0x0029_8488;
+
+pub(crate) const HIT_SPEECH_COLLISION: u32 = 0x002a_0a30;
+
+pub(crate) const HIT_AGGRESSION_INSTANCE: u32 = 0x0015_5a50;
+
+pub(crate) const HIT_ADD_AGGRESSION: u32 = 0x0015_5bf0;
+
+/// The rider's controller sub-object (+0x6c0) and its virtual
+/// `GetRiderIndex` slot (vtable +0x38: this delta, +0x3c: function).
+pub(crate) const HIT_CONTROLLER: u32 = 0x6c0;
+
+pub(crate) const HIT_INDEX_SLOT: u32 = 0x38;
+
+/// Call `(rider + 0x6c0)->GetRiderIndex()` for the rider in `reg`; `reg`
+/// becomes the controller pointer, as in the original.
+pub(crate) fn hit_rider_index(c: &mut Cpu, reg: usize, ret: u32) -> crate::call::Flow {
+    let ctl = r32(c, reg).wrapping_add(HIT_CONTROLLER);
+    let vt = Addr(ctl).lw(c);
+    c.g[V1][0] = vt;
+    c.g[reg][0] = sx(ctl);
+    let delta = Addr((vt as u32).wrapping_add(HIT_INDEX_SLOT)).lh(c);
+    let f = Addr((vt as u32).wrapping_add(HIT_INDEX_SLOT + 4)).lw(c);
+    c.g[V0][0] = f;
+    c.g[A0][0] = sx(ctl.wrapping_add(delta as u32));
+    call_ptr(c, f as u32, ret)
+}
+
+/// `void Rider_ReportRiderHit0(Rider *a, Rider *b)` (0x10e228): rider `a`
+/// hit rider `b`: play the collision sound and the collision speech (kind
+/// 1, variant 0), and add aggression from `b`'s index towards `a`'s.
+pub fn rider_report_rider_hit0(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 47;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        call_ptr(c, HIT_AUDIO_INSTANCE, 0x0010_e248)?;
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, HIT_PLAY_COLLISION_SOUND, 0x0010_e258)?;
+        call_ptr(c, HIT_AUDIO_INSTANCE, 0x0010_e260)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.g[T0][0] = 0;
+        c.g[A3][0] = 1;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, HIT_SPEECH_COLLISION, 0x0010_e278)?;
+        call_ptr(c, HIT_AGGRESSION_INSTANCE, 0x0010_e280)?;
+        c.g[S2][0] = c.g[V0][0];
+        hit_rider_index(c, S0, 0x0010_e29c)?;
+        c.g[S0][0] = c.g[V0][0];
+        hit_rider_index(c, S1, 0x0010_e2b8)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[V0][0];
+        c.g[A3][0] = 0;
+        call_ptr(c, HIT_ADD_AGGRESSION, 0x0010_e2cc)?;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -12635,6 +12719,84 @@ pub(crate) mod tests {
                 let mode = schedule(c, &mut r, seed, 0x0010_cd20);
                 c.f[12] = 2.0f32.to_bits();
                 mode
+            },
+        );
+    }
+    use super::*;
+
+    /// Rider_ReportRiderHit0: the real callees take short paths (no views:
+    /// FindViewInRange gives -1 and the collision sound stops; speech volume
+    /// 0 stops the speech); the riders' GetRiderIndex methods are fakes
+    /// returning rider 1..2 and rival 1..3, and AddAggression runs on
+    /// records as in its own test.
+    #[test]
+    fn rider_report_rider_hit0_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable, LOG_RESULTS};
+        use crate::game::be::beintaggression::{AGGRESSION_MESSAGES_OFF, AGGRESSION_RECORDS};
+        covered(
+            ee::s00::f_0010e228__generated,
+            rider_report_rider_hit0,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10_e228, 3);
+                c.pc = 0x0010_e228;
+                let gp = crate::difftest::GAME_GP;
+                let world = DATA + 0x5_0000;
+                let audio = DATA + 0x1_0000;
+                let agg = DATA + 0x6_0000;
+                let (a, b) = (DATA, DATA + 0x1000);
+                // Audio: no views (world+0x84 -> +0x84 -> count +0x10 = 0);
+                // speech volume (audio + 0x62fc) 0.
+                c.bus.write32(gp + 0x410, audio);
+                c.bus.write32(audio + 0x62fc, 0);
+                c.bus.write32(gp - 0x848, world);
+                c.bus.write32(world + 0x84, world + 0x100);
+                c.bus.write32(world + 0x100 + 0x84, world + 0x300);
+                c.bus.write32(world + 0x300 + 0x10, 0);
+                c.bus.write32(world + 0x100 + 0x28, world + 0x200);
+                c.bus.write32(world + 0x200, 1 + r.next_u32() % 9);
+                // Aggression singleton exists.
+                c.bus.write32(gp - 0x1ea4, agg);
+                // Controllers: GetRiderIndex (and the sound's position
+                // method at +0x28) are fakes.
+                for rider in [a, b] {
+                    let vt = vtable(c, &mut r, &[0x28, HIT_INDEX_SLOT]);
+                    c.bus.write32(rider + HIT_CONTROLLER, vt);
+                }
+                let rider = 1 + r.next_u32() % 2;
+                let rival = 1 + r.next_u32() % 3;
+                c.bus.write32(LOG_RESULTS + 4, rider);
+                c.bus.write32(LOG_RESULTS + 8, rival);
+                // AddAggression's rider slots, character records and
+                // aggression records (as in its own test).
+                let pick = |r: &mut Rng, v: &[i32]| v[(r.next_u32() as usize) % v.len()];
+                for idx in 0..4u32 {
+                    c.bus.write32(0x0053_05b0 + 4 * idx, idx);
+                    let rec = 0x0053_5b20 + 0x1c * idx;
+                    let flag = pick(&mut r, &[-1, 0, 1]) as u32;
+                    c.bus.write32(rec + 0xc, flag);
+                    c.bus.write32(rec + 0x10, r.next_u32() % 4);
+                    c.bus.write8(rec + 0x11, (r.next_u32() % 5) as u8);
+                }
+                for profile in 0..3u32 {
+                    for ch in 0..5u32 {
+                        for rv in 0..5u32 {
+                            let e = AGGRESSION_RECORDS + profile * 0x9b50 + ch * 0xf88 + rv * 3;
+                            c.bus
+                                .write8(e + 0xbc1, pick(&mut r, &[-1, 0, 1, 2, 3, 4]) as u8);
+                            c.bus
+                                .write8(e + 0xbc2, pick(&mut r, &[-1, 0, 1, 2, 3, 4, 5]) as u8);
+                            c.bus.write8(
+                                e + 0xbc3,
+                                pick(&mut r, &[-3, 0, 4, 9, 14, 15, 19, 24, 30]) as u8,
+                            );
+                        }
+                    }
+                }
+                c.bus
+                    .write8(AGGRESSION_MESSAGES_OFF, (r.next_u32() % 2) as u8);
+                c.g[A0][0] = a as u64;
+                c.g[A1][0] = b as u64;
             },
         );
     }

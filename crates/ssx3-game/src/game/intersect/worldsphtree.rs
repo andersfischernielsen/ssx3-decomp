@@ -41,6 +41,7 @@ pub(crate) use crate::game::main::gamemode::lw_r;
 pub(crate) use crate::game::main::gamemode::sp_2 as sp_3;
 pub(crate) use crate::game::main::gamemode::sw_r;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
+pub(crate) use crate::game::object::railmodifier::STREAM_WRITE_BYTES;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2;
 use crate::guest::Addr;
@@ -206,6 +207,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "OverlapList_GatherType2",
     ),
     (0x0034_1aa0, anim_object_ctor, "AnimObject_ctor"),
+    (0x0034_1cf0, anim_object_dtor, "AnimObject_dtor"),
+    (0x0034_2718, anim_teeter_save, "AnimTeeter_Save"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -15531,6 +15534,102 @@ pub fn anim_object_ctor(c: &mut Cpu) {
     })
 }
 
+/// AnimTeeter: the embedded AnimObject at +0x30; the teeter's own 0x30
+/// bytes at +0 are written raw.
+pub(crate) const ANIM_TEETER_ANIM_OBJECT: u32 = 0x30;
+
+pub(crate) const ANIM_TEETER_SAVED_BYTES: u32 = 0x30;
+
+pub(crate) const ANIM_OBJECT_BASE_SAVE: Callee = Callee {
+    addr: 0x0034_e3d8,
+    f: ee::s11::AnimObject_BaseSave,
+};
+
+/// `void AnimTeeter_Save(AnimTeeter* self, cStream* stream)` (0x342718):
+/// save the embedded AnimObject (+0x30), then the teeter's first 0x30 bytes
+/// through `stream->WriteBytes`.
+pub fn anim_teeter_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(r32(c, S1).wrapping_add(ANIM_TEETER_ANIM_OBJECT));
+        ANIM_OBJECT_BASE_SAVE.call(c, 0x0034_2738)?;
+        // Registers at the call: v1 = vtable, a1 = self, a2 = 0x30.
+        let stream = r32(c, S0);
+        c.g[V1][0] = c.lw(stream);
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = ANIM_TEETER_SAVED_BYTES as u64;
+        let vt = r32(c, V1);
+        c.g[A0][0] = c.lh(vt.wrapping_add(STREAM_WRITE_BYTES));
+        c.g[V0][0] = c.lw(vt.wrapping_add(STREAM_WRITE_BYTES + 4));
+        c.g[A0][0] = sx(stream.wrapping_add(c.g[A0][0] as u32));
+        let target = r32(c, V0);
+        call_ptr(c, target, 0x0034_2754)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// AnimObject (as a derived object): its vtable word at +0x3c and the base
+/// part at +0x1c.
+pub(crate) const ANIM_OBJECT_DTOR_VPTR: u32 = 0x3c;
+
+pub(crate) const ANIM_OBJECT_DTOR_BASE: u32 = 0x1c;
+
+/// The vtable the destructor installs (0x490b10).
+pub(crate) const ANIM_OBJECT_DTOR_VTABLE: u32 = 0x0049_0b10;
+
+pub(crate) const ANIM_OBJECT_BASE_DTOR: Callee = Callee {
+    addr: 0x0034_dba8,
+    f: ee::s11::AnimObject_BaseDtor,
+};
+
+/// `__builtin_delete` (operator delete; another shard: through the table).
+pub(crate) const OC308_BUILTIN_DELETE: u32 = 0x0031_7e50;
+
+/// `void AnimObject_dtor(AnimObject* self, int flags)` (0x341cf0): reset
+/// the vtable (+0x3c), destroy the base part at +0x1c (flags 0), and free
+/// the object when `flags & 1`.
+pub fn anim_object_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = sx(ANIM_OBJECT_DTOR_VTABLE);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        let this = r32(c, S1);
+        c.sw(this.wrapping_add(ANIM_OBJECT_DTOR_VPTR), c.g[V0][0]);
+        c.g[A0][0] = sx(this.wrapping_add(ANIM_OBJECT_DTOR_BASE));
+        c.g[A1][0] = 0;
+        ANIM_OBJECT_BASE_DTOR.call(c, 0x0034_1d20)?;
+        c.g[S0][0] &= 1;
+        let free = c.g[S0][0] != 0;
+        frame.restore(c, S0, 0x20);
+        if free {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, OC308_BUILTIN_DELETE, 0x0034_1d34)?;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -17699,6 +17798,87 @@ pub(crate) mod tests {
                 c.g[A3][0] = sx(NODE);
                 c.g[T0][0] = sx(DEF);
                 c.pc = 0x0034_1aa0;
+            },
+        );
+    }
+    use super::*;
+
+    /// A stream whose vtable has a fake in every slot (AnimObject_BaseSave,
+    /// ModObj_Save and WorldObj_Save write through several of them).
+    pub(crate) fn oc308_all_fake_stream(
+        c: &mut Cpu,
+        r: &mut crate::difftest::Rng,
+        stream: u32,
+        vt: u32,
+    ) {
+        c.bus.write32(stream, vt);
+        for off in (0..0x340).step_by(8) {
+            let delta = ((r.next_u32() as i16 as i32 % 64) & !3) as u16;
+            c.bus.write16(vt + off, delta);
+            c.bus.write32(vt + off + 4, FAKE + 2 * off);
+        }
+    }
+
+    /// The base save runs for real (its stream writes are fakes; no modifier
+    /// block to save), then the teeter's own write; any call may unwind.
+    #[test]
+    fn anim_teeter_save_matches() {
+        covered(
+            ee::s11::f_00342718__generated,
+            anim_teeter_save,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_2718, 8);
+                let self_ = DATA;
+                crate::difftest::fill(c, &mut r, self_, 0x40);
+                let base = self_ + ANIM_TEETER_ANIM_OBJECT;
+                // ModObj (base + 0x14): no modifier block; WorldObj fields zero.
+                c.bus.write32(base + 0x30, 0);
+                c.bus.write32(base + 0x4c, 0);
+                let stream = DATA + 0x1000;
+                oc308_all_fake_stream(c, &mut r, stream, DATA + 0x2000);
+                c.g[A0][0] = sx(self_);
+                c.g[A1][0] = sx(stream);
+                c.pc = 0x0034_2718;
+            },
+        );
+    }
+
+    /// The base destructor runs for real on a heap object (empty ModObj, an
+    /// optional cache block, no nodes); `flags & 1` frees the object.
+    #[test]
+    fn anim_object_dtor_matches() {
+        use crate::difftest::GAME_GP;
+        use crate::game::bx::cubicspline::tests::oc238_run;
+        crate::difftest::check(
+            ee::s11::f_00341cf0__generated,
+            anim_object_dtor,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_1cf0, 0);
+                // The game heap over test memory, pools off.
+                c.bus.write32(GAME_GP + 0xdd8, 0);
+                oc238_run(
+                    c,
+                    0x0031_ff60,
+                    ee::s10::f_0031ff60,
+                    &[0x004f_f250, (DATA + 0x40000) as u64, 0x40000],
+                );
+                let alloc = |c: &mut Cpu, size: u64| -> u32 {
+                    oc238_run(c, 0x0031_9e48, ee::s10::f_00319e48, &[size, 0]) as u32
+                };
+                let me = alloc(c, 0x80);
+                for i in 0..0x20 {
+                    c.bus.write32(me + 4 * i, 0);
+                }
+                crate::difftest::fill(c, &mut r, me, 0x7);
+                let base = me + ANIM_OBJECT_DTOR_BASE;
+                c.bus.write16(base + 0x14 + 0x10, (r.next_u32() % 8) as u16);
+                let cache = if seed % 3 == 0 { 0 } else { alloc(c, 0x20) };
+                c.bus.write32(base + 0x44, cache);
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = (r.next_u32() & 0xff) as u64;
+                c.pc = 0x0034_1cf0;
             },
         );
     }

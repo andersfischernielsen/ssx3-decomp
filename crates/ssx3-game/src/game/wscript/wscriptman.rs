@@ -355,6 +355,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         wscript_man_run_obj_script1,
         "WScriptMan_RunObjScript1",
     ),
+    (
+        0x0030_98b0,
+        wscript_man_post_air_event,
+        "WScriptMan_PostAirEvent",
+    ),
+    (
+        0x0030_b228,
+        wscript_process_list_count,
+        "WScriptProcessList_Count",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4720,6 +4730,88 @@ pub fn wscript_man_run_obj_script1(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// WScriptProcessList_Count (0x30b228)
+
+/// `cWScriptListNode`: the next process (`+0x18`).
+pub(crate) const OC305_WSCRIPT_PROCESS_NEXT: u32 = 0x18;
+
+/// `int WScriptProcessList_Count(WScriptProcessList* self)` (0x30b228): the
+/// number of processes in the list (head at `+0`, linked through `+0x18`).
+pub fn wscript_process_list_count(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[A0][0] = Addr(r32(c, A0)).lw(c);
+    c.g[V0][0] = 0;
+    if c.g[A0][0] != 0 {
+        c.cycles += 1;
+        loop {
+            // The node and count live in a0/v0 (an event at the loop head
+            // sees them there).
+            c.cycles += 7;
+            c.g[A0][0] = Addr(r32(c, A0)).off(OC305_WSCRIPT_PROCESS_NEXT).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+            if c.g[A0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0030_b238);
+            }
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// WScriptMan_PostAirEvent (0x3098b0)
+
+/// The script manager's op list: count at +0x40, then 12-byte ops from
+/// +0x44 (`{ int op; int a; int b; }`).
+pub(crate) const POST_AIR_OP_COUNT: u32 = 0x40;
+
+pub(crate) const POST_AIR_OP_SIZE: u64 = 0xc;
+
+/// The "air" op code.
+pub(crate) const POST_AIR_OP: u64 = 0x7_0002;
+
+/// `void WScriptMan_PostAirEvent(WScriptMan* self)` (0x3098b0): appends
+/// op 0x70002 to the manager's op list. The 12-byte op is built in a stack
+/// temporary whose other two words are never written (stack leftovers are
+/// copied along), copied once on the stack, then into the list with
+/// unaligned doubleword moves; the count is bumped. Leaf, frame 0x20.
+pub fn wscript_man_post_air_event(c: &mut Cpu) {
+    c.cycles += 25;
+    let man = r32(c, A0);
+    c.g[A1][0] = Addr(man.wrapping_add(POST_AIR_OP_COUNT)).lw(c);
+    c.g[V1][0] = POST_AIR_OP_SIZE;
+    let frame = Frame::open(c, 0x20);
+    c.mult(0, V1, A1, V1);
+    c.g[V0][0] = POST_AIR_OP;
+    let tmp = sp(c);
+    Addr(tmp).sw(c, POST_AIR_OP);
+    c.g[A2][0] = sx(man.wrapping_add(POST_AIR_OP_COUNT));
+    // The op temporary, copied to sp+0x10.
+    let head = Addr(tmp).read_u64_unaligned(c);
+    let tail = Addr(tmp + 8).lw(c);
+    c.g[V0][0] = head;
+    c.g[A3][0] = tail;
+    Addr(tmp + 0x10).write_u64_unaligned(c, head);
+    Addr(tmp + 0x18).sw(c, tail);
+    c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+    let slot = r32(c, V1).wrapping_add(r32(c, A2));
+    c.g[V1][0] = sx(slot);
+    // ... and into the list slot.
+    let head = Addr(tmp + 0x10).read_u64_unaligned(c);
+    let tail = Addr(tmp + 0x18).lw(c);
+    c.g[V0][0] = head;
+    c.g[A2][0] = tail;
+    Addr(slot.wrapping_add(4)).write_u64_unaligned(c, head);
+    Addr(slot.wrapping_add(0xc)).sw(c, tail);
+    let count = c.g[A1][0];
+    Addr(man.wrapping_add(POST_AIR_OP_COUNT)).sw(c, count);
+    frame.close(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6788,6 +6880,62 @@ pub(crate) mod tests {
                 c.bus.write32(d, r.next_u32());
                 c.bus.write32(d + 4, r.next_u32());
                 c.bus.write32(d + 8, 2);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    /// `WScriptProcessList_Count`: empty lists and lists of up to 9
+    /// processes; events off, delivered, or unwinding at the loop head.
+    #[test]
+    fn wscript_process_list_count_matches() {
+        use crate::difftest::events::{check_events, schedule, Events};
+        check_events(
+            ee::s10::f_0030b228__generated,
+            wscript_process_list_count,
+            240,
+            &|c, seed| {
+                let mut r = crate::difftest::Rng(0x30b2_2800 ^ seed as u64);
+                crate::difftest::scramble(c, &mut r);
+                let list = crate::difftest::DATA;
+                let n = seed / 3 % 10;
+                let node_at = |i: u32| crate::difftest::DATA + 0x1000 + 0x40 * i;
+                for i in 0..n {
+                    crate::difftest::fill(c, &mut r, node_at(i), 0x20);
+                    let next = if i + 1 < n { node_at(i + 1) } else { 0 };
+                    c.bus.write32(node_at(i) + OC305_WSCRIPT_PROCESS_NEXT, next);
+                }
+                c.bus.write32(list, if n > 0 { node_at(0) } else { 0 });
+                c.g[A0][0] = sx(list);
+                let mode = schedule(c, &mut r, seed, 0x0030_b228);
+                if mode != Events::Off {
+                    c.next_event = c.cycles + (r.next_u32() % 20) as u64;
+                }
+                mode
+            },
+        );
+    }
+
+    /// `WScriptMan_PostAirEvent`: random op counts (slots at every
+    /// alignment mod 8, as the 12-byte stride gives) and random stack
+    /// leftovers in the op temporary.
+    #[test]
+    fn wscript_man_post_air_event_matches() {
+        crate::difftest::check_lohi(
+            ee::s10::f_003098b0__generated,
+            wscript_man_post_air_event,
+            300,
+            &|c, seed| {
+                let mut r = crate::difftest::Rng(0x30_98b0 ^ (seed as u64) << 12);
+                crate::difftest::scramble(c, &mut r);
+                c.pc = 0x0030_98b0;
+                let man = DATA + 0x100 + (r.next_u32() % 0x40) * 4;
+                c.g[A0][0] = sx(man);
+                let count = seed % 64;
+                c.bus.write32(man + POST_AIR_OP_COUNT, count);
+                fill(c, &mut r, man + 0x44, 0x100);
+                fill(c, &mut r, crate::difftest::SP - 0x40, 0x10);
             },
         );
     }

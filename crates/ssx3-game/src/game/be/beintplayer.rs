@@ -329,6 +329,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_new_player_int_char_profile_call523e8,
         "BENewPlayerInt_CharProfileCall523e8",
     ),
+    (
+        0x0014_7410,
+        be_new_player_int_get_alt_character,
+        "BENewPlayerInt_GetAltCharacter",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3298,6 +3303,46 @@ pub fn be_new_player_int_char_profile_call523e8(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// BENewPlayerInt_GetAltCharacter (0x147410)
+
+/// The player records (0x1c bytes each) and the alternate-character byte.
+pub(crate) const BENP_PLAYERS: u32 = 0x0053_4fe0;
+
+pub(crate) const BENP_PLAYER_SIZE: u32 = 0x1c;
+
+pub(crate) const BENP_PLAYER_ALT_CHARACTER: u32 = 0x12;
+
+/// The slot table `BENewPlayerInt_GetSlot` reads (`0x5305b0[index]`).
+pub(crate) const BENP_SLOTS: u32 = 0x0053_05b0;
+
+pub(crate) const BENP_GET_SLOT: Callee = Callee {
+    addr: 0x0014_7798,
+    f: ee::s01::BENewPlayerInt_GetSlot,
+};
+
+/// `s8 BENewPlayerInt_GetAltCharacter(BENewPlayerInt* self, int index)`
+/// (0x147410): the alternate character (signed byte +0x12) of the player
+/// record the player in slot `index` uses.
+pub fn be_new_player_int_get_alt_character(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        BENP_GET_SLOT.call(c, 0x0014_7420)?;
+        c.g[A0][0] = BENP_PLAYER_SIZE as u64;
+        c.g[V1][0] = sx(BENP_PLAYERS);
+        let slot = c.g[V0][0] as u32;
+        let off = abi::mult(c, slot, BENP_PLAYER_SIZE);
+        frame.restore_ra(c, 0);
+        let rec = off.wrapping_add(BENP_PLAYERS);
+        c.g[V0][0] = Addr(rec.wrapping_add(BENP_PLAYER_ALT_CHARACTER)).lb(c);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4592,6 +4637,31 @@ pub(crate) mod tests {
                         );
                     }
                 }
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::events::Events;
+
+    /// BENewPlayerInt_GetAltCharacter: slot indices 0..7 whose players use
+    /// records 0..15 (alt characters of either sign), through the real
+    /// BENewPlayerInt_GetSlot.
+    #[test]
+    fn be_new_player_int_get_alt_character_matches() {
+        crate::difftest::check_lohi(
+            ee::s01::f_00147410__generated,
+            be_new_player_int_get_alt_character,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0014_7410 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0014_7410;
+                for i in 0..8 {
+                    c.bus.write32(BENP_SLOTS + 4 * i, r.next_u32() % 16);
+                }
+                fill(c, &mut r, BENP_PLAYERS, 16 * BENP_PLAYER_SIZE / 4);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = (r.next_u32() % 8) as u64 | (r.next_u32() as u64) << 32;
             },
         );
     }
