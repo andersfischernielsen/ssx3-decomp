@@ -224,6 +224,10 @@ pub const PER_TICK: &[(u32, u32, PerTick)] = &[
     // MatrixChaseCameraAlgorithm_Update (0x1607e0): the orbit angle (+0x390)
     // gains 0.0614 rad per tick.
     (0x0049_c530, 0x3d7b_4caa, PerTick::Step),
+    // SpokeChaseCameraAlgorithm_ComputeDesiredEye (0x177fc0), the handplant
+    // (spoke) camera: its heading (+0x390) keeps 0.96 and adds 0.04 of the
+    // direction per update, then is renormalized.
+    (0x0049_d2f0, 0x3f75_c28f, PerTick::Affine(0x0049_d2f4)),
     // OVScreenSession_Update (0x209370), the pause map: the icons' scale
     // pulse speed, -0.16 / +0.16 per tick.
     (0x0049_dbf0, 0xbe23_d70a, PerTick::Step),
@@ -266,7 +270,7 @@ pub fn per_tick_values(hz: u32) -> Vec<(u32, u32)> {
 }
 
 /// The offsets of [`PerTick::Affine`] entries: (entry, executable value).
-const AFFINE_B: &[(u32, u32)] = &[(0x0049_b894, 0x4194_25ed)];
+const AFFINE_B: &[(u32, u32)] = &[(0x0049_b894, 0x4194_25ed), (0x0049_d2f4, 0x3d23_d710)];
 
 /// Rewrite the [`PER_TICK`] constants for `hz` (each only if it still holds
 /// the executable's value or one this wrote, so a wrong address is caught).
@@ -862,6 +866,20 @@ pub fn set_for_test(c: &mut Cpu, hz: u32) {
     c.bus.write32(APPMAN_PTR, APP);
     c.bus.write32(APP + APPMAN_RATE, hz);
     c.bus.write32(APP + APPMAN_STEP, step_bits(hz));
+}
+
+/// The bits of [`PER_TICK`] entry `entry` at `hz`. Its row must hold
+/// `stock`, the executable's value: `patch_per_tick` leaves a row whose bits
+/// do not match alone at run time.
+#[cfg(test)]
+pub fn per_tick_at(hz: u32, entry: u32, stock: u32) -> u32 {
+    let row = PER_TICK.iter().find(|e| e.0 == entry).map(|e| e.1);
+    assert_eq!(row, Some(stock), "PER_TICK row {entry:#x}");
+    per_tick_values(hz)
+        .into_iter()
+        .find(|e| e.0 == entry)
+        .unwrap()
+        .1
 }
 
 #[cfg(test)]

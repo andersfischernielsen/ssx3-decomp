@@ -2671,7 +2671,8 @@ pub fn spoke_chase_camera_algorithm_get_focus_point(c: &mut Cpu) {
 /// target's `+0x20` vector. The heading (`this + 0x390`) becomes the
 /// normalized `0.96 * heading + 0.04 * direction` (the direction itself when
 /// that is shorter than 0.02), and the eye sits 30 above the focus point
-/// (the up vector at 0x4ff160) and 250 behind it along the heading.
+/// (the up vector at 0x4ff160) and 250 behind it along the heading. The
+/// blend's two shares are a [`crate::tick::PER_TICK`] entry.
 pub fn spoke_chase_camera_algorithm_compute_desired_eye(c: &mut Cpu) {
     use crate::game::camera::camera::chase;
     const RIG_RIDER: u32 = 4;
@@ -6553,6 +6554,64 @@ pub(crate) mod tests {
             seen[taken] = true;
         }
         assert!(seen.iter().all(|&s| s), "{seen:?}");
+    }
+
+    /// The heading turns toward the direction the same way per game time at
+    /// any rate. The per-update normalize makes it approximate: within 0.5
+    /// degrees over the first second from 10, 45 and 90 degrees off.
+    #[test]
+    fn spoke_chase_camera_heading_follows_the_rate() {
+        const KEEP: u32 = 0x0049_d2f0;
+        const ADD: u32 = 0x0049_d2f4;
+        for start in [10.0f64, 45.0, 90.0] {
+            let angles = [60u32, 120, 240].map(|hz| {
+                // An entry the rewrite leaves alone keeps its executable bits.
+                let add = crate::tick::per_tick_values(hz)
+                    .into_iter()
+                    .find(|e| e.0 == ADD)
+                    .map_or(0x3d23_d710, |e| e.1);
+                let mut c = crate::difftest::fresh();
+                let _ = machine(&mut c, 0, 0x177fc0, 0);
+                spoke_eye_objects(&mut c, 0);
+                c.bus
+                    .write32(KEEP, crate::tick::per_tick_at(hz, KEEP, 0x3f75_c28f));
+                c.bus.write32(ADD, add);
+                put_vec(&mut c, SPOKE_DIR, [1.0f32.to_bits(), 0, 0, 0]);
+                let (s, co) = start.to_radians().sin_cos();
+                put_vec(
+                    &mut c,
+                    SPOKE + 0x390,
+                    [(co as f32).to_bits(), (s as f32).to_bits(), 0, 0],
+                );
+                let mut out = Vec::new();
+                for n in 1..=hz {
+                    c.g[A0][0] = SPOKE_OUT as u64;
+                    c.g[A1][0] = SPOKE as u64;
+                    c.g[A2][0] = SPOKE_DIR as u64;
+                    spoke_chase_camera_algorithm_compute_desired_eye(&mut c);
+                    assert_eq!(c.pc, TEST_RA);
+                    if n % (hz / 4) == 0 {
+                        let x = f32::from_bits(c.bus.read32(SPOKE + 0x390)) as f64;
+                        let y = f32::from_bits(c.bus.read32(SPOKE + 0x394)) as f64;
+                        out.push(y.atan2(x).to_degrees());
+                    }
+                }
+                out
+            });
+            for (hz, got) in [(120, &angles[1]), (240, &angles[2])] {
+                for (i, (a, b)) in got.iter().zip(&angles[0]).enumerate() {
+                    assert!(
+                        (a - b).abs() < 0.5,
+                        "from {start} deg, {hz} Hz at {} s: {a} vs {b} at 60",
+                        0.25 * (i + 1) as f64
+                    );
+                }
+            }
+        }
+        // At 60 both entries keep the executable's bits.
+        let at60 = crate::tick::per_tick_values(60);
+        assert!(at60.contains(&(KEEP, 0x3f75_c28f)), "keep share");
+        assert!(at60.contains(&(ADD, 0x3d23_d710)), "added share");
     }
 
     /// The `BELibrary` singleton (`gp - 0x1f04`) and the world (`gp - 0x848`).
