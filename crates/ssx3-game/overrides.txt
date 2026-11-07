@@ -6157,6 +6157,7 @@
 0x00113200    AirPredictor_Simulate
 0x0010e910    Rider_BankTrickBoost
 0x0012e980    RiderPrewindSub_Enter
+0x0010c3b8    ComputerActorRider_RollRandomTrick
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks

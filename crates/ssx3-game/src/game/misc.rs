@@ -337,6 +337,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "StreamFile_GetChannelBytes",
     ),
     (0x003e_1530, stream_file_is_idle, "StreamFile_IsIdle"),
+    (
+        0x0010_c3b8,
+        computer_actor_rider_roll_random_trick,
+        "ComputerActorRider_RollRandomTrick",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -17071,6 +17076,58 @@ pub fn computer_actor_rider_roll_fitted_trick(c: &mut Cpu) {
     })
 }
 
+// ComputerActorRider_RollRandomTrick (0x10c3b8)
+
+/// 40.0f and 60.0f (probability percentages).
+const CAR_FORTY: u32 = 0x4220_0000;
+const CAR_SIXTY: u32 = 0x4270_0000;
+
+/// `bool ComputerActorRider_RollRandomTrick(ComputerActorRider* self)`
+/// (0x10c3b8): whether the AI rider picks a random trick: a
+/// dice roll `Rand_NextGame() % 100 < chance * 40 + 60` (so at least 60%).
+/// These constants are percentages, not time steps.
+pub fn computer_actor_rider_roll_random_trick(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0031_7810, 0x0010_c3cc)?;
+        c.g[V1][0] = 100;
+        let me = c.g[S0][0] as u32;
+        let chance = Addr(me.wrapping_add(CAR_TRICK_SKILL)).read_fpu(c);
+        c.f[0] = chance.0;
+        let roll_raw = c.g[V0][0] as u32;
+        abi::divu(c, roll_raw, 100);
+        let (forty, sixty) = (FpuF32(CAR_FORTY), FpuF32(CAR_SIXTY));
+        c.f[1] = forty.0;
+        c.g[AT][0] = CAR_SIXTY as u64;
+        c.f[2] = sixty.0;
+
+        c.cycles += 4;
+        let scaled = chance * forty;
+        c.g[V0][0] = c.hi[0];
+        let threshold = scaled + sixty;
+        c.f[0] = threshold.0;
+        let roll = car_u32_to_float(c);
+        c.f[1] = roll.0;
+
+        c.cycles += 4;
+        let hit = abi::c_lt_s(c, roll, threshold);
+        c.g[V0][0] = 1;
+        if !hit {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 // ---------------------------------------------------------------------------
 // StreamFile_EnqueueRequest (0x3dfd58)
 
@@ -24294,6 +24351,29 @@ pub(crate) mod tests {
                 };
                 c.bus.write32(DATA + CAR_TRICK_SKILL, chance);
                 fill(c, &mut r, 0x0050_0000 - 0xfd0, 8);
+                c.g[A0][0] = sx(DATA);
+            },
+        );
+    }
+
+    /// Random rolls cover ordinary skills, out-of-range skills, and edge floats.
+    #[test]
+    fn computer_actor_rider_roll_random_trick_matches() {
+        crate::difftest::check_lohi(
+            ee::s00::f_0010c3b8__generated,
+            computer_actor_rider_roll_random_trick,
+            350,
+            &|c, seed| {
+                let mut r = Rng(0x0010_c3b8 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0010_c3b8;
+                let skill = if seed % 4 == 0 {
+                    r.edge_f32()
+                } else {
+                    [-1.0f32, 0.0, 0.25, 0.5, 0.75, 1.0, 2.0][(seed % 7) as usize].to_bits()
+                };
+                c.bus.write32(DATA + CAR_TRICK_SKILL, skill);
+                fill(c, &mut r, 0x004f_f030, 8); // real Rand_NextGame state
                 c.g[A0][0] = sx(DATA);
             },
         );
