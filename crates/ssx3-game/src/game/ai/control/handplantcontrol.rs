@@ -3114,7 +3114,8 @@ pub fn rider_railslide_state_enter(c: &mut Cpu) {
 /// `void RiderRailslideState_PostUpdate(state)` (0x13bfa8): update bounds,
 /// launch when leaving the rail, select collision masks, resolve contacts,
 /// and clamp velocity to the rider's maximum speed. Leaving, the slew-5 return
-/// step (rider +0x230) is loaded from the pool.
+/// step (rider +0x230) is loaded from the pool, a [`crate::tick::PER_TICK`]
+/// entry.
 pub fn rider_railslide_state_post_update(c: &mut Cpu) {
     guest(c, |c| {
         const RIDER: u32 = 0x50;
@@ -9395,6 +9396,24 @@ pub(crate) mod tests {
                 "return step seed {seed}"
             );
         }
+    }
+
+    /// Leaving a rail, the return step moves the same way per game time.
+    #[test]
+    fn rider_railslide_state_return_follows_the_rate() {
+        const STEP: u32 = 0x0049_bfdc;
+
+        crate::tick::assert_slew_follows_the_rate(crate::difftest::DATA + 0x122c, &|hz| {
+            let mut c = crate::difftest::fresh();
+            railslide_post_setup(&mut c, 1);
+            c.bus
+                .write32(STEP, crate::tick::per_tick_at(hz, STEP, 0x3d08_8889));
+            crate::difftest::run_generated(&mut c, rider_railslide_state_post_update);
+            assert_eq!(c.pc, crate::difftest::RA);
+            let stored = c.bus.read32(crate::difftest::DATA + 0x1230);
+            assert_eq!(stored, crate::tick::per_tick_at(hz, STEP, 0x3d08_8889));
+            c
+        });
     }
 
     /// `RiderRailslideState_Enter` seeds the rail-value slew's step (`+0x260`)

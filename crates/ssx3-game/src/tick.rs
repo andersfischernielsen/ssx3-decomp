@@ -140,6 +140,9 @@ pub const PER_TICK: &[(u32, u32, PerTick)] = &[
     // (rider +0x1fc; `CARVE` / `rider_anim::SUB_BLEND`), which also gates
     // the landing animation; consumed once per update by Rider_UpdateSlewedParams.
     (0x0049_b95c, 0x3d08_8889, PerTick::Step),
+    // RiderRailslideState_PostUpdate (0x13bfa8): leaving a rail, the return
+    // step for rider +0x22c; consumed once per update by Rider_UpdateSlewedParams.
+    (0x0049_bfdc, 0x3d08_8889, PerTick::Step),
     // Rider_HandleBoostInput (0x114130): the boost meter (rider +0x2f8)
     // drains 0.0015068 per tick while boost is held.
     (0x0049_b4fc, 0x3ac5_7fcc, PerTick::Step),
@@ -862,6 +865,43 @@ pub fn set_for_test(c: &mut Cpu, hz: u32) {
     c.bus.write32(APPMAN_PTR, APP);
     c.bus.write32(APP + APPMAN_RATE, hz);
     c.bus.write32(APP + APPMAN_STEP, step_bits(hz));
+}
+
+/// The bits of [`PER_TICK`] entry `entry` at `hz`. Its row must hold
+/// `stock`, the executable's value: `patch_per_tick` leaves a row whose bits
+/// do not match alone at run time.
+#[cfg(test)]
+pub fn per_tick_at(hz: u32, entry: u32, stock: u32) -> u32 {
+    let row = PER_TICK.iter().find(|e| e.0 == entry).map(|e| e.1);
+    assert_eq!(row, Some(stock), "PER_TICK row {entry:#x}");
+    per_tick_values(hz)
+        .into_iter()
+        .find(|e| e.0 == entry)
+        .unwrap()
+        .1
+}
+
+/// `run(hz)` leaves a machine with a rider slew's step and target written.
+/// From the same value, one 60 Hz frame of updates must end on the same
+/// value at every rate.
+#[cfg(test)]
+pub fn assert_slew_follows_the_rate(param: u32, run: &dyn Fn(u32) -> Box<Cpu>) {
+    for start in [-0.8f32, -0.01, 0.01, 0.8] {
+        let got = [60u32, 120, 240].map(|hz| {
+            let mut c = run(hz);
+            c.bus.write32(param, start.to_bits());
+            for _ in 0..hz / 60 {
+                crate::game::ai::rider::slew(&mut c, param);
+                let moved = c.f[1];
+                c.bus.write32(param, moved);
+            }
+            f32::from_bits(c.bus.read32(param))
+        });
+        assert!(
+            got.iter().all(|v| (v - got[0]).abs() < 2e-6),
+            "from {start}: 60/120/240 Hz end on {got:?}"
+        );
+    }
 }
 
 #[cfg(test)]
