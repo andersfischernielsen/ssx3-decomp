@@ -93,6 +93,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RiderRailslideState_Enter",
     ),
     (
+        0x0013_bfa8,
+        rider_railslide_state_post_update,
+        "RiderRailslideState_PostUpdate",
+    ),
+    (
         0x0013_c618,
         rider_railslide_state_load_state,
         "RiderRailslideState_LoadState",
@@ -3101,6 +3106,151 @@ pub fn rider_railslide_state_enter(c: &mut Cpu) {
         sw(c, S0, 0x40, 0);
         c.sq(3, (c.g[S0][0] as u32).wrapping_add(0x30));
         frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void RiderRailslideState_PostUpdate(state)` (0x13bfa8): update bounds,
+/// launch when leaving the rail, select collision masks, resolve contacts,
+/// and clamp velocity to the rider's maximum speed. Leaving, the slew-5 return
+/// step (rider +0x230) is loaded from the pool.
+pub fn rider_railslide_state_post_update(c: &mut Cpu) {
+    guest(c, |c| {
+        const RIDER: u32 = 0x50;
+        const LEAVING: u32 = 0x20;
+        // Slew 5 uses the common value / step / target layout at rider +0x22c.
+        const SLEW5_STEP: u32 = 0x230;
+        const SLEW5_TARGET: u32 = 0x234;
+        const UBER_GRIND_STANCE: u32 = 0x394;
+        const COLLISION_MASK: u32 = 0x28;
+        const STANCE_MASKS: u32 = 0;
+        const SAVED_RA: u32 = 0x10;
+        const SAVED_STATE: u32 = 0x20;
+        /// gp-0x7114: 1/30, the slew-5 return step when leaving a rail.
+        const GP_SLEW5_RETURN: u32 = 0x7114;
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, SAVED_STATE);
+        frame.save_ra(c, SAVED_RA);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        call_ptr(c, RIDER_UPDATE_BOUNDS, 0x0013_bfc4)?;
+        c.g[V0][0] = Addr(r32(c, S0)).off(LEAVING).lw(c);
+        let leaving = c.g[V0][0] != 0;
+        c.g[V0][0] = 0x460000;
+        if leaving {
+            c.cycles += 9;
+            c.g[V0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+            c.lwc1(0, r32(c, GP).wrapping_sub(GP_SLEW5_RETURN));
+            Addr(r32(c, V0)).off(SLEW5_TARGET).sw(c, 0);
+            c.swc1(0, r32(c, V0).wrapping_add(SLEW5_STEP));
+            c.g[AT][0] = sx(0xbf80_0000);
+            c.mtc1(AT, 12);
+            c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+            call_ptr(c, RIDER_LAUNCH_INTO_AIR, 0x0013_bff0)?;
+            c.g[V0][0] = 0x460000;
+        }
+
+        // The four stance masks are copied with the original unaligned loads.
+        c.cycles += 15;
+        c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        // 0x458230: four stance-dependent collision masks.
+        c.g[A3][0] = sx(r32(c, V0).wrapping_sub(0x7dd0));
+        c.ldl(V1, r32(c, A3).wrapping_add(7));
+        c.ldr(V1, r32(c, A3));
+        c.ldl(A1, r32(c, A3).wrapping_add(15));
+        c.ldr(A1, r32(c, A3).wrapping_add(8));
+        c.sdl(V1, frame.at(c, STANCE_MASKS + 7));
+        c.sdr(V1, frame.at(c, STANCE_MASKS));
+        c.sdl(A1, frame.at(c, STANCE_MASKS + 15));
+        c.sdr(A1, frame.at(c, STANCE_MASKS + 8));
+        call_ptr(c, RIDER_GET_SUB_STATE, 0x0013_c024)?;
+        c.g[V1][0] = 12;
+        if c.g[V0][0] == c.g[V1][0] {
+            c.cycles += 9;
+            c.g[V1][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+            c.g[A0][0] = Addr(r32(c, V1)).off(air::SUB).lw(c);
+            c.g[A1][0] = Addr(r32(c, V1)).off(R_HULL).lw(c);
+            c.g[V0][0] = Addr(r32(c, A0)).off(UBER_GRIND_STANCE).lw(c);
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[V1][0] = sx(frame.at(c, STANCE_MASKS + r32(c, V0)));
+            c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+            Addr(r32(c, A1)).off(COLLISION_MASK).sw(c, c.g[A0][0]);
+        } else {
+            c.g[V0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+            c.cycles += 3;
+            c.g[A0][0] = 0x16;
+            c.g[V1][0] = Addr(r32(c, V0)).off(R_HULL).lw(c);
+            Addr(r32(c, V1)).off(COLLISION_MASK).sw(c, c.g[A0][0]);
+        }
+
+        c.cycles += 19;
+        c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        c.g[A1][0] = 0;
+        call_ptr(c, RIDER_HANDLE_WALL_COLLISION, 0x0013_c06c)?;
+        c.g[V1][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        c.g[A1][0] = 3;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[V0][0] = Addr(r32(c, V1)).off(R_HULL).lw(c);
+        Addr(r32(c, V0)).off(COLLISION_MASK).sw(c, c.g[A1][0]);
+        call_ptr(c, 0x0013_c140, 0x0013_c084)?;
+        c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        c.g[V0][0] = u64::MAX;
+        c.g[V1][0] = Addr(r32(c, A0)).off(R_HULL).lw(c);
+        Addr(r32(c, V1)).off(COLLISION_MASK).sw(c, c.g[V0][0]);
+        c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        call_ptr(c, RIDER_CHECK_RIDER_COLLISIONS, 0x0013_c0a0)?;
+        c.g[V0][0] = Addr(r32(c, S0)).off(LEAVING).lw(c);
+        if c.g[V0][0] != 0 {
+            c.cycles += 5;
+            c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+            call_ptr(c, RIDER_GET_MAIN_STATE, 0x0013_c0b4)?;
+            c.g[V1][0] = 4;
+            let on_rail = c.g[V0][0] == c.g[V1][0];
+            c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+            if on_rail {
+                c.cycles += 6;
+                c.g[A1][0] = 1;
+                call_ptr(c, RIDER_SET_MAIN_STATE, 0x0013_c0c8)?;
+                c.g[A0][0] = Addr(r32(c, GP)).off(GP_AUDIO).lw(c);
+                c.g[A1][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+                call_ptr(c, SSX_AUDIO_PLAY_TAKEOFF_SOUND, 0x0013_c0d4)?;
+                c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+            }
+        } else {
+            c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        }
+
+        // Preserve the VU0 reduction, Q result and scratch registers.
+        c.cycles += 15;
+        c.lqc2(3, r32(c, A0).wrapping_add(R_VEL));
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.vu0().sqrt(4, 0);
+        c.vu0().waitq();
+        c.cfc2(V0, 22);
+        c.mtc1(V0, 1);
+        c.lwc1(0, r32(c, A0).wrapping_add(R_MAX_SPEED));
+        c.c_lt_s(0, 1);
+        let too_fast = c.fcc();
+        frame.restore(c, S0, SAVED_STATE);
+        if too_fast {
+            c.cycles += 7;
+            c.div_s(0, 0, 1);
+            c.mfc1(V0, 0);
+            c.lqc2(4, r32(c, A0).wrapping_add(R_VEL));
+            c.qmtc2(V0, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, r32(c, A0).wrapping_add(R_VEL));
+            frame.restore(c, S0, SAVED_STATE);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, SAVED_RA);
         frame.close(c);
         Ok(())
     })
@@ -9160,6 +9310,91 @@ pub(crate) mod tests {
                 w_2(c, GAME_GP.wrapping_sub(0x7184), 0.05f32.to_bits());
             },
         );
+    }
+
+    /// Real bounds/launch/collision/state/audio callees on empty-world paths;
+    /// only virtual methods use the per-machine fake hooks.
+    fn railslide_post_setup(c: &mut Cpu, seed: u32) {
+        use crate::difftest::{put_vec, DATA, GAME_GP};
+
+        const RIDER: u32 = DATA + 0x1000;
+
+        const OWNER: u32 = DATA + 0x3000;
+
+        const AUDIO: u32 = DATA + 0x20000;
+        post_update_setup(c, seed, false);
+        c.pc = 0x0013_bfa8;
+        c.bus.write32(DATA + 0x50, RIDER);
+        c.bus.write32(DATA + 0x20, seed % 2);
+        c.bus
+            .write32(OWNER + 0xde0, if seed / 2 % 2 == 0 { 4 } else { 1 });
+        c.bus
+            .write32(OWNER + 0xde4, if seed / 4 % 2 == 0 { 9 } else { 12 });
+        c.bus.write32(OWNER + 0x394, seed / 8 % 4);
+        // Bound the real main-state dispatchers at their epilogue entries.
+        // This fixture checks the caller's transition, not state-entry work.
+        for state in 0..6 {
+            c.bus.write32(0x456b10 + state * 4, 0x0011_1374);
+            c.bus.write32(0x456b30 + state * 4, 0x0011_13fc);
+        }
+        // All four masks, and every pool value read by this port, vary.
+        for i in 0..4 {
+            c.bus.write32(0x458230 + 4 * i, (1 << i) ^ (seed << 8));
+        }
+        c.bus.write32(
+            GAME_GP - 0x7114,
+            [0.01f32, 1.0 / 30.0, 0.07][(seed / 32 % 3) as usize].to_bits(),
+        );
+        c.bus.write32(GAME_GP + 0x410, AUDIO);
+        // No rider is registered with audio, so takeoff's FindRider exits.
+        c.bus.write32(RIDER + 0x874, 0);
+        c.bus.write32(RIDER + 0x870, u32::MAX);
+        put_vec(c, RIDER + 0x1e0, [40.0f32.to_bits(), 0, 0, 0]);
+        c.bus.write32(
+            RIDER + 0x2e4,
+            if seed / 96 % 2 == 0 {
+                10.0f32
+            } else {
+                8000.0f32
+            }
+            .to_bits(),
+        );
+    }
+
+    #[test]
+    fn rider_railslide_state_post_update_matches() {
+        crate::difftest::check(
+            ee::s01::f_0013bfa8__generated,
+            rider_railslide_state_post_update,
+            192,
+            &railslide_post_setup,
+        );
+        // Seeds 0, 1, 3 and 4 witness both outcomes of the leaving,
+        // stance-mask and state-transition branches, all clamping speed;
+        // seed 96 (maximum speed 8000) takes the not-clamped path.
+        crate::difftest::require_paths(
+            ee::s01::f_0013bfa8__generated,
+            192,
+            &[1111, 1963, 1778, 2468, 1104],
+            &railslide_post_setup,
+        );
+        // Pool variants can share cycle counts: assert their output too.
+        for seed in 0..192 {
+            let mut c = crate::difftest::fresh();
+            railslide_post_setup(&mut c, seed);
+            crate::difftest::run_generated(&mut c, ee::s01::f_0013bfa8__generated);
+            assert_eq!(c.pc, crate::difftest::RA, "incomplete seed {seed}");
+            let step = if seed % 2 == 0 {
+                0
+            } else {
+                [0.01f32, 1.0 / 30.0, 0.07][(seed / 32 % 3) as usize].to_bits()
+            };
+            assert_eq!(
+                c.bus.read32(crate::difftest::DATA + 0x1230),
+                step,
+                "return step seed {seed}"
+            );
+        }
     }
 
     /// `RiderRailslideState_Enter` seeds the rail-value slew's step (`+0x260`)
