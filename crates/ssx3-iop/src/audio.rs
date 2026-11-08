@@ -47,6 +47,10 @@ static SUSPENDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 /// stays open.
 pub fn suspend() {
     SUSPENDED.store(true, std::sync::atomic::Ordering::Relaxed);
+    // A front end that pulls may not pull again until it resumes.
+    if let Some(r) = PULLED.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        r.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    }
 }
 
 /// Undo [`suspend`]: sound resumes with the next samples the game mixes.
@@ -497,6 +501,7 @@ mod tests {
         suspend();
         assert_eq!(sink.queued_frames(), None);
         resume();
+        assert_eq!(sink.queued_frames(), Some(100), "suspend drops the queue");
         set_output(Output::Off);
         assert!(Sink::from_env().ring.is_none());
     }

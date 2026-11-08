@@ -58,6 +58,20 @@ pub trait Settings: Send + Sync {
     fn get(&self, key: &str) -> Option<String>;
 }
 
+/// A front end's settings under the process environment, the precedence of
+/// `ssx3_core::config`: what the engine itself reads. A variable that is set
+/// wins even when empty (then the default).
+struct EnvFirst(Arc<dyn Settings>);
+
+impl Settings for EnvFirst {
+    fn get(&self, key: &str) -> Option<String> {
+        match std::env::var(key) {
+            Ok(v) => Some(v).filter(|v| !v.is_empty()),
+            Err(_) => self.0.get(key),
+        }
+    }
+}
+
 /// The process environment (empty values count as unset).
 pub struct EnvSettings;
 
@@ -172,6 +186,8 @@ impl Engine {
         }
         init_paths(config.data_root, config.save_root, config.find_pack);
         ssx3_iop::audio::set_output(config.audio);
+        // What the engine reads itself, with the same precedence.
+        let settings: Arc<dyn Settings> = Arc::new(EnvFirst(settings));
         let skip = settings
             .get("SSX3_SKIP_MOVIES")
             .map(|v| v != "0")

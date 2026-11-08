@@ -259,13 +259,10 @@ mod vu_pool {
 }
 
 /// The largest 4:3 box in a `w`×`h` canvas (whole pixels).
-fn box43(w: u32, h: u32) -> (f32, f32) {
+/// The largest box of aspect `a` (width / height) in `w` x `h`.
+fn fit(w: u32, h: u32, a: f32) -> (f32, f32) {
     let (w, h) = (w as f32, h as f32);
-    let (bw, bh) = if w / h > 4.0 / 3.0 {
-        (h * 4.0 / 3.0, h)
-    } else {
-        (w, w * 3.0 / 4.0)
-    };
+    let (bw, bh) = if w / h > a { (h * a, h) } else { (w, w / a) };
     (bw.floor().max(64.0), bh.floor().max(64.0))
 }
 
@@ -432,12 +429,26 @@ impl Game {
         self.vu_buffer.clone()
     }
 
-    /// Render the game's own 4:3 view at the pixel size of the 4:3 box it
-    /// fills in the canvas (`present`).
+    /// Render at the pixel size of the box the image fills in the canvas
+    /// (`present`): the game's own 4:3 view unless the settings ask for an
+    /// aspect (`SSX3_ASPECT`), with `SSX3_RESOLUTION` and `SSX3_FOV`; a
+    /// fixed `SSX3_RENDER_SIZE` is left as the engine set it.
     fn follow_size(&self) {
-        let (w, h) = box43(self.config.width, self.config.height);
-        self.gfx.set_output_size(Some((w as u32, h as u32)));
-        ssx3_ps2::frame_sink::set_view(0.0, 1.0);
+        if !self.engine.follows_surface() {
+            return;
+        }
+        let aspect = self.engine.aspect_box();
+        let (w, h) = fit(
+            self.config.width,
+            self.config.height,
+            aspect.unwrap_or(4.0 / 3.0),
+        );
+        let k = self.engine.resolution();
+        self.gfx.set_output_size(Some((
+            ((w * k).round() as u32).max(64),
+            ((h * k).round() as u32).max(64),
+        )));
+        ssx3_ps2::frame_sink::set_view(aspect.map_or(0.0, |_| w / h), self.engine.fov());
     }
 
     /// The canvas was resized (device pixels).
@@ -509,7 +520,7 @@ impl Game {
     }
 
     fn present_image(&mut self) {
-        let Some((view, _, _)) = self.gfx.present_view() else {
+        let Some((view, iw, ih)) = self.gfx.present_view() else {
             return;
         };
         let frame = match self.surface.get_current_texture() {
@@ -556,9 +567,9 @@ impl Game {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            // The 4:3 image, as large as fits, centred.
+            // The image at its own aspect, as large as fits, centred.
             let (cw, ch) = (self.config.width as f32, self.config.height as f32);
-            let (w, h) = box43(self.config.width, self.config.height);
+            let (w, h) = fit(self.config.width, self.config.height, iw as f32 / ih as f32);
             pass.set_viewport(
                 ((cw - w) / 2.0).floor(),
                 ((ch - h) / 2.0).floor(),
