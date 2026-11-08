@@ -94,21 +94,34 @@ pub fn tex0(m: &dyn Mem, info: u32) -> u64 {
     dword(m, info + ti::TEX0)
 }
 
-/// Cheap content fingerprint: 32 evenly spaced words of the level-0 pixels
-/// and the whole CLUT.
+/// Content fingerprint of the level-0 pixels and the whole CLUT.
 fn fingerprint(m: &dyn Mem, pixels: u32, bytes: u32, clut: u32, clut_bytes: u32) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    let mut mix = |v: u32| {
-        h ^= v as u64;
+    let mut mix = |b: u8| {
+        h ^= b as u64;
         h = h.wrapping_mul(0x0100_0000_01b3);
     };
-    if bytes >= 4 {
-        for i in 0..32u32 {
-            mix(word(m, (pixels + (bytes / 32 * i)) & !3));
+    let mut addr = pixels;
+    let end = pixels.saturating_add(bytes);
+    while addr < end {
+        let base = addr & !15;
+        let start = (addr - base) as usize;
+        let count = (16 - start).min((end - addr) as usize);
+        for &b in &m.qword(base).to_le_bytes()[start..start + count] {
+            mix(b);
         }
+        addr += count as u32;
     }
-    for i in (0..clut_bytes).step_by(4) {
-        mix(word(m, clut + i));
+    let mut addr = clut;
+    let end = clut.saturating_add(clut_bytes);
+    while clut_bytes != 0 && addr < end {
+        let base = addr & !15;
+        let start = (addr - base) as usize;
+        let count = (16 - start).min((end - addr) as usize);
+        for &b in &m.qword(base).to_le_bytes()[start..start + count] {
+            mix(b);
+        }
+        addr += count as u32;
     }
     h
 }
