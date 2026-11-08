@@ -6158,8 +6158,6 @@
 0x0010e910    Rider_BankTrickBoost
 0x0012e980    RiderPrewindSub_Enter
 0x0010c3b8    ComputerActorRider_RollRandomTrick
-# tick rate: spoke (handplant) camera heading
-0x00177fc0    SpokeChaseCameraAlgorithm_ComputeDesiredEye
 # Phase 2 wave: oc313, oc314, oc315, oc316
 0x0015f780    RiderCameraTarget_v23
 0x0035c0e8    RailModifier_BuildRailNodes
@@ -6226,6 +6224,7 @@
 # The boot logos (EA, THX) can be skipped with X/Start, like the intro
 0x001a27a0    ssx_BootMoviesUpdate
 
-# tick rate: chase camera updates
-0x00160bf8 RelativeChaseCameraAlgorithm_Update
-0x00178208 SpokeChaseCameraAlgorithm_Update
+# tick rate: chase camera blends and updates
+0x00160bf8    RelativeChaseCameraAlgorithm_Update
+0x00177fc0    SpokeChaseCameraAlgorithm_ComputeDesiredEye
+0x00178208    SpokeChaseCameraAlgorithm_Update

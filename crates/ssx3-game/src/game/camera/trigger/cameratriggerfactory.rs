@@ -2985,6 +2985,13 @@ pub fn spoke_chase_camera_algorithm_update(c: &mut Cpu) {
         c.cycles += 1;
         c.sqrt_s(20, 20);
     }
+    // Distance and handplant state shape the effective retained share first.
+    // Keep the original FPU operations at 60 Hz, and preserve that share per
+    // 1/60 second at other rates.
+    let hz = crate::tick::rate(c);
+    if hz != 60 {
+        c.f[20] = f32::from_bits(c.f[20]).powf(60.0 / hz as f32).to_bits();
+    }
     // Blend the old eye with ComputeDesiredEye, then raise the focus 37 units.
     c.cycles += 53;
     c.mfc1(2, 20);
@@ -6743,6 +6750,83 @@ pub(crate) mod tests {
         put_vec(c, SPOKE + 0x40, vector(distance, 0.0, 0.0));
         put_vec(c, 0x004f_f160, vector(0.0, 0.0, 1.0));
         put_vec(c, 0x004f_f120, vector(0.0, 0.0, 1.0));
+    }
+
+    /// Stable virtual outputs for the rate test; the real gather, main-state,
+    /// desired-eye and focus-point callees execute without replacing any slot.
+    fn spoke_rate_target(c: &mut Cpu, target: u32) {
+        let out = c.g[A0][0] as u32;
+        match target {
+            FAKE => put_vec(c, out, [0; 4]),
+            x if x == FAKE + 0x10 || x == FAKE + 0x40 => {
+                put_vec(c, out, [60.0f32.to_bits(), 0, 0, 0]);
+            }
+            x if x == FAKE + 0x20 => c.g[V0][0] = SPOKE_HAND as u64,
+            x if x == FAKE + 0x30 => c.g[V0][0] = SPOKE_OUT as u64,
+            x if x == FAKE + 0x50 => c.g[V0][0] = 4,
+            x if x == FAKE + 0x60 || x == FAKE + 0x70 => c.f[0] = 0,
+            _ => panic!("unexpected spoke target {target:#x}"),
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    #[test]
+    fn spoke_chase_camera_eye_follows_the_rate() {
+        for state in [0u32, 5] {
+            // The distance-dependent coefficient is recomputed each tick.
+            // Crossing the ramp remains approximate (1 unit); a start in the
+            // ramp is closer (0.3); beyond the far limit every rate snaps.
+            for (start, tolerance) in [(-80.0f32, 1.0f32), (-200.0, 0.3), (-2000.0, 0.001)] {
+                let sample = |hz: u32| {
+                    let mut c = crate::difftest::fresh();
+                    spoke_update_setup(&mut c, u32::from(state == 5));
+                    elf_image(&mut c);
+                    crate::tick::set_for_test(&mut c, hz);
+                    for (at, bits) in crate::tick::per_tick_values(hz) {
+                        c.bus.write32(at, bits);
+                    }
+                    c.hooks.miss = spoke_rate_target;
+                    put_vec(&mut c, SPOKE_OUT, [0; 4]);
+                    put_vec(&mut c, SPOKE + 0x20, [0, 0, 37.0f32.to_bits(), 0]);
+                    put_vec(
+                        &mut c,
+                        SPOKE + 0x40,
+                        [start.to_bits(), 0, 30.0f32.to_bits(), 0],
+                    );
+                    let mut out = Vec::new();
+                    for n in 1..=hz {
+                        c.g[A0][0] = SPOKE as u64;
+                        c.g[RA][0] = crate::difftest::RA as u64;
+                        c.g[SP][0] = crate::difftest::SP as u64;
+                        spoke_chase_camera_algorithm_update(&mut c);
+                        assert_eq!(c.pc, crate::difftest::RA);
+                        assert_eq!(c.g[SP][0], crate::difftest::SP as u64);
+                        assert_eq!(c.bus.read32(SPOKE_OWNER + 0xde0), state);
+                        let heading = f32::from_bits(c.bus.read32(SPOKE + 0x390));
+                        assert!((heading - 1.0).abs() < 0.00001);
+                        if n % (hz / 4) == 0 {
+                            let eye: [f32; 3] = std::array::from_fn(|i| {
+                                f32::from_bits(c.bus.read32(SPOKE + 0x40 + i as u32 * 4))
+                            });
+                            out.push(eye);
+                        }
+                    }
+                    out
+                };
+                let stock = sample(60);
+                println!("SPOKE_RATE state={state} start={start} hz=60 samples={stock:?}");
+                for hz in [120, 240] {
+                    let actual = sample(hz);
+                    println!("SPOKE_RATE state={state} start={start} hz={hz} samples={actual:?}");
+                    for (n, (a, b)) in actual.iter().zip(&stock).enumerate() {
+                        for axis in 0..3 {
+                            assert!((a[axis] - b[axis]).abs() < tolerance,
+                                "state {state}, start {start}, {hz} Hz checkpoint {n}: {a:?} vs {b:?}");
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]
