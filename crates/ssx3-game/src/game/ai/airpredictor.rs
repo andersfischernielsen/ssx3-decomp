@@ -5,9 +5,12 @@ use crate::abi;
 use crate::abi::r32;
 use crate::call;
 use crate::call::call_ptr;
+use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 pub(crate) use crate::game::ai::rider::fcc_lt;
 pub(crate) use crate::game::ai::rider::fr_3 as fr;
 pub(crate) use crate::game::ai::rider::gp_lit;
@@ -46,6 +49,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "AirPredictor_LoadState",
     ),
     (0x0011_39a0, air_predictor_step_2, "AirPredictor_Step"),
+    (0x0011_3200, air_predictor_simulate, "AirPredictor_Simulate"),
 ];
 
 /// `void AirPredictor_Update(AirPredictor *ap, Vec4 *pos, Vec4 *vel, float dt)`
@@ -378,15 +382,313 @@ pub fn air_predictor_step_2(c: &mut Cpu) {
     abi::ret(c);
 }
 
+const GP_FORECAST_DISTANCE: u32 = 0x7c74;
+const GP_FORECAST_STEP: u32 = 0x7c70;
+const GP_FORECAST_HEADING: u32 = 0x7c6c;
+const GP_FORECAST_EXTENSION: u32 = 0x7c68;
+const GP_FORECAST_BACKTRACK: u32 = 0x7c64;
+
+/// `void AirPredictor_Simulate(AirPredictor *ap)` (0x113200): extend the
+/// fixed-step flight forecast until its distance/heading limit, then sweep
+/// the segment and backtrack its predicted time and velocity to a contact.
+/// The forecast step and contact backtrack are separate gp-relative loads;
+/// both are `tick::NOT_A_STEP`.
+pub fn air_predictor_simulate(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 48;
+        let frame = Frame::open(c, 0x280);
+        c.f[1] = (gp_lit(c, GP_FORECAST_DISTANCE)).0; // forecast distance budget
+        frame.save(c, S0, 0x240);
+        frame.save(c, S1, 0x230);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x220);
+        c.g[S1][0] = sx(r32(c, S0).wrapping_add(0x60)); // velocity
+        frame.save(c, S3, 0x210);
+        c.g[S2][0] = sx(r32(c, S0).wrapping_add(0x50)); // position
+        frame.save(c, S4, 0x200);
+        c.g[S3][0] = sx(frame.at(c, 0xf0)); // segment query
+        frame.save(c, S5, 0x1f0);
+        c.g[S4][0] = sx(frame.at(c, 0x70)); // contact result
+        frame.save(c, S6, 0x1e0);
+        c.g[S5][0] = sx(frame.at(c, 0x40)); // extended end
+        frame.save_fpr(c, 25, 0x278);
+        c.g[S6][0] = sx(frame.at(c, 0x30)); // extended start
+        for (f, off) in [(24, 0x270), (23, 0x268), (22, 0x260), (21, 0x258)] {
+            frame.save_fpr(c, f, off);
+        }
+        frame.save_ra(c, 0x1d0);
+        frame.save_fpr(c, 20, 0x250);
+        c.f[21] = (FpuF32::ZERO).0; // internal steps, not game ticks
+        c.lq(V0, r32(c, S0) + 0x50);
+        c.lq(V1, r32(c, S0) + 0x60);
+        c.sq(V0, sp(c));
+        c.sq(V1, sp(c) + 0x10);
+        // Initial direction, with the original VU0 reduction order.
+        c.lqc2(3, r32(c, S0) + 0x60);
+        {
+            let v = c.vu0();
+            v.add(0b1000, 6, 0, Src::Bc(0, W));
+            v.mul(0b1111, 4, 3, Src::Vec(3));
+            v.adda(0b1000, 4, Src::Bc(4, Y));
+            v.madda(0b1000, 6, Src::Bc(4, Z));
+            v.madd(0b1000, 4, 6, Src::Bc(4, W));
+            v.rsqrt(0, 3, 4, 0);
+            v.waitq();
+            v.mul(0b1111, 5, 3, Src::Q);
+        }
+        c.sqc2(5, sp(c) + 0x30);
+        c.f[25] = (gp_lit(c, GP_FORECAST_STEP)).0; // forecast quantum
+        c.f[0] = (Addr(r32(c, S0) + AIRP_MAX_SPEED).read_fpu(c)).0;
+        c.lq(V0, sp(c) + 0x30);
+        c.f[22] = (fr(c, 1).div(fr(c, 0))).0;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 24);
+        c.sq(V0, sp(c) + 0x20);
+        c.f[23] = (gp_lit(c, GP_FORECAST_HEADING)).0; // heading cosine limit
+        c.f[0] = (Addr(r32(c, S0) + 0x98).read_fpu(c)).0;
+        loop {
+            c.cycles += 15;
+            c.g[A0][0] = c.g[S0][0];
+            c.f[20] = (Addr(r32(c, S0) + 0x58).read_fpu(c)).0;
+            c.g[A1][0] = c.g[S2][0];
+            c.f[0] = (fr(c, 0) + fr(c, 25)).0;
+            c.g[A2][0] = c.g[S1][0];
+            c.g[A3][0] = c.g[S2][0];
+            c.g[T0][0] = c.g[S1][0];
+            c.f[21] = (fr(c, 21) + fr(c, 24)).0;
+            Addr(r32(c, S0) + 0x98).write_fpu(c, fr(c, 0));
+            Callee {
+                addr: 0x0011_39a0,
+                f: ee::s00::AirPredictor_Step,
+            }
+            .call(c, 0x0011_32e8)?;
+            c.f[1] = (fr(c, 0)).0;
+            c.f[0] = (Addr(r32(c, S0) + 0x58).read_fpu(c)).0;
+            let rising = fr(c, 20).le(fr(c, 0));
+            abi::set_fcc(c, rising);
+            if rising {
+                c.cycles += 4;
+                c.f[0] = (Addr(r32(c, S0) + 0x98).read_fpu(c)).0;
+                c.lq(V0, r32(c, S0) + 0x50);
+                Addr(r32(c, S0) + 0x9c).write_fpu(c, fr(c, 0));
+                c.sq(V0, r32(c, S0) + 0x40);
+            }
+            c.cycles += 4;
+            if fcc_lt(c, fr(c, 22), fr(c, 21)) {
+                c.lq(V1, r32(c, S0) + 0x50);
+                break;
+            }
+            c.cycles += 14;
+            c.f[0] = (fr(c, 1) * fr(c, 23)).0;
+            c.lqc2(3, sp(c) + 0x20);
+            c.lqc2(5, r32(c, S0) + 0x60);
+            simulate_dot(c);
+            c.qmfc2(V0, 4);
+            c.mtc1(V0, 1);
+            if fcc_lt(c, fr(c, 1), fr(c, 0)) {
+                c.cycles += 1;
+                c.lq(V1, r32(c, S0) + 0x50);
+                break;
+            }
+            c.f[0] = (Addr(r32(c, S0) + 0x98).read_fpu(c)).0;
+            if event_due(c) {
+                deliver_event_here(c, 0x0011_32c0);
+            }
+        }
+        // Extend both ends of the sweep by the same fraction of its delta.
+        c.cycles += 34;
+        c.g[A1][0] = c.g[S5][0];
+        c.lq(V0, sp(c));
+        c.g[A2][0] = c.g[S6][0];
+        c.sq(V1, sp(c) + 0x40);
+        c.g[A0][0] = c.g[S3][0];
+        c.sq(V0, sp(c) + 0x30);
+        c.g[A3][0] = 1;
+        c.lqc2(3, sp(c) + 0x40);
+        c.lqc2(4, sp(c) + 0x30);
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, sp(c) + 0x60);
+        c.f[0] = (gp_lit(c, GP_FORECAST_EXTENSION)).0;
+        c.lq(V0, sp(c) + 0x60);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 12);
+        c.sq(V0, sp(c) + 0x50);
+        c.mfc1(V1, 0);
+        c.lqc2(4, sp(c) + 0x50);
+        c.qmtc2(V1, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, sp(c) + 0x50);
+        c.lqc2(3, sp(c) + 0x30);
+        c.lqc2(4, sp(c) + 0x50);
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, sp(c) + 0x30);
+        c.lqc2(3, sp(c) + 0x40);
+        c.lqc2(4, sp(c) + 0x50);
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, sp(c) + 0x40);
+        call_ptr(c, 0x0032_e100, 0x0011_33d4)?;
+        c.g[V1][0] = Addr(r32(c, S0) + 0xac).lw(c);
+        let active = c.g[V1][0] != 0;
+        c.g[V1][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+        c.cycles += if active { 7 } else { 8 };
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[S4][0];
+        c.g[A3][0] = 0;
+        c.g[V0][0] = Addr(r32(c, V1) + 0x84).lw(c);
+        c.g[A0][0] = Addr(r32(c, V0) + 0x20).lw(c);
+        if active {
+            call_ptr(c, 0x0033_78c0, 0x0011_3418)?;
+        } else {
+            call_ptr(c, 0x0033_6850, 0x0011_33f8)?;
+        }
+        c.f[3] = (fr(c, 0)).0;
+        c.cycles += 5;
+        c.f[1] = (FpuF32::ZERO).0;
+        let hit = fr(c, 1).le(fr(c, 3));
+        abi::set_fcc(c, hit);
+        if hit {
+            c.cycles += 13;
+            c.lqc2(3, sp(c) + 0x50);
+            c.lqc2(5, sp(c) + 0x80);
+            simulate_dot(c);
+            c.qmfc2(V0, 4);
+            c.mtc1(V0, 0);
+            let approaching = fcc_lt(c, fr(c, 0), fr(c, 1));
+            c.g[A0][0] = 2;
+            if approaching {
+                c.cycles += 34;
+                c.f[0] = (gp_lit(c, GP_FORECAST_BACKTRACK)).0; // contact time backtrack
+                c.f[2] = (Addr(r32(c, S0) + 0x98).read_fpu(c)).0;
+                c.f[0] = (fr(c, 3) * fr(c, 0)).0;
+                c.lq(V0, sp(c) + 0x70);
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(AT, 1);
+                c.sq(V0, r32(c, S0));
+                c.f[0] = (fr(c, 21) * fr(c, 0)).0;
+                c.f[1] = (fr(c, 1) - fr(c, 3)).0;
+                c.f[2] = (fr(c, 2) - fr(c, 0)).0;
+                Addr(r32(c, S0) + 0x98).write_fpu(c, fr(c, 2));
+                c.mfc1(V1, 3);
+                c.lqc2(4, sp(c) + 0x10);
+                c.qmtc2(V1, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, sp(c) + 0x1b0);
+                c.lq(V0, sp(c) + 0x1b0);
+                c.sq(V0, sp(c) + 0x1a0);
+                c.mfc1(V1, 1);
+                c.lqc2(4, r32(c, S0) + 0x60);
+                c.qmtc2(V1, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, sp(c) + 0x1c0);
+                c.lq(V0, sp(c) + 0x1c0);
+                c.sq(V0, sp(c) + 0x1b0);
+                c.lqc2(3, sp(c) + 0x1a0);
+                c.lqc2(4, sp(c) + 0x1b0);
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, sp(c) + 0x1c0);
+                c.lq(V0, sp(c) + 0x1c0);
+                c.g[V1][0] = Addr(r32(c, S0) + 0xac).lw(c);
+                c.sq(V0, r32(c, S0) + 0x10);
+                let mode_two = c.g[V1][0] == c.g[A0][0];
+                c.sq(V0, sp(c) + 0x60);
+                if mode_two {
+                    c.cycles += 9;
+                    c.g[V1][0] = 3;
+                    c.g[V0][0] = 0x50_0000;
+                    Addr(r32(c, S0) + 0xac).sw(c, c.g[V1][0]);
+                    c.g[V0][0] = sx(0x4f_f160);
+                    c.g[A0][0] = 13;
+                    c.lq(V1, r32(c, V0));
+                    Addr(r32(c, S0) + 0x90).sw(c, c.g[A0][0]);
+                    c.sq(V1, r32(c, S0) + 0x20);
+                } else {
+                    c.cycles += 6;
+                    c.lq(V0, sp(c) + 0x80);
+                    c.g[V1][0] = 1;
+                    c.g[A0][0] = Addr(sp(c) + 0xbc).lw(c);
+                    Addr(r32(c, S0) + 0xac).sw(c, c.g[V1][0]);
+                    c.sq(V0, r32(c, S0) + 0x20);
+                    Addr(r32(c, S0) + 0x90).sw(c, c.g[A0][0]);
+                }
+                c.cycles += 3;
+                c.g[A0][0] = Addr(sp(c) + 0xc4).lw(c);
+                let has_object = c.g[A0][0] != 0;
+                c.g[V0][0] = 1;
+                let mut object_contact = false;
+                if has_object {
+                    c.cycles += 3;
+                    c.g[V1][0] = Addr(r32(c, S0) + 0xac).lw(c);
+                    object_contact = c.g[V1][0] == c.g[V0][0];
+                    c.f[1] = (Addr(sp(c) + 0xdc).read_fpu(c)).0;
+                }
+                if object_contact {
+                    c.cycles += 8;
+                    c.g[V0][0] = Addr(r32(c, A0) + 0xa).lhu(c);
+                    Addr(r32(c, S0) + 0x94).sh(c, c.g[V0][0]);
+                    c.f[0] = (Addr(sp(c) + 0xe0).read_fpu(c)).0;
+                    c.g[V0][0] = Addr(r32(c, A0) + 0x150).lw(c);
+                    Addr(r32(c, S0) + 0x38).write_fpu(c, fr(c, 0));
+                    Addr(r32(c, S0) + 0x30).sw(c, c.g[V0][0]);
+                    Addr(r32(c, S0) + 0x34).write_fpu(c, fr(c, 1));
+                } else {
+                    c.cycles += 5;
+                    c.g[V0][0] = u64::MAX;
+                    c.g[V1][0] = u64::MAX;
+                    Addr(r32(c, S0) + 0x94).sh(c, c.g[V1][0]);
+                    Addr(r32(c, S0) + 0x30).sw(c, c.g[V0][0]);
+                }
+            }
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x240);
+        c.cycles += 15;
+        for (r, off) in [
+            (S1, 0x230),
+            (S2, 0x220),
+            (S3, 0x210),
+            (S4, 0x200),
+            (S5, 0x1f0),
+            (S6, 0x1e0),
+        ] {
+            frame.restore(c, r, off);
+        }
+        frame.restore_ra(c, 0x1d0);
+        for (f, off) in [
+            (25, 0x278),
+            (24, 0x270),
+            (23, 0x268),
+            (22, 0x260),
+            (21, 0x258),
+            (20, 0x250),
+        ] {
+            frame.restore_fpr(c, f, off);
+        }
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Dot of vf3 and vf5, leaving the original reduction temporaries in VU0.
+fn simulate_dot(c: &mut Cpu) {
+    let v = c.vu0();
+    v.add(0b1000, 6, 0, Src::Bc(0, W));
+    v.mul(0b1111, 4, 3, Src::Vec(5));
+    v.adda(0b1000, 4, Src::Bc(4, Y));
+    v.madda(0b1000, 6, Src::Bc(4, Z));
+    v.madd(0b1000, 4, 6, Src::Bc(4, W));
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use crate::difftest::elf_image;
 
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::LOG_UNWIND_AT;
 
     use crate::difftest::put_words;
     use crate::difftest::scramble;
@@ -397,6 +699,140 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::ai::tests::leaf;
 
     pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
+
+    /// Only the object's virtual collision delegate is fake. The predictor,
+    /// segment constructor, grid traversal and closest-contact query run real.
+    fn simulate_collision(c: &mut Cpu, target: u32) {
+        use crate::difftest::fakes::{fake_call, FAKE};
+        let out = r32(c, A2);
+        let case = c.bus.read32(DATA + 0x300);
+        fake_call(c, target);
+        if c.pc & 0xffff_0000 == 0xdead_0000 {
+            return;
+        }
+        if target == FAKE {
+            c.g[V0][0] = 1;
+            return;
+        }
+        assert_eq!(target, FAKE + 0x10);
+        for off in (0..0x80).step_by(4) {
+            c.bus.write32(out + off, 0);
+        }
+        let normal = if case / 16 % 2 == 0 { 1.0f32 } else { -1.0 };
+        c.bus.write32(out + 0x10, normal.to_bits());
+        c.bus.write32(out, 33.0f32.to_bits());
+        c.bus.write32(
+            out + 0x40,
+            [0.0f32, 0.25, 1.0][(case / 4 % 3) as usize].to_bits(),
+        );
+        c.bus.write32(out + 0x4c, 7);
+        c.bus
+            .write32(out + 0x54, if case % 3 == 0 { 0 } else { DATA + 0x400 });
+        c.bus.write32(out + 0x6c, 0.75f32.to_bits());
+        c.bus.write32(out + 0x70, 0.125f32.to_bits());
+        c.g[V0][0] = if case % 5 == 0 { 0 } else { 1 };
+    }
+
+    fn simulate_event(c: &mut Cpu) -> bool {
+        // Structured back-edge event: preserve the thread and resume the loop.
+        c.bus.write32(DATA + 0x1800, c.pc);
+        c.bus.write64(DATA + 0x1808, c.cycles);
+        for r in 0..32 {
+            c.bus.write64(DATA + 0x1810 + 16 * r as u32, c.g[r][0]);
+            c.bus.write64(DATA + 0x1818 + 16 * r as u32, c.g[r][1]);
+        }
+        c.next_event = u64::MAX;
+        false
+    }
+
+    fn simulate_fixture(c: &mut Cpu, seed: u32) {
+        use crate::difftest::fakes::FAKE;
+        elf_image(c);
+        machine(c, seed, 0x1132_00ab, 0);
+        predictor_pool(c);
+        let case = seed;
+        // Independently varied literal-pool inputs, not tick-rate coverage.
+        for (address, value) in [
+            (0x49b47c, [0.0f32, 10_000.0, 100_000.0][(case % 3) as usize]),
+            (0x49b480, [0.01, 0.025, 0.04][(case / 3 % 3) as usize]),
+            (0x49b484, [0.95, 0.9999, 1.01][(case / 9 % 3) as usize]),
+            (0x49b488, [0.01, 0.03, 0.05][(case / 27 % 3) as usize]),
+            (0x49b48c, [0.007, 0.02, 0.03][(case / 81 % 3) as usize]),
+        ] {
+            c.bus.write32(address, value.to_bits());
+        }
+        c.hooks.miss = simulate_collision;
+        c.bus
+            .write32(LOG_UNWIND_AT, if case % 11 == 10 { 1 } else { u32::MAX });
+        for o in (0..0xb0).step_by(4) {
+            c.bus.write32(DATA + o, 0);
+        }
+        c.bus.write32(DATA + 0x5c, 1.0f32.to_bits());
+        c.bus.write32(DATA + 0x60, 5000.0f32.to_bits());
+        c.bus.write32(
+            DATA + 0x68,
+            if case % 2 == 0 { 600.0f32 } else { -600.0f32 }.to_bits(),
+        );
+        c.bus.write32(DATA + 0xa8, 5000.0f32.to_bits());
+        c.bus.write32(DATA + 0xac, case % 4);
+        c.bus.write32(DATA + 0x300, case);
+        c.bus.write16(DATA + 0x40a, 0x1234);
+        c.bus.write32(DATA + 0x550, 0x8765_4321);
+        c.bus.write32(GAME_GP - 0x848, DATA + 0x600);
+        c.bus.write32(DATA + 0x684, DATA + 0x700);
+        c.bus.write32(DATA + 0x720, DATA + 0x800);
+        for (i, x) in [0u32, 0, 1.0f32.to_bits(), 0].into_iter().enumerate() {
+            c.bus.write32(0x4ff160 + 4 * i as u32, x);
+        }
+        c.g[A0][0] = sx(DATA);
+        c.pc = 0x0011_3200;
+        if case % 2 == 0 {
+            c.next_event = 0;
+            c.hooks.event = simulate_event;
+        }
+        // One huge cell and one bounded object; all other cell trees are empty.
+        let (grid, tree, object, sub, vt) = (
+            DATA + 0x800,
+            DATA + 0x900,
+            DATA + 0xa00,
+            DATA + 0xc00,
+            DATA + 0xd00,
+        );
+        c.bus.write32(GAME_GP - 0x2dfc, 0.5f32.to_bits());
+        c.bus.write32(grid, 20);
+        c.bus.write32(grid + 0x10, tree);
+        c.bus.write32(tree + 0x20, object);
+        c.bus.write32(object + 8, 0x20);
+        c.bus.write32(object + 0xc, sub);
+        c.bus.write32(object + 0x88, DATA + 0xf00);
+        for k in 0..3 {
+            c.bus
+                .write32(object + 0x60 + 4 * k, (-100_000.0f32).to_bits());
+            c.bus.write32(object + 0x6c + 4 * k, 100_000.0f32.to_bits());
+        }
+        c.bus.write32(sub + 0xc, vt);
+        c.bus.write32(vt + 0x134, FAKE);
+        c.bus.write32(vt + 0x13c, FAKE + 0x10);
+    }
+
+    #[test]
+    fn air_predictor_simulate_matches() {
+        covered(
+            ee::s00::f_00113200__generated,
+            air_predictor_simulate,
+            243,
+            &simulate_fixture,
+        );
+        // Seeds 16/11: rise/fall, distance/heading exits, event/no event,
+        // both grid queries and approaching/receding contacts. Seeds 18/22:
+        // mode 2 -> 3 and object absent/present; seed 5: no contact.
+        crate::difftest::require_paths(
+            ee::s00::f_00113200__generated,
+            5,
+            &[1624, 2010, 1879, 3499, 1901],
+            &|c, seed| simulate_fixture(c, [16, 11, 18, 5, 22][seed as usize]),
+        );
+    }
 
     /// The predictor's `.lit4` constants (the test machine has no data image).
     fn predictor_pool(c: &mut Cpu) {

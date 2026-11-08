@@ -303,6 +303,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_report_rider_hit0,
         "Rider_ReportRiderHit0",
     ),
+    (0x0010_e910, rider_bank_trick_boost, "Rider_BankTrickBoost"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8991,6 +8992,215 @@ pub fn rider_report_rider_hit0(c: &mut Cpu) {
     })
 }
 
+/// `Rider_BankTrickBoost` (0x10e910): bank the landed trick's metrics,
+/// advance the ten-trick boost chain, notify effects/events, then award boost.
+/// The 60.0 uber timer at rider +0x2f0 is a duration in seconds, decayed
+/// by dt; it is not a per-tick rate term.
+pub fn rider_bank_trick_boost(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 44;
+        let frame = Frame::open(c, 0xa0);
+        c.g[T2][0] = c.g[A1][0];
+        frame.save(c, S0, 0x80);
+        c.g[T1][0] = c.g[A2][0];
+        frame.save(c, S1, 0x70);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S3, 0x50);
+        c.g[A2][0] = c.g[T2][0];
+        frame.save(c, S4, 0x40);
+        frame.save(c, S5, 0x30);
+        c.g[S4][0] = c.g[T0][0];
+        frame.save_fpr(c, 21, 0x98);
+        c.g[T0][0] = c.g[A3][0];
+        frame.save_fpr(c, 20, 0x90);
+        c.f[21] = c.f[12];
+        frame.save(c, S2, 0x60);
+        c.g[A3][0] = c.g[T1][0];
+        frame.save(c, S6, 0x20);
+        frame.save(c, S7, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = Addr(r32(c, S0) + 0x324).lw(c);
+        c.g[A1][0] = Addr(r32(c, S0) + 0x320).lw(c);
+        c.g[V0][0] = Addr(r32(c, S0) + 0x790).lw(c);
+        c.g[A1][0] ^= c.g[V1][0];
+        c.g[S2][0] = Addr(r32(c, V0) + 0x114).lw(c);
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = (c.g[A1][0] != 0) as u64;
+        c.g[S6][0] = Addr(r32(c, V0) + 0x134).lw(c);
+        c.g[S7][0] = Addr(r32(c, V0) + 0x198).lw(c);
+        Callee {
+            addr: 0x0011_9d40,
+            f: ee::s00::RiderMetrix_LandTrick,
+        }
+        .call(c, 0x0010_e988)?;
+        c.g[V1][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+        c.f[20] = c.f[0];
+        c.g[V0][0] = Addr(r32(c, S0) + 0x790).lw(c);
+        c.g[A1][0] = Addr(r32(c, V1) + 0x84).lw(c);
+        c.g[S1][0] = Addr(r32(c, V0) + 0x114).lw(c);
+        c.g[A2][0] = sx(r32(c, V0).wrapping_add(0xfc));
+        c.g[A0][0] = Addr(r32(c, A1) + 0x28).lw(c);
+        c.g[A1][0] = Addr(r32(c, S0) + 0x86c).lw(c);
+        c.g[S3][0] = Addr(r32(c, V0) + 0x134).lw(c);
+        c.g[S5][0] = Addr(r32(c, V0) + 0x198).lw(c);
+        call_ptr(c, 0x0027_0870, 0x0010_e9b4)?;
+        c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[S1][0] as i64)) as u64;
+        let added_tricks = c.g[V0][0] != 0;
+        c.g[A1][0] = c.g[S4][0];
+        if added_tricks {
+            c.cycles += 4;
+            c.g[A2][0] = Addr(r32(c, S0) + 0x2f4).lw(c);
+            c.g[V0][0] = ((c.g[A2][0] as i64) < 10) as u64;
+            let below_ten = c.g[V0][0] != 0;
+            c.g[A1][0] = 10;
+            if below_ten {
+                c.cycles += 7;
+                c.g[V0][0] = sx(r32(c, S1).wrapping_sub(r32(c, S2)));
+                c.g[A0][0] = sx(r32(c, A1).wrapping_sub(r32(c, A2)));
+                c.g[V1][0] = ((c.g[V0][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                if c.g[V1][0] == 0 {
+                    c.g[V0][0] = c.g[A0][0];
+                }
+                c.g[V0][0] = sx(r32(c, A2).wrapping_add(r32(c, V0)));
+                let full = c.g[V0][0] == c.g[A1][0];
+                Addr(r32(c, S0) + 0x2f4).sw(c, c.g[V0][0]);
+                if full {
+                    c.cycles += 3;
+                    c.g[AT][0] = 0x4270_0000;
+                    c.mtc1(AT, 0);
+                    Addr(r32(c, S0) + 0x2f0).write_fpu(c, FpuF32(c.f[0]));
+                }
+            }
+            c.cycles += 1;
+            c.g[A1][0] = c.g[S4][0];
+        }
+        c.cycles += 13;
+        c.g[A0][0] = Addr(r32(c, S0) + 0x77c).lw(c);
+        c.g[A3][0] = Addr(r32(c, A1) + 0x4c).lw(c);
+        c.g[A2][0] = sx(r32(c, A1).wrapping_add(0x10));
+        c.f[12] = c.f[21];
+        Callee {
+            addr: 0x0011_1aa0,
+            f: ee::s00::RiderBase_TriggerDynamicSpray,
+        }
+        .call(c, 0x0010_ea10)?;
+        c.g[V1][0] = Addr(r32(c, S0) + 0x6c0).lw(c);
+        c.g[A1][0] = sx(r32(c, S0).wrapping_add(0x6c0));
+        c.g[A0][0] = Addr(r32(c, V1) + 0x40).lh(c);
+        c.g[V0][0] = Addr(r32(c, V1) + 0x44).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+        call_ptr(c, target, 0x0010_ea28)?;
+        let notify = c.g[V0][0] != 0;
+        c.g[V0][0] = ((c.g[S6][0] as i64) < (c.g[S3][0] as i64)) as u64;
+        let mut skip_tail = false;
+        if notify {
+            c.cycles += 2;
+            let special = c.g[V0][0] != 0;
+            c.g[A0][0] = c.g[S0][0];
+            if special {
+                c.cycles += 5;
+                c.f[12] = FpuF32::ZERO.0;
+                c.g[A1][0] = 3;
+                Callee {
+                    addr: 0x0010_e028,
+                    f: ee::s00::Rider_SetTimedEvent,
+                }
+                .call(c, 0x0010_ea44)?;
+                c.g[A0][0] = c.g[S0][0];
+                skip_tail = true;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 6;
+                    c.f[12] = FpuF32::ZERO.0;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = 2;
+                    Callee {
+                        addr: 0x0010_e028,
+                        f: ee::s00::Rider_SetTimedEvent,
+                    }
+                    .call(c, 0x0010_ea68)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    skip_tail = true;
+                } else {
+                    c.cycles += 11;
+                    call_ptr(c, 0x0014_dc80, 0x0010_ea78)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A1][0] = 3;
+                    call_ptr(c, 0x0014_dd58, 0x0010_ea84)?;
+                    c.g[A1][0] = Addr(r32(c, S0) + 0x86c).lw(c);
+                    c.g[A2][0] = sx(r32(c, S5).wrapping_sub(r32(c, S7)));
+                    c.g[A0][0] = c.g[V0][0];
+                    call_ptr(c, 0x0014_9778, 0x0010_ea94)?;
+                    let award = c.g[V0][0] != 0;
+                    c.g[A0][0] = c.g[S0][0];
+                    if award {
+                        c.cycles += 3;
+                        c.f[12] = FpuF32::ZERO.0;
+                        c.g[A1][0] = 1;
+                        Callee {
+                            addr: 0x0010_e028,
+                            f: ee::s00::Rider_SetTimedEvent,
+                        }
+                        .call(c, 0x0010_eaa8)?;
+                    }
+                }
+            }
+        }
+        if !skip_tail {
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S0][0];
+        }
+        c.cycles += 8;
+        c.f[12] = c.f[20];
+        c.g[A1][0] = 1;
+        Callee {
+            addr: 0x0010_e098,
+            f: ee::s00::Rider_AddBoost,
+        }
+        .call(c, 0x0010_eab8)?;
+        c.f[0] = FpuF32::ZERO.0;
+        let positive = FpuF32(c.f[0]).lt(FpuF32(c.f[20]));
+        abi::set_fcc(c, positive);
+        if positive {
+            Addr(r32(c, S0) + 0x2ec).write_fpu(c, FpuF32(c.f[0]));
+        }
+        c.cycles += 25;
+        c.g[V1][0] = Addr(r32(c, S0) + 0x6c0).lw(c);
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(AT, 12);
+        c.g[A0][0] = Addr(r32(c, V1) + 0x88).lh(c);
+        c.f[12] = (FpuF32(c.f[21]) * FpuF32(c.f[12])).0;
+        c.g[V0][0] = Addr(r32(c, V1) + 0x8c).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+        call_ptr(c, target, 0x0010_eaec)?;
+        c.g[A0][0] = Addr(r32(c, GP) + 0x410).lw(c);
+        c.g[A1][0] = c.g[S0][0];
+        c.f[12] = c.f[20];
+        call_ptr(c, 0x0029_48d0, 0x0010_eafc)?;
+        for (r, off) in [
+            (S0, 0x80),
+            (S1, 0x70),
+            (S2, 0x60),
+            (S3, 0x50),
+            (S4, 0x40),
+            (S5, 0x30),
+            (S6, 0x20),
+            (S7, 0x10),
+        ] {
+            frame.restore(c, r, off);
+        }
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x98);
+        frame.restore_fpr(c, 20, 0x90);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -12384,6 +12594,159 @@ pub(crate) mod tests {
                 c.g[A0][0] = a as u64;
                 c.g[A1][0] = b as u64;
             },
+        );
+    }
+
+    const BANK_RIDER: u32 = DATA;
+    const BANK_METRIX: u32 = DATA + 0x1000;
+    const BANK_CASE: u32 = DATA + 0x3000;
+
+    fn bank_virtual(c: &mut Cpu, target: u32) {
+        let ret = r32(c, RA);
+        let case = c.bus.read32(BANK_CASE);
+        let interface = r32(c, A1);
+        fakes::fake(c, target, ret);
+        if c.pc == ret {
+            // The virtual BE interface callback can publish a combo while
+            // FinishTrick is running. LandTrick itself never changes +0x134;
+            // this per-machine side effect exercises BankTrickBoost's
+            // otherwise unreachable special-combo notification arm.
+            if target == fakes::FAKE + 0x40 && interface == 0 && case / 128 % 2 != 0 {
+                c.bus.write32(BANK_METRIX + 0x134, 3);
+            }
+            c.g[V0][0] = match target {
+                fakes::FAKE => (case / 8 % 2) as u64,
+                _ => 0,
+            };
+        }
+    }
+
+    /// Real scoring, replay, spray, timed event, boost and audio helpers;
+    /// only virtual rider/BE callbacks use the per-machine fake hooks.
+    fn bank_fixture(c: &mut Cpu, seed: u32) {
+        elf_image(c);
+        fakes::machine(c, seed, 0x10e9_10ab, 8);
+        c.hooks.miss = bank_virtual;
+        let case = seed;
+        c.bus.write32(BANK_CASE, case);
+        let (rider, m) = (BANK_RIDER, BANK_METRIX);
+        let (be, world, game, race, player, state, audio) = (
+            DATA + 0x20_0000,
+            DATA + 0x21_0000,
+            DATA + 0x21_1000,
+            DATA + 0x21_2000,
+            DATA + 0x21_3000,
+            DATA + 0x21_4000,
+            DATA + 0x22_0000,
+        );
+        c.bus.write32(GAME_GP - 0x1f04, be);
+        // A real BELibrary_GetInterface dispatch to one bounded virtual fake.
+        c.bus.write32(GAME_GP - 0x1efc, 0);
+        c.bus.write32(0x0053_08a8, DATA + 0x2800);
+        c.bus.write32(DATA + 0x2804, DATA + 0x2900);
+        c.bus.write32(DATA + 0x290c, fakes::FAKE + 0x40);
+        // Real rating queries: player index -> slot, character 0, rating 1.
+        for i in 0..6 {
+            c.bus.write32(0x0053_05b0 + 4 * i, 0);
+        }
+        c.bus.write32(0x0053_5b2c, u32::MAX);
+        c.bus.write32(0x0053_5b30, 0);
+        for i in 0..0x100 {
+            c.bus.write8(0x0053_5538 + i, 5);
+        }
+        c.bus.write32(GAME_GP - 0x848, world);
+        c.bus.write32(GAME_GP + 0x410, audio);
+        c.bus.write32(world + 0x84, game);
+        c.bus.write32(game + 0xc, race);
+        c.bus.write32(game + 0x28, DATA + 0x2a00);
+        c.bus.write32(DATA + 0x2a00, 1); // replay helper's early return
+        c.bus.write32(race + 0x7c, 1);
+        c.bus.write32(race + 0x40, player);
+        c.bus.write32(player + 0x18, state);
+        c.bus.write32(
+            state + 0x470,
+            if case % 5 == 0 { 1.0f32 } else { -1.0f32 }.to_bits(),
+        );
+        c.bus.write8(0x0053_5bc8 + 0x48, 0);
+        c.bus.write8(0x0053_5bc8 + 0x49, 0);
+        c.bus.write32(rider + 0x790, m);
+        c.bus.write32(rider + 0x320, case & 1);
+        c.bus.write32(rider + 0x324, case / 2 & 1);
+        c.bus.write32(rider + 0x304, 3); // AddBoost's real no-HUD path
+        c.bus
+            .write32(rider + 0x2f4, [0, 8, 9, 10][(case / 4 % 4) as usize]);
+        c.bus.write32(rider + 0x2f0, 7.0f32.to_bits());
+        c.bus.write32(rider + 0x2ec, 2.0f32.to_bits());
+        c.bus.write32(m + 0x114, 5);
+        c.bus.write32(m + 0x134, 2);
+        c.bus.write32(m + 0x198, 100);
+        c.bus
+            .write32(m + 0x14, [0.0f32, 0.25, 1.0][(case % 3) as usize].to_bits());
+        c.bus.write32(m + 0x1c4, 100.0f32.to_bits());
+        c.bus
+            .write32(m + 0x54, [0, 1, 4, 12][(case / 3 % 4) as usize]);
+        c.bus.write32(m + 0x74, case / 12 % 2);
+        c.bus
+            .write32(m + 0x84, if case / 64 % 2 == 0 { 0 } else { 200_000 });
+        c.bus.write32(m + 0x1ac, rider);
+        c.bus.write32(GAME_GP - 0x7a00, 0.125f32.to_bits());
+        c.bus.write32(rider + 0x77c, DATA + 0x4000);
+        c.bus.write32(rider + 0x86c, case % 6);
+        c.bus.write32(DATA + 0x244c, case % 3);
+        let vt = DATA + 0x2600;
+        c.bus.write32(rider + 0x6c0, vt);
+        for (off, target) in [
+            (0x40, fakes::FAKE),
+            (0x88, fakes::FAKE + 0x10),
+            (0x48, fakes::FAKE + 0x20),
+            (0x28, fakes::FAKE + 0x30),
+        ] {
+            c.bus.write32(vt + off + 4, target);
+        }
+        c.g[A0][0] = sx(rider);
+        c.g[A1][0] = (case % 2) as u64;
+        c.g[A2][0] = (case % 3) as u64;
+        c.g[A3][0] = (case % 4) as u64;
+        c.g[T0][0] = sx(DATA + 0x2400);
+        c.f[12] = (0.125f32 * (case + 1) as f32).to_bits();
+        c.pc = 0x0010_e910;
+    }
+
+    #[test]
+    fn rider_bank_trick_boost_matches() {
+        // Both arms have the same cycle cost, so prove the memory outcomes.
+        for (seed, expected) in [(9, 2.0f32), (8, 0.0f32)] {
+            for run in [
+                ee::s00::f_0010e910__generated as GuestFn,
+                rider_bank_trick_boost,
+            ] {
+                let mut c = crate::difftest::fresh();
+                bank_fixture(&mut c, seed);
+                // Complete the return path for these two memory witnesses.
+                c.bus.write32(fakes::LOG_UNWIND_AT, u32::MAX);
+                crate::difftest::run_generated(&mut c, run);
+                assert_eq!(c.pc, crate::difftest::RA, "seed {seed}");
+                assert_eq!(
+                    c.bus.read32(BANK_RIDER + 0x2ec),
+                    expected.to_bits(),
+                    "seed {seed}: boost timer store"
+                );
+            }
+        }
+        fakes::covered(
+            ee::s00::f_0010e910__generated,
+            rider_bank_trick_boost,
+            256,
+            &bank_fixture,
+        );
+        // 8: clamp to ten + timer + trick event; 9: no tricks/boost/award;
+        // 16: increment below ten + no notification; 142: already ten +
+        // special-combo event; 74: no added tricks + score-award event.
+        crate::difftest::require_paths(
+            ee::s00::f_0010e910__generated,
+            5,
+            &[1438, 1530, 1404, 1428, 1926],
+            &|c, seed| bank_fixture(c, [8, 9, 16, 142, 74][seed as usize]),
         );
     }
 }
