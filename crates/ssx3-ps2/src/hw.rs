@@ -679,7 +679,7 @@ impl Hw {
                 for (i, v) in data.iter().enumerate() {
                     mem_q_write(ram, spr, madr + i as u32 * 16, madr & 0x8000_0000 != 0, *v);
                 }
-                if std::env::var_os("SSX3_TRACE_DOWNLOAD").is_some() {
+                if ssx3_core::config::var_os("SSX3_TRACE_DOWNLOAD").is_some() {
                     let nz = data.iter().filter(|q| **q != 0).count();
                     eprintln!(
                         "[vif1-download] qwc {n} -> {madr:#x}: got {} qwords, {nz} non-zero",
@@ -875,8 +875,7 @@ impl Hw {
 fn watch_qword() -> Option<u64> {
     static W: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
     *W.get_or_init(|| {
-        std::env::var("SSX3_WATCH_QWORD")
-            .ok()
+        ssx3_core::config::var("SSX3_WATCH_QWORD")
             .and_then(|v| u64::from_str_radix(v.trim_start_matches("0x"), 16).ok())
     })
 }

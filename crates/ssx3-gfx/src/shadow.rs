@@ -94,7 +94,7 @@ fn view_planes(c: &Cam, size: (u32, u32)) -> Option<[[f64; 4]; 5]> {
 }
 
 fn env_f(k: &str) -> Option<Vec<f64>> {
-    let v = std::env::var(k).ok()?;
+    let v = ssx3_core::config::var(k)?;
     let r: Vec<f64> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
     (!r.is_empty()).then_some(r)
 }
@@ -200,7 +200,7 @@ pub fn lighting(world: &str) -> Lighting {
         .map_or(DEFAULT_LIGHTING, |c| c.1);
     static ENV: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     for part in ENV
-        .get_or_init(|| std::env::var("SSX3_LIGHT").unwrap_or_default())
+        .get_or_init(|| ssx3_core::config::var("SSX3_LIGHT").unwrap_or_default())
         .split(';')
     {
         let mut it = part.split_whitespace();
@@ -273,7 +273,7 @@ struct Knobs {
 fn knobs() -> &'static Knobs {
     static K: OnceLock<Knobs> = OnceLock::new();
     K.get_or_init(|| {
-        let env = |k: &str| std::env::var(k).unwrap_or_default();
+        let env = |k: &str| ssx3_core::config::var(k).unwrap_or_default();
         let sun = env("SSX3_SUN");
         Knobs {
             show: AtomicU32::new(show_code(&env("SSX3_SHADOW_SHOW")).to_bits()),
@@ -376,7 +376,7 @@ pub fn debug(what: &str) -> bool {
             .any(|m| m.load(Ordering::Relaxed) & (1 << i) != 0);
     }
     static S: OnceLock<String> = OnceLock::new();
-    S.get_or_init(|| std::env::var("SSX3_SHADOW_DEBUG").unwrap_or_default())
+    S.get_or_init(|| ssx3_core::config::var("SSX3_SHADOW_DEBUG").unwrap_or_default())
         .split(',')
         .any(|w| w == what)
 }

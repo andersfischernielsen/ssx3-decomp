@@ -52,7 +52,7 @@ pub(crate) fn install_renderer(c: &mut Cpu, s: &dyn Settings) -> Option<ssx3_gfx
     }
     // The light visibility queries from the native depth (unless a debug
     // switch already forces them).
-    if native && std::env::var_os("SSX3_DEBUG_LENSFX_VIS").is_none() {
+    if native && ssx3_core::config::var_os("SSX3_DEBUG_LENSFX_VIS").is_none() {
         assert!(ssx3_ee::set_override(LENSFX_QUERY, lensfx_query_native));
     }
     ssx3_ps2::frame_sink::set_native(native);

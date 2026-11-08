@@ -326,10 +326,7 @@ pub fn step_bits(hz: u32) -> u32 {
 
 /// Read `SSX3_TICK_HZ` at boot; returns the configured rate.
 pub fn install() -> u32 {
-    if let Some(hz) = std::env::var("SSX3_TICK_HZ")
-        .ok()
-        .and_then(|v| v.parse::<u32>().ok())
-    {
+    if let Some(hz) = ssx3_core::config::var("SSX3_TICK_HZ").and_then(|v| v.parse::<u32>().ok()) {
         set(hz);
     }
     configured()

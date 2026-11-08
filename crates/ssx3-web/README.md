@@ -44,6 +44,8 @@ The recompiled game as WebAssembly, drawn with WebGPU. Experimental.
 - **Sound.** The native mixer's 48 kHz stereo goes from the worker to the
   page each frame and plays through an AudioWorklet (`www/audio.js`), which
   buffers at most ~200 ms.
+- **Settings.** `SSX3_*` keys in the page's URL query are the game's
+  settings (`docs/options.md`), e.g. `?SSX3_TICK_HZ=120`.
 - **Image.** The game's 4:3 view boxed in the canvas, rendered at the box's
   pixel size (the render scale costs little: the time goes to the CPU
   side), no anisotropic filtering.

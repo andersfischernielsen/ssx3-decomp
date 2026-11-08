@@ -104,7 +104,7 @@ static MMIO_COUNTS: std::sync::Mutex<Option<std::collections::HashMap<(u32, bool
 
 #[inline]
 fn profile(p: u32, write: bool) {
-    if *MMIO_PROFILE.get_or_init(|| std::env::var_os("SSX3_MMIO_PROFILE").is_some()) {
+    if *MMIO_PROFILE.get_or_init(|| ssx3_core::config::var_os("SSX3_MMIO_PROFILE").is_some()) {
         *MMIO_COUNTS
             .lock()
             .unwrap()

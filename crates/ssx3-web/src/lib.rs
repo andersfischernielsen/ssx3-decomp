@@ -25,13 +25,32 @@ use ssx3_core::iso::{self, Source};
 use ssx3_engine::{Engine, EngineConfig};
 use wasm_bindgen::prelude::*;
 
-/// The settings file of the native front end: none here. Every setting is
-/// its default, except the ones that would change the original image.
-fn settings(key: &str) -> Option<String> {
-    match key {
-        "SSX3_ANISO" => Some("1".into()),
-        _ => None,
+/// The settings: what the page passes (`SSX3_*` keys, e.g. from the URL
+/// query), else the default, except the ones that would change the
+/// original image.
+fn settings(page: std::collections::HashMap<String, String>) -> impl ssx3_engine::Settings {
+    move |key: &str| match page.get(key) {
+        Some(v) => Some(v.clone()),
+        None if key == "SSX3_ANISO" => Some("1".into()),
+        None => None,
     }
+}
+
+/// A JS object's string-valued `SSX3_*` properties.
+fn page_settings(obj: &JsValue) -> std::collections::HashMap<String, String> {
+    let mut m = std::collections::HashMap::new();
+    if !obj.is_object() {
+        return m;
+    }
+    for entry in js_sys::Object::entries(obj.unchecked_ref()).iter() {
+        let pair: js_sys::Array = entry.unchecked_into();
+        if let (Some(k), Some(v)) = (pair.get(0).as_string(), pair.get(1).as_string()) {
+            if k.starts_with("SSX3_") {
+                m.insert(k, v);
+            }
+        }
+    }
+    m
 }
 
 fn log(s: &str) {
@@ -291,13 +310,16 @@ fn now_ms() -> f64 {
 
 /// Boot the game: `canvas` is drawn to, `iso` is the disc image, `helpers`
 /// the number of VU helper workers the page will start (0: none; needs
-/// cross-origin isolation for the shared buffer).
+/// cross-origin isolation for the shared buffer), `settings` an object of
+/// `SSX3_*` settings (`docs/options.md`; strings) or `undefined`.
 #[wasm_bindgen]
 pub async fn start(
     canvas: web_sys::OffscreenCanvas,
     iso: web_sys::Blob,
     helpers: u32,
+    settings: JsValue,
 ) -> Result<Game, JsValue> {
+    let page = page_settings(&settings);
     console_error_panic_hook::set_once();
     let blob = Arc::new(SendBlob(iso));
     iso::set_opener(Box::new(move || {
@@ -367,7 +389,10 @@ pub async fn start(
     });
 
     log("[ssx3] booting");
-    let engine = Engine::boot(EngineConfig::new(Box::new(settings)));
+    if !page.is_empty() {
+        log(&format!("[ssx3] settings: {page:?}"));
+    }
+    let engine = Engine::boot(EngineConfig::new(Box::new(self::settings(page))));
     let gfx = engine.renderer().cloned().ok_or("renderer: no GPU")?;
     let pool = (helpers > 0).then(|| vu_pool::Pool::new(helpers)).flatten();
     let vu_buffer = pool.as_ref().map(|p| p.sab.clone());

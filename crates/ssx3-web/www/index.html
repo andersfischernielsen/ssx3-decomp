@@ -76,8 +76,13 @@ document.getElementById("iso").onchange = (e) => {
     }
   };
   worker.onerror = (e) => { msg.textContent = e.message; };
-  const hp = new URLSearchParams(location.search).get("helpers");
-  worker.postMessage({ type: "start", canvas: off, iso, helpers: hp == null ? null : Number(hp) }, [off]);
+  const query = new URLSearchParams(location.search);
+  const hp = query.get("helpers");
+  // Settings: SSX3_* keys of the URL query (docs/options.md), e.g.
+  // ?SSX3_TICK_HZ=120&SSX3_SKIP_MOVIES=1.
+  const settings = {};
+  for (const [k, v] of query) if (k.startsWith("SSX3_")) settings[k] = v;
+  worker.postMessage({ type: "start", canvas: off, iso, helpers: hp == null ? null : Number(hp), settings }, [off]);
 
   let buttons = 0;
   const key = (down) => (e) => {

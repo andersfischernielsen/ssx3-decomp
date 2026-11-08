@@ -17,7 +17,7 @@ onmessage = async (e) => {
       // (`?helpers=N` on the page overrides the count.)
       const auto = self.crossOriginIsolated ? Math.max(1, Math.min(6, (navigator.hardwareConcurrency || 4) - 2)) : 0;
       const helpers = self.crossOriginIsolated && m.helpers != null ? m.helpers : auto;
-      game = await start(m.canvas, m.iso, helpers);
+      game = await start(m.canvas, m.iso, helpers, m.settings);
       const sab = game.vu_buffer();
       for (let id = 0; sab && id < helpers; id++) {
         new Worker("./vuworker.js", { type: "module" }).postMessage({ sab, id });

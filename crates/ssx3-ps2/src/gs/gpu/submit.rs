@@ -50,7 +50,7 @@ const MAX_QUEUED: usize = 2;
 impl Submitter {
     /// `None` when `SSX3_GS_SUBMIT_THREAD=0`.
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<Submitter> {
-        if std::env::var("SSX3_GS_SUBMIT_THREAD").is_ok_and(|v| v == "0") {
+        if ssx3_core::config::var("SSX3_GS_SUBMIT_THREAD").is_some_and(|v| v == "0") {
             return None;
         }
         let (tx, rx) = sync_channel::<Job>(MAX_QUEUED);
@@ -108,7 +108,7 @@ fn run(rx: Receiver<Job>, dev: wgpu::Device, q: wgpu::Queue, done: Arc<Done>) {
     let mut inflight: VecDeque<wgpu::SubmissionIndex> = VecDeque::new();
     // SSX3_GS_WAITS: (GPU busy time, last completion), reported at exit.
     type Busy = Arc<Mutex<(std::time::Duration, Option<web_time::Instant>)>>;
-    let busy: Option<Busy> = std::env::var_os("SSX3_GS_WAITS")
+    let busy: Option<Busy> = ssx3_core::config::var_os("SSX3_GS_WAITS")
         .map(|_| Arc::new(Mutex::new((std::time::Duration::ZERO, None))));
     let t0 = web_time::Instant::now();
     // Completion callbacks run in `poll`: poll often while measuring.

@@ -148,7 +148,7 @@ static LIST: Mutex<Vec<Recorded>> = Mutex::new(Vec::new());
 /// Captures are recorded (a renderer takes them); `SSX3_DIRECT=0` keeps
 /// them off.
 pub fn set_active(on: bool) {
-    let on = on && std::env::var("SSX3_DIRECT").map_or(true, |v| v != "0");
+    let on = on && ssx3_core::config::var("SSX3_DIRECT").map_or(true, |v| v != "0");
     ACTIVE.store(on, Ordering::Relaxed);
     if !on {
         LIST.lock().unwrap().clear();
@@ -189,7 +189,7 @@ static PACKETLESS: AtomicBool = AtomicBool::new(false);
 /// building packets (a native renderer takes the captures; the emulated
 /// GS would draw nothing of them). `SSX3_PACKETS=1` keeps the packets.
 pub fn set_packetless(on: bool) {
-    let on = on && std::env::var("SSX3_PACKETS").map_or(true, |v| v != "1");
+    let on = on && ssx3_core::config::var("SSX3_PACKETS").map_or(true, |v| v != "1");
     PACKETLESS.store(on, Ordering::Relaxed);
 }
 

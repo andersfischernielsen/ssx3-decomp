@@ -122,19 +122,17 @@ fn header(bytes: u32) -> Vec<u8> {
 impl Sink {
     /// Build the sink from the environment (see module docs).
     pub fn from_env() -> Self {
-        let wav = std::env::var("SSX3_WAV")
-            .ok()
-            .and_then(|p| match Wav::create(&p) {
-                Ok(w) => {
-                    eprintln!("[audio] recording to {p}");
-                    Some(w)
-                }
-                Err(e) => {
-                    eprintln!("[audio] cannot create {p}: {e}");
-                    None
-                }
-            });
-        let mode = std::env::var("SSX3_AUDIO").unwrap_or_default();
+        let wav = ssx3_core::config::var("SSX3_WAV").and_then(|p| match Wav::create(&p) {
+            Ok(w) => {
+                eprintln!("[audio] recording to {p}");
+                Some(w)
+            }
+            Err(e) => {
+                eprintln!("[audio] cannot create {p}: {e}");
+                None
+            }
+        });
+        let mode = ssx3_core::config::var("SSX3_AUDIO").unwrap_or_default();
         let ring = match mode.as_str() {
             "0" => None,
             // Test device: drained in real time, plays nothing.

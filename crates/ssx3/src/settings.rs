@@ -3,11 +3,12 @@
 //! the settings overlay (F10 in the window).
 //!
 //! The file holds `KEY = value` lines with the environment variables' names.
-//! At startup it is read into the process environment for every key the
-//! environment does not set itself, so each part of the program keeps
-//! reading its variable. Settings the window applies while running (field
-//! of view, aspect, resolution, catch-up, fullscreen) are read through
-//! [`get`], which sees changes made in the overlay.
+//! [`Desktop`] is the engine's settings and so every crate's
+//! (`ssx3_core::config`, under the environment). Settings the window
+//! applies while running (field of view, aspect, resolution, catch-up,
+//! fullscreen, the renderer's options) are read through [`get`], which sees
+//! changes made in the overlay; the others keep their value from startup
+//! until the next start.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -244,6 +245,8 @@ pub fn is_debug(item: &Item) -> bool {
 
 struct State {
     values: BTreeMap<String, String>,
+    /// The values at startup (settings that apply at the next start).
+    boot: BTreeMap<String, String>,
     /// Keys the environment set when the program started (they win over the
     /// file at the next start too).
     from_env: Vec<String>,
@@ -273,29 +276,25 @@ fn parse(text: &str) -> BTreeMap<String, String> {
         .collect()
 }
 
-/// Read the settings file and put its values into the environment where
-/// the environment has none. Call first thing in `main`, before any thread
-/// starts.
+/// Read the settings file (the environment over it). Call first thing in
+/// `main`, before the engine boots.
 pub fn load() {
     let mut values = std::fs::read_to_string(path())
         .map(|t| parse(&t))
         .unwrap_or_default();
     let mut from_env = Vec::new();
     for item in ITEMS {
-        match std::env::var(item.key) {
-            Ok(v) => {
-                values.insert(item.key.to_string(), v);
-                from_env.push(item.key.to_string());
-            }
-            Err(_) => {
-                if let Some(v) = values.get(item.key).filter(|v| !v.is_empty()) {
-                    // SAFETY (edition 2021: safe): no other thread runs yet.
-                    std::env::set_var(item.key, v);
-                }
-            }
+        if let Ok(v) = std::env::var(item.key) {
+            values.insert(item.key.to_string(), v);
+            from_env.push(item.key.to_string());
         }
     }
-    *STATE.write().unwrap() = Some(State { values, from_env });
+    let boot = values.clone();
+    *STATE.write().unwrap() = Some(State {
+        values,
+        boot,
+        from_env,
+    });
 }
 
 /// A setting's current value (`None`: the default).
@@ -312,10 +311,15 @@ pub struct Desktop;
 
 impl ssx3_engine::Settings for Desktop {
     fn get(&self, key: &str) -> Option<String> {
-        if ITEMS.iter().any(|i| i.key == key) {
-            get(key)
-        } else {
-            std::env::var(key).ok().filter(|v| !v.is_empty())
+        match ITEMS.iter().find(|i| i.key == key) {
+            Some(i) if i.live => get(key),
+            // Applies at the next start: the value at startup.
+            Some(_) => STATE
+                .read()
+                .unwrap()
+                .as_ref()
+                .and_then(|s| s.boot.get(key).filter(|v| !v.is_empty()).cloned()),
+            None => std::env::var(key).ok().filter(|v| !v.is_empty()),
         }
     }
 }
@@ -334,6 +338,7 @@ pub fn set(key: &str, value: &str) {
     let mut g = STATE.write().unwrap();
     let s = g.get_or_insert_with(|| State {
         values: BTreeMap::new(),
+        boot: BTreeMap::new(),
         from_env: Vec::new(),
     });
     s.values.insert(key.to_string(), value.to_string());

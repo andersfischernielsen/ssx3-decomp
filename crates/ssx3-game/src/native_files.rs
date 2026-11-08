@@ -112,7 +112,7 @@ fn repo_root() -> PathBuf {
 /// log if `SSX3_FILE_LOG` is. Call after [`crate::install`]. Returns whether
 /// native files are on.
 pub fn install() -> bool {
-    if let Ok(p) = std::env::var("SSX3_FILE_LOG") {
+    if let Some(p) = ssx3_core::config::var("SSX3_FILE_LOG") {
         match File::create(&p) {
             Ok(f) => {
                 *LOG.lock().unwrap() = Some(f);
@@ -125,10 +125,10 @@ pub fn install() -> bool {
         }
     }
     // On by default; SSX3_NATIVE_FILES=0 keeps the emulated CD.
-    if std::env::var("SSX3_NATIVE_FILES").is_ok_and(|v| v == "0") {
+    if ssx3_core::config::var("SSX3_NATIVE_FILES").is_some_and(|v| v == "0") {
         return false;
     }
-    let src = match std::env::var_os("SSX3_DATA_DIR") {
+    let src = match ssx3_core::config::var_os("SSX3_DATA_DIR") {
         Some(d) => {
             let d = PathBuf::from(d);
             if !d.is_dir() {

@@ -30,8 +30,9 @@ mod debug;
 mod render;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
-pub use boot::{init_paths, repo_root, BOOT_ENV_KEYS};
+pub use boot::{init_paths, repo_root};
 pub use debug::{dump, status};
 pub use ssx3_gfx::Renderer;
 pub use ssx3_ps2::Cpu;
@@ -44,13 +45,14 @@ use ssx3_game::tick::{self, Pacer};
 /// fixed values, a platform's preferences). Keys are the `SSX3_*` names of
 /// `docs/options.md`; `None` (or an empty value) is the default.
 ///
-/// The engine reads the image settings through this whenever they apply
-/// (at boot and on [`Engine::setting_changed`]), so a front end that edits
-/// settings while running sees them take effect. Settings the game's crates
-/// read while booting ([`BOOT_ENV_KEYS`]) are copied into the process
-/// environment by [`Engine::boot`] unless the environment sets them; debug
-/// switches stay environment variables.
-pub trait Settings {
+/// [`Engine::boot`] installs it as the settings of every crate
+/// (`ssx3_core::config`): paths, sound, the game rate, debug switches. The
+/// process environment wins over it. The engine reads the image settings
+/// through it whenever they apply (at boot and on
+/// [`Engine::setting_changed`]), so a front end that edits settings while
+/// running sees them take effect; most others are read once, at boot or
+/// when first needed.
+pub trait Settings: Send + Sync {
     fn get(&self, key: &str) -> Option<String>;
 }
 
@@ -63,7 +65,7 @@ impl Settings for EnvSettings {
     }
 }
 
-impl<F: Fn(&str) -> Option<String>> Settings for F {
+impl<F: Fn(&str) -> Option<String> + Send + Sync> Settings for F {
     fn get(&self, key: &str) -> Option<String> {
         self(key).filter(|v| !v.is_empty())
     }
@@ -127,7 +129,7 @@ pub struct Advance {
 pub struct Engine {
     cpu: Box<Cpu>,
     gfx: Option<Renderer>,
-    settings: Box<dyn Settings>,
+    settings: Arc<dyn Settings>,
     pads: [u16; 2],
     sticks: [[u8; 4]; 2],
     pacer: Pacer,
@@ -154,9 +156,13 @@ impl Engine {
     /// GPU context (`ssx3_ps2::gpu`) is created here unless the front end
     /// created it first (the browser must: `gpu::init_context().await`).
     pub fn boot(config: EngineConfig) -> Engine {
+        let settings: Arc<dyn Settings> = Arc::from(config.settings);
+        // Every crate's settings (`ssx3_core::config`), under the environment.
+        let provider = settings.clone();
+        if ssx3_core::config::set_provider(Box::new(move |k| provider.get(k))).is_err() {
+            eprintln!("[ssx3-engine] settings provider already installed; keeping the first");
+        }
         init_paths(config.data_root, config.save_root, config.find_pack);
-        let settings = config.settings;
-        boot::export_boot_settings(&*settings);
         let skip = settings
             .get("SSX3_SKIP_MOVIES")
             .map(|v| v != "0")

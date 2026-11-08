@@ -309,7 +309,7 @@ pub fn compare(generated: GuestFn, hand: GuestFn, setup: &dyn Fn(&mut Cpu)) -> R
 /// assertions in many tests need them; a seed costs ~4 ms).
 /// `SSX3_DIFF_SEEDS=N` caps at N for a quick smoke run.
 pub fn seed_count(seeds: u32) -> u32 {
-    match std::env::var("SSX3_DIFF_SEEDS").ok().as_deref() {
+    match ssx3_core::config::var("SSX3_DIFF_SEEDS").as_deref() {
         Some("all") => seeds,
         Some(v) => seeds.min(v.parse().unwrap_or(32)),
         None => seeds,
@@ -322,7 +322,7 @@ pub fn seed_count(seeds: u32) -> u32 {
 /// extension). `SSX3_DIFF_STRICT=args`: only the arguments of the calls
 /// both make (a missing argument setup).
 pub fn strict_ok(soft: &[String]) -> bool {
-    match std::env::var("SSX3_DIFF_STRICT").ok().as_deref() {
+    match ssx3_core::config::var("SSX3_DIFF_STRICT").as_deref() {
         None => true,
         Some("args") => !soft.iter().any(|m| m.starts_with("call args")),
         Some(_) => soft.is_empty(),

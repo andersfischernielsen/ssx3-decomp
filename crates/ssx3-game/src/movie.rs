@@ -32,7 +32,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 /// Whether the native libmpeg is installed (`SSX3_NATIVE_MPEG`, default on).
 pub fn on() -> bool {
-    std::env::var("SSX3_NATIVE_MPEG").map_or(true, |v| v != "0")
+    ssx3_core::config::var("SSX3_NATIVE_MPEG").map_or(true, |v| v != "0")
 }
 
 /// The replacements to install: the native libmpeg, or with
@@ -54,7 +54,7 @@ pub fn overrides() -> &'static [(u32, GuestFn, &'static str)] {
 }
 
 fn hash_on() -> bool {
-    std::env::var_os("SSX3_MOVIE_HASH").is_some()
+    ssx3_core::config::var_os("SSX3_MOVIE_HASH").is_some()
 }
 
 /// FNV-1a of guest RAM `[a, a + n)`, printed with the picture number.
@@ -69,7 +69,7 @@ fn print_hash(c: &Cpu, a: u32, n: usize) {
     let k = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     eprintln!("[movie] picture {k} hash {h:016x}");
     // (`SSX3_MOVIE_DUMP=<dir>`: the first pictures' bytes, for a diff.)
-    if let (Some(dir), true) = (std::env::var_os("SSX3_MOVIE_DUMP"), k < 8) {
+    if let (Some(dir), true) = (ssx3_core::config::var_os("SSX3_MOVIE_DUMP"), k < 8) {
         if let Some(b) = c.bus.ram.get(o..o + n) {
             let _ = std::fs::write(std::path::Path::new(&dir).join(format!("pic{k}.rgba")), b);
         }

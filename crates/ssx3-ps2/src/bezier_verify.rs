@@ -32,7 +32,7 @@ use crate::Qword;
 
 pub fn enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("SSX3_VERIFY_BEZIER").is_some())
+    *ON.get_or_init(|| ssx3_core::config::var_os("SSX3_VERIFY_BEZIER").is_some())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -148,8 +148,7 @@ pub fn end(mut p: Pending, vu: &Vu) {
     };
     let mut g = STATE.lock().unwrap();
     let s = g.get_or_insert_with(|| State {
-        dump: std::env::var("SSX3_VERIFY_BEZIER_DUMP")
-            .ok()
+        dump: ssx3_core::config::var("SSX3_VERIFY_BEZIER_DUMP")
             .and_then(|path| std::fs::File::create(path).ok()),
         ..State::default()
     });

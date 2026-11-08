@@ -106,12 +106,13 @@ impl App {
                         );
                     }
                     gilrs::EventType::ButtonPressed(b, code)
-                        if std::env::var_os("SSX3_PAD_DEBUG").is_some() =>
+                        if ssx3_core::config::var_os("SSX3_PAD_DEBUG").is_some() =>
                     {
                         eprintln!("[pad] pressed {b:?} (code {code:?})");
                     }
                     gilrs::EventType::AxisChanged(a, v, code)
-                        if std::env::var_os("SSX3_PAD_DEBUG").is_some() && v.abs() > 0.5 =>
+                        if ssx3_core::config::var_os("SSX3_PAD_DEBUG").is_some()
+                            && v.abs() > 0.5 =>
                     {
                         eprintln!("[pad] axis {a:?} {v:.2} (code {code:?})");
                     }
@@ -600,7 +601,7 @@ enum MenuKey {
 /// image, anamorphic), so anamorphic is shown at 16:9.
 fn display_aspect(cpu: &Cpu) -> f32 {
     static FORCED: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
-    let forced = *FORCED.get_or_init(|| match std::env::var("SSX3_ASPECT").ok()?.as_str() {
+    let forced = *FORCED.get_or_init(|| match ssx3_core::config::var("SSX3_ASPECT")?.as_str() {
         "stretch" => Some(0.0),
         "16:9" => Some(16.0 / 9.0),
         "4:3" => Some(4.0 / 3.0),
@@ -635,9 +636,7 @@ fn main() {
         frame: Vec::new(),
         last: Instant::now(),
         started: Instant::now(),
-        exit_after: std::env::var("SSX3_EXIT_AFTER_FRAMES")
-            .ok()
-            .and_then(|s| s.parse().ok()),
+        exit_after: ssx3_core::config::var("SSX3_EXIT_AFTER_FRAMES").and_then(|s| s.parse().ok()),
         shots: 0,
         fps_mark: Instant::now(),
         keys: 0,

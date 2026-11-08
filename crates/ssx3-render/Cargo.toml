@@ -10,6 +10,8 @@ license.workspace = true
 # microcode, for the bit-exact native VU1 programs (mat3.rs). The translated
 # microcode itself is not needed here.
 ssx3-vu = { path = "../ssx3-vu", default-features = false }
+# Settings lookups (`ssx3_core::config`).
+ssx3-core.workspace = true
 
 [dev-dependencies]
 # The translated microcode, as the reference the native programs are tested

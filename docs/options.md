@@ -8,8 +8,11 @@ overrides the file. The overlay's last rows are a debug group for the real-time
 lighting (views, sun, casters, the bake; not saved): see "Real-time lighting:
 tuning and debugging" below.
 
-All options are environment variables. The defaults are the verified, exact
-configuration. The plain command above is the recommended way to play.
+All options are environment variables. A front end can also give them as its
+settings (the window's settings file, the browser page's URL query, an app's
+preferences; `docs/frontends.md`); the environment wins over those. The
+defaults are the verified, exact configuration. The plain command above is
+the recommended way to play.
 
 **Everyday:**
 

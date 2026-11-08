@@ -7,7 +7,7 @@
 
 use std::time::Instant;
 
-use ssx3_engine::{Engine, EngineConfig, EnvSettings};
+use ssx3_engine::{Engine, EngineConfig, EnvSettings, Settings};
 
 #[path = "../png.rs"]
 mod png;
@@ -16,21 +16,20 @@ fn main() {
     ssx3_engine::init_paths(None, None, true);
     let args: Vec<String> = std::env::args().collect();
     let frames: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(300);
-    let slow_ms: Option<f64> = std::env::var("SSX3_SLOW_FRAME_MS")
-        .ok()
-        .and_then(|v| v.parse().ok());
+    let slow_ms: Option<f64> =
+        ssx3_core::config::var("SSX3_SLOW_FRAME_MS").and_then(|v| v.parse().ok());
     // Test knob: SSX3_CATCHUP=1 runs the window's real-time catch-up here
     // too (with SSX3_SLOW_FRAME_MS: a slow host). Not deterministic.
-    let mut catch_up = std::env::var("SSX3_CATCHUP")
-        .is_ok_and(|v| v == "1")
+    let mut catch_up = ssx3_core::config::var("SSX3_CATCHUP")
+        .is_some_and(|v| v == "1")
         .then(|| {
             ssx3_ps2::machine::set_realtime(true);
             ssx3_game::tick::Pacer::default()
         });
     // Test knob: SSX3_UPDATES_PER_VSYNC=N[@F] queues N game updates at every
     // VSync from frame F on (the catch-up path, deterministic).
-    let forced_updates: Option<(u32, u64)> =
-        std::env::var("SSX3_UPDATES_PER_VSYNC").ok().and_then(|v| {
+    let forced_updates: Option<(u32, u64)> = ssx3_core::config::var("SSX3_UPDATES_PER_VSYNC")
+        .and_then(|v| {
             let (n, f) = v.split_once('@').unwrap_or((&v, "0"));
             Some((n.parse().ok()?, f.parse().ok()?))
         });
@@ -42,29 +41,29 @@ fn main() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
     // SSX3_SHOT_FROM=F: screenshots only from frame F on.
-    let shot_from: u64 = std::env::var("SSX3_SHOT_FROM")
-        .ok()
+    let shot_from: u64 = ssx3_core::config::var("SSX3_SHOT_FROM")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
-    let shot_dir = std::env::var("SSX3_SHOTS").unwrap_or_else(|_| "/tmp/ssx3-shots".into());
+    let shot_dir = ssx3_core::config::var("SSX3_SHOTS").unwrap_or_else(|| "/tmp/ssx3-shots".into());
     let _ = std::fs::create_dir_all(&shot_dir);
 
-    // Headless runs do not open the audio device unless asked (SSX3_AUDIO=1);
-    // SSX3_WAV=file.wav records the IOP's audio output.
-    if std::env::var_os("SSX3_AUDIO").is_none() {
-        std::env::set_var("SSX3_AUDIO", "0");
-    }
     // Settings from the environment; the boot movies skipped unless
-    // SSX3_SKIP_MOVIES=0 (scripted input timings assume it).
+    // SSX3_SKIP_MOVIES=0 (scripted input timings assume it). Headless runs
+    // do not open the audio device unless asked (SSX3_AUDIO=1);
+    // SSX3_WAV=file.wav records the IOP's audio output.
+    let settings = |k: &str| match k {
+        "SSX3_AUDIO" => Some("0".to_string()),
+        _ => EnvSettings.get(k),
+    };
     let mut engine = Engine::boot(EngineConfig {
         find_pack: true,
         skip_movies: true,
-        ..EngineConfig::new(Box::new(EnvSettings))
+        ..EngineConfig::new(Box::new(settings))
     });
     let gfx = engine.renderer().cloned();
     // Check of the browser's VU offload path: every chunk of VU1 calls
     // encoded, run from the bytes and decoded (`ssx3_render::vujob`).
-    if std::env::var_os("SSX3_VU_OFFLOAD_SELFTEST").is_some() {
+    if ssx3_core::config::var_os("SSX3_VU_OFFLOAD_SELFTEST").is_some() {
         ssx3_gfx::set_vu_offload(
             Box::new(|jobs| {
                 let r: Vec<Vec<u8>> = jobs.iter().map(|j| ssx3_gfx::run_vu_job(j, &[])).collect();
@@ -79,7 +78,7 @@ fn main() {
     // Scripted input: SSX3_INPUT="300:4000:10,400:0008:10" presses Cross (0x4000)
     // at frame 300 for 10 frames, then Start (0x0008) at frame 400. An optional
     // fourth field picks the pad (1 or 2; default 1): "500:0008:8:2".
-    let script: Vec<(u64, u16, u64, usize)> = std::env::var("SSX3_INPUT")
+    let script: Vec<(u64, u16, u64, usize)> = ssx3_core::config::var("SSX3_INPUT")
         .unwrap_or_default()
         .split(',')
         .filter_map(|e| {
@@ -98,7 +97,7 @@ fn main() {
     // records frames 2380..2383 (and 4050..4053) for offline replay with
     // `gs_replay`.
     #[cfg(feature = "emu-gs")]
-    let captures: Vec<(u64, u64, String)> = std::env::var("SSX3_GS_CAPTURE")
+    let captures: Vec<(u64, u64, String)> = ssx3_core::config::var("SSX3_GS_CAPTURE")
         .unwrap_or_default()
         .split(',')
         .filter_map(|e| {
@@ -115,7 +114,7 @@ fn main() {
     // thread: guest code, building the typed frame, waiting for the render
     // thread when it is a frame behind), reported with the render thread's
     // and the frame sink's stage times over the same window.
-    let bench: Option<(u64, u64)> = std::env::var("SSX3_BENCH").ok().and_then(|v| {
+    let bench: Option<(u64, u64)> = ssx3_core::config::var("SSX3_BENCH").and_then(|v| {
         let (a, b) = v.split_once(':')?;
         Some((a.parse().ok()?, b.parse().ok()?))
     });
@@ -234,7 +233,7 @@ fn main() {
             #[cfg(feature = "emu-gs")]
             let c = engine.cpu_mut();
             let path = format!("{shot_dir}/frame{f:05}.png");
-            if std::env::var("SSX3_SHADOW_DEBUG").is_ok_and(|v| v.contains("lightlog")) {
+            if ssx3_core::config::var("SSX3_SHADOW_DEBUG").is_some_and(|v| v.contains("lightlog")) {
                 eprintln!("[shot] {f}");
             }
             // Native: the draw-layer renderer's image is the one shown.
@@ -268,12 +267,12 @@ fn main() {
                 );
             }
             // SSX3_FRAME_DUMP=n: the last n frames' inputs, for gfx_replay.
-            if std::env::var_os("SSX3_FRAME_DUMP").is_some() {
+            if ssx3_core::config::var_os("SSX3_FRAME_DUMP").is_some() {
                 let dir = format!("{shot_dir}/frame{f:05}-dump");
                 let _ = std::fs::create_dir_all(&dir);
                 let _ = ssx3_ps2::frame_sink::write_dumps(&dir);
             }
-            if std::env::var_os("SSX3_GFX_RTDUMP").is_some() {
+            if ssx3_core::config::var_os("SSX3_GFX_RTDUMP").is_some() {
                 for (fbp, w, h, px) in gfx.as_ref().map(|g| g.read_rts()).unwrap_or_default() {
                     let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
                     let _ = std::fs::write(
@@ -295,7 +294,7 @@ fn main() {
             }
             // SSX3_HIRES_SHOTS=dir: also the N× copies (SSX3_RENDER_SCALE).
             #[cfg(feature = "emu-gs")]
-            if let Ok(dir) = std::env::var("SSX3_HIRES_SHOTS") {
+            if let Some(dir) = ssx3_core::config::var("SSX3_HIRES_SHOTS") {
                 for (label, w, h, px) in ssx3_ps2::m!(c).hw.gs.core().hires_snapshots() {
                     let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
                     let _ = std::fs::write(
@@ -341,7 +340,7 @@ fn main() {
     // Debug: SSX3_DUMP_TEX=tbp:tbw:psm:w:h:path writes that VRAM texture as
     // raw RGBA (CT32/CT24) at exit.
     #[cfg(feature = "emu-gs")]
-    if let Ok(spec) = std::env::var("SSX3_DUMP_TEX") {
+    if let Some(spec) = ssx3_core::config::var("SSX3_DUMP_TEX") {
         let p: Vec<&str> = spec.split(':').collect();
         let n = |i: usize| u32::from_str_radix(p[i].trim_start_matches("0x"), 16).unwrap_or(0);
         let (tbp, tbw, psm, w, h) = (n(0), n(1), n(2), n(3), n(4));
@@ -357,7 +356,7 @@ fn main() {
         let _ = std::fs::write(p[5], out);
     }
     #[cfg(feature = "emu-gs")]
-    if std::env::var("SSX3_VRAM_DUMP").is_ok() {
+    if ssx3_core::config::var("SSX3_VRAM_DUMP").is_some() {
         use ssx3_ps2::gs::swizzle::{read_pixel, PSMCT32};
         let mut v = vec![0u32; 1024 * 1024];
         let gs = ssx3_ps2::m!(c).hw.gs.core();
@@ -375,7 +374,7 @@ fn main() {
             .collect();
         eprintln!("gs priv: {}", regs.join(" "));
     }
-    if let Ok(v) = std::env::var("SSX3_MEMSCAN") {
+    if let Some(v) = ssx3_core::config::var("SSX3_MEMSCAN") {
         let want = u64::from_str_radix(v.trim_start_matches("0x"), 16).unwrap_or(0);
         let scan = |name: &str, mem: &[u8]| {
             let mut hits = 0;
@@ -394,7 +393,7 @@ fn main() {
     }
     // Debug: SSX3_RAM_DUMP=path writes the 32 MiB of EE RAM at exit (compare
     // with a PCSX2 dump via tools/pine.py).
-    if let Ok(path) = std::env::var("SSX3_RAM_DUMP") {
+    if let Some(path) = ssx3_core::config::var("SSX3_RAM_DUMP") {
         if let Err(e) = std::fs::write(&path, &c.bus.ram[..]) {
             eprintln!("SSX3_RAM_DUMP {path}: {e}");
         }
@@ -436,7 +435,7 @@ fn main() {
     }
     // Debug: SSX3_PEEK="addr:words,addr:words" dumps EE memory at exit
     // (an address of the form gp+N is taken relative to $gp).
-    if let Ok(spec) = std::env::var("SSX3_PEEK") {
+    if let Some(spec) = ssx3_core::config::var("SSX3_PEEK") {
         let gp = c.g[28][0] as u32;
         for item in spec.split(',') {
             let (a, n) = item.split_once(':').unwrap_or((item, "4"));
@@ -471,7 +470,7 @@ fn main() {
     // SSX3_TEXDUMP="tbp:tbw:psm:w:h:cbp" (hex tbp/psm/cbp) writes the texture
     // (palettised via a CT32 CSM1 CLUT at cbp) to <shots>/tex.png.
     #[cfg(feature = "emu-gs")]
-    if let Ok(spec) = std::env::var("SSX3_TEXDUMP") {
+    if let Some(spec) = ssx3_core::config::var("SSX3_TEXDUMP") {
         use ssx3_ps2::gs::swizzle::{read_pixel, PSMCT32};
         let p: Vec<u32> = spec
             .split(':')

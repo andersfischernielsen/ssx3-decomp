@@ -7,8 +7,6 @@ use std::sync::OnceLock;
 
 use ssx3_ps2::{machine, Cpu};
 
-use crate::Settings;
-
 /// The checkout this crate was built from (the defaults for the disc image,
 /// `orig/` and `generated/entries.txt` when no root or override names them).
 pub fn repo_root() -> PathBuf {
@@ -26,8 +24,9 @@ static PATHS: OnceLock<bool> = OnceLock::new();
 /// - `data_root` / `save_root`: the roots of `ssx3_core::platform_paths`
 ///   (game data, may be read-only; memory card, settings, dumps; writable).
 ///   Both `None` keeps the checkout-relative defaults; one alone takes the
-///   checkout (data) or `saves` (saves) for the other. Per-file environment
-///   overrides (`SSX3_ISO`, `SSX3_MEMCARD`, ...) still win.
+///   checkout (data) or `saves` (saves) for the other. Per-file settings
+///   (`SSX3_ISO`, `SSX3_MEMCARD`, ...: the environment, then the front end's
+///   settings, `ssx3_core::config`) still win.
 /// - `find_pack`: a standalone build (`tools/bundle.py`): the disc comes from
 ///   the pack in or next to the executable (or in the data root), and the
 ///   memory card and settings live in the save root, else the user's data
@@ -57,13 +56,12 @@ fn init_standalone() -> bool {
     }));
     STANDALONE.store(true, Ordering::Relaxed);
     let dir = ssx3_core::platform_paths::standalone_saves(data_dir());
+    // Defaults under the environment and the front end's settings.
     for (key, file) in [
         ("SSX3_MEMCARD", "ssx3-mc0.ps2"),
         ("SSX3_SETTINGS", "ssx3-settings.cfg"),
     ] {
-        if std::env::var_os(key).is_none() {
-            std::env::set_var(key, dir.join(file));
-        }
+        ssx3_core::config::set_default(key, dir.join(file).to_string_lossy());
     }
     eprintln!(
         "[standalone] game data from {shown}; saves in {}",
@@ -90,27 +88,6 @@ fn data_dir() -> PathBuf {
             .or_else(|| env("HOME").map(|h| h.join(".local/share")))
             .unwrap_or_else(|| PathBuf::from("."))
             .join("ssx3")
-    }
-}
-
-/// Settings the game's crates read from the process environment while they
-/// boot. [`crate::Engine::boot`] copies a front end's value for each into
-/// the environment when the environment does not set it already.
-pub const BOOT_ENV_KEYS: &[&str] = &[
-    "SSX3_TICK_HZ",
-    "SSX3_SND",
-    "SSX3_IOP_SIO2",
-    "SSX3_NATIVE_FILES",
-    "SSX3_AUDIO",
-];
-
-pub(crate) fn export_boot_settings(settings: &dyn Settings) {
-    for key in BOOT_ENV_KEYS {
-        if std::env::var_os(key).is_none() {
-            if let Some(v) = settings.get(key) {
-                std::env::set_var(key, v);
-            }
-        }
     }
 }
 
@@ -151,7 +128,7 @@ pub(crate) fn boot(skip_movies: bool) -> Box<Cpu> {
     // when no adapter is usable); SSX3_GS=cpu forces the software path.
     // (The browser: no GS rasterizer at all, see `install_renderer`.)
     #[cfg(feature = "emu-gs")]
-    if std::env::var("SSX3_GS").is_err() && !cfg!(target_arch = "wasm32") {
+    if ssx3_core::config::var("SSX3_GS").is_none() && !cfg!(target_arch = "wasm32") {
         ssx3_ps2::m!(c)
             .hw
             .gs

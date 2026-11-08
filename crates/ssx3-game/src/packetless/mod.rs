@@ -671,12 +671,14 @@ pub(crate) fn dispatch_patch_fx(c: &mut Cpu, packets: fn(&mut Cpu)) {
 
 fn keep_native() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("SSX3_DRAW_CHECK").is_ok_and(|v| v == "2"))
+    *ON.get_or_init(|| ssx3_core::config::var("SSX3_DRAW_CHECK").is_some_and(|v| v == "2"))
 }
 
 pub(crate) fn check_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("SSX3_DRAW_CHECK").is_ok_and(|v| !v.is_empty() && v != "0"))
+    *ON.get_or_init(|| {
+        ssx3_core::config::var("SSX3_DRAW_CHECK").is_some_and(|v| !v.is_empty() && v != "0")
+    })
 }
 
 /// Per checked function: calls, mismatches.
@@ -744,7 +746,7 @@ pub(crate) fn record_watch(c: &mut Cpu, gm: u32, records: u32) -> Watch {
 fn skipped(name: &str) -> bool {
     static SKIP: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     SKIP.get_or_init(|| {
-        std::env::var("SSX3_PACKETLESS_SKIP")
+        ssx3_core::config::var("SSX3_PACKETLESS_SKIP")
             .map(|v| v.split(',').map(str::to_string).collect())
             .unwrap_or_default()
     })
@@ -802,8 +804,7 @@ pub(crate) fn dispatch_ram(
     } else if check_on() {
         static EVERY: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
         let every = *EVERY.get_or_init(|| {
-            std::env::var("SSX3_DRAW_CHECK_EVERY")
-                .ok()
+            ssx3_core::config::var("SSX3_DRAW_CHECK_EVERY")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(8)
                 .max(1)

@@ -26,9 +26,9 @@ use ssx3_engine::{Engine, EngineConfig, EnvSettings, Pace, Settings};
 // otherwise (later calls do nothing).
 pub fn init_paths(data_root: Option<PathBuf>, save_root: Option<PathBuf>, find_pack: bool) -> bool;
 
-pub trait Settings { fn get(&self, key: &str) -> Option<String>; }
-pub struct EnvSettings;                               // the process environment
-impl<F: Fn(&str) -> Option<String>> Settings for F {} // a closure or fn
+pub trait Settings: Send + Sync { fn get(&self, key: &str) -> Option<String>; }
+pub struct EnvSettings;                                             // the process environment
+impl<F: Fn(&str) -> Option<String> + Send + Sync> Settings for F {} // a closure or fn
 
 pub struct EngineConfig {
     pub data_root: Option<PathBuf>, // disc image, orig/, texture packs
@@ -100,13 +100,17 @@ The engine re-exports the crates a front end touches (`ssx3_ps2`,
 1. **Paths and settings.** Call `init_paths` if the game data or the saves
    are not in the checkout (an app's storage). Give the engine a `Settings`:
    the window reads its settings file with the environment over it, the
-   headless runner reads the environment (`EnvSettings`), the browser has
-   fixed values. Keys are the `SSX3_*` names in `options.md`. The image
-   settings are read through it whenever they apply. The settings the
-   game's crates read while booting (`ssx3_engine::BOOT_ENV_KEYS`: game
-   rate, sound and pad paths, native files, audio device) are copied into
-   the process environment by `Engine::boot` unless the environment already
-   sets them. Debug switches stay environment variables.
+   headless runner reads the environment (`EnvSettings`), the browser the
+   page's values (`SSX3_*` keys of the URL query). Keys are the `SSX3_*`
+   names in `options.md`, every one of them: paths (`SSX3_ISO`,
+   `SSX3_MEMCARD`, `SSX3_TEX_REPLACE`, ...), sound, the game rate, the
+   renderer and the debug switches. `Engine::boot` installs the `Settings`
+   as the provider of `ssx3_core::config`, which every crate reads its
+   options through: the process environment first, then the front end's
+   settings, then process defaults (`config::set_default`; a standalone
+   build's save folder). Empty values from the settings count as unset. The
+   image settings are read through it whenever they apply; most others
+   once, at boot or when first needed.
 2. **Boot.** `Engine::boot(config)` creates the machine, loads the disc and
    the executable, installs the hand-written functions and the renderer
    (`SSX3_RENDER`). The GPU context is created on demand; a front end that

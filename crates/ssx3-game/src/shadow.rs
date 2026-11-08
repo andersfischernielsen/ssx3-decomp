@@ -38,8 +38,7 @@ static INSIDE: AtomicBool = AtomicBool::new(false);
 fn every() -> u64 {
     static E: OnceLock<u64> = OnceLock::new();
     *E.get_or_init(|| {
-        std::env::var("SSX3_SHADOW_EVERY")
-            .ok()
+        ssx3_core::config::var("SSX3_SHADOW_EVERY")
             .and_then(|v| v.parse().ok())
             .unwrap_or(1)
             .max(1)
@@ -49,8 +48,7 @@ fn every() -> u64 {
 fn first() -> u64 {
     static F: OnceLock<u64> = OnceLock::new();
     *F.get_or_init(|| {
-        std::env::var("SSX3_SHADOW_FIRST")
-            .ok()
+        ssx3_core::config::var("SSX3_SHADOW_FIRST")
             .and_then(|v| v.parse().ok())
             .unwrap_or(20)
     })
@@ -59,7 +57,7 @@ fn first() -> u64 {
 /// The functions to shadow (`SSX3_SHADOW`), if any: `None` when the
 /// variable is unset.
 pub fn wanted() -> Option<Option<Vec<u32>>> {
-    let v = std::env::var("SSX3_SHADOW").ok()?;
+    let v = ssx3_core::config::var("SSX3_SHADOW")?;
     if v == "all" {
         return Some(None);
     }

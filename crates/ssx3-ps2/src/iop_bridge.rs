@@ -54,13 +54,15 @@ const MODULE_SERVERS: &[(&str, &[u32])] = &[
 /// memory card in `mc_native.rs`.
 pub fn sio2_enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var("SSX3_IOP_SIO2").is_ok_and(|v| v != "0"))
+    *ON.get_or_init(|| ssx3_core::config::var("SSX3_IOP_SIO2").is_some_and(|v| v != "0"))
 }
 
 pub fn enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
     *ON.get_or_init(|| {
-        let want = std::env::var("SSX3_IOP").map(|v| v != "0").unwrap_or(true);
+        let want = ssx3_core::config::var("SSX3_IOP")
+            .map(|v| v != "0")
+            .unwrap_or(true);
         if want && ssx3_iop::generated().is_none() {
             eprintln!(
                 "[iop] SSX3_IOP set but no recompiled IOP code is registered; using the HLE IOP"

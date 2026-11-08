@@ -32,7 +32,7 @@ const END_TRI_STRIP: u32 = 0x0037_a430;
 
 /// Install the wrappers; false when switched off.
 pub fn install() -> bool {
-    if std::env::var("SSX3_DIRECT").is_ok_and(|v| v == "0") {
+    if ssx3_core::config::var("SSX3_DIRECT").is_some_and(|v| v == "0") {
         return false;
     }
     for (a, f, name) in [
@@ -1250,7 +1250,7 @@ fn draw_skinned_model_shadow(c: &mut Cpu) {
 /// `SSX3_CAPTURE_DEBUG=1`: packets that are not captured are reported.
 fn debug() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("SSX3_CAPTURE_DEBUG").is_some())
+    *ON.get_or_init(|| ssx3_core::config::var_os("SSX3_CAPTURE_DEBUG").is_some())
 }
 
 /// The PS2GraphicsMan (`gp+0x2a90`).
@@ -1306,7 +1306,8 @@ fn append_packet(c: &mut Cpu) {
     // (The hand-written replacement unless every function runs generated.)
     static GENERATED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     #[cfg(feature = "render")]
-    let native = !*GENERATED.get_or_init(|| std::env::var_os("SSX3_NO_OVERRIDES").is_some());
+    let native =
+        !*GENERATED.get_or_init(|| ssx3_core::config::var_os("SSX3_NO_OVERRIDES").is_some());
     #[cfg(not(feature = "render"))]
     let native = {
         let _ = &GENERATED;

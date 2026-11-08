@@ -462,7 +462,7 @@ fn compatible(held: &NativeSurfaces, s: &NativeSurfaces) -> bool {
 /// `SSX3_NATIVE_NO_REUSE=1`: always unswizzle (A/B check of the reuse).
 fn no_reuse() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| std::env::var_os("SSX3_NATIVE_NO_REUSE").is_some())
+    *E.get_or_init(|| ssx3_core::config::var_os("SSX3_NATIVE_NO_REUSE").is_some())
 }
 
 /// `FbFmt` code of a frame format (gs.wgsl `read_fb`/`write_fb`), as

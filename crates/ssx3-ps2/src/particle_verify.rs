@@ -26,7 +26,7 @@ use crate::Qword;
 
 pub fn enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("SSX3_VERIFY_PARTICLES").is_some())
+    *ON.get_or_init(|| ssx3_core::config::var_os("SSX3_VERIFY_PARTICLES").is_some())
 }
 
 #[derive(Default, Clone, Copy)]

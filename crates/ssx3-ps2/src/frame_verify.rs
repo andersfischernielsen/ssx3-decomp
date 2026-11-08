@@ -80,7 +80,7 @@ static STATE: Mutex<Option<State>> = Mutex::new(None);
 pub fn enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
-        let on = std::env::var_os("SSX3_VERIFY_FRAME").is_some();
+        let on = ssx3_core::config::var_os("SSX3_VERIFY_FRAME").is_some();
         if on {
             frame::keep_payloads(true);
         }
@@ -386,7 +386,7 @@ fn check(s: &mut State, m: &EeMem, g: u32) {
 
     // Debug: SSX3_VERIFY_FRAME_OUTLINE=race|menu prints the pass outline of
     // a few frames of that kind (every 200th).
-    let want = std::env::var("SSX3_VERIFY_FRAME_OUTLINE").ok();
+    let want = ssx3_core::config::var("SSX3_VERIFY_FRAME_OUTLINE");
     let nth = if race { s.race.frames } else { s.menu.frames };
     if want.as_deref() == Some(if race { "race" } else { "menu" }) && nth % 200 == 100 {
         let outline: Vec<String> = fr

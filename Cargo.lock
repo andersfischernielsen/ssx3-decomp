@@ -2556,6 +2556,7 @@ dependencies = [
 name = "ssx3-render"
 version = "0.1.0"
 dependencies = [
+ "ssx3-core",
  "ssx3-vu",
 ]
 

@@ -277,8 +277,7 @@ pub struct Mtgs {
 /// `SSX3_RENDER_ROUNDTRIP=N` (see `Mtgs::roundtrip_every`); `1` is every
 /// GIF transfer.
 fn roundtrip_every() -> u64 {
-    std::env::var("SSX3_RENDER_ROUNDTRIP")
-        .ok()
+    ssx3_core::config::var("SSX3_RENDER_ROUNDTRIP")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0)
 }
@@ -289,14 +288,14 @@ fn mtgs_enabled() -> bool {
         return false;
     }
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| std::env::var("SSX3_MTGS").map_or(true, |v| v != "0"))
+    *E.get_or_init(|| ssx3_core::config::var("SSX3_MTGS").map_or(true, |v| v != "0"))
 }
 
 /// Check the guest-side mirrors against the GS at every sync (always in
 /// tests; `SSX3_MTGS_CHECK=1` otherwise).
 fn mtgs_check() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    cfg!(test) || *E.get_or_init(|| std::env::var_os("SSX3_MTGS_CHECK").is_some())
+    cfg!(test) || *E.get_or_init(|| ssx3_core::config::var_os("SSX3_MTGS_CHECK").is_some())
 }
 
 impl Mtgs {
@@ -951,7 +950,7 @@ fn ad_side_effects(csr: &mut u64, siglblid: &mut u64, addr: u8, value: u64) {
 
 impl Drop for Mtgs {
     fn drop(&mut self) {
-        if std::env::var_os("SSX3_MTGS_STATS").is_some() {
+        if ssx3_core::config::var_os("SSX3_MTGS_STATS").is_some() {
             eprintln!("[mtgs] {:?}", self.stats);
         }
         #[cfg(feature = "emu-gs")]
@@ -969,7 +968,7 @@ impl Drop for Mtgs {
                 self.drain();
                 self.roundtrip_report();
             }
-            if std::env::var_os("SSX3_GS_WAITS").is_some() {
+            if ssx3_core::config::var_os("SSX3_GS_WAITS").is_some() {
                 self.drain();
                 if let Some(st) = self.lock().gpu_stats() {
                     eprintln!(
@@ -981,7 +980,7 @@ impl Drop for Mtgs {
                 );
                 }
             }
-            if std::env::var_os("SSX3_GS_PROFILE").is_some() {
+            if ssx3_core::config::var_os("SSX3_GS_PROFILE").is_some() {
                 self.drain();
                 if let Some(st) = self.lock().gpu_stats() {
                     eprintln!(

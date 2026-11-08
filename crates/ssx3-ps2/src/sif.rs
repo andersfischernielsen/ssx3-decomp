@@ -83,7 +83,7 @@ impl Sif {
             next_fd: 3,
             iop_heap: 0x0010_0000,
             stream_pos: 0,
-            trace: std::env::var("SSX3_TRACE_SIF").is_ok(),
+            trace: ssx3_core::config::var("SSX3_TRACE_SIF").is_some(),
             loaded_modules: Vec::new(),
             unknown_servers: BTreeMap::new(),
             pad_buttons: [0; 2],
@@ -561,17 +561,17 @@ fn cd_scmd(c: &mut Cpu, method: u32, _a: u32, _s: u32, ret: u32, rsize: u32) -> 
             // Fixed RTC by default so runs are reproducible (the game seeds its
             // RNG from it, e.g. the rider line-up). SSX3_RTC=<unix secs> pins a
             // specific time; SSX3_REAL_CLOCK=1 uses the host clock.
-            let secs = if let Some(v) = std::env::var("SSX3_RTC").ok().and_then(|v| v.parse().ok())
-            {
-                v
-            } else if std::env::var_os("SSX3_REAL_CLOCK").is_some() {
-                web_time::SystemTime::now()
-                    .duration_since(web_time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0)
-            } else {
-                12 * 3600
-            };
+            let secs =
+                if let Some(v) = ssx3_core::config::var("SSX3_RTC").and_then(|v| v.parse().ok()) {
+                    v
+                } else if ssx3_core::config::var_os("SSX3_REAL_CLOCK").is_some() {
+                    web_time::SystemTime::now()
+                        .duration_since(web_time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0)
+                } else {
+                    12 * 3600
+                };
             let (s, m, h) = (
                 (secs % 60) as u32,
                 (secs / 60 % 60) as u32,

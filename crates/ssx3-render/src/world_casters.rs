@@ -92,8 +92,8 @@ fn filter() -> u8 {
     if f & FILTER_SET != 0 {
         return f;
     }
-    let mut f = parse_filter(&std::env::var("SSX3_CASTERS").unwrap_or_default());
-    if let Ok(k) = std::env::var("SSX3_CASTERS_ONLY") {
+    let mut f = parse_filter(&ssx3_core::config::var("SSX3_CASTERS").unwrap_or_default());
+    if let Some(k) = ssx3_core::config::var("SSX3_CASTERS_ONLY") {
         if k != "patches" {
             f |= NO_PATCHES;
         }
@@ -101,7 +101,7 @@ fn filter() -> u8 {
             f |= NO_INSTANCES;
         }
     }
-    if std::env::var_os("SSX3_CASTERS_SHOWN").is_some() {
+    if ssx3_core::config::var_os("SSX3_CASTERS_SHOWN").is_some() {
         f |= SHOWN_ONLY;
     }
     let _ = FILTER.compare_exchange(0, f, Ordering::Relaxed, Ordering::Relaxed);
@@ -169,8 +169,7 @@ pub struct WorldLight {
 fn halo_intensity() -> f32 {
     static I: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
     *I.get_or_init(|| {
-        std::env::var("SSX3_HALOS")
-            .ok()
+        ssx3_core::config::var("SSX3_HALOS")
             .and_then(|v| v.parse().ok())
             .unwrap_or(40.0)
     })
@@ -428,7 +427,7 @@ impl CasterCache {
         if set == self.set && lights == self.lights {
             return self.current.clone();
         }
-        if std::env::var_os("SSX3_CASTERS_DEBUG").is_some() {
+        if ssx3_core::config::var_os("SSX3_CASTERS_DEBUG").is_some() {
             let old: std::collections::HashMap<u32, u64> =
                 self.set.iter().map(|e| (e.0, e.1)).collect();
             let new: std::collections::HashMap<u32, u64> = set.iter().map(|e| (e.0, e.1)).collect();
@@ -471,7 +470,7 @@ impl CasterCache {
             triangles.extend_from_slice(&self.meshes[&p].1.solid);
         }
         // Debug: the largest instances (by their triangles' extent).
-        if std::env::var_os("SSX3_CASTERS_DEBUG").is_some() {
+        if ssx3_core::config::var_os("SSX3_CASTERS_DEBUG").is_some() {
             let mut ext: Vec<(f32, u32, [f32; 6])> = set
                 .iter()
                 .filter(|e| e.2)
@@ -492,7 +491,7 @@ impl CasterCache {
                 })
                 .collect();
             ext.sort_by(|a, b| b.0.total_cmp(&a.0));
-            if let Ok(path) = std::env::var("SSX3_CASTERS_BOXES") {
+            if let Some(path) = ssx3_core::config::var("SSX3_CASTERS_BOXES") {
                 let txt: String = ext
                     .iter()
                     .map(|(_, p, b)| {

@@ -21,8 +21,7 @@ use super::super::raster::Pages;
 pub(crate) fn scale() -> u32 {
     static S: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
     *S.get_or_init(|| {
-        std::env::var("SSX3_RENDER_SCALE")
-            .ok()
+        ssx3_core::config::var("SSX3_RENDER_SCALE")
             .and_then(|v| v.parse().ok())
             .unwrap_or(1)
             .clamp(1, 8)
