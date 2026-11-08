@@ -381,6 +381,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         chase_camera_check_distance_reset_wrapper,
         "ChaseCameraAlgorithm_CheckDistanceReset_Wrapper",
     ),
+    (
+        0x0015_f780,
+        rider_camera_target_v23,
+        "RiderCameraTarget_v23",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8235,6 +8240,147 @@ pub fn chase_camera_check_distance_reset_wrapper(c: &mut Cpu) {
     )
 }
 
+// ---------------------------------------------------------------------------
+// RiderCameraTarget_v23 (0x15f780)
+
+/// `RiderCameraTarget::mRider` (the rider object).
+pub(crate) const RCT_V23_RIDER: u32 = 0x4;
+
+/// `Rider + 0x788`: the landing record (velocity at +0x10, normal at +0x20).
+pub(crate) const RCT_V23_LANDING: u32 = 0x788;
+
+pub(crate) const RCT_V23_LANDING_VELOCITY: u32 = 0x10;
+
+pub(crate) const RCT_V23_LANDING_NORMAL: u32 = 0x20;
+
+/// `.lit4` at gp-0x6c50: minimum |n|·|v| (0.001) for a meaningful angle.
+pub(crate) const RCT_V23_MIN_LEN: u32 = 0x6c50;
+
+/// `.lit4` at gp-0x6c4c: pi/2.
+pub(crate) const RCT_V23_HALF_PI: u32 = 0x6c4c;
+
+/// `Math_Asin` (0x31c128, another shard: through the table).
+pub(crate) const RCT_V23_MATH_ASIN: u32 = 0x0031_c128;
+
+/// gp-relative address `gp - off`.
+#[inline]
+pub(crate) fn rct_v23_gp(c: &Cpu, off: u32) -> u32 {
+    (c.g[GP][0] as u32).wrapping_sub(off)
+}
+
+/// The compiled inline dot product of the quadwords at `a` and `b`: leaves
+/// the result in vf4 (lane w), with vf3/vf5/vf6 and ACC as the original.
+#[inline]
+pub(crate) fn rct_v23_dot(c: &mut Cpu, a: u32, b: u32) {
+    c.lqc2(3, a);
+    c.lqc2(5, b);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+}
+
+/// `float RiderCameraTarget_v23(RiderCameraTarget* self)` (0x15f780): the
+/// landing angle of the rider. Takes the rider's landing normal `n` and
+/// landing velocity `v`; if both have positive squared length and
+/// |n|·|v| >= 0.001, returns `pi/2 - asin(clamp(n·(-v) / (|n||v|), -1, 1))`
+/// (the angle between the surface and the incoming direction), else 0.
+pub fn rider_camera_target_v23(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x50);
+        c.mtc1(0, 1);
+        frame.save_ra(c, 0x40);
+        c.g[A1][0] = 0;
+        c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(RCT_V23_RIDER)).lw(c);
+        c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(RCT_V23_LANDING)).lw(c);
+        let landing = c.g[A0][0] as u32;
+        // sp+0x00: the normal, sp+0x10: the velocity.
+        c.lq(2, landing.wrapping_add(RCT_V23_LANDING_NORMAL));
+        c.sq(2, frame.at(c, 0));
+        c.lq(3, landing.wrapping_add(RCT_V23_LANDING_VELOCITY));
+        c.sq(3, frame.at(c, 0x10));
+        let (n, v) = (frame.at(c, 0), frame.at(c, 0x10));
+        rct_v23_dot(c, n, n);
+        c.qmfc2(2, 4);
+        c.mtc1(2, 0);
+        c.c_lt_s(1, 0);
+        if c.fcc() {
+            c.cycles += 13;
+            rct_v23_dot(c, v, v);
+            c.qmfc2(2, 4);
+            c.mtc1(2, 0);
+            c.c_lt_s(1, 0);
+            if c.fcc() {
+                c.g[A1][0] = 1;
+            }
+        }
+        c.cycles += 2;
+        if c.g[A1][0] == 0 {
+            // No usable vectors: 0.
+            c.cycles += 1;
+            c.mtc1(0, 0);
+            c.cycles += 1;
+            frame.restore_ra(c, 0x40);
+        } else {
+            c.cycles += 34;
+            // sp+0x20 (via sp+0x30): -v.
+            c.g[AT][0] = sx(0xbf80_0000);
+            c.mtc1(1, 3);
+            c.mfc1(2, 3);
+            c.lqc2(4, v);
+            c.qmtc2(2, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, frame.at(c, 0x30));
+            let lit = rct_v23_gp(c, RCT_V23_MIN_LEN);
+            c.lwc1(2, lit);
+            c.lq(2, frame.at(c, 0x30));
+            c.sq(2, frame.at(c, 0x20));
+            let neg_v = frame.at(c, 0x20);
+            rct_v23_dot(c, neg_v, neg_v);
+            c.qmfc2(2, 4);
+            c.mtc1(2, 1);
+            rct_v23_dot(c, n, n);
+            c.qmfc2(3, 4);
+            c.mtc1(3, 0);
+            c.mul_s(0, 0, 1);
+            c.sqrt_s(1, 0);
+            c.c_lt_s(1, 2);
+            c.mtc1(0, 0);
+            let too_short = c.fcc();
+            frame.restore_ra(c, 0x40);
+            if !too_short {
+                c.cycles += 14;
+                rct_v23_dot(c, n, neg_v);
+                c.qmfc2(2, 4);
+                c.mtc1(2, 0);
+                c.div_s(12, 0, 1);
+                // clamp(cos, -1, 1) (f3 = -1)
+                c.c_le_s(3, 12);
+                if !c.fcc() {
+                    c.mov_s(12, 3);
+                } else {
+                    c.cycles += 3;
+                    c.g[AT][0] = 0x3f80_0000;
+                    c.mtc1(1, 0);
+                    c.min_s(12, 12, 0);
+                }
+                c.cycles += 5;
+                call_ptr(c, RCT_V23_MATH_ASIN, 0x0015_f8e8)?;
+                let lit = rct_v23_gp(c, RCT_V23_HALF_PI);
+                c.lwc1(1, lit);
+                c.sub_s(0, 1, 0);
+                c.cycles += 1;
+                frame.restore_ra(c, 0x40);
+            }
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10622,6 +10768,72 @@ pub(crate) mod tests {
                     [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0],
                 );
                 c.g[A0][0] = sx(CAM);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::object::railmodifier::tests::oc313_vec;
+
+    /// Landing angle: zero vectors (both early outs), tiny vectors (below
+    /// the 0.001 length), parallel/antiparallel vectors (clamp edges) and
+    /// random ones; the real `Math_Asin` runs with its `.lit4` constants.
+    #[test]
+    fn rider_camera_target_v23_matches() {
+        check(
+            ee::s01::f_0015f780__generated,
+            rider_camera_target_v23,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0015_f780, 0);
+                c.pc = 0x0015_f780;
+                // .lit4: the function's and Math_Asin's.
+                let lit = |c: &mut Cpu, off: i32, v: f32| {
+                    c.bus.write32(GAME_GP.wrapping_add(off as u32), v.to_bits())
+                };
+                lit(c, -0x6c50, 0.001);
+                lit(c, -0x6c4c, std::f32::consts::FRAC_PI_2);
+                lit(c, -0x2e60, -std::f32::consts::FRAC_1_SQRT_2);
+                lit(c, -0x2e58, std::f32::consts::FRAC_1_SQRT_2);
+                lit(c, -0x2e54, std::f32::consts::FRAC_PI_2);
+                put_words(
+                    c,
+                    GAME_GP + 0xdf0,
+                    &[
+                        0.167_702_27f32.to_bits(),
+                        0.067_658_506f32.to_bits(),
+                        0.052_005_03f32.to_bits(),
+                        0.054_984_73f32.to_bits(),
+                    ],
+                );
+                let target = DATA;
+                let rider = DATA + 0x100;
+                let landing = DATA + 0x1000;
+                c.bus.write32(target + RCT_V23_RIDER, rider);
+                c.bus.write32(rider + RCT_V23_LANDING, landing);
+                c.g[A0][0] = sx(target);
+                let edge = seed % 7 == 6;
+                let mut n = oc313_vec(&mut r, edge);
+                let mut v = oc313_vec(&mut r, edge);
+                match seed % 8 {
+                    0 => n = [0; 4],
+                    1 => v = [0; 4],
+                    2 => {
+                        // tiny: |n||v| < 0.001
+                        for x in n.iter_mut().chain(v.iter_mut()) {
+                            *x = r.f32(0.01);
+                        }
+                    }
+                    3 => {
+                        // v parallel or antiparallel to n
+                        let k = if r.next_u32() & 1 == 0 { 3.0f32 } else { -2.5 };
+                        for i in 0..4 {
+                            v[i] = (f32::from_bits(n[i]) * k).to_bits();
+                        }
+                    }
+                    _ => {}
+                }
+                put_vec(c, landing + RCT_V23_LANDING_VELOCITY, v);
+                put_vec(c, landing + RCT_V23_LANDING_NORMAL, n);
             },
         );
     }
