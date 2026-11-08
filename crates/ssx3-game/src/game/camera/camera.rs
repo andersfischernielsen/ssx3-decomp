@@ -8325,6 +8325,14 @@ pub(crate) fn update_heading(c: &mut Cpu, frame: Frame, this: u32, info: u32) ->
         c.sqrt_s(2, 0);
     }
 
+    // The filter and state-specific fourth root determine the final retained
+    // share. Preserve the original FPU sequence at 60; at other rates keep
+    // that effective retention per 1/60 second.
+    let hz = crate::tick::rate(c);
+    if hz != 60 {
+        c.f[2] = f32::from_bits(c.f[2]).powf(60.0 / hz as f32).to_bits();
+    }
+
     // heading = dir * (1/speed) * (1 - s) + heading * s.
     c.cycles += 32;
     c.lwc1(0, info.wrapping_add(SPEED));
@@ -11010,6 +11018,78 @@ pub(crate) mod tests {
                 c.f[14] = r.f32(2.0);
             },
         );
+    }
+
+    /// Freeze the filter output with zero gains, so this tests the retained
+    /// share alone, including the fourth-root transform in states 11..13.
+    /// The target turns at time 0 and 0.5 s on the same game-time schedule.
+    #[test]
+    fn chase_camera_heading_blend_follows_the_rate() {
+        for state in [0u32, 11, 12, 13] {
+            for filtered in [0.0f32, 0.2, 0.5] {
+                let sample = |hz: u32| {
+                    let mut c = crate::difftest::fresh();
+                    machine(&mut c, 0, 0x162c78, 0);
+                    elf_image(&mut c);
+                    crate::tick::set_for_test(&mut c, hz);
+                    let (info, rig, vt, rider) =
+                        (DATA + 0x800, DATA + 0x1000, DATA + 0x1100, DATA + 0x1200);
+                    c.bus.write32(DATA + chase::RIG, rig);
+                    c.bus.write32(rig, vt);
+                    c.bus.write32(rig + 4, rider);
+                    c.bus.write16(vt + 0x18, 0);
+                    c.bus.write32(vt + 0x1c, FAKE);
+                    c.bus.write32(rider + chase::RIDER_STATE, state);
+                    c.bus.write32(info + chase_info::SPEED, 40.0f32.to_bits());
+                    put_vec(&mut c, DATA + chase::HEADING, [1.0f32.to_bits(), 0, 0, 0]);
+                    for i in 0..5 {
+                        c.bus
+                            .write32(DATA + chase::HIST + chase::H_B + 4 * i, filtered.to_bits());
+                    }
+                    let mut out = Vec::new();
+                    for n in 1..=hz {
+                        let v: [f32; 4] = if n <= hz / 2 {
+                            [0.0, 40.0, 0.0, 0.0]
+                        } else {
+                            [-40.0, 0.0, 0.0, 0.0]
+                        };
+                        put_vec(&mut c, info + chase_info::DIR, v.map(f32::to_bits));
+                        put_vec(&mut c, SP - 0xa0, [1.0f32.to_bits(), 0, 0, 0]);
+                        c.bus.write32(fakes::LOG_COUNT, 0);
+                        c.bus.write32(fakes::LOG_NEXT, 0);
+                        c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+                        c.g[A0][0] = DATA as u64;
+                        c.g[A1][0] = info as u64;
+                        c.g[RA][0] = crate::difftest::RA as u64;
+                        c.g[ssx3_ee_rt::cpu::reg::SP][0] = SP as u64;
+                        chase_camera_update_chase_heading(&mut c);
+                        assert_eq!(c.pc, crate::difftest::RA);
+                        assert_eq!(c.g[ssx3_ee_rt::cpu::reg::SP][0], SP as u64);
+                        if n % (hz / 4) == 0 {
+                            let heading: [f32; 4] = std::array::from_fn(|i| {
+                                f32::from_bits(c.bus.read32(DATA + chase::HEADING + 4 * i as u32))
+                            });
+                            out.push(heading);
+                        }
+                    }
+                    out
+                };
+                let stock = sample(60);
+                println!("HEADING_RATE state={state} filter={filtered} hz=60 samples={stock:?}");
+                for hz in [120, 240] {
+                    let actual = sample(hz);
+                    println!(
+                        "HEADING_RATE state={state} filter={filtered} hz={hz} samples={actual:?}"
+                    );
+                    for (n, (a, b)) in actual.iter().zip(&stock).enumerate() {
+                        for axis in 0..4 {
+                            assert!((a[axis] - b[axis]).abs() < 0.001,
+                                "state {state}, filter {filtered}, {hz} Hz checkpoint {n}: {a:?} vs {b:?}");
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// ChaseCameraAlgorithm_UpdateChaseHeading: slow (speed below 100 km/h)
