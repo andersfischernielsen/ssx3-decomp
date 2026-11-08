@@ -1,6 +1,6 @@
 [package]
 name = "ssx3"
-description = "SSX 3 (USA) native recompilation — entry point."
+description = "SSX 3 (USA) native recompilation: the desktop front ends (window, headless) on ssx3-engine."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -17,16 +17,16 @@ path = "src/bin/ssx3_headless.rs"
 [features]
 default = ["ee-threads"]
 # Dynamic call graph of the EE code (SSX3_CALLPROF=<out>:<from>:<to>).
-callprof = ["ssx3-ee-rt/callprof"]
+callprof = ["ssx3-engine/callprof"]
 # The generated EE code: host threads (native default) or unwind form
 # (generated/ee-unwind; single-threaded, as the browser build needs).
-ee-threads = ["dep:ssx3-ee-threads", "ssx3-game/ee-threads"]
+ee-threads = ["ssx3-engine/ee-threads"]
 # The emulated GS (verification renderers SSX3_RENDER=emu/shadow, GS
 # captures and VRAM dumps); the game itself renders natively.
-emu-gs = ["ssx3-ps2/emu-gs"]
-ee-unwind = ["dep:ssx3-ee-unwind", "ssx3-game/ee-unwind"]
+emu-gs = ["ssx3-engine/emu-gs", "ssx3-ps2/emu-gs"]
+ee-unwind = ["ssx3-engine/ee-unwind"]
 # The translated VU1 microcode: the emulated GS path (SSX3_RENDER=emu/shadow).
-vu1-microcode = ["ssx3-ps2/vu1-microcode", "emu-gs"]
+vu1-microcode = ["ssx3-engine/vu1-microcode", "emu-gs"]
 
 [dependencies]
 env_logger = "0.11.11"
@@ -35,15 +35,12 @@ gilrs = "0.11"
 log = "0.4.34"
 pollster = "1.0.1"
 ssx3-core.workspace = true
-ssx3-gs.workspace = true
 ssx3-ps2 = { path = "../ssx3-ps2" }
 ssx3-gfx = { path = "../ssx3-gfx" }
 ssx3-ee-rt = { path = "../ssx3-ee-rt" }
-ssx3-ee-threads = { path = "../../generated/ee/game", package = "ssx3-ee", optional = true }
-ssx3-ee-unwind = { path = "../../generated/ee-unwind/game", package = "ssx3-ee-unwind", optional = true }
+ssx3-engine = { path = "../ssx3-engine", default-features = false }
 ssx3-game = { path = "../ssx3-game", default-features = false, features = ["packages"] }
 ssx3-iop = { path = "../ssx3-iop" }
-ssx3-iop-gen = { path = "../../generated/iop/modules" }
 wgpu = "30.0.1"
 winit = "0.30.13"
 

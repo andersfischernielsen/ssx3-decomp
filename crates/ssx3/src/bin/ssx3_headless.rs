@@ -5,25 +5,15 @@
 //! cargo run --profile game -p ssx3 --bin ssx3-headless -- 600 --shot-every 60
 //! ```
 
-// The generated EE code in the chosen form (features `ee-threads` / `ee-unwind`).
-#[cfg(all(feature = "ee-threads", not(feature = "ee-unwind")))]
-extern crate ssx3_ee_threads as ssx3_ee;
-#[cfg(feature = "ee-unwind")]
-extern crate ssx3_ee_unwind as ssx3_ee;
-
 use std::time::Instant;
 
-#[allow(dead_code)]
-#[path = "../game.rs"]
-mod game;
+use ssx3_engine::{Engine, EngineConfig, EnvSettings};
+
 #[path = "../png.rs"]
 mod png;
-#[allow(dead_code)]
-#[path = "../settings.rs"]
-mod settings;
 
 fn main() {
-    game::init_standalone();
+    ssx3_engine::init_paths(None, None, true);
     let args: Vec<String> = std::env::args().collect();
     let frames: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(300);
     let slow_ms: Option<f64> = std::env::var("SSX3_SLOW_FRAME_MS")
@@ -64,8 +54,14 @@ fn main() {
     if std::env::var_os("SSX3_AUDIO").is_none() {
         std::env::set_var("SSX3_AUDIO", "0");
     }
-    let mut c = game::boot(true);
-    let gfx = game::install_renderer(&mut c);
+    // Settings from the environment; the boot movies skipped unless
+    // SSX3_SKIP_MOVIES=0 (scripted input timings assume it).
+    let mut engine = Engine::boot(EngineConfig {
+        find_pack: true,
+        skip_movies: true,
+        ..EngineConfig::new(Box::new(EnvSettings))
+    });
+    let gfx = engine.renderer().cloned();
     // Check of the browser's VU offload path: every chunk of VU1 calls
     // encoded, run from the bytes and decoded (`ssx3_render::vujob`).
     if std::env::var_os("SSX3_VU_OFFLOAD_SELFTEST").is_some() {
@@ -136,7 +132,7 @@ fn main() {
         #[cfg(feature = "emu-gs")]
         for (start, _, _) in &captures {
             if f == *start {
-                ssx3_ps2::m!(c).hw.gs.core().start_capture();
+                ssx3_ps2::m!(engine.cpu_mut()).hw.gs.core().start_capture();
             }
         }
         let mut held = [0u16; 2];
@@ -145,9 +141,8 @@ fn main() {
                 held[*pad] |= bits;
             }
         }
-        // SSX3_EVENT: the boot presses through the title and the prompts.
-        held[0] |= ssx3_game::event_boot::pad_buttons();
-        ssx3_ps2::m!(c).sif.pad_buttons = held;
+        engine.set_pad(0, held[0]);
+        engine.set_pad(1, held[1]);
         ssx3_ps2::vu::capture::set_frame(f);
         if let Some((n, from)) = forced_updates {
             ssx3_game::tick::set_updates_per_vsync(if f >= from { n } else { 1 });
@@ -161,6 +156,7 @@ fn main() {
             ssx3_ps2::machine::set_audio_lead_frames((k.audio_lead() * 48000.0) as u32);
             catch_sum += n as u64;
             if f % 300 == 0 {
+                let c = engine.cpu_mut();
                 let app = c.bus.read32(ssx3_game::tick::APPMAN_PTR);
                 let upd = if app != 0 {
                     c.bus.read32(app + 0x1c)
@@ -175,7 +171,7 @@ fn main() {
                 );
             }
         }
-        let alive = ssx3_ps2::machine::run_frame(&mut c);
+        let alive = engine.step();
         ssx3_ee_rt::prof::frame(f);
         if let Some((from, to)) = bench {
             if (from..=to).contains(&f) {
@@ -218,7 +214,7 @@ fn main() {
         #[cfg(feature = "emu-gs")]
         for (start, n, path) in &captures {
             if f + 1 == start + n || (!alive && f >= *start && f < start + n) {
-                let trace = ssx3_ps2::m!(c).hw.gs.core().finish_capture();
+                let trace = ssx3_ps2::m!(engine.cpu_mut()).hw.gs.core().finish_capture();
                 match std::fs::write(path, &trace) {
                     Ok(()) => eprintln!(
                         "gs capture: frames {start}..{f} -> {path} ({} bytes)",
@@ -229,12 +225,14 @@ fn main() {
             }
         }
         if f % 60 == 0 || !alive {
-            eprintln!("[{:6.1}s] {}", t0.elapsed().as_secs_f64(), game::status(&c));
-            if let Some(s) = ssx3_ps2::iop_bridge::status(&c) {
+            eprintln!("[{:6.1}s] {}", t0.elapsed().as_secs_f64(), engine.status());
+            if let Some(s) = ssx3_ps2::iop_bridge::status(engine.cpu()) {
                 eprintln!("          {s}");
             }
         }
         if shot_every > 0 && f % shot_every == 0 && f >= shot_from {
+            #[cfg(feature = "emu-gs")]
+            let c = engine.cpu_mut();
             let path = format!("{shot_dir}/frame{f:05}.png");
             if std::env::var("SSX3_SHADOW_DEBUG").is_ok_and(|v| v.contains("lightlog")) {
                 eprintln!("[shot] {f}");
@@ -319,6 +317,7 @@ fn main() {
             break;
         }
     }
+    let c = engine.cpu_mut();
     if let Some(g) = &gfx {
         #[cfg(feature = "emu-gs")]
         eprintln!(
@@ -400,7 +399,7 @@ fn main() {
             eprintln!("SSX3_RAM_DUMP {path}: {e}");
         }
     }
-    ssx3_ps2::iop_bridge::shutdown(&mut c);
+    ssx3_ps2::iop_bridge::shutdown(c);
     if let Some(s) = ssx3_ps2::render_verify::summary() {
         eprintln!("{s}");
     }
@@ -502,7 +501,7 @@ fn main() {
         let _ = std::fs::write(format!("{shot_dir}/tex.png"), png::encode(w, h, &img));
     }
     eprintln!("halted: {:?}", ssx3_ps2::m!(c).kernel.halted);
-    eprint!("{}", game::dump(&c));
+    eprint!("{}", ssx3_engine::dump(c));
     for l in ssx3_game::shadow::report() {
         eprintln!("[shadow] {l}");
     }
@@ -542,7 +541,7 @@ fn main() {
     if !ssx3_ps2::m!(c).sched.misses.is_empty() {
         // Record new entry points for the next `recomp-ee` run.
         use std::io::Write;
-        let path = game::repo_root().join("generated/entries.txt");
+        let path = ssx3_engine::repo_root().join("generated/entries.txt");
         if let Ok(mut f) = std::fs::OpenOptions::new()
             .append(true)
             .create(true)

@@ -306,6 +306,20 @@ pub fn get(key: &str) -> Option<String> {
     }
 }
 
+/// The engine's view of the settings: the file (with the environment over
+/// it) for the overlay's keys, the environment for every other key.
+pub struct Desktop;
+
+impl ssx3_engine::Settings for Desktop {
+    fn get(&self, key: &str) -> Option<String> {
+        if ITEMS.iter().any(|i| i.key == key) {
+            get(key)
+        } else {
+            std::env::var(key).ok().filter(|v| !v.is_empty())
+        }
+    }
+}
+
 /// Whether the environment set `key` at startup.
 pub fn from_env(key: &str) -> bool {
     STATE

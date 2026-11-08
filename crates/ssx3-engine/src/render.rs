@@ -1,238 +1,8 @@
-//! Boot the recompiled game: machine setup shared by the windowed and
-//! headless front ends.
+//! The draw-layer renderer and the image options a front end can change.
 
-use std::path::PathBuf;
+use ssx3_ps2::Cpu;
 
-use ssx3_ps2::{machine, Cpu};
-
-pub fn repo_root() -> PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
-static STANDALONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// A standalone build (`tools/bundle.py`): the disc comes from the pack in or
-/// next to the executable, and the memory card and settings live in the
-/// user's data folder (unless `SSX3_MEMCARD` / `SSX3_SETTINGS` say otherwise).
-/// Call first thing in `main`. Returns whether a pack was found.
-pub fn init_standalone() -> bool {
-    let Some((path, base)) = ssx3_core::pack::Pack::locate() else {
-        return false;
-    };
-    let shown = path.display().to_string();
-    ssx3_core::iso::set_opener(Box::new(move || {
-        Ok(Box::new(ssx3_core::pack::Pack::open_at(&path, base)?)
-            as Box<dyn ssx3_core::iso::Source>)
-    }));
-    STANDALONE.store(true, std::sync::atomic::Ordering::Relaxed);
-    let dir = ssx3_core::platform_paths::standalone_saves(data_dir());
-    for (key, file) in [
-        ("SSX3_MEMCARD", "ssx3-mc0.ps2"),
-        ("SSX3_SETTINGS", "ssx3-settings.cfg"),
-    ] {
-        if std::env::var_os(key).is_none() {
-            std::env::set_var(key, dir.join(file));
-        }
-    }
-    eprintln!(
-        "[standalone] game data from {shown}; saves in {}",
-        dir.display()
-    );
-    true
-}
-
-/// The user's data folder for a standalone build: `%APPDATA%\SSX3` on
-/// Windows, `~/Library/Application Support/SSX3` on macOS,
-/// `$XDG_DATA_HOME/ssx3` (or `~/.local/share/ssx3`) elsewhere.
-fn data_dir() -> PathBuf {
-    let env = |k: &str| std::env::var_os(k).map(PathBuf::from);
-    if cfg!(windows) {
-        env("APPDATA")
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("SSX3")
-    } else if cfg!(target_os = "macos") {
-        env("HOME")
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("Library/Application Support/SSX3")
-    } else {
-        env("XDG_DATA_HOME")
-            .or_else(|| env("HOME").map(|h| h.join(".local/share")))
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("ssx3")
-    }
-}
-
-/// At every VSync: the game rate.
-fn vblank(c: &mut Cpu) {
-    ssx3_game::tick::on_vblank(c);
-}
-
-/// Create the machine, load the disc and the executable, start the main thread.
-pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
-    machine::register_functions(&ssx3_ee::FUNCTIONS);
-    // Hand-written replacements (crates/ssx3-game); SSX3_NO_OVERRIDES=1 runs
-    // the generated code everywhere.
-    let n = ssx3_game::install();
-    if n > 0 {
-        eprintln!("[ssx3-game] {n} hand-written function(s) installed");
-    }
-    // The tick rate (SSX3_TICK_HZ, settings "Game rate").
-    machine::set_vsync_hz(ssx3_game::tick::install());
-    machine::set_vblank_hook(vblank);
-    ssx3_game::debug::install();
-    // SSX3_EVENT / SSX3_RIDER: straight into an event.
-    ssx3_game::event_boot::install();
-    // Phase 3: the draw functions record their draws for the renderer.
-    if !ssx3_game::capture::install() {
-        eprintln!("[ssx3-game] draw capture off");
-    }
-    // Phase 3: files from the host instead of the emulated CD.
-    if ssx3_game::native_files::install() {
-        eprintln!("[ssx3-game] native files on");
-    }
-    // Recompiled IOP sound modules; used when SSX3_IOP=1 (see iop_bridge.rs).
-    #[cfg(not(target_arch = "wasm32"))]
-    ssx3_iop::register_generated(&ssx3_iop_gen::GENERATED);
-    let mut c = ssx3_ps2::new_cpu();
-    ssx3_ps2::m!(c).kernel.host_threads = ssx3_ee::HOST_THREADS;
-    // The GPU rasterizer is the default for the game (falls back to the CPU
-    // when no adapter is usable); SSX3_GS=cpu forces the software path.
-    // (The browser: no GS rasterizer at all, see `install_renderer`.)
-    #[cfg(feature = "emu-gs")]
-    if std::env::var("SSX3_GS").is_err() && !cfg!(target_arch = "wasm32") {
-        ssx3_ps2::m!(c)
-            .hw
-            .gs
-            .core()
-            .set_backend(ssx3_ps2::gs::Backend::Gpu);
-    }
-    let iso = ssx3_core::platform_paths::data_file_utf8(
-        "SSX3_ISO",
-        "SSX 3 (USA).iso",
-        repo_root().join("SSX 3 (USA).iso"),
-    );
-    if let Err(e) = ssx3_ps2::m!(c).sif.open_disc(iso.clone()) {
-        eprintln!("warning: cannot open disc image {}: {e}", iso.display());
-    }
-    let elf = read_elf(&mut c);
-    machine::boot(&mut c, &elf, "cdrom0:\\SLUS_207.72;1").expect("boot");
-    // The boot movies are selected by a bitmask at gp-0x1724 (0x4a19cc;
-    // initial value 7 = EA logo | THX | intro, read by ssx_BootMoviesUpdate
-    // 0x1a27a0). Clearing it skips them: the headless runner does by default
-    // (scripted input timings assume it), the window plays them.
-    // SSX3_SKIP_MOVIES=0/1 overrides either.
-    let skip = std::env::var("SSX3_SKIP_MOVIES")
-        .map(|v| v != "0")
-        .unwrap_or(skip_movies_default);
-    if skip {
-        c.bus.write32(0x004a_19cc, 0);
-    }
-    c
-}
-
-/// The executable: `orig/SLUS_207.72`, else the one on the disc.
-fn read_elf(c: &mut Cpu) -> Vec<u8> {
-    let path = ssx3_core::platform_paths::data_path(
-        "orig/SLUS_207.72",
-        repo_root().join("orig/SLUS_207.72"),
-    );
-    if !STANDALONE.load(std::sync::atomic::Ordering::Relaxed) {
-        if let Ok(v) = std::fs::read(&path) {
-            return v;
-        }
-    }
-    let d = ssx3_ps2::m!(c)
-        .sif
-        .disc
-        .as_mut()
-        .unwrap_or_else(|| panic!("{}: missing, and no disc", path.display()));
-    let e = d.find("SLUS_207.72").expect("SLUS_207.72 on the disc");
-    let mut v = d.read_vec(e.sector, e.size.div_ceil(2048));
-    v.truncate(e.size as usize);
-    v
-}
-
-/// One-line status summary.
-pub fn status(c: &Cpu) -> String {
-    let threads: Vec<String> = ssx3_ps2::mr!(c)
-        .kernel
-        .threads
-        .values()
-        .map(|t| {
-            format!(
-                "{}:{:?}@{:x}p{}",
-                t.id,
-                t.status,
-                if t.id == ssx3_ps2::mr!(c).kernel.current {
-                    c.pc
-                } else {
-                    t.ctx.pc
-                },
-                t.priority
-            )
-        })
-        .collect();
-    format!(
-        "frame {} cycles {}M thread {} prims {} | {}",
-        ssx3_ps2::mr!(c).sched.frames,
-        c.cycles / 1_000_000,
-        ssx3_ps2::mr!(c).kernel.current,
-        ssx3_ps2::mr!(c).hw.gs.prims_drawn(),
-        threads.join(" ")
-    )
-}
-
-/// Multi-line dump of every thread and semaphore (used by the headless
-/// binary only; both binaries include this module).
-#[allow(dead_code)]
-pub fn dump(c: &Cpu) -> String {
-    let mut out = String::new();
-    for t in ssx3_ps2::mr!(c).kernel.threads.values() {
-        let (pc, ra, sp) = if t.id == ssx3_ps2::mr!(c).kernel.current {
-            (c.pc, c.g[31][0] as u32, c.g[29][0] as u32)
-        } else {
-            (t.ctx.pc, t.ctx.g[31][0] as u32, t.ctx.g[29][0] as u32)
-        };
-        out += &format!(
-            "  thread {} {:?} prio {} entry {:#x} pc {:#x} ra {:#x} sp {:#x} wait {:?}/{}\n",
-            t.id, t.status, t.priority, t.entry, pc, ra, sp, t.wait, t.wait_id
-        );
-        // Heuristic backtrace: words on the stack that are return addresses
-        // (point just after a jal/jalr in translated code).
-        let mut bt = Vec::new();
-        for i in 0..512u32 {
-            let v = c.bus.ram_u32(sp.wrapping_add(i * 4));
-            if (0x0010_0000..0x0042_e590).contains(&v)
-                && v & 3 == 0
-                && ssx3_ps2::machine::has_code(v)
-            {
-                let call = c.bus.ram_u32(v - 8);
-                if call >> 26 == 3 || (call >> 26 == 0 && call & 63 == 9) {
-                    bt.push(format!("{v:x}"));
-                }
-            }
-            if bt.len() >= 16 {
-                break;
-            }
-        }
-        out += &format!("    stack: {}\n", bt.join(" "));
-    }
-    out += &format!(
-        "  cpu per thread (Mcycles): {:?}\n",
-        ssx3_ps2::mr!(c)
-            .kernel
-            .thread_cycles
-            .iter()
-            .map(|(k, v)| (*k, v / 1_000_000))
-            .collect::<Vec<_>>()
-    );
-    for (id, s) in &ssx3_ps2::mr!(c).kernel.semas {
-        if !s.waiters.is_empty() {
-            out += &format!("  sema {id} count {} waiters {:?}\n", s.count, s.waiters);
-        }
-    }
-    out
-}
+use crate::Settings;
 
 /// The draw-layer renderer (`ssx3-gfx`, `docs/plans/phase3-draw-layer.md`),
 /// by `SSX3_RENDER`:
@@ -241,8 +11,8 @@ pub fn dump(c: &Cpu) -> String {
 ///   frames are published (movies and loading screens still draw there);
 /// - `shadow`: it draws next to the emulated GS, which stays what is shown;
 /// - `emu`: not installed (the emulated GS only).
-pub fn install_renderer(c: &mut Cpu) -> Option<ssx3_gfx::Renderer> {
-    let mode = std::env::var("SSX3_RENDER").unwrap_or_else(|_| "native".into());
+pub(crate) fn install_renderer(c: &mut Cpu, s: &dyn Settings) -> Option<ssx3_gfx::Renderer> {
+    let mode = s.get("SSX3_RENDER").unwrap_or_else(|| "native".into());
     let mode = if mode != "native" && !ssx3_ps2::vu::VU1_MICROCODE {
         eprintln!("SSX3_RENDER={mode}: the emulated GS needs the VU1 microcode (build with --features vu1-microcode); using native");
         "native".to_string()
@@ -264,18 +34,18 @@ pub fn install_renderer(c: &mut Cpu) -> Option<ssx3_gfx::Renderer> {
     };
     let r = ssx3_gfx::Renderer::new(ctx.device.clone(), ctx.queue.clone());
     r.set_want_depth(native);
-    r.set_anisotropy(anisotropy());
-    r.set_options(gfx_options());
+    r.set_anisotropy(anisotropy(s));
+    r.set_options(gfx_options(s));
     // SSX3_RENDER_SIZE=WxH: render at that size, widened to its aspect.
-    if let Some((w, h)) = render_size() {
+    if let Some((w, h)) = render_size(s) {
         r.set_output_size(Some((w, h)));
-        ssx3_ps2::frame_sink::set_view(w as f32 / h as f32, fov());
-    } else if fov() != 1.0 {
-        ssx3_ps2::frame_sink::set_view(0.0, fov());
+        ssx3_ps2::frame_sink::set_view(w as f32 / h as f32, fov(s));
+    } else if fov(s) != 1.0 {
+        ssx3_ps2::frame_sink::set_view(0.0, fov(s));
     }
     // SSX3_RENDER_SCALE=N: N× internal resolution (1..8).
-    if let Some(n) = std::env::var("SSX3_RENDER_SCALE")
-        .ok()
+    if let Some(n) = s
+        .get("SSX3_RENDER_SCALE")
         .and_then(|v| v.parse::<u32>().ok())
     {
         r.set_scale(n);
@@ -453,43 +223,43 @@ mod tests {
 }
 
 /// `SSX3_RENDER_SIZE=WxH`: a fixed output size.
-pub fn render_size() -> Option<(u32, u32)> {
-    let v = std::env::var("SSX3_RENDER_SIZE").ok()?;
+pub fn render_size(s: &dyn Settings) -> Option<(u32, u32)> {
+    let v = s.get("SSX3_RENDER_SIZE")?;
     let (w, h) = v.split_once(['x', 'X'])?;
     Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
 }
 
 /// `SSX3_FOV=<multiplier>`: field of view relative to the game's (1.2 =
 /// 20% wider, in the projection's tangent).
-pub fn fov() -> f32 {
-    crate::settings::get("SSX3_FOV")
+pub fn fov(s: &dyn Settings) -> f32 {
+    s.get("SSX3_FOV")
         .and_then(|v| v.parse::<f32>().ok())
         .filter(|v| *v > 0.1 && *v < 4.0)
         .unwrap_or(1.0)
 }
 
-/// Native window: render at the window's pixel size (or the aspect box in
-/// it, `aspect_box`) and widen the view to its aspect, unless a fixed size
+/// Render at the surface's pixel size (or the aspect box in it,
+/// `aspect_box`) and widen the view to its aspect, unless a fixed size
 /// (`SSX3_RENDER_SIZE`) is asked for.
-pub fn follows_window() -> bool {
-    render_size().is_none()
+pub fn follows_surface(s: &dyn Settings) -> bool {
+    render_size(s).is_none()
 }
 
 /// `SSX3_ASPECT=4:3|16:9`: the image keeps that aspect inside the window
 /// (letterboxed or pillarboxed) instead of filling it.
-pub fn aspect_box() -> Option<f32> {
-    match crate::settings::get("SSX3_ASPECT").as_deref() {
+pub fn aspect_box(s: &dyn Settings) -> Option<f32> {
+    match s.get("SSX3_ASPECT").as_deref() {
         Some("4:3") => Some(4.0 / 3.0),
         Some("16:9") => Some(16.0 / 9.0),
         _ => None,
     }
 }
 
-/// The modern graphics options from the settings (F10) or environment:
+/// The modern graphics options from the settings:
 /// `SSX3_AA`, `SSX3_LOD_BIAS`, `SSX3_AO`, `SSX3_SHADOWS`, `SSX3_BLOOM`,
 /// `SSX3_SNOW`. Unset: the original look.
-pub fn gfx_options() -> ssx3_gfx::Options {
-    let get = |k: &str| crate::settings::get(k);
+pub fn gfx_options(s: &dyn Settings) -> ssx3_gfx::Options {
+    let get = |k: &str| s.get(k);
     let on = |k: &str| get(k).is_some_and(|v| v != "0");
     ssx3_gfx::Options {
         aa: match get("SSX3_AA").as_deref() {
@@ -513,16 +283,16 @@ pub fn gfx_options() -> ssx3_gfx::Options {
 /// `SSX3_ANISO=1|2|4|8|16`: anisotropic filtering (16 by default; it
 /// sharpens textures with mipmaps, i.e. texture-pack replacements, seen at a
 /// glancing angle).
-pub fn anisotropy() -> u16 {
-    crate::settings::get("SSX3_ANISO")
+pub fn anisotropy(s: &dyn Settings) -> u16 {
+    s.get("SSX3_ANISO")
         .and_then(|v| v.parse::<u16>().ok())
         .map_or(16, |n| n.clamp(1, 16))
 }
 
 /// `SSX3_RESOLUTION=<percent>`: render at that fraction of the window's
 /// pixels (scaled up to fill it).
-pub fn resolution() -> f32 {
-    crate::settings::get("SSX3_RESOLUTION")
+pub fn resolution(s: &dyn Settings) -> f32 {
+    s.get("SSX3_RESOLUTION")
         .and_then(|v| v.parse::<f32>().ok())
         .map_or(1.0, |p| (p / 100.0).clamp(0.25, 2.0))
 }

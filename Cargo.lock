@@ -2163,14 +2163,11 @@ dependencies = [
  "log",
  "pollster",
  "ssx3-core",
- "ssx3-ee",
  "ssx3-ee-rt",
- "ssx3-ee-unwind",
+ "ssx3-engine",
  "ssx3-game",
  "ssx3-gfx",
- "ssx3-gs",
  "ssx3-iop",
- "ssx3-iop-gen",
  "ssx3-ps2",
  "wgpu",
  "winit",
@@ -2455,6 +2452,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssx3-engine"
+version = "0.1.0"
+dependencies = [
+ "ssx3-core",
+ "ssx3-ee",
+ "ssx3-ee-rt",
+ "ssx3-ee-unwind",
+ "ssx3-game",
+ "ssx3-gfx",
+ "ssx3-iop",
+ "ssx3-iop-gen",
+ "ssx3-ps2",
+]
+
+[[package]]
 name = "ssx3-game"
 version = "0.1.0"
 dependencies = [
@@ -2584,8 +2596,7 @@ dependencies = [
  "js-sys",
  "ssx3-core",
  "ssx3-ee-rt",
- "ssx3-ee-unwind",
- "ssx3-game",
+ "ssx3-engine",
  "ssx3-gfx",
  "ssx3-iop",
  "ssx3-ps2",
