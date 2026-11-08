@@ -6153,6 +6153,15 @@
 0x003c3178    SND_ChannelApplyLowpass
 0x003c8c30    SND_EeVoiceSetHighpass
 0x003000a8    WScriptFn_StartObjectLoop
+# Phase 2 wave: oc313, oc314, oc315, oc316
+0x0015f780    RiderCameraTarget_v23
+0x0035c0e8    RailModifier_BuildRailNodes
+0x00361038    Object_v01
+0x00270ce8    Replay_EndHighlight
+0x00351010    RestoreNode_Save
+0x003db838    SPCH_DecodeSampleEntry
+0x003d9830    SPCH_NotifyPlayCallback
+0x003c6760    SNDSTRM_StartChannel
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
