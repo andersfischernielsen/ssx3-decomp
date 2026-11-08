@@ -6153,6 +6153,11 @@
 0x003c3178    SND_ChannelApplyLowpass
 0x003c8c30    SND_EeVoiceSetHighpass
 0x003000a8    WScriptFn_StartObjectLoop
+# tick rate: air predictor forecast, prewind entry, boost banking and random trick roll
+0x00113200    AirPredictor_Simulate
+0x0010e910    Rider_BankTrickBoost
+0x0012e980    RiderPrewindSub_Enter
+0x0010c3b8    ComputerActorRider_RollRandomTrick
 # Phase 2 wave: oc313, oc314, oc315, oc316
 0x0015f780    RiderCameraTarget_v23
 0x0035c0e8    RailModifier_BuildRailNodes

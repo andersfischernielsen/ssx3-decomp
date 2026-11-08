@@ -486,6 +486,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_spin_sub_set_spin_direction,
         "RiderSpinSub_SetSpinDirection",
     ),
+    (
+        0x0012_e980,
+        rider_prewind_sub_enter,
+        "RiderPrewindSub_Enter",
+    ),
 ];
 
 /// `gp`-relative globals used here.
@@ -15139,6 +15144,31 @@ pub fn rider_natural_air_sub_enter(c: &mut Cpu) {
     })
 }
 
+/// `void RiderPrewindSub_Enter(PrewindSub *state)` (0x12e980): set the
+/// rider's prewind slew rate and zero its target, then play the directional
+/// animation selected from the table at 0x43d788. Keep the rate pool-backed.
+pub fn rider_prewind_sub_enter(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = Addr(r32(c, A0)).lw(c);
+        c.f[0] = Addr(r32(c, GP).wrapping_sub(0x7794)).read_fpu(c).0;
+        c.g[A1][0] = 0x44_0000;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx(0x43_d788);
+        Addr(r32(c, V0) + 0x200).write_fpu(c, FpuF32(c.f[0]));
+        Addr(r32(c, V0) + 0x204).sw(c, 0);
+        Callee {
+            addr: 0x0012_ee30,
+            f: ee::s00::RiderPrewindSub_PlayDirectionalAnim,
+        }
+        .call(c, 0x0012_e9a4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -18601,6 +18631,40 @@ pub(crate) mod tests {
                 c.bus.write32(rider + NAT_AIR_RIDER_VX, vx);
                 c.bus.write32(rider + NAT_AIR_RIDER_VY, vy);
                 c.g[A0][0] = this as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn rider_prewind_sub_enter_matches() {
+        fakes::covered(
+            ee::s00::f_0012e980__generated,
+            rider_prewind_sub_enter,
+            192,
+            &|c, seed| {
+                elf_image(c);
+                fakes::machine(c, seed, 0x12e9_80ab, 1);
+                let rider = DATA + 0x1000;
+                let ctl = DATA + 0x3000;
+                let vt = DATA + 0x4000;
+                c.g[A0][0] = sx(DATA);
+                c.bus.write32(DATA, rider);
+                c.bus.write32(rider + 0x200, 7.0f32.to_bits());
+                c.bus.write32(rider + 0x204, 9.0f32.to_bits());
+                // Real directional selector and PlayAnim; only its virtual
+                // play method is fake, returning PlayAnim's early-exit id.
+                c.bus.write32(rider + prewind::STICK_X, 0);
+                c.bus.write32(rider + prewind::STICK_Y, 0);
+                c.bus.write32(rider + prewind::ANIM_COLUMN, seed % 5);
+                c.bus.write32(rider + prewind::ANIM_CTL, ctl);
+                c.bus.write32(ctl + 8, u32::MAX);
+                c.bus.write32(ctl + 0x58, vt);
+                c.bus.write32(vt + 0x24, fakes::FAKE);
+                c.bus.write32(fakes::LOG_RESULTS, 0x207);
+                c.bus.write32(
+                    GAME_GP - 0x7794,
+                    [0.0f32, 1.0 / 30.0, 0.125, -0.25][(seed % 4) as usize].to_bits(),
+                );
             },
         );
     }

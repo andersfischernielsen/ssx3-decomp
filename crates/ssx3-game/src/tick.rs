@@ -136,6 +136,10 @@ pub const PER_TICK: &[(u32, u32, PerTick)] = &[
     // RiderNaturalAirSub_Enter (0x12f620): the spin/flip charge return
     // steps, consumed once per update by Rider_UpdateSlewedParams.
     (0x0049_b9e8, 0x3d08_8889, PerTick::Step),
+    // RiderPrewindSub_Enter (0x12e980): the return step for the carve value
+    // (rider +0x1fc; `CARVE` / `rider_anim::SUB_BLEND`), which also gates
+    // the landing animation; consumed once per update by Rider_UpdateSlewedParams.
+    (0x0049_b95c, 0x3d08_8889, PerTick::Step),
     // Rider_HandleBoostInput (0x114130): the boost meter (rider +0x2f8)
     // drains 0.0015068 per tick while boost is held.
     (0x0049_b4fc, 0x3ac5_7fcc, PerTick::Step),
@@ -1232,6 +1236,43 @@ mod tests {
                         "{hz} Hz {offset:x}: {value} vs {want}"
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn prewind_carve_return_follows_the_rate() {
+        use crate::difftest::{fresh, DATA, GAME_GP, RA};
+        use ssx3_ee_rt::cpu::reg::{A0, GP};
+        for initial in [-0.8f32, -0.01, 0.01, 0.8] {
+            let mut expected = None;
+            for hz in [60, 120, 240] {
+                let mut c = fresh();
+                set_for_test(&mut c, hz);
+                c.g[GP][0] = GAME_GP as u64;
+                let sub = DATA;
+                let rider = DATA + 0x1000;
+                let anim = DATA + 0x2000;
+                c.bus.write32(sub, rider);
+                // Centred sticks and an already-playing layer-2 animation
+                // take the real directional-animation helper's short path.
+                c.bus.write32(rider + 0x784, anim);
+                c.bus.write32(anim + 8, 7);
+                c.bus.write32(0x0043_d788, 7);
+                c.bus.write32(0x0049_b95c, 0x3d08_8889);
+                patch_per_tick(&mut c, hz);
+                c.g[A0][0] = sub as u64;
+                ssx3_ee::s00::f_0012e980(&mut c);
+                assert_eq!(c.pc, RA);
+                let param = rider + 0x1fc;
+                c.bus.write32(param, initial.to_bits());
+                for _ in 0..hz / 60 {
+                    crate::game::ai::rider::slew(&mut c, param);
+                    c.bus.write32(param, c.f[1]);
+                }
+                let value = f32::from_bits(c.bus.read32(param));
+                let want = *expected.get_or_insert(value);
+                assert!((value - want).abs() < 2e-7, "{hz} Hz: {value} vs {want}");
             }
         }
     }
