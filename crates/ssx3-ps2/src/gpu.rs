@@ -56,7 +56,7 @@ async fn create_context() -> Result<GpuContext, String> {
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("ssx3-gs"),
             required_limits: adapter.limits(),
-            required_features: (if std::env::var_os("SSX3_GS_PROFILE").is_some() {
+            required_features: (if ssx3_core::config::var_os("SSX3_GS_PROFILE").is_some() {
                 adapter.features() & wgpu::Features::TIMESTAMP_QUERY
             } else {
                 wgpu::Features::empty()

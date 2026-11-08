@@ -65,7 +65,7 @@ pub use ssx3_ee_rt::{Cpu, Qword};
 pub fn trace_path3() -> bool {
     static E: std::sync::OnceLock<Option<(u64, u64)>> = std::sync::OnceLock::new();
     let r = E.get_or_init(|| {
-        let v = std::env::var("SSX3_TRACE_PATH3").ok()?;
+        let v = ssx3_core::config::var("SSX3_TRACE_PATH3")?;
         let mut it = v.split(':').map(|x| x.parse::<u64>().ok());
         match (it.next().flatten(), it.next().flatten()) {
             (Some(a), Some(b)) => Some((a, b)),

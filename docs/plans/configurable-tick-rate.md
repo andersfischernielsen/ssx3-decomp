@@ -61,7 +61,7 @@ setting and loads `1/60` itself.
 lives:
 
 - `tick::install()` reads `SSX3_TICK_HZ` (the settings file puts the
-  overlay's choice there). The front end (`crates/ssx3/src/game.rs`) passes
+  overlay's choice there). The engine (`crates/ssx3-engine/src/boot.rs`) passes
   the rate to `ssx3_ps2::machine::set_vsync_hz` (VSync at N × 1000/1001 Hz;
   60 is the original 59.94 Hz) and installs `tick::on_vblank` as the
   machine's VSync hook.

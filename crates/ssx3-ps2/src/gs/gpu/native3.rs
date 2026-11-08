@@ -717,13 +717,13 @@ fn alpha_test_range(atst: u32, aref: u32, lo: u32, hi: u32) -> Option<bool> {
 /// attribute planes instead of the hardware's barycentrics.
 fn planes_knob() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| std::env::var_os("SSX3_N3_PLANES").is_some())
+    *E.get_or_init(|| ssx3_core::config::var_os("SSX3_N3_PLANES").is_some())
 }
 
 /// `SSX3_N3_DIAG=1`: tally fallbacks by draw state (printed at exit).
 pub fn diag_knob() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| std::env::var_os("SSX3_N3_DIAG").is_some())
+    *E.get_or_init(|| ssx3_core::config::var_os("SSX3_N3_DIAG").is_some())
 }
 
 /// Added to interpolated colour and fog before truncating to integers
@@ -731,8 +731,7 @@ pub fn diag_knob() -> bool {
 fn eps_knob() -> f32 {
     static E: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
     *E.get_or_init(|| {
-        std::env::var("SSX3_N3_EPS")
-            .ok()
+        ssx3_core::config::var("SSX3_N3_EPS")
             .and_then(|v| v.parse().ok())
             .unwrap_or(1e-4)
     })
@@ -1030,7 +1029,7 @@ impl Gpu {
             source: wgpu::ShaderSource::Wgsl(src.into()),
         };
         // As the GS module (gpu/mod.rs): every index stays in bounds.
-        let module = if std::env::var_os("SSX3_GS_CHECKED").is_some() {
+        let module = if ssx3_core::config::var_os("SSX3_GS_CHECKED").is_some() {
             dev.create_shader_module(desc)
         } else {
             // SAFETY: see `GpuGs::new`; vertex records are offsets the CPU

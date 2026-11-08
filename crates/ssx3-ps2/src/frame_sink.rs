@@ -91,7 +91,7 @@ impl FrameBuilder {
             b.sun = ssx3_render::world_casters::painter_sun(mem);
         }
         static CHECK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if *CHECK.get_or_init(|| std::env::var_os("SSX3_CHAIN_CACHE_CHECK").is_some()) {
+        if *CHECK.get_or_init(|| ssx3_core::config::var_os("SSX3_CHAIN_CACHE_CHECK").is_some()) {
             let bad = b
                 .issues
                 .iter()
@@ -107,7 +107,7 @@ impl FrameBuilder {
         // `SSX3_FRAME_ISSUES=1`: what the build could not match (packets
         // without a capture, chain shapes it did not expect).
         static ISSUES: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if *ISSUES.get_or_init(|| std::env::var_os("SSX3_FRAME_ISSUES").is_some())
+        if *ISSUES.get_or_init(|| ssx3_core::config::var_os("SSX3_FRAME_ISSUES").is_some())
             && !b.issues.is_empty()
         {
             eprintln!(
@@ -205,7 +205,7 @@ pub fn skip_chain(vif: bool, tadr: u32) -> bool {
     // frames only now and then, as on loading screens.)
     if !native()
         || tadr == 0
-        || *RUN.get_or_init(|| std::env::var_os("SSX3_NATIVE_RUN_CHAINS").is_some())
+        || *RUN.get_or_init(|| ssx3_core::config::var_os("SSX3_NATIVE_RUN_CHAINS").is_some())
     {
         return false;
     }
@@ -398,12 +398,13 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
         // SSX3_DEPTH_SYNC=0: the latest instead.)
         static SYNC: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let n = PUBLISHED.fetch_add(1, Ordering::Relaxed);
-        let depth =
-            if *SYNC.get_or_init(|| std::env::var("SSX3_DEPTH_SYNC").map_or(true, |v| v != "0")) {
-                n.checked_sub(2).and_then(|f| s.sink.depth_of(f))
-            } else {
-                s.sink.depth()
-            };
+        let depth = if *SYNC
+            .get_or_init(|| ssx3_core::config::var("SSX3_DEPTH_SYNC").map_or(true, |v| v != "0"))
+        {
+            n.checked_sub(2).and_then(|f| s.sink.depth_of(f))
+        } else {
+            s.sink.depth()
+        };
         drop(guard);
         LAST_PUBLISH.store(crate::mr!(c).sched.frames.max(1), Ordering::Release);
         if let Some(d) = depth {
@@ -426,8 +427,7 @@ const DUMP_MAGIC: &[u8; 8] = b"SSX3FRM1";
 fn dump_keep() -> Option<usize> {
     static K: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
     *K.get_or_init(|| {
-        std::env::var("SSX3_FRAME_DUMP")
-            .ok()
+        ssx3_core::config::var("SSX3_FRAME_DUMP")
             .and_then(|v| v.parse().ok())
             .filter(|&n| n > 0)
     })
@@ -524,7 +524,7 @@ fn snapshot_ram(snap: &mut DumpMem, ram: &[u8], snap_id: u64) {
         }
     }
     static CHECK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    if *CHECK.get_or_init(|| std::env::var_os("SSX3_SNAPSHOT_CHECK").is_some()) {
+    if *CHECK.get_or_init(|| ssx3_core::config::var_os("SSX3_SNAPSHOT_CHECK").is_some()) {
         let bad: Vec<usize> = (0..pages)
             .filter(|&p| snap.ram[p * 4096..(p + 1) * 4096] != ram[p * 4096..(p + 1) * 4096])
             .collect();
@@ -592,7 +592,7 @@ fn pages_unchanged(a: u32, b: u32, since: u64) -> bool {
 
 fn full_snapshot() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("SSX3_FULL_SNAPSHOT").is_ok_and(|v| v == "1"))
+    *ON.get_or_init(|| ssx3_core::config::var("SSX3_FULL_SNAPSHOT").is_some_and(|v| v == "1"))
 }
 
 /// EE memory as the game has it, with the page generations.
@@ -741,7 +741,7 @@ impl Mem for FrameMem {
             }
         }
         if MISSES.fetch_add(1, Ordering::Relaxed) < 3
-            && std::env::var_os("SSX3_FRAME_MEM_LOG").is_some()
+            && ssx3_core::config::var_os("SSX3_FRAME_MEM_LOG").is_some()
         {
             eprintln!(
                 "[frame-mem] read at {addr:#x} outside the frame's pages\n{}",
@@ -900,7 +900,7 @@ pub fn build_dump_cached(
 /// captures (`SSX3_DIRECT=0`, older frame dumps).
 pub fn native_frame(direct: &[ssx3_render::direct::Recorded]) -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("SSX3_NATIVE_FRAME").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| ssx3_core::config::var("SSX3_NATIVE_FRAME").map_or(true, |v| v != "0"))
         && !direct.is_empty()
 }
 

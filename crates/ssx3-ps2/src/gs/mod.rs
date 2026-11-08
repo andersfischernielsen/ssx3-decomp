@@ -100,8 +100,8 @@ pub fn render_native_type3() -> bool {
 
 /// `SSX3_RENDER_NATIVE` lists `name` (comma separated).
 fn render_native_has(name: &str) -> bool {
-    std::env::var("SSX3_RENDER_NATIVE")
-        .is_ok_and(|v| v.split(',').any(|x| x.trim() == name || x.trim() == "all"))
+    ssx3_core::config::var("SSX3_RENDER_NATIVE")
+        .is_some_and(|v| v.split(',').any(|x| x.trim() == name || x.trim() == "all"))
 }
 
 /// The VU1 program with this segment hash is drawn natively
@@ -142,7 +142,7 @@ fn render_native_type3_cached() -> bool {
 /// `SSX3_N3_EXACT_2D=0` uses the blend unit.
 fn exact_2d() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| std::env::var("SSX3_N3_EXACT_2D").map_or(true, |v| v != "0"))
+    *E.get_or_init(|| ssx3_core::config::var("SSX3_N3_EXACT_2D").map_or(true, |v| v != "0"))
 }
 
 /// `SSX3_RENDER_NATIVE` lists `2d` (or `all`): VIF1 DIRECT/DIRECTHL
@@ -161,12 +161,12 @@ pub fn render_native_post() -> bool {
 
 fn clamp_trace() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| std::env::var("SSX3_TRACE_CLAMP").is_ok())
+    *E.get_or_init(|| ssx3_core::config::var("SSX3_TRACE_CLAMP").is_some())
 }
 
 /// `SSX3_PATH3_MASK=0` lets PATH3 DMA through immediately, ignoring
 /// MSKPATH3/M3R (the old behaviour).
 fn path3_mask_enabled() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| std::env::var("SSX3_PATH3_MASK").map_or(true, |v| v != "0"))
+    *E.get_or_init(|| ssx3_core::config::var("SSX3_PATH3_MASK").map_or(true, |v| v != "0"))
 }

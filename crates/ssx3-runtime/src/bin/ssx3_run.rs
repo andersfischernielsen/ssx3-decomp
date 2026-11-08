@@ -23,11 +23,10 @@ fn main() {
 
     let mut cpu = Cpu::new();
     elf.load_into(&mut cpu.mem);
-    cpu.trace_limit = std::env::var("SSX3_TRACE")
-        .ok()
+    cpu.trace_limit = ssx3_core::config::var("SSX3_TRACE")
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
-    if let Ok(s) = std::env::var("SSX3_STEPS") {
+    if let Some(s) = ssx3_core::config::var("SSX3_STEPS") {
         if let Ok(n) = s.parse() {
             cpu.step_limit = n;
         }

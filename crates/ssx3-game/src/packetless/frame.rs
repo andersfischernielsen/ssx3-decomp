@@ -134,8 +134,9 @@ pub fn render_frame(c: &mut Cpu) {
 /// 0; else the generated body.
 pub(crate) fn dispatch_render_frame(c: &mut Cpu, generated: fn(&mut Cpu)) {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let on =
-        *ON.get_or_init(|| std::env::var("SSX3_NATIVE_RENDER_FRAME").map_or(true, |v| v != "0"));
+    let on = *ON.get_or_init(|| {
+        ssx3_core::config::var("SSX3_NATIVE_RENDER_FRAME").map_or(true, |v| v != "0")
+    });
     if on && direct::packetless() {
         render_frame(c)
     } else {

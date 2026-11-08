@@ -10,7 +10,7 @@ pub fn from_disc(size: u32) -> Option<Vec<u8>> {
     let iso = ssx3_core::platform_paths::data_file_utf8(
         "SSX3_ISO",
         "SSX 3 (USA).iso",
-        crate::game::repo_root().join("SSX 3 (USA).iso"),
+        ssx3_engine::repo_root().join("SSX 3 (USA).iso"),
     );
     let mut disc = ssx3_core::iso::Disc::open(&iso).ok()?;
     let e = disc.find("DATA/UI/FE_1.SSH")?;
@@ -146,7 +146,7 @@ mod tests {
         assert_eq!(rgba.len(), 128 * 128 * 4);
         assert!(rgba.chunks(4).all(|p| p[3] == 255));
         assert_eq!(rgba[4 * (64 * 128 + 64) + 3], 255);
-        let dir = crate::game::repo_root().join("target/bundle/icon-preview");
+        let dir = ssx3_engine::repo_root().join("target/bundle/icon-preview");
         let _ = std::fs::create_dir_all(&dir);
         let _ = std::fs::write(
             dir.join("window128.png"),

@@ -10,7 +10,7 @@ default native mode does not use them on the frame path.
 ```
  build time                                   run time (native mode, the default)
  ┌──────────────────────────────────────┐     ┌──────────────────────────────────────────────┐
- │ Ghidra: functions, names, boundaries │     │ crates/ssx3: window (winit + wgpu), headless │
+ │ Ghidra: functions, names, boundaries │     │ ssx3-engine ◄ window, headless, browser      │
  │ ssx3-recomp: recomp-ee ─► generated/ │     └───────────────┬──────────────────────────────┘
  │   ee (host threads), ee-unwind       │                     │ one VBlank per frame
  │   (single thread, WebAssembly)       │                     ▼
@@ -54,10 +54,11 @@ default native mode does not use them on the frame path.
 | `ssx3-mpeg` | MPEG-2 video: the native movie decoder and the pieces it shares with the IPU model. |
 | `ssx3-snd` | The native sound driver (EA's IOP SNDDRV in Rust). |
 | `ssx3-mc` | The native memory card. |
-| `ssx3-web` | The browser build (unwind form in a Web Worker, WebGPU). |
+| `ssx3-engine` | The game as a library for every front end: boot, input, pacing, renderer, lifecycle (`frontends.md`). |
+| `ssx3-web` | The browser front end (unwind form in a Web Worker, WebGPU). |
 | `ssx3-iop` | IOP runtime for the recompiled IRX modules, SPU2, SIO2/pad/memory card. |
 | `ssx3-recomp` | `recomp-ee`, `recomp-iop` (generators). |
-| `ssx3` | Front ends (window, headless). |
+| `ssx3` | Desktop front ends (window, headless). |
 
 A hardware change rebuilds only its crate and relinks (GS/kernel ~3 s, VU
 ~2.5 min); only `ssx3-ee-rt` changes recompile the generated EE crates
@@ -69,6 +70,7 @@ A hardware change rebuilds only its crate and relinks (GS/kernel ~3 s, VU
 | --- | --- |
 | long-term phases (recomp → typed Rust → native port) | `plans/roadmap.md` |
 | building, headless runs, verification, debug switches | `development.md` |
+| the engine API, writing a front end | `frontends.md` |
 | boot path, syscalls, IOP modules, threads | `investigation/boot-path.md` |
 | EE generator, threading modes, structured output | `investigation/recompiler-v2.md` |
 | function names (Ghidra passes) | `investigation/naming.md` |

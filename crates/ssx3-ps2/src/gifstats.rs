@@ -14,7 +14,7 @@ pub static PACKETS: AtomicU64 = AtomicU64::new(0);
 
 pub fn enabled() -> bool {
     static E: OnceLock<bool> = OnceLock::new();
-    *E.get_or_init(|| std::env::var("SSX3_GIF_STATS").is_ok())
+    *E.get_or_init(|| ssx3_core::config::var("SSX3_GIF_STATS").is_some())
 }
 
 /// Scan one GIF packet (PACKED XYZ registers only).

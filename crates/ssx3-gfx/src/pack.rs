@@ -40,8 +40,7 @@ pub struct Pack {
 
 impl Pack {
     pub fn from_env() -> Pack {
-        let dump = std::env::var("SSX3_TEX_DUMP")
-            .ok()
+        let dump = ssx3_core::config::var("SSX3_TEX_DUMP")
             .filter(|v| !v.is_empty() && v != "0")
             .map(|v| {
                 if v == "1" {

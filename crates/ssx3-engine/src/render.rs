@@ -1,0 +1,298 @@
+//! The draw-layer renderer and the image options a front end can change.
+
+use ssx3_ps2::Cpu;
+
+use crate::Settings;
+
+/// The draw-layer renderer (`ssx3-gfx`, `docs/plans/phase3-draw-layer.md`),
+/// by `SSX3_RENDER`:
+/// - `native` (default): it draws every frame the game publishes and is
+///   shown; the emulated GS keeps running everything but rasterizing while
+///   frames are published (movies and loading screens still draw there);
+/// - `shadow`: it draws next to the emulated GS, which stays what is shown;
+/// - `emu`: not installed (the emulated GS only).
+pub(crate) fn install_renderer(c: &mut Cpu, s: &dyn Settings) -> Option<ssx3_gfx::Renderer> {
+    let mode = s.get("SSX3_RENDER").unwrap_or_else(|| "native".into());
+    let mode = if mode != "native" && !ssx3_ps2::vu::VU1_MICROCODE {
+        eprintln!("SSX3_RENDER={mode}: the emulated GS needs the VU1 microcode (build with --features vu1-microcode); using native");
+        "native".to_string()
+    } else {
+        mode
+    };
+    let native = match mode.as_str() {
+        "native" => true,
+        "shadow" => false,
+        "emu" => return None,
+        m => {
+            eprintln!("SSX3_RENDER={m}: expected native, shadow or emu; using native");
+            true
+        }
+    };
+    let Some(ctx) = ssx3_ps2::gpu::context() else {
+        eprintln!("[gfx] no GPU: using the emulated GS");
+        return None;
+    };
+    let r = ssx3_gfx::Renderer::new(ctx.device.clone(), ctx.queue.clone());
+    r.set_want_depth(native);
+    r.set_anisotropy(anisotropy(s));
+    r.set_options(gfx_options(s));
+    // SSX3_RENDER_SIZE=WxH: render at that size, widened to its aspect.
+    if let Some((w, h)) = render_size(s) {
+        r.set_output_size(Some((w, h)));
+        ssx3_ps2::frame_sink::set_view(w as f32 / h as f32, fov(s));
+    } else if fov(s) != 1.0 {
+        ssx3_ps2::frame_sink::set_view(0.0, fov(s));
+    }
+    // SSX3_RENDER_SCALE=N: N× internal resolution (1..8).
+    if let Some(n) = s
+        .get("SSX3_RENDER_SCALE")
+        .and_then(|v| v.parse::<u32>().ok())
+    {
+        r.set_scale(n);
+    }
+    // The light visibility queries from the native depth (unless a debug
+    // switch already forces them).
+    if native && ssx3_core::config::var_os("SSX3_DEBUG_LENSFX_VIS").is_none() {
+        assert!(ssx3_ee::set_override(LENSFX_QUERY, lensfx_query_native));
+    }
+    ssx3_ps2::frame_sink::set_native(native);
+    // Rendering runs on its own thread, next to the game (in the browser,
+    // when the game publishes a frame).
+    if !cfg!(target_arch = "wasm32") {
+        r.start_worker();
+    }
+    // Native: no GS emulation. The game's frames (menus, movies, loading
+    // screens and races all come through them) are drawn by ssx3-gfx; the
+    // GS keeps only what the game can observe (registers and events).
+    if native {
+        ssx3_ps2::m!(c).hw.gs.detach();
+    }
+    ssx3_ps2::frame_sink::install(Box::new(r.clone()));
+    // Stage C: draw functions with a native form build no packets while
+    // the native renderer draws (the emulated GS is detached).
+    ssx3_game::packetless::set_on(native);
+    eprintln!(
+        "[gfx] draw-layer renderer installed ({})",
+        if native { "native" } else { "shadow" }
+    );
+    Some(r)
+}
+
+/// `LensFX_v04` (0x2ec478): how much of a light source is visible. The game
+/// reads the Z buffer around the light back from the GS (a 16×16 local→host
+/// transfer through VIF1) and counts the pixels of the light's rectangle at
+/// or behind its depth. Natively the same count runs over the renderer's
+/// depth; with no native frame yet, the generated body runs.
+///
+/// Arguments: a0 the LensFX object, a1 the query record (floats: light
+/// rectangle x, y, w, h at 0..3, read rectangle x, y, w, h at 4..7, depth
+/// at 9), a2 where the visibility goes. Returns 1.
+const LENSFX_QUERY: u32 = 0x002e_c478;
+
+fn lensfx_query_native(c: &mut Cpu) {
+    use ssx3_ee_rt::cpu::reg::*;
+    if !ssx3_ps2::frame_sink::native() {
+        ssx3_ee::s09::f_002ec478__generated(c);
+        return;
+    }
+    let (rec, out) = (c.g[A1][0] as u32, c.g[A2][0] as u32);
+    let f: Vec<f32> = (0..10)
+        .map(|i| f32::from_bits(c.bus.read32(rec + 4 * i)))
+        .collect();
+    // Records with a read rectangle beyond the screen (or not a number)
+    // are left to the game's own code.
+    let area = f[6] * f[7];
+    if !(0.0..=1024.0 * 1024.0).contains(&area) || !f[4..8].iter().all(|v| v.is_finite()) {
+        static LOGGED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        if LOGGED.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 5 {
+            eprintln!("[lensfx] unusual query record {f:?}: generated path");
+        }
+        ssx3_ee::s09::f_002ec478__generated(c);
+        return;
+    }
+    let Some(v) = ssx3_ps2::frame_sink::with_depth(|d| lensfx_visibility(&f, d.w, d.h, &d.z))
+    else {
+        ssx3_ee::s09::f_002ec478__generated(c);
+        return;
+    };
+    c.bus.write32(out, v.to_bits());
+    // (Sun shadows: where the sun is.)
+    let depth = if f[9] < 0.0 { 0 } else { f[9] as u32 };
+    ssx3_ps2::frame_sink::note_light(f[0] + f[2] * 0.5, f[1] + f[3] * 0.5, depth);
+    c.g[V0][0] = 1;
+    // Return to the caller.
+    c.pc = c.g[RA][0] as u32;
+}
+
+/// `LensFX_v04`'s count over a `w`×`h` Z buffer (`f`: the query record).
+/// Pixels of the light's rectangle at or behind its depth count as
+/// visible. With the whole rectangle on screen the result is visible /
+/// total; otherwise max(0, (visible − half) / half) truncated to an
+/// integer, as the game computes it.
+fn lensfx_visibility(f: &[f32], w: u32, h: u32, z: &dyn Fn(u32, u32) -> u32) -> f32 {
+    let (lx, ly, lw, lh) = (f[0] as i32, f[1] as i32, f[2] as i32, f[3] as i32);
+    let (sx, sy, rw, rh) = (f[4] as i32, f[5] as i32, f[6] as i32, f[7] as i32);
+    // __fixunssfsi.
+    let depth = if f[9] < 0.0 {
+        f[9] as i32 as u32
+    } else {
+        f[9] as u32
+    };
+    let (mut total, mut visible) = (0.0f32, 0.0f32);
+    for r in 0..rh.max(0) {
+        let py = sy + r;
+        for k in 0..rw.max(0) {
+            let px = sx + k;
+            if px < lx || px >= lx + lw || py < ly || py >= ly + lh {
+                continue;
+            }
+            total += 1.0;
+            let zv = if px >= 0 && py >= 0 && (px as u32) < w && (py as u32) < h {
+                z(px as u32, py as u32)
+            } else {
+                0
+            };
+            if zv <= depth {
+                visible += 1.0;
+            }
+        }
+    }
+    let full = f[2] * f[3];
+    if total == full {
+        visible / total
+    } else {
+        let half = full * 0.5;
+        let r = (visible - half) / half;
+        ((r as i32) * (0.0 < r) as i32) as f32
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lensfx_visibility;
+
+    /// A 16×16 query at (8, 8), light depth 1000, over a 64×64 Z buffer.
+    fn query(x: f32, y: f32) -> [f32; 10] {
+        [x, y, 16.0, 16.0, x, y, 16.0, 16.0, 0.0, 1000.0]
+    }
+
+    #[test]
+    fn unoccluded_light_is_fully_visible() {
+        let z = vec![500u32; 64 * 64];
+        assert_eq!(
+            lensfx_visibility(&query(8.0, 8.0), 64, 64, &|x, y| z[(y * 64 + x) as usize]),
+            1.0
+        );
+    }
+
+    #[test]
+    fn geometry_in_front_hides_its_share() {
+        // The left half of the rectangle is covered by nearer geometry
+        // (larger Z is nearer on the GS).
+        let mut z = vec![0u32; 64 * 64];
+        for y in 8..24 {
+            for x in 8..16 {
+                z[y * 64 + x] = 5000;
+            }
+        }
+        assert_eq!(
+            lensfx_visibility(&query(8.0, 8.0), 64, 64, &|x, y| z[(y * 64 + x) as usize]),
+            0.5
+        );
+    }
+
+    #[test]
+    fn partly_off_screen_uses_the_game_formula() {
+        // Read rectangle clamped to the screen: 8 of 16 columns are read,
+        // all visible: (128 - 128) / 128 = 0.
+        let z = vec![0u32; 64 * 64];
+        let mut f = query(-8.0, 8.0);
+        f[4] = 0.0;
+        f[6] = 8.0;
+        assert_eq!(
+            lensfx_visibility(&f, 64, 64, &|x, y| z[(y * 64 + x) as usize]),
+            0.0
+        );
+        // Fully on screen again but every pixel occluded: 0.
+        let z = vec![5000u32; 64 * 64];
+        assert_eq!(
+            lensfx_visibility(&query(8.0, 8.0), 64, 64, &|x, y| z[(y * 64 + x) as usize]),
+            0.0
+        );
+    }
+}
+
+/// `SSX3_RENDER_SIZE=WxH`: a fixed output size.
+pub fn render_size(s: &dyn Settings) -> Option<(u32, u32)> {
+    let v = s.get("SSX3_RENDER_SIZE")?;
+    let (w, h) = v.split_once(['x', 'X'])?;
+    Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
+}
+
+/// `SSX3_FOV=<multiplier>`: field of view relative to the game's (1.2 =
+/// 20% wider, in the projection's tangent).
+pub fn fov(s: &dyn Settings) -> f32 {
+    s.get("SSX3_FOV")
+        .and_then(|v| v.parse::<f32>().ok())
+        .filter(|v| *v > 0.1 && *v < 4.0)
+        .unwrap_or(1.0)
+}
+
+/// Render at the surface's pixel size (or the aspect box in it,
+/// `aspect_box`) and widen the view to its aspect, unless a fixed size
+/// (`SSX3_RENDER_SIZE`) is asked for.
+pub fn follows_surface(s: &dyn Settings) -> bool {
+    render_size(s).is_none()
+}
+
+/// `SSX3_ASPECT=4:3|16:9`: the image keeps that aspect inside the window
+/// (letterboxed or pillarboxed) instead of filling it.
+pub fn aspect_box(s: &dyn Settings) -> Option<f32> {
+    match s.get("SSX3_ASPECT").as_deref() {
+        Some("4:3") => Some(4.0 / 3.0),
+        Some("16:9") => Some(16.0 / 9.0),
+        _ => None,
+    }
+}
+
+/// The modern graphics options from the settings:
+/// `SSX3_AA`, `SSX3_LOD_BIAS`, `SSX3_AO`, `SSX3_SHADOWS`, `SSX3_BLOOM`,
+/// `SSX3_SNOW`. Unset: the original look.
+pub fn gfx_options(s: &dyn Settings) -> ssx3_gfx::Options {
+    let get = |k: &str| s.get(k);
+    let on = |k: &str| get(k).is_some_and(|v| v != "0");
+    ssx3_gfx::Options {
+        aa: match get("SSX3_AA").as_deref() {
+            Some("fxaa") => ssx3_gfx::Aa::Fxaa,
+            _ => ssx3_gfx::Aa::Off,
+        },
+        lod_bias: get("SSX3_LOD_BIAS")
+            .and_then(|v| v.parse::<f32>().ok())
+            .map_or(0.0, |b| b.clamp(-2.0, 2.0)),
+        ao: on("SSX3_AO"),
+        shadows: on("SSX3_SHADOWS"),
+        bloom: match get("SSX3_BLOOM").as_deref() {
+            Some("modern") => ssx3_gfx::Bloom::Modern,
+            Some("off") => ssx3_gfx::Bloom::Off,
+            _ => ssx3_gfx::Bloom::Original,
+        },
+        snow: on("SSX3_SNOW"),
+    }
+}
+
+/// `SSX3_ANISO=1|2|4|8|16`: anisotropic filtering (16 by default; it
+/// sharpens textures with mipmaps, i.e. texture-pack replacements, seen at a
+/// glancing angle).
+pub fn anisotropy(s: &dyn Settings) -> u16 {
+    s.get("SSX3_ANISO")
+        .and_then(|v| v.parse::<u16>().ok())
+        .map_or(16, |n| n.clamp(1, 16))
+}
+
+/// `SSX3_RESOLUTION=<percent>`: render at that fraction of the window's
+/// pixels (scaled up to fill it).
+pub fn resolution(s: &dyn Settings) -> f32 {
+    s.get("SSX3_RESOLUTION")
+        .and_then(|v| v.parse::<f32>().ok())
+        .map_or(1.0, |p| (p / 100.0).clamp(0.25, 2.0))
+}

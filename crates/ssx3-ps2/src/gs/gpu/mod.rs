@@ -110,14 +110,14 @@ pub use crate::gpu::{context, init_context, GpuContext};
 /// `SSX3_GS_TRACE_READBACK`: log every VRAM readback and its cause.
 fn trace_readback() -> bool {
     static P: OnceLock<bool> = OnceLock::new();
-    *P.get_or_init(|| std::env::var_os("SSX3_GS_TRACE_READBACK").is_some())
+    *P.get_or_init(|| ssx3_core::config::var_os("SSX3_GS_TRACE_READBACK").is_some())
 }
 
 /// `SSX3_GS_PROFILE=1`: time the raster passes with GPU timestamps
 /// (`GpuStats::gpu_raster_ns`; waits for the GPU after every submission).
 fn profiling() -> bool {
     static P: OnceLock<bool> = OnceLock::new();
-    *P.get_or_init(|| std::env::var_os("SSX3_GS_PROFILE").is_some())
+    *P.get_or_init(|| ssx3_core::config::var_os("SSX3_GS_PROFILE").is_some())
 }
 
 /// Timestamp queries for `SSX3_GS_PROFILE`.
@@ -544,11 +544,11 @@ impl GpuGs {
         let desc = wgpu::ShaderModuleDescriptor {
             label: Some("gs.wgsl"),
             // SSX3_GS_WGSL=path overrides the built-in shader (development).
-            source: wgpu::ShaderSource::Wgsl(match std::env::var("SSX3_GS_WGSL") {
-                Ok(p) => std::fs::read_to_string(&p)
+            source: wgpu::ShaderSource::Wgsl(match ssx3_core::config::var("SSX3_GS_WGSL") {
+                Some(p) => std::fs::read_to_string(&p)
                     .unwrap_or_else(|e| panic!("{p}: {e}"))
                     .into(),
-                Err(_) => SHADER.into(),
+                None => SHADER.into(),
             }),
         };
         // Without wgpu's injected bounds checks and loop bounding the
@@ -557,7 +557,7 @@ impl GpuGs {
         // masked or bounded by construction, and `data` / `decoded` indices
         // are offsets the CPU encoded into buffers it sized.
         // SSX3_GS_CHECKED=1 keeps the checks (debugging).
-        let module = if std::env::var_os("SSX3_GS_CHECKED").is_some() {
+        let module = if ssx3_core::config::var_os("SSX3_GS_CHECKED").is_some() {
             dev.create_shader_module(desc)
         } else {
             // SAFETY: see above; the shader never indexes out of bounds.
@@ -630,7 +630,7 @@ impl GpuGs {
             touched: Vec::new(),
             stats: GpuStats::default(),
             prof_info: Vec::new(),
-            latent_readback: std::env::var_os("SSX3_GS_SYNC_READBACK").is_none(),
+            latent_readback: ssx3_core::config::var_os("SSX3_GS_SYNC_READBACK").is_none(),
             latent: Latent {
                 buf: mk("gs-latent", VRAM_BYTES, U::MAP_READ | U::COPY_DST),
                 ready: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -1284,7 +1284,7 @@ impl GpuGs {
     /// before the batch, from the same snapshot the batch would sample.
     fn plan_decodes(&mut self, slo: u32, shi: u32) {
         static OFF: OnceLock<bool> = OnceLock::new();
-        if *OFF.get_or_init(|| std::env::var_os("SSX3_GS_NO_DECODE").is_some()) {
+        if *OFF.get_or_init(|| ssx3_core::config::var_os("SSX3_GS_NO_DECODE").is_some()) {
             return;
         }
         let uses = std::mem::take(&mut self.batch.tex_use);
@@ -1349,7 +1349,7 @@ impl GpuGs {
     /// rather than reading the pages back. Returns whether to do so.
     pub(crate) fn direct_upload(&mut self, r: &Region, vram: &[u32]) -> bool {
         self.n3_touch(&r.pages, vram);
-        if std::env::var_os("SSX3_GS_NO_DIRECT").is_some() {
+        if ssx3_core::config::var_os("SSX3_GS_NO_DIRECT").is_some() {
             return false;
         }
         if !self.gpu_dirty.hits(&r.pages) && !self.batch_writes(r) {
@@ -1375,7 +1375,7 @@ impl GpuGs {
     /// copies after its upload (`SSX3_RENDER_SCALE`). `p` = sbp, sbw, spsm,
     /// ssax, ssay, dbp, dbw, dpsm, dsax, dsay, rrw, rrh.
     pub(crate) fn hires_l2l(&mut self, p: [u32; 12]) {
-        if std::env::var_os("SSX3_HIRES_DEBUG").is_some() {
+        if ssx3_core::config::var_os("SSX3_HIRES_DEBUG").is_some() {
             static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
             if N.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 12 {
                 eprintln!("[hires] l2l {p:?}");
@@ -1421,7 +1421,7 @@ impl GpuGs {
             let ss = swizzle::Surface::new(spsm, sbp, sbw);
             let sp = raster::Pages::rect(&ss, sx, sy, sx + w - 1, sy + hh - 1);
             if !h.is_current(&src, &sp) {
-                if std::env::var_os("SSX3_HIRES_DEBUG").is_some() {
+                if ssx3_core::config::var_os("SSX3_HIRES_DEBUG").is_some() {
                     eprintln!(
                         "[hires] l2l source not current: {src:?} (exists {})",
                         h.surfs.contains_key(&src)
@@ -1817,7 +1817,7 @@ impl GpuGs {
                     .chunks_exact(8)
                     .map(|c| u64::from_le_bytes(c.try_into().unwrap()))
                     .collect();
-                let verbose = std::env::var("SSX3_GS_PROFILE").is_ok_and(|v| v == "2");
+                let verbose = ssx3_core::config::var("SSX3_GS_PROFILE").is_some_and(|v| v == "2");
                 let mut raster_i = 0;
                 for (i, pair) in t.chunks_exact(2).enumerate() {
                     let ns = (pair[1].saturating_sub(pair[0]) as f64 * period) as u64;

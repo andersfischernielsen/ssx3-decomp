@@ -59,7 +59,7 @@ impl Gs {
         self.xfer_region = None;
         let p = self.xfer_params();
         static TRACE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if *TRACE.get_or_init(|| std::env::var_os("SSX3_TRACE_XFER").is_some()) {
+        if *TRACE.get_or_init(|| ssx3_core::config::var_os("SSX3_TRACE_XFER").is_some()) {
             let b = self.regs.bitbltbuf;
             eprintln!(
                 "[xfer] dir {} sbp {:#x} sbw {} spsm {:#x} -> dbp {:#x} dbw {} dpsm {:#x} pos {:#x} size {:#x}",
@@ -277,7 +277,7 @@ impl Gs {
         if let Some(lo) = nib {
             bytes.push(lo);
         }
-        if std::env::var_os("SSX3_TRACE_DOWNLOAD").is_some() {
+        if ssx3_core::config::var_os("SSX3_TRACE_DOWNLOAD").is_some() {
             let z = &self.regs.ctx[0].zbuf;
             let f = &self.regs.ctx[0].frame;
             let vals: Vec<u32> = bytes

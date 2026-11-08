@@ -41,7 +41,7 @@ pub struct NativeSnd {
 pub fn enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
     // Native by default; SSX3_SND=iop runs the recompiled IOP sound driver.
-    *ON.get_or_init(|| std::env::var("SSX3_SND").map_or(true, |v| v != "iop"))
+    *ON.get_or_init(|| ssx3_core::config::var("SSX3_SND").map_or(true, |v| v != "iop"))
 }
 
 fn state(c: &mut Cpu) -> &mut NativeSnd {

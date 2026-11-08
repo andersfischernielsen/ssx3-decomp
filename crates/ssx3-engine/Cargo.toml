@@ -1,0 +1,34 @@
+[package]
+name = "ssx3-engine"
+description = "SSX 3 (USA) native recompilation as a library: boot, input, stepping and pacing, the renderer and lifecycle hooks for any front end (docs/frontends.md)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["ee-threads"]
+# Dynamic call graph of the EE code (SSX3_CALLPROF=<out>:<from>:<to>).
+callprof = ["ssx3-ee-rt/callprof"]
+# The generated EE code: host threads (native default) or unwind form
+# (generated/ee-unwind; single-threaded, as the browser build needs).
+ee-threads = ["dep:ssx3-ee-threads", "ssx3-game/ee-threads"]
+ee-unwind = ["dep:ssx3-ee-unwind", "ssx3-game/ee-unwind"]
+# The emulated GS (verification renderers SSX3_RENDER=emu/shadow, GS
+# captures and VRAM dumps); the game itself renders natively.
+emu-gs = ["ssx3-ps2/emu-gs"]
+# The translated VU1 microcode: the emulated GS path (SSX3_RENDER=emu/shadow).
+vu1-microcode = ["ssx3-ps2/vu1-microcode", "emu-gs"]
+
+[dependencies]
+ssx3-core.workspace = true
+ssx3-ps2 = { path = "../ssx3-ps2" }
+ssx3-gfx = { path = "../ssx3-gfx" }
+ssx3-ee-rt = { path = "../ssx3-ee-rt" }
+ssx3-ee-threads = { path = "../../generated/ee/game", package = "ssx3-ee", optional = true }
+ssx3-ee-unwind = { path = "../../generated/ee-unwind/game", package = "ssx3-ee-unwind", optional = true }
+ssx3-game = { path = "../ssx3-game", default-features = false, features = ["packages"] }
+ssx3-iop = { path = "../ssx3-iop" }
+
+# The recompiled IOP sound modules (SSX3_IOP=1); not in the browser.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ssx3-iop-gen = { path = "../../generated/iop/modules" }

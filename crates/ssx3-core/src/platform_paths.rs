@@ -1,5 +1,6 @@
 //! Default game-data and save locations. A frontend may set separate roots
-//! once, before opening files. Per-file environment overrides still win.
+//! once, before opening files. Per-file overrides (`crate::config`: the
+//! environment, then the front end's settings) still win.
 //! Without roots, callers retain their checkout-relative or bundled defaults.
 //! Paths are joined without probing or canonicalizing: relative paths use the
 //! current working directory; unavailable roots do not select another location.
@@ -41,7 +42,7 @@ pub fn data_path(name: &str, default: PathBuf) -> PathBuf {
 /// An OS-string override, else a rooted name, else the desktop default.
 pub fn data_file(key: &str, name: &str, default: PathBuf) -> PathBuf {
     resolve(
-        std::env::var_os(key).map(PathBuf::from),
+        crate::config::var_os(key).map(PathBuf::from),
         ROOTS.get().map(|r| r.data.as_path()),
         name,
         default,
@@ -51,7 +52,7 @@ pub fn data_file(key: &str, name: &str, default: PathBuf) -> PathBuf {
 /// Like `data_file`, but ignores non-UTF-8 overrides.
 pub fn data_file_utf8(key: &str, name: &str, default: PathBuf) -> PathBuf {
     resolve(
-        std::env::var(key).ok().map(PathBuf::from),
+        crate::config::var(key).map(PathBuf::from),
         ROOTS.get().map(|r| r.data.as_path()),
         name,
         default,
@@ -61,7 +62,7 @@ pub fn data_file_utf8(key: &str, name: &str, default: PathBuf) -> PathBuf {
 /// A save file. `name` is relative to the save root, without a `saves/` prefix.
 pub fn save_file(key: &str, name: &str, default: PathBuf) -> PathBuf {
     resolve(
-        std::env::var_os(key).map(PathBuf::from),
+        crate::config::var_os(key).map(PathBuf::from),
         ROOTS.get().map(|r| r.saves.as_path()),
         name,
         default,
@@ -72,7 +73,7 @@ pub fn save_file(key: &str, name: &str, default: PathBuf) -> PathBuf {
 /// Overrides are returned verbatim, including those sentinels.
 pub fn memory_card() -> PathBuf {
     resolve(
-        std::env::var("SSX3_MEMCARD").ok().map(PathBuf::from),
+        crate::config::var("SSX3_MEMCARD").map(PathBuf::from),
         ROOTS.get().map(|r| r.saves.as_path()),
         "ssx3-mc0.ps2",
         PathBuf::from("saves/ssx3-mc0.ps2"),
@@ -82,7 +83,7 @@ pub fn memory_card() -> PathBuf {
 /// An explicit pack selection is authoritative, even if it cannot be opened.
 /// With no selection, `Pack::locate` retains its executable/bundle search.
 pub fn pack_override() -> Option<PathBuf> {
-    std::env::var_os("SSX3_PACK")
+    crate::config::var_os("SSX3_PACK")
         .map(PathBuf::from)
         .or_else(|| ROOTS.get().map(|r| r.data.join("ssx3.pack")))
 }

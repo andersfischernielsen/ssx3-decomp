@@ -139,7 +139,7 @@ fn unpack_plain<const VN: u32, const VL: u32>(
 fn native_vu1() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     // Native by default; SSX3_VU1=emu runs the translated microcode.
-    *ON.get_or_init(|| std::env::var("SSX3_VU1").map_or(true, |v| v != "emu"))
+    *ON.get_or_init(|| ssx3_core::config::var("SSX3_VU1").map_or(true, |v| v != "emu"))
 }
 
 impl Vif {

@@ -188,7 +188,7 @@ impl Gs {
     /// `cpu`). Falls back to the CPU when no GPU is usable.
     pub fn new() -> Self {
         let mut gs = Self::new_cpu();
-        if std::env::var("SSX3_GS").is_ok_and(|v| v.eq_ignore_ascii_case("gpu")) {
+        if ssx3_core::config::var("SSX3_GS").is_some_and(|v| v.eq_ignore_ascii_case("gpu")) {
             gs.set_backend(Backend::Gpu);
         }
         gs

@@ -1,9 +1,16 @@
 //! Host audio: the SPU2 pushes 48 kHz stereo frames into a [`Sink`], which
-//! forwards them to a cpal output stream through a bounded ring buffer and,
+//! forwards them to the output through a bounded ring buffer and,
 //! optionally, to a WAV file.
 //!
-//! * `SSX3_AUDIO=0` disables the output device (headless runs default to off).
+//! * [`set_output`] (the front end, before the game starts): who plays the
+//!   ring. [`Output::Device`] (the default): the default cpal device;
+//!   [`Output::Off`]: nothing (no ring); [`Output::Pull`]: the front end
+//!   takes the samples with [`pull`] and feeds its own device (the browser's
+//!   AudioWorklet, an Android Oboe stream, SDL, ...).
+//! * `SSX3_AUDIO` overrides it: `0` off, `null` a silent device drained in
+//!   real time (tests), `pull` pull, anything else the device.
 //! * `SSX3_WAV=path.wav` records everything the SPU2 produces.
+//! * [`suspend`] / [`resume`]: the front end's pause and audio interruptions.
 //!
 //! The emulator does not run in lock step with the sound card: the ring
 //! holds at most ~200 ms; when it is full new samples are dropped, when it is
@@ -29,8 +36,141 @@ pub fn underrun_frames() -> u64 {
     UNDERRUN_FRAMES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Output suspended ([`suspend`]): the device plays silence and new samples
+/// are dropped.
+static SUSPENDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Silence the output (a paused game, an audio interruption, a hidden app):
+/// the device plays silence and drops what was queued, new samples are not
+/// queued (a WAV capture still records them), and the real-time mixer stops
+/// topping the queue up ([`Sink::queued_frames`] is `None`). The device
+/// stays open.
+pub fn suspend() {
+    SUSPENDED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Undo [`suspend`]: sound resumes with the next samples the game mixes.
+pub fn resume() {
+    SUSPENDED.store(false, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether the output is suspended.
+pub fn suspended() -> bool {
+    SUSPENDED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Who plays the game's sound ([`set_output`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Output {
+    /// The default output device (cpal). In the browser, [`Output::Pull`].
+    #[default]
+    Device,
+    /// No output (a WAV capture still records).
+    Off,
+    /// The front end pulls the samples ([`pull`]): interleaved stereo i16
+    /// at [`RATE`], at most ~200 ms queued (newer samples are dropped while
+    /// the queue is full).
+    Pull,
+}
+
+static OUTPUT: Mutex<Output> = Mutex::new(Output::Device);
+
+/// Choose the output before the game starts (`ssx3_engine::EngineConfig::audio`).
+/// `SSX3_AUDIO` overrides it.
+pub fn set_output(o: Output) {
+    *OUTPUT.lock().unwrap_or_else(|e| e.into_inner()) = o;
+}
+
+/// The output chosen: `SSX3_AUDIO` if set, else [`set_output`]'s.
+pub fn output() -> Output {
+    match ssx3_core::config::var("SSX3_AUDIO").as_deref() {
+        Some("0") => Output::Off,
+        Some("pull") => Output::Pull,
+        Some(_) => Output::Device,
+        None => *OUTPUT.lock().unwrap_or_else(|e| e.into_inner()),
+    }
+}
+
+/// The ring [`pull`] drains ([`Output::Pull`]).
+static PULLED: Mutex<Option<Ring>> = Mutex::new(None);
+
+/// [`Output::Pull`]: stereo frames the front end holds beyond the ring
+/// ([`report_buffered`]); negative until it reports.
+static FRONT_BUFFERED: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(-1);
+
+/// [`Output::Pull`]: how many stereo frames the front end has buffered but
+/// not played yet (its own queue, a device buffer it can see). Once
+/// reported, [`Sink::queued_frames`] counts the ring plus this, so the
+/// real-time mixer keeps the front end's stream fed when the game catches
+/// up; report again whenever it changes. Unreported, a front end that pulls
+/// once per presented image is not topped up (it may drain the ring every
+/// frame). [`pull_into`] reports 0 the first time it is called: a front end
+/// pulling from its audio callback holds nothing beyond the ring.
+pub fn report_buffered(frames: usize) {
+    FRONT_BUFFERED.store(
+        frames.min(i64::MAX as usize) as i64,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+fn front_buffered() -> Option<usize> {
+    let v = FRONT_BUFFERED.load(std::sync::atomic::Ordering::Relaxed);
+    (v >= 0).then_some(v as usize)
+}
+
+/// [`Output::Pull`]: append the samples produced since the last call to
+/// `out` (interleaved stereo, 48 kHz). Returns the stereo frames appended.
+/// Call it from the front end's audio callback or once per presented frame;
+/// suspended ([`suspend`]), it drops what was queued and appends nothing.
+pub fn pull(out: &mut Vec<i16>) -> usize {
+    let Some(r) = PULLED.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
+        return 0;
+    };
+    let mut q = r.lock().unwrap_or_else(|e| e.into_inner());
+    if suspended() {
+        q.clear();
+        return 0;
+    }
+    let n = q.len();
+    out.extend(q.drain(..));
+    n / 2
+}
+
+/// Up to `out.len() / 2` stereo frames into `out` (interleaved), for an
+/// audio callback that fills a fixed buffer; the rest of `out` is left as
+/// it is. Returns the frames written.
+pub fn pull_into(out: &mut [i16]) -> usize {
+    let _ = FRONT_BUFFERED.compare_exchange(
+        -1,
+        0,
+        std::sync::atomic::Ordering::Relaxed,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    let Some(r) = PULLED.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
+        return 0;
+    };
+    let mut q = r.lock().unwrap_or_else(|e| e.into_inner());
+    if suspended() {
+        q.clear();
+        return 0;
+    }
+    let n = (out.len() & !1).min(q.len());
+    for (o, v) in out.iter_mut().zip(q.drain(..n)) {
+        *o = v;
+    }
+    n / 2
+}
+
+fn start_pull() -> Option<Ring> {
+    let ring: Ring = Arc::new(Mutex::new(VecDeque::with_capacity(RING_FRAMES * 2)));
+    *PULLED.lock().unwrap_or_else(|e| e.into_inner()) = Some(ring.clone());
+    Some(ring)
+}
+
 pub struct Sink {
     ring: Option<Ring>,
+    /// The front end drains the ring ([`Output::Pull`]).
+    pulled: bool,
     wav: Option<Wav>,
 }
 
@@ -98,32 +238,39 @@ fn header(bytes: u32) -> Vec<u8> {
 impl Sink {
     /// Build the sink from the environment (see module docs).
     pub fn from_env() -> Self {
-        let wav = std::env::var("SSX3_WAV")
-            .ok()
-            .and_then(|p| match Wav::create(&p) {
-                Ok(w) => {
-                    eprintln!("[audio] recording to {p}");
-                    Some(w)
-                }
-                Err(e) => {
-                    eprintln!("[audio] cannot create {p}: {e}");
-                    None
-                }
-            });
-        let mode = std::env::var("SSX3_AUDIO").unwrap_or_default();
-        let ring = match mode.as_str() {
-            "0" => None,
+        let wav = ssx3_core::config::var("SSX3_WAV").and_then(|p| match Wav::create(&p) {
+            Ok(w) => {
+                eprintln!("[audio] recording to {p}");
+                Some(w)
+            }
+            Err(e) => {
+                eprintln!("[audio] cannot create {p}: {e}");
+                None
+            }
+        });
+        let null = ssx3_core::config::var("SSX3_AUDIO").is_some_and(|v| v == "null");
+        let out = output();
+        let ring = match out {
+            Output::Off => None,
             // Test device: drained in real time, plays nothing.
-            "null" => start_null_device(),
-            _ => start_device(),
+            Output::Device if null => start_null_device(),
+            Output::Device => start_device(),
+            Output::Pull => start_pull(),
         };
-        Self { ring, wav }
+        Self {
+            pulled: ring.is_some() && (out == Output::Pull || cfg!(target_arch = "wasm32")),
+            ring,
+            wav,
+        }
     }
 
     /// Interleaved stereo frames.
     pub fn push(&mut self, s: &[i16]) {
         if let Some(w) = self.wav.as_mut() {
             w.push(s);
+        }
+        if suspended() {
+            return;
         }
         if let Some(r) = &self.ring {
             if let Ok(mut q) = r.lock() {
@@ -135,14 +282,16 @@ impl Sink {
     }
 
     /// Stereo frames waiting for the output device (`None` without one, and
-    /// in the browser, where the page drains the ring every frame).
+    /// when the front end pulls the samples without [`report_buffered`]: it
+    /// may drain them every frame; with it, the ring plus what it reported).
     pub fn queued_frames(&self) -> Option<usize> {
-        if cfg!(target_arch = "wasm32") {
+        if suspended() {
             return None;
         }
+        let front = if self.pulled { front_buffered()? } else { 0 };
         self.ring
             .as_ref()
-            .map(|r| r.lock().map_or(0, |q| q.len() / 2))
+            .map(|r| r.lock().map_or(0, |q| q.len() / 2) + front)
     }
 
     pub fn flush(&mut self) {
@@ -168,6 +317,11 @@ fn start_null_device() -> Option<Ring> {
                 let due = (t0.elapsed().as_secs_f64() * RATE as f64) as u64;
                 let n = ((due - taken) * 2) as usize;
                 let mut q = r.lock().unwrap();
+                if suspended() {
+                    q.clear();
+                    taken = due;
+                    continue;
+                }
                 let k = n.min(q.len());
                 q.drain(..k);
                 UNDERRUN_FRAMES
@@ -184,25 +338,11 @@ fn start_null_device() -> Option<Ring> {
     None
 }
 
-/// The browser: no device here. The ring is drained by the page ([`take`]),
-/// which plays it with Web Audio.
+/// The browser: no device here. The page pulls the samples ([`pull`]) and
+/// plays them with Web Audio.
 #[cfg(target_arch = "wasm32")]
 fn start_device() -> Option<Ring> {
-    let ring: Ring = Arc::new(Mutex::new(VecDeque::with_capacity(RING_FRAMES * 2)));
-    *PAGE.lock().unwrap() = Some(ring.clone());
-    Some(ring)
-}
-
-#[cfg(target_arch = "wasm32")]
-static PAGE: Mutex<Option<Ring>> = Mutex::new(None);
-
-/// The browser: the samples produced since the last call (interleaved
-/// stereo, 48 kHz).
-#[cfg(target_arch = "wasm32")]
-pub fn take(out: &mut Vec<i16>) {
-    if let Some(r) = PAGE.lock().unwrap().as_ref() {
-        out.extend(r.lock().unwrap().drain(..));
-    }
+    start_pull()
 }
 
 /// Open the default output device on its own thread (cpal streams are not
@@ -271,6 +411,16 @@ fn open_stream(ring: Ring) -> Result<cpal::Stream, String> {
     let mut next = [0i16; 2];
     let mut fill = move |out: &mut dyn FnMut(usize, f32), frames: usize| {
         let mut q = ring.lock().unwrap();
+        if suspended() {
+            // Silence, and nothing stale left to play on resume.
+            q.clear();
+            cur = [0; 2];
+            next = [0; 2];
+            for i in 0..frames * channels {
+                out(i, 0.0);
+            }
+            return;
+        }
         for i in 0..frames {
             frac += step;
             while frac >= 1.0 {
@@ -315,4 +465,39 @@ fn open_stream(ring: Ring) -> Result<cpal::Stream, String> {
     .map_err(|e| e.to_string())?;
     stream.play().map_err(|e| e.to_string())?;
     Ok(stream)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pull_output_hands_the_samples_to_the_front_end() {
+        if ssx3_core::config::var_os("SSX3_AUDIO").is_some() {
+            return;
+        }
+        set_output(Output::Pull);
+        let mut sink = Sink::from_env();
+        assert_eq!(sink.queued_frames(), None);
+        sink.push(&[1, 2, 3, 4]);
+        let mut out = Vec::new();
+        assert_eq!(pull(&mut out), 2);
+        assert_eq!(out, [1, 2, 3, 4]);
+        sink.push(&[5, 6, 7, 8, 9, 10]);
+        let mut buf = [0i16; 4];
+        assert_eq!(pull_into(&mut buf), 2);
+        assert_eq!(buf, [5, 6, 7, 8]);
+        assert_eq!(pull(&mut out), 1);
+        assert_eq!(&out[4..], [9, 10]);
+        // Pulling from a callback counts the ring; a report adds to it.
+        sink.push(&[1, 2, 3, 4, 5, 6]);
+        assert_eq!(sink.queued_frames(), Some(3));
+        report_buffered(100);
+        assert_eq!(sink.queued_frames(), Some(103));
+        suspend();
+        assert_eq!(sink.queued_frames(), None);
+        resume();
+        set_output(Output::Off);
+        assert!(Sink::from_env().ring.is_none());
+    }
 }

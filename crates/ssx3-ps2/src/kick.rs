@@ -51,7 +51,7 @@ static PENDING: AtomicU32 = AtomicU32::new(0);
 fn on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     crate::frame_sink::native()
-        && *ON.get_or_init(|| std::env::var("SSX3_NATIVE_KICK").map_or(true, |v| v != "0"))
+        && *ON.get_or_init(|| ssx3_core::config::var("SSX3_NATIVE_KICK").map_or(true, |v| v != "0"))
 }
 
 /// The GraphicsMan if `id` is its kick semaphore and the kick is native.
