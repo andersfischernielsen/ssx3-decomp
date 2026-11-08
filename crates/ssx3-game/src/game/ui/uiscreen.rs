@@ -8,6 +8,7 @@ use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::call::Unwound;
 use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
@@ -97,6 +98,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         uiscreen_cmd_end_transition_out,
         "UIScreen_CmdEndTransitionOut",
     ),
+    (0x0039_d778, ui_screen_update, "UIScreen_Update"),
     (0x0039_d860, ui_screen_find_object, "UIScreen_FindObject"),
     (0x0039_d8c0, c_ui_scroll_dtor, "cUIScroll_dtor"),
     (0x0039_d968, cui_scroll_render, "cUIScroll_Render"),
@@ -130,23 +132,41 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_ANIM_SET_CREATE_ANIM;
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_CTOR_2;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_FIRST_4 as UI_LIST_FIRST_2;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_DTOR;
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_SET_ANIM;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_FIND_OBJECT_2 as UI_SCREEN_FIND_OBJECT;
 
+    pub(crate) use crate::game::main::gamemode::callee::UI_LIST_NODE_IS_SENTINEL as UI_LIST_NODE_IS_SENTINEL_2;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_CTOR_2 as UI_LIST_CTOR;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_DELETE_ALL;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_NODE_DTOR_BODY;
 
     pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_NODE_UNLINK;
     pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_PUSH_BACK;
+    pub(crate) use crate::game::ui::uistate::ui_callee::NODE_UNLINK as UI_LIST_NODE_UNLINK_2;
 
     // UI (shard 13).
     pub const C_UI_GROUP_SET_FOCUS: Callee = Callee {
         addr: 0x0039_8638,
         f: ee::s13::f_00398638,
+    };
+
+    pub const UI_SCREEN_GET_PRIMARY_THREAD: Callee = Callee {
+        addr: 0x0039_c7c0,
+        f: ee::s13::f_0039c7c0,
+    };
+
+    pub const UI_SCREEN_RUN_THREAD_FRAME: Callee = Callee {
+        addr: 0x0039_c978,
+        f: ee::s13::f_0039c978,
+    };
+
+    pub const C_UI_GROUP_UPDATE_ANIM: Callee = Callee {
+        addr: 0x0039_8910,
+        f: ee::s13::f_00398910,
     };
 }
 
@@ -400,6 +420,234 @@ pub fn ui_screen_run_thread_frame(c: &mut Cpu) {
     ee::s13::f_0039c978__generated(c);
     let frame = c.bus.read16(thread.wrapping_add(0xc)) as u32;
     crate::tick::frame60_ran(c, thread, frame);
+}
+
+/// Resumed in the thread walk (the `UIScreen_RunThreadFrame` back edge).
+pub(crate) const UI_SCREEN_UPDATE_WALK: u32 = 0x0039_d7b0;
+
+/// `void UIScreen_Update(UIScreen* s)` (0x39d778): run the screen's threads
+/// (`UIScreen_RunThreadFrame`), then its widgets' animations
+/// (`cUIGroup_UpdateAnim`) at the frame of its timeline thread.
+pub fn ui_screen_update(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                0x0039_d778 => {
+                    c.cycles += 11;
+                    // The widgets' animations find the timeline that
+                    // clocks them through the screen being updated.
+                    set_updating(c, Some(r32(c, A0)));
+                    let frame = Frame::open(c, 0x40);
+                    frame.save(c, S2, 0x10);
+                    c.g[S2][0] = c.g[A0][0];
+                    frame.save(c, S0, 0x30);
+                    frame.save(c, S1, 0x20);
+                    frame.save_ra(c, 0);
+                    c.g[RA][0] = sx(0x0039_d798);
+                    c.g[A0][0] = sx(p(r32(c, S2), 0x18));
+                    callee::UI_LIST_FIRST_2.call(c, 0x0039_d798)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    let empty = c.g[S0][0] == 0;
+                    c.g[A0][0] = c.g[S2][0];
+                    pc = if empty { 0x0039_d814 } else { 0x0039_d7a4 };
+                    continue;
+                }
+                0x0039_d7a4 => {
+                    c.cycles += 2;
+                    pc = 0x0039_d804;
+                    continue;
+                }
+                UI_SCREEN_UPDATE_WALK => {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lhu(p(r32(c, S0), 0xe));
+                    c.g[V0][0] = c.lhu(p(r32(c, S0), 0xc));
+                    let finished = c.g[V1][0] == c.g[V0][0];
+                    c.g[S1][0] = c.lw(p(r32(c, S0), 0x4));
+                    if finished {
+                        pc = 0x0039_d800;
+                    } else {
+                        pc = 0x0039_d7c0;
+                    }
+                    continue;
+                }
+                0x0039_d7c0 => {
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A1][0] = c.g[S0][0];
+                    callee::UI_SCREEN_RUN_THREAD_FRAME.call(c, 0x0039_d7cc)?;
+                    c.g[V0][0] = c.lb(p(r32(c, S0), 0x13)) & 0x1;
+                    if c.g[V0][0] != 0 {
+                        c.g[S0][0] = c.g[S1][0];
+                        pc = 0x0039_d804;
+                    } else {
+                        pc = 0x0039_d7dc;
+                    }
+                    continue;
+                }
+                0x0039_d7dc => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::UI_LIST_NODE_UNLINK_2.call(c, 0x0039_d7e4)?;
+                    let gone = c.g[S0][0] == 0;
+                    c.g[A1][0] = 0x3;
+                    pc = if gone { 0x0039_d800 } else { 0x0039_d7ec };
+                    continue;
+                }
+                0x0039_d7ec => {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(p(r32(c, S0), 0x8));
+                    c.g[A0][0] = c.lh(p(c.g[V0][0] as u32, 0x8));
+                    c.g[V1][0] = c.lw(p(c.g[V0][0] as u32, 0xc));
+                    let target = c.g[V1][0] as u32;
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, target, 0x0039_d800)?;
+                    pc = 0x0039_d800;
+                    continue;
+                }
+                0x0039_d800 => {
+                    c.cycles += 1;
+                    c.g[S0][0] = c.g[S1][0];
+                    pc = 0x0039_d804;
+                    continue;
+                }
+                0x0039_d804 => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::UI_LIST_NODE_IS_SENTINEL_2.call(c, 0x0039_d80c)?;
+                    let more = c.g[V0][0] == 0;
+                    c.g[A0][0] = c.g[S2][0];
+                    if more {
+                        if back_edge_unwinds(c, UI_SCREEN_UPDATE_WALK) {
+                            return Err(Unwound);
+                        }
+                        pc = UI_SCREEN_UPDATE_WALK;
+                    } else {
+                        pc = 0x0039_d814;
+                    }
+                    continue;
+                }
+                0x0039_d814 => {
+                    c.cycles += 4;
+                    c.g[S0][0] = 0xffff;
+                    callee::UI_SCREEN_GET_PRIMARY_THREAD.call(c, 0x0039_d81c)?;
+                    if c.g[V0][0] != 0 {
+                        c.g[S0][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0xc));
+                        pc = 0x0039_d838;
+                    } else {
+                        pc = 0x0039_d824;
+                    }
+                    continue;
+                }
+                0x0039_d824 => {
+                    c.cycles += 4;
+                    c.g[A0][0] = sx(p(r32(c, S2), 0x18));
+                    callee::UI_LIST_FIRST_2.call(c, 0x0039_d82c)?;
+                    let empty = c.g[V0][0] == 0;
+                    c.g[A0][0] = sx(p(r32(c, S2), 0x40));
+                    pc = if empty { 0x0039_d83c } else { 0x0039_d834 };
+                    continue;
+                }
+                0x0039_d834 => {
+                    c.cycles += 1;
+                    c.g[S0][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0xc));
+                    pc = 0x0039_d838;
+                    continue;
+                }
+                0x0039_d838 => {
+                    c.cycles += 1;
+                    c.g[A0][0] = sx(p(r32(c, S2), 0x40));
+                    pc = 0x0039_d83c;
+                    continue;
+                }
+                0x0039_d83c => {
+                    c.cycles += 8;
+                    c.g[A1][0] = c.g[S0][0];
+                    // (Again: a resumed walk may come back in a later frame.)
+                    set_updating(c, Some(r32(c, S2)));
+                    callee::C_UI_GROUP_UPDATE_ANIM.call(c, 0x0039_d844)?;
+                    set_updating(c, None);
+                    let frame = Frame { size: 0x40 };
+                    frame.restore(c, S0, 0x30);
+                    frame.restore(c, S1, 0x20);
+                    frame.restore(c, S2, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0039_d778, 0x0039_d85c);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+thread_local! {
+    /// The screen whose `UIScreen_Update` is running, with the VSync count
+    /// (`tick::vsync_count`) it was set at.
+    static UPDATING: std::cell::Cell<Option<(u32, u32)>> = const { std::cell::Cell::new(None) };
+}
+
+/// Set (or clear) the screen whose `UIScreen_Update` is running.
+fn set_updating(c: &mut Cpu, screen: Option<u32>) {
+    let vsync = crate::tick::vsync_count(c);
+    UPDATING.set(screen.map(|s| (s, vsync)));
+}
+
+/// The screen whose `UIScreen_Update` is running.
+///
+/// One slot, not a stack: an update that an event unwinds is not re-entered
+/// here (the trampoline resumes it in the generated body), so nothing clears
+/// its screen. In the unwind form (the browser build) the VBlank that
+/// finishes a frame unwinds the thread, so there the screen counts only
+/// until the VSync count moves. Host threads block at a VBlank and come back
+/// to the update instead; only a call-depth unwind leaves the slot set, until
+/// the next update replaces it.
+pub(crate) fn updating_screen(c: &mut Cpu) -> Option<u32> {
+    let vsync = crate::tick::vsync_count(c);
+    slot_screen(UPDATING.get(), cfg!(feature = "ee-unwind"), vsync)
+}
+
+/// [`updating_screen`]'s rule for a slot, in the unwind form or with host
+/// threads, at the VSync count `vsync`.
+fn slot_screen(slot: Option<(u32, u32)>, unwind_form: bool, vsync: u32) -> Option<u32> {
+    let (screen, at) = slot?;
+    (!unwind_form || at == vsync).then_some(screen)
+}
+
+/// Run `body` as if inside `UIScreen_Update(screen)` (tests).
+#[cfg(test)]
+pub(crate) fn with_updating_screen(c: &mut Cpu, screen: u32, body: impl FnOnce(&mut Cpu)) {
+    set_updating(c, Some(screen));
+    body(c);
+    set_updating(c, None);
+}
+
+/// The thread whose frame `UIScreen_Update` passes to the widgets'
+/// animations: `UIScreen_GetPrimaryThread` (the first thread of the list at
+/// `+0x18` with bit 25 of `+0x10` set), else the list's first thread; 0 when
+/// there is none. Reads only.
+pub(crate) fn timeline_thread(c: &mut Cpu, screen: u32) -> u32 {
+    // `UIList_First` (0x397840): 0 when the first node links to itself.
+    let list = screen.wrapping_add(0x18);
+    let first = c.bus.read32(list.wrapping_add(4));
+    if first == 0 || c.bus.read32(first.wrapping_add(4)) == first {
+        return 0;
+    }
+    // `UIListNode_IsSentinel` (0x397718): a node that links to itself.
+    let mut node = first;
+    for _ in 0..256 {
+        if node == 0 || c.bus.read32(node.wrapping_add(4)) == node || c.bus.read32(node) == node {
+            break;
+        }
+        if (c.bus.read32(node.wrapping_add(0x10)) >> 25) & 1 != 0 {
+            return node;
+        }
+        node = c.bus.read32(node.wrapping_add(4));
+    }
+    first
 }
 
 /// `UIKeyframe* UIScreen_FindKeyframe(UIScreen* s, unsigned short frame)`
@@ -1918,6 +2166,599 @@ pub(crate) mod tests {
             }
             assert_eq!(c.bus.read16(thread + 0xc), 60, "{hz} Hz");
         }
+    }
+
+    #[test]
+    fn ui_screen_update_matches() {
+        use crate::difftest::events::{check_events, schedule, Events};
+        check_events(
+            ee::s13::f_0039d778__generated,
+            ui_screen_update,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x39d7_7800 ^ seed as u64);
+                scramble(c, &mut r);
+                let mode: Events = schedule(c, &mut r, seed, 0x0039_d778);
+                // Each choice below is drawn on its own, so every path meets
+                // every event mode.
+                let frame = (r.next_u32() % 7) as u16;
+                let speed = [1i8, 2, -1, 0][(r.next_u32() % 4) as usize];
+                let end = [0xffffu16, 3, 0][(r.next_u32() % 3) as usize];
+                let n = (r.next_u32() % 3) as u16;
+                let (screen, thread) = thread_fixture(c, &mut r, frame, speed, end, n);
+                let sentinel = DATA + 0x900;
+                c.bus.write32(sentinel + 4, sentinel);
+                // A second thread on half the seeds: the walk reaches it over
+                // the back edge, where an event may unwind and resume.
+                let thread2 = DATA + 0x180;
+                let two = r.next_u32() % 2 == 0;
+                if two {
+                    let f2 = (r.next_u32() % 7) as u16;
+                    let ran = if r.next_u32() % 3 == 0 {
+                        f2
+                    } else {
+                        (r.next_u32() % 7) as u16
+                    };
+                    c.bus.write16(thread2 + 0xc, f2);
+                    c.bus.write16(thread2 + 0xe, ran);
+                    c.bus
+                        .write16(thread2 + 0x10, [0xffffu16, 3][(r.next_u32() % 2) as usize]);
+                    c.bus
+                        .write8(thread2 + 0x12, [1i8, -1][(r.next_u32() % 2) as usize] as u8);
+                    c.bus.write8(thread2 + 0x13, (r.next_u32() % 2) as u8);
+                    c.bus.write32(thread2, 0);
+                    c.bus.write32(thread2 + 4, sentinel);
+                }
+                // The first thread: finished (`+0xe` is its frame), held
+                // (bit 0 of `+0x13`), or run and removed through the unlink
+                // path.
+                let kind = r.next_u32() % 3;
+                if kind == 0 {
+                    c.bus.write16(thread + 0xe, frame);
+                }
+                c.bus.write8(thread + 0x13, (kind == 1) as u8);
+                c.bus.write32(thread, 0);
+                c.bus
+                    .write32(thread + 4, if two { thread2 } else { sentinel });
+                // A null next link on some seeds: the walk steps onto node 0
+                // (a runnable thread linking back to the last one), runs and
+                // unlinks it, and skips the cleanup call of a null node.
+                if r.next_u32() % 4 == 0 {
+                    let last = if two { thread2 } else { thread };
+                    c.bus.write32(last + 4, 0);
+                    let f0 = (r.next_u32() % 5) as u16;
+                    c.bus.write32(0, last);
+                    c.bus.write32(4, sentinel);
+                    c.bus.write16(0xc, f0);
+                    c.bus.write16(0xe, f0.wrapping_add(1));
+                    c.bus.write16(0x10, 0xffff);
+                    c.bus.write8(0x12, 1);
+                    c.bus.write8(0x13, 0);
+                }
+                // A primary thread (bit 25 of the word at `+0x10`: bit 1 of
+                // `+0x13`) on some seeds, either thread.
+                let primary = match r.next_u32() % 3 {
+                    0 => thread,
+                    1 if two => thread2,
+                    _ => 0,
+                };
+                if primary != 0 {
+                    let flags = c.bus.read8(primary + 0x13);
+                    c.bus.write8(primary + 0x13, flags | 2);
+                }
+                // The removal path calls a cleanup through a fabricated
+                // vtable: a safe read of the thread's next link.
+                let cleanup = DATA + 0xa00;
+                c.bus.write32(thread + 8, cleanup);
+                c.bus.write32(thread2 + 8, cleanup);
+                c.bus.write16(cleanup + 8, 0);
+                c.bus.write32(cleanup + 0xc, 0x0039_7718);
+                // An empty node list and a null animation for the group.
+                c.bus.write32(screen + 0x40 + 0x74 + 4, 0);
+                c.bus.write32(screen + 0x40 + 0xc, 0);
+                // The thread list: no first node, empty, or the threads.
+                let first = match r.next_u32() % 8 {
+                    0 => 0,
+                    1 => sentinel,
+                    _ => thread,
+                };
+                c.bus.write32(screen + 0x18 + 4, first);
+                c.g[A0][0] = sx(screen);
+                mode
+            },
+        );
+    }
+
+    /// The tests below drive `ui_screen_update` through the real
+    /// screen/thread/widget path: the callees with tick-rate handling must
+    /// reach their ports (as in the game), the rest run their generated
+    /// bodies. Installs those three slots and puts the previous ones back.
+    /// The slots are process-wide and tests run in parallel: one test holds
+    /// them at a time, or one test's drop would put the generated bodies
+    /// back under another.
+    struct Slots {
+        run_thread_frame: fn(&mut Cpu),
+        anim_advance: fn(&mut Cpu),
+        anim_apply: fn(&mut Cpu),
+        // Released after `drop` has put the slots back.
+        _held: std::sync::MutexGuard<'static, ()>,
+    }
+
+    static SLOTS_HELD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    impl Slots {
+        fn install() -> Slots {
+            use crate::game::ui::uianimation::{ui_anim_advance, ui_anim_apply};
+            // (A test that failed while holding them has already put them back.)
+            let held = SLOTS_HELD.lock().unwrap_or_else(|e| e.into_inner());
+            unsafe {
+                let saved = Slots {
+                    run_thread_frame: ee::s13::OVERRIDE_0039C978,
+                    anim_advance: ee::s13::OVERRIDE_003974B0,
+                    anim_apply: ee::s13::OVERRIDE_003975E0,
+                    _held: held,
+                };
+                ee::s13::OVERRIDE_0039C978 = ui_screen_run_thread_frame;
+                ee::s13::OVERRIDE_003974B0 = ui_anim_advance;
+                ee::s13::OVERRIDE_003975E0 = ui_anim_apply;
+                saved
+            }
+        }
+    }
+
+    impl Drop for Slots {
+        fn drop(&mut self) {
+            unsafe {
+                ee::s13::OVERRIDE_0039C978 = self.run_thread_frame;
+                ee::s13::OVERRIDE_003974B0 = self.anim_advance;
+                ee::s13::OVERRIDE_003975E0 = self.anim_apply;
+            }
+        }
+    }
+
+    /// A screen with one timeline thread (empty keyframes), a group holding
+    /// `widgets` (`(mode, start, count)` each with its own animation and
+    /// target; mode 9 wraps) driven through the real update path. Layout
+    /// lives at `base` (distinct per scenario, so host clocks never alias).
+    /// Returns (screen, thread).
+    fn full_path_fixture(
+        c: &mut Cpu,
+        base: u32,
+        hz: u32,
+        step: i8,
+        widgets: &[(u32, u16, u16)],
+    ) -> (u32, u32) {
+        // The widgets' own updates are fake callees, as in the engine
+        // tests: point the miss hook at them.
+        c.hooks.miss = crate::difftest::fakes::fake_call;
+        c.hooks.jump_out = crate::difftest::fakes::fake_jump_out;
+        c.hooks.syscall = crate::difftest::fakes::fake_syscall;
+        // Never unwind from a fake: the widgets' updates always return.
+        c.bus
+            .write32(crate::difftest::fakes::LOG_UNWIND_AT, u32::MAX);
+        crate::difftest::elf_image(c);
+        crate::tick::set_for_test(c, hz);
+        let (screen, thread, list) = (base, base + 0x80, base + 0x100);
+        // Eight empty keyframes (frames 0..7): the thread steps regardless.
+        c.bus.write32(list, 8);
+        let mut at = list + 4;
+        for i in 0..8u32 {
+            c.bus.write32(at + 4, 0xc);
+            c.bus.write16(at + 8, i as u16);
+            c.bus.write16(at + 0xa, 0);
+            at += 0xc;
+        }
+        c.bus.write32(screen + 0x34, list);
+        c.bus.write16(thread + 0xc, 0);
+        c.bus.write16(thread + 0xe, 0xffff);
+        c.bus.write16(thread + 0x10, 0xffff);
+        c.bus.write8(thread + 0x12, step as u8);
+        // Held: the walk advances past the thread without unlinking it, so
+        // it clocks the widgets on every tick.
+        c.bus.write8(thread + 0x13, 1);
+        c.bus.write32(thread, 0);
+        let sentinel = base + 0x900;
+        c.bus.write32(sentinel + 4, sentinel);
+        c.bus.write32(thread + 4, sentinel);
+        // The removal path calls a cleanup through a fabricated vtable:
+        // a safe read of the thread's next link.
+        let cleanup = base + 0xa00;
+        c.bus.write32(thread + 8, cleanup);
+        c.bus.write16(cleanup + 8, 0);
+        c.bus.write32(cleanup + 0xc, 0x0039_7718);
+        c.bus.write32(screen + 0x18 + 4, thread);
+        // The group walks one node per widget below.
+        let group = screen + 0x40;
+        let mut node = base + 0xb00;
+        let mut prev = 0u32;
+        for (w, (mode, start, count)) in widgets.iter().enumerate() {
+            let wu = w as u32;
+            let (widget, vt) = (base + 0x1000 + wu * 0x100, base + 0x2000 + wu * 0x100);
+            let (anim, data, chans, chan) = (
+                base + 0x3000 + wu * 0x200,
+                base + 0x3400 + wu * 0x40,
+                base + 0x3480 + wu * 0x40,
+                base + 0x3500 + wu * 0x40,
+            );
+            c.bus.write32(widget + 8, vt);
+            c.bus.write32(widget + 0xc, anim);
+            c.bus.write8(widget + 0x10, *mode as u8);
+            c.bus.write16(vt + 0x60, 0);
+            c.bus.write32(vt + 0x64, 0x003a_0048);
+            c.bus.write32(anim, data);
+            c.bus.write32(anim + 4, chans);
+            c.bus.write16(anim + 0x8, 0xffff);
+            c.bus
+                .write16(anim + 0xa, if *start == 0xffff { 0 } else { 0xffff });
+            c.bus.write16(anim + 0xc, *start);
+            c.bus.write8(anim + 0xe, 0);
+            c.bus.write16(data + 2, *count);
+            c.bus.write32(data + 4, 1);
+            c.bus.write32(chans, chan);
+            c.bus.write16(chan + 2, 0);
+            // Two segments, (0,0)-(8,80)-(10,100): every integer frame
+            // evaluates exactly in binary floating point, so the integer
+            // parameter below converts without rounding artifacts. Keys
+            // are (frame delta, absolute value).
+            c.bus.write16(chan + 6, 3);
+            c.bus.write16(chan + 0xa, 0);
+            c.bus.write16(chan + 0xc, 8);
+            c.bus.write16(chan + 0xe, 80);
+            c.bus.write16(chan + 0x10, 2);
+            c.bus.write16(chan + 0x12, 100);
+            c.bus.write32(node, widget);
+            c.bus.write32(node + 4, sentinel);
+            c.bus.write32(node + 8, widget);
+            // The widget walk calls the widget's own update with the node:
+            // route it to the real per-object animation runner (0x3a0000)
+            // with the node-relative offset to the widget.
+            c.bus.write16(widget + 0x98, (widget - node) as u16);
+            c.bus.write32(widget + 0x9c, 0x003a_0000);
+            if prev != 0 {
+                c.bus.write32(prev + 4, node);
+            } else {
+                c.bus.write32(group + 0x74 + 4, node);
+            }
+            prev = node;
+            node += 0xa8;
+        }
+        c.bus.write32(group + 0xc, 0);
+        (screen, thread)
+    }
+
+    /// One real `UIScreen_Update` tick, driven through event unwinds; the
+    /// update returns to its caller.
+    fn update_tick(c: &mut Cpu, screen: u32) {
+        use crate::difftest::events::drive;
+        c.g[A0][0] = screen as u64;
+        c.g[RA][0] = sx(crate::difftest::RA);
+        c.pc = 0x0039_d778;
+        drive(c, ui_screen_update);
+        assert_eq!(c.pc, crate::difftest::RA);
+    }
+
+    /// A per-object `frame60_due`/`ran` clock, mirroring `tick.rs`: the
+    /// oracle for the rates below, not the wiring under test.
+    struct OracleClock {
+        frame: u32,
+        credit: u32,
+        live: bool,
+    }
+
+    impl OracleClock {
+        fn due(&mut self, rate: u32, frame: u32) -> bool {
+            if !self.live || self.frame != frame {
+                self.frame = frame;
+                self.credit = 0;
+                self.live = true;
+                return true;
+            }
+            self.credit += 60;
+            if self.credit >= rate {
+                self.credit -= rate;
+                true
+            } else {
+                false
+            }
+        }
+
+        fn ran(&mut self, frame: u32) {
+            if self.live {
+                self.frame = frame;
+            }
+        }
+
+        fn phase(&self, frame: u32) -> u32 {
+            if self.live && self.frame == frame {
+                self.credit
+            } else {
+                0
+            }
+        }
+    }
+
+    /// Through the real screen/thread/widget path, widget values follow the
+    /// authored line at 60 frames per second at every rate: the original
+    /// frame values at 30/60, blended between frames above.
+    #[test]
+    fn ui_anim_full_path_follows_the_rate() {
+        let _slots = Slots::install();
+        // Forward: a timeline widget (mode 0) and an own-clock widget
+        // (mode 1) at 30/60/120/144/240.
+        for (hi, hz) in [30u32, 60, 120, 144, 240].iter().enumerate() {
+            let base = DATA + 0x1_0000 * hi as u32;
+            let mut c = crate::difftest::fresh();
+            let (screen, thread) =
+                full_path_fixture(&mut c, base, *hz, 1, &[(0, 0, 20), (1, 0xffff, 20)]);
+            let (w0, w1) = (base + 0x1000, base + 0x1100);
+            // Oracle thread state (+0xc / +0xe) and its host clock.
+            let (mut f, mut last) = (0u32, 0xffffu32);
+            let mut tclock = OracleClock {
+                frame: 0,
+                credit: 0,
+                live: false,
+            };
+            let anim_a = base + 0x3200;
+            for t in 0..12u32 {
+                // The own-clock widget applies the frame its advance has
+                // left in +0xa, then steps; the blend reads that same frame
+                // beforehand, so sample both up front.
+                let a_pre = c.bus.read16(anim_a + 0xa) as u32;
+                let aphase = crate::tick::frame60_phase(&mut c, anim_a, a_pre);
+                update_tick(&mut c, screen);
+                // The thread: mirror of the walk plus Anders's gate.
+                if f != last && tclock.due(*hz, f) {
+                    last = f;
+                    f += 1;
+                    tclock.ran(f);
+                }
+                assert_eq!(c.bus.read16(thread + 0xc), f as u16, "{hz} Hz tick {t}");
+                // The timeline widget: its frame, or blended towards the
+                // next one above 60. The blend gate mirrors the port: the
+                // thread is running, and its clock is mid-frame.
+                let running = c.bus.read16(thread + 0xe) as u32 != f;
+                let phase = crate::tick::frame60_phase(&mut c, thread, f);
+                let eval = |x: u32| 10.0 * (x.min(10)) as f32;
+                let want = if running && phase != 0 && f + 1 < 20 {
+                    eval(f) + (eval(f + 1) - eval(f)) * phase as f32 / *hz as f32
+                } else {
+                    eval(f)
+                };
+                let got = f32::from_bits(c.bus.read32(w0 + 0x44));
+                assert!(
+                    (got - want).abs() < 1e-3,
+                    "{hz} Hz tick {t}: {got} != {want}"
+                );
+                // The own-clock widget: the same through its own advance.
+                // The blend runs before the advance steps, off the
+                // pre-tick frame above.
+                let awant = if aphase != 0 && a_pre + 1 < 20 {
+                    eval(a_pre) + (eval(a_pre + 1) - eval(a_pre)) * aphase as f32 / *hz as f32
+                } else {
+                    eval(a_pre)
+                };
+                let agot = f32::from_bits(c.bus.read32(w1 + 0x44));
+                assert!(
+                    (agot - awant).abs() < 1e-3,
+                    "{hz} Hz own tick {t}: {agot} != {awant}"
+                );
+            }
+        }
+        // Reverse at 120: back down the authored line, blending between.
+        {
+            let base = DATA + 0x6_0000;
+            let mut c = crate::difftest::fresh();
+            let (screen, thread) = full_path_fixture(&mut c, base, 120, -1, &[(0, 0, 20)]);
+            c.bus.write16(thread + 0xc, 6);
+            c.bus.write16(thread + 0xe, 5);
+            let w0 = base + 0x1000;
+            let (mut f, mut last) = (6u32, 5u32);
+            let mut tclock = OracleClock {
+                frame: 0,
+                credit: 0,
+                live: false,
+            };
+            let mut tapplied = 0xffffu32;
+            for t in 0..10u32 {
+                update_tick(&mut c, screen);
+                if f != last && tclock.due(120, f) {
+                    last = f;
+                    f -= 1;
+                    tclock.ran(f);
+                }
+                assert_eq!(c.bus.read16(thread + 0xc), f as u16, "rev tick {t}");
+                let mut want = 10.0 * f as f32;
+                if tapplied == f {
+                    let phase = tclock.phase(f);
+                    if phase != 0 && f >= 1 {
+                        want = 10.0 * (f as f32 - phase as f32 / 120.0);
+                    }
+                }
+                tapplied = f;
+                let got = f32::from_bits(c.bus.read32(w0 + 0x44));
+                assert!((got - want).abs() < 1e-3, "rev tick {t}: {got} != {want}");
+            }
+        }
+        // Stop, restart, jump and wrap at 120: held frames keep their exact
+        // values, and no blend ever spans a jump or a wrap.
+        {
+            let base = DATA + 0x7_0000;
+            let mut c = crate::difftest::fresh();
+            let (screen, thread) = full_path_fixture(&mut c, base, 120, 1, &[(0, 0, 20)]);
+            let w0 = base + 0x1000;
+            // Five ticks: the thread steps to 3 on the last one, so the
+            // widget holds an exact frame value to freeze.
+            for _ in 0..5u32 {
+                update_tick(&mut c, screen);
+            }
+            let held = c.bus.read16(thread + 0xc);
+            assert_eq!(held, 3, "thread steps first");
+            let frozen = f32::from_bits(c.bus.read32(w0 + 0x44));
+            assert!((frozen - 30.0).abs() < 1e-3, "step tick is exact: {frozen}");
+            // Hold the thread: the widget freezes at its frame's value.
+            c.bus.write16(thread + 0xe, held);
+            for t in 0..3u32 {
+                update_tick(&mut c, screen);
+                assert_eq!(c.bus.read16(thread + 0xc), held, "held tick {t}");
+                let got = f32::from_bits(c.bus.read32(w0 + 0x44));
+                assert!((got - 30.0).abs() < 1e-3, "held tick {t}: {got}");
+            }
+            // Restart one frame back: motion resumes through the blend.
+            c.bus.write16(thread + 0xe, held - 1);
+            update_tick(&mut c, screen);
+            assert_eq!(c.bus.read16(thread + 0xc), held, "restart holds the step");
+            let got = f32::from_bits(c.bus.read32(w0 + 0x44));
+            assert!((got - 35.0).abs() < 1e-3, "restart blends: {got}");
+            // Jump the thread (as a goto would): the widget takes the new
+            // frame's value at once, with no in-between.
+            c.bus.write16(thread + 0xc, 7);
+            c.bus.write16(thread + 0xe, 7);
+            update_tick(&mut c, screen);
+            assert_eq!(c.bus.read16(thread + 0xc), 7);
+            let got = f32::from_bits(c.bus.read32(w0 + 0x44));
+            assert!((got - 70.0).abs() < 1e-3, "jump: {got}");
+            // Reverse past frame 0: the thread wraps to 0xffff, the values
+            // hold, nothing blends across the boundary.
+            c.bus.write16(thread + 0xc, 1);
+            c.bus.write16(thread + 0xe, 0);
+            c.bus.write8(thread + 0x12, (-1i8) as u8);
+            update_tick(&mut c, screen);
+            assert_eq!(c.bus.read16(thread + 0xc), 0, "steps to 0");
+            update_tick(&mut c, screen);
+            update_tick(&mut c, screen);
+            // Either it wraps to 0xffff or it holds at 0: nothing blends
+            // across the boundary either way.
+            let wrapped = c.bus.read16(thread + 0xc);
+            assert!(wrapped == 0 || wrapped == 0xffff, "boundary: {wrapped}");
+            let got = f32::from_bits(c.bus.read32(w0 + 0x44));
+            assert!((got - 0.0).abs() < 1e-3, "wrap holds 0: {got}");
+        }
+        // Parameter 12 is never blended: the integer bits step exactly.
+        {
+            let base = DATA + 0x8_0000;
+            let mut c = crate::difftest::fresh();
+            let (screen, thread) = full_path_fixture(&mut c, base, 120, 1, &[(0, 0, 20)]);
+            // Retarget the one channel at parameter 12.
+            c.bus.write16(base + 0x3500 + 2, 12);
+            let w0 = base + 0x1000;
+            for t in 0..8u32 {
+                update_tick(&mut c, screen);
+                let f = c.bus.read16(thread + 0xc) as u32;
+                let bits = (c.bus.read32(w0 + 0x14) >> 13) & 0x3f;
+                assert_eq!(bits, 10 * f.min(10), "param 12 tick {t}");
+            }
+        }
+    }
+
+    /// An event unwinding a screen update before its widgets are applied, with
+    /// the port re-entered at the walk (as `drive` does; in the game the
+    /// generated body resumes), does not lose the screen: after the resume
+    /// the timeline blend still finds it, so resumed ticks match
+    /// uninterrupted ones exactly.
+    #[test]
+    fn ui_screen_update_resumed_before_widgets() {
+        use crate::difftest::events::drive;
+        let _slots = Slots::install();
+        let base = DATA + 0x9_0000;
+        let mut c = crate::difftest::fresh();
+        let (screen, thread) = full_path_fixture(&mut c, base, 120, 1, &[(0, 0, 20)]);
+        let w0 = base + 0x1000;
+        let (mut f, mut last) = (0u32, 0xffffu32);
+        let mut tclock = OracleClock {
+            frame: 0,
+            credit: 0,
+            live: false,
+        };
+        let mut tapplied = 0xffffu32;
+        for t in 0..6u32 {
+            // Start the update with a VBlank already due, so the walk's
+            // back edge unwinds before any thread runs; drive the update
+            // through the resume to completion.
+            c.g[A0][0] = screen as u64;
+            c.g[RA][0] = sx(crate::difftest::RA);
+            c.pc = 0x0039_d778;
+            let first = c.cycles;
+            c.next_event = c.cycles;
+            ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                .sched
+                .next_vblank = 0;
+            drive(&mut c, ui_screen_update);
+            assert_ne!(c.next_event, first, "tick {t}: an event delivered");
+            if f != last && tclock.due(120, f) {
+                last = f;
+                f += 1;
+                tclock.ran(f);
+            }
+            assert_eq!(c.bus.read16(thread + 0xc), f as u16, "tick {t}");
+            let mut want = 10.0 * f as f32;
+            if tapplied == f {
+                let phase = tclock.phase(f);
+                if phase != 0 && f + 1 < 20 {
+                    want = 10.0 * (f as f32 + phase as f32 / 120.0);
+                }
+            }
+            tapplied = f;
+            let got = f32::from_bits(c.bus.read32(w0 + 0x44));
+            assert!((got - want).abs() < 1e-3, "tick {t}: {got} != {want}");
+        }
+    }
+
+    /// In the game an update that an event unwinds is not re-entered: the
+    /// generated body finishes it (the unwind form's slot stub runs every
+    /// entry but the start there), so the port never clears its screen. The
+    /// screen counts within the frame (a thread switch resumes it there) and,
+    /// in the unwind form, never after the VSync that unwound it, however
+    /// many updates were cut off; a whole update afterwards still blends and
+    /// leaves no screen.
+    #[test]
+    fn ui_screen_update_unwound_leaves_no_stale_screen() {
+        use crate::difftest::fakes::{FAKE, LOG_COUNT, LOG_UNWIND_AT};
+        let _slots = Slots::install();
+        let base = DATA + 0xa_0000;
+        let mut c = crate::difftest::fresh();
+        let (screen, thread) = full_path_fixture(&mut c, base, 120, 1, &[(0, 0, 20)]);
+        // The app manager (`tick::set_for_test`) holds the VSync count.
+        let app = c.bus.read32(crate::tick::APPMAN_PTR);
+        // The widget's parameter setter: a fake that unwinds on the first
+        // fake call, inside the group update.
+        let vt = base + 0x2000;
+        let setter = c.bus.read32(vt + 0x64);
+        c.bus.write32(vt + 0x64, FAKE);
+        let anim = base + 0x3000;
+        for t in 0..4u32 {
+            // A frame not yet applied: the original's channel loop runs.
+            c.bus.write16(anim + 0x8, 0xffff);
+            c.bus.write16(anim + 0xa, 0xffff);
+            c.bus.write32(LOG_COUNT, 0);
+            c.bus.write32(LOG_UNWIND_AT, 0);
+            c.g[A0][0] = screen as u64;
+            c.g[RA][0] = sx(crate::difftest::RA);
+            c.pc = 0x0039_d778;
+            ui_screen_update(&mut c);
+            assert_eq!(c.pc & 0xffff_0000, 0xdead_0000, "tick {t}: unwound");
+            assert_eq!(
+                updating_screen(&mut c),
+                Some(screen),
+                "tick {t}: same frame"
+            );
+            // The VBlank that unwinds the thread runs `App_VSyncTick` first.
+            let vsync = c.bus.read32(app + crate::tick::APPMAN_VSYNC) + 1;
+            c.bus.write32(app + crate::tick::APPMAN_VSYNC, vsync);
+            let unwind_form = slot_screen(UPDATING.get(), true, vsync);
+            assert_eq!(unwind_form, None, "tick {t}: stale screen");
+        }
+        c.bus.write32(vt + 0x64, setter);
+        c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+        // Between two steps the widget takes an in-between value again.
+        let mut blended = false;
+        for _ in 0..4u32 {
+            update_tick(&mut c, screen);
+            assert_eq!(updating_screen(&mut c), None, "after a whole update");
+            let f = c.bus.read16(thread + 0xc) as f32;
+            let got = f32::from_bits(c.bus.read32(base + 0x1000 + 0x44));
+            blended |= (got - 10.0 * f).abs() > 1e-3;
+        }
+        assert!(blended, "the timeline widget blends again");
     }
 
     #[test]
