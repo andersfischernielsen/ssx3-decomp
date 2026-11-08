@@ -95,9 +95,15 @@ fn open_card() -> Option<Slot> {
                 path,
             })
         }
+        // No file system (the browser) or no access: a card in memory, so
+        // the game gets past its memory card check (an empty slot hangs it).
         Err(e) => {
-            eprintln!("[mc] cannot open {p}: {e}; no memory card inserted");
-            None
+            eprintln!("[mc] cannot open {p}: {e}; memory card in memory (not saved)");
+            Some(Slot {
+                fs: Fs::new(Card::erased()),
+                file: None,
+                path,
+            })
         }
     }
 }
