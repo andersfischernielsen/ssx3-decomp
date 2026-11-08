@@ -1,8 +1,14 @@
 //! Host audio: the SPU2 pushes 48 kHz stereo frames into a [`Sink`], which
-//! forwards them to a cpal output stream through a bounded ring buffer and,
+//! forwards them to the output through a bounded ring buffer and,
 //! optionally, to a WAV file.
 //!
-//! * `SSX3_AUDIO=0` disables the output device (headless runs default to off).
+//! * [`set_output`] (the front end, before the game starts): who plays the
+//!   ring. [`Output::Device`] (the default): the default cpal device;
+//!   [`Output::Off`]: nothing (no ring); [`Output::Pull`]: the front end
+//!   takes the samples with [`pull`] and feeds its own device (the browser's
+//!   AudioWorklet, an Android Oboe stream, SDL, ...).
+//! * `SSX3_AUDIO` overrides it: `0` off, `null` a silent device drained in
+//!   real time (tests), `pull` pull, anything else the device.
 //! * `SSX3_WAV=path.wav` records everything the SPU2 produces.
 //! * [`suspend`] / [`resume`]: the front end's pause and audio interruptions.
 //!
@@ -53,8 +59,88 @@ pub fn suspended() -> bool {
     SUSPENDED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Who plays the game's sound ([`set_output`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Output {
+    /// The default output device (cpal). In the browser, [`Output::Pull`].
+    #[default]
+    Device,
+    /// No output (a WAV capture still records).
+    Off,
+    /// The front end pulls the samples ([`pull`]): interleaved stereo i16
+    /// at [`RATE`], at most ~200 ms queued (newer samples are dropped while
+    /// the queue is full).
+    Pull,
+}
+
+static OUTPUT: Mutex<Output> = Mutex::new(Output::Device);
+
+/// Choose the output before the game starts (`ssx3_engine::EngineConfig::audio`).
+/// `SSX3_AUDIO` overrides it.
+pub fn set_output(o: Output) {
+    *OUTPUT.lock().unwrap_or_else(|e| e.into_inner()) = o;
+}
+
+/// The output chosen: `SSX3_AUDIO` if set, else [`set_output`]'s.
+pub fn output() -> Output {
+    match ssx3_core::config::var("SSX3_AUDIO").as_deref() {
+        Some("0") => Output::Off,
+        Some("pull") => Output::Pull,
+        Some(_) => Output::Device,
+        None => *OUTPUT.lock().unwrap_or_else(|e| e.into_inner()),
+    }
+}
+
+/// The ring [`pull`] drains ([`Output::Pull`]).
+static PULLED: Mutex<Option<Ring>> = Mutex::new(None);
+
+/// [`Output::Pull`]: append the samples produced since the last call to
+/// `out` (interleaved stereo, 48 kHz). Returns the stereo frames appended.
+/// Call it from the front end's audio callback or once per presented frame;
+/// suspended ([`suspend`]), it drops what was queued and appends nothing.
+pub fn pull(out: &mut Vec<i16>) -> usize {
+    let Some(r) = PULLED.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
+        return 0;
+    };
+    let mut q = r.lock().unwrap_or_else(|e| e.into_inner());
+    if suspended() {
+        q.clear();
+        return 0;
+    }
+    let n = q.len();
+    out.extend(q.drain(..));
+    n / 2
+}
+
+/// Up to `out.len() / 2` stereo frames into `out` (interleaved), for an
+/// audio callback that fills a fixed buffer; the rest of `out` is left as
+/// it is. Returns the frames written.
+pub fn pull_into(out: &mut [i16]) -> usize {
+    let Some(r) = PULLED.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
+        return 0;
+    };
+    let mut q = r.lock().unwrap_or_else(|e| e.into_inner());
+    if suspended() {
+        q.clear();
+        return 0;
+    }
+    let n = (out.len() & !1).min(q.len());
+    for (o, v) in out.iter_mut().zip(q.drain(..n)) {
+        *o = v;
+    }
+    n / 2
+}
+
+fn start_pull() -> Option<Ring> {
+    let ring: Ring = Arc::new(Mutex::new(VecDeque::with_capacity(RING_FRAMES * 2)));
+    *PULLED.lock().unwrap_or_else(|e| e.into_inner()) = Some(ring.clone());
+    Some(ring)
+}
+
 pub struct Sink {
     ring: Option<Ring>,
+    /// The front end drains the ring ([`Output::Pull`]).
+    pulled: bool,
     wav: Option<Wav>,
 }
 
@@ -132,14 +218,20 @@ impl Sink {
                 None
             }
         });
-        let mode = ssx3_core::config::var("SSX3_AUDIO").unwrap_or_default();
-        let ring = match mode.as_str() {
-            "0" => None,
+        let null = ssx3_core::config::var("SSX3_AUDIO").is_some_and(|v| v == "null");
+        let out = output();
+        let ring = match out {
+            Output::Off => None,
             // Test device: drained in real time, plays nothing.
-            "null" => start_null_device(),
-            _ => start_device(),
+            Output::Device if null => start_null_device(),
+            Output::Device => start_device(),
+            Output::Pull => start_pull(),
         };
-        Self { ring, wav }
+        Self {
+            pulled: ring.is_some() && (out == Output::Pull || cfg!(target_arch = "wasm32")),
+            ring,
+            wav,
+        }
     }
 
     /// Interleaved stereo frames.
@@ -160,9 +252,9 @@ impl Sink {
     }
 
     /// Stereo frames waiting for the output device (`None` without one, and
-    /// in the browser, where the page drains the ring every frame).
+    /// when the front end pulls the samples: it may drain them every frame).
     pub fn queued_frames(&self) -> Option<usize> {
-        if cfg!(target_arch = "wasm32") || suspended() {
+        if self.pulled || suspended() {
             return None;
         }
         self.ring
@@ -214,30 +306,11 @@ fn start_null_device() -> Option<Ring> {
     None
 }
 
-/// The browser: no device here. The ring is drained by the page ([`take`]),
-/// which plays it with Web Audio.
+/// The browser: no device here. The page pulls the samples ([`pull`]) and
+/// plays them with Web Audio.
 #[cfg(target_arch = "wasm32")]
 fn start_device() -> Option<Ring> {
-    let ring: Ring = Arc::new(Mutex::new(VecDeque::with_capacity(RING_FRAMES * 2)));
-    *PAGE.lock().unwrap() = Some(ring.clone());
-    Some(ring)
-}
-
-#[cfg(target_arch = "wasm32")]
-static PAGE: Mutex<Option<Ring>> = Mutex::new(None);
-
-/// The browser: the samples produced since the last call (interleaved
-/// stereo, 48 kHz).
-#[cfg(target_arch = "wasm32")]
-pub fn take(out: &mut Vec<i16>) {
-    if let Some(r) = PAGE.lock().unwrap().as_ref() {
-        let mut q = r.lock().unwrap();
-        if suspended() {
-            q.clear();
-            return;
-        }
-        out.extend(q.drain(..));
-    }
+    start_pull()
 }
 
 /// Open the default output device on its own thread (cpal streams are not
@@ -360,4 +433,31 @@ fn open_stream(ring: Ring) -> Result<cpal::Stream, String> {
     .map_err(|e| e.to_string())?;
     stream.play().map_err(|e| e.to_string())?;
     Ok(stream)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pull_output_hands_the_samples_to_the_front_end() {
+        if ssx3_core::config::var_os("SSX3_AUDIO").is_some() {
+            return;
+        }
+        set_output(Output::Pull);
+        let mut sink = Sink::from_env();
+        assert_eq!(sink.queued_frames(), None);
+        sink.push(&[1, 2, 3, 4]);
+        let mut out = Vec::new();
+        assert_eq!(pull(&mut out), 2);
+        assert_eq!(out, [1, 2, 3, 4]);
+        sink.push(&[5, 6, 7, 8, 9, 10]);
+        let mut buf = [0i16; 4];
+        assert_eq!(pull_into(&mut buf), 2);
+        assert_eq!(buf, [5, 6, 7, 8]);
+        assert_eq!(pull(&mut out), 1);
+        assert_eq!(&out[4..], [9, 10]);
+        set_output(Output::Off);
+        assert!(Sink::from_env().ring.is_none());
+    }
 }

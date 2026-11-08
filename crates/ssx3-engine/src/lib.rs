@@ -35,6 +35,8 @@ use std::sync::Arc;
 pub use boot::{init_paths, repo_root};
 pub use debug::{dump, status};
 pub use ssx3_gfx::Renderer;
+/// Who plays the game's sound ([`EngineConfig::audio`]).
+pub use ssx3_iop::audio::Output as Audio;
 pub use ssx3_ps2::Cpu;
 /// The crates a front end works with, at the versions the engine uses.
 pub use {ssx3_core, ssx3_game, ssx3_gfx, ssx3_iop, ssx3_ps2};
@@ -82,6 +84,11 @@ pub struct EngineConfig {
     /// Skip the boot movies unless the `SSX3_SKIP_MOVIES` setting says
     /// otherwise (scripted input timings assume they are skipped).
     pub skip_movies: bool,
+    /// Who plays the sound: the default device ([`Audio::Device`], the
+    /// default), nobody ([`Audio::Off`]) or the front end, which takes the
+    /// samples with [`Engine::audio_pull`] ([`Audio::Pull`]). The
+    /// `SSX3_AUDIO` setting overrides it (`0`, `null`, `pull`, `1`).
+    pub audio: Audio,
     pub settings: Box<dyn Settings>,
 }
 
@@ -93,6 +100,7 @@ impl EngineConfig {
             save_root: None,
             find_pack: false,
             skip_movies: false,
+            audio: Audio::Device,
             settings,
         }
     }
@@ -163,6 +171,7 @@ impl Engine {
             eprintln!("[ssx3-engine] settings provider already installed; keeping the first");
         }
         init_paths(config.data_root, config.save_root, config.find_pack);
+        ssx3_iop::audio::set_output(config.audio);
         let skip = settings
             .get("SSX3_SKIP_MOVIES")
             .map(|v| v != "0")
@@ -396,6 +405,16 @@ impl Engine {
     pub fn audio_resume(&mut self) {
         self.audio_interrupted = false;
         self.sync_audio();
+    }
+
+    /// [`Audio::Pull`]: append the sound produced since the last call to
+    /// `out`, interleaved stereo i16 at 48 kHz ([`ssx3_iop::audio::RATE`]).
+    /// Returns the stereo frames appended (none while paused or
+    /// [`Engine::audio_suspend`]ed). Call it once per presented image or from
+    /// the front end's audio callback (any thread: [`ssx3_iop::audio::pull`]
+    /// and [`ssx3_iop::audio::pull_into`] are the same without the engine).
+    pub fn audio_pull(&mut self, out: &mut Vec<i16>) -> usize {
+        ssx3_iop::audio::pull(out)
     }
 
     fn sync_audio(&self) {

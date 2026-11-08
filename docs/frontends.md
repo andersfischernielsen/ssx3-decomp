@@ -9,7 +9,7 @@ repository has three:
 | --- | --- | --- |
 | Window | `crates/ssx3/src/main.rs` (`ssx3`) | winit window, `wgpu` presenter, keyboard and gilrs controllers, the settings file and the F10 overlay, F11 fullscreen, F12 screenshots. |
 | Headless | `crates/ssx3/src/bin/ssx3_headless.rs` (`ssx3-headless`) | No window: N frames, scripted input (`SSX3_INPUT`), screenshots, RAM dumps, the verification and debug reports. The RAM gate runs it. |
-| Browser | `crates/ssx3-web` | WebAssembly in a Web Worker: the disc from a `File`, an `OffscreenCanvas`, VU helper workers, audio handed to the page. |
+| Browser | `crates/ssx3-web` | WebAssembly in a Web Worker: the disc from a `File`, an `OffscreenCanvas`, VU helper workers, audio pulled for the page. |
 
 A front end for another platform (an Android or iOS app, a console
 homebrew shell, a frame server) lives in its own repository and uses this
@@ -19,7 +19,7 @@ and the browser lives here.
 ## The engine API
 
 ```rust
-use ssx3_engine::{Engine, EngineConfig, EnvSettings, Pace, Settings};
+use ssx3_engine::{Audio, Engine, EngineConfig, EnvSettings, Pace, Settings};
 
 // Optional, first: data and save roots, a standalone pack. Call it before
 // reading a settings file kept with the saves; `Engine::boot` calls it
@@ -35,6 +35,7 @@ pub struct EngineConfig {
     pub save_root: Option<PathBuf>, // memory card, settings, dumps
     pub find_pack: bool,            // standalone pack (tools/bundle.py)
     pub skip_movies: bool,          // default; SSX3_SKIP_MOVIES overrides
+    pub audio: Audio,               // Device (default) | Off | Pull; SSX3_AUDIO overrides
     pub settings: Box<dyn Settings>,
 }
 impl EngineConfig { pub fn new(settings: Box<dyn Settings>) -> Self; }
@@ -62,6 +63,7 @@ impl Engine {
     pub fn paused(&self) -> bool;
     pub fn audio_suspend(&mut self);
     pub fn audio_resume(&mut self);
+    pub fn audio_pull(&mut self, out: &mut Vec<i16>) -> usize; // Audio::Pull
     pub fn shutdown(&mut self);
 
     // image
@@ -159,15 +161,21 @@ The engine re-exports the crates a front end touches (`ssx3_ps2`,
 
 ### Audio
 
-The engine opens the default output device itself (cpal, 48 kHz stereo;
-`SSX3_AUDIO=0` keeps it closed) and the browser drains the samples instead
-(`ssx3_iop::audio::take`). A platform whose audio must be owned by the app
-(an Android `AAudio`/`Oboe` stream with its own focus handling) can for now
-set `SSX3_AUDIO=0` and use `pause`/`audio_suspend` around its stream.
-Follow-up: a sink API (`ssx3_iop::audio::set_sink(Box<dyn FnMut(&[i16])>)`
-or a pull-based `take` on every platform) so the front end owns the device;
-the mixer already produces whole 512-frame blocks, so only the hand-off
-changes.
+`EngineConfig::audio` chooses who plays the sound (48 kHz stereo i16):
+
+| `Audio` | Output |
+| --- | --- |
+| `Device` (default) | The engine opens the default output device itself (cpal). |
+| `Off` | No output (the headless runner). |
+| `Pull` | The front end owns the device: `engine.audio_pull(&mut Vec<i16>)` appends the samples mixed since the last call (interleaved stereo; returns the frames). From an audio callback on another thread, `ssx3_iop::audio::pull` / `pull_into(&mut [i16])` do the same without the engine. The browser uses it: the worker pulls once per presented frame and the page plays the samples with an AudioWorklet. |
+
+The game is not in lock step with the sound card: at most ~200 ms is
+queued, newer samples are dropped while it is full, and the front end
+plays silence when it runs dry. Paused or `audio_suspend`ed, the queue is
+dropped and nothing is pulled. The `SSX3_AUDIO` setting overrides the
+choice (`0` off, `pull`, `null` a silent device drained in real time for
+tests, any other value the device); `SSX3_WAV=file.wav` records the sound
+whatever the output.
 
 ## Using this repository from another one
 

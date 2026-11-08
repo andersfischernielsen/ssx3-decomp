@@ -392,7 +392,11 @@ pub async fn start(
     if !page.is_empty() {
         log(&format!("[ssx3] settings: {page:?}"));
     }
-    let engine = Engine::boot(EngineConfig::new(Box::new(self::settings(page))));
+    let engine = Engine::boot(EngineConfig {
+        // The page plays the sound (`Game::audio`).
+        audio: ssx3_engine::Audio::Pull,
+        ..EngineConfig::new(Box::new(self::settings(page)))
+    });
     let gfx = engine.renderer().cloned().ok_or("renderer: no GPU")?;
     let pool = (helpers > 0).then(|| vu_pool::Pool::new(helpers)).flatten();
     let vu_buffer = pool.as_ref().map(|p| p.sab.clone());
@@ -492,7 +496,7 @@ impl Game {
     /// The sound since the last call: interleaved stereo, 48 kHz.
     pub fn audio(&mut self) -> Vec<i16> {
         let mut v = Vec::new();
-        ssx3_iop::audio::take(&mut v);
+        self.engine.audio_pull(&mut v);
         v
     }
 

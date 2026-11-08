@@ -23,7 +23,7 @@ the recommended way to play.
 | `SSX3_MEMCARD=<path>` | Memory card file (default `saves/ssx3-mc0.ps2`). |
 | `SSX3_PACK=<path>` | Play from a data pack made by `tools/bundle.py pack` instead of the disc image. |
 | `SSX3_PAD2=1` | Plug in pad 2; a second controller drives it (Multi Play). |
-| `SSX3_AUDIO=0` | No audio output. |
+| `SSX3_AUDIO=0` | No audio output (`1`: the default device, also in headless runs, which default to off; `pull`: the front end pulls the samples, `docs/frontends.md`). |
 | `SSX3_REAL_CLOCK=1` | Give the PS2 the host's date and time (the default is a fixed time, so runs are reproducible). |
 
 **Straight into an event** (debugging, testing, benchmarks):

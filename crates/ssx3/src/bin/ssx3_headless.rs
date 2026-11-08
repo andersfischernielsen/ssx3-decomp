@@ -7,7 +7,7 @@
 
 use std::time::Instant;
 
-use ssx3_engine::{Engine, EngineConfig, EnvSettings, Settings};
+use ssx3_engine::{Audio, Engine, EngineConfig, EnvSettings};
 
 #[path = "../png.rs"]
 mod png;
@@ -51,14 +51,11 @@ fn main() {
     // SSX3_SKIP_MOVIES=0 (scripted input timings assume it). Headless runs
     // do not open the audio device unless asked (SSX3_AUDIO=1);
     // SSX3_WAV=file.wav records the IOP's audio output.
-    let settings = |k: &str| match k {
-        "SSX3_AUDIO" => Some("0".to_string()),
-        _ => EnvSettings.get(k),
-    };
     let mut engine = Engine::boot(EngineConfig {
         find_pack: true,
         skip_movies: true,
-        ..EngineConfig::new(Box::new(settings))
+        audio: Audio::Off,
+        ..EngineConfig::new(Box::new(EnvSettings))
     });
     let gfx = engine.renderer().cloned();
     // Check of the browser's VU offload path: every chunk of VU1 calls
