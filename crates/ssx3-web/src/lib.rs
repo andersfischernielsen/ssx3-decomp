@@ -9,6 +9,9 @@
 //! (boxed in the canvas), no anisotropic filtering, no interpolation, no
 //! texture packs.
 //!
+//! The game itself is `ssx3-engine` (unwind form): this crate is the
+//! browser front end (disc from a `File`, the canvas, the VU helpers).
+//!
 //! Sound: the mixer's samples go to the page ([`Game::audio`]), which plays
 //! them with an AudioWorklet (`www/audio.js`).
 //!
@@ -16,25 +19,18 @@
 //! gamepads and the settings overlay.
 #![cfg(target_arch = "wasm32")]
 
-extern crate ssx3_ee_unwind as ssx3_ee;
-
 use std::sync::Arc;
 
 use ssx3_core::iso::{self, Source};
-use ssx3_ps2::Cpu;
+use ssx3_engine::{Engine, EngineConfig};
 use wasm_bindgen::prelude::*;
-
-#[path = "../../ssx3/src/game.rs"]
-mod game;
 
 /// The settings file of the native front end: none here. Every setting is
 /// its default, except the ones that would change the original image.
-mod settings {
-    pub fn get(key: &str) -> Option<String> {
-        match key {
-            "SSX3_ANISO" => Some("1".into()),
-            _ => None,
-        }
+fn settings(key: &str) -> Option<String> {
+    match key {
+        "SSX3_ANISO" => Some("1".into()),
+        _ => None,
     }
 }
 
@@ -271,7 +267,7 @@ struct VsOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
 
 #[wasm_bindgen]
 pub struct Game {
-    cpu: Box<Cpu>,
+    engine: Engine,
     gfx: ssx3_gfx::Renderer,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -371,8 +367,8 @@ pub async fn start(
     });
 
     log("[ssx3] booting");
-    let mut cpu = game::boot(false);
-    let gfx = game::install_renderer(&mut cpu).ok_or("renderer: no GPU")?;
+    let engine = Engine::boot(EngineConfig::new(Box::new(settings)));
+    let gfx = engine.renderer().cloned().ok_or("renderer: no GPU")?;
     let pool = (helpers > 0).then(|| vu_pool::Pool::new(helpers)).flatten();
     let vu_buffer = pool.as_ref().map(|p| p.sab.clone());
     if let Some(p) = pool {
@@ -382,7 +378,7 @@ pub async fn start(
         ssx3_gfx::set_vu_offload(Box::new(move |jobs| p.start(jobs)), helpers as usize);
     }
     let game = Game {
-        cpu,
+        engine,
         gfx,
         device: ctx.device.clone(),
         queue: ctx.queue.clone(),
@@ -429,16 +425,15 @@ impl Game {
     /// Run one game frame with pad 1's buttons (libpad bits, pressed = 1).
     /// False when the game has stopped.
     pub fn frame(&mut self, buttons: u16) -> bool {
-        ssx3_ps2::m!(self.cpu).sif.pad_buttons[0] = buttons;
+        self.engine.set_pad(0, buttons);
         let t0 = now_ms();
-        let alive = ssx3_ps2::machine::run_frame(&mut self.cpu);
+        let alive = self.engine.step();
         self.ms_frame += now_ms() - t0;
-        let frames = ssx3_ps2::m!(self.cpu).sched.frames;
-        if frames % 300 == 0 {
+        if self.engine.frames() % 300 == 0 {
             log(&format!(
                 "[{:6.1}s] {}",
                 (now_ms() - self.started) / 1e3,
-                game::status(&self.cpu)
+                self.engine.status()
             ));
             log(&format!(
                 "  last 300 frames: {:.2} ms per frame in run_frame, {:.2} ms in present; {}; {}",
@@ -453,10 +448,20 @@ impl Game {
         if !alive {
             log(&format!(
                 "halted: {:?}",
-                ssx3_ps2::m!(self.cpu).kernel.halted
+                ssx3_ps2::mr!(self.engine.cpu()).kernel.halted
             ));
         }
         alive
+    }
+
+    /// The page is hidden: silence the sound until [`Game::resume`] (the
+    /// page's own loop stops running frames).
+    pub fn pause(&mut self) {
+        self.engine.pause();
+    }
+
+    pub fn resume(&mut self) {
+        self.engine.resume();
     }
 
     /// The sound since the last call: interleaved stereo, 48 kHz.

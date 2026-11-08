@@ -16,8 +16,7 @@ ssx3-iop = { path = "../ssx3-iop" }
 ssx3-gfx = { path = "../ssx3-gfx" }
 ssx3-render = { path = "../ssx3-render" }
 ssx3-ee-rt = { path = "../ssx3-ee-rt" }
-ssx3-ee-unwind = { path = "../../generated/ee-unwind/game", package = "ssx3-ee-unwind" }
-ssx3-game = { path = "../ssx3-game", default-features = false, features = ["packages", "ee-unwind"] }
+ssx3-engine = { path = "../ssx3-engine", default-features = false, features = ["ee-unwind"] }
 # wgpu's types are Send + Sync in a single-threaded wasm build with this.
 wgpu = { version = "30.0.1", features = ["fragile-send-sync-non-atomic-wasm"] }
 wasm-bindgen = "0.2.129"
