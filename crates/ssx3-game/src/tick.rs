@@ -224,6 +224,9 @@ pub const PER_TICK: &[(u32, u32, PerTick)] = &[
     // MatrixChaseCameraAlgorithm_Update (0x1607e0): the orbit angle (+0x390)
     // gains 0.0614 rad per tick.
     (0x0049_c530, 0x3d7b_4caa, PerTick::Step),
+    // RelativeChaseCameraAlgorithm_Update (0x160bf8): eye-offset blend,
+    // old * 0.97 + desired * (1 - 0.97), after the first update.
+    (0x0049_c578, 0x3f78_51ec, PerTick::Affine(0x0049_c57c)),
     // SpokeChaseCameraAlgorithm_ComputeDesiredEye (0x177fc0), the handplant
     // (spoke) camera: its heading (+0x390) keeps 0.96 and adds 0.04 of the
     // direction per update, then is renormalized.
@@ -270,7 +273,11 @@ pub fn per_tick_values(hz: u32) -> Vec<(u32, u32)> {
 }
 
 /// The offsets of [`PerTick::Affine`] entries: (entry, executable value).
-const AFFINE_B: &[(u32, u32)] = &[(0x0049_b894, 0x4194_25ed), (0x0049_d2f4, 0x3d23_d710)];
+const AFFINE_B: &[(u32, u32)] = &[
+    (0x0049_b894, 0x4194_25ed),
+    (0x0049_c57c, 0x3cf5_c280),
+    (0x0049_d2f4, 0x3d23_d710),
+];
 
 /// Rewrite the [`PER_TICK`] constants for `hz` (each only if it still holds
 /// the executable's value or one this wrote, so a wrong address is caught).

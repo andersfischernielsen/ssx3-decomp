@@ -10384,6 +10384,80 @@ pub(crate) mod tests {
         c.bus.write32(this + 0x394, (seed / 5) % 2);
     }
 
+    /// Compare the actual eye-offset blend on a piecewise-constant direction
+    /// schedule. Gather's horizontal heading and target focus are held fixed
+    /// to that input, isolating this recurrence from the other camera slews.
+    #[test]
+    fn relative_chase_camera_eye_follows_the_rate() {
+        let sample = |hz: u32| {
+            let mut c = crate::difftest::fresh();
+            relative_update_setup(&mut c, 0);
+            elf_image(&mut c);
+            crate::tick::set_for_test(&mut c, hz);
+            let keep = crate::tick::per_tick_at(hz, 0x0049_c578, 0x3f78_51ec);
+            let add = crate::tick::per_tick_values(hz)
+                .into_iter()
+                .find(|x| x.0 == 0x0049_c57c)
+                .map(|x| x.1)
+                .unwrap_or(0x3cf5_c280);
+            if hz == 60 {
+                assert_eq!(keep, 0x3f78_51ec);
+                assert_eq!(add, 0x3cf5_c280);
+            }
+            c.bus.write32(0x0049_c578, keep);
+            c.bus.write32(0x0049_c57c, add);
+            c.bus.write32(DATA + 0x390, 0);
+            c.bus.write32(DATA + 0x394, 0);
+            put_vec(&mut c, DATA + 0x3b0, [0; 4]);
+            let mut out = Vec::new();
+            for n in 0..=hz {
+                let v: [f32; 4] = if n == 0 {
+                    [40.0, 0.0, 0.0, 0.0]
+                } else if n <= hz / 2 {
+                    [0.0, 40.0, 0.0, 0.0]
+                } else {
+                    [-40.0, 0.0, 0.0, 0.0]
+                };
+                let bits = v.map(f32::to_bits);
+                put_vec(&mut c, SP - 0x250, bits);
+                put_vec(&mut c, DATA + 0x1b0, bits);
+                put_vec(&mut c, DATA + 0x100, bits);
+                put_vec(&mut c, SP - 0x1d0, [0; 4]);
+                put_vec(&mut c, SP - 0xa0, [0; 4]);
+                c.bus.write32(fakes::LOG_COUNT, 0);
+                c.bus.write32(fakes::LOG_NEXT, 0);
+                c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+                c.g[A0][0] = DATA as u64;
+                c.g[ssx3_ee_rt::cpu::reg::SP][0] = SP as u64;
+                c.g[RA][0] = crate::difftest::RA as u64;
+                relative_chase_camera_algorithm_update(&mut c);
+                assert_eq!(c.pc, crate::difftest::RA);
+                assert_eq!(c.g[ssx3_ee_rt::cpu::reg::SP][0], SP as u64);
+                if n > 0 && n % (hz / 4) == 0 {
+                    let eye: [f32; 3] = std::array::from_fn(|i| {
+                        f32::from_bits(c.bus.read32(DATA + 0x40 + 4 * i as u32))
+                    });
+                    out.push(eye);
+                }
+            }
+            out
+        };
+        let stock = sample(60);
+        println!("RELATIVE_RATE eye hz=60 samples={stock:?}");
+        for hz in [120, 240] {
+            let actual = sample(hz);
+            println!("RELATIVE_RATE eye hz={hz} samples={actual:?}");
+            for (n, (a, b)) in actual.iter().zip(&stock).enumerate() {
+                for axis in 0..3 {
+                    assert!(
+                        (a[axis] - b[axis]).abs() < 0.02,
+                        "{hz} Hz checkpoint {n} axis {axis}: {a:?} vs {b:?}"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn relative_chase_camera_algorithm_update_matches() {
         covered(
