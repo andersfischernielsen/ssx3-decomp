@@ -352,6 +352,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ModifierBlock_FreeTexFlip",
     ),
     (0x0035_c540, rail_modifier_v02, "RailModifier_v02"),
+    (
+        0x0035_c0e8,
+        rail_modifier_build_rail_nodes,
+        "RailModifier_BuildRailNodes",
+    ),
+    (0x0036_1038, object_v01, "Object_v01"),
 ];
 
 /// The matrix record table of `DeferMan_InternMatrixRecord`.
@@ -5797,6 +5803,324 @@ pub fn rail_modifier_v02(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// RailModifier_BuildRailNodes (0x35c0e8)
+
+/// `cRailModifier + 0x34`: the starting rail node index (< 0: none).
+pub(crate) const RM_BUILD_NODE: u32 = 0x34;
+
+/// `cRailModifier + 0x40`: the rail object (matrix at +0x10, node table
+/// header at +0x80, scale at +0x84).
+pub(crate) const RM_BUILD_RAIL: u32 = 0x40;
+
+/// `cRailModifier + 0x44`: the allocated 0x10-byte link.
+pub(crate) const RM_BUILD_LINK: u32 = 0x44;
+
+/// `cRailModifier + 0x50`: the built transform (4 rows).
+pub(crate) const RM_BUILD_XFORM: u32 = 0x50;
+
+pub(crate) const RM_BUILD_RAIL_MATRIX: u32 = 0x10;
+
+pub(crate) const RM_BUILD_RAIL_TABLE: u32 = 0x80;
+
+pub(crate) const RM_BUILD_RAIL_SCALE: u32 = 0x84;
+
+/// `EA_MemAllocNamed` / `cMemMan_alloc` (0x317d70, through the table).
+pub(crate) const RM_BUILD_MEM_ALLOC: u32 = 0x0031_7d70;
+
+/// `lqc2 vf1..vf4` from `src`, then `sqc2 vf1..vf4` to `dst` (a 4x4 matrix
+/// copy through VU0).
+#[inline]
+pub(crate) fn rm_build_copy_matrix(c: &mut Cpu, src: u32, dst: u32) {
+    for i in 0..4u32 {
+        c.lqc2(1 + i as usize, src.wrapping_add(0x10 * i));
+    }
+    for i in 0..4u32 {
+        c.sqc2(1 + i as usize, dst.wrapping_add(0x10 * i));
+    }
+}
+
+/// vf12..vf15 = rows vf8..vf11 times the matrix vf4..vf7 (the compiled
+/// matrix multiply).
+#[inline]
+pub(crate) fn rm_build_mul_matrix(c: &mut Cpu) {
+    for row in 0..4u8 {
+        let r = 8 + row;
+        c.vu0().mula(0b1111, 4, Src::Bc(r, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(r, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(r, Z));
+        c.vu0().madd(0b1111, 12 + row, 7, Src::Bc(r, W));
+    }
+}
+
+/// `lqc2 vf4..vf7` from `a`, `lqc2 vf8..vf11` from `b`, multiply, store
+/// vf12..vf15 at `out`, then copy `out` -> `tmp` -> `b`.
+#[inline]
+pub(crate) fn rm_build_concat(c: &mut Cpu, a: u32, b: u32, out: u32, tmp: u32) {
+    for i in 0..4u32 {
+        c.lqc2(4 + i as usize, a.wrapping_add(0x10 * i));
+    }
+    for i in 0..4u32 {
+        c.lqc2(8 + i as usize, b.wrapping_add(0x10 * i));
+    }
+    rm_build_mul_matrix(c);
+    for i in 0..4u32 {
+        c.sqc2(12 + i as usize, out.wrapping_add(0x10 * i));
+    }
+    rm_build_copy_matrix(c, out, tmp);
+    rm_build_copy_matrix(c, tmp, b);
+}
+
+/// `void cRailModifier_buildXform(cRailModifier* self)` (0x35c0e8): builds
+/// the modifier's transform at +0x50. Without a start node it is the rail's
+/// own matrix; otherwise the start node's matrix (translation scaled by the
+/// rail's scale), concatenated with each following node's matrix (same
+/// scaling) down the node chain (`next == -1` ends it), then with the rail's
+/// matrix. The 3x3 part is then transposed and the translation replaced by
+/// `-t` through the transposed rows (an inverse rigid transform), and a
+/// 0x10-byte link `{.., .., 2, self}` is allocated into +0x44.
+pub fn rail_modifier_build_rail_nodes(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x130);
+        frame.save(c, S0, 0x120);
+        frame.save_ra(c, 0x110);
+        c.g[S0][0] = c.g[A0][0];
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = Addr(this.wrapping_add(RM_BUILD_RAIL)).lw(c);
+        c.g[A0][0] = Addr(this.wrapping_add(RM_BUILD_NODE)).lw(c);
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(RM_BUILD_RAIL_TABLE)).lw(c);
+        c.g[T2][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x8)).lw(c);
+        let s = sp(c);
+        if (c.g[A0][0] as i64) < 0 {
+            // No node: the rail's matrix.
+            c.cycles += 13;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(RM_BUILD_RAIL_MATRIX));
+            c.g[V0][0] = sx(this.wrapping_add(RM_BUILD_XFORM));
+            let (src, dst) = (c.g[V1][0] as u32, c.g[V0][0] as u32);
+            rm_build_copy_matrix(c, src, dst);
+            c.g[T1][0] = c.g[V0][0];
+            c.g[T7][0] = 0x0049_0000;
+        } else {
+            c.cycles += 46;
+            // sp+0x00: the scale vector {s, s, s, 1}.
+            c.lwc1(0, (c.g[V1][0] as u32).wrapping_add(RM_BUILD_RAIL_SCALE));
+            c.g[A0][0] = sx((c.g[A0][0] as u32) << 4);
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 1);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T2][0] as u32));
+            c.swc1(0, s.wrapping_add(0x8));
+            c.g[V1][0] = sx(this.wrapping_add(RM_BUILD_XFORM));
+            c.swc1(1, s.wrapping_add(0xc));
+            c.swc1(0, s);
+            c.swc1(0, s.wrapping_add(0x4));
+            let node = c.g[A0][0] as u32;
+            c.g[V0][0] = Addr(node.wrapping_add(0xc)).lw(c);
+            let (src, dst) = (c.g[V0][0] as u32, c.g[V1][0] as u32);
+            rm_build_copy_matrix(c, src, dst);
+            // Row 3 (translation) *= scale.
+            c.lq(2, this.wrapping_add(0x80));
+            c.g[T1][0] = c.g[V1][0];
+            c.lwc1(0, s);
+            c.g[T4][0] = sx(s.wrapping_add(0x50));
+            c.sq(2, s.wrapping_add(0x20));
+            c.g[T6][0] = sx(s.wrapping_add(0x10));
+            c.lwc1(4, s.wrapping_add(0x4));
+            c.g[V1][0] = u64::MAX;
+            c.lwc1(1, s.wrapping_add(0x20));
+            c.lwc1(2, s.wrapping_add(0x24));
+            c.mul_s(1, 1, 0);
+            c.lwc1(3, s.wrapping_add(0x28));
+            c.mul_s(2, 2, 4);
+            c.lwc1(5, s.wrapping_add(0x8));
+            c.lwc1(0, s.wrapping_add(0x2c));
+            c.lwc1(4, s.wrapping_add(0xc));
+            c.mul_s(3, 3, 5);
+            c.swc1(1, s.wrapping_add(0x10));
+            c.mul_s(0, 0, 4);
+            c.swc1(2, s.wrapping_add(0x14));
+            c.swc1(3, s.wrapping_add(0x18));
+            c.swc1(0, s.wrapping_add(0x1c));
+            c.lq(2, s.wrapping_add(0x10));
+            c.sq(2, this.wrapping_add(0x80));
+            c.g[A0][0] = Addr(node).lw(c);
+            c.g[T7][0] = 0x0049_0000;
+            if c.g[A0][0] != c.g[V1][0] {
+                c.cycles += 6;
+                c.g[T0][0] = c.g[T1][0];
+                c.g[A3][0] = sx(s.wrapping_add(0x30));
+                c.g[A2][0] = sx(s.wrapping_add(0xd0));
+                c.g[T3][0] = sx(s.wrapping_add(0x70));
+                c.g[T5][0] = u64::MAX;
+                c.g[A1][0] = sx((c.g[A0][0] as u32) << 4);
+                loop {
+                    // Next node: its matrix (sp+0x70) with the translation
+                    // scaled (sp+0xa0), then xform = node * xform.
+                    c.cycles += 78;
+                    c.lwc1(6, s);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[T2][0] as u32));
+                    c.lwc1(7, s.wrapping_add(0x4));
+                    let node = c.g[A1][0] as u32;
+                    c.g[A0][0] = Addr(node.wrapping_add(0xc)).lw(c);
+                    c.lwc1(5, s.wrapping_add(0x8));
+                    let m = c.g[A0][0] as u32;
+                    c.lq(3, m);
+                    c.lwc1(4, s.wrapping_add(0xc));
+                    c.sq(3, s.wrapping_add(0xb0));
+                    c.sq(3, s.wrapping_add(0x70));
+                    c.lq(2, m.wrapping_add(0x10));
+                    c.sq(2, s.wrapping_add(0xb0));
+                    c.sq(2, s.wrapping_add(0x80));
+                    c.lq(3, m.wrapping_add(0x20));
+                    c.sq(3, s.wrapping_add(0xb0));
+                    c.sq(3, s.wrapping_add(0x90));
+                    c.lq(2, m.wrapping_add(0x30));
+                    c.sq(2, s.wrapping_add(0xc0));
+                    c.lwc1(1, s.wrapping_add(0xc0));
+                    c.lwc1(2, s.wrapping_add(0xc4));
+                    c.lwc1(3, s.wrapping_add(0xc8));
+                    c.mul_s(1, 1, 6);
+                    c.lwc1(0, s.wrapping_add(0xcc));
+                    c.mul_s(2, 2, 7);
+                    c.mul_s(3, 3, 5);
+                    c.mul_s(0, 0, 4);
+                    c.swc1(1, s.wrapping_add(0xb0));
+                    c.swc1(2, s.wrapping_add(0xb4));
+                    c.swc1(3, s.wrapping_add(0xb8));
+                    c.swc1(0, s.wrapping_add(0xbc));
+                    c.lq(2, s.wrapping_add(0xb0));
+                    c.sq(2, s.wrapping_add(0xa0));
+                    let (t3, t0, a2, a3) = (
+                        c.g[T3][0] as u32,
+                        c.g[T0][0] as u32,
+                        c.g[A2][0] as u32,
+                        c.g[A3][0] as u32,
+                    );
+                    rm_build_concat(c, t3, t0, a2, a3);
+                    c.g[A0][0] = Addr(node).lw(c);
+                    let more = c.g[A0][0] != c.g[T5][0];
+                    c.g[A1][0] = sx((c.g[A0][0] as u32) << 4);
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0035_c210);
+                    }
+                }
+            }
+            // xform = rail matrix * xform.
+            c.cycles += 47;
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(RM_BUILD_RAIL)).lw(c);
+            c.g[V1][0] = c.g[T6][0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(RM_BUILD_RAIL_MATRIX));
+            let (v0, t1, t4, v1) = (
+                c.g[V0][0] as u32,
+                c.g[T1][0] as u32,
+                c.g[T4][0] as u32,
+                c.g[V1][0] as u32,
+            );
+            rm_build_concat(c, v0, t1, t4, v1);
+        }
+        // Transpose the 3x3 part.
+        c.cycles += 55;
+        let this = c.g[S0][0] as u32;
+        let s = sp(c);
+        let f = |o: u32| this.wrapping_add(o);
+        c.lwc1(3, f(0x54));
+        c.g[A1][0] = sx((c.g[T7][0] as u32).wrapping_sub(0x15a0));
+        c.lwc1(2, f(0x60));
+        c.g[A0][0] = 0x10;
+        c.swc1(3, f(0x60));
+        c.g[A2][0] = 0x2000_0000;
+        c.lwc1(3, f(0x58));
+        c.g[A3][0] = 0;
+        c.lwc1(1, f(0x70));
+        c.swc1(3, f(0x70));
+        c.lq(2, f(0x80));
+        c.swc1(2, f(0x54));
+        c.lwc1(3, f(0x68));
+        c.lwc1(0, f(0x74));
+        c.sq(2, s.wrapping_add(0x10));
+        c.swc1(0, f(0x68));
+        c.swc1(1, f(0x58));
+        c.swc1(3, f(0x74));
+        // Translation: -t (sp+0x20), w = 0, through the transposed rows.
+        c.g[AT][0] = sx(0xbf80_0000);
+        c.mtc1(1, 0);
+        c.mfc1(2, 0);
+        c.lqc2(4, s.wrapping_add(0x10));
+        c.qmtc2(2, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, s.wrapping_add(0x20));
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 1);
+        c.lq(2, s.wrapping_add(0x20));
+        c.sq(2, s);
+        Addr(s.wrapping_add(0xc)).sw(c, 0);
+        c.lqc2(8, s);
+        let t1 = c.g[T1][0] as u32;
+        for i in 0..4u32 {
+            c.lqc2(4 + i as usize, t1.wrapping_add(0x10 * i));
+        }
+        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+        c.sqc2(12, s.wrapping_add(0x20));
+        c.lq(3, s.wrapping_add(0x20));
+        c.sq(3, s);
+        c.swc1(1, s.wrapping_add(0xc));
+        c.sq(3, s.wrapping_add(0x10));
+        c.lq(2, s);
+        c.sq(2, f(0x80));
+        // The link: EA_MemAllocNamed(0x10, "...", 0x20000000, 0).
+        call_ptr(c, RM_BUILD_MEM_ALLOC, 0x0035_c4c0)?;
+        c.g[V1][0] = 0x2;
+        let (link, owner, kind) = (c.g[V0][0], c.g[S0][0], c.g[V1][0]);
+        Addr((link as u32).wrapping_add(0xc)).sw(c, owner);
+        Addr((link as u32).wrapping_add(0x8)).sw(c, kind);
+        Addr((owner as u32).wrapping_add(RM_BUILD_LINK)).sw(c, link);
+        frame.restore(c, S0, 0x120);
+        frame.restore_ra(c, 0x110);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Object_v01 (0x361038)
+
+/// The vtable `Object_v01` installs at `+0xc` before chaining (`D_00490e80`).
+pub(crate) const OBJECT_V01_VTABLE_ADDR: u32 = 0x0049_0e80;
+
+/// The object's vtable pointer.
+pub(crate) const OBJECT_V01_VTABLE: u32 = 0xc;
+
+pub(crate) const OBJECT_V01_MOD_OBJ_DTOR: Callee = Callee {
+    addr: 0x0035_53c0,
+    f: ee::s11::ModObj_dtor,
+};
+
+/// `Object* Object_v01(Object* self, int flags)` (0x361038, the
+/// `railmodifier.cpp` object's virtual destructor): reinstall its own vtable
+/// (0x490e80) and chain to `ModObj_dtor(self, flags)` (flags passed
+/// through untouched in a1). Leaves v1 = self.
+pub fn object_v01(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x49_0000;
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx(OBJECT_V01_VTABLE_ADDR);
+        c.sw(r32(c, V1).wrapping_add(OBJECT_V01_VTABLE), c.g[V0][0]);
+        OBJECT_V01_MOD_OBJ_DTOR.call(c, 0x0036_1054)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8230,6 +8554,141 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(self_);
                 c.g[A1][0] = sx(stream);
                 c.pc = 0x0035_c540;
+            },
+        );
+    }
+
+    /// A float vector: mostly ordinary values, sometimes edge cases.
+    pub(crate) fn oc313_vec(r: &mut Rng, edge: bool) -> [u32; 4] {
+        let mut v = [0u32; 4];
+        for x in v.iter_mut() {
+            *x = if edge { r.edge_f32() } else { r.f32(50.0) };
+        }
+        v
+    }
+
+    /// Rail transform: no start node (rail matrix), a single node, and
+    /// chains of up to four nodes; the link is allocated from the pools.
+    #[test]
+    fn rail_modifier_build_rail_nodes_matches() {
+        check(
+            ee::s11::f_0035c0e8__generated,
+            rail_modifier_build_rail_nodes,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_c0e8, 0);
+                c.pc = 0x0035_c0e8;
+                crate::game::fe::debugfe::tests::pool_allocator(c);
+                let this = DATA;
+                let rail = DATA + 0x1000;
+                let table = DATA + 0x2000;
+                let nodes = DATA + 0x3000;
+                let mats = DATA + 0x4000;
+                let edge = seed % 9 == 8;
+                for i in 0..0x24u32 {
+                    c.bus.write32(this + 4 * i, r.next_u32());
+                }
+                for i in 0..4u32 {
+                    let v = oc313_vec(&mut r, edge);
+                    put_vec(c, rail + RM_BUILD_RAIL_MATRIX + 0x10 * i, v);
+                    put_vec(
+                        c,
+                        this + RM_BUILD_XFORM + 0x10 * i,
+                        oc313_vec(&mut r, false),
+                    );
+                }
+                c.bus.write32(this + RM_BUILD_RAIL, rail);
+                c.bus.write32(rail + RM_BUILD_RAIL_TABLE, table);
+                c.bus.write32(rail + RM_BUILD_RAIL_SCALE, r.f32(4.0));
+                c.bus.write32(table + 0x8, nodes);
+                // Node chain: start, then `len` more, then -1.
+                let len = seed % 5;
+                let mut idx = 1 + r.next_u32() % 3;
+                let start = idx;
+                for k in 0..=len {
+                    let next = if k == len {
+                        u32::MAX
+                    } else {
+                        idx + 1 + r.next_u32() % 2
+                    };
+                    let node = nodes + 0x10 * idx;
+                    c.bus.write32(node, next);
+                    c.bus.write32(node + 0xc, mats + 0x40 * k);
+                    for i in 0..4u32 {
+                        let v = oc313_vec(&mut r, edge);
+                        put_vec(c, mats + 0x40 * k + 0x10 * i, v);
+                    }
+                    idx = next;
+                }
+                let first = if seed % 4 == 0 {
+                    u32::MAX - r.next_u32() % 4
+                } else {
+                    start
+                };
+                c.bus.write32(this + RM_BUILD_NODE, first);
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    /// `Object_v01`: the vtable store, then the real `ModObj_dtor` chain on
+    /// the fixture of `mod_obj_dtor_matches` (no modifier block, or an empty
+    /// one from a dlmalloc arena; WorldObj_dtor without the delete bit). The
+    /// mutex syscalls are fakes; some seeds unwind at one of the calls.
+    #[test]
+    fn object_v01_matches() {
+        use crate::difftest::fakes::{machine, LOG_COUNT, LOG_UNWIND_AT};
+        use crate::difftest::{check, fill, DATA, GAME_GP};
+        use crate::game::bx::cubicspline::tests::oc238_run;
+        use crate::game::object::movenode::MOD_OBJ_BLOCK;
+        check(
+            ee::s12::f_00361038__generated,
+            object_v01,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x36_1038, 0);
+                let obj = DATA + 0x1000;
+                let inst = DATA + 0x1100;
+                fill(c, &mut r, obj, 8);
+                c.bus.write16(obj + 0x10, (r.next_u32() % 8) as u16);
+                if seed % 3 == 0 {
+                    c.bus.write32(obj + 4, 0);
+                } else {
+                    c.bus.write32(obj + 4, DATA + 0x1200);
+                    c.bus
+                        .write32(obj + 8, if seed % 3 == 1 { 0 } else { DATA + 0x1300 });
+                }
+                c.bus
+                    .write32(obj + 0x18, if seed % 7 == 0 { 0 } else { inst });
+                c.bus.write32(inst + 0x8, r.next_u32());
+                c.bus
+                    .write32(inst + 0xc, if seed % 2 == 0 { obj } else { r.next_u32() });
+                let block = if seed % 4 == 0 {
+                    0
+                } else {
+                    // The game heap over test memory, pools off.
+                    c.bus.write32(GAME_GP + 0xdd8, 0);
+                    oc238_run(
+                        c,
+                        0x0031_ff60,
+                        ee::s10::f_0031ff60,
+                        &[0x004f_f250, (DATA + 0x40000) as u64, 0x40000],
+                    );
+                    let b = oc238_run(c, 0x0031_9e48, ee::s10::f_00319e48, &[0x40, 0]) as u32;
+                    for i in 0..0x10 {
+                        c.bus.write32(b + 4 * i, 0);
+                    }
+                    b
+                };
+                c.bus.write32(obj + MOD_OBJ_BLOCK, block);
+                // Unwind at one of the next calls (the setup made some).
+                if seed % 3 == 1 {
+                    let n = c.bus.read32(LOG_COUNT);
+                    c.bus.write32(LOG_UNWIND_AT, n + r.next_u32() % 6);
+                }
+                c.pc = 0x0036_1038;
+                c.g[A0][0] = sx(obj);
+                c.g[A1][0] = (r.next_u32() & !1) as u64;
             },
         );
     }

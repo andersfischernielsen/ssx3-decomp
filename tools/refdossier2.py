@@ -7,10 +7,17 @@ Like refdossier.py, plus a table of the reference body's callees and globals
 translated to addresses, with the generated Rust location of each callee. A
 worker can then map the readable C++ onto our runtime without hunting through
 `generated/ee`.
+
+Functions with no C++ body in the reference get Ghidra's decompilation
+(`0xADDR.ghidra.c`, pseudo-C) when the GhidraMCP backend is up
+(`SSX3_GHIDRA`, default http://127.0.0.1:8080, SLUS_207.72 open in a
+CodeBrowser); without it the dossier says so and the step is skipped.
 """
+import json
 import os
 import re
 import sys
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from refsrc import REF, load_symbols  # noqa: E402
@@ -22,6 +29,21 @@ KEYWORDS = {
     "struct", "union", "enum", "typedef", "static", "const", "extern",
     "inline", "asm", "goto", "case", "break", "continue", "default", "double",
 }
+
+
+GHIDRA = os.environ.get("SSX3_GHIDRA", "http://127.0.0.1:8080")
+
+
+def ghidra_decompile(addr):
+    """Ghidra's pseudo-C for the function at `addr`, or None."""
+    try:
+        with urllib.request.urlopen(f"{GHIDRA}/decompile_function?address={addr:#x}", timeout=60) as r:
+            reply = json.load(r)
+    except (OSError, ValueError):
+        return None
+    if not reply.get("success"):
+        return None
+    return (reply.get("data") or {}).get("code")
 
 
 def generated_location(addr, generated_root):
@@ -111,12 +133,25 @@ def main(argv):
             lines += [f"Reference has only assembly (`{asm[0]}:{asm[1]}`).", ""]
         else:
             lines += ["Reference has no implementation (not in its symtab).", ""]
+        if not impl:
+            code = ghidra_decompile(a)
+            if code:
+                open(os.path.join(outdir, f"{a:#010x}.ghidra.c"), "w").write(code.strip("\n") + "\n")
+                lines += [f"Ghidra decompilation: `{a:#010x}.ghidra.c` (pseudo-C from the",
+                          "Ghidra project: control flow and calls are reliable, types and",
+                          "names are guesses; registers, cycles and order come from the",
+                          "generated Rust).", ""]
+            else:
+                lines += ["(No Ghidra decompilation: backend not reachable.)", ""]
         if decl:
             lines += ["", "Declaration:", "", "```c++", decl[2], "```"]
         if gen:
             lines += ["", f"Generated Rust (the authority): `{gen[0]}:{gen[1]}`"]
         open(os.path.join(outdir, f"{a:#010x}.md"), "w").write("\n".join(lines) + "\n")
-        print(f"{a:#010x} {name or '?':40s} {'C++' if impl else ('asm' if asm else 'none'):4s}")
+        kind = 'C++' if impl else ('asm' if asm else 'none')
+        if not impl and os.path.exists(os.path.join(outdir, f"{a:#010x}.ghidra.c")):
+            kind += '+ghidra'
+        print(f"{a:#010x} {name or '?':40s} {kind}")
 
 
 if __name__ == "__main__":

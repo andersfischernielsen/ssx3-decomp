@@ -29,6 +29,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0035_0f08, hide_ctor_2, "Hide_ctor_2"),
     (0x0035_0fd8, restore_node_ctor_2, "RestoreNode_ctor_2"),
     (0x0035_0f40, hide_save, "Hide_Save"),
+    (0x0035_1010, restore_node_save, "RestoreNode_Save"),
 ];
 
 /// Cross-shard calls the generator emitted as `call_indirect(c, addr)`: they
@@ -268,6 +269,27 @@ pub fn hide_save(c: &mut Cpu) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// RestoreNode_Save (0x351010).
+
+/// `WorldObj_Save(self, stream)`.
+pub(crate) const RESTORE_NODE_WORLD_OBJ_SAVE: Callee = Callee {
+    addr: 0x0034_fe90,
+    f: ee::s11::WorldObj_Save,
+};
+
+/// `void RestoreNode_Save(RestoreNode* self, Stream* stream)` (0x351010): a
+/// restore node saves only its world-object part: `WorldObj_Save(self,
+/// stream)`. Frame 0x10 (ra +0).
+pub fn restore_node_save(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Direct(RESTORE_NODE_WORLD_OBJ_SAVE),
+        0x0035_1020,
+    );
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -451,6 +473,28 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = machine(c, seed, 0x35_0f40, 3);
                 c.pc = 0x0035_0f40;
+                let this = DATA + 0x100;
+                let stream = DATA + 0x400;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = stream as u64;
+                let vt = vtable(c, &mut r, &[8, 0x30]);
+                c.bus.write32(stream, vt);
+            },
+        );
+    }
+
+    /// `RestoreNode_Save` through the real `WorldObj_Save` (and
+    /// `SyncProcess_Save`), the stream's writers fakes (some unwind).
+    #[test]
+    fn restore_node_save_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        covered(
+            ee::s11::f_00351010__generated,
+            restore_node_save,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_1010, 3);
+                c.pc = 0x0035_1010;
                 let this = DATA + 0x100;
                 let stream = DATA + 0x400;
                 c.g[A0][0] = this as u64;

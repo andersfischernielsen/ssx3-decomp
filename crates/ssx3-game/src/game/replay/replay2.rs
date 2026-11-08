@@ -331,6 +331,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0027_0130, replay_alloc_snapshot, "Replay_AllocSnapshot"),
     (0x0027_0538, replay_prune_snapshots, "Replay_PruneSnapshots"),
     (0x0027_0870, replay_on_rider_land, "Replay_OnRiderLand"),
+    (0x0027_0ce8, replay_end_highlight, "Replay_EndHighlight"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4961,6 +4962,143 @@ pub fn replay_alloc_snapshot(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Replay_EndHighlight (0x270ce8)
+
+/// Size of one highlight slot in the `Replay` and the offset of the slot
+/// array.
+pub(crate) const REPLAY_END_HIGHLIGHT_SLOT_SIZE: u32 = 0xb4;
+
+pub(crate) const REPLAY_END_HIGHLIGHT_SLOTS: u32 = 0x494;
+
+/// Offset of a slot's snapshot node pointer from the slot array start
+/// (`slot + 0xb0`, seen from the replay as `+0x544`).
+pub(crate) const REPLAY_END_HIGHLIGHT_SLOT_NODE: u32 = 0x544;
+
+/// Snapshot node flag byte: one "highlighted in slot n" bit per slot.
+pub(crate) const REPLAY_END_HIGHLIGHT_NODE_FLAGS: u32 = 0x1e;
+
+pub(crate) const REPLAY_END_HIGHLIGHT_SCORE: Callee = Callee {
+    addr: 0x0026_e838,
+    f: ee::s07::Replay_HighlightSlotScore,
+};
+
+pub(crate) const REPLAY_END_HIGHLIGHT_CLEAR: Callee = Callee {
+    addr: 0x0026_e800,
+    f: ee::s07::Replay_HighlightSlotClear,
+};
+
+pub(crate) const REPLAY_END_HIGHLIGHT_COUNT: Callee = Callee {
+    addr: 0x0027_0bd8,
+    f: ee::s07::Replay_CountHighlights,
+};
+
+pub(crate) const REPLAY_END_HIGHLIGHT_GET_MAX: Callee = Callee {
+    addr: 0x0027_0c40,
+    f: ee::s07::Replay_GetMaxHighlights,
+};
+
+pub(crate) const REPLAY_END_HIGHLIGHT_FIND_WEAKEST: Callee = Callee {
+    addr: 0x0027_0c58,
+    f: ee::s07::Replay_FindWeakestHighlight,
+};
+
+pub(crate) const REPLAY_END_HIGHLIGHT_DETACH: Callee = Callee {
+    addr: 0x0026_e7f8,
+    f: ee::s07::Replay_HighlightSlotDetach,
+};
+
+/// `void Replay_EndHighlight(Replay* replay, int slot, Player* player, int
+/// mode)` (0x270ce8): close the highlight being recorded in `slot`, if the
+/// slot has a snapshot node. Score it (`Replay_HighlightSlotScore`); a
+/// worthless one is dropped (`Replay_HighlightSlotClear`). A kept one that
+/// brings the slot's highlight count to the maximum evicts the weakest
+/// highlight (`Replay_FindWeakestHighlight`): that node loses the slot's bit
+/// in its flag byte. Finally the slot lets go of its node
+/// (`Replay_HighlightSlotDetach`).
+pub fn replay_end_highlight(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S3, 0x20);
+        c.g[S1][0] = c.g[A0][0]; // replay
+        c.g[S3][0] = c.g[A1][0]; // slot
+        c.g[A0][0] = REPLAY_END_HIGHLIGHT_SLOT_SIZE as u64;
+        c.mult(0, V0, S3, A0);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S0, 0x50);
+        c.g[A1][0] = c.g[A2][0];
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, S1)));
+        c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(REPLAY_END_HIGHLIGHT_SLOT_NODE));
+        c.g[S2][0] = c.g[A3][0]; // mode
+        if c.g[V0][0] != 0 {
+            c.cycles += 8;
+            c.mult(0, S4, S3, A0); // slot offset
+            c.g[A2][0] = c.g[S2][0];
+            c.g[V0][0] = sx(r32(c, S4).wrapping_add(REPLAY_END_HIGHLIGHT_SLOTS));
+            c.g[S0][0] = sx(r32(c, S1).wrapping_add(r32(c, V0))); // the slot
+            c.g[A0][0] = c.g[S0][0];
+            REPLAY_END_HIGHLIGHT_SCORE.call(c, 0x0027_0d40)?;
+            c.g[A1][0] = c.g[S3][0];
+            if c.g[V0][0] == 0 {
+                // Not worth keeping.
+                c.cycles += 2;
+                c.g[A0][0] = c.g[S0][0];
+                REPLAY_END_HIGHLIGHT_CLEAR.call(c, 0x0027_0dac)?;
+                c.cycles += 1;
+                c.g[A0][0] = REPLAY_END_HIGHLIGHT_SLOT_SIZE as u64;
+            } else {
+                c.cycles += 10;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A2][0] = c.g[S2][0];
+                REPLAY_END_HIGHLIGHT_COUNT.call(c, 0x0027_0d54)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = c.g[S2][0];
+                REPLAY_END_HIGHLIGHT_GET_MAX.call(c, 0x0027_0d64)?;
+                c.g[S0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[S0][0] != 0 {
+                    c.g[A0][0] = REPLAY_END_HIGHLIGHT_SLOT_SIZE as u64;
+                } else {
+                    // Full: evict the weakest highlight from this slot.
+                    c.cycles += 13;
+                    c.g[V0][0] = sx(r32(c, S4).wrapping_add(r32(c, S1)));
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A2][0] = c.lw(r32(c, V0).wrapping_add(REPLAY_END_HIGHLIGHT_SLOT_NODE));
+                    c.g[A3][0] = c.g[S2][0];
+                    c.g[A1][0] = c.g[S3][0];
+                    REPLAY_END_HIGHLIGHT_FIND_WEAKEST.call(c, 0x0027_0d88)?;
+                    let node = r32(c, V0).wrapping_add(REPLAY_END_HIGHLIGHT_NODE_FLAGS);
+                    c.g[A0][0] = c.lbu(node);
+                    c.g[V1][0] = sx(1u32 << (r32(c, S3) & 31));
+                    c.g[V1][0] = !c.g[V1][0];
+                    c.g[A0][0] &= c.g[V1][0];
+                    c.sb(node, c.g[A0][0]);
+                    c.cycles += 1;
+                    c.g[A0][0] = REPLAY_END_HIGHLIGHT_SLOT_SIZE as u64;
+                }
+            }
+            c.cycles += 4;
+            c.mult(0, A0, S3, A0);
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(REPLAY_END_HIGHLIGHT_SLOTS));
+            c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
+            REPLAY_END_HIGHLIGHT_DETACH.call(c, 0x0027_0dc0)?;
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7172,6 +7310,102 @@ pub(crate) mod tests {
                 c.bus.write32(node + 0x18, 0);
                 c.g[A0][0] = sx(replay);
                 c.pc = 0x0027_0130;
+            },
+        );
+    }
+
+    /// `Replay_EndHighlight` with the real callees (all short leaves): a
+    /// replay with a snapshot list of 0..4 nodes (random flag bytes and
+    /// per-slot values), slot 0..5 whose node pointer is null (nothing to
+    /// end), a list node or a lone node; score inputs that give 0 (clear) or
+    /// 1 (kept), maximum counts that make the count below or at the limit
+    /// (evict the weakest), both modes. LO/HI are compared (`mult`).
+    #[test]
+    fn replay_end_highlight_matches() {
+        use crate::difftest::{check_lohi, fill, scramble, Rng, DATA};
+        check_lohi(
+            ee::s07::f_00270ce8__generated,
+            replay_end_highlight,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0270_ce80 ^ (seed as u64) << 4);
+                scramble(c, &mut r);
+                let replay = DATA + 0x1000;
+                let player = DATA + 0x3000;
+                let nodes = DATA + 0x4000;
+                let lone = DATA + 0x5000;
+                fill(c, &mut r, replay, 0x300);
+                fill(c, &mut r, player, 0x40);
+                let slot_n = seed % 6;
+                let slot =
+                    replay + REPLAY_END_HIGHLIGHT_SLOTS + slot_n * REPLAY_END_HIGHLIGHT_SLOT_SIZE;
+                // Snapshot list: node+0x14 next, +0x1e slot bits, +0x1f skip,
+                // +0x20 + 4 * slot value.
+                let count = r.next_u32() % 5;
+                let init_node = |c: &mut Cpu, r: &mut Rng, n: u32| {
+                    fill(c, r, n, 0x20);
+                    c.bus
+                        .write8(n + REPLAY_END_HIGHLIGHT_NODE_FLAGS, r.next_u32() as u8);
+                    c.bus.write8(n + 0x1f, (r.next_u32() % 4 == 0) as u8);
+                    for i in 0..8 {
+                        c.bus
+                            .write32(n + 0x20 + 4 * i, (r.next_u32() % 7).wrapping_sub(3));
+                    }
+                };
+                for i in 0..count {
+                    let n = nodes + i * 0x80;
+                    init_node(c, &mut r, n);
+                    c.bus
+                        .write32(n + 0x14, if i + 1 < count { n + 0x80 } else { 0 });
+                }
+                init_node(c, &mut r, lone);
+                c.bus
+                    .write32(replay + 0x3b0, if count == 0 { 0 } else { nodes });
+                let node = match seed % 5 {
+                    0 => 0,
+                    1 => lone,
+                    _ if count > 0 => nodes + (r.next_u32() % count) * 0x80,
+                    _ => lone,
+                };
+                c.bus.write32(slot + 0xb0, node);
+                c.bus.write32(slot, r.next_u32() % 8); // slot index
+                c.bus.write32(replay + 0xc, r.next_u32() % 4); // max highlights
+                                                               // Score inputs: zero/near/far progress, distance gate at 5.0.
+                let base = r.next_u32() % 5000;
+                c.bus.write32(slot + 0xa0, base);
+                c.bus.write32(
+                    player + 0x9c,
+                    base + [0, 400, 1500][(r.next_u32() % 3) as usize],
+                );
+                let t = r.next_u32() % 100;
+                c.bus.write32(slot + 0xa8, t);
+                c.bus.write32(
+                    player + 0xa4,
+                    if r.next_u32() % 3 == 0 {
+                        t
+                    } else {
+                        t + 1 + r.next_u32() % 50
+                    },
+                );
+                c.bus.write32(
+                    player + 0x44,
+                    (if r.next_u32() % 2 == 0 {
+                        4.0f32
+                    } else {
+                        6.0f32
+                    })
+                    .to_bits(),
+                );
+                let mode = match (seed / 6) % 3 {
+                    0 => 0,
+                    1 => 1,
+                    _ => r.next_u32() as u64 | 1,
+                };
+                c.pc = 0x0027_0ce8;
+                c.g[A0][0] = sx(replay);
+                c.g[A1][0] = slot_n as u64;
+                c.g[A2][0] = sx(player);
+                c.g[A3][0] = mode;
             },
         );
     }
