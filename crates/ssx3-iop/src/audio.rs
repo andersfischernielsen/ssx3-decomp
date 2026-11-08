@@ -4,6 +4,7 @@
 //!
 //! * `SSX3_AUDIO=0` disables the output device (headless runs default to off).
 //! * `SSX3_WAV=path.wav` records everything the SPU2 produces.
+//! * [`suspend`] / [`resume`]: the front end's pause and audio interruptions.
 //!
 //! The emulator does not run in lock step with the sound card: the ring
 //! holds at most ~200 ms; when it is full new samples are dropped, when it is
@@ -27,6 +28,29 @@ static UNDERRUN_FRAMES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 /// Frames the device has played as gaps so far.
 pub fn underrun_frames() -> u64 {
     UNDERRUN_FRAMES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Output suspended ([`suspend`]): the device plays silence and new samples
+/// are dropped.
+static SUSPENDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Silence the output (a paused game, an audio interruption, a hidden app):
+/// the device plays silence and drops what was queued, new samples are not
+/// queued (a WAV capture still records them), and the real-time mixer stops
+/// topping the queue up ([`Sink::queued_frames`] is `None`). The device
+/// stays open.
+pub fn suspend() {
+    SUSPENDED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Undo [`suspend`]: sound resumes with the next samples the game mixes.
+pub fn resume() {
+    SUSPENDED.store(false, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether the output is suspended.
+pub fn suspended() -> bool {
+    SUSPENDED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 pub struct Sink {
@@ -125,6 +149,9 @@ impl Sink {
         if let Some(w) = self.wav.as_mut() {
             w.push(s);
         }
+        if suspended() {
+            return;
+        }
         if let Some(r) = &self.ring {
             if let Ok(mut q) = r.lock() {
                 if q.len() + s.len() <= RING_FRAMES * 2 {
@@ -137,7 +164,7 @@ impl Sink {
     /// Stereo frames waiting for the output device (`None` without one, and
     /// in the browser, where the page drains the ring every frame).
     pub fn queued_frames(&self) -> Option<usize> {
-        if cfg!(target_arch = "wasm32") {
+        if cfg!(target_arch = "wasm32") || suspended() {
             return None;
         }
         self.ring
@@ -168,6 +195,11 @@ fn start_null_device() -> Option<Ring> {
                 let due = (t0.elapsed().as_secs_f64() * RATE as f64) as u64;
                 let n = ((due - taken) * 2) as usize;
                 let mut q = r.lock().unwrap();
+                if suspended() {
+                    q.clear();
+                    taken = due;
+                    continue;
+                }
                 let k = n.min(q.len());
                 q.drain(..k);
                 UNDERRUN_FRAMES
@@ -201,7 +233,12 @@ static PAGE: Mutex<Option<Ring>> = Mutex::new(None);
 #[cfg(target_arch = "wasm32")]
 pub fn take(out: &mut Vec<i16>) {
     if let Some(r) = PAGE.lock().unwrap().as_ref() {
-        out.extend(r.lock().unwrap().drain(..));
+        let mut q = r.lock().unwrap();
+        if suspended() {
+            q.clear();
+            return;
+        }
+        out.extend(q.drain(..));
     }
 }
 
@@ -271,6 +308,16 @@ fn open_stream(ring: Ring) -> Result<cpal::Stream, String> {
     let mut next = [0i16; 2];
     let mut fill = move |out: &mut dyn FnMut(usize, f32), frames: usize| {
         let mut q = ring.lock().unwrap();
+        if suspended() {
+            // Silence, and nothing stale left to play on resume.
+            q.clear();
+            cur = [0; 2];
+            next = [0; 2];
+            for i in 0..frames * channels {
+                out(i, 0.0);
+            }
+            return;
+        }
         for i in 0..frames {
             frac += step;
             while frac >= 1.0 {
