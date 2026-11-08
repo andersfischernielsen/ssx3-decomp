@@ -250,6 +250,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "SpokeChaseCameraAlgorithm_ComputeDesiredEye",
     ),
     (
+        0x0017_8208,
+        spoke_chase_camera_algorithm_update,
+        "SpokeChaseCameraAlgorithm_Update",
+    ),
+    (
         0x0017_8520,
         superpipe_chase_camera_algorithm_ctor,
         "SuperpipeChaseCameraAlgorithm_ctor",
@@ -2858,6 +2863,188 @@ pub fn spoke_chase_camera_algorithm_compute_desired_eye(c: &mut Cpu) {
     c.sq(3, c.g[S2][0] as u32);
     frame.restore(c, S2, SAVED_OUTPUT);
     c.sq(3, frame.at(c, 0x20));
+    frame.close(c);
+}
+
+/// `void SpokeChaseCameraAlgorithm_Update(Alg* self)` (0x178208):
+/// gather the rider state and blend the eye toward the spoke camera's desired
+/// eye. Retention falls with the focus-to-eye distance and is square-rooted
+/// in handplant state 5. The focus is the target's focus point plus 37 units
+/// along the world up vector. All tuning remains loaded from the pool.
+pub fn spoke_chase_camera_algorithm_update(c: &mut Cpu) {
+    use crate::game::camera::camera::{chase, chase_info};
+    const RIG_RIDER: u32 = 4;
+    const FOCUS: u32 = 0x20;
+    const EYE: u32 = 0x40;
+    const INFO_DIRECTION: u32 = chase_info::DIR;
+    const SAVED_RA: u32 = 0xc0;
+    const SAVED_CAMERA: u32 = 0xd0;
+    const SAVED_RETENTION: u32 = 0xe0;
+    const SAVED_ONE: u32 = 0xe8;
+    // Stack +0x70..+0xb0: reused vector-expression and call-result spills.
+    /// gp-0x5df4: 0.27136135, GatherRiderState f12 tuning argument.
+    const GP_GATHER_F12: u32 = 0x5df4;
+    /// gp-0x5df0: 0.9, GatherRiderState f13 tuning argument.
+    const GP_GATHER_F13: u32 = 0x5df0;
+    /// gp-0x5dec: 0.29420722, GatherRiderState f14 tuning argument.
+    const GP_GATHER_F14: u32 = 0x5dec;
+    /// gp-0x5de8: 0.851393, GatherRiderState f15 tuning argument.
+    const GP_GATHER_F15: u32 = 0x5de8;
+    /// gp-0x5de4: 0.85, GatherRiderState f16 tuning argument.
+    const GP_GATHER_F16: u32 = 0x5de4;
+    /// gp-0x5de0: 0.97, GatherRiderState f17 tuning argument.
+    const GP_GATHER_F17: u32 = 0x5de0;
+    /// gp-0x5ddc: 0.1, GatherRiderState f18 tuning argument.
+    const GP_GATHER_F18: u32 = 0x5ddc;
+    /// gp-0x5dd8: 0.6, GatherRiderState f19 tuning argument.
+    const GP_GATHER_F19: u32 = 0x5dd8;
+    /// gp-0x5dd4: pi/4, camera field of view.
+    const GP_FOV: u32 = 0x5dd4;
+    /// gp-0x5dd0: 1500, focus-to-eye distance where retention reaches zero.
+    const GP_FAR_DISTANCE: u32 = 0x5dd0;
+    /// gp-0x5dcc: 1350, distance interval above the 150-unit near threshold.
+    const GP_DISTANCE_SPAN: u32 = 0x5dcc;
+    /// gp-0x5dc8: 0.988, maximum retained eye share at 60 Hz.
+    const GP_EYE_RETENTION: u32 = 0x5dc8;
+    c.cycles += 39;
+    let frame = Frame::open(c, 0xf0);
+    c.lwc1(12, r32(c, GP).wrapping_sub(GP_GATHER_F12));
+    frame.save(c, S0, SAVED_CAMERA);
+    c.g[A1][0] = c.g[SP][0];
+    c.g[S0][0] = c.g[A0][0];
+    c.lwc1(13, r32(c, GP).wrapping_sub(GP_GATHER_F13));
+    c.lwc1(14, r32(c, GP).wrapping_sub(GP_GATHER_F14));
+    c.lwc1(15, r32(c, GP).wrapping_sub(GP_GATHER_F15));
+    c.lwc1(16, r32(c, GP).wrapping_sub(GP_GATHER_F16));
+    c.lwc1(17, r32(c, GP).wrapping_sub(GP_GATHER_F17));
+    c.lwc1(18, r32(c, GP).wrapping_sub(GP_GATHER_F18));
+    c.lwc1(19, r32(c, GP).wrapping_sub(GP_GATHER_F19));
+    frame.save_ra(c, SAVED_RA);
+    frame.save_fpr(c, 21, SAVED_ONE);
+    c.g[RA][0] = sx(0x00178248);
+    frame.save_fpr(c, 20, SAVED_RETENTION);
+    if call_ptr(c, 0x00162568, 0x00178248).is_err() {
+        return;
+    }
+    c.lwc1(0, r32(c, GP).wrapping_sub(GP_FOV));
+    c.g[AT][0] = 0x43160000;
+    c.mtc1(1, 2);
+    c.swc1(0, c.g[S0][0] as u32);
+    c.lqc2(3, r32(c, S0).wrapping_add(FOCUS));
+    c.lqc2(4, r32(c, S0).wrapping_add(EYE));
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, frame.at(c, 0x80));
+    c.lq(2, frame.at(c, 0x80));
+    c.sq(2, frame.at(c, 0x70));
+    c.lqc2(3, frame.at(c, 0x70));
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(3, 22);
+    c.mtc1(3, 1);
+    c.c_le_s(2, 1);
+    // Distance below 150 retains the full tuned share. Between 150 and
+    // the far threshold it falls linearly; beyond the threshold it is zero.
+    if !c.fcc() {
+        c.cycles += 1;
+        c.mtc1(0, 1);
+    } else {
+        c.cycles += 4;
+        c.lwc1(0, r32(c, GP).wrapping_sub(GP_FAR_DISTANCE));
+        c.c_le_s(1, 0);
+        if c.fcc() {
+            c.cycles += 5;
+            c.sub_s(1, 1, 2);
+            c.lwc1(0, r32(c, GP).wrapping_sub(GP_DISTANCE_SPAN));
+            c.div_s(1, 1, 0);
+        } else {
+            c.cycles += 4;
+            c.g[AT][0] = 0x3f800000;
+            c.mtc1(1, 1);
+        }
+    }
+    // Handplant (state 5) retains the square root of the effective share.
+    c.cycles += 11;
+    c.g[AT][0] = 0x3f800000;
+    c.mtc1(1, 21);
+    c.g[V0][0] = Addr(r32(c, S0).wrapping_add(chase::RIG)).lw(c);
+    c.sub_s(1, 21, 1);
+    c.lwc1(0, r32(c, GP).wrapping_sub(GP_EYE_RETENTION));
+    c.g[A0][0] = Addr(r32(c, V0).wrapping_add(RIG_RIDER)).lw(c);
+    c.g[RA][0] = sx(0x001782fc);
+    c.mul_s(20, 1, 0);
+    if call_ptr(c, 0x0011fe98, 0x001782fc).is_err() {
+        return;
+    }
+    c.g[V1][0] = 0x5;
+    if c.g[V0][0] == c.g[V1][0] {
+        c.cycles += 1;
+        c.sqrt_s(20, 20);
+    }
+    // Blend the old eye with ComputeDesiredEye, then raise the focus 37 units.
+    c.cycles += 53;
+    c.mfc1(2, 20);
+    c.lqc2(4, r32(c, S0).wrapping_add(EYE));
+    c.qmtc2(2, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, 0x90));
+    c.g[A0][0] = sx(frame.at(c, 0xa0));
+    c.lq(2, frame.at(c, 0x90));
+    c.g[A1][0] = c.g[S0][0];
+    c.g[A2][0] = sx(frame.at(c, INFO_DIRECTION));
+    c.sub_s(20, 21, 20);
+    c.g[RA][0] = sx(0x0017833c);
+    c.sq(2, frame.at(c, 0x80));
+    if call_ptr(c, 0x00177fc0, 0x0017833c).is_err() {
+        return;
+    }
+    c.mfc1(2, 20);
+    c.lqc2(4, frame.at(c, 0xa0));
+    c.qmtc2(2, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, 0xb0));
+    c.g[A1][0] = c.g[S0][0];
+    c.lq(2, frame.at(c, 0xb0));
+    c.g[A0][0] = sx(frame.at(c, 0x80));
+    c.sq(2, frame.at(c, 0x90));
+    c.lqc2(3, frame.at(c, 0x80));
+    c.lqc2(4, frame.at(c, 0x90));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, frame.at(c, 0xb0));
+    c.lq(2, frame.at(c, 0xb0));
+    c.sq(2, r32(c, S0).wrapping_add(EYE));
+    c.g[RA][0] = sx(0x00178380);
+    c.sq(2, frame.at(c, 0x70));
+    if call_ptr(c, 0x00177ef8, 0x00178380).is_err() {
+        return;
+    }
+    c.g[V0][0] = 0x500000;
+    c.g[AT][0] = 0x42140000;
+    c.mtc1(1, 0);
+    // 0x4ff160: world up.
+    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0xea0));
+    frame.restore_ra(c, SAVED_RA);
+    c.mfc1(3, 0);
+    c.lqc2(4, c.g[V0][0] as u32);
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, 0xa0));
+    frame.restore_fpr(c, 21, SAVED_ONE);
+    c.lq(2, frame.at(c, 0xa0));
+    frame.restore_fpr(c, 20, SAVED_RETENTION);
+    c.sq(2, frame.at(c, 0x90));
+    c.lqc2(3, frame.at(c, 0x80));
+    c.lqc2(4, frame.at(c, 0x90));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, frame.at(c, 0xa0));
+    c.lq(2, frame.at(c, 0xa0));
+    c.sq(2, r32(c, S0).wrapping_add(FOCUS));
+    frame.restore(c, S0, SAVED_CAMERA);
+    c.sq(2, frame.at(c, 0x70));
     frame.close(c);
 }
 
@@ -6511,6 +6698,117 @@ pub(crate) mod tests {
             [0, 1, 2, 3].map(|i| -b / k * d[i] / len + noise[i])
         };
         spoke_put(c, SPOKE + 0x390, heading);
+    }
+
+    /// Three distance branches crossed with state 5 / other, retaining real
+    /// GatherRiderState, GetMainState, ComputeDesiredEye and GetFocusPoint.
+    /// Only the target and rider virtual methods use the logging fakes.
+    fn spoke_update_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x178208, 10);
+        elf_image(c);
+        c.bus.write32(crate::tick::APPMAN_PTR, 0);
+        spoke_eye_objects(c, if seed % 2 == 0 { 0 } else { 5 });
+        c.g[A0][0] = SPOKE as u64;
+        c.pc = 0x0017_8208;
+        let vt = SPOKE + 0x500;
+        for (i, slot) in [0x18u32, 0xa0, 0x88, 0x90].into_iter().enumerate() {
+            c.bus.write16(vt + slot, i as u16 * 0x10);
+            c.bus.write32(vt + slot + 4, FAKE + 0x40 + i as u32 * 0x10);
+        }
+        c.bus.write32(LOG_RESULTS + 4, 4);
+        c.bus.write32(LOG_RESULTS + 5 * 4, SPOKE_HAND);
+        c.bus.write32(
+            fakes::LOG_UNWIND_AT,
+            if seed < 6 || seed % 3 != 0 {
+                u32::MAX
+            } else {
+                (seed / 3) % 10
+            },
+        );
+        for neg in (0x5dc8..=0x5e0c).step_by(4).chain([0x6af8, 0x6afc]) {
+            let at = GAME_GP - neg;
+            let v = f32::from_bits(c.bus.read32(at));
+            let scale = [0.8f32, 1.0, 1.2][(r.next_u32() % 3) as usize];
+            c.bus.write32(at, (v * scale).to_bits());
+        }
+        let vector = |x: f32, y: f32, z: f32| [x.to_bits(), y.to_bits(), z.to_bits(), 0];
+        let velocity = vector(60.0, 0.0, 0.0);
+        put_vec(c, crate::difftest::SP - 0x200, velocity);
+        put_vec(c, SPOKE + 0x1b0, velocity);
+        put_vec(c, SPOKE + 0x100, velocity);
+        put_vec(c, SPOKE_HAND, velocity);
+        put_vec(c, SPOKE + 0x390, vector(1.0, 0.0, 0.0));
+        put_vec(c, SPOKE + 0x20, [0; 4]);
+        let distance = [100.0, 500.0, 2000.0][(seed / 2 % 3) as usize];
+        put_vec(c, SPOKE + 0x40, vector(distance, 0.0, 0.0));
+        put_vec(c, 0x004f_f160, vector(0.0, 0.0, 1.0));
+        put_vec(c, 0x004f_f120, vector(0.0, 0.0, 1.0));
+    }
+
+    #[test]
+    fn spoke_chase_camera_algorithm_update_matches() {
+        covered(
+            ee::s02::f_00178208__generated,
+            spoke_chase_camera_algorithm_update,
+            240,
+            &spoke_update_setup,
+        );
+        // Exact thresholds and their adjacent representable distances, crossed
+        // with ordinary/state-5 behavior. The far threshold is the loaded,
+        // seed-varied pool value, not an assumed stock constant.
+        crate::difftest::check(
+            ee::s02::f_00178208__generated,
+            spoke_chase_camera_algorithm_update,
+            12,
+            &|c, seed| {
+                spoke_update_setup(c, seed);
+                c.bus.write32(fakes::LOG_UNWIND_AT, u32::MAX);
+                let boundary = if seed / 6 == 0 {
+                    150.0f32.to_bits()
+                } else {
+                    c.bus.read32(GAME_GP - 0x5dd0)
+                };
+                let distance = match seed / 2 % 3 {
+                    0 => boundary - 1,
+                    1 => boundary,
+                    _ => boundary + 1,
+                };
+                put_vec(c, SPOKE + 0x40, [distance, 0, 0, 0]);
+            },
+        );
+        // Three distance branches crossed with normal/handplant state. Some
+        // paths share a cost because ComputeDesiredEye also branches.
+        crate::difftest::require_paths(
+            ee::s02::f_00178208__generated,
+            240,
+            &[629, 639, 637, 650],
+            &spoke_update_setup,
+        );
+        for seed in 0..6 {
+            let mut c = crate::difftest::fresh();
+            spoke_update_setup(&mut c, seed);
+            let distance = f32::from_bits(c.bus.read32(SPOKE + 0x40));
+            let far = f32::from_bits(c.bus.read32(GAME_GP - 0x5dd0));
+            let branch = if distance < 150.0 {
+                0
+            } else if distance <= far {
+                1
+            } else {
+                2
+            };
+            assert_eq!(branch, seed / 2, "seed {seed}");
+            assert_eq!(
+                c.bus.read32(SPOKE_OWNER + 0xde0),
+                if seed % 2 == 0 { 0 } else { 5 }
+            );
+            crate::difftest::run_generated(&mut c, ee::s02::f_00178208__generated);
+            assert_eq!(c.pc, TEST_RA);
+            let calls = c.bus.read32(fakes::LOG_COUNT);
+            assert_eq!(calls, 9 + seed % 2, "seed {seed}");
+            let hand =
+                (0..calls).any(|n| c.bus.read32(fakes::LOG_START + 0x220 * n) == FAKE + 0x20);
+            assert_eq!(hand, seed % 2 != 0, "seed {seed}");
+        }
     }
 
     #[test]

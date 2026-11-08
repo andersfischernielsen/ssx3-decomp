@@ -6228,3 +6228,4 @@
 
 # tick rate: chase camera updates
 0x00160bf8 RelativeChaseCameraAlgorithm_Update
+0x00178208 SpokeChaseCameraAlgorithm_Update
