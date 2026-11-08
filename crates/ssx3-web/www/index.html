@@ -95,6 +95,18 @@ document.getElementById("iso").onchange = (e) => {
   addEventListener("keydown", (e) => { if (audio.state !== "running") audio.resume(); key(true)(e); });
   addEventListener("keyup", key(false));
   addEventListener("blur", () => worker.postMessage({ type: "buttons", buttons: (buttons = 0) }));
+  // Hidden (another tab, minimised, the page put away): pause the game and
+  // its sound; shown again: resume.
+  let hidden = false;
+  const setHidden = (h) => {
+    if (h === hidden) return;
+    hidden = h;
+    worker.postMessage({ type: h ? "pause" : "resume" });
+    (h ? audio.suspend() : audio.resume()).catch(() => {});
+  };
+  document.addEventListener("visibilitychange", () => setHidden(document.visibilityState === "hidden"));
+  addEventListener("pagehide", () => setHidden(true));
+  addEventListener("pageshow", () => setHidden(document.visibilityState === "hidden"));
   addEventListener("resize", () => {
     const [w, h] = pixelSize();
     worker.postMessage({ type: "resize", width: w, height: h });

@@ -483,8 +483,9 @@ impl Game {
         alive
     }
 
-    /// The page is hidden: silence the sound until [`Game::resume`] (the
-    /// page's own loop stops running frames).
+    /// The page is hidden (`www/worker.js` on the page's `visibilitychange`):
+    /// silence the sound until [`Game::resume`]; the worker's loop stops
+    /// running frames meanwhile.
     pub fn pause(&mut self) {
         self.engine.pause();
     }

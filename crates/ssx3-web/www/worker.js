@@ -6,6 +6,10 @@ const FIELD_MS = 1000 / 59.94;
 let game = null;
 let buttons = 0;
 let size = null;
+// The page is hidden: no frames run (the engine is paused, its sound silent).
+let paused = false;
+let stopped = false;
+let raf = 0;
 
 onmessage = async (e) => {
   const m = e.data;
@@ -23,7 +27,8 @@ onmessage = async (e) => {
         new Worker("./vuworker.js", { type: "module" }).postMessage({ sab, id });
       }
       postMessage({ type: "running" });
-      loop();
+      if (paused) game.pause();
+      else loop();
     } catch (err) {
       postMessage({ type: "error", message: String(err && err.stack || err) });
     }
@@ -31,14 +36,28 @@ onmessage = async (e) => {
     buttons = m.buttons;
   } else if (m.type === "resize") {
     size = [m.width, m.height];
+  } else if (m.type === "pause") {
+    if (paused) return;
+    paused = true;
+    cancelAnimationFrame(raf);
+    game?.pause();
+  } else if (m.type === "resume") {
+    if (!paused) return;
+    paused = false;
+    if (game && !stopped) {
+      game.resume();
+      loop();
+    }
   }
 };
 
+// The frame loop (started over after a pause: no burst of frames to catch up).
 function loop() {
   let next = performance.now();
   let frames = 0;
   let mark = next;
   const tick = (now) => {
+    if (paused) return;
     if (size) {
       game.resize(size[0], size[1]);
       size = null;
@@ -48,6 +67,7 @@ function loop() {
     let ran = 0;
     while (now >= next && ran < 2) {
       if (!game.frame(buttons)) {
+        stopped = true;
         postMessage({ type: "error", message: "the game stopped" });
         return;
       }
@@ -66,7 +86,7 @@ function loop() {
       frames = 0;
       mark = now;
     }
-    requestAnimationFrame(tick);
+    raf = requestAnimationFrame(tick);
   };
-  requestAnimationFrame(tick);
+  raf = requestAnimationFrame(tick);
 }

@@ -147,7 +147,10 @@ The engine re-exports the crates a front end touches (`ssx3_ps2`,
      Paused, `pace` runs nothing and the audio output is silent; `resume`
      starts the pacer over, so there is no burst of catch-up VSyncs.
      `step()` still runs a VSync when asked (the window shows a settings
-     change behind its overlay that way).
+     change behind its overlay that way). The browser pauses while the page
+     is hidden (`visibilitychange`, `pagehide`/`pageshow`): the page tells
+     the worker, which pauses the engine and stops its frame loop, and
+     suspends its `AudioContext`.
    - `audio_suspend()` / `audio_resume()`: the platform took the audio away
      while the game may keep running. The output device stays open, plays
      silence and drops what was queued.
