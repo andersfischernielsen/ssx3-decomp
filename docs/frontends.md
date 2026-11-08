@@ -64,6 +64,7 @@ impl Engine {
     pub fn audio_suspend(&mut self);
     pub fn audio_resume(&mut self);
     pub fn audio_pull(&mut self, out: &mut Vec<i16>) -> usize; // Audio::Pull
+    pub fn audio_buffered(&mut self, frames: usize);           // Audio::Pull: what the front end holds
     pub fn shutdown(&mut self);
 
     // image
@@ -119,6 +120,14 @@ The engine re-exports the crates a front end touches (`ssx3_ps2`,
    must create it asynchronously (the browser) calls
    `ssx3_ps2::gpu::init_context().await` first and creates its surface on
    that instance.
+
+   **Boot once per process.** The settings provider, the paths, the audio
+   output, the game rate and the other startup settings are process-wide and
+   take effect at the first `Engine::boot` only; a second boot in the same
+   process keeps them (and logs that). A front end whose UI can be torn down
+   and recreated without the process ending (an Android activity, a
+   reopened window) keeps its `Engine` alive across that, or runs the game
+   in a process of its own.
 3. **Input.** `set_pad(port, buttons)`: libpad bits, pressed = 1 (bit 0
    Select, 1 L3, 2 R3, 3 Start, 4 up, 5 right, 6 down, 7 left, 8 L2, 9 R2,
    10 L1, 11 R1, 12 Triangle, 13 Circle, 14 Cross, 15 Square).
@@ -179,6 +188,15 @@ dropped and nothing is pulled. The `SSX3_AUDIO` setting overrides the
 choice (`0` off, `pull`, `null` a silent device drained in real time for
 tests, any other value the device); `SSX3_WAV=file.wav` records the sound
 whatever the output.
+
+With `Pull` and catch-up on, the game mixes ahead while the queue is short,
+so the stream stays fed when the game runs several VSyncs at once. It can
+only do that when it knows how much is queued: a front end that pulls from
+its audio callback with `pull_into` is counted automatically (the queue is
+the engine's ring), and one that keeps its own buffer reports it with
+`engine.audio_buffered(frames)` (or `ssx3_iop::audio::report_buffered`)
+whenever it changes. A front end that does neither (the browser, which
+pulls once per presented frame) is not topped up.
 
 ## Using this repository from another one
 

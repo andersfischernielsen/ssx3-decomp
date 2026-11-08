@@ -417,6 +417,14 @@ impl Engine {
         ssx3_iop::audio::pull(out)
     }
 
+    /// [`Audio::Pull`]: the stereo frames the front end has buffered but not
+    /// played yet, so the game mixes ahead to keep its stream fed when it
+    /// catches up ([`ssx3_iop::audio::report_buffered`]; a front end pulling
+    /// from its audio callback with `pull_into` is counted without this).
+    pub fn audio_buffered(&mut self, frames: usize) {
+        ssx3_iop::audio::report_buffered(frames)
+    }
+
     fn sync_audio(&self) {
         if self.paused || self.audio_interrupted {
             ssx3_iop::audio::suspend();

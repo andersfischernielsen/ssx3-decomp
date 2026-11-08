@@ -94,6 +94,30 @@ pub fn output() -> Output {
 /// The ring [`pull`] drains ([`Output::Pull`]).
 static PULLED: Mutex<Option<Ring>> = Mutex::new(None);
 
+/// [`Output::Pull`]: stereo frames the front end holds beyond the ring
+/// ([`report_buffered`]); negative until it reports.
+static FRONT_BUFFERED: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(-1);
+
+/// [`Output::Pull`]: how many stereo frames the front end has buffered but
+/// not played yet (its own queue, a device buffer it can see). Once
+/// reported, [`Sink::queued_frames`] counts the ring plus this, so the
+/// real-time mixer keeps the front end's stream fed when the game catches
+/// up; report again whenever it changes. Unreported, a front end that pulls
+/// once per presented image is not topped up (it may drain the ring every
+/// frame). [`pull_into`] reports 0 the first time it is called: a front end
+/// pulling from its audio callback holds nothing beyond the ring.
+pub fn report_buffered(frames: usize) {
+    FRONT_BUFFERED.store(
+        frames.min(i64::MAX as usize) as i64,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+fn front_buffered() -> Option<usize> {
+    let v = FRONT_BUFFERED.load(std::sync::atomic::Ordering::Relaxed);
+    (v >= 0).then_some(v as usize)
+}
+
 /// [`Output::Pull`]: append the samples produced since the last call to
 /// `out` (interleaved stereo, 48 kHz). Returns the stereo frames appended.
 /// Call it from the front end's audio callback or once per presented frame;
@@ -116,6 +140,12 @@ pub fn pull(out: &mut Vec<i16>) -> usize {
 /// audio callback that fills a fixed buffer; the rest of `out` is left as
 /// it is. Returns the frames written.
 pub fn pull_into(out: &mut [i16]) -> usize {
+    let _ = FRONT_BUFFERED.compare_exchange(
+        -1,
+        0,
+        std::sync::atomic::Ordering::Relaxed,
+        std::sync::atomic::Ordering::Relaxed,
+    );
     let Some(r) = PULLED.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
         return 0;
     };
@@ -252,14 +282,16 @@ impl Sink {
     }
 
     /// Stereo frames waiting for the output device (`None` without one, and
-    /// when the front end pulls the samples: it may drain them every frame).
+    /// when the front end pulls the samples without [`report_buffered`]: it
+    /// may drain them every frame; with it, the ring plus what it reported).
     pub fn queued_frames(&self) -> Option<usize> {
-        if self.pulled || suspended() {
+        if suspended() {
             return None;
         }
+        let front = if self.pulled { front_buffered()? } else { 0 };
         self.ring
             .as_ref()
-            .map(|r| r.lock().map_or(0, |q| q.len() / 2))
+            .map(|r| r.lock().map_or(0, |q| q.len() / 2) + front)
     }
 
     pub fn flush(&mut self) {
@@ -457,6 +489,14 @@ mod tests {
         assert_eq!(buf, [5, 6, 7, 8]);
         assert_eq!(pull(&mut out), 1);
         assert_eq!(&out[4..], [9, 10]);
+        // Pulling from a callback counts the ring; a report adds to it.
+        sink.push(&[1, 2, 3, 4, 5, 6]);
+        assert_eq!(sink.queued_frames(), Some(3));
+        report_buffered(100);
+        assert_eq!(sink.queued_frames(), Some(103));
+        suspend();
+        assert_eq!(sink.queued_frames(), None);
+        resume();
         set_output(Output::Off);
         assert!(Sink::from_env().ring.is_none());
     }
