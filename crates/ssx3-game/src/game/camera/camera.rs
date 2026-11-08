@@ -156,6 +156,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RelativeChaseCameraAlgorithm_ctor",
     ),
     (
+        0x0016_0bf8,
+        relative_chase_camera_algorithm_update,
+        "RelativeChaseCameraAlgorithm_Update",
+    ),
+    (
         0x0016_0fd0,
         relative_chase_camera_algorithm_reset_for_rider,
         "RelativeChaseCameraAlgorithm_ResetForRider",
@@ -5434,6 +5439,355 @@ pub fn mid_left_chase_camera_reset_for_rider(c: &mut Cpu) {
 // ---------------------------------------------------------------------------
 // Chase camera.
 
+/// `void RelativeChaseCameraAlgorithm_Update(Alg* self)` (0x160bf8):
+/// build a horizontal frame from the gathered rider velocity, falling back
+/// to the target's forward vector and then the global direction. Smooth
+/// the focus against the previous focus (+0x3b0), place the eye on the
+/// angle/radius orbit, then smooth its offset (+0x3a0). The first update
+/// (+0x394 == 0) initializes both histories without blending.
+pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
+    const FOCUS: u32 = 0x20;
+    const EYE: u32 = 0x40;
+    const ORBIT_ANGLE: u32 = 0x390;
+    const HISTORY_INITIALIZED: u32 = 0x394;
+    const PREVIOUS_EYE_OFFSET: u32 = 0x3a0;
+    const PREVIOUS_FOCUS: u32 = 0x3b0;
+    const GET_FOCUS: u32 = 8;
+    const GET_FORWARD: u32 = 0x20;
+    const INFO_DIRECTION: u32 = chase_info::DIR;
+    const DIRECTION: u32 = 0x70;
+    // The rig's fallback forward vector, then the horizontal side vector.
+    const SIDE_OR_FORWARD: u32 = 0x80;
+    const SAVED_RA: u32 = 0x100;
+    const SAVED_WORLD_BASE: u32 = 0x110;
+    const SAVED_CAMERA: u32 = 0x120;
+    const SAVED_F20: u32 = 0x130;
+    // Stack +0x90..+0xf0: reused VU vector-expression spills, kept in order.
+    /// gp-0x6bac: 0.27136135, GatherRiderState f12 tuning argument.
+    const GP_GATHER_F12: u32 = 0x6bac;
+    /// gp-0x6ba8: 0.9, GatherRiderState f13 tuning argument.
+    const GP_GATHER_F13: u32 = 0x6ba8;
+    /// gp-0x6ba4: 0.29420722, GatherRiderState f14 tuning argument.
+    const GP_GATHER_F14: u32 = 0x6ba4;
+    /// gp-0x6ba0: 0.851393, GatherRiderState f15 tuning argument.
+    const GP_GATHER_F15: u32 = 0x6ba0;
+    /// gp-0x6b9c: 0.85, GatherRiderState f16 tuning argument.
+    const GP_GATHER_F16: u32 = 0x6b9c;
+    /// gp-0x6b98: 0.97, GatherRiderState f17 tuning argument.
+    const GP_GATHER_F17: u32 = 0x6b98;
+    /// gp-0x6b94: 0.1, GatherRiderState f18 tuning argument.
+    const GP_GATHER_F18: u32 = 0x6b94;
+    /// gp-0x6b90: 0.6, GatherRiderState f19 tuning argument.
+    const GP_GATHER_F19: u32 = 0x6b90;
+    /// gp-0x6b8c: 0.001, minimum usable horizontal direction component.
+    const GP_MIN_DIRECTION_COMPONENT: u32 = 0x6b8c;
+    /// gp-0x6b88: 0.64, previous focus share.
+    const GP_FOCUS_RETAINED: u32 = 0x6b88;
+    /// gp-0x6b84: 0.36, new focus share.
+    const GP_FOCUS_INCOMING: u32 = 0x6b84;
+    /// gp-0x6b80: 385.9184, eye orbit radius.
+    const GP_ORBIT_RADIUS: u32 = 0x6b80;
+    /// gp-0x6b7c: 53.241573, eye height above focus.
+    const GP_EYE_HEIGHT: u32 = 0x6b7c;
+    /// gp-0x6b78: 0.97, retained eye-offset share at 60 Hz.
+    const GP_EYE_OFFSET_RETAINED: u32 = 0x6b78;
+    /// gp-0x6b74: 0.029999971, incoming eye-offset share at 60 Hz.
+    const GP_EYE_OFFSET_INCOMING: u32 = 0x6b74;
+    c.cycles += 23;
+    let frame = Frame::open(c, 0x140);
+    c.lwc1(12, r32(c, GP).wrapping_sub(GP_GATHER_F12));
+    frame.save(c, S0, SAVED_CAMERA);
+    c.g[A1][0] = c.g[SP][0];
+    c.lwc1(13, r32(c, GP).wrapping_sub(GP_GATHER_F13));
+    c.lwc1(14, r32(c, GP).wrapping_sub(GP_GATHER_F14));
+    c.lwc1(15, r32(c, GP).wrapping_sub(GP_GATHER_F15));
+    c.lwc1(16, r32(c, GP).wrapping_sub(GP_GATHER_F16));
+    c.lwc1(17, r32(c, GP).wrapping_sub(GP_GATHER_F17));
+    c.lwc1(18, r32(c, GP).wrapping_sub(GP_GATHER_F18));
+    c.lwc1(19, r32(c, GP).wrapping_sub(GP_GATHER_F19));
+    frame.save_fpr(c, 20, SAVED_F20);
+    frame.save(c, S1, SAVED_WORLD_BASE);
+    frame.save_ra(c, SAVED_RA);
+    c.g[RA][0] = sx(0x00160c38);
+    c.g[S0][0] = c.g[A0][0];
+    if call_ptr(c, 0x00162568, 0x00160c38).is_err() {
+        return;
+    }
+    c.lwc1(20, r32(c, GP).wrapping_sub(GP_MIN_DIRECTION_COMPONENT));
+    c.lwc1(0, frame.at(c, INFO_DIRECTION));
+    c.abs_s(0, 0);
+    c.c_lt_s(20, 0);
+    let moving_x = c.fcc();
+    c.lq(2, frame.at(c, INFO_DIRECTION));
+    let moving = if moving_x {
+        true
+    } else {
+        c.cycles += 6;
+        c.lwc1(0, frame.at(c, INFO_DIRECTION + 4));
+        c.abs_s(0, 0);
+        c.c_lt_s(20, 0);
+        if !c.fcc() {
+            c.g[A2][0] = Addr(r32(c, S0).wrapping_add(chase::RIG)).lw(c);
+        }
+        c.fcc()
+    };
+    if moving {
+        c.cycles += 2;
+        c.sq(2, frame.at(c, DIRECTION));
+    } else {
+        c.cycles += 14;
+        c.g[A0][0] = sx(frame.at(c, SIDE_OR_FORWARD));
+        c.g[V0][0] = Addr(r32(c, A2)).lw(c);
+        c.g[A1][0] = Addr(r32(c, V0).wrapping_add(GET_FORWARD)).lh(c);
+        c.g[V1][0] = Addr(r32(c, V0).wrapping_add(GET_FORWARD + 4)).lw(c);
+        let target_method = r32(c, V1);
+        c.g[RA][0] = sx(0x00160c8c);
+        c.g[A1][0] = sx(r32(c, A2).wrapping_add(r32(c, A1)));
+        if call_ptr(c, target_method, 0x00160c8c).is_err() {
+            return;
+        }
+        c.lq(2, frame.at(c, SIDE_OR_FORWARD));
+        c.sq(2, frame.at(c, DIRECTION));
+        c.lwc1(0, frame.at(c, DIRECTION));
+        c.abs_s(0, 0);
+        c.c_lt_s(0, 20);
+        let forward_x = !c.fcc();
+        c.lwc1(0, frame.at(c, DIRECTION + 4));
+        if !forward_x {
+            c.cycles += 5;
+            c.abs_s(0, 0);
+            c.c_lt_s(0, 20);
+            c.g[V0][0] = 0x500000;
+            if c.fcc() {
+                c.cycles += 3;
+                // 0x4ff140: global fallback direction.
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0xec0));
+                c.lq(3, c.g[V0][0] as u32);
+                c.sq(3, frame.at(c, DIRECTION));
+            }
+        }
+    }
+    // Normalize the horizontal direction and its perpendicular, then get the focus.
+    c.cycles += 68;
+    c.sw(frame.at(c, DIRECTION + 8), 0u64);
+    c.g[S1][0] = 0x500000;
+    // 0x4ff160: world up.
+    c.lqc2(4, r32(c, S1).wrapping_sub(0xea0));
+    c.lqc2(5, frame.at(c, DIRECTION));
+    c.vu0().opmula(4, 5);
+    c.vu0().opmsub(6, 5, 4);
+    c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+    c.sqc2(6, frame.at(c, 0x90));
+    c.g[A0][0] = sx(frame.at(c, 0xa0));
+    c.lq(2, frame.at(c, 0x90));
+    c.sq(2, frame.at(c, SIDE_OR_FORWARD));
+    c.lqc2(3, frame.at(c, DIRECTION));
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(3, 22);
+    c.mtc1(3, 0);
+    c.mfc1(2, 0);
+    c.qmtc2(2, 3);
+    c.vu0().div(0, 3, 3, 0);
+    c.lqc2(4, frame.at(c, DIRECTION));
+    c.vu0().waitq();
+    c.vu0().mul(0b1111, 5, 4, Src::Q);
+    c.sqc2(5, frame.at(c, DIRECTION));
+    c.lqc2(3, frame.at(c, SIDE_OR_FORWARD));
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(3, 22);
+    c.mtc1(3, 1);
+    c.mfc1(2, 1);
+    c.qmtc2(2, 3);
+    c.vu0().div(0, 3, 3, 0);
+    c.lqc2(4, frame.at(c, SIDE_OR_FORWARD));
+    c.vu0().waitq();
+    c.vu0().mul(0b1111, 5, 4, Src::Q);
+    c.sqc2(5, frame.at(c, SIDE_OR_FORWARD));
+    c.g[A2][0] = Addr(r32(c, S0).wrapping_add(chase::RIG)).lw(c);
+    c.g[V0][0] = Addr(r32(c, A2)).lw(c);
+    c.g[A1][0] = Addr(r32(c, V0).wrapping_add(GET_FOCUS)).lh(c);
+    c.g[V1][0] = Addr(r32(c, V0).wrapping_add(GET_FOCUS + 4)).lw(c);
+    let target_method = r32(c, V1);
+    c.g[RA][0] = sx(0x00160d98);
+    c.g[A1][0] = sx(r32(c, A2).wrapping_add(r32(c, A1)));
+    if call_ptr(c, target_method, 0x00160d98).is_err() {
+        return;
+    }
+    c.mtc1(0, 0);
+    c.mfc1(3, 0);
+    // 0x4ff160: world up.
+    c.lqc2(4, r32(c, S1).wrapping_sub(0xea0));
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, 0xc0));
+    c.lq(2, frame.at(c, 0xc0));
+    c.sq(2, frame.at(c, 0xb0));
+    c.lqc2(3, frame.at(c, 0xa0));
+    c.lqc2(4, frame.at(c, 0xb0));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, frame.at(c, 0xc0));
+    c.lq(2, frame.at(c, 0xc0));
+    c.g[V1][0] = Addr(r32(c, S0).wrapping_add(HISTORY_INITIALIZED)).lw(c);
+    c.sq(2, r32(c, S0).wrapping_add(FOCUS));
+    let initialized = c.g[V1][0] != 0;
+    c.sq(2, frame.at(c, 0x90));
+    if initialized {
+        // Focus = retained previous focus + new target focus.
+        c.cycles += 23;
+        c.lwc1(0, r32(c, GP).wrapping_sub(GP_FOCUS_RETAINED));
+        c.mfc1(2, 0);
+        c.lqc2(4, r32(c, S0).wrapping_add(PREVIOUS_FOCUS));
+        c.qmtc2(2, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, frame.at(c, 0xb0));
+        c.lwc1(1, r32(c, GP).wrapping_sub(GP_FOCUS_INCOMING));
+        c.lq(2, frame.at(c, 0xb0));
+        c.sq(2, frame.at(c, 0xa0));
+        c.mfc1(3, 1);
+        c.lqc2(4, r32(c, S0).wrapping_add(FOCUS));
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, frame.at(c, 0xc0));
+        c.lq(2, frame.at(c, 0xc0));
+        c.sq(2, frame.at(c, 0xb0));
+        c.lqc2(3, frame.at(c, 0xa0));
+        c.lqc2(4, frame.at(c, 0xb0));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, frame.at(c, 0xc0));
+        c.lq(2, frame.at(c, 0xc0));
+        c.sq(2, r32(c, S0).wrapping_add(FOCUS));
+        c.sq(2, frame.at(c, 0x90));
+    }
+    // Place the eye on the orbit in the horizontal frame.
+    c.cycles += 52;
+    c.lq(2, r32(c, S0).wrapping_add(FOCUS));
+    c.lwc1(12, r32(c, S0).wrapping_add(ORBIT_ANGLE));
+    c.lwc1(20, r32(c, GP).wrapping_sub(GP_ORBIT_RADIUS));
+    c.g[RA][0] = sx(0x00160e4c);
+    c.sq(2, r32(c, S0).wrapping_add(PREVIOUS_FOCUS));
+    if call_ptr(c, 0x0031c040, 0x00160e4c).is_err() {
+        return;
+    }
+    c.mul_s(0, 0, 20);
+    c.mfc1(3, 0);
+    c.lqc2(4, frame.at(c, DIRECTION));
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, 0xd0));
+    c.lq(2, frame.at(c, 0xd0));
+    c.sq(2, frame.at(c, 0xc0));
+    c.lqc2(3, r32(c, S0).wrapping_add(FOCUS));
+    c.lqc2(4, frame.at(c, 0xc0));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, frame.at(c, 0xd0));
+    c.lq(2, frame.at(c, 0xd0));
+    c.lwc1(12, r32(c, S0).wrapping_add(ORBIT_ANGLE));
+    c.g[RA][0] = sx(0x00160e8c);
+    c.sq(2, frame.at(c, 0xb0));
+    if call_ptr(c, 0x0031bf60, 0x00160e8c).is_err() {
+        return;
+    }
+    c.mul_s(0, 0, 20);
+    c.lwc1(1, r32(c, GP).wrapping_sub(GP_EYE_HEIGHT));
+    c.mfc1(3, 0);
+    c.lqc2(4, frame.at(c, SIDE_OR_FORWARD));
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, 0xe0));
+    c.lq(2, frame.at(c, 0xe0));
+    c.sq(2, frame.at(c, 0xd0));
+    c.lqc2(3, frame.at(c, 0xb0));
+    c.lqc2(4, frame.at(c, 0xd0));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, frame.at(c, 0xe0));
+    c.lq(2, frame.at(c, 0xe0));
+    c.sq(2, frame.at(c, 0xa0));
+    c.mfc1(3, 1);
+    // 0x4ff160: world up.
+    c.lqc2(4, r32(c, S1).wrapping_sub(0xea0));
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, 0xf0));
+    c.lq(2, frame.at(c, 0xf0));
+    c.sq(2, frame.at(c, 0xe0));
+    c.lqc2(3, frame.at(c, 0xa0));
+    c.lqc2(4, frame.at(c, 0xe0));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, frame.at(c, 0xf0));
+    c.lq(2, frame.at(c, 0xf0));
+    c.g[V1][0] = Addr(r32(c, S0).wrapping_add(HISTORY_INITIALIZED)).lw(c);
+    c.sq(2, r32(c, S0).wrapping_add(EYE));
+    let initialized = c.g[V1][0] != 0;
+    c.sq(2, frame.at(c, 0x90));
+    if initialized {
+        // Blend the eye offset against its history, preserving the focus.
+        c.cycles += 35;
+        c.lqc2(3, r32(c, S0).wrapping_add(FOCUS));
+        c.lqc2(4, r32(c, S0).wrapping_add(EYE));
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, frame.at(c, 0xa0));
+        c.lwc1(0, r32(c, GP).wrapping_sub(GP_EYE_OFFSET_RETAINED));
+        c.lq(2, frame.at(c, 0xa0));
+        c.lwc1(1, r32(c, GP).wrapping_sub(GP_EYE_OFFSET_INCOMING));
+        c.sq(2, frame.at(c, 0x90));
+        c.mfc1(3, 0);
+        c.lqc2(4, r32(c, S0).wrapping_add(PREVIOUS_EYE_OFFSET));
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, frame.at(c, 0xc0));
+        c.lq(2, frame.at(c, 0xc0));
+        c.sq(2, frame.at(c, 0xb0));
+        c.mfc1(3, 1);
+        c.lqc2(4, frame.at(c, 0x90));
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, frame.at(c, 0xd0));
+        c.lq(2, frame.at(c, 0xd0));
+        c.sq(2, frame.at(c, 0xc0));
+        c.lqc2(3, frame.at(c, 0xb0));
+        c.lqc2(4, frame.at(c, 0xc0));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, frame.at(c, 0xd0));
+        c.lq(2, frame.at(c, 0xd0));
+        c.sq(2, frame.at(c, 0xa0));
+        c.lqc2(3, r32(c, S0).wrapping_add(FOCUS));
+        c.lqc2(4, frame.at(c, 0xa0));
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, frame.at(c, 0xc0));
+        c.lq(2, frame.at(c, 0xc0));
+        c.sq(2, r32(c, S0).wrapping_add(EYE));
+        c.sq(2, frame.at(c, 0xb0));
+    }
+    // Store the eye offset and mark both histories initialized.
+    c.cycles += 15;
+    c.lqc2(3, r32(c, S0).wrapping_add(FOCUS));
+    c.lqc2(4, r32(c, S0).wrapping_add(EYE));
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, frame.at(c, 0xa0));
+    c.g[V1][0] = 0x1;
+    c.lq(2, frame.at(c, 0xa0));
+    c.sw(r32(c, S0).wrapping_add(HISTORY_INITIALIZED), c.g[V1][0]);
+    c.sq(2, r32(c, S0).wrapping_add(PREVIOUS_EYE_OFFSET));
+    frame.restore(c, S0, SAVED_CAMERA);
+    frame.restore(c, S1, SAVED_WORLD_BASE);
+    frame.restore_ra(c, SAVED_RA);
+    frame.restore_fpr(c, 20, SAVED_F20);
+    c.sq(2, frame.at(c, 0x90));
+    frame.close(c);
+}
+
 /// `void RelativeChaseCamerAlgorithm_ResetForRider(Cam* self, int id)`
 /// (0x160fd0): if the camera's rider is `id`, reset the relative chase camera
 /// (drop its blend state and refresh the camera behind the rider).
@@ -9943,6 +10297,100 @@ pub(crate) mod tests {
         w_7(c, algo + 0x10, ctl);
         slot_4(c, ctl, 0x28, 0, FAKE + 0x20);
         slot_4(c, ctl, 0x2c, 0, FAKE + 0x30);
+    }
+
+    /// Real GatherRiderState, Rider_GetMainState, sin and cos; only target
+    /// virtuals are fake. Ten cases cross five direction exits with first /
+    /// subsequent update. Every gp pool slot read by the update and gather
+    /// varies with the seed, so hard-coded tuning constants are observable.
+    fn relative_update_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x160bf8, 7);
+        elf_image(c);
+        c.bus.write32(crate::tick::APPMAN_PTR, 0);
+        let (this, target, vt, rider, state) = (
+            DATA,
+            DATA + 0x1000,
+            DATA + 0x2000,
+            DATA + 0x3000,
+            DATA + 0x4000,
+        );
+        c.g[A0][0] = this as u64;
+        c.pc = 0x0016_0bf8;
+        c.bus.write32(this + 0x30, target);
+        c.bus.write32(target, vt);
+        c.bus.write32(target + 4, rider);
+        c.bus.write32(rider + 0x77c, state);
+        c.bus.write32(state + 0xde0, 0);
+        for (i, slot) in [0x18u32, 0xa0, 0x88, 0x90, 8, 0x20].into_iter().enumerate() {
+            c.bus.write16(vt + slot, (i as u16) * 0x10);
+            c.bus.write32(vt + slot + 4, FAKE + i as u32 * 0x10);
+        }
+        c.bus.write32(LOG_RESULTS + 4, 4);
+        // Keep the first ten cases complete, then exercise each unwind index.
+        c.bus.write32(
+            LOG_UNWIND_AT,
+            if seed < 10 || seed % 3 != 0 {
+                u32::MAX
+            } else {
+                (seed / 3) % 7
+            },
+        );
+        for neg in (0x6b74..=0x6bac).step_by(4).chain([0x6af8, 0x6afc]) {
+            let at = GAME_GP - neg;
+            let v = f32::from_bits(c.bus.read32(at));
+            let scale = [0.8f32, 1.0, 1.2][(r.next_u32() % 3) as usize];
+            c.bus.write32(at, (v * scale).to_bits());
+        }
+        let case = seed % 5;
+        let vec = |x: f32, y: f32, z: f32| [x.to_bits(), y.to_bits(), z.to_bits(), 0];
+        let velocity = match case {
+            0 => vec(60.0, 10.0, 0.0),
+            1 => vec(0.0, 60.0, 0.0),
+            _ => vec(0.0, 0.0, 60.0),
+        };
+        put_vec(c, SP - 0x250, velocity);
+        put_vec(c, this + 0x1b0, velocity);
+        put_vec(c, this + 0x100, velocity);
+        let forward = match case {
+            2 => vec(1.0, 0.0, 0.0),
+            3 => vec(0.0, 1.0, 0.0),
+            _ => vec(0.0, 0.0, 1.0),
+        };
+        put_vec(c, SP - 0xc0, forward);
+        put_vec(c, 0x004f_f140, vec(1.0, 0.0, 0.0));
+        put_vec(c, 0x004f_f160, vec(0.0, 0.0, 1.0));
+        put_vec(c, 0x004f_f120, vec(0.0, 0.0, 1.0));
+        // Target position outputs, plus the initial focus/eye histories.
+        for at in [
+            SP - 0x1d0,
+            SP - 0xa0,
+            this + 0x20,
+            this + 0x40,
+            this + 0x3a0,
+            this + 0x3b0,
+        ] {
+            let v = [r.f32(100.0), r.f32(100.0), r.f32(100.0), 0];
+            put_vec(c, at, v);
+        }
+        c.bus.write32(this + 0x390, r.f32(3.0));
+        c.bus.write32(this + 0x394, (seed / 5) % 2);
+    }
+
+    #[test]
+    fn relative_chase_camera_algorithm_update_matches() {
+        covered(
+            ee::s01::f_00160bf8__generated,
+            relative_chase_camera_algorithm_update,
+            240,
+            &relative_update_setup,
+        );
+        // The ten complete paths: five direction exits, each with and without history.
+        crate::difftest::require_paths(
+            ee::s01::f_00160bf8__generated,
+            240,
+            &[504, 517, 535, 543, 545, 562, 573, 607, 597, 603],
+            &relative_update_setup,
+        );
     }
 
     #[test]
