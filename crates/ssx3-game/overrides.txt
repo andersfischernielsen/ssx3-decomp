@@ -6158,6 +6158,11 @@
 0x0010e910    Rider_BankTrickBoost
 0x0012e980    RiderPrewindSub_Enter
 0x0010c3b8    ComputerActorRider_RollRandomTrick
+# tick rate: railslide and finish-line returns, uber grind input, wipeout board spheres
+0x0012c678    RiderFinishLineSub_HandleInput
+0x00136508    RiderUberGrindSub_HandleInput
+0x00137550    RiderWipeoutState_BuildBoardSpheres
+0x0013bfa8    RiderRailslideState_PostUpdate
 # Phase 2 wave: oc313, oc314, oc315, oc316
 0x0015f780    RiderCameraTarget_v23
 0x0035c0e8    RailModifier_BuildRailNodes
