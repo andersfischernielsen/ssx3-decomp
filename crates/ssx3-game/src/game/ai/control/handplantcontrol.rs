@@ -48,6 +48,8 @@ pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
 pub(crate) use crate::game::fe::splashmanager::gpo;
 pub(crate) use crate::game::intersect::worldsphtree::sp_2 as sp_3;
+pub(crate) use crate::game::misc::OVERLAP_LIST_FIND_NEAREST_RAIL;
+pub(crate) use crate::game::misc::RIDER_PROBE_RAIL;
 pub(crate) use crate::game::movie::movieplayer::gp as gp_5;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
@@ -91,6 +93,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0013_ad20,
         rider_railslide_state_enter,
         "RiderRailslideState_Enter",
+    ),
+    (
+        0x0013_af28,
+        rider_railslide_state_update,
+        "RiderRailslideState_Update",
     ),
     (
         0x0013_bfa8,
@@ -213,9 +220,23 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::movie::movieplayer::callee::OVERLAP_LIST_FIND_CLOSEST;
 
+    pub(crate) use crate::game::ai::rider::callee::BUILD_WORLD_MATRIX as RIDER_BUILD_WORLD_MATRIX_CALLEE;
     pub(crate) use crate::game::movie::movieplayer::callee::RIDER_GET_SUBSTATE;
     pub(crate) use crate::game::movie::movieplayer::callee::RIDER_ORIENTATION_IMPLICIT;
     pub(crate) use crate::game::movie::movieplayer::callee::RIDER_UPDATE_ORIENTATION;
+
+    // No generated slot; called through `call_ptr` like the bare-`u32` entries below.
+    pub const MATH_SIN_COS: u32 = 0x0031_be50;
+
+    pub const ATTRIB6_FACTOR_2: Callee = Callee {
+        addr: 0x0014_9208,
+        f: ee::s01::BECharInt_GetAttrib6Factor_2,
+    };
+
+    pub const COMPUTE_RAIL_FRAME: Callee = Callee {
+        addr: 0x0013_bd80,
+        f: ee::s01::RiderRailslideState_ComputeRailFrame,
+    };
 
     pub const CAST_BOARD_RAY: Callee = Callee {
         addr: 0x0013_a7b0,
@@ -3106,6 +3127,1399 @@ pub fn rider_railslide_state_enter(c: &mut Cpu) {
         sw(c, S0, 0x40, 0);
         c.sq(3, (c.g[S0][0] as u32).wrapping_add(0x30));
         frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RiderRailslideState_Update (0x13af28, handplantcontrol.cpp).
+
+// `RiderRailslideState` fields (offsets from the state object).
+
+/// Lean accumulator (`+0x10`).
+pub(crate) const RAIL_STATE_LEAN: u32 = 0x10;
+
+/// Seconds attached to this rail (`+0x14`).
+pub(crate) const RAIL_STATE_ATTACHED_TIME: u32 = 0x14;
+
+/// Lateral balance accumulator (`+0x18`).
+pub(crate) const RAIL_STATE_BALANCE: u32 = 0x18;
+
+/// Roll accumulator (`+0x1c`).
+pub(crate) const RAIL_STATE_ROLL: u32 = 0x1c;
+
+/// `+0x20`: nonzero while detached (set on entry, cleared by a successful
+/// probe). With no rail the state stays detached and `PostUpdate` launches
+/// the rider.
+pub(crate) const RAIL_STATE_DETACHED: u32 = 0x20;
+
+/// Contact material id, or -1 when the rail has none (`+0x24`).
+pub(crate) const RAIL_STATE_MATERIAL_ID: u32 = 0x24;
+
+/// The rider object behind the state (`+0x50`).
+pub(crate) const RAIL_STATE_RIDER: u32 = 0x50;
+
+// Rider fields the rail update reads or writes (offsets from the rider).
+
+/// Rider +0x1a0: the right row of the orientation. The orientation rows
+/// double as the rail frame's basis while grinding.
+pub(crate) const RAIL_RIDER_RIGHT: u32 = 0x1a0;
+
+/// Rider +0x1b0: the up row of the orientation (the air state's `ORIENT`,
+/// the rider module's `FWD_REF`).
+pub(crate) const RAIL_RIDER_UP: u32 = 0x1b0;
+
+/// Rider +0x1c0: the forward row of the orientation.
+pub(crate) const RAIL_RIDER_FORWARD: u32 = 0x1c0;
+
+/// Rider +0x22c: lean/roll accumulator driven by the stick.
+pub(crate) const RAIL_RIDER_STEER: u32 = 0x22c;
+
+/// Rider +0x25c: the probe blend (the rail-value slew's value; its step
+/// lives at +0x260). Reset to 2.0 while attached less than 0.6 s.
+pub(crate) const RAIL_RIDER_PROBE_BLEND: u32 = 0x25c;
+
+/// Rider +0x2fc: boost held (0 or 1).
+pub(crate) const RAIL_RIDER_BOOST: u32 = 0x2fc;
+
+/// Rider +0x328: character subtype (`rider::rail::STANCE`; the AI's `STANCE`
+/// and the prewind `ANIM_COLUMN` alias the same slot). Stances 3-4 are the
+/// special (grind) stance.
+pub(crate) const RAIL_RIDER_SUBTYPE: u32 = 0x328;
+
+/// Rider +0x370: the rail frame's x-axis while grinding (the rider module's
+/// `UP`, the ground state's `R_FORWARD`, the air state's `UP_COPY` and the
+/// transform's `TRANSFORM`).
+pub(crate) const RAIL_RIDER_RAIL_UP: u32 = rider::UP;
+
+/// Rider +0x3d0: the moving rail's contact velocity. The air state reuses the
+/// slot for gravity (`air::GRAVITY`) and the ground code as a second normal
+/// (`rider::GROUND_NORMAL2`).
+pub(crate) const RAIL_RIDER_BASE_VELOCITY: u32 = 0x3d0;
+
+/// Rider +0x438: the contact kind, stored in the surface slot (`R_SURFACE`).
+pub(crate) const RAIL_RIDER_RAIL_KIND: u32 = R_SURFACE;
+
+/// Rider +0x460: the closest rail point.
+pub(crate) const RAIL_RIDER_RAIL_POINT: u32 = 0x460;
+
+/// Rider +0x5ac: nonzero while riding a moving rail.
+pub(crate) const RAIL_RIDER_MOVING_RAIL: u32 = 0x5ac;
+
+/// Rider +0x780: the pose source holding the rail pose list.
+pub(crate) const RAIL_RIDER_POSE_SOURCE: u32 = 0x780;
+
+/// Pose source +0x2c: the rail pose list.
+pub(crate) const RAIL_POSE_SOURCE_LIST: u32 = 0x2c;
+
+/// Rider +0x860: the overlap list (`R_OVERLAP_LIST`).
+pub(crate) const RAIL_RIDER_OVERLAP: u32 = R_OVERLAP_LIST;
+
+/// Rider +0x86c: character index (attribute lookup).
+pub(crate) const RAIL_RIDER_CHARACTER_INDEX: u32 = 0x86c;
+
+/// Rider +0x8a0: the board node (pose index).
+pub(crate) const RAIL_RIDER_BOARD_NODE: u32 = 0x8a0;
+
+/// Rider +0xb34: attribute context (character factors).
+pub(crate) const RAIL_RIDER_ATTRIB_CONTEXT: u32 = 0xb34;
+
+// Stack slots (offsets from the frame base).
+
+/// Frame size: 0x1b0 bytes of stack slots.
+pub(crate) const RAIL_FRAME_SIZE: u32 = 0x1b0;
+
+/// sp+0x00: the board pose point.
+pub(crate) const RAIL_FRAME_BOARD_POINT: u32 = 0x0;
+
+/// sp+0x10: the found rail direction (and sp+0x00 its closest point).
+pub(crate) const RAIL_FRAME_DIRECTION: u32 = 0x10;
+
+/// sp+0x20: the contact velocity of the moving rail.
+pub(crate) const RAIL_FRAME_CONTACT_VELOCITY: u32 = 0x20;
+
+/// sp+0x4c: the contact kind, sp+0x50 the contact object, sp+0x58 its
+/// material.
+pub(crate) const RAIL_FRAME_CONTACT_KIND: u32 = 0x4c;
+pub(crate) const RAIL_FRAME_CONTACT_OBJECT: u32 = 0x50;
+pub(crate) const RAIL_FRAME_CONTACT_MATERIAL: u32 = 0x58;
+
+/// sp+0x130/0x134, sp+0x138/0x13c: the lean/roll `Math_SinCos` outputs.
+pub(crate) const RAIL_FRAME_LEAN_SIN: u32 = 0x130;
+pub(crate) const RAIL_FRAME_LEAN_COS: u32 = 0x134;
+pub(crate) const RAIL_FRAME_ROLL_SIN: u32 = 0x138;
+pub(crate) const RAIL_FRAME_ROLL_COS: u32 = 0x13c;
+
+// Callee-saved spill slots.
+
+/// sp+0x140: the saved return address.
+pub(crate) const RAIL_FRAME_SAVED_RA: u32 = 0x140;
+pub(crate) const RAIL_FRAME_SAVED_DIRECTION: u32 = 0x150;
+pub(crate) const RAIL_FRAME_SAVED_POSE: u32 = 0x160;
+pub(crate) const RAIL_FRAME_SAVED_STATE: u32 = 0x170;
+/// sp+0x180: saved f20 (balance gain).
+pub(crate) const RAIL_FRAME_SAVED_GAIN: u32 = 0x180;
+/// sp+0x188: saved f21 (lateral balance).
+pub(crate) const RAIL_FRAME_SAVED_BALANCE: u32 = 0x188;
+/// sp+0x190: saved f22 (lateral offset).
+pub(crate) const RAIL_FRAME_SAVED_LATERAL: u32 = 0x190;
+pub(crate) const RAIL_FRAME_SAVED_DT: u32 = 0x198;
+pub(crate) const RAIL_FRAME_SAVED_SPEED_SQUARED: u32 = 0x1a0;
+
+/// The z lanes of the direction and rail slots above.
+pub(crate) const RAIL_FRAME_DIRECTION_Z: u32 = 0x18;
+pub(crate) const RAIL_FRAME_RAIL_Z: u32 = 0xc8;
+
+// Reused VU spill slots, kept in address order; neutral names.
+
+/// sp+0x80: first reused spill.
+pub(crate) const RAIL_FRAME_T80: u32 = 0x80;
+pub(crate) const RAIL_FRAME_T90: u32 = 0x90;
+pub(crate) const RAIL_FRAME_TA0: u32 = 0xa0;
+pub(crate) const RAIL_FRAME_TB0: u32 = 0xb0;
+pub(crate) const RAIL_FRAME_TC0: u32 = 0xc0;
+pub(crate) const RAIL_FRAME_TD0: u32 = 0xd0;
+pub(crate) const RAIL_FRAME_TE0: u32 = 0xe0;
+pub(crate) const RAIL_FRAME_TF0: u32 = 0xf0;
+pub(crate) const RAIL_FRAME_T100: u32 = 0x100;
+pub(crate) const RAIL_FRAME_T110: u32 = 0x110;
+pub(crate) const RAIL_FRAME_T120: u32 = 0x120;
+
+/// Pool floats the rail update loads (gp-relative, subtracted), with the
+/// values from the ELF.
+pub(crate) mod rail_pool {
+    /// gp-0x716c: 1/60 step, the tick length.
+    pub const STEP: u32 = 0x716c;
+    /// gp-0x7168: 555.56; below it the balance gain stays 0.5,
+    /// otherwise it is speed x 0.0009.
+    pub const SPEED_THRESHOLD: u32 = 0x7168;
+    /// gp-0x7164: 0.0009 (555.56 x 0.0009 = 0.5, so the gain is
+    /// max(0.5, speed x 0.0009)).
+    pub const SPEED_GAIN: u32 = 0x7164;
+    /// gp-0x7160: 0.6 s; attached less than this resets the probe
+    /// blend to 2.0.
+    pub const SNAP_TIME: u32 = 0x7160;
+    /// gp-0x715c: 0.001, the blend-norm guard.
+    pub const NORM_EPSILON: u32 = 0x715c;
+    /// gp-0x7158/0x7154: -/+2450, the boost along the rail.
+    pub const REVERSE_BOOST: u32 = 0x7158;
+    pub const FORWARD_BOOST: u32 = 0x7154;
+    /// gp-0x7150: 0.92; |rail z| above it counts as steep.
+    pub const STEEP_THRESHOLD: u32 = 0x7150;
+    /// gp-0x714c: 0.6 s; attached less than this takes the airborne path.
+    pub const EARLY_BALANCE_TIME: u32 = 0x714c;
+    /// gp-0x7148: 0.3, the ordinary balance gain.
+    pub const BALANCE_GAIN: u32 = 0x7148;
+    /// gp-0x7144: 1.8, the special-stance balance gain.
+    pub const SPECIAL_BALANCE_GAIN: u32 = 0x7144;
+    /// gp-0x7140: 1.65, the attribute gain.
+    pub const ATTRIB_GAIN: u32 = 0x7140;
+    /// gp-0x713c: 1/70, the special-stance balance scale.
+    pub const SPECIAL_BALANCE_SCALE: u32 = 0x713c;
+    /// gp-0x7138: 40 degrees, the special-stance roll limit.
+    pub const SPECIAL_ROLL_LIMIT: u32 = 0x7138;
+    /// gp-0x7134: 30 degrees, the special-stance lean limit.
+    pub const SPECIAL_LEAN_LIMIT: u32 = 0x7134;
+    /// gp-0x7130: 1/30, the ordinary balance scale.
+    pub const BALANCE_SCALE: u32 = 0x7130;
+    /// gp-0x712c: 20 degrees, the ordinary lean limit.
+    pub const LEAN_LIMIT: u32 = 0x712c;
+    /// gp-0x7128: 1e10, the orientation rebuild limit.
+    pub const ORIENTATION_LIMIT: u32 = 0x7128;
+    /// gp-0x7124: 0.001, the rail-distance epsilon.
+    pub const POSITION_EPSILON: u32 = 0x7124;
+    /// gp-0x7120: 0.001, the speed epsilon.
+    pub const SPEED_EPSILON: u32 = 0x7120;
+    /// gp-0x711c: 277.78, the detach impulse scale.
+    pub const DETACH_IMPULSE: u32 = 0x711c;
+}
+
+/// Named float immediates (each loaded through AT/mtc1 exactly as written).
+pub(crate) mod rail_float {
+    /// 300: the rail search radius.
+    pub const SEARCH_RADIUS: f32 = 300.0;
+    /// 300: the lean slew per second.
+    pub const LEAN_SLEW: f32 = 300.0;
+    /// 1000: the correction speed toward the rail.
+    pub const CORRECTION_SPEED: f32 = 1000.0;
+    /// 30: the alignment rate per second of game time.
+    pub const ALIGN_RATE: f32 = 30.0;
+    /// -980: gravity along -y.
+    pub const GRAVITY_PULL: f32 = -980.0;
+}
+
+/// Contact indirection: the contact object +0xc holds its owner (body),
+/// whose +0xc is the vtable; each slot is `{ short delta; short;
+/// void (*fn)(); }`, called with `body + delta`. `vcall` reads the method
+/// slot at `DELTA + 4`, so only the deltas are named for the moving and
+/// contact dispatches.
+pub(crate) const RAIL_CONTACT_OWNER: u32 = 0xc;
+pub(crate) const RAIL_BODY_VTABLE: u32 = 0xc;
+pub(crate) const RAIL_VT_MOVING_DELTA: u32 = 0x170;
+pub(crate) const RAIL_VT_CONTACT_DELTA: u32 = 0x150;
+pub(crate) const RAIL_VT_FORCE_DELTA: u32 = 0x158;
+pub(crate) const RAIL_VT_FORCE_METHOD: u32 = 0x15c;
+
+/// Bit 0x4 of the segment material flags (+0x1c): doubles the balance gain.
+pub(crate) const RAIL_MATERIAL_GAIN_FLAG: u32 = 0x4;
+
+/// First special (grind) rider subtype; the check below accepts 3-4.
+pub(crate) const RAIL_SPECIAL_SUBTYPE_FIRST: u32 = 3;
+
+/// Segment material flags (+0x1c).
+pub(crate) const RAIL_MATERIAL_FLAGS: u32 = 0x1c;
+
+/// 0x004a_5e50: the shared gravity vector, (0, 0, -980, 0), written once.
+pub(crate) const RAIL_GRAVITY: u32 = 0x004a_5e50;
+/// Upper half of `RAIL_GRAVITY`, held in T0 by the original.
+pub(crate) const RAIL_GRAVITY_HI: u64 = (RAIL_GRAVITY & 0xffff_0000) as u64;
+/// Lower half of `RAIL_GRAVITY` (`T0 + RAIL_GRAVITY_LO` addresses the vector;
+/// the X lane is this base address).
+pub(crate) const RAIL_GRAVITY_LO: u32 = RAIL_GRAVITY & 0xffff;
+/// gp+0x1b14: nonzero once `RAIL_GRAVITY` is set up.
+pub(crate) const RAIL_GP_GRAVITY_READY: u32 = 0x1b14;
+/// Lanes of the `RAIL_GRAVITY` vector.
+pub(crate) const RAIL_GRAV_Y: u32 = 0x4;
+pub(crate) const RAIL_GRAV_Z: u32 = 0x8;
+pub(crate) const RAIL_GRAV_W: u32 = 0xc;
+
+/// Per-update rail-alignment share that preserves the 60 Hz blend over equal
+/// game time.
+///
+/// Each update replaces a share `k` of the velocity's cross-rail component,
+/// keeping `(1 - k)`. At 60 Hz that share is `k60 = time_scale * (1/60) *
+/// ALIGN_RATE`. The `n = hz/60` updates in one sixtieth must compound to the
+/// same remainder: `(1 - w)^n = 1 - k60`, so `w = 1 - (1 - k60)^(60/hz)`.
+/// The power runs in f64, as [`crate::tick::per_tick_values`] does, and the
+/// result returns to f32 bits. At 60 the stock coefficient returns unchanged.
+///
+/// `k60 = 1` gives `w = 1`, the stock 60 Hz coefficient bit for bit (the
+/// game computes that share in f32 the same way). Above 1 no real
+/// per-update share reproduces the stock result at 120 or 240, so the
+/// stock per-update coefficient is kept instead; negative and nonfinite
+/// `k60` keep it too. The fallback jumps at the boundary: just above 1
+/// the two rates part ways as the time scale crosses 2.
+fn rail_alignment_weight(c: &mut Cpu, stock: u32, timescale: u32) -> u32 {
+    let hz = crate::tick::rate(c);
+    if hz == 60 {
+        return stock;
+    }
+    let k60 = (FpuF32(timescale)
+        * FpuF32(crate::tick::STEP_60)
+        * FpuF32::from_f32(rail_float::ALIGN_RATE))
+    .to_f32();
+    if (0.0..=1.0).contains(&k60) {
+        let w = 1.0 - (1.0 - f64::from(k60)).powf(60.0 / f64::from(hz));
+        (w as f32).to_bits()
+    } else {
+        // keep stock above 1 at 120/240.
+        stock
+    }
+}
+
+/// What the rail search found: a rail to attach to, a rejected contact to
+/// push away from, or no contact at all.
+enum RailContact {
+    Attached,
+    Rejected,
+    Absent,
+}
+
+/// Rail search and contact velocity: find the nearest rail from the board
+/// pose, keep the moving object's contact velocity and the contact kind,
+/// object and material, and probe the rail for attachment.
+///
+/// Entry: `V0` holds the rider (left by the speed clamp). Returns whether the
+/// probe attached, rejected the contact, or found no rail at all (in which
+/// case the state stays detached), plus the rider time scale for the
+/// alignment blend.
+fn rail_search_and_contact_velocity(
+    c: &mut Cpu,
+    frame: Frame,
+    state: Addr,
+) -> Result<(RailContact, u32), call::Unwound> {
+    let pool_base = r32(c, GP);
+    let pool = |offset: u32| pool_base.wrapping_sub(offset);
+    c.cycles += 21;
+    c.g[S2][0] = 0x1;
+    c.lwc1(1, pool(rail_pool::STEP));
+    c.g[A2][0] = sx(frame.at(c, RAIL_FRAME_BOARD_POINT));
+    c.f[0] = Addr(r32(c, V0)).off(air::DT).read_fpu(c).0;
+    c.g[A3][0] = 0x1;
+    state.off(RAIL_STATE_DETACHED).sw(c, c.g[S2][0]);
+    Addr(r32(c, V0)).off(RAIL_RIDER_MOVING_RAIL).sw(c, 0u64);
+    c.mul_s(23, 0, 1);
+    let update_timescale = c.f[0];
+    c.g[AT][0] = u64::from(rail_float::SEARCH_RADIUS.to_bits());
+    c.mtc1(AT, 12);
+    c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.g[A0][0] = Addr(r32(c, V1)).off(RAIL_RIDER_POSE_SOURCE).lw(c);
+    c.g[V0][0] = Addr(r32(c, V1)).off(RAIL_RIDER_BOARD_NODE).lw(c);
+    c.g[A1][0] = Addr(r32(c, A0)).off(RAIL_POSE_SOURCE_LIST).lw(c);
+    c.g[V0][0] = sx(r32(c, V0) << 5);
+    c.g[A0][0] = Addr(r32(c, V1)).off(RAIL_RIDER_OVERLAP).lw(c);
+    c.g[S1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+    c.g[A1][0] = c.g[S1][0];
+    call_ptr(c, OVERLAP_LIST_FIND_NEAREST_RAIL, 0x0013b010)?;
+    let no_contact = c.g[V0][0] == 0u64;
+    c.g[A0][0] = Addr(frame.at(c, RAIL_FRAME_CONTACT_OBJECT)).lw(c);
+    if no_contact {
+        return Ok((RailContact::Absent, update_timescale));
+    }
+    c.cycles += 2;
+    let no_contact_object = c.g[A0][0] == 0u64;
+    c.g[V0][0] = Addr(frame.at(c, RAIL_FRAME_CONTACT_MATERIAL)).lw(c);
+    if !no_contact_object {
+        c.cycles += 3;
+        c.g[A1][0] = Addr(r32(c, A0)).off(RAIL_CONTACT_OWNER).lw(c);
+        let no_contact_body = c.g[A1][0] == 0u64;
+        if !no_contact_body {
+            c.cycles += 7;
+            c.g[V1][0] = Addr(r32(c, A1)).off(RAIL_BODY_VTABLE).lw(c);
+            vcall(c, A1, V1, RAIL_VT_MOVING_DELTA, V0, 0x0013b040)?;
+            let moving = c.g[V0][0] != 0u64;
+            c.g[V0][0] = Addr(frame.at(c, RAIL_FRAME_CONTACT_MATERIAL)).lw(c);
+            if moving {
+                c.cycles += 3;
+                c.g[V0][0] = state.off(RAIL_STATE_RIDER).lw(c);
+                Addr(r32(c, V0))
+                    .off(RAIL_RIDER_MOVING_RAIL)
+                    .sw(c, c.g[S2][0]);
+                c.g[V0][0] = Addr(frame.at(c, RAIL_FRAME_CONTACT_MATERIAL)).lw(c);
+            }
+        }
+    }
+    // The contact material id, or -1 when the rail has none.
+    c.cycles += 2;
+    let no_material = c.g[V0][0] == 0u64;
+    if !no_material {
+        c.cycles += 2;
+        c.g[V0][0] = Addr(r32(c, V0)).lw(c);
+    } else {
+        c.cycles += 2;
+        // -1: no material id.
+        c.g[V0][0] = 0xffffffffffff0000;
+        c.g[V0][0] |= 0xffff;
+    }
+    c.cycles += 4;
+    state.off(RAIL_STATE_MATERIAL_ID).sw(c, c.g[V0][0]);
+    c.g[A0][0] = Addr(frame.at(c, RAIL_FRAME_CONTACT_OBJECT)).lw(c);
+    if c.g[A0][0] == 0u64 {
+        c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    } else {
+        c.cycles += 3;
+        c.g[A2][0] = Addr(r32(c, A0)).off(RAIL_CONTACT_OWNER).lw(c);
+        let no_velocity_body = c.g[A2][0] == 0u64;
+        c.g[A1][0] = sx(frame.at(c, RAIL_FRAME_BOARD_POINT));
+        if !no_velocity_body {
+            c.cycles += 5;
+            c.g[V0][0] = Addr(r32(c, A2)).off(RAIL_BODY_VTABLE).lw(c);
+            vcall(c, A2, V0, RAIL_VT_CONTACT_DELTA, V1, 0x0013b09c)?;
+        }
+        c.cycles += 1;
+        c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    }
+    c.cycles += 26;
+    c.g[V0][0] = Addr(frame.at(c, RAIL_FRAME_CONTACT_KIND)).lw(c);
+    c.lwc1(0, pool(rail_pool::SPEED_THRESHOLD));
+    Addr(r32(c, V1)).off(RAIL_RIDER_RAIL_KIND).sw(c, c.g[V0][0]);
+    c.g[AT][0] = 0x3f000000; // 0.5
+    c.mtc1(AT, 20);
+    c.lq(2, frame.at(c, RAIL_FRAME_BOARD_POINT));
+    c.g[A0][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.sq(2, Addr(r32(c, A0)).off(RAIL_RIDER_RAIL_POINT).0);
+    c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.lq(2, frame.at(c, RAIL_FRAME_CONTACT_VELOCITY));
+    c.sq(2, Addr(r32(c, V1)).off(RAIL_RIDER_BASE_VELOCITY).0);
+    c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    v_length(c, Addr(r32(c, V1)).off(R_VEL).0, 2, 1);
+    // f0 still holds SPEED_THRESHOLD from the load above: the stock
+    // speed compare.
+    if abi::c_lt_s(c, FpuF32(c.f[1]), FpuF32(c.f[0])) {
+        c.lwc1(1, state.off(RAIL_STATE_ATTACHED_TIME).0);
+    } else {
+        c.cycles += 3;
+        c.lwc1(0, pool(rail_pool::SPEED_GAIN));
+        c.mul_s(20, 1, 0);
+        c.lwc1(1, state.off(RAIL_STATE_ATTACHED_TIME).0);
+    }
+    c.cycles += 5;
+    c.lwc1(0, pool(rail_pool::SNAP_TIME));
+    let recent = abi::c_lt_s(c, FpuF32(c.f[1]), FpuF32(c.f[0]));
+    c.mul_s(24, 20, 20);
+    if recent {
+        c.cycles += 3;
+        c.g[AT][0] = 0x40000000; // 2
+        c.mtc1(AT, 0);
+        Addr(r32(c, V1))
+            .off(RAIL_RIDER_PROBE_BLEND)
+            .write_fpu(c, FpuF32(c.f[0]));
+    }
+    c.cycles += 7;
+    c.g[A2][0] = sx(frame.at(c, RAIL_FRAME_DIRECTION));
+    c.g[A0][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.g[S2][0] = c.g[A2][0];
+    c.g[A1][0] = sx(frame.at(c, RAIL_FRAME_BOARD_POINT));
+    RIDER_PROBE_RAIL.call(c, 0x0013b148)?;
+    if c.g[V0][0] == 0u64 {
+        return Ok((RailContact::Rejected, update_timescale));
+    }
+    Ok((RailContact::Attached, update_timescale))
+}
+
+/// Alignment blend: the relative velocity (`vel - moving-rail velocity`) is
+/// projected onto the rail direction (flipping the direction when it points
+/// backward), the rider is pulled toward the rail, and the blend keeps
+/// (1-k) of the cross-rail component per update, compounding to the 60 Hz
+/// result over equal game time. The relative velocity is then restored to
+/// its speed.
+fn rail_alignment_blend(c: &mut Cpu, frame: Frame, state: Addr, update_timescale: u32) -> Flow {
+    let pool_base = r32(c, GP);
+    let pool = |offset: u32| pool_base.wrapping_sub(offset);
+    c.cycles += 25;
+    c.lwc1(0, state.off(RAIL_STATE_ATTACHED_TIME).0);
+    state.off(RAIL_STATE_DETACHED).sw(c, 0u64);
+    c.add_s(0, 0, 23);
+    c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.mtc1(ZERO, 5);
+    c.swc1(0, state.off(RAIL_STATE_ATTACHED_TIME).0);
+    v_sub(
+        c,
+        Addr(r32(c, V1)).off(R_VEL).0,
+        Addr(r32(c, V1)).off(RAIL_RIDER_BASE_VELOCITY).0,
+        frame.at(c, RAIL_FRAME_T90),
+    );
+    c.lq(2, frame.at(c, RAIL_FRAME_T90));
+    c.sq(2, frame.at(c, RAIL_FRAME_T80));
+    dot_ab(
+        c,
+        frame.at(c, RAIL_FRAME_T80),
+        frame.at(c, RAIL_FRAME_DIRECTION),
+    );
+    c.qmfc2(V1, 4);
+    c.mtc1(V1, 4);
+    let against_rail = abi::c_lt_s(c, FpuF32(c.f[4]), FpuF32(c.f[5]));
+    c.lq(2, frame.at(c, RAIL_FRAME_DIRECTION));
+    if against_rail {
+        c.cycles += 9;
+        c.f[4] = (-FpuF32(c.f[4])).0;
+        c.g[AT][0] = sx(0xbf80_0000); // -1
+        c.mtc1(AT, 0);
+        c.mfc1(V0, 0);
+        vu_scale(c, 2, frame.at(c, RAIL_FRAME_DIRECTION));
+        c.sqc2(5, frame.at(c, RAIL_FRAME_DIRECTION));
+        c.lq(2, frame.at(c, RAIL_FRAME_DIRECTION));
+    }
+    c.cycles += 39;
+    c.g[AT][0] = u64::from(rail_float::CORRECTION_SPEED.to_bits());
+    c.mtc1(AT, 0);
+    c.sq(2, r32(c, S0));
+    v_sub(
+        c,
+        frame.at(c, RAIL_FRAME_BOARD_POINT),
+        r32(c, S1),
+        frame.at(c, RAIL_FRAME_TA0),
+    );
+    c.mul_s(3, 23, 0);
+    c.lq(2, frame.at(c, RAIL_FRAME_TA0));
+    c.g[A1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.sq(2, frame.at(c, RAIL_FRAME_T90));
+    c.f[0] = (-FpuF32(c.f[3])).0;
+    c.lq(3, Addr(r32(c, A1)).off(RAIL_RIDER_RIGHT).0);
+    c.mov_s(2, 0);
+    c.sq(3, frame.at(c, RAIL_FRAME_TA0));
+    dot_ab(c, frame.at(c, RAIL_FRAME_TA0), frame.at(c, RAIL_FRAME_T90));
+    c.qmfc2(A0, 4);
+    c.mtc1(A0, 22);
+    c.lq(2, Addr(r32(c, A1)).off(RAIL_RIDER_FORWARD).0);
+    c.sq(2, frame.at(c, RAIL_FRAME_TA0));
+    dot_ab(c, frame.at(c, RAIL_FRAME_T90), frame.at(c, RAIL_FRAME_TA0));
+    c.qmfc2(V1, 4);
+    c.mtc1(V1, 1);
+    c.c_le_s(0, 1);
+    if c.fcc() {
+        c.min_s(2, 1, 3);
+    }
+    // Blend relative velocity toward its rail projection, then restore its speed.
+    c.cycles += 73;
+    c.lq(2, Addr(r32(c, A1)).off(RAIL_RIDER_FORWARD).0);
+    c.g[AT][0] = u64::from(rail_float::ALIGN_RATE.to_bits());
+    c.mtc1(AT, 1);
+    c.sq(2, frame.at(c, RAIL_FRAME_TB0));
+    c.mfc1(V1, 2);
+    vu_scale(c, 3, frame.at(c, RAIL_FRAME_TB0));
+    c.sqc2(5, frame.at(c, RAIL_FRAME_TC0));
+    c.mul_s(1, 23, 1);
+    c.f[1] = rail_alignment_weight(c, c.f[1], update_timescale);
+    c.lq(2, frame.at(c, RAIL_FRAME_TC0));
+    c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.sq(2, frame.at(c, RAIL_FRAME_TA0));
+    v_add(
+        c,
+        Addr(r32(c, V1)).off(R_POS).0,
+        frame.at(c, RAIL_FRAME_TA0),
+        Addr(r32(c, V1)).off(R_POS).0,
+    );
+    c.g[AT][0] = 0x3f800000; // 1
+    c.mtc1(AT, 0);
+    c.mfc1(V0, 4);
+    vu_scale(c, 2, frame.at(c, RAIL_FRAME_DIRECTION));
+    c.sqc2(5, frame.at(c, RAIL_FRAME_TB0));
+    c.lwc1(2, pool(rail_pool::NORM_EPSILON));
+    c.lq(2, frame.at(c, RAIL_FRAME_TB0));
+    c.sub_s(0, 0, 1);
+    c.sq(2, frame.at(c, RAIL_FRAME_TA0));
+    v_length(c, frame.at(c, RAIL_FRAME_T80), 3, 3);
+    c.mfc1(A0, 1);
+    vu_scale(c, 4, frame.at(c, RAIL_FRAME_TA0));
+    c.sqc2(5, frame.at(c, RAIL_FRAME_TD0));
+    c.lq(2, frame.at(c, RAIL_FRAME_TD0));
+    c.sq(2, frame.at(c, RAIL_FRAME_TC0));
+    c.mfc1(V1, 0);
+    vu_scale(c, 3, frame.at(c, RAIL_FRAME_T80));
+    c.sqc2(5, frame.at(c, RAIL_FRAME_TE0));
+    c.lq(2, frame.at(c, RAIL_FRAME_TE0));
+    c.sq(2, frame.at(c, RAIL_FRAME_TD0));
+    // The rail frame plus the cross vector is the lean frame.
+    v_add(
+        c,
+        frame.at(c, RAIL_FRAME_TC0),
+        frame.at(c, RAIL_FRAME_TD0),
+        frame.at(c, RAIL_FRAME_TE0),
+    );
+    c.lq(2, frame.at(c, RAIL_FRAME_TE0));
+    c.sq(2, frame.at(c, RAIL_FRAME_T80));
+    c.sq(2, frame.at(c, RAIL_FRAME_TB0));
+    v_length(c, frame.at(c, RAIL_FRAME_T80), 3, 0);
+    let readable = abi::c_lt_s(c, FpuF32(c.f[2]), FpuF32(c.f[0]));
+    if !readable {
+        c.g[V0][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    } else {
+        c.cycles += 7;
+        c.div_s(0, 3, 0);
+        c.mfc1(V0, 0);
+        vu_scale(c, 2, frame.at(c, RAIL_FRAME_T80));
+        c.sqc2(5, frame.at(c, RAIL_FRAME_T80));
+        c.g[V0][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    }
+    Ok(())
+}
+
+/// Gravity, boost and moving-rail force: the rider's velocity is rebuilt from
+/// the relative velocity plus the rail's base velocity, the shared gravity
+/// vector is set up once, gravity is projected along the rail, boost is
+/// added, the moving rail's force virtual runs, and velocity and position
+/// are integrated.
+fn rail_gravity_boost_and_moving_force(c: &mut Cpu, frame: Frame, state: Addr) -> Flow {
+    let pool_base = r32(c, GP);
+    let pool = |offset: u32| pool_base.wrapping_sub(offset);
+    c.cycles += 10;
+    c.g[T0][0] = RAIL_GRAVITY_HI;
+    v_add(
+        c,
+        frame.at(c, RAIL_FRAME_T80),
+        Addr(r32(c, V0)).off(RAIL_RIDER_BASE_VELOCITY).0,
+        frame.at(c, RAIL_FRAME_TC0),
+    );
+    c.lq(3, frame.at(c, RAIL_FRAME_TC0));
+    c.g[A0][0] = Addr(r32(c, GP)).off(RAIL_GP_GRAVITY_READY).lw(c);
+    c.sq(3, frame.at(c, RAIL_FRAME_TB0));
+    let gravity_ready = c.g[A0][0] != 0u64;
+    c.sq(3, Addr(r32(c, V0)).off(R_VEL).0);
+    if !gravity_ready {
+        c.cycles += 9;
+        c.g[AT][0] = sx(rail_float::GRAVITY_PULL.to_bits());
+        c.mtc1(AT, 0);
+        c.g[V0][0] = sx(Addr(r32(c, T0)).off(RAIL_GRAVITY_LO).0);
+        Addr(r32(c, V0))
+            .off(RAIL_GRAV_W)
+            .write_fpu(c, FpuF32(c.f[5]));
+        c.g[V1][0] = 0x1;
+        Addr(r32(c, V0))
+            .off(RAIL_GRAV_Z)
+            .write_fpu(c, FpuF32(c.f[0]));
+        Addr(r32(c, GP))
+            .off(RAIL_GP_GRAVITY_READY)
+            .sw(c, c.g[V1][0]);
+        Addr(r32(c, T0))
+            .off(RAIL_GRAVITY_LO)
+            .write_fpu(c, FpuF32(c.f[5]));
+        Addr(r32(c, V0))
+            .off(RAIL_GRAV_Y)
+            .write_fpu(c, FpuF32(c.f[5]));
+    }
+    // Project gravity along the rail and add boost before integrating.
+    c.cycles += 35;
+    dot_ab(
+        c,
+        Addr(r32(c, T0)).off(RAIL_GRAVITY_LO).0,
+        frame.at(c, RAIL_FRAME_DIRECTION),
+    );
+    c.qmfc2(V0, 4);
+    c.mtc1(V0, 0);
+    c.mfc1(V1, 0);
+    vu_scale(c, 3, frame.at(c, RAIL_FRAME_DIRECTION));
+    c.sqc2(5, frame.at(c, RAIL_FRAME_TD0));
+    c.lq(2, frame.at(c, RAIL_FRAME_TD0));
+    c.sq(2, frame.at(c, RAIL_FRAME_TC0));
+    c.mfc1(V1, 5);
+    vu_scale(c, 3, frame.at(c, RAIL_FRAME_TA0));
+    c.sqc2(5, frame.at(c, RAIL_FRAME_TE0));
+    c.lq(2, frame.at(c, RAIL_FRAME_TE0));
+    c.sq(2, frame.at(c, RAIL_FRAME_TD0));
+    v_sub(
+        c,
+        frame.at(c, RAIL_FRAME_TC0),
+        frame.at(c, RAIL_FRAME_TD0),
+        frame.at(c, RAIL_FRAME_TE0),
+    );
+    c.lq(2, frame.at(c, RAIL_FRAME_TE0));
+    c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.sq(2, frame.at(c, RAIL_FRAME_TB0));
+    c.lwc1(1, Addr(r32(c, V1)).off(RAIL_RIDER_BOOST).0);
+    let boosting = abi::c_lt_s(c, FpuF32(c.f[5]), FpuF32(c.f[1]));
+    c.g[A0][0] = Addr(frame.at(c, RAIL_FRAME_CONTACT_OBJECT)).lw(c);
+    if boosting {
+        c.cycles += 4;
+        let forward = abi::c_lt_s(c, FpuF32(c.f[5]), FpuF32(c.f[4]));
+        c.lwc1(0, pool(rail_pool::REVERSE_BOOST));
+        if !forward {
+            c.mul_s(0, 1, 0);
+        } else {
+            c.cycles += 2;
+            c.lwc1(0, pool(rail_pool::FORWARD_BOOST));
+            c.mul_s(0, 1, 0);
+        }
+        c.cycles += 12;
+        c.mfc1(V1, 0);
+        vu_scale(c, 3, frame.at(c, RAIL_FRAME_DIRECTION));
+        c.sqc2(5, frame.at(c, RAIL_FRAME_TD0));
+        c.lq(2, frame.at(c, RAIL_FRAME_TD0));
+        c.sq(2, frame.at(c, RAIL_FRAME_TC0));
+        v_add(
+            c,
+            frame.at(c, RAIL_FRAME_TB0),
+            frame.at(c, RAIL_FRAME_TC0),
+            frame.at(c, RAIL_FRAME_TB0),
+        );
+        c.g[A0][0] = Addr(frame.at(c, RAIL_FRAME_CONTACT_OBJECT)).lw(c);
+    }
+    c.cycles += 2;
+    let no_contact_object = c.g[A0][0] == 0u64;
+    c.g[S1][0] = sx(frame.at(c, RAIL_FRAME_TC0));
+    if !no_contact_object {
+        c.cycles += 3;
+        c.g[V1][0] = Addr(r32(c, A0)).off(RAIL_CONTACT_OWNER).lw(c);
+        let no_contact_body = c.g[V1][0] == 0u64;
+        c.g[A2][0] = c.g[S1][0];
+        if !no_contact_body {
+            c.cycles += 21;
+            c.g[A3][0] = Addr(r32(c, V1)).off(RAIL_BODY_VTABLE).lw(c);
+            c.mtc1(ZERO, 0);
+            c.g[A1][0] = sx(frame.at(c, RAIL_FRAME_BOARD_POINT));
+            c.g[A0][0] = Addr(r32(c, A3)).off(RAIL_VT_FORCE_DELTA).lh(c);
+            c.mfc1(V0, 0);
+            vu_scale(c, 2, frame.at(c, RAIL_FRAME_TA0));
+            c.sqc2(5, frame.at(c, RAIL_FRAME_TE0));
+            c.lq(2, frame.at(c, RAIL_FRAME_TE0));
+            c.g[A0][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+            c.sq(2, frame.at(c, RAIL_FRAME_TD0));
+            v_sub(
+                c,
+                Addr(r32(c, T0)).off(RAIL_GRAVITY_LO).0,
+                frame.at(c, RAIL_FRAME_TD0),
+                frame.at(c, RAIL_FRAME_TE0),
+            );
+            c.lq(2, frame.at(c, RAIL_FRAME_TE0));
+            c.sq(2, frame.at(c, RAIL_FRAME_TC0));
+            c.g[V1][0] = Addr(r32(c, A3)).off(RAIL_VT_FORCE_METHOD).lw(c);
+            let target = c.g[V1][0] as u32;
+            call_ptr(c, target, 0x0013b53c)?;
+        }
+    }
+    c.cycles += 32;
+    c.mfc1(V0, 23);
+    vu_scale(c, 2, frame.at(c, RAIL_FRAME_TB0));
+    c.sqc2(5, frame.at(c, RAIL_FRAME_TD0));
+    c.g[AT][0] = 0x3f000000; // 0.5
+    c.mtc1(AT, 0);
+    c.lq(2, frame.at(c, RAIL_FRAME_TD0));
+    c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.c_le_s(0, 20);
+    c.sq(2, frame.at(c, RAIL_FRAME_TC0));
+    v_add(
+        c,
+        Addr(r32(c, V1)).off(R_VEL).0,
+        frame.at(c, RAIL_FRAME_TC0),
+        Addr(r32(c, V1)).off(R_VEL).0,
+    );
+    c.g[AT][0] = 0x40000000; // 2
+    c.mtc1(AT, 1);
+    c.g[V0][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.mfc1(A0, 23);
+    vu_scale(c, 4, Addr(r32(c, V0)).off(R_VEL).0);
+    c.sqc2(5, frame.at(c, RAIL_FRAME_TD0));
+    c.lq(3, frame.at(c, RAIL_FRAME_TD0));
+    c.g[V0][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.sq(3, frame.at(c, RAIL_FRAME_TC0));
+    v_add(
+        c,
+        Addr(r32(c, V0)).off(R_POS).0,
+        frame.at(c, RAIL_FRAME_TC0),
+        Addr(r32(c, V0)).off(R_POS).0,
+    );
+    if c.fcc() {
+        c.min_s(0, 20, 1);
+    }
+    c.cycles += 12;
+    c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.g[AT][0] = 0x43340000; // 180
+    c.mtc1(AT, 1);
+    c.lq(2, Addr(r32(c, V1)).off(RAIL_RIDER_FORWARD).0);
+    c.mul_s(1, 0, 1);
+    c.sq(2, frame.at(c, RAIL_FRAME_TC0));
+    c.mtc1(ZERO, 2);
+    c.lwc1(0, frame.at(c, RAIL_FRAME_RAIL_Z));
+    let dipping = abi::c_lt_s(c, FpuF32(c.f[0]), FpuF32(c.f[2]));
+    c.lwc1(0, Addr(r32(c, V1)).off(RAIL_RIDER_STEER).0);
+    if dipping {
+        c.cycles += 1;
+        c.f[0] = (-FpuF32(c.f[0])).0;
+    }
+    c.cycles += 9;
+    c.mul_s(21, 0, 1);
+    c.lwc1(0, frame.at(c, RAIL_FRAME_DIRECTION_Z));
+    c.g[V0][0] = 0x1;
+    c.lwc1(1, pool(rail_pool::STEEP_THRESHOLD));
+    c.f[0] = FpuF32(c.f[0]).abs().0;
+    let steep = abi::c_lt_s(c, FpuF32(c.f[1]), FpuF32(c.f[0]));
+    if !steep {
+        c.g[V0][0] = 0u64;
+    }
+    Ok(())
+}
+
+/// Balance gain: the response gain (`f20`) from attachment age, rail
+/// steepness, contact material and rider attributes. Entry: `V0` holds the
+/// steep flag. A settled rider (attached past the early window) on a
+/// non-steep rail takes the ordinary path; otherwise the gain falls through
+/// to -5.
+fn rail_balance_gain(c: &mut Cpu, frame: Frame, state: Addr) -> Flow {
+    let pool_base = r32(c, GP);
+    let pool = |offset: u32| pool_base.wrapping_sub(offset);
+    c.cycles += 5;
+    c.lwc1(1, state.off(RAIL_STATE_ATTACHED_TIME).0);
+    c.lwc1(0, pool(rail_pool::EARLY_BALANCE_TIME));
+    let recent = abi::c_lt_s(c, FpuF32(c.f[1]), FpuF32(c.f[0]));
+    let mut settled = false;
+    if !recent {
+        c.cycles += 2;
+        if r32(c, V0) == 0 {
+            c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+            settled = true;
+        }
+    }
+    if settled {
+        c.cycles += 6;
+        c.lwc1(20, pool(rail_pool::BALANCE_GAIN));
+        c.g[V0][0] = Addr(r32(c, V1)).off(RAIL_RIDER_SUBTYPE).lw(c);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(RAIL_SPECIAL_SUBTYPE_FIRST));
+        c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
+        let special = c.g[V0][0] != 0u64;
+        c.g[V1][0] = Addr(frame.at(c, RAIL_FRAME_CONTACT_MATERIAL)).lw(c);
+        if special {
+            c.cycles += 1;
+            c.lwc1(20, pool(rail_pool::SPECIAL_BALANCE_GAIN));
+        }
+        c.cycles += 2;
+        let no_material = c.g[V1][0] == 0u64;
+        c.g[V0][0] = 0u64;
+        if !no_material {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, V1)).off(RAIL_MATERIAL_FLAGS).lw(c);
+            c.g[V0][0] = c.g[V0][0] & RAIL_MATERIAL_GAIN_FLAG as u64;
+            c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
+        }
+        // The gain doubles on the material flag, otherwise the stock scale,
+        // clamp and rail-roll limit apply.
+        c.cycles += 2;
+        let gain_flag = c.g[V0][0] != 0u64;
+        if gain_flag {
+            c.cycles += 2;
+            c.add_s(20, 20, 20);
+        } else {
+            c.cycles += 6;
+            c.g[AT][0] = 0x40200000; // 2.5
+            c.mtc1(AT, 1);
+            c.f[0] = FpuF32(c.f[22]).abs().0;
+            let small_correction = abi::c_lt_s(c, FpuF32(c.f[0]), FpuF32(c.f[1]));
+            if small_correction {
+                c.cycles += 3;
+                c.g[AT][0] = sx(0xbf80_0000); // -1
+                c.mtc1(AT, 0);
+                c.min_s(20, 20, 0);
+            }
+        }
+        c.cycles += 17;
+        callee::BE_INSTANCE.call(c, 0x0013b6ac)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0x3;
+        callee::BE_INTERFACE.call(c, 0x0013b6b8)?;
+        c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A2][0] = Addr(r32(c, V1)).off(RAIL_RIDER_ATTRIB_CONTEXT).lw(c);
+        c.g[A1][0] = Addr(r32(c, V1)).off(RAIL_RIDER_CHARACTER_INDEX).lw(c);
+        callee::ATTRIB6_FACTOR_2.call(c, 0x0013b6cc)?;
+        c.lwc1(2, pool(rail_pool::ATTRIB_GAIN));
+        c.g[AT][0] = 0x3f800000; // 1
+        c.mtc1(AT, 1);
+        c.mul_s(0, 0, 2);
+        c.add_s(0, 0, 1);
+        c.div_s(1, 1, 0);
+        c.mul_s(20, 20, 1);
+    } else {
+        c.cycles += 4;
+        c.g[AT][0] = sx(0xc0a00000); // -5
+        c.mtc1(AT, 20);
+    }
+    Ok(())
+}
+
+/// Lean and roll targets: the lateral balance (`f21`) is updated from the
+/// gain and clamped at the board edge, then turned into lean/roll targets
+/// (`f12`/`f20`) and slewed into the board frame.
+fn rail_lean_roll_targets(c: &mut Cpu, frame: Frame, state: Addr) -> Flow {
+    let pool_base = r32(c, GP);
+    let pool = |offset: u32| pool_base.wrapping_sub(offset);
+    c.cycles += 5;
+    c.mtc1(ZERO, 0);
+    c.c_le_s(0, 20);
+    let needs_clamp = c.fcc();
+    c.mov_s(4, 22);
+    if needs_clamp {
+        c.cycles += 8;
+        c.g[AT][0] = sx(0xc1a00000); // -20
+        c.mtc1(AT, 0);
+        c.g[AT][0] = 0x41a00000; // 20
+        c.mtc1(AT, 1);
+        c.c_le_s(0, 22);
+        if c.fcc() {
+            c.min_s(0, 22, 1);
+        }
+        c.cycles += 1;
+        c.mov_s(4, 0);
+    }
+    c.cycles += 9;
+    c.g[AT][0] = 0x3f800000; // 1
+    c.mtc1(AT, 0);
+    c.g[AT][0] = 0x40800000; // 4
+    c.mtc1(AT, 2);
+    c.div_s(1, 0, 24);
+    c.c_le_s(0, 1);
+    let slow = c.fcc();
+    c.mov_s(3, 0);
+    if slow {
+        c.cycles += 1;
+        c.min_s(3, 1, 2);
+    }
+    c.cycles += 12;
+    c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.mul_s(0, 20, 3);
+    c.mtc1(ZERO, 2);
+    c.g[A0][0] = 0u64;
+    c.lq(2, Addr(r32(c, V1)).off(RAIL_RIDER_FORWARD).0);
+    c.mul_s(0, 4, 0);
+    c.sq(2, frame.at(c, RAIL_FRAME_TC0));
+    c.lwc1(1, frame.at(c, RAIL_FRAME_RAIL_Z));
+    let dipping = abi::c_lt_s(c, FpuF32(c.f[1]), FpuF32(c.f[2]));
+    c.sub_s(21, 21, 0);
+    if dipping {
+        c.cycles += 7;
+        c.g[AT][0] = 0x41a00000; // 20
+        c.mtc1(AT, 1);
+        c.f[0] = FpuF32(c.f[22]).abs().0;
+        c.c_lt_s(0, 1);
+        if c.fcc() {
+            c.g[A0][0] = 0x1;
+        }
+    }
+    c.cycles += 2;
+    let on_edge = c.g[A0][0] != 0u64;
+    if !on_edge {
+        c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    } else {
+        c.cycles += 4;
+        c.mtc1(ZERO, 0);
+        let positive = abi::c_lt_s(c, FpuF32(c.f[0]), FpuF32(c.f[22]));
+        if positive {
+            c.cycles += 4;
+            c.g[AT][0] = sx(0xc3b40000); // -360
+            c.mtc1(AT, 0);
+            c.min_s(21, 21, 0);
+        } else {
+            c.cycles += 3;
+            c.g[AT][0] = 0x43b40000; // 360
+            c.mtc1(AT, 0);
+            c.f[21] = FpuF32(c.f[21]).max(FpuF32(c.f[0])).0;
+        }
+        c.cycles += 1;
+        c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    }
+    // Turn lateral balance into lean/roll targets and slew the board frame.
+    c.cycles += 21;
+    c.mul_s(0, 21, 23);
+    c.lq(2, Addr(r32(c, V1)).off(RAIL_RIDER_RIGHT).0);
+    c.sq(2, frame.at(c, RAIL_FRAME_TD0));
+    c.mfc1(V1, 0);
+    vu_scale(c, 3, frame.at(c, RAIL_FRAME_TD0));
+    c.sqc2(5, frame.at(c, RAIL_FRAME_TE0));
+    c.lq(2, frame.at(c, RAIL_FRAME_TE0));
+    c.g[A0][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.sq(2, frame.at(c, RAIL_FRAME_TC0));
+    v_add(
+        c,
+        Addr(r32(c, A0)).off(R_POS).0,
+        frame.at(c, RAIL_FRAME_TC0),
+        Addr(r32(c, A0)).off(R_POS).0,
+    );
+    c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.g[V0][0] = Addr(r32(c, V1)).off(RAIL_RIDER_SUBTYPE).lw(c);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(RAIL_SPECIAL_SUBTYPE_FIRST));
+    c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
+    let special = c.g[V0][0] != 0u64;
+    if special {
+        c.cycles += 10;
+        c.lwc1(0, pool(rail_pool::SPECIAL_BALANCE_SCALE));
+        c.g[AT][0] = sx(0xbf80_0000); // -1
+        c.mtc1(AT, 1);
+        c.mul_s(0, 22, 0);
+        c.g[AT][0] = 0x3f800000; // 1
+        c.mtc1(AT, 2);
+        c.c_le_s(1, 0);
+        let capped = c.fcc();
+        c.mov_s(3, 1);
+        if capped {
+            c.cycles += 1;
+            c.min_s(3, 0, 2);
+        }
+        c.cycles += 9;
+        c.lwc1(4, pool(rail_pool::SPECIAL_ROLL_LIMIT));
+        c.lwc1(2, state.off(RAIL_STATE_ROLL).0);
+        c.f[1] = (-FpuF32(c.f[4])).0;
+        c.lwc1(0, pool(rail_pool::SPECIAL_LEAN_LIMIT));
+        c.swc1(3, state.off(RAIL_STATE_BALANCE).0);
+        c.c_le_s(1, 2);
+        let in_range = c.fcc();
+        c.mul_s(12, 3, 0);
+        if in_range {
+            c.cycles += 1;
+            c.min_s(1, 2, 4);
+        }
+        c.cycles += 2;
+        c.mov_s(20, 1);
+    } else {
+        c.cycles += 10;
+        c.lwc1(0, pool(rail_pool::BALANCE_SCALE));
+        c.g[AT][0] = sx(0xbf80_0000); // -1
+        c.mtc1(AT, 1);
+        c.mul_s(0, 22, 0);
+        c.g[AT][0] = 0x3f800000; // 1
+        c.mtc1(AT, 2);
+        c.c_le_s(1, 0);
+        let capped = c.fcc();
+        c.mov_s(4, 1);
+        if capped {
+            c.cycles += 1;
+            c.min_s(4, 0, 2);
+        }
+        c.cycles += 8;
+        c.lwc1(3, pool(rail_pool::LEAN_LIMIT));
+        c.lwc1(2, state.off(RAIL_STATE_ROLL).0);
+        c.f[0] = (-FpuF32(c.f[3])).0;
+        c.swc1(4, state.off(RAIL_STATE_BALANCE).0);
+        c.c_le_s(0, 2);
+        let in_range = c.fcc();
+        c.mul_s(12, 4, 3);
+        if in_range {
+            c.cycles += 1;
+            c.min_s(0, 2, 3);
+        }
+        c.cycles += 1;
+        c.mov_s(20, 0);
+    }
+    c.cycles += 9;
+    c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.mtc1(ZERO, 1);
+    c.lq(2, Addr(r32(c, V1)).off(RAIL_RIDER_FORWARD).0);
+    c.sq(2, frame.at(c, RAIL_FRAME_TC0));
+    c.lwc1(0, frame.at(c, RAIL_FRAME_RAIL_Z));
+    if abi::c_lt_s(c, FpuF32(c.f[0]), FpuF32(c.f[1])) {
+        c.f[12] = (-FpuF32(c.f[12])).0;
+    }
+    c.cycles += 9;
+    c.g[AT][0] = u64::from(rail_float::LEAN_SLEW.to_bits());
+    c.mtc1(AT, 1);
+    c.lwc1(3, state.off(RAIL_STATE_LEAN).0);
+    c.mul_s(1, 23, 1);
+    c.add_s(0, 12, 1);
+    let below = abi::c_lt_s(c, FpuF32(c.f[0]), FpuF32(c.f[3]));
+    if !below {
+        c.sub_s(0, 12, 1);
+        c.cycles += 4;
+        let above = abi::c_lt_s(c, FpuF32(c.f[3]), FpuF32(c.f[0]));
+        c.mov_s(2, 12);
+        if above {
+            c.cycles += 1;
+            c.add_s(2, 3, 1);
+        }
+    } else {
+        c.cycles += 2;
+        c.sub_s(2, 3, 1);
+    }
+    // Pays for the whole of rail_orientation_rebuild below; kept here to
+    // match the original's block totals.
+    c.cycles += 120;
+    c.mov_s(12, 2);
+    Ok(())
+}
+
+/// Orientation rebuild: the lean/roll angles become the rail frame, the
+/// frame's basis is rebuilt against the rider's up, and the orientation is
+/// updated toward facing the rail. Its 120-cycle charge sits at the end of
+/// rail_lean_roll_targets, as in the original.
+fn rail_orientation_rebuild(c: &mut Cpu, frame: Frame, state: Addr) -> Flow {
+    let pool_base = r32(c, GP);
+    let pool = |offset: u32| pool_base.wrapping_sub(offset);
+    c.g[A0][0] = sx(frame.at(c, RAIL_FRAME_LEAN_SIN));
+    c.g[A1][0] = sx(frame.at(c, RAIL_FRAME_LEAN_COS));
+    state.off(RAIL_STATE_LEAN).write_fpu(c, FpuF32(c.f[2]));
+    call_ptr(c, callee::MATH_SIN_COS, 0x0013b948)?;
+    c.g[A2][0] = c.g[S2][0];
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[S0][0];
+    callee::COMPUTE_RAIL_FRAME.call(c, 0x0013b958)?;
+    c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.mov_s(12, 20);
+    c.lq(2, frame.at(c, RAIL_FRAME_TC0));
+    c.g[A0][0] = sx(frame.at(c, RAIL_FRAME_ROLL_SIN));
+    c.g[A1][0] = sx(frame.at(c, RAIL_FRAME_ROLL_COS));
+    c.sq(2, Addr(r32(c, V1)).off(RAIL_RIDER_RAIL_UP).0);
+    c.lqc2(4, frame.at(c, RAIL_FRAME_TC0));
+    c.lqc2(5, frame.at(c, RAIL_FRAME_DIRECTION));
+    c.vu0().opmula(4, 5);
+    c.vu0().opmsub(6, 5, 4);
+    c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+    c.sqc2(6, frame.at(c, RAIL_FRAME_TE0));
+    c.lq(2, frame.at(c, RAIL_FRAME_TE0));
+    c.lwc1(0, frame.at(c, RAIL_FRAME_LEAN_COS));
+    c.sq(2, frame.at(c, RAIL_FRAME_TD0));
+    c.mfc1(V1, 0);
+    vu_scale(c, 3, frame.at(c, RAIL_FRAME_TC0));
+    c.sqc2(5, frame.at(c, RAIL_FRAME_T100));
+    c.lq(2, frame.at(c, RAIL_FRAME_T100));
+    c.lwc1(0, frame.at(c, RAIL_FRAME_LEAN_SIN));
+    c.sq(2, frame.at(c, RAIL_FRAME_TF0));
+    c.mfc1(V1, 0);
+    vu_scale(c, 3, frame.at(c, RAIL_FRAME_TD0));
+    c.sqc2(5, frame.at(c, RAIL_FRAME_T110));
+    c.lq(2, frame.at(c, RAIL_FRAME_T110));
+    c.sq(2, frame.at(c, RAIL_FRAME_T100));
+    v_add(
+        c,
+        frame.at(c, RAIL_FRAME_TF0),
+        frame.at(c, RAIL_FRAME_T100),
+        frame.at(c, RAIL_FRAME_T110),
+    );
+    c.lq(2, frame.at(c, RAIL_FRAME_T110));
+    c.sq(2, frame.at(c, RAIL_FRAME_TE0));
+    call_ptr(c, callee::MATH_SIN_COS, 0x0013b9ec)?;
+    c.lwc1(0, frame.at(c, RAIL_FRAME_ROLL_COS));
+    c.g[A1][0] = sx(frame.at(c, RAIL_FRAME_TE0));
+    c.mfc1(V0, 0);
+    vu_scale(c, 2, frame.at(c, RAIL_FRAME_TD0));
+    c.sqc2(5, frame.at(c, RAIL_FRAME_T110));
+    c.g[AT][0] = 0x3f000000; // 0.5
+    c.mtc1(AT, 2);
+    c.lq(2, frame.at(c, RAIL_FRAME_T110));
+    c.g[A2][0] = sx(frame.at(c, RAIL_FRAME_T100));
+    c.lwc1(0, frame.at(c, RAIL_FRAME_ROLL_SIN));
+    c.sq(2, frame.at(c, RAIL_FRAME_T100));
+    c.mfc1(V1, 0);
+    vu_scale(c, 3, frame.at(c, RAIL_FRAME_DIRECTION));
+    c.sqc2(5, frame.at(c, RAIL_FRAME_T120));
+    c.g[AT][0] = 0x41700000; // 15
+    c.mtc1(AT, 3);
+    c.lq(2, frame.at(c, RAIL_FRAME_T120));
+    c.g[AT][0] = 0x3f800000; // 1
+    c.mtc1(AT, 0);
+    c.sq(2, frame.at(c, RAIL_FRAME_T110));
+    v_sub(
+        c,
+        frame.at(c, RAIL_FRAME_T100),
+        frame.at(c, RAIL_FRAME_T110),
+        frame.at(c, RAIL_FRAME_T120),
+    );
+    c.lwc1(13, pool(rail_pool::ORIENTATION_LIMIT));
+    c.lq(2, frame.at(c, RAIL_FRAME_T120));
+    c.sq(2, frame.at(c, RAIL_FRAME_TF0));
+    c.lqc2(4, frame.at(c, RAIL_FRAME_TF0));
+    c.lqc2(5, frame.at(c, RAIL_FRAME_TE0));
+    c.vu0().opmula(4, 5);
+    c.vu0().opmsub(6, 5, 4);
+    c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+    c.sqc2(6, frame.at(c, RAIL_FRAME_T120));
+    c.lq(2, frame.at(c, RAIL_FRAME_T120));
+    c.sq(2, frame.at(c, RAIL_FRAME_T110));
+    v_normalize(
+        c,
+        frame.at(c, RAIL_FRAME_T110),
+        frame.at(c, RAIL_FRAME_T120),
+    );
+    c.lq(2, frame.at(c, RAIL_FRAME_T120));
+    c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.sq(2, frame.at(c, RAIL_FRAME_T100));
+    c.g[A0][0] = c.g[V1][0];
+    c.lq(2, Addr(r32(c, V1)).off(RAIL_RIDER_UP).0);
+    c.sq(2, frame.at(c, RAIL_FRAME_T110));
+    dot_ab(
+        c,
+        frame.at(c, RAIL_FRAME_T100),
+        frame.at(c, RAIL_FRAME_T110),
+    );
+    c.qmfc2(A3, 4);
+    c.mtc1(A3, 12);
+    c.lwc1(1, Addr(r32(c, V1)).off(air::DT).0);
+    c.mul_s(12, 12, 2);
+    c.add_s(12, 12, 2);
+    c.sub_s(0, 0, 12);
+    c.mul_s(12, 12, 3);
+    c.add_s(12, 12, 0);
+    c.mul_s(12, 12, 1);
+    call_ptr(c, callee::RIDER_UPDATE_ORIENTATION, 0x0013bb0c)?;
+    Ok(())
+}
+
+/// Detach push: the probe rejected the contact, so push the rider away from
+/// the rail along the separation direction and add the detach impulse.
+fn rail_detach_push(c: &mut Cpu, frame: Frame, state: Addr) -> Flow {
+    let pool_base = r32(c, GP);
+    let pool = |offset: u32| pool_base.wrapping_sub(offset);
+    c.cycles += 21;
+    v_sub(
+        c,
+        r32(c, S1),
+        frame.at(c, RAIL_FRAME_BOARD_POINT),
+        frame.at(c, RAIL_FRAME_T90),
+    );
+    c.lwc1(0, pool(rail_pool::POSITION_EPSILON));
+    c.lq(2, frame.at(c, RAIL_FRAME_T90));
+    c.sq(2, frame.at(c, RAIL_FRAME_T80));
+    v_length(c, frame.at(c, RAIL_FRAME_T80), 3, 1);
+    let readable = abi::c_lt_s(c, FpuF32(c.f[1]), FpuF32(c.f[0]));
+    c.lq(2, frame.at(c, RAIL_FRAME_DIRECTION));
+    if !readable {
+        c.cycles += 26;
+        c.mfc1(V0, 1);
+        c.qmtc2(V0, 3);
+        c.vu0().div(0, 3, 3, 0);
+        c.lqc2(4, frame.at(c, RAIL_FRAME_T80));
+        c.vu0().waitq();
+        c.vu0().mul(0b1111, 4, 4, Src::Q);
+        c.sqc2(4, frame.at(c, RAIL_FRAME_TB0));
+        c.lq(2, frame.at(c, RAIL_FRAME_TB0));
+        c.g[AT][0] = 0x3f000000; // 0.5
+        c.mtc1(AT, 1);
+        c.sq(2, frame.at(c, RAIL_FRAME_T90));
+        c.sq(2, frame.at(c, RAIL_FRAME_TA0));
+        dot_ab(
+            c,
+            frame.at(c, RAIL_FRAME_T90),
+            frame.at(c, RAIL_FRAME_DIRECTION),
+        );
+        c.qmfc2(V1, 4);
+        c.mtc1(V1, 0);
+        c.f[0] = FpuF32(c.f[0]).abs().0;
+        let aligned = abi::c_lt_s(c, FpuF32(c.f[1]), FpuF32(c.f[0]));
+        c.lq(2, frame.at(c, RAIL_FRAME_DIRECTION));
+        if aligned {
+            c.cycles += 1;
+            c.sq(2, frame.at(c, RAIL_FRAME_T90));
+        }
+    } else {
+        c.cycles += 1;
+        c.sq(2, frame.at(c, RAIL_FRAME_T90));
+    }
+    c.cycles += 14;
+    c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.mtc1(ZERO, 0);
+    dot_ab(
+        c,
+        Addr(r32(c, V1)).off(R_VEL).0,
+        frame.at(c, RAIL_FRAME_T90),
+    );
+    c.qmfc2(V0, 4);
+    c.mtc1(V0, 2);
+    let approaching = abi::c_lt_s(c, FpuF32(c.f[2]), FpuF32(c.f[0]));
+    if approaching {
+        c.cycles += 15;
+        c.lwc1(3, pool(rail_pool::SPEED_EPSILON));
+        // Stock passes register 2 here, leaving V1 (the rider) intact.
+        v_length(c, Addr(r32(c, V1)).off(R_VEL).0, 2, 1);
+        let slow = abi::c_lt_s(c, FpuF32(c.f[1]), FpuF32(c.f[3]));
+        c.lq(2, frame.at(c, RAIL_FRAME_DIRECTION));
+        if slow {
+            c.cycles += 2;
+            c.sq(2, frame.at(c, RAIL_FRAME_T90));
+        } else {
+            c.cycles += 28;
+            c.f[0] = FpuF32(c.f[2]).div(FpuF32(c.f[1])).0;
+            c.mfc1(V0, 0);
+            c.lqc2(4, Addr(r32(c, V1)).off(R_VEL).0);
+            c.qmtc2(V0, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, frame.at(c, RAIL_FRAME_TC0));
+            c.lq(2, frame.at(c, RAIL_FRAME_TC0));
+            c.sq(2, frame.at(c, RAIL_FRAME_TB0));
+            v_sub(
+                c,
+                frame.at(c, RAIL_FRAME_T90),
+                frame.at(c, RAIL_FRAME_TB0),
+                frame.at(c, RAIL_FRAME_TC0),
+            );
+            c.lq(2, frame.at(c, RAIL_FRAME_TC0));
+            c.sq(2, frame.at(c, RAIL_FRAME_TA0));
+            v_length(c, frame.at(c, RAIL_FRAME_TA0), 3, 0);
+            // Push along the normalized correction when it is longer than
+            // the epsilon, else along the velocity direction; both arms
+            // then run the detach impulse below.
+            let above_threshold = abi::c_lt_s(c, FpuF32(c.f[3]), FpuF32(c.f[0]));
+            if !above_threshold {
+                c.g[V0][0] = state.off(RAIL_STATE_RIDER).lw(c);
+                c.cycles += 10;
+                c.mfc1(A0, 1);
+                c.qmtc2(A0, 3);
+                c.vu0().div(0, 3, 3, 0);
+                c.lqc2(4, Addr(r32(c, V0)).off(R_VEL).0);
+                c.vu0().waitq();
+                c.vu0().mul(0b1111, 4, 4, Src::Q);
+                c.sqc2(4, frame.at(c, RAIL_FRAME_TC0));
+                c.lq(3, frame.at(c, RAIL_FRAME_TC0));
+                c.sq(3, frame.at(c, RAIL_FRAME_T90));
+                c.sq(3, frame.at(c, RAIL_FRAME_TB0));
+            } else {
+                c.cycles += 11;
+                c.mfc1(V1, 0);
+                c.qmtc2(V1, 3);
+                c.vu0().div(0, 3, 3, 0);
+                c.lqc2(4, frame.at(c, RAIL_FRAME_TA0));
+                c.vu0().waitq();
+                c.vu0().mul(0b1111, 4, 4, Src::Q);
+                c.sqc2(4, frame.at(c, RAIL_FRAME_TC0));
+                c.lq(2, frame.at(c, RAIL_FRAME_TC0));
+                c.sq(2, frame.at(c, RAIL_FRAME_T90));
+                c.sq(2, frame.at(c, RAIL_FRAME_TB0));
+            }
+        }
+    }
+    c.cycles += 13;
+    c.lwc1(0, pool(rail_pool::DETACH_IMPULSE));
+    c.mfc1(V1, 0);
+    c.lqc2(4, frame.at(c, RAIL_FRAME_T90));
+    c.qmtc2(V1, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, RAIL_FRAME_TB0));
+    c.lq(2, frame.at(c, RAIL_FRAME_TB0));
+    c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+    c.sq(2, frame.at(c, RAIL_FRAME_TA0));
+    v_add(
+        c,
+        Addr(r32(c, V1)).off(R_VEL).0,
+        frame.at(c, RAIL_FRAME_TA0),
+        Addr(r32(c, V1)).off(R_VEL).0,
+    );
+    Ok(())
+}
+
+/// `void RiderRailslideState_Update(RiderRailslideState *state)` (0x13af28):
+/// find the nearby rail, align the rider's relative velocity, apply rail and
+/// balance forces, then rebuild the board orientation. VU0 operations and
+/// their scratch stores stay in the original order because later forces and
+/// guest callees observe them.
+///
+/// The alignment blend compounds to the 60 Hz result over equal game time
+/// ([`rail_alignment_weight`]); the lean slew and attached time use the
+/// tick step, while the detach impulse, the balance update and the
+/// orientation rate stay per-update and are not converted here.
+pub fn rider_railslide_state_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, RAIL_FRAME_SIZE);
+        frame.save(c, S0, RAIL_FRAME_SAVED_STATE);
+        frame.save(c, S1, RAIL_FRAME_SAVED_POSE);
+        c.g[S0][0] = c.g[A0][0];
+        let state = Addr(r32(c, S0));
+        frame.save(c, S2, RAIL_FRAME_SAVED_DIRECTION);
+        frame.save_ra(c, RAIL_FRAME_SAVED_RA);
+        frame.save_fpr(c, 24, RAIL_FRAME_SAVED_SPEED_SQUARED);
+        frame.save_fpr(c, 23, RAIL_FRAME_SAVED_DT);
+        frame.save_fpr(c, 22, RAIL_FRAME_SAVED_LATERAL);
+        frame.save_fpr(c, 21, RAIL_FRAME_SAVED_BALANCE);
+        frame.save_fpr(c, 20, RAIL_FRAME_SAVED_GAIN);
+        // Zero the roll accumulator when entering the grind sub-state.
+        c.g[A0][0] = state.off(RAIL_STATE_RIDER).lw(c);
+        call_ptr(c, callee::RIDER_GET_SUBSTATE, 0x0013af5c)?;
+        c.g[V1][0] = 0xc;
+        if c.g[V0][0] == c.g[V1][0] {
+            state.off(RAIL_STATE_ROLL).sw(c, 0u64);
+        }
+        // Clamp the speed before searching.
+        c.cycles += 16;
+        c.g[V1][0] = state.off(RAIL_STATE_RIDER).lw(c);
+        v_length(c, Addr(r32(c, V1)).off(R_VEL).0, 2, 1);
+        c.lwc1(0, Addr(r32(c, V1)).off(R_MAX_SPEED).0);
+        let over = abi::c_lt_s(c, FpuF32(c.f[0]), FpuF32(c.f[1]));
+        if !over {
+            c.g[V0][0] = state.off(RAIL_STATE_RIDER).lw(c);
+        } else {
+            c.cycles += 7;
+            c.div_s(0, 0, 1);
+            c.mfc1(V0, 0);
+            c.lqc2(4, Addr(r32(c, V1)).off(R_VEL).0);
+            c.qmtc2(V0, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, Addr(r32(c, V1)).off(R_VEL).0);
+            c.g[V0][0] = state.off(RAIL_STATE_RIDER).lw(c);
+        }
+        // Entry: V0 holds the rider.
+        let (contact, update_timescale) = rail_search_and_contact_velocity(c, frame, state)?;
+        match contact {
+            RailContact::Attached => {
+                rail_alignment_blend(c, frame, state, update_timescale)?;
+                rail_gravity_boost_and_moving_force(c, frame, state)?;
+                rail_balance_gain(c, frame, state)?;
+                rail_lean_roll_targets(c, frame, state)?;
+                rail_orientation_rebuild(c, frame, state)?;
+            }
+            // With no rail the state stays detached and `PostUpdate`
+            // launches the rider: skip the detach push too.
+            RailContact::Absent => {}
+            RailContact::Rejected => {
+                rail_detach_push(c, frame, state)?;
+            }
+        }
+        c.cycles += 13;
+        c.g[A0][0] = state.off(RAIL_STATE_RIDER).lw(c);
+        callee::RIDER_BUILD_WORLD_MATRIX_CALLEE.call(c, 0x0013bd50)?;
+        frame.restore(c, S0, RAIL_FRAME_SAVED_STATE);
+        frame.restore(c, S1, RAIL_FRAME_SAVED_POSE);
+        frame.restore(c, S2, RAIL_FRAME_SAVED_DIRECTION);
+        frame.restore_ra(c, RAIL_FRAME_SAVED_RA);
+        frame.restore_fpr(c, 24, RAIL_FRAME_SAVED_SPEED_SQUARED);
+        frame.restore_fpr(c, 23, RAIL_FRAME_SAVED_DT);
+        frame.restore_fpr(c, 22, RAIL_FRAME_SAVED_LATERAL);
+        frame.restore_fpr(c, 21, RAIL_FRAME_SAVED_BALANCE);
+        frame.restore_fpr(c, 20, RAIL_FRAME_SAVED_GAIN);
         frame.close(c);
         Ok(())
     })
@@ -8487,6 +9901,7 @@ pub(crate) mod tests {
 
     use super::*;
     use crate::abi;
+    use crate::difftest;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
     use crate::difftest::compare;
@@ -9414,6 +10829,482 @@ pub(crate) mod tests {
             assert_eq!(stored, crate::tick::per_tick_at(hz, STEP, 0x3d08_8889));
             c
         });
+    }
+
+    // `RiderRailslideState_Update` fixtures live in `DATA` pages: the state,
+    // rider, sub-state, pose source and pose, overlap list, the rail under
+    // test, its material, the flexible-rail fixtures (space, object, vtable,
+    // curve; contact cases 14+ search these), and the library behind the
+    // attribute lookup. `CONTACT_CASE` selects the setup variant (seed
+    // layout is documented on `rail_update_setup`).
+    const RAIL_UPDATE_STATE: u32 = DATA;
+    const RAIL_UPDATE_RIDER: u32 = DATA + 0x1000;
+    const RAIL_UPDATE_SUBSTATE: u32 = DATA + 0x3000;
+    const RAIL_UPDATE_POSE_SOURCE: u32 = DATA + 0x4000;
+    const RAIL_UPDATE_POSE: u32 = DATA + 0x4100;
+    const RAIL_UPDATE_LIST: u32 = DATA + 0x5000;
+    const RAIL_UPDATE_RAIL: u32 = DATA + 0x6000;
+    const RAIL_UPDATE_MATERIAL: u32 = DATA + 0x6200;
+    const RAIL_UPDATE_FLEX: u32 = DATA + 0x7000;
+    const RAIL_UPDATE_FLEX_SPACE: u32 = DATA + 0x7100;
+    const RAIL_UPDATE_FLEX_OBJECT: u32 = DATA + 0x7200;
+    const RAIL_UPDATE_FLEX_VTABLE: u32 = DATA + 0x7400;
+    const RAIL_UPDATE_FLEX_CURVE: u32 = DATA + 0x7800;
+    const RAIL_UPDATE_LIBRARY: u32 = DATA + 0x9000;
+    const RAIL_UPDATE_LIBRARY_VTABLE: u32 = DATA + 0x9200;
+    /// Contact-case selector (see `rail_update_setup` for the bit layout).
+    const CONTACT_CASE: u32 = DATA + 0xa000;
+    /// The moving rail's contact velocity, shared by the fake and the
+    /// alignment assertions.
+    const MOVING_VELOCITY: [f32; 4] = [20.0, -5.0, 0.0, 0.0];
+
+    fn rail_update_vector(c: &mut Cpu, at: u32, values: [f32; 4]) {
+        put_vec(c, at, values.map(f32::to_bits));
+    }
+
+    // Geometry and the 0x1086b8 attachment guard are real. Only the moving
+    // object's virtual methods and the library interface lookup are fakes;
+    // their complete argument registers are logged by the shared harness.
+    fn rail_update_virtual_method(c: &mut Cpu, target: u32) {
+        let contact = c.g[A1][0] as u32;
+        let return_pc = c.g[RA][0] as u32;
+        fakes::fake_call(c, target);
+        if c.pc != return_pc {
+            return;
+        }
+        match target - fakes::FAKE {
+            0 => c.g[V0][0] = ((c.bus.read32(CONTACT_CASE) & 32) == 0) as u64, // moving flag
+            0x10 => rail_update_vector(c, contact + 0x20, MOVING_VELOCITY),
+            0x20 => {}              // impulse accepted; its arguments remain in the log
+            0x30 => c.g[V0][0] = 0, // segment's material index
+            0x40 => c.g[V0][0] = RAIL_UPDATE_LIBRARY as u64,
+            _ => panic!("unexpected rail fixture virtual target {target:#x}"),
+        }
+    }
+
+    /// Seeds 0..96: `mode = seed % 16` is the contact case, matched
+    /// directly: 0 leaves the overlap list empty (no contact), 12 is
+    /// rejected by the attachment probe (stays detached), 13 pairs
+    /// ordinary speed with a strong lateral push, 6 is a steep rail
+    /// along z, 9 sets the material flags to 5, 10/11 select the
+    /// special-stance subtypes, 4/5/15 hold boost, 7-11 and 15 start
+    /// attached (11 with roll), and 14+ search the flexible rail.
+    /// `seed / 16 % 4` picks the rider time scale from `[1.0, 1.5, 2.0,
+    /// 2.2]` (mode 12 also varies the lateral speed through it to reach
+    /// both normalization guards); at 60 Hz the blend helper returns
+    /// stock early, so the differential never reaches the conversion and
+    /// only the rate test covers 120/240 Hz. `seed & 16` flips the
+    /// lateral sign, the steer and the sub-state; `seed & 32` makes the
+    /// moving-flag virtual return 0 and tilts the rider forward;
+    /// `seed >= 64` asks the harness for random-unwind calls. Seed 62
+    /// drops the flexible object's owner (the null-body paths);
+    /// flexible contacts already arrive material-less (the -1 id path).
+    fn rail_update_setup(c: &mut Cpu, seed: u32) {
+        elf_image(c);
+        fakes::machine(c, seed, 0x13af_2800, if seed >= 64 { 5 } else { 0 });
+        c.hooks.miss = rail_update_virtual_method;
+        let mode = seed % 16;
+        c.bus.write32(CONTACT_CASE, seed);
+        c.bus
+            .write32(RAIL_UPDATE_STATE + RAIL_STATE_RIDER, RAIL_UPDATE_RIDER);
+        c.bus.write32(
+            RAIL_UPDATE_STATE + RAIL_STATE_ATTACHED_TIME,
+            if (7..=11).contains(&mode) || mode == 15 {
+                1.0f32.to_bits()
+            } else {
+                0
+            },
+        );
+        c.bus.write32(
+            RAIL_UPDATE_STATE + RAIL_STATE_ROLL,
+            if mode == 11 { 1.0f32.to_bits() } else { 0 },
+        );
+        c.bus
+            .write32(RAIL_UPDATE_RIDER + air::SUB, RAIL_UPDATE_SUBSTATE);
+        c.bus.write32(
+            RAIL_UPDATE_SUBSTATE + 0xde4,
+            if seed & 16 == 0 { 12 } else { 3 },
+        );
+        c.bus.write32(
+            RAIL_UPDATE_RIDER + RAIL_RIDER_POSE_SOURCE,
+            RAIL_UPDATE_POSE_SOURCE,
+        );
+        c.bus.write32(
+            RAIL_UPDATE_POSE_SOURCE + RAIL_POSE_SOURCE_LIST,
+            RAIL_UPDATE_POSE,
+        );
+        c.bus
+            .write32(RAIL_UPDATE_RIDER + RAIL_RIDER_OVERLAP, RAIL_UPDATE_LIST);
+        c.bus.write32(RAIL_UPDATE_RIDER + RAIL_RIDER_BOARD_NODE, 0);
+        let lateral = (if seed & 16 == 0 { 1.0 } else { -1.0 })
+            * match mode {
+                7 | 9 | 10 | 11 => 25.0,
+                8 => 1.0,
+                12 | 13 => 200.0,
+                _ => 0.0,
+            };
+        rail_update_vector(c, RAIL_UPDATE_POSE, [0.0, lateral, 0.0, 1.0]);
+        rail_update_vector(c, RAIL_UPDATE_POSE + 0x10, [0.0, 0.0, 0.0, 1.0]);
+        rail_update_vector(c, RAIL_UPDATE_RIDER + R_POS, [0.0, lateral, 0.0, 0.0]);
+        rail_update_vector(c, RAIL_UPDATE_RIDER + 0x120, [0.0, 0.0, 0.0, 1.0]);
+        rail_update_vector(
+            c,
+            RAIL_UPDATE_RIDER + RAIL_RIDER_RIGHT,
+            [0.0, 1.0, 0.0, 0.0],
+        );
+        rail_update_vector(c, RAIL_UPDATE_RIDER + RAIL_RIDER_UP, [0.0, 0.0, 1.0, 0.0]);
+        rail_update_vector(
+            c,
+            RAIL_UPDATE_RIDER + RAIL_RIDER_FORWARD,
+            [1.0, 0.0, if seed & 32 == 0 { 0.0 } else { -1.0 }, 0.0],
+        );
+        let velocity = match mode {
+            1 => [0.0; 4],
+            3 => [-1000.0, 100.0, 0.0, 0.0],
+            5 => [0.0, 100.0, 0.0, 0.0],
+            6 => [100.0, 0.0, 400.0, 0.0],
+            7 => [800.0, 40.0, 0.0, 0.0],
+            // Return-zero contact with ordinary, unit and near-zero speed:
+            // reaches both subsequent normalization guards.
+            12 => [
+                0.0,
+                match seed / 16 % 4 {
+                    1 => 1.0,
+                    2 => -0.0001,
+                    _ => -100.0,
+                },
+                0.0,
+                0.0,
+            ],
+            13 => [0.0, 100.0, 0.0, 0.0],
+            _ => [100.0, 100.0, 0.0, 0.0],
+        };
+        rail_update_vector(c, RAIL_UPDATE_RIDER + R_VEL, velocity);
+        c.bus.write32(
+            RAIL_UPDATE_RIDER + R_MAX_SPEED,
+            if mode == 3 {
+                100.0f32.to_bits()
+            } else {
+                10000.0f32.to_bits()
+            },
+        );
+        c.bus.write32(
+            RAIL_UPDATE_RIDER + air::DT,
+            [1.0f32, 1.5, 2.0, 2.2][(seed / 16 % 4) as usize].to_bits(),
+        );
+        c.bus.write32(
+            RAIL_UPDATE_RIDER + RAIL_RIDER_BOOST,
+            if [4, 5, 15].contains(&mode) {
+                1.0f32.to_bits()
+            } else {
+                0
+            },
+        );
+        c.bus.write32(
+            RAIL_UPDATE_RIDER + RAIL_RIDER_STEER,
+            if seed & 16 == 0 {
+                0.5f32.to_bits()
+            } else {
+                (-0.5f32).to_bits()
+            },
+        );
+        c.bus.write32(
+            RAIL_UPDATE_RIDER + RAIL_RIDER_SUBTYPE,
+            match mode {
+                10 => 3,
+                11 => 4,
+                _ => 0,
+            },
+        );
+        c.bus
+            .write32(RAIL_UPDATE_RIDER + RAIL_RIDER_CHARACTER_INDEX, 0);
+        c.bus
+            .write32(RAIL_UPDATE_RIDER + RAIL_RIDER_ATTRIB_CONTEXT, 1);
+        c.bus
+            .write32(RAIL_UPDATE_RIDER + RAIL_RIDER_PROBE_BLEND, 1.0f32.to_bits());
+        c.bus.write32(RAIL_UPDATE_RIDER + 0x330, 0);
+        rail_update_vector(c, RAIL_UPDATE_RIDER + 0x9d0, [0.0; 4]);
+        // A linear cubic from -500 to +500 along x (or a steep rail along z).
+        // The closest-point search uses all its original five/24-sample passes.
+        let slope = if mode == 6 {
+            [0.0, 0.0, 1000.0, 0.0]
+        } else {
+            [1000.0, 0.0, 0.0, 0.0]
+        };
+        let origin = if mode == 6 {
+            [0.0, 0.0, -500.0, 1.0]
+        } else {
+            [-500.0, 0.0, 0.0, 1.0]
+        };
+        for base in [RAIL_UPDATE_RAIL + 0x10, RAIL_UPDATE_FLEX_CURVE] {
+            rail_update_vector(c, base, [0.0; 4]);
+            rail_update_vector(c, base + 0x10, [0.0; 4]);
+            rail_update_vector(c, base + 0x20, slope);
+            rail_update_vector(c, base + 0x30, origin);
+        }
+        c.bus
+            .write32(RAIL_UPDATE_LIST + 0x210, if mode == 0 { 0 } else { 1 });
+        c.bus.write32(
+            RAIL_UPDATE_LIST + 0x214,
+            if mode >= 14 {
+                RAIL_UPDATE_FLEX_SPACE
+            } else {
+                RAIL_UPDATE_RAIL
+            },
+        );
+        c.bus.write32(RAIL_UPDATE_RAIL + 8, 1);
+        c.bus.write32(RAIL_UPDATE_RAIL + 0x68, RAIL_UPDATE_MATERIAL);
+        c.bus.write32(RAIL_UPDATE_MATERIAL, 7);
+        c.bus.write32(
+            RAIL_UPDATE_MATERIAL + RAIL_MATERIAL_FLAGS,
+            if mode == 9 { 5 } else { 1 },
+        );
+        c.bus.write32(RAIL_UPDATE_MATERIAL + 0x28, 7);
+        for off in [0x6c, 0x70, 0x74] {
+            c.bus
+                .write32(RAIL_UPDATE_RAIL + off, (-1000.0f32).to_bits());
+        }
+        for off in [0x78, 0x7c, 0x80] {
+            c.bus.write32(RAIL_UPDATE_RAIL + off, 1000.0f32.to_bits());
+        }
+        c.bus.write32(RAIL_UPDATE_FLEX_SPACE + 8, 3);
+        c.bus
+            .write32(RAIL_UPDATE_FLEX_SPACE + 0xc, RAIL_UPDATE_FLEX);
+        c.bus
+            .write32(RAIL_UPDATE_FLEX + 0xc, RAIL_UPDATE_FLEX_VTABLE);
+        c.bus
+            .write32(RAIL_UPDATE_FLEX + 0x18, RAIL_UPDATE_FLEX_OBJECT);
+        c.bus.write32(RAIL_UPDATE_FLEX + 0x20, 2);
+        c.bus.write32(RAIL_UPDATE_FLEX + 0x24, 1);
+        c.bus
+            .write32(RAIL_UPDATE_FLEX + 0x50, RAIL_UPDATE_FLEX_CURVE);
+        c.bus
+            .write32(RAIL_UPDATE_FLEX_OBJECT + 0xc, RAIL_UPDATE_FLEX);
+        // Seed 62 rides a flexible rail whose object has no owner: the
+        // moving-delta dispatches are skipped in the search and the force.
+        if seed == 62 {
+            c.bus.write32(RAIL_UPDATE_FLEX_OBJECT + 0xc, 0);
+        }
+        c.bus
+            .write32(RAIL_UPDATE_FLEX_OBJECT + 0x88, RAIL_UPDATE_MATERIAL);
+        c.bus.write16(RAIL_UPDATE_MATERIAL + 0x1a, 7);
+        for (offset, target) in [(0x170, 0), (0x150, 0x10), (0x158, 0x20), (0x188, 0x30)] {
+            c.bus.write16(RAIL_UPDATE_FLEX_VTABLE + offset, 0);
+            c.bus
+                .write32(RAIL_UPDATE_FLEX_VTABLE + offset + 4, fakes::FAKE + target);
+        }
+        // Real character-factor callees use slot zero's shared profile (0.5).
+        c.bus.write32(GAME_GP - 0x1f04, RAIL_UPDATE_LIBRARY);
+        c.bus.write32(GAME_GP - 0x1efc, 0);
+        c.bus.write32(0x5308a8, RAIL_UPDATE_LIBRARY);
+        c.bus
+            .write32(RAIL_UPDATE_LIBRARY + 4, RAIL_UPDATE_LIBRARY_VTABLE);
+        c.bus.write16(RAIL_UPDATE_LIBRARY_VTABLE + 8, 0);
+        c.bus
+            .write32(RAIL_UPDATE_LIBRARY_VTABLE + 0xc, fakes::FAKE + 0x40);
+        c.bus.write32(0x5305b0, 0);
+        c.bus.write32(0x534ff0, 4);
+        c.bus.write32(0x535b2c, 0);
+        c.bus.write8(0x535b31, 0);
+        c.bus.write32(GAME_GP + RAIL_GP_GRAVITY_READY, 0);
+        c.g[A0][0] = sx(RAIL_UPDATE_STATE);
+        c.pc = 0x13af28;
+    }
+
+    #[test]
+    fn rider_railslide_state_update_matches() {
+        difftest::check(
+            ee::s01::f_0013af28__generated,
+            rider_railslide_state_update,
+            96,
+            &rail_update_setup,
+        );
+        // Reachability assertions accompany the state comparison: no contact,
+        // both attachment returns, zero/nonzero blend norm, moving contact.
+        for mode in [0, 1, 2, 12, 14, 15] {
+            let mut c = difftest::fresh();
+            rail_update_setup(&mut c, mode);
+            ee::s01::f_0013af28__generated(&mut c);
+            assert_eq!(c.pc, difftest::RA, "mode {mode} did not return");
+            assert_eq!(
+                c.bus.read32(RAIL_UPDATE_STATE + RAIL_STATE_DETACHED),
+                if [0, 12].contains(&mode) { 1 } else { 0 },
+                "attachment mode {mode}"
+            );
+            if mode == 1 || mode == 2 {
+                let rel = SP - RAIL_FRAME_SIZE + RAIL_FRAME_T80;
+                let norm = (0..3)
+                    .map(|i| f32::from_bits(c.bus.read32(rel + 4 * i)).powi(2))
+                    .sum::<f32>()
+                    .sqrt();
+                assert_eq!(norm > 0.001, mode == 2, "blend norm mode {mode}: {norm}");
+            }
+            if mode == 1 || mode >= 14 {
+                assert_eq!(
+                    c.bus.read32(RAIL_UPDATE_STATE + RAIL_STATE_MATERIAL_ID),
+                    if mode == 1 { 7 } else { 0xffff_ffff },
+                    "material id mode {mode}"
+                );
+            }
+            if mode >= 14 {
+                assert_eq!(
+                    c.bus.read32(RAIL_UPDATE_RIDER + RAIL_RIDER_MOVING_RAIL),
+                    1,
+                    "moving rail flag"
+                );
+                assert_eq!(
+                    c.bus.read32(RAIL_UPDATE_RIDER + RAIL_RIDER_BASE_VELOCITY),
+                    MOVING_VELOCITY[0].to_bits(),
+                    "moving rail velocity"
+                );
+                let count = c.bus.read32(fakes::LOG_COUNT);
+                assert!(
+                    (0..count)
+                        .any(|i| c.bus.read32(fakes::LOG_START + 0x220 * i) == fakes::FAKE + 0x20),
+                    "moving rail force not applied"
+                );
+            }
+        }
+        // Pinned total-cycle costs, grouped by contact case. `require_paths`
+        // only proves each cost occurs for some seed; the mode loop above is
+        // what ties branches to states. Seeds 89 and 94 take the harness's
+        // random fake-unwind instead and are covered by their cases' other
+        // seeds.
+        difftest::require_paths(
+            ee::s01::f_0013af28__generated,
+            96,
+            &[
+                // Mode 0: empty overlap list, no contact.
+                165, // Mode 1: static rail, attached (zero blend norm).
+                2983, 2999, // Mode 2: static rail (nonzero blend norm).
+                2990, 3006, // Mode 3: over the max speed (clamp arm).
+                3006, 3022, // Mode 4: boost held.
+                3008, 3024, // Mode 5: boost held with a lateral push.
+                3006, 3015, 3022, // Mode 6: steep rail along z.
+                3286, 3302, // Mode 7: static rail, high speed.
+                3141, 3143, 3152, 3154, // Mode 8: static rail, small lateral (1.0).
+                3136, 3138, 3155, 3158, // Mode 9: material flags 5 (gain doubling).
+                3138, 3140, 3147, 3149, // Modes 10-11: special-stance subtypes.
+                3139, 3141, 3150, 3152, // Mode 12: attachment probe rejects (detached).
+                2084, 2101, 2137, 2138, // Mode 13: ordinary speed, strong lateral push.
+                2084, 2138,
+                // Mode 14: flexible rail, material-less (id -1); 3049 has no owner.
+                3049, 3087, 3096, // Mode 15: flexible rail with boost.
+                3242, 3264,
+            ],
+            &rail_update_setup,
+        );
+    }
+
+    fn rail_update_alignment_setup(c: &mut Cpu, hz: u32, seed: u32, timescale: f32) {
+        // Seed 7 is a static rail, seed 14 a moving one; the setup leaves
+        // each contact's base velocity in place for the measure below.
+        rail_update_setup(c, seed);
+        crate::tick::set_for_test(c, hz);
+        c.bus
+            .write32(GAME_GP - rail_pool::STEP, crate::tick::step_bits(hz));
+        c.bus
+            .write32(RAIL_UPDATE_RIDER + air::DT, timescale.to_bits());
+        c.bus.write32(RAIL_UPDATE_RIDER + RAIL_RIDER_STEER, 0); // isolate alignment from steering
+        c.bus.write32(GAME_GP + RAIL_GP_GRAVITY_READY, 1);
+        rail_update_vector(c, RAIL_GRAVITY, [0.0; 4]); // no gravity or boost along the rail
+    }
+
+    #[test]
+    fn rail_alignment_follows_equal_game_time() {
+        // Tolerances: 1e-5 on the relative-velocity angle (radians) and
+        // 0.001 on its speed across rates, matching the blend-norm guard
+        // epsilon. The seed-7 rows also pin the 60 Hz angle to the closed
+        // form tan(angle) = (1-k60)*tan(before) (1e-4 on tan, proving the
+        // blend ran) and the speed to the incoming speed (0.01, proving
+        // the renormalise); seed 14 takes the moving-rail force, so only
+        // the cross-rate checks apply there.
+        // Timescale 2.0 gives k60 = 1 exactly, which converts to w = 1;
+        // only above 1 does the fallback keep the stock coefficient.
+        // Seeds 14 and 7 start the rider at different angles to the rail
+        // (relative velocities [80, 105] and [800, 40] against +x).
+        for seed in [14, 7] {
+            for timescale in [0.25f32, 1.0, 1.5, 1.9, 2.0] {
+                // k60 in the game's f32 operation order.
+                let k60 = timescale * f32::from_bits(crate::tick::STEP_60) * rail_float::ALIGN_RATE;
+                // Starting relative velocity, before any update.
+                let (tan0, norm0) = {
+                    let mut c = difftest::fresh();
+                    rail_update_alignment_setup(&mut c, 60, seed, timescale);
+                    let base_x =
+                        f32::from_bits(c.bus.read32(RAIL_UPDATE_RIDER + RAIL_RIDER_BASE_VELOCITY));
+                    let base_y = f32::from_bits(
+                        c.bus
+                            .read32(RAIL_UPDATE_RIDER + RAIL_RIDER_BASE_VELOCITY + 4),
+                    );
+                    let x0 = f32::from_bits(c.bus.read32(RAIL_UPDATE_RIDER + R_VEL)) - base_x;
+                    let y0 = f32::from_bits(c.bus.read32(RAIL_UPDATE_RIDER + R_VEL + 4)) - base_y;
+                    (y0 / x0, x0.hypot(y0))
+                };
+                let mut reference: Option<(f32, f32)> = None;
+                for hz in [60, 120, 240] {
+                    let mut c = difftest::fresh();
+                    rail_update_alignment_setup(&mut c, hz, seed, timescale);
+                    for _ in 0..hz / 60 {
+                        c.g[A0][0] = sx(RAIL_UPDATE_STATE);
+                        c.g[RA][0] = sx(difftest::RA);
+                        c.pc = 0x13af28;
+                        rider_railslide_state_update(&mut c);
+                        assert_eq!(c.pc, difftest::RA);
+                        assert_eq!(
+                            c.bus.read32(RAIL_UPDATE_STATE + RAIL_STATE_DETACHED),
+                            0,
+                            "alignment guard must run"
+                        );
+                    }
+                    let base_x =
+                        f32::from_bits(c.bus.read32(RAIL_UPDATE_RIDER + RAIL_RIDER_BASE_VELOCITY));
+                    let base_y = f32::from_bits(
+                        c.bus
+                            .read32(RAIL_UPDATE_RIDER + RAIL_RIDER_BASE_VELOCITY + 4),
+                    );
+                    let x = f32::from_bits(c.bus.read32(RAIL_UPDATE_RIDER + R_VEL)) - base_x;
+                    let y = f32::from_bits(c.bus.read32(RAIL_UPDATE_RIDER + R_VEL + 4)) - base_y;
+                    let angle = y.atan2(x);
+                    let norm = x.hypot(y);
+                    if let Some((angle60, norm60)) = reference {
+                        assert!(
+                            (angle - angle60).abs() < 1e-5,
+                            "seed={seed} timescale={timescale} hz={hz} angle={angle} vs {angle60}"
+                        );
+                        assert!(
+                            (norm - norm60).abs() < 0.001,
+                            "seed={seed} relative speed changed at hz={hz}"
+                        );
+                    } else {
+                        if seed == 7 {
+                            assert!(
+                                (angle.tan() - (1.0 - k60) * tan0).abs() < 1e-4,
+                                "seed=7 timescale={timescale}: 60 Hz angle {angle} not (1-k60)*tan0"
+                            );
+                            assert!(
+                                (norm - norm0).abs() < 0.01,
+                                "seed=7 timescale={timescale}: speed {norm} not incoming {norm0}"
+                            );
+                        }
+                        reference = Some((angle, norm));
+                    }
+                }
+            }
+        }
+        // Above k60 = 1 the fallback preserves the entire stock update
+        // at each rate, including all forces, registers, cycles and
+        // memory.
+        for timescale in [2.2f32, 3.0] {
+            for hz in [60, 120, 240] {
+                difftest::check(
+                    ee::s01::f_0013af28__generated,
+                    rider_railslide_state_update,
+                    1,
+                    &|c, _| rail_update_alignment_setup(c, hz, 14, timescale),
+                );
+            }
+        }
     }
 
     /// `RiderRailslideState_Enter` seeds the rail-value slew's step (`+0x260`)
