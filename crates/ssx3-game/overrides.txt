@@ -6233,3 +6233,8 @@
 0x00160bf8    RelativeChaseCameraAlgorithm_Update
 0x00177fc0    SpokeChaseCameraAlgorithm_ComputeDesiredEye
 0x00178208    SpokeChaseCameraAlgorithm_Update
+
+# online: connection handshake and connect timeout, peer timeout, session deadline
+0x00255a20    cCommSystem_Update
+0x00257a80    cGameComm_CheckPeerTimeout
+0x00258870    cGameComm_SetTimeoutTimer
