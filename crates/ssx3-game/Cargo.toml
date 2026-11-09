@@ -4,6 +4,7 @@ description = "Hand-written, typed Rust replacements for recompiled SSX 3 functi
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+build = "build.rs"
 
 # Depends on the generated crates (to install replacements into their slots);
 # they never depend on this crate, so editing it only rebuilds it and relinks.
