@@ -761,7 +761,7 @@ fn structured_emit(
     translated: &BTreeSet<u32>,
     call_prefix: &str,
 ) -> Option<String> {
-    let dbg = std::env::var("SSX3_DEBUG_STRUCT").is_ok();
+    let dbg = ssx3_core::config::var("SSX3_DEBUG_STRUCT").is_some();
     let fail = |why: &str| {
         if dbg {
             eprintln!("struct {} @ {:08x}: {why}", f.name, f.address);
@@ -959,7 +959,7 @@ fn build_cfg(decoded: &[(u32, Instruction)]) -> Option<Vec<Blk>> {
     for b in &blocks {
         for k in 0..b.nsucc {
             if b.succ[k] == usize::MAX {
-                if std::env::var("SSX3_DEBUG_STRUCT").is_ok() {
+                if ssx3_core::config::var("SSX3_DEBUG_STRUCT").is_some() {
                     let (pc, inst) = decoded[b.term];
                     eprintln!(
                         "  unresolved successor: block {:08x} term {:08x} {} (k={k})",

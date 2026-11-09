@@ -174,7 +174,7 @@ impl Ipu {
             irq: false,
             dma4_tag_end: false,
             stats: IpuStats::default(),
-            trace: std::env::var_os("SSX3_TRACE_IPU").is_some(),
+            trace: ssx3_core::config::var_os("SSX3_TRACE_IPU").is_some(),
         }
     }
 

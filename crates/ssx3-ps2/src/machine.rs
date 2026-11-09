@@ -137,7 +137,7 @@ fn host_clock_behind(c: &mut Cpu) -> bool {
 
 fn follow_host_clock(c: &mut Cpu) {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    if !*ON.get_or_init(|| std::env::var("SSX3_HOST_CLOCK").is_ok_and(|v| v != "0")) {
+    if !*ON.get_or_init(|| ssx3_core::config::var("SSX3_HOST_CLOCK").is_some_and(|v| v != "0")) {
         return;
     }
     let now = web_time::Instant::now();
@@ -164,7 +164,7 @@ fn follow_host_clock(c: &mut Cpu) {
 /// A debug switch read once (`getenv` takes a process-wide lock and scans
 /// the environment: far too slow for paths taken per call).
 fn env_flag(cell: &'static std::sync::OnceLock<bool>, name: &str) -> bool {
-    *cell.get_or_init(|| std::env::var_os(name).is_some())
+    *cell.get_or_init(|| ssx3_core::config::var_os(name).is_some())
 }
 
 /// No translated code at `target` (hook for `call_indirect`).

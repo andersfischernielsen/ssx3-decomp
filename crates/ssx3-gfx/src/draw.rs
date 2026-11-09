@@ -493,7 +493,7 @@ impl Pipelines {
         let clip_depth = dev
             .features()
             .contains(wgpu::Features::DEPTH_CLIP_CONTROL | wgpu::Features::CLIP_DISTANCES)
-            && std::env::var("SSX3_CLIP_DEPTH").map_or(true, |v| v != "0");
+            && ssx3_core::config::var("SSX3_CLIP_DEPTH").map_or(true, |v| v != "0");
         let gpu_module = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ssx3-gfx gpuvu.wgsl"),
             source: wgpu::ShaderSource::Wgsl(if clip_depth {

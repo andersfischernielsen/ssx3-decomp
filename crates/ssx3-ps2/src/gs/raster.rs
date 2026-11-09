@@ -2113,11 +2113,11 @@ fn tri_rows<const TX: u8>(
 
 fn tex_trace() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| std::env::var("SSX3_TRACE_TEX").is_ok())
+    *E.get_or_init(|| ssx3_core::config::var("SSX3_TRACE_TEX").is_some())
 }
 
 /// Debug: SSX3_NO_MIPMAP=1 always samples level 0.
 fn no_mipmap() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| std::env::var_os("SSX3_NO_MIPMAP").is_some())
+    *E.get_or_init(|| ssx3_core::config::var_os("SSX3_NO_MIPMAP").is_some())
 }

@@ -1240,8 +1240,8 @@ fn chain_cache_mode() -> (bool, bool) {
     static M: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
     *M.get_or_init(|| {
         (
-            std::env::var("SSX3_CHAIN_CACHE").map_or(true, |v| v != "0"),
-            std::env::var_os("SSX3_CHAIN_CACHE_CHECK").is_some(),
+            ssx3_core::config::var("SSX3_CHAIN_CACHE").map_or(true, |v| v != "0"),
+            ssx3_core::config::var_os("SSX3_CHAIN_CACHE_CHECK").is_some(),
         )
     })
 }
@@ -1317,7 +1317,7 @@ fn play_chain(m: &dyn Mem, vif: &mut Vif1, cache: &mut ChainCache, a: u32) {
 /// compared with their commands.
 fn direct_check() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("SSX3_DIRECT_CHECK").is_some())
+    *ON.get_or_init(|| ssx3_core::config::var_os("SSX3_DIRECT_CHECK").is_some())
 }
 
 /// Decode a captured packet (CNT / REF tags from `start` to its end) and

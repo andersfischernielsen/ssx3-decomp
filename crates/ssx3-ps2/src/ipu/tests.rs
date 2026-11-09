@@ -685,7 +685,7 @@ fn load_eabig() -> Option<Vec<u8>> {
     if let Ok(d) = std::fs::read("/Volumes/SSX3/DATA/MOVIES/EABIG.MPC") {
         return Some(d);
     }
-    let iso = std::env::var_os("SSX3_ISO")
+    let iso = ssx3_core::config::var_os("SSX3_ISO")
         .map(std::path::PathBuf::from)
         .or_else(|| {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -787,9 +787,8 @@ fn eabig_i_frames_decode() {
     let height = (((seq[5] & 0xF) as usize) << 8) | seq[6] as usize;
     assert_eq!((width, height), (512, 448));
     assert_eq!(seq[11] & 3, 0, "default quantiser matrices");
-    let out_dir = std::env::var_os("SSX3_IPU_PNG_DIR").map(std::path::PathBuf::from);
-    let max = std::env::var("SSX3_IPU_FRAMES")
-        .ok()
+    let out_dir = ssx3_core::config::var_os("SSX3_IPU_PNG_DIR").map(std::path::PathBuf::from);
+    let max = ssx3_core::config::var("SSX3_IPU_FRAMES")
         .and_then(|s| s.parse().ok())
         .unwrap_or(2usize);
 
@@ -921,7 +920,8 @@ fn eabig_native_decoder() {
 /// differ, with the macroblocks' predictions.
 #[test]
 fn eabig_native_vs_dumps() {
-    let (Some(dir), Some(mpc)) = (std::env::var_os("SSX3_MPEG_REF_DIR"), load_eabig()) else {
+    let (Some(dir), Some(mpc)) = (ssx3_core::config::var_os("SSX3_MPEG_REF_DIR"), load_eabig())
+    else {
         return;
     };
     let chunks = mpc_video_chunks(&mpc);

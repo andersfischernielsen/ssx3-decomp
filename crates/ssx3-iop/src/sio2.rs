@@ -85,7 +85,7 @@ impl Sio2 {
         let mut pads = [DualShock2::new(), DualShock2::new()];
         // Pad 2 is unplugged unless SSX3_PAD2=1 (Multi Play needs it; the
         // windowed front end maps a second game controller to it).
-        pads[1].connected = std::env::var_os("SSX3_PAD2").is_some_and(|v| v != "0");
+        pads[1].connected = ssx3_core::config::var_os("SSX3_PAD2").is_some_and(|v| v != "0");
         Self {
             send3: [0; 16],
             send1: [0; 4],
@@ -105,7 +105,7 @@ impl Sio2 {
             dma_block: 0,
             pads,
             card: None,
-            trace: std::env::var("SSX3_TRACE_SIO2").is_ok(),
+            trace: ssx3_core::config::var("SSX3_TRACE_SIO2").is_some(),
             transfers: 0,
             packets: 0,
         }

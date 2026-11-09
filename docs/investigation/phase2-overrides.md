@@ -16,7 +16,7 @@ running and every step is checked by byte-identical replays.
   readable `pub use` alias keep pointing at `f_X`, so direct calls inside a
   shard, cross-shard calls and indirect calls all reach the replacement. The
   table crate (`generated/ee/game`) gets `set_override(addr, f)`.
-- `ssx3_game::install()` (called by `crates/ssx3/src/game.rs` at boot) fills
+- `ssx3_game::install()` (called by `crates/ssx3-engine/src/boot.rs` at boot) fills
   the slots. `SSX3_NO_OVERRIDES=1` keeps the generated bodies (A/B checks);
   `SSX3_OVERRIDES=addr,addr` installs only some.
 - Dependencies point one way: `ssx3-game` → generated crates → `ssx3-ee-rt`.

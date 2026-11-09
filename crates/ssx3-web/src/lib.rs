@@ -9,6 +9,9 @@
 //! (boxed in the canvas), no anisotropic filtering, no interpolation, no
 //! texture packs.
 //!
+//! The game itself is `ssx3-engine` (unwind form): this crate is the
+//! browser front end (disc from a `File`, the canvas, the VU helpers).
+//!
 //! Sound: the mixer's samples go to the page ([`Game::audio`]), which plays
 //! them with an AudioWorklet (`www/audio.js`).
 //!
@@ -16,26 +19,38 @@
 //! gamepads and the settings overlay.
 #![cfg(target_arch = "wasm32")]
 
-extern crate ssx3_ee_unwind as ssx3_ee;
-
 use std::sync::Arc;
 
 use ssx3_core::iso::{self, Source};
-use ssx3_ps2::Cpu;
+use ssx3_engine::{Engine, EngineConfig};
 use wasm_bindgen::prelude::*;
 
-#[path = "../../ssx3/src/game.rs"]
-mod game;
+/// The settings: what the page passes (`SSX3_*` keys, e.g. from the URL
+/// query), else the default, except the ones that would change the
+/// original image.
+fn settings(page: std::collections::HashMap<String, String>) -> impl ssx3_engine::Settings {
+    move |key: &str| match page.get(key) {
+        Some(v) => Some(v.clone()),
+        None if key == "SSX3_ANISO" => Some("1".into()),
+        None => None,
+    }
+}
 
-/// The settings file of the native front end: none here. Every setting is
-/// its default, except the ones that would change the original image.
-mod settings {
-    pub fn get(key: &str) -> Option<String> {
-        match key {
-            "SSX3_ANISO" => Some("1".into()),
-            _ => None,
+/// A JS object's string-valued `SSX3_*` properties.
+fn page_settings(obj: &JsValue) -> std::collections::HashMap<String, String> {
+    let mut m = std::collections::HashMap::new();
+    if !obj.is_object() {
+        return m;
+    }
+    for entry in js_sys::Object::entries(obj.unchecked_ref()).iter() {
+        let pair: js_sys::Array = entry.unchecked_into();
+        if let (Some(k), Some(v)) = (pair.get(0).as_string(), pair.get(1).as_string()) {
+            if k.starts_with("SSX3_") {
+                m.insert(k, v);
+            }
         }
     }
+    m
 }
 
 fn log(s: &str) {
@@ -244,13 +259,10 @@ mod vu_pool {
 }
 
 /// The largest 4:3 box in a `w`×`h` canvas (whole pixels).
-fn box43(w: u32, h: u32) -> (f32, f32) {
+/// The largest box of aspect `a` (width / height) in `w` x `h`.
+fn fit(w: u32, h: u32, a: f32) -> (f32, f32) {
     let (w, h) = (w as f32, h as f32);
-    let (bw, bh) = if w / h > 4.0 / 3.0 {
-        (h * 4.0 / 3.0, h)
-    } else {
-        (w, w * 3.0 / 4.0)
-    };
+    let (bw, bh) = if w / h > a { (h * a, h) } else { (w, w / a) };
     (bw.floor().max(64.0), bh.floor().max(64.0))
 }
 
@@ -271,7 +283,7 @@ struct VsOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
 
 #[wasm_bindgen]
 pub struct Game {
-    cpu: Box<Cpu>,
+    engine: Engine,
     gfx: ssx3_gfx::Renderer,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -295,13 +307,16 @@ fn now_ms() -> f64 {
 
 /// Boot the game: `canvas` is drawn to, `iso` is the disc image, `helpers`
 /// the number of VU helper workers the page will start (0: none; needs
-/// cross-origin isolation for the shared buffer).
+/// cross-origin isolation for the shared buffer), `settings` an object of
+/// `SSX3_*` settings (`docs/options.md`; strings) or `undefined`.
 #[wasm_bindgen]
 pub async fn start(
     canvas: web_sys::OffscreenCanvas,
     iso: web_sys::Blob,
     helpers: u32,
+    settings: JsValue,
 ) -> Result<Game, JsValue> {
+    let page = page_settings(&settings);
     console_error_panic_hook::set_once();
     let blob = Arc::new(SendBlob(iso));
     iso::set_opener(Box::new(move || {
@@ -371,8 +386,15 @@ pub async fn start(
     });
 
     log("[ssx3] booting");
-    let mut cpu = game::boot(false);
-    let gfx = game::install_renderer(&mut cpu).ok_or("renderer: no GPU")?;
+    if !page.is_empty() {
+        log(&format!("[ssx3] settings: {page:?}"));
+    }
+    let engine = Engine::boot(EngineConfig {
+        // The page plays the sound (`Game::audio`).
+        audio: ssx3_engine::Audio::Pull,
+        ..EngineConfig::new(Box::new(self::settings(page)))
+    });
+    let gfx = engine.renderer().cloned().ok_or("renderer: no GPU")?;
     let pool = (helpers > 0).then(|| vu_pool::Pool::new(helpers)).flatten();
     let vu_buffer = pool.as_ref().map(|p| p.sab.clone());
     if let Some(p) = pool {
@@ -382,7 +404,7 @@ pub async fn start(
         ssx3_gfx::set_vu_offload(Box::new(move |jobs| p.start(jobs)), helpers as usize);
     }
     let game = Game {
-        cpu,
+        engine,
         gfx,
         device: ctx.device.clone(),
         queue: ctx.queue.clone(),
@@ -407,12 +429,26 @@ impl Game {
         self.vu_buffer.clone()
     }
 
-    /// Render the game's own 4:3 view at the pixel size of the 4:3 box it
-    /// fills in the canvas (`present`).
+    /// Render at the pixel size of the box the image fills in the canvas
+    /// (`present`): the game's own 4:3 view unless the settings ask for an
+    /// aspect (`SSX3_ASPECT`), with `SSX3_RESOLUTION` and `SSX3_FOV`; a
+    /// fixed `SSX3_RENDER_SIZE` is left as the engine set it.
     fn follow_size(&self) {
-        let (w, h) = box43(self.config.width, self.config.height);
-        self.gfx.set_output_size(Some((w as u32, h as u32)));
-        ssx3_ps2::frame_sink::set_view(0.0, 1.0);
+        if !self.engine.follows_surface() {
+            return;
+        }
+        let aspect = self.engine.aspect_box();
+        let (w, h) = fit(
+            self.config.width,
+            self.config.height,
+            aspect.unwrap_or(4.0 / 3.0),
+        );
+        let k = self.engine.resolution();
+        self.gfx.set_output_size(Some((
+            ((w * k).round() as u32).max(64),
+            ((h * k).round() as u32).max(64),
+        )));
+        ssx3_ps2::frame_sink::set_view(aspect.map_or(0.0, |_| w / h), self.engine.fov());
     }
 
     /// The canvas was resized (device pixels).
@@ -429,16 +465,15 @@ impl Game {
     /// Run one game frame with pad 1's buttons (libpad bits, pressed = 1).
     /// False when the game has stopped.
     pub fn frame(&mut self, buttons: u16) -> bool {
-        ssx3_ps2::m!(self.cpu).sif.pad_buttons[0] = buttons;
+        self.engine.set_pad(0, buttons);
         let t0 = now_ms();
-        let alive = ssx3_ps2::machine::run_frame(&mut self.cpu);
+        let alive = self.engine.step();
         self.ms_frame += now_ms() - t0;
-        let frames = ssx3_ps2::m!(self.cpu).sched.frames;
-        if frames % 300 == 0 {
+        if self.engine.frames() % 300 == 0 {
             log(&format!(
                 "[{:6.1}s] {}",
                 (now_ms() - self.started) / 1e3,
-                game::status(&self.cpu)
+                self.engine.status()
             ));
             log(&format!(
                 "  last 300 frames: {:.2} ms per frame in run_frame, {:.2} ms in present; {}; {}",
@@ -453,16 +488,27 @@ impl Game {
         if !alive {
             log(&format!(
                 "halted: {:?}",
-                ssx3_ps2::m!(self.cpu).kernel.halted
+                ssx3_ps2::mr!(self.engine.cpu()).kernel.halted
             ));
         }
         alive
     }
 
+    /// The page is hidden (`www/worker.js` on the page's `visibilitychange`):
+    /// silence the sound until [`Game::resume`]; the worker's loop stops
+    /// running frames meanwhile.
+    pub fn pause(&mut self) {
+        self.engine.pause();
+    }
+
+    pub fn resume(&mut self) {
+        self.engine.resume();
+    }
+
     /// The sound since the last call: interleaved stereo, 48 kHz.
     pub fn audio(&mut self) -> Vec<i16> {
         let mut v = Vec::new();
-        ssx3_iop::audio::take(&mut v);
+        self.engine.audio_pull(&mut v);
         v
     }
 
@@ -474,7 +520,7 @@ impl Game {
     }
 
     fn present_image(&mut self) {
-        let Some((view, _, _)) = self.gfx.present_view() else {
+        let Some((view, iw, ih)) = self.gfx.present_view() else {
             return;
         };
         let frame = match self.surface.get_current_texture() {
@@ -521,9 +567,9 @@ impl Game {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            // The 4:3 image, as large as fits, centred.
+            // The image at its own aspect, as large as fits, centred.
             let (cw, ch) = (self.config.width as f32, self.config.height as f32);
-            let (w, h) = box43(self.config.width, self.config.height);
+            let (w, h) = fit(self.config.width, self.config.height, iw as f32 / ih as f32);
             pass.set_viewport(
                 ((cw - w) / 2.0).floor(),
                 ((ch - h) / 2.0).floor(),

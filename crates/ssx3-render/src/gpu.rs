@@ -174,7 +174,7 @@ impl Link {
 /// Whether calls go to the GPU (`SSX3_GPU_VU=0`: the CPU programs).
 pub fn enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("SSX3_GPU_VU").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| ssx3_core::config::var("SSX3_GPU_VU").map_or(true, |v| v != "0"))
 }
 
 /// `SSX3_GPU_VU_SKIP` key of the type 3 strips (entries 0x12b8 / 0x3a08).
@@ -185,7 +185,7 @@ const STRIPS: u64 = 1;
 fn skipped(hash: u64) -> bool {
     static SKIP: std::sync::OnceLock<Vec<u64>> = std::sync::OnceLock::new();
     SKIP.get_or_init(|| {
-        let v = std::env::var("SSX3_GPU_VU_SKIP").unwrap_or_default();
+        let v = ssx3_core::config::var("SSX3_GPU_VU_SKIP").unwrap_or_default();
         v.split(',')
             .filter_map(|n| match n.trim() {
                 "mat1" => Some(crate::mat1::HASH),
@@ -221,7 +221,7 @@ pub fn plan(
 ) -> Option<Vec<GpuCall>> {
     let r = plan_inner(hash, entry, top, itop, kept, mem);
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    if *ON.get_or_init(|| std::env::var_os("SSX3_GPU_STATS").is_some()) {
+    if *ON.get_or_init(|| ssx3_core::config::var_os("SSX3_GPU_STATS").is_some()) {
         *STATS
             .lock()
             .unwrap()

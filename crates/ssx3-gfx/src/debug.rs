@@ -32,7 +32,7 @@ pub struct Dbg {
 pub fn get() -> &'static Dbg {
     static D: OnceLock<Dbg> = OnceLock::new();
     D.get_or_init(|| {
-        let var = |k: &str| std::env::var(k).ok();
+        let var = ssx3_core::config::var;
         Dbg {
             trace: var("SSX3_GFX_TRACE").and_then(|v| v.parse().ok()),
             trace_out: var("SSX3_GFX_TRACE_OUT").unwrap_or_else(|| "/tmp/gfx-trace.txt".into()),

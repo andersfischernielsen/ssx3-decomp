@@ -76,8 +76,13 @@ document.getElementById("iso").onchange = (e) => {
     }
   };
   worker.onerror = (e) => { msg.textContent = e.message; };
-  const hp = new URLSearchParams(location.search).get("helpers");
-  worker.postMessage({ type: "start", canvas: off, iso, helpers: hp == null ? null : Number(hp) }, [off]);
+  const query = new URLSearchParams(location.search);
+  const hp = query.get("helpers");
+  // Settings: SSX3_* keys of the URL query (docs/options.md), e.g.
+  // ?SSX3_TICK_HZ=120&SSX3_SKIP_MOVIES=1.
+  const settings = {};
+  for (const [k, v] of query) if (k.startsWith("SSX3_")) settings[k] = v;
+  worker.postMessage({ type: "start", canvas: off, iso, helpers: hp == null ? null : Number(hp), settings }, [off]);
 
   let buttons = 0;
   const key = (down) => (e) => {
@@ -90,6 +95,20 @@ document.getElementById("iso").onchange = (e) => {
   addEventListener("keydown", (e) => { if (audio.state !== "running") audio.resume(); key(true)(e); });
   addEventListener("keyup", key(false));
   addEventListener("blur", () => worker.postMessage({ type: "buttons", buttons: (buttons = 0) }));
+  // Hidden (another tab, minimised, the page put away): pause the game and
+  // its sound; shown again: resume.
+  let hidden = false;
+  const setHidden = (h) => {
+    if (h === hidden) return;
+    hidden = h;
+    worker.postMessage({ type: h ? "pause" : "resume" });
+    (h ? audio.suspend() : audio.resume()).catch(() => {});
+  };
+  document.addEventListener("visibilitychange", () => setHidden(document.visibilityState === "hidden"));
+  addEventListener("pagehide", () => setHidden(true));
+  addEventListener("pageshow", () => setHidden(document.visibilityState === "hidden"));
+  // Opened in a background tab: no event comes until it is shown.
+  setHidden(document.visibilityState === "hidden");
   addEventListener("resize", () => {
     const [w, h] = pixelSize();
     worker.postMessage({ type: "resize", width: w, height: h });

@@ -3176,7 +3176,7 @@ impl Build {
             }
         }
         static SEQ: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let seq = *SEQ.get_or_init(|| std::env::var_os("SSX3_GFX_SEQ_VU").is_some());
+        let seq = *SEQ.get_or_init(|| ssx3_core::config::var_os("SSX3_GFX_SEQ_VU").is_some());
         let parallel = OFFLOAD
             .get()
             .map(|o| o.1)

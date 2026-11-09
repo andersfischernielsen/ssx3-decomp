@@ -237,6 +237,13 @@ pub const PER_TICK: &[(u32, u32, PerTick)] = &[
     // MatrixChaseCameraAlgorithm_Update (0x1607e0): the orbit angle (+0x390)
     // gains 0.0614 rad per tick.
     (0x0049_c530, 0x3d7b_4caa, PerTick::Step),
+    // RelativeChaseCameraAlgorithm_Update (0x160bf8): eye-offset blend,
+    // old * 0.97 + desired * (1 - 0.97), after the first update.
+    (0x0049_c578, 0x3f78_51ec, PerTick::Affine(0x0049_c57c)),
+    // SpokeChaseCameraAlgorithm_ComputeDesiredEye (0x177fc0), the handplant
+    // (spoke) camera: its heading (+0x390) keeps 0.96 and adds 0.04 of the
+    // direction per update, then is renormalized.
+    (0x0049_d2f0, 0x3f75_c28f, PerTick::Affine(0x0049_d2f4)),
     // OVScreenSession_Update (0x209370), the pause map: the icons' scale
     // pulse speed, -0.16 / +0.16 per tick.
     (0x0049_dbf0, 0xbe23_d70a, PerTick::Step),
@@ -279,7 +286,11 @@ pub fn per_tick_values(hz: u32) -> Vec<(u32, u32)> {
 }
 
 /// The offsets of [`PerTick::Affine`] entries: (entry, executable value).
-const AFFINE_B: &[(u32, u32)] = &[(0x0049_b894, 0x4194_25ed)];
+const AFFINE_B: &[(u32, u32)] = &[
+    (0x0049_b894, 0x4194_25ed),
+    (0x0049_c57c, 0x3cf5_c280),
+    (0x0049_d2f4, 0x3d23_d710),
+];
 
 /// Rewrite the [`PER_TICK`] constants for `hz` (each only if it still holds
 /// the executable's value or one this wrote, so a wrong address is caught).
@@ -343,10 +354,7 @@ pub fn step_bits(hz: u32) -> u32 {
 
 /// Read `SSX3_TICK_HZ` at boot; returns the configured rate.
 pub fn install() -> u32 {
-    if let Some(hz) = std::env::var("SSX3_TICK_HZ")
-        .ok()
-        .and_then(|v| v.parse::<u32>().ok())
-    {
+    if let Some(hz) = ssx3_core::config::var("SSX3_TICK_HZ").and_then(|v| v.parse::<u32>().ok()) {
         set(hz);
     }
     configured()

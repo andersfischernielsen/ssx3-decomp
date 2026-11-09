@@ -192,7 +192,7 @@ impl Iop {
             yield_now: false,
             in_handler: 0,
             handler_deadline: 0,
-            trace: std::env::var("SSX3_TRACE_IOP").is_ok(),
+            trace: ssx3_core::config::var("SSX3_TRACE_IOP").is_some(),
             unknown_io: BTreeMap::new(),
             io_regs: BTreeMap::new(),
             instructions: 0,

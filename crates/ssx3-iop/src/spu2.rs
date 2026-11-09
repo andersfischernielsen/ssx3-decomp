@@ -185,7 +185,7 @@ impl Spu2 {
             ticks: 0,
             sink: None,
             samples_out: 0,
-            trace: std::env::var("SSX3_TRACE_SPU2").is_ok(),
+            trace: ssx3_core::config::var("SSX3_TRACE_SPU2").is_some(),
             raise_irq: false,
             stats: [0; 4],
         }

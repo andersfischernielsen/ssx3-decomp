@@ -18,7 +18,7 @@ fn main() {
     let iso = std::env::args()
         .nth(1)
         .map(PathBuf::from)
-        .or_else(|| std::env::var("SSX3_ISO").ok().map(PathBuf::from))
+        .or_else(|| ssx3_core::config::var("SSX3_ISO").map(PathBuf::from))
         .unwrap_or_else(|| root.join("SSX 3 (USA).iso"));
     match ssx3_recomp::iopgen::generate_from_disc(&iso, &root.join("generated/iop/modules")) {
         Ok(o) => {

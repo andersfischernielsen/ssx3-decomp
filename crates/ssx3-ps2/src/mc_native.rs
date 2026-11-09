@@ -95,6 +95,17 @@ fn open_card() -> Option<Slot> {
                 path,
             })
         }
+        // No file system (the browser): a card in memory, so the game gets
+        // past its memory card check (an empty slot hangs it).
+        Err(e) if cfg!(target_arch = "wasm32") => {
+            eprintln!("[mc] cannot open {p}: {e}; memory card in memory (not saved)");
+            Some(Slot {
+                fs: Fs::new(Card::erased()),
+                file: None,
+                path,
+            })
+        }
+        // Natively a card that would not be saved is worse than none.
         Err(e) => {
             eprintln!("[mc] cannot open {p}: {e}; no memory card inserted");
             None
@@ -127,9 +138,9 @@ pub fn enabled() -> bool {
 }
 
 fn bcd_free_secs() -> u64 {
-    if let Some(v) = std::env::var("SSX3_RTC").ok().and_then(|v| v.parse().ok()) {
+    if let Some(v) = ssx3_core::config::var("SSX3_RTC").and_then(|v| v.parse().ok()) {
         v
-    } else if std::env::var_os("SSX3_REAL_CLOCK").is_some() {
+    } else if ssx3_core::config::var_os("SSX3_REAL_CLOCK").is_some() {
         web_time::SystemTime::now()
             .duration_since(web_time::UNIX_EPOCH)
             .map(|d| d.as_secs())

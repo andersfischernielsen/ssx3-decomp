@@ -245,7 +245,7 @@ fn draws(path: &str, bytes: &[u8], dir: &str) {
         std::fs::write(format!("{dir}/f{seg:02}.png"), png::encode(w, h, &img)).unwrap();
         // SSX3_DUMP_FB=fbp:fbw:psm:w:h,...: also those buffers as
         // DIR/fNN-fb<fbp>.png (RGB, alpha in DIR/fNN-fb<fbp>-a.png).
-        for spec in std::env::var("SSX3_DUMP_FB")
+        for spec in ssx3_core::config::var("SSX3_DUMP_FB")
             .unwrap_or_default()
             .split(',')
             .filter(|s| !s.is_empty())

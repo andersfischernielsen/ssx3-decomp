@@ -73,8 +73,7 @@ impl Pool {
     pub(crate) fn global() -> &'static Pool {
         static POOL: OnceLock<Pool> = OnceLock::new();
         POOL.get_or_init(|| {
-            let n = std::env::var("SSX3_GS_THREADS")
-                .ok()
+            let n = ssx3_core::config::var("SSX3_GS_THREADS")
                 .and_then(|s| s.parse::<usize>().ok())
                 .unwrap_or_else(|| {
                     std::thread::available_parallelism()

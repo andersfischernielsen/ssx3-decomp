@@ -43,7 +43,7 @@ pub type Output = (Vec<(usize, CallOut)>, Box<[u8; MEM]>);
 /// Debug: `SSX3_GPU_CHECK=1` compares planned GPU calls with the program.
 fn check_gpu() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("SSX3_GPU_CHECK").is_some())
+    *ON.get_or_init(|| ssx3_core::config::var_os("SSX3_GPU_CHECK").is_some())
 }
 
 /// Run one call natively: its GPU plan (when enabled and ported) or the

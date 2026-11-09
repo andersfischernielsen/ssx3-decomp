@@ -166,16 +166,16 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
 /// `SSX3_SKIP_OVERRIDES=addr,addr` all but the listed ones.
 /// Returns how many were installed.
 pub fn install() -> usize {
-    if std::env::var_os("SSX3_NO_OVERRIDES").is_some() {
+    if ssx3_core::config::var_os("SSX3_NO_OVERRIDES").is_some() {
         return 0;
     }
-    let only: Option<Vec<u32>> = std::env::var("SSX3_OVERRIDES").ok().map(|s| {
+    let only: Option<Vec<u32>> = ssx3_core::config::var("SSX3_OVERRIDES").map(|s| {
         s.split(',')
             .filter_map(|a| u32::from_str_radix(a.trim().trim_start_matches("0x"), 16).ok())
             .collect()
     });
     // `SSX3_SKIP_OVERRIDES=addr,addr`: all but these (bisecting a wave).
-    let skip: Vec<u32> = std::env::var("SSX3_SKIP_OVERRIDES")
+    let skip: Vec<u32> = ssx3_core::config::var("SSX3_SKIP_OVERRIDES")
         .map(|s| {
             s.split(',')
                 .filter_map(|a| u32::from_str_radix(a.trim().trim_start_matches("0x"), 16).ok())

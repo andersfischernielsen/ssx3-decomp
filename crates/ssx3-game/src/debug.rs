@@ -10,9 +10,8 @@ const LENSFX_QUERY: u32 = 0x002e_c478;
 /// query (`LensFX_v04`: the visible fraction of a light from a Z-buffer
 /// readback) to a fixed value, to see which glows depend on it.
 pub fn install() {
-    if let Some(v) = std::env::var("SSX3_DEBUG_LENSFX_VIS")
-        .ok()
-        .and_then(|v| v.parse::<f32>().ok())
+    if let Some(v) =
+        ssx3_core::config::var("SSX3_DEBUG_LENSFX_VIS").and_then(|v| v.parse::<f32>().ok())
     {
         FORCED.store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
         assert!(ssx3_ee::set_override(LENSFX_QUERY, lensfx_query_forced));

@@ -88,7 +88,8 @@ emulated reference paths: [`docs/options.md`](docs/options.md).
 
 | Crate | Role |
 | --- | --- |
-| `ssx3` | Front ends: the windowed `ssx3` (winit + wgpu + gilrs + cpal) and `ssx3-headless`. |
+| `ssx3-engine` | The game as a library: boot, input, stepping and pacing, the renderer, lifecycle (pause, audio suspend). Every front end drives it; see [`docs/frontends.md`](docs/frontends.md). |
+| `ssx3` | Desktop front ends on `ssx3-engine`: the windowed `ssx3` (winit + wgpu + gilrs) and `ssx3-headless`. |
 | `ssx3-game` | The code ported to Rust: game functions in `src/game/<dir>/<unit>.rs` after the C++ source tree, each checked against the generated one; the native draw functions (`packetless`), native libmpeg (`movie.rs`), the native file layer, the tick rate (`tick.rs`). |
 | `ssx3-recomp` | The function inventory, the R5900 decoder, and `recomp-ee`: ~808k instructions in 13.3k functions lowered to structured Rust, sharded into 16 crates under `generated/ee/`. `recomp-iop` does the same for the game's IOP modules. See [`docs/investigation/recompiler-v2.md`](docs/investigation/recompiler-v2.md). |
 | `ssx3-ee-rt` | The EE core the generated code compiles against: `Cpu`, instruction semantics (MMI, bit-exact PS2 float), guest memory, the function table, the `Platform` trait. Kept small so hardware changes never recompile generated code. |
@@ -108,6 +109,10 @@ drives frames, so a thread switch is a stack switch and a guest call is a plain 
 `recomp-ee --unwind` generates the single-thread resumable form for the browser, using the
 unwind/trampoline model from [ps2-web-recomp](https://github.com/snuri00/ps2-web-recomp)
 (MIT). More in [`docs/architecture.md`](docs/architecture.md).
+
+Front ends for other platforms live in their own repositories and use this one as a git
+submodule (the generated code is made locally by `tools/setup.py`): the engine API and
+what a front end does are in [`docs/frontends.md`](docs/frontends.md).
 
 ## Tools
 

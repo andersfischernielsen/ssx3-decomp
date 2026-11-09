@@ -109,10 +109,10 @@ pub fn pad_buttons() -> u16 {
 /// Install the boot hook when `SSX3_EVENT` is set. Call after
 /// [`crate::install`] (it wraps the hand-written boot load update).
 pub fn install() {
-    let Ok(want) = std::env::var("SSX3_EVENT") else {
+    let Some(want) = ssx3_core::config::var("SSX3_EVENT") else {
         return;
     };
-    let rider = std::env::var("SSX3_RIDER").ok().map(|r| {
+    let rider = ssx3_core::config::var("SSX3_RIDER").map(|r| {
         let r = r.to_ascii_lowercase();
         RIDERS
             .iter()

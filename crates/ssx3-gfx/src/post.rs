@@ -90,7 +90,7 @@ const VIEWS: &[&str] = &[
 fn view() -> &'static AtomicU8 {
     static S: OnceLock<AtomicU8> = OnceLock::new();
     S.get_or_init(|| {
-        let v = std::env::var("SSX3_GFX_SHOW").unwrap_or_default();
+        let v = ssx3_core::config::var("SSX3_GFX_SHOW").unwrap_or_default();
         AtomicU8::new(view_code(&v))
     })
 }
@@ -127,8 +127,7 @@ pub(crate) fn debug_view() -> f32 {
 /// The cascade the debug views show (`SSX3_SHADOW_CASCADE`, the widest by
 /// default).
 fn shadow_cascade() -> usize {
-    std::env::var("SSX3_SHADOW_CASCADE")
-        .ok()
+    ssx3_core::config::var("SSX3_SHADOW_CASCADE")
         .and_then(|v| v.parse().ok())
         .unwrap_or(crate::shadow::CASCADES - 1)
         .min(crate::shadow::CASCADES - 1)
