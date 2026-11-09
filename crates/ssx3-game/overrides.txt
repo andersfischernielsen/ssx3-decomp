@@ -6223,3 +6223,8 @@
 0x0039d778    UIScreen_Update
 # The boot logos (EA, THX) can be skipped with X/Start, like the intro
 0x001a27a0    ssx_BootMoviesUpdate
+
+# tick rate: chase camera blends and updates
+0x00160bf8    RelativeChaseCameraAlgorithm_Update
+0x00177fc0    SpokeChaseCameraAlgorithm_ComputeDesiredEye
+0x00178208    SpokeChaseCameraAlgorithm_Update
