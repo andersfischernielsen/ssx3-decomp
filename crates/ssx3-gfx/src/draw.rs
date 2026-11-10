@@ -703,42 +703,9 @@ impl Pipelines {
         p: ssx3_render::gpu::Program,
     ) -> &wgpu::RenderPipeline {
         let (module, pl) = (&self.shadow_module, &self.shadow_pl);
-        self.shadow_cache.entry(p).or_insert_with(|| {
-            dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("ssx3-gfx shadow"),
-                layout: Some(pl),
-                vertex: wgpu::VertexState {
-                    module,
-                    entry_point: Some(p.vs_entry()),
-                    compilation_options: Default::default(),
-                    buffers: &[],
-                },
-                primitive: wgpu::PrimitiveState {
-                    cull_mode: None,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: SHADOW_FORMAT,
-                    depth_write_enabled: Some(true),
-                    depth_compare: Some(wgpu::CompareFunction::Less),
-                    stencil: Default::default(),
-                    bias: wgpu::DepthBiasState {
-                        constant: 2,
-                        slope_scale: 1.5,
-                        clamp: SHADOW_BIAS_CLAMP,
-                    },
-                }),
-                multisample: Default::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module,
-                    entry_point: Some("fs_shadow"),
-                    compilation_options: Default::default(),
-                    targets: &[],
-                }),
-                multiview_mask: None,
-                cache: None,
-            })
-        })
+        self.shadow_cache
+            .entry(p)
+            .or_insert_with(|| shadow_pipeline(dev, module, pl, p))
     }
 
     /// A GPU-vertex pipeline made earlier with [`Pipelines::get_gpu`].
@@ -761,57 +728,9 @@ impl Pipelines {
         lit: u32,
     ) -> &wgpu::RenderPipeline {
         let (module, pl, clip_depth) = (&self.gpu_module, &self.gpu_pl, self.clip_depth);
-        self.gpu_cache.entry((k, p, lit)).or_insert_with(|| {
-            let entry = p.vs_entry();
-            let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
-                color: wgpu::BlendComponent {
-                    src_factor: s,
-                    dst_factor: d,
-                    operation: op,
-                },
-                alpha: wgpu::BlendComponent::REPLACE,
-            });
-            dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("ssx3-gfx gpuvu draw"),
-                layout: Some(pl),
-                vertex: wgpu::VertexState {
-                    module,
-                    entry_point: Some(entry),
-                    compilation_options: Default::default(),
-                    buffers: &[],
-                },
-                primitive: wgpu::PrimitiveState {
-                    cull_mode: None,
-                    unclipped_depth: clip_depth,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DEPTH_FORMAT,
-                    depth_write_enabled: Some(k.depth_write),
-                    depth_compare: Some(k.depth),
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                multisample: Default::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module,
-                    entry_point: Some(if clip_depth { "fs_gpu_nd" } else { "fs_gpu" }),
-                    // The lighting paths the draw can take; the others are
-                    // compiled out (`LIT`, gpuvu.wgsl).
-                    compilation_options: wgpu::PipelineCompilationOptions {
-                        constants: &[("LIT", lit as f64)],
-                        ..Default::default()
-                    },
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: COLOR_FORMAT,
-                        blend,
-                        write_mask: wgpu::ColorWrites::from_bits_truncate(k.write as u32),
-                    })],
-                }),
-                multiview_mask: None,
-                cache: None,
-            })
-        })
+        self.gpu_cache
+            .entry((k, p, lit))
+            .or_insert_with(|| gpu_pipeline(dev, module, pl, clip_depth, k, p, lit))
     }
 
     /// A pipeline made earlier with [`Pipelines::get`].
@@ -821,49 +740,171 @@ impl Pipelines {
 
     pub fn get(&mut self, dev: &wgpu::Device, k: PipeKey) -> &wgpu::RenderPipeline {
         let (module, pl) = (&self.module, &self.pl);
-        self.cache.entry(k).or_insert_with(|| {
-            let attrs = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32, 2 => Float32x4, 3 => Float32x4];
-            let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
-                color: wgpu::BlendComponent { src_factor: s, dst_factor: d, operation: op },
-                alpha: wgpu::BlendComponent::REPLACE,
-            });
-            dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("ssx3-gfx draw"),
-                layout: Some(pl),
-                vertex: wgpu::VertexState {
-                    module,
-                    entry_point: Some("vs"),
-                    compilation_options: Default::default(),
-                    buffers: &[Some(wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<crate::gs::Vtx>() as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &attrs,
-                    })],
-                },
-                primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DEPTH_FORMAT,
-                    depth_write_enabled: Some(k.depth_write),
-                    depth_compare: Some(k.depth),
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                multisample: Default::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module,
-                    entry_point: Some("fs"),
-                    compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: COLOR_FORMAT,
-                        blend,
-                        write_mask: wgpu::ColorWrites::from_bits_truncate(k.write as u32),
-                    })],
-                }),
-                multiview_mask: None,
-                cache: None,
-            })
-        })
+        self.cache
+            .entry(k)
+            .or_insert_with(|| cpu_pipeline(dev, module, pl, k))
     }
+}
+
+/// The shadow-map pipeline ([`Pipelines::shadow`]).
+fn shadow_pipeline(
+    dev: &wgpu::Device,
+    module: &wgpu::ShaderModule,
+    pl: &wgpu::PipelineLayout,
+    p: ssx3_render::gpu::Program,
+) -> wgpu::RenderPipeline {
+    dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("ssx3-gfx shadow"),
+        layout: Some(pl),
+        vertex: wgpu::VertexState {
+            module,
+            entry_point: Some(p.vs_entry()),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        primitive: wgpu::PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: SHADOW_FORMAT,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Less),
+            stencil: Default::default(),
+            bias: wgpu::DepthBiasState {
+                constant: 2,
+                slope_scale: 1.5,
+                clamp: SHADOW_BIAS_CLAMP,
+            },
+        }),
+        multisample: Default::default(),
+        fragment: Some(wgpu::FragmentState {
+            module,
+            entry_point: Some("fs_shadow"),
+            compilation_options: Default::default(),
+            targets: &[],
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+/// The GPU-vertex draw pipeline ([`Pipelines::get_gpu`]).
+fn gpu_pipeline(
+    dev: &wgpu::Device,
+    module: &wgpu::ShaderModule,
+    pl: &wgpu::PipelineLayout,
+    clip_depth: bool,
+    k: PipeKey,
+    p: ssx3_render::gpu::Program,
+    lit: u32,
+) -> wgpu::RenderPipeline {
+    let entry = p.vs_entry();
+    let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
+        color: wgpu::BlendComponent {
+            src_factor: s,
+            dst_factor: d,
+            operation: op,
+        },
+        alpha: wgpu::BlendComponent::REPLACE,
+    });
+    dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("ssx3-gfx gpuvu draw"),
+        layout: Some(pl),
+        vertex: wgpu::VertexState {
+            module,
+            entry_point: Some(entry),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        primitive: wgpu::PrimitiveState {
+            cull_mode: None,
+            unclipped_depth: clip_depth,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(k.depth_write),
+            depth_compare: Some(k.depth),
+            stencil: Default::default(),
+            bias: Default::default(),
+        }),
+        multisample: Default::default(),
+        fragment: Some(wgpu::FragmentState {
+            module,
+            entry_point: Some(if clip_depth { "fs_gpu_nd" } else { "fs_gpu" }),
+            // The lighting paths the draw can take; the others are
+            // compiled out (`LIT`, gpuvu.wgsl).
+            compilation_options: wgpu::PipelineCompilationOptions {
+                constants: &[("LIT", lit as f64)],
+                ..Default::default()
+            },
+            targets: &[Some(wgpu::ColorTargetState {
+                format: COLOR_FORMAT,
+                blend,
+                write_mask: wgpu::ColorWrites::from_bits_truncate(k.write as u32),
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+/// The CPU-vertex draw pipeline ([`Pipelines::get`]).
+fn cpu_pipeline(
+    dev: &wgpu::Device,
+    module: &wgpu::ShaderModule,
+    pl: &wgpu::PipelineLayout,
+    k: PipeKey,
+) -> wgpu::RenderPipeline {
+    let attrs =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32, 2 => Float32x4, 3 => Float32x4];
+    let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
+        color: wgpu::BlendComponent {
+            src_factor: s,
+            dst_factor: d,
+            operation: op,
+        },
+        alpha: wgpu::BlendComponent::REPLACE,
+    });
+    dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("ssx3-gfx draw"),
+        layout: Some(pl),
+        vertex: wgpu::VertexState {
+            module,
+            entry_point: Some("vs"),
+            compilation_options: Default::default(),
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<crate::gs::Vtx>() as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &attrs,
+            })],
+        },
+        primitive: wgpu::PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(k.depth_write),
+            depth_compare: Some(k.depth),
+            stencil: Default::default(),
+            bias: Default::default(),
+        }),
+        multisample: Default::default(),
+        fragment: Some(wgpu::FragmentState {
+            module,
+            entry_point: Some("fs"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: COLOR_FORMAT,
+                blend,
+                write_mask: wgpu::ColorWrites::from_bits_truncate(k.write as u32),
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
 }
 
 /// Sampler description from CLAMP and TEX1.
