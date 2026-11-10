@@ -1845,6 +1845,75 @@ pub fn mc_manager_read_save_by_slot(c: &mut Cpu) {
     })
 }
 
+/// `MCManager` fields read by the short card screens option.
+mod mc {
+    /// Selects the update step; the state machine runs while it is 0.
+    pub const UPDATE_STEP: u32 = 0xb8;
+    /// The manager's general state timer, in updates.
+    pub const WAIT: u32 = 0x108;
+    /// Current state of the state machine.
+    pub const STATE: u32 = 0x130;
+
+    /// The states the option caps.
+    pub mod state {
+        /// `MCManager_State02` (0x23e4f8): waits 90 updates, then enters state
+        /// 3, which runs the real card check.
+        pub const PRE_CHECK_WAIT: u32 = 0x02;
+        /// `MCManager_State06_Check` (0x23ec00): after the countdown it
+        /// inherited, polls the card list that SetState(6) requested, then
+        /// acts on it.
+        pub const LIST_DIR: u32 = 0x06;
+        /// `MCManager_State12_Save` (0x23fbb8): waits for the card to go idle
+        /// and for the rest of the 60-update hold state 0x11 started, then
+        /// enters state 0x13.
+        pub const SAVE_FINISH: u32 = 0x12;
+        /// `MCManager_State21_Load` (0x2405d0): waits for the card to go idle
+        /// and for the rest of the 60-update hold state 0x20 started, then
+        /// enters state 0x22.
+        pub const LOAD_FINISH: u32 = 0x21;
+    }
+}
+
+/// The longest these states wait with the option on: 0.25 s of updates.
+const SHORT_CARD_WAIT_UPDATES: i32 = 15;
+
+fn short_card_screens() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        ssx3_core::config::var("SSX3_SHORT_MEMCARD_SCREENS")
+            .is_some_and(|v| !v.is_empty() && v != "0")
+    })
+}
+
+/// The wait to use in `state`: capped in four of the states, unchanged
+/// elsewhere. Negative: already expired, leave it.
+fn short_card_wait(state: u32, count: i32) -> i32 {
+    if matches!(
+        state,
+        mc::state::PRE_CHECK_WAIT
+            | mc::state::LIST_DIR
+            | mc::state::SAVE_FINISH
+            | mc::state::LOAD_FINISH
+    ) {
+        count.min(SHORT_CARD_WAIT_UPDATES)
+    } else {
+        count
+    }
+}
+
+/// Cap the manager's wait for the option, while the state machine is running.
+fn shorten_card_wait(c: &mut Cpu, manager: Addr) {
+    if manager.off(mc::UPDATE_STEP).lw(c) != 0 {
+        return;
+    }
+    let state = manager.off(mc::STATE).lw(c) as u32;
+    let wait = manager.off(mc::WAIT).lw(c) as i32;
+    let shortened = short_card_wait(state, wait);
+    if shortened != wait {
+        manager.off(mc::WAIT).sw(c, shortened as u64);
+    }
+}
+
 /// `void MCManager_Update(self)` (0x23d618): the memory card manager's
 /// per-frame update; `+0xb8` selects the update step (0: the state machine,
 /// 1: mode 1, anything else: nothing).
@@ -1854,11 +1923,19 @@ pub fn mc_manager_read_save_by_slot(c: &mut Cpu) {
 /// the update runs once per `rate / 60` ticks (`tick::frame60_due`, one clock
 /// per manager): the boot "Checking for memory card" screen and the save and
 /// load messages stay up as long as at 60. Every call runs at 60.
+///
+/// With `SSX3_SHORT_MEMCARD_SCREENS=1` (the engine's default; the headless
+/// runner and the tests leave it off), states 0x02/0x06/0x12/0x21 wait at
+/// most 15 more updates (about 0.25 s); the handlers still wait for the card
+/// where they do card I/O.
 pub fn mc_manager_update(c: &mut Cpu) {
     let self_ = abi::r32(c, A0);
     if !crate::tick::frame60_due(c, self_, 0) {
         abi::ret(c);
         return;
+    }
+    if short_card_screens() {
+        shorten_card_wait(c, Addr(self_));
     }
     mc_manager_update_step(c);
 }
@@ -5843,6 +5920,59 @@ pub(crate) mod tests {
                 c.bus.write32(this + 0xb8, step);
             },
         );
+    }
+
+    const MESSAGE_STATES: [u32; 4] = [
+        mc::state::PRE_CHECK_WAIT,
+        mc::state::LIST_DIR,
+        mc::state::SAVE_FINISH,
+        mc::state::LOAD_FINISH,
+    ];
+
+    #[test]
+    fn short_card_wait_caps_only_the_message_states() {
+        // Negative: already expired, leave it.
+        let pairs = [(90, 15), (16, 15), (15, 15), (14, 14), (0, 0), (-1, -1)];
+        for state in MESSAGE_STATES {
+            for (count, expected) in pairs {
+                assert_eq!(
+                    short_card_wait(state, count),
+                    expected,
+                    "{state:#x} {count}"
+                );
+            }
+        }
+        for state in [0, 1, 3, 5, 7, 0x11, 0x13, 0x20, 0x22] {
+            for (count, _) in pairs {
+                assert_eq!(short_card_wait(state, count), count, "{state:#x} {count}");
+            }
+        }
+    }
+
+    /// Runs `shorten_card_wait` on a manager and returns its wait afterwards.
+    fn wait_after_shortening(state: u32, step: u32, wait: u32) -> u32 {
+        let mut c = crate::difftest::fresh();
+        let this = DATA + 0x100;
+        c.bus.write32(this + mc::STATE, state);
+        c.bus.write32(this + mc::UPDATE_STEP, step);
+        c.bus.write32(this + mc::WAIT, wait);
+        shorten_card_wait(&mut c, Addr(this));
+        c.bus.read32(this + mc::WAIT)
+    }
+
+    #[test]
+    fn shorten_card_wait_caps_running_message_states() {
+        for state in MESSAGE_STATES {
+            assert_eq!(wait_after_shortening(state, 0, 90), 15);
+            assert_eq!(wait_after_shortening(state, 0, 14), 14);
+            assert_eq!(wait_after_shortening(state, 0, u32::MAX), u32::MAX);
+            assert_eq!(wait_after_shortening(state, 0, 0x7fff_ffff), 15);
+            // Negative as a signed count: already expired.
+            assert_eq!(wait_after_shortening(state, 0, 0x8000_0000), 0x8000_0000);
+            // The state machine isn't running; leave RAM untouched.
+            assert_eq!(wait_after_shortening(state, 1, 90), 90);
+        }
+        assert_eq!(wait_after_shortening(3, 0, 90), 90);
     }
 
     /// The manager's update runs 60 times per second at 60, 120, 144 and

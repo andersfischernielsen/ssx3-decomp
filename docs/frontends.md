@@ -35,6 +35,7 @@ pub struct EngineConfig {
     pub save_root: Option<PathBuf>, // memory card, settings, dumps
     pub find_pack: bool,            // standalone pack (tools/bundle.py)
     pub skip_movies: bool,          // default; SSX3_SKIP_MOVIES overrides
+    pub short_memcard_screens: bool, // default true; SSX3_SHORT_MEMCARD_SCREENS overrides
     pub audio: Audio,               // Device (default) | Off | Pull; SSX3_AUDIO overrides
     pub settings: Box<dyn Settings>,
 }
