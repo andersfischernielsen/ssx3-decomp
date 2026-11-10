@@ -11,6 +11,8 @@
 
 use std::collections::HashMap;
 
+mod persist;
+
 use crate::gs::DrawState;
 
 pub const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -352,6 +354,9 @@ const GPUVU_SOURCES: &[&str] = &[
 
 /// The GPU-vertex module's shadow hook when it draws for the screen
 /// (shadow.wgsl replaces it in the shadow pass).
+/// Every lighting path at once (what a debug view compiles in).
+pub(super) const ALL_LIT_PATHS: u32 = 63;
+
 /// The renderer's lighting paths a GPU draw with batch flags `flags` can
 /// take (`LIT` in gpuvu.wgsl): those of its flags; all of them with a debug
 /// view on (`show`, `SSX3_SHADOW_SHOW`); none with the lighting off.
@@ -360,7 +365,7 @@ pub fn lit_paths(lighting: bool, show: f32, flags: u32) -> u32 {
         return 0;
     }
     if show != 0.0 {
-        return 63;
+        return ALL_LIT_PATHS;
     }
     [(16384, 1), (4096, 2), (65536, 4), (131072, 8), (32768, 16)]
         .iter()
@@ -411,6 +416,10 @@ pub struct Pipelines {
     gpu_pl: wgpu::PipelineLayout,
     /// (Keyed also by the lighting paths compiled in: [`lit_paths`].)
     gpu_cache: HashMap<(PipeKey, ssx3_render::gpu::Program, u32), wgpu::RenderPipeline>,
+    prewarm_rx: Option<std::sync::mpsc::Receiver<(Prewarm, wgpu::RenderPipeline)>>,
+    key_store: Option<persist::KeyStore>,
+    /// Setup with the saved files in progress: until prewarm ends.
+    start: Option<persist::StartMark>,
     /// The shadow pass (shadow.wgsl; bind group 1 with a placeholder map).
     shadow_module: wgpu::ShaderModule,
     shadow_pl: wgpu::PipelineLayout,
@@ -423,7 +432,21 @@ pub struct Pipelines {
 }
 
 impl Pipelines {
+    /// Pipelines created on demand, nothing kept between runs.
     pub fn new(dev: &wgpu::Device) -> Pipelines {
+        Self::build(dev, None)
+    }
+
+    /// Also records the pipelines this run needs and keeps them for the next.
+    pub fn with_saved(dev: &wgpu::Device) -> Pipelines {
+        Self::build(dev, persist::Writer::start().map(std::sync::Arc::new))
+    }
+
+    fn build(dev: &wgpu::Device, writer: Option<std::sync::Arc<persist::Writer>>) -> Pipelines {
+        // Before anything is made from the saved files: a start that died
+        // during setup leaves its marker, and the next begins without them.
+        let start = writer.as_ref().and_then(|_| persist::start());
+        let fresh = start.as_ref().is_some_and(|&(_, unfinished)| unfinished);
         let module = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ssx3-gfx draw.wgsl"),
             source: wgpu::ShaderSource::Wgsl(include_str!("draw.wgsl").into()),
@@ -684,9 +707,88 @@ impl Pipelines {
             gpu_layout,
             gpu_pl,
             gpu_cache: HashMap::new(),
+            prewarm_rx: None,
+            key_store: writer.and_then(|w| persist::KeyStore::open(w, fresh)),
+            start: start.map(|(mark, _)| mark),
             shadow_module,
             shadow_pl,
             shadow_cache: HashMap::new(),
+        }
+    }
+
+    /// Compile descriptors recorded on earlier runs while boot proceeds.
+    /// Draws still create a pipeline on demand if the worker has not finished it.
+    pub fn prewarm_recorded(&mut self, dev: &wgpu::Device) {
+        // Setup ends here with nothing to prewarm, else when the worker does.
+        let mark = self.start.take();
+        let keys = self
+            .key_store
+            .as_ref()
+            .map_or_else(Vec::new, persist::KeyStore::keys);
+        if keys.is_empty() {
+            return;
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.prewarm_rx = Some(rx);
+        let (dev, clip_depth) = (dev.clone(), self.clip_depth);
+        let (gpu_module, gpu_pl) = (self.gpu_module.clone(), self.gpu_pl.clone());
+        let (module, pl) = (self.module.clone(), self.pl.clone());
+        let (shadow_module, shadow_pl) = (self.shadow_module.clone(), self.shadow_pl.clone());
+        // If the thread cannot start, draws create their pipelines on demand.
+        let spawned = std::thread::Builder::new()
+            .name("pipeline-prewarm".into())
+            .spawn(move || {
+                let _mark = mark;
+                for key in keys {
+                    let made = (
+                        key,
+                        match key {
+                            Prewarm::Gpu(k, p, lit) => {
+                                gpu_pipeline(&dev, &gpu_module, &gpu_pl, clip_depth, k, p, lit)
+                            }
+                            Prewarm::Cpu(k) => cpu_pipeline(&dev, &module, &pl, k),
+                            Prewarm::Shadow(p) => {
+                                shadow_pipeline(&dev, &shadow_module, &shadow_pl, p)
+                            }
+                        },
+                    );
+                    if tx.send(made).is_err() {
+                        return;
+                    }
+                }
+            });
+        if spawned.is_err() {
+            self.prewarm_rx = None;
+        }
+    }
+
+    /// A pipeline the worker had not finished: record it for the next start.
+    fn note_new(&mut self, key: Prewarm) {
+        if let Some(store) = &mut self.key_store {
+            store.record(key);
+        }
+    }
+
+    fn drain_prewarm(&mut self) {
+        let Some(rx) = &self.prewarm_rx else { return };
+        loop {
+            match rx.try_recv() {
+                // (A draw that raced the worker made its own: keep that one.)
+                Ok((Prewarm::Gpu(k, p, lit), pipe)) => {
+                    self.gpu_cache.entry((k, p, lit)).or_insert(pipe);
+                }
+                Ok((Prewarm::Cpu(k), pipe)) => {
+                    self.cache.entry(k).or_insert(pipe);
+                }
+                Ok((Prewarm::Shadow(p), pipe)) => {
+                    self.shadow_cache.entry(p).or_insert(pipe);
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => return,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.prewarm_rx = None;
+                    return;
+                }
+            }
         }
     }
 
@@ -702,6 +804,12 @@ impl Pipelines {
         dev: &wgpu::Device,
         p: ssx3_render::gpu::Program,
     ) -> &wgpu::RenderPipeline {
+        if !self.shadow_cache.contains_key(&p) {
+            self.drain_prewarm();
+        }
+        if !self.shadow_cache.contains_key(&p) {
+            self.note_new(Prewarm::Shadow(p));
+        }
         let (module, pl) = (&self.shadow_module, &self.shadow_pl);
         self.shadow_cache
             .entry(p)
@@ -727,6 +835,12 @@ impl Pipelines {
         p: ssx3_render::gpu::Program,
         lit: u32,
     ) -> &wgpu::RenderPipeline {
+        if !self.gpu_cache.contains_key(&(k, p, lit)) {
+            self.drain_prewarm();
+        }
+        if !self.gpu_cache.contains_key(&(k, p, lit)) {
+            self.note_new(Prewarm::Gpu(k, p, lit));
+        }
         let (module, pl, clip_depth) = (&self.gpu_module, &self.gpu_pl, self.clip_depth);
         self.gpu_cache
             .entry((k, p, lit))
@@ -739,11 +853,33 @@ impl Pipelines {
     }
 
     pub fn get(&mut self, dev: &wgpu::Device, k: PipeKey) -> &wgpu::RenderPipeline {
+        if !self.cache.contains_key(&k) {
+            self.drain_prewarm();
+        }
+        if !self.cache.contains_key(&k) {
+            self.note_new(Prewarm::Cpu(k));
+        }
         let (module, pl) = (&self.module, &self.pl);
         self.cache
             .entry(k)
             .or_insert_with(|| cpu_pipeline(dev, module, pl, k))
     }
+
+    /// Once a frame: takes in what prewarm has finished and has the writer
+    /// thread save what was recorded, when due.
+    pub fn flush_due(&mut self) {
+        self.drain_prewarm();
+        if let Some(store) = &mut self.key_store {
+            store.flush_due();
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Prewarm {
+    Gpu(PipeKey, ssx3_render::gpu::Program, u32),
+    Cpu(PipeKey),
+    Shadow(ssx3_render::gpu::Program),
 }
 
 /// The shadow-map pipeline ([`Pipelines::shadow`]).

@@ -33,6 +33,7 @@ impl<F: Fn(&str) -> Option<String> + Send + Sync> Settings for F {} // a closure
 pub struct EngineConfig {
     pub data_root: Option<PathBuf>, // disc image, orig/, texture packs
     pub save_root: Option<PathBuf>, // memory card, settings, dumps
+    pub cache_root: Option<PathBuf>, // rebuildable files (pipelines)
     pub find_pack: bool,            // standalone pack (tools/bundle.py)
     pub skip_movies: bool,          // default; SSX3_SKIP_MOVIES overrides
     pub short_memcard_screens: bool, // default true; SSX3_SHORT_MEMCARD_SCREENS overrides
@@ -102,7 +103,15 @@ The engine re-exports the crates a front end touches (`ssx3_ps2`,
 ## What a front end does
 
 1. **Paths and settings.** Call `init_paths` if the game data or the saves
-   are not in the checkout (an app's storage). Give the engine a `Settings`:
+   are not in the checkout (an app's storage), and set `cache_root` to the
+   app's cache folder. Without one, the platform's cache folder is used
+   (`%LOCALAPPDATA%\SSX3` on Windows, `~/Library/Caches/SSX3` on macOS and
+   Apple mobile, `$XDG_CACHE_HOME/ssx3` on Linux); with no cache folder,
+   nothing is kept.
+   Run one copy of the game per cache folder: two copies sharing one folder
+   can each mistake the other's start marker for an interrupted start and
+   discard the saved files (no corruption; one slow start follows).
+   Give the engine a `Settings`:
    the window reads its settings file with the environment over it, the
    headless runner reads the environment (`EnvSettings`), the browser the
    page's values (`SSX3_*` keys of the URL query). Keys are the `SSX3_*`

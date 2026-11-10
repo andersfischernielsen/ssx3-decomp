@@ -32,7 +32,12 @@ pub(crate) fn install_renderer(c: &mut Cpu, s: &dyn Settings) -> Option<ssx3_gfx
         eprintln!("[gfx] no GPU: using the emulated GS");
         return None;
     };
-    let r = ssx3_gfx::Renderer::new(ctx.device.clone(), ctx.queue.clone());
+    // A browser has no files: pipelines are only created on demand.
+    let r = if cfg!(target_arch = "wasm32") {
+        ssx3_gfx::Renderer::new(ctx.device.clone(), ctx.queue.clone())
+    } else {
+        ssx3_gfx::Renderer::with_saved_pipelines(ctx.device.clone(), ctx.queue.clone())
+    };
     r.set_want_depth(native);
     r.set_anisotropy(anisotropy(s));
     r.set_options(gfx_options(s));
