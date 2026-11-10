@@ -19,7 +19,7 @@ the recommended way to play.
 | Variable | Effect |
 | --- | --- |
 | `SSX3_SKIP_MOVIES=1` | Skip the EA, THX and intro movies at boot. |
-| `SSX3_SHORT_MEMCARD_SCREENS=1` | Shorten the memory card check, load and save messages to about a quarter second each. |
+| `SSX3_SHORT_MEMCARD_SCREENS=0` | Keep the memory card check, load and save messages at their original length; by default they are shortened to about a quarter second each. The headless runner keeps them at their original length (scripted inputs assume it) unless set to `1`. |
 | `SSX3_ISO=<path>` | Disc image location (default `./SSX 3 (USA).iso`). |
 | `SSX3_MEMCARD=<path>` | Memory card file (default `saves/ssx3-mc0.ps2`). |
 | `SSX3_PACK=<path>` | Play from a data pack made by `tools/bundle.py pack` instead of the disc image. |

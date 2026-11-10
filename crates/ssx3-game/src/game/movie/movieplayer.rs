@@ -1924,9 +1924,10 @@ fn shorten_card_wait(c: &mut Cpu, manager: Addr) {
 /// per manager): the boot "Checking for memory card" screen and the save and
 /// load messages stay up as long as at 60. Every call runs at 60.
 ///
-/// With `SSX3_SHORT_MEMCARD_SCREENS=1`, states 0x02/0x06/0x12/0x21 wait at most
-/// 15 more updates (about 0.25 s); the handlers still wait for the card where
-/// they do card I/O.
+/// With `SSX3_SHORT_MEMCARD_SCREENS=1` (the engine's default; the headless
+/// runner and the tests leave it off), states 0x02/0x06/0x12/0x21 wait at
+/// most 15 more updates (about 0.25 s); the handlers still wait for the card
+/// where they do card I/O.
 pub fn mc_manager_update(c: &mut Cpu) {
     let self_ = abi::r32(c, A0);
     if !crate::tick::frame60_due(c, self_, 0) {

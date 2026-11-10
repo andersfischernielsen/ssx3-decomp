@@ -48,12 +48,15 @@ fn main() {
     let _ = std::fs::create_dir_all(&shot_dir);
 
     // Settings from the environment; the boot movies skipped unless
-    // SSX3_SKIP_MOVIES=0 (scripted input timings assume it). Headless runs
+    // SSX3_SKIP_MOVIES=0 and the memory card messages at their full length
+    // unless SSX3_SHORT_MEMCARD_SCREENS=1 (scripted input timings assume
+    // both). Headless runs
     // do not open the audio device unless asked (SSX3_AUDIO=1);
     // SSX3_WAV=file.wav records the IOP's audio output.
     let mut engine = Engine::boot(EngineConfig {
         find_pack: true,
         skip_movies: true,
+        short_memcard_screens: false,
         audio: Audio::Off,
         ..EngineConfig::new(Box::new(EnvSettings))
     });

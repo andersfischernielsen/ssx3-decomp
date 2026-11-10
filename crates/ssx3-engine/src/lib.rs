@@ -98,6 +98,10 @@ pub struct EngineConfig {
     /// Skip the boot movies unless the `SSX3_SKIP_MOVIES` setting says
     /// otherwise (scripted input timings assume they are skipped).
     pub skip_movies: bool,
+    /// Shorten the memory card check, load and save messages to about a
+    /// quarter second (default on) unless the `SSX3_SHORT_MEMCARD_SCREENS`
+    /// setting says otherwise (scripted input timings assume they are not).
+    pub short_memcard_screens: bool,
     /// Who plays the sound: the default device ([`Audio::Device`], the
     /// default), nobody ([`Audio::Off`]) or the front end, which takes the
     /// samples with [`Engine::audio_pull`] ([`Audio::Pull`]). The
@@ -107,13 +111,15 @@ pub struct EngineConfig {
 }
 
 impl EngineConfig {
-    /// Checkout-relative paths, no pack, movies played.
+    /// Checkout-relative paths, no pack, movies played, short memory card
+    /// messages.
     pub fn new(settings: Box<dyn Settings>) -> Self {
         Self {
             data_root: None,
             save_root: None,
             find_pack: false,
             skip_movies: false,
+            short_memcard_screens: true,
             audio: Audio::Device,
             settings,
         }
@@ -185,6 +191,14 @@ impl Engine {
             eprintln!("[ssx3-engine] settings provider already installed; keeping the first");
         }
         init_paths(config.data_root, config.save_root, config.find_pack);
+        ssx3_core::config::set_default(
+            "SSX3_SHORT_MEMCARD_SCREENS",
+            if config.short_memcard_screens {
+                "1"
+            } else {
+                "0"
+            },
+        );
         ssx3_iop::audio::set_output(config.audio);
         // What the engine reads itself, with the same precedence.
         let settings: Arc<dyn Settings> = Arc::new(EnvFirst(settings));
