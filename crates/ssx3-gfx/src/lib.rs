@@ -1225,22 +1225,41 @@ impl Inner {
                 self.queue.write_buffer(&ib, 0, idx);
             }
             self.queue.write_buffer(&ob, 0, of);
-            // The arena: what is new since the last upload (all of it when
-            // it was cleared or outgrew its buffer).
+            // The arena: what is new since the last upload. The buffer is made
+            // once at `MeshArena::BYTES`, as growing it mid-race stalls that
+            // frame; an overshoot gets its own buffer, then back to `BYTES`.
             let ab = {
                 let mut a = g.arena.lock().unwrap();
-                let need = (a.data.len() as u64 * 16).max(256);
-                let fresh = self.arena_epoch != a.epoch || self.arena_buf.as_ref().is_none_or(|b| b.size() < need);
+                let need = (a.data.len() as u64 * gs::MeshArena::QWORD as u64).max(BUFFER_ALIGN);
+                let fresh = self.arena_epoch != a.epoch;
                 if fresh {
-                    self.arena_buf = None;
                     a.uploaded = 0;
                     self.arena_epoch = a.epoch;
                 }
-                let ab = grow_buffer(&self.dev, &mut self.arena_buf, need, wgpu::BufferUsages::STORAGE, "ssx3-gfx mesh arena");
-                if a.uploaded < a.data.len() {
-                    let new = bytes(a.data[a.uploaded..].as_flattened());
-                    self.queue.write_buffer(&ab, a.uploaded as u64 * 16, new);
-                    a.uploaded = a.data.len();
+                let limits = self.dev.limits();
+                let most = limits.max_buffer_size.min(limits.max_storage_buffer_binding_size) / BUFFER_ALIGN * BUFFER_ALIGN;
+                debug_assert!(most >= gs::MeshArena::BYTES, "device limits below the mesh arena's buffer");
+                if let Some(size) = arena_buffer(need, self.arena_buf.as_ref().map(|b| b.size()), fresh, most) {
+                    self.arena_buf = Some(self.dev.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("ssx3-gfx mesh arena"),
+                        size,
+                        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    }));
+                    a.uploaded = 0;
+                }
+                let ab = self.arena_buf.clone().unwrap();
+                // Only an overshoot can pass the device's limit: the devices
+                // are requested with at least wgpu's default limits (128 MiB
+                // bindings, twice `BYTES`) on Vulkan, Metal, DX12, GLES and
+                // WebGPU. Data past it is not uploaded: that frame's draws
+                // read clamped or zero geometry past the buffer's end, and
+                // the next start-over discards it.
+                let fits = a.data.len().min((ab.size() / gs::MeshArena::QWORD as u64) as usize);
+                if a.uploaded < fits {
+                    let new = bytes(a.data[a.uploaded..fits].as_flattened());
+                    self.queue.write_buffer(&ab, a.uploaded as u64 * gs::MeshArena::QWORD as u64, new);
+                    a.uploaded = fits;
                 }
                 ab
             };
@@ -3271,6 +3290,26 @@ pub fn set_vu_offload(f: VuOffload, workers: usize) {
     let _ = OFFLOAD.set((f, workers.max(1)));
 }
 
+/// Minimum buffer size already used everywhere in this file (`.max(256)`), and a multiple of wgpu's `COPY_BUFFER_ALIGNMENT` (4).
+const BUFFER_ALIGN: u64 = 256;
+
+/// The mesh arena's buffer for an upload of `need` bytes: `Some(size)` to
+/// make a new one, `None` to keep the `current` one. The buffer is made at
+/// `MeshArena::BYTES` (or a frame's overshoot, rounded up to `BUFFER_ALIGN`)
+/// and kept across start-overs (`fresh`), except an overshoot's; `most` is
+/// the device's limit.
+fn arena_buffer(need: u64, current: Option<u64>, fresh: bool, most: u64) -> Option<u64> {
+    let current = current.filter(|&size| !(fresh && size > gs::MeshArena::BYTES));
+    match current {
+        Some(size) if size >= need => None,
+        _ => Some(
+            need.max(gs::MeshArena::BYTES)
+                .next_multiple_of(BUFFER_ALIGN)
+                .min(most),
+        ),
+    }
+}
+
 /// `slot`'s buffer if it holds `size` bytes, else a new one (twice as big as
 /// needed, so it rarely grows again).
 fn grow_buffer(
@@ -3297,6 +3336,31 @@ fn grow_buffer(
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn mesh_arena_buffer_sizes() {
+        let (cap, most) = (gs::MeshArena::BYTES, 128 << 20);
+        // The first frame makes it at the cap; it is kept, also when the
+        // arena starts over.
+        assert_eq!(arena_buffer(BUFFER_ALIGN, None, true, most), Some(cap));
+        assert_eq!(arena_buffer(cap / 2, Some(cap), false, most), None);
+        assert_eq!(arena_buffer(4096, Some(cap), true, most), None);
+        // An overshoot gets its own size, rounded up to `BUFFER_ALIGN`, until
+        // the next start-over goes back to the cap.
+        let over = Some(cap + BUFFER_ALIGN);
+        assert_eq!(arena_buffer(cap + 1, Some(cap), false, most), over);
+        assert_eq!(arena_buffer(cap + BUFFER_ALIGN, over, false, most), None);
+        assert_eq!(arena_buffer(4096, over, true, most), Some(cap));
+        // An overshoot on the frame the arena starts over, and one already
+        // a multiple of `BUFFER_ALIGN`.
+        assert_eq!(arena_buffer(cap + 1, Some(cap), true, most), over);
+        assert_eq!(
+            arena_buffer(cap + BUFFER_ALIGN, Some(cap), false, most),
+            over
+        );
+        // Never past the device's limit.
+        assert_eq!(arena_buffer(most + 1, Some(cap), false, most), Some(most));
+    }
 
     #[test]
     fn depth_by_frame() {

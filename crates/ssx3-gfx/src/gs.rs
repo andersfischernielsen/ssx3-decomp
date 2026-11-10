@@ -218,14 +218,26 @@ pub struct MeshArena {
 }
 
 impl MeshArena {
+    /// One arena entry (a qword) in bytes.
+    pub(crate) const QWORD: usize = std::mem::size_of::<[u32; 4]>();
+    /// The size of the arena's GPU buffer: 64 MiB.
+    pub(crate) const BYTES: u64 = 64 << 20;
     /// The arena's size cap (qwords).
-    const CAP: usize = (64 << 20) / 16;
+    const CAP: usize = (Self::BYTES as usize) / Self::QWORD;
+    /// 4 MiB headroom: twice the 2.008 MB max single-frame growth seen (a course's first frame).
+    const HEADROOM: usize = (4_usize << 20) / Self::QWORD;
 
-    /// Start over once the arena is past its cap (everything is uploaded
+    /// Whether an arena of `len` qwords is within [`Self::HEADROOM`] of its
+    /// cap.
+    const fn full(len: usize) -> bool {
+        len > Self::CAP - Self::HEADROOM
+    }
+
+    /// Start over once the arena is [`Self::full`] (everything is uploaded
     /// again). Only between frames: a frame's plan relies on what the arena
     /// keeps ([`Self::kept`]).
     pub fn limit(&mut self) {
-        if self.data.len() > Self::CAP {
+        if Self::full(self.data.len()) {
             *self = MeshArena {
                 epoch: self.epoch + 1,
                 ..Default::default()
@@ -1354,6 +1366,28 @@ mod tests {
 
     fn sprite(prim: u64) -> Vec<(u32, u64)> {
         vec![(0x00, prim), (0x05, 0), (0x05, 16 * 16 | (16 * 16) << 32)]
+    }
+
+    #[test]
+    fn mesh_arena_starts_over_with_room_for_a_frame() {
+        let most = MeshArena::CAP - MeshArena::HEADROOM;
+        assert!(!MeshArena::full(most) && MeshArena::full(most + 1));
+        let mut a = MeshArena {
+            data: vec![[0; 4]; 8],
+            epoch: 3,
+            ..Default::default()
+        };
+        a.limit();
+        assert_eq!((a.data.len(), a.epoch), (8, 3));
+        // (Zeroed, so its pages are not touched until written.)
+        let mut a = MeshArena {
+            data: vec![[0; 4]; most + 1],
+            uploaded: 7,
+            epoch: 3,
+            ..Default::default()
+        };
+        a.limit();
+        assert_eq!((a.data.len(), a.uploaded, a.epoch), (0, 0, 4));
     }
 
     #[test]
