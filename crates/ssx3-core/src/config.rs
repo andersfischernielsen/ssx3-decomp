@@ -4,7 +4,7 @@
 //! The process environment wins. A key the environment does not set comes
 //! from the front end's settings ([`set_provider`]: a settings file, an
 //! app's preferences, the browser page's values), then from the process's
-//! defaults ([`set_default`]: e.g. the save folder of a standalone build).
+//! defaults ([`set_default`]: e.g. the engine's short memory card messages).
 //! Empty values from the provider or the defaults count as unset; an empty
 //! environment variable is returned as it is (as reading the environment
 //! directly did).
