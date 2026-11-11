@@ -38,10 +38,10 @@ const FILE: &str = "ssx3-pipeline-keys.bin";
 /// Present from the start of pipeline setup until its prewarm ends ([`start`]).
 const MARKER: &str = "ssx3-pipeline-prewarm.running";
 
-const FNV_BASIS: u64 = 0xcbf29ce484222325;
+pub(super) const FNV_BASIS: u64 = 0xcbf29ce484222325;
 const FNV_PRIME: u64 = 0x100000001b3;
 
-fn hash(bytes: &[u8], mut h: u64) -> u64 {
+pub(super) fn hash(bytes: &[u8], mut h: u64) -> u64 {
     for &b in bytes {
         h = (h ^ u64::from(b)).wrapping_mul(FNV_PRIME);
     }
@@ -53,8 +53,10 @@ pub(super) fn renderer_hash() -> u64 {
     static HASH: OnceLock<u64> = OnceLock::new();
     *HASH.get_or_init(|| {
         let mut h = hash(include_bytes!("../draw.rs"), FNV_BASIS);
-        // This file (the record format and what it maps to) invalidates too.
+        // This file (the record format and what it maps to) and the driver
+        // envelope invalidate too.
         h = hash(include_bytes!("persist.rs"), h);
+        h = hash(include_bytes!("driver_cache.rs"), h);
         for source in super::GPUVU_SOURCES {
             h = hash(source.as_bytes(), h);
         }
@@ -292,6 +294,16 @@ pub(super) fn read_capped(path: &Path, max: usize) -> Option<Vec<u8>> {
         bytes.clear();
     }
     Some(bytes)
+}
+
+/// A saved file's bytes ([`read_capped`]); starting `fresh`, none, and the
+/// file is deleted.
+pub(super) fn read_saved(path: &Path, max: usize, fresh: bool) -> Option<Vec<u8>> {
+    if fresh {
+        let _ = std::fs::remove_file(path);
+        return None;
+    }
+    read_capped(path, max)
 }
 
 /// Atomic replace; the temporary name is per process so two running copies
@@ -609,6 +621,16 @@ mod tests {
             std::fs::remove_file(dir.join(name)).unwrap();
         }
         std::fs::remove_dir(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_fresh_start_deletes_the_saved_file() {
+        let path = std::env::temp_dir().join(format!("ssx3-fresh-{}.bin", std::process::id()));
+        std::fs::write(&path, b"saved").unwrap();
+        assert_eq!(read_saved(&path, 16, false), Some(b"saved".to_vec()));
+        assert_eq!(read_saved(&path, 16, true), None);
+        assert!(!path.exists());
+        assert_eq!(read_saved(&path, 16, false), None);
     }
 
     #[test]

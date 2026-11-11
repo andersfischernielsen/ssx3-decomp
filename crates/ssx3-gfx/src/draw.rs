@@ -11,6 +11,7 @@
 
 use std::collections::HashMap;
 
+mod driver_cache;
 mod persist;
 
 use crate::gs::DrawState;
@@ -420,6 +421,7 @@ pub struct Pipelines {
     key_store: Option<persist::KeyStore>,
     /// Setup with the saved files in progress: until prewarm ends.
     start: Option<persist::StartMark>,
+    driver_cache: Option<driver_cache::DriverCache>,
     /// The shadow pass (shadow.wgsl; bind group 1 with a placeholder map).
     shadow_module: wgpu::ShaderModule,
     shadow_pl: wgpu::PipelineLayout,
@@ -438,15 +440,24 @@ impl Pipelines {
     }
 
     /// Also records the pipelines this run needs and keeps them for the next.
-    pub fn with_saved(dev: &wgpu::Device) -> Pipelines {
-        Self::build(dev, persist::Writer::start().map(std::sync::Arc::new))
+    pub fn with_saved(dev: &wgpu::Device, adapter: &wgpu::AdapterInfo) -> Pipelines {
+        let writer = persist::Writer::start().map(std::sync::Arc::new);
+        Self::build(dev, writer.map(|w| (w, adapter)))
     }
 
-    fn build(dev: &wgpu::Device, writer: Option<std::sync::Arc<persist::Writer>>) -> Pipelines {
+    fn build(
+        dev: &wgpu::Device,
+        saved: Option<(std::sync::Arc<persist::Writer>, &wgpu::AdapterInfo)>,
+    ) -> Pipelines {
+        let (writer, adapter) = saved.unzip();
         // Before anything is made from the saved files: a start that died
         // during setup leaves its marker, and the next begins without them.
         let start = writer.as_ref().and_then(|_| persist::start());
         let fresh = start.as_ref().is_some_and(|&(_, unfinished)| unfinished);
+        let driver_cache = writer
+            .clone()
+            .zip(adapter)
+            .and_then(|(w, a)| driver_cache::DriverCache::open(dev, a, w, fresh));
         let module = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ssx3-gfx draw.wgsl"),
             source: wgpu::ShaderSource::Wgsl(include_str!("draw.wgsl").into()),
@@ -626,7 +637,7 @@ impl Pipelines {
             multisample: Default::default(),
             fragment: None,
             multiview_mask: None,
-            cache: None,
+            cache: driver_cache.as_ref().map(|d| &d.cache),
         });
         let cut_layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ssx3-gfx cut-out"),
@@ -692,7 +703,7 @@ impl Pipelines {
                 targets: &[],
             }),
             multiview_mask: None,
-            cache: None,
+            cache: driver_cache.as_ref().map(|d| &d.cache),
         });
         Pipelines {
             caster,
@@ -709,6 +720,7 @@ impl Pipelines {
             gpu_cache: HashMap::new(),
             prewarm_rx: None,
             key_store: writer.and_then(|w| persist::KeyStore::open(w, fresh)),
+            driver_cache,
             start: start.map(|(mark, _)| mark),
             shadow_module,
             shadow_pl,
@@ -734,6 +746,7 @@ impl Pipelines {
         let (gpu_module, gpu_pl) = (self.gpu_module.clone(), self.gpu_pl.clone());
         let (module, pl) = (self.module.clone(), self.pl.clone());
         let (shadow_module, shadow_pl) = (self.shadow_module.clone(), self.shadow_pl.clone());
+        let driver_cache = self.driver_cache.as_ref().map(|d| d.cache.clone());
         // If the thread cannot start, draws create their pipelines on demand.
         let spawned = std::thread::Builder::new()
             .name("pipeline-prewarm".into())
@@ -743,13 +756,26 @@ impl Pipelines {
                     let made = (
                         key,
                         match key {
-                            Prewarm::Gpu(k, p, lit) => {
-                                gpu_pipeline(&dev, &gpu_module, &gpu_pl, clip_depth, k, p, lit)
+                            Prewarm::Gpu(k, p, lit) => gpu_pipeline(
+                                &dev,
+                                &gpu_module,
+                                &gpu_pl,
+                                clip_depth,
+                                k,
+                                p,
+                                lit,
+                                driver_cache.as_ref(),
+                            ),
+                            Prewarm::Cpu(k) => {
+                                cpu_pipeline(&dev, &module, &pl, k, driver_cache.as_ref())
                             }
-                            Prewarm::Cpu(k) => cpu_pipeline(&dev, &module, &pl, k),
-                            Prewarm::Shadow(p) => {
-                                shadow_pipeline(&dev, &shadow_module, &shadow_pl, p)
-                            }
+                            Prewarm::Shadow(p) => shadow_pipeline(
+                                &dev,
+                                &shadow_module,
+                                &shadow_pl,
+                                p,
+                                driver_cache.as_ref(),
+                            ),
                         },
                     );
                     if tx.send(made).is_err() {
@@ -762,10 +788,14 @@ impl Pipelines {
         }
     }
 
-    /// A pipeline the worker had not finished: record it for the next start.
+    /// A pipeline the worker had not finished: record it for the next start,
+    /// and note that the driver may have compiled something worth keeping.
     fn note_new(&mut self, key: Prewarm) {
         if let Some(store) = &mut self.key_store {
             store.record(key);
+        }
+        if let Some(store) = &mut self.driver_cache {
+            store.mark_dirty();
         }
     }
 
@@ -786,6 +816,11 @@ impl Pipelines {
                 Err(std::sync::mpsc::TryRecvError::Empty) => return,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     self.prewarm_rx = None;
+                    // A driver update empties the loaded cache: the writer
+                    // compares what prewarm built with what is on disk.
+                    if let Some(store) = &mut self.driver_cache {
+                        store.mark_dirty();
+                    }
                     return;
                 }
             }
@@ -811,9 +846,10 @@ impl Pipelines {
             self.note_new(Prewarm::Shadow(p));
         }
         let (module, pl) = (&self.shadow_module, &self.shadow_pl);
+        let driver = self.driver_cache.as_ref().map(|d| &d.cache);
         self.shadow_cache
             .entry(p)
-            .or_insert_with(|| shadow_pipeline(dev, module, pl, p))
+            .or_insert_with(|| shadow_pipeline(dev, module, pl, p, driver))
     }
 
     /// A GPU-vertex pipeline made earlier with [`Pipelines::get_gpu`].
@@ -842,9 +878,10 @@ impl Pipelines {
             self.note_new(Prewarm::Gpu(k, p, lit));
         }
         let (module, pl, clip_depth) = (&self.gpu_module, &self.gpu_pl, self.clip_depth);
+        let driver = self.driver_cache.as_ref().map(|d| &d.cache);
         self.gpu_cache
             .entry((k, p, lit))
-            .or_insert_with(|| gpu_pipeline(dev, module, pl, clip_depth, k, p, lit))
+            .or_insert_with(|| gpu_pipeline(dev, module, pl, clip_depth, k, p, lit, driver))
     }
 
     /// A pipeline made earlier with [`Pipelines::get`].
@@ -860,9 +897,10 @@ impl Pipelines {
             self.note_new(Prewarm::Cpu(k));
         }
         let (module, pl) = (&self.module, &self.pl);
+        let driver = self.driver_cache.as_ref().map(|d| &d.cache);
         self.cache
             .entry(k)
-            .or_insert_with(|| cpu_pipeline(dev, module, pl, k))
+            .or_insert_with(|| cpu_pipeline(dev, module, pl, k, driver))
     }
 
     /// Once a frame: takes in what prewarm has finished and has the writer
@@ -870,6 +908,9 @@ impl Pipelines {
     pub fn flush_due(&mut self) {
         self.drain_prewarm();
         if let Some(store) = &mut self.key_store {
+            store.flush_due();
+        }
+        if let Some(store) = &mut self.driver_cache {
             store.flush_due();
         }
     }
@@ -888,6 +929,7 @@ fn shadow_pipeline(
     module: &wgpu::ShaderModule,
     pl: &wgpu::PipelineLayout,
     p: ssx3_render::gpu::Program,
+    cache: Option<&wgpu::PipelineCache>,
 ) -> wgpu::RenderPipeline {
     dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("ssx3-gfx shadow"),
@@ -921,11 +963,12 @@ fn shadow_pipeline(
             targets: &[],
         }),
         multiview_mask: None,
-        cache: None,
+        cache,
     })
 }
 
 /// The GPU-vertex draw pipeline ([`Pipelines::get_gpu`]).
+#[allow(clippy::too_many_arguments)]
 fn gpu_pipeline(
     dev: &wgpu::Device,
     module: &wgpu::ShaderModule,
@@ -934,6 +977,7 @@ fn gpu_pipeline(
     k: PipeKey,
     p: ssx3_render::gpu::Program,
     lit: u32,
+    cache: Option<&wgpu::PipelineCache>,
 ) -> wgpu::RenderPipeline {
     let entry = p.vs_entry();
     let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
@@ -982,7 +1026,7 @@ fn gpu_pipeline(
             })],
         }),
         multiview_mask: None,
-        cache: None,
+        cache,
     })
 }
 
@@ -992,6 +1036,7 @@ fn cpu_pipeline(
     module: &wgpu::ShaderModule,
     pl: &wgpu::PipelineLayout,
     k: PipeKey,
+    cache: Option<&wgpu::PipelineCache>,
 ) -> wgpu::RenderPipeline {
     let attrs =
         wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32, 2 => Float32x4, 3 => Float32x4];
@@ -1039,7 +1084,7 @@ fn cpu_pipeline(
             })],
         }),
         multiview_mask: None,
-        cache: None,
+        cache,
     })
 }
 

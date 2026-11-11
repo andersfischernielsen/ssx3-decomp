@@ -36,7 +36,11 @@ pub(crate) fn install_renderer(c: &mut Cpu, s: &dyn Settings) -> Option<ssx3_gfx
     let r = if cfg!(target_arch = "wasm32") {
         ssx3_gfx::Renderer::new(ctx.device.clone(), ctx.queue.clone())
     } else {
-        ssx3_gfx::Renderer::with_saved_pipelines(ctx.device.clone(), ctx.queue.clone())
+        ssx3_gfx::Renderer::with_saved_pipelines(
+            ctx.device.clone(),
+            ctx.queue.clone(),
+            &ctx.adapter.get_info(),
+        )
     };
     r.set_want_depth(native);
     r.set_anisotropy(anisotropy(s));

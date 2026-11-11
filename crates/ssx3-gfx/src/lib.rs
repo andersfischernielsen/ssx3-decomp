@@ -289,9 +289,14 @@ impl Renderer {
     }
 
     /// Like [`Renderer::new`], but starts from the last run's pipelines:
-    /// recorded ones are prepared in the background, new ones recorded.
-    pub fn with_saved_pipelines(dev: wgpu::Device, queue: wgpu::Queue) -> Renderer {
-        let mut pipes = draw::Pipelines::with_saved(&dev);
+    /// recorded ones are prepared in the background, new ones recorded;
+    /// `adapter` names the Vulkan cache file.
+    pub fn with_saved_pipelines(
+        dev: wgpu::Device,
+        queue: wgpu::Queue,
+        adapter: &wgpu::AdapterInfo,
+    ) -> Renderer {
+        let mut pipes = draw::Pipelines::with_saved(&dev, adapter);
         pipes.prewarm_recorded(&dev);
         Self::with_pipelines(dev, queue, pipes)
     }

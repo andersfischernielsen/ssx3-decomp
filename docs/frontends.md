@@ -107,7 +107,7 @@ The engine re-exports the crates a front end touches (`ssx3_ps2`,
    app's cache folder. Without one, the platform's cache folder is used
    (`%LOCALAPPDATA%\SSX3` on Windows, `~/Library/Caches/SSX3` on macOS and
    Apple mobile, `$XDG_CACHE_HOME/ssx3` on Linux); with no cache folder,
-   nothing is kept.
+   nothing is kept. On Vulkan the driver's data is kept in the same folder.
    Run one copy of the game per cache folder: two copies sharing one folder
    can each mistake the other's start marker for an interrupted start and
    discard the saved files (no corruption; one slow start follows).
