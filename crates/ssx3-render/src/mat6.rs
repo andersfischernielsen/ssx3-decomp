@@ -26,7 +26,10 @@
 //!
 //! Exactness rules (as in [`crate::mat3`]):
 //! - every float op goes through the PS2 float helpers the translated code
-//!   uses (`ssx3_vu::vu::fast`, `float`), in the original operand order and
+//!   uses (`ssx3_vu::vu::fast`, `float`) — except with `SSX3_FAST_MATH=1`,
+//!   when the per-vertex ops go through host `f32` instead (see
+//!   [`crate::render_math`]; bone/matrix composition stays exact there) —
+//!   in the original operand order and
 //!   evaluation order (transforms go x, y, z, w; the lighting sum goes
 //!   L0, x², y², z², xy, zx, yz, x, y, z), including the accumulator round
 //!   trips (`ACC = offset·1`, `cross = OPMULA + 0·0`);
@@ -76,7 +79,7 @@
 //! makes. The env pass redraws its draw's data (`Link::Reuse`) with the
 //! sphere-map ST.
 
-use ssx3_vu::vu::{fast, float};
+use crate::render_math::{fast, float};
 
 /// A VU vector register: four PS2 floats (or integers) as raw bits, x..w.
 pub type V = [u32; 4];
@@ -622,11 +625,11 @@ fn bone_setup(m: &mut Mem) -> bool {
         let b = BONES + 4 * i;
         let cols: [V; 4] = std::array::from_fn(|j| m.ld(b + j as u16));
         for (j, c) in cols.iter().enumerate() {
-            m.st(b + j as u16, xform(&mat, *c, c[3]));
+            m.st(b + j as u16, fast::exact_xform(&mat, c));
         }
         for (j, c) in cols[..3].iter().enumerate() {
             m.st(RAW_ROT + 3 * i + j as u16, *c);
-            m.st(ENV_ROT + 3 * i + j as u16, xform3(&env, *c));
+            m.st(ENV_ROT + 3 * i + j as u16, fast::exact_xform3(&env, c));
         }
     }
     true

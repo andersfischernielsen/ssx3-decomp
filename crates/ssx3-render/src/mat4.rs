@@ -61,7 +61,9 @@
 //!
 //! - Every float op is the PS2 one (`ssx3_vu::vu::fast` / `float`), in the
 //!   original operand order, including the accumulator chains (`ACC = a·1`,
-//!   `ACC = 0 + x`) — see the helpers at the end of this file.
+//!   `ACC = 0 + x`) — see the helpers at the end of this file. Exception:
+//!   with `SSX3_FAST_MATH=1` the per-vertex ops go through host `f32`
+//!   instead (see [`crate::render_math`]).
 //! - The LFSR: `rinit` keeps the seed's 23 mantissa bits with exponent 0
 //!   (`(s & 0x7fffff) | 0x3f800000`), `rnext` steps
 //!   `r = ((r << 1) ^ bit4 ^ bit22) & 0x7fffff | 0x3f800000` and returns r
@@ -79,7 +81,7 @@
 //! Inputs whose loops would not end (0x1460 with a count of 0) are declined:
 //! [`run`] returns `false` and the caller runs the translated program.
 
-use ssx3_vu::vu::{fast, float};
+use crate::render_math::{fast, float};
 
 use crate::bezier::Mem;
 

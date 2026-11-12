@@ -14,7 +14,7 @@
 //! the leaving side, so the last bits differ. It is identical in the two
 //! Bezier programs (f4babac5 0x1cc8, 9790369f 0x36d0, same code).
 
-use ssx3_vu::vu::{fast, float};
+use crate::render_math::{fast, float};
 
 /// A VU vector register: four PS2 floats (or integers) as raw bits, x..w.
 pub type V = [u32; 4];
