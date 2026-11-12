@@ -138,17 +138,8 @@ pub fn enabled() -> bool {
 }
 
 fn bcd_free_secs() -> u64 {
-    if let Some(v) = ssx3_core::config::var("SSX3_RTC").and_then(|v| v.parse().ok()) {
-        v
-    } else if ssx3_core::config::var_os("SSX3_REAL_CLOCK").is_some() {
-        web_time::SystemTime::now()
-            .duration_since(web_time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
-    } else {
-        // The fixed clock the CDVD server reports: 2026-10-14 12:00 UTC.
-        1_791_979_200
-    }
+    // The fixed clock the CDVD server reports: 2026-10-14 12:00 UTC.
+    crate::clock::seconds(1_791_979_200)
 }
 
 /// The card's time stamp for now (JST, like MCMAN's).
