@@ -561,17 +561,7 @@ fn cd_scmd(c: &mut Cpu, method: u32, _a: u32, _s: u32, ret: u32, rsize: u32) -> 
             // Fixed RTC by default so runs are reproducible (the game seeds its
             // RNG from it, e.g. the rider line-up). SSX3_RTC=<unix secs> pins a
             // specific time; SSX3_REAL_CLOCK=1 uses the host clock.
-            let secs =
-                if let Some(v) = ssx3_core::config::var("SSX3_RTC").and_then(|v| v.parse().ok()) {
-                    v
-                } else if ssx3_core::config::var_os("SSX3_REAL_CLOCK").is_some() {
-                    web_time::SystemTime::now()
-                        .duration_since(web_time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0)
-                } else {
-                    12 * 3600
-                };
+            let secs = crate::clock::seconds(12 * 3600);
             let (s, m, h) = (
                 (secs % 60) as u32,
                 (secs / 60 % 60) as u32,
@@ -612,6 +602,108 @@ fn cd_scmd(c: &mut Cpu, method: u32, _a: u32, _s: u32, ret: u32, rsize: u32) -> 
         }
     }
     true
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::*;
+
+    #[test]
+    fn settings_reach_both_clock_consumers() {
+        // Isolate environment and the process-wide provider from parallel tests.
+        let Ok(expected) = std::env::var("SSX3_CLOCK_TEST_EXPECT") else {
+            for (name, real, rtc, provider, expected) in [
+                ("unset", None, None, None, "43200"),
+                ("zero", Some("0"), None, None, "43200"),
+                ("one", Some("1"), None, None, "host"),
+                ("empty", Some(""), None, None, "host"),
+                ("false", Some("false"), None, None, "host"),
+                ("true", Some("true"), None, None, "host"),
+                ("other", Some("2"), None, None, "host"),
+                ("pinned", Some("1"), Some("3600"), None, "3600"),
+                ("pinned-zero", Some("1"), Some("0"), None, "0"),
+                ("invalid-rtc", Some("0"), Some("bad"), None, "43200"),
+                ("provider", None, None, Some("1"), "host"),
+                ("env-over-provider", Some("0"), None, Some("1"), "43200"),
+            ] {
+                let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+                command
+                    .args([
+                        "--exact",
+                        "sif::clock_tests::settings_reach_both_clock_consumers",
+                        "--nocapture",
+                    ])
+                    .env_remove("SSX3_REAL_CLOCK")
+                    .env_remove("SSX3_RTC")
+                    .env_remove("SSX3_CLOCK_TEST_PROVIDER")
+                    .env("SSX3_CLOCK_TEST_EXPECT", expected);
+                if let Some(value) = real {
+                    command.env("SSX3_REAL_CLOCK", value);
+                }
+                if let Some(value) = rtc {
+                    command.env("SSX3_RTC", value);
+                }
+                if let Some(value) = provider {
+                    command.env("SSX3_CLOCK_TEST_PROVIDER", value);
+                }
+                let output = command.output().unwrap();
+                assert!(
+                    output.status.success(),
+                    "{name}: {}\n{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            return;
+        };
+        if let Ok(value) = std::env::var("SSX3_CLOCK_TEST_PROVIDER") {
+            assert!(ssx3_core::config::set_provider(Box::new(move |key| {
+                (key == "SSX3_REAL_CLOCK").then(|| value.clone())
+            }))
+            .is_ok());
+        }
+        let host_now = || {
+            web_time::SystemTime::now()
+                .duration_since(web_time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        };
+        let before = host_now();
+        let mut c = crate::new_cpu();
+        assert!(cd_scmd(&mut c, 1, 0, 0, 0x1000, 12));
+        let cd = [
+            c.bus.read8(0x1005),
+            c.bus.read8(0x1006),
+            c.bus.read8(0x1007),
+        ];
+        let mc = crate::mc_native::now();
+        let after = host_now();
+        let times: Vec<u64> = if expected == "host" {
+            (before..=after).collect()
+        } else {
+            vec![expected.parse().unwrap()]
+        };
+        let matches = |sec: u64, bcd_encoded: bool| {
+            let parts = [
+                (sec % 60) as u8,
+                (sec / 60 % 60) as u8,
+                ((sec / 3600 + 9) % 24) as u8,
+            ];
+            if bcd_encoded {
+                parts.map(|v| bcd(v as u32))
+            } else {
+                parts
+            }
+        };
+        assert!(
+            times.iter().any(|&sec| cd == matches(sec, true)),
+            "CDVD: {cd:?}"
+        );
+        assert!(
+            times.iter().any(|&sec| mc[1..4] == matches(sec, false)),
+            "memory card: {mc:?}"
+        );
+    }
 }
 
 fn cd_ncmd(c: &mut Cpu, method: u32, args: u32, _s: u32, ret: u32, rsize: u32) -> bool {
