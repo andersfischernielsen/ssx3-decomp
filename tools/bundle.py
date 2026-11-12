@@ -24,7 +24,7 @@ at run time on every OS (Linux executables carry none).
 The pack (`ssx3-core/src/pack.rs`) is the disc image without the padding
 files (PAD0.000, PAD1.000) and all-zero sectors, about 2.4 GB. The result
 plays from anywhere: no ISO, no repository. Saves and settings go to the
-user's data folder (see `game::init_standalone`).
+user's data folder (see `ssx3_core::platform_paths::save_dir`).
 
 The build needs the generated code (built from your game, not in git), so
 it can only be made on a machine that has it. The output contains the game:

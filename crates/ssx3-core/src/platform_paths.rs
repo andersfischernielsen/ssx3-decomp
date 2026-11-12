@@ -1,11 +1,13 @@
 //! Default game-data and save locations. A frontend may set separate roots
 //! once, before opening files. Per-file overrides (`crate::config`: the
 //! environment, then the front end's settings) still win.
-//! Without roots, callers retain their checkout-relative or bundled defaults.
+//! Without roots, a standalone build keeps its saves in the user's data
+//! folder, and other callers retain their checkout-relative defaults.
 //! Paths are joined without probing or canonicalizing: relative paths use the
 //! current working directory; unavailable roots do not select another location.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 #[derive(Debug)]
@@ -59,11 +61,12 @@ pub fn data_file_utf8(key: &str, name: &str, default: PathBuf) -> PathBuf {
     )
 }
 
-/// A save file. `name` is relative to the save root, without a `saves/` prefix.
+/// A save file, resolved when asked: the `key` override, else `name` in
+/// [`save_dir`], else `default`. `name` has no `saves/` prefix.
 pub fn save_file(key: &str, name: &str, default: PathBuf) -> PathBuf {
     resolve(
         crate::config::var_os(key).map(PathBuf::from),
-        ROOTS.get().map(|r| r.saves.as_path()),
+        save_dir().as_deref(),
         name,
         default,
     )
@@ -74,7 +77,7 @@ pub fn save_file(key: &str, name: &str, default: PathBuf) -> PathBuf {
 pub fn memory_card() -> PathBuf {
     resolve(
         crate::config::var("SSX3_MEMCARD").map(PathBuf::from),
-        ROOTS.get().map(|r| r.saves.as_path()),
+        save_dir().as_deref(),
         "ssx3-mc0.ps2",
         PathBuf::from("saves/ssx3-mc0.ps2"),
     )
@@ -106,9 +109,75 @@ pub fn texture_replacements() -> PathBuf {
     )
 }
 
-/// The explicit save root, else the frontend's platform-specific default.
-pub fn standalone_saves(default: PathBuf) -> PathBuf {
-    ROOTS.get().map_or(default, |r| r.saves.clone())
+static STANDALONE: AtomicBool = AtomicBool::new(false);
+
+/// A standalone build (a pack in use): without a save root, saves go to the
+/// user's data folder ([`save_dir`]).
+pub fn set_standalone() {
+    STANDALONE.store(true, Ordering::Relaxed);
+}
+
+/// Whether [`set_standalone`] was called.
+pub fn is_standalone() -> bool {
+    STANDALONE.load(Ordering::Relaxed)
+}
+
+/// Where the memory card and settings go when no override names them,
+/// looked up when asked: the save root, else for a standalone build the
+/// user's data folder. None (the checkout's `saves/`) when neither is set
+/// or the user's data folder cannot be found.
+pub fn save_dir() -> Option<PathBuf> {
+    match ROOTS.get() {
+        Some(roots) => Some(roots.saves.clone()),
+        None if is_standalone() => user_data_dir(),
+        None => None,
+    }
+}
+
+/// The OS family a per-user folder depends on.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Platform {
+    Windows,
+    Mac,
+    AppleMobile,
+    Android,
+    Unix,
+}
+
+impl Platform {
+    pub(crate) fn current() -> Self {
+        if cfg!(target_os = "windows") {
+            Self::Windows
+        } else if cfg!(target_os = "macos") {
+            Self::Mac
+        } else if cfg!(target_vendor = "apple") {
+            Self::AppleMobile
+        } else if cfg!(target_os = "android") {
+            Self::Android
+        } else {
+            Self::Unix
+        }
+    }
+}
+
+/// The user's data folder on `platform`; an empty or relative variable counts as unset.
+fn user_data_dir_for(platform: Platform, env: impl Fn(&str) -> Option<PathBuf>) -> Option<PathBuf> {
+    let usable = |key: &str| env(key).filter(|p| p.has_root());
+    match platform {
+        Platform::Windows => usable("APPDATA").map(|dir| dir.join("SSX3")),
+        Platform::Mac => usable("HOME").map(|home| home.join("Library/Application Support/SSX3")),
+        Platform::AppleMobile => usable("HOME").map(|home| home.join("Documents/saves")),
+        Platform::Android => None,
+        Platform::Unix => usable("XDG_DATA_HOME")
+            .or_else(|| usable("HOME").map(|home| home.join(".local/share")))
+            .map(|dir| dir.join("ssx3")),
+    }
+}
+
+fn user_data_dir() -> Option<PathBuf> {
+    user_data_dir_for(Platform::current(), |key| {
+        std::env::var_os(key).map(PathBuf::from)
+    })
 }
 
 #[cfg(test)]
@@ -176,6 +245,62 @@ mod tests {
     }
 
     #[test]
+    fn user_data_folders() {
+        use Platform::*;
+        let p = PathBuf::from;
+        let all = |k: &str| match k {
+            "APPDATA" => Some(p("/appdata")),
+            "HOME" => Some(p("/home")),
+            "XDG_DATA_HOME" => Some(p("/xdg")),
+            _ => None,
+        };
+        let home_only = |k: &str| (k == "HOME").then(|| p("/home"));
+        assert_eq!(user_data_dir_for(Windows, &all), Some(p("/appdata/SSX3")));
+        assert_eq!(
+            user_data_dir_for(Mac, &all),
+            Some(p("/home/Library/Application Support/SSX3"))
+        );
+        assert_eq!(
+            user_data_dir_for(AppleMobile, &all),
+            Some(p("/home/Documents/saves"))
+        );
+        assert_eq!(user_data_dir_for(Unix, &all), Some(p("/xdg/ssx3")));
+        assert_eq!(
+            user_data_dir_for(Unix, &home_only),
+            Some(p("/home/.local/share/ssx3"))
+        );
+        assert_eq!(user_data_dir_for(Android, &all), None);
+        // Empty and relative values count as unset.
+        for bad in ["", "relative"] {
+            let odd = |k: &str| match k {
+                "XDG_DATA_HOME" | "APPDATA" => Some(p(bad)),
+                "HOME" => Some(p("/home")),
+                _ => None,
+            };
+            assert_eq!(
+                user_data_dir_for(Unix, &odd),
+                Some(p("/home/.local/share/ssx3"))
+            );
+            assert_eq!(user_data_dir_for(Windows, &odd), None);
+            let only = |_: &str| Some(p(bad));
+            for platform in [Windows, Mac, AppleMobile, Unix] {
+                assert_eq!(
+                    user_data_dir_for(platform, &only),
+                    None,
+                    "{platform:?} {bad:?}"
+                );
+            }
+        }
+        for platform in [Windows, Mac, AppleMobile, Unix, Android] {
+            assert_eq!(
+                user_data_dir_for(platform, &|_: &str| None),
+                None,
+                "{platform:?}"
+            );
+        }
+    }
+
+    #[test]
     fn file_override_wins_without_becoming_root_relative() {
         for value in ["", "none", "relative/file", "/absolute/file"] {
             let value = PathBuf::from(value);
@@ -204,6 +329,123 @@ mod tests {
         assert_eq!(std::fs::read(default).unwrap(), b"existing save");
     }
 
+    /// A test variable, with a non-UTF-8 byte appended in `non-utf8` mode.
+    fn test_var(value: &str, mode: &str) -> std::ffi::OsString {
+        #[cfg(unix)]
+        if mode == "non-utf8" {
+            use std::os::unix::ffi::OsStringExt;
+            let mut bytes = value.as_bytes().to_vec();
+            bytes.push(0xff);
+            return std::ffi::OsString::from_vec(bytes);
+        }
+        let _ = mode;
+        value.into()
+    }
+
+    #[test]
+    fn standalone_saves_through_the_globals() {
+        const CHILD: &str = "SSX3_PATHS_TEST_STANDALONE_CHILD";
+        let key = "SSX3_PLATFORM_PATHS_TEST_SAVE";
+        let Some(mode) = std::env::var_os(CHILD) else {
+            // The flag and the roots are process-wide.
+            for mode in ["utf8", "non-utf8"] {
+                let output = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args([
+                        "--exact",
+                        "platform_paths::tests::standalone_saves_through_the_globals",
+                        "--test-threads=1",
+                    ])
+                    .env(CHILD, mode)
+                    .env("APPDATA", test_var("/sa-appdata", mode))
+                    .env("HOME", test_var("/sa-home", mode))
+                    .env("XDG_DATA_HOME", test_var("/sa-xdg", mode))
+                    .env_remove("SSX3_MEMCARD")
+                    .env_remove(key)
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success()
+                        && String::from_utf8_lossy(&output.stdout).contains("ok. 1 passed;"),
+                    "{mode}: {}\n{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            return;
+        };
+        let mode = mode.to_str().unwrap();
+        let card = PathBuf::from("saves/ssx3-mc0.ps2");
+        let settings = PathBuf::from("saves/ssx3-settings.cfg");
+        let settings_file = || save_file(key, "ssx3-settings.cfg", settings.clone());
+        // A checkout: no roots, no pack.
+        assert_eq!(save_dir(), None);
+        assert_eq!(memory_card(), card);
+        assert_eq!(settings_file(), settings);
+        // A desktop pack: the user's data folder, from the variables as given.
+        let var = |value| PathBuf::from(test_var(value, mode));
+        let user = match Platform::current() {
+            Platform::Windows => Some(var("/sa-appdata").join("SSX3")),
+            Platform::Mac => Some(var("/sa-home").join("Library/Application Support/SSX3")),
+            Platform::AppleMobile => Some(var("/sa-home").join("Documents/saves")),
+            Platform::Android => None,
+            Platform::Unix => Some(var("/sa-xdg").join("ssx3")),
+        };
+        set_standalone();
+        assert!(is_standalone());
+        assert_eq!(save_dir(), user);
+        let in_user =
+            |name, default: &PathBuf| user.as_ref().map_or(default.clone(), |d| d.join(name));
+        assert_eq!(memory_card(), in_user("ssx3-mc0.ps2", &card));
+        assert_eq!(settings_file(), in_user("ssx3-settings.cfg", &settings));
+        // A save root set later wins; an override wins over both.
+        let saves = PathBuf::from("/front-end-saves");
+        set(Roots {
+            data: PathBuf::from("/front-end-data"),
+            saves: saves.clone(),
+        })
+        .unwrap();
+        assert_eq!(save_dir(), Some(saves.clone()));
+        assert_eq!(memory_card(), saves.join("ssx3-mc0.ps2"));
+        assert_eq!(settings_file(), saves.join("ssx3-settings.cfg"));
+        std::env::set_var("SSX3_MEMCARD", "/explicit/card");
+        std::env::set_var(key, "/explicit/settings");
+        assert_eq!(memory_card(), Path::new("/explicit/card"));
+        assert_eq!(settings_file(), Path::new("/explicit/settings"));
+    }
+
+    #[test]
+    fn standalone_save_dir_without_a_usable_folder() {
+        const CHILD: &str = "SSX3_PATHS_TEST_NO_FOLDER_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            // The flag is process-wide: check it in a child.
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "platform_paths::tests::standalone_save_dir_without_a_usable_folder",
+                    "--test-threads=1",
+                ])
+                .env(CHILD, "1")
+                .env("APPDATA", "")
+                .env("HOME", "")
+                .env("XDG_DATA_HOME", "relative")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout).contains("ok. 1 passed;"),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        // An empty `HOME`/`APPDATA` and a relative `XDG_DATA_HOME` count as
+        // unset on every OS, so a standalone build falls back to `./saves`.
+        set_standalone();
+        assert!(is_standalone());
+        assert_eq!(save_dir(), None);
+    }
+
     #[test]
     fn frontend_roots_and_environment_overrides() {
         const CHILD: &str = "SSX3_PATHS_TEST_CHILD";
@@ -223,7 +465,8 @@ mod tests {
                     .output()
                     .unwrap();
                 assert!(
-                    output.status.success(),
+                    output.status.success()
+                        && String::from_utf8_lossy(&output.stdout).contains("ok. 1 passed;"),
                     "{mode}: {}\n{}",
                     String::from_utf8_lossy(&output.stdout),
                     String::from_utf8_lossy(&output.stderr)
@@ -259,7 +502,7 @@ mod tests {
         assert_eq!(rejected.saves, default);
         assert_eq!(data_file(key, "file", default.clone()), data.join("file"));
         assert_eq!(save_file(key, "file", default.clone()), saves.join("file"));
-        assert_eq!(standalone_saves(default.clone()), saves);
+        assert_eq!(save_dir(), Some(saves.clone()));
         assert_eq!(texture_dump(), saves.join("textures/dump"));
         assert_eq!(texture_replacements(), data.join("textures/replace"));
         assert_eq!(memory_card(), saves.join("ssx3-mc0.ps2"));

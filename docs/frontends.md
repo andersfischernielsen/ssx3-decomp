@@ -111,10 +111,9 @@ The engine re-exports the crates a front end touches (`ssx3_ps2`,
    renderer and the debug switches. `Engine::boot` installs the `Settings`
    as the provider of `ssx3_core::config`, which every crate reads its
    options through: the process environment first, then the front end's
-   settings, then process defaults (`config::set_default`; a standalone
-   build's save folder). Empty values from the settings count as unset. The
-   image settings are read through it whenever they apply; most others
-   once, at boot or when first needed.
+   settings, then process defaults (`config::set_default`). Empty values
+   from the settings count as unset. The image settings are read through
+   it whenever they apply; most others once, at boot or when first needed.
 2. **Boot.** `Engine::boot(config)` creates the machine, loads the disc and
    the executable, installs the hand-written functions and the renderer
    (`SSX3_RENDER`). The GPU context is created on demand; a front end that
@@ -231,8 +230,13 @@ codegen-units = 64
 
 and build with `--profile game`. Point the engine at where the app keeps
 the game data and the saves with `EngineConfig::data_root` / `save_root`
-(or `init_paths`); without them it uses the checkout. Update the submodule
-and run `tools/setup.py` again when the recompiler changes.
+(or `init_paths`); without them it uses the checkout — or, for a standalone
+pack, the platform's user folder: Windows `%APPDATA%\SSX3`, macOS
+`~/Library/Application Support/SSX3`, iOS `~/Documents/saves` (backed up and
+visible in Files), elsewhere `$XDG_DATA_HOME/ssx3` (or `~/.local/share/ssx3`;
+an empty or relative variable counts as unset); none on Android, so saves stay
+in `./saves`. Update the submodule and run `tools/setup.py` again when the
+recompiler changes.
 
 Keep the front end on the public API above. A change that needs more from
 the engine (a hook, a setting, an image format) belongs in `ssx3-engine`

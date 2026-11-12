@@ -2,7 +2,6 @@
 //! game's hand-written functions and hooks.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use ssx3_ps2::{machine, Cpu};
@@ -13,7 +12,6 @@ pub fn repo_root() -> PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-static STANDALONE: AtomicBool = AtomicBool::new(false);
 static PATHS: OnceLock<bool> = OnceLock::new();
 
 /// Where the game's files come from and where saves go. Call once, first
@@ -30,7 +28,8 @@ static PATHS: OnceLock<bool> = OnceLock::new();
 /// - `find_pack`: a standalone build (`tools/bundle.py`): the disc comes from
 ///   the pack in or next to the executable (or in the data root), and the
 ///   memory card and settings live in the save root, else the user's data
-///   folder (unless `SSX3_MEMCARD` / `SSX3_SETTINGS` say otherwise).
+///   folder (`ssx3_core::platform_paths::save_dir`), unless `SSX3_MEMCARD` /
+///   `SSX3_SETTINGS` say otherwise.
 ///
 /// Returns whether a pack was found.
 pub fn init_paths(data_root: Option<PathBuf>, save_root: Option<PathBuf>, find_pack: bool) -> bool {
@@ -54,41 +53,18 @@ fn init_standalone() -> bool {
         Ok(Box::new(ssx3_core::pack::Pack::open_at(&path, base)?)
             as Box<dyn ssx3_core::iso::Source>)
     }));
-    STANDALONE.store(true, Ordering::Relaxed);
-    let dir = ssx3_core::platform_paths::standalone_saves(data_dir());
-    // Defaults under the environment and the front end's settings.
-    for (key, file) in [
-        ("SSX3_MEMCARD", "ssx3-mc0.ps2"),
-        ("SSX3_SETTINGS", "ssx3-settings.cfg"),
-    ] {
-        ssx3_core::config::set_default(key, dir.join(file).to_string_lossy());
+    ssx3_core::platform_paths::set_standalone();
+    match ssx3_core::platform_paths::save_dir() {
+        Some(dir) => eprintln!(
+            "[standalone] game data from {shown}; saves in {}",
+            dir.display()
+        ),
+        None => eprintln!(
+            "[standalone] game data from {shown}; no user data folder \
+             (HOME, APPDATA or XDG_DATA_HOME unset or without a root), so saves in ./saves"
+        ),
     }
-    eprintln!(
-        "[standalone] game data from {shown}; saves in {}",
-        dir.display()
-    );
     true
-}
-
-/// The user's data folder for a standalone build: `%APPDATA%\SSX3` on
-/// Windows, `~/Library/Application Support/SSX3` on macOS,
-/// `$XDG_DATA_HOME/ssx3` (or `~/.local/share/ssx3`) elsewhere.
-fn data_dir() -> PathBuf {
-    let env = |k: &str| std::env::var_os(k).map(PathBuf::from);
-    if cfg!(windows) {
-        env("APPDATA")
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("SSX3")
-    } else if cfg!(target_os = "macos") {
-        env("HOME")
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("Library/Application Support/SSX3")
-    } else {
-        env("XDG_DATA_HOME")
-            .or_else(|| env("HOME").map(|h| h.join(".local/share")))
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("ssx3")
-    }
 }
 
 /// At every VSync: the game rate.
@@ -160,7 +136,7 @@ fn read_elf(c: &mut Cpu) -> Vec<u8> {
         "orig/SLUS_207.72",
         repo_root().join("orig/SLUS_207.72"),
     );
-    if !STANDALONE.load(Ordering::Relaxed) {
+    if !ssx3_core::platform_paths::is_standalone() {
         if let Ok(v) = std::fs::read(&path) {
             return v;
         }

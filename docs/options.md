@@ -3,10 +3,10 @@
 Most options can be changed in the game with the settings overlay (F10): display rate,
 field of view, aspect ratio, resolution, anisotropic filtering and fullscreen apply at once; renderer, sound,
 pads and memory card, game files and intro movies after a restart. They are saved in
-`saves/ssx3-settings.cfg` as `SSX3_*` lines; an environment variable of the same name
-overrides the file. The overlay's last rows are a debug group for the real-time
-lighting (views, sun, casters, the bake; not saved): see "Real-time lighting:
-tuning and debugging" below.
+`saves/ssx3-settings.cfg` (next to the memory card in a standalone build)
+as `SSX3_*` lines; an environment variable of the same name overrides the file. The
+overlay's last rows are a debug group for the real-time lighting (views, sun, casters,
+the bake; not saved): see "Real-time lighting: tuning and debugging" below.
 
 All options are environment variables. A front end can also give them as its
 settings (the window's settings file, the browser page's URL query, an app's
@@ -21,7 +21,7 @@ the recommended way to play.
 | `SSX3_SKIP_MOVIES=1` | Skip the EA, THX and intro movies at boot. |
 | `SSX3_SHORT_MEMCARD_SCREENS=0` | Keep the memory card check, load and save messages at their original length; by default they are shortened to about a quarter second each. The headless runner keeps them at their original length (scripted inputs assume it) unless set to `1`. |
 | `SSX3_ISO=<path>` | Disc image location (default `./SSX 3 (USA).iso`). |
-| `SSX3_MEMCARD=<path>` | Memory card file (default `saves/ssx3-mc0.ps2`). |
+| `SSX3_MEMCARD=<path>` | Memory card file (default `saves/ssx3-mc0.ps2`, or the front end's save root; a standalone build without one uses the user's data folder, see `docs/frontends.md`). |
 | `SSX3_PACK=<path>` | Play from a data pack made by `tools/bundle.py pack` instead of the disc image. |
 | `SSX3_PAD2=1` | Plug in pad 2; a second controller drives it (Multi Play). |
 | `SSX3_AUDIO=0` | No audio output (`1`: the default device, also in headless runs, which default to off; `pull`: the front end pulls the samples, `docs/frontends.md`). |
