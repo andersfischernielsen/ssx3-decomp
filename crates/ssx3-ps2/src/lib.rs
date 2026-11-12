@@ -14,6 +14,7 @@ pub use ssx3_ee_rt::{bus, cpu, fpu, mmi};
 // First, so its `m!`/`mr!` macros are in scope in every module below.
 #[macro_use]
 pub mod platform;
+mod clock;
 pub mod elf;
 pub mod gifstats;
 pub mod gpu;
