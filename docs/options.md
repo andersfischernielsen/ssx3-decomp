@@ -25,7 +25,8 @@ the recommended way to play.
 | `SSX3_PACK=<path>` | Play from a data pack made by `tools/bundle.py pack` instead of the disc image. |
 | `SSX3_PAD2=1` | Plug in pad 2; a second controller drives it (Multi Play). |
 | `SSX3_AUDIO=0` | No audio output (`1`: the default device, also in headless runs, which default to off; `pull`: the front end pulls the samples, `docs/frontends.md`). |
-| `SSX3_REAL_CLOCK=1` | Give the PS2 the host's date and time (the default is a fixed time, so runs are reproducible). |
+| `SSX3_REAL_CLOCK=1` | Use the host clock for the PS2 clock's time of day and memory-card timestamps. Unset, `0`, empty and other values keep the fixed clock, so runs are reproducible. |
+| `SSX3_RTC=<unix seconds>` | Pin the clock to a timestamp; a valid nonnegative integer overrides `SSX3_REAL_CLOCK`, including `0`. Invalid values fall back to the selected clock. |
 
 **Straight into an event** (debugging, testing, benchmarks):
 
