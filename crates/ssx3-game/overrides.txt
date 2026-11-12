@@ -6238,3 +6238,5 @@
 0x00255a20    cCommSystem_Update
 0x00257a80    cGameComm_CheckPeerTimeout
 0x00258870    cGameComm_SetTimeoutTimer
+# tick rate: rail alignment
+0x0013af28    RiderRailslideState_Update
