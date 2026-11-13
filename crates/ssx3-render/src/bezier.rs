@@ -658,18 +658,22 @@ pub mod gpu {
             self.lens.push(s.len() as u32);
             self.packets.last_mut().expect("packet first").2 += 1;
         }
-        /// The triangles (last vertex) of the strips of packets `ps`.
-        fn triangles(&self, ps: std::ops::Range<usize>) -> impl Iterator<Item = u32> + '_ {
+        /// The strips (first vertex, length) of packets `ps`.
+        fn strips(&self, ps: std::ops::Range<usize>) -> impl Iterator<Item = (u32, u32)> + '_ {
             ps.flat_map(move |p| {
                 let (_, a, b) = self.packets[p];
                 let first: u32 = self.lens[..a].iter().sum();
                 self.lens[a..b].iter().scan(first, |f, &len| {
                     let s = *f;
                     *f += len;
-                    Some((2..len).map(move |k| s + k))
+                    Some((s, len))
                 })
             })
-            .flatten()
+        }
+        /// The triangles (last vertex) of the strips of packets `ps`.
+        fn triangles(&self, ps: std::ops::Range<usize>) -> impl Iterator<Item = u32> + '_ {
+            self.strips(ps)
+                .flat_map(|(s, len)| (2..len).map(move |k| s + k))
         }
         /// Runs of packets with the same tag (one call each).
         fn runs(&self, m: &Mem) -> Vec<(V, std::ops::Range<usize>)> {
@@ -697,6 +701,10 @@ pub mod gpu {
 
     fn tag(v: V) -> u128 {
         v[0] as u128 | (v[1] as u128) << 32 | (v[2] as u128) << 64 | (v[3] as u128) << 96
+    }
+
+    fn untag(t: u128) -> V {
+        std::array::from_fn(|i| (t >> (32 * i)) as u32)
     }
 
     /// Whether a fan tag draws the clipped triangles as such: a triangle
@@ -733,6 +741,162 @@ pub mod gpu {
         draw_data(m, s, data, nv, colour, n, program, out);
     }
 
+    /// `m·p` (`m` by columns), summed in `bz_clip`'s order: the CPU clip
+    /// transform of the fan triage and of [`eval`] (`eval` relies on the
+    /// order; the triage's bound holds for any).
+    fn clip(m: &[F4; 4], p: F4) -> F4 {
+        // (By columns, so the four components vectorise.)
+        let term = |c: usize| m[c].map(|x| x * p[c]);
+        let add = |a: F4, b: F4| -> F4 { std::array::from_fn(|l| a[l] + b[l]) };
+        add(add(add(term(0), term(1)), term(2)), term(3))
+    }
+
+    // The fan triage's bound. The shader sets a flag when `h[l] > |h[3]|`
+    // (or `-h[l] > |h[3]|`) in `f32` (`bz_flags`). An `f32` dot of 4 terms
+    // (in any order, with or without FMA, rounding to nearest or toward
+    // zero) is within 8·2^-24·S of the exact one, S = Σ|terms| (Higham's
+    // γ₄ for u = 2^-23). So the shader certainly sets the flag when the
+    // exact `h[l] - |h[3]|` is above 8·2^-24·(S[l] + S[3]), and certainly
+    // leaves it clear at or below the negative. The first test, in `f32`,
+    // adds 4·2^-24·S for this CPU's dot and 2^-24·S for its own margin
+    // arithmetic: 13·2^-24 per unit of S. It retests the vertices it
+    // leaves undecided in `f64`, where the products are exact: 8·2^-24,
+    // times `1 + 2^-19` for γ₄'s higher terms and the `f64` sums. `floor`
+    // covers what the shader's flush to zero may cost. Valid
+    // while every S is below `f32::MAX / 2`, so that no partial sum in any
+    // order overflows or saturates; beyond that every flag is possible.
+
+    /// The two tests' margins per unit of Σ|terms|: 13·2^-24 and
+    /// 8·2^-24·(1 + 2^-19).
+    const F32_MARGIN: f32 = 6.5 * f32::EPSILON;
+    const F64_MARGIN: f64 = 4.0 * f32::EPSILON as f64 * (1.0 + 1.0 / (1u32 << 19) as f64);
+    /// Results the shader may flush to zero per flag: 4 products and 3
+    /// sums per component, two components (14), and 2 more for both
+    /// sides' gradual underflow (under 2^-149 per rounding).
+    const FLUSHED: f64 = 16.0;
+
+    /// The six clip flags (+x -x +y -y +z -z).
+    const ALL: u32 = 0x3f;
+
+    /// A vertex's clip flags as the fan shader may compute them: those it
+    /// may set (`possible`) and those it must set (`certain`).
+    #[derive(Clone, Copy)]
+    struct VertexFlags {
+        possible: u32,
+        certain: u32,
+    }
+
+    /// Every flag possible, none certain.
+    const UNKNOWN: VertexFlags = VertexFlags {
+        possible: ALL,
+        certain: 0,
+    };
+
+    /// [`VertexFlags`] for a clip position within `k·(s[l] + s[3]) +
+    /// floor` of `h` in each component pair: the `f64` test.
+    fn decide(h: [f64; 4], s: [f64; 4], k: f64, floor: f64) -> VertexFlags {
+        let a = h[3].abs();
+        // (Lane 3, w against itself, goes with the others and is masked
+        // off.)
+        let (mut clear, mut certain) = (0, 0);
+        for l in 0..4 {
+            let margin = (s[l] + s[3]) * k + floor;
+            let (up, down) = (h[l] - a, -h[l] - a);
+            clear |=
+                u32::from(up <= -margin) << (2 * l) | u32::from(down <= -margin) << (2 * l + 1);
+            certain |= u32::from(up > margin) << (2 * l) | u32::from(down > margin) << (2 * l + 1);
+        }
+        VertexFlags {
+            possible: !clear & ALL,
+            certain: certain & ALL,
+        }
+    }
+
+    /// [`decide`] in `f32` with [`F32_MARGIN`], the first test (`f32`
+    /// arithmetic is twice as wide in SIMD; its margin covers its own
+    /// rounding).
+    fn decide_f32(h: F4, s: F4, floor: f32) -> VertexFlags {
+        let a = h[3].abs();
+        let (mut clear, mut certain) = (0, 0);
+        for l in 0..4 {
+            let margin = (s[l] + s[3]) * F32_MARGIN + floor;
+            let (up, down) = (h[l] - a, -h[l] - a);
+            clear |=
+                u32::from(up <= -margin) << (2 * l) | u32::from(down <= -margin) << (2 * l + 1);
+            certain |= u32::from(up > margin) << (2 * l) | u32::from(down > margin) << (2 * l + 1);
+        }
+        VertexFlags {
+            possible: !clear & ALL,
+            certain: certain & ALL,
+        }
+    }
+
+    /// The fan shader's flags for a position under the draw matrix `mat`
+    /// (the uniforms' columns).
+    fn clip_flags(mat: &[V; 4]) -> impl Fn(F4) -> VertexFlags {
+        let mat = mat.map(|c| c.map(f32::from_bits));
+        let abs = mat.map(|c| c.map(f32::abs));
+        // A flushed position component costs |m|·2^-126 per term; a
+        // flushed matrix entry has no bound (no triage for that draw).
+        let entries = || abs.iter().flatten();
+        let floor = if entries().any(|&x| x != 0.0 && x < f32::MIN_POSITIVE) {
+            f64::INFINITY
+        } else {
+            (FLUSHED + entries().map(|&x| f64::from(x)).sum::<f64>()) * f64::from(f32::MIN_POSITIVE)
+        };
+        let floor32 = floor as f32;
+        move |p| {
+            let s = clip(&abs, p.map(f32::abs));
+            // (Also NaN and infinity.)
+            if !s.iter().all(|&x| x < f32::MAX / 2.0) {
+                return UNKNOWN;
+            }
+            let f = decide_f32(clip(&mat, p), s, floor32);
+            if f.possible == f.certain {
+                return f;
+            }
+            let dot = |m: &[F4; 4], p: F4| -> [f64; 4] {
+                std::array::from_fn(|l| (0..4).map(|c| f64::from(m[c][l]) * f64::from(p[c])).sum())
+            };
+            decide(dot(&mat, p), dot(&abs, p.map(f32::abs)), F64_MARGIN, floor)
+        }
+    }
+
+    /// Whether the fan shader may draw a strip triangle with these vertex
+    /// flags: it kills one with no flag (inside the guard band; the strip
+    /// call draws it) and one [`fan_dropped`] drops.
+    fn fan_draws([f0, f1, f2]: [VertexFlags; 3]) -> bool {
+        (f0.possible | f1.possible | f2.possible) != 0
+            && !fan_dropped([f0.certain, f1.certain, f2.certain])
+    }
+
+    /// The triangles of packets `ps` the fan shader may draw, from the
+    /// draw's matrix and input data ({position, UV} per vertex; a vertex
+    /// without data, which [`draw`] never gives, is kept).
+    fn fan_triangles(
+        mat: &[V; 4],
+        data: &[[u32; 4]],
+        s: &Strips,
+        ps: std::ops::Range<usize>,
+    ) -> Vec<u32> {
+        let flags = clip_flags(mat);
+        let flags = |v: u32| {
+            data.get(2 * v as usize)
+                .map_or(UNKNOWN, |q| flags(q.map(f32::from_bits)))
+        };
+        let mut out = Vec::new();
+        for (first, len) in s.strips(ps) {
+            let mut f = [UNKNOWN; 3];
+            for v in first..first + len {
+                f = [f[1], f[2], flags(v)];
+                if v >= first + 2 && fan_draws(f) {
+                    out.push(v);
+                }
+            }
+        }
+        out
+    }
+
     /// [`draw`] with the vertex data given ({position, UV} per strip
     /// vertex), and the vertex count the mark records (the program's).
     #[allow(clippy::too_many_arguments)]
@@ -750,7 +914,7 @@ pub mod gpu {
         let nv = s.verts.len() as u32;
         // (Smooth normals only for the renderer's lighting: without it a
         // zero third qword, the layout unchanged.)
-        let mut data = Some(if crate::world_casters::enabled() {
+        let mut source = Some(if crate::world_casters::enabled() {
             with_normals(s, &data)
         } else {
             without_normals(s, &data)
@@ -759,7 +923,7 @@ pub mod gpu {
         let fan = m.ld(FAN_TAG_A);
         let mut call =
             |mode: u32, t: V, (indices, index_mode): (Vec<u32>, u32), out: &mut Vec<GpuCall>| {
-                let (data, link, reuse) = match data.take() {
+                let (data, link, reuse) = match source.take() {
                     Some(d) => (d, Link::Source(KEY), 0),
                     None => (Vec::new(), Link::Reuse(KEY), 1),
                 };
@@ -793,7 +957,12 @@ pub mod gpu {
                     .map(|f| [fan[0], f[1], f[2], f[3]])
             };
             if let Some(fan) = fan {
-                call(FANS, fan, fan_indices(s.triangles(ps.clone())), out);
+                // The fan shader kills every other triangle: listing only
+                // these, or no fan call, leaves the drawn ones unchanged.
+                let crossing = fan_triangles(&r.mat, &data, s, ps.clone());
+                if !crossing.is_empty() {
+                    call(FANS, fan, fan_indices(crossing.into_iter()), out);
+                }
             }
             call(STRIPS, t, strip_indices(s.triangles(ps)), out);
         }
@@ -884,6 +1053,308 @@ pub mod gpu {
 
     /// Qwords per vertex in a draw's data: position, UV, normal.
     pub const DATA_STRIDE: usize = 3;
+
+    #[cfg(test)]
+    mod fan_tests {
+        use super::{
+            clip, clip_flags, decide, draw_data, eval, fan_draws, fan_indices, fan_triangles,
+            flags, uni, Strips, F4, FANS, STRIPS, V,
+        };
+        use crate::bezier::{Mem, Vertex, FAN_TAG_A, ONE, PACKET_A};
+        use crate::gpu::GpuCall;
+
+        const IDENT: [V; 4] = [
+            [ONE, 0, 0, 0],
+            [0, ONE, 0, 0],
+            [0, 0, ONE, 0],
+            [0, 0, 0, ONE],
+        ];
+
+        fn ident() -> [F4; 4] {
+            IDENT.map(|c| c.map(f32::from_bits))
+        }
+
+        fn bits(m: [F4; 4]) -> [V; 4] {
+            m.map(|c| c.map(f32::to_bits))
+        }
+
+        /// The (possible, certain) flags the triage gives position `p`
+        /// under matrix `m`.
+        fn triaged(m: [F4; 4], p: F4) -> (u32, u32) {
+            let f = clip_flags(&bits(m))(p);
+            (f.possible, f.certain)
+        }
+
+        /// A xorshift generator of numbers in [-1, 1).
+        fn rng(mut seed: u64) -> impl FnMut() -> f64 {
+            move || {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                (seed >> 11) as f64 / (1u64 << 52) as f64 - 1.0
+            }
+        }
+
+        /// The fan shader's rule on clip positions, with a margin of `2·s`
+        /// on every plane: whether a triangle may be drawn as a fan.
+        #[test]
+        fn fan_draws_keeps_what_the_shader_may_draw() {
+            let i = [0.0, 0.0, 0.0, 1.0];
+            let px = [2.0, 0.0, 0.0, 1.0];
+            let neg_w = [0.0, 0.0, 0.0, -1.0];
+            #[rustfmt::skip]
+            let rows: &[(&str, [F4; 3], f64, bool)] = &[
+                ("inside the guard band", [i, i, i], 0.0, false),
+                ("one corner past +x", [px, i, i], 0.0, true),
+                ("a corner beyond the far plane", [[0.0, 0.0, 2.0, 1.0], i, i], 0.0, false),
+                ("past -z, not the far plane", [[0.0, 0.0, -2.0, 1.0], i, i], 0.0, true),
+                ("past +x and -y, no common plane", [px, [0.0, -2.0, 0.0, 1.0], i], 0.0, true),
+                ("w < 0, against |w|", [[2.0, 0.0, 0.0, -1.0], neg_w, neg_w], 0.0, true),
+                ("all zero", [[0.0; 4]; 3], 0.0, false),
+                ("w = 0 and x > 0", [[1.0, 0.0, 0.0, 0.0], [0.0; 4], [0.0; 4]], 0.0, true),
+                ("NaN", [[f32::NAN, 0.0, 0.0, 1.0], i, i], 0.0, true),
+                ("just inside +x, in the margin", [[0.99, 0.0, 0.0, 1.0]; 3], 0.02, true),
+                ("just past +x, in the margin", [[1.01, 0.0, 0.0, 1.0]; 3], 0.02, true),
+                ("just past the far plane, in the margin", [[0.0, 0.0, 1.01, 1.0], i, i], 0.02, true),
+                ("past +x beyond the margin", [[1.05, 0.0, 0.0, 1.0]; 3], 0.02, false),
+                ("past the far plane beyond the margin", [[0.0, 0.0, 1.05, 1.0], i, i], 0.02, false),
+            ];
+            for &(what, h, s, want) in rows {
+                let f = h.map(|h| decide(h.map(f64::from), [s; 4], 1.0, 0.0));
+                assert_eq!(fan_draws(f), want, "{what}");
+            }
+            for lane in 0..3 {
+                for sign in [2.0, -2.0] {
+                    let mut h = i;
+                    h[lane] = sign;
+                    let f = decide(h.map(f64::from), [0.0; 4], 1.0, 0.0);
+                    assert!(!fan_draws([f; 3]), "all outside, lane {lane} sign {sign}");
+                }
+            }
+        }
+
+        /// The triage's flags at its edges: matrix entries changed from the
+        /// identity (column, lane, value), the position, the flags looked
+        /// at and the (possible, certain) ones among them.
+        #[test]
+        fn triage_flags_at_the_edges() {
+            let e = f32::EPSILON; // 2·2^-24
+            let all = super::ALL;
+            #[rustfmt::skip]
+            let rows: &[(&str, &[(usize, usize, f32)], F4, u32, (u32, u32))] = &[
+                // Σ|terms| is x + 1: the exact test's margin is about 16·2^-24.
+                ("18·2^-24 past +x", &[], [1.0 + 9.0 * e, 0.0, 0.0, 1.0], 1, (1, 1)),
+                ("14·2^-24 past +x", &[], [1.0 + 7.0 * e, 0.0, 0.0, 1.0], 1, (1, 0)),
+                ("14·2^-24 inside +x", &[], [1.0 - 7.0 * e, 0.0, 0.0, 1.0], 1, (1, 0)),
+                ("18·2^-24 inside +x", &[], [1.0 - 9.0 * e, 0.0, 0.0, 1.0], 1, (0, 0)),
+                // 1e8 + 1 - 1e8: 0 in this CPU's f32, 1 exactly.
+                ("cancelling terms", &[(0, 0, 1e8), (1, 0, 1.0), (2, 0, -1e8)], [1.0; 4], 1, (1, 0)),
+                // The shader may flush x and w to zero, or not.
+                ("subnormal position", &[], [2e-39, 0.0, 0.0, 1e-39], 3, (3, 0)),
+                ("subnormal matrix entry", &[(1, 0, 1e-40)], [2.0, 0.0, 0.0, 1.0], all, (all, 0)),
+                ("NaN position", &[], [f32::NAN, 0.0, 0.0, 1.0], all, (all, 0)),
+                ("infinite position", &[], [f32::INFINITY, 0.0, 0.0, 1.0], all, (all, 0)),
+                ("NaN matrix entry", &[(3, 0, f32::NAN)], [0.0, 0.0, 0.0, 1.0], all, (all, 0)),
+                // x is 0 exactly; the shader's sum overflows (+x or -x set,
+                // by rounding mode).
+                ("overflowing sum",
+                    &[(1, 0, 1.0), (2, 0, -1.0), (3, 0, -1.0), (1, 1, 0.0), (2, 2, 0.0), (3, 3, 1e-4)],
+                    [3e38; 4], all, (all, 0)),
+                // x > w exactly; the shader's products overflow (inf - inf: no
+                // flag).
+                ("overflowing products", &[(0, 0, 1e30), (1, 0, -1e30)],
+                    [1e30, 0.99e30, 0.0, 1.0], all, (all, 0)),
+            ];
+            for &(what, edits, p, mask, want) in rows {
+                let mut m = ident();
+                for &(c, l, x) in edits {
+                    m[c][l] = x;
+                }
+                let (possible, certain) = triaged(m, p);
+                assert_eq!((possible & mask, certain & mask), want, "{what}");
+            }
+        }
+
+        /// Against the exact dot (in `f64`, where the `f32` products are
+        /// exact): a certain flag is set and a flag left out of `possible`
+        /// is clear for every shader `f32` dot within γ₄(2^-23)·Σ|terms|
+        /// of it, near each plane of random transforms with large
+        /// translations (cancelling terms).
+        #[test]
+        fn flags_hold_for_every_shader_rounding() {
+            let mut rnd = rng(0x2545_f491_4f6c_dd1d);
+            let u = f64::from(f32::EPSILON) / 2.0;
+            // The shader's γ₄, plus this check's own `f64` sums.
+            let gamma = 8.0 * u / (1.0 - 8.0 * u) + 4.0 * f64::EPSILON;
+            let exact = |m: &[[f32; 4]; 4], p: F4, l: usize| -> (f64, f64) {
+                let t = (0..4).map(|c| f64::from(m[c][l]) * f64::from(p[c]));
+                (t.clone().sum(), t.map(f64::abs).sum())
+            };
+            let mut seen = [0; 3]; // certain, undecided, clear
+            for _ in 0..20_000 {
+                let mut m = [[0f32; 4]; 4];
+                for c in 0..3 {
+                    for l in 0..3 {
+                        m[c][l] = rnd() as f32;
+                    }
+                    m[c][3] = (0.01 * rnd()) as f32;
+                }
+                m[3][3] = (50.0 + 49.0 * rnd()) as f32;
+                let p = [1000.0 * rnd(), 1000.0 * rnd(), 1000.0 * rnd(), 1.0].map(|x| x as f32);
+                let (w, _) = exact(&m, p, 3);
+                for l in 0..3 {
+                    // A translation putting `h[l]` about k·2^-24·Σ|terms|
+                    // from `±|w|`, k in ±20.
+                    let (part, sum) = exact(&m, p, l);
+                    let side = if rnd() < 0.0 { -1.0 } else { 1.0 };
+                    let k = 20.0 * rnd() * u * 2.0 * (sum + w.abs());
+                    m[3][l] = (side * (w.abs() + k) - part) as f32;
+                }
+                let (possible, certain) = triaged(m, p);
+                let (hw, sw) = exact(&m, p, 3);
+                for l in 0..3 {
+                    let (h, s) = exact(&m, p, l);
+                    let e = gamma * (s + sw);
+                    for (bit, d) in [(2 * l, h - hw.abs()), (2 * l + 1, -h - hw.abs())] {
+                        if certain >> bit & 1 != 0 {
+                            assert!(d > e, "certain but within the shader's bound: {m:?} {p:?}");
+                            seen[0] += 1;
+                        } else if possible >> bit & 1 != 0 {
+                            seen[1] += 1;
+                        } else {
+                            assert!(d <= -e, "clear but within the shader's bound: {m:?} {p:?}");
+                            seen[2] += 1;
+                        }
+                    }
+                }
+            }
+            assert!(seen.iter().all(|&n| n > 1000), "{seen:?}");
+        }
+
+        /// The calls [`draw_data`] plans for these strips (one packet,
+        /// matrix `mat`).
+        fn planned(mat: [V; 4], strips: &[&[F4]]) -> Vec<GpuCall> {
+            let mut bytes = [0u8; 16384];
+            let mut m = Mem(&mut bytes);
+            for (q, c) in mat.into_iter().enumerate() {
+                m.st(q as u16, c);
+            }
+            let tag = [0, (1 << 14) | (4 << 15), 7, 8];
+            m.st(PACKET_A, tag);
+            m.st(FAN_TAG_A, tag);
+            let mut s = Strips::default();
+            s.packet(PACKET_A);
+            let mut data = Vec::new();
+            let mut nv = 0u32;
+            for strip in strips {
+                let verts: Vec<Vertex> = strip.iter().map(|_| Vertex { pos: 0, uv: 0 }).collect();
+                nv += verts.len() as u32;
+                for &p in strip.iter() {
+                    data.push(p.map(f32::to_bits));
+                    data.push([0; 4]);
+                }
+                s.strip(&verts);
+            }
+            let mut out = Vec::new();
+            draw_data(&mut m, &s, data, nv, [128; 4], 4, 0, &mut out);
+            out
+        }
+
+        /// Through the planner: a run with no crossing triangle emits no
+        /// fan call; a mixed run lists only the crossing triangle in its
+        /// fan call, which still precedes the strip call.
+        #[test]
+        fn draw_data_lists_only_crossing_fans() {
+            let inside = [[0.0, 0.0, 0.0, 1.0]; 3];
+            let out = planned(IDENT, &[&inside]);
+            assert_eq!(out.len(), 1);
+            assert_eq!(out[0].uniforms[uni::INFO][0], STRIPS);
+            assert_eq!(out[0].indices, vec![2]);
+
+            let crossing = [
+                [2.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ];
+            let out = planned(IDENT, &[&inside, &crossing]);
+            assert_eq!(out.len(), 2);
+            assert_eq!(out[0].uniforms[uni::INFO][0], FANS);
+            assert_eq!(out[0].indices, vec![5]);
+            assert_eq!(out[1].uniforms[uni::INFO][0], STRIPS);
+            assert_eq!(out[1].indices, vec![2, 5]);
+
+            // A vertex without data (which `draw` never plans) is kept.
+            let mut s = Strips::default();
+            s.packet(PACKET_A);
+            s.strip(&[Vertex { pos: 0, uv: 0 }; 3]);
+            assert_eq!(fan_triangles(&IDENT, &[], &s, 0..1), vec![2]);
+        }
+
+        /// The plan against [`eval`], the shader's formulas in this CPU's
+        /// `f32` (one of the roundings the triage covers): the fan call
+        /// lists every fan `eval` draws among all the strip's triangles,
+        /// and every vertex's `eval` flags lie between the triage's certain
+        /// and possible ones. Random strips with vertices near the planes,
+        /// at w = 1, with and without large translations.
+        #[test]
+        fn fan_call_draws_what_eval_draws() {
+            let mut rnd = rng(0x9e37_79b9_7f4a_7c15);
+            let u = f64::from(f32::EPSILON) / 2.0;
+            let mut seen = [0; 3]; // fans drawn, triangles not listed, undecided vertices
+            for case in 0..400 {
+                let t: [f64; 3] = if case % 2 == 0 {
+                    [0.0; 3]
+                } else {
+                    std::array::from_fn(|_| 1e4 * rnd())
+                };
+                let mut m = ident();
+                for l in 0..3 {
+                    m[3][l] = t[l] as f32;
+                }
+                let strip: Vec<F4> = (0..8)
+                    .map(|_| {
+                        let mut h: [f64; 3] = std::array::from_fn(|_| 1.2 * rnd());
+                        if rnd() < 0.0 {
+                            // About k·2^-24·Σ|terms| from a plane, k in ±24.
+                            let l = ((rnd() + 1.0) * 1.5) as usize;
+                            let side = if rnd() < 0.0 { -1.0 } else { 1.0 };
+                            let s = (side - t[l]).abs() + t[l].abs() + 1.0;
+                            h[l] = side * (1.0 + 24.0 * rnd() * u * s);
+                        }
+                        [h[0] - t[0], h[1] - t[1], h[2] - t[2], 1.0].map(|x| x as f32)
+                    })
+                    .collect();
+                let out = planned(bits(m), &[&strip]);
+                let src = &out[0].data;
+                let strips = out.last().expect("a strip call");
+                let mut all = strips.clone();
+                all.uniforms[uni::INFO][0] = FANS;
+                (all.indices, all.index_mode) = fan_indices(strips.indices.iter().copied());
+                let want: Vec<u32> = eval(&all, src).fans.iter().map(|f| f.0).collect();
+                let listed: Vec<&GpuCall> = out
+                    .iter()
+                    .filter(|c| c.uniforms[uni::INFO][0] == FANS)
+                    .collect();
+                let got: Vec<u32> = listed
+                    .iter()
+                    .flat_map(|c| eval(c, src).fans)
+                    .map(|f| f.0)
+                    .collect();
+                assert_eq!(got, want, "{m:?} {strip:?}");
+                let n_listed: usize = listed.iter().map(|c| c.indices.len()).sum();
+                seen[0] += want.len();
+                seen[1] += strips.indices.len() - n_listed;
+                let triage = clip_flags(&bits(m));
+                for &p in &strip {
+                    let (f, mirror) = (triage(p), flags(clip(&m, p)));
+                    assert_eq!(f.certain & !mirror, 0, "{m:?} {p:?}");
+                    assert_eq!(mirror & !f.possible, 0, "{m:?} {p:?}");
+                    seen[2] += usize::from(f.possible != f.certain);
+                }
+            }
+            assert!(seen.iter().all(|&n| n > 50), "{seen:?}");
+        }
+    }
 
     #[cfg(test)]
     mod normal_tests {
@@ -999,6 +1470,16 @@ pub mod gpu {
             .sum()
     }
 
+    /// The far plane's flag (+z).
+    const FAR: u32 = 16;
+
+    /// Whether the fan shader drops a clipped triangle with these vertex
+    /// flags: a vertex beyond the far plane, or all three outside one
+    /// plane (the clipper would keep at most an edge).
+    fn fan_dropped([f0, f1, f2]: [u32; 3]) -> bool {
+        (f0 | f1 | f2) & FAR != 0 || f0 & f1 & f2 != 0
+    }
+
     /// The program's clipper ([`clip_triangle`]) in IEEE floats, as the
     /// shader runs it (for triangles reaching behind the eye): the polygon
     /// (clip-space position, ST) of the triangle `(p, st)`; empty when
@@ -1074,12 +1555,7 @@ pub mod gpu {
         let m = [f(0), f(1), f(2), f(3)];
         let (gs, go) = (f(uni::GUARD_SCALE), f(uni::GUARD_OFFSET));
         let nv = info[2] as usize;
-        let h = |v: usize| -> F4 {
-            let p = src[DATA_STRIDE * v].map(f32::from_bits);
-            std::array::from_fn(|l| {
-                m[0][l] * p[0] + m[1][l] * p[1] + m[2][l] * p[2] + m[3][l] * p[3]
-            })
-        };
+        let h = |v: usize| -> F4 { clip(&m, src[DATA_STRIDE * v].map(f32::from_bits)) };
         let uv = |v: usize| -> F4 { src[DATA_STRIDE * v + 1].map(f32::from_bits) };
         let screen = |c: F4| -> [f32; 3] {
             let q = 1.0 / c[3];
@@ -1115,7 +1591,7 @@ pub mod gpu {
             let c = [h(i - 2), h(i - 1), h(i)];
             let fl = c.map(flags);
             let any = fl[0] | fl[1] | fl[2];
-            let dropped = any & 0x10 != 0 || fl[0] & fl[1] & fl[2] != 0;
+            let dropped = fan_dropped(fl);
             if info[0] == STRIPS {
                 if any == 0 {
                     strips.push(i as u32);
@@ -1154,24 +1630,31 @@ pub mod gpu {
                 .map(|v| std::array::from_fn(|i| (v[i / 4] >> (32 * (i % 4))) as u32))
                 .collect()
         };
-        // The program's passes: (strip vertices, fans).
-        let mut passes: Vec<(Vec<[u32; 12]>, Vec<Vec<[u32; 12]>>)> = Vec::new();
-        let (mut verts, mut fans, mut strips) = (Vec::new(), Vec::new(), 0);
+        // The program's passes: (strip vertices, fans, fan tags).
+        let mut passes: Vec<(Vec<[u32; 12]>, Vec<Vec<[u32; 12]>>, Vec<V>)> = Vec::new();
+        let (mut verts, mut fans, mut fan_tags, mut strips) =
+            (Vec::new(), Vec::new(), Vec::new(), 0);
         let mut p = 0;
         while p < gif.len() {
-            let lo = gif[p] as u64;
+            let head = gif[p];
+            let lo = head as u64;
             let nloop = (lo & 0x7fff) as usize;
             let body = &gif[p + 1..(p + 1 + 3 * nloop).min(gif.len())];
             p += 1 + 3 * nloop;
             // (Strip packets: PRE, triangle strip.)
             if lo >> 46 & 1 == 0 || (lo >> 47) & 7 != 4 {
                 fans.push(words(body));
+                fan_tags.push(untag(head));
                 continue;
             }
             verts.extend(words(body));
             strips += 1;
             if strips == 2 {
-                passes.push((std::mem::take(&mut verts), std::mem::take(&mut fans)));
+                passes.push((
+                    std::mem::take(&mut verts),
+                    std::mem::take(&mut fans),
+                    std::mem::take(&mut fan_tags),
+                ));
                 strips = 0;
             }
         }
@@ -1210,7 +1693,8 @@ pub mod gpu {
             let z = w[2] as i32 as f32;
             xy && (g[2] * 16.0 - z).abs() <= 16.0 * 256.0 + 1e-3 * z.abs()
         };
-        for (k, ((src, cs), (want, want_fans))) in planned.iter().zip(&passes).enumerate() {
+        for (k, ((src, cs), (want, want_fans, fan_tags))) in planned.iter().zip(&passes).enumerate()
+        {
             let Some(src) = src else { continue };
             let evals: Vec<Eval> = cs.iter().map(|c| eval(c, src)).collect();
             let v = &evals[0].verts;
@@ -1244,7 +1728,20 @@ pub mod gpu {
                     prog.len()
                 ));
             }
-            if cs.iter().any(|c| c.uniforms[uni::INFO][0] == FANS) {
+            // No fan call: the plan found no triangle the fan shader draws,
+            // so the program must kick no fans (unless its fan tags are not
+            // ones the plan would draw them with).
+            if !cs.iter().any(|c| c.uniforms[uni::INFO][0] == FANS) {
+                let drawable = cs
+                    .iter()
+                    .any(|c| fan_tags.iter().any(|&f| fans_draw(untag(c.tag), f)));
+                if drawable && !want_fans.is_empty() {
+                    bad.push(format!(
+                        "pass {k}: no fan call, the program {} fans",
+                        want_fans.len()
+                    ));
+                }
+            } else {
                 let fans: Vec<&(u32, Vec<[f32; 6]>)> =
                     evals.iter().flat_map(|e| e.fans.iter()).collect();
                 if fans.len() != want_fans.len() {
