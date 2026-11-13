@@ -34,7 +34,7 @@ The orchestrator (you, in the main session) runs waves: pick about 80 functions,
 ### Before a wave
 
 - `main` is up to date and green. If the build stops with "generated/ee is older than overrides.txt", run `python3 tools/integrate_wave.py regen`.
-- After pulling the reference (`~/Desktop/devvydont-ssx3`), rebuild its index: `python3 tools/refindex.py` (seconds; `refsrc.py` warns when it is stale).
+- After pulling the references (`~/Desktop/devvydont-ssx3`, and the fallback `~/Desktop/peak3-ssx3`), rebuild their indexes: `python3 tools/refindex.py` (seconds, both; `refsrc.py` warns when either is stale).
 - Ghidra is open on `SLUS_207.72` with the GhidraMCP plugin (port 8080; check with `mcp__ghidra__get_program_info`). Without it, dossiers of functions with no C++ have no pseudo-C; say so and go on.
 - Long builds: wrap heavy commands in `caffeinate -s` (the machine sleeps otherwise). One heavy process at a time (a build, a test run or a game run), never two in parallel.
 

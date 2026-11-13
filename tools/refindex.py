@@ -2,6 +2,7 @@
 """Index the reference C++ decompilation: name -> implementation location.
 
     python3 tools/refindex.py [--out FILE]   # default: tools/.refindex.json
+                                             # (+ tools/.refindex2.json)
 
 Scans `~/Desktop/devvydont-ssx3/src/**/*.{cpp,c}` once. For every function it
 records whether it has a C++ body (inside `#ifdef SKIP_ASM` or otherwise) or
@@ -10,6 +11,10 @@ readable source for this address?" without rescanning the tree per address.
 A function's entry is its built unit (`config/ssx3_us.yaml`); unbuilt files
 in src/ only fill in names no built unit has. `refsrc.py`, `refbody.py` and
 `progress.py` read the index: rerun this after updating the reference.
+
+With the fallback reference present (the peak3project fork, `SSX3_REF2`,
+default `~/Desktop/peak3-ssx3`; same layout) it also writes its index,
+`tools/.refindex2.json` (`--out` names only the primary's).
 """
 import bisect
 import json
@@ -18,7 +23,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from refsrc import REF, is_built  # noqa: E402
+from refsrc import REFS, is_built  # noqa: E402
 
 ASM_RE = re.compile(r'INCLUDE_ASM\("[^"]*",\s*([A-Za-z_]\w*)\)')
 
@@ -146,19 +151,23 @@ def index_file(path, text):
 
 
 def main(argv):
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".refindex.json")
-    if "--out" in argv:
-        out = argv[argv.index("--out") + 1]
+    for i, (ref, out, label) in enumerate(REFS):
+        if i == 0 and "--out" in argv:
+            out = argv[argv.index("--out") + 1]
+        build(ref, out, label)
+
+
+def build(ref, out, label):
     # Built units first; files no build uses only fill in names the built
     # units lack (refsrc.built_units).
     paths = []
-    for root, dirs, files in os.walk(os.path.join(REF, "src")):
+    for root, dirs, files in os.walk(os.path.join(ref, "src")):
         dirs.sort()
         paths += [os.path.join(root, f) for f in sorted(files) if f.endswith((".cpp", ".c"))]
-    paths.sort(key=lambda p: not is_built(p))
+    paths.sort(key=lambda p: not is_built(p, ref))
     table, aliased, unbuilt = {}, {}, set()
     for p in paths:
-        built = is_built(p)
+        built = is_built(p, ref)
         text = open(p, errors="replace").read()
         impl, aliases = index_file(p, text)
         for name, v in impl.items():
@@ -177,7 +186,7 @@ def main(argv):
             table[name] = v
     json.dump(table, open(out, "w"))
     cpp = sum(1 for v in table.values() if v[0] == "c++")
-    print(f"{len(table)} names indexed ({cpp} with C++, {len(table) - cpp} asm only) -> {out}")
+    print(f"{label}: {len(table)} names indexed ({cpp} with C++, {len(table) - cpp} asm only) -> {out}")
 
 
 if __name__ == "__main__":

@@ -36,6 +36,9 @@ after each wave.
   order.
 - The reference C/C++ (the dossier; `python3 tools/refsrc.py <name>`, the
   `devvydont-ssx3` checkout) is a readability aid only.
+- When DevvyDont has a function only as asm, the dossier may take its C++
+  from the fallback reference, the `peak3project/ssx3` fork (`peak3-ssx3`;
+  the dossier says "peak3project fork", with the fork's name for it).
 - Dossiers also give the SSX On Tour dev-build name and DWARF signature when
   the reference knows one (`docs/ontour_names.tsv` there): good for naming
   arguments and fields.

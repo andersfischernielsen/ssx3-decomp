@@ -8,7 +8,10 @@ translated to addresses, with the generated Rust location of each callee. A
 worker can then map the readable C++ onto our runtime without hunting through
 `generated/ee`.
 
-Functions with no C++ body in the reference get Ghidra's decompilation
+A function DevvyDont has only as asm (or not at all) takes its C++ body from
+the fallback reference, the peak3project fork (`SSX3_REF2`, refsrc.py), when
+that has one; the dossier says so, and its callee table maps the fork's names.
+Functions with no C++ body in either reference get Ghidra's decompilation
 (`0xADDR.ghidra.c`, pseudo-C) when the GhidraMCP backend is up
 (`SSX3_GHIDRA`, default http://127.0.0.1:8080, SLUS_207.72 open in a
 CodeBrowser); without it the dossier says so and the step is skipped.
@@ -20,8 +23,8 @@ import sys
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from refsrc import REF, load_symbols  # noqa: E402
-from refbody import find_impl, find_asm, find_decl  # noqa: E402
+from refsrc import LABEL2, REF, REF2, load_symbols  # noqa: E402
+from refbody import find_asm, find_decl, find_impl_named, impl_for  # noqa: E402
 
 KEYWORDS = {
     "if", "for", "while", "switch", "return", "sizeof", "cast", "do", "else",
@@ -112,6 +115,26 @@ def callee_table(body, syms, by_name, gen_root):
     return out
 
 
+def helper_table(body, path, by_name):
+    """Unaddressed functions the body calls that its file defines (static
+    inline helpers such as `updateMatSeg_A0B0`): name and line, so their
+    bodies can be read too."""
+    try:
+        text = open(path, errors="replace").read()
+    except OSError:
+        return []
+    rows, seen = [], set()
+    for m in re.finditer(r"\b([A-Za-z_]\w*)\s*\(", body):
+        ident = m.group(1)
+        if ident in KEYWORDS or ident in seen or ident in by_name or ident.startswith("func_"):
+            continue
+        seen.add(ident)
+        hit = find_impl_named(ident, [(path, text)])
+        if hit:
+            rows.append(f"- `{ident}`: `{path}:{hit[1]}`")
+    return ["", "## Local helpers (defined in the same file, inlined)", ""] + rows if rows else []
+
+
 def global_table(body, syms):
     rows = []
     seen = set()
@@ -138,26 +161,46 @@ def main(argv):
     gen_root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                             "generated", "ee")
     ontour = ontour_names()
+    fork_syms, fork_by_name = None, {}
     for arg in addrs:
         a = int(arg, 16)
         # (Functions without a symbol are `func_XXXXXXXX` in the reference.)
         name = syms.get(a) or f"func_{a:08X}"
-        impl = find_impl(name) if name else None
-        decl = find_decl(name) if name else None
-        asm = find_asm(name) if name else None
+        ref, ref_name, impl = impl_for(a, name)
+        decl = find_decl(name)
+        if ref != REF:
+            decl = find_decl(ref_name, REF2) or decl
+        asm = find_asm(name)
         gen = generated_location(a, gen_root)
         lines = [f"# {a:#010x} `{name or '?'}`", ""]
         if a in ontour:
             ot_name, ot_sig, ot_unit, tier = ontour[a]
             lines += [f"On Tour dev-build symbol (tier {tier}, `{ot_unit}`): `{ot_name}`",
                       f"signature: `{ot_sig}`", ""]
-        if impl:
+        if impl and ref != REF:
+            path, line, body, _ = impl
+            primary = f"only assembly (`{asm[0]}:{asm[1]}`)" if asm else "no implementation"
+            lines += [f"DevvyDont reference has {primary}.", "",
+                      f"Reference C++ from the {LABEL2} (`{REF2}`; same executable,",
+                      f"named `{ref_name}` there): `{path}:{line}` (a readability",
+                      "aid, not the authority).", ""]
+            open(os.path.join(outdir, f"{a:#010x}.cpp"), "w").write(body.strip("\n") + "\n")
+            lines += [f"Body: `{a:#010x}.cpp` (from the {LABEL2})", ""]
+            if fork_syms is None:
+                fork_syms = load_symbols(REF2)
+                for fa, fn in fork_syms.items():
+                    fork_by_name.setdefault(fn, fa)
+            lines += callee_table(body, fork_syms, fork_by_name, gen_root)
+            lines += helper_table(body, path, fork_by_name)
+            lines += global_table(body, fork_syms)
+        elif impl:
             path, line, body, _ = impl
             lines += [f"Reference C++: `{path}:{line}` (same executable; a",
                       "readability aid, not the authority).", ""]
             open(os.path.join(outdir, f"{a:#010x}.cpp"), "w").write(body.strip("\n") + "\n")
             lines += [f"Body: `{a:#010x}.cpp`", ""]
             lines += callee_table(body, syms, by_name, gen_root)
+            lines += helper_table(body, path, by_name)
             lines += global_table(body, syms)
         elif asm:
             lines += [f"Reference has only assembly (`{asm[0]}:{asm[1]}`).", ""]
@@ -178,7 +221,7 @@ def main(argv):
         if gen:
             lines += ["", f"Generated Rust (the authority): `{gen[0]}:{gen[1]}`"]
         open(os.path.join(outdir, f"{a:#010x}.md"), "w").write("\n".join(lines) + "\n")
-        kind = 'C++' if impl else ('asm' if asm else 'none')
+        kind = ('C++' + ('(peak3)' if ref != REF else '')) if impl else ('asm' if asm else 'none')
         if not impl and os.path.exists(os.path.join(outdir, f"{a:#010x}.ghidra.c")):
             kind += '+ghidra'
         print(f"{a:#010x} {name or '?':40s} {kind}")

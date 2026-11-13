@@ -48,6 +48,7 @@
 /crates/ssx3-web/www/pkg-vu/
 /target-agents
 tools/.refindex.json
+tools/.refindex2.json
 tools/.reorg-units.json
 
 # Standalone builds (tools/bundle.py): they contain the game
