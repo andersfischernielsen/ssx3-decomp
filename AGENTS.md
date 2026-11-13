@@ -11,6 +11,7 @@ Keep the decompilation work:
   - avoid too many heavy validation runs
   - prefer unit tests to compare GS vs. native behavior
 
+Keep commit messages very brief and to the point.
 Never co-author commits.
 Wait with the browser build as the final step of your work (smoke test). The browser is the lowest-priority platform target.
 
