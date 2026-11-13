@@ -36,6 +36,9 @@ after each wave.
   order.
 - The reference C/C++ (the dossier; `python3 tools/refsrc.py <name>`, the
   `devvydont-ssx3` checkout) is a readability aid only.
+- Dossiers also give the SSX On Tour dev-build name and DWARF signature when
+  the reference knows one (`docs/ontour_names.tsv` there): good for naming
+  arguments and fields.
 - Functions with no C++ come with Ghidra's decompilation
   (`0xADDR.ghidra.c` next to the dossier). Use it for structure: control
   flow, calls, which fields are read and written. Its types, names and

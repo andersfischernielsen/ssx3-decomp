@@ -344,6 +344,32 @@ def unit_of_addrs(addrs):
     return {a: cache.get(f'{a:08x}', [None, None]) for a in addrs}
 
 
+def anonymous(unit):
+    """A reference unit named after its address range (`seg/seg_1218`,
+    `bx/seg_1BA100`) or a merged one (`fe/all_in_one_fe`) rather than a source
+    file: the name prefix vote places such functions first (a FocusMan_
+    function joins `ui/focusman` rather than `seg/seg_1218`)."""
+    last = unit.rsplit('/', 1)[-1].lower()
+    return unit.startswith('seg/') or last.startswith(('seg_', 'all_in_one'))
+
+
+def tree_units():
+    """(unit, name) of every replacement already in game/ (`dir/unit` from
+    its file path)."""
+    entry = re.compile(r'\(\s*0x[0-9a-f]{4}_[0-9a-f]{4},\s*\w+,\s*"([^"]+)"')
+    out = []
+    for root, _dirs, files in os.walk(GAME):
+        for f in files:
+            if not f.endswith('.rs'):
+                continue
+            rel = os.path.relpath(os.path.join(root, f), GAME)[:-3]
+            rel = rel[:-4] if rel.endswith('/mod') else rel
+            if rel in ('mod', 'misc', 'parked'):
+                continue
+            out += [(rel, n) for n in entry.findall(open(os.path.join(root, f)).read())]
+    return out
+
+
 def modname(seg):
     s = re.sub(r'[^A-Za-z0-9_]', '_', seg).lower()
     if s[0].isdigit() or s in RESERVED:
@@ -414,19 +440,25 @@ def plan(mods):
                 if a:
                     parked[(m, it.name)] = int(a.group(1).replace('_', ''), 16)
     units = unit_of_addrs(sorted({a for (_, a, _, _) in allov} | set(parked.values())))
-    # Prefix vote for the unknown.
+    # Prefix vote for the unknown and for anonymous units: this batch, plus
+    # the replacements already in the tree.
     votes = collections.defaultdict(collections.Counter)
     for (_, a, f, n) in allov:
         u = units[a][0]
-        if u:
-            votes[prefix(n)][u] += 1
+        if u and not anonymous(u):
+            votes[prefix(n)]['/'.join(unit_path(u))] += 1
+    for u, n in tree_units():
+        if not anonymous(u) and not n.startswith(('func_', 'FUN_')):
+            votes[prefix(n)]['/'.join(unit_path(u))] += 1
     def place(a, name):
         u = units.get(a, [None])[0]
-        if u:
+        if u and not anonymous(u):
             return unit_path(u)
         v = votes.get(prefix(name))
         if v:
             return unit_path(v.most_common(1)[0][0])
+        if u:
+            return unit_path(u)
         n = name or ''
         if n.startswith('__'):
             return unit_path('lib/gcc')

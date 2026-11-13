@@ -7,17 +7,34 @@ Scans `~/Desktop/devvydont-ssx3/src/**/*.{cpp,c}` once. For every function it
 records whether it has a C++ body (inside `#ifdef SKIP_ASM` or otherwise) or
 only `INCLUDE_ASM`. The index lets wave selection ask "does the reference have
 readable source for this address?" without rescanning the tree per address.
+A function's entry is its built unit (`config/ssx3_us.yaml`); unbuilt files
+in src/ only fill in names no built unit has. `refsrc.py`, `refbody.py` and
+`progress.py` read the index: rerun this after updating the reference.
 """
+import bisect
 import json
 import os
 import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from refsrc import REF  # noqa: E402
+from refsrc import REF, is_built  # noqa: E402
 
 ASM_RE = re.compile(r'INCLUDE_ASM\("[^"]*",\s*([A-Za-z_]\w*)\)')
-NAME_BEFORE_PAREN = re.compile(r"([A-Za-z_]\w*)\s*$")
+
+
+def name_before(code, k):
+    """(identifier, its offset) ending just before `code[k]` (whitespace
+    allowed in between), or (None, 0)."""
+    e = k
+    while e > 0 and code[e - 1] in " \t\r\n":
+        e -= 1
+    b = e
+    while b > 0 and (code[b - 1].isalnum() or code[b - 1] == "_"):
+        b -= 1
+    while b < e and code[b].isdigit():
+        b += 1
+    return (code[b:e], b) if b < e else (None, 0)
 
 
 ALIAS_RE = re.compile(r'([A-Za-z_]\w*)\s*\([^;{}]*\)\s*__asm__\s*\(\s*"([A-Za-z_]\w*)"\s*\)')
@@ -57,9 +74,14 @@ def code_only(text):
 
 def index_file(path, text):
     impl = {}
+    newlines = [i for i, c in enumerate(text) if c == "\n"]
+
+    def line_at(offset):
+        return bisect.bisect_left(newlines, offset) + 1
+
     # INCLUDE_ASM sites.
     for m in ASM_RE.finditer(text):
-        impl.setdefault(m.group(1), ("asm", path, text.count("\n", 0, m.start()) + 1))
+        impl.setdefault(m.group(1), ("asm", path, line_at(m.start())))
     # Definitions: a `{` at brace depth 0 (outside any body; `extern "C"`
     # and namespace blocks count as depth 0) after a parameter list.
     code = code_only(text)
@@ -100,38 +122,59 @@ def index_file(path, text):
                 if d == 0:
                     break
             k -= 1
-        nm = NAME_BEFORE_PAREN.search(code[:k]) if k >= 0 else None
-        if not nm or nm.group(1) in ("if", "for", "while", "switch", "return", "sizeof"):
+        name, start = name_before(code, k) if k >= 0 else (None, 0)
+        if not name or name in ("if", "for", "while", "switch", "return", "sizeof"):
             opaque.append(False)
             continue
         opaque.append(True)
         depth += 1
-        name = nm.group(1)
-        line = text.count("\n", 0, nm.start(1)) + 1
+        line = line_at(start)
         # A definition wins over a plain INCLUDE_ASM for the same name.
         impl[name] = ("c++", path, line)
-    # `T f_impl(...) __asm__("func_X")`: f_impl's body is func_X's.
-    for m in ALIAS_RE.finditer(code):
+    # `T f_impl(...) __asm__("func_X")`: f_impl's body is func_X's (used
+    # only where no file defines func_X itself; see main).
+    # (Matched on `text`: `code` blanks the string literal; a match inside a
+    # comment is skipped.)
+    aliases = {}
+    for m in ALIAS_RE.finditer(text):
+        if code[m.start()] != text[m.start()]:
+            continue
         body = impl.get(m.group(1))
         if body and body[0] == "c++":
-            impl[m.group(2)] = body
-    return impl
+            aliases.setdefault(m.group(2), body)
+    return impl, aliases
 
 
 def main(argv):
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".refindex.json")
     if "--out" in argv:
         out = argv[argv.index("--out") + 1]
-    table = {}
-    for root, _dirs, files in os.walk(os.path.join(REF, "src")):
-        for f in files:
-            if not f.endswith((".cpp", ".c")):
+    # Built units first; files no build uses only fill in names the built
+    # units lack (refsrc.built_units).
+    paths = []
+    for root, dirs, files in os.walk(os.path.join(REF, "src")):
+        dirs.sort()
+        paths += [os.path.join(root, f) for f in sorted(files) if f.endswith((".cpp", ".c"))]
+    paths.sort(key=lambda p: not is_built(p))
+    table, aliased, unbuilt = {}, {}, set()
+    for p in paths:
+        built = is_built(p)
+        text = open(p, errors="replace").read()
+        impl, aliases = index_file(p, text)
+        for name, v in impl.items():
+            if name in table and name not in unbuilt and not built:
                 continue
-            p = os.path.join(root, f)
-            text = open(p, errors="replace").read()
-            for name, v in index_file(p, text).items():
-                if v[0] == "c++" or name not in table:
-                    table[name] = v
+            if v[0] == "c++" or name not in table:
+                table[name] = v
+                if not built:
+                    unbuilt.add(name)
+                else:
+                    unbuilt.discard(name)
+        for name, v in aliases.items():
+            aliased.setdefault(name, v)
+    for name, v in aliased.items():
+        if name not in table or table[name][0] != "c++":
+            table[name] = v
     json.dump(table, open(out, "w"))
     cpp = sum(1 for v in table.values() if v[0] == "c++")
     print(f"{len(table)} names indexed ({cpp} with C++, {len(table) - cpp} asm only) -> {out}")

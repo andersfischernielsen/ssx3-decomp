@@ -46,6 +46,31 @@ def ghidra_decompile(addr):
     return (reply.get("data") or {}).get("code")
 
 
+def ontour_names():
+    """address -> (On Tour name, DWARF signature, unit, tier) from the
+    reference's docs/ontour_names.tsv (names and signatures from SSX On Tour's
+    unstripped PSP dev builds, transferred to SSX 3 by evidence)."""
+    out = {}
+    try:
+        lines = open(os.path.join(REF, "docs", "ontour_names.tsv"), errors="replace").read().splitlines()
+    except OSError:
+        return out
+    cols = None
+    for line in lines:
+        if line.startswith("#"):
+            continue
+        f = line.split("\t")
+        if cols is None:
+            cols = {c: i for i, c in enumerate(f)}
+            continue
+        try:
+            out[int(f[cols["address"]], 16)] = tuple(
+                f[cols[c]] for c in ("ontour_name", "ontour_signature", "ontour_unit", "tier"))
+        except (KeyError, ValueError, IndexError):
+            pass
+    return out
+
+
 def generated_location(addr, generated_root):
     name = f"f_{addr:08x}"
     for shard in sorted(os.listdir(generated_root)):
@@ -112,6 +137,7 @@ def main(argv):
         by_name.setdefault(n, a)
     gen_root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                             "generated", "ee")
+    ontour = ontour_names()
     for arg in addrs:
         a = int(arg, 16)
         # (Functions without a symbol are `func_XXXXXXXX` in the reference.)
@@ -121,6 +147,10 @@ def main(argv):
         asm = find_asm(name) if name else None
         gen = generated_location(a, gen_root)
         lines = [f"# {a:#010x} `{name or '?'}`", ""]
+        if a in ontour:
+            ot_name, ot_sig, ot_unit, tier = ontour[a]
+            lines += [f"On Tour dev-build symbol (tier {tier}, `{ot_unit}`): `{ot_name}`",
+                      f"signature: `{ot_sig}`", ""]
         if impl:
             path, line, body, _ = impl
             lines += [f"Reference C++: `{path}:{line}` (same executable; a",

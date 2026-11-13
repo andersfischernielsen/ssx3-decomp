@@ -86,6 +86,35 @@ The second ctor argument is gcc 2.95's "construct virtual bases" flag; the third
 `AI_Update` (0x128af0) collects the active `Rider*`s and runs one phase over all
 riders before the next (see "Per-frame update" below).
 
+## Reference names (DevvyDont `include/ai/rider.h`, 2026-11)
+
+The reference decompilation now names the rider classes and several fields
+(from retail and preview-build accessors). Where it differs from the sections
+below, prefer it:
+
+- Our `RiderBase` is `cRiderHandler`; `ComputerActorRider` is `cComputer`.
+  `cRider` has bases `cBeing` (vptr at 0x6c0) and `cScriptObjRider` (vptrs at
+  0x6d0 and 0x6e8), and is a virtual base of `cPlayer` (at `cPlayer`+0xe10)
+  and of about 30 rider components.
+- `cRider` vtable slots include 4 `applyBoost`, 10 `transport`,
+  11 `resetToPath`, 16-19 vibration.
+
+| Offset | Reference | Our name below |
+| --- | --- | --- |
+| 0x120 | `mRotation` (quaternion) | agrees |
+| 0x1a0 | `mMatrix` | agrees |
+| 0x474 | `mStartTick` | race bookkeeping |
+| 0x478 | `mFinishTick` (now + penalty) | race bookkeeping |
+| 0x47c | `mPenaltyTicks` | finish time slot |
+| 0x480 | `mDidNotFinish` (set by `quitEvent`) | finished flag |
+| 0x750-0x75c | audio braking, edging, pressure, speed (0..1) | board flex/edge (low confidence) |
+| 0x774 / 0x778 | wipeout slide / tumble sound handles | unknown |
+| 0x780 | `cAnimModel*` | `RiderModel` |
+| 0x878 | `mIsActor` | - |
+| 0x884 / 0x888 | `mRenderFlag` / `mSafeRenderTick` | visible / renderSlot |
+| 0xac4 | `mIsInNIS` (in-game cinematic) | `isPuppet` |
+| 0xb18 | `mIsOnScreen` | wall-hit result |
+
 ## Rider (virtual base, 0xb40 bytes)
 
 Ctor `Rider_ctor` 0x11b698 (calls the data-base ctor 0x140738 for +0x000..+0x6c0,
