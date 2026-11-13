@@ -63,7 +63,7 @@
 //!   original operand order, including the accumulator chains (`ACC = a·1`,
 //!   `ACC = 0 + x`) — see the helpers at the end of this file. Exception:
 //!   with `SSX3_FAST_MATH=1` the per-vertex ops go through host `f32`
-//!   instead (see [`crate::render_math`]).
+//!   instead (see [`crate::render_math`]), all but the glitter hash.
 //! - The LFSR: `rinit` keeps the seed's 23 mantissa bits with exponent 0
 //!   (`(s & 0x7fffff) | 0x3f800000`), `rnext` steps
 //!   `r = ((r << 1) ^ bit4 ^ bit22) & 0x7fffff | 0x3f800000` and returns r
@@ -794,13 +794,16 @@ fn glitter_points(
     scr: &Screen,
     each: &mut dyn FnMut(&mut Mem, &GlitterPoint),
 ) {
+    // Exact under fast math too: one different last bit in the hash
+    // reseeds every later point, so the glints would land elsewhere.
+    use exact::{add, add1, madd, mul, mul1, sub1};
     let d = |m: &Mem, i: u16| m.ld(top.wrapping_add(i));
     let count = d(m, 21)[3] as u16;
     let coef: [V; 16] = std::array::from_fn(|i| d(m, i as u16));
     let (d0, d1, d2, d3) = (coef[0], coef[1], coef[2], coef[3]);
 
     // The patch normal direction: (D16 D17 D18 D18) · (M · (0,0,1,0)).
-    let mz = xform(&scr.m, [0, 0, ONE, 0]);
+    let mz = fast::exact_xform(&scr.m, &[0, 0, ONE, 0]);
     let normal = {
         let acc = mul(d(m, 16), bc(mz[0]));
         let acc = madd(acc, d(m, 17), bc(mz[1]));
@@ -1522,6 +1525,32 @@ pub(crate) fn madd1(acc: u32, a: u32, b: u32) -> u32 {
 pub(crate) fn min1(a: u32, b: u32) -> u32 {
     min(bc(a), bc(b))[0]
 }
+/// The helpers above that the glitter hash uses, always the PS2 ops (also
+/// under `SSX3_FAST_MATH`).
+mod exact {
+    use super::{bc, V};
+    use crate::render_math::exact::fast;
+
+    pub(super) fn add(a: V, b: V) -> V {
+        fast::add4::<0b1111, true, true>(&a, &b).0
+    }
+    pub(super) fn mul(a: V, b: V) -> V {
+        fast::mul4::<0b1111, true, true>(&a, &b).0
+    }
+    pub(super) fn madd(acc: V, a: V, b: V) -> V {
+        fast::madd4::<0b1111, true, true, true>(&acc, &a, &b).0
+    }
+    pub(super) fn add1(a: u32, b: u32) -> u32 {
+        add(bc(a), bc(b))[0]
+    }
+    pub(super) fn sub1(a: u32, b: u32) -> u32 {
+        fast::sub4::<0b1111, true, true>(&bc(a), &bc(b)).0[0]
+    }
+    pub(super) fn mul1(a: u32, b: u32) -> u32 {
+        mul(bc(a), bc(b))[0]
+    }
+}
+
 /// The MAC sign flag of an FMAC result lane.
 pub(crate) fn neg(x: u32) -> bool {
     x & 0x8000_0000 != 0
