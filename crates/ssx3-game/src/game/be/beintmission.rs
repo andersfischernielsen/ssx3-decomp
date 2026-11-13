@@ -16,7 +16,7 @@ use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw as lw_2;
-pub(crate) use crate::game::dirtysock::tags2::p_2 as p;
+pub(crate) use crate::game::dirtysock::tagsunk::p_2 as p;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -248,7 +248,7 @@ pub(crate) mod callee {
     use super::ee;
     use super::Callee;
 
-    pub(crate) use crate::game::bx::bxstring2::callee::BE_GET_RIDER_CHARACTER as BE_GET_RIDER_CHARACTER_2;
+    pub(crate) use crate::game::bx::bxstringctor::callee::BE_GET_RIDER_CHARACTER as BE_GET_RIDER_CHARACTER_2;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_RIDER_CHARACTER_2 as BE_GET_RIDER_CHARACTER;
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_RIDER_PROFILE;
@@ -2113,11 +2113,11 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::ai::ai::tests::strict;
     pub(crate) use crate::game::ai::ai::tests::SEEDS as SEEDS_3;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3;
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::base_6 as base_4;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2 as be_library;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base_2;
 
     pub(crate) use crate::game::fe::fereal::tests::base;

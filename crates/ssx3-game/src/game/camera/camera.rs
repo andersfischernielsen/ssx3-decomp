@@ -406,7 +406,7 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::be::beintnetwork::callee::INPUT_MAP_EVAL_FLOAT;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::CAM_CONTROLLER_SET_ALGORITHM;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::CAM_CONTROLLER_SET_ALGORITHM;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::ALGORITHM_LIST_CLEAR;
     pub(crate) use crate::game::fe::feasyncfile::callee::ALGORITHM_LIST_PUSH_2 as ALGORITHM_LIST_PUSH;
@@ -8773,14 +8773,13 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear_4;
 
     pub(crate) use crate::game::ai::rider::tests::slot_2 as slot;
-    pub(crate) use crate::game::bx::bxstring2::tests::game;
+    pub(crate) use crate::game::bx::bxstringctor::tests::game;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::SCRATCH;
+    pub(crate) use crate::game::bx::bxstringctor::tests::SCRATCH;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::base_6 as base_8;
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::w as w_11;
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
-    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_6 as base_4;
@@ -8790,6 +8789,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::check_all_2 as check_all;
     pub(crate) use crate::game::fe::feasyncfile::tests::clear_4 as clear_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::globals_4 as globals_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::gp_at;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::pool;
 

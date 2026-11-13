@@ -454,7 +454,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::be::bedbreward::tests::alloc_ready as alloc_ready_2;
     pub(crate) use crate::game::be::bedbreward::tests::call_setup;
     pub(crate) use crate::game::be::beintmission::tests::SEEDS;
-    pub(crate) use crate::game::bx::bxstring2::tests::be_library;
+    pub(crate) use crate::game::bx::bxstringctor::tests::be_library;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_7 as be_library_2;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::env;

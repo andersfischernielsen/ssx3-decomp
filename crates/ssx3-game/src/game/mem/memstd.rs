@@ -11,9 +11,9 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw as lw_3;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::p_8 as p_5;
-pub(crate) use crate::game::dirtysock::tags2::arg;
-pub(crate) use crate::game::dirtysock::tags2::deleting_dtor;
-pub(crate) use crate::game::dirtysock::tags2::vslot;
+pub(crate) use crate::game::dirtysock::tagsunk::arg;
+pub(crate) use crate::game::dirtysock::tagsunk::deleting_dtor;
+pub(crate) use crate::game::dirtysock::tagsunk::vslot;
 pub(crate) use crate::game::fe::debugfe::at;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at_2;
 pub(crate) use crate::game::fe::feasyncfile::gpa;
@@ -22,10 +22,10 @@ pub(crate) use crate::game::fe::feasyncfile::lh_3 as lh_2;
 pub(crate) use crate::game::fe::feasyncfile::lw_9 as lw_4;
 pub(crate) use crate::game::fe::feasyncfile::p as p_4;
 pub(crate) use crate::game::fe::feasyncfile::sw_7 as sw_2;
-pub(crate) use crate::game::fe::fepopup3::lh;
-pub(crate) use crate::game::fe::fepopup3::lw_2 as lw;
-pub(crate) use crate::game::fe::fepopup3::p_2;
-pub(crate) use crate::game::fe::fepopup3::sw;
+pub(crate) use crate::game::fe::fepopupmisc::lh;
+pub(crate) use crate::game::fe::fepopupmisc::lw_2 as lw;
+pub(crate) use crate::game::fe::fepopupmisc::p_2;
+pub(crate) use crate::game::fe::fepopupmisc::sw;
 pub(crate) use crate::game::fe::fereal::close;
 pub(crate) use crate::game::fe::fereal::gp;
 pub(crate) use crate::game::fe::fereal::open;
@@ -126,13 +126,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::bx::bxstring2::callee::VID_ENGINE_PLAYER_START_PLAYBACK;
+    pub(crate) use crate::game::bx::bxstringctor::callee::VID_ENGINE_PLAYER_START_PLAYBACK;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUILTIN_DELETE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::BUILTIN_DELETE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_ALLOC_NAMED_ALIGNED;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MEM_ALLOC_NAMED_ALIGNED;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::VID_ENGINE_PLAYER_CLOSE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::VID_ENGINE_PLAYER_CLOSE;
 
     pub(crate) use crate::game::main::gamestate::callee::VD_TEXTURE_SINK_CTOR;
 
@@ -1277,12 +1277,12 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::camera::camera::tests::run as run_4;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
-    pub(crate) use crate::game::dirtysock::tags2::tests::dtor_setup;
-    pub(crate) use crate::game::dirtysock::tags2::tests::heap_init;
-    pub(crate) use crate::game::dirtysock::tags2::tests::rng_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2 as be_library;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::dtor_setup;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::heap_init;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::rng_2;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::MEM_HEAP;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::MEM_HEAP;
     pub(crate) use crate::game::fe::debugfe::tests::w;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_13 as base_4;
@@ -1301,7 +1301,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::SCRATCH;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_14 as SEEDS_4;
 
-    pub(crate) use crate::game::fe::fepopup3::tests::setup;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::setup;
     pub(crate) use crate::game::fe::fereal::tests::base;
     pub(crate) use crate::game::main::gamestate::tests::base_3;
     pub(crate) use crate::game::main::gamestate::tests::SEEDS_5 as SEEDS_3;

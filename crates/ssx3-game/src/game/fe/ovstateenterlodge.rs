@@ -8,8 +8,7 @@ use crate::call::guest;
 use crate::call::sp;
 use crate::call::Flow;
 use crate::call::Frame;
-pub(crate) use crate::game::dirtysock::tags2::gp_8 as gp_2;
-pub(crate) use crate::game::dirtysock::tags2::p;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_8 as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::at_2 as at;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_3;
 pub(crate) use crate::game::fe::feasyncfile::gp_3 as gp;
@@ -19,13 +18,14 @@ pub(crate) use crate::game::fe::feasyncfile::lw_r;
 pub(crate) use crate::game::fe::feasyncfile::sw_4 as sw_2;
 pub(crate) use crate::game::fe::feasyncfile::sw_r;
 pub(crate) use crate::game::fe::festateloadhint::accept_key_6;
-pub(crate) use crate::game::fe::festaterewards2::handle_list_key;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::fe::festatetrophyroom::handle_list_key;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
+pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
 pub(crate) use crate::game::movie::movieplayer::at as at_2;
+pub(crate) use crate::game::sound::bankmonitor::p;
 use crate::guest::Addr;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -124,9 +124,9 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::be::beintmission::callee::WSCRIPT_MAN_EVENT_QUEUE_POP;
 
-    pub(crate) use crate::game::bx::bxstring2::callee::OV_SCREEN_PDA_TEMPLATE_CLOSE;
+    pub(crate) use crate::game::bx::bxstringctor::callee::OV_SCREEN_PDA_TEMPLATE_CLOSE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::KEYBOARD_POPUP_SHOW;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::KEYBOARD_POPUP_SHOW;
 
     pub(crate) use crate::game::main::gamestate::callee::STR_HASH;
 
@@ -1098,16 +1098,16 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
 
     pub(crate) use crate::game::be::bedbprofile::tests::strict;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_6;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_6;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::slot_2 as slot;
+    pub(crate) use crate::game::bx::bxstringctor::tests::slot_2 as slot;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
-    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
-    pub(crate) use crate::game::dirtysock::tags2::tests::put_text;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::put_text;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base_5;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_7;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::gp_at;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
 
@@ -1119,13 +1119,13 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_11 as SEEDS_5;
     pub(crate) use crate::game::fe::feasyncfile::tests::W;
 
-    pub(crate) use crate::game::fe::fememcard2::tests::hash_screen;
+    pub(crate) use crate::game::fe::fememcardcallbacks::tests::hash_screen;
 
     pub(crate) use crate::game::fe::festateloadhint::cfe_state_progressive_verify_ps2_on_widget_notify;
     pub(crate) use crate::game::fe::festateoptions::tests::belib as belib_2;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_2;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS as SEEDS_2;
     pub(crate) use crate::game::fe::ovtemplatedialog::ov_screen_overlay_menu_on_widget_notify;
     pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
 

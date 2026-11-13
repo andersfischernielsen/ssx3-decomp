@@ -11,7 +11,7 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::lh_2 as lh;
-pub(crate) use crate::game::dirtysock::tags2::arg;
+pub(crate) use crate::game::dirtysock::tagsunk::arg;
 pub(crate) use crate::game::fe::feasyncfile::at_2;
 pub(crate) use crate::game::fe::feasyncfile::gpr;
 pub(crate) use crate::game::fe::fepopup::at as at_3;
@@ -117,9 +117,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::bx::bxstring2::callee::FE_MODULE_RIDER_PREVIEW_REQUEST_CHAR;
+    pub(crate) use crate::game::bx::bxstringctor::callee::FE_MODULE_RIDER_PREVIEW_REQUEST_CHAR;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::FE_MODULE_RIDER_PREVIEW_SET_VISIBLE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::FE_MODULE_RIDER_PREVIEW_SET_VISIBLE;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::FE_MODULE_RIDER_PREVIEW_RELEASE_BOLT_FILES;
 
@@ -127,7 +127,7 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::fe::fepopup::callee::C0019F878;
 
-    pub(crate) use crate::game::fe::fepopup3::callee::FE_MODULE_RIDER_PREVIEW_CTOR;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::FE_MODULE_RIDER_PREVIEW_CTOR;
 
     pub(crate) use crate::game::fe::festateload::callee::RIDER_PREVIEW_APPLY_TRANSFORM;
 
@@ -1428,7 +1428,7 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
 
     pub(crate) use crate::game::ai::ai::tests::CHILD;
-    pub(crate) use crate::game::dirtysock::tags2::tests::rng_2 as rng;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::rng_2 as rng;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_4 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::fake_small;
     pub(crate) use crate::game::fe::feasyncfile::tests::game_globals;
@@ -1438,7 +1438,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_2;
     pub(crate) use crate::game::fe::fepopup::tests::check_all_3 as check_all;
 
-    pub(crate) use crate::game::fe::fepopup3::tests::setup;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::setup;
     pub(crate) use crate::game::fe::festateload::tests::clear;
     pub(crate) use crate::game::fe::festateload::tests::OBJ;
     pub(crate) use crate::game::fe::ovstatepause::tests::globals_2;

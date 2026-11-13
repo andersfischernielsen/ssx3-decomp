@@ -5,11 +5,11 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Flow;
 use crate::call::Frame;
-pub(crate) use crate::game::dirtysock::tags2::at;
-pub(crate) use crate::game::dirtysock::tags2::gp_5 as gp;
-pub(crate) use crate::game::dirtysock::tags2::sw;
+pub(crate) use crate::game::dirtysock::tagsunk::at_3 as at;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_5 as gp;
+pub(crate) use crate::game::dirtysock::tagsunk::sw;
 pub(crate) use crate::game::fe::feasyncfile::at_2;
-pub(crate) use crate::game::fe::fepopup3::p as p_2;
+pub(crate) use crate::game::main::ssxappdtor::p as p_2;
 use crate::guest::Addr;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -31,9 +31,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_GET_INTERFACE_RIDER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INTERFACE;
+    pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INSTANCE;
+    pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INTERFACE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BE_GET_INTERFACE_RIDER;
 }
 
 /// `EventSelect* EventSelect_ctor(EventSelect* self)` (0x2006b8): when the
@@ -220,7 +220,7 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2 as be_library;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::W;

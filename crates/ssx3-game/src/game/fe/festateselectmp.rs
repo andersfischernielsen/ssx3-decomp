@@ -7,7 +7,7 @@ use crate::call::guest;
 use crate::call::Frame;
 pub(crate) use crate::game::fe::feasyncfile::lw_at_2 as lw_at;
 pub(crate) use crate::game::fe::feasyncfile::p;
-pub(crate) use crate::game::fe::festaterewards2::init_state;
+pub(crate) use crate::game::fe::festatetrophyroom::init_state;
 pub(crate) use crate::game::fe::ovstates::at;
 pub(crate) use crate::game::fe::ovstates::close;
 pub(crate) use crate::game::fe::ovstates::open;
@@ -47,7 +47,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::UI_STATE_CTOR;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::UI_STATE_CTOR;
 }
 
 /// `cFEStateMPCircuit* cFEStateMPCircuit_ctor(cFEStateMPCircuit*)` (0x1A3218):
@@ -272,9 +272,9 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2;
 
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
 
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS;
     use ssx3_ee as ee;
 
     #[test]

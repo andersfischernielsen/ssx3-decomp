@@ -14,7 +14,7 @@ use crate::events;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::ai::SAVE_STATE_STREAM_WRITE;
-pub(crate) use crate::game::be::bestate2::ea;
+pub(crate) use crate::game::be::beprepoststate::ea;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
@@ -357,8 +357,8 @@ pub(crate) mod callee {
     use super::ee;
     use super::Callee;
 
-    pub(crate) use crate::game::bx::bxstring2::callee::WSCRIPT_MISSION_CTOR;
-    pub(crate) use crate::game::bx::bxstring2::callee::WSCRIPT_PROCESS_LIST_PUSH_FRONT_2 as WSCRIPT_PROCESS_LIST_PUSH_FRONT_3;
+    pub(crate) use crate::game::bx::bxstringctor::callee::WSCRIPT_MISSION_CTOR;
+    pub(crate) use crate::game::bx::bxstringctor::callee::WSCRIPT_PROCESS_LIST_PUSH_FRONT_2 as WSCRIPT_PROCESS_LIST_PUSH_FRONT_3;
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_LIBRARY_GET_INSTANCE as BE_LIBRARY_GET_INSTANCE_4;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_LIBRARY_GET_INTERFACE as BE_LIBRARY_GET_INTERFACE_2;
@@ -4219,16 +4219,16 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::ai::tests::uf;
     pub(crate) use crate::game::ai::ai::tests::CHILD;
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear_6;
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS as SEEDS_7;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::w;
+    pub(crate) use crate::game::be::beprepoststate::tests::SEEDS as SEEDS_7;
     pub(crate) use crate::game::bx::appman::tests::ptr as ptr_2;
     pub(crate) use crate::game::bx::appman::tests::rng;
     pub(crate) use crate::game::bx::appman::tests::SEEDS;
     pub(crate) use crate::game::bx::bxstring::tests::SEEDS as SEEDS_3;
-    pub(crate) use crate::game::bx::bxstring2::tests::alloc_base as alloc_base_2;
+    pub(crate) use crate::game::bx::bxstringctor::tests::alloc_base as alloc_base_2;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_6 as be_library_4;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_6 as be_library_4;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_8;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as base_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_3 as base_4;

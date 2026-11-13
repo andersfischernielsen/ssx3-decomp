@@ -29,7 +29,7 @@ pub(crate) use crate::game::ai::rider::slt;
 pub(crate) use crate::game::ai::rider::sp_2;
 pub(crate) use crate::game::ai::rider::vcall;
 pub(crate) use crate::game::ai::rider::Ops;
-pub(crate) use crate::game::be::bestate2::ea;
+pub(crate) use crate::game::be::beprepoststate::ea;
 pub(crate) use crate::game::fe::feasyncfile::at as at_2;
 pub(crate) use crate::game::fe::feasyncfile::lw_5 as lw_2;
 pub(crate) use crate::game::fe::festateoptions::gpa;
@@ -61,7 +61,7 @@ use crate::abi::ret;
 use crate::abi::set_reg;
 use crate::call;
 /// Replacements in this unit: (address, function, name).
-pub(crate) use crate::game::fe::ovstatemission2::ov_screen_set_widget_visibility;
+pub(crate) use crate::game::fe::ovstateprofile::ov_screen_set_widget_visibility;
 pub(crate) use crate::game::fe::splashmanager::oc230_gp;
 
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -5751,9 +5751,9 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::be::beintplayer::tests::strict;
     pub(crate) use crate::game::be::beintplayer::tests::SEEDS_7 as SEEDS_6;
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::bx::bxstring2::tests::fbits;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::w;
+    pub(crate) use crate::game::bx::bxstringctor::tests::fbits;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::gpf;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base_2;
 

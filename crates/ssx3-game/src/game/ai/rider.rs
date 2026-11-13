@@ -14,7 +14,7 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::control::handplantcontrol::gp_4;
-pub(crate) use crate::game::bx::bxstring2::gp_lit as gp_lit_2;
+pub(crate) use crate::game::bx::bxstringctor::gp_lit as gp_lit_2;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_4;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at as lw_at_2;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
@@ -38,6 +38,7 @@ pub(crate) use crate::game::render::particle::at as at_2;
 pub(crate) use crate::game::scripter::ssxscriptengine::low;
 pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at;
 pub(crate) use crate::game::scripter::ssxscriptengine::sw_at as sw_at_2;
+use crate::game::visualfx::boardwakefx as bw;
 pub(crate) use crate::game::visualfx::boardwakefx::lh;
 pub(crate) use crate::game::visualfx::boardwakefx::lw_2;
 pub(crate) use crate::game::visualfx::boardwakefx::r32_2 as r32_3;
@@ -256,6 +257,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_get_player_character_info,
         "Rider_GetPlayerCharacterInfo",
     ),
+    (0x0012_20d8, rider_build_light_set, "Rider_BuildLightSet"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -12426,6 +12428,194 @@ pub fn rider_get_player_character_info(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod rider_lights {
+
+    /// The rider's vtable (`+0x38` slot: the AI/view index getter).
+    pub const VTABLE: u32 = 0x6c0;
+
+    pub const AI_INDEX_SLOT: u32 = 0x38;
+
+    /// `RiderHandler*` (its `+0xd30` holds the extra directional lights).
+    pub const HANDLER: u32 = 0x77c;
+
+    /// Eight dynamic lights affecting the rider (null for none).
+    pub const DYNAMIC_LIGHTS: u32 = 0x794;
+
+    /// The rider's irradiance (light set).
+    pub const LIGHTS: u32 = 0x7c0;
+
+    /// Handler offset of the directional-light block: `{x, y, z, n}` and
+    /// `n` lights (`+0x10` points, 12 bytes each; `+0x50` directions, 16
+    /// bytes each).
+    pub const HANDLER_LIGHTS: u32 = 0xd30;
+}
+
+/// `int rider->GetAIIndex()` through the rider's vtable, returning to `ret`.
+pub(crate) fn rider_ai_index(c: &mut Cpu, rider: u32, ret: u32) -> crate::call::Flow {
+    use rider_lights::*;
+    c.g[V1][0] = c.lw(rider.wrapping_add(VTABLE));
+    c.g[A1][0] = sx(rider.wrapping_add(VTABLE));
+    c.g[A0][0] = c.lh(bw::p(r32(c, V1), AI_INDEX_SLOT));
+    c.g[V0][0] = c.lw(bw::p(r32(c, V1), AI_INDEX_SLOT + 4));
+    let method = r32(c, V0);
+    c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+    call_ptr(c, method, ret)
+}
+
+/// `void Rider_BuildLightSet(cRider* r)` (0x1220d8): rebuild the rider's
+/// irradiance at_m2 `+0x7c0`: clear it, copy the view's ambient set
+/// (`WorldPainter_GetViewIrradiance(index)`, 0xa0 bytes), add the
+/// camera-relative light at_m2 the hips (`WorldPainter_GetLighting30`), each of
+/// the eight dynamic lights, and, if the rider handler has them, its
+/// directional block: the offset vector, then one directional light per
+/// entry.
+pub fn rider_build_light_set(c: &mut Cpu) {
+    use rider_lights::*;
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S2, 0x60);
+        frame.save(c, S0, 0x80);
+        c.g[S2][0] = c.g[A0][0];
+        let rider = r32(c, S2);
+        c.g[S0][0] = sx(rider.wrapping_add(LIGHTS));
+        frame.save(c, S1, 0x70);
+        frame.save(c, S3, 0x50);
+        frame.save(c, S4, 0x40);
+        frame.save(c, S5, 0x30);
+        frame.save_ra(c, 0x20);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0038_9260, 0x0012_2108)?; // Irradiance_Clear
+        rider_ai_index(c, rider, 0x0012_2120)?;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x002e_dfb8, 0x0012_2128)?; // WorldPainter_GetViewIrradiance
+                                                // Copy the view's irradiance (0xa0 bytes, two quadwords a step).
+        c.g[V1][0] = sx(r32(c, V0).wrapping_add(0xa0));
+        loop {
+            c.cycles += 7;
+            c.lq(A0, r32(c, V0));
+            c.lq(A1, bw::p(r32(c, V0), 0x10));
+            c.sq(A0, r32(c, S0));
+            c.sq(A1, bw::p(r32(c, S0), 0x10));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x20));
+            let more = c.g[V0][0] != c.g[V1][0];
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(0x20));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0012_212c);
+            }
+        }
+        // The camera-relative light at_m2 the hips.
+        c.cycles += 20;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = c.g[S2][0];
+        Callee {
+            addr: 0x0011_ff48,
+            f: ee::s00::Rider_GetHipsPosition,
+        }
+        .call(c, 0x0012_2154)?;
+        c.g[S0][0] = sx(rider.wrapping_add(LIGHTS));
+        c.g[S4][0] = c.g[S0][0];
+        c.g[S1][0] = sx(rider.wrapping_add(DYNAMIC_LIGHTS));
+        c.g[S3][0] = 7;
+        rider_ai_index(c, rider, 0x0012_217c)?;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x002e_efa8, 0x0012_2184)?; // WorldPainter_GetLighting30
+        c.mov_s(12, 0);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[SP][0];
+        call_ptr(c, 0x0038_9cb8, 0x0012_2194)?; // Irradiance_AddCameraRelativeLight
+                                                // The dynamic lights.
+        loop {
+            c.cycles += 3;
+            c.g[A2][0] = c.lw(r32(c, S1));
+            let none = c.g[A2][0] == 0;
+            c.g[A0][0] = c.g[S4][0];
+            if !none {
+                c.cycles += 2;
+                c.g[A1][0] = c.g[SP][0];
+                call_ptr(c, 0x0038_a6a8, 0x0012_21ac)?; // Irradiance_AddDynamicLight
+            }
+            c.cycles += 3;
+            c.g[S3][0] = sx(r32(c, S3).wrapping_sub(1));
+            let more = (c.g[S3][0] as i64) >= 0;
+            c.g[S1][0] = sx(r32(c, S1).wrapping_add(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0012_2198);
+            }
+        }
+        // The handler's directional block.
+        c.cycles += 6;
+        c.g[V1][0] = c.lw(rider.wrapping_add(HANDLER));
+        c.g[S1][0] = 0;
+        c.g[V0][0] = sx(r32(c, V1).wrapping_add(HANDLER_LIGHTS));
+        if c.g[V1][0] != 0 {
+            c.g[S1][0] = c.g[V0][0];
+        }
+        let block = r32(c, S1);
+        c.g[A1][0] = sx(bw::p(sp(c), 0x10));
+        if block != 0 {
+            c.cycles += 13;
+            c.lwc1(0, block);
+            c.lwc1(1, bw::p(block, 0x4));
+            c.g[S5][0] = c.g[A1][0];
+            c.lwc1(2, bw::p(block, 0x8));
+            c.g[A0][0] = c.g[S4][0];
+            c.swc1(0, bw::p(sp(c), 0x10));
+            c.g[S3][0] = 0;
+            c.swc1(1, bw::p(sp(c), 0x14));
+            c.swc1(2, bw::p(sp(c), 0x18));
+            call_ptr(c, 0x0038_9558, 0x0012_21f8)?; // Vec3_AddTo
+            c.g[V0][0] = c.lw(bw::p(block, 0xc));
+            c.g[S0][0] = sx(bw::p(block, 0x18));
+            if c.g[V0][0] as i64 > 0 {
+                c.cycles += 3;
+                c.g[S2][0] = sx(bw::p(block, 0x50));
+                c.lwc1(0, r32(c, S0).wrapping_sub(0x8));
+                loop {
+                    c.cycles += 16;
+                    c.g[A1][0] = c.g[S2][0];
+                    c.lwc1(1, r32(c, S0).wrapping_sub(0x4));
+                    c.g[A0][0] = c.g[S4][0];
+                    c.lwc1(2, r32(c, S0));
+                    c.g[A2][0] = c.g[S5][0];
+                    c.swc1(0, bw::p(sp(c), 0x10));
+                    c.g[S3][0] = sx(r32(c, S3).wrapping_add(1));
+                    c.swc1(1, bw::p(sp(c), 0x14));
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(0xc));
+                    c.swc1(2, bw::p(sp(c), 0x18));
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_add(0x10));
+                    call_ptr(c, 0x0038_9520, 0x0012_2240)?; // Irradiance_AddDirectional
+                    c.g[V0][0] = c.lw(bw::p(block, 0xc));
+                    c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        break;
+                    }
+                    c.lwc1(0, r32(c, S0).wrapping_sub(0x8));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0012_2210);
+                    }
+                }
+            }
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15807,6 +15997,142 @@ pub(crate) mod tests {
                 c.bus
                     .write32(RIDER + RIDER_GET_PLAYER_CHARACTER_INFO_AI_INDEX, seed % 8);
                 c.g[A0][0] = sx(RIDER);
+            },
+        );
+    }
+
+    use ssx3_ee_rt::cpu::sx;
+    use ssx3_ee_rt::Cpu;
+
+    /// A dynamic light for `Irradiance_AddDynamicLight` (kind, position,
+    /// colour, cone and falloff fields).
+    pub(crate) fn dynamic_light(c: &mut Cpu, r: &mut Rng, light: u32, kind: u32) {
+        c.bus.write32(light + 0x10, kind);
+        for k in 0..3 {
+            c.bus.write32(light + 4 * k, r.f32(20.0));
+        }
+        c.bus.write32(
+            light + 0xc,
+            crate::game::visualfx::boardwakefx::tests::f(1.0),
+        );
+        c.bus.write32(
+            light + 0x14,
+            crate::game::visualfx::boardwakefx::tests::f(f32::from_bits(r.f32(1.5)) + 1.5),
+        );
+        c.bus.write32(light + 0x18, r.f32(1.0));
+        c.bus.write32(
+            light + 0x1c,
+            crate::game::visualfx::boardwakefx::tests::f(f32::from_bits(r.f32(1.0)) + 1.0),
+        );
+        for k in 0..6 {
+            c.bus.write32(light + 0x20 + 4 * k, r.f32(1.0));
+        }
+        fill(c, r, light + 0x38, 2);
+        for k in 0..8 {
+            c.bus.write32(light + 0x40 + 4 * k, r.f32(30.0));
+        }
+        let outer = f32::from_bits(r.f32(5.0)) + 5.0;
+        c.bus.write32(
+            light + 0x60,
+            crate::game::visualfx::boardwakefx::tests::f(outer),
+        );
+        c.bus.write32(
+            light + 0x5c,
+            crate::game::visualfx::boardwakefx::tests::f(outer + 10.0),
+        );
+        c.bus.write8(light + 0x64, (r.next_u32() % 5) as u8);
+        c.bus.write8(light + 0x65, (r.next_u32() % 6) as u8);
+    }
+
+    /// `Rider_BuildLightSet` with the real irradiance callees: the view
+    /// irradiance copy, the camera-relative light (camera view matrix through
+    /// a fake), 0-8 dynamic lights, and the handler's directional block
+    /// (absent, empty, or 1-3 lights). The rider's AI-index getter and the
+    /// lighting/camera methods are fakes (some seeds unwind at_m2 them).
+    #[test]
+    fn rider_build_light_set_matches() {
+        use rider_lights::*;
+        check_lohi(
+            ee::s00::f_001220d8__generated,
+            rider_build_light_set,
+            200,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x1220, 4);
+                let (rider, vt, hips, bones, handler) = (
+                    DATA,
+                    DATA + 0x2000,
+                    DATA + 0x2100,
+                    DATA + 0x2200,
+                    DATA + 0x4000,
+                );
+                let (camera, cam_vt, view) = (DATA + 0x5000, DATA + 0x6000, DATA + 0x5100);
+                fill(c, &mut r, rider + LIGHTS, 0x28);
+                c.bus.write32(rider + VTABLE, vt);
+                c.bus
+                    .write16(vt + AI_INDEX_SLOT, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(vt + AI_INDEX_SLOT + 4, FAKE);
+                // The view index from both getter calls (forced fake results).
+                let view_index = 1 + seed % 3;
+                c.bus.write32(LOG_RESULTS, view_index);
+                c.bus.write32(LOG_RESULTS + 4, 1 + (seed / 3) % 3);
+                c.bus.write32(LOG_RESULTS + 12, view);
+                for i in 1..4u32 {
+                    fill(c, &mut r, 0x004f_a3c0 + i * 0xf0, 0x28);
+                    let (cell, obj, ovt) = (
+                        DATA + 0x7000 + i * 0x40,
+                        DATA + 0x7400 + i * 0x40,
+                        DATA + 0x7800 + i * 0x200,
+                    );
+                    c.bus.write32(0x004f_a370 + i * 0xf0 + 0x1c, cell);
+                    c.bus.write32(cell, obj);
+                    c.bus.write32(obj + 4, ovt);
+                    c.bus.write16(ovt + 0x150, (r.next_u32() & 0x7c) as u16);
+                    c.bus.write32(ovt + 0x154, FAKE + 0x10);
+                }
+                // Hips: rider+0x780 -> skeleton, +0x2c bones (32 bytes), +0x89c index.
+                c.bus.write32(rider + 0x780, hips);
+                c.bus.write32(hips + 0x2c, bones);
+                c.bus.write32(rider + 0x89c, r.next_u32() % 4);
+                for k in 0..32 {
+                    c.bus.write32(bones + 4 * k, r.f32(50.0));
+                }
+                // The camera (gp_m2+0x2a90) and its view matrix.
+                c.bus.write32(GAME_GP + 0x2a90, camera);
+                c.bus.write32(camera + 0x10d8, cam_vt);
+                c.bus.write16(cam_vt + 0x118, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(cam_vt + 0x11c, FAKE + 0x20);
+                for k in 0..16 {
+                    c.bus.write32(view + 4 * k, r.f32(2.0));
+                }
+                // Dynamic lights: none, or one of two lights per slot.
+                let (l1, l2) = (DATA + 0x3000, DATA + 0x3100);
+                dynamic_light(c, &mut r, l1, [1u32, 2, 0, 3][(seed % 4) as usize]);
+                dynamic_light(c, &mut r, l2, [2u32, 1, 3, 0][(seed / 4 % 4) as usize]);
+                for k in 0..8u32 {
+                    let l = match (r.next_u32() % 4, seed % 5) {
+                        (_, 0) => 0,
+                        (0, _) => l1,
+                        (1, _) => l2,
+                        _ => 0,
+                    };
+                    c.bus.write32(rider + DYNAMIC_LIGHTS + 4 * k, l);
+                }
+                // The handler's directional block.
+                c.bus
+                    .write32(rider + HANDLER, if seed % 4 == 1 { 0 } else { handler });
+                let block = handler + HANDLER_LIGHTS;
+                for k in 0..3 {
+                    c.bus.write32(block + 4 * k, r.f32(5.0));
+                }
+                c.bus.write32(block + 0xc, (seed / 2) % 4);
+                for k in 0..12 {
+                    c.bus.write32(block + 0x10 + 4 * k, r.f32(5.0));
+                    c.bus.write32(block + 0x50 + 4 * k, r.f32(1.0));
+                }
+                c.bus.write32(block + 0x80, r.f32(1.0));
+                c.g[A0][0] = sx(rider);
+                c.pc = 0x0012_20d8;
             },
         );
     }

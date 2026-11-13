@@ -305,9 +305,9 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
 
     use crate::difftest::SP as STACK_TOP;
-    pub(crate) use crate::game::bx::bxstring2::tests::game;
+    pub(crate) use crate::game::bx::bxstringctor::tests::game;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::SCRATCH;
+    pub(crate) use crate::game::bx::bxstringctor::tests::SCRATCH;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
     pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_5 as heap_init_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::w;

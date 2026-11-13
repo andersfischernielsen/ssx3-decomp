@@ -531,9 +531,9 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
 
     pub(crate) use crate::game::be::bedbprofile::tests::strict;
-    pub(crate) use crate::game::bx::bxstring2::tests::alloc_base;
+    pub(crate) use crate::game::bx::bxstringctor::tests::alloc_base;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::run;
+    pub(crate) use crate::game::bx::bxstringctor::tests::run;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_16 as base;
 

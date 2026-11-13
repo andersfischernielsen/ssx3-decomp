@@ -21,10 +21,10 @@ pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lh_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at as lw_at_4;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
-pub(crate) use crate::game::dirtysock::tags2::at;
-pub(crate) use crate::game::dirtysock::tags2::lw;
-pub(crate) use crate::game::dirtysock::tags2::p_2;
-pub(crate) use crate::game::dirtysock::tags2::sw;
+pub(crate) use crate::game::dirtysock::tagsunk::at_3 as at;
+pub(crate) use crate::game::dirtysock::tagsunk::lw;
+pub(crate) use crate::game::dirtysock::tagsunk::p_2;
+pub(crate) use crate::game::dirtysock::tagsunk::sw;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at_4;
 pub(crate) use crate::game::fe::feasyncfile::lh_2 as lh_3;
 pub(crate) use crate::game::fe::feasyncfile::lw_5 as lw_4;
@@ -32,15 +32,15 @@ pub(crate) use crate::game::fe::feasyncfile::lw_6 as lw_5;
 pub(crate) use crate::game::fe::feasyncfile::lw_at_2;
 pub(crate) use crate::game::fe::feasyncfile::sw_6 as sw_5;
 pub(crate) use crate::game::fe::feasyncfile::u32_at;
-pub(crate) use crate::game::fe::fepopup3::gp_2;
-pub(crate) use crate::game::fe::fepopup3::lh;
-pub(crate) use crate::game::fe::fepopup3::lw_2;
-pub(crate) use crate::game::fe::fepopup3::p_2 as p_4;
-pub(crate) use crate::game::fe::fepopup3::sw as sw_2;
+pub(crate) use crate::game::fe::fepopupmisc::gp_2;
+pub(crate) use crate::game::fe::fepopupmisc::lh;
+pub(crate) use crate::game::fe::fepopupmisc::lw_2;
+pub(crate) use crate::game::fe::fepopupmisc::p_2 as p_4;
+pub(crate) use crate::game::fe::fepopupmisc::sw as sw_2;
 pub(crate) use crate::game::fe::festaterewards::lw_3;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
 pub(crate) use crate::game::fe::festateselectmp::epilogue;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
+pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::fe::ovstates::at as at_5;
 pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at_3;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2 as p_3;
@@ -326,21 +326,21 @@ pub(crate) mod callee {
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_END_OPERATION;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_ON_OPERATION_DONE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::CBE_GET_BE as CBE_GET_BE_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CBE_GET_INTERFACE as CBE_GET_INTERFACE_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::CBE_GET_BE as CBE_GET_BE_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::CBE_GET_INTERFACE as CBE_GET_INTERFACE_2;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_00152948;
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_00152BA8;
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_002C2540;
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_002C26D0;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::F_00152948;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::F_00152BA8;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::F_002C2540;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::F_002C26D0;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_GET_PRODUCT_CODE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_GET_SAVE_TYPE_TAG;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_END_OPERATION_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_REQUEST_CARD_INFO;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_SET_MODE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MC_GET_PRODUCT_CODE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MC_GET_SAVE_TYPE_TAG;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MC_MANAGER_END_OPERATION_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MC_MANAGER_REQUEST_CARD_INFO;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MC_SET_MODE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::OPERATOR_NEW_NAMED;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::OPERATOR_NEW_NAMED;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::MC_MANAGER_ON_CARD_SCANNED;
     pub(crate) use crate::game::fe::feasyncfile::callee::MC_MANAGER_UPDATE_MODE1;
@@ -348,10 +348,10 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_ENGINE_GET_PROCESS;
 
-    pub(crate) use crate::game::fe::fepopup3::callee::MC_MANAGER_END_OPERATION_2 as MC_MANAGER_END_OPERATION_3;
-    pub(crate) use crate::game::fe::fepopup3::callee::MC_MANAGER_END_PROGRESS;
-    pub(crate) use crate::game::fe::fepopup3::callee::MC_MANAGER_REQUEST_CARD_INFO_2;
-    pub(crate) use crate::game::fe::fepopup3::callee::MC_MANAGER_SET_MODE;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::MC_MANAGER_END_OPERATION_2 as MC_MANAGER_END_OPERATION_3;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::MC_MANAGER_END_PROGRESS;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::MC_MANAGER_REQUEST_CARD_INFO_2;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::MC_MANAGER_SET_MODE;
 
     pub(crate) use crate::game::sound::bankmonitor::callee::PS2_MEMCARD_CREATE;
 
@@ -5213,16 +5213,16 @@ pub(crate) mod tests {
     pub(crate) use crate::game::be::beintnetwork::tests::put_str;
     pub(crate) use crate::game::be::belibrary::tests::alloc_ready;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_9;
-    pub(crate) use crate::game::bx::bxstring2::tests::be_library;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_9;
+    pub(crate) use crate::game::bx::bxstringctor::tests::be_library;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::common;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::put_vtable;
-    pub(crate) use crate::game::dirtysock::tags2::tests::zero;
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_5;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::put_vtable;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::zero;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7 as SEEDS_5;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_4 as alloc_base_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_setup;
@@ -5280,15 +5280,15 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::VT;
 
     pub(crate) use crate::game::fe::fememcard::tests::put_slot;
-    pub(crate) use crate::game::fe::fepopup3::tests::setup;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::setup;
     pub(crate) use crate::game::fe::festatecredits::tests::RET_ZERO as RET_ZERO_2;
     pub(crate) use crate::game::fe::festaterewards::tests::base_4 as base_5;
 
     pub(crate) use crate::game::fe::festaterewards::tests::slot_2 as slot_6;
 
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_3;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS as SEEDS_3;
     pub(crate) use crate::game::fe::ovtemplatedialog::tests::ONE_STUB;
     pub(crate) use crate::game::fe::ovtemplatedialog::tests::ZERO_STUB;
     pub(crate) use crate::game::main::gameload::tests::slot_to;

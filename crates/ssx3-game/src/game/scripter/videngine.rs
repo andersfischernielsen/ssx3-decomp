@@ -6,7 +6,7 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Frame;
-pub(crate) use crate::game::dirtysock::tags2::arg;
+pub(crate) use crate::game::dirtysock::tagsunk::arg;
 pub(crate) use crate::game::sound::bankmonitor::p;
 pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw;
 pub(crate) use crate::game::wscript::wscriptman::sw;
@@ -54,7 +54,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_CMD_QUEUE_CLEAR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SCRIPT_CMD_QUEUE_CLEAR;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_CMD_QUEUE_IS_FULL;
 }
@@ -612,7 +612,7 @@ pub(crate) mod tests {
     use crate::difftest::Rng;
     use crate::difftest::DATA;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::rng_2 as rng;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::rng_2 as rng;
     pub(crate) use crate::game::sound::bankmonitor::tests::SEEDS_4 as SEEDS;
     pub(crate) use crate::game::wscript::wscriptman::tests::base_6 as base;
     pub(crate) use crate::game::wscript::wscriptman::tests::clear_5 as clear;

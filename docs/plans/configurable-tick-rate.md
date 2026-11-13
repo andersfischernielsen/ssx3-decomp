@@ -30,7 +30,7 @@ Status (2026-10-23):
   240 Hz and the race clock/course % agree up to the start offset.
 - ✅ Porting follow-up for T3: `InSeq_InstanceUpdate` (0x274a30) and
   `cFEStateOptionsController_OnWidgetAction` (0x18ca10) are hand-written now
-  (`game/replay/replay2.rs`, `game/fe/festateoptions.rs`); their differential
+  (`game/replay/replaycache.rs`, `game/fe/festateoptions.rs`); their differential
   tests pass with the strict register/call comparison. Their rate work:
   the options vibration timers (60 ticks) follow the rate, the UV-scroll
   velocity is a per-60-Hz-frame value applied as `60/rate`, and the two

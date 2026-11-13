@@ -789,7 +789,7 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
 
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_18 as base_4;
@@ -800,7 +800,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_17 as SEEDS_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_6 as WORLD;
-    pub(crate) use crate::game::fe::festatecharequip2::tests::money_text_test;
+    pub(crate) use crate::game::fe::festatecharequipdetail::tests::money_text_test;
 
     pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_3;
 

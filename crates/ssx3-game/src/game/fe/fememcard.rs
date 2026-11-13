@@ -9,10 +9,9 @@ use crate::call::sp;
 use crate::call::Frame;
 pub(crate) use crate::game::ai::computer::lh_2 as lh;
 pub(crate) use crate::game::ai::computer::sd;
-pub(crate) use crate::game::dirtysock::tags2::at;
-pub(crate) use crate::game::dirtysock::tags2::gp_5 as gp;
-pub(crate) use crate::game::dirtysock::tags2::leave;
-pub(crate) use crate::game::dirtysock::tags2::sw;
+pub(crate) use crate::game::dirtysock::tagsunk::at_3 as at;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_5 as gp;
+pub(crate) use crate::game::dirtysock::tagsunk::sw;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::r;
 pub(crate) use crate::game::fe::fepopup::ld;
@@ -20,6 +19,7 @@ pub(crate) use crate::game::fe::fepopup::lw_9 as lw_3;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw_3;
 pub(crate) use crate::game::fe::ovstatepause::lw;
 pub(crate) use crate::game::fe::ovstatepause::p;
+pub(crate) use crate::game::sound::bankmonitor::leave;
 pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw_2;
 pub(crate) use crate::game::wscript::wscriptman::sw as sw_2;
 use crate::guest::Addr;
@@ -91,7 +91,7 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::be::beintmission::callee::MEMCARD_SCAN_STEP;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_APP_START_FE_MODULE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SSX_APP_START_FE_MODULE;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::FE_MEMCARD_FINISH;
     pub(crate) use crate::game::fe::feasyncfile::callee::FE_MEMCARD_START_PROFILE_SEARCH;
@@ -903,9 +903,9 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::bx::bxstring::tests::heap;
     pub(crate) use crate::game::bx::bxstring::tests::put_str_2 as put_str;
-    pub(crate) use crate::game::bx::bxstring2::tests::be_library;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::pool_7 as pool;
+    pub(crate) use crate::game::bx::bxstringctor::tests::be_library;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::pool_7 as pool;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_setup;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base_3;

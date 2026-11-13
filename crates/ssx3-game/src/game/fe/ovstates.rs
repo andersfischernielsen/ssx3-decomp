@@ -11,13 +11,13 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::beintplayer::lh;
-pub(crate) use crate::game::be::bestate2::ea;
-pub(crate) use crate::game::dirtysock::tags2::const_reg;
-pub(crate) use crate::game::dirtysock::tags2::sw;
+pub(crate) use crate::game::be::beprepoststate::ea;
+pub(crate) use crate::game::dirtysock::tagsunk::const_reg;
+pub(crate) use crate::game::dirtysock::tagsunk::sw;
 pub(crate) use crate::game::fe::feasyncfile::p as p_4;
 pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_ACTIVATED;
 pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_IGNORED;
-pub(crate) use crate::game::fe::festaterewards2::init_state;
+pub(crate) use crate::game::fe::festatetrophyroom::init_state;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::p as p_3;
 pub(crate) use crate::game::sound::soundsys::gp_4 as gp;
@@ -86,9 +86,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_CTOR_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_STATE_CTOR_2;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::UI_STATE_CTOR;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::UI_STATE_CTOR;
 
     pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SET_USER_DATA;
 }
@@ -734,8 +734,8 @@ pub(crate) mod tests {
     use crate::difftest::RA as RET;
 
     pub(crate) use crate::game::ai::rider::tests::clear_2;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS as SEEDS_4;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
+    pub(crate) use crate::game::be::beprepoststate::tests::SEEDS as SEEDS_4;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2 as be_library;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_6 as base;
 
@@ -743,9 +743,9 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ3_2 as OBJ3;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
     pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_3 as WORLD;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS;
     pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
 
     pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_4;

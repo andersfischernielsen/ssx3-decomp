@@ -10,15 +10,15 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::be::gp;
-pub(crate) use crate::game::dirtysock::tags2::sw;
+pub(crate) use crate::game::dirtysock::tagsunk::sw;
 pub(crate) use crate::game::fe::feasyncfile::at_2 as at;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
 pub(crate) use crate::game::fe::feasyncfile::p as p_5;
 pub(crate) use crate::game::fe::feasyncfile::p as p_6;
 pub(crate) use crate::game::fe::feasyncfile::r;
 pub(crate) use crate::game::fe::feasyncfile::sb_r;
-pub(crate) use crate::game::fe::fepopup3::lb;
-pub(crate) use crate::game::fe::fepopup3::p_2;
+pub(crate) use crate::game::fe::fepopupmisc::lb;
+pub(crate) use crate::game::fe::fepopupmisc::p_2;
 pub(crate) use crate::game::main::gamestate::gw;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
 pub(crate) use crate::game::main::gamestate::p_2 as p_3;
@@ -77,11 +77,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 /// Direct and cross-shard callees, by guest address.
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOC_STRING_TABLE_DTOR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::LOC_STRING_TABLE_DTOR;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::FE_LOCALE_LOAD_TABLE;
 
-    pub(crate) use crate::game::fe::fepopup3::callee::FE_LOCALE_UNLOAD_TABLE;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::FE_LOCALE_UNLOAD_TABLE;
 
     pub(crate) use crate::game::main::gamestate::callee::STR_HASH;
 
@@ -871,11 +871,11 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::be::bedbprofile::tests::strict;
     pub(crate) use crate::game::camera::trigger::cameratriggerlist::tests::wb;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
-    pub(crate) use crate::game::dirtysock::tags2::tests::heap_init_5 as heap_init;
-    pub(crate) use crate::game::dirtysock::tags2::tests::run_4 as run;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2 as be_library;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::heap_init_5 as heap_init;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::run_4 as run;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::MEM_HEAP;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::MEM_HEAP;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_16 as base_5;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_6;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_4 as base;
@@ -888,8 +888,8 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_3 as WORLD;
 
-    pub(crate) use crate::game::fe::fepopup3::tests::setup;
-    pub(crate) use crate::game::fe::festateoptions2::cfestaterequestline_shutdown;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::setup;
+    pub(crate) use crate::game::fe::festateaudiooptions::cfestaterequestline_shutdown;
     pub(crate) use crate::game::main::gamestate::tests::base_3;
     pub(crate) use crate::game::main::gamestate::tests::slot_2;
     pub(crate) use crate::game::main::gamestate::tests::SEEDS_5 as SEEDS;

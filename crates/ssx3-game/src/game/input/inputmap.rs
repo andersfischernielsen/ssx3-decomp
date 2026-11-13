@@ -698,7 +698,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::SEEDS_2 as SEEDS;
     pub(crate) use crate::game::camera::camera::tests::input_map;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::cstr;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::cstr;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_3 as alloc_base;
 

@@ -20,7 +20,7 @@ use crate::events::event_due;
 use crate::events::Resume;
 pub(crate) use crate::game::ai::ai::at as at_2;
 use crate::game::lib::snd;
-pub(crate) use crate::game::misc::SND_EVENT_TABLE;
+pub(crate) use crate::game::sound::soundsys::SND_EVENT_TABLE;
 use crate::game::visualfx::boardwakefx as bw;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;

@@ -18,9 +18,8 @@ use crate::events::event_due;
 pub(crate) use crate::game::ai::ai::gp as gp_2;
 pub(crate) use crate::game::ai::computer::lh_2;
 pub(crate) use crate::game::ai::computer::sd;
-pub(crate) use crate::game::be::bestate2::ea;
-pub(crate) use crate::game::dirtysock::tags2::lw;
-pub(crate) use crate::game::dirtysock::tags2::p;
+pub(crate) use crate::game::be::beprepoststate::ea;
+pub(crate) use crate::game::dirtysock::tagsunk::lw;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at_4;
 pub(crate) use crate::game::fe::feasyncfile::gp_3;
 pub(crate) use crate::game::fe::feasyncfile::gp_7 as gp_4;
@@ -47,8 +46,9 @@ pub(crate) use crate::game::main::gamestate::vslot;
 pub(crate) use crate::game::movie::movieplayer::at as at_2;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::render::graphicsman::RegMem;
-pub(crate) use crate::game::replay::replay2::destroy_if_flag;
+pub(crate) use crate::game::replay::replaycache::destroy_if_flag;
 pub(crate) use crate::game::sound::bankmonitor::leave;
+pub(crate) use crate::game::sound::bankmonitor::p;
 pub(crate) use crate::game::visualfx::boardtrailfx::gp;
 pub(crate) use crate::game::visualfx::worldlightman::deleting_dtor;
 pub(crate) use crate::game::wscript::wscriptman::sw;
@@ -392,10 +392,10 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::camera::camera::callee::MEASURE_ROW;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_ITEM_MEASURE_ROW;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_PAGE_SELECT_NEXT;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MENU_SYS_ITEM_MEASURE_ROW;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MENU_SYS_PAGE_SELECT_NEXT;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_2 as SPRINTF;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SPRINTF_2 as SPRINTF;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_CTOR;
     pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_IS_DISABLED;
@@ -455,7 +455,7 @@ pub(crate) mod g {}
 
 pub(crate) mod addr {
 
-    pub(crate) use crate::game::bx::bxstring2::addr::SPRINTF;
+    pub(crate) use crate::game::bx::bxstringctor::addr::SPRINTF;
 }
 
 /// `gp-0x848`: the `World` singleton pointer (global data filled in at
@@ -4160,22 +4160,22 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear_5;
     pub(crate) use crate::game::be::beintoption::tests::slot;
     pub(crate) use crate::game::be::beintoption::tests::VT;
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS as SEEDS_6;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::w;
+    pub(crate) use crate::game::be::beprepoststate::tests::SEEDS as SEEDS_6;
     pub(crate) use crate::game::bx::appman::tests::ptr as ptr_2;
     pub(crate) use crate::game::bx::appman::tests::rng;
     pub(crate) use crate::game::bx::appman::tests::SEEDS;
     pub(crate) use crate::game::bx::bxstring::tests::SEEDS as SEEDS_2;
 
     pub(crate) use crate::game::camera::cameracontroller::tests::pool as pool_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::alloc_ready;
-    pub(crate) use crate::game::dirtysock::tags2::tests::clear as clear_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::alloc_ready;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::common;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear as clear_2;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::gp_at;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_4;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7 as SEEDS_4;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base_8;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_13 as base_9;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_10;
@@ -4221,7 +4221,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::render::particle::tests::clear as clear_3;
     pub(crate) use crate::game::render::particle::tests::common as common_2;
     pub(crate) use crate::game::render::particle::tests::SEEDS_7 as SEEDS_5;
-    pub(crate) use crate::game::replay::replay2::tests::dtor_setup;
+    pub(crate) use crate::game::replay::replaycache::tests::dtor_setup;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::base as base_6;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::globals_4 as globals_5;
     pub(crate) use crate::game::sound::bankmonitor::tests::SEEDS_4 as SEEDS_3;

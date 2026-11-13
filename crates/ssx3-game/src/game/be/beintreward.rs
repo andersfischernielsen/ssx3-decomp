@@ -14,7 +14,7 @@ use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::sd;
 pub(crate) use crate::game::be::beintnewrace::TRACK_RECORDS;
 pub(crate) use crate::game::be::beintplayer::mul32;
-pub(crate) use crate::game::bx::bxstring2::MESSAGE_MAP;
+pub(crate) use crate::game::bx::bxstringctor::MESSAGE_MAP;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
 pub(crate) use crate::game::fe::fepopup::at as at_3;
@@ -439,9 +439,9 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::CLEAR_NEW_REWARDS;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUILTIN_DELETE as BUILTIN_DELETE_2;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::BUILTIN_DELETE as BUILTIN_DELETE_2;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::REWARDS_FILE_UNLOAD;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::REWARDS_FILE_UNLOAD;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_COUNT_COLLECTED_ON_PEAK;
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_COUNT_COMPLETED_ON_PEAK;
@@ -3623,7 +3623,7 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::ai::ai::tests::generic;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2 as be_library;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base_6;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::w_4 as w_2;

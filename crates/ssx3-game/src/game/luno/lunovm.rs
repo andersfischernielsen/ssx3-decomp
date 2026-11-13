@@ -69,9 +69,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::bx::bxstring2::callee::C_LUNO_TABLE_ALLOC;
+    pub(crate) use crate::game::bx::bxstringctor::callee::C_LUNO_TABLE_ALLOC;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::LUNO_TABLE_DTOR as LUNO_TABLE_DTOR_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::LUNO_TABLE_DTOR as LUNO_TABLE_DTOR_2;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::LUNO_VM_REGISTER_DTOR;
 
@@ -1278,11 +1278,11 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::bx::bxstring::tests::alloc;
     pub(crate) use crate::game::bx::bxstring::tests::heap;
-    pub(crate) use crate::game::bx::bxstring2::tests::alloc_mutex;
+    pub(crate) use crate::game::bx::bxstringctor::tests::alloc_mutex;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::alloc_machine;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::alloc_machine;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::zero;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::zero;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_7 as be_library;
 
@@ -1637,7 +1637,7 @@ pub(crate) mod tests {
     /// cLunoTable_FreeData on the pool allocator / dlmalloc arena).
     #[test]
     fn cluno_table_assign_matches() {
-        use crate::game::dirtysock::tags2::tests::zero;
+        use crate::game::dirtysock::tagsunk::tests::zero;
         use crate::game::fe::festaterewards::tests::heap_block;
         use crate::game::worldpainter::quadtree::tests::alloc_machine;
         const SELF: u32 = DATA + 0x400;

@@ -20,9 +20,9 @@ pub(crate) use crate::game::bx::bxstring::gp;
 pub(crate) use crate::game::camera::camera::camera_algorithm_ctor;
 pub(crate) use crate::game::camera::camera::gp_4 as gp_2;
 pub(crate) use crate::game::camera::camera::write_tuning;
-pub(crate) use crate::game::dirtysock::tags2::arg;
-pub(crate) use crate::game::dirtysock::tags2::const_reg;
-pub(crate) use crate::game::dirtysock::tags2::sw;
+pub(crate) use crate::game::dirtysock::tagsunk::arg;
+pub(crate) use crate::game::dirtysock::tagsunk::const_reg;
+pub(crate) use crate::game::dirtysock::tagsunk::sw;
 pub(crate) use crate::game::fe::feasyncfile::at as at_2;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at_3;
 pub(crate) use crate::game::fe::feasyncfile::lw_6 as lw_2;
@@ -343,20 +343,20 @@ pub(crate) mod callee {
     use super::ee;
     use super::Callee;
 
-    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAMERA_INIT_FROM_RIDER;
-    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAMERA_RESET_FOR_RIDER;
+    pub(crate) use crate::game::bx::bxstringctor::callee::CHASE_CAMERA_INIT_FROM_RIDER;
+    pub(crate) use crate::game::bx::bxstringctor::callee::CHASE_CAMERA_RESET_FOR_RIDER;
 
-    pub(crate) use crate::game::bx::bxstring2::callee::SUPERPIPE_COMPUTE_DESIRED_EYE;
-    pub(crate) use crate::game::bx::bxstring2::callee::SUPERPIPE_COMPUTE_LOOK_AT;
+    pub(crate) use crate::game::bx::bxstringctor::callee::SUPERPIPE_COMPUTE_DESIRED_EYE;
+    pub(crate) use crate::game::bx::bxstringctor::callee::SUPERPIPE_COMPUTE_LOOK_AT;
 
     pub(crate) use crate::game::camera::camera::callee::CHASE_CAMERA_ALGORITHM_CTOR;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INTERFACE;
+    pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INSTANCE;
+    pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INTERFACE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BOUNDED_CAMERA_ALGORITHM_BASE_CTOR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BOUNDED_CAMERA_ALGORITHM_BASE_CTOR;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::OPERATOR_DELETE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::OPERATOR_DELETE;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::DEBUG_MENU_DISPATCH_ITEM_OP;
 
@@ -5454,14 +5454,14 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::ai::aianimeventmap::tests::alloc_setup;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3;
-    pub(crate) use crate::game::bx::bxstring2::tests::f;
-    pub(crate) use crate::game::bx::bxstring2::tests::slot_2;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3;
+    pub(crate) use crate::game::bx::bxstringctor::tests::slot_2;
+    pub(crate) use crate::game::render::particle::tests::f;
 
     pub(crate) use crate::game::camera::camera::mid_left_chase_camera_reset_for_rider;
     pub(crate) use crate::game::camera::camera::tests::algo_setup;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
-    pub(crate) use crate::game::dirtysock::tags2::tests::heap_block;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2 as be_library;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::heap_block;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_13 as base_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_4;

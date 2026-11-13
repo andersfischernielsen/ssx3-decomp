@@ -18,8 +18,8 @@ pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
 pub(crate) use crate::game::fe::feasyncfile::sw_r;
 pub(crate) use crate::game::fe::fereal::close;
 pub(crate) use crate::game::fe::fereal::open;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
+pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::object::debouncenode::p;
 pub(crate) use crate::game::object::flagset::gp_float;
 pub(crate) use crate::game::render::lightman::addu;
@@ -2742,9 +2742,9 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::fe::fereal::tests::base;
     pub(crate) use crate::game::fe::festatecredits::tests::RET_ZERO;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS;
     pub(crate) use crate::game::input::inputmap::tests::put_f32;
 
     pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_3;

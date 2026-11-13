@@ -92,9 +92,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 #[allow(dead_code)]
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::bx::bxstring2::callee::BE_GET_CHAR_PROFILE_EVENT_RECORD;
-    pub(crate) use crate::game::bx::bxstring2::callee::BE_GET_RIDER_CHARACTER;
-    pub(crate) use crate::game::bx::bxstring2::callee::BE_GET_RIDER_PROFILE;
+    pub(crate) use crate::game::bx::bxstringctor::callee::BE_GET_CHAR_PROFILE_EVENT_RECORD;
+    pub(crate) use crate::game::bx::bxstringctor::callee::BE_GET_RIDER_CHARACTER;
+    pub(crate) use crate::game::bx::bxstringctor::callee::BE_GET_RIDER_PROFILE;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_LIBRARY_GET_INSTANCE_2 as BE_LIBRARY_GET_INSTANCE;
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_LIBRARY_GET_INTERFACE_2 as BE_LIBRARY_GET_INTERFACE;
@@ -663,7 +663,7 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::be::beintnetwork::tests::alloc_setup;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_2;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_2;
 
     pub(crate) use crate::game::fe::debugfe::tests::w;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ2;

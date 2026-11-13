@@ -15,7 +15,7 @@ pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
 pub(crate) use crate::game::dirtysock::tags::lbu_r;
 pub(crate) use crate::game::fe::debugfe::at;
-pub(crate) use crate::game::fe::festaterewards2::r;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
 pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::lw_r;
 pub(crate) use crate::game::main::gamemode::sp_2 as sp;
@@ -50,7 +50,7 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STREAM_FILE_QUEUE_RANGE;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::SPRINTF;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::SPRINTF;
 
     pub(crate) use crate::game::main::gamemode::callee::BUILTIN_DELETE;
 
@@ -554,9 +554,9 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::debugfe::tests::w as w_2;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ;
     pub(crate) use crate::game::fe::fepopup::tests::b;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS;
     pub(crate) use crate::game::main::gamemode::tests::be_library;
     pub(crate) use crate::game::main::gamemode::tests::SEEDS_2 as SEEDS_3;
     pub(crate) use crate::game::object::animnode::tests::heap_block;

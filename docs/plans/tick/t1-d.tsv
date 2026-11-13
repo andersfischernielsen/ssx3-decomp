@@ -25,8 +25,8 @@ entry	site	function	class	reason
 0x49d7e4	0x1c4f60	cFEStateStats_FormatTime	STEP	ldf f1,1/60 @0x1c4f60 (port feasyncfile.rs:14557) then mul_s f0,frames,f1: frame count -> seconds before h:mm:ss.mmm (div by 60 twice, 1000.0 for ms)
 0x49d95c	0x1e6d58	OVScreenFinalStandings_TransitionIn	STEP	lwc1 f1,1/60 @0x1e6d58: (int)((float)raceTimeTicks * 1/60) -> FE_FormatMinSec(seconds)
 0x49d960	0x1e7d70	OVScreenFinishOv_Init	STEP	lwc1 f1,1/60 @0x1e7d70: (int)((float)raceTimeTicks * 1/60) -> FE_FormatMinSec(seconds)
-0x49d964	0x1e8108	OVScreenFinishOv_Update	STEP	port fepopup3.rs:4252: f0 = transition timer + 1/60 per tick, stored at self+0x9c (test writes 0.05f there to speed the transition up)
-0x49d968	0x1e8828	OVScreenFinishOv2_Update	STEP	port fepopup3.rs:4350: same body as OVScreenFinishOv_Update, timer += 1/60 per tick
+0x49d964	0x1e8108	OVScreenFinishOv_Update	STEP	port fe/fepopupmisc.rs: f0 = transition timer + 1/60 per tick, stored at self+0x9c (test writes 0.05f there to speed the transition up)
+0x49d968	0x1e8828	OVScreenFinishOv2_Update	STEP	port fe/fepopupmisc.rs: same body as OVScreenFinishOv_Update, timer += 1/60 per tick
 0x49d96c	0x1e8b74	OVScreenPeakChallengeResults_Init	STEP	lwc1 f1,1/60 @0x1e8b74: (int)((float)raceTimeTicks * 1/60) -> FE_FormatMinSec(seconds)
 0x49d970	0x1e8bd8	OVScreenPeakChallengeResults_Init	STEP	lwc1 f1,1/60 @0x1e8bd8: (int)((float)eventBestTicks * 1/60) -> FE_FormatMinSec(seconds)
 0x49d998	0x1eb02c	cOVStateHUD1P_Update	STEP	lwc1 f0,1/60 @0x1eb02c: f1 = hud timer + 1/60 per tick, stored at self+0x190 (wrap/scale to +0x194/+0x198)

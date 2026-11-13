@@ -9,7 +9,7 @@ use crate::call::guest;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-pub(crate) use crate::game::dirtysock::tags2::at;
+pub(crate) use crate::game::dirtysock::tagsunk::at_3 as at;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::p;
 use crate::guest::Addr;
@@ -352,7 +352,7 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
 
     pub(crate) use crate::game::be::belibrary::tests::SRC;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2 as be_library;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::w;

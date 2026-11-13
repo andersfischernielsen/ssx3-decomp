@@ -128,8 +128,8 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::festaterewards::callee::UI_LIST_CTOR;
     pub(crate) use crate::game::fe::festaterewards::callee::UI_OBJECT_CTOR;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::UI_TEXT_SCROLL_CLEAR_LINES;
-    pub(crate) use crate::game::fe::festaterewards2::callee::UI_TEXT_SCROLL_SET_WIDE_STRING;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::UI_TEXT_SCROLL_CLEAR_LINES;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::UI_TEXT_SCROLL_SET_WIDE_STRING;
 
     pub(crate) use crate::game::main::gamemode::callee::CUI_TEXT_SCROLL_SET_WIDE_STRING;
 
@@ -1249,10 +1249,10 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::be::beintplayer::tests::w8;
     pub(crate) use crate::game::bx::bxstring::tests::heap;
-    pub(crate) use crate::game::bx::bxstring2::tests::be_library;
-    pub(crate) use crate::game::bx::bxstring2::tests::SCRATCH;
-    pub(crate) use crate::game::dirtysock::tags2::tests::pool_7 as pool;
-    pub(crate) use crate::game::dirtysock::tags2::tests::DST;
+    pub(crate) use crate::game::bx::bxstringctor::tests::be_library;
+    pub(crate) use crate::game::bx::bxstringctor::tests::SCRATCH;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::pool_7 as pool;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::DST;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_setup;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base_4;
@@ -1265,8 +1265,8 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::fe::festateloadhint::tests::w32;
     pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
     pub(crate) use crate::game::input::inputmap::tests::alloc as alloc_2;
     pub(crate) use crate::game::main::gamemode::tests::be_library as be_library_2;
     pub(crate) use crate::game::main::gamemode::tests::slot;

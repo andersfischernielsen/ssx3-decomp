@@ -8,11 +8,11 @@ use crate::call::guest;
 use crate::call::sp;
 use crate::call::Frame;
 pub(crate) use crate::game::be::be::vt_call;
-pub(crate) use crate::game::be::bestate2::ea;
-pub(crate) use crate::game::dirtysock::tags2::at;
-pub(crate) use crate::game::dirtysock::tags2::gp_5 as gp;
+pub(crate) use crate::game::be::beprepoststate::ea;
+pub(crate) use crate::game::dirtysock::tagsunk::at_3 as at;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_5 as gp;
 pub(crate) use crate::game::fe::feasyncfile::p as p_2;
-pub(crate) use crate::game::fe::fepopup3::transition_in;
+pub(crate) use crate::game::fe::fepopupmisc::transition_in;
 pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_ACTIVATED;
 pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_IGNORED;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2 as p;
@@ -63,9 +63,9 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::be::beintmission::callee::UBER_TRICK_REFRESH;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::FEMODULE_SET_PREVIEW_VISIBLE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::FEMODULE_SET_PREVIEW_VISIBLE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_SHUTDOWN;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_STATE_SHUTDOWN;
 }
 
 /// `bool cFEStateUberTrick_TransitionIn(cFEStateUberTrick* s, int on)`
@@ -293,11 +293,11 @@ pub(crate) mod tests {
 
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS;
-    pub(crate) use crate::game::bx::bxstring2::tests::be_library;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::w;
+    pub(crate) use crate::game::be::beprepoststate::tests::SEEDS;
+    pub(crate) use crate::game::bx::bxstringctor::tests::be_library;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_6 as base;
 

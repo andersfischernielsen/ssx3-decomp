@@ -23,7 +23,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUILTIN_DELETE_2 as BUILTIN_DELETE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BUILTIN_DELETE_2 as BUILTIN_DELETE;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,9 +80,9 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::alloc_machine;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::alloc_machine;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::zero;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::zero;
 
     pub(crate) use crate::game::fe::festaterewards::tests::heap_block;
 

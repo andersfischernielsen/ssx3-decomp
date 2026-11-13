@@ -13,10 +13,10 @@ use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::beintplayer::lh;
-pub(crate) use crate::game::be::bestate2::ea;
+pub(crate) use crate::game::be::beprepoststate::ea;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw as lw_3;
-pub(crate) use crate::game::dirtysock::tags2::arg;
-pub(crate) use crate::game::dirtysock::tags2::gp_8 as gp;
+pub(crate) use crate::game::dirtysock::tagsunk::arg;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_8 as gp;
 pub(crate) use crate::game::fe::debugfe::at;
 pub(crate) use crate::game::fe::feasyncfile::at as at_4;
 pub(crate) use crate::game::fe::feasyncfile::at_2;
@@ -247,14 +247,14 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::be::beintoption::callee::SCRIPT_ENGINE_CLEAR_PROCESS;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::IN_SEQ_CHANNEL_SET_LISTENER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::IN_SEQ_INSTANCE_PAUSE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::IN_SEQ_INSTANCE_RESUME;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::IN_SEQ_CHANNEL_SET_LISTENER;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::IN_SEQ_INSTANCE_PAUSE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::IN_SEQ_INSTANCE_RESUME;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::OPERATOR_DELETE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::OPERATOR_DELETE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_GET_INSTANCE_SCRIPT_2 as SCRIPT_ENGINE_GET_INSTANCE_SCRIPT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_GET_PROCESS;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SCRIPT_ENGINE_GET_INSTANCE_SCRIPT_2 as SCRIPT_ENGINE_GET_INSTANCE_SCRIPT;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SCRIPT_ENGINE_GET_PROCESS;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::IN_SEQ_DTOR;
     pub(crate) use crate::game::fe::feasyncfile::callee::IN_SEQ_INSTANCE_PAUSE as IN_SEQ_INSTANCE_PAUSE_2;
@@ -2254,19 +2254,19 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::be::beintplayer::tests::strict;
     pub(crate) use crate::game::be::beintplayer::tests::SEEDS_7 as SEEDS_9;
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS as SEEDS_4;
-    pub(crate) use crate::game::bx::bxstring2::tests::game;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::w;
+    pub(crate) use crate::game::be::beprepoststate::tests::SEEDS as SEEDS_4;
+    pub(crate) use crate::game::bx::bxstringctor::tests::game;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::SCRATCH;
+    pub(crate) use crate::game::bx::bxstringctor::tests::SCRATCH;
     pub(crate) use crate::game::camera::cameracontroller::tests::put_vtable;
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
-    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
-    pub(crate) use crate::game::dirtysock::tags2::tests::rng_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::rng_2;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_16 as base_6;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::gp_at;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::call_machine;
     pub(crate) use crate::game::fe::feasyncfile::tests::check_all;

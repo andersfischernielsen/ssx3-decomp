@@ -11,9 +11,9 @@ use crate::call::Flow;
 use crate::call::Frame;
 pub(crate) use crate::game::ai::computer::lh_2 as lh;
 pub(crate) use crate::game::ai::computer::sd;
-pub(crate) use crate::game::dirtysock::tags2::gp_5 as gp;
-pub(crate) use crate::game::dirtysock::tags2::p_2;
-pub(crate) use crate::game::dirtysock::tags2::sw;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_5 as gp;
+pub(crate) use crate::game::dirtysock::tagsunk::p_2;
+pub(crate) use crate::game::dirtysock::tagsunk::sw;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_3;
 pub(crate) use crate::game::fe::feasyncfile::lw_5 as lw_4;
@@ -26,8 +26,8 @@ pub(crate) use crate::game::fe::fepopup::sw_4 as sw_3;
 pub(crate) use crate::game::fe::festateoptions::gpa;
 pub(crate) use crate::game::fe::festaterewards::gp_4;
 pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_2;
-pub(crate) use crate::game::fe::ovstatemission2::ov_screen_set_two_visible;
-pub(crate) use crate::game::fe::ovstatemission2::ov_screen_set_widget_visibility;
+pub(crate) use crate::game::fe::ovstateprofile::ov_screen_set_two_visible;
+pub(crate) use crate::game::fe::ovstateprofile::ov_screen_set_widget_visibility;
 pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::lw_r;
 pub(crate) use crate::game::main::gamemode::sp_2;
@@ -199,7 +199,7 @@ pub(crate) mod callee {
     pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INSTANCE;
     pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INTERFACE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_MESSAGE_FLAG_SET;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BE_MESSAGE_FLAG_SET;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::FE_STRING_HASH;
 
@@ -2100,8 +2100,8 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::put;
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear_3;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::gpf;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::world_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::world_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_4 as alloc_base;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base_3;
 
@@ -2129,7 +2129,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::festaterewards::tests::strict;
 
     pub(crate) use crate::game::fe::ovstatemission::tests::str_hash as str_hash_2;
-    pub(crate) use crate::game::fe::ovstatemission2::tests::hash_object;
+    pub(crate) use crate::game::fe::ovstateprofile::tests::hash_object;
     pub(crate) use crate::game::main::gamemode::tests::be_library as be_library_3;
     pub(crate) use crate::game::main::gamemode::tests::SEEDS;
     pub(crate) use crate::game::main::gamemode::tests::SEEDS_2 as SEEDS_3;

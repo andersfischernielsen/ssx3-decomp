@@ -4,9 +4,9 @@
 use crate::abi;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-pub(crate) use crate::game::dirtysock::tags2::gp_3 as gp;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_3 as gp;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
+pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -57,9 +57,9 @@ pub(crate) mod tests {
 
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS;
     pub(crate) use crate::game::main::gameload::tests::fb;
     // gp - 0x2a68: 1/30
     pub(crate) const GP_NEG99999: u32 = 0x49ee_64;

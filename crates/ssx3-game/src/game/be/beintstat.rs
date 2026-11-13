@@ -33,16 +33,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_BAGT_INT_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_CHAR_INT_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_NEW_PLAYER_INT_GET_INSTANCE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BE_BAGT_INT_GET_INSTANCE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BE_CHAR_INT_GET_INSTANCE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BE_NEW_PLAYER_INT_GET_INSTANCE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::FORMAT_TAGGED;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::FORMAT_TAGGED;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEMSET_3 as MEMSET;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MEMSET_3 as MEMSET;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_6 as SPRINTF;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STR_HASH_4 as STR_HASH;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SPRINTF_6 as SPRINTF;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::STR_HASH_4 as STR_HASH;
 
     pub(crate) use crate::game::fe::festaterewards::callee::BECHAR_GET_OVERALL_RATING;
 

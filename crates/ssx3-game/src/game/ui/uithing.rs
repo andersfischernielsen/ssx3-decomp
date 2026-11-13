@@ -12,7 +12,7 @@ pub(crate) use crate::game::camera::cameraalgorithms::lh;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at;
 pub(crate) use crate::game::fe::feasyncfile::lw_7 as lw;
 pub(crate) use crate::game::fe::feasyncfile::p;
-pub(crate) use crate::game::fe::fepopup3::gp_6 as gp;
+pub(crate) use crate::game::fe::fepopupmisc::gp_6 as gp;
 pub(crate) use crate::game::fe::ovstates::at as at_2;
 pub(crate) use crate::game::fe::ovstates::close;
 pub(crate) use crate::game::fe::ovstates::open;

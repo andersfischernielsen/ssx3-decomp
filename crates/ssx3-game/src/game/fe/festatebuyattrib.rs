@@ -1,4 +1,4 @@
-//! `src/fe/festaterewards3.cpp`: hand-written replacements (moved from the
+//! `src/fe/festatebuyattrib.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
@@ -11,9 +11,9 @@ pub(crate) use crate::game::fe::debugfe::at;
 pub(crate) use crate::game::fe::feasyncfile::lh_r;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
-pub(crate) use crate::game::fe::fepopup3::transition_in;
-pub(crate) use crate::game::fe::festaterewards2::handle_key_6_8_9;
-pub(crate) use crate::game::fe::festaterewards2::handle_list_key;
+pub(crate) use crate::game::fe::fepopupmisc::transition_in;
+pub(crate) use crate::game::fe::festatetrophyroom::handle_key_6_8_9;
+pub(crate) use crate::game::fe::festatetrophyroom::handle_list_key;
 pub(crate) use crate::game::fe::ovstatepause::lw;
 pub(crate) use crate::game::main::ssxappdtor::p;
 use crate::guest::Addr;
@@ -90,25 +90,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees (same-shard direct calls; cross-shard ones stay `call_ptr`s).
 
 pub(crate) mod callee {
-
     pub(crate) use crate::game::be::beintmission::callee::BUY_ATTRIB_UPDATE_BARS;
-
     pub(crate) use crate::game::be::beintmission::callee::CAREER_STATS_SHOW_HIGHLIGHTS;
-
-    pub(crate) use crate::game::dirtysock::tags2::callee::FE_MODULE_GET_PLAYER_PAD_MASK;
-
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_HASH_VALUE32;
-
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_SCREEN_GET_OBJECT_BY_HASH_NAME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_CTOR_3 as UI_STATE_CTOR_2;
-
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_TEXT_SET_ASCII_STRING;
-
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::FE_MODULE_GET_PLAYER_PAD_MASK;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::GET_HASH_VALUE32;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_SCREEN_GET_OBJECT_BY_HASH_NAME;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_STATE_CTOR_3 as UI_STATE_CTOR_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_TEXT_SET_ASCII_STRING;
     pub(crate) use crate::game::fe::ovstatepause::callee::C_FE_STATE_ON_ACTIVATE;
-
     pub(crate) use crate::game::main::ssxappdtor::callee::BUY_ATTRIB_COMMIT_PURCHASE;
     pub(crate) use crate::game::main::ssxappdtor::callee::CAREER_STATS_SELECT_PAGE;
-
     pub(crate) use crate::game::main::ssxappdtor::callee::FE_STATE_ON_ACTIVATE;
 }
 
@@ -612,28 +603,20 @@ pub fn cfestatebuyattrib_init(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-
     use crate::difftest::fakes::machine;
-
     use crate::difftest::fakes::FAKE;
-
     use crate::difftest::fill;
-
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear_3;
-    pub(crate) use crate::game::bx::bxstring2::tests::be_library;
-    pub(crate) use crate::game::dirtysock::tags2::tests::alloc_ready;
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
-    pub(crate) use crate::game::dirtysock::tags2::tests::clear as clear_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
-
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS;
+    pub(crate) use crate::game::bx::bxstringctor::tests::be_library;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::alloc_ready;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::common;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7 as SEEDS;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::clear;
     pub(crate) use crate::game::fe::feasyncfile::tests::globals_2 as globals;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_5 as heap_init;
     pub(crate) use crate::game::fe::feasyncfile::tests::slot_3 as slot;
     pub(crate) use crate::game::fe::feasyncfile::tests::strict;
@@ -641,8 +624,8 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::world_3 as world;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as SEEDS_3;
     pub(crate) use crate::game::fe::fememcard::tests::vtable_at;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear as clear_2;
     pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_2;
-
     pub(crate) use crate::game::world::worldview::tests::SEEDS_5 as SEEDS_2;
     use ssx3_ee as ee;
 

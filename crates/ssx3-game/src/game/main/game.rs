@@ -135,7 +135,7 @@ pub(crate) mod view {
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::bx::bxstring2::callee::SECTION_MAN_INIT;
+    pub(crate) use crate::game::bx::bxstringctor::callee::SECTION_MAN_INIT;
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_TRACK_INFO;
 
@@ -143,11 +143,11 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SECTION_SELECT_PEAK_LIGHTING;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INTERFACE;
+    pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INSTANCE;
+    pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INTERFACE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SECTION_MAN_IS_EVENT_LOADED;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SECTION_MAN_PUSH_FREE_NODE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SECTION_MAN_IS_EVENT_LOADED;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SECTION_MAN_PUSH_FREE_NODE;
 
     pub(crate) use crate::game::fe::ovstatepause::callee::SECTION_MAN_REQUEST_ACTIVATE;
 
@@ -1002,13 +1002,13 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::be_library;
+    pub(crate) use crate::game::bx::bxstringctor::tests::be_library;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::world_2 as world;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_6 as be_library_3;
-    pub(crate) use crate::game::dirtysock::tags2::tests::clear;
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_6 as be_library_3;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7 as SEEDS_2;
     pub(crate) use crate::game::fe::ovstatepause::tests::globals_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear;
 
     pub(crate) use crate::game::movie::movieplayer::tests::base_3 as base;
     pub(crate) use crate::game::movie::movieplayer::tests::globals;

@@ -12,7 +12,7 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::be::vt_call;
-pub(crate) use crate::game::dirtysock::tags2::gp_8 as gp;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_8 as gp;
 pub(crate) use crate::game::fe::feasyncfile::at;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
@@ -74,9 +74,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::OPERATOR_DELETE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::OPERATOR_DELETE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_MOVIE_STOP;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SCRIPT_MOVIE_STOP;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::OPERATOR_NEW_NAMED_4 as OPERATOR_NEW_NAMED;
 
@@ -571,9 +571,9 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::zero;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::zero;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_6 as base_2;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::env;

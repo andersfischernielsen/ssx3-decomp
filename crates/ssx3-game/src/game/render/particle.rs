@@ -17,8 +17,8 @@ use crate::call::Frame;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-pub(crate) use crate::game::bx::bxstring2::frame_f;
-pub(crate) use crate::game::bx::bxstring2::set_frame_f;
+pub(crate) use crate::game::bx::bxstringctor::frame_f;
+pub(crate) use crate::game::bx::bxstringctor::set_frame_f;
 pub(crate) use crate::game::bx::memblockman::gp_2;
 pub(crate) use crate::game::camera::camera::gp_4;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_2;
@@ -446,13 +446,13 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::DYNAMIC_EMITTER_RESET;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::DYNAMIC_EMITTER_DTOR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::DYNAMIC_EMITTER_DTOR;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEMITTER_FREE_DATA;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MEMITTER_FREE_DATA;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::PS2_GRID_MESH_CTOR;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::DYNAMIC_EMITTER_CTOR;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::DYNAMIC_EMITTER_CTOR;
 
     pub(crate) use crate::game::main::gamemode::callee::BUILTIN_DELETE as BUILTIN_DELETE_5;
 
@@ -11582,9 +11582,9 @@ pub(crate) mod tests {
     pub(crate) use crate::game::be::belibrary::tests::alloc_ready;
     pub(crate) use crate::game::be::belibrary::tests::load;
     pub(crate) use crate::game::be::belibrary::tests::SRC;
-    pub(crate) use crate::game::bx::bxstring2::tests::alloc_base;
+    pub(crate) use crate::game::bx::bxstringctor::tests::alloc_base;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::base as base_3;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base_6;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_6 as base_5;
@@ -11615,8 +11615,8 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::fe::festateloadhint::tests::w32;
     pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_8;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
     pub(crate) use crate::game::input::inputparse::tests::EMPTY;
     pub(crate) use crate::game::main::gamemode::tests::be_library as be_library_3;
 

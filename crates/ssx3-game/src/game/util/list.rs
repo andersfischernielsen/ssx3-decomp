@@ -410,7 +410,7 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::ai::rider::tests::slot_2 as slot;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::string;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::string;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library_2;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::slot_3 as slot_2;

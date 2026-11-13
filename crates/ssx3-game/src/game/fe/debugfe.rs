@@ -189,8 +189,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_FORWARD_EVENT_TO_UI;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MENU_ON_LOBBY_EVENT;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::LOBBY_MAN_FORWARD_EVENT_TO_UI;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::LOBBY_MENU_ON_LOBBY_EVENT;
 
     pub(crate) use crate::game::fe::fepopup::callee::C0017F500;
 
@@ -2271,15 +2271,14 @@ pub(crate) mod tests {
     pub(crate) use crate::game::be::bedbprofile::tests::strict;
     pub(crate) use crate::game::be::beintstat::tests::allocator;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::W;
+    pub(crate) use crate::game::bx::bxstringctor::tests::W;
     pub(crate) use crate::game::camera::camera::tests::alloc_base;
 
     pub(crate) use crate::game::camera::camera::tests::W_2 as W_5;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::gpf;
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
-    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
-    pub(crate) use crate::game::dirtysock::tags2::tests::put_vtable;
-    pub(crate) use crate::game::dirtysock::tags2::tests::zero;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::put_vtable;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::zero;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base_5;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_13 as base_6;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_7;
@@ -2287,6 +2286,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::check_all_2 as check_all;
     pub(crate) use crate::game::fe::feasyncfile::tests::game_globals;
     pub(crate) use crate::game::fe::feasyncfile::tests::globals_4 as globals;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::gp_at;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_6 as pool_allocator_2;
 

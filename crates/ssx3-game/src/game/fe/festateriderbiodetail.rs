@@ -1,4 +1,4 @@
-//! `src/fe/festateriderbio2.cpp`: hand-written replacements (moved from the
+//! `src/fe/festateriderbiodetail.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
@@ -39,7 +39,6 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees (addresses the generated body reaches through the function table).
 
 pub(crate) mod callee {
-
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_ADD_CHILD;
 }
 
@@ -214,31 +213,20 @@ pub fn cfe_state_rider_bio_fill_bio_info(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-
     use crate::difftest::fakes::machine;
-
     use crate::difftest::DATA;
-
-    pub(crate) use crate::game::dirtysock::tags2::tests::w8;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::w8;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_13 as base;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::env;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::run_8 as run;
     pub(crate) use crate::game::fe::feasyncfile::tests::slot_6 as slot;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::w;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::w32;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::wh;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::EMPTY;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::SCRATCH;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_12 as SEEDS;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_14 as SEEDS_2;
-
     pub(crate) use crate::game::fe::festatecredits::tests::RET_ZERO;
     use ssx3_ee as ee;
 

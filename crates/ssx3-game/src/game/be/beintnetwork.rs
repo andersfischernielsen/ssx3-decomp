@@ -22,7 +22,7 @@ pub(crate) use crate::game::be::bedbreward::RACE_GP;
 pub(crate) use crate::game::be::beintmission::lw;
 pub(crate) use crate::game::be::beintmission::BE_GET_RIDER_CHARACTER;
 pub(crate) use crate::game::be::beintmission::EA_MEM_ALLOC_NAMED;
-pub(crate) use crate::game::be::bestate2::ea;
+pub(crate) use crate::game::be::beprepoststate::ea;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at;
 pub(crate) use crate::game::fe::feasyncfile::lh_r;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
@@ -118,9 +118,9 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::ai::ai::callee::BE_COPY_PROFILE_CHARACTERS;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_GET_RIDER_CHARACTER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INSTANCE_2 as BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INTERFACE_2 as BE_LIBRARY_GET_INTERFACE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BE_GET_RIDER_CHARACTER;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BE_LIBRARY_GET_INSTANCE_2 as BE_LIBRARY_GET_INSTANCE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BE_LIBRARY_GET_INTERFACE_2 as BE_LIBRARY_GET_INTERFACE;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_BACKUP_CHARACTER;
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_COPY_PROFILE;
@@ -959,10 +959,10 @@ pub(crate) mod tests {
     pub(crate) use crate::game::be::beintnewrace::be_new_race_int_destroy_instance;
     pub(crate) use crate::game::be::beintoption::be_option_int_destroy_instance;
     pub(crate) use crate::game::be::beintplayer::be_new_player_int_destroy_instance;
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS as SEEDS_3;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::w;
+    pub(crate) use crate::game::be::beprepoststate::tests::SEEDS as SEEDS_3;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_13 as base_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_9 as base;

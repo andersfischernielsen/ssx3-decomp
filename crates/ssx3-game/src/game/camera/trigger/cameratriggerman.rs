@@ -99,7 +99,7 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::be::beintmission::callee::CAMERA_TRIGGER_EMPTY_STUB;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::CAMERA_TRIGGER_STACK_CLEAR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::CAMERA_TRIGGER_STACK_CLEAR;
 
     pub(crate) use crate::game::main::gamemode::callee::CAMERA_TRIGGER_MAN_PARSE;
     pub(crate) use crate::game::main::gamemode::callee::CAMERA_TRIGGER_MAN_UNLOAD;
@@ -1579,7 +1579,7 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::axes;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::rng_2 as rng;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::rng_2 as rng;
     use ssx3_ee as ee;
 
     #[test]

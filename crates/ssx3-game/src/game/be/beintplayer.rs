@@ -2939,10 +2939,10 @@ pub(crate) mod tests {
     pub(crate) use crate::game::be::beintaggression::be_aggression_int_destroy_instance;
     pub(crate) use crate::game::be::beintbagt::be_bagt_int_destroy_instance;
     pub(crate) use crate::game::be::beintmission::be_mission_int_destroy_instance;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_7;
-    pub(crate) use crate::game::bx::bxstring2::tests::slot_2 as slot_4;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_7;
+    pub(crate) use crate::game::bx::bxstringctor::tests::slot_2 as slot_4;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::VTS;
+    pub(crate) use crate::game::bx::bxstringctor::tests::VTS;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base_6;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_8;

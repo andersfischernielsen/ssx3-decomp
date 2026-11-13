@@ -6,13 +6,13 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Frame;
-pub(crate) use crate::game::dirtysock::tags2::p;
 pub(crate) use crate::game::fe::feasyncfile::at;
 pub(crate) use crate::game::fe::feasyncfile::lw_at_2 as lw_at;
 pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::lw_r;
 pub(crate) use crate::game::main::gamemode::sp_2;
 pub(crate) use crate::game::main::gamemode::sw_r;
+pub(crate) use crate::game::sound::bankmonitor::p;
 use crate::guest::Addr;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -53,7 +53,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::STRCPY;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::STRCPY_2 as STRCPY;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_CTOR_2;
 
@@ -280,10 +280,10 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
 
     use crate::difftest::RA as TEST_RA;
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS;
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::w;
+    pub(crate) use crate::game::be::beprepoststate::tests::SEEDS;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::env;
 

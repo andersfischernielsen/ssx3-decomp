@@ -114,12 +114,12 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::QSORT;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::CBE_GET_INTERFACE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::CBE_GET_INTERFACE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_ALT_CHAR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_CHAR_ID;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::GET_ALT_CHAR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::GET_CHAR_ID;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEMSET_3 as MEMSET_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MEMSET_3 as MEMSET_2;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::GAME_RAND_NEXT;
 
@@ -2771,11 +2771,11 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
 
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::put;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_2;
-    pub(crate) use crate::game::bx::bxstring2::tests::gp_at;
-    pub(crate) use crate::game::bx::bxstring2::tests::slot_2;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_2;
+    pub(crate) use crate::game::bx::bxstringctor::tests::slot_2;
+    pub(crate) use crate::game::render::particle::tests::gp_at;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::W;
+    pub(crate) use crate::game::bx::bxstringctor::tests::W;
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::gpf;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_3;

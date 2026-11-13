@@ -121,7 +121,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 #[allow(dead_code)]
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::bx::bxstring2::callee::FLAG_MANAGER_GROUP_BUILD_MESH;
+    pub(crate) use crate::game::bx::bxstringctor::callee::FLAG_MANAGER_GROUP_BUILD_MESH;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::GAME_PROCESS_DTOR_2 as GAME_PROCESS_DTOR;
 
@@ -3256,7 +3256,7 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
 
     pub(crate) use crate::game::animation::animmodel::tests::SEEDS_4 as SEEDS_5;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_4;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_4;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_5;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as base;

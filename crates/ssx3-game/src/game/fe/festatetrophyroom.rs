@@ -1,4 +1,4 @@
-//! `src/fe/festaterewards2.cpp`: hand-written replacements (moved from the
+//! `src/fe/festatetrophyroom.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
@@ -13,7 +13,7 @@ pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lh_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
-pub(crate) use crate::game::dirtysock::tags2::lb_at;
+pub(crate) use crate::game::dirtysock::tagsunk::lb_at;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at_3;
 pub(crate) use crate::game::fe::feasyncfile::gp_16 as gp;
 pub(crate) use crate::game::fe::feasyncfile::lh;
@@ -21,7 +21,7 @@ pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
 pub(crate) use crate::game::fe::feasyncfile::p as p_4;
 pub(crate) use crate::game::fe::feasyncfile::p as p_5;
 pub(crate) use crate::game::fe::feasyncfile::sw_r;
-pub(crate) use crate::game::fe::fepopup2::fe_state_screen_init;
+pub(crate) use crate::game::fe::festatenethelppopup::fe_state_screen_init;
 pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_2;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::main::gamemode::lw_r;
@@ -138,30 +138,18 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_EVENT_STAT;
-
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_DTOR_2 as UI_STATE_DTOR;
-
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_STATE_DTOR_2 as UI_STATE_DTOR;
     pub(crate) use crate::game::fe::feasyncfile::callee::C_FE_STATE_TROPHY_ROOM_SHOW_TROPHY_IMAGE;
     pub(crate) use crate::game::fe::feasyncfile::callee::C_FE_STATE_TROPHY_ROOM_SHOW_TROPHY_INFO;
-
     pub(crate) use crate::game::fe::feasyncfile::callee::MEMCARD_INSTALL_CALLBACKS;
-
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_STATE_MGR_SWITCH_STATE;
-
     pub(crate) use crate::game::main::gamemode::callee::C_UI_ENGINE_ADD_SCREEN_BY_HASH_NAME;
-
     pub(crate) use crate::game::main::gamemode::callee::C_UI_SCREEN_PLAY_FRAME;
-
     pub(crate) use crate::game::main::gamemode::callee::FUNC_0028F140;
-
     pub(crate) use crate::game::main::gamemode::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE;
-
     pub(crate) use crate::game::main::gamemode::callee::STR_HASH;
-
     pub(crate) use crate::game::main::gamestate::callee::MEMCARD_STATE_BASE_INSTALL_CALLBACKS;
-
     pub(crate) use crate::game::main::gamestate::callee::UI_STATE_CTOR_3 as UI_STATE_CTOR_2;
 
     pub const FE_STATE_ON_ACTIVATE: Callee = Callee {
@@ -437,25 +425,18 @@ pub(crate) mod callee {
 
 /// Cross-shard call targets (the generator emits `call_indirect` for them).
 pub(crate) mod table {
-
     pub(crate) use crate::game::ai::computer::table::STR_HASH;
 }
 
 /// `GetHashValue32` (0x317670) and the UI object lookups, which the generator
 /// emitted as cross-shard `call_indirect`s.
 pub(crate) mod table_callee {
-
     pub(crate) use crate::game::fe::festaterewards::table_callee::BENEW_PLAYER_INT_GET_CHAR_ID;
     pub(crate) use crate::game::fe::festaterewards::table_callee::BE_GET;
     pub(crate) use crate::game::fe::festaterewards::table_callee::BE_GET_INTERFACE_FV;
     pub(crate) use crate::game::fe::festaterewards::table_callee::BE_GET_TEXT_FROM_ID;
-
     pub(crate) use crate::game::fe::festaterewards::table_callee::FE_STATE_CTOR;
 }
-
-/// Addresses the generator emitted as `call_indirect` (outside the shard's
-/// own direct-call set, so no readable alias is needed here).
-pub(crate) mod addr {}
 
 /// `void MemCardStateBase_dtor(MemCardStateBase* self, int flags)` (0x1d5428):
 /// install the two intermediate vtables, clear the global and run the state
@@ -1497,19 +1478,14 @@ pub fn mem_card_state_base_shutdown(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
-
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-
     pub(crate) use crate::game::bx::bxstring::tests::heap_init as heap_init_3;
-    pub(crate) use crate::game::dirtysock::tags2::tests::alloc_machine;
-
-    pub(crate) use crate::game::dirtysock::tags2::tests::zero;
-
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::alloc_machine;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::zero;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_13 as base_4;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_5;
@@ -1518,32 +1494,22 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::fake_small;
     pub(crate) use crate::game::fe::feasyncfile::tests::fe_base;
     pub(crate) use crate::game::fe::feasyncfile::tests::game_globals;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_5 as heap_init_2;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::slot_9 as slot_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::strict;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::world_3 as world;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::IFACE;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_3 as OBJ2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ3_2 as OBJ3;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ4_2 as OBJ4;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_3 as OBJ;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::SCRATCH;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_14 as SEEDS_4;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_16 as SEEDS_5;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::W_4 as W;
     pub(crate) use crate::game::fe::festaterewards::tests::base_4 as base_2;
-
     pub(crate) use crate::game::fe::festaterewards::tests::heap_block;
-
     pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
-
     pub(crate) use crate::game::main::gamemode::tests::SEEDS_2 as SEEDS_3;
     pub(crate) use crate::game::main::gamestate::tests::base_3 as base;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::run as run_2;

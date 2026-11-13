@@ -3013,8 +3013,8 @@ pub(crate) mod tests {
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::base_6 as base_7;
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::w as w_5;
-    pub(crate) use crate::game::dirtysock::tags2::tests::DST;
-    pub(crate) use crate::game::dirtysock::tags2::tests::LISTARR;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::DST;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::LISTARR;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base_5;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_6;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as base;

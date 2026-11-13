@@ -15,12 +15,12 @@ use crate::events;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::beintplayer::mul32;
-pub(crate) use crate::game::dirtysock::tags2::gp_3;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_3;
 pub(crate) use crate::game::fe::debugfe::r32_2;
 pub(crate) use crate::game::fe::festateloadhint::lqsp;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
+pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw as lw_2;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
 pub(crate) use crate::game::intersect::aifwddiff::gp;
@@ -35,7 +35,7 @@ pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::object::flexrailnode::at_3;
 pub(crate) use crate::game::object::flexrailnode::r32v;
 pub(crate) use crate::game::object::flexrailnode::spa;
-pub(crate) use crate::game::replay::replay2::destroy_if_flag;
+pub(crate) use crate::game::replay::replaycache::destroy_if_flag;
 pub(crate) use crate::game::visualfx::boardwakefx::qcopy;
 pub(crate) use crate::game::visualfx::boardwakefx::vlen;
 pub(crate) use crate::game::visualfx::boardwakefx::vsub_2 as vsub;
@@ -235,7 +235,7 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_IS_FLAG4;
     pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_MANAGER_LOAD;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::WORLD_TRIGGER_MANAGER_GET_TRIGGER_INFO;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::WORLD_TRIGGER_MANAGER_GET_TRIGGER_INFO;
 
     pub(crate) use crate::game::intersect::worldsphtree::callee::WORLD_SOUND_QUERY_TREE_NODE;
 
@@ -3527,9 +3527,9 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
 
     pub(crate) use crate::game::bx::bxstring::tests::SEEDS as SEEDS_2;
-    pub(crate) use crate::game::bx::bxstring2::tests::game;
+    pub(crate) use crate::game::bx::bxstringctor::tests::game;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::SCRATCH;
+    pub(crate) use crate::game::bx::bxstringctor::tests::SCRATCH;
     pub(crate) use crate::game::fe::debugfe::tests::w as w_2;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ2;
@@ -3547,9 +3547,9 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::fereal::tests::SELF2;
     pub(crate) use crate::game::fe::festateloadhint::tests::w32;
     pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_5;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_3;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS as SEEDS_3;
     pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
 
     pub(crate) use crate::game::intersect::worldsphtree::tests::f;
@@ -3568,7 +3568,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::render::particle::tests::base;
     pub(crate) use crate::game::render::particle::tests::clear;
     pub(crate) use crate::game::render::particle::tests::SEEDS_7 as SEEDS_4;
-    pub(crate) use crate::game::replay::replay2::tests::dtor_setup;
+    pub(crate) use crate::game::replay::replaycache::tests::dtor_setup;
     use ssx3_ee as ee;
 
     #[test]

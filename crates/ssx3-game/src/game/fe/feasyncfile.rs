@@ -19,23 +19,23 @@ pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_3;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at as lw_at_5;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
-pub(crate) use crate::game::dirtysock::tags2::at;
-pub(crate) use crate::game::dirtysock::tags2::const_reg;
-pub(crate) use crate::game::dirtysock::tags2::gp_5 as gp_2;
-pub(crate) use crate::game::dirtysock::tags2::gp_9 as gp_5;
-pub(crate) use crate::game::dirtysock::tags2::lb_at;
-pub(crate) use crate::game::dirtysock::tags2::lw;
-pub(crate) use crate::game::dirtysock::tags2::p_2;
-pub(crate) use crate::game::dirtysock::tags2::sw;
+pub(crate) use crate::game::dirtysock::tagsunk::at_3 as at;
+pub(crate) use crate::game::dirtysock::tagsunk::const_reg;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_5 as gp_2;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_9 as gp_5;
+pub(crate) use crate::game::dirtysock::tagsunk::lb_at;
+pub(crate) use crate::game::dirtysock::tagsunk::lw;
+pub(crate) use crate::game::dirtysock::tagsunk::p_2;
+pub(crate) use crate::game::dirtysock::tagsunk::sw;
 pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::fe::fepopup::sb;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw_8;
-pub(crate) use crate::game::fe::fepopup3::lh;
-pub(crate) use crate::game::fe::fepopup3::lw_2;
-pub(crate) use crate::game::fe::fepopup3::p_2 as p_4;
-pub(crate) use crate::game::fe::fepopup3::sw as sw_2;
+pub(crate) use crate::game::fe::fepopupmisc::lh;
+pub(crate) use crate::game::fe::fepopupmisc::lw_2;
+pub(crate) use crate::game::fe::fepopupmisc::p_2 as p_4;
+pub(crate) use crate::game::fe::fepopupmisc::sw as sw_2;
 pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_4;
-pub(crate) use crate::game::fe::festaterewards2::r;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
 pub(crate) use crate::game::fe::ovstates::at as at_6;
 pub(crate) use crate::game::fe::ovstates::close;
 pub(crate) use crate::game::main::gamemode::gpo;
@@ -1296,11 +1296,11 @@ pub(crate) mod callee {
     pub(crate) use crate::game::be::beintmission::callee::NET_FE_STATE_ON_WIDGET_ACTION;
     pub(crate) use crate::game::be::beintmission::callee::POPUP_CONFIRM_CFG_RESET;
 
-    pub(crate) use crate::game::bx::bxstring2::callee::C_FE_STATE_LOBBY_MENU_FILL_PLAYER_LIST;
-    pub(crate) use crate::game::bx::bxstring2::callee::C_FE_STATE_LOBBY_MENU_UPDATE_PLAYER_SCROLL_ARROWS;
+    pub(crate) use crate::game::bx::bxstringctor::callee::C_FE_STATE_LOBBY_MENU_FILL_PLAYER_LIST;
+    pub(crate) use crate::game::bx::bxstringctor::callee::C_FE_STATE_LOBBY_MENU_UPDATE_PLAYER_SCROLL_ARROWS;
 
-    pub(crate) use crate::game::bx::bxstring2::callee::NET_FE_STATE_GET_POPUP as NET_FE_STATE_GET_POPUP_5;
-    pub(crate) use crate::game::bx::bxstring2::callee::NET_FE_STATE_SHOW_POPUP as NET_FE_STATE_SHOW_POPUP_4;
+    pub(crate) use crate::game::bx::bxstringctor::callee::NET_FE_STATE_GET_POPUP as NET_FE_STATE_GET_POPUP_5;
+    pub(crate) use crate::game::bx::bxstringctor::callee::NET_FE_STATE_SHOW_POPUP as NET_FE_STATE_SHOW_POPUP_4;
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::FE_ASYNC_SET_STATE;
 
@@ -1317,70 +1317,70 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_STRING as UI_TEXT_SET_STRING_3;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_GET_INTERFACE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BE_GET_INTERFACE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::CBXSTRING_CTOR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::CBXSTRING_CTOR;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::CHAT_ROOM_UPDATE_PLAYER_QUALITY_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::CHAT_ROOM_UPDATE_PLAYER_QUALITY_2;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::EMPTY_CHILD_HANDLER;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::EMPTY_CHILD_HANDLER;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::FE_STATE_STATS_REFRESH_RESULTS_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::FE_STATE_STATS_REFRESH_RESULTS_2;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_HASH_VALUE32;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::GET_HASH_VALUE32;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEMSET_3 as MEMSET_4;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MEMSET_3 as MEMSET_4;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_CTOR_2 as NET_FE_STATE_CTOR_3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_CTOR_3 as NET_FE_STATE_CTOR_7;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_DTOR_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_HANDLE_NET_EVENT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_ON_CHILD_EVENT_2 as NET_FE_STATE_ON_CHILD_EVENT_3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_ON_CHILD_EVENT_3 as NET_FE_STATE_ON_CHILD_EVENT_6;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_UPDATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_UPDATE_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::NET_FE_STATE_CTOR_2 as NET_FE_STATE_CTOR_3;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::NET_FE_STATE_CTOR_3 as NET_FE_STATE_CTOR_7;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::NET_FE_STATE_DTOR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::NET_FE_STATE_DTOR_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::NET_FE_STATE_HANDLE_NET_EVENT;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::NET_FE_STATE_ON_CHILD_EVENT_2 as NET_FE_STATE_ON_CHILD_EVENT_3;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::NET_FE_STATE_ON_CHILD_EVENT_3 as NET_FE_STATE_ON_CHILD_EVENT_6;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::NET_FE_STATE_UPDATE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::NET_FE_STATE_UPDATE_2;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_MESSENGER_SET_PLAYER_MENU_SELECTION;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::NET_MESSENGER_SET_PLAYER_MENU_SELECTION;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::ON_QUIT_POPUP_EVENT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::OPERATOR_DELETE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::ON_QUIT_POPUP_EVENT;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::OPERATOR_DELETE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::STATS_SELECT_CATEGORY;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::STATS_SELECT_CATEGORY;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_LIST_CLOSE_ALL_POPUPS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_MENU_SET_SELECTED_BY_INDEX;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_LIST_CLOSE_ALL_POPUPS;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_MENU_SET_SELECTED_BY_INDEX;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_SCREEN_GET_OBJECT_BY_HASH_NAME;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_SCREEN_GET_OBJECT_BY_HASH_NAME;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_TEXT_SET_ASCII_STRING;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_TEXT_SET_ASCII_STRING;
 
     pub(crate) use crate::game::fe::fepopup::callee::C001BB9B0;
 
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_CREATE_STEP1_ON_EDIT_DONE_POPUP_EVENT;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_CREATE_STEP1_ON_SAVE_ACCOUNT_ANSWER;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_LOBBY_MENU_ON_CREATE_ROOM_POPUP_EVENT;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_LOBBY_MENU_PROMPT_ROOM_PASSWORD;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_NET_QUICK_MESSAGES_ON_RESET_POPUP_EVENT;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_NET_QUICK_MESSAGES_ON_SAVE_POPUP_EVENT;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_ONLINE_MAIN_MENU_ON_DISCONNECT_POPUP_EVENT;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_ONLINE_MAIN_MENU_ON_LEAVE_POPUP_EVENT;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::CFE_STATE_CREATE_STEP1_ON_EDIT_DONE_POPUP_EVENT;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::CFE_STATE_CREATE_STEP1_ON_SAVE_ACCOUNT_ANSWER;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::CFE_STATE_LOBBY_MENU_ON_CREATE_ROOM_POPUP_EVENT;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::CFE_STATE_LOBBY_MENU_PROMPT_ROOM_PASSWORD;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::CFE_STATE_NET_QUICK_MESSAGES_ON_RESET_POPUP_EVENT;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::CFE_STATE_NET_QUICK_MESSAGES_ON_SAVE_POPUP_EVENT;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::CFE_STATE_ONLINE_MAIN_MENU_ON_DISCONNECT_POPUP_EVENT;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::CFE_STATE_ONLINE_MAIN_MENU_ON_LEAVE_POPUP_EVENT;
 
-    pub(crate) use crate::game::fe::fepopup3::callee::FE_ASYNC_MANAGER_GET_STATE;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::FE_ASYNC_MANAGER_GET_STATE;
 
-    pub(crate) use crate::game::fe::fepopup3::callee::NET_FE_STATE_CTOR as NET_FE_STATE_CTOR_8;
-    pub(crate) use crate::game::fe::fepopup3::callee::NET_FE_STATE_GET_POPUP;
-    pub(crate) use crate::game::fe::fepopup3::callee::NET_FE_STATE_ON_CHILD_EVENT as NET_FE_STATE_ON_CHILD_EVENT_7;
-    pub(crate) use crate::game::fe::fepopup3::callee::NET_FE_STATE_SETUP_BUDDY_ACTION_POPUP;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::NET_FE_STATE_CTOR_2 as NET_FE_STATE_CTOR_8;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::NET_FE_STATE_ON_CHILD_EVENT_2 as NET_FE_STATE_ON_CHILD_EVENT_7;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::NET_FE_STATE_GET_POPUP;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::NET_FE_STATE_SETUP_BUDDY_ACTION_POPUP;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::CHAT_ROOM_UPDATE_PLAYER_QUALITY;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::CHAT_ROOM_UPDATE_PLAYER_QUALITY;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::FE_STATE_STATS_REFRESH_RESULTS;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::FE_STATE_STATS_REFRESH_RESULTS;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::NET_FE_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::NET_FE_STATE_ON_CHILD_EVENT;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::NET_FE_STATE_ON_ACTIVATE;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::NET_FE_STATE_ON_CHILD_EVENT;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::NET_QUICK_PLAY_POPUP_ON_OPTIONS_EVENT;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::NET_QUICK_PLAY_POPUP_ON_OPTIONS_EVENT;
 
     pub(crate) use crate::game::fe::ovstatepause::callee::CHECK_ACCOUNT_NAME;
     pub(crate) use crate::game::fe::ovstatepause::callee::CHECK_PASSWORD;
@@ -18306,36 +18306,36 @@ pub(crate) mod tests {
     pub(crate) use crate::game::bx::bxstring::tests::heap;
     pub(crate) use crate::game::bx::bxstring::tests::put_str_2 as put_str_5;
     pub(crate) use crate::game::bx::bxstring::tests::string as string_3;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_14;
-    pub(crate) use crate::game::bx::bxstring2::tests::slot_2 as slot_10;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_14;
+    pub(crate) use crate::game::bx::bxstringctor::tests::slot_2 as slot_10;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library_3;
-    pub(crate) use crate::game::dirtysock::tags2::tests::clear as clear_3;
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2 as be_library_3;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::common;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear as clear_3;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
-    pub(crate) use crate::game::dirtysock::tags2::tests::heap_block_2 as heap_block;
-    pub(crate) use crate::game::dirtysock::tags2::tests::heap_init_5 as heap_init_3;
-    pub(crate) use crate::game::dirtysock::tags2::tests::pool_7 as pool_6;
-    pub(crate) use crate::game::dirtysock::tags2::tests::put_vtable;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::heap_block_2 as heap_block;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::heap_init_5 as heap_init_3;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::pool_7 as pool_6;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::put_vtable;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::gp_at;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::string;
-    pub(crate) use crate::game::dirtysock::tags2::tests::world_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_5;
-    pub(crate) use crate::game::dirtysock::tags2::tests::ZERO_FN;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::string;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::world_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7 as SEEDS_5;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::ZERO_FN;
     pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_20;
     pub(crate) use crate::game::fe::fepopup::tests::check_all_3;
 
-    pub(crate) use crate::game::fe::fepopup3::tests::setup;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::setup;
     pub(crate) use crate::game::fe::festaterewards::tests::base_4 as base_8;
 
     pub(crate) use crate::game::fe::festaterewards::tests::slot_2 as slot_7;
 
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_3;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS as SEEDS_3;
     pub(crate) use crate::game::fe::ovstatepause::tests::globals_2 as globals_3;
 
     pub(crate) use crate::game::main::gamemode::tests::be_library as be_library_6;

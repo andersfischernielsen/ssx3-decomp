@@ -8,8 +8,8 @@ use crate::call::guest;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-pub(crate) use crate::game::be::bestate2::ea;
-pub(crate) use crate::game::be::bestate2::gp_lw;
+pub(crate) use crate::game::be::beprepoststate::ea;
+pub(crate) use crate::game::be::beprepoststate::gp_lw;
 pub(crate) use crate::game::fe::feasyncfile::gp_11 as gp;
 pub(crate) use crate::game::fe::ovstates::at;
 pub(crate) use crate::game::fe::ovstates::close;
@@ -432,9 +432,9 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::w;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_7 as be_library;

@@ -54,7 +54,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_SOUND_BASE_CTOR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_SOUND_BASE_CTOR;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_FILE_CACHE_SHUTDOWN;
 

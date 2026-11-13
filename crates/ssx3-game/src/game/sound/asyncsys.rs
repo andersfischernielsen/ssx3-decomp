@@ -74,11 +74,11 @@ pub(crate) mod audio {
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUILTIN_DELETE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::BUILTIN_DELETE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_FREE_MEMORY_2 as SND_BANK_FREE_MEMORY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLINK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLOAD_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SND_BANK_FREE_MEMORY_2 as SND_BANK_FREE_MEMORY;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SND_BANK_UNLINK;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SND_BANK_UNLOAD_2;
 
     pub(crate) use crate::game::wscript::wscriptman::callee::SND_BANK_UNLOAD;
 }
@@ -1601,10 +1601,10 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::SEEDS_2 as SEEDS;
     pub(crate) use crate::game::animation::animmodel::tests::SEEDS_4;
     pub(crate) use crate::game::camera::cameraalgorithms::tests::world_chain;
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::common;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::heap_block_2 as heap_block;
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_3;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::heap_block_2 as heap_block;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7 as SEEDS_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as base;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::w_2 as w;

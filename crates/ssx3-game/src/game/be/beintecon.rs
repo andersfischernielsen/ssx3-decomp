@@ -99,9 +99,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEM_FREE_3 as EA_MEM_FREE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::EA_MEM_FREE_3 as EA_MEM_FREE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::OPERATOR_DELETE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::OPERATOR_DELETE;
 }
 
 /// The shared address arithmetic of the two economy getters: `db` (0x4a6ca8)
@@ -679,7 +679,7 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
 
     pub(crate) use crate::game::be::beintmission::tests::instance_setup;
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_13 as base_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_9 as base_2;

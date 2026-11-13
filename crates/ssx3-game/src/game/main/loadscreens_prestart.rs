@@ -152,6 +152,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_game_load_screen_update,
         "cGameLoadScreen_Update",
     ),
+    (0x0023_2ae0, start_screen_ctor, "StartScreen_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1143,6 +1144,37 @@ pub fn pre_start_screen_update(c: &mut Cpu) {
     return;
 }
 
+// ---------------------------------------------------------------------------
+// StartScreen + memory card.
+
+/// `StartScreen* StartScreen_Load(self, arg)` (0x232ae0): the start screen's
+/// constructor: `AppModule_ctor`, then the module's id/vtable and a cleared
+/// field.
+pub fn start_screen_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        callee::APP_MODULE_CTOR.call(c, 0x0023_2afc)?;
+        let self_ = abi::r32(c, S0);
+        c.g[V1][0] = 0x48_0000;
+        Addr(self_.wrapping_add(0x18)).sw(c, c.g[S1][0]);
+        c.g[V1][0] = sx(0x48_0000u32.wrapping_sub(0x2830));
+        c.g[V0][0] = c.g[S0][0];
+        Addr(self_).sw(c, c.g[V1][0]);
+        Addr(self_.wrapping_add(0xc)).sw(c, 0);
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1159,8 +1191,8 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::alloc_base;
-    pub(crate) use crate::game::bx::bxstring2::tests::f;
+    pub(crate) use crate::game::bx::bxstringctor::tests::alloc_base;
+    pub(crate) use crate::game::render::particle::tests::f;
 
     pub(crate) use crate::game::fe::debugfe::tests::w;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ;
@@ -1686,6 +1718,22 @@ pub(crate) mod tests {
                 c.bus.write32(WORLD + 0xa4, PRE_MODULE);
                 c.bus.write32(PRE_MODULE + 0x4, r.edge_f32());
                 c.bus.write32(WORLD + 0x4, (seed % 2) as u32);
+            },
+        );
+    }
+
+    #[test]
+    fn start_screen_ctor_matches() {
+        check(
+            ee::s06::f_00232ae0__generated,
+            start_screen_ctor,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x232a_e0, 1);
+                let this = DATA + 0x100;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(r.next_u32() & 0xffff);
+                c.bus.write32(GAME_GP - 0x51b8, r.next_u32());
             },
         );
     }

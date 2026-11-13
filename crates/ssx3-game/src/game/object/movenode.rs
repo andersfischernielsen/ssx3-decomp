@@ -21,7 +21,7 @@ use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::lh_2 as lh;
 pub(crate) use crate::game::ai::computer::sd;
 pub(crate) use crate::game::ai::ridermetrix::swc1_r;
-pub(crate) use crate::game::be::bestate2::ea;
+pub(crate) use crate::game::be::beprepoststate::ea;
 pub(crate) use crate::game::bx::bxstring::gp;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_4;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lh_at;
@@ -273,8 +273,8 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::ai::rider::callee::MODIFIER_BLOCK_GET_TRANSFORM_BOUNDS;
 
-    pub(crate) use crate::game::bx::bxstring2::callee::MULTIPARTICLE_CTOR;
-    pub(crate) use crate::game::bx::bxstring2::callee::MULTIPARTICLE_MAN_CLEAR;
+    pub(crate) use crate::game::bx::bxstringctor::callee::MULTIPARTICLE_CTOR;
+    pub(crate) use crate::game::bx::bxstringctor::callee::MULTIPARTICLE_MAN_CLEAR;
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::AVALANCHE_GET_OBJECT_MATRIX;
 
@@ -361,7 +361,7 @@ pub(crate) mod g {}
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
 pub(crate) mod addr {
 
-    pub(crate) use crate::game::bx::bxstring2::addr::MEM_MAN_ALLOC;
+    pub(crate) use crate::game::bx::bxstringctor::addr::MEM_MAN_ALLOC;
 
     pub(crate) use crate::game::scripter::ssxscriptengine::addr::POSITION_MODIFIER_CTOR_3;
 }
@@ -4272,13 +4272,13 @@ pub(crate) mod tests {
     pub(crate) use crate::game::be::beintstat::tests::allocator;
 
     pub(crate) use crate::game::be::belibrary::tests::SRC;
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::be::bestate2::tests::w;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::w;
     pub(crate) use crate::game::bx::bxstring::tests::alloc_ready;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::alloc_base as alloc_base_2;
+    pub(crate) use crate::game::bx::bxstringctor::tests::alloc_base as alloc_base_2;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::pool_allocator_3 as pool_allocator;
+    pub(crate) use crate::game::bx::bxstringctor::tests::pool_allocator_3 as pool_allocator;
 
     pub(crate) use crate::game::camera::cameracontroller::tests::pool as pool_2;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::gpf;
@@ -4305,7 +4305,7 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ as OBJ_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_2 as WORLD;
-    pub(crate) use crate::game::fe::fememcard2::tests::alloc as alloc_2;
+    pub(crate) use crate::game::fe::fememcardcallbacks::tests::alloc as alloc_2;
     pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_8;
     pub(crate) use crate::game::fe::fepopup::tests::check_all_3 as check_all;
 
@@ -6213,7 +6213,7 @@ pub(crate) mod tests {
     /// object is random bytes.
     #[test]
     fn mod_obj_create_modifier_block_matches() {
-        use crate::game::dirtysock::tags2::tests::alloc_machine;
+        use crate::game::dirtysock::tagsunk::tests::alloc_machine;
         check(
             ee::s11::f_00355468__generated,
             mod_obj_create_modifier_block,

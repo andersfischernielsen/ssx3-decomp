@@ -19,7 +19,7 @@ use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::lh_2;
 pub(crate) use crate::game::ai::computer::sd;
 pub(crate) use crate::game::be::beintplayer::lh;
-pub(crate) use crate::game::be::bestate2::ea;
+pub(crate) use crate::game::be::beprepoststate::ea;
 pub(crate) use crate::game::fe::feasyncfile::at_2;
 pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::fe::fepopup::lq;
@@ -15316,10 +15316,10 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::ai::tests::wf;
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::put;
     pub(crate) use crate::game::be::beintmission::tests::SEEDS as SEEDS_3;
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS as SEEDS_6;
-    pub(crate) use crate::game::bx::bxstring2::tests::fbits;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::w;
+    pub(crate) use crate::game::be::beprepoststate::tests::SEEDS as SEEDS_6;
+    pub(crate) use crate::game::bx::bxstringctor::tests::fbits;
     pub(crate) use crate::game::camera::trigger::cameratriggerlist::tests::small_pointer;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base;
 

@@ -19,8 +19,8 @@ pub(crate) use crate::game::fe::feasyncfile::p_6 as p_3;
 pub(crate) use crate::game::fe::festateloadhint::lqsp;
 pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
+pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::fe::ovstatepause::lw;
 pub(crate) use crate::game::fe::ovstatepause::p;
 pub(crate) use crate::game::main::gamemode::low;
@@ -293,16 +293,16 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::be::beintmission::callee::UI_STATE_UPDATE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::AUDIO_APPLY_OUTPUT_MODE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::AUDIO_APPLY_OUTPUT_MODE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_REWARD_INT_IS_UNLOCKED;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BE_REWARD_INT_IS_UNLOCKED;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_HASH_VALUE32;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::GET_HASH_VALUE32;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SOUND_PLAYER_SET_BY_INDEX;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SOUND_PLAYER_START;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SOUND_PLAYER_SET_BY_INDEX;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SOUND_PLAYER_START;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::VID_ENGINE_PLAYER_DTOR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::VID_ENGINE_PLAYER_DTOR;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_LIBRARY_GET_INSTANCE_4 as BE_LIBRARY_GET_INSTANCE_3;
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_LIBRARY_GET_INTERFACE_4 as BE_LIBRARY_GET_INTERFACE_3;
@@ -323,9 +323,9 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_PLAY_FRAME_2 as UI_SCREEN_PLAY_FRAME;
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_STATE_CTOR_2_4 as UI_STATE_CTOR_2_3;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::PREVIEW_REWARD_POLL_IMAGE_LOAD;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::PREVIEW_REWARD_POLL_IMAGE_LOAD;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::UI_STATE_UPDATE as UI_STATE_UPDATE_2;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::UI_STATE_UPDATE as UI_STATE_UPDATE_2;
 
     pub(crate) use crate::game::fe::ovstatepause::callee::FE_FORMAT_MONEY;
 
@@ -2827,20 +2827,20 @@ pub(crate) mod tests {
     pub(crate) use crate::game::be::beintplayer::tests::w8;
 
     pub(crate) use crate::game::camera::cameracontroller::tests::pool as pool_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::alloc_machine;
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::alloc_machine;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::clear;
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::common;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::gp_at;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::run_2 as run;
-    pub(crate) use crate::game::dirtysock::tags2::tests::string;
-    pub(crate) use crate::game::dirtysock::tags2::tests::world_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::zero;
-    pub(crate) use crate::game::dirtysock::tags2::tests::MEM_HEAP;
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::run_2 as run;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::string;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::world_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::zero;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::MEM_HEAP;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7 as SEEDS_2;
     pub(crate) use crate::game::fe::debugfe::tests::put_str;
     pub(crate) use crate::game::fe::debugfe::tests::w as w_2;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ;
@@ -2861,14 +2861,14 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_15 as SEEDS_5;
 
-    pub(crate) use crate::game::fe::festatecharequip2::tests::money_text_test;
+    pub(crate) use crate::game::fe::festatecharequipdetail::tests::money_text_test;
     pub(crate) use crate::game::fe::festatecharequipdetail::tests::world;
     pub(crate) use crate::game::fe::festateloadhint::tests::w32;
 
     pub(crate) use crate::game::fe::festateoptions::tests::setup;
     pub(crate) use crate::game::fe::festateoptions::tests::AUX;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
     pub(crate) use crate::game::fe::ovstatepause::tests::globals_2 as globals;
 
     pub(crate) use crate::game::main::gamemode::tests::be_library as be_library_2;

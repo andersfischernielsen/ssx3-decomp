@@ -6,7 +6,7 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Frame;
-pub(crate) use crate::game::fe::fepopup2::fe_state_screen_init;
+pub(crate) use crate::game::fe::festatenethelppopup::fe_state_screen_init;
 pub(crate) use crate::game::fe::festateoptions::call_object_a2;
 pub(crate) use crate::game::fe::festateoptions::screen_object;
 pub(crate) use crate::game::fe::festateoptions::ui_state_epilogue;
@@ -682,11 +682,11 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::gp_at;
+    pub(crate) use crate::game::render::particle::tests::gp_at;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::slot_2 as slot;
+    pub(crate) use crate::game::bx::bxstringctor::tests::slot_2 as slot;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_2;
 
@@ -695,7 +695,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
 
-    pub(crate) use crate::game::fe::fememcard2::tests::hash_screen;
+    pub(crate) use crate::game::fe::fememcardcallbacks::tests::hash_screen;
 
     pub(crate) use crate::game::fe::festateoptions::tests::fe_state_setup;
 

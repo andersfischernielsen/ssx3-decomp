@@ -18,8 +18,8 @@ use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::sd;
 pub(crate) use crate::game::be::beintnetwork::ldl;
 pub(crate) use crate::game::be::beintnetwork::sdl;
-pub(crate) use crate::game::be::bestate2::ea;
-pub(crate) use crate::game::bx::bxstring2::gp_4 as gp;
+pub(crate) use crate::game::be::beprepoststate::ea;
+pub(crate) use crate::game::bx::bxstringctor::gp_4 as gp;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_2;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw as lw_3;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
@@ -6161,9 +6161,9 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::rider::tests::clear_2;
     pub(crate) use crate::game::be::bedbreward::tests::alloc_ready as alloc_ready_2;
 
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS as SEEDS_8;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::w;
+    pub(crate) use crate::game::be::beprepoststate::tests::SEEDS as SEEDS_8;
     pub(crate) use crate::game::bx::bxstring::tests::SEEDS as SEEDS_2;
     pub(crate) use crate::game::camera::cameracontroller::tests::heap_block;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::base_6 as base_8;

@@ -234,9 +234,9 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::f;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::gp_at;
+    pub(crate) use crate::game::render::particle::tests::f;
 
     pub(crate) use crate::game::object::movenode::tests::delta;
     pub(crate) use crate::game::object::movenode::tests::slot;

@@ -834,7 +834,7 @@ pub(crate) mod tests {
     use crate::difftest::Rng;
     use crate::difftest::DATA;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::cstr;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::cstr;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_4 as base;
 

@@ -6,9 +6,8 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Frame;
-pub(crate) use crate::game::dirtysock::tags2::const_reg;
-pub(crate) use crate::game::dirtysock::tags2::leave;
-pub(crate) use crate::game::dirtysock::tags2::sw;
+pub(crate) use crate::game::dirtysock::tagsunk::const_reg;
+pub(crate) use crate::game::dirtysock::tagsunk::sw;
 pub(crate) use crate::game::fe::feasyncfile::at as at_2;
 pub(crate) use crate::game::fe::fereal::close;
 pub(crate) use crate::game::fe::fereal::gp;
@@ -16,6 +15,7 @@ pub(crate) use crate::game::fe::fereal::open;
 pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_ACTIVATED;
 pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_IGNORED;
 pub(crate) use crate::game::fe::festateload::at;
+pub(crate) use crate::game::sound::bankmonitor::leave;
 use crate::guest::Addr;
 use crate::tick;
 use ssx3_ee_rt::cpu::reg::*;
@@ -62,7 +62,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_CTOR_2 as UI_STATE_CTOR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_STATE_CTOR_2 as UI_STATE_CTOR;
 
     pub(crate) use crate::game::fe::festateload::callee::UI_STATE_V13;
 }
@@ -360,10 +360,10 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::be::bestate2::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
 
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
+    pub(crate) use crate::game::be::beprepoststate::tests::SEEDS;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2 as be_library;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::env;
 

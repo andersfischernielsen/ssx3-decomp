@@ -14,7 +14,7 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::delete_if_flag;
 pub(crate) use crate::game::be::be::gp;
-pub(crate) use crate::game::dirtysock::tags2::arg;
+pub(crate) use crate::game::dirtysock::tagsunk::arg;
 pub(crate) use crate::game::fe::debugfe::at as at_2;
 pub(crate) use crate::game::fe::debugfe::r32_2;
 pub(crate) use crate::game::fe::fepopup::at as at_3;
@@ -157,6 +157,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0016_bef8,
         camera_trigger_list_dtor,
         "CameraTriggerList_dtor",
+    ),
+    (
+        0x0016_bd30,
+        math_wrap_angle_clamp_half_pi,
+        "Math_WrapAngleClampHalfPi",
     ),
 ];
 
@@ -1583,6 +1588,53 @@ pub fn manual_script_camera_algo_update(c: &mut Cpu) {
     return;
 }
 
+/// `float Math_WrapAngleClampHalfPi(float angle)` (0x16bd30): wrap an angle
+/// into [-pi/2, pi/2) using a rounding step and a final clamp.
+pub fn math_wrap_angle_clamp_half_pi(c: &mut Cpu) {
+    let angle = Addr(abi::arg(c, 0));
+    let half = FpuF32(0x3f00_0000);
+    c.cycles += 11;
+    let scale = Addr((c.g[GP][0] as u32).wrapping_sub(0x6470)).read_fpu(c);
+    let input = angle.read_fpu(c);
+    c.f[4] = input.0;
+    c.g[AT][0] = 0x3f00_0000;
+    c.f[1] = half.0;
+    let f0 = scale * input + half;
+    let n = f0.to_i32();
+    let mut f2 = FpuF32::from_i32(n);
+    c.f[2] = f2.0;
+    let lt = f0.lt(f2);
+    abi::set_fcc(c, lt);
+    if lt {
+        c.cycles += 3;
+        c.g[AT][0] = 0x3f80_0000;
+        c.f[0] = 0x3f80_0000;
+        f2 = f2 - FpuF32::ONE;
+        c.f[2] = f2.0;
+    }
+    c.cycles += 10;
+    let a = Addr((c.g[GP][0] as u32).wrapping_sub(0x646c)).read_fpu(c);
+    c.f[0] = a.0;
+    let b = Addr((c.g[GP][0] as u32).wrapping_sub(0x6468)).read_fpu(c);
+    c.f[1] = b.0;
+    let mut f0 = a * f2;
+    let cc = Addr((c.g[GP][0] as u32).wrapping_sub(0x6464)).read_fpu(c);
+    c.f[2] = cc.0;
+    c.f[3] = b.0;
+    f0 = input - f0;
+    c.f[0] = f0.0;
+    let le = b.le(f0);
+    abi::set_fcc(c, le);
+    angle.write_fpu(c, f0);
+    if le {
+        c.cycles += 1;
+        c.f[3] = f0.min(cc).0;
+    }
+    c.cycles += 2;
+    angle.write_fpu(c, FpuF32(c.f[3]));
+    abi::ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1608,7 +1660,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::be::beintoption::tests::VT;
     pub(crate) use crate::game::be::beintstat::tests::allocator;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::be_library;
+    pub(crate) use crate::game::bx::bxstringctor::tests::be_library;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ as OBJ_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::strict;
     pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_4;
@@ -2173,6 +2225,26 @@ pub(crate) mod tests {
                 for i in 0..0x20 {
                     c.bus.write32(MAN_CAM + 0x40 + 4 * i, r.f32(10.0));
                 }
+            },
+        );
+    }
+
+    #[test]
+    fn math_wrap_angle_clamp_half_pi_matches() {
+        check(
+            ssx3_ee::s02::f_0016bd30,
+            math_wrap_angle_clamp_half_pi,
+            300,
+            &|c, seed| {
+                let mut r_m2 = Rng(0x16bd ^ seed as u64);
+                scramble(c, &mut r_m2);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(GAME_GP.wrapping_sub(0x6470), r_m2.edge_f32());
+                c.bus.write32(GAME_GP.wrapping_sub(0x646c), r_m2.edge_f32());
+                c.bus.write32(GAME_GP.wrapping_sub(0x6468), r_m2.edge_f32());
+                c.bus.write32(GAME_GP.wrapping_sub(0x6464), r_m2.edge_f32());
+                c.bus.write32(DATA, r_m2.edge_f32());
             },
         );
     }

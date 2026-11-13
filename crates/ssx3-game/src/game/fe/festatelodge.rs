@@ -1,13 +1,13 @@
-//! `src/fe/ovstatelodge2.cpp`: hand-written replacements (moved from the
+//! `src/fe/festatelodge.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Frame;
-pub(crate) use crate::game::dirtysock::tags2::p;
 pub(crate) use crate::game::fe::feasyncfile::r;
 pub(crate) use crate::game::fe::festatebonusmaterial::widget_range_notify;
+pub(crate) use crate::game::sound::bankmonitor::p;
 use crate::guest::Addr;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -48,14 +48,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees and fixed addresses.
 
 pub(crate) mod callee {
-
-    pub(crate) use crate::game::dirtysock::tags2::callee::FE_MODULE_GET_PLAYER_PAD_MASK;
-
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_CTOR_3 as UI_STATE_CTOR;
-
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::FE_MODULE_GET_PLAYER_PAD_MASK;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_STATE_CTOR_3 as UI_STATE_CTOR;
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_INTERFACE;
-
     pub(crate) use crate::game::fe::feasyncfile::callee::FE_STRING_HASH;
 }
 
@@ -276,27 +272,21 @@ pub fn fe_state_lodge_rider_detail_init(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-
     use crate::difftest::fakes::machine;
-
     use crate::difftest::DATA;
-
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS as SEEDS_2;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::w;
+    pub(crate) use crate::game::be::beprepoststate::tests::SEEDS as SEEDS_2;
     pub(crate) use crate::game::camera::trigger::cameratriggerlist::tests::wb;
-    pub(crate) use crate::game::dirtysock::tags2::tests::alloc_ready;
-    pub(crate) use crate::game::dirtysock::tags2::tests::clear;
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
-
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::alloc_ready;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::common;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7 as SEEDS;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_4 as alloc_base;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ3_2 as OBJ3;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
-
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear;
     use ssx3_ee as ee;
 
     #[test]

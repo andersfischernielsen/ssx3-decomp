@@ -16,8 +16,8 @@ use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::beintscore::gp as gp_2;
-pub(crate) use crate::game::fe::fepopup3::p_2;
-pub(crate) use crate::game::fe::fepopup3::sw;
+pub(crate) use crate::game::fe::fepopupmisc::p_2;
+pub(crate) use crate::game::fe::fepopupmisc::sw;
 pub(crate) use crate::game::fe::festateload::glo;
 pub(crate) use crate::game::fe::festateloadhint::lqsp;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
@@ -112,12 +112,12 @@ pub(crate) mod callee {
     pub(crate) use crate::game::ai::rider::callee::PAD_QUEUE_GET_PAD_STATUS;
     pub(crate) use crate::game::ai::rider::callee::USB_KEYBOARD_UPDATE;
 
-    pub(crate) use crate::game::bx::bxstring2::callee::CROWD_MAN2D_REMOVE_ALL;
-    pub(crate) use crate::game::bx::bxstring2::callee::CROWD_MAN2D_RESET;
+    pub(crate) use crate::game::bx::bxstringctor::callee::CROWD_MAN2D_REMOVE_ALL;
+    pub(crate) use crate::game::bx::bxstringctor::callee::CROWD_MAN2D_RESET;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::CROWD_MAN2D_INIT_SLOT;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::CROWD_MAN2D_INIT_SLOT;
 
-    pub(crate) use crate::game::fe::fepopup3::callee::GAME_MODULE_CTOR;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::GAME_MODULE_CTOR;
 
     pub(crate) use crate::game::fe::festateload::callee::WORLD_TRIGGER_MANAGER_DTOR;
 
@@ -2844,11 +2844,11 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::ai::ai::tests::CHILD;
     pub(crate) use crate::game::ai::rider::tests::clear_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::heap_init_5 as heap_init;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::heap_init_5 as heap_init;
 
-    pub(crate) use crate::game::fe::fepopup3::tests::setup;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::setup;
     pub(crate) use crate::game::fe::festateload::tests::clear;
     pub(crate) use crate::game::fe::festateload::tests::globals;
     pub(crate) use crate::game::fe::festateload::tests::OBJ;

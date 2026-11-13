@@ -8,9 +8,9 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Flow;
 use crate::call::Frame;
-pub(crate) use crate::game::dirtysock::tags2::deleting_dtor;
+pub(crate) use crate::game::dirtysock::tagsunk::deleting_dtor;
 pub(crate) use crate::game::fe::feasyncfile::p as p_4;
-pub(crate) use crate::game::fe::fepopup2::fe_state_screen_init;
+pub(crate) use crate::game::fe::festatenethelppopup::fe_state_screen_init;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2 as p;
 use crate::guest::Addr;
 #[cfg(test)]
@@ -91,7 +91,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_DTOR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_STATE_DTOR;
 
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::CFE_LOAD_STATE_SETUP_RESULT_WIDGET;
 }
@@ -642,8 +642,8 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
 
     pub(crate) use crate::game::ai::ai::tests::belibrary;
-    pub(crate) use crate::game::dirtysock::tags2::tests::dtor_setup;
-    pub(crate) use crate::game::dirtysock::tags2::tests::rng_2 as rng;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::dtor_setup;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::rng_2 as rng;
     pub(crate) use crate::game::fe::feasyncfile::tests::diff;
     pub(crate) use crate::game::fe::feasyncfile::tests::fe_base;
 

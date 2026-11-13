@@ -13,14 +13,14 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::animation::rideranimbase::sw as sw_3;
 pub(crate) use crate::game::be::beintplayer::lh;
-pub(crate) use crate::game::be::bestate2::ea;
+pub(crate) use crate::game::be::beprepoststate::ea;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_2;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::gpa;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lh_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at as lw_at_2;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
-pub(crate) use crate::game::dirtysock::tags2::arg;
+pub(crate) use crate::game::dirtysock::tagsunk::arg;
 pub(crate) use crate::game::fe::debugfe::at;
 pub(crate) use crate::game::fe::debugfe::gp;
 pub(crate) use crate::game::fe::debugfe::r32_2;
@@ -271,24 +271,24 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::be::beintmission::callee::SND_BANK_SET_MEMORY;
 
-    pub(crate) use crate::game::bx::bxstring2::callee::SND_BANK_MAN_INIT_LOAD_REQUEST;
+    pub(crate) use crate::game::bx::bxstringctor::callee::SND_BANK_MAN_INIT_LOAD_REQUEST;
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_IS_TRACK_GROUP5;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_PLAY_MUSIC;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_RESUME_SFX;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STOP_LOADING_SCREEN_LOOP;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_FREE_MEMORY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_GET_BUFFER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_GET_BUFFER_SIZE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_MAN_UNLOAD_BANK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_RELEASE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLOAD;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLOAD_MEMORY;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SND_BANK_FREE_MEMORY;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SND_BANK_GET_BUFFER;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SND_BANK_GET_BUFFER_SIZE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SND_BANK_MAN_UNLOAD_BANK;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SND_BANK_RELEASE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SND_BANK_UNLOAD;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SND_BANK_UNLOAD_MEMORY;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_HANDLE_MUSIC_EVENT;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SSX_AUDIO_HANDLE_MUSIC_EVENT;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_STOP_LOADING_SCREEN_LOOP;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SSX_AUDIO_STOP_LOADING_SCREEN_LOOP;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_GET_MUSIC_TIER;
     pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_GET_TRACK_TYPE;
@@ -333,11 +333,11 @@ pub(crate) mod table {
 /// own direct-call set, so no readable alias is needed here).
 pub(crate) mod addr {
 
-    pub(crate) use crate::game::bx::bxstring2::addr::BE_INTERFACE_LOOKUP;
-    pub(crate) use crate::game::bx::bxstring2::addr::CBE_GET_BE;
-    pub(crate) use crate::game::bx::bxstring2::addr::CBE_GET_INTERFACE;
+    pub(crate) use crate::game::bx::bxstringctor::addr::BE_INTERFACE_LOOKUP;
+    pub(crate) use crate::game::bx::bxstringctor::addr::CBE_GET_BE;
+    pub(crate) use crate::game::bx::bxstringctor::addr::CBE_GET_INTERFACE;
 
-    pub(crate) use crate::game::bx::bxstring2::addr::UI_ENGINE_TEARDOWN;
+    pub(crate) use crate::game::bx::bxstringctor::addr::UI_ENGINE_TEARDOWN;
 }
 
 /// `void SndBank_Link(SndBank *self, SndBank *other)` (0x28b6c8): splice
@@ -3122,15 +3122,15 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::put;
 
     pub(crate) use crate::game::ai::rider::tests::slot_2 as slot;
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::bx::bxstring2::tests::W;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::w;
+    pub(crate) use crate::game::bx::bxstringctor::tests::W;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::gpf;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_6 as be_library_3;
-    pub(crate) use crate::game::dirtysock::tags2::tests::put_str8;
-    pub(crate) use crate::game::dirtysock::tags2::tests::rng_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::zero;
-    pub(crate) use crate::game::dirtysock::tags2::tests::SCRATCH;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_6 as be_library_3;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::put_str8;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::rng_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::zero;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SCRATCH;
     pub(crate) use crate::game::fe::debugfe::tests::w as w_2;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ;
 

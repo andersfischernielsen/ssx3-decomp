@@ -1634,7 +1634,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::ai::tests::be_library;
     pub(crate) use crate::game::ai::ai::tests::SEEDS_2 as SEEDS_3;
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_2;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_2;
 
     pub(crate) use crate::game::object::debouncenode::tests::base;
     pub(crate) use crate::game::object::debouncenode::tests::SEEDS;

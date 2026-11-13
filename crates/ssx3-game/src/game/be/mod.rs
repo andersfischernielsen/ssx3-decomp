@@ -21,7 +21,6 @@ pub mod beintstat;
 pub mod belibrary;
 pub mod beprepoststate;
 pub mod bestate;
-pub mod bestate2;
 
 /// Every replacement in this directory.
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
@@ -45,6 +44,5 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(belibrary::OVERRIDES);
     v.extend_from_slice(beprepoststate::OVERRIDES);
     v.extend_from_slice(bestate::OVERRIDES);
-    v.extend_from_slice(bestate2::OVERRIDES);
     v
 }

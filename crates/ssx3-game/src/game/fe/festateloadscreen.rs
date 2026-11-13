@@ -13,7 +13,7 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::beintplayer::lh;
 pub(crate) use crate::game::be::beintscore::gp as gp_2;
-pub(crate) use crate::game::dirtysock::tags2::gp_2 as gp;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_2 as gp;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_3;
 pub(crate) use crate::game::fe::feasyncfile::lh_r;
 pub(crate) use crate::game::fe::feasyncfile::low_2;
@@ -24,6 +24,9 @@ pub(crate) use crate::game::fe::fereal::close;
 pub(crate) use crate::game::fe::fereal::open;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
+pub(crate) use crate::game::main::gamestate::gw;
+pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at_m2;
+pub(crate) use crate::game::main::gamestate::p_2 as p_m2;
 pub(crate) use crate::game::main::ssxappdtor::p;
 pub(crate) use crate::game::movie::movieplayer::lw_at;
 pub(crate) use crate::game::scripter::ssxscriptengine::low;
@@ -83,6 +86,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_state_finish_save_state,
         "GameStateFinish_SaveState",
     ),
+    (
+        0x0023_4910,
+        gamestatepreraceeload_check_intro_script,
+        "GameStatePreRaceLoad_CheckIntroScript",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -91,9 +99,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::bx::bxstring2::callee::GAME_MODULE_REQUEST_STATE as GAME_MODULE_REQUEST_STATE_2;
+    pub(crate) use crate::game::bx::bxstringctor::callee::GAME_MODULE_REQUEST_STATE as GAME_MODULE_REQUEST_STATE_2;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::GAME_MODULE_REQUEST_STATE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::GAME_MODULE_REQUEST_STATE;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::APP_MODULE_RENDER_FADE;
 
@@ -104,6 +112,7 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::main::ssxappdtor::callee::UI_ENGINE_UPDATE;
 
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_LIST_START;
     pub(crate) use crate::game::world::wscriptcache::callee::BANK_MONITOR_DELETE_INSTANCE;
 }
 
@@ -824,6 +833,57 @@ pub fn game_state_finish_save_state(c: &mut Cpu) {
     })
 }
 
+/// `void GameStatePreRaceLoad_CheckIntroScript(self)` (0x234910): start the
+/// intro script when the engine is in state 2 and mark `self+0x14`.
+pub fn gamestatepreraceeload_check_intro_script(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        let engine = lw_at_m2(c, gw(c, -0x84c));
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = engine;
+        c.g[V0][0] = lw_at_m2(c, p_m2(engine as u32, 0x550));
+        c.g[V0][0] ^= 2;
+        let not_state = c.g[V0][0] != 0;
+        c.g[S0][0] = c.g[A0][0];
+        if !not_state {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[V1][0];
+            c.g[A1][0] = 1;
+            c.g[A2][0] = 1;
+            c.g[A3][0] = 1;
+            call_ptr(c, callee::SCRIPT_ENGINE_LIST_START.addr, 0x0023_4944)?;
+        }
+        c.cycles += 5;
+        c.g[A0][0] = lw_at_m2(c, gw(c, -0x84c));
+        c.g[V0][0] = lw_at_m2(c, p_m2(c.g[A0][0] as u32, 0x550));
+        c.g[V0][0] ^= 2;
+        if c.g[V0][0] != 0 {
+            c.sw(p_m2(r32(c, S0), 0x14), 0);
+        } else {
+            c.cycles += 5;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 1;
+            c.g[A3][0] = 1;
+            call_ptr(c, callee::SCRIPT_ENGINE_LIST_START.addr, 0x0023_4968)?;
+            c.sw(p_m2(r32(c, S0), 0x14), 0);
+        }
+        c.cycles += 5;
+        c.g[V1][0] = 1;
+        c.g[V0][0] = lw_at_m2(c, gw(c, -0x84c));
+        c.g[V0][0] = lw_at_m2(c, p_m2(c.g[V0][0] as u32, 0x550));
+        if c.g[V0][0] == c.g[V1][0] {
+            c.sw(p_m2(r32(c, S0), 0x14), c.g[V0][0]);
+        }
+        c.cycles += 4;
+        frame.restore(c, 16, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -845,12 +905,12 @@ pub(crate) mod tests {
 
     use crate::difftest::RA as TEST_RA;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_2;
-    pub(crate) use crate::game::bx::bxstring2::tests::gp_at;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_2;
+    pub(crate) use crate::game::render::particle::tests::gp_at;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
+    pub(crate) use crate::game::bx::bxstringctor::tests::RIDERS;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::rng_2 as rng;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::rng_2 as rng;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
@@ -1265,6 +1325,25 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA + 0x400 + (r.next_u32() & 0xfc));
                 c.g[A1][0] = sx(stream);
                 c.pc = 0x0023_40b8;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::main::gamestate::tests::base_3 as base_m2;
+    pub(crate) use crate::game::main::gamestate::tests::SEEDS_5 as SEEDS_m2;
+
+    #[test]
+    fn gamestatepreraceeload_check_intro_script_matches() {
+        check(
+            ee::s06::f_00234910__generated,
+            gamestatepreraceeload_check_intro_script,
+            SEEDS_m2,
+            &|c, seed| {
+                base_m2(c, seed, 0x4910, 0);
+                let engine = DATA + 0x800;
+                c.bus.write32(GAME_GP - 0x84c, engine);
+                c.bus.write32(engine + 0x550, (seed % 3) as u32);
+                c.g[A0][0] = sx(DATA + 0x100);
             },
         );
     }

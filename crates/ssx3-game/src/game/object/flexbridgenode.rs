@@ -12,7 +12,7 @@ pub(crate) use crate::game::fe::feasyncfile::lh_r;
 pub(crate) use crate::game::fe::feasyncfile::low_2;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
 pub(crate) use crate::game::fe::feasyncfile::sw_r;
-pub(crate) use crate::game::fe::fepopup3::s32;
+pub(crate) use crate::game::fe::fepopupmisc::s32;
 pub(crate) use crate::game::intersect::worldsphtree::save_field_block;
 pub(crate) use crate::game::render::particle::this_with_delta;
 pub(crate) use crate::game::scripter::ssxscriptengine::low;
@@ -535,7 +535,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::be::beintplayer::tests::strict;
     pub(crate) use crate::game::bx::bxstring::tests::SEEDS;
     pub(crate) use crate::game::bx::memblockman::tests::fake_slot;
-    pub(crate) use crate::game::dirtysock::tags2::tests::world_2 as world;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::world_2 as world;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_5 as heap_init;

@@ -24,10 +24,15 @@ pub(crate) use crate::game::fe::feasyncfile::p_6 as p_5;
 pub(crate) use crate::game::fe::festateloadhint::lqsp;
 pub(crate) use crate::game::fe::festateloadhint::p_3 as p_4;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
+pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::intersect::worldsphtree::p;
+pub(crate) use crate::game::misc::add32;
+pub(crate) use crate::game::misc::MEMCPY;
+pub(crate) use crate::game::misc::PAD_PORTS;
+pub(crate) use crate::game::misc::PAD_PORT_SIZE;
+pub(crate) use crate::game::misc::PAD_SLOT_SIZE;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2;
 pub(crate) use crate::game::visualfx::worldlightman::deleting_dtor;
 pub(crate) use crate::game::world::worldview::p_2 as p_3;
@@ -119,6 +124,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "InputVM_ReadPadChannel",
     ),
     (0x0032_6b88, pad_queue_poll, "PadQueue_Poll"),
+    (0x003f_fa58, sce_pad_read, "scePadRead"),
+    (0x003f_fbc0, sce_pad_get_state, "scePadGetState"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -135,7 +142,7 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::fe::feasyncfile::callee::PS2_PAD_CTOR;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::PS2_PAD_CREATE;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::PS2_PAD_CREATE;
 
     pub(crate) use crate::game::intersect::worldsphtree::callee::INPUT_VM_READ_BUILTIN;
     pub(crate) use crate::game::intersect::worldsphtree::callee::INPUT_VM_READ_PAD_CHANNEL;
@@ -3055,6 +3062,215 @@ pub fn pad_queue_poll(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod libpad {
+    use super::*;
+
+    /// The port/slot table (`0x526250 + port * 0x70 + slot * 0x1c`).
+    pub const PORTS: u32 = 0x0052_6250;
+
+    pub const PORT_STRIDE: u32 = 0x70;
+
+    pub const SLOT_STRIDE: u32 = 0x1c;
+
+    /// Non-zero while the port is open.
+    pub const OPEN: u32 = 0x10;
+
+    /// The DMA buffer's state byte (6: stable) and request state (2: busy).
+    pub const STATE: u32 = 0x70;
+
+    pub const REQ_STATE: u32 = 0x71;
+
+    /// `u8* libpad_GetDmaBuffer(int port, int slot)` (0x3ff9a8).
+    pub const GET_DMA_BUFFER: Callee = Callee {
+        addr: 0x003f_f9a8,
+        f: ee::s15::libpad_GetDmaBuffer,
+    };
+}
+
+pub(crate) const PAD_OPEN: u32 = 0x10;
+
+/// Offset of the data length word in a pad DMA buffer half.
+pub(crate) const PAD_DATA_LEN: u32 = 0x60;
+
+pub(crate) const D_INTR: Callee = Callee {
+    addr: 0x0042_c078,
+    f: ee::s15::f_0042c078,
+};
+
+pub(crate) const E_INTR: Callee = Callee {
+    addr: 0x0042_c0c0,
+    f: ee::s15::f_0042c0c0,
+};
+
+pub(crate) const LIBPAD_GET_DMA_BUFFER: Callee = Callee {
+    addr: 0x003f_f9a8,
+    f: ee::s15::f_003ff9a8,
+};
+
+/// `int scePadRead(int port, int slot, u8* data)` (0x3ffa58): 0 when the port
+/// is closed; otherwise, with interrupts off, copy the current 0x80-byte DMA
+/// half to the stack, copy its first `len` (`+0x60`) bytes to `data`, turn
+/// interrupts back on if they were, and return `len`.
+pub fn sce_pad_read(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xe0);
+        c.g[V1][0] = PAD_PORT_SIZE;
+        c.sd(frame.at(c, 0x90), c.g[S1][0]);
+        c.g[V0][0] = 0x52_0000;
+        c.sd(frame.at(c, 0xa0), c.g[S2][0]);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S2][0] = c.g[A1][0];
+        c.g[A0][0] = PAD_SLOT_SIZE;
+        c.mult(1, V1, S1, V1);
+        c.mult(0, A0, S2, A0);
+        c.sd(frame.at(c, 0xc0), c.g[S4][0]);
+        c.g[V0][0] = sx(PAD_PORTS);
+        frame.save_ra(c, 0xd0);
+        c.sd(frame.at(c, 0xb0), c.g[S3][0]);
+        c.g[A0][0] = add32(c.g[A0][0], c.g[V1][0]);
+        c.sd(frame.at(c, 0x80), c.g[S0][0]);
+        c.g[V0][0] = add32(c.g[V0][0], c.g[A0][0]);
+        c.g[V1][0] = Addr(r32(c, V0) + PAD_OPEN).lw(c);
+        c.g[S4][0] = c.g[A2][0];
+        if c.g[V1][0] == 0 {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 11;
+            D_INTR.call(c, 0x003f_fab8)?;
+            c.g[S3][0] = c.g[V0][0];
+            c.g[S0][0] = c.g[SP][0];
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S2][0];
+            LIBPAD_GET_DMA_BUFFER.call(c, 0x003f_facc)?;
+            // Copy the 0x80-byte half to the stack, 32 bytes at_m2 a time.
+            c.g[V1][0] = c.g[V0][0];
+            c.g[V0][0] = c.g[V1][0] & 7;
+            let aligned = c.g[V0][0] == 0;
+            c.g[A0][0] = c.g[SP][0];
+            c.cycles += 1;
+            c.g[V0][0] = add32(c.g[V1][0], 0x80);
+            if aligned {
+                loop {
+                    c.cycles += 13;
+                    let (src, dst) = (r32(c, V1), r32(c, A0));
+                    for (k, reg) in [A1, A2, A3, T0].into_iter().enumerate() {
+                        c.g[reg][0] = c.ld(src + 8 * k as u32);
+                    }
+                    for (k, reg) in [A1, A2, A3, T0].into_iter().enumerate() {
+                        c.sd(dst + 8 * k as u32, c.g[reg][0]);
+                    }
+                    c.g[V1][0] = add32(c.g[V1][0], 0x20);
+                    c.g[A0][0] = add32(c.g[A0][0], 0x20);
+                    if c.g[V1][0] == c.g[V0][0] {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003f_fb40);
+                    }
+                }
+                c.cycles += 1;
+            } else {
+                loop {
+                    c.cycles += 21;
+                    let (src, dst) = (r32(c, V1), r32(c, A0));
+                    for (k, reg) in [A1, A2, A3, T0].into_iter().enumerate() {
+                        let at_m2 = src + 8 * k as u32;
+                        c.ldl(reg, at_m2 + 7);
+                        c.ldr(reg, at_m2);
+                    }
+                    for (k, reg) in [A1, A2, A3, T0].into_iter().enumerate() {
+                        let at_m2 = dst + 8 * k as u32;
+                        c.sdl(reg, at_m2 + 7);
+                        c.sdr(reg, at_m2);
+                    }
+                    c.g[V1][0] = add32(c.g[V1][0], 0x20);
+                    c.g[A0][0] = add32(c.g[A0][0], 0x20);
+                    if c.g[V1][0] == c.g[V0][0] {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003f_fae0);
+                    }
+                }
+                c.cycles += 2;
+            }
+            let buf = r32(c, S0);
+            c.g[A2][0] = Addr(buf + PAD_DATA_LEN).lw(c);
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = c.g[S0][0];
+            MEMCPY.call(c, 0x003f_fb84)?;
+            c.g[V1][0] = 1;
+            if c.g[S3][0] == c.g[V1][0] {
+                c.cycles += 3;
+                E_INTR.call(c, 0x003f_fb98)?;
+            }
+            c.g[V0][0] = Addr(buf + PAD_DATA_LEN).lw(c);
+        }
+        c.cycles += 8;
+        frame.restore_ra(c, 0xd0);
+        c.g[S4][0] = c.ld(frame.at(c, 0xc0));
+        c.g[S3][0] = c.ld(frame.at(c, 0xb0));
+        c.g[S2][0] = c.ld(frame.at(c, 0xa0));
+        c.g[S1][0] = c.ld(frame.at(c, 0x90));
+        c.g[S0][0] = c.ld(frame.at(c, 0x80));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int scePadGetState(int port, int slot)` (0x3ffbc0): 0x63 when the
+/// port is not open; otherwise the DMA buffer's state byte, except that a
+/// stable pad (6) with a request still running (2) reports 5 (`scePadStateExecCmd`).
+pub fn sce_pad_get_state(c: &mut Cpu) {
+    use libpad::*;
+    guest(c, |c| {
+        c.cycles += 14;
+        c.g[A2][0] = c.g[A0][0];
+        c.g[V1][0] = PORT_STRIDE as u64;
+        c.g[A0][0] = SLOT_STRIDE as u64;
+        c.mult(1, V1, A2, V1); // port * 0x70
+        c.mult(0, A0, A1, A0); // slot * 0x1c
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(PORTS);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+        c.g[V0][0] = sx(PORTS.wrapping_add(r32(c, A0)));
+        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(OPEN));
+        let open = c.g[V1][0] != 0;
+        c.g[V0][0] = 0x63;
+        if !open {
+            c.cycles += 1;
+        } else {
+            c.cycles += 7;
+            c.g[A0][0] = c.g[A2][0];
+            GET_DMA_BUFFER.call(c, 0x003f_fc00)?;
+            c.g[A0][0] = c.g[V0][0];
+            let buf = r32(c, A0);
+            c.g[V1][0] = 6;
+            c.g[V0][0] = c.lbu(buf + STATE);
+            let stable = c.g[V0][0] == c.g[V1][0];
+            if stable {
+                c.cycles += 4;
+                c.g[V1][0] = c.lbu(buf + REQ_STATE);
+                c.g[V0][0] = 2;
+                if c.g[V1][0] != c.g[V0][0] {
+                    c.g[V0][0] = c.lbu(buf + STATE);
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = 5;
+                }
+            }
+        }
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3079,7 +3295,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::aianimeventmap::tests::alloc_setup;
 
     pub(crate) use crate::game::be::beintplayer::tests::w8;
-    pub(crate) use crate::game::bx::bxstring2::tests::alloc_base;
+    pub(crate) use crate::game::bx::bxstringctor::tests::alloc_base;
 
     pub(crate) use crate::game::bx::memblockman::tests::fake_slot;
     pub(crate) use crate::game::camera::trigger::cameratriggerlist::tests::wb;
@@ -3100,9 +3316,9 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::fe::festateloadhint::tests::w32;
     pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_6;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_4;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS as SEEDS_4;
     pub(crate) use crate::game::intersect::worldsphtree::tests::SEEDS_2;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::base;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::globals_4 as globals;
@@ -3982,6 +4198,91 @@ pub(crate) mod tests {
                     c.bus.write32(vt + 0x14, FAKE + 0x10 * i);
                 }
                 c.g[A0][0] = sx(q);
+            },
+        );
+    }
+
+    use ssx3_ee_rt::cpu::sx;
+    use ssx3_ee_rt::Cpu;
+
+    /// `scePadRead` on closed and open ports, with an 8-byte aligned and a
+    /// 4-byte aligned DMA buffer (the two copy loops), either half current,
+    /// interrupts on or off, data lengths 0..0x20.
+    #[test]
+    fn sce_pad_read_matches() {
+        check(
+            ee::s15::f_003ffa58__generated,
+            sce_pad_read,
+            120,
+            &|c, seed| {
+                let mut r: Rng = machine(c, seed, 0x3f_fa58, 0);
+                c.cop0[12] = if seed % 2 == 0 { 0 } else { 0x1_0000 };
+                let port = (seed / 2) % 2;
+                let slot = (seed / 4) % 4;
+                let at_m2 = PAD_PORTS + 0x70 * port + 0x1c * slot;
+                let buf = DATA + 0x1000 + if seed % 3 == 0 { 4 } else { 0 };
+                c.bus.write32(at_m2, buf);
+                c.bus
+                    .write32(at_m2 + PAD_OPEN, if seed % 7 == 0 { 0 } else { 1 });
+                for k in 0..0x40 {
+                    c.bus.write32(buf + 4 * k, r.next_u32());
+                }
+                // The current half: the one with the larger frame counter.
+                c.bus.write32(buf + 0x58, r.next_u32() % 4);
+                c.bus.write32(buf + 0xd8, r.next_u32() % 4);
+                c.bus.write32(buf + PAD_DATA_LEN, r.next_u32() % 0x21);
+                c.bus
+                    .write32(buf + 0x80 + PAD_DATA_LEN, r.next_u32() % 0x21);
+                c.g[A0][0] = port as u64;
+                c.g[A1][0] = slot as u64;
+                c.g[A2][0] = sx(DATA + 0x3000);
+                c.pc = 0x003f_fa58;
+            },
+        );
+    }
+
+    // -------------------------------------------------------- scePadGetState
+
+    /// `scePadGetState`: ports and slots 0..3, the port closed or open, a
+    /// DMA buffer (either half, by the real `libpad_GetDmaBuffer`) whose
+    /// state is 6 or another value, request state 2 or another value.
+    #[test]
+    fn sce_pad_get_state_matches() {
+        use super::libpad::*;
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check_lohi, elf_image, DATA};
+        check_lohi(
+            ee::s15::f_003ffbc0__generated,
+            sce_pad_get_state,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003f_fbc0, 0);
+                elf_image(c);
+                c.pc = 0x003f_fbc0;
+                let (port, slot) = (r.next_u32() % 2, r.next_u32() % 4);
+                let entry = PORTS + port * PORT_STRIDE + slot * SLOT_STRIDE;
+                let buf = DATA + 0x100 * (r.next_u32() % 8);
+                c.bus.write32(entry, buf);
+                c.bus
+                    .write32(entry + OPEN, if seed % 5 == 0 { 0 } else { 1 });
+                c.bus.write32(buf + 0x58, r.next_u32() % 4);
+                c.bus.write32(buf + 0xd8, r.next_u32() % 4);
+                for half in [buf, buf + 0x80] {
+                    let state = if r.next_u32() % 2 == 0 {
+                        6
+                    } else {
+                        r.next_u32() % 8
+                    };
+                    let req = if r.next_u32() % 2 == 0 {
+                        2
+                    } else {
+                        r.next_u32() % 4
+                    };
+                    c.bus.write8(half + STATE, state as u8);
+                    c.bus.write8(half + REQ_STATE, req as u8);
+                }
+                c.g[A0][0] = port as u64;
+                c.g[A1][0] = slot as u64;
             },
         );
     }

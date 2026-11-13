@@ -17,7 +17,7 @@ pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_3;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lh_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
-pub(crate) use crate::game::dirtysock::tags2::vslot as vslot_2;
+pub(crate) use crate::game::dirtysock::tagsunk::vslot as vslot_2;
 pub(crate) use crate::game::fe::feasyncfile::at_2 as at;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at_4;
 pub(crate) use crate::game::fe::feasyncfile::gp_18 as gp;
@@ -27,7 +27,7 @@ pub(crate) use crate::game::fe::feasyncfile::lw_r;
 pub(crate) use crate::game::fe::feasyncfile::p_5 as p_2;
 pub(crate) use crate::game::fe::feasyncfile::sb_r;
 pub(crate) use crate::game::fe::feasyncfile::sw_r;
-pub(crate) use crate::game::fe::fepopup3::gp_6 as gp_2;
+pub(crate) use crate::game::fe::fepopupmisc::gp_6 as gp_2;
 pub(crate) use crate::game::fe::fereal::close;
 pub(crate) use crate::game::fe::fereal::open;
 pub(crate) use crate::game::main::gamemode::sp_2;
@@ -1657,7 +1657,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::camera::cameracontroller::tests::put_vtable;
     pub(crate) use crate::game::dirtysock::tags::tests::put_str;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::string;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::string;
     pub(crate) use crate::game::fe::feasyncfile::tests::b;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_13 as base_4;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_5;

@@ -45,8 +45,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 #[allow(dead_code)]
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::bx::bxstring2::callee::SECTION_MAN_DEQUEUE_SECTION;
-    pub(crate) use crate::game::bx::bxstring2::callee::SECTION_MAN_POP_FREE_NODE;
+    pub(crate) use crate::game::bx::bxstringctor::callee::SECTION_MAN_DEQUEUE_SECTION;
+    pub(crate) use crate::game::bx::bxstringctor::callee::SECTION_MAN_POP_FREE_NODE;
 }
 
 /// Offset of the section manager's free-node list head.
@@ -205,7 +205,7 @@ pub(crate) mod tests {
     use crate::difftest::Rng;
     use crate::difftest::DATA;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_2;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_2;
 
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::base;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear;

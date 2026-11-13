@@ -3643,7 +3643,7 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::bx::bxstring::tests::alloc_ready;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::pool8;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::pool8;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::strict;
     pub(crate) use crate::game::fe::fepopup::tests::f_2;

@@ -11,8 +11,8 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::be::gp;
 pub(crate) use crate::game::be::be::vt_call;
-pub(crate) use crate::game::dirtysock::tags2::at;
-pub(crate) use crate::game::dirtysock::tags2::p_2 as p;
+pub(crate) use crate::game::dirtysock::tagsunk::at_3 as at;
+pub(crate) use crate::game::dirtysock::tagsunk::p_2 as p;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::p as p_2;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
@@ -61,7 +61,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 /// Direct and cross-shard callees, by guest address.
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ANIM_BANK_MAN_FIND_BANK;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SCRIPT_ANIM_BANK_MAN_FIND_BANK;
 
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::MEM_MAN_FREE_ENTRY;
 }
@@ -441,8 +441,8 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
-    pub(crate) use crate::game::dirtysock::tags2::tests::zero;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2 as be_library;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::zero;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_6 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::fake_method;
     pub(crate) use crate::game::fe::feasyncfile::tests::globals_6 as globals;

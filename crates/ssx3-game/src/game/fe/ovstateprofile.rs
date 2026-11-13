@@ -1,4 +1,4 @@
-//! `src/fe/ovstatemission2.cpp`: hand-written replacements (moved from the
+//! `src/fe/ovstateprofile.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi::r32;
@@ -71,22 +71,14 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 /// Direct and cross-shard callees, by guest address.
 pub(crate) mod callee {
-
     pub(crate) use crate::game::fe::feasyncfile::callee::AUTOSAVE_UPDATE_ICON;
-
     pub(crate) use crate::game::movie::movieplayer::callee::C_OV_STATE_OVERLAY_INIT;
-
     pub(crate) use crate::game::movie::movieplayer::callee::GET_HASH_VALUE_32;
-
     pub(crate) use crate::game::movie::movieplayer::callee::OV_SCREEN_PDA_TEMPLATE_OPEN;
     pub(crate) use crate::game::movie::movieplayer::callee::OV_SCREEN_PROFILE_SAVE_PDA_INIT_SLOT_LABELS;
-
     pub(crate) use crate::game::movie::movieplayer::callee::UI_ENGINE_ADD_SCREEN_BY_HASH_NAME;
-
     pub(crate) use crate::game::movie::movieplayer::callee::UI_SCREEN_PLAY_FRAME;
-
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::MC_MANAGER_GET as MC_MANAGER_GET_2;
-
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::OV_SCREEN_PROFILE_SAVE_PDA_REFRESH_CARD_INFO;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::OV_SCREEN_PROFILE_SAVE_PDA_RESET_SLOT_LIST;
 }
@@ -94,17 +86,13 @@ pub(crate) mod callee {
 /// `GetHashValue32` (0x317670) and the UI object lookups, which the generator
 /// emitted as cross-shard `call_indirect`s.
 pub(crate) mod table_callee {
-
     pub(crate) use crate::game::fe::festaterewards::table_callee::GET_HASH_VALUE32;
-
     pub(crate) use crate::game::fe::festaterewards::table_callee::UI_SCREEN_FIND_OBJECT;
 }
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
 pub(crate) mod table {
-
     pub(crate) use crate::game::fe::feasyncfile::table::STR_HASH;
-
     pub(crate) use crate::game::fe::feasyncfile::table::UI_SCREEN_FIND_OBJECT;
 }
 
@@ -616,50 +604,35 @@ pub fn ov_screen_profile_save_pda_init_slot_labels(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-
     use crate::difftest::fakes;
     use crate::difftest::fakes::machine;
-
     use crate::difftest::fakes::FAKE;
-
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-
     pub(crate) use crate::game::fe::debugfe::tests::w;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ2;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ3;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_4;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_5 as heap_init_2;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::slot_3 as slot;
     pub(crate) use crate::game::fe::feasyncfile::tests::w as w_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::w as w_5;
     pub(crate) use crate::game::fe::feasyncfile::tests::world_3 as world;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ_2;
-
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as SEEDS_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::W;
-
     pub(crate) use crate::game::fe::festaterewards::tests::base_4 as base_3;
-
     pub(crate) use crate::game::fe::festaterewards::tests::slot_2;
     pub(crate) use crate::game::fe::festaterewards::tests::w as w_4;
-
     pub(crate) use crate::game::fe::ovstatemap::tests::str_hash;
     pub(crate) use crate::game::fe::ovstatepause::tests::close_top_state_once_test;
     pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
-
     pub(crate) use crate::game::movie::movieplayer::tests::alloc_base as alloc_base_2;
-
     pub(crate) use crate::game::movie::movieplayer::tests::w as w_3;
-
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::gp_at;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_4 as SEEDS;

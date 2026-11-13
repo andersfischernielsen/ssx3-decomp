@@ -385,7 +385,7 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::ai::ai::tests::rng as rng_2;
     pub(crate) use crate::game::bx::bxstring::tests::heap;
-    pub(crate) use crate::game::dirtysock::tags2::tests::pool_7 as pool;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::pool_7 as pool;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_4 as alloc_base;
 
     pub(crate) use crate::game::lib::sif::tests::SEEDS as SEEDS_3;

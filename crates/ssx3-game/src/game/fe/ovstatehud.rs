@@ -26,8 +26,8 @@ pub(crate) use crate::game::fe::fepopup::lq;
 pub(crate) use crate::game::fe::fepopup::lw_9 as lw;
 pub(crate) use crate::game::fe::fepopup::sq;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw_3;
-pub(crate) use crate::game::fe::fepopup3::p_2;
-pub(crate) use crate::game::fe::fepopup3::sw;
+pub(crate) use crate::game::fe::fepopupmisc::p_2;
+pub(crate) use crate::game::fe::fepopupmisc::sw;
 pub(crate) use crate::game::render::particle::add32;
 pub(crate) use crate::game::render::particle::at;
 pub(crate) use crate::game::render::particle::fconst;
@@ -116,7 +116,7 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::fepopup::callee::C001E9290;
     pub(crate) use crate::game::fe::fepopup::callee::C001F10F8;
 
-    pub(crate) use crate::game::fe::fepopup3::callee::HUD_LAYOUT_ICON_TEXT;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::HUD_LAYOUT_ICON_TEXT;
 
     pub(crate) use crate::game::render::particle::callee::FONT_DRAW_TEXT;
 
@@ -15390,7 +15390,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_3;
     pub(crate) use crate::game::fe::fepopup::tests::check_all_3 as check_all;
 
-    pub(crate) use crate::game::fe::fepopup3::tests::setup;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::setup;
     pub(crate) use crate::game::render::particle::tests::f;
     pub(crate) use crate::game::render::particle::tests::gp_at;
     pub(crate) use crate::game::render::particle::tests::put_vec3;

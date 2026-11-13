@@ -9,7 +9,7 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
-pub(crate) use crate::game::dirtysock::tags2::arg;
+pub(crate) use crate::game::dirtysock::tagsunk::arg;
 pub(crate) use crate::game::fe::ovstatepause::p;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
 use crate::guest::Addr;
@@ -67,7 +67,7 @@ pub(crate) mod callee {
     use super::ee;
     use super::Callee;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::EVENT_SELECT_ON_WIDGET_NOTIFY;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::EVENT_SELECT_ON_WIDGET_NOTIFY;
 
     pub(crate) use crate::game::fe::ovstatepause::callee::EVENT_SELECT_POST_INPUT;
 

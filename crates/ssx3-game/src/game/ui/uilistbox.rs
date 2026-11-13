@@ -616,9 +616,9 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::ai::tests::strict;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::base_6 as base_3;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::put_vtable;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::put_vtable;
     pub(crate) use crate::game::fe::feasyncfile::tests::diff;
     pub(crate) use crate::game::fe::feasyncfile::tests::fe_base;
 

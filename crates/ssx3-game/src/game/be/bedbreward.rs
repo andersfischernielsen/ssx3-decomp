@@ -426,7 +426,7 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
     pub(crate) use crate::game::ai::aianimeventmap::tests::alloc_setup;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::game;
+    pub(crate) use crate::game::bx::bxstringctor::tests::game;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::strict;
     pub(crate) use crate::game::render::particle::tests::clear;

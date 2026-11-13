@@ -3691,7 +3691,7 @@ pub(crate) mod tests {
     fn c_csi_cubic_spline_alloc_matches() {
         use crate::game::be::beintreward::tests::world;
         use crate::game::bx::bxstring::tests::{alloc, heap};
-        use crate::game::bx::bxstring2::tests::be_library;
+        use crate::game::bx::bxstringctor::tests::be_library;
         crate::difftest::check_lohi(
             ee::s10::f_0031d660__generated,
             c_csi_cubic_spline_alloc,

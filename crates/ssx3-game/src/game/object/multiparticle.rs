@@ -19,7 +19,7 @@ use crate::events::event_due;
 pub(crate) use crate::game::ai::aianimeventmap::BUILTIN_DELETE;
 pub(crate) use crate::game::animation::animmodel::EA_MEM_FREE_ADDR;
 pub(crate) use crate::game::animation::rideranimbase::OPERATOR_NEW_NAMED2_ADDR;
-pub(crate) use crate::game::dirtysock::tags2::gp_3 as gp;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_3 as gp;
 pub(crate) use crate::game::fe::feasyncfile::addu;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_3;
 pub(crate) use crate::game::fe::feasyncfile::gp_13 as gp_2;
@@ -35,15 +35,15 @@ pub(crate) use crate::game::fe::fepopup::at as at_2;
 pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::fe::fepopup::lw_9 as lw_3;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw;
-pub(crate) use crate::game::fe::fepopup3::gp_6 as gp_5;
-pub(crate) use crate::game::fe::fepopup3::p as p_7;
+pub(crate) use crate::game::fe::fepopupmisc::gp_6 as gp_5;
 pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
+pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::intersect::worldsphtree::save_field_block;
 pub(crate) use crate::game::main::gamestate::gw;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
 pub(crate) use crate::game::main::gamestate::p_2 as p_3;
+pub(crate) use crate::game::main::ssxappdtor::p as p_7;
 pub(crate) use crate::game::object::movenode::MP_COUNT;
 pub(crate) use crate::game::object::movenode::MP_EMITTER;
 pub(crate) use crate::game::object::movenode::MP_STREAM_WRITE;
@@ -123,7 +123,7 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::fe::feasyncfile::callee::SYNC_PROCESS_CTOR;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::ANIM_OBJECT_V36;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::ANIM_OBJECT_V36;
 
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::ANIM_OBJECT_SAVE;
 
@@ -1848,7 +1848,7 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::ai::rider::tests::clear_2;
     pub(crate) use crate::game::animation::animmodel::tests::SEEDS_4;
-    pub(crate) use crate::game::bx::bxstring2::tests::be_library;
+    pub(crate) use crate::game::bx::bxstringctor::tests::be_library;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_setup;
     pub(crate) use crate::game::fe::feasyncfile::tests::b;
@@ -1875,9 +1875,9 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_5;
     pub(crate) use crate::game::fe::festaterewards::tests::base_4 as base_3;
 
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_2;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS as SEEDS_2;
 
     pub(crate) use crate::game::intersect::worldsphtree::tests::save_test;
     pub(crate) use crate::game::main::gameload::tests::fb;

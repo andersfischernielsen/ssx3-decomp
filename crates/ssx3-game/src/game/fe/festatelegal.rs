@@ -6,9 +6,9 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Frame;
-pub(crate) use crate::game::fe::fepopup3::gp_2 as gp;
-pub(crate) use crate::game::fe::fepopup3::p_2 as p;
-pub(crate) use crate::game::fe::fepopup3::sw;
+pub(crate) use crate::game::fe::fepopupmisc::gp_2 as gp;
+pub(crate) use crate::game::fe::fepopupmisc::p_2 as p;
+pub(crate) use crate::game::fe::fepopupmisc::sw;
 use crate::tick;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -135,7 +135,7 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::fe::feasyncfile::tests::w;
 
-    pub(crate) use crate::game::fe::fepopup3::tests::setup;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::setup;
     use ssx3_ee as ee;
 
     // ---------------------------------------------------------------- FE core

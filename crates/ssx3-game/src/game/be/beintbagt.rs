@@ -686,7 +686,7 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::SCRATCH;
+    pub(crate) use crate::game::bx::bxstringctor::tests::SCRATCH;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base_2;
 
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::base;

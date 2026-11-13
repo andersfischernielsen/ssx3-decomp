@@ -15,14 +15,14 @@ use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-pub(crate) use crate::game::be::bestate2::ea;
-pub(crate) use crate::game::be::bestate2::gp_rel;
+pub(crate) use crate::game::be::beprepoststate::ea;
+pub(crate) use crate::game::be::beprepoststate::gp_rel;
 pub(crate) use crate::game::bx::bxstring::gp as gp_4;
-pub(crate) use crate::game::bx::bxstring2::MESSAGE_MAP;
+pub(crate) use crate::game::bx::bxstringctor::MESSAGE_MAP;
 pub(crate) use crate::game::camera::camera::gp;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::p_8;
-pub(crate) use crate::game::dirtysock::tags2::gp_9 as gp_3;
-pub(crate) use crate::game::dirtysock::tags2::lw;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_9 as gp_3;
+pub(crate) use crate::game::dirtysock::tagsunk::lw;
 pub(crate) use crate::game::fe::feasyncfile::gp_11 as gp_5;
 pub(crate) use crate::game::fe::feasyncfile::gpa;
 pub(crate) use crate::game::fe::feasyncfile::lw_3 as lw_2;
@@ -35,7 +35,7 @@ pub(crate) use crate::game::fe::festateload::at;
 pub(crate) use crate::game::fe::festateloadhint::lqsp;
 pub(crate) use crate::game::fe::festateloadhint::p_3 as p_4;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
-pub(crate) use crate::game::fe::festaterewards2::r;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
 pub(crate) use crate::game::main::gamemode::low as low_2;
 pub(crate) use crate::game::main::gamemode::sp_2;
 pub(crate) use crate::game::main::gamemode::sw_r;
@@ -307,18 +307,18 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::camera::camera::callee::MEMCARD_SET_STATE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_GET_SAVE_NAME;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::C_PS2_MEM_CARD_GET_SAVE_NAME;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_READ_SAVE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_SET_STATE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::C_PS2_MEM_CARD_REQUEST_READ_SAVE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::C_PS2_MEM_CARD_SET_STATE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_ASCII_CHAR_TO_SJIS;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MEM_CARD_ASCII_CHAR_TO_SJIS;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCE_MC_FORMAT;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SCE_MC_FORMAT;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_2 as SPRINTF;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SPRINTF_2 as SPRINTF;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::STRCPY as STRCPY_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::STRCPY_2;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::PS2_MEM_CARD_CLEAR_DIR_CACHE;
 
@@ -502,7 +502,7 @@ pub(crate) mod table {
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
 pub(crate) mod addr {
 
-    pub(crate) use crate::game::bx::bxstring2::addr::MC_MANAGER_GET_INFO;
+    pub(crate) use crate::game::bx::bxstringctor::addr::MC_MANAGER_GET_INFO;
 
     pub(crate) use crate::game::scripter::ssxscriptengine::addr::STRLEN;
 }
@@ -3329,23 +3329,23 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::ai::tests::SEEDS as SEEDS_10;
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear_6;
     pub(crate) use crate::game::be::beintnetwork::tests::put_str;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS as SEEDS_6;
+    pub(crate) use crate::game::be::beprepoststate::tests::SEEDS as SEEDS_6;
     pub(crate) use crate::game::bx::bxstring::tests::string as string_2;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_4;
-    pub(crate) use crate::game::bx::bxstring2::tests::game;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_4;
+    pub(crate) use crate::game::bx::bxstringctor::tests::game;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::slot_2;
+    pub(crate) use crate::game::bx::bxstringctor::tests::slot_2;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::SCRATCH;
-    pub(crate) use crate::game::bx::bxstring2::tests::VTS;
+    pub(crate) use crate::game::bx::bxstringctor::tests::SCRATCH;
+    pub(crate) use crate::game::bx::bxstringctor::tests::VTS;
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::base_6 as base_7;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::clear as clear_3;
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::common;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear as clear_3;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::string;
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_4;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::string;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7 as SEEDS_4;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_5;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_3 as base_2;
@@ -3366,9 +3366,9 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::fepopup::tests::b;
     pub(crate) use crate::game::fe::festateload::tests::clear;
     pub(crate) use crate::game::fe::festateload::tests::OBJ;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_2;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS as SEEDS_2;
     pub(crate) use crate::game::main::gamemode::tests::be_library as be_library_2;
     pub(crate) use crate::game::main::gamemode::tests::SEEDS_2 as SEEDS_8;
     pub(crate) use crate::game::object::animnode::tests::heap_block;

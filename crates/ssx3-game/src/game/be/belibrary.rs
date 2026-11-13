@@ -2195,7 +2195,7 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
 
     pub(crate) use crate::game::be::beintmission::tests::instance_setup;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_4;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_4;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_4 as base;

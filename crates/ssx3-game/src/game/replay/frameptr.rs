@@ -15,23 +15,23 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::be::gp;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::p_8;
-pub(crate) use crate::game::dirtysock::tags2::leave;
-pub(crate) use crate::game::dirtysock::tags2::lw;
-pub(crate) use crate::game::dirtysock::tags2::p as p_2;
-pub(crate) use crate::game::dirtysock::tags2::p as p_3;
-pub(crate) use crate::game::dirtysock::tags2::p_2 as p;
-pub(crate) use crate::game::dirtysock::tags2::sw;
+pub(crate) use crate::game::dirtysock::tagsunk::lw;
+pub(crate) use crate::game::dirtysock::tagsunk::p_2 as p;
+pub(crate) use crate::game::dirtysock::tagsunk::sw;
 pub(crate) use crate::game::fe::feasyncfile::at_2;
 pub(crate) use crate::game::fe::feasyncfile::gp_12 as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::p as p_5;
 pub(crate) use crate::game::fe::feasyncfile::p as p_6;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
+pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::render::lightman::addu;
 pub(crate) use crate::game::render::lightman::off;
 pub(crate) use crate::game::render::lightman::Oc49Mem;
 pub(crate) use crate::game::render::particle::at;
 pub(crate) use crate::game::scripter::ssxscriptengine::p as p_4;
+pub(crate) use crate::game::sound::bankmonitor::leave;
+pub(crate) use crate::game::sound::bankmonitor::p as p_2;
+pub(crate) use crate::game::sound::bankmonitor::p as p_3;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -135,31 +135,31 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::be::beintmission::callee::REPLAY_APPLY_CAMERA;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::CAMERA_TRIGGER_MAN_UPDATE_TRIGGERS;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::CAMERA_TRIGGER_MAN_UPDATE_TRIGGERS;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEM_FREE_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::EA_MEM_FREE_2;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::GAME_CAMERA_SET_CONTROLLER;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::GAME_CAMERA_SET_CONTROLLER;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_ADD_SNAPSHOT;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::REPLAY_ADD_SNAPSHOT;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_FREE_SNAPSHOT;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::REPLAY_FREE_SNAPSHOT;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_RECORD_SNAPSHOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_RESTORE_SNAPSHOT;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::REPLAY_RECORD_SNAPSHOT;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::REPLAY_RESTORE_SNAPSHOT;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_STREAM_WRITE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::REPLAY_STREAM_WRITE;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_SET_OWNER;
     pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_MAN_SET_IN_GAME_TRIGGERS;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::RIDER_SET_INPUT_ENABLED;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_SET_STATE_2;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::REPLAY_SET_STATE_2;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_STREAM_CTOR;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::REPLAY_STREAM_CTOR;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::WORLD_STATE_STREAM_RESET;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::WORLD_STATE_STREAM_RESET;
 
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_STREAM_REWIND_READ;
 }
@@ -1939,14 +1939,14 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::ai::ai::tests::leaf;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::alloc_ready;
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::alloc_ready;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2 as be_library;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::common;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::put_vtable;
-    pub(crate) use crate::game::dirtysock::tags2::tests::zero;
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_4;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::put_vtable;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::zero;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7 as SEEDS_4;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base_4;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_4 as base_2;
 
@@ -1959,9 +1959,9 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_3 as OBJ;
 
     pub(crate) use crate::game::fe::festatecharequipdetail::tests::world;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_2;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS as SEEDS_2;
     pub(crate) use crate::game::input::inputmap::tests::put_f32;
     pub(crate) use crate::game::main::gamemode::tests::SEEDS;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::base as base_3;

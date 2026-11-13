@@ -16,8 +16,7 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::r;
-pub(crate) use crate::game::dirtysock::tags2::gp_3 as gp_2;
-pub(crate) use crate::game::dirtysock::tags2::p;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_3 as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at_4;
 pub(crate) use crate::game::fe::feasyncfile::gp_15 as gp_6;
 pub(crate) use crate::game::fe::feasyncfile::gpa;
@@ -27,7 +26,7 @@ pub(crate) use crate::game::fe::feasyncfile::lw_5 as lw_3;
 pub(crate) use crate::game::fe::feasyncfile::lw_6 as lw_4;
 pub(crate) use crate::game::fe::feasyncfile::sw_4 as sw_2;
 pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_2;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::lib::snd::addiu;
 pub(crate) use crate::game::lib::snd::at;
 pub(crate) use crate::game::lib::snd::cvt_w;
@@ -43,6 +42,7 @@ pub(crate) use crate::game::sound::bankmonitor::add32;
 pub(crate) use crate::game::sound::bankmonitor::gp as gp_3;
 pub(crate) use crate::game::sound::bankmonitor::leave;
 pub(crate) use crate::game::sound::bankmonitor::load_gp;
+pub(crate) use crate::game::sound::bankmonitor::p;
 pub(crate) use crate::game::wscript::wscriptman::gp as gp_4;
 pub(crate) use crate::game::wscript::wscriptman::sw;
 use crate::guest::Addr;
@@ -318,10 +318,10 @@ pub(crate) mod callee {
     pub(crate) use crate::game::be::beintnetwork::callee::SSX_AUDIO_SYSTEM_GET_APP;
     pub(crate) use crate::game::be::beintnetwork::callee::SSX_AUDIO_SYSTEM_GET_VIEW_COUNT;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::AUDIO_SET_OUTPUT;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::AUDIO_SET_OUTPUT;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_EMPTY_CROWD_HANDLER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_GET_CHANNEL_VOLUME;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SSX_AUDIO_EMPTY_CROWD_HANDLER;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SSX_AUDIO_GET_CHANNEL_VOLUME;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_LEVEL_TO_VOLUME_2;
 
@@ -3639,9 +3639,9 @@ pub(crate) mod tests {
     pub(crate) use crate::game::be::beintplayer::tests::w8;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::base_6 as base_10;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
-    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
-    pub(crate) use crate::game::dirtysock::tags2::tests::SCRATCH;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SCRATCH;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::gp_at;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_setup;
 
@@ -3668,11 +3668,11 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as SEEDS_5;
     pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_2 as WORLD;
 
-    pub(crate) use crate::game::fe::fepopup3::tests::wb;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::wb;
     pub(crate) use crate::game::fe::festaterewards::tests::base_4;
 
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
     pub(crate) use crate::game::main::gameload::tests::fb;
     pub(crate) use crate::game::render::graphicsman::tests::same;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::belib_2;

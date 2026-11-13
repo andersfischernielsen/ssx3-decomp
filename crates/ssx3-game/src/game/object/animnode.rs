@@ -11,8 +11,8 @@ use crate::call::Frame;
 use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-pub(crate) use crate::game::be::bestate2::ea;
-pub(crate) use crate::game::be::bestate2::gp_rel;
+pub(crate) use crate::game::be::beprepoststate::ea;
+pub(crate) use crate::game::be::beprepoststate::gp_rel;
 pub(crate) use crate::game::visualfx::boardtrailfx::p;
 use crate::guest::Addr;
 use ssx3_ee as ee;
@@ -475,8 +475,8 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::be::bestate2::tests::w;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::w;
     pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
     pub(crate) use crate::game::wscript::wscriptman::tests::clear_3 as clear;
     pub(crate) use crate::game::wscript::wscriptman::tests::load;

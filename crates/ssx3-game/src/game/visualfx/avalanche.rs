@@ -13,8 +13,8 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::rider::gp_at;
-pub(crate) use crate::game::dirtysock::tags2::gp_9 as gp;
-pub(crate) use crate::game::dirtysock::tags2::lw;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_9 as gp;
+pub(crate) use crate::game::dirtysock::tagsunk::lw;
 pub(crate) use crate::game::fe::feasyncfile::p;
 pub(crate) use crate::game::fe::feasyncfile::r;
 pub(crate) use crate::game::fe::festateloadhint::gp as gp_2;
@@ -99,10 +99,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_BAKE_GROUP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_EXPORT_HISTORY_FILES;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_FREE_HISTORIES;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_LOAD_HISTORY_FILE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::AVALANCHE_BAKE_GROUP;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::AVALANCHE_EXPORT_HISTORY_FILES;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::AVALANCHE_FREE_HISTORIES;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::AVALANCHE_LOAD_HISTORY_FILE;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::AVALANCHE_DESTROY_ALL;
     pub(crate) use crate::game::fe::feasyncfile::callee::AVALANCHE_RESET_ONE;
@@ -2287,8 +2287,8 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
 
     pub(crate) use crate::game::be::bedbprofile::tests::strict as strict_2;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_2;
-    pub(crate) use crate::game::bx::bxstring2::tests::f;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_2;
+    pub(crate) use crate::game::render::particle::tests::f;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_setup;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_3;

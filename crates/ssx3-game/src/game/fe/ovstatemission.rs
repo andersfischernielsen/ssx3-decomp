@@ -8,10 +8,10 @@ use crate::call::guest;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-pub(crate) use crate::game::dirtysock::tags2::p;
 pub(crate) use crate::game::fe::debugfe::at;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at_2;
 pub(crate) use crate::game::fe::feasyncfile::lw_6 as lw_2;
+pub(crate) use crate::game::sound::bankmonitor::p;
 pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw;
 use crate::guest::Addr;
 #[cfg(test)]

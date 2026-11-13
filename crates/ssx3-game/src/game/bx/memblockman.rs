@@ -13,7 +13,7 @@ use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::rider::gp_at;
-pub(crate) use crate::game::dirtysock::tags2::lw;
+pub(crate) use crate::game::dirtysock::tagsunk::lw;
 pub(crate) use crate::game::fe::feasyncfile::lh_r;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
@@ -102,24 +102,24 @@ pub(crate) mod callee {
     pub(crate) use crate::game::ai::rider::callee::VU0_RESTORE_CONTEXT;
     pub(crate) use crate::game::ai::rider::callee::VU0_SAVE_CONTEXT;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT0;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT1;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT4;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT5;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT6;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MEM_REPORT_POOL_STAT0;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MEM_REPORT_POOL_STAT1;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MEM_REPORT_POOL_STAT2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MEM_REPORT_POOL_STAT3;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MEM_REPORT_POOL_STAT4;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MEM_REPORT_POOL_STAT5;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::MEM_REPORT_POOL_STAT6;
 
     pub(crate) use crate::game::fe::festateload::callee::I_SIGNAL_SEMA;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::DL_HEAP_USABLE_SIZE;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::DL_HEAP_USABLE_SIZE;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::EA_MUTEX_LOCK;
-    pub(crate) use crate::game::fe::festaterewards2::callee::EA_MUTEX_UNLOCK;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::EA_MUTEX_LOCK;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::EA_MUTEX_UNLOCK;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::MEM_GET_POOL_BLOCK_SIZE;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::MEM_GET_POOL_BLOCK_SIZE;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::MEM_REPORT_POOL_STATS;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::MEM_REPORT_POOL_STATS;
 
     pub(crate) use crate::game::movie::movieplayer::callee::POOL128_FREE;
     pub(crate) use crate::game::movie::movieplayer::callee::POOL16_FREE;
@@ -1333,17 +1333,17 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_3;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7 as SEEDS_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::gp_at;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::slot_3 as slot;
     pub(crate) use crate::game::fe::feasyncfile::tests::world_3 as world;
     pub(crate) use crate::game::fe::festateload::tests::clear;
     pub(crate) use crate::game::fe::festateload::tests::OBJ;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_2;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS as SEEDS_2;
     pub(crate) use crate::game::sound::bankmanager::tests::rng;
     pub(crate) use crate::game::sound::bankmanager::tests::SEEDS;
     pub(crate) use crate::game::world::worldview::tests::word;

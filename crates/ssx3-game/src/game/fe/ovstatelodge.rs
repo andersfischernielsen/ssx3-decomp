@@ -15,13 +15,13 @@ pub(crate) use crate::game::fe::feasyncfile::lw_5;
 pub(crate) use crate::game::fe::fepopup::at as at_4;
 pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::fe::fepopup::lw_9 as lw_7;
-pub(crate) use crate::game::fe::fepopup2::fe_state_screen_init;
-pub(crate) use crate::game::fe::fepopup3::gp_2 as gp;
-pub(crate) use crate::game::fe::fepopup3::lw_2;
-pub(crate) use crate::game::fe::fepopup3::p_2 as p;
-pub(crate) use crate::game::fe::fepopup3::sw;
+pub(crate) use crate::game::fe::fepopupmisc::gp_2 as gp;
+pub(crate) use crate::game::fe::fepopupmisc::lw_2;
+pub(crate) use crate::game::fe::fepopupmisc::p_2 as p;
+pub(crate) use crate::game::fe::fepopupmisc::sw;
+pub(crate) use crate::game::fe::festatenethelppopup::fe_state_screen_init;
 pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_4;
-pub(crate) use crate::game::fe::festaterewards2::handle_list_key;
+pub(crate) use crate::game::fe::festatetrophyroom::handle_list_key;
 pub(crate) use crate::game::fe::ovstatepause::lw;
 use crate::guest::Addr;
 #[cfg(test)]
@@ -92,9 +92,9 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::fe::fepopup::callee::C001D32E0;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::FE_STATE_ON_ACTIVATE;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::FE_STATE_ON_ACTIVATE;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::MOUNTAIN_ROOM_UPDATE_EVENT_ICONS;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::MOUNTAIN_ROOM_UPDATE_EVENT_ICONS;
 
     pub(crate) use crate::game::fe::ovstatepause::callee::MOUNTAIN_ROOM_POLL_IMAGE_LOAD;
 
@@ -833,16 +833,16 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_3;
     pub(crate) use crate::game::fe::fepopup::tests::check_all_3 as check_all;
 
-    pub(crate) use crate::game::fe::fepopup3::tests::setup;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::setup;
     pub(crate) use crate::game::fe::festaterewards::tests::base_4 as base;
 
     pub(crate) use crate::game::fe::festaterewards::tests::slot_2;
 
-    pub(crate) use crate::game::fe::festaterewards2::cfe_state_rewards_room_on_widget_notify;
-    pub(crate) use crate::game::fe::festaterewards2::mem_card_state_base_on_widget_notify;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards3::cfe_state_buy_attrib_on_widget_notify;
+    pub(crate) use crate::game::fe::festatebuyattrib::cfe_state_buy_attrib_on_widget_notify;
+    pub(crate) use crate::game::fe::festatetrophyroom::cfe_state_rewards_room_on_widget_notify;
+    pub(crate) use crate::game::fe::festatetrophyroom::mem_card_state_base_on_widget_notify;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
     pub(crate) use crate::game::fe::ovstateenterlodge::ov_screen_enter_lodge_on_widget_notify;
     pub(crate) use crate::game::fe::ovtemplatedialog::ov_screen_yn_dialog_on_widget_notify;
     pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup as setup_2;

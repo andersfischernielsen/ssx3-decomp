@@ -66,7 +66,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_LOAD;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_OBJECT_LOAD;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_ANIM_ADVANCE as UI_ANIM_ADVANCE_2;
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_ANIM_APPLY as UI_ANIM_APPLY_2;
@@ -1104,7 +1104,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::ai::tests::SEEDS_2 as SEEDS;
     pub(crate) use crate::game::be::beintplayer::tests::r_u32;
     pub(crate) use crate::game::camera::cameracontroller::tests::fake_child;
-    pub(crate) use crate::game::dirtysock::tags2::tests::w8;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::w8;
     pub(crate) use crate::game::fe::debugfe::tests::w;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ2;

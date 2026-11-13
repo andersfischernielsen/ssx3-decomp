@@ -40,7 +40,7 @@ pub(crate) use crate::game::object::splinemodifier::setf as setf_3;
 pub(crate) use crate::game::object::splinemodifier::stf as stf_2;
 pub(crate) use crate::game::render::particle::addi;
 pub(crate) use crate::game::render::particle::at as at_2;
-pub(crate) use crate::game::replay::replay2::destroy_if_flag;
+pub(crate) use crate::game::replay::replaycache::destroy_if_flag;
 use crate::game::visualfx::boardwakefx as bw;
 pub(crate) use crate::game::wscript::wscriptman::sw as sw_2;
 use crate::guest::Addr;
@@ -335,7 +335,7 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SNOW_BOX_DTOR;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SNOW_BOX_RESET;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SNOW_BOX_RESET;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::C_TRANSITION_MAN_START_CAPTURED;
 
@@ -13958,9 +13958,9 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::camera::cameracontroller::tests::put_vtable;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::gpf;
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::common;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_setup;
@@ -13978,7 +13978,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::festateoptions::tests::setup;
     pub(crate) use crate::game::fe::festateoptions::tests::AUX;
     pub(crate) use crate::game::object::effectlink::tests::alloc;
-    pub(crate) use crate::game::replay::replay2::tests::dtor_setup;
+    pub(crate) use crate::game::replay::replaycache::tests::dtor_setup;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_10 as SEEDS_8;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_4 as SEEDS_6;

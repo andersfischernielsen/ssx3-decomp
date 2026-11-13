@@ -24,7 +24,7 @@ pub(crate) use crate::game::ai::rider::rate_step_60;
 pub(crate) use crate::game::camera::camera::gp;
 pub(crate) use crate::game::camera::camera::gp_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw as lw_5;
-pub(crate) use crate::game::dirtysock::tags2::gp_8 as gp_2;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_8 as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at_2;
 pub(crate) use crate::game::fe::feasyncfile::gp_12 as gp_4;
 pub(crate) use crate::game::fe::feasyncfile::gp_16 as gp_5;
@@ -512,17 +512,17 @@ pub(crate) mod g {}
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::dirtysock::tags2::callee::ANIM_GET_LAYER_SEQUENCE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::ANIM_GET_LAYER_SEQUENCE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::EFFECT_ALLOC;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EFFECT_CTOR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::EFFECT_ALLOC;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::EFFECT_CTOR;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_TRANSITION_MAN;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::GET_TRANSITION_MAN;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::IS_LOCAL_PLAYER;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::IS_LOCAL_PLAYER;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::TRANSITION_START;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TRANSITION_STOP;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::TRANSITION_START;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::TRANSITION_STOP;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::ANIM_CONTROLLER_IS_LAYER_ANIM_FINISHED;
 
@@ -15926,19 +15926,19 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::control::handplantcontrol::rider_handplant_state_load_state;
     pub(crate) use crate::game::ai::control::handplantcontrol::rider_railslide_state_load_state;
     pub(crate) use crate::game::ai::motion::wipeoutmotion::rider_wipeout_state_load_state;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_5;
-    pub(crate) use crate::game::bx::bxstring2::tests::slot_2 as slot_4;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_5;
+    pub(crate) use crate::game::bx::bxstringctor::tests::slot_2 as slot_4;
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::base_6;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::belib_3 as belib;
-    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::belib_3 as belib;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_13 as base_4;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_18 as base_7;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_3 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_6 as base_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::diff;
     pub(crate) use crate::game::fe::feasyncfile::tests::fe_base;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::gp_at;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::w;
 

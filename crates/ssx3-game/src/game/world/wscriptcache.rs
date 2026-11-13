@@ -16,9 +16,9 @@ use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::sd;
-pub(crate) use crate::game::be::bestate2::ea;
+pub(crate) use crate::game::be::beprepoststate::ea;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw as lw_4;
-pub(crate) use crate::game::dirtysock::tags2::gp_3 as gp;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_3 as gp;
 pub(crate) use crate::game::fe::feasyncfile::at as at_2;
 pub(crate) use crate::game::fe::feasyncfile::gp_12 as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::lw as lw_5;
@@ -32,8 +32,8 @@ pub(crate) use crate::game::fe::fepopup::lw_9 as lw_7;
 pub(crate) use crate::game::fe::fepopup::sw_4;
 pub(crate) use crate::game::fe::festateload::at;
 pub(crate) use crate::game::fe::festaterewards::lw_3;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
+pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::fe::ovstatepause::lw;
 pub(crate) use crate::game::main::gamestate::gw;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at_2;
@@ -323,11 +323,11 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::be::beintmission::callee::MPEG2_ERROR;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::FLOAT_TO_UINT;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::FLOAT_TO_UINT;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::OPERATOR_DELETE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::RCMP_DECODE_FRAME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::RCMP_FRAME_NUMBER;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::OPERATOR_DELETE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::RCMP_DECODE_FRAME;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::RCMP_FRAME_NUMBER;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::MPEG2_GET_BITS_2;
     pub(crate) use crate::game::fe::feasyncfile::callee::MPEG2_MARKER_BIT_2;
@@ -339,7 +339,7 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_CACHE_SET_DATA;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::TWSCRIPT_CACHE_RELOCATE;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::TWSCRIPT_CACHE_RELOCATE;
 
     pub(crate) use crate::game::fe::ovstatepause::callee::MPEG2_FLUSH_BUFFER as MPEG2_FLUSH_BUFFER_2;
     pub(crate) use crate::game::fe::ovstatepause::callee::MPEG2_SHOW_BITS as MPEG2_SHOW_BITS_2;
@@ -549,8 +549,8 @@ pub(crate) mod g {}
 /// own direct-call set, so no readable alias is needed here).
 pub(crate) mod addr {
 
-    pub(crate) use crate::game::bx::bxstring2::addr::MEM_MAN_FREE;
-    pub(crate) use crate::game::bx::bxstring2::addr::MEM_MAN_FREE_NOSIZE;
+    pub(crate) use crate::game::bx::bxstringctor::addr::MEM_MAN_FREE;
+    pub(crate) use crate::game::bx::bxstringctor::addr::MEM_MAN_FREE_NOSIZE;
 }
 
 /// `GetHashValue32` (0x317670) and the UI object lookups, which the generator
@@ -4792,11 +4792,11 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::ai::tests::CHILD;
     pub(crate) use crate::game::ai::ai::tests::SEEDS as SEEDS_10;
     pub(crate) use crate::game::ai::ai::tests::SEEDS_2 as SEEDS_3;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS as SEEDS_7;
+    pub(crate) use crate::game::be::beprepoststate::tests::SEEDS as SEEDS_7;
     pub(crate) use crate::game::camera::script::scriptcontroller::tests::SEEDS_2;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::base_6;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::base_8 as base;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_3 as base_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_6 as base_3;
@@ -4825,9 +4825,9 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::festateload::tests::OBJ;
     pub(crate) use crate::game::fe::festaterewards::tests::base_4 as base_5;
 
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_4;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS as SEEDS_4;
     pub(crate) use crate::game::fe::ovtemplatedialog::tests::ZERO_STUB;
     pub(crate) use crate::game::main::gamestate::tests::base_3 as base_4;
     pub(crate) use crate::game::main::gamestate::tests::SEEDS_5 as SEEDS_8;

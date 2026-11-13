@@ -8,7 +8,7 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Frame;
 use crate::call::VSlot;
-pub(crate) use crate::game::dirtysock::tags2::deleting_dtor;
+pub(crate) use crate::game::dirtysock::tagsunk::deleting_dtor;
 pub(crate) use crate::game::fe::feasyncfile::at;
 pub(crate) use crate::game::fe::feasyncfile::lw_5 as lw;
 pub(crate) use crate::game::fe::feasyncfile::ui_init_screen;
@@ -1064,8 +1064,8 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::bx::bxstring::tests::alloc_ready;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::dtor_setup;
-    pub(crate) use crate::game::dirtysock::tags2::tests::put_text;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::dtor_setup;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::put_text;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_4 as be_library;
@@ -1093,8 +1093,8 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_12 as SEEDS_4;
     pub(crate) use crate::game::fe::feasyncfile::tests::VT;
 
-    pub(crate) use crate::game::fe::fepopup3::tests::setup;
-    pub(crate) use crate::game::fe::fepopup3::tests::EMPTY_STRING;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::setup;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::EMPTY_STRING;
     pub(crate) use crate::game::fe::festateloadhint::tests::load_state_dtor_setup;
     pub(crate) use crate::game::fe::festateloadhint::tests::load_state_fixture;
     pub(crate) use crate::game::fe::festateloadhint::tests::w32;

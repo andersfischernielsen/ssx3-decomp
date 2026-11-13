@@ -6,6 +6,7 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Frame;
 pub(crate) use crate::game::fe::feasyncfile::p;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
 use crate::guest::Addr;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -25,6 +26,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         feflowstate_set_menu_selection,
         "FEFlowState_SetMenuSelection",
     ),
+    (0x001a_06b0, fe_flow_state_free, "FEFlowState_Free"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -84,6 +86,38 @@ pub fn fe_flow_state_init(c: &mut Cpu) {
         call_ptr(c, 0x0041_6210, 0x001a_0698)?;
         frame.restore(c, S0, 0x20);
         frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) mod callee {
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::MEM_MAN_FREE;
+}
+
+/// `void FEFlowState_Free(FEFlowState* self)` (0x1A06B0): close the state,
+/// freeing the buffer it owns at +0x4.
+pub fn fe_flow_state_free(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        let this = c.g[A0][0];
+        c.g[S0][0] = this;
+        let owned = Addr(r(c, S0).wrapping_add(4)).lw(c);
+        c.g[A0][0] = owned;
+        if owned == 0 {
+            Addr(r(c, S0)).sb(c, 0);
+        } else {
+            c.cycles += 4;
+            callee::MEM_MAN_FREE.call(c, 0x001a_06d4)?;
+            Addr(r(c, S0).wrapping_add(4)).sw(c, 0);
+            Addr(r(c, S0)).sb(c, 0);
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -158,6 +192,27 @@ pub(crate) mod tests {
                 c.g[A0][0] = OBJ as u64;
                 c.g[A1][0] = if seed % 2 == 0 { 0 } else { 0x24 };
                 w(c, OBJ + 4, if seed % 3 == 0 { 0 } else { OBJ2 });
+            },
+        );
+    }
+
+    use crate::difftest::fakes::machine;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w as w_m2;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS;
+
+    #[test]
+    fn fe_flow_state_free_matches() {
+        check(
+            ssx3_ee::s03::f_001a06b0__generated,
+            fe_flow_state_free,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 0x1a06_b0, 1);
+                belib(c);
+                c.g[A0][0] = DATA as u64;
+                let owned = if seed % 2 == 0 { 0 } else { DATA + 0x800 };
+                w_m2(c, DATA + 4, owned);
             },
         );
     }

@@ -11,12 +11,12 @@ use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-pub(crate) use crate::game::bx::bxstring2::vdot4;
+pub(crate) use crate::game::bx::bxstringctor::vdot4;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
 pub(crate) use crate::game::fe::feasyncfile::sw_r;
 pub(crate) use crate::game::fe::festateloadhint::p_3;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
+pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::object::splinemodifier::lwc1_r;
 pub(crate) use crate::game::object::splinemodifier::swc1_r;
 pub(crate) use crate::game::render::particle::add32;
@@ -135,9 +135,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 #[allow(dead_code)]
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::bx::bxstring2::callee::CHUNK_RESOLVE_RELOCATE_DMA;
+    pub(crate) use crate::game::bx::bxstringctor::callee::CHUNK_RESOLVE_RELOCATE_DMA;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::CW_SCRIPT_CACHE_ALLOC;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::CW_SCRIPT_CACHE_ALLOC;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CHUNK_RESOLVE_HOOK;
 
@@ -1955,10 +1955,10 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::rider::tests::clear_2;
     pub(crate) use crate::game::be::bedbreward::tests::alloc_ready as alloc_ready_2;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3;
 
     pub(crate) use crate::game::camera::cameracontroller::tests::heap_block;
-    pub(crate) use crate::game::dirtysock::tags2::tests::alloc_machine;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::alloc_machine;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
@@ -1973,9 +1973,9 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::fe::festateloadhint::tests::w32;
     pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_6;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_2;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS as SEEDS_2;
     pub(crate) use crate::game::render::particle::tests::base;
     pub(crate) use crate::game::render::particle::tests::clear;
     pub(crate) use crate::game::render::particle::tests::common;

@@ -116,16 +116,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::bx::bxstring2::callee::WORLD_STATE_RESTORE;
+    pub(crate) use crate::game::bx::bxstringctor::callee::WORLD_STATE_RESTORE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUILTIN_DELETE as BUILTIN_DELETE_2;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::BUILTIN_DELETE as BUILTIN_DELETE_2;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEM_FREE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::EA_MEM_FREE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_CACHE_FREE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::REPLAY_CACHE_FREE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_SET_STATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_SNAPSHOT_EMPTY_HOOK_B;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::REPLAY_SET_STATE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::REPLAY_SNAPSHOT_EMPTY_HOOK_B;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::PLAYBACK_RESTORE_WORLD;
     pub(crate) use crate::game::fe::feasyncfile::callee::REPLAY_CACHE_RESET;
@@ -1801,10 +1801,10 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
 
     pub(crate) use crate::game::ai::rider::tests::clear_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::alloc_machine;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::alloc_machine;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2 as be_library;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::zero;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::zero;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::base_16 as base_4;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as base;
@@ -1820,7 +1820,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::world_3 as world;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_15 as SEEDS_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as SEEDS;
-    pub(crate) use crate::game::fe::fepopup3::tests::dummy_world;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::dummy_world;
     pub(crate) use crate::game::fe::fereal::tests::base as base_2;
     pub(crate) use crate::game::fe::festaterewards::tests::heap_block;
     pub(crate) use crate::game::movie::movieplayer::tests::base_3;
@@ -2514,7 +2514,7 @@ pub(crate) mod tests {
     #[test]
     fn replay_record_snapshot_matches() {
         use crate::game::fe::feasyncfile::tests::call_machine;
-        use crate::game::fe::fepopup3::tests::dummy_world;
+        use crate::game::fe::fepopupmisc::tests::dummy_world;
         check(
             ee::s07::f_0026d760__generated,
             replay_record_snapshot,

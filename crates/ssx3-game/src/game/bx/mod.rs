@@ -6,7 +6,6 @@ pub mod appman;
 pub mod bigfile;
 pub mod bxrandom;
 pub mod bxstring;
-pub mod bxstring2;
 pub mod bxstringctor;
 pub mod cubicspline;
 pub mod execman;
@@ -21,7 +20,6 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(bigfile::OVERRIDES);
     v.extend_from_slice(bxrandom::OVERRIDES);
     v.extend_from_slice(bxstring::OVERRIDES);
-    v.extend_from_slice(bxstring2::OVERRIDES);
     v.extend_from_slice(bxstringctor::OVERRIDES);
     v.extend_from_slice(cubicspline::OVERRIDES);
     v.extend_from_slice(execman::OVERRIDES);

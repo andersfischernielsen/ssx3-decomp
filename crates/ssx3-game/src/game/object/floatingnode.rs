@@ -7,9 +7,9 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Frame;
-pub(crate) use crate::game::be::bestate2::ea;
-pub(crate) use crate::game::be::bestate2::gp_lw;
-pub(crate) use crate::game::be::bestate2::gp_rel;
+pub(crate) use crate::game::be::beprepoststate::ea;
+pub(crate) use crate::game::be::beprepoststate::gp_lw;
+pub(crate) use crate::game::be::beprepoststate::gp_rel;
 pub(crate) use crate::game::fe::feasyncfile::lh_r;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
@@ -407,8 +407,8 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
 
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear;
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::be::bestate2::tests::w;
+    pub(crate) use crate::game::be::beprepoststate::tests::belib;
+    pub(crate) use crate::game::be::beprepoststate::tests::w;
     pub(crate) use crate::game::camera::trigger::cameratriggerlist::tests::small_pointer;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
 

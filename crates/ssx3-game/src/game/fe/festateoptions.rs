@@ -11,21 +11,20 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 pub(crate) use crate::game::ai::rider::world;
-pub(crate) use crate::game::dirtysock::tags2::const_reg;
-pub(crate) use crate::game::dirtysock::tags2::gp_5 as gp;
-pub(crate) use crate::game::dirtysock::tags2::leave;
-pub(crate) use crate::game::dirtysock::tags2::p_2;
-pub(crate) use crate::game::dirtysock::tags2::sw;
+pub(crate) use crate::game::dirtysock::tagsunk::const_reg;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_5 as gp;
+pub(crate) use crate::game::dirtysock::tagsunk::p_2;
+pub(crate) use crate::game::dirtysock::tagsunk::sw;
 pub(crate) use crate::game::fe::feasyncfile::at;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at_3;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::lh;
 pub(crate) use crate::game::fe::feasyncfile::p_6 as p_4;
 pub(crate) use crate::game::fe::feasyncfile::r;
-pub(crate) use crate::game::fe::fepopup2::fe_state_screen_init;
 pub(crate) use crate::game::fe::festateloadhint::lqsp;
 pub(crate) use crate::game::fe::festateloadhint::p_3;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
+pub(crate) use crate::game::fe::festatenethelppopup::fe_state_screen_init;
 pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_2;
 pub(crate) use crate::game::fe::ovstatepause::p;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
@@ -35,6 +34,7 @@ pub(crate) use crate::game::main::gamemode::lw_r;
 pub(crate) use crate::game::main::gamemode::sp_2;
 pub(crate) use crate::game::scripter::ssxscriptengine::low;
 pub(crate) use crate::game::scripter::ssxscriptengine::sw_at;
+pub(crate) use crate::game::sound::bankmonitor::leave;
 pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw_3;
 use crate::guest::Addr;
 use ssx3_ee as ee;
@@ -181,11 +181,11 @@ pub(crate) mod callee {
     use super::ee;
     use super::Callee;
 
-    pub(crate) use crate::game::bx::bxstring2::callee::OPTIONS_SET_VIBRATION;
+    pub(crate) use crate::game::bx::bxstringctor::callee::OPTIONS_SET_VIBRATION;
 
     pub(crate) use crate::game::camera::camera::callee::UI_STATE_CTOR;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_CTOR_2 as UI_STATE_CTOR_3;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_STATE_CTOR_2 as UI_STATE_CTOR_3;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_INTERFACE;
 
@@ -1817,12 +1817,12 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3;
-    pub(crate) use crate::game::bx::bxstring2::tests::gp_at;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3;
+    pub(crate) use crate::game::render::particle::tests::gp_at;
 
     pub(crate) use crate::game::camera::cameracontroller::tests::pool as pool_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
-    pub(crate) use crate::game::dirtysock::tags2::tests::world_2 as world;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2 as be_library;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::world_2 as world;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_13 as base_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_16 as base_4;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_5;

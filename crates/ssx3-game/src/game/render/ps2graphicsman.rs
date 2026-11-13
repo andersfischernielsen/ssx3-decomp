@@ -22,8 +22,8 @@ pub(crate) use crate::game::fe::fepopup::lw_9 as lw_3;
 pub(crate) use crate::game::fe::fepopup::sq;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw_2;
 pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_2;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
+pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::p;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
 pub(crate) use crate::game::movie::movieplayer::add32;
@@ -119,7 +119,7 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::fepopup::callee::C00368170;
     pub(crate) use crate::game::fe::fepopup::callee::C00368970;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::MEM_MAN_FREE;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::MEM_MAN_FREE;
 
     pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
 }
@@ -1474,9 +1474,9 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_4;
     pub(crate) use crate::game::fe::fepopup::tests::check_all_3 as check_all;
 
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS;
     pub(crate) use crate::game::fe::ovstateenterlodge::tests::run as run_2;
     pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
 

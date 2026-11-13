@@ -924,7 +924,7 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_2;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_2;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_setup;
 

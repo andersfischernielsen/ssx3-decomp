@@ -19,7 +19,7 @@ pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
 pub(crate) use crate::game::main::gamestate::p_2 as p_3;
 pub(crate) use crate::game::movie::movieplayer::at as at_2;
 pub(crate) use crate::game::movie::movieplayer::word;
-pub(crate) use crate::game::replay::replay2::destroy_if_flag;
+pub(crate) use crate::game::replay::replaycache::destroy_if_flag;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -178,7 +178,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 pub(crate) mod callee {
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::STREAM_BUFFER_DTOR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::STREAM_BUFFER_DTOR;
 
     pub(crate) use crate::game::main::gamestate::callee::BUILTIN_DELETE_4;
 
@@ -1894,13 +1894,13 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::ai::ai::tests::leaf;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::common;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
-    pub(crate) use crate::game::dirtysock::tags2::tests::heap_block_2 as heap_block;
-    pub(crate) use crate::game::dirtysock::tags2::tests::heap_init_6 as heap_init;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::heap_block_2 as heap_block;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::heap_init_6 as heap_init;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::gp_at;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7 as SEEDS_2;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ2;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as base;
@@ -1918,7 +1918,7 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::movie::movieplayer::tests::w as w_3;
 
-    pub(crate) use crate::game::replay::replay2::tests::dtor_setup;
+    pub(crate) use crate::game::replay::replaycache::tests::dtor_setup;
     pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
     pub(crate) use crate::game::wscript::wscriptman::tests::clear_3 as clear;
 

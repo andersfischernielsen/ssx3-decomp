@@ -15,7 +15,6 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::camera::cameracontroller::delete_owner;
 pub(crate) use crate::game::camera::script::scriptcontroller::vslot as vslot_2;
-pub(crate) use crate::game::dirtysock::tags2::p;
 pub(crate) use crate::game::fe::debugfe::at;
 pub(crate) use crate::game::fe::debugfe::r32_2;
 pub(crate) use crate::game::fe::feasyncfile::at_2;
@@ -27,12 +26,13 @@ pub(crate) use crate::game::fe::feasyncfile::p_5 as p_3;
 pub(crate) use crate::game::fe::feasyncfile::sb_r;
 pub(crate) use crate::game::fe::feasyncfile::sw_4 as sw;
 pub(crate) use crate::game::fe::feasyncfile::sw_r;
-pub(crate) use crate::game::fe::festaterewards2::sh_r;
+pub(crate) use crate::game::fe::festatetrophyroom::sh_r;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
 pub(crate) use crate::game::main::gamestate::vslot;
 pub(crate) use crate::game::scripter::ssxscriptengine::low;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2;
 pub(crate) use crate::game::scripter::ssxscriptengine::sw_at;
+pub(crate) use crate::game::sound::bankmonitor::p;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
 use crate::guest::Addr;
 use callee::*;
@@ -128,7 +128,7 @@ pub(crate) mod callee {
     use super::ee;
     use super::Callee;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_LOAD;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::UI_OBJECT_LOAD;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_ANIM_SET_CREATE_ANIM;
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_CTOR_2;
@@ -1791,7 +1791,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::ai::tests::SEEDS_2;
     pub(crate) use crate::game::animation::animmodel::tests::SEEDS_4 as SEEDS_3;
     pub(crate) use crate::game::camera::cameracontroller::tests::fake_child;
-    pub(crate) use crate::game::dirtysock::tags2::tests::slot_8 as slot_5;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::slot_8 as slot_5;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ2;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ3;

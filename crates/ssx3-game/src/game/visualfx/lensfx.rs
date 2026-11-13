@@ -2671,9 +2671,9 @@ pub(crate) mod tests {
     pub(crate) use crate::game::bx::appman::tests::SEEDS;
     pub(crate) use crate::game::bx::bxstring::tests::heap_init_4 as heap_init;
     pub(crate) use crate::game::bx::bxstring::tests::pool;
-    pub(crate) use crate::game::bx::bxstring2::tests::game;
+    pub(crate) use crate::game::bx::bxstringctor::tests::game;
 
-    pub(crate) use crate::game::bx::bxstring2::tests::SCRATCH;
+    pub(crate) use crate::game::bx::bxstringctor::tests::SCRATCH;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_setup;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_13 as base_3;

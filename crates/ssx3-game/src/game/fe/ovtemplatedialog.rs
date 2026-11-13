@@ -12,13 +12,14 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_3;
 pub(crate) use crate::game::fe::feasyncfile::gp_13 as gp_2;
+pub(crate) use crate::game::fe::feasyncfile::gp_3 as gp_m2;
 pub(crate) use crate::game::fe::feasyncfile::lh_r;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
 pub(crate) use crate::game::fe::feasyncfile::lw_at_2 as lw_at;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
 pub(crate) use crate::game::fe::feasyncfile::r;
 pub(crate) use crate::game::fe::festateloadhint::accept_key_6;
-pub(crate) use crate::game::fe::festaterewards2::handle_list_key;
+pub(crate) use crate::game::fe::festatetrophyroom::handle_list_key;
 pub(crate) use crate::game::movie::movieplayer::at;
 pub(crate) use crate::game::movie::movieplayer::gp;
 pub(crate) use crate::game::movie::movieplayer::word;
@@ -83,6 +84,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0020_cba0,
         game_ui_is_pause_menu_open,
         "GameUI_IsPauseMenuOpen",
+    ),
+    (
+        0x0020_d190,
+        ov_screen_pda_template_close,
+        "OVScreenPDATemplate_Close",
     ),
 ];
 
@@ -966,6 +972,41 @@ pub fn game_ui_is_pause_menu_open(c: &mut Cpu) {
     })
 }
 
+/// `void OVScreenPDATemplate_Close()` (0x20d190): unlink and delete the PDA
+/// template (`gp_m2-0x9e4`), then clear the global.
+pub fn ov_screen_pda_template_close(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = Addr(gp_m2(c, -0x9e4)).lw(c);
+        let none = c.g[A0][0] == 0;
+        frame.save_ra(c, 0);
+        if !none {
+            c.cycles += 5;
+            call_ptr(c, 0x0039_7740, 0x0020_d1a8)?;
+            c.g[A2][0] = Addr(gp_m2(c, -0x9e4)).lw(c);
+            let gone = c.g[A2][0] == 0;
+            c.g[A1][0] = 3;
+            if !gone {
+                c.cycles += 5;
+                let template = abi::r32(c, A2);
+                c.g[V0][0] = Addr(template.wrapping_add(8)).lw(c);
+                let vtable = c.g[V0][0] as u32;
+                c.g[A0][0] = Addr(vtable.wrapping_add(8)).lh(c);
+                c.g[V1][0] = Addr(vtable.wrapping_add(0xc)).lw(c);
+                let target = c.g[V1][0] as u32;
+                c.g[A0][0] = sx(template.wrapping_add(abi::r32(c, A0)));
+                call_ptr(c, target, 0x0020_d1c8)?;
+            }
+        }
+        c.cycles += 4;
+        frame.restore_ra(c, 0);
+        Addr(gp_m2(c, -0x9e4)).sw(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1366,6 +1407,28 @@ pub(crate) mod tests {
                     c.bus.write32(sentinel + 4, sentinel);
                 }
                 c.pc = 0x0020_cba0;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::FAKE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::slot as slot_m2;
+
+    #[test]
+    fn ov_screen_pda_template_close_matches() {
+        check(
+            ee::s05::f_0020d190__generated,
+            ov_screen_pda_template_close,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x20d1_90, 2);
+                let template = if seed % 3 == 0 { 0 } else { DATA + 0x100 };
+                c.bus.write32(GAME_GP - 0x9e4, template);
+                if template != 0 {
+                    let vt = DATA + 0x800;
+                    c.bus.write32(template + 8, vt);
+                    slot_m2(c, &mut r, vt, 8, FAKE + 0x10);
+                }
             },
         );
     }

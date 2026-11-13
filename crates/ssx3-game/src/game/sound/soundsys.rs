@@ -20,8 +20,8 @@ pub(crate) use crate::game::ai::computer::lh_2 as lh;
 pub(crate) use crate::game::ai::computer::sd;
 pub(crate) use crate::game::animation::animsequencer::dtor;
 pub(crate) use crate::game::be::beintnetwork::ldl;
-pub(crate) use crate::game::be::bestate2::ea;
-pub(crate) use crate::game::dirtysock::tags2::lw;
+pub(crate) use crate::game::be::beprepoststate::ea;
+pub(crate) use crate::game::dirtysock::tagsunk::lw;
 pub(crate) use crate::game::fe::feasyncfile::at_2 as at;
 pub(crate) use crate::game::fe::feasyncfile::gp;
 pub(crate) use crate::game::fe::feasyncfile::gp_15 as gp_3;
@@ -37,8 +37,8 @@ pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::fe::fepopup::lhu;
 pub(crate) use crate::game::fe::fepopup::sh;
 pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_2;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::fe::festatetrophyroom::r;
+pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::lib::snd::add;
 pub(crate) use crate::game::lib::snd::shl;
 pub(crate) use crate::game::main::gamestate::gw;
@@ -731,6 +731,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_speech_wipeout_recover,
         "SSXAudioSystem_SpeechWipeoutRecover",
     ),
+    (
+        0x002a_68b0,
+        crowd_audio_update_pitch_bend,
+        "CrowdAudio_UpdatePitchBend",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -754,44 +759,44 @@ pub(crate) mod callee {
     pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INSTANCE;
     pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INTERFACE;
 
-    pub(crate) use crate::game::bx::bxstring2::callee::INI_PARSER_SKIP_WHITESPACE;
+    pub(crate) use crate::game::bx::bxstringctor::callee::INI_PARSER_SKIP_WHITESPACE;
 
-    pub(crate) use crate::game::bx::bxstring2::callee::SPEECH_SYSTEM_SET_EVENT_CONTEXT as SPEECH_SYSTEM_SET_EVENT_CONTEXT_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_GET_LANGUAGE_MASK;
-    pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_GET_SPEECH_CONTEXT_MASK;
-    pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_IS_DJ_SPEECH_ON;
+    pub(crate) use crate::game::bx::bxstringctor::callee::SPEECH_SYSTEM_SET_EVENT_CONTEXT as SPEECH_SYSTEM_SET_EVENT_CONTEXT_2;
+    pub(crate) use crate::game::bx::bxstringctor::callee::SSX_AUDIO_GET_LANGUAGE_MASK;
+    pub(crate) use crate::game::bx::bxstringctor::callee::SSX_AUDIO_GET_SPEECH_CONTEXT_MASK;
+    pub(crate) use crate::game::bx::bxstringctor::callee::SSX_AUDIO_IS_DJ_SPEECH_ON;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_ADD_TIMER_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BANK_MONITOR_ADD_TIMER_2;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_STOP_HANDLE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BANK_MONITOR_STOP_HANDLE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INSTANCE_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INTERFACE_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BE_LIBRARY_GET_INSTANCE_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::BE_LIBRARY_GET_INTERFACE_2;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::CROWD_INSTANCE_PLAY_FALL;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CROWD_INSTANCE_PLAY_TRICK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CROWD_INSTANCE_STOP_ANTICIPATE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::CROWD_INSTANCE_PLAY_FALL;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::CROWD_INSTANCE_PLAY_TRICK;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::CROWD_INSTANCE_STOP_ANTICIPATE;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_FINISH_SPEECH_MASK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_LANGUAGE_MASK as GET_LANGUAGE_MASK_3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_RIDER_VOICE_MASK;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::GET_FINISH_SPEECH_MASK;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::GET_LANGUAGE_MASK as GET_LANGUAGE_MASK_3;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::GET_RIDER_VOICE_MASK;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::IS_PA_SPEECH_ON;
-    pub(crate) use crate::game::dirtysock::tags2::callee::IS_RACE_TYPE_4OR5;
-    pub(crate) use crate::game::dirtysock::tags2::callee::IS_REPLAY_PLAYING;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::IS_PA_SPEECH_ON;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::IS_RACE_TYPE_4OR5;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::IS_REPLAY_PLAYING;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::RAND_NEXT_MAIN;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::RAND_NEXT_MAIN;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::RIDER_123168;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::RIDER_123168;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_MAN_UNLOAD_BANK;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SND_BANK_MAN_UNLOAD_BANK;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPEECH_QUEUE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPEECH_SET_EVENT_CONTEXT as SPEECH_SET_EVENT_CONTEXT_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SPEECH_QUEUE;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SPEECH_SET_EVENT_CONTEXT as SPEECH_SET_EVENT_CONTEXT_2;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_ARCADE_SAY;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SSX_AUDIO_ARCADE_SAY;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_RIDER_SAY_20B9;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::SSX_AUDIO_RIDER_SAY_20B9;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_GET_GAME_MODULE_2 as AUDIO_GET_GAME_MODULE;
     pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_IS_TRACK_GROUP0_EVENT;
@@ -837,9 +842,9 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::festaterewards::callee::SPEECH_SET_EVENT_CONTEXT;
     pub(crate) use crate::game::fe::festaterewards::callee::SPEECH_STOP_INSTANCE;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND;
 
-    pub(crate) use crate::game::fe::festaterewards2::callee::MEMSET;
+    pub(crate) use crate::game::fe::festatetrophyroom::callee::MEMSET;
 
     pub(crate) use crate::game::intersect::worldsphtree::callee::SSX_AUDIO_SYSTEM_IS_TRACK_ID_GROUP2;
     pub(crate) use crate::game::intersect::worldsphtree::callee::SSX_AUDIO_SYSTEM_IS_TRACK_ID_GROUP3;
@@ -940,13 +945,13 @@ pub(crate) mod table {
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
 pub(crate) mod addr {
-    pub(crate) use crate::game::bx::bxstring2::addr::BANK_MONITOR_TIMER_RESET;
-    pub(crate) use crate::game::bx::bxstring2::addr::BE_INTERFACE_LOOKUP;
-    pub(crate) use crate::game::bx::bxstring2::addr::CBE_GET_BE;
-    pub(crate) use crate::game::bx::bxstring2::addr::CBE_GET_INTERFACE;
+    pub(crate) use crate::game::bx::bxstringctor::addr::BANK_MONITOR_TIMER_RESET;
+    pub(crate) use crate::game::bx::bxstringctor::addr::BE_INTERFACE_LOOKUP;
+    pub(crate) use crate::game::bx::bxstringctor::addr::CBE_GET_BE;
+    pub(crate) use crate::game::bx::bxstringctor::addr::CBE_GET_INTERFACE;
 
-    pub(crate) use crate::game::bx::bxstring2::addr::MEM_MAN_FREE;
-    pub(crate) use crate::game::bx::bxstring2::addr::MEM_MAN_FREE_NOSIZE;
+    pub(crate) use crate::game::bx::bxstringctor::addr::MEM_MAN_FREE;
+    pub(crate) use crate::game::bx::bxstringctor::addr::MEM_MAN_FREE_NOSIZE;
 }
 
 /// `GetHashValue32` (0x317670) and the UI object lookups, which the generator
@@ -16986,6 +16991,138 @@ pub fn ssx_audio_system_start_ambience_loop(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// SND_FireEvents (0x3b5f98)
+// ---------------------------------------------------------------------------
+
+/// The sound library's event-handler table (`D_0050A8E8`).
+pub(crate) const SND_EVENT_TABLE: u32 = 0x0050_a8e8;
+
+// ---------------------------------------------------------------------------
+// CrowdAudio_UpdatePitchBend (0x2a68b0)
+// ---------------------------------------------------------------------------
+
+/// Sound handle of a bank-monitor instance (negative: not playing).
+pub(crate) const CROWD_VOICE_HANDLE: u32 = 0x4;
+
+/// CrowdAudio: index of the active pitch-bend curve, and its time left.
+pub(crate) const CROWD_BEND_CURVE: u32 = 0x184;
+
+pub(crate) const CROWD_BEND_TIME: u32 = 0x188;
+
+/// gp_m2-relative pointer to the crowd sound table (`D_004A36F8`), 0x54-byte
+/// entries; the bend curve fields start 0x1c into an entry.
+pub(crate) const CROWD_TABLE_GP: u32 = 0x608;
+
+pub(crate) const CROWD_ENTRY_SIZE: u32 = 0x54;
+
+pub(crate) const CROWD_ENTRY_BEND: u32 = 0x1c;
+
+/// Curve fields (relative to the bend start): ramp-down length, ramp-up
+/// length, bend depth.
+pub(crate) const BEND_FALL: u32 = 0x48;
+
+pub(crate) const BEND_RISE: u32 = 0x4c;
+
+pub(crate) const BEND_DEPTH: u32 = 0x50;
+
+/// `void CrowdAudio_UpdatePitchBend(CrowdAudio* self, BankMonitorInstance*
+/// voice, float dt)` (0x2a68b0): a voice that is not playing is reset;
+/// otherwise, while a pitch bend is running, counts its time down by `dt`
+/// and sets the voice's pitch bend (0x40 = centre) from the curve: rising
+/// while the time left is under the rise length, then falling.
+pub fn crowd_audio_update_pitch_bend(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        let handle = Addr(r32(c, S1)).off(CROWD_VOICE_HANDLE).lw(c);
+        c.g[V0][0] = handle;
+        c.g[A1][0] = c.g[A0][0];
+        if (handle as i64) < 0 {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S1][0];
+            Callee {
+                addr: 0x002a_bb38,
+                f: ee::s08::f_002abb38,
+            }
+            .call(c, 0x002a_68d8)?;
+            frame.restore(c, S0, 0x20);
+        } else {
+            c.cycles += 6;
+            let this = Addr(r32(c, A1));
+            let time = this.off(CROWD_BEND_TIME).read_fpu(c);
+            c.f[1] = time.0;
+            c.f[0] = 0;
+            let idle = time.le(FpuF32::ZERO);
+            abi::set_fcc(c, idle);
+            frame.restore(c, S0, 0x20);
+            if !idle {
+                c.cycles += 13;
+                let curve = this.off(CROWD_BEND_CURVE).lw(c);
+                c.g[V1][0] = CROWD_ENTRY_SIZE as u64;
+                let left = time - FpuF32(c.f[12]);
+                c.f[12] = left.0;
+                let table = Addr(c.g[GP][0] as u32).off(CROWD_TABLE_GP).lw(c) as u32;
+                let offset =
+                    abi::mult(c, curve as u32, CROWD_ENTRY_SIZE).wrapping_add(CROWD_ENTRY_BEND);
+                this.off(CROWD_BEND_TIME).write_fpu(c, left);
+                c.g[V0][0] = sx(offset);
+                let bend = Addr(table.wrapping_add(offset));
+                c.g[A0][0] = sx(bend.0);
+                let rise = bend.off(BEND_RISE).read_fpu(c);
+                c.f[1] = rise.0;
+                let falling = abi::c_lt_s(c, rise, left);
+                c.g[S0][0] = 0x40;
+                let scaled = if falling {
+                    // Past the rise: depth * (fall - (left - rise)) / fall.
+                    c.cycles += 8;
+                    let over = left - rise;
+                    let fall = bend.off(BEND_FALL).read_fpu(c);
+                    let depth = bend.off(BEND_DEPTH).read_fpu(c);
+                    let remaining = fall - over;
+                    c.f[1] = remaining.0;
+                    c.f[2] = fall.0;
+                    Some((depth * remaining).div(fall))
+                } else {
+                    c.cycles += 3;
+                    if abi::c_lt_s(c, FpuF32::ZERO, left) {
+                        // Rising: depth * left / rise.
+                        c.cycles += 3;
+                        let depth = bend.off(BEND_DEPTH).read_fpu(c);
+                        Some((depth * left).div(rise))
+                    } else {
+                        None
+                    }
+                };
+                if let Some(scaled) = scaled {
+                    c.cycles += 3;
+                    c.f[0] = scaled.0;
+                    let whole = scaled.to_i32() as u32;
+                    c.f[1] = whole;
+                    c.g[V0][0] = sx(whole);
+                    c.g[S0][0] = sx(whole.wrapping_add(0x40));
+                }
+                c.cycles += 8;
+                call_ptr(c, 0x003b_58a0, 0x002a_6978)?; // SND_Lock
+                c.g[A0][0] = Addr(r32(c, S1)).off(CROWD_VOICE_HANDLE).lw(c);
+                c.g[A1][0] = c.g[S0][0];
+                call_ptr(c, 0x003b_c6b8, 0x002a_6984)?; // SND_SetPitchBend
+                call_ptr(c, 0x003b_58d8, 0x002a_698c)?; // SND_Unlock
+                frame.restore(c, S0, 0x20);
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -17021,20 +17158,20 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::ai::tests::wf;
     pub(crate) use crate::game::ai::ai::tests::RIDER;
     pub(crate) use crate::game::ai::rider::tests::put_world_2 as put_world;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS as SEEDS_9;
+    pub(crate) use crate::game::be::beprepoststate::tests::SEEDS as SEEDS_9;
     pub(crate) use crate::game::bx::bxstring::tests::put_str;
     pub(crate) use crate::game::bx::bxstring::tests::SEEDS as SEEDS_2;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_6;
-    pub(crate) use crate::game::bx::bxstring2::tests::f;
+    pub(crate) use crate::game::bx::bxstringctor::tests::base_3 as base_6;
+    pub(crate) use crate::game::render::particle::tests::f;
 
     pub(crate) use crate::game::camera::cameracontroller::tests::put_vtable;
-    pub(crate) use crate::game::dirtysock::tags2::tests::belib_3 as belib_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::belib_3 as belib_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::common;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::world_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::zero;
-    pub(crate) use crate::game::dirtysock::tags2::tests::SCRATCH;
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::world_2;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::zero;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SCRATCH;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base_5;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_16 as base_7;
@@ -17097,9 +17234,9 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::festaterewards::tests::strict;
 
     pub(crate) use crate::game::fe::festaterewards::tests::W as W_5;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_4;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS as SEEDS_4;
     pub(crate) use crate::game::fe::ovtemplatedialog::tests::ZERO_STUB;
 
     pub(crate) use crate::game::main::gamemode::tests::SEEDS as SEEDS_3;
@@ -22087,6 +22224,74 @@ pub(crate) mod tests {
                     },
                 );
                 c.bus.write32(audio::SYS + AMBIENCE_LOOP_GAIN, r.f32(1.0));
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    use ssx3_ee_rt::cpu::sx;
+    use ssx3_ee_rt::Cpu;
+
+    /// `CrowdAudio_UpdatePitchBend`: a voice with a negative handle (reset;
+    /// its fade-out already running so it returns at_m2 once) or a playing one;
+    /// bend time left <= 0 (idle) or running, with dt so that the time left
+    /// lands in the falling part, the rising part or at_m2/below zero. The
+    /// crowd table (gp_m2+0x608) has 4 entries of random curves. SND_Lock and
+    /// SND_Unlock run for real and call their callbacks (fakes);
+    /// SND_SetPitchBend runs for real with no channels (handle not found).
+    #[test]
+    fn crowd_audio_update_pitch_bend_matches() {
+        use crate::difftest::GAME_GP;
+        const SELF: u32 = DATA + 0x100;
+        const VOICE: u32 = DATA + 0x400;
+        const TABLE: u32 = DATA + 0x800;
+        covered(
+            ee::s08::f_002a68b0__generated,
+            crowd_audio_update_pitch_bend,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_68b0, 4);
+                c.pc = 0x002a_68b0;
+                fill(c, &mut r, SELF, 0x70);
+                fill(c, &mut r, VOICE, 0x10);
+                fill(c, &mut r, TABLE, 0x60);
+                c.bus.write32(GAME_GP + CROWD_TABLE_GP, TABLE);
+                // Lock/unlock callbacks; no sound channels.
+                c.bus.write32(0x0044_c46c, FAKE);
+                c.bus.write32(0x0044_c470, FAKE + 0x10);
+                c.bus.write16(SND_EVENT_TABLE + 0x17e, 0);
+                let playing = seed % 6 != 0;
+                c.bus.write32(
+                    VOICE + CROWD_VOICE_HANDLE,
+                    if playing {
+                        r.next_u32() & 0x7fff_ffff
+                    } else {
+                        0x8000_0000 | r.next_u32()
+                    },
+                );
+                c.bus.write32(VOICE + 0x54, 1); // fade-out already running
+                let curve = r.next_u32() % 4;
+                c.bus.write32(SELF + CROWD_BEND_CURVE, curve);
+                let bend = TABLE + curve * CROWD_ENTRY_SIZE + CROWD_ENTRY_BEND;
+                let fall = 0.5 + (r.next_u32() % 100) as f32 / 50.0;
+                let rise = 0.25 + (r.next_u32() % 100) as f32 / 50.0;
+                c.bus.write32(bend + BEND_FALL, fall.to_bits());
+                c.bus.write32(bend + BEND_RISE, rise.to_bits());
+                c.bus.write32(bend + BEND_DEPTH, r.f32(64.0));
+                let time = match seed % 5 {
+                    0 => -((r.next_u32() % 3) as f32),
+                    _ => (r.next_u32() % 400) as f32 / 50.0,
+                };
+                c.bus.write32(SELF + CROWD_BEND_TIME, time.to_bits());
+                // dt: the whole time (ends exactly at_m2 0), an edge value, or a frame-ish step.
+                c.f[12] = match (seed / 5) % 4 {
+                    0 => time.to_bits(),
+                    1 => r.edge_f32(),
+                    _ => ((r.next_u32() % 100) as f32 / 60.0).to_bits(),
+                };
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(VOICE);
             },
         );
     }

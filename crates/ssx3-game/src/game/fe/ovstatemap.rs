@@ -18,9 +18,9 @@ pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_3;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
-pub(crate) use crate::game::dirtysock::tags2::at;
-pub(crate) use crate::game::dirtysock::tags2::gp_5 as gp;
-pub(crate) use crate::game::dirtysock::tags2::p_2 as p;
+pub(crate) use crate::game::dirtysock::tagsunk::at_3 as at;
+pub(crate) use crate::game::dirtysock::tagsunk::gp_5 as gp;
+pub(crate) use crate::game::dirtysock::tagsunk::p_2 as p;
 pub(crate) use crate::game::fe::feasyncfile::at_2;
 pub(crate) use crate::game::fe::feasyncfile::lh_r;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
@@ -28,9 +28,9 @@ pub(crate) use crate::game::fe::feasyncfile::lw_r;
 pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::fe::fepopup::lw_9 as lw_3;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw;
-pub(crate) use crate::game::fe::fepopup3::lh;
-pub(crate) use crate::game::fe::fepopup3::lw_2;
-pub(crate) use crate::game::fe::fepopup3::p_2;
+pub(crate) use crate::game::fe::fepopupmisc::lh;
+pub(crate) use crate::game::fe::fepopupmisc::lw_2;
+pub(crate) use crate::game::fe::fepopupmisc::p_2;
 pub(crate) use crate::game::fe::ovstatepause::lw;
 pub(crate) use crate::game::main::gamemode::gpo;
 pub(crate) use crate::game::main::gamemode::sp_2;
@@ -1149,7 +1149,7 @@ pub(crate) mod tests {
     use crate::difftest::RA as TEST_RA;
 
     pub(crate) use crate::game::camera::cameracontroller::tests::put_vtable;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::be_library_2 as be_library;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::fake_method;
 
@@ -1164,7 +1164,7 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::fepopup::tests::base_14 as base;
     pub(crate) use crate::game::fe::fepopup::tests::check_all_3 as check_all;
 
-    pub(crate) use crate::game::fe::fepopup3::tests::setup;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::setup;
     pub(crate) use crate::game::fe::festatestore::tests::world;
     pub(crate) use crate::game::fe::ovstatepause::tests::globals_2 as globals;
 

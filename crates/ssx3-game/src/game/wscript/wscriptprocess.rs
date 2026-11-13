@@ -140,7 +140,7 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::camera::camera::callee::WSCRIPT_DELETE_ALL;
 
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_LUNO_TABLE_DTOR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::C_LUNO_TABLE_DTOR;
 
     pub(crate) use crate::game::movie::movieplayer::callee::WSCRIPT_CACHE_GET_PROCESSES;
     pub(crate) use crate::game::movie::movieplayer::callee::WSCRIPT_CACHE_GET_PROCESS_COUNT;
@@ -1916,12 +1916,12 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::common;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::heap_block_2 as heap_block;
-    pub(crate) use crate::game::dirtysock::tags2::tests::pool8;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::heap_block_2 as heap_block;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::pool8;
 
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_4;
+    pub(crate) use crate::game::dirtysock::tagsunk::tests::SEEDS_7 as SEEDS_4;
 
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_setup;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_4;
