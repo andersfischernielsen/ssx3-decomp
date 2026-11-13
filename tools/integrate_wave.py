@@ -8,6 +8,7 @@
     python3 tools/integrate_wave.py build                  # ssx3-headless
     python3 tools/integrate_wave.py gate                   # race replay vs baseline
     python3 tools/integrate_wave.py all    oc37 ...        # everything above
+    python3 tools/integrate_wave.py race-input             # print the gate's SSX3_INPUT
 
 The baseline RAM is the deterministic race replay of the accepted tree
 (SSX3_INPUT race, 6000 frames, SSX3_RAM_DUMP); the gate compares the whole of
@@ -144,6 +145,8 @@ def main(argv):
         build()
     elif mode == "gate":
         gate()
+    elif mode == "race-input":
+        print(RACE_INPUT)
     elif mode == "all":
         prep(mods)
         regen()
