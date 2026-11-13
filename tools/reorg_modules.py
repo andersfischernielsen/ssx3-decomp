@@ -28,6 +28,8 @@ import subprocess
 import sys
 
 R = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Imports renamed because a unit already imports the name from elsewhere.
+ALIASED = []
 SRC = os.path.join(R, 'crates/ssx3-game/src')
 GAME = os.path.join(SRC, 'game')
 CACHE = os.path.join(R, 'tools/.reorg-units.json')
@@ -403,7 +405,7 @@ PREFIX_UNITS = {
     'racestategameinit': 'main/racestate', 'racestatefreeride': 'main/racestate',
     'racestatecountdown': 'main/racestate', 'trick': 'ai/trick', 'chudfx': 'visualfx/hudfx',
     'dnasauth': 'dirtysock/dnasauth', 'cgamecomm': 'dirtysock/gamecomm',
-    'morton': 'render/morton', 'render2d': 'render/render2d', 'shps': 'render/shps',
+    'morton': 'render/graphicsman', 'render2d': 'render/lightman', 'shps': 'render/shps',
 }
 
 
@@ -607,6 +609,31 @@ def assign(parsed, target):
                 for x in subs:
                     if not x.targets and x.kind != 'use':
                         x.targets.add(major)
+            changed = True
+            while changed:
+                changed = False
+                for it in list(main) + [s for (_, ss) in inner.values() for s in ss]:
+                    if not it.targets:
+                        continue
+                    for x in refs_of(it):
+                        # A replacement stays in its own unit (others import it).
+                        if x.kind == 'fn' and target.get((m, x.name)):
+                            continue
+                        if not it.targets <= x.targets:
+                            x.targets |= it.targets
+                            changed = True
+                # impl blocks follow their type or trait (and pull in what they use).
+                for it in main:
+                    if it.kind == 'impl':
+                        for r in [it.name[1]] + [r for r in it.refs if byname.get(r) and any(x.kind == 'trait' for x in byname[r])]:
+                            for x in byname.get(r, []):
+                                if not x.targets <= it.targets:
+                                    it.targets |= x.targets
+                                    changed = True
+            for mname, (mit, subs) in inner.items():
+                for x in subs:
+                    if not x.targets and x.kind != 'use':
+                        x.targets.add(major)
             if tests:
                 for x in tests[1]:
                     if not x.targets and x.kind != 'use':
@@ -657,9 +684,38 @@ def build(parsed, allov, target, seed=None):
             for it in subs:
                 if isinstance(it.name, str) and it.kind != 'use':
                     U['inner'][mname]['names'][it.name] = ('<existing>', norm(it.text()))
+        for mname, (_, subs) in inner_.items():
+            for it in subs:
+                if it.kind == 'use':
+                    out = []
+                    parse_use_tree(re.sub(r'^(pub(\([^)]*\))?\s+)?use\s+', '', it.body.strip()).rstrip(';'), [], out)
+                    for p_, a_, n_ in out:
+                        if n_ and not p_.endswith('*'):
+                            U['inner'][mname]['names'].setdefault(n_, ('<import>', None))
+        for it in main_:
+            if isinstance(it.name, str) and it.kind not in ('use', 'impl'):
+                U['tnames'].setdefault(it.name, ('<import>', None))
+        for mname in inner_:
+            U['tnames'].setdefault(mname, ('<import>', None))
         for it in (tests_[1] if tests_ else []):
             if isinstance(it.name, str) and it.kind != 'use':
                 U['tnames'][it.name] = ('<existing>', norm(it.text()))
+        for it in main_:
+            if it.kind == 'use':
+                out = []
+                parse_use_tree(re.sub(r'^(pub(\([^)]*\))?\s+)?use\s+', '', it.body.strip()).rstrip(';'), [], out)
+                for p_, a_, n_ in out:
+                    if n_ and not p_.endswith('*'):
+                        U['names'].setdefault(n_, ('<import>', None))
+                        U.setdefault('imp', {}).setdefault(n_, p_)
+        for it in (tests_[1] if tests_ else []):
+            if it.kind == 'use':
+                out = []
+                parse_use_tree(re.sub(r'^(pub(\([^)]*\))?\s+)?use\s+', '', it.body.strip()).rstrip(';'), [], out)
+                for p_, a_, n_ in out:
+                    if n_ and not p_.endswith('*'):
+                        U['tnames'].setdefault(n_, ('<import>', None))
+                        U.setdefault('timp', {}).setdefault(n_, p_)
     unassigned = []
     # Names each target imports (from any contributing module): a local item
     # with such a name is renamed, so both stay usable.
@@ -724,9 +780,26 @@ def build(parsed, allov, target, seed=None):
         for it in main:
             alltargets |= it.targets
         pubfns = {it.name: it for it in main if it.kind == 'fn' and it.body.lstrip().startswith('pub')}
+        modimp = set(); tmodimp = set()
+        for it in main:
+            if it.kind == 'use':
+                out = []
+                parse_use_tree(re.sub(r'^(pub(\([^)]*\))?\s+)?use\s+', '', it.body.strip()).rstrip(';'), [], out)
+                modimp |= {n for p, a, n in out if n and not p.endswith('*')}
+        if tests:
+            for it in tests[1]:
+                if it.kind == 'use':
+                    out = []
+                    parse_use_tree(re.sub(r'^(pub(\([^)]*\))?\s+)?use\s+', '', it.body.strip()).rstrip(';'), [], out)
+                    tmodimp |= {n for p, a, n in out if n and not p.endswith('*') and not p.startswith('super')}
         for t in sorted(alltargets):
             U = units[t]
             ren = {}
+            for nm_ in modimp:
+                U['names'].setdefault(nm_, ('<import>', None))
+            if tests and any(t in s_.targets for s_ in tests[1] if s_.kind == 'fn'):
+                for nm_ in tmodimp:
+                    U['tnames'].setdefault(nm_, ('<import>', None))
             # First pass: names and clashes.
             def claim(names, it, key):
                 nm = it.name
@@ -786,6 +859,47 @@ def build(parsed, allov, target, seed=None):
             for mname in inner_imported:
                 for k_, v_ in inner_tok[mname].items():
                     top.setdefault(k_, v_)
+            def alias_imports(items, impkey, namekey, rmap, test_scope):
+                imp = U.setdefault(impkey, {})
+                names_ = U[namekey]
+                lines = []
+                for it in items:
+                    if it.kind != 'use':
+                        continue
+                    b_ = it.body.strip()
+                    mm_ = re.match(r'(?:pub(?:\([^)]*\))?\s+)?use\s+(?:self::)?([A-Za-z_][A-Za-z0-9_]*)::', b_)
+                    if not test_scope and mm_ and mm_.group(1) in inner:
+                        lines.append(f'use {mm_.group(1)}::*;')
+                        continue
+                    attr = '#[cfg(test)]\n' if '#[cfg(test)]' in it.pre else ''
+                    mv = re.match(r'(pub(?:\([^)]*\))?\s+)', b_)
+                    vis = mv.group(1) if mv else ''
+                    out = []
+                    parse_use_tree(re.sub(r'^(pub(\([^)]*\))?\s+)?use\s+', '', b_).rstrip(';'), [], out)
+                    for p_, a_, n_ in out:
+                        if not n_ or p_.endswith('*') or p_.startswith(('super', 'self')):
+                            lines.append(attr + vis + 'use ' + p_ + (f' as {a_}' if a_ else '') + ';')
+                            continue
+                        cur = imp.get(n_)
+                        defined = n_ in names_ and names_[n_][0] != '<import>'
+                        if cur == p_ and not defined:
+                            continue
+                        if cur is None and not defined:
+                            imp[n_] = p_
+                            lines.append(attr + vis + 'use ' + p_ + (f' as {n_}' if n_ != p_.split('::')[-1] else '') + ';')
+                            continue
+                        k = 2
+                        while f'{n_}_m{k}' in names_ or f'{n_}_m{k}' in imp:
+                            k += 1
+                        nn = f'{n_}_m{k}'
+                        imp[nn] = p_
+                        names_[nn] = ('<import>', None)
+                        rmap[n_] = nn
+                        ALIASED.append(('/'.join(t), m, impkey, n_, nn, p_, cur))
+                        lines.append(attr + vis + 'use ' + p_ + f' as {nn};')
+                return lines
+            top_lines = alias_imports(main, 'imp', 'names', top, False)
+            test_lines = alias_imports(tests[1], 'timp', 'tnames', tst, True) if tests and any(t in s_.targets for s_ in tests[1] if s_.kind == 'fn') else []
             tok = top
             def emit(lst, it, key):
                 if it.name and not isinstance(it.name, tuple) and (key + it.name) in drop:
@@ -815,14 +929,7 @@ def build(parsed, allov, target, seed=None):
                     txt = make_shared(txt, it)
                 lst.append(txt)
             # Uses (all of the module's, deduplicated later).
-            for it in main:
-                if it.kind == 'use':
-                    b_ = it.body.strip()
-                    mm_ = re.match(r'(?:pub(?:\([^)]*\))?\s+)?use\s+(?:self::)?([A-Za-z_][A-Za-z0-9_]*)::', b_)
-                    if mm_ and mm_.group(1) in inner:
-                        # Its own inner module: all of it (renamed items included).
-                        b_ = f'use {mm_.group(1)}::*;'
-                    U['uses'].append(b_)
+            U['uses'] += top_lines
             for it in main:
                 if t in it.targets and it.kind != 'use' and it.name != 'OVERRIDES':
                     emit(U['items'], it, '')
@@ -838,10 +945,9 @@ def build(parsed, allov, target, seed=None):
             if tests:
                 tit, subs = tests
                 if any(t in s.targets for s in subs if s.kind == 'fn'):
+                    U['tuses'] += test_lines
                     for s in subs:
-                        if s.kind == 'use':
-                            U['tuses'].append(s.body.strip())
-                        elif t in s.targets:
+                        if s.kind != 'use' and t in s.targets:
                             emit(U['titems'], s, 'tests::')
             for f, (a, n) in ovs.items():
                 it = next((x for x in main if x.name == f), None)
@@ -1188,6 +1294,8 @@ def main():
     elif cmd == 'apply':
         written, unassigned = apply(mods)
         print(len(written), 'units written')
+        for a in ALIASED:
+            print('aliased import:', *a)
         for u in unassigned:
             print('unassigned:', *u)
 
