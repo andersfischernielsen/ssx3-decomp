@@ -1,4 +1,4 @@
-//! Work package E7 replay, scripts, game module (docs/investigation/phase2-candidates-3.md).
+//! Work package E7 replay, scripts, game module (eaaa404^:docs/investigation/phase2-candidates-3.md).
 //!
 //! Hand-written, typed replacements for replay / WScript / game-module
 //! functions, each with a differential test against the generated body.

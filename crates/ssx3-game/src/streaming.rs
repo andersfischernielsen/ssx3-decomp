@@ -1,4 +1,4 @@
-//! Work package E6 file & stream I/O (docs/investigation/phase2-candidates-3.md).
+//! Work package E6 file & stream I/O (eaaa404^:docs/investigation/phase2-candidates-3.md).
 //!
 //! Hand-written, typed replacements for the generated file/stream functions,
 //! each with a differential test against the generated body.

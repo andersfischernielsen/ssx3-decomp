@@ -382,7 +382,7 @@ fn q_wait_prog(lower: u32) -> [(u32, u32); 4] {
     ]
 }
 
-/// Regression (race "girders", `docs/investigation/race-geometry.md`): a
+/// Regression (race "girders", `eaaa404^:docs/investigation/race-geometry.md`): a
 /// WAITQ stalls its whole pair *before* the upper op, so an upper op reading
 /// Q in the WAITQ pair sees the new Q (PCSX2 microVU `mVU_WAITQ` pass 1
 /// folds the wait into the pair stall; the interpreter tests lower stalls
@@ -451,7 +451,7 @@ fn waitq_translation_stalls_before_upper() {
 /// Clip flags reach FC* ops 4 cycles after CLIP, like MAC/status (PCSX2
 /// microVU and interpreter). With 3, VU0's bounding-box test (`27649fa5`
 /// 0x0570: CLIP a, CLIP b, then FCGET 4 and 3 pairs later) saw only half of
-/// the box corners and culled visible meshes (`race-geometry.md`).
+/// the box corners and culled visible meshes (`eaaa404^:docs/investigation/race-geometry.md`).
 #[test]
 fn clip_flags_visible_after_four_cycles() {
     let clip = |fs: u32, ft: u32| 0x01c0_0000 | ft << 16 | fs << 11 | 0x1ff; // CLIPw.xyz

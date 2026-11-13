@@ -1,5 +1,5 @@
 //! Work package D5: world, sections & process lists
-//! (`docs/investigation/phase2-candidates-2.md`, structs in
+//! (`eaaa404^:docs/investigation/phase2-candidates-2.md`, structs in
 //! `docs/investigation/structs/world.md`).
 //!
 //! The per-frame drivers of the course: the GameProcess priority lists

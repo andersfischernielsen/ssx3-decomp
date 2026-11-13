@@ -1,6 +1,6 @@
 //! Slot 95 `DrawModel` (0x37e238) without packets: the model's matrices,
 //! lighting and render state as the generated code computes them
-//! (`docs/investigation/n2-capture/models.md`), the mesh chain by address.
+//! (`eaaa404^:docs/investigation/n2-capture/models.md`), the mesh chain by address.
 
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;

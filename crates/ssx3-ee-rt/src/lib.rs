@@ -15,7 +15,7 @@
 //! the generated crates depend only on this crate, a change to the hardware
 //! model rebuilds `ssx3-ps2` and relinks; it does not recompile the ~80 MB
 //! of generated code. Keep this crate small and change it rarely:
-//! `docs/investigation/crate-split.md`.
+//! `docs/archive/crate-split.md`.
 
 pub mod bus;
 pub mod cop2;

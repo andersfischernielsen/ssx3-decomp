@@ -1,4 +1,4 @@
-//! Work package D7: the audio system (`docs/investigation/phase2-candidates-2.md`,
+//! Work package D7: the audio system (`eaaa404^:docs/investigation/phase2-candidates-2.md`,
 //! names from `docs/investigation/naming.md` pass 3).
 //!
 //! Two layers of the game's audio:

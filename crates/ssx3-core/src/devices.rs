@@ -9,7 +9,7 @@
 //! `false` (writes) so the runtime can log them instead of silently
 //! swallowing state.
 //!
-//! The layout is transcribed from `docs/ps2-bible.md` ("PS2 EE Hardware
+//! The layout is transcribed from `docs/archive/ps2-bible.md` ("PS2 EE Hardware
 //! Register Map"), which in turn cites the EE User's Manual. Only the pieces
 //! the game actually touches are modelled; the rest of the window (VIF, GIF,
 //! IPU, SIF, ...) is handled elsewhere or left for later.
@@ -49,7 +49,7 @@ pub mod timer_reg {
     pub const HOLD: u32 = 0x30;
 }
 
-/// Bit fields of a timer's `MODE` register (`docs/ps2-bible.md`).
+/// Bit fields of a timer's `MODE` register (`docs/archive/ps2-bible.md`).
 pub mod timer_mode {
     /// Count-up enable: `0` stops the counter, `1` starts/restarts it.
     pub const CUE: u32 = 1 << 7;

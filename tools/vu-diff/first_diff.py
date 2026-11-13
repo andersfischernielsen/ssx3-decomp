@@ -78,7 +78,7 @@ def words(line):
 
 
 def classify(key, hist_keys, diffs):
-    """Known ps2-web-recomp vs PCSX2 differences (see vu-differential.md)."""
+    """Known ps2-web-recomp vs PCSX2 differences (see `git show eaaa404^:docs/investigation/vu-differential.md`)."""
     hdr = [d for d in diffs if " vi " in d]
     regs = [d for d in diffs if " vi " not in d]
     pairs = []

@@ -1,5 +1,5 @@
 //! Work package D2 skeleton, animation & VU0 math
-//! (docs/investigation/phase2-candidates-2.md, "D2"; layouts from
+//! (eaaa404^:docs/investigation/phase2-candidates-2.md, "D2"; layouts from
 //! docs/investigation/structs/rider.md).
 //!
 //! The rider's skeleton lives in a `RiderModel`: per bone a local

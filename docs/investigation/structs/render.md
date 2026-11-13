@@ -43,7 +43,7 @@ Renderer_DmaKickThread (0x382760, prio 5)
 
 The GIF channel carries only texture uploads (PATH3, one packet per texture). The
 VIF1 chain unmasks PATH3 just before the draws that need each texture; see
-`race-textures.md`. Both chains run in two phases. Between the phases the CPU
+`eaaa404^:docs/investigation/race-textures.md`. Both chains run in two phases. Between the phases the CPU
 callback at gm+0x6d0c runs (live: 0x2e3110, the LensFX/flare code; set through
 slot 117 by `LensFXBase_ctor`).
 
@@ -294,7 +294,7 @@ bucket whose type is not 0, before the GS register block:
 The jump table is at 0x492040 (9 entries; 0 and 8 return). "Header" is VU1 data memory from
 address 0, written with `UNPACK V4-32` (no FLG), `M` = the current MatrixRecord.
 
-| type | microprogram (`.vutext` chain -> code, hash in `vu-vif.md`) | BASE / OFFSET | mode-0 header | mode-1 header | used by | conf |
+| type | microprogram (`.vutext` chain -> code, hash in `../../archive/vu-vif.md`) | BASE / OFFSET | mode-0 header | mode-1 header | used by | conf |
 |---|---|---|---|---|---|---|
 | 1 | CALL 0x42e590 -> 0x42e5b4 `f4babac5` (1172 pairs) | 0x250 / 0xd8 | qw0-5 = M.worldView, M.guardScale, M.guardOffset; then `REF 0x44b080` (12 qw): UNPACK 11 at 6 = colour (0x80 x4), 4 GIF tags {strip ctx1 `0x302e4000`, strip ctx2 `0x312e4000`, fan ctx1 `0x302ec000`, fan ctx2 `0x312ec000`, all NREG 3 REGS 0x412 = ST,RGBAQ,XYZ2}, 6 qw of integer tessellation tables (per LOD n = 2,3,4: n, n-1, ...) | qw0-5 | Bezier terrain patches, `PS2BezierMan` vt 18 (0x38b370) via `FUN_0038ca70` | H |
 | 2 | CALL 0x430a80 -> 0x430aa4 `9790369f` (2005 pairs) | 0x250 / 0xd8 | qw0-5 as type 1, qw6 colour, qw7-10 the same 4 GIF tags; then UNPACK 42 qw at 0x200: 18 qw from `*(gp+0x1158)+0x1a0`, 18 qw from `+0x320` (REF tags), 3 qw {0x200,0x212,k,k} {0x204,0x216,..} {0x20a,0x21c,..} with k = 1/3, 1/5, 1/7 (gp-0x28a8..) | qw0-5 | second Bezier pass (two textures: ctx1 + ctx2), `FUN_0038ce20` | H (layout) / L (meaning of the 0x200 block) |
@@ -304,7 +304,7 @@ address 0, written with `UNPACK V4-32` (no FLG), `M` = the current MatrixRecord.
 | 6 | CALL 0x434990 -> 0x4349b4 `9fa47842` (576 pairs) | 0xc0 / 0x169 | qw0-5 as type 1; then UNPACK 4 at 0x392 (FLG): GIF tag strip ctx2 (`0x312e4000`, REGS 0x412) + 3 qw = rows of (bias matrix 0x4ffb80 {0.5,-0.5 ,.., 0.5,0.5,1,1} x M) (texture-projection / env map for context 2); then `CALL w3` | same as mode 0 | lit skinned models (slot 99 with slot 124's lighting packet) | H |
 | 7 | CALL 0x434990 (same program as 6) | 0xc0 / 0x169 | no header; `CALL w3` (the 6-qword header from slot 101) | `CALL w3` | skinned model shadow (slot 100 after slot 101) | H |
 
-`0x43bd34` (`27649fa5`) is not referenced here; it is the VU0 bounding-box test (see `race-geometry.md`).
+`0x43bd34` (`27649fa5`) is not referenced here; it is the VU0 bounding-box test (see `eaaa404^:docs/investigation/race-geometry.md`).
 
 Live (stale records of frame 5000 in the headless dump): type 0: 238 records, 1: 2, 2: 24, 3: 94, 4: 16, 6: 43
 (w3 = 0x6241c0), 7: 4 (w3 = 0x631e30); type 5 not drawn in that frame.
@@ -375,7 +375,7 @@ MSCAL addresses are byte addresses in the program of that material type. Unless 
 | 85 / 86 | 0x381310 / 0x3816f0 | DrawTrail / DrawTrailB | 5 | VU1 | sort mode 2; UNPACK V4-32 FLG 11 at 0: 4 qw (viewProj x d+0x50 matrix), 2 qw constants, 5 qw from the descriptor | by the program | 0x0 (85) / 0x408 (86) | H |
 | 87 | 0x382170 | DrawCircle(radius, centre, colour, step) | — | via 73 | 16-segment unit circle (0x4ffbc0) scaled on VU0; push/identity/pop matrix, then slot 73 | as 73 | — | H |
 | 89 | 0x386e78 | DrawShadowVolume (proposed; was "DrawShadow/decal") | 3 | VU1 + DIRECT | several passes: DIRECT A+D FRAME_1 (FBMSK 0x00ffffff: alpha only), ZBUF (ZMSK), TEST (ZTST changes 1/2/3), FBA_1; STCYCL 1,1 UNPACK 2 at 4 = guardScale/Offset; mesh passes `FUN_00386d10` -> `FUN_00387ec0` and five `FUN_00386dd0(a, b)` edge passes | strip `0x302e4000`/REGS 0x412 inside the helpers | via helpers (see `FUN_00387ec0`) | M |
-| 90 | 0x3883b8 | DrawBoardWake (cBoardWakeFX) | 3 | VU1 | `FUN_003885e0`: UNPACK V4-32 FLG 2 at 0 (GIF tag + count) then per strip STCYCL 1,1 + UNPACK of 3 qw/vertex | 0x5c strip, REGS 0x412 | 0x3a00 / 0x3a08 (the near-plane clipping entry, see `race-geometry.md`) | H |
+| 90 | 0x3883b8 | DrawBoardWake (cBoardWakeFX) | 3 | VU1 | `FUN_003885e0`: UNPACK V4-32 FLG 2 at 0 (GIF tag + count) then per strip STCYCL 1,1 + UNPACK of 3 qw/vertex | 0x5c strip, REGS 0x412 | 0x3a00 / 0x3a08 (the near-plane clipping entry, see `eaaa404^:docs/investigation/race-geometry.md`) | H |
 | 95 | 0x37e238 | DrawModel (MeshAnim, SkyBox, ModObj) | 3 | VU1 | `FUN_0037e120`: CNT 6: STMASK 0, STCYCL 1,1, UNPACK V4-32 FLG 5 at 0 = model matrix + {0,0,0,flags}; optional extras (`FUN_0037e040`, UNPACK 4 at 5); then DMA `CALL` the mesh packet (REF vertex data, `UNPACK V4-5` colours, `MSCAL 0x2270`, ITOP) | in the prebuilt packet | 0x2270 (live CALL target 0x1095ba0: `MSCAL 0x44e`) | H |
 | 96 | 0x369cb0 | DrawModelSimple -> 95 | 3 | | | | | H |
 | 99 | 0x37a610 | DrawSkinnedModel (rider) | 6 (via 124) | VU1 | per bone batch: CNT 4n+2: STCYCL 1,1, UNPACK V4-32 4n at 0x11 (bone matrices), `UNPACK S-32 1 at 0x3ff = n`, `MSCAL 0x80`, `MSCAL 0x70`; per mesh DMA `CALL` to the mesh packets; morph targets: `UNPACK V2-32 FLG 1 at 0xb4` {12800.0, weight} + `MSCAL 0x398` | in the mesh packets | 0x80, 0x70, 0x398 | H |

@@ -19,7 +19,7 @@
 //! The [`Gs`] receives exactly the same calls in the same order as without
 //! the thread, so its output (VRAM, display, captures) is identical.
 //! `SSX3_MTGS=0` runs every call synchronously on the guest thread.
-//! See `docs/investigation/gs-mtgs.md`.
+//! See `docs/archive/gs-mtgs.md`.
 
 use std::collections::VecDeque;
 #[cfg(feature = "emu-gs")]

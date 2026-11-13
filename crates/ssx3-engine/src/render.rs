@@ -4,7 +4,7 @@ use ssx3_ps2::Cpu;
 
 use crate::Settings;
 
-/// The draw-layer renderer (`ssx3-gfx`, `docs/plans/phase3-draw-layer.md`),
+/// The draw-layer renderer (`ssx3-gfx`, `eaaa404^:docs/plans/phase3-draw-layer.md`),
 /// by `SSX3_RENDER`:
 /// - `native` (default): it draws every frame the game publishes and is
 ///   shown; the emulated GS keeps running everything but rasterizing while

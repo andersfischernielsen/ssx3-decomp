@@ -1,6 +1,6 @@
 //! VU program invocation recorder, for differential testing against an
 //! independent VU interpreter (`tools/vu-diff/`, see
-//! `docs/investigation/vu-differential.md`).
+//! `eaaa404^:docs/investigation/vu-differential.md`).
 //!
 //! `SSX3_VU_CAPTURE=<path>:<max>[:<from_frame>[:<stride>[:<to_frame>]]]` appends one
 //! [`Record`] per captured MSCAL/MSCNT (VU1, via the VIF) or VCALLMS (VU0) to

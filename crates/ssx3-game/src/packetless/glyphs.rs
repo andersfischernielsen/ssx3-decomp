@@ -1,6 +1,6 @@
 //! Font glyphs (slots 80 `DrawGlyphs`, 81 `DrawGlyphsW`) without packets:
 //! the glyph sprites as the GIF data the generated bodies send `DIRECT`
-//! (`docs/investigation/n2-capture/direct2d.md` §6), one `Step::Gif`.
+//! (`eaaa404^:docs/investigation/n2-capture/direct2d.md` §6), one `Step::Gif`.
 
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;

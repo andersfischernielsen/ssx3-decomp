@@ -679,7 +679,7 @@ impl Emitter<'_> {
         // A Q wait (WAITQ, or DIV/SQRT/RSQRT behind a pending one) stalls
         // the whole pair before its upper op, so an upper reading Q here sees
         // the new Q (PCSX2; SSX 3's near-plane clipper relies on it, see
-        // `docs/investigation/race-geometry.md`).
+        // `eaaa404^:docs/investigation/race-geometry.md`).
         if p.lower.as_ref().is_some_and(lower_waits_q) {
             o(out, "vu.stall_q();");
         }

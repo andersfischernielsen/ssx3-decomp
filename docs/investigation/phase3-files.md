@@ -1,14 +1,14 @@
-# Phase 3, subsystem 1: native files
+# Native files
 
 Game files come from the host through `std::fs` instead of the emulated CD
-(`crates/ssx3-game/src/native_files.rs`). This is the first phase 3 subsystem;
-`phase3-boundaries.md` §1 explains how the seam was chosen.
+(`crates/ssx3-game/src/native_files.rs`; on by default). How the seam was chosen:
+`../archive/phase3-boundaries.md` §1.
 
 ## Use
 
 | Variable | Effect |
 |---|---|
-| `SSX3_NATIVE_FILES=1` | Turn native files on (off by default, so the default path stays byte-identical). |
+| `SSX3_NATIVE_FILES=0` | The emulated CD instead (the default is native files). |
 | `SSX3_DATA_DIR=<dir>` | Read from an extracted or mounted copy of the disc (any case: `DATA/UI/...` matches `data/ui/...`). Files can be replaced on the host. If the directory does not exist, the game keeps the emulated CD. |
 | (neither) | Read from the disc image by ISO9660 name (`SSX3_ISO`, default `SSX 3 (USA).iso`). |
 | `SSX3_FILE_LOG=<file>` | In either mode, log every completed read as `name offset size fnv64`. Compare two logs with `tools/compare-file-logs.py`. |
@@ -46,26 +46,17 @@ guest threads (host-thread unwind), the generated body therefore resumes and
 returns correctly. A read parked at that moment is finished by the next
 `EAFile_HostReadService`, the timer task that runs every frame.
 
-## Verification
+## Verification (2026-10-15)
 
-Run the race script to frame 5000 with emulated and with native files, and
-compare the two `SSX3_FILE_LOG` logs (2026-10-15):
-
-- **Reads:** 975 reads (909 distinct) in each run, with **0 content mismatches**. Only the
-  order differs, because native reads complete sooner.
-- **Race:** the native run reaches the same race at the same time. Frame 5000 shows the same
-  scene with small rider position differences, from load timing.
-- **Source:** a run from a mounted copy of the disc (`SSX3_DATA_DIR=/Volumes/SSX3`) is
-  byte-identical to a run from the image at frame 5000. Native runs are deterministic.
-- **Full race:** to frame 9000, both runs complete the race with no misses and no halts. 1,021 distinct reads are common to both, with 0 content mismatches. The roughly 30 reads seen in only one run are music-stream positions and speech lines, which differ because play diverged slightly.
-- **Emulated CD traffic:** 2,101 `sceCdRead` RPCs in the emulated run, 20 single sectors in
-  the native one.
-- **Default path:** without the variables, the override A/B replay stays byte-identical.
+A race to frame 9000 with emulated and with native files: every read identical in
+content (`SSX3_FILE_LOG` logs, `tools/compare-file-logs.py`), only the order differs
+(native reads complete sooner); a run from a mounted copy of the disc is byte-identical
+to one from the image.
 
 ## What still goes through the emulated CD
 
 `EAFile_CdInit` at boot still runs: `sceCdInit`, disc type, TOC, and its walk
-of the disc's directories into the CD name table (the 20 sectors above).
+of the disc's directories into the CD name table (about 20 sectors).
 
 The walk cannot simply be skipped: `EAFile_CdInit` returns the number of
 entries, and startup treats 0 as "no file system". Removing it means either
@@ -73,10 +64,4 @@ overriding `EAFile_CdInit` (and the CD read thread it starts) or filling the
 table natively. Neither is needed for correctness.
 
 Movies (`AV_Player`) and streams (`SNDSTRM`) read through `StreamFile` →
-EAFile, so they are native already. The memory card is a separate path (SIO2).
-
-## Next
-
-Make native files the default once the windowed game has been played through
-with it; extract `DATA/` with a tool (`tools/extract-from-iso.sh` only takes
-the ELF); then the frame loop and sound (`phase3-boundaries.md` §2-3).
+EAFile, so they are native already. The memory card is a separate path (`ssx3-mc`).

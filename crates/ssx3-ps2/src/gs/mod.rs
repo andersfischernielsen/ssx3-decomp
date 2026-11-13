@@ -12,7 +12,7 @@
 //! - `display(&mut out) -> (w, h)`: RGBA8 image of what PMODE/DISPFB/DISPLAY show.
 //! - `read_local(...)`: local->host transfer (TRXDIR=1) output, drained by GIF FIFO reads.
 //!
-//! Implementation: a CPU software GS. See `docs/investigation/gs.md`.
+//! Implementation: a CPU software GS. See `docs/archive/gs.md`.
 //! Swizzle tables and several semantics are ported from ps2-web-recomp
 //! (MIT, https://github.com/snuri00/ps2-web-recomp) and PCSX2 GSdx behaviour.
 #![cfg_attr(not(feature = "emu-gs"), allow(dead_code))]

@@ -399,7 +399,7 @@ impl<'a> Emit<'a> {
             }
 
             // 128-bit pair loads/stores: approximated to the low 64 bits (see
-            // docs/investigation/codegen.md).
+            // docs/archive/recompiler.md, "The first code generator").
             ("lq", Mem { rt, rs, offset }) => {
                 self.line(
                     pc,
@@ -569,7 +569,7 @@ impl<'a> Emit<'a> {
         match inst.operands {
             Cop1Arith { fd, fs, ft } => {
                 // NOTE: adda/suba/mula/diva are approximated as their non-accumulating
-                // forms; see docs/investigation/fpu.md.
+                // forms; see docs/archive/recompiler.md ("FPU (COP1) lowering").
                 let expr = match base {
                     "add" | "adda" => "a + b",
                     "sub" | "suba" => "a - b",

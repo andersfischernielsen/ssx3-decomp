@@ -1,0 +1,6 @@
+# Kept out of ripgrep (and so out of agents' Grep) but not out of git.
+# The generated EE/IOP/VU code is already skipped through .gitignore.
+# Name lookups stay searchable in generated/functions.tsv and
+# generated/discovered-names.tsv; these two repeat them.
+/generated/functions.json
+/generated/boundaries.tsv

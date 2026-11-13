@@ -1259,7 +1259,7 @@ fn gm_of(c: &mut Cpu) -> u32 {
 }
 
 /// Draw functions whose packets are captured through the records they
-/// write (`capture_records`; specs in `docs/investigation/n2-capture/`).
+/// write (`capture_records`; specs in `eaaa404^:docs/investigation/n2-capture/`).
 macro_rules! record_captures {
     ($($name:ident = $shard:ident :: $f:ident; $doc:literal)*) => {
         $(

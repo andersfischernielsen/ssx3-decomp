@@ -1,5 +1,5 @@
 //! Work package E2: `SSXAudioSystem` and the bank monitors
-//! (`docs/investigation/phase2-candidates-3.md`).
+//! (`eaaa404^:docs/investigation/phase2-candidates-3.md`).
 //!
 //! The main-thread side of SSX 3's audio, above the EA sound driver:
 //!

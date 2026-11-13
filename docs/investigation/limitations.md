@@ -12,7 +12,8 @@
   `docs/plans/configurable-tick-rate.md`).
 - Paths never scripted are covered only by the hand-written functions'
   differential tests and random menu input
-  ([`coverage.md`](coverage.md), `tools/scenarios.py`).
+  (`tools/scenarios.py`; the phase-1 coverage log is
+  [`../archive/coverage.md`](../archive/coverage.md)).
 
 ## Runtime
 
@@ -30,7 +31,8 @@
 
 ## Hand-written code
 
-- 5,092 of 11,844 functions are installed as typed Rust; about 200 more are
+- About half of the 11,844 functions are installed as typed Rust (current
+  share: the README's progress chart, `tools/progress.py`); some more are
   written but not installed (fixtures could not reach their real paths, or
   a replay showed a difference). Installed ports keep the generated code's
   registers and cycles exactly; most are not yet "modern" Rust (they still

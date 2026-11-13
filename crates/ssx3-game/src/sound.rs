@@ -1,5 +1,5 @@
 //! Work package A5: sound, streaming and files
-//! (`docs/investigation/phase2-candidates.md`, names from
+//! (`eaaa404^:docs/investigation/phase2-candidates.md`, names from
 //! `docs/investigation/naming.md` pass 3).
 //!
 //! The EA sound driver's bookkeeping (voice handles, intrusive lists, banks,

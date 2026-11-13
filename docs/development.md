@@ -13,7 +13,7 @@ CARGO_TARGET_DIR=target-unwind cargo build --profile game -p ssx3 --bin ssx3-hea
 
 Regenerate after editing `crates/ssx3-game/overrides.txt` (a new override
 slot) or the recompiler. A change to `ssx3-ee-rt` recompiles all generated
-crates (`investigation/crate-split.md`).
+crates (`archive/crate-split.md`).
 
 **Machine limits (8 GB):** one heavy process at a time: a build (`-j 4`) or
 one headless run, never two runs or a run during a build.
@@ -140,4 +140,4 @@ Optional: the function inventory (`generated/functions.tsv`) is committed.
 4. `tools/import-ghidra-names.py` imports the project's names; with the
    GhidraMCP plugin running, `tools/export-ghidra-functions.py` writes them
    back to `generated/functions.{json,tsv}`. See
-   [`investigation/ghidra-mcp.md`](investigation/ghidra-mcp.md).
+   [`investigation/tools.md`](investigation/tools.md).

@@ -91,7 +91,7 @@ emulated reference paths: [`docs/options.md`](docs/options.md).
 | `ssx3-engine` | The game as a library: boot, input, stepping and pacing, the renderer, lifecycle (pause, audio suspend). Every front end drives it; see [`docs/frontends.md`](docs/frontends.md). |
 | `ssx3` | Desktop front ends on `ssx3-engine`: the windowed `ssx3` (winit + wgpu + gilrs) and `ssx3-headless`. |
 | `ssx3-game` | The code ported to Rust: game functions in `src/game/<dir>/<unit>.rs` after the C++ source tree, each checked against the generated one; the native draw functions (`packetless`), native libmpeg (`movie.rs`), the native file layer, the tick rate (`tick.rs`). |
-| `ssx3-recomp` | The function inventory, the R5900 decoder, and `recomp-ee`: ~808k instructions in 13.3k functions lowered to structured Rust, sharded into 16 crates under `generated/ee/`. `recomp-iop` does the same for the game's IOP modules. See [`docs/investigation/recompiler-v2.md`](docs/investigation/recompiler-v2.md). |
+| `ssx3-recomp` | The function inventory, the R5900 decoder, and `recomp-ee`: ~808k instructions in 13.3k functions lowered to structured Rust, sharded into 16 crates under `generated/ee/`. `recomp-iop` does the same for the game's IOP modules. See [`docs/archive/recompiler.md`](docs/archive/recompiler.md). |
 | `ssx3-ee-rt` | The EE core the generated code compiles against: `Cpu`, instruction semantics (MMI, bit-exact PS2 float), guest memory, the function table, the `Platform` trait. Kept small so hardware changes never recompile generated code. |
 | `ssx3-ps2` | The platform (`Machine`): an HLE EE kernel (threads, semaphores, alarms), the hardware registers the game touches, SIF and the native IOP services, the frame sink and native DMA kick; the emulated GS, VIF and IPU for the reference path. |
 | `ssx3-gfx` | The native renderer (wgpu): typed frames from the game's draws, the VU1 programs on CPU/GPU, post passes, modern graphics options. |
@@ -128,7 +128,8 @@ Mostly Python 3, run from the repository root.
 
 ## Contributing
 
-- Docs: [`docs/architecture.md`](docs/architecture.md) (how it fits together),
+- Docs: [`docs/README.md`](docs/README.md) (the map: what each doc is for and whether it
+  is current), [`docs/architecture.md`](docs/architecture.md) (how it fits together),
   [`docs/development.md`](docs/development.md) (headless runs, verification, debugging,
   Ghidra), [`docs/plans/`](docs/plans/) (roadmap and active plans).
 - Porting functions to Rust:

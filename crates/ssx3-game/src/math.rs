@@ -1,7 +1,7 @@
 //! Work package A1 math: sin/cos/asin/atan, angle wrapping, 1-D noise, cubic
 //! spline segments, the multi-word random generator, libm bit helpers
 //! (`fabsf`, `floorf`, ...), 64-bit multiply
-//! (`docs/investigation/phase2-candidates.md`, package A1).
+//! (`eaaa404^:docs/investigation/phase2-candidates.md`, package A1).
 //!
 //! Everything here is COP1 (FPU) code: floats are [`FpuF32`] (truncating
 //! PS2 arithmetic, no inf/NaN, two roundings per multiply-add) and every

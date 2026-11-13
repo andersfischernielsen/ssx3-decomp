@@ -1,5 +1,5 @@
 //! Work package D6: frontend UI, fonts & HUD
-//! (`docs/investigation/phase2-candidates-2.md`; class notes in
+//! (`eaaa404^:docs/investigation/phase2-candidates-2.md`; class notes in
 //! `docs/investigation/naming.md`, "UI / front end").
 //!
 //! The UI engine runs a stack of `UIState`s (front-end menus, in-race

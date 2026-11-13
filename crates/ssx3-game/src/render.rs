@@ -1,5 +1,5 @@
 //! Work package A4: render packets and small graphics state
-//! (`docs/investigation/phase2-candidates.md`, layouts in
+//! (`eaaa404^:docs/investigation/phase2-candidates.md`, layouts in
 //! `docs/investigation/structs/render.md`).
 //!
 //! The renderer builds its GS register writes as A+D pairs (a 64-bit value

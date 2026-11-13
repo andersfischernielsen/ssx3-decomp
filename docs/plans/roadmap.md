@@ -2,207 +2,98 @@
 
 Goal: a complete decompilation of SSX 3 (`SLUS_207.72`) to Rust that runs
 natively, then becomes readable, typed Rust, and finally a native **port**
-(the PS2 hardware model replaced by host APIs at the game's own interfaces).
+with no PS2 machine emulation (`AGENTS.md`, "Goals").
 
 Agreed with the project owner on 2026-10-14. Order matters: each phase is
 the safety net for the next one (see "Verification" below).
 
 Status legend: ✅ done · 🟡 in progress · ⬜ not started
 
-## Where we are (2026-10-22)
+## Where we are
 
 | Layer | Today |
 | --- | --- |
-| Game logic (EE) | Statically compiled to Rust; 5,092 of 11,844 functions hand-written typed Rust (~90% of a race's per-frame work), the rest generated. Still PS2-shaped: register file, guest RAM, PS2 float rules. |
+| Game logic (EE) | Statically compiled to Rust; about half of it hand-written typed Rust (the README's progress chart, `tools/progress.py`), the rest generated. Still PS2-shaped: register file, guest RAM, PS2 float rules. |
 | Kernel | Native HLE: guest threads as coroutines on one host thread, semaphores, alarms, interrupts. |
-| Graphics | Native: the draw functions record typed draws, `ssx3-gfx` (wgpu) renders them. The emulated DMA/VIF/VU1/GS remain only for the reference path. |
+| Graphics | Native: the draw functions record typed draws, `ssx3-gfx` (wgpu) renders them. The emulated DMA/VIF/VU1/GS remain only for the reference path (`--features vu1-microcode`). |
 | Movies, sound, files, pads, memory card | Native (`ssx3-mpeg`, `ssx3-snd`, `std::fs`, native libpad/libmc). The IOP does not run. |
+| Game rate | Configurable (`SSX3_TICK_HZ`), bit-exact at 60: `configurable-tick-rate.md`. |
 
-Detailed status: `native-rendering.md` (N1-N6); next steps:
-`port-architecture.md`.
+Detailed status of the native work: `native-rendering.md` (N1-N6); runtime
+next steps: `port-architecture.md`; open issues:
+`../investigation/limitations.md`.
 
 ## Phase 1: full static recompilation, playable natively ✅
 
-Everything the game executes is statically translated; the game is playable on
-the owner's machine at full speed. Development and verification:
-`../development.md`.
-
-- ✅ EE: 13,306 functions translated, ~97% structured Rust; no runtime decode
-  (VU0 macro ops included). Runtime misses are recorded in
-  `generated/entries.txt` and translated on the next `recomp-ee`.
-- ✅ VU: all 7 microprograms translated (`generated/vu`).
-- ✅ IOP: SNDDRV, LIBSD, SIO2MAN, PADMAN, MCMAN, MCSERV recompiled; CD/file
-  servers are native stand-ins (firmware); network/USB modules stubbed.
-- ✅ Boot, movies, menus, memory-card save/load, a full Snow Jam race to the
-  results screen.
-- 🟡 Rendering correctness (stretched near-plane geometry: VU WAITQ stall fix
-  in progress, `race-geometry.md`).
-- 🟡 60 fps (GS on its own thread, `gs-mtgs.md`; VU done, `vu-performance.md`).
-- ⬜ Coverage: play every course, mode (career/progression, freestyle,
-  replays, other events), menu and option once, so every reachable function
-  has run at least once; fix whatever breaks.
-- ✅ Build times (`../investigation/crate-split.md`): generated code depends only
-  on `ssx3-ee-rt`; GS/kernel changes rebuild in seconds, VU in ~2.5 min.
-
-Done when: all courses and modes play correctly at 60 fps natively, with no
-misses, and visuals match PCSX2.
-
-Known issues parked by the owner (2026-10-15) so phase 2 can start: light
-glows and flares (sun, point lights) show through geometry
-(`../investigation/flare-occlusion.md`); (Multi Play done 2026-10-15:
-`SSX3_PAD2=1`, split-screen race works); race ~41 fps headless after the geometry fixes.
+Everything the game executes is statically translated (EE: 13,306 functions,
+mostly structured Rust, no runtime decode; VU microprograms; the IOP sound,
+pad and memory-card modules) and the game is playable at full speed: boot,
+movies, menus, memory-card save/load, every course and mode scripted in
+`tools/scenarios.py`. Runtime misses are recorded in `generated/entries.txt`
+and translated on the next `recomp-ee`. History: `../archive/` (recompiler,
+GS/VU/IOP models, build-time split, coverage).
 
 ## Phase 2: "Rust-ify": readable, typed source 🟡
 
-Progress (2026-10-15): override mechanism + differential tests
-(`../investigation/phase2-overrides.md`); 1,368 functions replaced by typed Rust,
-byte-identical; 9,715 of 11,844 functions named (pass 3); race-path structs
-mapped (`../investigation/structs/`).
-
 Turn machine-shaped Rust into source a person can read and change.
 
-1. Names: from ~4,300 of 13,306 named functions to all of them (Ghidra
-   passes, `naming.md`).
-2. Types for the core data structures, starting with those the race uses:
-   rider, camera, course/world objects, render packets/display lists, sound
-   events. Struct definitions in Rust; guest-memory accessors typed.
-3. Function signatures (arguments/returns from the MIPS ABI) instead of the
-   register file at call boundaries.
-4. Register promotion: guest registers → typed locals (SSA), so functions
-   stop reading/writing `c.g[...]` internally.
-5. Replace PS2 idioms with plain Rust where semantics allow (memcpy/memset,
-   string handling, fixed-point/float helpers), keeping bit-exactness where it
+1. ✅ Names: every function is named (Ghidra passes 1-5,
+   `../investigation/naming.md`).
+2. 🟡 Types for the core data structures (rider, camera, world, render,
+   input, app: `../investigation/structs/`); typed views in `ssx3-game`.
+3. 🟡 Hand-written replacements, one verified function at a time (the
+   porting loop in `AGENTS.md`; mechanism `../investigation/phase2-overrides.md`).
+4. ⬜ Function signatures (arguments/returns from the MIPS ABI) instead of
+   the register file at call boundaries.
+5. ⬜ Register promotion: guest registers → typed locals, so functions stop
+   reading/writing `c.g[...]` internally.
+6. ⬜ Replace PS2 idioms with plain Rust where semantics allow (memcpy/memset,
+   strings, fixed-point/float helpers), keeping bit-exactness where it
    matters.
 
 Done when: the subsystems in phase 3 have clear, typed interfaces.
-
-## Current order of work (owner decision, 2026-10-15)
-
-Phase 2 is not finished function by function before phase 3 starts. Phase 3
-only needs the game/hardware boundary understood and typed; inner code can stay
-generated. Order:
-
-1. **Finish the running OpenCode wave** (oc23-oc28), gate it (`cargo nextest`,
-   5 s per test), integrate what passes, replay, commit. No further bulk
-   OpenCode waves for now (OpenCode tokens are running low).
-2. **Name every remaining function** (~2,100 still `FUN_*` in Ghidra, 82%
-   named after pass 3): naming pass 4 with Ghidra; re-export
-   `generated/functions.tsv`; owner saves Ghidra.
-3. **Phase 3 groundwork:** a per-frame call graph and subsystem map
-   (rendering, files, sound, frame loop / threads), and **typed interfaces
-   for the boundary functions only** (where the game hands work to the
-   hardware: PS2GraphicsMan draw slots / packet builders / DMA kick, EAFile /
-   BigFile / CD, the SND API, GameModule / App frame loop). Inner code stays
-   generated.
-   Status (2026-10-15): boundary map `../investigation/phase3-boundaries.md`;
-   per-frame call graph `../investigation/frame-callgraph.md`; every function
-   named (passes 4-5).
-4. **Phase 3 subsystems**, one at a time, each checked against the emulated
-   path running side by side: files → `std::fs`, sound → native mixer, frame
-   loop → host timer, rendering → native draws (the 7 VU1 microprograms as
-   shaders or kept translated with only the GS replaced). Status (2026-10-16):
-   - **Files: done**, behind `SSX3_NATIVE_FILES=1`
-     (`../investigation/phase3-files.md`). Every read is identical to the
-     emulated CD through a full race.
-   - **Sound: done**, behind `SSX3_SND=native`
-     (`../investigation/phase3-sound.md`, crate `ssx3-snd`). The audio is
-     bit-identical to the recompiled IOP while the game state matches. Both
-     switches together run a full race.
-   - **Frame loop: analysed** (`../investigation/phase3-frame-loop.md`). The
-     game already decouples logic and rendering; there is an opt-in
-     `SSX3_HOST_CLOCK=1`. The real change waits for native rendering.
-   - **Rendering: GS-primitive level done, opt-in; draw layer not started**
-     (`../investigation/phase3-render.md`). The game's frames still go
-     through the DMA, VIF, VU1 and GS models; `SSX3_RENDER_NATIVE` replaces
-     only how GS primitives are rasterized, with GS-exact shaders (so it
-     costs about as much GPU as the emulated path). Hooking the game's draw
-     layer (phase 3 below) is the step that removes those models from the
-     frame path. Done so far:
-     - Stage 0a: the EE-level frame reader, exact on 2.57M calls.
-     - All six VU1 rendering programs as bit-exact readable Rust
-       (`ssx3-render` mat1-6). With `SSX3_VU1=native` the full race is
-       byte-identical.
-     - wgpu draws for every GS primitive class: 3D, 2D (PATH2), post effects
-       (PATH3), lines, texture feedback. `SSX3_RENDER_NATIVE=all` has 0
-       fallbacks in the full race, with game state identical.
-     - Persistent targets; a submit thread; targeted latent readbacks.
-     - Resolution scaling (`SSX3_RENDER_SCALE=N`), shown in the window at N×.
-     - Widescreen: the presenter follows the game's own anamorphic option
-       (16:9), with an `SSX3_ASPECT` override.
-     - Native mode is GPU-bound (about as costly as the compute rasterizer),
-       so a lower cost needs a design change (performance notes in
-       phase3-render.md).
-   - **Frame loop:** `SSX3_HOST_CLOCK=1` keeps game time real-time when
-     rendering falls behind (extra 60 Hz updates, fewer renders). It needs a
-     windowed check with native rendering.
-   - **Open, for the owner:**
-     - a windowed playtest with `SSX3_RENDER_NATIVE=all` (optionally
-       `SSX3_RENDER_SCALE=2`, `SSX3_HOST_CLOCK=1`) before any of these
-       become defaults;
-     - the flare rock case (Peak 3 freestyle) at the original spot
-       (`../investigation/flare-occlusion.md`).
-
-Bulk phase 2 rewriting (typed function bodies) continues later as capacity
-allows (OpenCode waves, `phase2-worker-guide.md`).
 
 ## Phase 3: native port: move the boundary upward 🟡
 
 Replace hardware models with host implementations at the game's own
 interfaces, one subsystem at a time:
 
-- Rendering: hook the game's draw layer (meshes, textures, matrices) and issue
-  wgpu draws directly, skipping VIF/VU/GS emulation (also removes the main
-  performance cost). Allows higher resolutions, widescreen, frame rate.
-  wgpu is the graphics API for this (owner decision, 2026-10-15): the VU1
-  material types become wgpu shaders.
-- Files: the game's file layer → `std::fs` on extracted `DATA/`, skipping
-  CD/SIF/IOP.
-- Audio: the game's sound API → a native mixer, skipping SPU2 emulation.
-- Timing: the frame loop driven by a host timer instead of emulated VBlank and
-  timer interrupts.
-- Kernel/threads: guest threads → plain Rust concurrency (or a single loop)
-  where the game's use allows.
-- VU0 microcode → hand-written Rust ✅ (owner decision, 2026-10-17;
-  `crates/ssx3-vu/src/vu/vu0lib.rs`). With the native renderer the only
-  program that runs is VU0's visibility library (box/frustum clip tests,
-  sphere/plane groups, segment/triangle, matrix chains). It now runs as
-  readable Rust, equal to the translation in the full architectural state
-  and memory (random-state and captured-call differential tests; a 6000-frame
-  race ends with identical RAM, `SSX3_VU0_TRANSLATED=1` for such A/B runs).
-  The translated microcode (`generated/vu`) is no longer part of the game
-  build: feature `vu1-microcode` brings it back for the emulated GS path
-  (`SSX3_RENDER=emu/shadow`), `vu_diff` and the reference tests.
+- ✅ Files → `std::fs` (`../investigation/phase3-files.md`).
+- ✅ Sound → native driver and mixer (`../investigation/phase3-sound.md`,
+  `ssx3-snd`).
+- ✅ Movies → native MPEG-2 decoder (`ssx3-mpeg`).
+- 🟡 Rendering → the game's draw functions record typed draws, drawn with
+  wgpu; higher resolutions, widescreen (`native-rendering.md`: N1, N2 done,
+  N3/N4 in progress; design `../investigation/phase3-render.md`,
+  `../investigation/n2-render-layer.md`).
+- ✅ VU0 microcode → hand-written Rust (`crates/ssx3-vu/src/vu/vu0lib.rs`);
+  the translated microcode (`generated/vu`) is only in the
+  `vu1-microcode` reference build.
+- 🟡 The rest of the PS2 (kernel, DMAC/INTC/timer state, guest RAM):
+  `native-rendering.md` N4/N6, `port-architecture.md` task 3.
 
 Done when: the game runs without the PS2 hardware models (they stay available
-for verification).
+for verification until then).
 
 ## Optional: browser (WebAssembly) 🟡
 
-Branch `wasm`, `crates/ssx3-web` (README there). It plays: the unwind form of
-the EE code in a Web Worker, the disc image read with `FileReaderSync`,
-ssx3-gfx drawing with WebGPU into an `OffscreenCanvas`, keyboard input.
-Menus run at 60 fps; races are slower (about 22 game frames per second in
-headless Chrome). To do: race speed (profile the wasm), a browser-storage
-memory card, sound (Web Audio), gamepads, the settings overlay. Keep the
-unwind form working (`ssx3-headless` with `--features ee-unwind` checks it
-natively) and avoid new blocking GPU readbacks.
+`crates/ssx3-web` (README there): the unwind form of the EE code in a Web
+Worker, the disc image read with `FileReaderSync`, ssx3-gfx drawing with
+WebGPU. Lowest-priority target: keep the unwind form working
+(`ssx3-headless --features ee-unwind` checks it natively) and avoid new
+blocking GPU readbacks.
 
 ## Final task (required before the project is called done) ⬜
 
-- **Light glows/flares must be occluded by geometry** (sun glare, point-light
-  glows and star flares currently draw through the rider, walls, roofs and
-  terrain): `../investigation/flare-occlusion.md`. Parked by the owner on
-  2026-10-15 so the Rust-ification could start, but explicitly required.
-  Fix it in whichever phase owns rendering at that point (in the emulated GS
-  path if still present; otherwise in the native renderer) and confirm
-  against PCSX2.
+- **Light glows/flares must be occluded by geometry**:
+  `../investigation/flare-occlusion.md`. Parked by the owner on 2026-10-15,
+  but explicitly required. Confirm against PCSX2.
 
 ## Verification (applies to every phase)
 
 Runs are deterministic (fixed RTC), so any change can be checked by replaying
-the scripted race and comparing screenshots byte for byte against the
-previous build (`../development.md`). Further oracles:
-`vu_diff` captures, `gs_replay` traces, and PCSX2 via PINE
-(`tools/pine.py`, `../investigation/pcsx2-pine.md`). Phase 2 rewrites must
-keep phase 1 output identical; phase 3 replacements are compared against the
-emulated path running side by side.
+the scripted race and comparing RAM (the gate) or screenshots byte for byte
+against the previous build (`../development.md`). Hand-written code has
+differential tests against its generated body. Further oracles: PCSX2 via
+PINE (`tools/pine.py`, `../investigation/tools.md`) and, in the reference
+build, `vu_diff` captures and `gs_replay` traces.

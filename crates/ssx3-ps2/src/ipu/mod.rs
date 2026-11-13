@@ -15,7 +15,7 @@
 //!
 //! Port of ps2-web-recomp's `runtime/src/ipu/ipu.cpp` (MIT, Copyright (c)
 //! 2026 Samir Nuri), with PCSX2's CSC/dither/VQ/threshold semantics. See
-//! `docs/investigation/ipu.md`.
+//! `docs/archive/ipu.md`.
 
 pub mod dma;
 

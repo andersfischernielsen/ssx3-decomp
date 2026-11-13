@@ -15,7 +15,7 @@ card request with "no card". The game therefore opened with *"No memory card
 (PS2) inserted. You cannot currently save your progress…"* and could never
 save. Now the disc's own `DATA/MODULES/SIO2MAN.IRX`, `PADMAN.IRX`,
 `MCMAN.IRX` and `MCSERV.IRX` are statically recompiled like the sound
-modules (`docs/investigation/iop-audio.md`) and drive a model of the SIO2
+modules (`docs/archive/iop-audio.md`) and drive a model of the SIO2
 hardware with a DualShock 2 and a memory card plugged in.
 
 ## Modules
@@ -146,11 +146,9 @@ files on an image.
       ssx1.ico                            73144 bytes
       BASLUS-20772-GAM0001                39777 bytes
   ```
-  ![Save complete](memcard-save-complete.png)
 * **Next run:** Options → Save/Load → Load game lists *1 PLAYER 1* in
   MEMORY CARD slot 1; loading it ends in **"Load complete."**
 
-  ![Load game list](memcard-load-list.png)
 * **Pads:** all menu navigation and the race run through PADMAN → SIO2MAN →
   the modelled DualShock 2.
 * With `SSX3_MEMCARD=none` the boot prompt is back (card absent:

@@ -1,5 +1,5 @@
 //! Hand each frame the game publishes to a host renderer (phase 3, draw
-//! layer: `docs/plans/phase3-draw-layer.md`).
+//! layer: `eaaa404^:docs/plans/phase3-draw-layer.md`).
 //!
 //! At the same point as `frame_verify` (the kick-semaphore signal at the end
 //! of `PS2GraphicsMan_EndFrame`), the typed frame is built from EE memory on

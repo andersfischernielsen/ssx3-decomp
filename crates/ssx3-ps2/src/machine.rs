@@ -104,7 +104,7 @@ pub struct Sched {
 }
 
 /// Emulated time following the host clock (phase 3 frame loop,
-/// `docs/investigation/phase3-frame-loop.md`).
+/// `docs/archive/phase3-frame-loop.md`).
 #[derive(Clone, Copy, Debug)]
 pub struct HostClock {
     pub start: web_time::Instant,

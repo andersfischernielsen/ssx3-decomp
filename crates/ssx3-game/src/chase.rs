@@ -1,4 +1,4 @@
-//! Work package D3 chase camera (docs/investigation/phase2-candidates-2.md,
+//! Work package D3 chase camera (eaaa404^:docs/investigation/phase2-candidates-2.md,
 //! layouts in docs/investigation/structs/camera.md).
 //!
 //! The race camera is a `ChaseCameraAlgorithm`: every frame its leaf class's

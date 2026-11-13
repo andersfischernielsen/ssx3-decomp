@@ -3,7 +3,7 @@
 Complete reference for implementing the MMI/Special2 decoder, extracted from the
 Ghidra EmotionEngine-Reloaded Sleigh (`eecore.sinc`, `mips.sinc`, `base.sinc`,
 `cop1.sinc`, `cop2.sinc`, `vuupper.sinc`) and cross-checked against the
-in-repo [`docs/ps2-bible.md`](../ps2-bible.md) tables and
+in-repo [`ps2-bible.md`](ps2-bible.md) tables and
 [psi-rockin/ps2tek](https://psi-rockin.github.io/ps2tek/).
 
 > [!IMPORTANT]
@@ -419,7 +419,7 @@ Accumulator broadcast variants selected by `word[10:2]` with lane in `word[1:0]`
 
 1. **Group selectors.** The task brief said MMI0/1/2/3 are `fct ∈
    {0x08,0x09,0x0A,0x0B}`. That is **not** what any of the three sources say.
-   Sleigh, `docs/ps2-bible.md`, and ps2tek all agree on
+   Sleigh, `ps2-bible.md`, and ps2tek all agree on
    `MMI0=0x08, MMI1=0x28, MMI2=0x09, MMI3=0x29`; `fct=0x0A`/`0x0B` are
    unassigned. Implement the `{0x08,0x09,0x28,0x29}` set.
 2. **`msub`/`msubu` missing.** Manual/ps2tek list MMI `fct=0x02` (`msub`) and

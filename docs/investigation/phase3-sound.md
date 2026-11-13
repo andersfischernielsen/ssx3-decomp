@@ -1,6 +1,6 @@
 # Phase 3, sound: the SNDDRV / LIBSD ↔ EE protocol
 
-Specification for a native sound driver that replaces the recompiled IOP modules (`iop-audio.md`) at the EE/IOP boundary (`phase3-boundaries.md` §2, cut A). Research pass 2026-10-15.
+Specification for a native sound driver that replaces the recompiled IOP modules (`../archive/iop-audio.md`) at the EE/IOP boundary (`../archive/phase3-boundaries.md` §2, cut A). Research pass 2026-10-15.
 
 Scope: SSX 3 (SLUS_207.72), EA "SND Library EE Driver" SNDDRV.IRX v8.3.3 plus Sony LIBSD.IRX (libsd v1.05). The two IRX files are loaded at the project's fixed bases: LIBSD at 0x20000 and SNDDRV at 0x30000.
 
@@ -589,32 +589,21 @@ It runs on the SPU2 model (`ssx3_iop::spu2`). That model can now be used without
 (`write_reg16`, `render_next`, `push_input`, `dma_write`); the split was checked to be
 behaviour-identical: same WAV and RAM after a race.
 
-`crates/ssx3-ps2/src/snd_native.rs` plugs the driver in with `SSX3_SND=native`.
-- LIBSD/SNDDRV are not started on the recompiled IOP, which keeps running the pad and
-  memory-card modules.
+`crates/ssx3-ps2/src/snd_native.rs` plugs the driver in (the default; `SSX3_SND=iop`
+selects the recompiled IOP modules instead).
+- LIBSD/SNDDRV are not started.
 - The `'SND'` RPC and SIF user command 0 fall through to the HLE side, which calls the
   driver.
 - Ticks run every 3,145,728 EE cycles from `machine::service_events`.
 - The status block is written to the EE, followed by command 1 type 0 with `opt` = the tag
   receive area (0x3b3c4).
 
-### Verification
+### Verification (2026-10-15)
 
-Race script to frame 5000, `SSX3_SND=native` vs the recompiled IOP (`SSX3_IOP` default), both
-with WAV capture:
-
-- **Game state** is identical until the sound banks load (screenshots at frames 1000-3000 are
-  byte-identical). Native uploads complete at once instead of after the emulated SPU DMA, so
-  load timing, and with it the race, diverges afterwards (as with native files).
-- **Audio** is bit-identical while the game is: after aligning the captures (they start
-  recording at different times), the menu music at 30 s and 40 s matches on 100% of samples.
-  Later the two runs play different sounds at different times, and only the music stays
-  correlated.
-- **Voice release:** at frame 5000, 12 SPU voices are busy and 29 have reported finished
-  (recompiled IOP: 14 and 26), so the game frees its channels as it should.
-- **Unit tests:** 21 cover the resamplers and the IOP mixer, including PCM8/16 and EA-XA,
-  loops, gain ramps and declick.
+Against the recompiled IOP, with WAV capture: game state identical until the sound banks
+load (native uploads complete at once, so load timing diverges afterwards, as with native
+files); audio bit-identical while the game is; voices are released as they should be; 21 unit
+tests cover the resamplers and the IOP mixer (PCM8/16, EA-XA, loops, gain ramps, declick).
 
 Open: reverb (mode 0 throughout SSX 3, not modelled); the sweep phase bit and Gaussian
-interpolation (SPU2 model limits, shared with the IOP path). Native sound is opt-in until it
-has been played through in the windowed game.
+interpolation (SPU2 model limits, shared with the IOP path).

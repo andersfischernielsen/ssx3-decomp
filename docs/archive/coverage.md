@@ -19,17 +19,17 @@ cursor), Previews, Online.
 | Boot, movies, title, main menu | any | ✅ no misses |
 | Options → Save/Load (memory card) | see `sio2-memcard.md` | ✅ save + load |
 | Single Event → Race → Snow Jam, full race to results | `playable-push.md` race script, to frame 20000 | ✅ no misses; renders correctly after the WAITQ + clip-latency fixes (`race-geometry.md`) |
-| Conquer The Mountain → character select → intro flight → free ride (0/44 collectibles) | `1600:0008:8,1800:0040:6,1900:4000:8,2300:4000:8,…` every 400 frames to 4300 | ✅ no misses (`coverage-conquer-the-mountain.png`; taken before the geometry fix) |
+| Conquer The Mountain → character select → intro flight → free ride (0/44 collectibles) | `1600:0008:8,1800:0040:6,1900:4000:8,2300:4000:8,…` every 400 frames to 4300 | ✅ no misses |
 | Online → network configuration | Down ×3 from Single Event, then Cross | ✅ no misses; shows "memory card … unformatted" for the network-config lookup although saves work (probably a BWNETCNF/mc getInfo detail; online is dead anyway) |
 | Previews → trailer list (NFS Underground, NFL Street, NBA Street Vol. 2) → trailer playback (EA Games logo, disclaimer) | Down ×2 from Single Event (Multi Play is skipped), Cross | ✅ no misses |
-| Multi Play (2 controllers): P1/P2 character select and setup, Bragging Rights handicaps, split-screen Snow Jam race | `SSX3_PAD2=1` plugs in pad 2; Down ×2 at 1800/1850, then Cross on both pads (`frame:4000:8` and `frame:4000:8:2`) every 400 frames from 2300, hold both from 6300 | ✅ no halts or misses (`coverage-multiplay.png`); the window maps a second game controller to pad 2 |
+| Multi Play (2 controllers): P1/P2 character select and setup, Bragging Rights handicaps, split-screen Snow Jam race | `SSX3_PAD2=1` plugs in pad 2; Down ×2 at 1800/1850, then Cross on both pads (`frame:4000:8` and `frame:4000:8:2`) every 400 frames from 2300, hold both from 6300 | ✅ no halts or misses; the window maps a second game controller to pad 2 |
 | **All Single Event events (22 across 3 peaks)** | | ✅ (2026-10-15) |
-| Single Event → Peak 1 → Race → Metro-City | race script with `3200:0040:6` before the event Cross at 3300 | ✅ no misses, renders correctly (`coverage-peak1-events.png` row 1) |
+| Single Event → Peak 1 → Race → Metro-City | race script with `3200:0040:6` before the event Cross at 3300 | ✅ no misses, renders correctly |
 | Single Event → Peak 1 → Race → Happiness (head-to-head, 2 riders) | Down ×2 at 3200/3250 | ✅ no misses (row 2) |
 | Single Event → Peak 1 → Freestyle (Snow Jam freestyle vs opponent, scoring, timer) | `3000:0040:6` before the mode Cross at 3100 | ✅ no misses (row 3) |
-| Peak 2 (progressed save): races Ruthless Ridge, Intimidator, Ruthless (rival); freestyle Style Mile (slopestyle), Launch Time (Big Air), Schizophrenia (Super Pipe), Ruthless Jam | event list: Down ×k at 3160+60k (or Up ×2 for the first race), event Cross at 3400 | ✅ all 7, no halts or misses (`coverage-peak2-events.png`, `coverage-peak23-first-races.png`) |
-| Peak 3 (progressed save): races Gravitude, The Throne (rival); freestyle Kick Doubt (slopestyle), Much-2-Much (Big Air), Perpendiculous (Super Pipe), Throne Jam | same | ✅ all 6, no halts or misses (`coverage-peak3-events.png`, `coverage-peak23-first-races.png`) |
-| Peak 1 Freestyle events: R&B (slopestyle), Crow's Nest (Big Air), The Junction (Super Pipe), Happiness Jam | Freestyle, then Down ×k (40 frames apart) after 3150 | ✅ all four, no misses; Big Air runs to its "Final run" card (`coverage-peak1-freestyle.png`) |
+| Peak 2 (progressed save): races Ruthless Ridge, Intimidator, Ruthless (rival); freestyle Style Mile (slopestyle), Launch Time (Big Air), Schizophrenia (Super Pipe), Ruthless Jam | event list: Down ×k at 3160+60k (or Up ×2 for the first race), event Cross at 3400 | ✅ all 7, no halts or misses |
+| Peak 3 (progressed save): races Gravitude, The Throne (rival); freestyle Kick Doubt (slopestyle), Much-2-Much (Big Air), Perpendiculous (Super Pipe), Throne Jam | same | ✅ all 6, no halts or misses |
+| Peak 1 Freestyle events: R&B (slopestyle), Crow's Nest (Big Air), The Junction (Super Pipe), Happiness Jam | Freestyle, then Down ×k (40 frames apart) after 3150 | ✅ all four, no misses; Big Air runs to its "Final run" card |
 | Career progression (events in Conquer The Mountain, unlocks, shop) | | ⬜ |
 | Results → Replay | race script to 20000, then `20100:0040:6,20200:4000:8` | ✅ replay viewer (web-cam, help overlay), no misses |
 | Records, "Next event", "Restart" from results | | ⬜ |

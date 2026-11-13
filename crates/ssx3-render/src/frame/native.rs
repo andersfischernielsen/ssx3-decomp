@@ -1,7 +1,7 @@
 //! The frame built from DeferMan's buckets and the captured draws, without
 //! walking the published chains (plan step N2, stage B,
 //! `docs/plans/native-rendering.md`; what RenderFrame emits:
-//! `docs/investigation/n2-capture/prelude.md`).
+//! `eaaa404^:docs/investigation/n2-capture/prelude.md`).
 //!
 //! The events are the ones the chain walk produces (`build_cached`) for the
 //! same frame, in the same order and with the same owners, except what

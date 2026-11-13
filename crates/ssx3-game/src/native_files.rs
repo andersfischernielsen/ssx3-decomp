@@ -1,6 +1,6 @@
 //! Phase 3, subsystem 1: game files from the host instead of the emulated CD.
 //!
-//! The seam is EA's file platform layer (`docs/investigation/phase3-boundaries.md`
+//! The seam is EA's file platform layer (`docs/archive/phase3-boundaries.md`
 //! §1, `docs/investigation/phase3-files.md`). Everything above it stays the
 //! generated game code: the request queue, BIG archives, async and streamed
 //! files, callbacks. Below it, the emulated CD thread, `sceCdRead`, the cdvd
@@ -63,7 +63,7 @@ const CALL_COMPLETE_REQUEST: Callee = Callee {
 /// generated body correctly.
 const PLATFORM_READ_RET: u32 = 0x003e_33a0;
 
-// EAFile globals (docs/investigation/phase3-boundaries.md §1.3).
+// EAFile globals (docs/archive/phase3-boundaries.md §1.3).
 const DEFAULT_DEVICE: u32 = 0x0045_0c44;
 const CD_PREFIX_PTR: u32 = 0x0045_0c3c;
 const HOST_PREFIX_PTR: u32 = 0x0045_0c50;

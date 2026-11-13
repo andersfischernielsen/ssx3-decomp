@@ -21,7 +21,7 @@ ssx3-vu = { path = "../ssx3-vu" }
 ssx3-render = { path = "../ssx3-render" }
 ssx3-mpeg = { path = "../ssx3-mpeg" }
 
-# Work packages from docs/investigation/phase2-candidates.md. Each is its own
+# Work packages from eaaa404^:docs/investigation/phase2-candidates.md. Each is its own
 # module behind a feature so packages can be developed in parallel without
 # breaking each other's builds; reviewed packages are added to `default`.
 [features]

@@ -1,28 +1,23 @@
 # Per-frame call graph (race)
 
-The dynamic call graph of the EE code during a race, recorded with the `callprof` feature.
-It is the phase 3 groundwork's view of the core flow. Read it together with
-`phase3-boundaries.md`, which explains where each subsystem hands work to the hardware. The
-full report is `callgraph-race.md`.
+The shape of a race frame as seen by the `callprof` feature: the main loop, the
+threads and the hot paths. Recorded in October 2026 over Snow Jam frames 5001-5300;
+the counts are from then, the structure is the game's.
 
 ## Recording
 
-```sh
-CARGO_TARGET_DIR=target-prof cargo build --profile game -p ssx3 --bin ssx3-headless --features callprof
-SSX3_CALLPROF=edges.tsv:5000:5300 SSX3_INPUT=<race script> target-prof/game/ssx3-headless 5300
-tools/callgraph.py edges.tsv --root App_RunModuleLoop --root SND_EeThread --root Renderer_DmaKickThread ...
-```
+`recomp-ee` puts `ssx3_ee_rt::prof::enter(c, start)` at the top of every function.
+Without the `callprof` feature it compiles to nothing (the normal build and the race
+replay are unchanged). With it, every call between two frames counts as an edge
+caller → callee (the caller is the function containing `ra - 8`). Build and record
+as in `AGENTS.md` ("Porting loop", step 1: `--features callprof`,
+`SSX3_CALLPROF=<out>:<from>:<to>`); `tools/pick_wave.py` ranks the edges and
+`tools/callgraph.py edges.tsv --root App_RunModuleLoop --root SND_EeThread ...` prints
+a report.
 
-`recomp-ee` puts `ssx3_ee_rt::prof::enter(c, start)` at the top of every function. Without the
-feature it compiles to nothing; the normal build is unchanged and the race replay stays
-byte-identical. With the feature, every call between the two frames is counted as an edge
-caller → callee, where the caller is the function containing `ra - 8`. A separate target
-directory keeps the normal build cache.
-
-Limits:
-- a tail call (`j`) is attributed to the tail-caller's caller;
-- calls from the hand-written replacements count like any other call, because the stub `f_X`
-  carries the hook.
+Limits: a tail call (`j`) is attributed to the tail-caller's caller; calls from
+hand-written ports count like any other call (the stub `f_X` carries the hook);
+`SSX3_NO_OVERRIDES=1` makes every generated call count.
 
 ## Race frames 5001-5300 (Snow Jam, mid-race)
 
@@ -58,23 +53,3 @@ Limits:
 - **File traffic in a race is streaming only.** `StreamFile_GetChunk` runs about 4.7 times per
   frame for music and speech, plus an occasional `sceCdSync`. No `EAFile_Open` happens
   mid-race.
-
-## What this means for the boundary order
-
-The measured traffic confirms the cuts proposed in `phase3-boundaries.md`.
-
-**Files.** During play only streaming touches the file layer, so replacing the
-`EAFile_Platform*` seam can be verified at boot and load time first, with no effect on the
-race path.
-
-**Sound.** The per-frame work is all above the SND C API (`SSXAudioSystem_Update`) or
-inside the SND thread.
-- The thread-level cut (A) keeps all of that generated.
-- The SND C API cut (B) would also take the UTK decoding and streaming off the EE.
-
-**Frame loop.** One logic tick and one render per loop. A host timer must deliver exactly
-one pad entry per 1/60 s to stay deterministic.
-
-**Rendering.** The 42 + 42 models and patches and the ~100 `SprStream` blocks per frame all
-end in `PS2GraphicsMan_EndFrame` → `Renderer_DmaKickThread`. That hand-off is the stage-1
-cut point.

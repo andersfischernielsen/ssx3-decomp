@@ -37,7 +37,7 @@
 //! Translated code produces exactly the same state, but the translator
 //! resolves most of that bookkeeping at translate time and emits straight-line
 //! calls into [`fast`] (see its module docs and
-//! `docs/investigation/vu-performance.md`):
+//! `docs/archive/vu-performance.md`):
 //!
 //! ```text
 //! let (u, um) = fast::madd4::<0b1111, false, true, true>(&vu.acc, &vu.vf[6], &[vu.vf[20][1]; 4]);
@@ -190,7 +190,7 @@ const FMAC_LATENCY: u64 = 4;
 /// `cycles + 4`; the interpreter flushes the FMAC pipe entry holding the
 /// clip flags after 4 cycles). It was 3 (ps2-web-recomp's `FlagPipe`), which
 /// made VU0's bounding-box test (`27649fa5` 0x0570) read only 4 of the 8
-/// corners and cull visible meshes (`race-geometry.md`). The translator's
+/// corners and cull visible meshes (`eaaa404^:docs/investigation/race-geometry.md`). The translator's
 /// flag analysis (3-pair window) needs this to be at most 4.
 const CLIP_LATENCY: u64 = 4;
 const DIV_LATENCY: u64 = 7;

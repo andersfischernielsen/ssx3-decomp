@@ -1,5 +1,5 @@
 //! Work package D4: AI, BE interfaces & race logic
-//! (`docs/investigation/phase2-candidates-2.md`, structs in
+//! (`eaaa404^:docs/investigation/phase2-candidates-2.md`, structs in
 //! `docs/investigation/structs/{rider,world}.md`).
 //!
 //! - **Back-end singletons.** The BE ("back end") layer keeps one lazily

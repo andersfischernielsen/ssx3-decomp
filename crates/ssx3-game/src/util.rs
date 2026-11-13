@@ -1,6 +1,6 @@
 //! Tier B1: memory and string utilities with loops (`memset`, `memcpy`,
 //! `EA_MemCopy`, `EA_MemSet`, `str*`, the UTF-16 `UStr_*` helpers;
-//! `docs/investigation/phase2-candidates.md`).
+//! `eaaa404^:docs/investigation/phase2-candidates.md`).
 //!
 //! These are leaves, but unlike Tier A they loop, and a loop is where the
 //! machine delivers interrupts and thread switches. Each replacement keeps

@@ -1,8 +1,9 @@
-# Phase 2 worker guide: replacing small generated functions
+# Worker guide: replacing generated functions
 
-This guide is for workers (OpenCode or other agents) who rewrite small
-generated functions of the SSX 3 decompilation as hand-written, typed Rust.
-Read it completely before starting.
+This guide is for writers (subagents) who rewrite generated functions of the
+SSX 3 decompilation as hand-written, typed Rust. Read it completely before
+starting; `../porting/writer-brief.md` adds the lessons of later waves and is
+binding where the two differ.
 
 ## What you are doing
 
@@ -40,9 +41,10 @@ same cycle count. A differential test proves it.
 4. Make it readable: a doc comment saying what the function does in game terms
    (and its signature), meaningful variable names, typed field accessors with
    named offsets where the meaning is clear (`const STATE: u32 = 0x54;`).
-5. Write one differential test per function and run it. Only add a function
-   to `OVERRIDES` when its test passes with no differences. If you cannot
-   make one match, leave it out and say why in your final message.
+5. Write one differential test per function. The orchestrator runs it (you
+   never run cargo); add the function's `OVERRIDES` entry together with its
+   finished test. If you cannot make one match, leave it out and say why in
+   your final message.
 
 
 ## Reference C++ decompilation (readability aid)
@@ -161,25 +163,18 @@ Add `use crate::{abi, guest::Addr}; use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::Cpu;` (and `crate::ps2f::FpuF32` if needed) and list each
 finished function: `(0x002c_c098, menu_sys_is_active, "MenuSys_IsActive"),`.
 
-## Test speed (gate)
+## Test speed
 
-Integration accepts a function only if its test passes **and finishes within
-5 seconds** (run per test by `cargo nextest`, see `.config/nextest.toml`).
-So: keep seeds at 200-300, build fixtures cheaply, and don't let real
-callees run long loops on test data (prefer setups that take the short
-path, or fakes). A test that times out rejects the function.
+A test must pass **and finish within 5 seconds** (`.config/nextest.toml`), or the
+function is rejected. Keep seeds at 200-300, build fixtures cheaply, and don't
+let real callees run long loops on test data (prefer setups that take the short
+path, or fakes).
 
-## Commands
+## Running the tests
 
-Run your tests (replace `ocN` with your module/feature name):
-
-```sh
-export CARGO_BUILD_JOBS=2
-nice -n 10 cargo test --profile game -p ssx3-game --features ocN ocN:: 2>&1 | tail -40
-```
-
-It may wait for a build lock ("Blocking waiting for file lock") while other
-workers build; that is normal, just wait. Do not run any other cargo command,
-do not run `recomp-ee`, do not build the game.
+You don't: never run cargo (no build, test or check), `recomp-ee` or the game.
+The orchestrator runs your module's tests
+(`SSX3_DIFF_STRICT=args cargo test --profile game -p ssx3-game --features ocN --lib ocN::`)
+and sends failures back to you with the exact difference.
 
 Finish with a short report: done functions, skipped ones and why.

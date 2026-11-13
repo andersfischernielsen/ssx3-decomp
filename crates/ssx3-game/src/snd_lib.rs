@@ -1,5 +1,5 @@
 //! Work package E1: the EA SND sound library core
-//! (`docs/investigation/phase2-candidates-3.md`, names from
+//! (`eaaa404^:docs/investigation/phase2-candidates-3.md`, names from
 //! `docs/investigation/naming.md` pass 3).
 //!
 //! The EE side of EA's SND driver as SSX 3 links it:

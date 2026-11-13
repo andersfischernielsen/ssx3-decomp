@@ -2,7 +2,7 @@
 
 _Mapped 2026-10-15 from Ghidra (`SLUS_207.72`), a paused PCSX2 Snow Jam race (PINE)
 and two RAM dumps of our own headless runner one frame apart (frames 5000/5001
-of the scripted race in `plans/playable-push.md`)._ Round 2 (same day) added the
+of the scripted reference race, `tools/scenarios.py input p1_race_snow_jam`)._ Round 2 (same day) added the
 trick system, slews, boost/target speed, the four unnamed FX mixins, RiderMetrix and
 the CPU AI block, using further dumps at frames 5002/5003/5030/5040/5060/5120/5240 and
 PINE reads of a CPU rider mid-trick.

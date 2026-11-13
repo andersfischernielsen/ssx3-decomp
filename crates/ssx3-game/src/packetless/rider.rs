@@ -1,4 +1,4 @@
-//! Riders without packets (`docs/investigation/n2-capture/riders.md`):
+//! Riders without packets (`eaaa404^:docs/investigation/n2-capture/riders.md`):
 //! slot 124 `EmitLightingPacket`, slot 101 `SetShadowHeader` (the type-6 /
 //! type-7 material parameters, CALLed through `w3`), slot 99
 //! `DrawSkinnedModel` and slot 100 `DrawSkinnedModelShadow` (bone batches

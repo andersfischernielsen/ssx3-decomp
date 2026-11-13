@@ -8,7 +8,7 @@ license.workspace = true
 [dependencies]
 ssx3-core.workspace = true
 # Not ssx3-ps2: only the VU op tables/translator are needed, without the
-# translated microcode (see docs/investigation/crate-split.md).
+# translated microcode (see docs/archive/crate-split.md).
 ssx3-vu = { path = "../ssx3-vu", default-features = false }
 ssx3-iop = { path = "../ssx3-iop" }
 

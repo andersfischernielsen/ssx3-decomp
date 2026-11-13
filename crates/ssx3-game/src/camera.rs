@@ -1,4 +1,4 @@
-//! Work package A3 camera (docs/investigation/phase2-candidates.md, layouts
+//! Work package A3 camera (eaaa404^:docs/investigation/phase2-candidates.md, layouts
 //! in docs/investigation/structs/camera.md).
 //!
 //! The game camera (`GameCamera`) holds an eye position and an orientation

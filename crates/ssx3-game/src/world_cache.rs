@@ -1,5 +1,5 @@
 //! Work package E8: world cache, sections, CPU riders, animation objects
-//! (`docs/investigation/phase2-candidates-3.md`, structs in
+//! (`eaaa404^:docs/investigation/phase2-candidates-3.md`, structs in
 //! `docs/investigation/structs/{world,rider}.md`).
 //!
 //! - **Section streamer views** (`cWorldCache` section streamer, embedded

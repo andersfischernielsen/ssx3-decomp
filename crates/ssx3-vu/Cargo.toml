@@ -7,7 +7,7 @@ license.workspace = true
 
 # Its own crate so that changes elsewhere in the hardware model (GS, kernel,
 # DMA, ...) do not recompile the ~5.5 MB of translated microcode
-# (docs/investigation/crate-split.md).
+# (docs/archive/crate-split.md).
 [features]
 default = []
 # The translated microcode in generated/vu. The game does not need it: VU0's

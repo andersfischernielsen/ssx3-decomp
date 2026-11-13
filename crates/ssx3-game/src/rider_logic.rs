@@ -1,4 +1,4 @@
-//! Work package E4: rider logic & metrics (`docs/investigation/phase2-candidates-3.md`,
+//! Work package E4: rider logic & metrics (`eaaa404^:docs/investigation/phase2-candidates-3.md`,
 //! E4; field names from `docs/investigation/structs/rider.md`).
 //!
 //! The per-frame rider logic around the state machine: the `RiderBase`

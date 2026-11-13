@@ -18,7 +18,7 @@
 //!   and a [`memcard`] 8 MB card backed by a host file;
 //! * [`audio`]: host output (cpal) and WAV capture.
 //!
-//! Execution model (same as the EE side, see `docs/investigation/recompiler-v2.md`):
+//! Execution model (same as the EE side, see `docs/archive/recompiler.md`):
 //! every function is a block dispatcher over its labels; a thread switch sets
 //! [`UNWIND`] in `pc`, every host frame returns, and [`trampoline`] re-enters
 //! the new thread at its saved `pc`. The host (`ssx3-ps2`) calls

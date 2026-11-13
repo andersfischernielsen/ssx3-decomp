@@ -62,9 +62,11 @@ default native mode does not use them on the frame path.
 
 A hardware change rebuilds only its crate and relinks (GS/kernel ~3 s, VU
 ~2.5 min); only `ssx3-ee-rt` changes recompile the generated EE crates
-(`investigation/crate-split.md`).
+(`archive/crate-split.md`).
 
 ## Key documents
+
+The full map is [`README.md`](README.md). For this overview:
 
 | topic | doc |
 | --- | --- |
@@ -72,17 +74,9 @@ A hardware change rebuilds only its crate and relinks (GS/kernel ~3 s, VU
 | building, headless runs, verification, debug switches | `development.md` |
 | the engine API, writing a front end | `frontends.md` |
 | boot path, syscalls, IOP modules, threads | `investigation/boot-path.md` |
-| EE generator, threading modes, structured output | `investigation/recompiler-v2.md` |
+| native rendering, files, sound | `plans/native-rendering.md`, `investigation/phase3-*.md` |
 | function names (Ghidra passes) | `investigation/naming.md` |
-| GS, performance, capture/replay | `investigation/gs.md`, `investigation/gs-performance.md` |
-| texture streaming, PATH3 masking | `investigation/race-textures.md` |
-| GS on its own host thread (MTGS), sync points | `investigation/gs-mtgs.md` |
-| VU/VIF, microcode translation | `investigation/vu-vif.md` |
-| VU translation performance (fast path, NEON, checks) | `investigation/vu-performance.md` |
-| IPU (movies) | `investigation/ipu.md` |
-| IOP recompilation, SPU2 audio | `investigation/iop-audio.md` |
-| reference design notes | `investigation/ps2-web-recomp-notes.md` |
-| crate layout for build times (core / VU / machine) | `investigation/crate-split.md` |
+| EE generator; the GS, VU/VIF, IPU and IOP models; crate split (history) | `archive/` (`recompiler.md`, `gs*.md`, `vu-*.md`, `ipu.md`, `iop-audio.md`, `crate-split.md`) |
 
 ## Invariants worth knowing
 

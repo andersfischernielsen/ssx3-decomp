@@ -2,7 +2,7 @@
 //! registers and FIFOs, SIF mailbox registers, and the VU memory window.
 //!
 //! Addresses are physical. Register layout follows the EE User's Manual (see
-//! `docs/ps2-bible.md`); DMA transfers complete instantly when started, like
+//! `docs/archive/ps2-bible.md`); DMA transfers complete instantly when started, like
 //! ps2-web-recomp's `dmac.cpp`.
 
 #[cfg(feature = "emu-gs")]

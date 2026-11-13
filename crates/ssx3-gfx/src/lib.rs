@@ -2,7 +2,7 @@
 //!
 //! Draws the frames the game publishes (`ssx3_render::frame::Frame`) with
 //! wgpu, without the PS2 DMA/VIF/VU1/GS models. Plan and progress:
-//! `docs/plans/phase3-draw-layer.md`.
+//! `eaaa404^:docs/plans/phase3-draw-layer.md`.
 //!
 //! Per frame ([`Renderer::render`]):
 //! 1. The frame's VIF events are replayed in chain order into a VU1 data

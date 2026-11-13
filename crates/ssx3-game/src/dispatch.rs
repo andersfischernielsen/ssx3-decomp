@@ -1,6 +1,6 @@
 //! Tier B: small functions with calls: thin wrappers, virtual dispatch and
 //! forwarding doors into the big state machines
-//! (`docs/investigation/phase2-candidates.md`, groups B2/B3).
+//! (`eaaa404^:docs/investigation/phase2-candidates.md`, groups B2/B3).
 //!
 //! Replacements here follow the call protocol of [`crate::call`] (stack
 //! frame, registers at each call, unwind check, cycles between calls).

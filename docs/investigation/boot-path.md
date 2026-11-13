@@ -60,7 +60,7 @@ instructions load `$v1` with `addiu/ori v1,zero,N`. 168 sites in total. The cano
 libkernl stub block is `0x423980-0x424218`. Each stub is 16 bytes:
 `li v1,N; syscall; jr ra; nop`. For these, **stub fn = syscall insn - 4**.
 Many stubs have no Ghidra function because nothing references them. Those are marked `(no function)`.
-Names follow the ps2sdk/Sony libkernl numbering. It differs from `docs/ps2-bible.md` in several places:
+Names follow the ps2sdk/Sony libkernl numbering. It differs from `docs/archive/ps2-bible.md` in several places:
 - 0x79/0x7A are `sceSifSetReg`/`sceSifGetReg`. They are not GetOsdConfigParam.
 - 0x4C-0x4F are Get/SetGsH/VParam.
 - 0x55-0x59 are the TLB calls installed by `_InitSys`.

@@ -1,4 +1,4 @@
-//! Bézier terrain without packets (`docs/investigation/n2-capture/bezier.md`):
+//! Bézier terrain without packets (`eaaa404^:docs/investigation/n2-capture/bezier.md`):
 //! `PS2BezierMan_v18` (0x38b370), the end of the terrain pass, with its
 //! emitters (`EmitPatchType1` / `Type2` / `MatrixPass` / `ProjectorPasses`)
 //! and the deferred type-1 groups. The patch cache (tessellation, the slot

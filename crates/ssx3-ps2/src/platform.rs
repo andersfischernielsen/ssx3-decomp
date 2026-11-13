@@ -9,7 +9,7 @@
 //! `m!(c).hw.gs`, ...), which borrows only the `c.bus.plat` field, so it can
 //! be combined with `c.g`, `c.bus.ram` and the other `Cpu` fields.
 //!
-//! See `docs/investigation/crate-split.md`.
+//! See `docs/archive/crate-split.md`.
 
 use ssx3_ee_rt::vu0::{Efu, Src, Vu0};
 use ssx3_ee_rt::{Cpu, Hooks, Platform};

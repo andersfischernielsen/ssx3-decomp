@@ -10,7 +10,7 @@ steps land.
 Related: [`roadmap.md`](roadmap.md) (phase 3, the native port),
 [`../investigation/phase3-render.md`](../investigation/phase3-render.md)
 (the seven VU1 programs, the draw-record level, the typed frame),
-[`../investigation/phase3-boundaries.md`](../investigation/phase3-boundaries.md)
+[`../archive/phase3-boundaries.md`](../archive/phase3-boundaries.md)
 §4 (the game's render layer: draw slots, `DeferMan`, the kick thread).
 
 ## Where we are (2026-10-18)
@@ -424,81 +424,10 @@ phase 2.
 The reference is a readability aid: `generated/ee` stays the authority for
 registers, cycles, memory and call order, and its names/signatures differ.
 
-
-Race call profile at 3,414 installed (frames 5002-5300, `callprof`): 70.2% of
-the weighted work (`calls/frame * bytes`) is already hand-written. Of the
-remaining 29.8%, 20.7% is asm-only, 6.1% no-symbol (libc/SDK) and 3.1% C++-backed,
-so the hot queue is now mostly functions with no readable C++. Waves are
-selected hot-first with `tools/pick_wave.py`; the remaining hot asm bodies are
-ported directly from `generated/ee` (a literal translation).
-
-Frame-phase timing, 2026-10-21 (6000-frame race replay, no screenshots):
-
-| build | wall / frame | EE thread incl. frame sink | frame sink (game thread) | gfx thread (build/prepare/submit/readback) |
-|---|---|---|---|---|
-| desktop (`ee-threads`, 3,911 installed) | 4.18 ms | ~3.5 ms | 0.65 ms | 1.79 ms (0.79/0.25/0.59/0.16) |
-| browser config (`ee-unwind`, 3,705 installed) | 2.88 ms | ~2.2 ms | 0.66 ms | 1.79 ms |
-
-The gfx thread is not the critical path on desktop (2.4 ms of slack); the
-frame is EE-thread-bound. But the EE *function bodies* are cheap to improve:
-`SSX3_NO_OVERRIDES=1` A/B (3 runs each) gives 25.14 vs 25.65 s on desktop
-(2.0%) and 17.28 vs 18.61 s on the browser config (7.7%) for the 82% of
-weighted EE work already hand-written. Extrapolated, replacing *all* EE bodies
-would save at most ~0.27 ms/frame (~9%) on the browser build, and the remaining
-18% is worth ~0.05 ms/frame (~1.7%) at the same rate. The rest of the EE phase
-is per-instruction overhead that both forms pay (bus accesses, cycle and event
-bookkeeping), plus the frame sink (0.65 ms) and the renderer (1.8 ms).
-
-A 6-second process sample mid-replay (16 host threads, 1,604 samples each)
-shows the pipeline is latency-bound, not CPU-bound: ~87% of all thread-samples
-are blocked in `__psynch_cvwait`/semaphore/workqueue waits. The only busy
-threads are `ee-thread-1` (the game thread, 76% busy) and `ssx3-gfx` (55%);
-the main thread is 93% waiting and the gs/submit threads are idle. Of the
-actual non-wait work (3,423 samples):
-
-| area | share of work |
-|---|---|
-| renderer (VIF replay/chain, VU-call planning, GPU draw) | 29% |
-| malloc/free | 12% |
-| libc/kernel misc | 10% |
-| VU core | 9% |
-| audio (SPU2 render/decode, snd_utk) | 6% |
-| EE runtime (call_indirect, bus) | 6% |
-| hash/HashMap | 5% |
-| guest generated code | 4.5% |
-| guest hand-written code | 2.7% |
-| other (Metal/AGX, mmap, dispatch) | 16% |
-
-So on the critical thread the biggest single item is the frame sink's VIF
-chain replay + hashing (part of the 0.65 ms/frame sink), then the renderer's
-VU planning on the gfx thread and per-frame allocation/hashing. Guest code in
-both forms is ~7% of the real work.
-
-So further hand-porting is completeness work, not a frame-time lever. If frame
-time is the goal: the renderer (1.8 ms/frame, 62% of the browser-config frame)
-and, on desktop, the emulated-thread synchronization (4.18 vs 2.88 ms/frame
-between the two builds) are the levers; a faster memory/bus path or eliding
-cycle/event bookkeeping in the transliteration would be the interpreter-side
-one. The weighted-work figure at 4,007 installed is 82.0% (frames 5001-5300). A
-re-profile at 19:35 produced an *identical* call graph (2,115 functions, 3,709
-edges) because the replay is deterministic and the replacements are
-behaviour-identical, so re-profiling is not needed to refresh the hot list; a
-profile is only stale with respect to the *installed set*. Of the remaining
-18.0%: 9.8% asm-only, 5.2% no-symbol, 3.0% C++-backed; the top 10 functions are
-7.2% and the top 50 are 11.9% of race work.
-
-Two exact ports are kept in their modules but not installed, because their
-fixtures cannot reproduce real data: `RiderAirState_PostUpdate` (oc108; both
-differential tests pass, but the race replay diverges on the board-contact arm)
-and `ChaseCameraAlgorithm_ApplyAirSwing` (oc109; the spline evaluate spins
-without a live spline). Re-audit those before re-adding their `OVERRIDES`.
-As of 2026-10-22: 5,092 of the 11,844 functions are installed as typed Rust
-(1,500 at the start of the session); 5,052 remaining functions are <=800 bytes
-with a readable C++ body and no `__entries` dispatcher fragment, and 4,876 of
-those are <=600 bytes. The small-function waves (50 per writer) are the best
-yield; the 400-function dispatcher-heavy waves at the start of the session
-yielded only 5-7 per writer.
-
+Profiles and frame-phase timings of 2026-10-21 (how much of the EE work was
+hand-written, where the frame time went, a process sample of the threads) are in
+[`../archive/phase3-render-log.md`](../archive/phase3-render-log.md) ("Frame-phase
+measurements"). The porting loop itself is in `AGENTS.md`.
 
 ## Rules
 

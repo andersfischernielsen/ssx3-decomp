@@ -1,5 +1,5 @@
 //! Work package D8: memory, containers, replay & script
-//! (`docs/investigation/phase2-candidates-2.md`).
+//! (`eaaa404^:docs/investigation/phase2-candidates-2.md`).
 //!
 //! - **VRAM heap** (`VramHeap_*`, the texture manager's GS memory allocator):
 //!   a fixed array of 0x123 block nodes ([`VramNode`]) linked twice: in

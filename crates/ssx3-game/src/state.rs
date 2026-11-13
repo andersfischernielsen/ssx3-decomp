@@ -1,5 +1,5 @@
 //! Work package A6: game state, lists, input and replay
-//! (`docs/investigation/phase2-candidates.md`, structs in
+//! (`eaaa404^:docs/investigation/phase2-candidates.md`, structs in
 //! `docs/investigation/structs/{input,app,world}.md`).
 //!
 //! Small accessors over global game state (the back end's race setup, the

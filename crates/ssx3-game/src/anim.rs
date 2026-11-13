@@ -1,5 +1,5 @@
 //! Work package A2: rider getters, state hooks and the animation-sequence
-//! helpers they call (`docs/investigation/phase2-candidates.md`, "A2 Rider &
+//! helpers they call (`eaaa404^:docs/investigation/phase2-candidates.md`, "A2 Rider &
 //! animation"; field names from `docs/investigation/structs/rider.md`).
 //!
 //! Every function here is a leaf (no calls, no `c.event()` checks). Each one

@@ -1,6 +1,6 @@
 //! Work package D1: the rider's per-frame "doors" (the small functions
 //! `AI_Update` / `AI_Render` call once per rider per frame) and the state
-//! machine's thin handlers (`docs/investigation/phase2-candidates-2.md`, D1;
+//! machine's thin handlers (`eaaa404^:docs/investigation/phase2-candidates-2.md`, D1;
 //! field names from `docs/investigation/structs/rider.md`).
 //!
 //! A rider is two objects: the gameplay `Rider` (physics, animation, FX;

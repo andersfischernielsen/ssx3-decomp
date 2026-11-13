@@ -1,5 +1,5 @@
 //! Work package E3 world painter, irradiance, lighting
-//! (docs/investigation/phase2-candidates-3.md).
+//! (eaaa404^:docs/investigation/phase2-candidates-3.md).
 //!
 //! Hand-written, typed replacements for the irradiance accumulators, the
 //! world-painter getters, the two `tWPIGD_*_Blend` gradient blends and

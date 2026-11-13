@@ -3,7 +3,7 @@
 //! EA's SND library splits its work between the EE and an IOP driver
 //! (SNDDRV.IRX on Sony's LIBSD.IRX). Until now the IOP side ran as statically
 //! recompiled IOP code on an emulated IOP kernel and SIF (`SSX3_IOP=1`,
-//! `docs/investigation/iop-audio.md`). This crate is that driver in plain
+//! `docs/archive/iop-audio.md`). This crate is that driver in plain
 //! Rust: it consumes exactly what the EE sends (tag buffers, sample uploads,
 //! the init RPC) and returns exactly what the EE reads (the status block and
 //! the per-tick command). Specification: `docs/investigation/phase3-sound.md`.

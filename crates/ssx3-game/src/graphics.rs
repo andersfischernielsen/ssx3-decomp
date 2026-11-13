@@ -1,4 +1,4 @@
-//! Work package E5 graphics manager & draw deferral (docs/investigation/phase2-candidates-3.md).
+//! Work package E5 graphics manager & draw deferral (eaaa404^:docs/investigation/phase2-candidates-3.md).
 //!
 //! Hand-written, typed replacements for the PS2 graphics manager and draw
 //! deferral (sprite/packet stream) functions, each with a differential test

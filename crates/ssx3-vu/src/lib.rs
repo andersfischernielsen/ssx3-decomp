@@ -7,7 +7,7 @@
 //! hand (`vu::vu0lib`), and, with feature `microcode`, the statically
 //! translated microcode in `generated/vu` (`vu::generated`: the VU1 programs
 //! of the emulated GS path, and the reference for tests). See `vu/mod.rs`
-//! and `docs/investigation/crate-split.md`.
+//! and `docs/archive/crate-split.md`.
 
 pub mod vu;
 

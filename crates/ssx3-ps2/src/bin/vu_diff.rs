@@ -619,7 +619,7 @@ fn main() {
             }
         }
         "qstall" => {
-            // The pair Q-stall fix (race-geometry.md): replay every record
+            // The pair Q-stall fix (eaaa404^:docs/investigation/race-geometry.md): replay every record
             // with and without it and check that only records that run a
             // WAITQ/DIV/SQRT/RSQRT pair with a pending, not yet due Q result
             // change, and that values (not just cycles) change only where

@@ -7,8 +7,8 @@
 //! semantics, RAM fast paths); this crate plugs into it as the
 //! [`Platform`](ssx3_ee_rt::Platform) behind memory-mapped I/O, VU0, syscalls
 //! and events ([`platform`]), so changing it does not recompile generated
-//! code. See `docs/investigation/crate-split.md` and
-//! `docs/plans/playable-push.md`.
+//! code. See `docs/archive/crate-split.md` and
+//! `eaaa404^:docs/plans/playable-push.md`.
 
 pub use ssx3_ee_rt::{bus, cpu, fpu, mmi};
 // First, so its `m!`/`mr!` macros are in scope in every module below.

@@ -1,7 +1,7 @@
 //! Indexed triangles (slot 72 `DrawIndexedTriangles`) and line strips
 //! (slot 73 `DrawLineStrip`) without packets: the EE projects (and, for
 //! lines, clips) the vertices and sends GIF REGLIST blocks with `DIRECT`
-//! (`docs/investigation/n2-capture/direct2d.md` §1, §2); here those blocks
+//! (`eaaa404^:docs/investigation/n2-capture/direct2d.md` §1, §2); here those blocks
 //! are the recorded draw (`Step::Gif`, as `crate::capture` reads the
 //! packet back).
 //!
