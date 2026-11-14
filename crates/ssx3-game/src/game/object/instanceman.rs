@@ -84,6 +84,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "IntersectInfo_FindKeySegment",
     ),
     (0x0035_1b40, mesh_anim_ctor_2, "MeshAnim_ctor_2"),
+    (0x0035_13d0, intersect_info_clear, "IntersectInfo_Clear"),
+    (
+        0x0035_2230,
+        mesh_anim_randomize_nodes,
+        "MeshAnim_RandomizeNodes",
+    ),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -1981,6 +1987,294 @@ pub fn mesh_anim_ctor_2(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// MeshAnim_RandomizeNodes (0x352230)
+
+/// The debris/mesh-anim instance: model at +0x18, spin scale at +0x20, the
+/// per-axis spin array at +0x330, the per-axis (normalized) axes at +0x1b0,
+/// vmax[3] at +0x390, vbase at +0x3a0 and the per-axis velocities at +0x530.
+pub(crate) const MESH_MODEL: u32 = 0x18;
+
+pub(crate) const MESH_SPIN_SCALE: u32 = 0x20;
+
+pub(crate) const MESH_AXIS: u32 = 0x1b0;
+
+pub(crate) const MESH_SPIN: u32 = 0x330;
+
+pub(crate) const MESH_VMAX: u32 = 0x390;
+
+pub(crate) const MESH_VBASE: u32 = 0x3a0;
+
+pub(crate) const MESH_VEL: u32 = 0x530;
+
+/// The model's node-list header (+0x80); its +4 is the node count.
+pub(crate) const MESH_NODE_LIST: u32 = 0x80;
+
+pub(crate) const MESH_NODE_COUNT: u32 = 0x4;
+
+/// The frame-rate struct `D_004A5B64` at `gp + 0x2a74`: the per-frame divisor
+/// at +0x10 and the velocity scale at +0x14.
+pub(crate) const MESH_FRAME_RATE_GP: u32 = 0x2a74;
+
+/// `Rand_NextMain` / `BXrand` (0x3177f0).
+pub(crate) const MESH_RAND: u32 = 0x0031_77f0;
+
+/// `void MeshAnim_RandomizeNodes(MeshAnim* self)` (0x352230): for every node
+/// of the model, give the debris a random spin (`spinScale * rand[0.5,1)`)
+/// and a random unit axis (`rand[-1,1)` in each of x, y, z, normalized); then
+/// for every node give it a velocity: `vbase * scale` plus a random
+/// `[-vmax, vmax) / frameCount` in each axis. Frame 0xd0 (s0-s6, f20-f24).
+pub fn mesh_anim_randomize_nodes(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xd0);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S5, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S6, 0x30);
+        frame.save_ra(c, 0x20);
+        frame.save_fpr(c, 24, 0xc0);
+        frame.save_fpr(c, 23, 0xb8);
+        frame.save_fpr(c, 22, 0xb0);
+        frame.save_fpr(c, 21, 0xa8);
+        frame.save_fpr(c, 20, 0xa0);
+        c.g[V0][0] = Addr(r32(c, S2).wrapping_add(MESH_MODEL)).lw(c);
+        c.g[S6][0] = Addr(r32(c, V0).wrapping_add(MESH_NODE_LIST)).lw(c);
+        c.g[V1][0] = Addr(r32(c, S6).wrapping_add(MESH_NODE_COUNT)).lw(c);
+        let no_nodes = (c.g[V1][0] as i64) <= 0;
+        c.g[S5][0] = 0;
+        if !no_nodes {
+            // f24 = 0.5, f22 = 1.0, f23 = -1.0; s1 = 23-bit mask, s4 = 1.0f.
+            c.cycles += 12;
+            c.g[S1][0] = 0x7f_0000;
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(AT, 24);
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 22);
+            c.g[S1][0] |= 0xffff;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.mtc1(AT, 23);
+            c.g[S4][0] = 0x3f80_0000;
+            c.g[S0][0] = c.g[S2][0];
+            c.g[S3][0] = sx(r32(c, S2).wrapping_add(MESH_SPIN));
+            loop {
+                c.cycles += 56;
+                c.g[S5][0] = sx(r32(c, S5).wrapping_add(1));
+                call_ptr(c, MESH_RAND, 0x0035_22b8)?;
+                // spin[i] = spinScale * (0.5 + 0.5 * rand[0,1)).
+                c.g[V0][0] &= c.g[S1][0];
+                c.lwc1(1, r32(c, S2).wrapping_add(MESH_SPIN_SCALE));
+                c.g[V0][0] |= c.g[S4][0];
+                c.mtc1(V0, 2);
+                c.sub_s(0, 2, 22);
+                c.mul_s(0, 0, 24);
+                c.add_s(0, 0, 24);
+                c.mul_s(1, 1, 0);
+                c.swc1(1, r32(c, S3));
+                call_ptr(c, MESH_RAND, 0x0035_22e0)?;
+                c.g[S3][0] = sx(r32(c, S3).wrapping_add(4));
+                // y = 2 * rand[0,1) - 1.
+                c.g[V0][0] &= c.g[S1][0];
+                c.g[V0][0] |= c.g[S4][0];
+                c.mtc1(V0, 3);
+                c.sub_s(21, 3, 22);
+                c.add_s(21, 21, 21);
+                c.add_s(21, 21, 23);
+                call_ptr(c, MESH_RAND, 0x0035_2300)?;
+                // z.
+                c.g[V0][0] &= c.g[S1][0];
+                c.g[V0][0] |= c.g[S4][0];
+                c.mtc1(V0, 0);
+                c.sub_s(20, 0, 22);
+                c.add_s(20, 20, 20);
+                c.add_s(20, 20, 23);
+                call_ptr(c, MESH_RAND, 0x0035_231c)?;
+                // x; the vector goes to the stack in (y, z, x, 0) order.
+                c.g[V0][0] &= c.g[S1][0];
+                c.swc1(21, r32(c, SP));
+                c.g[V0][0] |= c.g[S4][0];
+                c.swc1(20, r32(c, SP).wrapping_add(4));
+                c.mtc1(V0, 1);
+                c.sw(r32(c, SP).wrapping_add(0xc), 0);
+                c.sub_s(0, 1, 22);
+                c.add_s(0, 0, 0);
+                c.add_s(0, 0, 23);
+                c.swc1(0, r32(c, SP).wrapping_add(8));
+                c.lq(2, r32(c, SP));
+                c.sq(2, r32(c, S0).wrapping_add(MESH_AXIS));
+                // Normalize on VU0 and store back.
+                c.lqc2(3, r32(c, S0).wrapping_add(MESH_AXIS));
+                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                c.vu0().rsqrt(0, 3, 4, 0);
+                c.vu0().waitq();
+                c.vu0().mul(0b1111, 5, 3, Src::Q);
+                c.sqc2(5, r32(c, SP).wrapping_add(0x10));
+                c.lq(2, r32(c, SP).wrapping_add(0x10));
+                c.sq(2, r32(c, S0).wrapping_add(MESH_AXIS));
+                c.sq(2, r32(c, SP));
+                c.g[V0][0] = Addr(r32(c, S6).wrapping_add(MESH_NODE_COUNT)).lw(c);
+                c.g[V0][0] = ((c.g[S5][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(0x10));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_22b0);
+                }
+            }
+        }
+        // Velocities.
+        c.cycles += 3;
+        c.g[V0][0] = Addr(r32(c, S6).wrapping_add(MESH_NODE_COUNT)).lw(c);
+        let no_nodes = (c.g[V0][0] as i64) <= 0;
+        c.g[S3][0] = 0;
+        if !no_nodes {
+            c.cycles += 7;
+            c.g[S1][0] = 0x7f_0000;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 23);
+            c.g[S1][0] |= 0xffff;
+            c.g[S4][0] = 0x3f80_0000;
+            c.g[S0][0] = c.g[S2][0];
+            loop {
+                // vx = -vmax[0] .. vmax[0], scaled to a per-frame step.
+                c.cycles += 16;
+                c.lwc1(20, r32(c, S2).wrapping_add(MESH_VMAX));
+                call_ptr(c, MESH_RAND, 0x0035_23c0)?;
+                c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_add(MESH_FRAME_RATE_GP)).lw(c);
+                c.g[V0][0] &= c.g[S1][0];
+                c.g[V0][0] |= c.g[S4][0];
+                c.lwc1(0, r32(c, A0).wrapping_add(0x10));
+                c.cvt_s_w(0, 0);
+                c.mtc1(V0, 2);
+                c.div_s(0, 23, 0);
+                c.sub_s(1, 2, 23);
+                c.mul_s(20, 20, 1);
+                c.mul_s(22, 20, 0);
+                call_ptr(c, MESH_RAND, 0x0035_23ec)?;
+                c.g[V0][0] &= 1;
+                if c.g[V0][0] != 0 {
+                    c.neg_s(22, 22);
+                }
+                // vy.
+                c.cycles += 16;
+                c.lwc1(20, r32(c, S2).wrapping_add(MESH_VMAX + 4));
+                call_ptr(c, MESH_RAND, 0x0035_2400)?;
+                c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_add(MESH_FRAME_RATE_GP)).lw(c);
+                c.g[V0][0] &= c.g[S1][0];
+                c.g[V0][0] |= c.g[S4][0];
+                c.lwc1(0, r32(c, A0).wrapping_add(0x10));
+                c.cvt_s_w(0, 0);
+                c.mtc1(V0, 3);
+                c.div_s(0, 23, 0);
+                c.sub_s(1, 3, 23);
+                c.mul_s(20, 20, 1);
+                c.mul_s(21, 20, 0);
+                call_ptr(c, MESH_RAND, 0x0035_242c)?;
+                c.g[V0][0] &= 1;
+                if c.g[V0][0] != 0 {
+                    c.neg_s(21, 21);
+                }
+                // vz, then vel[j] = vbase * scale + (vx, vy, vz, 0).
+                c.cycles += 34;
+                c.lwc1(20, r32(c, S2).wrapping_add(MESH_VMAX + 8));
+                c.g[S3][0] = sx(r32(c, S3).wrapping_add(1));
+                call_ptr(c, MESH_RAND, 0x0035_2444)?;
+                c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(MESH_FRAME_RATE_GP)).lw(c);
+                c.g[V0][0] &= c.g[S1][0];
+                c.g[V0][0] |= c.g[S4][0];
+                c.lwc1(1, r32(c, V1).wrapping_add(0x10));
+                c.cvt_s_w(1, 1);
+                c.lwc1(0, r32(c, V1).wrapping_add(0x14));
+                c.mtc1(V0, 3);
+                c.mfc1(V1, 0);
+                c.lqc2(4, r32(c, S2).wrapping_add(MESH_VBASE));
+                c.qmtc2(V1, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, r32(c, SP).wrapping_add(0x10));
+                c.lq(2, r32(c, SP).wrapping_add(0x10));
+                c.sub_s(2, 3, 23);
+                c.div_s(1, 23, 1);
+                c.sq(2, r32(c, SP));
+                c.sq(2, r32(c, S0).wrapping_add(MESH_VEL));
+                c.mul_s(20, 20, 2);
+                c.swc1(22, r32(c, SP));
+                c.swc1(21, r32(c, SP).wrapping_add(4));
+                c.sw(r32(c, SP).wrapping_add(0xc), 0);
+                c.mul_s(20, 20, 1);
+                c.swc1(20, r32(c, SP).wrapping_add(8));
+                c.lqc2(3, r32(c, S0).wrapping_add(MESH_VEL));
+                c.lqc2(4, r32(c, SP));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, r32(c, S0).wrapping_add(MESH_VEL));
+                c.g[V0][0] = Addr(r32(c, S6).wrapping_add(MESH_NODE_COUNT)).lw(c);
+                c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(0x10));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_23b8);
+                }
+            }
+        }
+        c.cycles += 15;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.restore_fpr(c, 24, 0xc0);
+        frame.restore_fpr(c, 23, 0xb8);
+        frame.restore_fpr(c, 22, 0xb0);
+        frame.restore_fpr(c, 21, 0xa8);
+        frame.restore_fpr(c, 20, 0xa0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// IntersectInfo_Clear (0x3513d0)
+
+/// `void IntersectInfo_Clear(IntersectInfo* self)` (0x3513d0): zero the two
+/// 0x40-byte blocks (at +0 and +0x44) with `MEM_fill` and the word between
+/// them (+0x40). Frame 0x20 (s0 = self).
+pub fn intersect_info_clear(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0x40;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x003e_6448, 0x0035_13ec)?;
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(0x44));
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0x40;
+        call_ptr(c, 0x003e_6448, 0x0035_13fc)?;
+        Addr(r32(c, S0).wrapping_add(0x40)).sw(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2693,6 +2987,76 @@ pub(crate) mod tests {
                 }
                 mesh_anim_ctor_2_args(c, owner, src);
                 mode
+            },
+        );
+    }
+
+    pub(crate) use crate::game::lib::snd::tests::{MeshAnimFakeSlots, FAKE_CTRL, FAKE_MAGIC};
+
+    #[test]
+    fn mesh_anim_randomize_nodes_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, DATA, GAME_GP};
+        let _slots = MeshAnimFakeSlots::install();
+        check(
+            ssx3_ee::s11::f_00352230__generated,
+            mesh_anim_randomize_nodes,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_2230, 5);
+                // This machine's call to the faked RNG (see snd.rs).
+                c.bus.write32(FAKE_CTRL, FAKE_MAGIC);
+                let (this, model, nodes, rate) =
+                    (DATA + 0x1000, DATA + 0x2000, DATA + 0x3000, DATA + 0x4000);
+                // No nodes at all on some seeds (negative and zero counts).
+                let count = match seed % 6 {
+                    0 => 0i32,
+                    1 => -1,
+                    n => 1 + (n as i32 % 3),
+                };
+                c.bus.write32(this + MESH_MODEL, model);
+                c.bus.write32(model + MESH_NODE_LIST, nodes);
+                c.bus.write32(nodes + MESH_NODE_COUNT, count as u32);
+                c.bus.write32(this + MESH_SPIN_SCALE, r.f32(4.0));
+                for k in 0..3u32 {
+                    c.bus.write32(this + MESH_VMAX + 4 * k, r.f32(20.0));
+                }
+                for k in 0..4u32 {
+                    c.bus.write32(this + MESH_VBASE + 4 * k, r.f32(2.0));
+                }
+                // The frame-rate struct: divisor and velocity scale.
+                c.bus.write32(GAME_GP + MESH_FRAME_RATE_GP, rate);
+                c.bus.write32(
+                    rate + 0x10,
+                    match seed % 4 {
+                        0 => 30u32,
+                        1 => 60,
+                        2 => 120,
+                        _ => 1 + r.next_u32() % 200,
+                    },
+                );
+                c.bus.write32(rate + 0x14, r.f32(2.0));
+                c.g[A0][0] = this as u64;
+            },
+        );
+    }
+
+    /// `IntersectInfo_Clear` zeroes the two blocks and the word between them
+    /// (the real `MEM_fill`).
+    #[test]
+    fn intersect_info_clear_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA};
+        check(
+            ee::s11::f_003513d0__generated,
+            intersect_info_clear,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_13d0, 0);
+                c.pc = 0x0035_13d0;
+                let info = DATA + 0x100;
+                fill(c, &mut r, info, 0x30);
+                c.g[A0][0] = sx(info);
             },
         );
     }

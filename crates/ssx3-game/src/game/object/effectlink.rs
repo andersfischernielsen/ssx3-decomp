@@ -120,6 +120,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0034_58c0, particle_modifier_ctor, "ParticleModifier_ctor"),
     (0x0034_6300, halo_modifier_save, "HaloModifier_Save"),
+    (
+        0x0034_5c90,
+        dynamic_particle_modifier_ctor,
+        "DynamicParticleModifier_ctor",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1363,6 +1368,107 @@ pub fn halo_modifier_save(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// DynamicParticleModifier_ctor (0x345c90).
+
+/// `ParticleModifier_BaseCtor(ParticleModifier*, void *o)`.
+pub(crate) const DPM_BASE_CTOR: Callee = Callee {
+    addr: 0x0034_5798,
+    f: ee::s11::ParticleModifier_BaseCtor,
+};
+
+/// `DynamicEmitter_ctor(Emitter*)` (another shard: through the table).
+pub(crate) const DPM_EMITTER_CTOR: u32 = 0x0037_0b60;
+
+/// `DynamicEmitter_Setup(Emitter*, EmitterDef*, float time)`.
+pub(crate) const DPM_EMITTER_SETUP: u32 = 0x0037_0dc8;
+
+/// `DynamicParticleModifier_TransformPoints(DynamicParticleModifier*)`.
+pub(crate) const DPM_TRANSFORM_POINTS: Callee = Callee {
+    addr: 0x0034_5ef8,
+    f: ee::s11::DynamicParticleModifier_TransformPoints,
+};
+
+pub(crate) const DPM_DONE: u32 = 0x18;
+
+pub(crate) const DPM_EMITTER: u32 = 0x60;
+
+pub(crate) const DPM_DEFINITION: u32 = 0x260;
+
+/// The definition's local point (x, y, z at +0x48..+0x50, zeroed after).
+pub(crate) const DPM_DEF_POINT: u32 = 0x48;
+
+/// `void* DynamicParticleModifier_ctor(DynamicParticleModifier* mem, void*
+/// desc, void* inst, int node, sIbVec4* pos)` (0x345c90): initialise the
+/// base particle modifier, the emitter sub-object and the two local points,
+/// hand the definition's point to the emitter, set it up with no time left,
+/// transform the points into world space and count the instance. Frame 0x70
+/// (s0 = self, s1 = desc, s2 = emitter, s3 = node, s4 = pos).
+pub fn dynamic_particle_modifier_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 59;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S1, 0x50);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x30);
+        frame.save(c, S4, 0x20);
+        c.g[S3][0] = c.g[A3][0];
+        c.g[S4][0] = c.g[T0][0];
+        frame.save(c, S2, 0x40);
+        frame.save_ra(c, 0x10);
+        c.g[A1][0] = c.g[A2][0];
+        c.g[S2][0] = sx(r32(c, S0).wrapping_add(DPM_EMITTER));
+        DPM_BASE_CTOR.call(c, 0x0034_5cc8)?;
+        c.g[V0][0] = 0x49_0000;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1268));
+        Addr(r32(c, S0).wrapping_add(8)).sw(c, c.g[V0][0]);
+        call_ptr(c, DPM_EMITTER_CTOR, 0x0034_5cdc)?;
+        c.g[V0][0] = 0x49_0000;
+        Addr(r32(c, S0).wrapping_add(DPM_DEFINITION)).sw(c, c.g[S1][0]);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1370));
+        Addr(r32(c, S0).wrapping_add(DPM_NODE)).sw(c, c.g[S3][0]);
+        Addr(r32(c, S0).wrapping_add(0x258)).sw(c, c.g[V0][0]);
+        c.g[A0][0] = c.g[S2][0];
+        Addr(frame.at(c, 0xc)).sw(c, 0);
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(1, 12); // f12 = -1.0 (no time left)
+        c.lq(2, r32(c, S4));
+        c.sq(2, r32(c, S0).wrapping_add(0x20)); // localA = *pos
+        c.lwc1(0, r32(c, S1).wrapping_add(DPM_DEF_POINT));
+        c.lwc1(1, r32(c, S1).wrapping_add(DPM_DEF_POINT + 4));
+        c.lwc1(2, r32(c, S1).wrapping_add(DPM_DEF_POINT + 8));
+        c.swc1(0, frame.at(c, 0));
+        c.swc1(1, frame.at(c, 4));
+        c.swc1(2, frame.at(c, 8));
+        Addr(r32(c, S0).wrapping_add(0x14)).sw(c, 0);
+        c.lq(2, frame.at(c, 0));
+        c.sq(2, r32(c, S0).wrapping_add(0x50)); // localB
+        Addr(r32(c, S1).wrapping_add(DPM_DEF_POINT + 8)).sw(c, 0);
+        Addr(r32(c, S1).wrapping_add(DPM_DEF_POINT)).sw(c, 0);
+        Addr(r32(c, S1).wrapping_add(DPM_DEF_POINT + 4)).sw(c, 0);
+        c.g[A1][0] = Addr(r32(c, S0).wrapping_add(DPM_DEFINITION)).lw(c);
+        call_ptr(c, DPM_EMITTER_SETUP, 0x0034_5d40)?;
+        c.g[A0][0] = c.g[S0][0];
+        DPM_TRANSFORM_POINTS.call(c, 0x0034_5d48)?;
+        c.g[V1][0] = Addr(r32(c, GP).wrapping_add(0xf0c)).lw(c);
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x50);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+        frame.restore(c, S2, 0x40);
+        Addr(r32(c, GP).wrapping_add(0xf0c)).sw(c, c.g[V1][0]);
+        Addr(r32(c, S0).wrapping_add(DPM_DONE)).sw(c, 0);
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2130,6 +2236,113 @@ pub(crate) mod tests {
                 c.bus.write32(stream, vt);
                 c.g[A0][0] = this as u64;
                 c.g[A1][0] = stream as u64;
+            },
+        );
+    }
+
+    // -- 0x00345c90 DynamicParticleModifier_ctor ------------------------------
+
+    /// `DynamicParticleModifier_ctor`: the real base ctor, the emitter ctor
+    /// (`DynamicEmitter_ctor`, an `Emitter_Init` thunk and `memset`), the
+    /// real `DynamicEmitter_Setup` (its own test's definition fixture, with
+    /// the emitter's reset methods at the modifier's +0x258 = 0x491370 as
+    /// fakes) and the real
+    /// `DynamicParticleModifier_TransformPoints` (an instance with no owner
+    /// and node -1 or a 0-2 parent chain).
+    #[test]
+    fn dynamic_particle_modifier_ctor_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::{check, fill, DATA, GAME_GP};
+        const SELF: u32 = DATA + 0x2000;
+        const DEF: u32 = DATA + 0x1000;
+        const POS: u32 = DATA + 0x500;
+        const INST: u32 = DATA;
+        const SKEL: u32 = DATA + 0x400;
+        const NODES: u32 = DATA + 0x600;
+        const MATS: u32 = DATA + 0x800;
+        const DYN_VTABLE: u32 = 0x0049_1370;
+        check(
+            ee::s11::f_00345c90__generated,
+            dynamic_particle_modifier_ctor,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x345c90, 0);
+                c.pc = 0x0034_5c90;
+                c.g[GP][0] = GAME_GP as u64;
+                // The emitter's reset methods, at the vtable the ctor
+                // installs (slot -> {delta, method}).
+                for (slot, i) in [(0x8u32, 0u32), (0x28, 1), (0x10, 2)] {
+                    c.bus.write16(DYN_VTABLE + slot, 0);
+                    c.bus.write32(DYN_VTABLE + slot + 4, FAKE + 0x10 * i);
+                }
+                // The modifier and its definition (the setup test's fixture).
+                fill(c, &mut r, SELF, 0x300 / 4);
+                for i in 0..0x40u32 {
+                    c.bus.write32(DEF + 4 * i, r.f32(50.0));
+                }
+                c.bus.write32(DEF, 1 + r.next_u32() % 4);
+                c.bus.write32(DEF + 4, r.next_u32() % 4);
+                if seed % 5 != 0 {
+                    c.bus.write32(DEF + 0xc, 1.5f32.to_bits());
+                }
+                c.bus.write32(DEF + 0xd0, seed % 4);
+                c.bus.write32(DEF + 0xc4, r.next_u32());
+                c.bus.write32(DEF + 0xc8, r.next_u32());
+                let start = match seed % 4 {
+                    0 => 1.0f32.to_bits(),
+                    1 => r.f32(5.0) | 0x8000_0000,
+                    _ => r.f32(5.0) & 0x7fff_ffff,
+                };
+                c.bus.write32(DEF + 0x8, start);
+                c.bus.write32(
+                    SELF + DPM_EMITTER + 0x178,
+                    if seed % 8 == 0 {
+                        60
+                    } else {
+                        r.next_u32() % 400
+                    },
+                );
+                // Rand_NextMain's state, the descriptor tables and templates.
+                fill(c, &mut r, 0x004f_f018, 6);
+                let base = (GAME_GP as i32 - 0x2868) as u32;
+                for i in 0..24u32 {
+                    c.bus.write32(base + 4 * i, r.f32(10.0));
+                }
+                fill(c, &mut r, 0x0050_0000 - 0xee0, 4);
+                for i in 0..0x10u32 {
+                    c.bus.write32(0x0050_0000 - 0xe60 + 4 * i, r.f32(4.0));
+                }
+                fill(c, &mut r, 0x0050_1420, 5);
+                // The instance and its (optional) skeleton node chain.
+                for k in 0..0x10 {
+                    c.bus.write32(INST + 0x10 + 4 * k, r.f32(4.0));
+                }
+                c.bus.write32(INST + 0xc, 0);
+                c.bus.write32(INST + 0x84, r.f32(2.0));
+                c.bus.write32(INST + 0x80, SKEL);
+                c.bus.write32(SKEL + 8, NODES);
+                for (n, parent) in [(0u32, u32::MAX), (1, 0), (2, 1), (3, 0)] {
+                    c.bus.write32(NODES + 0x10 * n, parent);
+                    c.bus.write32(NODES + 0x10 * n + 0xc, MATS + 0x40 * n);
+                }
+                for k in 0..0x40 {
+                    c.bus.write32(MATS + 4 * k, r.f32(4.0));
+                }
+                // The position, and the definition point the ctor zeroes.
+                for k in 0..4 {
+                    c.bus.write32(POS + 4 * k, r.f32(10.0));
+                }
+                for k in 0..3 {
+                    c.bus.write32(DEF + DPM_DEF_POINT + 4 * k, r.edge_f32());
+                }
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(DEF);
+                c.g[A2][0] = sx(INST);
+                c.g[A3][0] = match seed % 5 {
+                    0 => u64::MAX,
+                    k => (k - 1) as u64,
+                };
+                c.g[T0][0] = sx(POS);
             },
         );
     }

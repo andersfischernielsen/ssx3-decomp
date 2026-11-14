@@ -503,6 +503,27 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         path_set_volume_percent,
         "PATH_SetVolumePercent",
     ),
+    (0x002a_d888, bankmonitor_timer_set, "BankMonitor_TimerSet"),
+    (
+        0x002a_dc30,
+        bank_monitor_find_free_timer,
+        "BankMonitor_FindFreeTimer",
+    ),
+    (
+        0x002b_03b8,
+        speech_get_language_from_suffix,
+        "Speech_GetLanguageFromSuffix",
+    ),
+    (
+        0x002b_1348,
+        speech_system_stream_wait_callback,
+        "SpeechSystem_StreamWaitCallback",
+    ),
+    (
+        0x002b_1520,
+        speech_system_apply_event_context,
+        "SpeechSystem_ApplyEventContext",
+    ),
 ];
 
 /// Same-shard direct callees used above.
@@ -833,6 +854,9 @@ pub(crate) mod callee {
         addr: 0x0014_d240,
         f: ee::s01::f_0014d240,
     };
+    pub(crate) use crate::game::lib::snd::callee::BANK_MONITOR_TIMER_ENABLE;
+    pub(crate) use crate::game::lib::snd::callee::BANK_MONITOR_TIMER_KILL as BANK_MONITOR_TIMER_KILL_2;
+    pub(crate) use crate::game::lib::snd::callee::BANK_MONITOR_TIMER_SET_PERIOD;
 }
 
 /// The monitor slots `PATH_PlatRefreshStatus` walks (`D_004D3E98`, 24
@@ -7913,6 +7937,661 @@ pub(crate) fn set_map_tracks(c: &mut Cpu) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// SpeechSystem_ApplyEventContext (0x2b1520)
+
+/// `sBMon.ents` entry `j`, as the body addresses it: `self + j*0x20`, with the
+/// fields at these absolute offsets (`ents[0]` is `self + 0x18`, i.e. the
+/// `used` word of entry 0).
+#[cfg(test)]
+pub(crate) const SPEECH_EVENT_ENT_SIZE: u32 = 0x20;
+
+/// `sBEnt_1520` fields, relative to `self + j*0x20`.
+pub(crate) const SPEECH_EVENT_ENT_USED: u32 = 0x18;
+
+pub(crate) const SPEECH_EVENT_ENT_ID: u32 = 0x20;
+
+pub(crate) const SPEECH_EVENT_ENT_KEY: u32 = 0x24;
+
+pub(crate) const SPEECH_EVENT_ENT_OBJ: u32 = 0x28;
+
+pub(crate) const SPEECH_EVENT_ENT_W: u32 = 0x2c;
+
+pub(crate) const SPEECH_EVENT_ENT_T: u32 = 0x30;
+
+pub(crate) const SPEECH_EVENT_ENT_K: u32 = 0x34;
+
+/// `sBMon` fields.
+pub(crate) const SPEECH_EVENT_SLOTS: u32 = 0x04;
+
+pub(crate) const SPEECH_EVENT_CUR_K: u32 = 0x0c;
+
+pub(crate) const SPEECH_EVENT_CUR_ID: u32 = 0x10;
+
+/// `sBMObj_1520`: the voice (a `cBMVoice_1520`) and the stored `z`.
+pub(crate) const SPEECH_EVENT_OBJ_VOICE: u32 = 0x6c0;
+
+pub(crate) const SPEECH_EVENT_OBJ_Z: u32 = 0x870;
+
+/// Virtual slots of the voice: `v05()` at +0x28 and `v08()` at +0x40.
+pub(crate) const SPEECH_EVENT_V05: u32 = 0x28;
+
+pub(crate) const SPEECH_EVENT_V08: u32 = 0x40;
+
+/// Where the found entry writes the voice's state (`slots[id]` fields).
+pub(crate) const SPEECH_EVENT_SLOT_V05: u32 = 0x8cc;
+
+pub(crate) const SPEECH_EVENT_SLOT_V08: u32 = 0x8f8;
+
+pub(crate) const SPEECH_EVENT_SLOT_Z: u32 = 0x8fc;
+
+pub(crate) const SPEECH_EVENT_SLOT_T: u32 = 0x8f4;
+
+pub(crate) const SPEECH_EVENT_SLOT_W: u32 = 0x8d0;
+
+/// `int SpeechSystem_ApplyEventContext(sBMon* self, int id, int key)`
+/// (0x2b1520): find the used entry of the ten whose `(id, key)` matches; copy
+/// its voice's `v05`/`v08`/`z`/`t`/`w` into `self->slots[id]`, remember its
+/// `k` (or clear the current key when `k` is 0) and return 1. No match: 0.
+/// Frame 0x70.
+pub fn speech_system_apply_event_context(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S5, 0x10);
+        c.g[S0][0] = c.g[A0][0]; // self
+        frame.save(c, S3, 0x30);
+        c.g[S5][0] = c.g[A1][0]; // id
+        frame.save(c, S1, 0x50);
+        c.g[S3][0] = sx((c.g[S5][0] as u32) << 2); // id * 4 (slots index)
+        frame.save(c, S2, 0x40);
+        c.g[A0][0] = 0; // j
+        frame.save(c, S4, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = sx((c.g[A0][0] as u32) << 5); // j * 0x20
+        'search: loop {
+            'b_2b167c: {
+                'b_2b166c: {
+                    c.cycles += 4;
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(SPEECH_EVENT_ENT_USED));
+                    if c.g[V1][0] == 0 {
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+                        break 'b_2b166c;
+                    }
+                    c.cycles += 3;
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(SPEECH_EVENT_ENT_ID));
+                    if c.g[V1][0] != c.g[S5][0] {
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+                        break 'b_2b166c;
+                    }
+                    c.cycles += 3;
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(SPEECH_EVENT_ENT_KEY));
+                    if c.g[V1][0] != c.g[A2][0] {
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+                        break 'b_2b166c;
+                    }
+                    // The entry matches: read the voice's v05/v08 and the z.
+                    'b_2b15e0: {
+                        c.cycles += 7;
+                        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(SPEECH_EVENT_ENT_OBJ));
+                        c.g[S4][0] = 0;
+                        c.g[S2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                        c.g[A3][0] = 0;
+                        c.g[A1][0] = c.lw(c.g[S2][0] as u32); // the entry's object
+                        let no_object = c.g[A1][0] == 0;
+                        c.g[T0][0] = sx(0xffff_ffff);
+                        if no_object {
+                            break 'b_2b15e0;
+                        }
+                        c.cycles += 17;
+                        c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(SPEECH_EVENT_OBJ_VOICE));
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(SPEECH_EVENT_OBJ_VOICE));
+                        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(SPEECH_EVENT_V05));
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(SPEECH_EVENT_V05 + 4));
+                        let v05 = c.g[V0][0] as u32;
+                        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, v05, 0x002b_15b4)?;
+                        c.g[A0][0] = c.lw(c.g[S2][0] as u32);
+                        c.g[S4][0] = c.g[V0][0]; // v = voice->v05()
+                        c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(SPEECH_EVENT_OBJ_VOICE));
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(SPEECH_EVENT_OBJ_VOICE));
+                        c.g[A1][0] = c.lh((c.g[V1][0] as u32).wrapping_add(SPEECH_EVENT_V08));
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(SPEECH_EVENT_V08 + 4));
+                        let v08 = c.g[V0][0] as u32;
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                        call_ptr(c, v08, 0x002b_15d4)?;
+                        c.g[V1][0] = c.lw(c.g[S2][0] as u32);
+                        c.g[A3][0] = c.g[V0][0]; // u = voice->v08()
+                        c.g[T0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(SPEECH_EVENT_OBJ_Z));
+                        break 'b_2b15e0;
+                    }
+                    'b_2b1664: {
+                        'b_2b165c: {
+                            c.cycles += 28;
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SPEECH_EVENT_SLOTS));
+                            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                            c.g[A2][0] = c.g[A0][0];
+                            c.g[A1][0] = c.g[A0][0];
+                            c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                            c.sw(
+                                (c.g[V1][0] as u32).wrapping_add(SPEECH_EVENT_SLOT_V05),
+                                c.g[S4][0],
+                            );
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SPEECH_EVENT_SLOTS));
+                            c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                            c.sw(
+                                (c.g[V1][0] as u32).wrapping_add(SPEECH_EVENT_SLOT_V08),
+                                c.g[A3][0],
+                            );
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SPEECH_EVENT_SLOTS));
+                            c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                            c.sw(
+                                (c.g[V1][0] as u32).wrapping_add(SPEECH_EVENT_SLOT_Z),
+                                c.g[T0][0],
+                            );
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SPEECH_EVENT_SLOTS));
+                            c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(SPEECH_EVENT_ENT_T));
+                            c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(SPEECH_EVENT_SLOT_T));
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(SPEECH_EVENT_SLOTS));
+                            c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(SPEECH_EVENT_ENT_W));
+                            c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                            c.sw(
+                                (c.g[V1][0] as u32).wrapping_add(SPEECH_EVENT_SLOT_W),
+                                c.g[A0][0],
+                            );
+                            c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(SPEECH_EVENT_ENT_K));
+                            if c.g[V0][0] == 0 {
+                                c.g[V0][0] = sx(0xffff_ffff);
+                                break 'b_2b165c;
+                            }
+                            c.cycles += 3;
+                            c.sw(
+                                (c.g[S0][0] as u32).wrapping_add(SPEECH_EVENT_CUR_ID),
+                                c.g[S5][0],
+                            );
+                            c.sw(
+                                (c.g[S0][0] as u32).wrapping_add(SPEECH_EVENT_CUR_K),
+                                c.g[V0][0],
+                            );
+                            break 'b_2b1664;
+                        }
+                        c.cycles += 2;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(SPEECH_EVENT_CUR_K), 0);
+                        c.sw(
+                            (c.g[S0][0] as u32).wrapping_add(SPEECH_EVENT_CUR_ID),
+                            c.g[V0][0],
+                        );
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = 1;
+                    break 'b_2b167c;
+                }
+                // Next entry, or out of entries.
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A0][0] as i64) < 10) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S1][0] = sx((c.g[A0][0] as u32) << 5);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002b_1558);
+                    }
+                    continue 'search;
+                }
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+                break 'b_2b167c;
+            }
+            c.cycles += 9;
+            break 'search;
+        }
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Speech_GetLanguageFromSuffix (0x2b03b8)
+// ---------------------------------------------------------------------------
+
+/// `int Speech_GetLanguageFromSuffix(const char* name)` (0x2b03b8): a speech
+/// bank name ends in `_eng`, `_frn`, `_grm` or `_spn`; return 1..4 for those
+/// languages and 0 otherwise. The check is on the last four characters, so a
+/// name shorter than four still reads whatever precedes it.
+pub fn speech_get_language_from_suffix(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0041_6810, 0x002b_03d0)?; // strlen
+        c.g[A1][0] = c.g[V0][0]; // len
+        c.g[V1][0] = 0x5f; // '_'
+        c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, S0))); // name + len
+        c.g[V0][0] = Addr(r32(c, A0).wrapping_sub(4)).lb(c);
+        let is_underscore = c.g[V0][0] == c.g[V1][0];
+        c.g[S1][0] = 0; // lang
+        let mut plus_one = true;
+        'suffix: {
+            if !is_underscore {
+                break 'suffix;
+            }
+            // "_eng"
+            c.cycles += 4;
+            c.g[V1][0] = Addr(r32(c, A0).wrapping_sub(3)).lb(c);
+            c.g[V0][0] = 0x65;
+            let not_e = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, S0)));
+            if !not_e {
+                c.cycles += 4;
+                c.g[V1][0] = Addr(r32(c, A0).wrapping_sub(2)).lb(c);
+                c.g[V0][0] = 0x6e;
+                let not_n = c.g[V1][0] != c.g[V0][0];
+                c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, S0)));
+                if !not_n {
+                    c.cycles += 4;
+                    c.g[V1][0] = Addr(r32(c, A0).wrapping_sub(1)).lb(c);
+                    c.g[V0][0] = 0x67;
+                    let not_g = c.g[V1][0] != c.g[V0][0];
+                    c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, S0)));
+                    if !not_g {
+                        c.cycles += 2;
+                        c.g[S1][0] = 1;
+                        break 'suffix;
+                    }
+                }
+            }
+            // "_frn"
+            c.cycles += 4;
+            c.g[A0][0] = 0x66;
+            c.g[V1][0] = Addr(r32(c, V0).wrapping_sub(3)).lb(c);
+            let not_f = c.g[V1][0] != c.g[A0][0];
+            c.g[A1][0] = c.g[V0][0];
+            if not_f {
+                c.cycles += 1;
+                c.g[V1][0] = Addr(r32(c, A1).wrapping_sub(3)).lb(c);
+            } else {
+                c.cycles += 4;
+                c.g[V1][0] = Addr(r32(c, A1).wrapping_sub(2)).lb(c);
+                c.g[V0][0] = 0x72;
+                if c.g[V1][0] != c.g[V0][0] {
+                    c.g[V1][0] = Addr(r32(c, A1).wrapping_sub(3)).lb(c);
+                } else {
+                    c.cycles += 4;
+                    c.g[V1][0] = Addr(r32(c, A1).wrapping_sub(1)).lb(c);
+                    c.g[V0][0] = 0x6e;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V1][0] = Addr(r32(c, A1).wrapping_sub(3)).lb(c);
+                    } else {
+                        c.cycles += 2;
+                        c.g[S1][0] = 2;
+                        break 'suffix;
+                    }
+                }
+            }
+            // "_grm"
+            c.cycles += 3;
+            c.g[V0][0] = 0x67;
+            if c.g[V1][0] != c.g[V0][0] {
+                c.g[V1][0] = Addr(r32(c, A1).wrapping_sub(3)).lb(c);
+            } else {
+                c.cycles += 4;
+                c.g[V1][0] = Addr(r32(c, A1).wrapping_sub(2)).lb(c);
+                c.g[V0][0] = 0x72;
+                if c.g[V1][0] != c.g[V0][0] {
+                    c.g[V1][0] = Addr(r32(c, A1).wrapping_sub(3)).lb(c);
+                } else {
+                    c.cycles += 4;
+                    c.g[V1][0] = Addr(r32(c, A1).wrapping_sub(1)).lb(c);
+                    c.g[V0][0] = 0x6d;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V1][0] = Addr(r32(c, A1).wrapping_sub(3)).lb(c);
+                    } else {
+                        c.cycles += 2;
+                        c.g[S1][0] = 3;
+                        break 'suffix;
+                    }
+                }
+            }
+            // "_spn"
+            c.cycles += 3;
+            c.g[V0][0] = 0x73;
+            let not_s = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = c.g[S1][0];
+            if not_s {
+                plus_one = false;
+                break 'suffix;
+            }
+            c.cycles += 4;
+            c.g[V1][0] = Addr(r32(c, A1).wrapping_sub(2)).lb(c);
+            c.g[V0][0] = 0x70;
+            let not_p = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = c.g[S1][0];
+            if not_p {
+                plus_one = false;
+                break 'suffix;
+            }
+            c.cycles += 4;
+            c.g[V0][0] = Addr(r32(c, A1).wrapping_sub(1)).lb(c);
+            c.g[S1][0] = 4;
+            c.g[V0][0] = c.g[V0][0] ^ 0x6e;
+            if c.g[V0][0] != 0 {
+                c.g[S1][0] = 0;
+            }
+        }
+        if plus_one {
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S1][0];
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        c.g[RA][0] = c.ld(frame.at(c, 0));
+        let ra = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x30));
+        c.pc = ra;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// BankMonitor_TimerSet (0x2ad888)
+// ---------------------------------------------------------------------------
+
+/// `void BankMonitor_TimerSet(BankMonitorTimer* t, int period, sBmKey key,
+/// int b, int c, int d, int e, int f)` (0x2ad888): re-arm a bank-monitor
+/// timer — kill it, set its period, store the 8-byte key (an unaligned
+/// copy through the stack) and five payload words, then enable it.
+pub fn bankmonitor_timer_set(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 42;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S0, 0x80);
+        c.g[S0][0] = c.g[A0][0]; // the timer
+        frame.save(c, S1, 0x70);
+        frame.save(c, S2, 0x60);
+        c.g[S1][0] = c.g[A1][0]; // period
+        frame.save(c, S3, 0x50);
+        c.g[S2][0] = c.g[A3][0]; // b
+        frame.save(c, S4, 0x40);
+        c.g[S3][0] = c.g[T0][0]; // c
+        frame.save(c, S5, 0x30);
+        c.g[S4][0] = c.g[T1][0]; // d
+        frame.save(c, S6, 0x20);
+        c.g[S5][0] = c.g[T2][0]; // e
+        c.g[S6][0] = c.g[T3][0]; // f
+        c.sd(frame.at(c, 0x10), c.g[RA][0]);
+        let key = c.g[A2][0];
+        c.sd(frame.at(c, 0), key);
+        callee::BANK_MONITOR_TIMER_KILL_2.call(c, 0x002a_d8d0)?;
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[S0][0];
+        callee::BANK_MONITOR_TIMER_SET_PERIOD.call(c, 0x002a_d8dc)?;
+        // The key is copied 8 bytes at a time, unaligned.
+        c.ldl(2, frame.at(c, 7));
+        c.ldr(2, frame.at(c, 0));
+        let key_src = Addr(r32(c, S0));
+        c.sdl(2, key_src.off(0x13).0);
+        c.sdr(2, key_src.off(0xc).0);
+        let timer = Addr(r32(c, S0));
+        let b = c.g[S2][0];
+        timer.off(0x18).sw(c, b);
+        c.g[A0][0] = c.g[S0][0];
+        let cw = c.g[S3][0];
+        timer.off(0x1c).sw(c, cw);
+        let dw = c.g[S4][0];
+        timer.off(0x20).sw(c, dw);
+        let ew = c.g[S5][0];
+        timer.off(0x24).sw(c, ew);
+        let fw = c.g[S6][0];
+        timer.off(0x28).sw(c, fw);
+        callee::BANK_MONITOR_TIMER_ENABLE.call(c, 0x002a_d908)?;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore(c, S6, 0x20);
+        c.g[RA][0] = c.ld(frame.at(c, 0x10));
+        let ra = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x90));
+        c.pc = ra;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SpeechSystem_StreamWaitCallback (0x2b1348)
+
+/// `SND` request message: the entry pointer at +0x18, the request id at
+/// +0x1c and the timer id at +0x20.
+pub(crate) const STREAM_MSG_ENTRY: u32 = 0x18;
+
+pub(crate) const STREAM_MSG_REQUEST: u32 = 0x1c;
+
+pub(crate) const STREAM_MSG_TIMER: u32 = 0x20;
+
+/// The request entry: the stream slot at +0, the stream index at +4.
+#[cfg(test)]
+pub(crate) const STREAM_ENTRY_SLOT: u32 = 0;
+
+pub(crate) const STREAM_ENTRY_INDEX: u32 = 0x4;
+
+/// `D_004A37B4` (the SND manager's `**`) at `gp + 0x6c4`.
+pub(crate) const STREAM_SND_GP: u32 = 0x6c4;
+
+/// The bank monitor's timer object at +0x1d8 of the manager.
+pub(crate) const STREAM_MONITOR: u32 = 0x1d8;
+
+/// The timer descriptor `D_004A37D8` (8 bytes, loaded unaligned).
+pub(crate) const STREAM_TIMER_DESC: u32 = 0x004a_37d8;
+
+/// Callees.
+pub(crate) const STREAM_ARRAY_GET_STATE: u32 = 0x002a_ae08;
+
+pub(crate) const STREAM_ARRAY_IS_PLAYING: u32 = 0x002a_b028;
+
+pub(crate) const STREAM_ARRAY_TIME_LEFT: u32 = 0x002a_ae78;
+
+pub(crate) const STREAM_ARRAY_CURRENT: u32 = 0x002a_b150;
+
+pub(crate) const STREAM_MONITOR_ADD_TIMER: u32 = 0x002a_dca0;
+
+pub(crate) const STREAM_INSTANCE_SLOT: u32 = 0x002b_1220;
+
+pub(crate) const STREAM_START_CALLBACK: u32 = 0x002b_1268;
+
+/// `int SpeechSystem_StreamWaitCallback(SpeechSystem* self, SndMsg* msg)`
+/// (0x2b1348): when the stream of the message's entry is beyond its first
+/// state: if it is playing, add a bank-monitor timer for its remaining time
+/// and return 1; otherwise, when the current request is the message's, run
+/// the start callback. In every other case run the start callback (the first
+/// state) or return 0. Frame 0x40 (s0 = self, s1 = entry, s2 = msg).
+pub fn speech_system_stream_wait_callback(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S2, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S1, 0x20);
+        c.g[S1][0] = Addr(r32(c, S2).wrapping_add(STREAM_MSG_ENTRY)).lw(c);
+        c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A1][0] = Addr(r32(c, S1).wrapping_add(STREAM_ENTRY_INDEX)).lw(c);
+        call_ptr(c, STREAM_ARRAY_GET_STATE, 0x002b_1374)?;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+        let first_state = (c.g[V0][0] as i64) <= 0;
+        c.g[A0][0] = c.g[S0][0];
+        if !first_state {
+            // Past the first state: playing (timer) or pending (compare)?
+            c.cycles += 5;
+            c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+            c.g[A1][0] = Addr(r32(c, S1).wrapping_add(STREAM_ENTRY_INDEX)).lw(c);
+            call_ptr(c, STREAM_ARRAY_IS_PLAYING, 0x002b_138c)?;
+            if c.g[V0][0] == 0 {
+                c.g[A1][0] = Addr(r32(c, S1)).lw(c);
+            } else {
+                c.cycles += 20;
+                c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+                c.g[A1][0] = Addr(r32(c, S1).wrapping_add(STREAM_ENTRY_INDEX)).lw(c);
+                call_ptr(c, STREAM_ARRAY_TIME_LEFT, 0x002b_13a0)?;
+                // `BankMonitor_AddTimer(**(gp+0x6c4) + 0x1d8, (int)time,
+                // D_004A37D8[0].v, entry, msg->request, msg->timer, 0, 0)`.
+                c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(STREAM_SND_GP)).lw(c);
+                c.cvt_w_s(1, 0);
+                c.mfc1(5, 1);
+                c.g[V0][0] = 0x004a_0000;
+                c.g[T1][0] = Addr(r32(c, S2).wrapping_add(STREAM_MSG_TIMER)).lw(c);
+                c.g[T0][0] = Addr(r32(c, V1)).lw(c);
+                c.g[A3][0] = c.g[S1][0];
+                c.ldl(6, STREAM_TIMER_DESC + 7);
+                c.ldr(6, STREAM_TIMER_DESC);
+                c.g[T2][0] = 0;
+                c.g[A0][0] = Addr(r32(c, T0)).lw(c);
+                c.g[T3][0] = 0;
+                c.g[T0][0] = Addr(r32(c, S2).wrapping_add(STREAM_MSG_REQUEST)).lw(c);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(STREAM_MONITOR));
+                call_ptr(c, STREAM_MONITOR_ADD_TIMER, 0x002b_13dc)?;
+                c.g[V0][0] = 1;
+                frame.restore(c, S0, 0x30);
+                frame.restore(c, S1, 0x20);
+                frame.restore(c, S2, 0x10);
+                frame.restore_ra(c, 0);
+                c.cycles += 6;
+                frame.close(c);
+                return Ok(());
+            }
+            // The request is still pending: is it the message's?
+            c.cycles += 8;
+            c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_add(STREAM_SND_GP)).lw(c);
+            call_ptr(c, STREAM_INSTANCE_SLOT, 0x002b_13ec)?;
+            c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, STREAM_ARRAY_CURRENT, 0x002b_13f8)?;
+            c.g[V1][0] = Addr(r32(c, S2).wrapping_add(STREAM_MSG_REQUEST)).lw(c);
+            let not_ours = c.g[V0][0] != c.g[V1][0];
+            c.g[V0][0] = 0;
+            if !not_ours {
+                c.cycles += 1;
+                c.g[A0][0] = c.g[S0][0];
+                speech_stream_start(c, frame)?;
+                return Ok(());
+            }
+        } else {
+            speech_stream_start(c, frame)?;
+            return Ok(());
+        }
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        c.cycles += 6;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The shared tail of `SpeechSystem_StreamWaitCallback`: run the start
+/// callback and return its result.
+pub(crate) fn speech_stream_start(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 2;
+    c.g[A1][0] = c.g[S2][0];
+    call_ptr(c, STREAM_START_CALLBACK, 0x002b_1410)?;
+    c.cycles += 6;
+    frame.restore(c, S0, 0x30);
+    frame.restore(c, S1, 0x20);
+    frame.restore(c, S2, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `BankMonitor_TimerIsFree` (0x2ad930).
+pub(crate) const OC327_BANK_TIMER_IS_FREE: Callee = Callee {
+    addr: 0x002a_d930,
+    f: ee::s08::BankMonitor_TimerIsFree,
+};
+
+// ---------------------------------------------------------------------------
+// Sound.
+
+/// `s32 BankMonitor_FindFreeTimer(BankMonitor* self, s32 n)` (0x2adc30): the
+/// index of the `n`-th free timer among the 48 at `self+0x98` (0x2c bytes
+/// apart), or -1.
+pub fn bank_monitor_find_free_timer(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x98));
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A1][0];
+        let mut done = false;
+        loop {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
+            OC327_BANK_TIMER_IS_FREE.call(c, 0x002a_dc58)?;
+            if c.g[V0][0] == 0 {
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+            } else {
+                c.cycles += 3;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(1));
+                if c.g[S2][0] != 0 {
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[S1][0];
+                    done = true;
+                }
+            }
+            if done {
+                break;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[S1][0] as i64) < 48) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2c));
+            if !more {
+                c.cycles += 1;
+                c.g[V0][0] = u64::MAX;
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002a_dc50);
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11488,6 +12167,244 @@ pub(crate) mod tests {
                         let p_m2 = if r_m2.next_u32() % 4 == 0 { 0 } else { track };
                         c.bus.write32(map + SLOT0 + 4 * j, p_m2);
                     }
+                }
+            },
+        );
+    }
+
+    pub(crate) use crate::game::lib::snd::tests::STREAM_FAKE_CONTROL;
+    pub(crate) use crate::game::lib::snd::tests::{StreamFakeSlots, FAKE_CTRL, FAKE_MAGIC};
+
+    // --------------------------------- SpeechSystem_ApplyEventContext
+
+    /// The ten-entry table: entry 0 is another id, entry 1 another key,
+    /// entry 2 unused, entry 3 the match (with or without an object).
+    pub(crate) fn speech_event_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x002b_1520 ^ (seed as u64) << 8);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        c.hooks.miss = crate::difftest::fakes::fake_call;
+        c.hooks.jump_out = crate::difftest::fakes::fake_jump_out;
+        c.hooks.syscall = crate::difftest::fakes::fake_syscall;
+        // Unwind at the first voice call for one seed in four (those carry an
+        // object on the matching entry, see below), so `covered` sees a
+        // requested unwind inside the matched path.
+        let unwind = if seed % 4 == 1 { 0 } else { u32::MAX };
+        c.bus.write32(crate::difftest::fakes::LOG_UNWIND_AT, unwind);
+
+        let this = DATA + 0x100;
+        let id = (seed % 3) as u32;
+        let key = ((seed / 3) % 2) as u32;
+        let no_match = seed % 5 == 4;
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = id as u64;
+        c.g[A2][0] = key as u64;
+        c.pc = 0x002b_1520;
+
+        // self->slots: an array of four slot records.
+        c.bus.write32(this + SPEECH_EVENT_SLOTS, DATA + 0x40);
+        for i in 0..4u32 {
+            c.bus
+                .write32(DATA + 0x40 + 4 * i, DATA + 0x2000 + 0x1000 * i);
+        }
+        // The ten entries: the body indexes entry `j` as `self + (j << 5)` and
+        // then uses the absolute offsets above, so write each entry's field
+        // block there (`ents[0]` is `self + 0x18`, the `used` word of j = 0).
+        for j in 0..10u32 {
+            let e = this + j * SPEECH_EVENT_ENT_SIZE;
+            fill(c, &mut r, e + SPEECH_EVENT_ENT_USED, 8);
+            let (used, e_id, e_key) = match j {
+                0 => (1u32, id ^ 1, key),
+                1 => (1, id, key ^ 1),
+                2 => (0, id, key),
+                3 => (1, id, if no_match { key ^ 1 } else { key }),
+                _ => (0, r.next_u32() % 3, r.next_u32() % 2),
+            };
+            c.bus.write32(e + SPEECH_EVENT_ENT_USED, used);
+            c.bus.write32(e + SPEECH_EVENT_ENT_ID, e_id);
+            c.bus.write32(e + SPEECH_EVENT_ENT_KEY, e_key);
+            c.bus.write32(e + SPEECH_EVENT_ENT_W, r.next_u32());
+            c.bus.write32(e + SPEECH_EVENT_ENT_T, r.edge_f32());
+            c.bus.write32(
+                e + SPEECH_EVENT_ENT_K,
+                if seed % 3 == 0 { 0 } else { 1 + seed % 7 },
+            );
+            c.bus.write32(e + SPEECH_EVENT_ENT_OBJ, 0);
+        }
+        // The matching entry's object, with a fake voice vtable.
+        if !no_match && seed % 2 == 1 {
+            let e = this + 3 * SPEECH_EVENT_ENT_SIZE;
+            let obj = DATA + 0x4000;
+            let vt = vtable(c, &mut r, &[SPEECH_EVENT_V05, SPEECH_EVENT_V08]);
+            c.bus.write32(obj + SPEECH_EVENT_OBJ_VOICE, vt);
+            c.bus.write32(obj + SPEECH_EVENT_OBJ_Z, r.next_u32());
+            c.bus.write32(e + SPEECH_EVENT_ENT_OBJ, obj);
+        }
+    }
+
+    /// `SpeechSystem_ApplyEventContext` over a ten-entry table: used/id/key
+    /// mismatches, the end of the table, and a match whose object is absent
+    /// or has a voice whose `v05`/`v08` are logging fakes.
+    #[test]
+    fn speech_system_apply_event_context_matches() {
+        covered(
+            ee::s08::f_002b1520__generated,
+            speech_system_apply_event_context,
+            200,
+            &speech_event_setup,
+        );
+    }
+
+    /// Speech_GetLanguageFromSuffix: names ending in `_eng`, `_frn`, `_grm`,
+    /// `_spn`, an unknown suffix, and no `_` suffix at all (with and without
+    /// a name prefix).
+    #[test]
+    fn speech_get_language_from_suffix_matches() {
+        check(
+            ee::s08::f_002b03b8__generated,
+            speech_get_language_from_suffix,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2b_03b8, 0);
+                let name = DATA + 0x100;
+                c.g[A0][0] = sx(name);
+                let suffix: &[u8] = match seed % 6 {
+                    0 => &b"eng"[..],
+                    1 => &b"frn"[..],
+                    2 => &b"grm"[..],
+                    3 => &b"spn"[..],
+                    4 => &b"xyz"[..],
+                    _ => &b""[..],
+                };
+                let mut p = name;
+                for _ in 0..(seed / 6) % 5 {
+                    c.bus.write8(p, b'a' + (r.next_u32() % 26) as u8);
+                    p += 1;
+                }
+                if seed % 2 == 0 {
+                    c.bus.write8(p, b'_');
+                    p += 1;
+                }
+                for (i, b) in suffix.iter().enumerate() {
+                    c.bus.write8(p + i as u32, *b);
+                }
+                c.bus.write8(p + suffix.len() as u32, 0);
+            },
+        );
+    }
+
+    /// BankMonitor_TimerSet: a timer record with random fields; the real
+    /// kill/set-period/enable leaves store the period, the 8-byte key and
+    /// the five payload words.
+    #[test]
+    fn bankmonitor_timer_set_matches() {
+        check(
+            ee::s08::f_002ad888__generated,
+            bankmonitor_timer_set,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_d888, 0);
+                let timer = DATA + 0x100;
+                for i in 0..0x30u32 {
+                    c.bus.write32(timer + 4 * i, r.next_u32());
+                }
+                c.g[A0][0] = sx(timer);
+                c.g[A1][0] = sx(r.next_u32() % 5000);
+                c.g[A2][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+                c.g[A3][0] = sx(r.next_u32());
+                c.g[T0][0] = sx(r.next_u32());
+                c.g[T1][0] = sx(r.next_u32());
+                c.g[T2][0] = sx(r.next_u32());
+                c.g[T3][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn speech_system_stream_wait_callback_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, DATA, GAME_GP};
+        let _slots = StreamFakeSlots::install();
+        check(
+            ssx3_ee::s08::f_002b1348__generated,
+            speech_system_stream_wait_callback,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002b_1348, 12);
+                // This machine's call to the faked callees (see snd.rs).
+                c.bus.write32(FAKE_CTRL, FAKE_MAGIC);
+                let (this, array, table) = (DATA + 0x1000, DATA + 0x1100, DATA + 0x1200);
+                let (msg, ent) = (DATA + 0x2000, DATA + 0x2100);
+                // Control values for the faked callees: the stream state, the
+                // playing flag, the remaining time and the instance slot.
+                c.bus.write32(
+                    STREAM_FAKE_CONTROL,
+                    match seed % 3 {
+                        0 => 0,
+                        1 => 1,
+                        _ => 2 + r.next_u32() % 4,
+                    },
+                );
+                c.bus.write32(STREAM_FAKE_CONTROL + 4, (seed % 2) as u32);
+                c.bus.write32(STREAM_FAKE_CONTROL + 8, r.f32(120.0));
+                c.bus.write32(STREAM_FAKE_CONTROL + 12, 0);
+                // self -> array; the array's buffer table is empty, so the
+                // current-request lookup returns -1 at once.
+                c.bus.write32(this, array);
+                c.bus.write32(array + 8, table);
+                for i in 0..8u32 {
+                    c.bus.write32(table + 4 * i, 0);
+                }
+                // The message and its request entry.
+                c.bus.write32(msg + STREAM_MSG_ENTRY, ent);
+                c.bus.write32(
+                    msg + STREAM_MSG_REQUEST,
+                    if seed % 4 == 0 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() & 0x7fff
+                    },
+                );
+                c.bus.write32(msg + STREAM_MSG_TIMER, u32::MAX);
+                c.bus.write32(ent + STREAM_ENTRY_SLOT, r.next_u32() % 4);
+                c.bus.write32(ent + STREAM_ENTRY_INDEX, r.next_u32() % 8);
+                // The SND manager chain `**(gp+0x6c4) + 0x1d8`.
+                let (p1, p2) = (DATA + 0x3000, DATA + 0x3100);
+                c.bus.write32(GAME_GP + STREAM_SND_GP, p1);
+                c.bus.write32(p1, p2);
+                c.bus.write32(p2, DATA + 0x3200);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = msg as u64;
+            },
+        );
+    }
+
+    /// `BankMonitor_FindFreeTimer`: timers free on a stride, `n` taking 1..3
+    /// (found), 0 and 48, and 200 (the whole table, -1).
+    #[test]
+    fn bank_monitor_find_free_timer_matches() {
+        check(
+            ee::s08::f_002adc30__generated,
+            bank_monitor_find_free_timer,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x002a_dc30 ^ seed as u64);
+                scramble(c, &mut r);
+                let this = DATA + 0x100;
+                c.g[A0][0] = sx(this);
+                let n = match seed % 4 {
+                    0 => 0,
+                    1 => 1 + (seed % 3),
+                    2 => 200,
+                    _ => 48,
+                };
+                c.g[A1][0] = sx(n);
+                for i in 0..48u32 {
+                    let t = this + 0x98 + i * 0x2c;
+                    let free = (i + seed) % 5 == 0;
+                    c.bus
+                        .write32(t + 4, if free { 0xffff_ffff } else { (seed ^ i) | 1 });
+                    c.bus.write32(t, r.next_u32());
                 }
             },
         );

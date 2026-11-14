@@ -200,6 +200,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_air_state_play_land_anim2,
         "RiderAirState_PlayLandAnim2",
     ),
+    (0x0013_99e0, rider_air_state_enter, "RiderAirState_Enter"),
+    (0x0013_fad8, obj_ptr_array_sort, "ObjPtrArray_Sort"),
 ];
 
 /// Direct call targets, as the generated body calls them (the shard alias,
@@ -9881,6 +9883,100 @@ pub(crate) fn land2_gp_lit(c: &mut Cpu, off: u32) -> u32 {
     Addr(gp.wrapping_sub(off)).read_u32(c)
 }
 
+// ---------------------------------------------------------------------------
+// RiderAirState_Enter (0x1399e0).
+
+/// `AirPredictor_Prime` (cAirPredictor's start-launch-into-air, another
+/// shard: through the table).
+pub(crate) const RIDER_AIR_START_LAUNCH: u32 = 0x0011_35b8;
+
+/// gp offset of the launch speed the air predictor is primed with.
+pub(crate) const RIDER_AIR_LAUNCH_SPEED: u32 = 0x71d8;
+
+/// `RiderAirState` fields: the "in the air" flag at +0, the rider at +4.
+pub(crate) const RIDER_AIR_ACTIVE: u32 = 0;
+
+pub(crate) const RIDER_AIR_RIDER: u32 = 4;
+
+/// Rider fields: the air predictor (+0x788), the launch state (+0x110) and
+/// the position (+0x1e0).
+pub(crate) const RIDER_AIR_PREDICTOR: u32 = 0x788;
+
+pub(crate) const RIDER_AIR_LAUNCH_STATE: u32 = 0x110;
+
+pub(crate) const RIDER_AIR_POSITION: u32 = 0x1e0;
+
+/// `void RiderAirState_Enter(RiderAirState* self, eMotionState prev)`
+/// (0x1399e0): the state is in the air when the previous state was air (5),
+/// then prime the rider's air predictor from its launch state and position.
+pub fn rider_air_state_enter(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = c.g[A1][0] ^ 5; // prev == 5
+        frame.save_ra(c, 0);
+        c.g[A1][0] = (c.g[A1][0] < 1) as u64;
+        Addr(r32(c, A0).wrapping_add(RIDER_AIR_ACTIVE)).sw(c, c.g[A1][0]);
+        c.g[V0][0] = Addr(r32(c, A0).wrapping_add(RIDER_AIR_RIDER)).lw(c);
+        c.lwc1(12, r32(c, GP).wrapping_sub(RIDER_AIR_LAUNCH_SPEED));
+        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(RIDER_AIR_PREDICTOR)).lw(c);
+        c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(RIDER_AIR_POSITION));
+        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(RIDER_AIR_LAUNCH_STATE));
+        call_ptr(c, RIDER_AIR_START_LAUNCH, 0x0013_9a0c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ObjPtrArray_Sort (0x13fad8)
+
+/// `ObjPtrArray_MergeSort(first, last, buf, cmp)` (0x13f8f8).
+pub(crate) const OBJ_PTR_ARRAY_MERGE_SORT: Callee = Callee {
+    addr: 0x0013_f8f8,
+    f: ee::s01::ObjPtrArray_MergeSort,
+};
+
+/// The stack frame's saved-`ra` slot.
+pub(crate) const OBJ_PTR_ARRAY_SORT_FRAME: u32 = 0x10;
+
+/// `int ObjPtrArray_Sort(T** first, T** last, T** out, const InstanceCompare& cmp)`
+/// (0x13fad8): sort the object-pointer range `[first, last)` into `*out`.
+/// Empty (or inverted) range: nothing, returns 1; one element: copies it and
+/// returns the pointer; two or more: the merge sort fills `*out` and its
+/// result is returned. Frame 0x10 (`ra` +0).
+pub fn obj_ptr_array_sort(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+        let frame = Frame::open(c, OBJ_PTR_ARRAY_SORT_FRAME);
+        // n = (last - first) / 4, an arithmetic shift as the original does.
+        c.g[V1][0] = sx(((c.g[V0][0] as u32) as i32 >> 2) as u32);
+        c.g[V0][0] = ((c.g[V1][0] as i64) < 2) as u64;
+        let fewer_than_two = c.g[V0][0] != 0;
+        frame.save_ra(c, 0);
+        if fewer_than_two {
+            c.cycles += 3;
+            c.g[V0][0] = 1;
+            let not_one = c.g[V1][0] != c.g[V0][0];
+            frame.restore_ra(c, 0);
+            if !not_one {
+                c.cycles += 2;
+                c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                c.sw(c.g[A2][0] as u32, c.g[V0][0]);
+            }
+        } else {
+            c.cycles += 4;
+            OBJ_PTR_ARRAY_MERGE_SORT.call(c, 0x0013_faf8)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     #[test]
@@ -12544,6 +12640,136 @@ pub(crate) mod tests {
                 c.bus.write32(rider + LAND2_RIDER_SPIN, spin.to_bits());
                 c.g[A0][0] = sx(state);
                 c.pc = 0x0013_a968;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+    use std::sync::Once;
+
+    // -- 0x001399e0 RiderAirState_Enter ---------------------------------------
+
+    /// `RiderAirState_Enter`: previous states 0..8 (air only for 5) and the
+    /// real `AirPredictor_Prime` on random predictor data.
+    #[test]
+    fn rider_air_state_enter_matches() {
+        use crate::difftest::{check, fill, scramble, Rng, DATA, GAME_GP};
+        const SELF: u32 = DATA;
+        const RIDER: u32 = DATA + 0x100;
+        check(
+            ee::s01::f_001399e0__generated,
+            rider_air_state_enter,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x1399_e000 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0013_99e0;
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(
+                    GAME_GP.wrapping_sub(RIDER_AIR_LAUNCH_SPEED),
+                    3333.3335f32.to_bits(),
+                );
+                fill(c, &mut r, DATA, 0x800 / 4);
+                c.bus.write32(SELF + RIDER_AIR_RIDER, RIDER);
+                c.bus.write32(RIDER + RIDER_AIR_PREDICTOR, DATA + 0x400);
+                for i in 0..4 {
+                    c.bus.write32(0x4ff_160 + 4 * i, r.next_u32());
+                    c.bus.write32(0x4ff_120 + 4 * i, r.next_u32());
+                }
+                for i in 0..2 {
+                    c.bus.write32(0x4a_5960 + 4 * i, r.next_u32());
+                }
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = (seed % 9) as u64;
+            },
+        );
+    }
+
+    /// Gate words: a fake only acts when its own machine carries its magic
+    /// (the slots are process-global, other tests' machines must fall
+    /// through to whatever was installed before).
+    pub(crate) const CTRL_SORT: u32 = DATA + 0x6_0000;
+
+    pub(crate) const MAGIC_SORT: u32 = 0x13fa_d801;
+
+    /// A call-logging fake for `addr`, gated on `ctrl == magic` and chaining
+    /// to the override it replaced (the slots are shared across test modules).
+    macro_rules! oc318_gated {
+        ($name:ident, $prev:ident, $ctrl:expr, $magic:expr, $addr:expr, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32($ctrl) == $magic {
+                    let ra = c.g[RA][0] as u32;
+                    return fake(c, $addr, ra);
+                }
+                let p = $prev.load(Ordering::Relaxed);
+                if p == 0 || p == $name as *const () as usize {
+                    return $gen(c);
+                }
+                // SAFETY: `p` was read from the same slot (a `fn(&mut Cpu)`).
+                let f = unsafe { std::mem::transmute::<usize, fn(&mut Cpu)>(p) };
+                f(c)
+            }
+        };
+    }
+    pub(crate) use oc318_gated;
+
+    // ------------------------------------------------------- ObjPtrArray_Sort
+
+    oc318_gated!(
+        oc318_fake_merge_sort,
+        OC318_PREV_MERGE_SORT,
+        CTRL_SORT,
+        MAGIC_SORT,
+        0x0013_f8f8,
+        ee::s01::f_0013f8f8__generated
+    );
+
+    pub(crate) fn obj_ptr_array_sort_install() {
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| unsafe {
+            OC318_PREV_MERGE_SORT.store(ee::s01::OVERRIDE_0013F8F8 as usize, Ordering::Relaxed);
+            ee::s01::OVERRIDE_0013F8F8 = oc318_fake_merge_sort;
+        });
+    }
+
+    /// `ObjPtrArray_Sort` over empty, inverted, single and 2/3/16-element
+    /// ranges (the merge sort is a logging fake).
+    #[test]
+    fn obj_ptr_array_sort_matches() {
+        obj_ptr_array_sort_install();
+        covered(
+            ee::s01::f_0013fad8__generated,
+            obj_ptr_array_sort,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0013_fad8, 1);
+                c.pc = 0x0013_fad8;
+                c.bus.write32(CTRL_SORT, MAGIC_SORT);
+                let first = DATA + 0x100;
+                let last = match seed % 8 {
+                    0 => first,                 // empty
+                    1 => first.wrapping_sub(8), // inverted
+                    2 => first + 4,             // one element
+                    3 => first + 8,             // two
+                    4 => first + 0xc,           // three
+                    5 => first + 0x10,          // four
+                    _ => first + 0x40,          // sixteen
+                };
+                for i in 0..16 {
+                    let v = if seed % 2 == 0 {
+                        r.next_u32()
+                    } else {
+                        first + 4 * (15 - i)
+                    };
+                    c.bus.write32(first + 4 * i, v);
+                }
+                c.g[A0][0] = first as u64;
+                c.g[A1][0] = last as u64;
+                c.g[A2][0] = (DATA + 0x300) as u64;
             },
         );
     }

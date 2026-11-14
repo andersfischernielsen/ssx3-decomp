@@ -89,6 +89,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         anim_seq_list_remove_event_trigger,
         "AnimSeqList_RemoveEventTrigger",
     ),
+    (0x0031_4668, anim_seq_list_clear, "AnimSeqList_Clear"),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -1256,6 +1257,85 @@ pub fn anim_seq_list_fade_out_all(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// AnimSeqList_Clear (0x314668)
+
+/// `AnimSeqList`: sequence count (`+0`), first sequence (`+4`).
+pub(crate) const OC320_SEQLIST_COUNT: u32 = 0x0;
+
+pub(crate) const OC320_SEQLIST_FIRST: u32 = 0x4;
+
+/// `AnimSequence`: next sequence in the list (`+0xc8`).
+pub(crate) const OC320_SEQ_NEXT: u32 = 0xc8;
+
+/// `AnimSequence_FreeTriggers` (0x313c08).
+pub(crate) const OC320_SEQ_FREE_TRIGGERS: Callee = Callee {
+    addr: 0x0031_3c08,
+    f: ee::s10::AnimSequence_FreeTriggers,
+};
+
+/// `operator delete` (`__builtin_delete`, 0x317e50).
+pub(crate) const OC320_DELETE: Callee = Callee {
+    addr: 0x0031_7e50,
+    f: ee::s10::__builtin_delete,
+};
+
+/// `void cAnimSequencer::expireAll(void)` (0x314668): drop every sequence of
+/// the list: unlink the head, free its triggers, `delete` it, and decrement
+/// the count, until the list is empty (a zeroed list leaves at once).
+pub fn anim_seq_list_clear(c: &mut Cpu) {
+    const LOOP_HEAD: u32 = 0x0031_4688;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, S1)).off(OC320_SEQLIST_FIRST).lw(c);
+        let empty = c.g[V0][0] == 0;
+        // `lq s0, 0x20(sp)` sits in the branch delay slot: it always runs.
+        frame.restore(c, S0, 0x20);
+        if !empty {
+            loop {
+                c.cycles += 4;
+                c.g[S0][0] = Addr(r32(c, S1)).off(OC320_SEQLIST_FIRST).lw(c);
+                let next = Addr(r32(c, S0)).off(OC320_SEQ_NEXT).lw(c);
+                c.g[V0][0] = next;
+                let node_null = c.g[S0][0] == 0;
+                // `sw` in the delay slot: unlink even for a null node.
+                Addr(r32(c, S1)).off(OC320_SEQLIST_FIRST).sw(c, next);
+                if !node_null {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    OC320_SEQ_FREE_TRIGGERS.call(c, 0x0031_46a0)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    OC320_DELETE.call(c, 0x0031_46a8)?;
+                }
+                c.cycles += 5;
+                c.g[V0][0] = Addr(r32(c, S1)).off(OC320_SEQLIST_COUNT).lw(c);
+                c.g[V1][0] = Addr(r32(c, S1)).off(OC320_SEQLIST_FIRST).lw(c);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                let more = c.g[V1][0] != 0;
+                Addr(r32(c, S1)).off(OC320_SEQLIST_COUNT).sw(c, c.g[V0][0]);
+                if !more {
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x20);
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, LOOP_HEAD);
+                }
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2022,5 +2102,59 @@ pub(crate) mod tests {
                 mode
             },
         );
+    }
+
+    /// A list of `count` sequences (linked through `+0xc8`), each with 0..2
+    /// triggers (linked through `+0xc`) that the real
+    /// `AnimSequence_FreeTriggers` pops, and the real `__builtin_delete`
+    /// (allocator mutex held, fast path).
+    pub(crate) fn oc320_clear_setup(c: &mut Cpu, seed: u32, count: u32) {
+        use crate::game::ai::aianimeventmap::tests::alloc_setup;
+        let mut r = machine(c, seed, 0x31_4668, 0);
+        alloc_setup(c, &mut r);
+        let list = DATA;
+        let mut head = 0;
+        for k in (0..count).rev() {
+            let seq = DATA + 0x1_0000 + 0x400 * k;
+            fill(c, &mut r, seq, 0x20);
+            let mut trig = 0;
+            for t in (0..r.next_u32() % 3).rev() {
+                let node = DATA + 0x8_0000 + 0x4000 * k + 0x40 * t;
+                c.bus.write32(node + 0x0, r.next_u32());
+                c.bus.write32(node + 0xc, trig);
+                trig = node;
+            }
+            c.bus.write32(seq + 0xac, trig);
+            c.bus.write32(seq + OC320_SEQ_NEXT, head);
+            head = seq;
+        }
+        c.bus.write32(list + OC320_SEQLIST_COUNT, count);
+        c.bus.write32(list + OC320_SEQLIST_FIRST, head);
+        c.g[A0][0] = sx(list);
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x0031_4668;
+    }
+
+    driven!(oc320_gen_clear, ee::s10::f_00314668__generated);
+
+    driven!(oc320_hand_clear, anim_seq_list_clear);
+
+    /// Empty list and lists of 1..4 sequences; then the same with events at
+    /// the loop's back edge (0x314688).
+    #[test]
+    fn anim_seq_list_clear_matches() {
+        check(
+            ee::s10::f_00314668__generated,
+            anim_seq_list_clear,
+            200,
+            &|c, seed| oc320_clear_setup(c, seed, seed % 5),
+        );
+        check_events(oc320_gen_clear, oc320_hand_clear, 60, &|c, seed| {
+            oc320_clear_setup(c, seed, 2 + seed / 3 % 3);
+            let mut r = Rng(0x3146_68 ^ seed as u64);
+            let mode = schedule(c, &mut r, seed, 0x0031_4668);
+            c.next_event = c.cycles + 4 + (r.next_u32() % 24) as u64;
+            mode
+        });
     }
 }

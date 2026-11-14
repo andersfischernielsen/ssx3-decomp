@@ -4,6 +4,7 @@
 use crate::abi;
 use crate::abi::r32;
 use crate::abi::ret;
+use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Frame;
@@ -26,6 +27,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003e_2490, eafile_str_icmp, "EAFile_StrICmp"),
     (0x003d_d648, ea_file_queue_read, "EAFile_QueueRead"),
     (0x003d_e670, ea_file_alloc_request, "EAFile_AllocRequest"),
+    (0x003d_d4e8, ea_file_queue_open, "EAFile_QueueOpen"),
+    (0x003d_d5a0, ea_file_queue_close, "EAFile_QueueClose"),
+    (
+        0x003d_e800,
+        ea_file_alloc_file_handle,
+        "EAFile_AllocFileHandle",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -544,6 +552,326 @@ pub fn ea_file_queue_read(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// 0x003de800 EAFile_AllocFileHandle
+
+/// The file-handle manager (`D_00519AB0`): `+4` the handle count, `+0x14`
+/// its mutex (0x519ac4), `+0x2c` the handle array. Handles are 0x110 bytes;
+/// their first word is the in-use flag.
+#[cfg(test)]
+pub(crate) const OC325_FILE_MANAGER: u32 = 0x0051_9ab0;
+
+pub(crate) const OC325_FILE_COUNT: u32 = 0x4;
+
+pub(crate) const OC325_FILE_MUTEX: u32 = 0x14;
+
+pub(crate) const OC325_FILE_ARRAY: u32 = 0x2c;
+
+pub(crate) const OC325_FILE_HANDLE: u32 = 0x110;
+
+/// The manager's own mutex (`D_00519AC4`).
+#[cfg(test)]
+pub(crate) const OC325_FILE_MANAGER_MUTEX: u32 = 0x0051_9ac4;
+
+pub(crate) const OC325_MUTEX_LOCK: Callee = Callee {
+    addr: 0x003e_5700,
+    f: ee::s14::EAMutex_Lock,
+};
+
+pub(crate) const OC325_MUTEX_UNLOCK: Callee = Callee {
+    addr: 0x003e_5760,
+    f: ee::s14::EAMutex_Unlock,
+};
+
+/// `EAFileHandle* EAFile_AllocFileHandle(void)` (0x3de800): take the file
+/// manager's lock, claim the first free handle (marking it in use) and
+/// return it; spin forever when every handle is taken.
+pub fn ea_file_alloc_file_handle(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x40);
+        c.g[A0][0] = 0x0052_0000;
+        frame.save(c, S1, 0x20);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x653c));
+        frame.save(c, S0, 0x30);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = 0;
+        OC325_MUTEX_LOCK.call(c, 0x003d_e824)?;
+        c.g[S2][0] = 0x0052_0000;
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x6550));
+        loop {
+            c.cycles += 4;
+            c.g[V0][0] = Addr(r32(c, S0).wrapping_add(OC325_FILE_COUNT)).lw(c);
+            c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let all_taken = c.g[V0][0] == 0;
+            c.g[V0][0] = OC325_FILE_HANDLE as u64;
+            if all_taken {
+                break;
+            }
+            c.cycles += 6;
+            c.g[A0][0] = Addr(r32(c, S0).wrapping_add(OC325_FILE_ARRAY)).lw(c);
+            c.mult(0, V0, S1, V0); // v0 = 0x110 * i
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V1][0] = Addr(c.g[A0][0] as u32).lw(c);
+            if c.g[V1][0] != 0 {
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_e830);
+                }
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = 0x1;
+                c.sw(c.g[A0][0] as u32, c.g[V0][0]);
+                break;
+            }
+        }
+        c.cycles += 5;
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(OC325_FILE_MUTEX));
+        OC325_MUTEX_UNLOCK.call(c, 0x003d_e868)?;
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(OC325_FILE_COUNT)).lw(c);
+        let no_free = c.g[S1][0] != c.g[V0][0];
+        c.g[V0][0] = OC325_FILE_HANDLE as u64;
+        if !no_free {
+            // Every handle is in use: the original spins here forever.
+            loop {
+                c.cycles += 7;
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_e878);
+                }
+            }
+        }
+        c.cycles += 10;
+        c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x6550));
+        c.mult(0, V0, S1, V0); // v0 = 0x110 * i
+        c.g[V1][0] = Addr(r32(c, A0).wrapping_add(OC325_FILE_ARRAY)).lw(c);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// EAFile_QueueOpen (0x3dd4e8)
+
+/// `EAFileRequest` words QueueOpen fills: arg2 at `+0x10`, arg3 at `+0x14`,
+/// arg1 at `+0x18`; its status at `+0xc` and its file handle at `+0x24`.
+pub(crate) const OC326_QO_ARG2: u32 = 0x10;
+
+pub(crate) const OC326_QO_ARG3: u32 = 0x14;
+
+pub(crate) const OC326_QO_ARG1: u32 = 0x18;
+
+pub(crate) const OC326_QO_STATUS: u32 = 0xc;
+
+pub(crate) const OC326_QO_HANDLE: u32 = 0x24;
+
+/// Where the file name goes inside the file handle.
+pub(crate) const OC326_QO_HANDLE_NAME: u32 = 0x10;
+
+/// The name buffer's length.
+pub(crate) const OC326_QO_NAME_LEN: u64 = 0x100;
+
+/// Command bits in the request's word 0: the mask that clears the state
+/// field (bits 20-23) and the "open" state (2 << 20).
+pub(crate) const OC326_QO_CMD_MASK: u32 = 0xff0f_ffff;
+
+pub(crate) const OC326_QO_CMD_OPEN: u64 = 0x0020_0000;
+
+/// Request status 2: failed / signalled.
+pub(crate) const OC326_QO_STATUS_FAILED: u64 = 2;
+
+pub(crate) const OC326_EA_ALLOC_REQUEST: Callee = Callee {
+    addr: 0x003d_e670,
+    f: ee::s14::EAFile_AllocRequest,
+};
+
+pub(crate) const OC326_EA_ALLOC_FILE_HANDLE: Callee = Callee {
+    addr: 0x003d_e800,
+    f: ee::s14::EAFile_AllocFileHandle,
+};
+
+pub(crate) const OC326_EA_QUEUE_SIGNAL_STUB: Callee = Callee {
+    addr: 0x003d_e668,
+    f: ee::s14::EAFile_QueueSignalStub,
+};
+
+pub(crate) const OC326_EA_SERVICE_QUEUE: Callee = Callee {
+    addr: 0x003d_dfa8,
+    f: ee::s14::EAFile_ServiceQueue,
+};
+
+/// `strncpy` (0x416ce0), through the function table.
+pub(crate) const OC326_STRNCPY: u32 = 0x0041_6ce0;
+
+/// `int EAFile_QueueOpen(const char* name, int a1, int a2, int a3)`
+/// (0x3dd4e8): take a request (`EAFile_AllocRequest`), make it an open (the
+/// command bits of word 0), store the three arguments, take a file handle for
+/// it (`EAFile_AllocFileHandle`, word `+0x24`); a null handle marks the
+/// request failed (status 2, signal stub). Copy the name (0x100 bytes) into
+/// the handle at `+0x10`, hand the request to `EAFile_ServiceQueue`, and
+/// return the request's word 0 (its handle).
+pub fn ea_file_queue_open(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = c.g[A3][0];
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S4, 0x10);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S3, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S4][0] = c.g[A0][0]; // name
+        OC326_EA_ALLOC_REQUEST.call(c, 0x003d_d518)?;
+        c.g[S3][0] = c.g[V0][0]; // request
+        let req = r32(c, S3);
+        c.g[A0][0] = OC326_QO_CMD_OPEN;
+        c.g[V1][0] = Addr(req).lw(c);
+        c.g[V0][0] = sx(OC326_QO_CMD_MASK); // 0xffff_ffff_ff0f_ffff
+        c.g[V0][0] |= 0xffff;
+        c.sw(req.wrapping_add(OC326_QO_ARG3), c.g[S0][0]);
+        c.g[V1][0] &= c.g[V0][0];
+        c.sw(req.wrapping_add(OC326_QO_ARG1), c.g[S1][0]);
+        c.g[V1][0] |= c.g[A0][0];
+        c.sw(req.wrapping_add(OC326_QO_ARG2), c.g[S2][0]);
+        c.sw(req, c.g[V1][0]);
+        OC326_EA_ALLOC_FILE_HANDLE.call(c, 0x003d_d548)?;
+        let has_handle = c.g[V0][0] != 0;
+        c.sw(req.wrapping_add(OC326_QO_HANDLE), c.g[V0][0]);
+        if !has_handle {
+            c.cycles += 4;
+            c.g[V0][0] = OC326_QO_STATUS_FAILED;
+            c.g[A0][0] = c.g[S3][0];
+            c.sw(req.wrapping_add(OC326_QO_STATUS), c.g[V0][0]);
+            OC326_EA_QUEUE_SIGNAL_STUB.call(c, 0x003d_d560)?;
+        }
+        c.cycles += 16;
+        // strncpy(handle->name, name, 0x100)
+        c.g[A0][0] = Addr(r32(c, S3)).off(OC326_QO_HANDLE).lw(c);
+        c.g[A1][0] = c.g[S4][0];
+        c.g[A2][0] = OC326_QO_NAME_LEN;
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(OC326_QO_HANDLE_NAME));
+        call_ptr(c, OC326_STRNCPY, 0x003d_d574)?;
+        c.g[A0][0] = c.g[S3][0];
+        OC326_EA_SERVICE_QUEUE.call(c, 0x003d_d57c)?;
+        c.g[V0][0] = Addr(r32(c, S3)).lw(c);
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// EAFile_QueueClose (0x3dd5a0)
+
+/// The EAFile request pool (`0x519ab0`) and its request-list head (`D_00519AE4`,
+/// reached as `0x520000 - 0x651c`).
+#[cfg(test)]
+pub(crate) const EAFILE_QC_LIST_HEAD: u32 = 0x0051_9ae4;
+
+/// A request's words: the flags/state (+0), the queue link (+0xc), the
+/// priority (+0x10), the second argument (+0x14) and the node id (+0x24).
+pub(crate) const EAFILE_QC_LINK: u32 = 0xc;
+
+pub(crate) const EAFILE_QC_PRIORITY: u32 = 0x10;
+
+pub(crate) const EAFILE_QC_ARG2: u32 = 0x14;
+
+pub(crate) const EAFILE_QC_ID: u32 = 0x24;
+
+/// A request-list node: its id (+0xc) and next link (+0x14).
+pub(crate) const EAFILE_QC_LIST_ID: u32 = 0xc;
+
+pub(crate) const EAFILE_QC_LIST_NEXT: u32 = 0x14;
+
+/// `int EAFile_QueueClose(int id, int arg1, int arg2)` (0x3dd5a0): take a
+/// request from the pool, set its state to 3 ("close"), store the arguments
+/// and the node id, and mark it signalled when a request-list node with that
+/// id exists; then hand it to the service queue and return its state word.
+/// Frame 0x50 (s0 = arg1, s1 = arg2, s2 = request, s3 = id).
+pub fn ea_file_queue_close(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S3, 0x10);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S3][0] = c.g[A0][0];
+        Callee {
+            addr: 0x003d_e670,
+            f: ee::s14::EAFile_AllocRequest,
+        }
+        .call(c, 0x003d_d5c8)?;
+        c.g[S2][0] = c.g[V0][0];
+        c.g[A1][0] = 0x0052_0000;
+        c.g[V1][0] = Addr(r32(c, S2)).lw(c);
+        c.g[V0][0] = 0xffff_ffff_ff0f_ffff; // clear the state bits
+        c.g[A0][0] = 0x30_0000; // state 3
+        c.g[V1][0] &= c.g[V0][0];
+        c.g[A1][0] = Addr(r32(c, A1).wrapping_sub(0x651c)).lw(c);
+        c.g[V1][0] |= c.g[A0][0];
+        c.g[A2][0] = 3;
+        Addr(r32(c, S2)).sw(c, c.g[V1][0]);
+        Addr(r32(c, S2).wrapping_add(EAFILE_QC_PRIORITY)).sw(c, c.g[S0][0]);
+        Addr(r32(c, S2).wrapping_add(EAFILE_QC_ARG2)).sw(c, c.g[S1][0]);
+        Addr(r32(c, S2).wrapping_add(EAFILE_QC_ID)).sw(c, c.g[S3][0]);
+        loop {
+            c.cycles += 2;
+            if c.g[A1][0] != 0 {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(r32(c, A1).wrapping_add(EAFILE_QC_LIST_ID)).lw(c);
+                if c.g[V0][0] != c.g[S3][0] {
+                    c.g[A1][0] = Addr(r32(c, A1).wrapping_add(EAFILE_QC_LIST_NEXT)).lw(c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003d_d600);
+                    }
+                    continue;
+                }
+                c.cycles += 3;
+                Addr(r32(c, S2).wrapping_add(EAFILE_QC_LINK)).sw(c, c.g[A2][0]);
+                c.g[A0][0] = c.g[S2][0];
+                Callee {
+                    addr: 0x003d_e668,
+                    f: ee::s14::EAFile_QueueSignalStub,
+                }
+                .call(c, 0x003d_d620)?;
+            }
+            break;
+        }
+        c.cycles += 10;
+        c.g[A0][0] = c.g[S2][0];
+        Callee {
+            addr: 0x003d_dfa8,
+            f: ee::s14::EAFile_ServiceQueue,
+        }
+        .call(c, 0x003d_d628)?;
+        c.g[V0][0] = Addr(r32(c, S2)).lw(c);
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -744,6 +1072,190 @@ pub(crate) mod tests {
                 c.g[A3][0] = sx(r.next_u32() & 0x7_ffff);
                 c.g[T0][0] = sx(r.next_u32() % 8);
                 c.g[T1][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::machine;
+
+    use crate::difftest::fakes::LOG_RESULTS;
+
+    use crate::difftest::RA as SENTINEL;
+
+    // -- 0x003de800 EAFile_AllocFileHandle -----------------------------------
+
+    /// The file manager with 1..4 handles, at least one free (the original
+    /// spins forever when every handle is taken), and its mutex owned by the
+    /// thread id the fakes return (0x42), so both mutex calls take the fast
+    /// path.
+    pub(crate) fn oc325_file_alloc_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x003d_e800, 3);
+        for i in 0..8u32 {
+            c.bus.write32(LOG_RESULTS + 4 * i, 0x42);
+        }
+        c.bus.write32(OC325_FILE_MANAGER_MUTEX + 4, 0x42);
+        c.bus.write32(OC325_FILE_MANAGER_MUTEX + 8, 1);
+        c.bus.write32(OC325_FILE_MANAGER_MUTEX + 0xc, 32);
+        c.bus.write32(0x0045_0de4, 0);
+        let count = 1 + r.next_u32() % 4;
+        let array = DATA + 0x1_0000;
+        c.bus.write32(OC325_FILE_MANAGER + OC325_FILE_COUNT, count);
+        c.bus.write32(OC325_FILE_MANAGER + OC325_FILE_ARRAY, array);
+        let free = r.next_u32() % count;
+        for i in 0..count {
+            let handle = array + OC325_FILE_HANDLE * i;
+            c.bus.write32(handle, if i == free { 0 } else { 1 });
+            c.bus.write32(handle + 4, r.next_u32());
+        }
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x003d_e800;
+    }
+
+    /// The mutex fast path on both calls and a free handle at a random
+    /// index; some mutex calls unwind (propagated).
+    #[test]
+    fn ea_file_alloc_file_handle_matches() {
+        covered(
+            ee::s14::f_003de800__generated,
+            ea_file_alloc_file_handle,
+            200,
+            &|c, seed| oc325_file_alloc_setup(c, seed),
+        );
+    }
+
+    // ------------------------------------------------------ EAFile_QueueOpen
+
+    /// EAFile_QueueOpen: the real EAFile_AllocRequest (a pool with a free
+    /// request slot; mutex with fake syscalls, some unwinding) and
+    /// EAFile_AllocFileHandle (a free handle slot), a name buffer, and the
+    /// real EAFile_ServiceQueue on its short path (a request already active
+    /// at pool+0x24, 0..2 queued). The null-handle branch is not reached: the
+    /// real AllocFileHandle spins when every handle is busy instead of
+    /// returning 0.
+    #[test]
+    fn ea_file_queue_open_matches() {
+        use crate::game::lib::eafile::{EAFILE_POOL_SLOTS, EAFILE_REQ_SIZE};
+        const POOL: u32 = 0x0051_9ab0;
+        const MUTEX: u32 = POOL + 0x14;
+        const SLOTS: u32 = DATA + 0x1000;
+        const HANDLES: u32 = DATA + 0x4000;
+        const QUEUED: u32 = DATA + 0x8000;
+        const NAME: u32 = DATA + 0xc000;
+        const HANDLE_COUNT: u32 = POOL + 0x4;
+        const HANDLE_SLOTS: u32 = POOL + 0x2c;
+        check(
+            ee::s14::f_003dd4e8__generated,
+            ea_file_queue_open,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d_d4e8, 8);
+                c.pc = 0x003d_d4e8;
+                // The request pool: 1..6 slots, the first free one anywhere.
+                let count = 1 + r.next_u32() % 6;
+                c.bus.write32(POOL, count);
+                c.bus.write32(POOL + EAFILE_POOL_SLOTS, SLOTS);
+                // The handle pool: 1..6 slots, all free.
+                let handles = 1 + r.next_u32() % 6;
+                c.bus.write32(HANDLE_COUNT, handles);
+                c.bus.write32(HANDLE_SLOTS, HANDLES);
+                for i in 0..6u32 {
+                    c.bus.write32(HANDLES + 0x110 * i, 0);
+                }
+                // Mutex: owner never a fake thread id, depth, semaphore.
+                c.bus
+                    .write32(MUTEX + 0x4, 0x7700_0000 | r.next_u32() & 0xffff);
+                c.bus.write32(MUTEX + 0x8, r.next_u32() & 3);
+                c.bus.write32(MUTEX + 0xc, r.next_u32() & 0xff);
+                c.bus.write32(0x0045_0de4, r.next_u32() & 1);
+                let free = r.next_u32() % count;
+                for i in 0..8u32 {
+                    let mut w = r.next_u32();
+                    if i == free {
+                        w &= !0x00f0_0000;
+                    } else if i < free && w & 0x00f0_0000 == 0 {
+                        w |= 0x0010_0000;
+                    }
+                    c.bus.write32(SLOTS + EAFILE_REQ_SIZE * i, w);
+                }
+                c.bus.write32(0x0045_0c0c, r.next_u32() & 0xf_ffff);
+                // The service queue: a request active; 0..2 queued.
+                c.bus.write32(POOL + 0x24, QUEUED + 0x100);
+                let queued = seed % 3;
+                c.bus
+                    .write32(POOL + 0x30, if queued == 0 { 0 } else { QUEUED });
+                for k in 0..queued {
+                    let q = QUEUED + 0x40 * k;
+                    c.bus.write32(q + 0x10, r.next_u32() % 8);
+                    c.bus
+                        .write32(q + 0x2c, if k + 1 < queued { q + 0x40 } else { 0 });
+                }
+                c.bus.write32(POOL + 0xc, r.next_u32() & 0xff);
+                // The name: a short, NUL-terminated string.
+                let len = r.next_u32() % 0x40;
+                for i in 0..len {
+                    c.bus.write8(NAME + i, b'a' + (r.next_u32() % 26) as u8);
+                }
+                c.bus.write8(NAME + len, 0);
+                c.g[A0][0] = sx(NAME);
+                c.g[A1][0] = sx(r.next_u32() & 0x7_ffff);
+                c.g[A2][0] = sx(r.next_u32() & 0x7_ffff);
+                c.g[A3][0] = sx(r.next_u32() & 0x7_ffff);
+            },
+        );
+    }
+
+    /// `EAFile_QueueClose`: a real request pool (two free slots), a
+    /// request-list with no matching, a matching or a second matching node,
+    /// and priorities that keep the real service queue on its short path.
+    #[test]
+    fn ea_file_queue_close_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA};
+        const POOL: u32 = 0x0051_9ab0;
+        const SLOTS: u32 = DATA + 0x1_0000;
+        const NODE: u32 = DATA + 0x2_0000;
+        const NODE2: u32 = DATA + 0x2_0100;
+        const ID: u32 = 0x1234;
+        check(
+            ee::s14::f_003dd5a0__generated,
+            ea_file_queue_close,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d_d5a0, 0);
+                c.pc = 0x003d_d5a0;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                // The request pool: two free slots, a zeroed mutex and a zeroed
+                // request queue (the real service queue then takes its short
+                // path).
+                for i in 0..0x10u32 {
+                    w(c, POOL + 4 * i, 0);
+                }
+                w(c, POOL, 2);
+                w(c, POOL + 0x28, SLOTS);
+                for i in 0..0x20u32 {
+                    w(c, SLOTS + 4 * i, 0);
+                }
+                // The request list.
+                let head = if seed % 3 == 0 { 0 } else { NODE };
+                w(c, EAFILE_QC_LIST_HEAD, head);
+                fill(c, &mut r, NODE, 0x20);
+                fill(c, &mut r, NODE2, 0x20);
+                w(
+                    c,
+                    NODE + EAFILE_QC_LIST_ID,
+                    if seed % 2 == 0 { ID } else { ID + 1 },
+                );
+                w(
+                    c,
+                    NODE + EAFILE_QC_LIST_NEXT,
+                    if seed % 4 == 0 { NODE2 } else { 0 },
+                );
+                w(c, NODE2 + EAFILE_QC_LIST_ID, ID);
+                w(c, NODE2 + EAFILE_QC_LIST_NEXT, 0);
+                c.g[A0][0] = ID as u64;
+                c.g[A1][0] = 1 + (r.next_u32() % 0x100) as u64;
+                c.g[A2][0] = r.next_u32() as u64;
             },
         );
     }

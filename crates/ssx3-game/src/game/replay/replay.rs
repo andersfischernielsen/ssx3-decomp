@@ -81,6 +81,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Replay_HighlightSlotScore",
     ),
     (0x0026_e8e0, replay_stream_ctor, "ReplayStream_ctor"),
+    (
+        0x0026_e6e0,
+        replay_highlight_slot_begin,
+        "Replay_HighlightSlotBegin",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -625,6 +630,139 @@ pub fn replay_highlight_slot_score(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Replay_HighlightSlotBegin (0x26e6e0)
+
+/// `Replay_SnapshotSetHighlightValue(rider, index, 0)` (0x26d730).
+pub(crate) const REPLAY_HIGHLIGHT_SET_VALUE: u64 = 0x0026_d730;
+
+/// `sReplayObj` fields: the slot index, its data block, the attached rider.
+pub(crate) const REPLAY_HIGHLIGHT_INDEX: u32 = 0x00;
+
+pub(crate) const REPLAY_HIGHLIGHT_DATA: u32 = 0x04;
+
+pub(crate) const REPLAY_HIGHLIGHT_RIDER: u32 = 0xb0;
+
+/// The data block: 0xa0 bytes copied in 0x20-byte chunks, then 0xc more.
+pub(crate) const REPLAY_HIGHLIGHT_CHUNK: u32 = 0x20;
+
+pub(crate) const REPLAY_HIGHLIGHT_BULK: u32 = 0xa0;
+
+/// The rider's highlight flag byte (bit per slot).
+pub(crate) const REPLAY_HIGHLIGHT_FLAGS: u32 = 0x1e;
+
+/// `void Replay_HighlightSlotBegin(sReplayObj* self, char* rider, sReplayData* src)`
+/// (0x26e6e0): mark the rider's per-slot highlight bit, tell the snapshot
+/// system, attach the rider to the slot and copy its 0xac-byte data block.
+/// Frame 0x40.
+pub fn replay_highlight_slot_begin(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = 1;
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A1][0]; // rider
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0]; // self
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A2][0]; // src
+        c.g[A2][0] = 0;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(REPLAY_HIGHLIGHT_INDEX));
+        c.g[V1][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(REPLAY_HIGHLIGHT_FLAGS));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << ((c.g[A0][0] as u32) & 31));
+        c.g[V1][0] = c.g[V1][0] | c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.sb(
+            (c.g[S0][0] as u32).wrapping_add(REPLAY_HIGHLIGHT_FLAGS),
+            c.g[V1][0],
+        );
+        c.g[RA][0] = sx(0x0026_e728);
+        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(REPLAY_HIGHLIGHT_INDEX));
+        call_ptr(c, REPLAY_HIGHLIGHT_SET_VALUE as u32, 0x0026_e728)?;
+        c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(REPLAY_HIGHLIGHT_DATA));
+        c.g[V0][0] = c.g[S2][0] | c.g[V1][0];
+        c.g[V0][0] = c.g[V0][0] & 0x7;
+        let aligned = c.g[V0][0] == 0;
+        c.sw(
+            (c.g[S1][0] as u32).wrapping_add(REPLAY_HIGHLIGHT_RIDER),
+            c.g[S0][0],
+        );
+        if aligned {
+            c.cycles += 1;
+            c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(REPLAY_HIGHLIGHT_BULK));
+            loop {
+                c.cycles += 11;
+                c.g[A0][0] = c.ld(c.g[S2][0] as u32);
+                c.g[A1][0] = c.ld((c.g[S2][0] as u32).wrapping_add(0x8));
+                c.g[A2][0] = c.ld((c.g[S2][0] as u32).wrapping_add(0x10));
+                c.g[A3][0] = c.ld((c.g[S2][0] as u32).wrapping_add(0x18));
+                c.sd(c.g[V1][0] as u32, c.g[A0][0]);
+                c.sd((c.g[V1][0] as u32).wrapping_add(0x8), c.g[A1][0]);
+                c.sd((c.g[V1][0] as u32).wrapping_add(0x10), c.g[A2][0]);
+                c.sd((c.g[V1][0] as u32).wrapping_add(0x18), c.g[A3][0]);
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(REPLAY_HIGHLIGHT_CHUNK));
+                let more = c.g[S2][0] != c.g[V0][0];
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(REPLAY_HIGHLIGHT_CHUNK));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0026_e798);
+                    }
+                    continue;
+                }
+                break;
+            }
+        } else {
+            c.cycles += 1;
+            c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(REPLAY_HIGHLIGHT_BULK));
+            loop {
+                c.cycles += 19;
+                c.ldl(4, (c.g[S2][0] as u32).wrapping_add(0x7));
+                c.ldr(4, c.g[S2][0] as u32);
+                c.ldl(5, (c.g[S2][0] as u32).wrapping_add(0xf));
+                c.ldr(5, (c.g[S2][0] as u32).wrapping_add(0x8));
+                c.ldl(6, (c.g[S2][0] as u32).wrapping_add(0x17));
+                c.ldr(6, (c.g[S2][0] as u32).wrapping_add(0x10));
+                c.ldl(7, (c.g[S2][0] as u32).wrapping_add(0x1f));
+                c.ldr(7, (c.g[S2][0] as u32).wrapping_add(0x18));
+                c.sdl(4, (c.g[V1][0] as u32).wrapping_add(0x7));
+                c.sdr(4, c.g[V1][0] as u32);
+                c.sdl(5, (c.g[V1][0] as u32).wrapping_add(0xf));
+                c.sdr(5, (c.g[V1][0] as u32).wrapping_add(0x8));
+                c.sdl(6, (c.g[V1][0] as u32).wrapping_add(0x17));
+                c.sdr(6, (c.g[V1][0] as u32).wrapping_add(0x10));
+                c.sdl(7, (c.g[V1][0] as u32).wrapping_add(0x1f));
+                c.sdr(7, (c.g[V1][0] as u32).wrapping_add(0x18));
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(REPLAY_HIGHLIGHT_CHUNK));
+                let more = c.g[S2][0] != c.g[V0][0];
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(REPLAY_HIGHLIGHT_CHUNK));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0026_e740);
+                    }
+                    continue;
+                }
+                c.cycles += 2;
+                break;
+            }
+        }
+        // The tail: the data block's last 0xc bytes.
+        c.cycles += 12;
+        c.ldl(2, (c.g[S2][0] as u32).wrapping_add(0x7));
+        c.ldr(2, c.g[S2][0] as u32);
+        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+        c.sdl(2, (c.g[V1][0] as u32).wrapping_add(0x7));
+        c.sdr(2, c.g[V1][0] as u32);
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[A0][0]);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -983,6 +1121,92 @@ pub(crate) mod tests {
                 w(c, rep + 0xb0, rep + 0x200);
                 w(c, obj, rep);
                 w(c, obj + 0xb0, rep + 0x300);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::fake;
+
+    use crate::difftest::fill;
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::oc318_gated;
+
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+    use std::sync::Once;
+
+    pub(crate) const CTRL_HIGHLIGHT: u32 = DATA + 0x6_0020;
+
+    pub(crate) const MAGIC_HIGHLIGHT: u32 = 0x26e6_e001;
+
+    // --------------------------------------- Replay_HighlightSlotBegin
+
+    oc318_gated!(
+        oc318_fake_highlight_set_value,
+        OC318_PREV_HIGHLIGHT,
+        CTRL_HIGHLIGHT,
+        MAGIC_HIGHLIGHT,
+        0x0026_d730,
+        ee::s07::f_0026d730__generated
+    );
+
+    pub(crate) fn replay_highlight_install() {
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| unsafe {
+            OC318_PREV_HIGHLIGHT.store(ee::s07::OVERRIDE_0026D730 as usize, Ordering::Relaxed);
+            ee::s07::OVERRIDE_0026D730 = oc318_fake_highlight_set_value;
+        });
+    }
+
+    /// A slot object, a rider and a data block: aligned and unaligned
+    /// blocks, so both copy loops run.
+    pub(crate) fn replay_highlight_setup(c: &mut Cpu, seed: u32) {
+        replay_highlight_install();
+        let mut r = machine(c, seed, 0x0026_e6e0, 1);
+        c.pc = 0x0026_e6e0;
+        c.bus.write32(CTRL_HIGHLIGHT, MAGIC_HIGHLIGHT);
+        // `self + 4` must be 8-aligned for the aligned path.
+        let this = if seed % 2 == 0 {
+            DATA + 0x404
+        } else {
+            DATA + 0x400
+        };
+        let rider = DATA + 0x800;
+        let src = DATA + 0x1000 + 4 * (seed % 2);
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = rider as u64;
+        c.g[A2][0] = src as u64;
+        c.bus.write32(this + REPLAY_HIGHLIGHT_INDEX, seed % 8);
+        fill(c, &mut r, rider, 8); // 0x20 bytes
+        fill(c, &mut r, this + REPLAY_HIGHLIGHT_DATA, 0xac / 4);
+        fill(c, &mut r, src, 0xac / 4);
+    }
+
+    /// `Replay_HighlightSlotBegin`: both copy loops (aligned and not) and the
+    /// snapshot call (a logging fake).
+    #[test]
+    fn replay_highlight_slot_begin_matches() {
+        covered(
+            ee::s07::f_0026e6e0__generated,
+            replay_highlight_slot_begin,
+            200,
+            &replay_highlight_setup,
+        );
+    }
+
+    /// The copy loops' back-edge event checks, with events delivered and
+    /// rescheduled mid-copy.
+    #[test]
+    fn replay_highlight_slot_begin_events_match() {
+        use crate::difftest::events::{check_events, schedule};
+        check_events(
+            ee::s07::f_0026e6e0__generated,
+            replay_highlight_slot_begin,
+            60,
+            &|c, seed| {
+                replay_highlight_setup(c, seed);
+                let mut r = Rng(0x0026_e601 ^ seed as u64);
+                schedule(c, &mut r, seed, 0x0026_e6e0)
             },
         );
     }

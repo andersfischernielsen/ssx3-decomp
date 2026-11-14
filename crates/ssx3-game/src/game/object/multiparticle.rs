@@ -47,6 +47,7 @@ pub(crate) use crate::game::main::ssxappdtor::p as p_7;
 pub(crate) use crate::game::object::movenode::MP_COUNT;
 pub(crate) use crate::game::object::movenode::MP_EMITTER;
 pub(crate) use crate::game::object::movenode::MP_STREAM_WRITE;
+pub(crate) use crate::game::seg::seg_1fbe38::gp_oc322;
 pub(crate) use crate::game::sound::soundsys::gp_4;
 pub(crate) use crate::game::sound::soundsys::p as p_5;
 use crate::guest::Addr;
@@ -108,6 +109,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0035_4920, sync_process_dtor, "SyncProcess_dtor"),
     (0x0035_8380, multi_particle_save, "MultiParticle_Save"),
+    (0x0035_9460, spline_modifier_ctor, "SplineModifier_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1826,6 +1828,191 @@ pub fn multi_particle_save(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// SplineModifier_ctor (0x359460)
+// ---------------------------------------------------------------------------
+
+/// The `cSplineModifier` vtable.
+pub(crate) const SPLINE_MODIFIER_CTOR_VTABLE: u32 = 0x48_f250;
+
+/// `D_004FF120`: the quad written to both `sMpQuad` slots (`+0xb0`, `+0xc0`).
+#[cfg(test)]
+pub(crate) const SPLINE_MODIFIER_CTOR_QUAD: u32 = 0x004f_f120;
+
+/// The `tAddSplineData` fields the constructor reads.
+pub(crate) const SPLINE_MODIFIER_CTOR_D_PATH: u32 = 0x4;
+
+pub(crate) const SPLINE_MODIFIER_CTOR_D_A: u32 = 0x8;
+
+pub(crate) const SPLINE_MODIFIER_CTOR_D_B: u32 = 0xc;
+
+pub(crate) const SPLINE_MODIFIER_CTOR_D_SPEED: u32 = 0x10;
+
+pub(crate) const SPLINE_MODIFIER_CTOR_D_ANGLE: u32 = 0x14;
+
+pub(crate) const SPLINE_MODIFIER_CTOR_D_OVERRIDE: u32 = 0x18;
+
+pub(crate) const SPLINE_MODIFIER_CTOR_D_JITTER: u32 = 0x1c;
+
+pub(crate) const SPLINE_MODIFIER_CTOR_D_FLAG: u32 = 0x20;
+
+pub(crate) const SPLINE_MODIFIER_CTOR_D_SCALE: u32 = 0x24;
+
+pub(crate) const SPLINE_MODIFIER_CTOR_D_END: u32 = 0x28;
+
+/// The `.lit4` constants: 0.0174533f (degrees to radians) at `gp-0x2a64` and
+/// 0.1f at `gp-0x2a60`.
+#[cfg(test)]
+pub(crate) const SPLINE_MODIFIER_CTOR_DEG2RAD: u32 = 0x3c8e_fa36;
+
+#[cfg(test)]
+pub(crate) const SPLINE_MODIFIER_CTOR_TENTH: u32 = 0x3dcc_cccd;
+
+/// `cSplineModifier* cSplineModifier_ctor(self, const tAddSplineData& sdata)`
+/// (0x359460): build a spline modifier from a descriptor: the path and speed,
+/// the per-frame angle in radians and the per-second speed scale, the initial
+/// distance (0, or the descriptor's override plus a random jitter, clamped
+/// into [0, path length]), the flags and the two default `sMpQuad`s.
+pub fn spline_modifier_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 44;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = 0x0049_0000;
+        frame.save(c, 16, 0x20);
+        c.g[V1][0] = 0xffff_ffff_ffff_0000;
+        frame.save(c, 17, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(SPLINE_MODIFIER_CTOR_VTABLE);
+        frame.save_fpr(c, 20, 0x30);
+        c.g[V1][0] |= 0xffff;
+        c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+        c.g[S1][0] = c.g[A1][0]; // the descriptor
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xd8), c.g[V1][0]);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xd8));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xe0), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xdc), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xe4), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0);
+        c.lwc1(1, gp_oc322(c, 0xffff_d59c)); // -0x2a64: degrees -> radians
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(SPLINE_MODIFIER_CTOR_D_A));
+        c.g[AT][0] = 0x42c8_0000; // 100.0f
+        c.mtc1(1, 2);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x30), c.g[V1][0]);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(SPLINE_MODIFIER_CTOR_D_B));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x34), c.g[V0][0]);
+        c.lwc1(
+            0,
+            (c.g[S1][0] as u32).wrapping_add(SPLINE_MODIFIER_CTOR_D_ANGLE),
+        );
+        c.mul_s(0, 0, 1);
+        c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x38));
+        c.lwc1(
+            1,
+            (c.g[S1][0] as u32).wrapping_add(SPLINE_MODIFIER_CTOR_D_SCALE),
+        );
+        c.mul_s(1, 1, 2);
+        c.swc1(1, (c.g[S0][0] as u32).wrapping_add(0x40));
+        c.lwc1(
+            0,
+            (c.g[S1][0] as u32).wrapping_add(SPLINE_MODIFIER_CTOR_D_END),
+        );
+        c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x44));
+        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(SPLINE_MODIFIER_CTOR_D_PATH));
+        Callee {
+            addr: 0x0034_51c0,
+            f: ee::s11::SplineModifier_InitPath,
+        }
+        .call(c, 0x0035_94ec)?;
+        c.lwc1(
+            12,
+            (c.g[S1][0] as u32).wrapping_add(SPLINE_MODIFIER_CTOR_D_SPEED),
+        );
+        c.g[A0][0] = c.g[S0][0];
+        Callee {
+            addr: 0x0035_9688,
+            f: ee::s11::SplineModifier_SetSpeed,
+        }
+        .call(c, 0x0035_94f8)?;
+        // The initial distance: 0 with a forward speed, else the path length.
+        c.mtc1(0, 1);
+        c.lwc1(
+            0,
+            (c.g[S1][0] as u32).wrapping_add(SPLINE_MODIFIER_CTOR_D_SPEED),
+        );
+        c.c_le_s(1, 0);
+        if c.fcc() {
+            c.cycles += 2;
+            c.swc1(1, (c.g[S0][0] as u32).wrapping_add(0x3c));
+        } else {
+            c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0xe4));
+            c.cycles += 1;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x3c));
+        }
+        c.cycles += 10;
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(SPLINE_MODIFIER_CTOR_D_FLAG));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x50), 0);
+        c.g[V0][0] = (0 < c.g[V0][0]) as u64;
+        c.mtc1(0, 20); // f20 = 0.0f
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x54), c.g[V0][0]);
+        c.lwc1(
+            0,
+            (c.g[S1][0] as u32).wrapping_add(SPLINE_MODIFIER_CTOR_D_OVERRIDE),
+        );
+        c.c_eq_s(0, 20);
+        if !c.fcc() {
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x3c));
+        }
+        // `dist += rand(-1, 1) * jitter`, clamped into [0, path length].
+        c.cycles += 14;
+        c.g[AT][0] = 0xffff_ffff_bf80_0000; // -1.0f
+        c.mtc1(1, 12);
+        c.g[AT][0] = 0x3f80_0000; // 1.0f
+        c.mtc1(1, 13);
+        call_ptr(c, 0x0031_7830, 0x0035_955c)?;
+        c.lwc1(
+            1,
+            (c.g[S1][0] as u32).wrapping_add(SPLINE_MODIFIER_CTOR_D_JITTER),
+        );
+        c.lwc1(2, (c.g[S0][0] as u32).wrapping_add(0x3c));
+        c.mul_s(0, 0, 1);
+        c.add_s(2, 2, 0);
+        c.c_lt_s(2, 20);
+        let mut clamp = c.fcc();
+        c.swc1(2, (c.g[S0][0] as u32).wrapping_add(0x3c));
+        if !clamp {
+            c.cycles += 5;
+            c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0xe4));
+            c.c_lt_s(0, 2);
+            let over = !c.fcc();
+            c.g[A1][0] = 0x0050_0000;
+            clamp = !over;
+        }
+        if clamp {
+            c.cycles += 2;
+            c.swc1(20, (c.g[S0][0] as u32).wrapping_add(0x3c));
+            c.g[A1][0] = 0x0050_0000;
+        }
+        c.cycles += 16;
+        c.g[A2][0] = 1;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xee0)); // &D_004FF120
+        c.g[V0][0] = c.g[S0][0];
+        c.lq(3, c.g[A1][0] as u32);
+        frame.restore(c, 17, 0x10);
+        c.sq(3, (c.g[S0][0] as u32).wrapping_add(0xb0));
+        frame.restore_ra(c, 0);
+        c.lq(4, c.g[A1][0] as u32);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x58), c.g[A2][0]);
+        c.sq(4, (c.g[S0][0] as u32).wrapping_add(0xc0));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xd0), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xd4), 0);
+        frame.restore(c, 16, 0x20);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2460,6 +2647,75 @@ pub(crate) mod tests {
                 c.bus.write32(stream, vt);
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(stream);
+            },
+        );
+    }
+
+    use crate::difftest::put_vec;
+    use crate::difftest::put_words;
+
+    /// `SplineModifier_ctor`: forward and backward speeds (the initial
+    /// distance), a descriptor override, zero and non-zero jitter (the clamp
+    /// and no-clamp paths), and every float edge case.
+    #[test]
+    fn spline_modifier_ctor_matches() {
+        check(
+            ee::s11::f_00359460__generated,
+            spline_modifier_ctor,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x3594_6000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                let sdata = DATA + 0x400;
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = sdata as u64;
+                c.bus
+                    .write32(sdata + SPLINE_MODIFIER_CTOR_D_PATH, r.next_u32() % 64);
+                c.bus
+                    .write32(sdata + SPLINE_MODIFIER_CTOR_D_A, r.next_u32());
+                c.bus
+                    .write32(sdata + SPLINE_MODIFIER_CTOR_D_B, r.next_u32());
+                let speed = if seed % 3 == 0 {
+                    r.f32(100.0) | 0x8000_0000
+                } else {
+                    r.f32(100.0)
+                };
+                c.bus.write32(sdata + SPLINE_MODIFIER_CTOR_D_SPEED, speed);
+                c.bus
+                    .write32(sdata + SPLINE_MODIFIER_CTOR_D_ANGLE, r.edge_f32());
+                c.bus.write32(
+                    sdata + SPLINE_MODIFIER_CTOR_D_OVERRIDE,
+                    if seed % 3 == 0 { 0 } else { r.f32(20.0) },
+                );
+                c.bus.write32(
+                    sdata + SPLINE_MODIFIER_CTOR_D_JITTER,
+                    if seed % 7 == 0 { 0 } else { r.f32(10.0) },
+                );
+                c.bus
+                    .write32(sdata + SPLINE_MODIFIER_CTOR_D_FLAG, (seed % 2) as u32);
+                c.bus
+                    .write32(sdata + SPLINE_MODIFIER_CTOR_D_SCALE, r.edge_f32());
+                c.bus
+                    .write32(sdata + SPLINE_MODIFIER_CTOR_D_END, r.edge_f32());
+                // The `.lit4` constants the ctor and SetSpeed read, the RNG state
+                // and the default `sMpQuad`.
+                put_words(
+                    c,
+                    GAME_GP.wrapping_sub(0x2a64),
+                    &[SPLINE_MODIFIER_CTOR_DEG2RAD],
+                );
+                put_words(
+                    c,
+                    GAME_GP.wrapping_sub(0x2a60),
+                    &[SPLINE_MODIFIER_CTOR_TENTH],
+                );
+                c.bus.write32(0x004f_f030, r.next_u32() | 1);
+                put_vec(
+                    c,
+                    SPLINE_MODIFIER_CTOR_QUAD,
+                    [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+                );
             },
         );
     }

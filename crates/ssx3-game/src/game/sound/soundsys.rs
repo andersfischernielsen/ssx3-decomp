@@ -736,6 +736,51 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         crowd_audio_update_pitch_bend,
         "CrowdAudio_UpdatePitchBend",
     ),
+    (
+        0x0029_0c40,
+        ssx_audio_system_get_rider_speed_volume,
+        "SSXAudioSystem_GetRiderSpeedVolume",
+    ),
+    (
+        0x0029_3b70,
+        ssx_audio_system_calc_surface_loop_remote_group1,
+        "SSXAudioSystem_CalcSurfaceLoopRemoteGroup1",
+    ),
+    (
+        0x0029_3dc0,
+        ssx_audio_system_calc_edge_loop_group1,
+        "SSXAudioSystem_CalcEdgeLoopGroup1",
+    ),
+    (
+        0x0029_61f0,
+        ssxaudiosystem_play_wipeout_crowd_reaction,
+        "SSXAudioSystem_PlayWipeoutCrowdReaction",
+    ),
+    (
+        0x0029_ab08,
+        ssx_audio_system_reset_boost_tick_pitch,
+        "SSXAudioSystem_ResetBoostTickPitch",
+    ),
+    (
+        0x0029_eee0,
+        ssxaudiosystem_get_speech_category,
+        "SSXAudioSystem_GetSpeechCategory",
+    ),
+    (
+        0x0029_f378,
+        ssx_audio_system_get_grunt_voice,
+        "SSXAudioSystem_GetGruntVoice",
+    ),
+    (
+        0x002a_1028,
+        ssx_audio_system_stop_character_speech,
+        "SSXAudioSystem_StopCharacterSpeech",
+    ),
+    (
+        0x002a_10c0,
+        ssx_audio_system_is_character_speaking,
+        "SSXAudioSystem_IsCharacterSpeaking",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -17123,6 +17168,803 @@ pub fn crowd_audio_update_pitch_bend(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_StopCharacterSpeech (0x2a1028)
+
+/// `SSXAudioSystem`: the stream array (`+0x118`) and the speech system
+/// (`+0x5560`, whose `+4` is the instance table).
+pub(crate) const OC320_AUDIO_STREAMS: u32 = 0x118;
+
+pub(crate) const OC320_AUDIO_SPEECH: u32 = 0x5560;
+
+/// `SpeechSystem_GetInstanceStreamSlot(speech, index)` (0x2b1220).
+pub(crate) const OC320_SPEECH_GET_STREAM_SLOT: Callee = Callee {
+    addr: 0x002b_1220,
+    f: ee::s08::f_002b1220,
+};
+
+/// `StreamArray_GetCurrentRequest(array, index)` (0x2ab150).
+pub(crate) const OC320_STREAM_ARRAY_GET_REQUEST: Callee = Callee {
+    addr: 0x002a_b150,
+    f: ee::s08::f_002ab150,
+};
+
+/// `BankMonitor_FindInstance(bank, key, index)` (0x2ad550).
+pub(crate) const OC320_BANK_FIND_INSTANCE: Callee = Callee {
+    addr: 0x002a_d550,
+    f: ee::s08::f_002ad550,
+};
+
+/// `SpeechSystem_StopInstance(speech, index)` (0x2b11b0).
+pub(crate) const OC320_SPEECH_STOP_INSTANCE: Callee = Callee {
+    addr: 0x002b_11b0,
+    f: ee::s08::f_002b11b0,
+};
+
+/// `int SSXAudioSystem_StopCharacterSpeech(SSXAudioSystem* self, int id)`
+/// (0x2a1028): stop the character speech instance whose voice carries `id`.
+/// 1 when there was no current request or the instance was stopped, 0 when
+/// there is no voice or the voice belongs to another id.
+pub fn ssx_audio_system_stop_character_speech(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(OC320_AUDIO_SPEECH));
+        c.g[S2][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0;
+        c.g[A0][0] = c.g[S1][0];
+        OC320_SPEECH_GET_STREAM_SLOT.call(c, 0x002a_1054)?;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(OC320_AUDIO_STREAMS));
+        c.g[A1][0] = c.g[V0][0];
+        OC320_STREAM_ARRAY_GET_REQUEST.call(c, 0x002a_1060)?;
+        c.g[A1][0] = c.g[V0][0];
+        let no_request = (c.g[A1][0] as i64) < 0;
+        c.g[V0][0] = 0x1;
+        if !no_request {
+            c.cycles += 7;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(OC320_AUDIO_STREAMS));
+            c.g[A2][0] = 0x3;
+            c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1d8));
+            OC320_BANK_FIND_INSTANCE.call(c, 0x002a_1080)?;
+            if c.g[V0][0] != 0 {
+                c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x80));
+                c.cycles += 2;
+                let other_id = c.g[V0][0] != c.g[S2][0];
+                c.g[V0][0] = 0;
+                if !other_id {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A1][0] = 0;
+                    OC320_SPEECH_STOP_INSTANCE.call(c, 0x002a_10a4)?;
+                    c.g[V0][0] = 0x1;
+                }
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_GetSpeechCategory (0x29eee0)
+// ---------------------------------------------------------------------------
+
+/// The speech category `SSXAudioSystem_GetSpeechCategory` caches, at `self +
+/// 0x5738`.
+pub(crate) const SSX_AUDIO_SPEECH_CATEGORY: u32 = 0x5738;
+
+/// `int func_0029EEE0(SSXAudioSystem* self, int known, const char* name)`
+/// (0x29eee0): pick the speech category from the bank name prefix — 2 for
+/// `DJ_` (11 when the app has no sound-module handle yet), 3 for `PA_`, 10 for
+/// `Arcade`, 4 for anything else — cache it in the system and return it. With
+/// `known` set nothing is looked at and the answer is -1.
+pub fn ssxaudiosystem_get_speech_category(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        if c.g[A1][0] != 0 {
+            c.cycles += 1;
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        } else {
+            let name = r32(c, A2);
+            {
+                let mut to_prefix_table = true;
+                'dj: {
+                    c.cycles += 4;
+                    c.g[V1][0] = Addr(name).lb(c);
+                    c.g[V0][0] = 0x44; // 'D'
+                    let not_d = c.g[V1][0] != c.g[V0][0];
+                    c.g[A0][0] = Addr(name).lbu(c);
+                    if not_d {
+                        c.cycles += 1;
+                        c.g[V0][0] = sx(r32(c, A0) << 24);
+                        break 'dj;
+                    }
+                    c.cycles += 4;
+                    c.g[V1][0] = Addr(name.wrapping_add(1)).lb(c);
+                    c.g[V0][0] = 0x4a; // 'J'
+                    let not_j = c.g[V1][0] != c.g[V0][0];
+                    c.g[V0][0] = sx(r32(c, A0) << 24);
+                    if not_j {
+                        break 'dj;
+                    }
+                    c.cycles += 4;
+                    c.g[V1][0] = Addr(name.wrapping_add(2)).lb(c);
+                    c.g[V0][0] = 0x5f; // '_'
+                    let not_underscore = c.g[V1][0] != c.g[V0][0];
+                    c.g[V0][0] = sx(r32(c, A0) << 24);
+                    if not_underscore {
+                        break 'dj;
+                    }
+                    c.cycles += 4;
+                    call_ptr(c, 0x0028_b1b0, 0x0029_ef2c)?; // has a sound module
+                    if c.g[V0][0] == 0 {
+                        c.g[V0][0] = 0xb;
+                    } else {
+                        c.cycles += 2;
+                        c.g[V0][0] = 2;
+                    }
+                    to_prefix_table = false;
+                }
+                if to_prefix_table {
+                    let mut to_arcade = true;
+                    'pa: {
+                        c.cycles += 4;
+                        c.g[V1][0] = 0x50; // 'P'
+                        c.g[V0][0] = sx(((r32(c, V0) as i32) >> 24) as u32);
+                        let not_p = c.g[V0][0] != c.g[V1][0];
+                        c.g[V0][0] = sx(r32(c, A0) << 24);
+                        if not_p {
+                            break 'pa;
+                        }
+                        c.cycles += 4;
+                        c.g[V1][0] = Addr(name.wrapping_add(1)).lb(c);
+                        c.g[V0][0] = 0x41; // 'A'
+                        let not_a = c.g[V1][0] != c.g[V0][0];
+                        c.g[V0][0] = sx(r32(c, A0) << 24);
+                        if not_a {
+                            break 'pa;
+                        }
+                        c.cycles += 4;
+                        c.g[V1][0] = Addr(name.wrapping_add(2)).lb(c);
+                        c.g[V0][0] = 0x5f; // '_'
+                        if c.g[V1][0] != c.g[V0][0] {
+                            c.g[V0][0] = sx(r32(c, A0) << 24);
+                            break 'pa;
+                        }
+                        c.cycles += 2;
+                        c.g[V0][0] = 3;
+                        to_arcade = false;
+                    }
+                    if to_arcade {
+                        c.cycles += 4;
+                        c.g[V1][0] = 0x41; // 'A'
+                        c.g[V0][0] = sx(((r32(c, V0) as i32) >> 24) as u32);
+                        let not_a = c.g[V0][0] != c.g[V1][0];
+                        c.g[V0][0] = 4;
+                        if !not_a {
+                            let rest = [b'r', b'c', b'a', b'd', b'e'];
+                            let mut i = 0;
+                            while i < rest.len() {
+                                c.cycles += 4;
+                                c.g[V1][0] = Addr(name.wrapping_add(1 + i as u32)).lb(c);
+                                c.g[V0][0] = rest[i] as u64;
+                                let differs = c.g[V1][0] != c.g[V0][0];
+                                c.g[V0][0] = 4;
+                                if differs {
+                                    break;
+                                }
+                                i += 1;
+                            }
+                            if i == rest.len() {
+                                c.cycles += 1;
+                                c.g[V0][0] = 0xa;
+                            }
+                        }
+                    }
+                }
+                c.cycles += 3;
+                let cat = Addr(r32(c, S0)).off(SSX_AUDIO_SPEECH_CATEGORY);
+                let store = c.g[V0][0];
+                cat.sw(c, store);
+                let stored = cat.lw(c);
+                c.g[V0][0] = stored;
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        c.g[RA][0] = c.ld(frame.at(c, 0));
+        let ra = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x20));
+        c.pc = ra;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_PlayWipeoutCrowdReaction (0x2961f0)
+// ---------------------------------------------------------------------------
+
+/// `void func_002961F0(SSXAudioSystem* sys, cRider* rider, float v)`
+/// (0x2961f0): the crowd's reaction to a wipeout — resolve the rider's voice
+/// index (0 while a replay plays, otherwise the tracked rider's), bail out
+/// when the system's current rider is someone else, then play the crowd's
+/// fall (or stop the anticipation) by how hard the wipeout was, and reset the
+/// music fade-in.
+pub fn ssxaudiosystem_play_wipeout_crowd_reaction(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0]; // sys
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = 0xffff_ffff_ffff_ffff; // voice index
+        frame.save_fpr(c, 20, 0x40);
+        c.g[S2][0] = c.g[A1][0]; // rider
+        frame.save_ra(c, 0);
+        c.mov_s(20, 12); // f20 = v
+        call_ptr(c, 0x0028_8ae0, 0x0029_621c)?; // IsReplayPlaying(sys)
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = Addr(r32(c, S2)).off(0x874).lw(c);
+            c.cycles += 2;
+            let no_tracking = c.g[V0][0] == 0;
+            c.g[V1][0] = 0;
+            if !no_tracking {
+                c.cycles += 2;
+                c.g[V0][0] = Addr(r32(c, S2)).off(0x87c).lw(c);
+                c.g[V1][0] = (0u64 < c.g[V0][0]) as u64;
+            }
+            c.cycles += 2;
+            if c.g[V1][0] != 0 {
+                c.g[S1][0] = Addr(r32(c, S2)).off(0x870).lw(c);
+            }
+        } else {
+            c.cycles += 2;
+            c.g[S1][0] = 0;
+        }
+
+        c.cycles += 5;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0028_5d98, 0x0029_6250)?; // FindRider(sys, index)
+        if c.g[V0][0] == c.g[S2][0] {
+            'reaction: {
+                c.cycles += 6;
+                c.mtc1(0, 0);
+                c.abs_s(12, 20);
+                c.c_le_s(12, 0);
+                let louder = !c.fcc();
+                c.g[A1][0] = c.g[S1][0];
+                if !louder {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x002a_7438, 0x0029_6278)?; // StopAnticipate
+                    c.g[A0][0] = c.g[S0][0];
+                    break 'reaction;
+                }
+                'quiet: {
+                    c.cycles += 6;
+                    c.g[AT][0] = 0x3e80_0000;
+                    c.mtc1(1, 0);
+                    c.c_lt_s(12, 0);
+                    let below_quarter = !c.fcc();
+                    c.g[A2][0] = c.g[S1][0];
+                    if !below_quarter {
+                        break 'quiet;
+                    }
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = 0;
+                    call_ptr(c, 0x002a_73d8, 0x0029_62a4)?; // PlayFall(0)
+                    c.g[A0][0] = c.g[S0][0];
+                    break 'reaction;
+                }
+                'medium: {
+                    c.cycles += 5;
+                    let gp = r32(c, GP);
+                    c.lwc1(0, gp.wrapping_sub(0x45a0));
+                    c.c_lt_s(12, 0);
+                    let below_soft = !c.fcc();
+                    c.g[A0][0] = c.g[S0][0];
+                    if !below_soft {
+                        break 'medium;
+                    }
+                    c.cycles += 4;
+                    c.g[A1][0] = 1;
+                    call_ptr(c, 0x002a_73d8, 0x0029_62c8)?; // PlayFall(1)
+                    c.g[A0][0] = c.g[S0][0];
+                    break 'reaction;
+                }
+                c.cycles += 4;
+                c.g[A2][0] = c.g[S1][0];
+                c.g[A1][0] = 2;
+                call_ptr(c, 0x002a_73d8, 0x0029_62dc)?; // PlayFall(2)
+                c.g[A0][0] = c.g[S0][0];
+            }
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S2][0];
+            call_ptr(c, 0x0028_f108, 0x0029_62e8)?; // ResetMusicFadeIn
+        }
+        frame.restore(c, S0, 0x30);
+        c.cycles += 6;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        c.g[RA][0] = c.ld(frame.at(c, 0));
+        frame.restore_fpr(c, 20, 0x40);
+        let ra = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x50));
+        c.pc = ra;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_GetRiderSpeedVolume (0x290c40)
+
+/// The rider's physics object (0x6c0 into the rider).
+pub(crate) const RIDER_SPEED_VOLUME_BODY: u32 = 0x6c0;
+
+/// `int SSXAudioSystem_GetRiderSpeedVolume(SSXAudioSystem* self, Rider* rider)`
+/// (0x290c40): the magnitude of the rider's speed (the vector returned by the
+/// physics object's virtual at slot 0x10) through audio curve table 3,
+/// clamped to the MIDI volume range 0..127. No args, no locals beyond `ra`.
+pub fn ssx_audio_system_get_rider_speed_volume(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 31;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        // The physics object's virtual speed vector.
+        c.g[V1][0] = Addr(r32(c, A1).wrapping_add(RIDER_SPEED_VOLUME_BODY)).lw(c);
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(RIDER_SPEED_VOLUME_BODY));
+        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x10)).lh(c);
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x14)).lw(c);
+        let method = r32(c, V0);
+        c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+        call_ptr(c, method, 0x0029_0c60)?;
+        // The speed's magnitude on VU0; Q into f12.
+        c.lqc2(3, r32(c, V0));
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.vu0().sqrt(4, 0);
+        c.vu0().waitq();
+        c.cfc2(3, 22);
+        c.mtc1(3, 12);
+        // Curve table 3 at that speed.
+        c.g[A0][0] = 0x3;
+        Callee {
+            addr: 0x0029_0c10,
+            f: ee::s07::Audio_EvalCurveTable,
+        }
+        .call(c, 0x0029_0c90)?;
+        c.cvt_w_s(1, 0);
+        c.mfc1(V0, 1);
+        // Clamp to 0..127 (the min/max the compiler emitted: `movn` pairs).
+        c.g[A1][0] = 0x7f;
+        c.g[V1][0] = u64::MAX;
+        frame.restore_ra(c, 0);
+        c.g[A0][0] = ((c.g[V0][0] as i64) < 128) as u64;
+        if c.g[A0][0] == 0 {
+            c.g[V0][0] = c.g[A1][0];
+        }
+        c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        if c.g[V1][0] == 0 {
+            c.g[V0][0] = 0;
+        }
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x0029f378 SSXAudioSystem_GetGruntVoice
+
+/// `int SSXAudioSystem_GetGruntVoice(SSXAudioSystem *self, Rider *rider)`
+/// (0x29f378): the "grunt" voice id for the rider's current character: the
+/// character lookup for kinds 0, else 6 for kinds 14, 16 and 21, and 7 for
+/// everything else.
+pub fn ssx_audio_system_get_grunt_voice(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[S0][0];
+        // Rider_GetPlayerCharacterInfo(rider) -> character id.
+        call_ptr(c, 0x0012_3168, 0x0029_f390)?;
+        c.g[V1][0] = c.g[V0][0];
+        c.g[V0][0] = 0xe;
+        let is14 = c.g[V1][0] == c.g[V0][0];
+        c.g[V0][0] = ((c.g[V1][0] as i64) < 15) as u64;
+        if !is14 {
+            c.cycles += 2;
+            let ge15 = c.g[V0][0] == 0;
+            c.g[V0][0] = 0x10;
+            if ge15 {
+                c.cycles += 2;
+                let is16 = c.g[V1][0] == c.g[V0][0];
+                c.g[V0][0] = 0x15;
+                if !is16 {
+                    c.cycles += 2;
+                    let is21 = c.g[V1][0] == c.g[V0][0];
+                    c.g[V0][0] = 0x7;
+                    if !is21 {
+                        // Any other kind: 7.
+                        c.cycles += 2;
+                        frame.restore(c, S0, 0x10);
+                        c.cycles += 3;
+                        frame.restore_ra(c, 0);
+                        frame.close(c);
+                        return Ok(());
+                    }
+                }
+            } else {
+                c.cycles += 2;
+                let is0 = c.g[V1][0] == 0;
+                c.g[V0][0] = 0x7;
+                if is0 {
+                    // Kind 0: the rider's character voice.
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x0012_3128, 0x0029_f3d8)?;
+                    frame.restore(c, S0, 0x10);
+                    c.cycles += 3;
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                c.cycles += 2;
+                frame.restore(c, S0, 0x10);
+                c.cycles += 3;
+                frame.restore_ra(c, 0);
+                frame.close(c);
+                return Ok(());
+            }
+        }
+        // Kinds 14, 16 and 21: 6.
+        c.cycles += 2;
+        c.g[V0][0] = 6;
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x002a10c0 SSXAudioSystem_IsCharacterSpeaking
+
+/// SSXAudioSystem: `+0x118` the stream array, `+0x5560` the speech system.
+pub(crate) const OC325_AUDIO_STREAMS: u32 = 0x118;
+
+pub(crate) const OC325_AUDIO_SPEECH: u32 = 0x5560;
+
+/// Audio object: the bank monitor.
+pub(crate) const OC325_AUDIO_BANK_MONITOR: u32 = 0x1d8;
+
+/// Bank monitor instance: the id of the voice.
+pub(crate) const OC325_INSTANCE_ID: u32 = 0x80;
+
+pub(crate) const OC325_SPEECH_GET_STREAM_SLOT: Callee = Callee {
+    addr: 0x002b_1220,
+    f: ee::s08::SpeechSystem_GetInstanceStreamSlot,
+};
+
+pub(crate) const OC325_STREAM_ARRAY_GET_REQUEST: Callee = Callee {
+    addr: 0x002a_b150,
+    f: ee::s08::StreamArray_GetCurrentRequest,
+};
+
+pub(crate) const OC325_BANK_FIND_INSTANCE: Callee = Callee {
+    addr: 0x002a_d550,
+    f: ee::s08::BankMonitor_FindInstance,
+};
+
+/// `int SSXAudioSystem_IsCharacterSpeaking(SSXAudioSystem* self, int id)`
+/// (0x2a10c0): 1 when the speech stream slot's current request has a voice
+/// whose id is `id`. 0 when there is no current request, no voice, or the
+/// voice belongs to another id.
+pub fn ssx_audio_system_is_character_speaking(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(OC325_AUDIO_SPEECH));
+        c.g[A1][0] = 0;
+        OC325_SPEECH_GET_STREAM_SLOT.call(c, 0x002a_10e4)?;
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(OC325_AUDIO_STREAMS)).lw(c);
+        c.g[A1][0] = c.g[V0][0];
+        OC325_STREAM_ARRAY_GET_REQUEST.call(c, 0x002a_10f0)?;
+        c.g[A1][0] = c.g[V0][0];
+        let no_request = (c.g[A1][0] as i64) < 0;
+        c.g[V0][0] = 0;
+        if !no_request {
+            c.cycles += 7;
+            c.g[V0][0] = Addr(r32(c, S0).wrapping_add(OC325_AUDIO_STREAMS)).lw(c);
+            c.g[A2][0] = 0x3;
+            c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(OC325_AUDIO_BANK_MONITOR));
+            OC325_BANK_FIND_INSTANCE.call(c, 0x002a_1110)?;
+            if c.g[V0][0] == 0 {
+                c.g[V0][0] = 0;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = Addr((c.g[V0][0] as u32).wrapping_add(OC325_INSTANCE_ID)).lw(c);
+                c.g[V0][0] = c.g[V0][0] ^ c.g[S1][0];
+                c.g[V0][0] = (c.g[V0][0] < 0x1) as u64;
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x0029ab08 SSXAudioSystem_ResetBoostTickPitch
+
+/// Rider: `+0x870` the boost-tick channel index, `+0x874`/`+0x87c` its two
+/// enable words.
+pub(crate) const OC325_RIDER_TICK_CHANNEL: u32 = 0x870;
+
+pub(crate) const OC325_RIDER_TICK_A: u32 = 0x874;
+
+pub(crate) const OC325_RIDER_TICK_B: u32 = 0x87c;
+
+/// SSXAudioSystem: per-channel pitch settings (halfwords).
+pub(crate) const OC325_CHANNEL_PITCH: u32 = 0x5fe8;
+
+/// `void SSXAudioSystem_ResetBoostTickPitch(SSXAudioSystem* mgr, Rider*
+/// rider)` (0x29ab08): when the rider's boost-tick sound is enabled, reset
+/// its channel's pitch to 1.0 (0x1000 in 4.12 fixed point).
+pub fn ssx_audio_system_reset_boost_tick_pitch(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = Addr(r32(c, A1).wrapping_add(OC325_RIDER_TICK_A)).lw(c);
+    let disabled = c.g[V0][0] == 0;
+    c.g[V1][0] = 0;
+    if !disabled {
+        c.cycles += 2;
+        c.g[V0][0] = Addr(r32(c, A1).wrapping_add(OC325_RIDER_TICK_B)).lw(c);
+        c.g[V1][0] = (0u64 < c.g[V0][0]) as u64;
+    }
+    c.cycles += 2;
+    let off = c.g[V1][0] == 0;
+    c.g[V1][0] = 0x1000;
+    if !off {
+        c.cycles += 4;
+        c.g[V0][0] = Addr(r32(c, A1).wrapping_add(OC325_RIDER_TICK_CHANNEL)).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sh(
+            (c.g[V0][0] as u32).wrapping_add(OC325_CHANNEL_PITCH),
+            c.g[V1][0],
+        );
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_CalcEdgeLoopGroup1 (0x293dc0)
+
+/// Per-rider audio level slots (`self + 0x5990`).
+pub(crate) const EDGE_LOOP_LEVELS: u32 = 0x5990;
+
+/// The volume curve descriptor (`D_00482CB8`, 40 bytes).
+pub(crate) const EDGE_LOOP_VOLUME_CURVE: u32 = 0x0048_2cb8;
+
+/// The pitch curve descriptor (`D_00482CE0`, 40 bytes).
+pub(crate) const EDGE_LOOP_PITCH_CURVE: u32 = 0x0048_2ce0;
+
+/// `0.1f` (`gp-0x45b0`): below it the level is scaled by the speed.
+pub(crate) const EDGE_LOOP_THRESHOLD: u32 = 0x45b0;
+
+/// Rider audio fields: the level components (+0x750, +0x754), the pressure
+/// (+0x758) and the speed (+0x75c); the physics object at +0x6c0.
+pub(crate) const EDGE_LOOP_RIDER_SPEED: u32 = 0x75c;
+
+pub(crate) const EDGE_LOOP_RIDER_PRESSURE: u32 = 0x758;
+
+pub(crate) const EDGE_LOOP_RIDER_BODY: u32 = 0x6c0;
+
+/// Copy the 8 bytes at `src` to `dst` with the unaligned load/store pair.
+pub(crate) fn edge_loop_copy_dword(c: &mut Cpu, reg: usize, src: u32, dst: u32) {
+    c.ldl(reg, src.wrapping_add(7));
+    c.ldr(reg, src);
+    c.sdl(reg, dst.wrapping_add(7));
+    c.sdr(reg, dst);
+}
+
+/// `void SSXAudioSystem_CalcEdgeLoopGroup1(SSXAudioSystem* self, Rider* rider,
+/// int* volume, int* pitch)` (0x293dc0): the board-edge loop of group 1. The
+/// level is the rider's two level factors (+0x750 + +0x754), scaled by
+/// `speed * 10` when the speed (+0x75c) is under 0.1. The edge index comes
+/// from the rider's virtual (`+0x6c0`, slot 0x38); a jump of more than 0.1
+/// from the previous level moves it a half (falling) or an eighth (rising)
+/// of the way. The level is stored back and the volume curve is evaluated at
+/// it (`*volume`), the pitch curve at the pressure (`*pitch`, times 4096).
+/// Frame 0xc0 (s0 = self, s1 = volume, s2 = pitch, f20..f22 saved).
+pub fn ssx_audio_system_calc_edge_loop_group1(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xc0);
+        c.g[V0][0] = c.g[A1][0]; // rider
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        c.g[S0][0] = c.g[A0][0]; // audio system
+        frame.save(c, S2, 0x70);
+        c.g[S1][0] = c.g[A2][0]; // volume out
+        frame.save_fpr(c, 21, 0xa8);
+        c.g[S2][0] = c.g[A3][0]; // pitch out
+        frame.save_fpr(c, 20, 0xa0);
+        frame.save_ra(c, 0x60);
+        frame.save_fpr(c, 22, 0xb0);
+        let rider = r32(c, V0);
+        c.lwc1(21, r32(c, GP).wrapping_sub(EDGE_LOOP_THRESHOLD));
+        c.lwc1(12, rider.wrapping_add(EDGE_LOOP_RIDER_SPEED));
+        c.lwc1(1, rider.wrapping_add(0x754));
+        c.lwc1(0, rider.wrapping_add(0x750));
+        c.c_lt_s(12, 21);
+        let quiet = c.fcc();
+        c.add_s(20, 1, 0); // level = +0x754 + +0x750
+        if quiet {
+            c.cycles += 4;
+            c.mul_s(1, 20, 12);
+            c.g[AT][0] = 0x4120_0000;
+            c.mtc1(1, 0); // 10.0
+            c.mul_s(20, 1, 0);
+        }
+
+        // The edge index from the rider's virtual.
+        c.cycles += 19;
+        c.g[V1][0] = Addr(rider.wrapping_add(EDGE_LOOP_RIDER_BODY)).lw(c);
+        c.g[A1][0] = sx(rider.wrapping_add(EDGE_LOOP_RIDER_BODY));
+        c.lwc1(22, rider.wrapping_add(EDGE_LOOP_RIDER_PRESSURE));
+        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x38)).lh(c);
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x3c)).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+        call_ptr(c, target, 0x0029_3e3c)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[V0][0] = sx(r32(c, S0).wrapping_add(EDGE_LOOP_LEVELS));
+        c.g[V1][0] = sx(r32(c, A0) << 2);
+        c.g[A1][0] = c.g[V0][0];
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+        c.lwc1(2, r32(c, V0)); // previous level
+        c.sub_s(1, 2, 20);
+        c.abs_s(0, 1);
+        c.c_lt_s(21, 0);
+        let jump = c.fcc(); // 0.1 < |prev - level|
+        c.g[V1][0] = 0x0048_0000;
+        if jump {
+            c.cycles += 3;
+            c.c_lt_s(20, 2);
+            if c.fcc() {
+                // Falling: half of the difference.
+                c.cycles += 5;
+                c.g[AT][0] = 0x3f00_0000;
+                c.mtc1(1, 0);
+                c.mul_s(0, 1, 0);
+                c.sub_s(20, 2, 0);
+            } else {
+                c.cycles += 4;
+                c.c_lt_s(2, 20);
+                c.g[V1][0] = 0x0048_0000;
+                if c.fcc() {
+                    // Rising: an eighth of the difference.
+                    c.cycles += 5;
+                    c.sub_s(0, 20, 2);
+                    c.g[AT][0] = 0x3e00_0000;
+                    c.mtc1(1, 1);
+                    c.mul_s(0, 0, 1);
+                    c.add_s(20, 2, 0);
+                }
+            }
+        }
+
+        // Store the level, copy both curves to the stack, evaluate them.
+        c.cycles += 69;
+        c.g[V0][0] = sx(r32(c, A0) << 2);
+        c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+        c.g[T0][0] = sx(r32(c, V1).wrapping_add(0x2cb8));
+        let base = sp(c);
+        for (i, reg) in [4usize, 6, 7, 4, 6].into_iter().enumerate() {
+            let o = 8 * i as u32;
+            edge_loop_copy_dword(c, reg, EDGE_LOOP_VOLUME_CURVE + o, base + o);
+        }
+        c.swc1(20, r32(c, V0)); // levels[idx] = level
+        c.g[A1][0] = 0x0048_0000;
+        c.g[S0][0] = sx(base.wrapping_add(0x30));
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A3][0] = sx(EDGE_LOOP_PITCH_CURVE);
+        for (i, reg) in [2usize, 3, 6, 2, 3].into_iter().enumerate() {
+            let o = 8 * i as u32;
+            edge_loop_copy_dword(c, reg, EDGE_LOOP_PITCH_CURVE + o, base + 0x30 + o);
+        }
+        c.mov_s(12, 20);
+        Callee {
+            addr: 0x0029_0b58,
+            f: ee::s07::Audio_EvalCurve5,
+        }
+        .call(c, 0x0029_3f78)?;
+        c.cvt_w_s(1, 0);
+        c.swc1(1, r32(c, S1)); // *volume
+        c.g[A0][0] = c.g[S0][0];
+        c.mov_s(12, 22);
+        Callee {
+            addr: 0x0029_0b58,
+            f: ee::s07::Audio_EvalCurve5,
+        }
+        .call(c, 0x0029_3f8c)?;
+        c.g[AT][0] = 0x4580_0000;
+        c.mtc1(1, 1); // 4096.0
+        frame.restore(c, S0, 0x90);
+        c.mul_s(0, 0, 1);
+        frame.restore(c, S1, 0x80);
+        frame.restore_ra(c, 0x60);
+        frame.restore_fpr(c, 22, 0xb0);
+        c.cvt_w_s(1, 0);
+        c.swc1(1, r32(c, S2)); // *pitch
+        frame.restore_fpr(c, 21, 0xa8);
+        frame.restore(c, S2, 0x70);
+        frame.restore_fpr(c, 20, 0xa0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_CalcSurfaceLoopRemoteGroup1 (0x293b70)
+
+/// `void SSXAudioSystem_CalcSurfaceLoopRemoteGroup1(SSXAudioSystem* self,
+/// Rider* rider, int* pitch, int* volume)` (0x293b70): the remote-racer twin
+/// of `SSXAudioSystem_CalcSurfaceLoopGroup1`, called with the same arguments.
+/// Frame 0x10 (just `ra`).
+pub fn ssx_audio_system_calc_surface_loop_remote_group1(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        Callee {
+            addr: 0x0029_3740,
+            f: ee::s07::SSXAudioSystem_CalcSurfaceLoopGroup1,
+        }
+        .call(c, 0x0029_3b80)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -22292,6 +23134,576 @@ pub(crate) mod tests {
                 };
                 c.g[A0][0] = sx(SELF);
                 c.g[A1][0] = sx(VOICE);
+            },
+        );
+    }
+
+    use crate::difftest::RA as SENTINEL;
+
+    // -- 0x002a1028 SSXAudioSystem_StopCharacterSpeech ------------------------
+
+    pub(crate) const OC320_STOP_SELF: u32 = DATA + 0x1_0000;
+
+    pub(crate) const OC320_STOP_SLOTTBL: u32 = DATA + 0x1_1000;
+
+    pub(crate) const OC320_STOP_SLOTENTRY: u32 = DATA + 0x1_2000;
+
+    pub(crate) const OC320_STOP_ARRAY: u32 = DATA + 0x1_3000;
+
+    pub(crate) const OC320_STOP_ELEMS: u32 = DATA + 0x1_4000;
+
+    pub(crate) const OC320_STOP_BUFFER: u32 = DATA + 0x1_5000;
+
+    pub(crate) const OC320_STOP_BANK: u32 = DATA + 0x2_0000;
+
+    pub(crate) const OC320_STOP_VOICES: u32 = DATA + 0x2_1000;
+
+    pub(crate) const OC320_STOP_STREAM: u32 = DATA + 0x3_0000;
+
+    pub(crate) const OC320_STOP_REQ: u32 = DATA + 0x3_1000;
+
+    pub(crate) const OC320_STOP_BUFOBJ: u32 = DATA + 0x3_2000;
+
+    /// `SNDSTRM_GetStream`: the stream table (`0x50a0a0 + id*4`) and its
+    /// count byte.
+    pub(crate) const OC320_STREAM_TABLE: u32 = 0x0050_a0a0;
+
+    pub(crate) const OC320_STREAM_COUNT: u32 = 0x0050_a92e;
+
+    /// `SNDSTRM_GetBufferedBytes`: the request table.
+    pub(crate) const OC320_STREAM_REQ_TABLE: u32 = 0x0051_5abc;
+
+    /// Modes: no slot entry (-1), a null array element (-1), no matching
+    /// voice, and a matching voice (id equal or not, so the stop instance
+    /// call runs or not). The stream lookup runs the real library code with
+    /// one controlled entry in the global stream table.
+    pub(crate) fn oc320_stop_speech_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x002a_1028, 0);
+        let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+        let w8 = |c: &mut Cpu, a: u32, v: u8| c.bus.write8(a, v);
+        let mode = seed % 4;
+        let id = 0x40 + r.next_u32() % 4;
+        w(c, OC320_STOP_SELF + OC320_AUDIO_STREAMS, OC320_STOP_ARRAY);
+        w(
+            c,
+            OC320_STOP_SELF + OC320_AUDIO_SPEECH + 4,
+            OC320_STOP_SLOTTBL,
+        );
+        if mode == 0 {
+            w(c, OC320_STOP_SLOTTBL, 0);
+        } else {
+            w(c, OC320_STOP_SLOTTBL, OC320_STOP_SLOTENTRY);
+        }
+        let slot = r.next_u32() % 4;
+        w(c, OC320_STOP_SLOTENTRY + 4, slot);
+        w(c, OC320_STOP_ARRAY + 8, OC320_STOP_ELEMS);
+        // The stream lookup: array element -> buffer -> stream id.
+        let stream_id = r.next_u32() % 4;
+        w(
+            c,
+            OC320_STOP_ELEMS + 4 * slot,
+            if mode == 1 { 0 } else { OC320_STOP_BUFFER },
+        );
+        w(c, OC320_STOP_BUFFER + 8, stream_id);
+        w(c, OC320_STREAM_TABLE + 4 * stream_id, OC320_STOP_STREAM);
+        w8(c, OC320_STREAM_COUNT, 8);
+        w(c, OC320_STOP_STREAM + 0x124, 7);
+        w(c, OC320_STOP_STREAM + 0x11c, OC320_STOP_REQ);
+        let request = r.next_u32() % 4;
+        w(c, OC320_STOP_REQ + 0xc, request);
+        c.bus.write16(OC320_STOP_STREAM + 0x14, 1);
+        let bb_id = r.next_u32() % 4;
+        w(c, OC320_STOP_STREAM + 8, bb_id);
+        w(c, OC320_STREAM_REQ_TABLE + 4 * bb_id, OC320_STOP_BUFOBJ);
+        w(c, OC320_STOP_BUFOBJ + 0x48, 5);
+        // The bank: `lw(lw(self+0x118)) + 0x1d8`, voice slots at `+0x8ec`.
+        w(c, OC320_STOP_ARRAY, OC320_STOP_BANK);
+        w(c, OC320_STOP_BANK + 0x8ec + 0x1d8, OC320_STOP_VOICES);
+        if mode >= 2 {
+            let k = r.next_u32() % 4;
+            let voice = OC320_STOP_VOICES + k * 0xc0;
+            w(c, voice, 3);
+            w(c, voice + 4, request);
+            w(c, voice + 0x9c, 0);
+            w(
+                c,
+                voice + 0x80,
+                if mode == 3 && seed % 8 < 4 {
+                    id
+                } else {
+                    id ^ 1
+                },
+            );
+        }
+        c.g[A0][0] = sx(OC320_STOP_SELF);
+        c.g[A1][0] = sx(id);
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x002a_1028;
+    }
+
+    /// The real speech-slot, stream-array, bank-monitor and stop-instance
+    /// callees; both return values and every early exit.
+    #[test]
+    fn ssx_audio_system_stop_character_speech_matches() {
+        check(
+            ee::s08::f_002a1028__generated,
+            ssx_audio_system_stop_character_speech,
+            240,
+            &|c, seed| oc320_stop_speech_setup(c, seed),
+        );
+    }
+
+    /// SSXAudioSystem_GetSpeechCategory: the `DJ_`, `PA_`, `Arcade` and
+    /// other prefixes (with the sound-module handle present, absent, and a
+    /// zero world), plus the "already known" argument and a stale cached
+    /// category in the system.
+    #[test]
+    fn ssxaudiosystem_get_speech_category_matches() {
+        check(
+            ee::s08::f_0029eee0__generated,
+            ssxaudiosystem_get_speech_category,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x29_eee0, 0);
+                let this = DATA;
+                let name = DATA + 0x100;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = if seed % 5 == 0 { 1 } else { 0 };
+                c.g[A2][0] = sx(name);
+                // The world and the sound-module handle behind `gp-0x848`.
+                let world = if seed % 2 == 0 { DATA + 0x2000 } else { 0 };
+                c.bus.write32(GAME_GP - 0x848, world);
+                let module = if seed % 3 == 0 { 0 } else { r.next_u32() | 1 };
+                c.bus.write32(world + 0x84, module);
+                let s: &[u8] = match seed % 8 {
+                    0 => &b"DJ_pick1"[..],
+                    1 => &b"PA_x"[..],
+                    2 => &b"Arcade"[..],
+                    3 => &b"Arcadf"[..],
+                    4 => &b"Arcax"[..],
+                    5 => &b"DJ"[..],
+                    6 => &b"Az"[..],
+                    _ => &b"Zzz"[..],
+                };
+                for (i, b) in s.iter().enumerate() {
+                    c.bus.write8(name + i as u32, *b);
+                }
+                c.bus.write8(name + s.len() as u32, 0);
+                c.bus
+                    .write32(this + SSX_AUDIO_SPEECH_CATEGORY, r.next_u32());
+            },
+        );
+    }
+
+    /// SSXAudioSystem_PlayWipeoutCrowdReaction: the rider-index resolution
+    /// (not in a replay, tracking or not) and the early return when
+    /// FindRider answers another rider, plus the four reaction levels when
+    /// it answers the rider itself (rider = -1, the answer of a FindRider
+    /// outside a replay) with the crowd instance absent.
+    #[test]
+    fn ssxaudiosystem_play_wipeout_crowd_reaction_matches() {
+        check(
+            ee::s08::f_002961f0__generated,
+            ssxaudiosystem_play_wipeout_crowd_reaction,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x29_61f0, 8);
+                // The BELibrary singleton `GetRiderRatingTier` asks for.
+                c.bus.write32(GAME_GP - 0x1f04, DATA + 0x3e000);
+                let sys = DATA;
+                // No crowd instance: the crowd calls return at once.
+                c.bus.write32(sys + 0x18, 0);
+                let rider = if seed % 3 == 0 {
+                    0xffff_ffffu32
+                } else {
+                    DATA + 0x1000
+                };
+                c.bus.write32(rider.wrapping_add(0x874), (seed % 2) as u32);
+                c.bus
+                    .write32(rider.wrapping_add(0x87c), (seed % 4 != 0) as u32);
+                c.bus.write32(rider.wrapping_add(0x870), r.next_u32() % 4);
+                c.g[A0][0] = sx(sys);
+                c.g[A1][0] = sx(rider);
+                c.f[12] = match seed % 7 {
+                    0 => 0.0f32.to_bits(),
+                    1 => 0.125f32.to_bits(),
+                    2 => 0.25f32.to_bits(),
+                    3 => 0.65f32.to_bits(),
+                    4 => 2.0f32.to_bits(),
+                    5 => (-0.3f32).to_bits(),
+                    _ => r.edge_f32(),
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_audio_system_get_rider_speed_volume_matches() {
+        use crate::difftest::fakes::{machine, FAKE, LOG_RESULTS};
+        use crate::difftest::{check, put_vec, put_words, DATA};
+        /// `D_00445898[3]`: the game's audio curve table 3 (byte-indexed;
+        /// the 32-bit loads mask the low address bits, as the bus does).
+        const CURVE: u32 = 0x0044_5898;
+        check(
+            ssx3_ee::s07::f_00290c40__generated,
+            ssx_audio_system_get_rider_speed_volume,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0029_0c40, 1);
+                let base = DATA + 0x2_0000;
+                let (rider, vt) = (base, base + 0x1000);
+                let (speed_vec, curve) = (base + 0x2000, CURVE);
+                // The physics object's table slot: delta at +0x10, method at
+                // +0x14 (a fake returning `speed_vec`).
+                c.bus.write32(rider + RIDER_SPEED_VOLUME_BODY, vt);
+                let delta = (r.next_u32() % 4) * 4;
+                c.bus.write16(vt + 0x10, delta as u16);
+                c.bus.write32(vt + 0x14, FAKE);
+                c.bus.write32(LOG_RESULTS, speed_vec);
+                // Curve table 3: times 0..4, values 0, -20, 40, 200, 300.
+                put_words(
+                    c,
+                    curve,
+                    &[
+                        0.0f32.to_bits(),
+                        1.0f32.to_bits(),
+                        2.0f32.to_bits(),
+                        3.0f32.to_bits(),
+                        4.0f32.to_bits(),
+                        0.0f32.to_bits(),
+                        (-20.0f32).to_bits(),
+                        40.0f32.to_bits(),
+                        200.0f32.to_bits(),
+                        300.0f32.to_bits(),
+                    ],
+                );
+                // The speed's magnitude comes out of the VU0 reduction as the
+                // vector's y (VF6 cleared); pick values that reach every
+                // clamp: negative, in range and over 127.
+                let speed = [0.0f32, 0.5, 1.5, 2.5, 3.5, 7.0][(seed % 6) as usize];
+                c.bus.plat.set_vf(6, [0, 0, 0, 0]);
+                put_vec(c, speed_vec, [0, speed.to_bits(), 0, 0]);
+                c.g[A1][0] = rider as u64;
+            },
+        );
+    }
+
+    /// The player slot table and character records the real
+    /// `Rider_GetPlayerCharacterInfo` / `Rider_GetCharacter` read, with the
+    /// character id covering 0, 14, 16, 21 and other kinds.
+    #[test]
+    fn ssx_audio_system_get_grunt_voice_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        const RIDER: u32 = DATA + 0x1000;
+        const LIB: u32 = DATA + 0x8000;
+        const IFACE: u32 = DATA + 0x8100;
+        const IFACE_VT: u32 = DATA + 0x8200;
+        check(
+            ee::s08::f_0029f378__generated,
+            ssx_audio_system_get_grunt_voice,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x29_f378, 0);
+                c.pc = 0x0029_f378;
+                let gp = GAME_GP;
+                c.bus.write32(gp - 0x1f04, LIB);
+                c.bus.write32(gp - 0x1efc, 0);
+                c.bus.write32(0x0053_08a8, IFACE);
+                c.bus.write32(IFACE + 4, IFACE_VT);
+                c.bus.write16(IFACE_VT + 8, (4 * (r.next_u32() % 4)) as u16);
+                c.bus.write32(IFACE_VT + 0xc, FAKE);
+                // The player slot table and the character records.
+                for i in 0..8u32 {
+                    c.bus.write32(0x0053_05b0 + 4 * i, r.next_u32() % 8);
+                }
+                for i in 0..0x1c * 8 / 4 {
+                    c.bus.write32(0x0053_4fe0 + 4 * i, r.next_u32());
+                }
+                let slot = (seed % 8) as u32;
+                let id = match seed % 6 {
+                    0 => 0u32,
+                    1 => 14,
+                    2 => 16,
+                    3 => 21,
+                    4 => 1 + r.next_u32() % 13,
+                    _ => r.next_u32() % 32,
+                };
+                c.bus.write8(0x0053_4fe0 + 0x1c * slot + 0x12, id as u8);
+                c.bus.write32(RIDER + 0x86c, slot);
+                c.g[A0][0] = sx(DATA + 0x2000);
+                c.g[A1][0] = sx(RIDER);
+            },
+        );
+    }
+
+    // -- 0x002a10c0 SSXAudioSystem_IsCharacterSpeaking ------------------------
+
+    pub(crate) const OC325_SP_SELF: u32 = DATA + 0x1_0000;
+
+    pub(crate) const OC325_SP_SLOTTBL: u32 = DATA + 0x1_1000;
+
+    pub(crate) const OC325_SP_SLOTENTRY: u32 = DATA + 0x1_2000;
+
+    pub(crate) const OC325_SP_ARRAY: u32 = DATA + 0x1_3000;
+
+    pub(crate) const OC325_SP_ELEMS: u32 = DATA + 0x1_4000;
+
+    pub(crate) const OC325_SP_BUFFER: u32 = DATA + 0x1_5000;
+
+    pub(crate) const OC325_SP_BANK: u32 = DATA + 0x2_0000;
+
+    pub(crate) const OC325_SP_VOICES: u32 = DATA + 0x2_1000;
+
+    pub(crate) const OC325_SP_STREAM: u32 = DATA + 0x3_0000;
+
+    pub(crate) const OC325_SP_REQ: u32 = DATA + 0x3_1000;
+
+    pub(crate) const OC325_SP_BUFOBJ: u32 = DATA + 0x3_2000;
+
+    /// `SNDSTRM_GetStream`: the stream table (`0x50a0a0 + id*4`) and its
+    /// count byte.
+    pub(crate) const OC325_STREAM_TABLE: u32 = 0x0050_a0a0;
+
+    pub(crate) const OC325_STREAM_COUNT: u32 = 0x0050_a92e;
+
+    /// `SNDSTRM_GetBufferedBytes`: the request table.
+    pub(crate) const OC325_STREAM_REQ_TABLE: u32 = 0x0051_5abc;
+
+    /// Modes: no slot entry (-1), a null array element (-1), no matching
+    /// voice, and a matching voice (id equal or not). The stream lookup runs
+    /// the real library code with one controlled entry in the global stream
+    /// table.
+    pub(crate) fn oc325_speaking_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x002a_10c0, 0);
+        let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+        let w8 = |c: &mut Cpu, a: u32, v: u8| c.bus.write8(a, v);
+        let mode = seed % 4;
+        let id = 0x40 + r.next_u32() % 4;
+        w(c, OC325_SP_SELF + OC325_AUDIO_STREAMS, OC325_SP_ARRAY);
+        w(c, OC325_SP_SELF + OC325_AUDIO_SPEECH + 4, OC325_SP_SLOTTBL);
+        if mode == 0 {
+            w(c, OC325_SP_SLOTTBL, 0);
+        } else {
+            w(c, OC325_SP_SLOTTBL, OC325_SP_SLOTENTRY);
+        }
+        let slot = r.next_u32() % 4;
+        w(c, OC325_SP_SLOTENTRY + 4, slot);
+        w(c, OC325_SP_ARRAY + 8, OC325_SP_ELEMS);
+        // The stream lookup: array element -> buffer -> stream id.
+        let stream_id = r.next_u32() % 4;
+        w(
+            c,
+            OC325_SP_ELEMS + 4 * slot,
+            if mode == 1 { 0 } else { OC325_SP_BUFFER },
+        );
+        w(c, OC325_SP_BUFFER + 8, stream_id);
+        w(c, OC325_STREAM_TABLE + 4 * stream_id, OC325_SP_STREAM);
+        w8(c, OC325_STREAM_COUNT, 8);
+        w(c, OC325_SP_STREAM + 0x124, 7);
+        w(c, OC325_SP_STREAM + 0x11c, OC325_SP_REQ);
+        let request = r.next_u32() % 4;
+        w(c, OC325_SP_REQ + 0xc, request);
+        c.bus.write16(OC325_SP_STREAM + 0x14, 1);
+        let bb_id = r.next_u32() % 4;
+        w(c, OC325_SP_STREAM + 8, bb_id);
+        w(c, OC325_STREAM_REQ_TABLE + 4 * bb_id, OC325_SP_BUFOBJ);
+        w(c, OC325_SP_BUFOBJ + 0x48, 5);
+        // The bank: `lw(lw(self+0x118)) + 0x1d8`, voice slots at `+0x8ec`.
+        w(c, OC325_SP_ARRAY, OC325_SP_BANK);
+        w(
+            c,
+            OC325_SP_BANK + 0x8ec + OC325_AUDIO_BANK_MONITOR,
+            OC325_SP_VOICES,
+        );
+        if mode >= 2 {
+            let k = r.next_u32() % 4;
+            let voice = OC325_SP_VOICES + k * 0xc0;
+            w(c, voice, 3);
+            w(c, voice + 4, request);
+            w(c, voice + 0x9c, 0);
+            w(
+                c,
+                voice + OC325_INSTANCE_ID,
+                if mode == 3 && seed % 8 < 4 {
+                    id
+                } else {
+                    id ^ 1
+                },
+            );
+        }
+        c.g[A0][0] = sx(OC325_SP_SELF);
+        c.g[A1][0] = sx(id);
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x002a_10c0;
+    }
+
+    /// The real speech-slot, stream-array and bank-monitor callees; both
+    /// ids and every early exit.
+    #[test]
+    fn ssx_audio_system_is_character_speaking_matches() {
+        check(
+            ee::s08::f_002a10c0__generated,
+            ssx_audio_system_is_character_speaking,
+            240,
+            &|c, seed| oc325_speaking_setup(c, seed),
+        );
+    }
+
+    // -- 0x0029ab08 SSXAudioSystem_ResetBoostTickPitch -----------------------
+
+    /// Both enable words (clear and set) and channel indices.
+    pub(crate) fn oc325_boost_pitch_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0029_ab08, 0);
+        let mgr = DATA + 0x1_0000;
+        let rider = DATA + 0x1_1000;
+        c.bus.write32(
+            rider + OC325_RIDER_TICK_A,
+            if seed % 3 == 0 { 0 } else { 1 },
+        );
+        c.bus.write32(
+            rider + OC325_RIDER_TICK_B,
+            if seed % 4 == 0 { 0 } else { 1 },
+        );
+        c.bus
+            .write32(rider + OC325_RIDER_TICK_CHANNEL, r.next_u32() % 4);
+        c.bus
+            .write16(mgr + OC325_CHANNEL_PITCH, r.next_u32() as u16);
+        c.g[A0][0] = sx(mgr);
+        c.g[A1][0] = sx(rider);
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x0029_ab08;
+    }
+
+    /// Both enable flags; the pitch halfword is written only when both are
+    /// set.
+    #[test]
+    fn ssx_audio_system_reset_boost_tick_pitch_matches() {
+        check(
+            ee::s08::f_0029ab08__generated,
+            ssx_audio_system_reset_boost_tick_pitch,
+            120,
+            &|c, seed| oc325_boost_pitch_setup(c, seed),
+        );
+    }
+
+    /// `SSXAudioSystem_CalcEdgeLoopGroup1`: speed under and over the 0.1
+    /// threshold (the level scaled by `speed * 10` or not), an edge getter
+    /// that is a fake virtual (forced index 1..8; some seeds unwind there),
+    /// previous levels below, above and near the new level (both adjustment
+    /// branches), and the real `Audio_EvalCurve5` on sorted five-point curves.
+    #[test]
+    fn ssx_audio_system_calc_edge_loop_group1_matches() {
+        use crate::difftest::fakes::{machine, vtable, LOG_RESULTS};
+        use crate::difftest::{check, Rng, DATA, GAME_GP};
+        const AUDIO: u32 = DATA;
+        const RIDER: u32 = DATA + 0x8000;
+        const OUT: u32 = DATA + 0xa000;
+        check(
+            ee::s07::f_00293dc0__generated,
+            ssx_audio_system_calc_edge_loop_group1,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x29_3dc0, 1);
+                c.pc = 0x0029_3dc0;
+                c.bus
+                    .write32(GAME_GP - EDGE_LOOP_THRESHOLD, 0.1f32.to_bits());
+                // Curves: x ascending 0..1, then y values.
+                for (base, k) in [
+                    (EDGE_LOOP_VOLUME_CURVE, 0.5f32),
+                    (EDGE_LOOP_PITCH_CURVE, 1.0f32),
+                ] {
+                    for i in 0..5u32 {
+                        c.bus.write32(base + 4 * i, (i as f32 * 0.25).to_bits());
+                        c.bus
+                            .write32(base + 0x14 + 4 * i, (k * (i * i) as f32 + 0.1).to_bits());
+                    }
+                }
+                let f = |r: &mut Rng, lo: f32, hi: f32| {
+                    lo + (r.next_u32() % 1000) as f32 / 1000.0 * (hi - lo)
+                };
+                c.bus.write32(RIDER + 0x750, f(&mut r, 0.0, 0.4).to_bits());
+                c.bus.write32(RIDER + 0x754, f(&mut r, 0.0, 0.4).to_bits());
+                c.bus.write32(RIDER + 0x758, f(&mut r, 0.0, 1.0).to_bits());
+                c.bus
+                    .write32(RIDER + EDGE_LOOP_RIDER_SPEED, f(&mut r, 0.0, 0.6).to_bits());
+                let vt = vtable(c, &mut r, &[0x38]);
+                c.bus.write32(RIDER + EDGE_LOOP_RIDER_BODY, vt);
+                let index = r.next_u32() % 8;
+                // The fake's forced result (zero would mean "a pointer", so the
+                // index is 1..8).
+                c.bus.write32(LOG_RESULTS, index + 1);
+                for i in 0..10u32 {
+                    let prev = match (seed + i) % 3 {
+                        0 => f(&mut r, -2.0, -1.0),
+                        1 => f(&mut r, 1.5, 3.0),
+                        _ => f(&mut r, 0.0, 1.0),
+                    };
+                    c.bus
+                        .write32(AUDIO + EDGE_LOOP_LEVELS + 4 * i, prev.to_bits());
+                }
+                c.g[A0][0] = sx(AUDIO);
+                c.g[A1][0] = sx(RIDER);
+                c.g[A2][0] = sx(OUT);
+                c.g[A3][0] = sx(OUT + 4);
+            },
+        );
+    }
+
+    /// `SSXAudioSystem_CalcSurfaceLoopRemoteGroup1` just calls
+    /// `SSXAudioSystem_CalcSurfaceLoopGroup1`; the fixture is that function's
+    /// (rider factors, a fake surface getter, previous levels, real curves).
+    #[test]
+    fn ssx_audio_system_calc_surface_loop_remote_group1_matches() {
+        use crate::difftest::fakes::{machine, vtable, LOG_RESULTS};
+        use crate::difftest::{check, Rng, DATA, GAME_GP};
+        use crate::game::sound::soundsys::{
+            SURFACE_LOOP1_LEVELS, SURFACE_LOOP1_PITCH_CURVE, SURFACE_LOOP1_VOLUME_CURVE,
+        };
+        const AUDIO: u32 = DATA;
+        const RIDER: u32 = DATA + 0x8000;
+        const OUT: u32 = DATA + 0xa000;
+        check(
+            ee::s07::f_00293b70__generated,
+            ssx_audio_system_calc_surface_loop_remote_group1,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x29_3b70, 1);
+                c.pc = 0x0029_3b70;
+                c.bus.write32(GAME_GP - 0x45c0, 0.3f32.to_bits());
+                for (base, k) in [
+                    (SURFACE_LOOP1_PITCH_CURVE, 1.0f32),
+                    (SURFACE_LOOP1_VOLUME_CURVE, 0.5),
+                ] {
+                    for i in 0..5u32 {
+                        c.bus.write32(base + 4 * i, (i as f32 * 0.25).to_bits());
+                        c.bus
+                            .write32(base + 0x14 + 4 * i, (k * (i * i) as f32 + 0.1).to_bits());
+                    }
+                }
+                let f = |r: &mut Rng, lo: f32, hi: f32| {
+                    lo + (r.next_u32() % 1000) as f32 / 1000.0 * (hi - lo)
+                };
+                c.bus.write32(RIDER + 0x750, f(&mut r, 0.0, 0.4).to_bits());
+                c.bus.write32(RIDER + 0x754, f(&mut r, 0.0, 0.4).to_bits());
+                c.bus.write32(RIDER + 0x758, f(&mut r, 0.0, 1.0).to_bits());
+                c.bus.write32(RIDER + 0x75c, f(&mut r, 0.0, 0.6).to_bits());
+                let vt = vtable(c, &mut r, &[0x38]);
+                c.bus.write32(RIDER + 0x6c0, vt);
+                let index = r.next_u32() % 8;
+                c.bus.write32(LOG_RESULTS, index + 1);
+                for i in 0..10u32 {
+                    let prev = match (seed + i) % 3 {
+                        0 => f(&mut r, -2.0, -1.0),
+                        1 => f(&mut r, 1.5, 3.0),
+                        _ => f(&mut r, 0.0, 1.0),
+                    };
+                    c.bus
+                        .write32(AUDIO + SURFACE_LOOP1_LEVELS + 4 * i, prev.to_bits());
+                }
+                c.g[A0][0] = sx(AUDIO);
+                c.g[A1][0] = sx(RIDER);
+                c.g[A2][0] = sx(OUT);
+                c.g[A3][0] = sx(OUT + 4);
             },
         );
     }

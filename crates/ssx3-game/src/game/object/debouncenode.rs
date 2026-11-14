@@ -103,6 +103,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0034_40c8, crowd_man3d_update, "CrowdMan3d_Update"),
     (0x0034_4138, crowd_man3d_render, "CrowdMan3d_Render"),
     (0x0034_41a8, crowd_man3d_save_state, "CrowdMan3d_SaveState"),
+    (
+        0x0034_2e98,
+        debounce_kill_restorable,
+        "Debounce_KillRestorable",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1937,6 +1942,156 @@ pub fn crowd_man3d_save_state(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Callees.
+
+/// `WorldObj_RunKillScript` (0x34fcc0).
+pub(crate) const OC327_WORLD_OBJ_RUN_KILL_SCRIPT: Callee = Callee {
+    addr: 0x0034_fcc0,
+    f: ee::s11::WorldObj_RunKillScript,
+};
+
+/// `DeadNode_ctor` (0x3506d8).
+pub(crate) const OC327_DEAD_NODE_CTOR: Callee = Callee {
+    addr: 0x0035_06d8,
+    f: ee::s11::DeadNode_ctor,
+};
+
+/// `RestoreNode_ctor` (0x350f60).
+pub(crate) const OC327_RESTORE_NODE_CTOR: Callee = Callee {
+    addr: 0x0035_0f60,
+    f: ee::s11::RestoreNode_ctor,
+};
+
+/// `EA_MemAllocNamed` (0x317d70; the generator emitted `call_indirect`).
+pub(crate) const OC327_EA_MEM_ALLOC_NAMED: u32 = 0x0031_7d70;
+
+// ---------------------------------------------------------------------------
+// Debounce nodes.
+
+/// The vtable-driven `OnKilled(this, 3)` call: `this+0xc` holds the vtable,
+/// its slot +8 is `{ short delta; short; void (*fn)(); }` and the method is
+/// called with `this + delta`. Charges `pre` cycles first (the caller charges
+/// them inside its own branch).
+pub(crate) fn debounce_kill_restorable_vt(c: &mut Cpu, ret_: u32, pre: u32) -> crate::call::Flow {
+    c.cycles += pre as u64;
+    let vt = Addr((c.g[S0][0] as u32).wrapping_add(0xc)).lw(c);
+    c.g[V0][0] = vt;
+    c.g[A1][0] = 3;
+    c.g[A0][0] = Addr((vt as u32).wrapping_add(8)).lh(c);
+    c.g[V1][0] = Addr((vt as u32).wrapping_add(0xc)).lw(c);
+    let target = c.g[V1][0] as u32;
+    c.g[RA][0] = sx(ret_);
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, ret_)
+}
+
+/// `void Debounce_KillRestorable(Debounce* self, const void* check)`
+/// (0x342e98): if the kill script lets it through and the debounce counter is
+/// non-negative, mark the node killed (`OnKilled(this, 3)`) and replace it by
+/// a dead node (mode 0) or a restore node (mode 3).
+pub fn debounce_kill_restorable(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        let no_check = c.g[A1][0] == 0;
+        frame.save_ra(c, 0);
+        debounce_kill_restorable_body(c, frame, no_check)?;
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// The body of `Debounce_KillRestorable`: each early exit restores `s0` (the
+/// original restores it there and not in the epilogue) and returns.
+pub(crate) fn debounce_kill_restorable_body(
+    c: &mut Cpu,
+    frame: Frame,
+    no_check: bool,
+) -> crate::call::Flow {
+    if !no_check {
+        c.cycles += 4;
+        OC327_WORLD_OBJ_RUN_KILL_SCRIPT.call(c, 0x0034_2eb8)?;
+        if c.g[V0][0] != 0 {
+            frame.restore(c, S0, 0x20);
+            return Ok(());
+        }
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x2c)).lw(c);
+    if (c.g[V0][0] as i64) < 0 {
+        frame.restore(c, S0, 0x20);
+        return Ok(());
+    }
+    c.cycles += 3;
+    c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x30)).lw(c);
+    let mode = c.g[V1][0] != 0;
+    c.g[V0][0] = 3;
+    if !mode {
+        // Mode 0: notify, then a dead node in place of this one.
+        c.cycles += 2;
+        let null_self = c.g[S0][0] == 0;
+        c.g[S1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x18)).lw(c);
+        if !null_self {
+            debounce_kill_restorable_vt(c, 0x0034_2ef8, 6)?;
+        }
+        c.cycles += 11;
+        c.g[A1][0] = 0x49_0000;
+        c.g[A0][0] = 0x1c;
+        c.g[A1][0] = sx(0x0048_e738);
+        c.g[A2][0] = 0x2000_0000;
+        c.g[RA][0] = sx(0x0034_2f10);
+        c.g[A3][0] = 0;
+        call_ptr(c, OC327_EA_MEM_ALLOC_NAMED, 0x0034_2f10)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[RA][0] = sx(0x0034_2f1c);
+        c.g[A1][0] = c.g[S1][0];
+        OC327_DEAD_NODE_CTOR.call(c, 0x0034_2f1c)?;
+        frame.restore(c, S0, 0x20);
+        return Ok(());
+    }
+    c.cycles += 2;
+    if c.g[V1][0] != c.g[V0][0] {
+        // Any other mode: only the notification.
+        c.cycles += 2;
+        c.g[A1][0] = 3;
+        let null_self = c.g[S0][0] == 0;
+        if !null_self {
+            debounce_kill_restorable_vt(c, 0x0034_2f94, 5)?;
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0x20);
+        return Ok(());
+    }
+    // Mode 3: notify, then a restore node in place of this one.
+    c.cycles += 2;
+    let null_self = c.g[S0][0] == 0;
+    c.g[S1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x18)).lw(c);
+    if !null_self {
+        debounce_kill_restorable_vt(c, 0x0034_2f4c, 6)?;
+    }
+    c.cycles += 11;
+    c.g[A1][0] = 0x49_0000;
+    c.g[A0][0] = 0x1c;
+    c.g[A1][0] = sx(0x0048_e748);
+    c.g[A2][0] = 0x2000_0000;
+    c.g[RA][0] = sx(0x0034_2f64);
+    c.g[A3][0] = 0;
+    call_ptr(c, OC327_EA_MEM_ALLOC_NAMED, 0x0034_2f64)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[RA][0] = sx(0x0034_2f70);
+    c.g[A1][0] = c.g[S1][0];
+    OC327_RESTORE_NODE_CTOR.call(c, 0x0034_2f70)?;
+    frame.restore(c, S0, 0x20);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2739,6 +2894,150 @@ pub(crate) mod tests {
             200,
             &|c, seed| {
                 crowd_man3d_save_setup(c, seed, 10);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ealib::seg_2b4578::tests::oc327_fake_gated;
+    pub(crate) use crate::game::ealib::seg_2b4578::tests::oc327_hook;
+    pub(crate) use crate::game::ealib::seg_2b4578::tests::OC327_CTRL;
+    pub(crate) use crate::game::ealib::seg_2b4578::tests::OC327_MAGIC;
+    pub(crate) use crate::game::ealib::seg_2b4578::tests::OC327_RET;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+    use std::sync::Once;
+
+    pub(crate) const RET_RUN_SCRIPT: u32 = 1;
+
+    pub(crate) const RET_ALLOC: u32 = 2;
+
+    pub(crate) const RET_BASE_CTOR: u32 = 4;
+
+    pub(crate) const RET_WSCRIPT_CACHE: u32 = 5;
+
+    oc327_hook!(
+        oc327_fake_run_script,
+        OC327_PREV_RUN_SCRIPT,
+        0x0030_a598,
+        RET_RUN_SCRIPT,
+        ee::s10::f_0030a598__generated
+    );
+
+    oc327_hook!(
+        oc327_fake_alloc,
+        OC327_PREV_ALLOC,
+        0x0031_7d70,
+        RET_ALLOC,
+        ee::s10::f_00317d70__generated
+    );
+
+    oc327_hook!(
+        oc327_fake_wscript_cache,
+        OC327_PREV_WSCRIPT_CACHE,
+        0x003a_6b78,
+        RET_WSCRIPT_CACHE,
+        ee::s13::f_003a6b78__generated
+    );
+
+    /// The allocator, shared by both create paths (installed once, chained).
+    pub(crate) fn oc327_install_alloc() {
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| unsafe {
+            let cur = ee::s10::OVERRIDE_00317D70 as usize;
+            if cur != oc327_fake_alloc as fn(&mut Cpu) as usize {
+                OC327_PREV_ALLOC.store(cur, Ordering::Relaxed);
+                ee::s10::OVERRIDE_00317D70 = oc327_fake_alloc;
+            }
+        });
+    }
+
+    /// The kill-script chain of `Debounce_KillRestorable` (the script runner,
+    /// the allocator and the dead-node ctor) is faked.
+    pub(crate) fn oc327_install_debounce() {
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| unsafe {
+            OC327_PREV_RUN_SCRIPT.store(ee::s10::OVERRIDE_0030A598 as usize, Ordering::Relaxed);
+            ee::s10::OVERRIDE_0030A598 = oc327_fake_run_script;
+            // `RestoreNode_ctor` has no slot of its own: its base constructor
+            // (`WorldObj_ctor`) stops it from touching the world.
+            OC327_PREV_DEAD_CTOR.store(ee::s11::OVERRIDE_003506D8 as usize, Ordering::Relaxed);
+            ee::s11::OVERRIDE_003506D8 = oc327_fake_dead_ctor;
+            OC327_PREV_WORLD_OBJ_CTOR.store(ee::s11::OVERRIDE_0034FB00 as usize, Ordering::Relaxed);
+            ee::s11::OVERRIDE_0034FB00 = oc327_fake_world_obj_ctor;
+            // `WScriptMan_RunKillScript`'s script lookup, so a refusing kill
+            // script stops there.
+            OC327_PREV_WSCRIPT_CACHE.store(ee::s13::OVERRIDE_003A6B78 as usize, Ordering::Relaxed);
+            ee::s13::OVERRIDE_003A6B78 = oc327_fake_wscript_cache;
+        });
+        oc327_install_alloc();
+    }
+
+    oc327_hook!(
+        oc327_fake_dead_ctor,
+        OC327_PREV_DEAD_CTOR,
+        0x0035_06d8,
+        RET_BASE_CTOR,
+        ee::s11::f_003506d8__generated
+    );
+
+    oc327_hook!(
+        oc327_fake_world_obj_ctor,
+        OC327_PREV_WORLD_OBJ_CTOR,
+        0x0034_fb00,
+        RET_BASE_CTOR,
+        ee::s11::f_0034fb00__generated
+    );
+
+    /// `Debounce_KillRestorable`: kill-script refusals, a negative counter, the
+    /// three modes (0, 3, other), a null self and a missing parent; the
+    /// script runner, allocator and ctors are fakes.
+    #[test]
+    fn debounce_kill_restorable_matches() {
+        oc327_install_debounce();
+        covered(
+            ee::s11::f_00342e98__generated,
+            debounce_kill_restorable,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0034_2e98, 4);
+                c.pc = 0x0034_2e98;
+                c.bus.write32(OC327_CTRL, OC327_MAGIC);
+                c.bus.write32(
+                    OC327_RET + 4 * RET_RUN_SCRIPT,
+                    if seed % 4 == 0 { 1 } else { 0 },
+                );
+                // The script lookup answers `-1` (no script): the runner then
+                // skips its call.
+                c.bus
+                    .write32(OC327_RET + 4 * RET_WSCRIPT_CACHE, 0xffff_ffff);
+                let block = DATA + 0x8_0000;
+                c.bus.write32(OC327_RET + 4 * RET_ALLOC, block);
+                c.bus.write32(OC327_RET + 4 * RET_BASE_CTOR, 0);
+                let this = DATA + 0x100;
+                let parent = DATA + 0x600;
+                c.g[A0][0] = if seed % 11 == 0 { 0 } else { sx(this) };
+                c.g[A1][0] = if seed % 3 == 0 { 0 } else { sx(DATA + 0x500) };
+                c.bus.write32(
+                    this + 0x2c,
+                    if seed % 5 == 0 { 0x8000_0000 } else { seed % 4 },
+                );
+                c.bus.write32(
+                    this + 0x30,
+                    match seed % 3 {
+                        0 => 0,
+                        1 => 3,
+                        _ => 1 + (seed % 4) * 4,
+                    },
+                );
+                let vt = vtable(c, &mut r, &[0x8]);
+                c.bus.write32(this + 0xc, vt);
+                c.bus.write32(this + 0x18, parent);
+                c.bus.write32(parent + 8, r.next_u32());
+                // The block the allocator hands out; a restore node reads its
+                // parent link.
+                c.bus
+                    .write32(block + 0x18, if seed % 7 == 0 { 0 } else { parent });
+                c.bus.write32(block + 0xc, r.next_u32());
             },
         );
     }

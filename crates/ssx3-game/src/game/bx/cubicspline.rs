@@ -65,6 +65,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0031_e2d8, dlheap_sys_alloc, "DLHeap_SysAlloc"),
     (0x0032_0330, mem_pool32_alloc, "MEM_Pool32Alloc"),
+    (0x0031_d700, c_csi_cubic_spline_init, "cCSICubicSpline_Init"),
+    (0x0032_0448, mem_pool512_alloc, "MEM_Pool512Alloc"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -2680,6 +2682,75 @@ pub fn c_csi_cubic_spline_alloc(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod callee {
+
+    pub(crate) use crate::game::lib::snd::callee::MEM_POOL_ALLOC;
+}
+
+// ---------------------------------------------------------------------------
+// MEM_Pool512Alloc (0x320448)
+// ---------------------------------------------------------------------------
+
+/// `void* MEM_Pool512Alloc(void* pool)` (0x320448): take one 512-byte block
+/// from the pool's free list (a singly linked list at `pool + 0x20000`);
+/// when the list is empty, ask the allocator for a fresh 0x204-byte block.
+pub fn mem_pool512_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V1][0] = 0x20000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+        c.g[V0][0] = c.lw(r32(c, A0));
+        if c.g[V0][0] == 0 {
+            c.cycles += 4;
+            c.g[A0][0] = 0x204;
+            callee::MEM_POOL_ALLOC.call(c, 0x0032_046c)?;
+            frame.restore_ra(c, 0);
+        } else {
+            c.g[V0][0] = c.lw(r32(c, A0));
+            c.cycles += 3;
+            c.g[V1][0] = c.lw(r32(c, V0));
+            let next = c.g[V1][0];
+            c.sw(r32(c, A0), next);
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// cCSICubicSpline_Init (0x31d700)
+
+/// `void cCSICubicSpline_Init(cCSICubicSpline* self)` (0x31d700): allocate the
+/// spline's data, then clear bit 0 of its flags word (the low bits of the
+/// first word hold the point count, bit 0 is this "initialised" flag).
+/// Frame 0x20 (s0 = self).
+pub fn c_csi_cubic_spline_init(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x0031_d660,
+            f: ee::s10::cCSICubicSpline_Alloc,
+        }
+        .call(c, 0x0031_d714)?;
+        c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+        c.g[V1][0] = 0xffff_ffff_ffff_fffe;
+        frame.restore_ra(c, 0);
+        c.g[V0][0] &= c.g[V1][0];
+        Addr(r32(c, S0)).sw(c, c.g[V0][0]);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3716,6 +3787,79 @@ pub(crate) mod tests {
                     _ => (r.next_u32() % 300) as u64,
                 };
                 c.pc = 0x0031_d660;
+            },
+        );
+    }
+
+    use crate::game::dirtysock::tagsunk::tests::put_arena;
+
+    /// MEM_Pool512Alloc: a pool with a free block (whose `next` is zero or
+    /// another block) takes it from the list; an empty list asks the
+    /// allocator over the main heap for a 0x204-byte block.
+    #[test]
+    fn mem_pool512_alloc_matches() {
+        check(
+            ee::s10::f_00320448__generated,
+            mem_pool512_alloc,
+            60,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x32_0448, 0);
+                put_arena(c);
+                let pool = DATA + 0x2000;
+                let head = pool + 0x20000;
+                let block = DATA + 0x4000;
+                let next = DATA + 0x5000;
+                c.g[A0][0] = sx(pool);
+                c.g[A1][0] = 8;
+                if seed % 3 == 0 {
+                    c.bus.write32(head, 0); // empty free list
+                    c.bus.write32(GAME_GP + 0xdd8, (seed % 2) as u32);
+                } else {
+                    c.bus.write32(head, block);
+                    c.bus.write32(block, if seed % 2 == 0 { 0 } else { next });
+                    c.bus.write32(next, DATA + 0x6000);
+                }
+            },
+        );
+    }
+
+    /// `cCSICubicSpline_Init` on a spline block with a heap arena (the real
+    /// `cCSICubicSpline_Alloc` allocates the point array) and an old data
+    /// pointer to free, counts 0, 1 and many.
+    #[test]
+    fn c_csi_cubic_spline_init_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA};
+        use crate::game::be::beintreward::tests::world;
+        use crate::game::bx::bxstring::tests::{alloc, heap};
+        use crate::game::bx::bxstringctor::tests::be_library;
+        check(
+            ee::s10::f_0031d700__generated,
+            c_csi_cubic_spline_init,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x31_d700, 0);
+                be_library(c);
+                world(c);
+                heap(c);
+                let old = if seed % 3 == 0 {
+                    0
+                } else {
+                    alloc(c, 0x14 * (1 + r.next_u32() % 16))
+                };
+                let spline = DATA + 0x100 + (r.next_u32() % 0x40) * 4;
+                fill(c, &mut r, spline, 8);
+                c.bus.write32(
+                    spline + crate::game::bx::cubicspline::SPLINE_ALLOC_DATA,
+                    old,
+                );
+                c.g[A0][0] = sx(spline);
+                c.g[A1][0] = match seed % 5 {
+                    0 => 0,
+                    1 => 1,
+                    _ => (r.next_u32() % 300) as u64,
+                };
+                c.pc = 0x0031_d700;
             },
         );
     }

@@ -10,6 +10,7 @@ use crate::call::Callee;
 use crate::call::Frame;
 pub(crate) use crate::game::ai::ai::save_state_write;
 pub(crate) use crate::game::ai::ai::virtual_call_slot;
+pub(crate) use crate::game::seg::seg_1fbe38::gp_oc322;
 pub(crate) use crate::game::wscript::wscriptman::frame_at;
 pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw;
 pub(crate) use crate::game::wscript::wscriptman::p;
@@ -72,6 +73,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0013_8ad8,
         rider_wipeout_state_save_state,
         "RiderWipeoutState_SaveState",
+    ),
+    (
+        0x0013_6c40,
+        rider_wipeout_state_enter,
+        "RiderWipeoutState_Enter",
+    ),
+    (
+        0x0013_6de0,
+        rider_wipeout_state_set_velocity,
+        "RiderWipeoutState_SetVelocity",
     ),
 ];
 
@@ -1221,6 +1232,222 @@ pub fn rider_wipeout_state_save_state(c: &mut Cpu) {
     save_state_write(c, 0x40, 0x0013_8b00);
 }
 
+// ---------------------------------------------------------------------------
+// RiderWipeoutState_Enter (0x136c40)
+// ---------------------------------------------------------------------------
+
+/// The wipeout motion's rider pointer and its sphere tree.
+pub(crate) const RIDER_WIPEOUT_STATE_ENTER_RIDER: u32 = 0x40;
+
+pub(crate) const RIDER_WIPEOUT_STATE_ENTER_TREE: u32 = 0x44;
+
+/// The rider's root position (`+0x110`), surface normal (`+0x370`), velocity
+/// (`+0x1e0`) and the air predictor (`+0x788`).
+pub(crate) const RIDER_WIPEOUT_STATE_ENTER_POS: u32 = 0x110;
+
+pub(crate) const RIDER_WIPEOUT_STATE_ENTER_UP: u32 = 0x370;
+
+pub(crate) const RIDER_WIPEOUT_STATE_ENTER_VEL: u32 = 0x1e0;
+
+pub(crate) const RIDER_WIPEOUT_STATE_ENTER_AIR: u32 = 0x788;
+
+/// The motion's own copy of the position (`+0x50`, `+0x60`).
+pub(crate) const RIDER_WIPEOUT_STATE_ENTER_POS_A: u32 = 0x50;
+
+pub(crate) const RIDER_WIPEOUT_STATE_ENTER_POS_B: u32 = 0x60;
+
+/// The launch speed literal (`3333.3335f`) in the `.lit4` pool at `gp-0x72c0`.
+#[cfg(test)]
+pub(crate) const RIDER_WIPEOUT_STATE_ENTER_LAUNCH_SPEED: u32 = 0x4550_5556;
+
+/// `void RiderWipeoutState_Enter(motion, int launched)` (0x136c40): enter the
+/// wipeout rider state; create the motion's sphere tree on first use, copy
+/// the rider's position into the motion, and either pull the rider back along
+/// the surface normal (a plain crash) or kick off the launch predictor.
+pub fn rider_wipeout_state_enter(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, 16, 0x40);
+        frame.save(c, 17, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_WIPEOUT_STATE_ENTER_TREE));
+        let has_tree = c.g[V0][0] != 0;
+        c.g[S1][0] = c.g[A1][0];
+        if !has_tree {
+            c.cycles += 9;
+            c.g[A0][0] = 0x2b0;
+            c.g[A1][0] = sx(0x0046_0000u32.wrapping_sub(0x7df0)); // &D_00458210
+            c.g[A2][0] = 0;
+            c.g[A3][0] = 0;
+            call_ptr(c, 0x0031_7d70, 0x0013_6c78)?;
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x0032_9910, 0x0013_6c80)?;
+            c.sw(
+                (c.g[S0][0] as u32).wrapping_add(RIDER_WIPEOUT_STATE_ENTER_TREE),
+                c.g[V0][0],
+            );
+        }
+        c.cycles += 7;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_WIPEOUT_STATE_ENTER_RIDER));
+        let rider = c.g[A0][0] as u32;
+        c.lq(2, rider.wrapping_add(RIDER_WIPEOUT_STATE_ENTER_POS));
+        c.g[A1][0] = sx(rider.wrapping_add(RIDER_WIPEOUT_STATE_ENTER_POS));
+        c.sq(
+            2,
+            (c.g[S0][0] as u32).wrapping_add(RIDER_WIPEOUT_STATE_ENTER_POS_A),
+        );
+        c.lq(3, rider.wrapping_add(RIDER_WIPEOUT_STATE_ENTER_POS));
+        let launched = c.g[S1][0] != 0;
+        c.sq(
+            3,
+            (c.g[S0][0] as u32).wrapping_add(RIDER_WIPEOUT_STATE_ENTER_POS_B),
+        );
+        if launched {
+            c.cycles += 6;
+            c.g[V0][0] = 1;
+            c.g[A2][0] = sx(rider.wrapping_add(RIDER_WIPEOUT_STATE_ENTER_VEL));
+            c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+            c.lwc1(12, gp_oc322(c, 0xffff_8d40)); // -0x72c0
+            c.g[A0][0] = c.lw(rider.wrapping_add(RIDER_WIPEOUT_STATE_ENTER_AIR));
+            call_ptr(c, 0x0011_35b8, 0x0013_6d14)?;
+        } else {
+            // `pos -= n * dot(pos, n)`: slide the rider back onto the surface.
+            c.cycles += 23;
+            c.lqc2(3, rider.wrapping_add(RIDER_WIPEOUT_STATE_ENTER_VEL));
+            c.lqc2(5, rider.wrapping_add(RIDER_WIPEOUT_STATE_ENTER_UP));
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.qmfc2(2, 4);
+            c.mtc1(2, 0);
+            c.mfc1(3, 0);
+            c.lqc2(4, rider.wrapping_add(RIDER_WIPEOUT_STATE_ENTER_UP));
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_WIPEOUT_STATE_ENTER_RIDER));
+            c.sq(2, c.g[SP][0] as u32);
+            c.lqc2(
+                3,
+                (c.g[V1][0] as u32).wrapping_add(RIDER_WIPEOUT_STATE_ENTER_VEL),
+            );
+            c.lqc2(4, c.g[SP][0] as u32);
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(
+                5,
+                (c.g[V1][0] as u32).wrapping_add(RIDER_WIPEOUT_STATE_ENTER_VEL),
+            );
+            c.sw(c.g[S0][0] as u32, 0);
+        }
+        c.cycles += 10;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_WIPEOUT_STATE_ENTER_RIDER));
+        c.sw((c.g[S0][0] as u32).wrapping_add(4), 0);
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x2dc), 0);
+        frame.restore(c, 17, 0x30);
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_WIPEOUT_STATE_ENTER_RIDER));
+        frame.restore(c, 16, 0x40);
+        frame.restore_ra(c, 0x20);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x2e0), 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RiderWipeoutState_SetVelocity (0x136de0)
+
+/// The wipeout state's rider pointer (`+0x40`); the rider's angular velocity
+/// (`+0x30`), up vector (`+0x370`), position (`+0x110`), velocity (`+0x1e0`)
+/// and air predictor (`+0x788`); the "launched" flag (`+0x4`).
+pub(crate) const OC326_RWSV_RIDER: u32 = 0x40;
+
+pub(crate) const OC326_RWSV_ANG_VEL: u32 = 0x30;
+
+pub(crate) const OC326_RWSV_UP: u32 = 0x370;
+
+pub(crate) const OC326_RWSV_POS: u32 = 0x110;
+
+pub(crate) const OC326_RWSV_VEL: u32 = 0x1e0;
+
+pub(crate) const OC326_RWSV_AIR: u32 = 0x788;
+
+pub(crate) const OC326_RWSV_LAUNCHED: u32 = 0x4;
+
+/// The offset (`gp-0x72bc`) of the launch speed (`3333.3335f`) in the
+/// `.lit4` pool.
+pub(crate) const OC326_RWSV_LAUNCH_SPEED_LIT: u32 = 0x72bc;
+
+/// `AirPredictor_Prime` (0x1135b8), through the function table.
+pub(crate) const OC326_AIR_PREDICTOR_PRIME: u32 = 0x0011_35b8;
+
+/// `void RiderWipeoutState_SetVelocity(motion, Vec4* vel, Vec4* angVel)`
+/// (0x136de0): store the new angular velocity and velocity into the rider;
+/// when not launched, slide the velocity back onto the surface along the
+/// up vector (`vel -= up * dot(vel, up)`); when launched, kick off the air
+/// predictor with the launch speed. Clears the launched flag either way.
+pub fn rider_wipeout_state_set_velocity(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save_ra(c, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        // lq v1, *angVel ; sq v1, self+0x30
+        c.lq(3, r32(c, A2));
+        c.g[A0][0] = Addr(r32(c, S0)).off(OC326_RWSV_RIDER).lw(c);
+        c.sq(3, r32(c, S0).wrapping_add(OC326_RWSV_ANG_VEL));
+        // lq v0, *vel ; sq v0, rider->vel
+        c.lq(2, r32(c, A1));
+        c.sq(2, r32(c, A0).wrapping_add(OC326_RWSV_VEL));
+        c.g[V1][0] = Addr(r32(c, S0)).lw(c); // self->launched
+        if c.g[V1][0] != 0 {
+            c.g[A1][0] = Addr(r32(c, S0)).off(OC326_RWSV_RIDER).lw(c);
+            c.cycles += 6;
+            c.lwc1(12, r32(c, GP).wrapping_sub(OC326_RWSV_LAUNCH_SPEED_LIT));
+            c.g[A0][0] = Addr(r32(c, A1)).off(OC326_RWSV_AIR).lw(c);
+            c.g[A2][0] = sx(r32(c, A1).wrapping_add(OC326_RWSV_VEL));
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(OC326_RWSV_POS));
+            call_ptr(c, OC326_AIR_PREDICTOR_PRIME, 0x0013_6e84)?;
+            c.sw(r32(c, S0).wrapping_add(OC326_RWSV_LAUNCHED), 0);
+        } else {
+            c.cycles += 24;
+            c.g[V0][0] = Addr(r32(c, S0)).off(OC326_RWSV_RIDER).lw(c);
+            c.lqc2(3, r32(c, V0).wrapping_add(OC326_RWSV_UP));
+            c.lqc2(5, r32(c, A1));
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.qmfc2(3, 4);
+            c.mtc1(3, 0);
+            c.mfc1(4, 0);
+            c.lqc2(4, r32(c, V0).wrapping_add(OC326_RWSV_UP));
+            c.qmtc2(4, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, sp(c).wrapping_add(0x10));
+            c.lq(3, sp(c).wrapping_add(0x10));
+            c.g[V0][0] = Addr(r32(c, S0)).off(OC326_RWSV_RIDER).lw(c);
+            c.sq(3, sp(c));
+            c.lqc2(3, r32(c, V0).wrapping_add(OC326_RWSV_VEL));
+            c.lqc2(4, sp(c));
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, r32(c, V0).wrapping_add(OC326_RWSV_VEL));
+            c.sw(r32(c, S0).wrapping_add(OC326_RWSV_LAUNCHED), 0);
+        }
+        c.cycles += 4;
+        frame.restore(c, 16, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1793,6 +2020,119 @@ pub(crate) mod tests {
             &|c, seed| {
                 save_state_fixture(c, seed, 0x0013_8ad8);
                 c.pc = 0x0013_8ad8;
+            },
+        );
+    }
+
+    /// `RiderWipeoutState_Enter`: with and without a sphere tree (the pool
+    /// allocator runs over a test heap) and both the crash (normal slide) and
+    /// the launch (air predictor) paths.
+    #[test]
+    fn rider_wipeout_state_enter_matches() {
+        check(
+            ee::s01::f_00136c40__generated,
+            rider_wipeout_state_enter,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x136c_4000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                let motion = DATA;
+                let rider = DATA + 0x800;
+                let has_tree = seed % 4 != 1;
+                if !has_tree {
+                    // `DLHeap_InitArena(&MEM_HEAP, arena, 0x40000)`: the game heap
+                    // over test memory, for the allocation path.
+                    c.g[A0][0] = 0x004f_f250;
+                    c.g[A1][0] = (DATA + 0x4_0000) as u64;
+                    c.g[A2][0] = 0x4_0000;
+                    c.g[RA][0] = crate::difftest::RA as u64;
+                    c.pc = 0x0031_ff60;
+                    ee::s10::DLHeap_InitArena(c);
+                }
+                c.g[A0][0] = motion as u64;
+                c.g[A1][0] = if seed % 3 == 0 { 1 } else { 0 };
+                c.bus.write32(motion + 0x40, rider);
+                c.bus
+                    .write32(motion + 0x44, if has_tree { DATA + 0x1800 } else { 0 });
+                for off in [0x110u32, 0x1e0, 0x370] {
+                    put_vec(
+                        c,
+                        rider + off,
+                        [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.edge_f32()],
+                    );
+                }
+                c.bus.write32(rider + 0x788, DATA + 0x2000);
+                c.bus.write32(rider + 0x2dc, r.next_u32());
+                c.bus.write32(rider + 0x2e0, r.next_u32());
+                put_words(
+                    c,
+                    GAME_GP.wrapping_sub(0x72c0),
+                    &[RIDER_WIPEOUT_STATE_ENTER_LAUNCH_SPEED],
+                );
+            },
+        );
+    }
+
+    // --------------------------------------- RiderWipeoutState_SetVelocity
+
+    /// RiderWipeoutState_SetVelocity: launched (the real AirPredictor_Prime,
+    /// its constants written by hand) or not (the VU0 projection onto the up
+    /// vector), with random angular velocity, velocity, position and up
+    /// vector.
+    #[test]
+    fn rider_wipeout_state_set_velocity_matches() {
+        const SELF: u32 = DATA;
+        const RIDER: u32 = DATA + 0x1000;
+        const VEL: u32 = DATA + 0x2000;
+        const ANG_VEL: u32 = DATA + 0x2100;
+        const AIR: u32 = DATA + 0x2200;
+        check(
+            ee::s01::f_00136de0__generated,
+            rider_wipeout_state_set_velocity,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0013_6de0 ^ (seed as u64) << 8);
+                crate::difftest::scramble(c, &mut r);
+                c.pc = 0x0013_6de0;
+                c.g[GP][0] = GAME_GP as u64;
+                // The air predictor's constants (reset and launch state).
+                for i in 0..4u32 {
+                    c.bus.write32(0x4ff160 + 4 * i, r.next_u32());
+                    c.bus.write32(0x4ff120 + 4 * i, r.next_u32());
+                }
+                for i in 0..2u32 {
+                    c.bus.write32(0x4a5960 + 4 * i, r.next_u32());
+                }
+                put_words(
+                    c,
+                    GAME_GP.wrapping_sub(OC326_RWSV_LAUNCH_SPEED_LIT),
+                    &[0x4550_5556],
+                );
+                // The rider's vectors and its air predictor.
+                put_words(
+                    c,
+                    RIDER + OC326_RWSV_POS,
+                    &[r.f32(100.0), r.f32(100.0), r.f32(100.0), 0],
+                );
+                put_words(
+                    c,
+                    RIDER + OC326_RWSV_VEL,
+                    &[r.f32(100.0), r.f32(100.0), r.f32(100.0), 0],
+                );
+                put_words(
+                    c,
+                    RIDER + OC326_RWSV_UP,
+                    &[r.f32(1.0), r.f32(1.0), r.f32(1.0), 0],
+                );
+                put_words(c, RIDER + OC326_RWSV_AIR, &[AIR]);
+                put_words(c, SELF + OC326_RWSV_RIDER, &[RIDER]);
+                put_words(c, SELF, &[if seed % 2 == 0 { 0 } else { r.next_u32() | 1 }]);
+                put_words(c, VEL, &[r.f32(100.0), r.f32(100.0), r.f32(100.0), 0]);
+                put_words(c, ANG_VEL, &[r.f32(5.0), r.f32(5.0), r.f32(5.0), 0]);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(VEL);
+                c.g[A2][0] = sx(ANG_VEL);
             },
         );
     }

@@ -259,6 +259,54 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         spch_decode_sample_entry,
         "SPCH_DecodeSampleEntry",
     ),
+    (0x003b_7f60, sndstrm_set_pan, "SNDSTRM_SetPan"),
+    (
+        0x003c_30c8,
+        snd_channel_apply_distortion,
+        "SND_ChannelApplyDistortion",
+    ),
+    (
+        0x003c_3250,
+        snd_channel_apply_highpass,
+        "SND_ChannelApplyHighpass",
+    ),
+    (0x003c_7600, snd_mix_declick16, "SND_MixDeclick16"),
+    (0x003c_83a0, snd_ee_voice_activate, "SND_EeVoiceActivate"),
+    (
+        0x003c_8b80,
+        snd_ee_voice_set_distortion,
+        "SND_EeVoiceSetDistortion",
+    ),
+    (0x003c_bb28, snd_dsp_resample_init, "SND_DspResample_Init"),
+    (0x003c_e0b8, snd_utk_set_state, "SND_UtkSetState"),
+    (0x003d_7110, spch_find_event, "SPCH_FindEvent"),
+    (0x003d_72a0, spch_alloc_queue_slot, "SPCH_AllocQueueSlot"),
+    (
+        0x003d_7a50,
+        spch_select_request_for_channel,
+        "SPCH_SelectRequestForChannel",
+    ),
+    (0x003d_7c38, spch_free_queue_slot, "SPCH_FreeQueueSlot"),
+    (
+        0x003d_7d58,
+        spch_purge_channel_requests,
+        "SPCH_PurgeChannelRequests",
+    ),
+    (
+        0x003d_81f0,
+        spch_find_bank_user_data,
+        "SPCH_FindBankUserData",
+    ),
+    (0x003d_8330, spch_find_bank_type, "SPCH_FindBankType"),
+    (0x003d_8cb0, spch_pick_weighted, "SPCH_PickWeighted"),
+    (
+        0x003d_95b8,
+        spch_resolve_event_parts,
+        "SPCH_ResolveEventParts",
+    ),
+    (0x003d_9a40, spch_reset_sentence, "SPCH_ResetSentence"),
+    (0x003d_9ac8, spch_sentence_append, "SPCH_SentenceAppend"),
+    (0x003d_b208, spch_eval_part_choice, "SPCH_EvalPartChoice"),
 ];
 
 /// Fields of the driver state block.
@@ -15852,6 +15900,2678 @@ pub(crate) fn sndstrm_start_voices(c: &mut Cpu, frame: Frame) -> crate::call::Fl
     call_ptr(c, SNDSTRM_START_STREAM_VOICES, 0x003c_6a14)
 }
 
+pub(crate) mod callee {
+    use super::Callee;
+    use ssx3_ee as ee;
+
+    pub const RIDER_METRIX_ROUNDED_TRICK_POINTS: Callee = Callee {
+        addr: 0x0011_7948,
+        f: ee::s00::RiderMetrix_GetRoundedTrickPoints,
+    };
+
+    pub const RIDER_METRIX_REMOVE_HUD_MESSAGE: Callee = Callee {
+        addr: 0x0011_79e0,
+        f: ee::s00::RiderMetrix_RemoveHUDMessage,
+    };
+
+    pub const RIDER_METRIX_SHOW_HUD_NUMBER: Callee = Callee {
+        addr: 0x0011_7b88,
+        f: ee::s00::RiderMetrix_ShowHUDNumber,
+    };
+
+    pub const RIDER_METRIX_TRICK_BONUS: Callee = Callee {
+        addr: 0x0011_7908,
+        f: ee::s00::RiderMetrix_GetTrickBonus,
+    };
+
+    pub const SPCH_RANDOM_NO_REPEAT: Callee = Callee {
+        addr: 0x003d_b5c0,
+        f: ee::s14::SPCH_RandomNoRepeat,
+    };
+
+    pub const BANK_MONITOR_TIMER_KILL: Callee = Callee {
+        addr: 0x002a_d940,
+        f: ee::s08::BankMonitor_TimerKill,
+    };
+
+    pub const BANK_MONITOR_TIMER_SET_PERIOD: Callee = Callee {
+        addr: 0x002a_d970,
+        f: ee::s08::BankMonitor_TimerSetPeriod,
+    };
+
+    pub const BANK_MONITOR_TIMER_ENABLE: Callee = Callee {
+        addr: 0x002a_d980,
+        f: ee::s08::BankMonitor_TimerEnable,
+    };
+
+    pub const MEM_POOL_ALLOC: Callee = Callee {
+        addr: 0x0031_9e48,
+        f: ee::s10::MEM_PoolAlloc,
+    };
+
+    pub const DYNAMIC_PARTICLE_MODIFIER_CTOR: Callee = Callee {
+        addr: 0x0034_5c90,
+        f: ee::s11::DynamicParticleModifier_ctor,
+    };
+
+    pub const MODOBJ_LINK_PARTICLE_MODIFIER: Callee = Callee {
+        addr: 0x0035_5658,
+        f: ee::s11::ModObj_LinkParticleModifier,
+    };
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_ResolveEventParts (0x3d95b8).
+
+/// A speech layer: 4 selection entries per `cnt` unit at +4, the
+/// "sentence in progress" flag at +5, the entry index list at +8.
+pub(crate) const SPCH_RESOLVE_LAYER_CNT: u32 = 4;
+
+pub(crate) const SPCH_RESOLVE_LAYER_N5: u32 = 5;
+
+pub(crate) const SPCH_RESOLVE_LAYER_LIST: u32 = 8;
+
+/// A selection entry (8 bytes): `i16 x` (bank index), `u8 start`, `u8 len`,
+/// `u8 cur`, `u8 flag`.
+pub(crate) const SPCH_RESOLVE_ENT_SIZE: u32 = 8;
+
+pub(crate) const SPCH_RESOLVE_ENT_START: u32 = 4;
+
+pub(crate) const SPCH_RESOLVE_ENT_LEN: u32 = 5;
+
+pub(crate) const SPCH_RESOLVE_ENT_CUR: u32 = 6;
+
+/// The variation table inside the selection set (right after 12 entries).
+pub(crate) const SPCH_RESOLVE_TBL: u32 = 0x62;
+
+/// A variation list: `s8 n` at +4, 8 ids at +8, 8 output columns at +0x10.
+pub(crate) const SPCH_RESOLVE_LIST_N: u32 = 4;
+
+pub(crate) const SPCH_RESOLVE_LIST_IDS: u32 = 8;
+
+pub(crate) const SPCH_RESOLVE_LIST_COLS: u32 = 0x10;
+
+/// The decoded sample record: the per-variation column bytes at +0xc.
+pub(crate) const SPCH_RESOLVE_SAMPLE_COLS: u32 = 0xc;
+
+/// The variation id that picks a decoded column.
+pub(crate) const SPCH_RESOLVE_WILD: u64 = 0xfe;
+
+/// gp offset of the speech bank pointer table (indexed by entry `x`).
+pub(crate) const SPCH_RESOLVE_GP_BANKS: u32 = 0x1734;
+
+/// `SPCH_RandomNoRepeat(int range, int key)`.
+pub(crate) const SPCH_RESOLVE_RANDOM_NO_REPEAT: Callee = Callee {
+    addr: 0x003d_b5c0,
+    f: ee::s14::f_003db5c0,
+};
+
+/// `SPCH_AssignVariations(Layer *, SelectionSet *, int threshold)`.
+pub(crate) const SPCH_RESOLVE_ASSIGN_VARIATIONS: Callee = Callee {
+    addr: 0x003d_93c0,
+    f: ee::s14::f_003d93c0,
+};
+
+/// `SPCH_FindBankDataPtr(u8 *id, void **data)`.
+pub(crate) const SPCH_RESOLVE_FIND_BANK_DATA: Callee = Callee {
+    addr: 0x003d_83b8,
+    f: ee::s14::f_003d83b8,
+};
+
+/// `SPCH_DecodeSampleEntry(bank, index, out)`.
+pub(crate) const SPCH_RESOLVE_DECODE_ENTRY: Callee = Callee {
+    addr: 0x003d_b838,
+    f: ee::s14::f_003db838,
+};
+
+/// `int SPCH_ResolveEventParts(u8* request, SelectionSet* h, Layer* l,
+/// int mode, int threshold)` (0x3d95b8): pick each layer entry's variation
+/// (shuffled and assigned through `SPCH_AssignVariations` when `mode == 1`
+/// or the layer says a sentence is in progress, otherwise `start +
+/// SPCH_RandomNoRepeat(len, x)`), then write every requested variation's
+/// decoded column byte into the bank output buffer.
+pub fn spch_resolve_event_parts(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0xe0);
+        c.g[V0][0] = 1;
+        frame.save(c, FP, 0xc0);
+        frame.save(c, S7, 0xb0);
+        c.g[FP][0] = c.g[T0][0]; // threshold
+        frame.save(c, S6, 0xa0);
+        c.g[S7][0] = c.g[A2][0]; // layer
+        frame.save(c, RA, 0xd0);
+        c.g[S6][0] = c.g[A1][0]; // selection set
+        frame.save(c, S5, 0x90);
+        frame.save(c, S4, 0x80);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S2, 0x60);
+        frame.save(c, S1, 0x50);
+        frame.save(c, S0, 0x40);
+        let mode_shuffles = c.g[A3][0] == c.g[V0][0];
+        Addr(frame.at(c, 0x14)).sw(c, c.g[A0][0]); // the request
+        let shuffles = if mode_shuffles {
+            true
+        } else {
+            c.cycles += 3;
+            let n5 = Addr(r32(c, S7).wrapping_add(SPCH_RESOLVE_LAYER_N5)).lbu(c);
+            c.g[V0][0] = n5;
+            if n5 == 0 {
+                c.g[V0][0] = Addr(r32(c, S7).wrapping_add(SPCH_RESOLVE_LAYER_CNT)).lbu(c);
+                false
+            } else {
+                true
+            }
+        };
+        let mut failed = false;
+        if shuffles {
+            // 0x3d9608: shuffle each entry's variation table slice, then
+            // assign the variations.
+            c.cycles += 5;
+            let cnt = Addr(r32(c, S7).wrapping_add(SPCH_RESOLVE_LAYER_CNT)).lbu(c);
+            c.g[V0][0] = cnt;
+            c.g[S5][0] = c.g[A3][0] ^ 2; // mode != 2: pass the threshold
+            c.g[S4][0] = sx((c.g[V0][0] as u32) >> 2);
+            c.g[V1][0] = 0;
+            if c.g[S4][0] != 0 {
+                c.cycles += 1;
+                c.g[V0][0] = sx((c.g[V1][0] as u32) << 3);
+                loop {
+                    c.cycles += 8;
+                    c.g[S3][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+                    c.g[V0][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = Addr(r32(c, V0).wrapping_add(SPCH_RESOLVE_ENT_START)).lbu(c);
+                    c.g[S0][0] = Addr(r32(c, V0).wrapping_add(SPCH_RESOLVE_ENT_LEN)).lbu(c);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(SPCH_RESOLVE_TBL));
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < 2) as u64;
+                    c.g[S2][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    if c.g[V0][0] == 0 {
+                        // len >= 2: Fisher-Yates over the entry's slice.
+                        c.cycles += 2;
+                        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                        loop {
+                            c.cycles += 12;
+                            c.g[A0][0] = c.g[S0][0];
+                            c.g[A1][0] = u64::MAX;
+                            SPCH_RESOLVE_RANDOM_NO_REPEAT.call(c, 0x003d_9654)?;
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
+                            c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.g[A0][0] = Addr(r32(c, S1).wrapping_sub(1)).lbu(c);
+                            c.g[V1][0] = Addr(r32(c, V0)).lbu(c);
+                            c.g[A1][0] = ((c.g[S0][0] as i64) < 2) as u64;
+                            Addr(r32(c, S1).wrapping_sub(1)).sb(c, c.g[V1][0]);
+                            Addr(r32(c, V0)).sb(c, c.g[A0][0]);
+                            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(1));
+                            if c.g[A1][0] != 0 {
+                                break;
+                            }
+                            if event_due(c) {
+                                deliver_event_here(c, 0x003d_9648);
+                            }
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[V1][0] = c.g[S3][0];
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[S4][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[V0][0] = sx((c.g[V1][0] as u32) << 3);
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003d_9620);
+                    }
+                }
+            }
+            c.cycles += 7;
+            c.g[A2][0] = 0;
+            c.g[A0][0] = c.g[S7][0];
+            if c.g[S5][0] != 0 {
+                c.g[A2][0] = c.g[FP][0];
+            }
+            c.g[A1][0] = c.g[S6][0];
+            SPCH_RESOLVE_ASSIGN_VARIATIONS.call(c, 0x003d_969c)?;
+            Addr(frame.at(c, 0x18)).sw(c, c.g[V0][0]);
+        } else {
+            // 0x3d96ac: cur = start + SPCH_RandomNoRepeat(len, x) per entry.
+            c.cycles += 5;
+            c.g[V1][0] = 1;
+            Addr(frame.at(c, 0x18)).sw(c, c.g[V1][0]);
+            c.g[S2][0] = sx((c.g[V0][0] as u32) >> 2);
+            c.g[S1][0] = 0;
+            if c.g[S2][0] != 0 {
+                c.cycles += 2;
+                c.g[S0][0] = c.g[S6][0];
+                loop {
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(r32(c, S0).wrapping_add(SPCH_RESOLVE_ENT_LEN)).lbu(c);
+                    c.g[A0][0] = c.g[V0][0];
+                    if c.g[V0][0] == 0 {
+                        // An empty entry: nothing to play at all (0x3d96a4,
+                        // charged below).
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003d_96a4);
+                        }
+                        failed = true;
+                        break;
+                    }
+                    c.cycles += 9;
+                    c.g[A1][0] = Addr(r32(c, S0)).lh(c);
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                    SPCH_RESOLVE_RANDOM_NO_REPEAT.call(c, 0x003d_96e0)?;
+                    c.g[V1][0] = Addr(r32(c, S0).wrapping_add(SPCH_RESOLVE_ENT_START)).lbu(c);
+                    c.g[A0][0] = ((c.g[S1][0] as i64) < (c.g[S2][0] as i64)) as u64;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    Addr(r32(c, S0).wrapping_add(SPCH_RESOLVE_ENT_CUR)).sb(c, c.g[V1][0]);
+                    let more = c.g[A0][0] != 0;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(SPCH_RESOLVE_ENT_SIZE));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003d_96c8);
+                    }
+                }
+            }
+        }
+        // 0x3d96f8: write the chosen columns into the bank's output buffer.
+        let mut tail_charge = true;
+        if !failed {
+            c.cycles += 5;
+            c.g[A0][0] = Addr(frame.at(c, 0x14)).lw(c);
+            c.g[A1][0] = sx(frame.at(c, 0x10));
+            SPCH_RESOLVE_FIND_BANK_DATA.call(c, 0x003d_9704)?;
+            let found = c.g[V0][0] != 0;
+            c.g[V0][0] = Addr(frame.at(c, 0x18)).lw(c);
+            tail_charge = found;
+            if found {
+                // 0x3d970c: per entry of the layer's list.
+                c.cycles += 5;
+                c.g[V0][0] = Addr(r32(c, S7).wrapping_add(SPCH_RESOLVE_LAYER_CNT)).lbu(c);
+                c.g[A0][0] = 0;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) >> 2);
+                Addr(frame.at(c, 0x1c)).sw(c, c.g[V0][0]);
+                if c.g[V0][0] != 0 {
+                    c.cycles += 4;
+                    c.g[V0][0] = sx((c.g[S7][0] as u32).wrapping_add(SPCH_RESOLVE_LAYER_LIST));
+                    Addr(frame.at(c, 0x20)).sw(c, c.g[V0][0]);
+                    c.g[V1][0] = Addr(frame.at(c, 0x20)).lw(c);
+                    loop {
+                        c.cycles += 8;
+                        c.g[S1][0] = 0;
+                        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        c.g[V1][0] = Addr(r32(c, V0)).lbu(c);
+                        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                        c.g[S3][0] = sx((c.g[S7][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                        c.g[V0][0] = Addr(r32(c, S3).wrapping_add(SPCH_RESOLVE_LIST_N)).lb(c);
+                        let empty = (c.g[V0][0] as i64) <= 0;
+                        c.g[FP][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+                        if !empty {
+                            c.cycles += 6;
+                            c.g[V0][0] = sx((c.g[A0][0] as u32) << 3);
+                            c.g[A3][0] = SPCH_RESOLVE_WILD;
+                            c.g[S2][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.g[S5][0] = sx((c.g[S6][0] as u32).wrapping_add(SPCH_RESOLVE_TBL));
+                            c.g[S4][0] =
+                                sx((c.g[SP][0] as u32).wrapping_add(SPCH_RESOLVE_SAMPLE_COLS));
+                            c.g[S0][0] =
+                                sx((c.g[S3][0] as u32).wrapping_add(SPCH_RESOLVE_LIST_COLS));
+                            loop {
+                                c.cycles += 3;
+                                c.g[V0][0] = Addr(
+                                    r32(c, S3)
+                                        .wrapping_add(SPCH_RESOLVE_LIST_IDS)
+                                        .wrapping_add(r32(c, S1)),
+                                )
+                                .lbu(c);
+                                if c.g[V0][0] != c.g[A3][0] {
+                                    c.g[V0][0] =
+                                        Addr(r32(c, S3).wrapping_add(SPCH_RESOLVE_LIST_N)).lb(c);
+                                } else {
+                                    c.cycles += 4;
+                                    c.g[V0][0] = Addr(r32(c, S0)).lbu(c);
+                                    c.g[V0][0] &= 0x80;
+                                    if c.g[V0][0] != 0 {
+                                        c.g[V0][0] =
+                                            Addr(r32(c, S3).wrapping_add(SPCH_RESOLVE_LIST_N))
+                                                .lb(c);
+                                    } else {
+                                        // Decode the chosen sample entry and
+                                        // take its column byte.
+                                        c.cycles += 13;
+                                        c.g[V0][0] = Addr(r32(c, S2)).lh(c);
+                                        c.g[A2][0] = c.g[SP][0];
+                                        c.g[A0][0] =
+                                            Addr(r32(c, GP).wrapping_add(SPCH_RESOLVE_GP_BANKS))
+                                                .lw(c);
+                                        c.g[V1][0] =
+                                            Addr(r32(c, S2).wrapping_add(SPCH_RESOLVE_ENT_CUR))
+                                                .lbu(c);
+                                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                                        c.g[V0][0] =
+                                            sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                        c.g[V1][0] =
+                                            sx((c.g[S5][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                        c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+                                        c.g[A1][0] = Addr(r32(c, V1)).lbu(c);
+                                        frame.save(c, A3, 0x30);
+                                        SPCH_RESOLVE_DECODE_ENTRY.call(c, 0x003d_97b0)?;
+                                        let decoded = c.g[V0][0] != 0;
+                                        frame.restore(c, A3, 0x30);
+                                        if decoded {
+                                            c.cycles += 6;
+                                            c.g[A1][0] = Addr(r32(c, S0)).lbu(c);
+                                            c.g[V1][0] =
+                                                sx((c.g[S4][0] as u32)
+                                                    .wrapping_add(c.g[S1][0] as u32));
+                                            c.g[V0][0] = Addr(frame.at(c, 0x10)).lw(c);
+                                            c.g[A0][0] = Addr(r32(c, V1)).lbu(c);
+                                            c.g[V0][0] =
+                                                sx((c.g[V0][0] as u32)
+                                                    .wrapping_add(c.g[A1][0] as u32));
+                                            Addr(r32(c, V0)).sb(c, c.g[A0][0]);
+                                        }
+                                        c.cycles += 1;
+                                        c.g[V0][0] =
+                                            Addr(r32(c, S3).wrapping_add(SPCH_RESOLVE_LIST_N))
+                                                .lb(c);
+                                    }
+                                }
+                                c.cycles += 4;
+                                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                                let more = c.g[V0][0] != 0;
+                                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                                if !more {
+                                    break;
+                                }
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x003d_9768);
+                                }
+                            }
+                        }
+                        c.cycles += 5;
+                        c.g[V1][0] = Addr(frame.at(c, 0x1c)).lw(c);
+                        c.g[A0][0] = c.g[FP][0];
+                        c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                        let more = c.g[V0][0] != 0;
+                        c.g[V1][0] = Addr(frame.at(c, 0x20)).lw(c);
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003d_9730);
+                        }
+                    }
+                }
+            }
+        } else {
+            // 0x3d96a4: an empty entry leaves ok = 0.
+            c.cycles += 2;
+            Addr(frame.at(c, 0x18)).sw(c, 0);
+        }
+        if tail_charge {
+            c.cycles += 1;
+            c.g[V0][0] = Addr(frame.at(c, 0x18)).lw(c);
+        }
+        c.cycles += 12;
+        frame.restore(c, RA, 0xd0);
+        frame.restore(c, FP, 0xc0);
+        frame.restore(c, S7, 0xb0);
+        frame.restore(c, S6, 0xa0);
+        frame.restore(c, S5, 0x90);
+        frame.restore(c, S4, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S0, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_EeVoiceSetDistortion (0x3c8b80).
+
+/// The EE voice table pointer; a voice entry is 0x60 bytes: its DSP chain
+/// head at +0x40 and its distortion DSP node at +0x54.
+pub(crate) const SND_DIST_VOICES: u32 = 0x0051_5d1c;
+
+pub(crate) const SND_DIST_VOICE_SIZE: u32 = 0x60;
+
+pub(crate) const SND_DIST_VOICE_CHAIN: u32 = 0x40;
+
+pub(crate) const SND_DIST_VOICE_DSP: u32 = 0x54;
+
+/// `SND_DspDistortion_Init(node)`.
+pub(crate) const SND_DIST_INIT: Callee = Callee {
+    addr: 0x003c_b528,
+    f: ee::s14::f_003cb528,
+};
+
+/// `SND_DspDistortion_SetAmount(node, int amount)`.
+pub(crate) const SND_DIST_SET_AMOUNT: Callee = Callee {
+    addr: 0x003c_b4a8,
+    f: ee::s14::f_003cb4a8,
+};
+
+/// `SND_DspInsertSorted(chain_head, node)`.
+pub(crate) const SND_DIST_INSERT_SORTED: Callee = Callee {
+    addr: 0x003c_8f48,
+    f: ee::s14::SND_DspInsertSorted,
+};
+
+/// `SND_DspRemove(chain_head)`.
+pub(crate) const SND_DIST_DSP_REMOVE: Callee = Callee {
+    addr: 0x003c_8fb0,
+    f: ee::s14::SND_DspRemove,
+};
+
+/// `void SND_EeVoiceSetDistortion(int voice, int amount)` (0x3c8b80): an
+/// amount above 0 gives the voice a distortion DSP (created on first use:
+/// `SND_MemAlloc(0x50)`, priority 0x78, `SND_DspDistortion_Init`, inserted
+/// into the voice's DSP chain) and sets its amount; an amount of 0 or less
+/// removes and frees that DSP, if any. Frame 0x30 (s0 = voice entry, s1 =
+/// amount); the entry offset uses `mult`.
+pub fn snd_ee_voice_set_distortion(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        c.g[V0][0] = SND_DIST_VOICE_SIZE as u64;
+        c.g[V1][0] = 0x51_0000;
+        c.mult(0, A0, A0, V0);
+        let frame = Frame::open(c, 0x30);
+        c.g[A2][0] = Addr(SND_DIST_VOICES).lw(c);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[S0][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
+        if (c.g[S1][0] as i64) <= 0 {
+            // Amount 0: drop the voice's distortion DSP.
+            c.cycles += 3;
+            c.g[A1][0] = Addr(r32(c, S0).wrapping_add(SND_DIST_VOICE_DSP)).lw(c);
+            if c.g[A1][0] != 0 {
+                c.cycles += 6;
+                c.g[A0][0] = sx(r32(c, S0).wrapping_add(SND_DIST_VOICE_CHAIN));
+                SND_DIST_DSP_REMOVE.call(c, 0x003c_8c10)?;
+                c.g[A0][0] = Addr(r32(c, S0).wrapping_add(SND_DIST_VOICE_DSP)).lw(c);
+                call_ptr(c, 0x003b_5e98, 0x003c_8c18)?; // SND_MemFree
+                Addr(r32(c, S0).wrapping_add(SND_DIST_VOICE_DSP)).sw(c, 0);
+            }
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, S0).wrapping_add(SND_DIST_VOICE_DSP)).lw(c);
+            if c.g[V0][0] == 0 {
+                // Create the distortion DSP and insert it into the chain.
+                c.cycles += 13;
+                c.g[A0][0] = 0x50;
+                call_ptr(c, 0x003b_5c60, 0x003c_8bc0)?; // SND_MemAlloc
+                let dsp = c.g[V0][0] as u32;
+                let slot = Addr(r32(c, S0).wrapping_add(SND_DIST_VOICE_DSP));
+                slot.sw(c, dsp as u64);
+                c.g[V1][0] = 0x78; // priority
+                Addr(dsp.wrapping_add(4)).sw(c, 0);
+                c.g[V0][0] = slot.lw(c);
+                Addr(r32(c, V0).wrapping_add(0x18)).sh(c, c.g[V1][0]);
+                c.g[A0][0] = slot.lw(c);
+                SND_DIST_INIT.call(c, 0x003c_8bdc)?;
+                c.g[A1][0] = slot.lw(c);
+                c.g[A0][0] = sx(r32(c, S0).wrapping_add(SND_DIST_VOICE_CHAIN));
+                SND_DIST_INSERT_SORTED.call(c, 0x003c_8be8)?;
+                c.g[A0][0] = slot.lw(c);
+            } else {
+                c.g[A0][0] = Addr(r32(c, S0).wrapping_add(SND_DIST_VOICE_DSP)).lw(c);
+            }
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S1][0];
+            SND_DIST_SET_AMOUNT.call(c, 0x003c_8bf4)?;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_ChannelApplyDistortion (0x3c30c8) and SND_ChannelApplyHighpass
+// (0x3c3250).
+
+/// The SND driver state (0x50a8e8): the channel table at +0x1f0 and the two
+/// voice index bases at +0x2f and +0x30.
+pub(crate) const SND_APPLY_STATE: u32 = 0x0050_a8e8;
+
+pub(crate) const SND_APPLY_CHANNELS: u32 = 0x1f0;
+
+pub(crate) const SND_APPLY_VOICE_BASE_A: u32 = 0x2f;
+
+pub(crate) const SND_APPLY_VOICE_BASE_B: u32 = 0x30;
+
+/// A channel is 0x8c bytes: its voices (+4, s16 each), the voice count
+/// (+0x23) and the flags (+0x24; bit 2 = filtered).
+pub(crate) const SND_APPLY_CHANNEL_SIZE: u32 = 0x8c;
+
+pub(crate) const SND_APPLY_VOICES: u32 = 0x4;
+
+pub(crate) const SND_APPLY_VOICE_COUNT: u32 = 0x23;
+
+pub(crate) const SND_APPLY_FLAGS: u32 = 0x24;
+
+/// `SND_EeVoiceSetDistortion` (0x3c8b80) through the table.
+pub(crate) const SND_APPLY_SET_DISTORTION: u32 = 0x003c_8b80;
+
+/// `SND_EeVoiceSetHighpass` (0x3c8c30) through the table.
+pub(crate) const SND_APPLY_SET_HIGHPASS: u32 = 0x003c_8c30;
+
+/// `void SND_ChannelApplyDistortion(int channel, int amount)` (0x3c30c8):
+/// for a filtered channel (flags bit 2), set every voice's distortion
+/// amount (`SND_EeVoiceSetDistortion(voice - bases, amount)`). Frame 0x60
+/// (s0 = voice list, s1 = voices done, s2 = channel, s3 = the driver
+/// state); the channel offset uses `mult`.
+pub fn snd_channel_apply_distortion(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x60);
+        c.g[V0][0] = SND_APPLY_CHANNEL_SIZE as u64;
+        frame.save(c, S2, 0x30);
+        c.mult(0, A0, A0, V0);
+        frame.save(c, S4, 0x10);
+        c.g[V1][0] = SND_APPLY_STATE as u64;
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S3, 0x20);
+        frame.save_ra(c, 0);
+        c.g[A2][0] = Addr(SND_APPLY_STATE + SND_APPLY_CHANNELS).lw(c);
+        c.g[S2][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
+        c.g[V0][0] = Addr(r32(c, S2).wrapping_add(SND_APPLY_FLAGS)).lhu(c);
+        c.g[V0][0] &= 4;
+        let filtered = c.g[V0][0] != 0;
+        c.g[S4][0] = c.g[A1][0];
+        if filtered {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, S2).wrapping_add(SND_APPLY_VOICE_COUNT)).lbu(c);
+            c.g[S1][0] = 0;
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[S3][0] = c.g[V1][0];
+                c.g[S0][0] = sx(r32(c, S2).wrapping_add(SND_APPLY_VOICES));
+                c.g[V0][0] = Addr(r32(c, S3).wrapping_add(SND_APPLY_VOICE_BASE_A)).lbu(c);
+                loop {
+                    c.cycles += 12;
+                    c.g[A1][0] = c.g[S4][0];
+                    c.g[A0][0] = Addr(r32(c, S3).wrapping_add(SND_APPLY_VOICE_BASE_B)).lbu(c);
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                    c.g[V1][0] = Addr(r32(c, S0)).lh(c);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(2));
+                    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+                    call_ptr(c, SND_APPLY_SET_DISTORTION, 0x003c_3148)?;
+                    c.g[V0][0] = Addr(r32(c, S2).wrapping_add(SND_APPLY_VOICE_COUNT)).lbu(c);
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        break;
+                    }
+                    c.g[V0][0] = Addr(r32(c, S3).wrapping_add(SND_APPLY_VOICE_BASE_A)).lbu(c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003c_3128);
+                    }
+                }
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SND_ChannelApplyHighpass(int channel, int frequency)` (0x3c3250):
+/// for a filtered channel (flags bit 2), set every voice's highpass cutoff
+/// (`SND_EeVoiceSetHighpass(voice - bases, frequency)`). Same shape as
+/// [`snd_channel_apply_distortion`] with the highpass setter.
+pub fn snd_channel_apply_highpass(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x60);
+        c.g[V0][0] = SND_APPLY_CHANNEL_SIZE as u64;
+        frame.save(c, S2, 0x30);
+        c.mult(0, A0, A0, V0);
+        frame.save(c, S4, 0x10);
+        c.g[V1][0] = SND_APPLY_STATE as u64;
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S3, 0x20);
+        frame.save_ra(c, 0);
+        c.g[A2][0] = Addr(SND_APPLY_STATE + SND_APPLY_CHANNELS).lw(c);
+        c.g[S2][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
+        c.g[V0][0] = Addr(r32(c, S2).wrapping_add(SND_APPLY_FLAGS)).lhu(c);
+        c.g[V0][0] &= 4;
+        let filtered = c.g[V0][0] != 0;
+        c.g[S4][0] = c.g[A1][0];
+        if filtered {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, S2).wrapping_add(SND_APPLY_VOICE_COUNT)).lbu(c);
+            c.g[S1][0] = 0;
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[S3][0] = c.g[V1][0];
+                c.g[S0][0] = sx(r32(c, S2).wrapping_add(SND_APPLY_VOICES));
+                c.g[V0][0] = Addr(r32(c, S3).wrapping_add(SND_APPLY_VOICE_BASE_A)).lbu(c);
+                loop {
+                    c.cycles += 12;
+                    c.g[A1][0] = c.g[S4][0];
+                    c.g[A0][0] = Addr(r32(c, S3).wrapping_add(SND_APPLY_VOICE_BASE_B)).lbu(c);
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                    c.g[V1][0] = Addr(r32(c, S0)).lh(c);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(2));
+                    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+                    call_ptr(c, SND_APPLY_SET_HIGHPASS, 0x003c_32d0)?;
+                    c.g[V0][0] = Addr(r32(c, S2).wrapping_add(SND_APPLY_VOICE_COUNT)).lbu(c);
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        break;
+                    }
+                    c.g[V0][0] = Addr(r32(c, S3).wrapping_add(SND_APPLY_VOICE_BASE_A)).lbu(c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003c_32b0);
+                    }
+                }
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_FindEvent (0x3d7110).
+
+/// The eight speech bank slots (a word per bank, 0: unused).
+pub(crate) const SPCH_FIND_EVENT_BANKS: u32 = 0x0044_ffb8;
+
+/// A speech bank: the bank id bytes at +8/+9, the event count at +0x10
+/// (u16) and the event index table at +0x18 (u16 each, a `u16` index into
+/// the bank, 4 bytes per entry).
+pub(crate) const SPCH_FIND_EVENT_COUNT: u32 = 0x10;
+
+pub(crate) const SPCH_FIND_EVENT_ENTRIES: u32 = 0x18;
+
+/// `u16* SPCH_FindEvent(u8* request)` (0x3d7110): find the bank whose id
+/// (bytes +8/+9) matches the request's (bytes +3/+2), then the bank's first
+/// event entry whose value equals the request's event id (the `u16` at +0);
+/// null when the bank or the event is not found. Frame 0x10 (the found slot
+/// at +0).
+pub fn spch_find_event(c: &mut Cpu) {
+    c.cycles += 8;
+    let frame = Frame::open(c, 0x10);
+    c.g[V0][0] = 0x45_0000;
+    c.g[A2][0] = sx(SPCH_FIND_EVENT_BANKS);
+    c.g[T1][0] = 0;
+    c.g[T2][0] = c.g[SP][0];
+    c.g[T0][0] = 0;
+    c.g[A3][0] = 0;
+    'slots: loop {
+        c.cycles += 3;
+        c.g[A1][0] = Addr(r32(c, A2)).lw(c);
+        if c.g[A1][0] == 0 {
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+        } else {
+            c.cycles += 4;
+            c.g[V1][0] = Addr(r32(c, A1).wrapping_add(9)).lbu(c);
+            c.g[V0][0] = Addr(r32(c, A0).wrapping_add(2)).lbu(c);
+            if c.g[V1][0] != c.g[V0][0] {
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+            } else {
+                c.cycles += 4;
+                c.g[V1][0] = Addr(r32(c, A1).wrapping_add(8)).lbu(c);
+                c.g[V0][0] = Addr(r32(c, A0).wrapping_add(3)).lbu(c);
+                if c.g[V1][0] != c.g[V0][0] {
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+                } else {
+                    c.cycles += 3;
+                    Addr(r32(c, T2)).sw(c, c.g[A2][0]);
+                    c.g[T0][0] = 1;
+                    break 'slots;
+                }
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[A3][0] as i64) < 8) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(8));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003d_7130);
+        }
+    }
+    c.cycles += 2;
+    let no_bank = c.g[T0][0] == 0;
+    c.g[V0][0] = Addr(r32(c, T2)).lw(c);
+    let mut found = false;
+    if !no_bank {
+        c.cycles += 5;
+        c.g[A2][0] = 0;
+        c.g[A3][0] = Addr(r32(c, V0)).lw(c); // the bank
+        c.g[T0][0] = Addr(r32(c, A3).wrapping_add(SPCH_FIND_EVENT_COUNT)).lhu(c);
+        let empty = c.g[T0][0] == 0;
+        c.g[A0][0] = Addr(r32(c, A0)).lhu(c); // the event id
+        if !empty {
+            c.cycles += 2;
+            c.g[A1][0] = sx(r32(c, A3).wrapping_add(SPCH_FIND_EVENT_ENTRIES));
+            loop {
+                c.cycles += 6;
+                c.g[V0][0] = Addr(r32(c, A1)).lhu(c);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[V1][0] = Addr(r32(c, V0)).lhu(c);
+                if c.g[V1][0] != c.g[A0][0] {
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+                } else {
+                    c.cycles += 2;
+                    c.g[T1][0] = c.g[V0][0];
+                    found = true;
+                    break;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[T0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(2));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_7198);
+                }
+            }
+        }
+        // The `+1` and the cleared result belong to the bank branch only:
+        // with no bank the original breaks out before them (and `t1` is
+        // still 0 from the prologue), and a found event skips them too.
+        if !found {
+            c.cycles += 1;
+            c.g[T1][0] = 0;
+        }
+    }
+    c.cycles += 3;
+    c.g[V0][0] = c.g[T1][0];
+    frame.close(c);
+}
+
+// ---------------------------------------------------------------------------
+// SND_MixDeclick16 (0x3c7600)
+
+/// The 16 ramp weights, `(16 - i) / 17`, as the game's float bits.
+pub(crate) const SND_DECLICK_K: [u32; 16] = [
+    0x3f70_f0f1, // 16/17
+    0x3f61_e1e2, // 15/17
+    0x3f52_d2d3, // 14/17
+    0x3f43_c3c4, // 13/17
+    0x3f34_b4b5, // 12/17
+    0x3f25_a5a6, // 11/17
+    0x3f16_9697, // 10/17
+    0x3f07_8788, // 9/17
+    0x3ef0_f0f1, // 8/17
+    0x3ed2_d2d3, // 7/17
+    0x3eb4_b4b5, // 6/17
+    0x3e96_9697, // 5/17
+    0x3e70_f0f1, // 4/17
+    0x3e34_b4b5, // 3/17
+    0x3df0_f0f1, // 2/17
+    0x3d70_f0f1, // 1/17
+];
+
+/// `void SND_MixDeclick16(float* ramp, float* samples)` (0x3c7600): fade 16
+/// samples in by adding `*ramp * (16 - i)/17` to sample `i`, then consume the
+/// ramp. Frame 0x20 (f20..f22 spilled at +0, +8, +0x10).
+///
+/// The register schedule (which weight sits in which `f` register, and the
+/// interleaving of the loads, the sixteen adds and the stores) is the
+/// original's: a straightforward loop leaves a different `f` state.
+pub fn snd_mix_declick16(c: &mut Cpu) {
+    c.cycles += 138;
+    let ramp = c.g[A0][0] as u32;
+    let out = c.g[A1][0] as u32;
+    c.lwc1(0, ramp);
+    let frame = Frame::open(c, 0x20);
+    c.g[AT][0] = SND_DECLICK_K[0] as u64;
+    c.mtc1(1, 2); // f2 = 16/17
+    c.lwc1(1, out);
+    c.mul_s(0, 0, 2);
+    c.g[AT][0] = SND_DECLICK_K[1] as u64;
+    c.mtc1(1, 5); // f5 = 15/17
+    frame.save_fpr(c, 22, 0x10);
+    frame.save_fpr(c, 21, 0x8);
+    c.add_s(1, 1, 0);
+    frame.save_fpr(c, 20, 0);
+    c.g[AT][0] = SND_DECLICK_K[2] as u64;
+    c.mtc1(1, 8); // f8 = 14/17
+    c.lwc1(2, out.wrapping_add(0x4));
+    c.swc1(1, out);
+    c.lwc1(3, out.wrapping_add(0x8));
+    c.lwc1(0, ramp);
+    c.g[AT][0] = SND_DECLICK_K[3] as u64;
+    c.mtc1(1, 11); // f11 = 13/17
+    c.mul_s(0, 0, 5);
+    c.lwc1(4, out.wrapping_add(0xc));
+    c.g[AT][0] = SND_DECLICK_K[4] as u64;
+    c.mtc1(1, 12); // f12 = 12/17
+    c.lwc1(1, out.wrapping_add(0x10));
+    c.add_s(2, 2, 0);
+    c.g[AT][0] = SND_DECLICK_K[5] as u64;
+    c.mtc1(1, 13); // f13 = 11/17
+    c.lwc1(5, out.wrapping_add(0x14));
+    c.g[AT][0] = SND_DECLICK_K[6] as u64;
+    c.mtc1(1, 14); // f14 = 10/17
+    c.swc1(2, out.wrapping_add(0x4));
+    c.lwc1(6, out.wrapping_add(0x18));
+    c.lwc1(0, ramp);
+    c.g[AT][0] = SND_DECLICK_K[7] as u64;
+    c.mtc1(1, 15); // f15 = 9/17
+    c.mul_s(0, 0, 8);
+    c.lwc1(7, out.wrapping_add(0x1c));
+    c.g[AT][0] = SND_DECLICK_K[8] as u64;
+    c.mtc1(1, 16); // f16 = 8/17
+    c.lwc1(2, out.wrapping_add(0x20));
+    c.add_s(3, 3, 0);
+    c.g[AT][0] = SND_DECLICK_K[9] as u64;
+    c.mtc1(1, 17); // f17 = 7/17
+    c.lwc1(8, out.wrapping_add(0x24));
+    c.lwc1(9, out.wrapping_add(0x28));
+    c.swc1(3, out.wrapping_add(0x8));
+    c.lwc1(10, out.wrapping_add(0x2c));
+    c.lwc1(0, ramp);
+    c.g[AT][0] = SND_DECLICK_K[10] as u64;
+    c.mtc1(1, 18); // f18 = 6/17
+    c.mul_s(0, 0, 11);
+    c.g[AT][0] = SND_DECLICK_K[11] as u64;
+    c.mtc1(1, 19); // f19 = 5/17
+    c.g[AT][0] = SND_DECLICK_K[12] as u64;
+    c.mtc1(1, 20); // f20 = 4/17
+    c.g[AT][0] = SND_DECLICK_K[13] as u64;
+    c.mtc1(1, 21); // f21 = 3/17
+    c.add_s(4, 4, 0);
+    c.g[AT][0] = SND_DECLICK_K[14] as u64;
+    c.mtc1(1, 22); // f22 = 2/17
+    c.g[AT][0] = SND_DECLICK_K[15] as u64;
+    c.mtc1(1, 11); // f11 = 1/17
+    c.swc1(4, out.wrapping_add(0xc));
+    c.lwc1(0, ramp);
+    c.mul_s(0, 0, 12);
+    c.add_s(1, 1, 0);
+    c.swc1(1, out.wrapping_add(0x10));
+    c.lwc1(0, ramp);
+    c.mul_s(0, 0, 13);
+    c.add_s(5, 5, 0);
+    c.swc1(5, out.wrapping_add(0x14));
+    c.lwc1(0, ramp);
+    c.mul_s(0, 0, 14);
+    c.add_s(6, 6, 0);
+    c.swc1(6, out.wrapping_add(0x18));
+    c.lwc1(0, ramp);
+    c.mul_s(0, 0, 15);
+    c.add_s(7, 7, 0);
+    c.swc1(7, out.wrapping_add(0x1c));
+    c.lwc1(0, ramp);
+    c.mul_s(0, 0, 16);
+    c.add_s(2, 2, 0);
+    c.swc1(2, out.wrapping_add(0x20));
+    c.lwc1(0, ramp);
+    c.mul_s(0, 0, 17);
+    c.add_s(8, 8, 0);
+    c.swc1(8, out.wrapping_add(0x24));
+    c.lwc1(0, ramp);
+    c.mul_s(0, 0, 18);
+    c.add_s(9, 9, 0);
+    c.swc1(9, out.wrapping_add(0x28));
+    c.lwc1(0, ramp);
+    c.mul_s(0, 0, 19);
+    c.add_s(10, 10, 0);
+    c.swc1(10, out.wrapping_add(0x2c));
+    c.lwc1(0, ramp);
+    c.lwc1(1, out.wrapping_add(0x30));
+    c.mul_s(0, 0, 20);
+    c.lwc1(2, out.wrapping_add(0x34));
+    c.lwc1(3, out.wrapping_add(0x38));
+    c.lwc1(4, out.wrapping_add(0x3c));
+    c.add_s(1, 1, 0);
+    frame.restore_fpr(c, 20, 0);
+    c.swc1(1, out.wrapping_add(0x30));
+    c.lwc1(0, ramp);
+    c.mul_s(0, 0, 21);
+    frame.restore_fpr(c, 21, 0x8);
+    c.add_s(2, 2, 0);
+    c.swc1(2, out.wrapping_add(0x34));
+    c.lwc1(0, ramp);
+    c.mul_s(0, 0, 22);
+    frame.restore_fpr(c, 22, 0x10);
+    c.add_s(3, 3, 0);
+    c.swc1(3, out.wrapping_add(0x38));
+    c.lwc1(0, ramp);
+    c.mul_s(0, 0, 11);
+    c.add_s(4, 4, 0);
+    c.swc1(4, out.wrapping_add(0x3c));
+    c.sw(ramp, 0);
+    let ra = c.g[RA][0] as u32;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+    c.pc = ra;
+}
+
+/// `D_00515B40`: the voice table: `+5` = active count (byte), `+0x1dc` = the
+/// 0x60-byte voice entries.
+#[cfg(test)]
+pub(crate) const SND_EE_VOICE_TABLE: u32 = 0x0051_5b40;
+
+pub(crate) const SND_EE_VOICE_COUNT: u32 = 0x5;
+
+pub(crate) const SND_EE_VOICE_ENTRIES: u32 = 0x1dc;
+
+/// `void SND_EeVoiceActivate(int voice)` (0x3c83a0): resets voice `voice`:
+/// clears its flags at +0 and +1 and its word at +0x3c, slides the two pitch
+/// floats at +0x34 down one, copies the envelope floats at +4 from +0x1c
+/// (as many as the active voice count), and marks the voice `2` (active).
+pub fn snd_ee_voice_activate(c: &mut Cpu) {
+    c.cycles += 12;
+    c.g[V1][0] = 0x60;
+    c.g[V0][0] = 0x0051_0000;
+    c.mult(0, A0, A0, V1); // a0 = voice * 0x60
+    c.g[A2][0] = c.g[V0][0];
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5b40));
+    c.g[A1][0] = 0;
+    c.g[V1][0] = Addr(r32(c, V0)).off(SND_EE_VOICE_ENTRIES).lw(c);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(r32(c, A0)));
+    let voice = r32(c, V1);
+    c.sw(voice.wrapping_add(0x3c), 0);
+    c.g[V0][0] = sx(voice.wrapping_add(0x34));
+    c.sb(voice.wrapping_add(0x1), 0);
+    // Two pitch floats: a[0] = a[1].
+    loop {
+        c.cycles += 7;
+        c.lwc1(0, r32(c, V0).wrapping_add(0x4));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
+        c.swc1(0, r32(c, V0));
+        let more = (c.g[A1][0] as i64) >= 0;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003c_83d0);
+        }
+    }
+    // The envelope floats: b[0] = b[6] for every active voice.
+    c.cycles += 4;
+    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x5b40));
+    c.g[V0][0] = Addr(r32(c, A0)).off(SND_EE_VOICE_COUNT).lbu(c);
+    let any = c.g[V0][0] != 0;
+    c.g[A1][0] = 0;
+    if any {
+        c.cycles += 3;
+        c.g[A2][0] = c.g[A0][0];
+        c.g[A0][0] = sx(voice.wrapping_add(0x4));
+        loop {
+            c.cycles += 7;
+            c.lwc1(0, r32(c, A0).wrapping_add(0x18));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+            c.swc1(0, r32(c, A0));
+            c.g[V0][0] = Addr(r32(c, A2)).off(SND_EE_VOICE_COUNT).lbu(c);
+            c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003c_8408);
+            }
+        }
+    }
+    c.cycles += 3;
+    c.g[V0][0] = 0x2;
+    c.sb(voice, c.g[V0][0]);
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_EvalPartChoice (0x3db208)
+// ---------------------------------------------------------------------------
+
+/// The speech filter callback table `D_0044FF90`: the callback pointer sits
+/// at `+4`. Zero means "no callback" (every part entry is rejected).
+#[cfg(test)]
+pub(crate) const SPCH_EVAL_PART_CHOICE_CB: u32 = 0x0044_ff90;
+
+/// The generated body materialises that table with `lui 0x45`, then adds
+/// `0x0 - 0x70`: `v0` is left at `0x450000` and `t0` (the table base the
+/// callback is loaded from) at `0x450000 - 0x70`.
+pub(crate) const SPCH_EVAL_PART_CHOICE_CB_LUI: u32 = 0x0045_0000;
+
+/// The bank-type table `SPCH_FindBankType` scans (8 eight-byte entries); the
+/// test writes it.
+#[cfg(test)]
+pub(crate) const SPCH_EVAL_PART_CHOICE_TYPE_TABLE: u32 = 0x0044_ffb8;
+
+/// Frame offsets of `SPCH_EvalPartChoice`'s 0x110-byte frame.
+pub(crate) const SPCH_EVAL_PART_CHOICE_OUT: u32 = 0x10;
+
+pub(crate) const SPCH_EVAL_PART_CHOICE_HANDLE: u32 = 0x14;
+
+pub(crate) const SPCH_EVAL_PART_CHOICE_VALS: u32 = 0x18;
+
+pub(crate) const SPCH_EVAL_PART_CHOICE_NEGMASK: u32 = 0x1c;
+
+pub(crate) const SPCH_EVAL_PART_CHOICE_TBL: u32 = 0x20;
+
+pub(crate) const SPCH_EVAL_PART_CHOICE_NEXT_K: u32 = 0x24;
+
+/// The current part entry, copied to the frame (`{u8 key; u8 class; u8 data}`).
+pub(crate) const SPCH_EVAL_PART_CHOICE_T_A: u32 = 0;
+
+pub(crate) const SPCH_EVAL_PART_CHOICE_T_B: u32 = 4;
+
+pub(crate) const SPCH_EVAL_PART_CHOICE_T_C: u32 = 8;
+
+/// Where the caller-saved q8..q11 (`t0`..`t3`) go across the callback.
+pub(crate) const SPCH_EVAL_PART_CHOICE_SAVE_T: u32 = 0x30;
+
+/// `int SPCH_EvalPartChoice(BankType* handle, SpeechBank* h, int* vals,
+/// unsigned char* negmask)` (0x3db208): scores every part entry of `h`
+/// against the 20 weight classes (`k`) through the filter callback, returns
+/// the bit mask of the entries the callback accepted (one bit per entry,
+/// bit `7 - index`) and ORs the rejected ones' bits into `*negmask`.
+///
+/// The callback is `int cb(handle, entry.key, value, out)`, `value` being
+/// `vals[k]` for class `k` and 0 for class 20 (`t.b == 0`); a positive result
+/// accepts the entry, 0 skips it and a negative one rejects it.
+pub fn spch_eval_part_choice(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, 0x110);
+        frame.save(c, S0, 0x70);
+        c.g[S0][0] = c.g[A1][0]; // s0 = the bank header
+        frame.save(c, FP, 0xf0);
+        frame.save(c, S7, 0xe0);
+        c.g[A1][0] = sx(frame.at(c, SPCH_EVAL_PART_CHOICE_OUT));
+        frame.save(c, S6, 0xd0);
+        c.g[FP][0] = 0; // res
+        frame.save(c, S3, 0xa0);
+        c.g[S7][0] = 0; // neg
+        frame.save(c, RA, 0x100);
+        c.g[S3][0] = 1; // k
+        frame.save(c, S5, 0xc0);
+        frame.save(c, S4, 0xb0);
+        frame.save(c, S2, 0x90);
+        frame.save(c, S1, 0x80);
+        c.sw(frame.at(c, SPCH_EVAL_PART_CHOICE_HANDLE), c.g[A0][0]);
+        c.sw(frame.at(c, SPCH_EVAL_PART_CHOICE_VALS), c.g[A2][0]);
+        c.sw(frame.at(c, SPCH_EVAL_PART_CHOICE_NEGMASK), c.g[A3][0]);
+        let find_bank_type = Callee {
+            addr: 0x003d_8330,
+            f: ee::s14::SPCH_FindBankType,
+        };
+        find_bank_type.call(c, 0x003d_b258)?;
+
+        // The header: byte +6 is the table size index, the low nibble of byte
+        // +7 the entry count; the entries follow at a 4-byte aligned offset.
+        let bank = r32(c, S0);
+        c.g[V0][0] = Addr(bank).off(6).lbu(c);
+        c.g[V1][0] = Addr(bank).off(7).lbu(c);
+        c.g[V0][0] = sx(r32(c, V0) << 1);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(3));
+        c.g[S6][0] = c.g[V1][0] & 0xf; // n = entry count
+        c.g[V0][0] = c.g[V0][0] & 0x3fc;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0xc));
+        c.g[S0][0] = sx(r32(c, S0).wrapping_add(r32(c, V0))); // tbl
+        c.sw(frame.at(c, SPCH_EVAL_PART_CHOICE_TBL), c.g[S0][0]);
+        c.g[V0][0] = sx(r32(c, S3).wrapping_add(1)); // k + 1 for the tail
+
+        'k: loop {
+            c.cycles += 3;
+            c.g[S2][0] = 0; // j
+            let no_entries = c.g[S6][0] == 0;
+            c.sw(frame.at(c, SPCH_EVAL_PART_CHOICE_NEXT_K), c.g[V0][0]);
+            if !no_entries {
+                c.cycles += 9;
+                c.g[V1][0] = c.lw(frame.at(c, SPCH_EVAL_PART_CHOICE_VALS));
+                c.g[V0][0] = sx(r32(c, S3) << 2);
+                c.g[S1][0] = c.lw(frame.at(c, SPCH_EVAL_PART_CHOICE_TBL));
+                c.g[T3][0] = 20; // the "no class" pass
+                c.g[S5][0] = sx(r32(c, V0).wrapping_add(r32(c, V1))); // &vals[k]
+                c.g[T2][0] = 7;
+                c.g[V0][0] = SPCH_EVAL_PART_CHOICE_CB_LUI as u64;
+                c.g[T1][0] = 1;
+                c.g[T0][0] = sx(SPCH_EVAL_PART_CHOICE_CB_LUI.wrapping_sub(0x70));
+
+                'j: loop {
+                    c.cycles += 8;
+                    let entry = r32(c, S1);
+                    c.g[V1][0] = Addr(entry).lbu(c); // t.a
+                    c.g[S4][0] = 0; // bit
+                    c.g[A0][0] = Addr(entry.wrapping_add(1)).lbu(c); // t.b
+                    c.g[V0][0] = Addr(entry.wrapping_add(2)).lbu(c); // t.c
+                    c.sw(frame.at(c, SPCH_EVAL_PART_CHOICE_T_A), c.g[V1][0]);
+                    c.sw(frame.at(c, SPCH_EVAL_PART_CHOICE_T_C), c.g[V0][0]);
+                    let k_is_max = c.g[S3][0] == c.g[T3][0];
+                    c.sw(frame.at(c, SPCH_EVAL_PART_CHOICE_T_B), c.g[A0][0]);
+
+                    'entry: {
+                        if !k_is_max {
+                            c.cycles += 2;
+                            if c.g[A0][0] != c.g[S3][0] {
+                                break 'entry; // another class: not this pass
+                            }
+                            c.cycles += 1;
+                            c.g[A2][0] = Addr(r32(c, S5)).lw(c); // vals[k]
+                        } else {
+                            c.cycles += 2;
+                            if c.g[A0][0] != 0 {
+                                break 'entry; // a class entry: not the 20th pass
+                            }
+                            c.cycles += 2;
+                            c.g[A2][0] = 0;
+                        }
+
+                        c.cycles += 6;
+                        c.g[V0][0] = sx(r32(c, T2).wrapping_sub(r32(c, S2)));
+                        c.g[V1][0] = Addr(r32(c, T0).wrapping_add(4)).lw(c); // cb
+                        c.g[V0][0] = sx(r32(c, T1) << (r32(c, V0) & 31));
+                        c.g[A1][0] = c.lw(frame.at(c, SPCH_EVAL_PART_CHOICE_T_A));
+                        let no_callback = c.g[V1][0] == 0;
+                        c.g[S0][0] = c.g[V0][0] & 0xff; // mask = 1 << (7 - j)
+                        if no_callback {
+                            c.cycles += 1;
+                            c.g[V0][0] = 0xffff_ffff_ffff_ffff; // r = -1
+                        } else {
+                            c.cycles += 12;
+                            c.g[A3][0] = c.lw(frame.at(c, SPCH_EVAL_PART_CHOICE_OUT));
+                            c.g[A0][0] = c.lw(frame.at(c, SPCH_EVAL_PART_CHOICE_HANDLE));
+                            frame.save(c, T0, SPCH_EVAL_PART_CHOICE_SAVE_T);
+                            frame.save(c, T1, SPCH_EVAL_PART_CHOICE_SAVE_T + 0x10);
+                            frame.save(c, T2, SPCH_EVAL_PART_CHOICE_SAVE_T + 0x20);
+                            frame.save(c, T3, SPCH_EVAL_PART_CHOICE_SAVE_T + 0x30);
+                            let target = r32(c, V1);
+                            call_ptr(c, target, 0x003d_b320)?;
+                            frame.restore(c, T0, SPCH_EVAL_PART_CHOICE_SAVE_T);
+                            frame.restore(c, T1, SPCH_EVAL_PART_CHOICE_SAVE_T + 0x10);
+                            frame.restore(c, T2, SPCH_EVAL_PART_CHOICE_SAVE_T + 0x20);
+                            frame.restore(c, T3, SPCH_EVAL_PART_CHOICE_SAVE_T + 0x30);
+                        }
+
+                        c.cycles += 2;
+                        if c.g[V0][0] != 0 {
+                            c.cycles += 2;
+                            if (c.g[V0][0] as i64) <= 0 {
+                                c.g[S7][0] = c.g[S7][0] | c.g[S0][0];
+                            } else {
+                                c.cycles += 1;
+                                c.g[S4][0] = c.g[S0][0];
+                            }
+                        } else {
+                            c.cycles += 2;
+                            c.g[S4][0] = 0;
+                        }
+                        c.cycles += 2;
+                        c.g[FP][0] = c.g[FP][0] | c.g[S4][0];
+                    }
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[S6][0] as i64)) as u64;
+                    let more_entries = c.g[V0][0] != 0;
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(3));
+                    if !more_entries {
+                        break 'j;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003d_b2b0);
+                    }
+                }
+            }
+
+            c.cycles += 4;
+            c.g[S3][0] = c.lw(frame.at(c, SPCH_EVAL_PART_CHOICE_NEXT_K));
+            c.g[V0][0] = ((c.g[S3][0] as i64) < 21) as u64;
+            let more_classes = c.g[V0][0] != 0;
+            c.g[V0][0] = sx(r32(c, S3).wrapping_add(1));
+            if !more_classes {
+                break 'k;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_b280);
+            }
+        }
+
+        c.cycles += 15;
+        c.g[V1][0] = c.lw(frame.at(c, SPCH_EVAL_PART_CHOICE_NEGMASK));
+        c.g[V0][0] = c.g[FP][0];
+        frame.restore(c, RA, 0x100);
+        let neg = c.g[S7][0];
+        c.sb(r32(c, V1), neg);
+        frame.restore(c, FP, 0xf0);
+        frame.restore(c, S7, 0xe0);
+        frame.restore(c, S6, 0xd0);
+        frame.restore(c, S5, 0xc0);
+        frame.restore(c, S4, 0xb0);
+        frame.restore(c, S3, 0xa0);
+        frame.restore(c, S2, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S0, 0x70);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_PickWeighted (0x3d8cb0)
+// ---------------------------------------------------------------------------
+
+/// The per-class weight table `SPCH_PickWeighted` reads (32-bit words).
+pub(crate) const SPCH_PICK_WEIGHT_TABLE: u32 = 0x0045_06e0;
+
+/// Frame offsets of `SPCH_PickWeighted`'s 0x1f0-byte frame.
+pub(crate) const SPCH_PICK_WEIGHTED_W: u32 = 0;
+
+// int w[]
+
+/// `void SPCH_PickWeighted(SpeechBank* h, unsigned char* out)` (0x3d8cb0):
+/// fill `out` with the bank's part indices in weighted-random order — one
+/// pass picking a part by its weight (the packed per-part byte's low 5 bits
+/// times its class weight) until the total runs out, then a pass appending
+/// every part whose weight is zero.
+pub fn spch_pick_weighted(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x1f0);
+        frame.save(c, S4, 0x1d0);
+        frame.save(c, S3, 0x1c0);
+        c.g[S4][0] = c.g[A1][0]; // out
+        frame.save(c, S2, 0x1b0);
+        c.g[S3][0] = c.g[A0][0]; // h
+        frame.save(c, RA, 0x1e0);
+        frame.save(c, S0, 0x190);
+        frame.save(c, S1, 0x1a0);
+        c.g[S1][0] = Addr(r32(c, S3)).off(6).lbu(c); // n
+        let no_entries = c.g[S1][0] == 0;
+        c.g[S2][0] = 0; // total
+        if !no_entries {
+            c.cycles += 6;
+            c.g[V0][0] = 0x450000;
+            c.g[T0][0] = c.g[SP][0];
+            c.g[T1][0] = sx(SPCH_PICK_WEIGHT_TABLE);
+            c.g[A3][0] = sx(r32(c, S3).wrapping_add(0xc));
+            c.g[A2][0] = c.g[S1][0];
+            loop {
+                c.cycles += 23;
+                c.g[V0][0] = Addr(r32(c, A3)).lhu(c);
+                c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+                c.g[A3][0] = sx(r32(c, A3).wrapping_add(2));
+                c.g[V0][0] = sx(r32(c, V0) << 2);
+                c.g[A1][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
+                c.g[A0][0] = Addr(r32(c, A1)).lbu(c);
+                c.g[V0][0] = sx(r32(c, A0) >> 5);
+                c.g[V0][0] = sx(r32(c, V0) << 2);
+                c.g[A0][0] = c.g[A0][0] & 0x1f;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, T1)));
+                c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+                c.mult(0, 4, 4, 3); // a0 = count * weight
+                let weight = c.g[A0][0];
+                c.sw(r32(c, T0), weight);
+                c.g[T0][0] = sx(r32(c, T0).wrapping_add(4));
+                c.g[A0][0] = Addr(r32(c, A1)).lbu(c);
+                c.g[V0][0] = sx(r32(c, A0) >> 5);
+                c.g[V0][0] = sx(r32(c, V0) << 2);
+                c.g[A0][0] = c.g[A0][0] & 0x1f;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, T1)));
+                c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+                c.mult(0, 2, 4, 3);
+                let more = c.g[A2][0] != 0;
+                c.g[S2][0] = sx(r32(c, V0).wrapping_add(r32(c, S2)));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_8cf8);
+                }
+            }
+        }
+
+        c.cycles += 2;
+        let none_left = (c.g[S2][0] as i64) <= 0;
+        c.g[S0][0] = 0; // k, the output count
+        if !none_left {
+            c.cycles += 1;
+            loop {
+                let mut recount = false;
+                c.cycles += 8;
+                c.g[A1][0] = 0xffff_ffff_ffff_ffff;
+                c.g[A0][0] = c.g[S2][0];
+                callee::SPCH_RANDOM_NO_REPEAT.call(c, 0x003d_8d6c)?; // r
+                c.g[A3][0] = sx(r32(c, S0).wrapping_add(1));
+                c.g[A1][0] = sx(r32(c, S4).wrapping_add(r32(c, S0))); // &out[k]
+                c.g[V1][0] = c.g[V0][0];
+                let no_entries = c.g[S1][0] == 0;
+                c.g[A2][0] = 0; // i
+                if no_entries {
+                    recount = true;
+                } else {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw(frame.at(c, SPCH_PICK_WEIGHTED_W));
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_sub(r32(c, V0)));
+                    let negative = (c.g[V1][0] as i64) < 0;
+                    c.g[V0][0] = sx(r32(c, A2) << 2);
+                    if negative {
+                        // r < w[0]: part 0 wins.
+                    } else {
+                        c.cycles += 2;
+                        c.g[A0][0] = c.g[SP][0];
+                        c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                        loop {
+                            c.cycles += 3;
+                            c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                            let out_of_range = c.g[V0][0] == 0;
+                            c.g[A0][0] = sx(r32(c, A0).wrapping_add(4));
+                            if out_of_range {
+                                recount = true;
+                                break;
+                            }
+                            c.cycles += 4;
+                            c.g[V0][0] = Addr(r32(c, A0)).lw(c);
+                            c.g[V1][0] = sx(r32(c, V1).wrapping_sub(r32(c, V0)));
+                            if (c.g[V1][0] as i64) >= 0 {
+                                c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x003d_8d98);
+                                }
+                            } else {
+                                recount = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if recount {
+                    c.cycles += 1;
+                    c.g[V0][0] = sx(r32(c, A2) << 2);
+                }
+                c.cycles += 7;
+                let picked = c.g[A2][0];
+                c.sb(r32(c, A1), picked);
+                c.g[V1][0] = sx(r32(c, SP).wrapping_add(r32(c, V0)));
+                c.g[S0][0] = c.g[A3][0];
+                c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+                c.g[S2][0] = sx(r32(c, S2).wrapping_sub(r32(c, V0)));
+                let still_left = (c.g[S2][0] as i64) > 0;
+                c.sw(r32(c, V1), 0); // the picked weight is spent
+                if !still_left {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_8d60);
+                }
+            }
+        }
+
+        c.cycles += 2;
+        let no_entries = c.g[S1][0] == 0;
+        c.g[A2][0] = 0;
+        if !no_entries {
+            c.cycles += 3;
+            c.g[V0][0] = 0x450000;
+            c.g[A3][0] = sx(r32(c, S3).wrapping_add(0xc));
+            c.g[T0][0] = sx(SPCH_PICK_WEIGHT_TABLE);
+            loop {
+                c.cycles += 12;
+                c.g[V0][0] = Addr(r32(c, A3)).lhu(c);
+                c.g[V0][0] = sx(r32(c, V0) << 2);
+                c.g[A1][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
+                c.g[A0][0] = Addr(r32(c, A1)).lbu(c);
+                c.g[V0][0] = sx(r32(c, A0) >> 5);
+                c.g[V0][0] = sx(r32(c, V0) << 2);
+                c.g[A0][0] = c.g[A0][0] & 0x1f;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, T0)));
+                c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+                c.mult(0, 4, 4, 3);
+                if c.g[A0][0] != 0 {
+                    c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                } else {
+                    c.cycles += 4;
+                    c.g[V0][0] = sx(r32(c, S4).wrapping_add(r32(c, S0)));
+                    let index = c.g[A2][0];
+                    c.sb(r32(c, V0), index);
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                    c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A3][0] = sx(r32(c, A3).wrapping_add(2));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_8de8);
+                }
+            }
+        }
+
+        c.cycles += 8;
+        frame.restore(c, RA, 0x1e0);
+        frame.restore(c, S4, 0x1d0);
+        frame.restore(c, S3, 0x1c0);
+        frame.restore(c, S2, 0x1b0);
+        frame.restore(c, S1, 0x1a0);
+        frame.restore(c, S0, 0x190);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SNDSTRM_SetPan (0x3b7f60)
+// ---------------------------------------------------------------------------
+
+/// The stream table `SNDSTRM_GetStream` indexes (relative to `0x510000`):
+/// `0x50a0a0` the stream pointers, `0x50a92e` the stream count.
+#[cfg(test)]
+pub(crate) const SND_GETSTREAM_TABLE: u32 = 0x0050_a0a0;
+
+#[cfg(test)]
+pub(crate) const SND_GETSTREAM_COUNT: u32 = 0x0050_a92e;
+
+/// The cached pan values in a stream record.
+pub(crate) const SNDSTRM_SET_PAN_LEFT: u32 = 0xf4;
+
+pub(crate) const SNDSTRM_SET_PAN_RIGHT: u32 = 0xf6;
+
+/// `int SNDSTRM_SetPan(int handle, int left, int right)` (0x3b7f60): cache
+/// the two pan values in the stream (`+0xf4`/`+0xf6`) and apply them to every
+/// channel of the voice; `-8` when the handle has no stream.
+pub fn sndstrm_set_pan(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, 16, 0x20);
+        frame.save(c, 17, 0x10);
+        c.g[S0][0] = c.g[A1][0]; // left
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0]; // right
+        Callee {
+            addr: 0x003b_6a38,
+            f: ee::s13::SNDSTRM_GetStream,
+        }
+        .call(c, 0x003b_7f7c)?;
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = sx(0xffff_fff8); // -8: no such stream
+        } else {
+            c.cycles += 7;
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(4));
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A2][0] = c.g[S1][0];
+            c.sh(
+                (c.g[V0][0] as u32).wrapping_add(SNDSTRM_SET_PAN_LEFT),
+                c.g[S0][0],
+            );
+            c.sh(
+                (c.g[V0][0] as u32).wrapping_add(SNDSTRM_SET_PAN_RIGHT),
+                c.g[S1][0],
+            );
+            Callee {
+                addr: 0x003b_8c00,
+                f: ee::s13::SND_SetPan,
+            }
+            .call(c, 0x003b_7f9c)?;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 5;
+        frame.restore(c, 16, 0x20);
+        frame.restore(c, 17, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_AllocQueueSlot (0x3d72a0)
+// ---------------------------------------------------------------------------
+
+/// `D_0044FFF8`: the speech queue. Each of the 16 records is 0x60 bytes:
+/// `+0x64` when it was queued, `+0x6a` the used flag, `+0x6b` the channel id,
+/// `+0x6c` the "in flight" halfword, `+0x70` the request record (`+2` its
+/// priority, `+4` its owner). The per-channel "skip" words are at `+0x40` and
+/// the per-channel counters at `+0`.
+#[cfg(test)]
+pub(crate) const SPCH_ALLOC_QUEUE_SLOT_BASE: u32 = 0x0044_fff8;
+
+pub(crate) const SPCH_ALLOC_QUEUE_SLOT_RECORD: u32 = 0x60;
+
+pub(crate) const SPCH_ALLOC_QUEUE_SLOT_SLOTS: u64 = 16;
+
+/// `int SPCH_AllocQueueSlot(int owner, int channel, int skip_own)` (0x3d72a0):
+/// take a free queue record; failing that, steal the oldest expired one,
+/// then one owned by `channel` and decrement its owner counter. Returns the
+/// slot index or `-1`.
+pub fn spch_alloc_queue_slot(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x60);
+        c.g[A3][0] = 0x0045_0000;
+        frame.save(c, 20, 0x40);
+        let base = sx((c.g[A3][0] as u32).wrapping_sub(8));
+        c.g[V0][0] = base;
+        frame.save(c, 19, 0x30);
+        c.g[S4][0] = c.g[A0][0]; // the owner value
+        frame.save(c, 18, 0x20);
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6a)); // &r[0].used
+        frame.save(c, 17, 0x10);
+        c.g[S2][0] = c.g[A1][0]; // the channel
+        frame.save(c, 16, 0);
+        c.g[S1][0] = u64::MAX; // the result
+        frame.save(c, 31, 0x50);
+        c.g[S3][0] = u64::MAX; // the slot to leave alone
+        c.g[S0][0] = 0; // the index
+                        // Phase 1: the first unused record.
+        let mut found = false;
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = c.lbu(c.g[V1][0] as u32);
+            if c.g[V0][0] != 0 {
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+            } else {
+                c.cycles += 2;
+                c.g[S1][0] = c.g[S0][0];
+                found = true;
+                break;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[S0][0] < SPCH_ALLOC_QUEUE_SLOT_SLOTS) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(SPCH_ALLOC_QUEUE_SLOT_RECORD));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_72e0);
+            }
+        }
+        // The generated phase-2 success leaves through `break 'b_3d73f8`,
+        // past the shared `cycles += 1; v0 = s1` tail (it sets v0 itself);
+        // phase 1 and phase 3 leave through `'b_3d73f4`, which runs it.
+        let mut stolen = false;
+        if !found {
+            // The per-channel slot to leave alone (only with `skip_own`).
+            'skip: {
+                c.cycles += 2;
+                let no_skip = c.g[A2][0] == 0;
+                c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_sub(8));
+                if no_skip {
+                    break 'skip;
+                }
+                c.cycles += 3;
+                c.g[V1][0] = sx((c.g[S2][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[S3][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x40));
+            }
+            c.cycles += 7;
+            c.g[S0][0] = 0;
+            Callee {
+                addr: 0x003d_b9a0,
+                f: ee::s14::SPCH_GetTime,
+            }
+            .call(c, 0x003d_731c)?;
+            c.g[A1][0] = c.g[V0][0]; // the current time
+            c.g[V0][0] = 0x0045_0000;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(8));
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x64));
+            // Phase 2: a record that has been queued for at least its
+            // priority's time (steal it and free it).
+            'scan2: loop {
+                'skip2: {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lh((c.g[A0][0] as u32).wrapping_add(8));
+                    if c.g[V0][0] != 0 {
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                        break 'skip2;
+                    }
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+                    c.g[V1][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(2));
+                    if c.g[V1][0] == 0 {
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                        break 'skip2;
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V0][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                        break 'skip2;
+                    }
+                    c.cycles += 2;
+                    if c.g[S3][0] == c.g[S0][0] {
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                        break 'skip2;
+                    }
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[S1][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x003d_7c38,
+                        f: ee::s14::SPCH_FreeQueueSlot,
+                    }
+                    .call(c, 0x003d_7374)?;
+                    c.g[V0][0] = c.g[S1][0];
+                    stolen = true;
+                    break 'scan2;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[S0][0] < SPCH_ALLOC_QUEUE_SLOT_SLOTS) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(SPCH_ALLOC_QUEUE_SLOT_RECORD));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_7330);
+                }
+            }
+            if !stolen {
+                // Phase 3: steal a record this channel already owns.
+                c.cycles += 4;
+                c.g[V0][0] = 0x0045_0000;
+                c.g[S0][0] = 0;
+                c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_sub(8));
+                c.g[A2][0] = c.g[A1][0];
+                'scan3: loop {
+                    'next3: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lh((c.g[A1][0] as u32).wrapping_add(0x6c));
+                        if c.g[V0][0] != 0 {
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                            break 'next3;
+                        }
+                        'try3: {
+                            c.cycles += 5;
+                            c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x70));
+                            c.g[V0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(4));
+                            c.g[V0][0] = (c.g[S4][0] < c.g[V0][0]) as u64;
+                            let too_high = c.g[V0][0] != 0;
+                            c.g[A0][0] = c.lbu((c.g[A1][0] as u32).wrapping_add(0x6b));
+                            if too_high {
+                                break 'try3;
+                            }
+                            c.cycles += 2;
+                            if c.g[A0][0] != c.g[S2][0] {
+                                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                                break 'next3;
+                            }
+                            c.cycles += 2;
+                            let is_skip = c.g[S0][0] == c.g[S3][0];
+                            c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
+                            if is_skip {
+                                break 'try3;
+                            }
+                            c.cycles += 7;
+                            c.sb((c.g[A1][0] as u32).wrapping_add(0x6a), 0);
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                            c.g[S1][0] = c.g[S0][0];
+                            c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                            c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                            break 'scan3;
+                        }
+                        c.cycles += 1;
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                        break 'next3;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[S0][0] < SPCH_ALLOC_QUEUE_SLOT_SLOTS) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(SPCH_ALLOC_QUEUE_SLOT_RECORD));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003d_7398);
+                    }
+                }
+            }
+        }
+        if !stolen {
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S1][0];
+        }
+        c.cycles += 8;
+        frame.restore(c, 31, 0x50);
+        frame.restore(c, 20, 0x40);
+        frame.restore(c, 19, 0x30);
+        frame.restore(c, 18, 0x20);
+        frame.restore(c, 17, 0x10);
+        frame.restore(c, 16, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_UtkSetState (0x3ce0b8)
+
+/// The SND state word (+0x4) and the two state fields (+0xd5c, +0xd44).
+pub(crate) const UTK_STATE: u32 = 0x4;
+
+pub(crate) const UTK_FIELD_D5C: u32 = 0xd5c;
+
+pub(crate) const UTK_FIELD_D44: u32 = 0xd44;
+
+/// `void SND_UtkSetState(Snd* snd, const SndUtkState* st)` (0x3ce0b8): copy
+/// the toolkit's state block (three words at +0/+4/+8) into the sound
+/// system's state fields.
+pub fn snd_utk_set_state(c: &mut Cpu) {
+    c.cycles += 7;
+    c.g[V0][0] = Addr(r32(c, A1)).lw(c);
+    Addr(r32(c, A0).wrapping_add(UTK_STATE)).sw(c, c.g[V0][0]);
+    c.g[V1][0] = Addr(r32(c, A1).wrapping_add(0x8)).lw(c);
+    Addr(r32(c, A0).wrapping_add(UTK_FIELD_D5C)).sw(c, c.g[V1][0]);
+    c.g[V0][0] = Addr(r32(c, A1).wrapping_add(0x4)).lw(c);
+    Addr(r32(c, A0).wrapping_add(UTK_FIELD_D44)).sw(c, c.g[V0][0]);
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_PurgeChannelRequests (0x3d7d58)
+
+/// The channel slot table `D_0044FFF8`: 16 slots 0x60 bytes apart at
+/// `+0x64 + 0x60*i` (so the fields sit at `0x64..0x70` of each slot record,
+/// i.e. `0x00..0x0c` of the element). The word at `+0x60` is the "another
+/// request is pending" flag the purge sets.
+pub(crate) const SPCH_SLOT_TABLE: u32 = 0x0044_fff8;
+
+pub(crate) const SPCH_SLOT_STRIDE: u32 = 0x60;
+
+/// Slot: the request's serial (`f0`), the tie-break halfword, the active byte,
+/// the channel byte, the 16-bit state (0 = idle), the 16-bit link handle and
+/// the queue entry pointer.
+pub(crate) const SPCH_SLOT_F0: u32 = 0x64;
+
+pub(crate) const SPCH_SLOT_H: u32 = 0x68;
+
+pub(crate) const SPCH_SLOT_ACTIVE: u32 = 0x6a;
+
+pub(crate) const SPCH_SLOT_CHANNEL: u32 = 0x6b;
+
+pub(crate) const SPCH_SLOT_S8: u32 = 0x6c;
+
+#[cfg(test)]
+pub(crate) const SPCH_SLOT_LINK: u32 = 0x6e;
+
+pub(crate) const SPCH_SLOT_QUEUE: u32 = 0x70;
+
+/// The pending flag, right before element 0.
+pub(crate) const SPCH_PENDING: u32 = 0x60;
+
+/// Queue entry: the signed status byte at +9 (100 = held) and the flags byte
+/// at +0xa (bit 2 = queued).
+pub(crate) const SPCH_QUEUE_STATUS: u32 = 0x9;
+
+pub(crate) const SPCH_QUEUE_FLAGS: u32 = 0xa;
+
+/// `SPCH_FreeQueueSlot` (0x3d7c38).
+pub(crate) const SPCH_FREE_QUEUE_SLOT: Callee = Callee {
+    addr: 0x003d_7c38,
+    f: ee::s14::SPCH_FreeQueueSlot,
+};
+
+/// `void SPCH_PurgeChannelRequests(int idx)` (0x3d7d58): clear the pending
+/// flag, then for all 16 channel slots except `idx`'s, free the queue slot of
+/// every idle entry (same channel, not playing) whose request is older than
+/// `idx`'s (serial, then tie-break halfword) and not marked queued; when an
+/// entry is not older and its queue entry is held (status 100) on the same
+/// channel, set the pending flag instead. Frame 0xa0 (s0-s7, fp).
+pub fn spch_purge_channel_requests(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0xa0);
+        frame.save(c, S6, 0x60);
+        c.g[V1][0] = SPCH_SLOT_STRIDE as u64;
+        c.g[V0][0] = 0x0045_0000;
+        c.g[S6][0] = c.g[A0][0];
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(8));
+        // `v1 = idx * 0x60`: the compiled form of `&r[idx]`.
+        c.mult(0, V1, S6, V1);
+        frame.save(c, FP, 0x80);
+        frame.save(c, S5, 0x50);
+        c.g[A0][0] = sx(r32(c, V0).wrapping_add(SPCH_SLOT_F0));
+        frame.save(c, S2, 0x20);
+        c.g[S5][0] = c.g[A0][0];
+        frame.save(c, S1, 0x10);
+        c.g[S2][0] = sx(r32(c, V0).wrapping_add(SPCH_SLOT_QUEUE));
+        frame.save(c, S0, 0);
+        c.g[A1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        frame.save(c, RA, 0x90);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+        frame.save(c, S7, 0x70);
+        c.g[S1][0] = 0;
+        frame.save(c, S4, 0x40);
+        c.g[S0][0] = 0;
+        frame.save(c, S3, 0x30);
+        c.g[FP][0] = 1;
+        // The reference slot's channel, serial and tie-break.
+        c.g[S3][0] = Addr(r32(c, A1).wrapping_add(SPCH_SLOT_CHANNEL)).lbu(c);
+        c.g[S4][0] = Addr(r32(c, V1)).lw(c);
+        c.g[S7][0] = Addr(r32(c, A1).wrapping_add(SPCH_SLOT_H)).lhu(c);
+        Addr(r32(c, V0).wrapping_add(SPCH_PENDING)).sw(c, 0);
+        // s1 = i.
+        loop {
+            c.cycles += 2;
+            c.g[V0][0] = 0x0045_0000;
+            // The two exits that rejoin after the block charge one more
+            // cycle: `i == idx`, and the "pending" case.
+            let mut late_exit = false;
+            if c.g[S1][0] == c.g[S6][0] {
+                late_exit = true;
+            } else {
+                c.cycles += 5;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(8));
+                c.g[V1][0] = sx(r32(c, S0).wrapping_add(r32(c, V0)));
+                c.g[V0][0] = Addr(r32(c, V1).wrapping_add(SPCH_SLOT_ACTIVE)).lbu(c);
+                if c.g[V0][0] != 0 {
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(r32(c, V1).wrapping_add(SPCH_SLOT_CHANNEL)).lbu(c);
+                    if c.g[V0][0] == c.g[S3][0] {
+                        c.cycles += 3;
+                        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(SPCH_SLOT_S8)).lh(c);
+                        if c.g[V0][0] == 0 {
+                            // Older than the reference request?
+                            c.cycles += 4;
+                            c.g[A0][0] = Addr(r32(c, S5)).lw(c);
+                            c.g[V0][0] = (c.g[A0][0] < c.g[S4][0]) as u64;
+                            let older = c.g[V0][0] != 0;
+                            c.g[V1][0] = Addr(r32(c, V1).wrapping_add(SPCH_SLOT_H)).lhu(c);
+                            let free = if older {
+                                true
+                            } else {
+                                c.cycles += 2;
+                                if c.g[A0][0] != c.g[S4][0] {
+                                    c.g[V1][0] = Addr(r32(c, S2)).lw(c);
+                                    false
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[V0][0] = (c.g[V1][0] < c.g[S7][0]) as u64;
+                                    if c.g[V0][0] == 0 {
+                                        c.g[V1][0] = Addr(r32(c, S2)).lw(c);
+                                        false
+                                    } else {
+                                        true
+                                    }
+                                }
+                            };
+                            if free {
+                                c.cycles += 9;
+                                // `v1 = 0x450000 + 0x68`: `&r[i].queue`.
+                                c.g[V1][0] = (SPCH_SLOT_TABLE + SPCH_SLOT_QUEUE) as u64;
+                                c.g[V0][0] = sx(r32(c, S0).wrapping_add(r32(c, V1)));
+                                c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+                                c.g[V1][0] = Addr(r32(c, A0).wrapping_add(SPCH_QUEUE_FLAGS)).lbu(c);
+                                c.g[V1][0] = sx(r32(c, V1) >> 2);
+                                c.g[V1][0] &= 1;
+                                if c.g[V1][0] == 0 {
+                                    c.cycles += 4;
+                                    c.g[A0][0] = c.g[S1][0];
+                                    SPCH_FREE_QUEUE_SLOT.call(c, 0x003d_7e4c)?;
+                                }
+                            } else {
+                                // Not older: is it held on this channel?
+                                c.cycles += 6;
+                                c.g[V0][0] = 0x0045_0000;
+                                c.g[A0][0] = sx(r32(c, V0).wrapping_sub(8));
+                                c.g[V0][0] = Addr(r32(c, V1).wrapping_add(SPCH_QUEUE_STATUS)).lb(c);
+                                c.g[V1][0] = 0x64;
+                                if c.g[V0][0] == c.g[V1][0] {
+                                    c.cycles += 4;
+                                    c.g[V0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+                                    c.g[V1][0] =
+                                        Addr(r32(c, V0).wrapping_add(SPCH_SLOT_CHANNEL)).lbu(c);
+                                    if c.g[V1][0] == c.g[S3][0] {
+                                        Addr(r32(c, A0).wrapping_add(SPCH_PENDING))
+                                            .sw(c, c.g[FP][0]);
+                                    }
+                                    late_exit = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if late_exit {
+                c.cycles += 1;
+            }
+            c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+            // i++ over the three parallel pointers.
+            c.cycles += 5;
+            c.g[S2][0] = sx(r32(c, S2).wrapping_add(SPCH_SLOT_STRIDE));
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(SPCH_SLOT_STRIDE));
+            c.g[V0][0] = ((c.g[S1][0] as i64) < 16) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[S5][0] = sx(r32(c, S5).wrapping_add(SPCH_SLOT_STRIDE));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_7dc8);
+            }
+        }
+        c.cycles += 12;
+        frame.restore(c, RA, 0x90);
+        frame.restore(c, FP, 0x80);
+        frame.restore(c, S7, 0x70);
+        frame.restore(c, S6, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore(c, S0, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x003d7a50 SPCH_SelectRequestForChannel
+
+/// `int SPCH_SelectRequestForChannel(int channel)` (0x3d7a50): find the
+/// event bound to `channel`, decode its request list (when the event's flag
+/// byte has 0x10 set, the list is `{count, ids}` at an offset computed from
+/// the event's counters), select a request from it and retry with no list
+/// when the selection fails.
+pub fn spch_select_request_for_channel(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = 0x0045_0000;
+        frame.save(c, S1, 0x20);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x660));
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x10);
+        c.g[V1][0] = sx((c.g[S1][0] as u32) << 3);
+        frame.save(c, RA, 0x30);
+        c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[S0][0] = 0;
+        c.g[V1][0] = Addr(c.g[A0][0] as u32).lhu(c);
+        c.g[V0][0] = 0xffff;
+        Addr(frame.at(c, 0)).sw(c, 0);
+        let unbound = c.g[V1][0] == c.g[V0][0];
+        Addr(frame.at(c, 4)).sw(c, 0);
+        if !unbound {
+            // The bound-entry block itself (the two stores' delay slot, the
+            // `li` pair and the call).
+            c.cycles += 5;
+            Callee {
+                addr: 0x003d_7110,
+                f: ee::s14::SPCH_FindEvent,
+            }
+            .call(c, 0x003d_7a94)?;
+            c.g[A2][0] = c.g[V0][0];
+            if c.g[A2][0] != 0 {
+                // The event: flag byte +0xa selects the request list.
+                c.cycles += 5;
+                c.g[T1][0] = Addr(c.g[A2][0] as u32).off(0xa).lbu(c);
+                c.g[V0][0] = sx((c.g[T1][0] as u32) >> 4);
+                c.g[V0][0] &= 1;
+                let no_list = c.g[V0][0] == 0;
+                c.g[A1][0] = 0;
+                if !no_list {
+                    c.cycles += 27;
+                    c.g[V1][0] = Addr(c.g[A2][0] as u32).off(7).lbu(c);
+                    c.g[A3][0] = 0xffff_ffff_ffff_0000u64;
+                    c.g[V0][0] = Addr(c.g[A2][0] as u32).off(6).lbu(c);
+                    c.g[A3][0] |= 0xfffc;
+                    c.g[A1][0] = sx((c.g[V1][0] as u32) << 24);
+                    c.g[V1][0] &= 0xf;
+                    c.g[T0][0] = sx((c.g[V0][0] as u32) << 1);
+                    c.g[V0][0] = sx((c.g[V1][0] as u32) << 1);
+                    c.g[A1][0] = sx(((c.g[A1][0] as u32) as i32 >> 28) as u32);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(3));
+                    c.g[V1][0] = sx((c.g[A1][0] as u32) << 1);
+                    c.g[A0][0] &= c.g[A3][0];
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xc));
+                    c.g[A1][0] = 0xffff_ffff_ffff_fffcu64;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(3));
+                    c.g[V0][0] &= c.g[A1][0];
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(3));
+                    c.g[V1][0] &= c.g[A1][0];
+                    c.g[V0][0] = sx((c.g[T1][0] as u32) >> 3);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] &= 1;
+                    let no_stride = c.g[V0][0] == 0;
+                    c.g[A1][0] = 1;
+                    if !no_stride {
+                        c.cycles += 3;
+                        c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(7));
+                        c.g[V0][0] &= c.g[A3][0];
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    }
+                    // The list: a count byte then the request ids.
+                    c.cycles += 4;
+                    c.g[V1][0] = Addr(c.g[A0][0] as u32).lbu(c);
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(2));
+                    Addr(frame.at(c, 4)).sw(c, c.g[V0][0]);
+                    Addr(frame.at(c, 0)).sw(c, c.g[V1][0]);
+                }
+                c.cycles += 1;
+                c.g[S0][0] = c.g[A1][0];
+            }
+        }
+        // First selection: with the list when one was decoded, else none.
+        c.cycles += 2;
+        let no_list = c.g[S0][0] == 0;
+        c.g[A0][0] = sx(sp(c));
+        if no_list {
+            c.cycles += 3;
+            c.g[A0][0] = 0;
+            c.g[A1][0] = c.g[S1][0];
+            Callee {
+                addr: 0x003d_7760,
+                f: ee::s14::SPCH_SelectRequest,
+            }
+            .call(c, 0x003d_7b64)?;
+        } else {
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S1][0];
+            Callee {
+                addr: 0x003d_7760,
+                f: ee::s14::SPCH_SelectRequest,
+            }
+            .call(c, 0x003d_7b50)?;
+        }
+        // A failed selection over the list retries with none.
+        c.cycles += 2;
+        let listed = c.g[S0][0] != 0;
+        frame.restore(c, RA, 0x30);
+        if listed {
+            // The list path charges 2 more before looking at the selection's
+            // result, whichever way it goes.
+            c.cycles += 2;
+            if (c.g[V0][0] as i64) < 0 {
+                c.cycles += 4;
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A0][0] = 0;
+                Callee {
+                    addr: 0x003d_7760,
+                    f: ee::s14::SPCH_SelectRequest,
+                }
+                .call(c, 0x003d_7b80)?;
+                frame.restore(c, RA, 0x30);
+                c.cycles += 1;
+                frame.restore(c, S1, 0x20);
+            } else {
+                frame.restore(c, S1, 0x20);
+            }
+        } else {
+            c.cycles += 1;
+            frame.restore(c, S1, 0x20);
+        }
+        c.cycles += 3;
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x003d7c38 SPCH_FreeQueueSlot
+
+/// The SPCH queue table (`D_0044FFF8`): 8 counters (`z`) at +0, 8 list heads
+/// (`a`) at +0x20, 8 (`b`) at +0x40, then 16 queue entries of 0x60 bytes.
+#[cfg(test)]
+pub(crate) const OC325_SPCH_QUEUES: u32 = 0x0044_fff8;
+
+pub(crate) const OC325_SPCH_QUEUE_ENTRY: u32 = 0x60;
+
+pub(crate) const OC325_SPCH_HEADS_A: u32 = 0x20;
+
+pub(crate) const OC325_SPCH_HEADS_B: u32 = 0x40;
+
+/// Entry fields: the bound flag (`c`, byte), the queue index (`d`, byte),
+/// the "in use" halfword (`s8`) and the next entry (`next`).
+pub(crate) const OC325_SPCH_FLAG: u32 = 0x6a;
+
+pub(crate) const OC325_SPCH_QUEUE_ID: u32 = 0x6b;
+
+pub(crate) const OC325_SPCH_IN_USE: u32 = 0x6c;
+
+pub(crate) const OC325_SPCH_NEXT: u32 = 0x6e;
+
+/// `void SPCH_FreeQueueSlot(unsigned slot)` (0x3d7c38): release a speech
+/// request slot: clear its bound flag and unlink it from its queue's lists
+/// (heads and the chain of bound entries), then drop its queue's count by
+/// one (clamped at 0).
+pub fn spch_free_queue_slot(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = (c.g[A0][0] < 0x10) as u64;
+    let out_of_range = c.g[V0][0] == 0;
+    c.g[A2][0] = u64::MAX;
+    if !out_of_range {
+        c.cycles += 9;
+        c.g[V1][0] = OC325_SPCH_QUEUE_ENTRY as u64;
+        c.g[V0][0] = 0x0045_0000;
+        c.mult(0, V1, A0, V1); // v1 = 0x60 * slot
+        c.g[T1][0] = sx((c.g[V0][0] as u32).wrapping_sub(8)); // 0x44fff8
+        c.g[T4][0] = c.g[V0][0]; // 0x450000
+        c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T1][0] as u32));
+        c.g[V0][0] = Addr((c.g[A3][0] as u32).wrapping_add(OC325_SPCH_IN_USE)).lh(c);
+        let in_use = c.g[V0][0] != 0;
+        c.g[V1][0] = sx((c.g[T1][0] as u32).wrapping_add(OC325_SPCH_HEADS_B));
+        if !in_use {
+            // Unbind: clear the flag, drop it from the b[] and a[] heads.
+            c.cycles += 7;
+            c.g[V0][0] = Addr((c.g[A3][0] as u32).wrapping_add(OC325_SPCH_QUEUE_ID)).lbu(c);
+            Addr((c.g[A3][0] as u32).wrapping_add(OC325_SPCH_FLAG)).sb(c, 0);
+            c.g[A1][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+            if c.g[A0][0] == c.g[V0][0] {
+                c.sw(c.g[V1][0] as u32, c.g[A2][0]);
+            }
+            c.cycles += 5;
+            c.g[T2][0] = sx((c.g[T1][0] as u32).wrapping_add(OC325_SPCH_HEADS_A));
+            c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[T2][0] as u32));
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+            if c.g[A0][0] == c.g[V0][0] {
+                c.sw(c.g[V1][0] as u32, c.g[A2][0]);
+            }
+            // Walk the chain of bound entries after this one.
+            c.cycles += 4;
+            c.g[A2][0] = Addr((c.g[A3][0] as u32).wrapping_add(OC325_SPCH_NEXT)).lh(c);
+            c.g[V0][0] = u64::MAX;
+            let no_next = c.g[A2][0] == c.g[V0][0];
+            c.g[T0][0] = c.g[A1][0];
+            let mut tail_charge = no_next;
+            if !no_next {
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[A2][0] < 0x10) as u64;
+                let far = c.g[V0][0] == 0;
+                c.g[V0][0] = OC325_SPCH_QUEUE_ENTRY as u64;
+                if !far {
+                    c.cycles += 7;
+                    c.g[T5][0] = c.g[T1][0];
+                    c.g[T3][0] = c.g[T2][0];
+                    c.g[T2][0] = OC325_SPCH_QUEUE_ENTRY as u64;
+                    c.g[T1][0] = c.g[T0][0];
+                    c.g[A3][0] = u64::MAX;
+                    c.mult(0, V0, A2, T2); // v0 = next * 0x60
+                    loop {
+                        c.cycles += 4;
+                        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T5][0] as u32));
+                        c.g[V0][0] =
+                            Addr((c.g[A1][0] as u32).wrapping_add(OC325_SPCH_IN_USE)).lh(c);
+                        if c.g[V0][0] == 0 {
+                            c.g[A2][0] = u64::MAX;
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] =
+                                Addr((c.g[A1][0] as u32).wrapping_add(OC325_SPCH_FLAG)).lbu(c);
+                            let unbound = c.g[V0][0] == 0;
+                            c.g[V1][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[T3][0] as u32));
+                            if unbound {
+                                c.cycles += 1;
+                                c.g[A2][0] = u64::MAX;
+                            } else {
+                                c.cycles += 3;
+                                c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                                if c.g[A2][0] == c.g[V0][0] {
+                                    c.sw(c.g[V1][0] as u32, c.g[A3][0]);
+                                }
+                                c.cycles += 3;
+                                c.g[A2][0] =
+                                    Addr((c.g[A1][0] as u32).wrapping_add(OC325_SPCH_NEXT)).lh(c);
+                                Addr((c.g[A1][0] as u32).wrapping_add(OC325_SPCH_FLAG)).sb(c, 0);
+                            }
+                        }
+                        c.cycles += 2;
+                        let finished = c.g[A2][0] == c.g[A3][0];
+                        c.g[V0][0] = (c.g[A2][0] < 0x10) as u64;
+                        if finished {
+                            break;
+                        }
+                        c.cycles += 2;
+                        let more = c.g[V0][0] != 0;
+                        c.mult(0, V0, A2, T2);
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003d_7cd0);
+                        }
+                    }
+                    tail_charge = true;
+                }
+            }
+            if tail_charge {
+                c.cycles += 1;
+                c.g[V0][0] = OC325_SPCH_QUEUE_ENTRY as u64;
+            }
+            // Drop the queue's count (clamped at 0).
+            c.cycles += 6;
+            c.g[A1][0] = sx((c.g[T4][0] as u32).wrapping_sub(8));
+            c.mult(0, V0, A0, V0); // v0 = slot * 0x60
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(OC325_SPCH_IN_USE)).lh(c);
+            let still_in_use = c.g[V1][0] != 0;
+            c.g[V1][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            if !still_in_use {
+                c.cycles += 4;
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                c.g[V1][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            }
+            c.cycles += 3;
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+            if (c.g[V0][0] as i64) < 0 {
+                c.sw(c.g[V1][0] as u32, 0);
+            }
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// SPCH bank table.
+
+/// The 8-entry SPCH bank table (`{ void* data; u32 user; }` per entry).
+pub(crate) const OC327_SPCH_BANK_TABLE: u32 = 0x0044_ffb8;
+
+/// `SPCH_Sentence`'s global sentence state (`SPCH_SentenceGlobals`).
+pub(crate) const OC327_SPCH_SENTENCE_GLOBALS: u32 = 0x0045_0700;
+
+/// `s32 SPCH_FindBankType(const u8* key, u8* type)` (0x3d8330): scan the eight
+/// bank-table entries for the one whose data block has `block[9] == key[2]`
+/// and `block[8] == key[3]`; on a hit return 1 and store `block[9]` through
+/// `type`, otherwise return 0. A leaf with a 0x10 stack frame for the matched
+/// entry pointer.
+pub fn spch_find_bank_type(c: &mut Cpu) {
+    c.cycles += 8;
+    let key = c.g[A0][0] as u32;
+    let out = c.g[A1][0] as u32;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+    c.g[V0][0] = 0x45_0000;
+    c.g[A3][0] = sx(OC327_SPCH_BANK_TABLE);
+    c.g[T3][0] = 0;
+    let slot = c.g[SP][0] as u32;
+    c.g[T2][0] = c.g[SP][0];
+    c.g[T1][0] = 0;
+    c.g[T0][0] = 0;
+    let mut found = false;
+    loop {
+        c.cycles += 3;
+        let block = Addr(c.g[A3][0] as u32).lw(c);
+        c.g[A2][0] = block;
+        if block == 0 {
+            c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(1));
+        } else {
+            c.cycles += 4;
+            let want = Addr((block as u32).wrapping_add(9)).lbu(c);
+            c.g[V1][0] = want;
+            let have = Addr(key.wrapping_add(2)).lbu(c);
+            c.g[V0][0] = have;
+            if want != have {
+                c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(1));
+            } else {
+                c.cycles += 4;
+                let want = Addr((block as u32).wrapping_add(8)).lbu(c);
+                c.g[V1][0] = want;
+                let have = Addr(key.wrapping_add(3)).lbu(c);
+                c.g[V0][0] = have;
+                if want != have {
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(1));
+                } else {
+                    c.cycles += 3;
+                    Addr(slot).sw(c, c.g[A3][0]);
+                    c.g[T1][0] = 1;
+                    found = true;
+                }
+            }
+        }
+        if found {
+            break;
+        }
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[T0][0] as i64) < 8) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(8));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003d_8350);
+        }
+    }
+    c.cycles += 2;
+    let none = c.g[T1][0] == 0;
+    c.g[V0][0] = Addr(slot).lw(c);
+    if !none {
+        c.cycles += 4;
+        c.g[T3][0] = 1;
+        let block = Addr(c.g[V0][0] as u32).lw(c);
+        c.g[V1][0] = block;
+        let kind = Addr((block as u32).wrapping_add(9)).lbu(c);
+        c.g[A0][0] = kind;
+        Addr(out).sw(c, kind);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = c.g[T3][0];
+    let ra = c.g[RA][0] as u32;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+    c.pc = ra;
+}
+
+/// `s32 SPCH_FindBankUserData(const u8* key, u32* user)` (0x3d81f0): the same
+/// bank-table scan as `SPCH_FindBankType`, but a hit stores the entry's user
+/// word (`*(u32*)(entry + 4)`) through `user`.
+pub fn spch_find_bank_user_data(c: &mut Cpu) {
+    c.cycles += 8;
+    let key = c.g[A0][0] as u32;
+    let out = c.g[A1][0] as u32;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+    c.g[V0][0] = 0x45_0000;
+    c.g[A3][0] = sx(OC327_SPCH_BANK_TABLE);
+    c.g[T3][0] = 0;
+    let slot = c.g[SP][0] as u32;
+    c.g[T2][0] = c.g[SP][0];
+    c.g[T1][0] = 0;
+    c.g[T0][0] = 0;
+    let mut found = false;
+    loop {
+        c.cycles += 3;
+        let block = Addr(c.g[A3][0] as u32).lw(c);
+        c.g[A2][0] = block;
+        if block == 0 {
+            c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(1));
+        } else {
+            c.cycles += 4;
+            let want = Addr((block as u32).wrapping_add(9)).lbu(c);
+            c.g[V1][0] = want;
+            let have = Addr(key.wrapping_add(2)).lbu(c);
+            c.g[V0][0] = have;
+            if want != have {
+                c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(1));
+            } else {
+                c.cycles += 4;
+                let want = Addr((block as u32).wrapping_add(8)).lbu(c);
+                c.g[V1][0] = want;
+                let have = Addr(key.wrapping_add(3)).lbu(c);
+                c.g[V0][0] = have;
+                if want != have {
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(1));
+                } else {
+                    c.cycles += 3;
+                    Addr(slot).sw(c, c.g[A3][0]);
+                    c.g[T1][0] = 1;
+                    found = true;
+                }
+            }
+        }
+        if found {
+            break;
+        }
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[T0][0] as i64) < 8) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(8));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003d_8210);
+        }
+    }
+    c.cycles += 2;
+    let none = c.g[T1][0] == 0;
+    c.g[V1][0] = Addr(slot).lw(c);
+    if !none {
+        c.cycles += 3;
+        c.g[T3][0] = 1;
+        let user = Addr((c.g[V1][0] as u32).wrapping_add(4)).lw(c);
+        c.g[V0][0] = user;
+        Addr(out).sw(c, user);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = c.g[T3][0];
+    let ra = c.g[RA][0] as u32;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+    c.pc = ra;
+}
+
+// ---------------------------------------------------------------------------
+// SPCH sentences.
+
+/// `void SPCH_SentenceAppend(SPCH_Node* h, s32 id, void* a2, const void* a3,
+/// u32 a4, const u32* a5)` (0x3d9ac8): if the current sentence is free (-1) or
+/// already `id`, take the next of the eight sentence slots (`f4++`); fill it
+/// (20 words from `a5`, the q-table from `h`'s entries, `cnt = a3[4] >> 2`
+/// records), mark it live and advance the q index.
+pub fn spch_sentence_append(c: &mut Cpu) {
+    let g = OC327_SPCH_SENTENCE_GLOBALS;
+    c.cycles += 7;
+    c.g[V0][0] = 0x45_0000;
+    c.g[T7][0] = c.g[A0][0];
+    c.g[T6][0] = c.g[V0][0];
+    c.g[T4][0] = sx(g);
+    c.g[V0][0] = Addr(g).lw(c);
+    let busy = (c.g[V0][0] as i64) < 0;
+    c.g[T5][0] = c.g[A2][0];
+    let mut append = busy;
+    if !busy {
+        c.cycles += 2;
+        append = c.g[V0][0] == c.g[A1][0];
+    }
+    if append {
+        // `f4++`: the slot index, and no room past eight.
+        c.cycles += 5;
+        c.g[T3][0] = Addr(g.wrapping_add(4)).lw(c);
+        c.g[V0][0] = sx((c.g[T3][0] as u32).wrapping_add(1));
+        c.g[V1][0] = ((c.g[T3][0] as i64) < 8) as u64;
+        let full = c.g[V1][0] == 0;
+        Addr(g.wrapping_add(4)).sw(c, c.g[V0][0]);
+        if !full {
+            // Slot base: `g + slot * 0x5c`, fields at +0x18c/+0x190/+0x194.
+            c.cycles += 12;
+            c.g[V0][0] = 0x5c;
+            Addr(g).sw(c, c.g[A1][0]);
+            c.mult(0, V0, T3, V0);
+            c.g[A2][0] = sx(g.wrapping_add(0x198));
+            c.g[T2][0] = 0x13;
+            c.g[V1][0] = sx((c.g[T4][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T4][0] as u32));
+            c.g[A0][0] = c.g[V1][0];
+            Addr((c.g[V1][0] as u32).wrapping_add(0x18c)).sw(c, c.g[T5][0]);
+            Addr((c.g[A0][0] as u32).wrapping_add(0x190)).sw(c, c.g[A3][0]);
+            Addr((c.g[A1][0] as u32).wrapping_add(0x194)).sb(c, c.g[T0][0]);
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+            // 20 words of per-sentence data.
+            loop {
+                c.cycles += 7;
+                c.g[V0][0] = Addr(c.g[T1][0] as u32).lw(c);
+                c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(1));
+                c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(4));
+                Addr(c.g[A0][0] as u32).sw(c, c.g[V0][0]);
+                let more = (c.g[T2][0] as i64) >= 0;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_9b30);
+                }
+            }
+            // Live flag and the q records from the node's entries.
+            c.cycles += 10;
+            c.g[V0][0] = 0x5c;
+            c.g[A0][0] = sx(g);
+            c.mult(0, V0, T3, V0);
+            c.g[V1][0] = 1;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            Addr((c.g[V0][0] as u32).wrapping_add(0x195)).sb(c, c.g[V1][0]);
+            c.g[V0][0] = Addr((c.g[A3][0] as u32).wrapping_add(4)).lbu(c);
+            c.g[A3][0] = sx((c.g[V0][0] as u32) >> 2);
+            let empty = c.g[A3][0] == 0;
+            c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(8)).lw(c);
+            if !empty {
+                c.cycles += 7;
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 3);
+                c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A1][0] = c.g[T7][0];
+                c.g[A0][0] = sx((c.g[T7][0] as u32).wrapping_add(0x62));
+                c.g[T2][0] = c.g[A3][0];
+                loop {
+                    c.cycles += 12;
+                    c.g[V1][0] = Addr(c.g[A1][0] as u32).lhu(c);
+                    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(1));
+                    Addr((c.g[A2][0] as u32).wrapping_sub(4)).sh(c, c.g[V1][0]);
+                    c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(2)).lhu(c);
+                    Addr((c.g[A2][0] as u32).wrapping_sub(2)).sh(c, c.g[V0][0]);
+                    c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(6)).lbu(c);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(8));
+                    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = Addr(c.g[V1][0] as u32).lbu(c);
+                    Addr(c.g[A2][0] as u32).sh(c, c.g[V0][0]);
+                    let more = c.g[T2][0] != 0;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(8));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003d_9b90);
+                    }
+                }
+            }
+            // The q index advances by the record count.
+            c.cycles += 4;
+            c.g[V1][0] = sx(g);
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(8)).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+            Addr((c.g[V1][0] as u32).wrapping_add(8)).sw(c, c.g[V0][0]);
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void SPCH_ResetSentence(void)` (0x3d9a40): reset the global sentence state
+/// (current id -1, counters 0) and clear the eight 0x5c-byte sentence slots
+/// and the 48 two-word q entries.
+pub fn spch_reset_sentence(c: &mut Cpu) {
+    let g = OC327_SPCH_SENTENCE_GLOBALS;
+    c.cycles += 10;
+    c.g[V0][0] = 0x45_0000;
+    c.g[A0][0] = u64::MAX;
+    c.g[V1][0] = sx(g);
+    Addr(g).sw(c, c.g[A0][0]);
+    c.g[A0][0] = c.g[V1][0];
+    Addr(g.wrapping_add(4)).sw(c, 0);
+    Addr(g.wrapping_add(8)).sw(c, 0);
+    c.g[V1][0] = sx(g.wrapping_add(0x2e0));
+    Addr(g.wrapping_add(0x18c)).sw(c, 0);
+    loop {
+        c.cycles += 8;
+        let p = c.g[A0][0] as u32;
+        Addr(p.wrapping_add(0x190)).sw(c, 0);
+        Addr(p.wrapping_add(0x194)).sb(c, 0);
+        Addr(p.wrapping_add(0x195)).sb(c, 0);
+        Addr(p.wrapping_add(0x197)).sb(c, 0);
+        c.g[A0][0] = sx(p.wrapping_add(0x5c));
+        c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+        if c.g[V0][0] == 0 {
+            c.cycles += 6;
+            c.g[V0][0] = 0x45_0000;
+            c.g[A0][0] = u64::MAX;
+            c.g[V0][0] = sx(g);
+            c.g[V1][0] = 0x2f;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12));
+            loop {
+                c.cycles += 7;
+                let p = c.g[V0][0] as u32;
+                Addr(p.wrapping_sub(6)).sh(c, c.g[A0][0]);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+                Addr(p.wrapping_sub(4)).sh(c, c.g[A0][0]);
+                Addr(p.wrapping_sub(2)).sh(c, 0);
+                Addr(p).sh(c, 0);
+                let more = (c.g[V1][0] as i64) >= 0;
+                c.g[V0][0] = sx(p.wrapping_add(8));
+                if !more {
+                    c.cycles += 2;
+                    ret(c);
+                    return;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_9aa0);
+                }
+            }
+        }
+        Addr((c.g[A0][0] as u32).wrapping_add(0x18c)).sw(c, 0);
+        if event_due(c) {
+            deliver_event_here(c, 0x003d_9a68);
+        }
+    }
+}
+
+/// `void SND_DspResample_Init(SND_DspResample* self)` (0x3cbb28): install the
+/// resampler vtable (0x3cb540) and clear its counters and its four word
+/// fields at +0x34..+0x28.
+pub fn snd_dsp_resample_init(c: &mut Cpu) {
+    c.cycles += 10;
+    c.g[V0][0] = 0x3d_0000;
+    let self_ = c.g[A0][0] as u32;
+    Addr(self_.wrapping_add(4)).sw(c, 0);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4ac0));
+    Addr(self_.wrapping_add(0x20)).sw(c, 0);
+    Addr(self_).sw(c, c.g[V0][0]);
+    c.g[V1][0] = 3;
+    Addr(self_.wrapping_add(0x24)).sh(c, 0);
+    c.g[V0][0] = sx(self_.wrapping_add(0x34));
+    Addr(self_.wrapping_add(0x26)).sh(c, 0);
+    loop {
+        c.cycles += 7;
+        Addr(c.g[V0][0] as u32).sw(c, 0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+        let more = (c.g[V1][0] as i64) >= 0;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(4));
+        if !more {
+            c.cycles += 2;
+            let ra = c.g[RA][0] as u32;
+            c.pc = ra;
+            return;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003c_bb50);
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     crate::difftest::events::driven!(oc238_gen_prebuffering, ee::s13::f_003b70f8__generated);
@@ -21681,6 +24401,1378 @@ pub(crate) mod tests {
                     c.next_event = c.cycles + 1;
                 }
                 mode
+            },
+        );
+    }
+
+    use crate::difftest::fakes::LOG_RESULTS;
+
+    // -- 0x003c8b80 SND_EeVoiceSetDistortion ----------------------------------
+
+    /// `SND_EeVoiceSetDistortion`: amounts above 0, 0 and negative; the
+    /// voice's DSP chain of 0-3 nodes; no distortion DSP yet (created and
+    /// inserted through the real `SND_MemAlloc` and the driver heap), one
+    /// already on the chain, or a detached one.
+    #[test]
+    fn snd_ee_voice_set_distortion_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check_lohi, fill, DATA};
+        const VOICES: u32 = DATA + 0x20_0000;
+        const NODES: u32 = DATA + 0x20_1000;
+        const HEAP: u32 = DATA + 0x20_2000;
+        check_lohi(
+            ee::s14::f_003c8b80__generated,
+            snd_ee_voice_set_distortion,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c_8b80, 0);
+                c.pc = 0x003c_8b80;
+                let index = seed % 8;
+                c.g[A0][0] = index as u64;
+                c.bus.write32(SND_DIST_VOICES, VOICES);
+                fill(c, &mut r, VOICES, SND_DIST_VOICE_SIZE * 8 / 4);
+                let voice = VOICES + SND_DIST_VOICE_SIZE * index;
+                // The DSP chain: 0-3 nodes {next +8, priority +0x18}; the
+                // stride leaves room for the 0x50-byte distortion node.
+                let n = seed / 8 % 4;
+                for i in 0..n {
+                    let node = NODES + 0x60 * i;
+                    fill(c, &mut r, node, 0x18);
+                    c.bus
+                        .write32(node + 8, if i + 1 == n { 0 } else { node + 0x60 });
+                    c.bus
+                        .write16(node + 0x18, (0x10 + 0x20 * i + r.next_u32() % 0x20) as u16);
+                }
+                c.bus
+                    .write32(voice + SND_DIST_VOICE_CHAIN, if n == 0 { 0 } else { NODES });
+                let dsp = match seed % 3 {
+                    0 => 0,
+                    1 if n > 0 => NODES + 0x60 * (r.next_u32() % n),
+                    _ => NODES + 0x200,
+                };
+                if dsp == NODES + 0x200 {
+                    fill(c, &mut r, dsp, 0x14);
+                }
+                c.bus.write32(voice + SND_DIST_VOICE_DSP, dsp);
+                // The driver heap: empty, room for the block.
+                for state in [0x0051_5b40u32, SND_APPLY_STATE] {
+                    c.bus.write32(state + 0x234, HEAP);
+                }
+                c.bus.write32(HEAP, DATA + 0x20_4000);
+                c.bus.write32(HEAP + 0x4, DATA + 0x20_3000);
+                c.bus.write32(HEAP + 0xc, 0x8_0000);
+                c.bus.write32(HEAP + 0x10, 0x100);
+                c.bus.write32(HEAP + 0x14, 0);
+                c.g[A1][0] = match seed / 5 % 5 {
+                    0 => 0,
+                    1 => sx(0x8000_0000 | r.next_u32()),
+                    2 => (r.next_u32() as u64) << 32 | (r.next_u32() % 20000) as u64,
+                    _ => 1 + (r.next_u32() % 0x2000) as u64,
+                };
+            },
+        );
+    }
+
+    // -- 0x003c30c8 SND_ChannelApplyDistortion, 0x003c3250 highpass ----------
+
+    /// A channel with a voice list whose numbers map onto voices 0-7 of a
+    /// zeroed voice table, the DSP nodes and the driver heap for the two
+    /// voice setters (their own tests' fixtures).
+    pub(crate) fn snd_apply_fixture(
+        c: &mut Cpu,
+        seed: u32,
+        salt: u64,
+        max_voices: u32,
+    ) -> crate::difftest::Rng {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::fill;
+        const CHANNELS: u32 = crate::difftest::DATA + 0x1000;
+        let mut r = machine(c, seed, salt, 0);
+        let ch = seed % 8;
+        c.g[A0][0] = ch as u64;
+        c.bus
+            .write32(SND_APPLY_STATE + SND_APPLY_CHANNELS, CHANNELS);
+        let chan = CHANNELS + SND_APPLY_CHANNEL_SIZE * ch;
+        c.bus.write16(
+            chan + SND_APPLY_FLAGS,
+            if seed % 2 == 0 {
+                4
+            } else {
+                (r.next_u32() & 0xffff & !4) as u16
+            },
+        );
+        let count = seed % (max_voices + 1);
+        c.bus.write8(chan + SND_APPLY_VOICE_COUNT, count as u8);
+        c.bus.write8(SND_APPLY_STATE + SND_APPLY_VOICE_BASE_A, 0);
+        c.bus.write8(SND_APPLY_STATE + SND_APPLY_VOICE_BASE_B, 0);
+        for i in 0..max_voices {
+            c.bus
+                .write16(chan + SND_APPLY_VOICES + 2 * i, (r.next_u32() % 8) as u16);
+        }
+        // The voice table: 8 entries, each with a 0-2 node chain and a
+        // filter/DSP node (sometimes detached, sometimes absent). A DSP node
+        // is up to 0x120 bytes (the FIR highpass), so chains and detached
+        // nodes get a stride no write can overrun.
+        const VOICES: u32 = crate::difftest::DATA + 0x20_0000;
+        const NODES: u32 = crate::difftest::DATA + 0x20_1000;
+        const NODE_STRIDE: u32 = 0x140;
+        const VOICE_STRIDE: u32 = 0x500;
+        const DSP_DETACHED: u32 = crate::difftest::DATA + 0x20_4000;
+        const HP_DETACHED: u32 = crate::difftest::DATA + 0x20_5000;
+        const HEAP: u32 = crate::difftest::DATA + 0x20_6000;
+        const BLOCKS: u32 = crate::difftest::DATA + 0x20_6400;
+        const BASE: u32 = crate::difftest::DATA + 0x20_7000;
+        c.bus.write32(SND_DIST_VOICES, VOICES);
+        fill(c, &mut r, VOICES, SND_DIST_VOICE_SIZE * 8 / 4);
+        for i in 0..8u32 {
+            let voice = VOICES + SND_DIST_VOICE_SIZE * i;
+            let chain = NODES + VOICE_STRIDE * i;
+            let n = r.next_u32() % 3;
+            for k in 0..n {
+                let node = chain + NODE_STRIDE * k;
+                fill(c, &mut r, node, NODE_STRIDE / 4);
+                c.bus
+                    .write32(node + 8, if k + 1 == n { 0 } else { node + NODE_STRIDE });
+                c.bus
+                    .write16(node + 0x18, (0x10 + 0x20 * k + r.next_u32() % 0x20) as u16);
+            }
+            c.bus
+                .write32(voice + SND_DIST_VOICE_CHAIN, if n == 0 { 0 } else { chain });
+            let dsp = match r.next_u32() % 3 {
+                0 => 0,
+                1 if n > 0 => chain + NODE_STRIDE * (r.next_u32() % n),
+                _ => DSP_DETACHED + 0x80 * i,
+            };
+            if dsp == DSP_DETACHED + 0x80 * i {
+                fill(c, &mut r, dsp, 0x14);
+            }
+            c.bus.write32(voice + SND_DIST_VOICE_DSP, dsp);
+            // The same voice's highpass DSP node lives at +0x5c.
+            let hp = match r.next_u32() % 3 {
+                0 => 0,
+                1 if n > 0 => chain + NODE_STRIDE * (r.next_u32() % n),
+                _ => HP_DETACHED + NODE_STRIDE * i,
+            };
+            if hp == HP_DETACHED + NODE_STRIDE * i {
+                fill(c, &mut r, hp, 0x48);
+            }
+            c.bus.write32(voice + 0x5c, hp);
+        }
+        // The driver heap: empty, a 0x4000 arena past every node region.
+        for state in [0x0051_5b40u32, SND_APPLY_STATE] {
+            c.bus.write32(state + 0x234, HEAP);
+        }
+        c.bus.write32(HEAP, BASE);
+        c.bus.write32(HEAP + 0x4, BLOCKS);
+        c.bus.write32(HEAP + 0xc, 0x4000);
+        c.bus.write32(HEAP + 0x10, 0x100);
+        c.bus.write32(HEAP + 0x14, 0);
+        c.bus.write16(
+            SND_APPLY_STATE + 0x2a,
+            [48000u32, 44100, 24000, r.next_u32() % 0x1_0000][(seed / 3 % 4) as usize] as u16,
+        );
+        r
+    }
+
+    /// `SND_ChannelApplyDistortion`: channels with and without the flag, 0-3
+    /// voices, the real `SND_EeVoiceSetDistortion` per voice with a positive,
+    /// zero or negative amount.
+    #[test]
+    fn snd_channel_apply_distortion_matches() {
+        use crate::difftest::check_lohi;
+        check_lohi(
+            ee::s13::f_003c30c8__generated,
+            snd_channel_apply_distortion,
+            240,
+            &|c, seed| {
+                let mut r = snd_apply_fixture(c, seed, 0x3c_30c8, 3);
+                c.pc = 0x003c_30c8;
+                c.g[A1][0] = match seed / 5 % 5 {
+                    0 => 0,
+                    1 => sx(0x8000_0000 | r.next_u32()),
+                    2 => (r.next_u32() as u64) << 32 | (r.next_u32() % 20000) as u64,
+                    _ => 1 + (r.next_u32() % 0x2000) as u64,
+                };
+            },
+        );
+    }
+
+    /// `SND_ChannelApplyHighpass`: the same fixture, the real
+    /// `SND_EeVoiceSetHighpass` per voice with a cutoff of 0, a negative
+    /// value or a frequency.
+    #[test]
+    fn snd_channel_apply_highpass_matches() {
+        use crate::difftest::check_lohi;
+        check_lohi(
+            ee::s13::f_003c3250__generated,
+            snd_channel_apply_highpass,
+            240,
+            &|c, seed| {
+                let mut r = snd_apply_fixture(c, seed, 0x3c_3250, 3);
+                c.pc = 0x003c_3250;
+                c.g[A1][0] = match seed / 5 % 5 {
+                    0 => 0,
+                    1 => sx(0x8000_0000 | r.next_u32()),
+                    2 => (r.next_u32() as u64) << 32 | (r.next_u32() % 20000) as u64,
+                    _ => 1 + (r.next_u32() % 20000) as u64,
+                };
+            },
+        );
+    }
+
+    // -- 0x003d7110 SPCH_FindEvent --------------------------------------------
+
+    /// `SPCH_FindEvent`: eight bank slots (some empty, and the request's id
+    /// matching one bank's or none), 0-4 event entries per bank with the
+    /// request's event id present or absent.
+    #[test]
+    fn spch_find_event_matches() {
+        use crate::difftest::{check, scramble, Rng, DATA};
+        const REQUEST: u32 = DATA + 0x100;
+        const BANKS: u32 = DATA + 0x1000;
+        check(
+            ee::s14::f_003d7110__generated,
+            spch_find_event,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x3d71_1000 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x003d_7110;
+                let ev = r.next_u32() as u16;
+                let sel = (seed % 8) as u32;
+                let id_bytes = (r.next_u32() as u8, r.next_u32() as u8);
+                for i in 0..8u32 {
+                    let bank = BANKS + 0x100 * i;
+                    let slot = SPCH_FIND_EVENT_BANKS + 8 * i;
+                    c.bus.write32(
+                        slot,
+                        if i == sel || r.next_u32() % 3 != 0 {
+                            bank
+                        } else {
+                            0
+                        },
+                    );
+                    let (b9, b8) = if i == sel {
+                        id_bytes
+                    } else {
+                        (r.next_u32() as u8, r.next_u32() as u8)
+                    };
+                    c.bus.write8(bank + 9, b9);
+                    c.bus.write8(bank + 8, b8);
+                    let count = (r.next_u32() % 5) as u16;
+                    c.bus.write16(bank + SPCH_FIND_EVENT_COUNT, count);
+                    let mut first = u32::MAX;
+                    for k in 0..count {
+                        let index = 0x20 + (r.next_u32() % 0x18) as u16;
+                        if k == 0 {
+                            first = index as u32;
+                        }
+                        c.bus
+                            .write16(bank + SPCH_FIND_EVENT_ENTRIES + 2 * k as u32, index);
+                    }
+                    if i == sel && count > 0 && seed % 3 == 0 {
+                        c.bus.write16(bank + 4 * first, ev);
+                    }
+                }
+                let (req2, req3) = if seed % 2 == 0 {
+                    id_bytes
+                } else {
+                    (r.next_u32() as u8, r.next_u32() as u8)
+                };
+                c.bus.write16(REQUEST, ev);
+                c.bus.write8(REQUEST + 2, req2);
+                c.bus.write8(REQUEST + 3, req3);
+                c.g[A0][0] = sx(REQUEST);
+            },
+        );
+    }
+
+    // -- 0x003d95b8 SPCH_ResolveEventParts ------------------------------------
+
+    /// `SPCH_ResolveEventParts`: the shuffle/assign path (`mode == 1`, and
+    /// `mode == 3` with the layer's in-progress flag set) and the plain path
+    /// (three entries, the first sometimes empty), a request whose bank id
+    /// matches the first bank slot or not, variation lists with `0xfe` ids
+    /// whose column bit is clear or set, and real callees:
+    /// `SPCH_RandomNoRepeat`, `SPCH_AssignVariations`,
+    /// `SPCH_FindBankDataPtr` and `SPCH_DecodeSampleEntry` over a real
+    /// speech bank.
+    #[test]
+    fn spch_resolve_event_parts_matches() {
+        use crate::difftest::{check, scramble, Rng, DATA, GAME_GP};
+        // Speech bank header offsets (`SPCH_DecodeSampleEntry`'s view).
+        const BANK_FLAGS: u32 = 0x4;
+        const BANK_COUNT: u32 = 0x5;
+        const BANK_BLOCKS: u32 = 0x7;
+        const BANK_END: u32 = 0x8;
+        const REQUEST: u32 = DATA + 0x1000;
+        const H: u32 = DATA + 0x2000;
+        const LAYER: u32 = DATA + 0x4000;
+        const TABLE: u32 = DATA + 0x8000;
+        const BANK: u32 = DATA + 0x1_0000;
+        const BANK_OUT: u32 = DATA + 0x2_0000;
+        const BANK2: u32 = DATA + 0x3_0000;
+        const SLOTS: u32 = 0x0044_ffb8;
+        check(
+            ee::s14::f_003d95b8__generated,
+            spch_resolve_event_parts,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x3d95_b800 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x003d_95b8;
+                c.g[GP][0] = GAME_GP as u64;
+                // The speech bank: header fields over random entries.
+                for i in 0..0x240u32 {
+                    c.bus.write8(BANK + i, r.next_u32() as u8);
+                }
+                // Up to 4 extra bytes: the decode record's extras stay below
+                // the out pointer at sp+0x10 and the result at sp+0x18.
+                c.bus.write8(BANK + BANK_FLAGS, (r.next_u32() % 5) as u8);
+                c.bus.write8(BANK + BANK_COUNT, 0xff);
+                c.bus.write8(BANK + BANK_BLOCKS, r.next_u32() as u8);
+                c.bus
+                    .write16(BANK + BANK_END, (r.next_u32() % 0x200) as u16);
+                // The bank's decoded-data buffer: `SPCH_FindBankDataPtr`
+                // returns `lw(bank) + 0x18 + round2(u16 at lw(bank) + 0x10)`
+                // (0 with a zero count), and the columns are written there.
+                c.bus.write32(BANK, BANK_OUT);
+                c.bus.write32(BANK_OUT + 0x10, 0);
+                c.bus.write32(TABLE, BANK);
+                c.bus.write32(GAME_GP + SPCH_RESOLVE_GP_BANKS, TABLE);
+                // The eight bank slots: this bank, one other (its id does not
+                // match), and empty ones.
+                for i in 0..8u32 {
+                    c.bus.write32(
+                        SLOTS + 8 * i,
+                        match i {
+                            0 => BANK,
+                            1 => BANK2,
+                            _ => 0,
+                        },
+                    );
+                }
+                c.bus.write8(BANK2 + 8, r.next_u32() as u8);
+                c.bus.write8(BANK2 + 9, r.next_u32() as u8);
+                // The request's bank id (bytes 2, 3) matches or does not.
+                let end = c.bus.read16(BANK + BANK_END);
+                let (b2, b3) = if seed % 2 == 0 {
+                    ((end >> 8) as u8, end as u8)
+                } else {
+                    (r.next_u32() as u8, r.next_u32() as u8)
+                };
+                c.bus.write32(REQUEST, r.next_u32());
+                c.bus.write8(REQUEST + 2, b2);
+                c.bus.write8(REQUEST + 3, b3);
+                // Three selection entries (cnt 14), all in bank 0.
+                for i in 0..3u32 {
+                    let e = H + SPCH_RESOLVE_ENT_SIZE * i;
+                    c.bus.write16(e, 0);
+                    c.bus
+                        .write8(e + SPCH_RESOLVE_ENT_START, (r.next_u32() % 0x40) as u8);
+                    let len = if seed % 5 == 0 && i == 0 {
+                        0
+                    } else {
+                        1 + (r.next_u32() % 8) as u8
+                    };
+                    c.bus.write8(e + SPCH_RESOLVE_ENT_LEN, len);
+                    c.bus.write8(e + SPCH_RESOLVE_ENT_CUR, r.next_u32() as u8);
+                }
+                for i in 0..0x100u32 {
+                    c.bus.write8(H + SPCH_RESOLVE_TBL + i, r.next_u32() as u8);
+                }
+                // Three entries normally; a count below 4 (no entry) also
+                // covers the empty selection set.
+                let cnt = if seed % 7 == 3 { (seed % 4) as u8 } else { 14 };
+                c.bus.write8(LAYER + SPCH_RESOLVE_LAYER_CNT, cnt);
+                let n5 = if seed % 8 == 7 {
+                    1 + (r.next_u32() % 3) as u8
+                } else {
+                    0
+                };
+                c.bus.write8(LAYER + SPCH_RESOLVE_LAYER_N5, n5);
+                let mut lists = [0u8; 3];
+                for (i, slot) in lists.iter_mut().enumerate() {
+                    *slot = (r.next_u32() % 0x40) as u8;
+                    c.bus
+                        .write8(LAYER + SPCH_RESOLVE_LAYER_LIST + i as u32, *slot);
+                }
+                for li in lists {
+                    let base = LAYER + 4 * li as u32;
+                    for j in 0..0x18u32 {
+                        c.bus.write8(base + j, r.next_u32() as u8);
+                    }
+                    let n = if seed % 6 == 0 {
+                        0
+                    } else {
+                        1 + (r.next_u32() % 8) as u8
+                    };
+                    c.bus.write8(base + SPCH_RESOLVE_LIST_N, n);
+                    for j in 0..8u32 {
+                        let id = if seed % 3 == 0 || r.next_u32() % 2 == 0 {
+                            0xfe
+                        } else {
+                            0x7f
+                        };
+                        c.bus.write8(base + SPCH_RESOLVE_LIST_IDS + j, id);
+                        let col = if r.next_u32() % 3 == 0 {
+                            r.next_u32() as u8 | 0x80
+                        } else {
+                            r.next_u32() as u8 & 0x7f
+                        };
+                        c.bus.write8(base + SPCH_RESOLVE_LIST_COLS + j, col);
+                    }
+                }
+                c.g[A0][0] = sx(REQUEST);
+                c.g[A1][0] = sx(H);
+                c.g[A2][0] = sx(LAYER);
+                c.g[A3][0] = match seed % 4 {
+                    0 => 0,
+                    1 => 1,
+                    2 => 2,
+                    _ => 3,
+                };
+                c.g[T0][0] = 0;
+            },
+        );
+    }
+
+    // ------------------------------------------------- SND_MixDeclick16
+
+    /// `SND_MixDeclick16`: a ramp value and sixteen samples at both alignments
+    /// (edge-case float bits so NaNs and infinities go through the same ops).
+    #[test]
+    fn snd_mix_declick16_matches() {
+        check(
+            ee::s14::f_003c7600__generated,
+            snd_mix_declick16,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003c_7600, 0);
+                let ramp = DATA + 0x100;
+                let out = DATA + 0x200 + 4 * (seed % 2);
+                c.bus.write32(ramp, r.edge_f32());
+                for i in 0..16 {
+                    c.bus.write32(out + 4 * i, r.edge_f32());
+                }
+                c.g[A0][0] = ramp as u64;
+                c.g[A1][0] = out as u64;
+            },
+        );
+    }
+
+    /// `SND_EeVoiceActivate`: the voice table global pointing at 0x60-byte
+    /// entries in DATA, with the active voice count 0..3 and a voice index
+    /// 0..3.
+    #[test]
+    fn snd_ee_voice_activate_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA};
+        check(
+            ee::s14::f_003c83a0__generated,
+            snd_ee_voice_activate,
+            80,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003c_83a0, 0);
+                let entries = DATA + 0x4000;
+                let voice = seed % 4;
+                fill(c, &mut r, entries, 0x60 * 4 / 4);
+                c.bus
+                    .write32(SND_EE_VOICE_TABLE + SND_EE_VOICE_ENTRIES, entries);
+                c.bus
+                    .write8(SND_EE_VOICE_TABLE + SND_EE_VOICE_COUNT, (seed % 4) as u8);
+                c.g[A0][0] = sx(voice);
+                c.pc = 0x003c_83a0;
+            },
+        );
+    }
+
+    /// SPCH_EvalPartChoice: a bank header with 0..12 three-byte part entries,
+    /// a bank-type table that matches (the type writes `out`) or does not,
+    /// and a filter callback that is absent (r = -1), a fake (r > 0) or the
+    /// real 0-returning leaf 0x1406c0 (r = 0).
+    #[test]
+    fn spch_eval_part_choice_matches() {
+        covered(
+            ee::s14::f_003db208__generated,
+            spch_eval_part_choice,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d_b208, 4);
+                c.pc = 0x003d_b208;
+                let handle = DATA + 0x2000; // bank-type descriptor
+                let ty = DATA + 0x3000; // a table entry's type struct
+                let bank = DATA + 0x4000; // header and part entries
+                let vals = DATA + 0x5000;
+                let negmask = DATA + 0x6000;
+                c.g[A0][0] = sx(handle);
+                c.g[A1][0] = sx(bank);
+                c.g[A2][0] = sx(vals);
+                c.g[A3][0] = sx(negmask);
+
+                // The type table: on a match the entry's type pointer is
+                // stored and the type's byte +9 becomes `out`.
+                for i in 0..8 {
+                    c.bus.write32(SPCH_EVAL_PART_CHOICE_TYPE_TABLE + 8 * i, 0);
+                }
+                c.bus.write8(ty + 8, seed as u8);
+                c.bus.write8(ty + 9, (seed >> 8) as u8);
+                c.bus.write8(handle + 2, seed as u8);
+                c.bus.write8(handle + 3, (seed >> 8) as u8);
+                if seed % 2 == 0 {
+                    c.bus.write32(SPCH_EVAL_PART_CHOICE_TYPE_TABLE, ty);
+                }
+
+                // Header: table index 0 (entries at +0xc), entry count.
+                c.bus.write8(bank + 6, 0);
+                let n = if seed % 7 == 0 { 0 } else { seed % 12 + 1 };
+                c.bus.write8(bank + 7, n as u8);
+                for j in 0..n {
+                    let e = bank + 0xc + 3 * j;
+                    c.bus.write8(e, r.next_u32() as u8); // t.a: callback key
+                    c.bus.write8(e + 1, ((j + seed) % 22) as u8); // t.b: class
+                    c.bus.write8(e + 2, r.next_u32() as u8); // t.c
+                }
+                for k in 0..21 {
+                    c.bus.write32(vals + 4 * k, r.next_u32());
+                }
+
+                match seed % 4 {
+                    0 => c.bus.write32(SPCH_EVAL_PART_CHOICE_CB + 4, 0),
+                    3 => c.bus.write32(SPCH_EVAL_PART_CHOICE_CB + 4, 0x0014_06c0),
+                    _ => {
+                        c.bus.write32(SPCH_EVAL_PART_CHOICE_CB + 4, FAKE);
+                        for i in 0..8 {
+                            c.bus.write32(LOG_RESULTS + 4 * i, r.next_u32() % 5 + 1);
+                        }
+                    }
+                }
+            },
+        );
+    }
+
+    /// SPCH_PickWeighted: banks of 0..6 parts with class weights that are
+    /// zero or not, so the weighted pass picks parts until the total runs
+    /// out and the zero-weight pass appends the rest.
+    #[test]
+    fn spch_pick_weighted_matches() {
+        check(
+            ee::s14::f_003d8cb0__generated,
+            spch_pick_weighted,
+            150,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3d_8cb0, 0);
+                let h = DATA;
+                let out = DATA + 0x8000;
+                c.g[A0][0] = sx(h);
+                c.g[A1][0] = sx(out);
+                for i in 0..8u32 {
+                    let weight = match (seed + i) % 4 {
+                        0 => 0,
+                        1 => 1,
+                        2 => 3,
+                        _ => 0x11,
+                    };
+                    c.bus.write32(SPCH_PICK_WEIGHT_TABLE + 4 * i, weight);
+                }
+                let n = if seed % 9 == 0 { 0 } else { seed % 6 + 1 };
+                c.bus.write8(h + 6, n as u8); // the part count
+                                              // Part ids 8..13 keep their packed bytes clear of the id list.
+                for j in 0..n {
+                    c.bus.write16(h + 0xc + 2 * j, (8 + j) as u16);
+                    let class = ((seed + j * 3) % 8) as u32;
+                    let count = (seed / 6 + j) % 32;
+                    c.bus.write8(h + 4 * (8 + j), ((class << 5) | count) as u8);
+                }
+                for i in 0..8u32 {
+                    c.bus.write8(out + i, 0xee);
+                }
+            },
+        );
+    }
+
+    /// `SNDSTRM_SetPan`: a missing stream (`-8`) and real streams of every
+    /// handle in the table (the pan values are cached and `SND_SetPan` runs;
+    /// its channel lookup finds none, so it returns at once).
+    #[test]
+    fn sndstrm_set_pan_matches() {
+        check(
+            ee::s13::f_003b7f60__generated,
+            sndstrm_set_pan,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3b7f_6000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = (seed % 5) as u64; // the stream handle
+                c.g[A1][0] = r.next_u32() as u64; // left pan
+                c.g[A2][0] = r.next_u32() as u64; // right pan
+                let count = if seed % 3 == 0 { 0u8 } else { 5 };
+                c.bus.write8(SND_GETSTREAM_COUNT, count);
+                for h in 0..4u32 {
+                    c.bus.write32(
+                        SND_GETSTREAM_TABLE + 4 * h,
+                        if h < count as u32 {
+                            DATA + 0x1000 + 0x100 * h
+                        } else {
+                            0
+                        },
+                    );
+                    c.bus.write32(DATA + 0x1004 + 0x100 * h, h);
+                }
+            },
+        );
+    }
+
+    /// `SPCH_AllocQueueSlot`: a free record, an expired one (stolen and
+    /// freed), the `skip_own` slot, a record this channel owns (stolen and
+    /// counted down) and the exhausted queue (`-1`).
+    #[test]
+    fn spch_alloc_queue_slot_matches() {
+        check(
+            ee::s14::f_003d72a0__generated,
+            spch_alloc_queue_slot,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x3d72_a000 ^ seed as u64);
+                scramble(c, &mut r);
+                let mode = seed % 5;
+                let arg0 = match mode {
+                    3 => 0u64,   // owner below every record's owner value
+                    4 => 0x8000, // owner above it
+                    _ => ((seed % 6) * 3) as u64,
+                };
+                c.g[A0][0] = arg0;
+                c.g[A1][0] = (seed % 4) as u64; // the channel
+                c.g[A2][0] = (seed % 2) as u64; // skip this channel's own slot
+                let base = SPCH_ALLOC_QUEUE_SLOT_BASE;
+                // The per-channel "skip" words.
+                for i in 0..16u32 {
+                    c.bus.write32(base + 0x40 + 4 * i, i % 5);
+                }
+                for i in 0..16u32 {
+                    let rec = base + SPCH_ALLOC_QUEUE_SLOT_RECORD * i;
+                    // `c`: the used flag; mode 0 leaves a free record behind.
+                    let used = if mode == 0 && i == 1 { 0 } else { 1 };
+                    c.bus.write8(rec + 0x6a, used);
+                    c.bus.write8(rec + 0x6b, (i % 4) as u8);
+                    // `s8`: the "in flight" halfword (mode 4 leaves every record
+                    // in flight, so no phase can take one).
+                    let s8 = match mode {
+                        0 => (i % 3) as u16,
+                        4 => 1,
+                        _ => 0,
+                    };
+                    c.bus.write16(rec + 0x6c, s8);
+                    c.bus.write32(rec + 0x64, 1000 + i);
+                    let req = DATA + 0x1000 + 0x10 * i;
+                    let prio = if mode == 2 || mode == 3 {
+                        0
+                    } else {
+                        1 + (i % 5)
+                    };
+                    c.bus.write16(req + 2, prio as u16);
+                    c.bus.write16(req + 4, (i * 2) as u16);
+                    c.bus.write32(rec + 0x70, req);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn snd_utk_set_state_matches() {
+        use crate::difftest::{check, fill, scramble, Rng, DATA};
+        check(
+            ssx3_ee::s14::f_003ce0b8__generated,
+            snd_utk_set_state,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3ce0b8 ^ seed as u64);
+                scramble(c, &mut r);
+                let (snd, state) = (DATA + 0x100, DATA + 0x200);
+                // Junk in both structs, then the three source words.
+                fill(c, &mut r, snd, 0x400);
+                fill(c, &mut r, state, 4);
+                c.g[A0][0] = snd as u64;
+                c.g[A1][0] = state as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn spch_purge_channel_requests_matches() {
+        use crate::difftest::{check, Rng, DATA};
+        check(
+            ssx3_ee::s14::f_003d7d58__generated,
+            spch_purge_channel_requests,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x003d_7d58 ^ seed as u64);
+                // One slot is the purge's reference (`idx`, in a0); the other
+                // 15 are compared against it.
+                let idx = r.next_u32() % 16;
+                let f0_ref = r.next_u32() & 0x0fff_ffff;
+                let h_ref = r.next_u32() % 0x8000;
+                let channel = (r.next_u32() % 4) as u8;
+                let entries = DATA + 0x2000;
+                for i in 0..16u32 {
+                    let slot = SPCH_SLOT_TABLE + SPCH_SLOT_STRIDE * i;
+                    let same = i == idx;
+                    // Serials and tie-breaks straddle the reference (older,
+                    // equal, newer).
+                    let f0 = if same {
+                        f0_ref
+                    } else {
+                        (f0_ref as i32 + (r.next_u32() % 3) as i32 - 1) as u32
+                    };
+                    let h = if same {
+                        h_ref
+                    } else {
+                        (h_ref as i32 + (r.next_u32() % 3) as i32 - 1) as u32 & 0xffff
+                    };
+                    let chan = if r.next_u32() % 2 == 0 {
+                        channel
+                    } else {
+                        (r.next_u32() % 4) as u8
+                    };
+                    // Some slots idle (active 0) or busy (state != 0).
+                    let active = if r.next_u32() % 4 == 0 {
+                        0
+                    } else {
+                        1 + r.next_u32() % 255
+                    };
+                    let state = if r.next_u32() % 3 == 0 { 1u32 } else { 0 };
+                    c.bus.write32(slot + SPCH_SLOT_F0, f0);
+                    c.bus.write16(slot + SPCH_SLOT_H, h as u16);
+                    c.bus.write8(slot + SPCH_SLOT_ACTIVE, active as u8);
+                    c.bus.write8(slot + SPCH_SLOT_CHANNEL, chan);
+                    c.bus.write16(slot + SPCH_SLOT_S8, state as u16);
+                    // Freeing the slot walks this link when it is not -1;
+                    // -1 takes `SPCH_FreeQueueSlot`'s short path.
+                    c.bus.write16(slot + SPCH_SLOT_LINK, 0xffff);
+                    let entry = entries + 0x20 * i;
+                    c.bus.write32(slot + SPCH_SLOT_QUEUE, entry);
+                    c.bus.write8(
+                        entry + SPCH_QUEUE_STATUS,
+                        if r.next_u32() % 2 == 0 {
+                            100
+                        } else {
+                            (r.next_u32() % 256) as u8
+                        },
+                    );
+                    c.bus.write8(
+                        entry + SPCH_QUEUE_FLAGS,
+                        if r.next_u32() % 2 == 0 { 0x04 } else { 0 },
+                    );
+                }
+                c.g[A0][0] = idx as u64;
+            },
+        );
+    }
+
+    // -- shared fake callees (WScriptMan_TryRunKillScript, MeshAnim_Randomize
+    //    Nodes, SpeechSystem_StreamWaitCallback) ---------------------------
+    //
+    // These three tests fake callees that other units' tests call too, and the
+    // suite runs its tests in parallel, so a fake acts only in a machine that
+    // carries `FAKE_MAGIC` at `FAKE_CTRL` in its own RAM; every other machine
+    // (and the other side of the diff) gets the body the fake replaced.
+
+    pub(crate) const FAKE_CTRL: u32 = DATA + 0x5_f000;
+
+    pub(crate) const FAKE_MAGIC: u32 = 0x0c3a_11e5;
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// The body running under `slot` when `fake` is installed over it, kept so
+    /// the fake can chain to it (never the fake itself).
+    fn keep_prev(slot: fn(&mut Cpu), fake: fn(&mut Cpu), prev: &AtomicUsize) {
+        let cur = slot as usize;
+        if cur != fake as usize && cur != 0 {
+            prev.store(cur, Ordering::Relaxed);
+        }
+    }
+
+    /// Runs the body a fake replaced (nothing when there was none).
+    fn run_prev(c: &mut Cpu, prev: &AtomicUsize) {
+        let p = prev.load(Ordering::Relaxed);
+        if p == 0 {
+            return;
+        }
+        // SAFETY: `p` is a `fn(&mut Cpu)` read from an override slot.
+        let f = unsafe { std::mem::transmute::<usize, fn(&mut Cpu)>(p) };
+        f(c)
+    }
+
+    // -- WScriptMan_TryRunKillScript fake callees -------------------------
+    //
+    // `HasKillScript` is faked (logging through `difftest::fakes::fake` so the
+    // argument dance is compared) to pick the "no script" and "run it" paths;
+    // the world's script lookup is faked to "not found" (-1, which a forced
+    // fake result cannot express) so `RunKillScript` takes its short path.
+
+    static PREV_HAS_KILL: AtomicUsize = AtomicUsize::new(0);
+
+    static PREV_WORLD_OBJECT: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn wscript_fake_has_kill_script(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC {
+            return run_prev(c, &PREV_HAS_KILL);
+        }
+        let ret = c.g[RA][0] as u32;
+        crate::difftest::fakes::fake(c, crate::game::util::menu::WSCRIPT_HAS_KILL_SCRIPT, ret);
+        // The control word: 0 = no kill script, else one.
+        let control = c.bus.read32(crate::difftest::fakes::LOG_RESULTS);
+        c.g[V0][0] = (control != 0) as u64;
+    }
+
+    pub(crate) fn wscript_fake_world_object(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC {
+            return run_prev(c, &PREV_WORLD_OBJECT);
+        }
+        c.g[V0][0] = u64::MAX;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Installs the fakes and puts the previous bodies back on drop.
+    pub(crate) struct WscriptFakeSlots {
+        has_kill_script: fn(&mut Cpu),
+        world_object: fn(&mut Cpu),
+    }
+
+    impl WscriptFakeSlots {
+        pub(crate) fn install() -> Self {
+            unsafe {
+                let saved = Self {
+                    has_kill_script: ssx3_ee::s10::OVERRIDE_0030A598,
+                    world_object: ssx3_ee::s13::OVERRIDE_003A6B78,
+                };
+                keep_prev(
+                    saved.has_kill_script,
+                    wscript_fake_has_kill_script,
+                    &PREV_HAS_KILL,
+                );
+                keep_prev(
+                    saved.world_object,
+                    wscript_fake_world_object,
+                    &PREV_WORLD_OBJECT,
+                );
+                ssx3_ee::s10::OVERRIDE_0030A598 = wscript_fake_has_kill_script;
+                ssx3_ee::s13::OVERRIDE_003A6B78 = wscript_fake_world_object;
+                saved
+            }
+        }
+    }
+
+    impl Drop for WscriptFakeSlots {
+        fn drop(&mut self) {
+            unsafe {
+                ssx3_ee::s10::OVERRIDE_0030A598 = self.has_kill_script;
+                ssx3_ee::s13::OVERRIDE_003A6B78 = self.world_object;
+            }
+        }
+    }
+
+    // -- MeshAnim_RandomizeNodes fake callee ------------------------------
+    //
+    // The RNG (`Rand_NextMain`) is faked, logging every register at each of
+    // the five calls per node so the caller's argument dance is compared.
+
+    static PREV_RAND: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn mesh_anim_fake_rand(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC {
+            return run_prev(c, &PREV_RAND);
+        }
+        let ret = c.g[RA][0] as u32;
+        crate::difftest::fakes::fake(c, crate::game::object::instanceman::MESH_RAND, ret);
+    }
+
+    /// Installs the RNG fake and puts the previous body back on drop.
+    pub(crate) struct MeshAnimFakeSlots {
+        rand: fn(&mut Cpu),
+    }
+
+    impl MeshAnimFakeSlots {
+        pub(crate) fn install() -> Self {
+            unsafe {
+                let saved = Self {
+                    rand: ssx3_ee::s10::OVERRIDE_003177F0,
+                };
+                keep_prev(saved.rand, mesh_anim_fake_rand, &PREV_RAND);
+                ssx3_ee::s10::OVERRIDE_003177F0 = mesh_anim_fake_rand;
+                saved
+            }
+        }
+    }
+
+    impl Drop for MeshAnimFakeSlots {
+        fn drop(&mut self) {
+            unsafe {
+                ssx3_ee::s10::OVERRIDE_003177F0 = self.rand;
+            }
+        }
+    }
+
+    // -- SpeechSystem_StreamWaitCallback fake callees ---------------------
+    //
+    // The stream-array getters and the bank timer are faked (logging every
+    // register at the call); their control values live at a fixed address.
+
+    pub(crate) const STREAM_FAKE_CONTROL: u32 = 0x0080_5000;
+
+    pub(crate) fn stream_fake_log(c: &mut Cpu, target: u32) {
+        let ret = c.g[RA][0] as u32;
+        crate::difftest::fakes::fake(c, target, ret);
+    }
+
+    static PREV_GET_STATE: AtomicUsize = AtomicUsize::new(0);
+    static PREV_IS_PLAYING: AtomicUsize = AtomicUsize::new(0);
+    static PREV_TIME_LEFT: AtomicUsize = AtomicUsize::new(0);
+    static PREV_ADD_TIMER: AtomicUsize = AtomicUsize::new(0);
+    static PREV_INSTANCE_SLOT: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn stream_fake_get_state(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC {
+            return run_prev(c, &PREV_GET_STATE);
+        }
+        stream_fake_log(c, crate::game::sound::bankmonitor::STREAM_ARRAY_GET_STATE);
+        c.g[V0][0] = c.bus.read32(STREAM_FAKE_CONTROL) as u64;
+    }
+
+    pub(crate) fn stream_fake_is_playing(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC {
+            return run_prev(c, &PREV_IS_PLAYING);
+        }
+        stream_fake_log(c, crate::game::sound::bankmonitor::STREAM_ARRAY_IS_PLAYING);
+        c.g[V0][0] = c.bus.read32(STREAM_FAKE_CONTROL + 4) as u64;
+    }
+
+    pub(crate) fn stream_fake_time_left(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC {
+            return run_prev(c, &PREV_TIME_LEFT);
+        }
+        stream_fake_log(c, crate::game::sound::bankmonitor::STREAM_ARRAY_TIME_LEFT);
+        c.f[0] = c.bus.read32(STREAM_FAKE_CONTROL + 8);
+    }
+
+    pub(crate) fn stream_fake_add_timer(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC {
+            return run_prev(c, &PREV_ADD_TIMER);
+        }
+        stream_fake_log(c, crate::game::sound::bankmonitor::STREAM_MONITOR_ADD_TIMER);
+    }
+
+    pub(crate) fn stream_fake_instance_slot(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC {
+            return run_prev(c, &PREV_INSTANCE_SLOT);
+        }
+        stream_fake_log(c, crate::game::sound::bankmonitor::STREAM_INSTANCE_SLOT);
+        c.g[V0][0] = c.bus.read32(STREAM_FAKE_CONTROL + 12) as u64;
+    }
+
+    /// Installs the fakes and puts the previous bodies back on drop.
+    pub(crate) struct StreamFakeSlots {
+        get_state: fn(&mut Cpu),
+        is_playing: fn(&mut Cpu),
+        time_left: fn(&mut Cpu),
+        add_timer: fn(&mut Cpu),
+        instance_slot: fn(&mut Cpu),
+    }
+
+    impl StreamFakeSlots {
+        pub(crate) fn install() -> Self {
+            unsafe {
+                let saved = Self {
+                    get_state: ssx3_ee::s08::OVERRIDE_002AAE08,
+                    is_playing: ssx3_ee::s08::OVERRIDE_002AB028,
+                    time_left: ssx3_ee::s08::OVERRIDE_002AAE78,
+                    add_timer: ssx3_ee::s08::OVERRIDE_002ADCA0,
+                    instance_slot: ssx3_ee::s08::OVERRIDE_002B1220,
+                };
+                keep_prev(saved.get_state, stream_fake_get_state, &PREV_GET_STATE);
+                keep_prev(saved.is_playing, stream_fake_is_playing, &PREV_IS_PLAYING);
+                keep_prev(saved.time_left, stream_fake_time_left, &PREV_TIME_LEFT);
+                keep_prev(saved.add_timer, stream_fake_add_timer, &PREV_ADD_TIMER);
+                keep_prev(
+                    saved.instance_slot,
+                    stream_fake_instance_slot,
+                    &PREV_INSTANCE_SLOT,
+                );
+                ssx3_ee::s08::OVERRIDE_002AAE08 = stream_fake_get_state;
+                ssx3_ee::s08::OVERRIDE_002AB028 = stream_fake_is_playing;
+                ssx3_ee::s08::OVERRIDE_002AAE78 = stream_fake_time_left;
+                ssx3_ee::s08::OVERRIDE_002ADCA0 = stream_fake_add_timer;
+                ssx3_ee::s08::OVERRIDE_002B1220 = stream_fake_instance_slot;
+                saved
+            }
+        }
+    }
+
+    impl Drop for StreamFakeSlots {
+        fn drop(&mut self) {
+            unsafe {
+                ssx3_ee::s08::OVERRIDE_002AAE08 = self.get_state;
+                ssx3_ee::s08::OVERRIDE_002AB028 = self.is_playing;
+                ssx3_ee::s08::OVERRIDE_002AAE78 = self.time_left;
+                ssx3_ee::s08::OVERRIDE_002ADCA0 = self.add_timer;
+                ssx3_ee::s08::OVERRIDE_002B1220 = self.instance_slot;
+            }
+        }
+    }
+
+    /// A channel table entry that is unbound, one whose event is missing and
+    /// one with a bound event (with and without the request-list flag byte),
+    /// over an all-zero SPCH state.
+    #[test]
+    fn spch_select_request_for_channel_matches() {
+        use crate::difftest::fakes::machine;
+        const SLOTS: u32 = 0x0044_ffb8;
+        const EVENT: u32 = DATA + 0x2000;
+        check(
+            ee::s14::f_003d7a50__generated,
+            spch_select_request_for_channel,
+            200,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3d_7a50, 0);
+                c.pc = 0x003d_7a50;
+                let idx = seed % 8;
+                let entry = 0x0045_0660 + 8 * idx;
+                // Zero the SPCH state the lookup and the selection read.
+                for a in (0x0045_0000..0x0045_1000).step_by(4) {
+                    c.bus.write32(a, 0);
+                }
+                let h = 0x1000u32 + seed % 8;
+                c.bus.write16(entry, h as u16);
+                c.bus.write8(entry + 2, (seed % 5) as u8);
+                c.bus.write8(entry + 3, (seed / 5 % 5) as u8);
+                let bound = match seed % 4 {
+                    0 => false, // unbound: handle 0xffff
+                    1 => false, // bound, but no event slot matches
+                    _ => true,
+                };
+                if seed % 4 == 0 {
+                    c.bus.write16(entry, 0xffff);
+                }
+                if bound {
+                    // One of the eight event slots carries the event.
+                    c.bus.write32(SLOTS + 8 * (seed % 8), EVENT);
+                    for i in 0..0x40u32 {
+                        c.bus.write8(EVENT + i, 0);
+                    }
+                    c.bus.write8(EVENT + 9, (seed % 5) as u8);
+                    c.bus.write8(EVENT + 8, (seed / 5 % 5) as u8);
+                    c.bus.write16(EVENT + 0x10, 1);
+                    c.bus.write16(EVENT + 0x18, 0);
+                    c.bus.write16(EVENT, h as u16);
+                    // The event's counters and flags.
+                    c.bus
+                        .write8(EVENT + 0xa, if seed % 3 == 0 { 0x10 } else { 0 });
+                    c.bus.write8(EVENT + 6, (seed % 4) as u8);
+                    c.bus.write8(EVENT + 7, (seed % 3) as u8);
+                    c.bus.write8(EVENT + 0xc, 1);
+                    c.bus.write16(EVENT + 0xe, 0);
+                }
+                c.g[A0][0] = idx as u64;
+            },
+        );
+    }
+
+    // -- 0x003d7c38 SPCH_FreeQueueSlot ---------------------------------------
+
+    /// A queue entry's address for `slot`.
+    pub(crate) fn oc325_spch_entry(slot: u32) -> u32 {
+        OC325_SPCH_QUEUES + OC325_SPCH_QUEUE_ENTRY * slot
+    }
+
+    /// A slot (0..15, or out of range) in a queue `d`: its in-use halfword,
+    /// its queue's count, heads and next entry (a chain of live entries
+    /// that always terminates).
+    pub(crate) fn oc325_free_slot_setup(c: &mut Cpu, seed: u32, force_chain: bool) {
+        let mut r = machine(c, seed, 0x003d_7c38, 0);
+        let mode = if force_chain { 4 } else { seed % 6 };
+        let slot = if !force_chain && seed % 7 == 0 {
+            u64::MAX
+        } else {
+            (r.next_u32() % 16) as u64
+        };
+        c.g[A0][0] = slot;
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x003d_7c38;
+        if slot >= 16 {
+            return;
+        }
+        let s = slot as u32;
+        let entry = oc325_spch_entry(s);
+        let d = r.next_u32() % 8;
+        c.bus.write8(entry + OC325_SPCH_QUEUE_ID, d as u8);
+        c.bus.write8(entry + OC325_SPCH_FLAG, 0);
+        c.bus.write32(
+            OC325_SPCH_QUEUES + 4 * d,
+            if seed % 3 == 0 { 0 } else { r.next_u32() % 5 },
+        );
+        c.bus.write32(
+            OC325_SPCH_QUEUES + OC325_SPCH_HEADS_A + 4 * d,
+            if seed % 4 == 0 { s } else { r.next_u32() % 16 },
+        );
+        c.bus.write32(
+            OC325_SPCH_QUEUES + OC325_SPCH_HEADS_B + 4 * d,
+            if seed % 5 == 0 { s } else { r.next_u32() % 16 },
+        );
+        c.bus.write16(
+            entry + OC325_SPCH_IN_USE,
+            if force_chain || seed % 2 == 0 { 0 } else { 1 },
+        );
+        let next: u16 = match mode {
+            0 => 0xffff,
+            1 => (16 + r.next_u32() % 16) as u16,
+            _ => 0xffff,
+        };
+        c.bus.write16(entry + OC325_SPCH_NEXT, next);
+        if mode >= 2 {
+            // A chain of 3..5 distinct entries (never the slot itself), each
+            // live and bound; it ends at -1, at an out-of-range index, at an
+            // entry that is not in use, or at one with the flag cleared.
+            let len = if force_chain {
+                3 + (r.next_u32() % 3) as usize
+            } else {
+                1 + (r.next_u32() % 5) as usize
+            };
+            let base = (s.wrapping_add(1).wrapping_add(r.next_u32() % 16)) % 16;
+            let mut nodes = Vec::with_capacity(len);
+            for k in 0..len {
+                nodes.push((base + k as u32) % 16);
+            }
+            for (k, &j) in nodes.iter().enumerate() {
+                let je = oc325_spch_entry(j);
+                let live = !(mode == 3 && k == 0);
+                c.bus
+                    .write16(je + OC325_SPCH_IN_USE, if live { 1 } else { 0 });
+                c.bus.write8(
+                    je + OC325_SPCH_FLAG,
+                    if mode == 2 && k + 1 == len { 0 } else { 1 },
+                );
+                let nxt: u16 = match k + 1 {
+                    k1 if k1 < len => nodes[k1] as u16,
+                    _ if mode == 5 => (16 + r.next_u32() % 16) as u16,
+                    _ => 0xffff,
+                };
+                c.bus.write16(je + OC325_SPCH_NEXT, nxt);
+            }
+            // Point a[] at the first node so the chain unlink runs too.
+            if seed % 2 == 0 {
+                c.bus
+                    .write32(OC325_SPCH_QUEUES + OC325_SPCH_HEADS_A + 4 * d, nodes[0]);
+            }
+            c.bus.write16(entry + OC325_SPCH_NEXT, nodes[0] as u16);
+        }
+    }
+
+    driven!(oc325_gen_free_slot, ee::s14::f_003d7c38__generated);
+
+    driven!(oc325_hand_free_slot, spch_free_queue_slot);
+
+    /// Every guard (out of range, in use), both head unlinks, and chains
+    /// that end at -1, past 16, at a dead entry and at an unbound entry.
+    #[test]
+    fn spch_free_queue_slot_matches() {
+        check_lohi(
+            ee::s14::f_003d7c38__generated,
+            spch_free_queue_slot,
+            240,
+            &|c, seed| oc325_free_slot_setup(c, seed, false),
+        );
+        check_events(oc325_gen_free_slot, oc325_hand_free_slot, 60, &|c, seed| {
+            let mut r = Rng(0x3d7c_38 ^ seed as u64);
+            oc325_free_slot_setup(c, seed, true);
+            let mode = schedule(c, &mut r, seed, 0x003d_7c38);
+            c.next_event = c.cycles + 2 + (r.next_u32() % 40) as u64;
+            mode
+        });
+    }
+
+    // ------------------------------------------------------------------ tests
+
+    /// `SPCH_FindBankType` over a bank table whose single matching entry may
+    /// miss on either compared byte; both `check` bytes of the key vary.
+    #[test]
+    fn spch_find_bank_type_matches() {
+        check(
+            ee::s14::f_003d8330__generated,
+            spch_find_bank_type,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3d83_3000 ^ seed as u64);
+                scramble(c, &mut r);
+                let key = DATA + 0x200;
+                let out = DATA + 0x300;
+                c.g[A0][0] = sx(key);
+                c.g[A1][0] = sx(out);
+                let k2 = (seed.wrapping_mul(37) % 251 + 1) as u8;
+                let k3 = (seed.wrapping_mul(11) % 249 + 3) as u8;
+                c.bus.write8(key + 2, k2);
+                c.bus.write8(key + 3, k3);
+                c.bus.write32(out, r.next_u32());
+                let hit = seed % 9;
+                for i in 0..8u32 {
+                    let e = OC327_SPCH_BANK_TABLE + i * 8;
+                    if i == hit {
+                        let block = DATA + 0x400 + i * 0x20;
+                        c.bus.write32(e, block);
+                        // 0: match; 1: the +9 byte differs; 2: the +8 byte differs.
+                        let variant = seed % 3;
+                        c.bus
+                            .write8(block + 9, if variant == 1 { k2 ^ 0x5a } else { k2 });
+                        c.bus
+                            .write8(block + 8, if variant == 2 { k3 ^ 0x5a } else { k3 });
+                    } else if seed % 2 == 0 {
+                        c.bus.write32(e, 0);
+                    } else {
+                        let block = DATA + 0x600 + i * 0x20;
+                        c.bus.write32(e, block);
+                        c.bus.write8(block + 9, k2.wrapping_add(1));
+                        c.bus.write8(block + 8, k3);
+                    }
+                }
+            },
+        );
+    }
+
+    /// `SPCH_FindBankUserData`: the same scan, storing the entry's user word.
+    #[test]
+    fn spch_find_bank_user_data_matches() {
+        check(
+            ee::s14::f_003d81f0__generated,
+            spch_find_bank_user_data,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3d81_f000 ^ seed as u64);
+                scramble(c, &mut r);
+                let key = DATA + 0x200;
+                let out = DATA + 0x300;
+                c.g[A0][0] = sx(key);
+                c.g[A1][0] = sx(out);
+                let k2 = (seed.wrapping_mul(37) % 251 + 1) as u8;
+                let k3 = (seed.wrapping_mul(11) % 249 + 3) as u8;
+                c.bus.write8(key + 2, k2);
+                c.bus.write8(key + 3, k3);
+                c.bus.write32(out, r.next_u32());
+                let hit = seed % 9;
+                for i in 0..8u32 {
+                    let e = OC327_SPCH_BANK_TABLE + i * 8;
+                    c.bus.write32(e + 4, r.next_u32());
+                    if i == hit {
+                        let block = DATA + 0x400 + i * 0x20;
+                        c.bus.write32(e, block);
+                        let variant = seed % 3;
+                        c.bus
+                            .write8(block + 9, if variant == 1 { k2 ^ 0x5a } else { k2 });
+                        c.bus
+                            .write8(block + 8, if variant == 2 { k3 ^ 0x5a } else { k3 });
+                    } else if seed % 2 == 0 {
+                        c.bus.write32(e, 0);
+                    } else {
+                        let block = DATA + 0x600 + i * 0x20;
+                        c.bus.write32(e, block);
+                        c.bus.write8(block + 9, k2.wrapping_add(1));
+                        c.bus.write8(block + 8, k3);
+                    }
+                }
+            },
+        );
+    }
+
+    /// `SPCH_SentenceAppend`: free (`-1`) and matching ids append, another id
+    /// returns; the slot counter 0..8 covers both the full and the append
+    /// paths, and the record count 0..3 the empty q-table.
+    #[test]
+    fn spch_sentence_append_matches() {
+        check(
+            ee::s14::f_003d9ac8__generated,
+            spch_sentence_append,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3d9a_c800 ^ seed as u64);
+                scramble(c, &mut r);
+                let g = OC327_SPCH_SENTENCE_GLOBALS;
+                let h = DATA + 0x1000;
+                let a2 = DATA + 0x2000;
+                let a3 = DATA + 0x3000;
+                let a5 = DATA + 0x4000;
+                for i in 0..0x120u32 / 4 {
+                    c.bus.write32(h + i * 4, r.next_u32());
+                }
+                for i in 0..20u32 {
+                    c.bus.write32(a5 + i * 4, r.next_u32());
+                }
+                let cnt = (seed % 4) as u8;
+                c.bus.write8(a3 + 4, cnt * 4);
+                c.bus.write32(a3, r.next_u32());
+                let id = 0x21 + (seed % 5);
+                let f0 = match seed % 3 {
+                    0 => 0xffff_ffff,
+                    1 => id,
+                    _ => id.wrapping_add(1),
+                };
+                c.bus.write32(g, f0);
+                c.bus.write32(
+                    g + 4,
+                    match seed % 4 {
+                        0 => 7,
+                        1 => 8,
+                        2 => 9,
+                        _ => seed % 8,
+                    },
+                );
+                c.bus.write32(g + 8, seed % 40);
+                c.g[A0][0] = sx(h);
+                // Sometimes junk in the id's upper half: the compare is 64-bit.
+                c.g[A1][0] = if seed % 7 == 0 {
+                    (r.next_u32() as u64) << 32 | id as u64
+                } else {
+                    sx(id)
+                };
+                c.g[A2][0] = sx(a2);
+                c.g[A3][0] = sx(a3);
+                c.g[T0][0] = (seed as u64) << 16 | 0x40;
+                c.g[T1][0] = sx(a5);
+            },
+        );
+    }
+
+    /// `SPCH_ResetSentence` clears the whole sentence state (globals, the
+    /// eight slots and the 48 q entries).
+    #[test]
+    fn spch_reset_sentence_matches() {
+        check(
+            ee::s14::f_003d9a40__generated,
+            spch_reset_sentence,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x3d9a_4000 ^ seed as u64);
+                scramble(c, &mut r);
+                for i in 0..(0x500u32 / 4) {
+                    c.bus
+                        .write32(OC327_SPCH_SENTENCE_GLOBALS + i * 4, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// `SND_DspResample_Init` on a scrambled resampler object.
+    #[test]
+    fn snd_dsp_resample_init_matches() {
+        check(
+            ee::s14::f_003cbb28__generated,
+            snd_dsp_resample_init,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3cbb_2800 ^ seed as u64);
+                scramble(c, &mut r);
+                let obj = DATA + 0x100 + (seed % 4) * 0x40;
+                c.g[A0][0] = sx(obj);
+                for i in 0..0x40u32 / 4 {
+                    c.bus.write32(obj + i * 4, r.next_u32());
+                }
             },
         );
     }

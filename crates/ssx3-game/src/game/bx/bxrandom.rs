@@ -2,6 +2,7 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi::set_reg;
+use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Frame;
@@ -15,6 +16,7 @@ use ssx3_ee_rt::Cpu;
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_77f0, rand_next_main, "Rand_NextMain"),
     (0x0031_7810, rand_next_game, "Rand_NextGame"),
+    (0x0031_78e0, rand_save_game_state, "Rand_SaveGameState"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -71,6 +73,34 @@ pub fn rand_next_game(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Rand_SaveGameState (0x3178e0)
+
+/// The game RNG's 0x18-byte state block.
+pub(crate) const RAND_STATE: u32 = 0x004f_f030;
+
+pub(crate) const RAND_STATE_BYTES: u64 = 0x18;
+
+/// `EA_MemCopy(dst, src, n)` (0x3e6574, cross-shard).
+pub(crate) const RAND_MEM_COPY: u32 = 0x003e_6574;
+
+/// `void Rand_SaveGameState(void* dst)` (0x3178e0): copy the game RNG's
+/// 0x18-byte state (`0x4ff030`) into `dst`. Frame 0x10.
+pub fn rand_save_game_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        // `a1 = 0x500000 - 0xfd0`.
+        c.g[A1][0] = RAND_STATE as u64;
+        frame.save_ra(c, 0);
+        c.g[A2][0] = RAND_STATE_BYTES;
+        call_ptr(c, RAND_MEM_COPY, 0x0031_78f8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -112,6 +142,26 @@ pub(crate) mod tests {
                 scramble(c, &mut r);
                 c.pc = 0x0031_7810;
                 fill(c, &mut r, RAND_GAME_STATE, 8);
+            },
+        );
+    }
+
+    #[test]
+    fn rand_save_game_state_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA};
+        check(
+            ssx3_ee::s10::f_003178e0__generated,
+            rand_save_game_state,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_78e0, 0);
+                // The RNG state and a junk destination (sometimes unaligned,
+                // which takes EA_MemCopy's byte head).
+                fill(c, &mut r, RAND_STATE, 6);
+                let dst = DATA + 0x100 + (seed as u32 % 4);
+                fill(c, &mut r, dst & !3, 8);
+                c.g[A0][0] = dst as u64;
             },
         );
     }

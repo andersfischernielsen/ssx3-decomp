@@ -262,6 +262,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0035_7000, position_modifier_save, "PositionModifier_Save"),
     (0x0035_78a8, particle_ctor_2, "Particle_ctor_2"),
+    (
+        0x0035_54b0,
+        mod_obj_set_transform_modifier,
+        "ModObj_SetTransformModifier",
+    ),
+    (
+        0x0035_5cb0,
+        mod_obj_add_particle_modifier,
+        "ModObj_AddParticleModifier",
+    ),
+    (
+        0x0035_5d10,
+        modobj_add_dynamic_particle_modifier,
+        "ModObj_AddDynamicParticleModifier",
+    ),
+    (0x0035_6cc8, mod_obj_v22, "ModObj_v22"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -353,6 +369,10 @@ pub(crate) mod callee {
         addr: 0x0035_2dd0,
         f: ee::s11::ModifierBlock_Render,
     };
+
+    pub(crate) use crate::game::lib::snd::callee::DYNAMIC_PARTICLE_MODIFIER_CTOR;
+
+    pub(crate) use crate::game::lib::snd::callee::MODOBJ_LINK_PARTICLE_MODIFIER;
 }
 
 /// `gp`-relative globals used here.
@@ -4240,6 +4260,259 @@ pub fn particle_ctor_2(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// ModObj_AddParticleModifier (0x355cb0)
+
+/// `EA_MemAllocNamed(size, name, flags, align)` (0x317d70).
+pub(crate) const MOD_OBJ_ADD_PARTICLE_ALLOC: u32 = 0x0031_7d70;
+
+/// `ParticleModifier_ctor(self, desc, link)` (0x3458c0).
+pub(crate) const MOD_OBJ_ADD_PARTICLE_CTOR: Callee = Callee {
+    addr: 0x0034_58c0,
+    f: ee::s11::ParticleModifier_ctor,
+};
+
+/// `ModObj_LinkParticleModifier(self, mod)` (0x355658).
+pub(crate) const MOD_OBJ_ADD_PARTICLE_LINK: Callee = Callee {
+    addr: 0x0035_5658,
+    f: ee::s11::ModObj_LinkParticleModifier,
+};
+
+/// `void ModObj_AddParticleModifier(cMoveNode* self, void* desc)` (0x355cb0):
+/// allocate a 0x1f0-byte particle modifier (named `D_0048e978`), construct it
+/// with `desc` and `self->field_18`, and link it into the node's modifier
+/// list. Frame 0x30 (ra +0, s0 +0x20, s1 +0x10).
+pub fn mod_obj_add_particle_modifier(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x30);
+        c.g[A3][0] = 0;
+        frame.save(c, S1, 0x10);
+        c.g[A2][0] = 0x2000_0000;
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A1][0]; // desc
+        c.g[S0][0] = c.g[A0][0]; // self
+        c.g[A1][0] = 0x0049_0000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x1f0;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1688)); // D_0048e978
+        call_ptr(c, MOD_OBJ_ADD_PARTICLE_ALLOC, 0x0035_5ce0)?;
+        // ParticleModifier_ctor(mod, desc, self->field_18)
+        c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[V0][0];
+        MOD_OBJ_ADD_PARTICLE_CTOR.call(c, 0x0035_5cf0)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        MOD_OBJ_ADD_PARTICLE_LINK.call(c, 0x0035_5cfc)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `MultiSplineModifier_Release` (0x35aae0).
+pub(crate) const MODOBJ_RELEASE: u32 = 0x0035_aae0;
+
+/// `int cMoveNode::decFocusCount(tInstanceRecord* pInst)` (0x356cc8): if the
+/// move node's block at +0x1c holds a node whose virtual query (slot 26)
+/// returns 2, release that node and return its result; otherwise 0.
+pub fn mod_obj_v22(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V1][0] = Addr(r32(c, S0)).off(0x1c).lw(c);
+        let has_block = c.g[V1][0] != 0;
+        c.g[S1][0] = c.g[A1][0];
+        if !has_block {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+            c.cycles += 1;
+            frame.restore(c, S0, 0x20);
+        } else {
+            c.cycles += 3;
+            c.g[A1][0] = Addr(r32(c, V1)).lw(c);
+            let has_node = c.g[A1][0] != 0;
+            c.g[V0][0] = 0;
+            let mut restored = false;
+            if has_node {
+                // node->vt[26].fn(node + delta) == 2?
+                c.cycles += 8;
+                c.g[V1][0] = Addr(r32(c, A1)).lw(c);
+                c.g[A0][0] = Addr(r32(c, V1)).off(0xd0).lh(c);
+                c.g[V0][0] = Addr(r32(c, V1)).off(0xd4).lw(c);
+                let query = r32(c, V0);
+                c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+                call_ptr(c, query, 0x0035_6d08)?;
+                c.g[V1][0] = 0x2;
+                let not_two = c.g[V0][0] != c.g[V1][0];
+                c.g[V0][0] = 0;
+                if !not_two {
+                    c.cycles += 6;
+                    c.g[V0][0] = Addr(r32(c, S0)).off(0x1c).lw(c);
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+                    call_ptr(c, MODOBJ_RELEASE, 0x0035_6d24)?;
+                    frame.restore(c, S0, 0x20);
+                    restored = true;
+                }
+            }
+            if !restored {
+                c.cycles += 1;
+                frame.restore(c, S0, 0x20);
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ModObj_AddDynamicParticleModifier (0x355d10)
+// ---------------------------------------------------------------------------
+
+/// The pool descriptor `D_0048E990` (`0x490000 - 0x1670`) a dynamic-particle
+/// modifier is allocated from.
+pub(crate) const MODOBJ_PARTICLE_MODIFIER_POOL: u32 = 0x0048_e990;
+
+/// `void cMoveNode_addDynamicParticle(cMoveNode* self, void* desc, int index,
+/// void* a4)` (0x355d10): when `index` names one of the node's dynamic
+/// particles, allocate a 0x270-byte modifier, construct it from `desc`, the
+/// node and `a4`, and link it into the node's modifier list; an out-of-range
+/// index deletes `desc` instead.
+pub fn modobj_add_dynamic_particle_modifier(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A2][0]; // index
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A0][0]; // self
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A1][0]; // desc
+        frame.save_ra(c, 0);
+        let negative = (c.g[S0][0] as i64) < 0;
+        c.g[S3][0] = c.g[A3][0]; // a4
+        let mut in_range = false;
+        if !negative {
+            c.cycles += 6;
+            c.g[V0][0] = Addr(r32(c, S1)).off(0x18).lw(c);
+            c.g[A0][0] = Addr(r32(c, V0)).off(0x80).lw(c);
+            c.g[V1][0] = Addr(r32(c, A0)).off(4).lw(c);
+            c.g[V1][0] = ((c.g[S0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+            in_range = c.g[V1][0] != 0;
+            c.g[A1][0] = 0x490000;
+        }
+        if in_range {
+            c.cycles += 15;
+            c.g[A0][0] = 0x270;
+            c.g[A1][0] = sx(MODOBJ_PARTICLE_MODIFIER_POOL);
+            c.g[A2][0] = 0x2000_0000;
+            c.g[A3][0] = 0;
+            call_ptr(c, 0x0031_7d70, 0x0035_5d78)?; // cMemMan_alloc
+            c.g[A2][0] = Addr(r32(c, S1)).off(0x18).lw(c);
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.g[T0][0] = c.g[S3][0];
+            c.g[A3][0] = c.g[S0][0];
+            callee::DYNAMIC_PARTICLE_MODIFIER_CTOR.call(c, 0x0035_5d90)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[V0][0];
+            callee::MODOBJ_LINK_PARTICLE_MODIFIER.call(c, 0x0035_5d9c)?;
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, 0x0031_7e50, 0x0035_5d5c)?; // operator delete(desc)
+        }
+        frame.restore(c, S0, 0x40);
+        c.cycles += 6;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        c.g[RA][0] = c.ld(frame.at(c, 0));
+        let ra = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x50));
+        c.pc = ra;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x003554b0 ModObj_SetTransformModifier
+
+/// `void cMoveNode::addTransformModifier(cMoveNode *self, cTransformModifier *mod)`
+/// (0x3554b0): notify the vtable's slot 49 (prepare), create or reset the
+/// node's modifier block, store `mod` at its head, notify slot 48 (refresh)
+/// and flag the node's object as transformed (clear 0x20, set 0x40).
+pub fn mod_obj_set_transform_modifier(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        // vtable[49](self)
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0xc).lw(c);
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x188).lh(c);
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x18c).lw(c);
+        let target = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0035_54dc)?;
+        c.g[A0][0] = Addr(c.g[S0][0] as u32).off(0x1c).lw(c);
+        let has_block = c.g[A0][0] != 0;
+        if has_block {
+            c.cycles += 3;
+            Callee {
+                addr: 0x0035_30d0,
+                f: ee::s11::ModifierBlock_FreeTransform,
+            }
+            .call(c, 0x0035_5500)?;
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x0035_5468,
+                f: ee::s11::ModObj_CreateModifierBlock,
+            }
+            .call(c, 0x0035_54f0)?;
+        }
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x1c).lw(c);
+        // Store the modifier at the block's head and refresh the node.
+        c.cycles += 18;
+        c.sw(c.g[V0][0] as u32, c.g[S1][0]);
+        c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0xc).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x180).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x184).lw(c);
+        let refresh = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, refresh, 0x0035_551c)?;
+        c.g[A0][0] = Addr(c.g[S0][0] as u32).off(0x18).lw(c);
+        c.g[V1][0] = 0xffff_ffff_ffff_0000u64;
+        c.g[V1][0] |= 0xffdf;
+        frame.restore(c, S0, 0x20);
+        c.g[V0][0] = Addr(c.g[A0][0] as u32).off(8).lw(c);
+        frame.restore(c, S1, 0x10);
+        c.g[V0][0] &= c.g[V1][0];
+        frame.restore_ra(c, 0);
+        c.g[V0][0] |= 0x40;
+        c.sw((c.g[A0][0] as u32).wrapping_add(8), c.g[V0][0]);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6491,6 +6764,260 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(OBJECT);
                 c.g[A3][0] = sx(BUF);
                 c.g[T0][0] = if seed % 5 == 0 { 0 } else { sx(NODE) };
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+    pub(crate) use crate::game::ai::ai::tests::oc318_fall_through;
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::oc318_gated;
+    use crate::game::dirtysock::tagsunk::tests::put_arena;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+    use std::sync::Once;
+
+    pub(crate) const CTRL_PARTICLE: u32 = DATA + 0x6_0010;
+
+    pub(crate) const MAGIC_PARTICLE: u32 = 0x355c_b001;
+
+    pub(crate) static OC318_PREV_PARTICLE_ALLOC: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC318_PREV_PARTICLE_CTOR: AtomicUsize = AtomicUsize::new(0);
+
+    oc318_gated!(
+        oc318_fake_particle_link,
+        OC318_PREV_PARTICLE_LINK,
+        CTRL_PARTICLE,
+        MAGIC_PARTICLE,
+        0x0035_5658,
+        ee::s11::f_00355658__generated
+    );
+
+    /// `EA_MemAllocNamed`: logs the request, returns the fixture's block.
+    pub(crate) fn oc318_fake_particle_alloc(c: &mut Cpu) {
+        if c.bus.read32(CTRL_PARTICLE) != MAGIC_PARTICLE {
+            return oc318_fall_through(
+                c,
+                &OC318_PREV_PARTICLE_ALLOC,
+                ee::s10::f_00317d70__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        let block = c.bus.read32(CTRL_PARTICLE + 4);
+        fake(c, 0x0031_7d70, ra);
+        if c.pc == ra {
+            c.g[V0][0] = block as u64;
+        }
+    }
+
+    /// `ParticleModifier_ctor`: logs its arguments and returns the modifier.
+    pub(crate) fn oc318_fake_particle_ctor(c: &mut Cpu) {
+        if c.bus.read32(CTRL_PARTICLE) != MAGIC_PARTICLE {
+            return oc318_fall_through(
+                c,
+                &OC318_PREV_PARTICLE_CTOR,
+                ee::s11::f_003458c0__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        let this = c.g[A0][0];
+        fake(c, 0x0034_58c0, ra);
+        if c.pc == ra {
+            c.g[V0][0] = this;
+        }
+    }
+
+    pub(crate) fn mod_obj_add_particle_install() {
+        // Put the engine-allocator fake in first, then chain on top of it.
+        crate::game::animation::animsequencer::tests::asl_install_fakes();
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| unsafe {
+            let hook = |slot: *mut fn(&mut Cpu), f: fn(&mut Cpu), prev: &AtomicUsize| {
+                let cur = *slot;
+                if cur as usize != f as usize {
+                    prev.store(cur as usize, Ordering::Relaxed);
+                    *slot = f;
+                }
+            };
+            hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+                oc318_fake_particle_alloc,
+                &OC318_PREV_PARTICLE_ALLOC,
+            );
+            hook(
+                addr_of_mut!(ee::s11::OVERRIDE_003458C0),
+                oc318_fake_particle_ctor,
+                &OC318_PREV_PARTICLE_CTOR,
+            );
+            hook(
+                addr_of_mut!(ee::s11::OVERRIDE_00355658),
+                oc318_fake_particle_link,
+                &OC318_PREV_PARTICLE_LINK,
+            );
+        });
+    }
+
+    /// `ModObj_AddParticleModifier`: allocator, constructor and linker are
+    /// logging fakes (some calls unwind).
+    #[test]
+    fn mod_obj_add_particle_modifier_matches() {
+        mod_obj_add_particle_install();
+        covered(
+            ee::s11::f_00355cb0__generated,
+            mod_obj_add_particle_modifier,
+            200,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0035_5cb0, 3);
+                c.pc = 0x0035_5cb0;
+                let ctrl = CTRL_PARTICLE;
+                c.bus.write32(ctrl, MAGIC_PARTICLE);
+                c.bus.write32(ctrl + 4, DATA + 0x8000);
+                let this = DATA + 0x100;
+                c.bus.write32(this + 0x18, 0x0035_5000 + seed);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (DATA + 0x200) as u64;
+            },
+        );
+    }
+
+    /// `ModObj_v22` (`cMoveNode::decFocusCount`): no block, a block with no
+    /// node, and a node whose virtual query is a fake forced to 2 (release)
+    /// or left to return a pointer (not 2).
+    #[test]
+    fn mod_obj_v22_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE, LOG_RESULTS};
+        use crate::difftest::DATA;
+        covered(
+            ee::s11::f_00356cc8__generated,
+            mod_obj_v22,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_6cc8, 1);
+                let this = DATA;
+                let block = DATA + 0x200;
+                let node = DATA + 0x300;
+                let vt = DATA + 0x400;
+                c.bus.write32(this + 0x1c, 0);
+                match seed % 4 {
+                    0 => {}
+                    1 => c.bus.write32(block, 0),
+                    n => {
+                        c.bus.write32(block, node);
+                        c.bus.write32(node, vt);
+                        c.bus.write16(vt + 0xd0, ((r.next_u32() & 0x3c) as u16) | 4);
+                        c.bus.write32(vt + 0xd4, FAKE);
+                        c.bus.write32(node + 0x34, r.next_u32());
+                        if n == 2 {
+                            c.bus.write32(LOG_RESULTS, 2);
+                        }
+                    }
+                }
+                if seed % 4 >= 1 {
+                    c.bus.write32(this + 0x1c, block);
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(DATA + 0x600);
+                c.pc = 0x0035_6cc8;
+            },
+        );
+    }
+
+    /// ModObj_AddDynamicParticleModifier: a negative index and an index past
+    /// the particle table delete the descriptor (a null one, so the free
+    /// path stays short), a valid index allocates from the main heap and
+    /// links the modifier.
+    #[test]
+    fn modobj_add_dynamic_particle_modifier_matches() {
+        check(
+            ee::s11::f_00355d10__generated,
+            modobj_add_dynamic_particle_modifier,
+            90,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_5d10, 8);
+                put_arena(c);
+                let node = DATA + 0x1000;
+                let group = DATA + 0x2000;
+                let table = DATA + 0x3000;
+                let count = seed % 4;
+                c.bus.write32(node + 0x18, group);
+                c.bus.write32(group + 0x80, table);
+                c.bus.write32(table + 4, count);
+                // The node array the modifier's `TransformPoints` walks
+                // (`Instance_GetNodeMatrix` reads `lw(table + 8)` as its base):
+                // a 16-byte entry per index, the next index at +0 and the
+                // node's matrix at +0xc. -1 ends the chain, so the walk's back
+                // edge runs once and then stops (zeroed entries never end).
+                let nodes = DATA + 0x8000;
+                c.bus.write32(table + 8, nodes);
+                for (i, next) in [1u32, u32::MAX].into_iter().enumerate() {
+                    let e = nodes + 0x10 * i as u32;
+                    c.bus.write32(e, next);
+                    c.bus.write32(e + 0xc, DATA + 0x9000 + 0x40 * i as u32);
+                }
+                // A modifier block already exists, so nothing is created.
+                c.bus.write32(node + 0x1c, table + 0x100);
+                let index = match seed % 3 {
+                    0 => -1i32,
+                    1 => count as i32 + 1,
+                    _ => 0,
+                };
+                let valid = index >= 0 && (index as u32) < count;
+                c.bus.write32(DATA + 0x4000 + 0x48, r.next_u32());
+                c.bus.write32(DATA + 0x4000 + 0x50, r.next_u32());
+                c.g[A0][0] = sx(node);
+                // Only a valid index keeps the descriptor: the delete path
+                // must not free a random pointer.
+                c.g[A1][0] = sx(if valid && seed % 5 != 0 {
+                    DATA + 0x4000
+                } else {
+                    0
+                });
+                c.g[A2][0] = sx(index as u32);
+                c.g[A3][0] = sx(table + 0x200);
+            },
+        );
+    }
+
+    /// A node with a vtable whose slots 48 and 49 are fakes (unwinding for
+    /// some seeds) and a modifier block that is either present (freed first)
+    /// or created by the real constructor on a test heap.
+    #[test]
+    fn mod_obj_set_transform_modifier_matches() {
+        use crate::difftest::fakes::FAKE;
+        use crate::game::worldpainter::quadtree::tests::alloc_machine;
+        const NODE: u32 = DATA + 0x100;
+        const VT: u32 = DATA + 0x800;
+        const OBJ: u32 = DATA + 0xc00;
+        const BLOCK: u32 = DATA + 0xd00;
+        const MOD: u32 = DATA + 0xe00;
+        check(
+            ee::s11::f_003554b0__generated,
+            mod_obj_set_transform_modifier,
+            150,
+            &|c, seed| {
+                let mut r = alloc_machine(c, seed, 0x35_54b0);
+                c.pc = 0x0035_54b0;
+                for i in 0..0x20u32 {
+                    c.bus.write32(NODE + 4 * i, 0);
+                    c.bus.write32(OBJ + 4 * i, 0);
+                    c.bus.write32(BLOCK + 4 * i, 0);
+                    c.bus.write32(MOD + 4 * i, 0);
+                }
+                for i in 0..0x70u32 {
+                    c.bus.write32(VT + 4 * i, 0);
+                }
+                c.bus.write32(NODE + 0xc, VT);
+                c.bus.write16(VT + 0x188, (4 * (r.next_u32() % 4)) as u16);
+                c.bus.write32(VT + 0x18c, FAKE);
+                c.bus.write16(VT + 0x180, (4 * (r.next_u32() % 4)) as u16);
+                c.bus.write32(VT + 0x184, FAKE + 0x10);
+                c.bus.write32(NODE + 0x18, OBJ);
+                c.bus.write32(OBJ + 8, r.next_u32());
+                c.bus
+                    .write32(NODE + 0x1c, if seed % 2 == 0 { 0 } else { BLOCK });
+                c.g[A0][0] = sx(NODE);
+                c.g[A1][0] = sx(MOD);
             },
         );
     }

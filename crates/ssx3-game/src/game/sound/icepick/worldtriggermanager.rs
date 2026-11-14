@@ -4,6 +4,7 @@
 use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -213,6 +214,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002b_5f60,
         world_trigger_manager_play_trigger_sound,
         "WorldTriggerManager_PlayTriggerSound",
+    ),
+    (
+        0x002b_8190,
+        world_sound_get_trigger_ids,
+        "cWorldSound_GetTriggerIds",
     ),
 ];
 
@@ -3505,6 +3511,166 @@ pub fn world_trigger_manager_play_trigger_sound(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// 0x002b8190 cWorldSound_GetTriggerIds
+
+/// A world sound object: `+0x8c` its trigger data, whose `+0x10` is the
+/// trigger header `{word offset to the records, record count}`.
+pub(crate) const OC325_SOUND_TDATA: u32 = 0x8c;
+
+pub(crate) const OC325_TRIGGER_HDR: u32 = 0x10;
+
+/// Record strides by type (0, 1, 2, 3).
+pub(crate) const OC325_TRIGGER_STRIDE: [u32; 4] = [0x1c, 0x30, 0x30, 0x18];
+
+/// `void cWorldSound_GetTriggerIds(cWorldSound* self, WorldSound* obj,
+/// int* o0, int* o1, int* o2, int* o3)` (0x2b8190): walk the trigger records
+/// (`{type, id}` with a type-dependent stride) and copy the id of each of
+/// the first four into the four output words (0 when there are fewer).
+pub fn world_sound_get_trigger_ids(c: &mut Cpu) {
+    c.cycles += 9;
+    let obj = c.g[A1][0] as u32;
+    c.g[V0][0] = Addr(obj.wrapping_add(OC325_SOUND_TDATA)).lw(c);
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x10));
+    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(OC325_TRIGGER_HDR)).lw(c);
+    c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(8));
+    c.g[T3][0] = Addr((c.g[V1][0] as u32).wrapping_add(4)).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+    let no_records = (c.g[T3][0] as i64) <= 0;
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    if !no_records {
+        // Record pointers in the frame's first four words.
+        c.cycles += 7;
+        c.g[T6][0] = 0x1;
+        c.g[T5][0] = 0x2;
+        c.g[T4][0] = 0x3;
+        c.g[T2][0] = c.g[SP][0];
+        c.g[A1][0] = c.g[T3][0];
+        c.sw(c.g[T2][0] as u32, c.g[A0][0]);
+        loop {
+            c.cycles += 3;
+            c.g[V1][0] = Addr(c.g[A0][0] as u32).lw(c);
+            let is_one = c.g[V1][0] == c.g[T6][0];
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 2) as u64;
+            if is_one {
+                c.cycles += 1;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(OC325_TRIGGER_STRIDE[1]));
+                c.cycles += 1;
+            } else {
+                c.cycles += 2;
+                if c.g[V0][0] != 0 {
+                    // type 0
+                    c.cycles += 2;
+                    if c.g[V1][0] == 0 {
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(OC325_TRIGGER_STRIDE[0]));
+                    } else {
+                        c.cycles += 2;
+                    }
+                    c.cycles += 1;
+                } else {
+                    c.cycles += 2;
+                    if c.g[V1][0] == c.g[T5][0] {
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(OC325_TRIGGER_STRIDE[2]));
+                        c.cycles += 1;
+                    } else {
+                        c.cycles += 2;
+                        if c.g[V1][0] == c.g[T4][0] {
+                            c.g[A0][0] =
+                                sx((c.g[A0][0] as u32).wrapping_add(OC325_TRIGGER_STRIDE[3]));
+                            c.cycles += 1;
+                        } else {
+                            c.cycles += 2;
+                        }
+                    }
+                }
+            }
+            c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(4));
+            c.cycles += 3;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+            if c.g[A1][0] == 0 {
+                break;
+            }
+            c.sw(c.g[T2][0] as u32, c.g[A0][0]);
+            if event_due(c) {
+                deliver_event_here(c, 0x002b_81d0);
+            }
+        }
+    }
+    // The four outputs, zeroed, then filled from the records' id words.
+    c.cycles += 6;
+    c.sw(c.g[A2][0] as u32, 0);
+    c.g[A0][0] = 0;
+    c.sw(c.g[A3][0] as u32, 0);
+    c.sw(c.g[T0][0] as u32, 0);
+    let no_records = (c.g[T3][0] as i64) <= 0;
+    c.sw(c.g[T1][0] as u32, 0);
+    if !no_records {
+        c.cycles += 6;
+        c.g[T6][0] = Addr(c.g[SP][0] as u32).lw(c);
+        c.g[T5][0] = 0x1;
+        c.g[T4][0] = 0x2;
+        c.g[T2][0] = 0x3;
+        c.g[A1][0] = c.g[SP][0];
+        loop {
+            c.cycles += 3;
+            c.g[V1][0] = Addr(c.g[T6][0] as u32).lw(c);
+            if c.g[V1][0] != c.g[T5][0] {
+                c.g[V0][0] = ((c.g[V1][0] as i64) < 2) as u64;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
+            let second = c.g[A0][0] == c.g[T5][0];
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(4)).lw(c);
+            if second {
+                c.cycles += 1;
+                c.sw(c.g[A3][0] as u32, c.g[V1][0]);
+                c.cycles += 1;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A0][0] as i64) < 2) as u64;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 2;
+                    if c.g[A0][0] == 0 {
+                        c.sw(c.g[A2][0] as u32, c.g[V1][0]);
+                    } else {
+                        c.cycles += 2;
+                    }
+                    c.cycles += 1;
+                } else {
+                    c.cycles += 2;
+                    if c.g[A0][0] == c.g[T4][0] {
+                        c.sw(c.g[T0][0] as u32, c.g[V1][0]);
+                        c.cycles += 1;
+                    } else {
+                        c.cycles += 2;
+                        if c.g[A0][0] == c.g[T2][0] {
+                            c.sw(c.g[T1][0] as u32, c.g[V1][0]);
+                            c.cycles += 1;
+                        } else {
+                            c.cycles += 2;
+                        }
+                    }
+                }
+            }
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[T3][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002b_8250);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x10));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4863,6 +5029,86 @@ pub(crate) mod tests {
                     3 => 0,
                     _ => r.next_u32() % 127,
                 });
+            },
+        );
+    }
+
+    use crate::difftest::RA as SENTINEL;
+
+    // -- 0x002b8190 cWorldSound_GetTriggerIds --------------------------------
+
+    pub(crate) const OC325_TRIG_OBJ: u32 = DATA + 0x1_0000;
+
+    pub(crate) const OC325_TRIG_DATA: u32 = DATA + 0x1_0100;
+
+    pub(crate) const OC325_TRIG_HDR: u32 = DATA + 0x1_0200;
+
+    pub(crate) const OC325_TRIG_RECS: u32 = DATA + 0x1_1000;
+
+    pub(crate) const OC325_TRIG_OUT: u32 = DATA + 0x1_2000;
+
+    /// A trigger header with 0..4 records whose types are 0..4 (4 = unknown,
+    /// stride 0) and random ids, and four output words.
+    pub(crate) fn oc325_trigger_ids_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x002b_8190, 0);
+        let n = seed % 5;
+        c.bus
+            .write32(OC325_TRIG_OBJ + OC325_SOUND_TDATA, OC325_TRIG_DATA);
+        c.bus
+            .write32(OC325_TRIG_DATA + OC325_TRIGGER_HDR, OC325_TRIG_HDR);
+        c.bus.write32(
+            OC325_TRIG_HDR,
+            (OC325_TRIG_RECS - (OC325_TRIG_HDR + 8)) >> 2,
+        );
+        c.bus.write32(OC325_TRIG_HDR + 4, n);
+        let mut p = OC325_TRIG_RECS;
+        for _ in 0..n {
+            let ty = r.next_u32() % 5;
+            c.bus.write32(p, ty);
+            c.bus.write32(p + 4, r.next_u32());
+            p += match ty {
+                0 => OC325_TRIGGER_STRIDE[0],
+                1 | 2 => OC325_TRIGGER_STRIDE[1],
+                3 => OC325_TRIGGER_STRIDE[3],
+                _ => 0,
+            };
+        }
+        for i in 0..4u32 {
+            c.bus.write32(OC325_TRIG_OUT + 4 * i, r.next_u32());
+        }
+        c.g[A1][0] = sx(OC325_TRIG_OBJ);
+        c.g[A2][0] = sx(OC325_TRIG_OUT);
+        c.g[A3][0] = sx(OC325_TRIG_OUT + 4);
+        c.g[T0][0] = sx(OC325_TRIG_OUT + 8);
+        c.g[T1][0] = sx(OC325_TRIG_OUT + 0xc);
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x002b_8190;
+    }
+
+    driven!(oc325_gen_trigger_ids, ee::s08::f_002b8190__generated);
+
+    driven!(oc325_hand_trigger_ids, world_sound_get_trigger_ids);
+
+    /// Zero to four records of every type, and events at both loop back
+    /// edges.
+    #[test]
+    fn world_sound_get_trigger_ids_matches() {
+        check(
+            ee::s08::f_002b8190__generated,
+            world_sound_get_trigger_ids,
+            220,
+            &|c, seed| oc325_trigger_ids_setup(c, seed),
+        );
+        check_events(
+            oc325_gen_trigger_ids,
+            oc325_hand_trigger_ids,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x2b81_90 ^ seed as u64);
+                oc325_trigger_ids_setup(c, seed);
+                let mode = schedule(c, &mut r, seed, 0x002b_8190);
+                c.next_event = c.cycles + 2 + (r.next_u32() % 40) as u64;
+                mode
             },
         );
     }

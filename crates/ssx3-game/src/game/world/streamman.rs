@@ -41,6 +41,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003a_6f88, c_stream_man_queue_read, "cStreamMan_QueueRead"),
     (0x003a_7058, cstream_man_set_rate, "cStreamMan_SetRate"),
     (0x003a_7098, c_stream_man_update, "cStreamMan_Update"),
+    (0x003a_7218, cstream_man_decompress, "cStreamMan_Decompress"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -538,6 +539,28 @@ pub(crate) fn stream_man_update_active(
     Ok(true)
 }
 
+/// `EAC_Unpack` (0x3b47f8).
+pub(crate) const OC327_EAC_UNPACK: Callee = Callee {
+    addr: 0x003b_47f8,
+    f: ee::s13::EAC_Unpack,
+};
+
+/// `void cStreamMan_Decompress(a0, a1, a2, a3)` (0x3a7218): decompress `a3`
+/// through `EAC_Unpack`, returning its result.
+pub fn cstream_man_decompress(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x003a_7228);
+        c.g[A0][0] = c.g[A3][0];
+        OC327_EAC_UNPACK.call(c, 0x003a_7228)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -829,6 +852,35 @@ pub(crate) mod tests {
                 w(c, h + 8, 0x20 * k);
                 w(c, h + 0xc, ring);
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::ealib::seg_2b4578::tests::oc327_install_refpack;
+    pub(crate) use crate::game::ealib::seg_2b4578::tests::OC327_CTRL;
+    pub(crate) use crate::game::ealib::seg_2b4578::tests::OC327_MAGIC;
+    pub(crate) use crate::game::ealib::seg_2b4578::tests::OC327_RET;
+    pub(crate) use crate::game::ealib::seg_2b4578::tests::RET_REFPACK;
+
+    /// `cStreamMan_Decompress`: moves `a3` to `a0` and calls `EAC_Unpack`.
+    #[test]
+    fn cstream_man_decompress_matches() {
+        oc327_install_refpack();
+        covered(
+            ee::s13::f_003a7218__generated,
+            cstream_man_decompress,
+            200,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x003a_7218, 1);
+                c.pc = 0x003a_7218;
+                c.bus.write32(OC327_CTRL, OC327_MAGIC);
+                c.bus.write32(OC327_RET + 4 * RET_REFPACK, 0x2000 + seed);
+                c.g[A0][0] = sx(DATA + 0x200);
+                c.g[A1][0] = sx(DATA + 0x400);
+                c.g[A2][0] = sx(DATA + 0x600);
+                c.g[A3][0] = sx(DATA + 0x800);
             },
         );
     }

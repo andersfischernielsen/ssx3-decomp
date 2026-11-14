@@ -51,6 +51,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0034_fbf0, world_obj_dtor, "WorldObj_dtor"),
     (0x0034_fd90, world_obj_kill, "WorldObj_Kill"),
+    (0x0035_0570, world_obj_get_bound_box, "WorldObj_GetBoundBox"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -759,6 +760,123 @@ pub fn world_obj_kill(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// WorldObj_GetBoundBox (0x350570).
+
+/// `cInstanceNode` fields: the node's matrix data (+0x18) with the centre
+/// (world translation) at +0x40, the first box corner at +0x60..+0x68 and
+/// the second at +0x6c..+0x74.
+pub(crate) const WORLDOBJ_NODE: u32 = 0x18;
+
+pub(crate) const WORLDOBJ_CENTRE: u32 = 0x40;
+
+pub(crate) const WORLDOBJ_CORNER_0: u32 = 0x60;
+
+pub(crate) const WORLDOBJ_CORNER_1: u32 = 0x6c;
+
+/// `void cInstanceNode_getBoundBoxInfo(cInstanceNode* self, sIbVec4 box[2],
+/// float* radius)` (0x350570): fill the two box corners (w = 1) and return
+/// the largest distance from the node's centre to a corner of the box they
+/// span. Frame 0x40 (the probe vector at +0x10, the centre at +0).
+pub fn world_obj_get_bound_box(c: &mut Cpu) {
+    c.cycles += 32;
+    c.g[V0][0] = Addr(r32(c, A0).wrapping_add(WORLDOBJ_NODE)).lw(c);
+    let frame = Frame::open(c, 0x40);
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(1, 2); // f2 = 1.0 (w)
+    c.g[T0][0] = sx(r32(c, A1).wrapping_add(0x10)); // mx = box[1]
+    c.lwc1(0, r32(c, V0).wrapping_add(WORLDOBJ_CORNER_0));
+    c.g[T1][0] = c.g[SP][0]; // &centre
+    c.mtc1(0, 3); // f3 = best = 0.0 (through the zero register)
+    c.mov_s(4, 2); // f4 = 1.0
+    c.swc1(0, frame.at(c, 0));
+    c.g[A3][0] = 0;
+    c.lwc1(0, r32(c, V0).wrapping_add(WORLDOBJ_CORNER_0 + 4));
+    c.swc1(0, frame.at(c, 4));
+    c.lwc1(1, r32(c, V0).wrapping_add(WORLDOBJ_CORNER_0 + 8));
+    c.swc1(2, frame.at(c, 0xc));
+    c.swc1(1, frame.at(c, 8));
+    c.lq(2, frame.at(c, 0));
+    c.sq(2, r32(c, A1));
+    c.g[V1][0] = Addr(r32(c, A0).wrapping_add(WORLDOBJ_NODE)).lw(c);
+    c.lwc1(0, r32(c, V1).wrapping_add(WORLDOBJ_CORNER_1));
+    c.swc1(0, frame.at(c, 0));
+    c.lwc1(1, r32(c, V1).wrapping_add(WORLDOBJ_CORNER_1 + 4));
+    c.swc1(1, frame.at(c, 4));
+    c.lwc1(0, r32(c, V1).wrapping_add(WORLDOBJ_CORNER_1 + 8));
+    c.swc1(0, frame.at(c, 8));
+    c.lq(2, frame.at(c, 0));
+    c.sq(2, r32(c, A1).wrapping_add(0x10));
+    c.g[V1][0] = Addr(r32(c, A0).wrapping_add(WORLDOBJ_NODE)).lw(c);
+    c.lq(2, r32(c, V1).wrapping_add(WORLDOBJ_CENTRE));
+    c.sq(2, frame.at(c, 0));
+    c.g[V0][0] = c.g[A3][0] & 1;
+    loop {
+        // x/y/z of corner (A3 & 1/2/4 ? box[0] : box[1]).
+        c.cycles += 2;
+        if c.g[V0][0] == 0 {
+            c.lwc1(2, r32(c, T0));
+        } else {
+            c.cycles += 1;
+            c.lwc1(2, r32(c, A1));
+        }
+        c.cycles += 3;
+        c.g[V0][0] = c.g[A3][0] & 2;
+        if c.g[V0][0] == 0 {
+            c.lwc1(1, r32(c, T0).wrapping_add(4));
+        } else {
+            c.cycles += 1;
+            c.lwc1(1, r32(c, A1).wrapping_add(4));
+        }
+        c.cycles += 3;
+        c.g[V0][0] = c.g[A3][0] & 4;
+        if c.g[V0][0] == 0 {
+            c.lwc1(0, r32(c, T0).wrapping_add(8));
+        } else {
+            c.cycles += 1;
+            c.lwc1(0, r32(c, A1).wrapping_add(8));
+        }
+        c.cycles += 23;
+        c.swc1(2, frame.at(c, 0x10));
+        c.swc1(1, frame.at(c, 0x14));
+        c.swc1(0, frame.at(c, 0x18));
+        c.swc1(4, frame.at(c, 0x1c));
+        c.lqc2(3, frame.at(c, 0x10));
+        c.lqc2(4, c.g[T1][0] as u32);
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4)); // c - centre
+        c.sqc2(5, frame.at(c, 0x30));
+        c.lq(2, frame.at(c, 0x30));
+        c.sq(2, frame.at(c, 0x20));
+        c.lqc2(3, frame.at(c, 0x20));
+        c.lqc2(5, frame.at(c, 0x20));
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W)); // dot(c - centre)
+        c.qmfc2(3, 4);
+        c.mtc1(3, 0);
+        c.c_lt_s(3, 0);
+        if c.fcc() {
+            c.mov_s(3, 0); // best = l
+        }
+        c.cycles += 4;
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+        c.g[V0][0] = ((c.g[A3][0] as i64) < 8) as u64;
+        if c.g[V0][0] == 0 {
+            c.cycles += 4;
+            c.sqrt_s(0, 3);
+            c.swc1(0, r32(c, A2));
+            frame.close(c);
+            return;
+        }
+        c.g[V0][0] = c.g[A3][0] & 1;
+        if event_due(c) {
+            deliver_event_here(c, 0x0035_05f0);
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -995,6 +1113,41 @@ pub(crate) mod tests {
                 c.bus
                     .write32(0x18, if seed % 2 == 0 { 0 } else { NODE + 0x40 });
                 c.g[A0][0] = if seed % 8 == 0 { 0 } else { sx(ME) };
+            },
+        );
+    }
+
+    // -- 0x00350570 WorldObj_GetBoundBox --------------------------------------
+
+    /// `WorldObj_GetBoundBox`: random corners and centre (edge-case floats,
+    /// zeroes, wide ranges) on the node's matrix data; the eight probe
+    /// corners are the combinations of the two box corners.
+    #[test]
+    fn world_obj_get_bound_box_matches() {
+        use crate::difftest::{check, scramble, Rng, DATA};
+        const SELF: u32 = DATA;
+        const NODE: u32 = DATA + 0x100;
+        const BOX: u32 = DATA + 0x400;
+        const RADIUS: u32 = DATA + 0x500;
+        check(
+            ee::s11::f_00350570__generated,
+            world_obj_get_bound_box,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x3505_7000 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(BOX);
+                c.g[A2][0] = sx(RADIUS);
+                c.bus.write32(SELF + WORLDOBJ_NODE, NODE);
+                for k in 0..0x80u32 {
+                    let v = match (seed as u32 + k) % 7 {
+                        0 => r.edge_f32(),
+                        1 => 0,
+                        _ => r.f32(1e5),
+                    };
+                    c.bus.write32(NODE + 4 * k, v);
+                }
             },
         );
     }

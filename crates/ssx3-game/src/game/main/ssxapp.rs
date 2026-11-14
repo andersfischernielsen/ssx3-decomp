@@ -98,6 +98,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0022_a408, nash_classify_patches, "Nash_ClassifyPatches"),
     (0x0022_7f58, ssx_app_tick, "SSXApp_Tick"),
+    (0x0022_97d8, crowd_man2d_remove, "CrowdMan2d_Remove"),
+    (0x0022_9e20, crowd_man2d_save_state, "CrowdMan2d_SaveState"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -2813,6 +2815,114 @@ pub fn ssx_app_tick(c: &mut Cpu) {
     })
 }
 
+/// Bytes of the 2D crowd array saved after the object's first word.
+pub(crate) const CROWD_MAN2D_SAVE_SIZE: u64 = 0x200;
+
+/// `void CrowdMan2d_SaveState(void* self, cPbStream* s)` (0x229e20): writes the
+/// crowd's 0x200-byte array at `self+8` through the stream's virtual write
+/// method (vtable entry +8: a 16-bit `this` delta and the code pointer at
+/// +0xc).
+pub fn crowd_man2d_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x8));
+        c.g[A2][0] = CROWD_MAN2D_SAVE_SIZE;
+        // s->v01(self + 8, 0x200): vtable entry at +8.
+        let stream = r32(c, A3);
+        c.g[V1][0] = Addr(stream).lw(c);
+        let slot = r32(c, V1);
+        c.g[A0][0] = Addr(slot).off(0x8).lh(c);
+        c.g[V0][0] = Addr(slot).off(0xc).lw(c);
+        let write = r32(c, V0);
+        c.g[A0][0] = sx(stream.wrapping_add(r32(c, A0)));
+        call_ptr(c, write, 0x0022_9e48)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// CrowdMan2d_Remove (0x2297d8)
+// ---------------------------------------------------------------------------
+
+/// The 64 crowd-instance slot words, at `self + 8`.
+pub(crate) const CROWD_MAN2D_REMOVE_SLOTS: u32 = 0x8;
+
+/// `void CrowdMan2d_Remove(self, int handle)` (0x2297d8): scan the 64 slot
+/// words at `+8` for `handle` and clear the first match
+/// (`CrowdMan2d_ClearSlot`). The generated body is a dispatcher and can be
+/// re-entered at the loop head after an event unwind, so the replacement
+/// keeps its blocks as states.
+pub fn crowd_man2d_remove(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                0x0022_97d8 => {
+                    c.cycles += 6;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+                    c.g[A2][0] = c.g[A1][0]; // the handle to find
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[A1][0] = 0; // the slot index
+                    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(CROWD_MAN2D_REMOVE_SLOTS));
+                    pc = 0x0022_97f4;
+                }
+                0x0022_97f0 => {
+                    c.cycles += 1;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+                    pc = 0x0022_97f4;
+                }
+                0x0022_97f4 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[A1][0] as i64) < 64) as u64;
+                    let done = c.g[V0][0] == 0;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    pc = if done { 0x0022_9818 } else { 0x0022_9800 };
+                }
+                0x0022_9800 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    let same = c.g[V0][0] == c.g[A2][0];
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(4));
+                    if same {
+                        pc = 0x0022_980c;
+                    } else {
+                        if back_edge_unwinds(c, 0x0022_97f0) {
+                            return Ok(());
+                        }
+                        pc = 0x0022_97f0;
+                    }
+                }
+                0x0022_980c => {
+                    c.cycles += 3;
+                    Callee {
+                        addr: 0x0022_9b90,
+                        f: ee::s05::CrowdMan2d_ClearSlot,
+                    }
+                    .call(c, 0x0022_9814)?;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    pc = 0x0022_9818;
+                }
+                0x0022_9818 => {
+                    c.cycles += 2;
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0022_97d8, 0x0022_9820);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4128,6 +4238,52 @@ pub(crate) mod tests {
                     c.bus
                         .write16(vt + 0x10, (r.next_u32() as i16 as i32 & !3) as u16);
                     c.bus.write32(vt + 0x14, FAKE + 0x10 * i);
+                }
+            },
+        );
+    }
+
+    /// `self` at DATA+0x800, the stream at DATA+0x10 whose vtable slot 8 is a
+    /// fake write (random `this` delta; some calls unwind).
+    #[test]
+    fn crowd_man2d_save_state_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::DATA;
+        covered(
+            ee::s05::f_00229e20__generated,
+            crowd_man2d_save_state,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0022_9e20, 1);
+                let stream = DATA + 0x10;
+                let vt = vtable(c, &mut r, &[0x8]);
+                c.bus.write32(stream, vt);
+                c.g[A0][0] = sx(DATA + 0x800);
+                c.g[A1][0] = sx(stream);
+                c.pc = 0x0022_9e20;
+            },
+        );
+    }
+
+    /// `CrowdMan2d_Remove`: the handle found at some slot (cleared) or in no
+    /// slot (all 64 scanned).
+    #[test]
+    fn crowd_man2d_remove_matches() {
+        check(
+            ee::s05::f_002297d8__generated,
+            crowd_man2d_remove,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x2297_d800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0022_97d8;
+                c.g[A0][0] = DATA as u64;
+                let handle = 0x1000 + (seed % 8) as u32;
+                c.g[A1][0] = handle as u64;
+                let hit = if seed % 3 == 0 { None } else { Some(seed % 64) };
+                for i in 0..64u32 {
+                    let v = if Some(i) == hit { handle } else { r.next_u32() };
+                    c.bus.write32(DATA + CROWD_MAN2D_REMOVE_SLOTS + 4 * i, v);
                 }
             },
         );

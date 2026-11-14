@@ -358,6 +358,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RailModifier_BuildRailNodes",
     ),
     (0x0036_1038, object_v01, "Object_v01"),
+    (0x0036_1290, intersect_info_dtor_2, "IntersectInfo_dtor_2"),
 ];
 
 /// The matrix record table of `DeferMan_InternMatrixRecord`.
@@ -6121,6 +6122,37 @@ pub fn object_v01(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// IntersectInfo_dtor_2 (0x361290)
+
+/// The `cMeshAnimFrame` vtable-instance pointer written at `+0x84`
+/// (`D_00490AF0`).
+pub(crate) const OC320_MESH_ANIM_FRAME_VT: u32 = 0x0049_0af0;
+
+/// `void cMeshAnimFrame::~cMeshAnimFrame(this, int flags)` (0x361290): the
+/// deleting destructor variant: install the base vtable pointer at `+0x84`,
+/// and when `flags & 1` is set, `operator delete(this)`.
+pub fn intersect_info_dtor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x490000;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(OC320_MESH_ANIM_FRAME_VT);
+        c.g[A1][0] = c.g[A1][0] & 0x1;
+        let plain = c.g[A1][0] == 0;
+        c.sw((c.g[A0][0] as u32).wrapping_add(0x84), c.g[V0][0]);
+        if !plain {
+            c.cycles += 2;
+            call_ptr(c, 0x0031_7e50, 0x0036_12b4)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8689,6 +8721,36 @@ pub(crate) mod tests {
                 c.pc = 0x0036_1038;
                 c.g[A0][0] = sx(obj);
                 c.g[A1][0] = (r.next_u32() & !1) as u64;
+            },
+        );
+    }
+
+    use crate::difftest::RA as SENTINEL;
+
+    // -- 0x00361290 IntersectInfo_dtor_2 -------------------------------------
+
+    /// A `cMeshAnimFrame` at DATA; the deleting destructor variant (`flags
+    /// & 1`) calls `operator delete`, the plain one does not. Other flag bits
+    /// are masked away (and stay masked in `a1`).
+    #[test]
+    fn intersect_info_dtor_2_matches() {
+        use crate::game::ai::aianimeventmap::tests::alloc_setup;
+        check(
+            ee::s12::f_00361290__generated,
+            intersect_info_dtor_2,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x36_1290, 0);
+                alloc_setup(c, &mut r);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = match seed % 4 {
+                    0 => 0u64,
+                    1 => 1,
+                    2 => 0xfffe | 1,
+                    _ => (r.next_u32() & !1) as u64,
+                };
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0036_1290;
             },
         );
     }

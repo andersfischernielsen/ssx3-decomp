@@ -501,6 +501,17 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_prewind_sub_enter,
         "RiderPrewindSub_Enter",
     ),
+    (
+        0x0012_ca30,
+        rider_wipeout_sub_enter,
+        "RiderWipeoutSub_Enter",
+    ),
+    (0x0012_e690, rider_wipeout_sub_exit, "RiderWipeoutSub_Exit"),
+    (
+        0x0012_fb68,
+        rider_natural_air_sub_exit,
+        "RiderNaturalAirSub_Exit",
+    ),
 ];
 
 /// `gp`-relative globals used here.
@@ -15891,6 +15902,343 @@ pub fn rider_prewind_sub_enter(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// RiderNaturalAirSub_Exit (0x12fb68)
+
+/// `AnimController_GetLayerAnimEntry(ctrl, layer)` (0x311ae8).
+pub(crate) const RIDER_AIR_EXIT_GET_ANIM: u32 = 0x0031_1ae8;
+
+/// `AnimController_FadeOutLayer(ctrl, layer, duration)` (0x311e88).
+pub(crate) const RIDER_AIR_EXIT_FADE_OUT: u32 = 0x0031_1e88;
+
+/// `AnimController_GetLayerSequence(ctrl, layer)` (0x311b20).
+pub(crate) const RIDER_AIR_EXIT_GET_SEQ: u32 = 0x0031_1b20;
+
+/// The rider's animation controller pointer.
+pub(crate) const RIDER_AIR_EXIT_CONTROLLER: u32 = 0x14;
+
+/// `AnimController`'s render object.
+pub(crate) const RIDER_AIR_EXIT_ANIMBASE: u32 = 0x784;
+
+/// The sequence's blend weight.
+pub(crate) const RIDER_AIR_EXIT_BLEND: u32 = 0x90;
+
+/// The fade-out duration the original passes in f12.
+pub(crate) const RIDER_AIR_EXIT_FADE_F12: u32 = 0x76e0;
+
+/// `void RiderNaturalAirSub_Exit(self, int release)` (0x12fb68): when the
+/// natural-air skill ends with a release and the controller's layer 0 is
+/// playing the wind-up (3) or the air (0xd) animation, fade that layer out
+/// and force its blend to 1. Frame 0x20 (ra +0, s0 +0x10).
+pub fn rider_natural_air_sub_exit(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        let quiet = c.g[A1][0] == 0;
+        c.g[S0][0] = c.g[A0][0]; // self
+        if !quiet {
+            c.cycles += 7;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_AIR_EXIT_CONTROLLER));
+            c.g[A1][0] = 1;
+            c.g[RA][0] = sx(0x0012_fb8c);
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(RIDER_AIR_EXIT_ANIMBASE));
+            call_ptr(c, RIDER_AIR_EXIT_GET_ANIM, 0x0012_fb8c)?;
+            c.g[V1][0] = 3;
+            let windup = c.g[V0][0] == c.g[V1][0];
+            c.g[A1][0] = 1;
+            if !windup {
+                // The original asks again (the call's result is not kept).
+                c.cycles += 6;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_AIR_EXIT_CONTROLLER));
+                c.g[RA][0] = sx(0x0012_fba4);
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(RIDER_AIR_EXIT_ANIMBASE));
+                call_ptr(c, RIDER_AIR_EXIT_GET_ANIM, 0x0012_fba4)?;
+                c.g[V1][0] = 0xd;
+                if c.g[V0][0] != c.g[V1][0] {
+                    frame.restore(c, S0, 0x10);
+                    c.cycles += 3;
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+            }
+            c.cycles += 12;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_AIR_EXIT_CONTROLLER));
+            c.g[A1][0] = 0;
+            c.lwc1(
+                12,
+                (c.g[GP][0] as u32).wrapping_sub(RIDER_AIR_EXIT_FADE_F12),
+            );
+            c.g[RA][0] = sx(0x0012_fbc4);
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(RIDER_AIR_EXIT_ANIMBASE));
+            call_ptr(c, RIDER_AIR_EXIT_FADE_OUT, 0x0012_fbc4)?;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_AIR_EXIT_CONTROLLER));
+            c.g[A1][0] = 1;
+            c.g[RA][0] = sx(0x0012_fbd4);
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(RIDER_AIR_EXIT_ANIMBASE));
+            call_ptr(c, RIDER_AIR_EXIT_GET_SEQ, 0x0012_fbd4)?;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 0);
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(RIDER_AIR_EXIT_BLEND));
+            c.cycles += 1;
+            frame.restore(c, S0, 0x10);
+            c.cycles += 3;
+            frame.restore_ra(c, 0);
+            frame.close(c);
+            return Ok(());
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RiderWipeoutSub_Enter (0x12ca30)
+
+/// `RiderWipeoutSub`: the rider (`+0x80`), phase (`+0`), the two pose-pair
+/// blocks `+0x10` and `+0x30`, `+0x54`, and the slide amount `+0x70`.
+pub(crate) const OC320_WIPE_RIDER: u32 = 0x80;
+
+pub(crate) const OC320_WIPE_A: u32 = 0x10;
+
+pub(crate) const OC320_WIPE_B: u32 = 0x30;
+
+pub(crate) const OC320_WIPE_F54: u32 = 0x54;
+
+pub(crate) const OC320_WIPE_SLIDE: u32 = 0x70;
+
+/// Rider: the motion state (`+0x77c`), the animation controller (`+0x784`),
+/// the sequence-pair table (`+0x780`), its two indices (`+0x89c`, `+0x8a4`),
+/// the animation set (`+0x86c`), the track (`+0x790`), the position
+/// (`+0x9d0`), and the sound slot index (`+0x870`); `+0x2e8`/`+0x2ec` and
+/// `+0x318` are reset.
+pub(crate) const OC320_RIDER_MOTION: u32 = 0x77c;
+
+pub(crate) const OC320_RIDER_ANIM: u32 = 0x784;
+
+pub(crate) const OC320_RIDER_PAIRS: u32 = 0x780;
+
+pub(crate) const OC320_RIDER_INDEX_A: u32 = 0x89c;
+
+pub(crate) const OC320_RIDER_INDEX_B: u32 = 0x8a4;
+
+pub(crate) const OC320_RIDER_POS: u32 = 0x9d0;
+
+/// `SSXAudioSystem_GetInstance` (`lw gp+0x410`, 0x28b180).
+pub(crate) const OC320_AUDIO_GET_INSTANCE: Callee = Callee {
+    addr: 0x0028_b180,
+    f: ee::s07::f_0028b180,
+};
+
+/// `SSXAudioSystem_StopCharacterSpeech(audio, rider)` (0x29e578): clears
+/// `audio->slot[rider->0x870]`.
+pub(crate) const OC320_AUDIO_STOP_SPEECH: Callee = Callee {
+    addr: 0x0029_e578,
+    f: ee::s08::f_0029e578,
+};
+
+/// `RiderAnimBase_GetBlendInTime(ctrl, 2)` (0x311ae8): 0 for the 0x1b6
+/// "no animation" id, else the entry's blend-in time.
+pub(crate) const OC320_ANIM_BLEND_IN: Callee = Callee {
+    addr: 0x0031_1ae8,
+    f: ee::s10::f_00311ae8,
+};
+
+/// `RiderWipeoutState_SetPose(motion, a, b, pair)` (0x136d40).
+pub(crate) const OC320_MOTION_SET_POSE: Callee = Callee {
+    addr: 0x0013_6d40,
+    f: ee::s01::f_00136d40,
+};
+
+/// `ReplayCache_RecordKey(cache, key, id)` (0x2708f0).
+pub(crate) const OC320_REPLAY_RECORD: Callee = Callee {
+    addr: 0x0027_08f0,
+    f: ee::s07::f_002708f0,
+};
+
+/// `WScriptMan_PushOp(man)` (0x309990): push op 0x70004.
+pub(crate) const OC320_WSCRIPT_PUSH: Callee = Callee {
+    addr: 0x0030_9990,
+    f: ee::s10::f_00309990,
+};
+
+/// `void RiderWipeoutSub_Enter(RiderWipeoutSub* this)` (0x12ca30): start a
+/// wipeout: clear the rider's wipeout state, stop its speech slot, copy the
+/// two pose pairs selected by the rider's current/next pair indices (adding
+/// the rider's position to both first vectors), and — when the controller's
+/// layer-2 blend-in time is 0x16 — hand the wipeout motion its start pose;
+/// then record the replay key and post the wipeout script op.
+pub fn rider_wipeout_sub_enter(c: &mut Cpu) {
+    use ssx3_ee_rt::vu0::Src;
+    guest(c, |c| {
+        c.cycles += 52;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(OC320_WIPE_B));
+        // Reset the rider's wipeout state.
+        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(OC320_WIPE_RIDER));
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x2ec), 0);
+        c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(OC320_WIPE_RIDER));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x2e8), 0);
+        c.sw(r32(c, S0).wrapping_add(OC320_WIPE_F54), 0);
+        c.sw(r32(c, S0).wrapping_add(OC320_WIPE_SLIDE), 0);
+        // Audio: stop the rider's character speech slot.
+        OC320_AUDIO_GET_INSTANCE.call(c, 0x0012_ca64)?;
+        c.g[A1][0] = c.lw(r32(c, S0).wrapping_add(OC320_WIPE_RIDER));
+        c.g[A0][0] = c.g[V0][0];
+        OC320_AUDIO_STOP_SPEECH.call(c, 0x0012_ca70)?;
+        // The pair for the current animation (`+0x89c`), then the one for
+        // the next (`+0x8a4`): 0x20 bytes each out of the pair table.
+        c.g[A2][0] = c.lw(r32(c, S0).wrapping_add(OC320_WIPE_RIDER));
+        c.g[A1][0] = 0x2;
+        c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(OC320_RIDER_PAIRS));
+        c.g[A0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(OC320_RIDER_INDEX_A));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x2c));
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 5);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.lq(2, c.g[A0][0] as u32);
+        c.sq(2, r32(c, S0).wrapping_add(OC320_WIPE_A));
+        c.lq(3, (c.g[A0][0] as u32).wrapping_add(0x10));
+        c.sq(3, r32(c, S0).wrapping_add(OC320_WIPE_A + 0x10));
+        c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(OC320_RIDER_PAIRS));
+        c.g[A0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(OC320_RIDER_INDEX_B));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x2c));
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 5);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.lq(2, c.g[A0][0] as u32);
+        c.sq(2, r32(c, S0).wrapping_add(OC320_WIPE_B));
+        c.lq(3, (c.g[A0][0] as u32).wrapping_add(0x10));
+        c.sq(3, r32(c, S0).wrapping_add(OC320_WIPE_B + 0x10));
+        // Both pair starts get the rider's position added (VU0).
+        c.lqc2(3, r32(c, S0).wrapping_add(OC320_WIPE_A));
+        c.lqc2(4, (c.g[A2][0] as u32).wrapping_add(OC320_RIDER_POS));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, r32(c, S0).wrapping_add(OC320_WIPE_A));
+        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(OC320_WIPE_RIDER));
+        c.lqc2(3, r32(c, S0).wrapping_add(OC320_WIPE_B));
+        c.lqc2(4, (c.g[V0][0] as u32).wrapping_add(OC320_RIDER_POS));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, r32(c, S0).wrapping_add(OC320_WIPE_B));
+        c.sw(r32(c, S0), 0);
+        // Layer 2's blend-in time picks the wipeout start pose (0x16).
+        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(OC320_WIPE_RIDER));
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(OC320_RIDER_ANIM));
+        OC320_ANIM_BLEND_IN.call(c, 0x0012_caf4)?;
+        c.g[V1][0] = 0x16;
+        let not_wipeout_anim = c.g[V0][0] != c.g[V1][0];
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        if !not_wipeout_anim {
+            c.cycles += 11;
+            c.g[A1][0] = c.lw(r32(c, S0).wrapping_add(OC320_WIPE_RIDER));
+            c.g[A2][0] = 0x500000;
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0xee0));
+            c.g[A3][0] = c.g[S1][0];
+            c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(OC320_RIDER_MOTION));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1e0));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x30));
+            OC320_MOTION_SET_POSE.call(c, 0x0012_cb20)?;
+            c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(OC320_WIPE_RIDER));
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x318), 0);
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        }
+        c.cycles += 14;
+        c.g[A3][0] = c.lw(r32(c, S0).wrapping_add(OC320_WIPE_RIDER));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+        c.g[A2][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x790));
+        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x28));
+        c.g[A1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x86c));
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0xfc));
+        OC320_REPLAY_RECORD.call(c, 0x0012_cb48)?;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xce8));
+        OC320_WSCRIPT_PUSH.call(c, 0x0012_cb50)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x0012e690 RiderWipeoutSub_Exit
+
+/// Rider: `+0x80` its scripting object, `+0x6c0` the wipeout sub-state's
+/// vtable slot (the sub-state object is at `+0x6c0`'s target).
+pub(crate) const OC325_RIDER_SCRIPT: u32 = 0x80;
+
+pub(crate) const OC325_RIDER_SUB: u32 = 0x6c0;
+
+/// The sub-state's virtual "is the wipeout finishing?" slot (entry 8 of a
+/// 0x10-byte table: delta at +0x40, method at +0x44).
+pub(crate) const OC325_SUB_EXIT_SLOT: u32 = 0x40;
+
+pub(crate) const OC325_AI_GET_FRAME_COUNTER: Callee = Callee {
+    addr: 0x0012_98c8,
+    f: ee::s00::AI_GetFrameCounter,
+};
+
+pub(crate) const OC325_RIDER_SET_TIMED_EVENT: Callee = Callee {
+    addr: 0x0010_e028,
+    f: ee::s00::Rider_SetTimedEvent,
+};
+
+/// `void RiderWipeoutSub_Exit(RiderWipeoutSub* m, int a1)` (0x12e690): every
+/// other frame, ask the wipeout sub-state whether it is done; when it is,
+/// set the rider's timed event 4 (the "wipeout over" boost timer), then
+/// notify the speech system of the wipeout recovery.
+pub fn rider_wipeout_sub_exit(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        OC325_AI_GET_FRAME_COUNTER.call(c, 0x0012_e6a4)?;
+        c.g[V0][0] &= 1;
+        if c.g[V0][0] != 0 {
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 9;
+            let rider = Addr(r32(c, S0).wrapping_add(OC325_RIDER_SCRIPT)).lw(c);
+            c.g[A0][0] = rider;
+            let vt = Addr((rider as u32).wrapping_add(OC325_RIDER_SUB)).lw(c);
+            c.g[V1][0] = vt;
+            c.g[A0][0] = sx((rider as u32).wrapping_add(OC325_RIDER_SUB));
+            c.g[A1][0] = Addr((vt as u32).wrapping_add(OC325_SUB_EXIT_SLOT)).lh(c);
+            c.g[V0][0] = Addr((vt as u32).wrapping_add(OC325_SUB_EXIT_SLOT + 4)).lw(c);
+            let method = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            call_ptr(c, method, 0x0012_e6cc)?;
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[A0][0] = Addr(r32(c, S0).wrapping_add(OC325_RIDER_SCRIPT)).lw(c);
+                c.mtc1(0, 12);
+                c.g[A1][0] = 0x4;
+                OC325_RIDER_SET_TIMED_EVENT.call(c, 0x0012_e6e4)?;
+            }
+            c.cycles += 6;
+            call_ptr(c, 0x0028_b180, 0x0012_e6ec)?;
+            c.g[A1][0] = Addr(r32(c, S0).wrapping_add(OC325_RIDER_SCRIPT)).lw(c);
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x002a_02d8, 0x0012_e6f8)?;
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -19805,6 +20153,287 @@ pub(crate) mod tests {
                     [0.0f32, 1.0 / 30.0, 0.125, -0.25][(seed % 4) as usize].to_bits(),
                 );
             },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::oc318_gated;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+    use std::sync::Once;
+
+    pub(crate) const CTRL_AIR: u32 = DATA + 0x6_0030;
+
+    pub(crate) const MAGIC_AIR: u32 = 0x12fb_6801;
+
+    // ------------------------------------------- ModObj_AddParticleModifier
+
+    pub(crate) fn oc318_fall_through(c: &mut Cpu, prev: &AtomicUsize, gen: fn(&mut Cpu)) {
+        let p = prev.load(Ordering::Relaxed);
+        if p == 0 {
+            return gen(c);
+        }
+        // SAFETY: `p` was read from the same slot (a `fn(&mut Cpu)`).
+        let f = unsafe { std::mem::transmute::<usize, fn(&mut Cpu)>(p) };
+        f(c)
+    }
+
+    // --------------------------------------- RiderNaturalAirSub_Exit
+
+    pub(crate) static OC318_PREV_AIR_ANIM: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC318_PREV_AIR_SEQ: AtomicUsize = AtomicUsize::new(0);
+
+    oc318_gated!(
+        oc318_fake_air_fade_out,
+        OC318_PREV_AIR_FADE,
+        CTRL_AIR,
+        MAGIC_AIR,
+        0x0031_1e88,
+        ee::s10::f_00311e88__generated
+    );
+
+    /// `AnimController_GetLayerSequence`: logs the call and returns the buffer
+    /// the fixture picks at `CTRL_AIR + 8` (the caller writes its blend).
+    pub(crate) fn oc318_fake_air_get_seq(c: &mut Cpu) {
+        if c.bus.read32(CTRL_AIR) != MAGIC_AIR {
+            return oc318_fall_through(c, &OC318_PREV_AIR_SEQ, ee::s10::f_00311b20__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        let seq = c.bus.read32(CTRL_AIR + 8);
+        fake(c, 0x0031_1b20, ra);
+        if c.pc == ra {
+            c.g[V0][0] = seq as u64;
+        }
+    }
+
+    /// `AnimController_GetLayerAnimEntry`: logs the call and returns the
+    /// animation the fixture picks at `CTRL_AIR + 4` (3, 0xd or another).
+    pub(crate) fn oc318_fake_air_get_anim(c: &mut Cpu) {
+        if c.bus.read32(CTRL_AIR) != MAGIC_AIR {
+            return oc318_fall_through(c, &OC318_PREV_AIR_ANIM, ee::s10::f_00311ae8__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        let anim = c.bus.read32(CTRL_AIR + 4);
+        fake(c, 0x0031_1ae8, ra);
+        if c.pc == ra {
+            c.g[V0][0] = anim as u64;
+        }
+    }
+
+    pub(crate) fn rider_natural_air_install() {
+        crate::game::misc::tests::bow_install_fakes();
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| unsafe {
+            let hook = |slot: *mut fn(&mut Cpu), f: fn(&mut Cpu), prev: &AtomicUsize| {
+                let cur = *slot;
+                if cur as usize != f as usize {
+                    prev.store(cur as usize, Ordering::Relaxed);
+                    *slot = f;
+                }
+            };
+            hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00311AE8),
+                oc318_fake_air_get_anim,
+                &OC318_PREV_AIR_ANIM,
+            );
+            hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00311E88),
+                oc318_fake_air_fade_out,
+                &OC318_PREV_AIR_FADE,
+            );
+            hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00311B20),
+                oc318_fake_air_get_seq,
+                &OC318_PREV_AIR_SEQ,
+            );
+        });
+    }
+
+    /// `RiderNaturalAirSub_Exit`: released or not, the layer entry at
+    /// 0x3/0xd/other → fade and blend, or return.
+    #[test]
+    fn rider_natural_air_sub_exit_matches() {
+        rider_natural_air_install();
+        covered(
+            ee::s00::f_0012fb68__generated,
+            rider_natural_air_sub_exit,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x0012_fb68, 3);
+                c.pc = 0x0012_fb68;
+                c.bus.write32(CTRL_AIR, MAGIC_AIR);
+                c.bus
+                    .write32(CTRL_AIR + 4, [3u32, 0xd, 7][(seed % 3) as usize]);
+                c.bus.write32(CTRL_AIR + 8, DATA + 0x3000);
+                let this = DATA + 0x100;
+                let ctrl = DATA + 0x200;
+                c.bus.write32(this + RIDER_AIR_EXIT_CONTROLLER, ctrl);
+                c.bus.write32(ctrl + RIDER_AIR_EXIT_ANIMBASE, DATA + 0x400);
+                let mut fr = Rng(seed as u64 + 7);
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(RIDER_AIR_EXIT_FADE_F12), fr.edge_f32());
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+            },
+        );
+    }
+
+    // -- 0x0012ca30 RiderWipeoutSub_Enter ------------------------------------
+
+    pub(crate) const OC320_ENTER_THIS: u32 = DATA + 0x2_0000;
+
+    pub(crate) const OC320_ENTER_RIDER: u32 = DATA + 0x3_0000;
+
+    pub(crate) const OC320_ENTER_ANIMBASE: u32 = DATA + 0x4_0000;
+
+    pub(crate) const OC320_ENTER_PAIRS: u32 = DATA + 0x4_8000;
+
+    pub(crate) const OC320_ENTER_MOTION: u32 = DATA + 0x5_0000;
+
+    pub(crate) const OC320_ENTER_SUB: u32 = DATA + 0x5_8000;
+
+    pub(crate) const OC320_ENTER_AUDIO: u32 = DATA + 0x6_0000;
+
+    pub(crate) const OC320_ENTER_WSM: u32 = DATA + 0x7_0000;
+
+    pub(crate) const OC320_ENTER_PTR1: u32 = DATA + 0x7_8000;
+
+    pub(crate) const OC320_ENTER_PTR2: u32 = DATA + 0x7_9000;
+
+    pub(crate) const OC320_ENTER_REPLAY: u32 = DATA + 0x7_a000;
+
+    /// `AnimTable_GetEntry`: `0x446990 + anim`, whose first word is the
+    /// animation's blend-in time.
+    pub(crate) const OC320_ANIM_TABLE: u32 = 0x0044_6990;
+
+    /// A live wipeout sub-state: an audio system, a rider with a pair table
+    /// (two indices), a motion state (pose flag on and off), a replay cache
+    /// whose first condition holds (the record call returns at once), a
+    /// script manager, and a blend-in time of 0x16 or not.
+    pub(crate) fn oc320_enter_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0012_ca30, 0);
+        let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+        w(c, OC320_ENTER_THIS + OC320_WIPE_RIDER, OC320_ENTER_RIDER);
+        fill(c, &mut r, OC320_ENTER_RIDER, 0x300);
+        w(c, OC320_ENTER_RIDER + 0x870, r.next_u32() % 4);
+        w(c, OC320_ENTER_RIDER + OC320_RIDER_PAIRS, OC320_ENTER_PAIRS);
+        w(c, OC320_ENTER_RIDER + OC320_RIDER_INDEX_A, r.next_u32() % 4);
+        w(c, OC320_ENTER_RIDER + OC320_RIDER_INDEX_B, r.next_u32() % 4);
+        w(c, OC320_ENTER_RIDER + OC320_RIDER_POS + 0x0, r.next_u32());
+        w(c, OC320_ENTER_RIDER + OC320_RIDER_POS + 0x4, r.next_u32());
+        w(c, OC320_ENTER_PAIRS + 0x2c, OC320_ENTER_PAIRS + 0x100);
+        fill(c, &mut r, OC320_ENTER_PAIRS + 0x100, 0x80);
+        // The animation controller's layer 2: 0x1b6 (no blend-in) or an id
+        // whose table word is 0x16 (the wipeout start pose) or not.
+        let anim = if seed % 5 == 0 {
+            0x1b6
+        } else {
+            (r.next_u32() % 0x40) * 4
+        };
+        w(
+            c,
+            OC320_ENTER_RIDER + OC320_RIDER_ANIM,
+            OC320_ENTER_ANIMBASE,
+        );
+        w(c, OC320_ENTER_ANIMBASE + 8, anim);
+        if anim != 0x1b6 {
+            let blend = if seed % 3 == 0 {
+                0x16
+            } else {
+                r.next_u32() % 0x40
+            };
+            w(c, OC320_ANIM_TABLE + anim, blend);
+        }
+        // The motion state: pose flag (both ways) and its sub-object.
+        w(
+            c,
+            OC320_ENTER_RIDER + OC320_RIDER_MOTION,
+            OC320_ENTER_MOTION,
+        );
+        w(
+            c,
+            OC320_ENTER_MOTION + 0x30,
+            if seed % 3 == 0 { 0 } else { 1 },
+        );
+        w(c, OC320_ENTER_MOTION + 0x70, OC320_ENTER_SUB);
+        fill(c, &mut r, OC320_ENTER_SUB, 0x100);
+        // Globals: audio system, replay cache, script manager.
+        w(c, GAME_GP + 0x410, OC320_ENTER_AUDIO);
+        w(c, GAME_GP - 0x848, OC320_ENTER_PTR1);
+        w(c, OC320_ENTER_PTR1 + 0x84, OC320_ENTER_PTR2);
+        w(c, OC320_ENTER_PTR2 + 0x28, OC320_ENTER_REPLAY);
+        w(c, OC320_ENTER_REPLAY + 0x61c, 1);
+        w(c, GAME_GP + 0xce8, OC320_ENTER_WSM);
+        c.g[A0][0] = sx(OC320_ENTER_THIS);
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x0012_ca30;
+    }
+
+    /// The real audio, animation-controller, wipeout-motion, replay-cache
+    /// (early return) and script-manager callees; the 0x16 branch both ways.
+    #[test]
+    fn rider_wipeout_sub_enter_matches() {
+        check(
+            ee::s00::f_0012ca30__generated,
+            rider_wipeout_sub_enter,
+            200,
+            &|c, seed| oc320_enter_setup(c, seed),
+        );
+    }
+
+    // -- 0x0012e690 RiderWipeoutSub_Exit -------------------------------------
+
+    pub(crate) const OC325_EXIT_THIS: u32 = DATA + 0x5_0000;
+
+    pub(crate) const OC325_EXIT_RIDER: u32 = DATA + 0x5_1000;
+
+    pub(crate) const OC325_EXIT_VT: u32 = DATA + 0x5_2000;
+
+    /// A real leaf that returns 0 (`RiderIface_*` stub at 0x1406c0).
+    pub(crate) const OC325_RETURNS_ZERO: u32 = 0x0014_06c0;
+
+    /// The frame counter's parity (odd: exit at once), and the wipeout
+    /// sub-state's virtual "done" method: a real zero-returning leaf, or a
+    /// fake (which returns a pointer, so the timed event and the speech
+    /// recovery run; the audio system is null, so the recovery is silent and
+    /// returns at once).
+    pub(crate) fn oc325_wipeout_exit_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0012_e690, 0);
+        let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+        const APP: u32 = DATA + 0x4_0000;
+        const GAME: u32 = DATA + 0x4_1000;
+        const AI: u32 = DATA + 0x4_2000;
+        w(c, GAME_GP + 0x848, APP);
+        w(c, APP + 0x84, GAME);
+        w(c, GAME + 0xc, AI);
+        w(c, AI + 8, (seed % 2) as u32);
+        w(c, OC325_EXIT_THIS + OC325_RIDER_SCRIPT, OC325_EXIT_RIDER);
+        w(c, OC325_EXIT_RIDER + OC325_RIDER_SUB, OC325_EXIT_VT);
+        let method = if seed % 3 == 0 {
+            OC325_RETURNS_ZERO
+        } else {
+            FAKE
+        };
+        c.bus.write16(OC325_EXIT_VT + OC325_SUB_EXIT_SLOT, 0);
+        w(c, OC325_EXIT_VT + OC325_SUB_EXIT_SLOT + 4, method);
+        c.g[A0][0] = sx(OC325_EXIT_THIS);
+        c.g[A1][0] = sx(r.next_u32());
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x0012_e690;
+    }
+
+    /// Both parities, both method results (the fake returns a pointer, so
+    /// the timed event and the recovery run), all three calls.
+    #[test]
+    fn rider_wipeout_sub_exit_matches() {
+        check(
+            ee::s00::f_0012e690__generated,
+            rider_wipeout_sub_exit,
+            200,
+            &|c, seed| oc325_wipeout_exit_setup(c, seed),
         );
     }
 }

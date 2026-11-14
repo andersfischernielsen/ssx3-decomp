@@ -348,6 +348,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         wscript_process_list_count,
         "WScriptProcessList_Count",
     ),
+    (
+        0x0030_c6c8,
+        wscript_man_collect_set_save,
+        "WScriptMan_CollectSetSave",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4191,6 +4196,38 @@ pub fn wscript_man_post_air_event(c: &mut Cpu) {
     frame.close(c);
 }
 
+// ---------------------------------------------------------------------------
+// WScriptMan_CollectSetSave (0x30c6c8)
+
+/// The saved object's vtable and the stream/collector interface slot.
+pub(crate) const WSCRIPT_SET_SAVE_VTABLE: u32 = 0x00;
+
+pub(crate) const WSCRIPT_SET_SAVE_SLOT: u32 = 0x08;
+
+/// `int WScriptMan_CollectSetSave(void* stream, cObj* obj)` (0x30c6c8):
+/// `obj->v01(stream, 0x10c)`, i.e. the collector's save entry with the
+/// `SaveSet` tag. Frame 0x10 (ra +0).
+pub fn wscript_man_collect_set_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A1][0]; // obj
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A0][0]; // stream
+        c.g[A2][0] = 0x10c;
+        c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(WSCRIPT_SET_SAVE_VTABLE));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(WSCRIPT_SET_SAVE_SLOT));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(WSCRIPT_SET_SAVE_SLOT + 4));
+        let save = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x0030_c6f0);
+        c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, save, 0x0030_c6f0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6260,6 +6297,27 @@ pub(crate) mod tests {
                 c.bus.write32(man + POST_AIR_OP_COUNT, count);
                 fill(c, &mut r, man + 0x44, 0x100);
                 fill(c, &mut r, crate::difftest::SP - 0x40, 0x10);
+            },
+        );
+    }
+
+    // --------------------------------------- WScriptMan_CollectSetSave
+
+    /// `WScriptMan_CollectSetSave`: a fake vtable slot 0x8 method.
+    #[test]
+    fn wscript_man_collect_set_save_matches() {
+        covered(
+            ee::s10::f_0030c6c8__generated,
+            wscript_man_collect_set_save,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0030_c6c8, 1);
+                c.pc = 0x0030_c6c8;
+                let obj = DATA + 0x100;
+                let vt = vtable(c, &mut r, &[WSCRIPT_SET_SAVE_SLOT]);
+                c.bus.write32(obj, vt);
+                c.g[A0][0] = (DATA + 0x200) as u64;
+                c.g[A1][0] = obj as u64;
             },
         );
     }

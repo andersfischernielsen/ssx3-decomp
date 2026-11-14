@@ -6,6 +6,7 @@ use crate::abi::r32;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::back_edge_unwinds;
@@ -104,6 +105,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RiderAnim_PlaySeqThenLoop",
     ),
     (0x0010_4d68, rider_anim_save_state, "RiderAnim_SaveState"),
+    (
+        0x0010_4a60,
+        rider_anim_seq_end_type02,
+        "RiderAnim_SeqEndType02",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1969,6 +1975,151 @@ pub fn rider_anim_save_state(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// AnimController_ReplaceSequence (0x312b18)
+
+/// A sequence node's current weight (+0x94), fade weight (+0x98) and fade
+/// target (+0x9c), all floats.
+pub(crate) const ANIM_NODE_WEIGHT: u32 = 0x94;
+
+pub(crate) const ANIM_NODE_FADE_WEIGHT: u32 = 0x98;
+
+pub(crate) const ANIM_NODE_FADE_TARGET: u32 = 0x9c;
+
+/// `cAnimSequencer`'s sequence list head (+4).
+#[cfg(test)]
+pub(crate) const ANIM_SEQ_LIST_HEAD: u32 = 0x4;
+
+// ---------------------------------------------------------------------------
+// RiderAnim_SeqEndType02 (0x104a60)
+
+/// The `.rodata` jump table at `0x4569e0` (`0x450000 + 0x69e0`), indexed by
+/// `state - 0x10d` (states 0x10d..=0x11e).
+pub(crate) const SEQ_END_TABLE: u32 = 0x69e0;
+
+/// `AnimController_ReplaceSequence` (0x312b18, cross-shard).
+pub(crate) const SEQ_END_REPLACE: u32 = 0x0031_2b18;
+
+/// `int RiderAnim_SeqEndType02(RiderAnim* a, cAnimSequencer* b, int* state,
+/// ...)` (0x104a60): the sequence-end handler for states 0x10d..=0x11e; each
+/// state maps (through the `.rodata` jump table) to a call of
+/// `AnimController_ReplaceSequence(a, b, state, anim)` with the state's
+/// animation id, or 0x1b6 for the two states without one.
+///
+/// Also accepts every entry of the generated `__entries` twin (the trampoline
+/// re-enters at a case block after an event unwinds the callee).
+pub fn rider_anim_seq_end_type02(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                // Entry: the state's index and the frame.
+                0x0010_4a60 => {
+                    c.cycles += 7;
+                    c.g[V1][0] = Addr(r32(c, A2)).lw(c);
+                    c.g[SP][0] = sx(sp(c).wrapping_sub(0x10));
+                    let frame = sp(c);
+                    c.sd(frame, c.g[RA][0]);
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_sub(0x10d));
+                    c.g[V0][0] = (c.g[V1][0] < 0x12) as u64;
+                    let in_table = c.g[V0][0] != 0;
+                    c.g[A3][0] = c.g[A0][0];
+                    pc = if in_table { 0x0010_4a7c } else { 0x0010_4b38 };
+                }
+                // The jump-table read.
+                0x0010_4a7c => {
+                    c.cycles += 7;
+                    c.g[V0][0] = 0x0045_0000;
+                    c.g[V1][0] = sx(r32(c, V1) << 2);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(SEQ_END_TABLE));
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+                    c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+                    pc = r32(c, A0);
+                    let known = matches!(
+                        pc,
+                        0x0010_4a98
+                            | 0x0010_4aac
+                            | 0x0010_4ac0
+                            | 0x0010_4ad4
+                            | 0x0010_4ae8
+                            | 0x0010_4afc
+                            | 0x0010_4b10
+                            | 0x0010_4b24
+                            | 0x0010_4b38
+                    );
+                    if !known {
+                        c.jump_out(pc, 0x0010_4a60, 0x0010_4b48);
+                        return Ok(());
+                    }
+                }
+                // The nine cases: replace the sequence with the state's anim.
+                0x0010_4a98 => {
+                    seq_end_replace(c, 0x0010_4aa4, 0x123)?;
+                    pc = 0x0010_4b40;
+                }
+                0x0010_4aac => {
+                    seq_end_replace(c, 0x0010_4ab8, 0x124)?;
+                    pc = 0x0010_4b40;
+                }
+                0x0010_4ac0 => {
+                    seq_end_replace(c, 0x0010_4acc, 0x121)?;
+                    pc = 0x0010_4b40;
+                }
+                0x0010_4ad4 => {
+                    seq_end_replace(c, 0x0010_4ae0, 0x122)?;
+                    pc = 0x0010_4b40;
+                }
+                0x0010_4ae8 => {
+                    seq_end_replace(c, 0x0010_4af4, 0x125)?;
+                    pc = 0x0010_4b40;
+                }
+                0x0010_4afc => {
+                    seq_end_replace(c, 0x0010_4b08, 0x126)?;
+                    pc = 0x0010_4b40;
+                }
+                0x0010_4b10 => {
+                    seq_end_replace(c, 0x0010_4b1c, 0x127)?;
+                    pc = 0x0010_4b40;
+                }
+                0x0010_4b24 => {
+                    seq_end_replace(c, 0x0010_4b30, 0x128)?;
+                    pc = 0x0010_4b40;
+                }
+                // No animation for this state.
+                0x0010_4b38 => {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x1b6;
+                    c.g[RA][0] = c.ld(sp(c));
+                    pc = 0x0010_4b40;
+                }
+                // Epilogue.
+                0x0010_4b40 => {
+                    c.cycles += 2;
+                    let ra = r32(c, RA);
+                    c.g[SP][0] = sx(sp(c).wrapping_add(0x10));
+                    c.pc = ra;
+                    return Ok(());
+                }
+                other => {
+                    c.jump_out(other, 0x0010_4a60, 0x0010_4b48);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// One case of `RiderAnim_SeqEndType02`: `AnimController_ReplaceSequence(a,
+/// b, state, anim)`, then reload `ra` from the frame.
+pub(crate) fn seq_end_replace(c: &mut Cpu, ret: u32, anim: u32) -> crate::call::Flow {
+    c.cycles += 5;
+    c.g[A0][0] = c.g[A3][0];
+    c.g[A3][0] = anim as u64;
+    call_ptr(c, SEQ_END_REPLACE, ret)?;
+    c.g[RA][0] = c.ld(sp(c));
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2783,5 +2934,87 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(STREAM);
             },
         );
+    }
+
+    #[test]
+    fn rider_anim_seq_end_type02_matches() {
+        use crate::difftest::{check, put_words, DATA};
+        check(
+            ssx3_ee::s00::f_00104a60__generated,
+            rider_anim_seq_end_type02,
+            200,
+            &|c, seed| {
+                // The same animation chain the replacement call runs.
+                replace_sequence_setup(c, seed, 0x0010_4a60);
+                // The game's `.rodata` jump table for states 0x10d..=0x11e
+                // (the two states 0x115 and 0x11a have no entry block). The
+                // 0x115 entry is corrupt to exercise the `jump_out` arm.
+                put_words(
+                    c,
+                    0x0045_69e0,
+                    &[
+                        0x0010_4ac0,
+                        0x0010_4ad4,
+                        0x0010_4a98,
+                        0x0010_4aac,
+                        0x0010_4ae8,
+                        0x0010_4afc,
+                        0x0010_4b10,
+                        0x0010_4b24,
+                        0xdead_1234,
+                        0x0010_4ac0,
+                        0x0010_4ad4,
+                        0x0010_4aac,
+                        0x0010_4aac,
+                        0x0010_4b38,
+                        0x0010_4ac0,
+                        0x0010_4ad4,
+                        0x0010_4a98,
+                        0x0010_4aac,
+                    ],
+                );
+                // Every state, plus out-of-table ones.
+                let state = if seed % 5 == 0 {
+                    0x108 + seed % 0x60
+                } else {
+                    0x10d + seed % 18
+                };
+                // The node doubles as the state word (a2 = the int* argument).
+                c.bus.write32(DATA + 0x300, state);
+                c.pc = 0x0010_4a60;
+            },
+        );
+    }
+
+    /// The animation chain `AnimController_ReplaceSequence` runs, kept on
+    /// its short paths (no global fake slots, so the tests stay independent):
+    /// an empty sequencer list, and `AnimController_PlayAnim`'s virtual
+    /// returning the "no animation" id 0x207.
+    pub(crate) fn replace_sequence_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        use crate::difftest::fakes::{machine, FAKE, LOG_RESULTS};
+        use crate::difftest::DATA;
+        let mut r = machine(c, seed, salt, 0);
+        let (self_, sub, seq, node) = (DATA + 0x100, DATA + 0x180, DATA + 0x200, DATA + 0x300);
+        // `PlayAnim`'s virtual: a fake that returns 0x207.
+        c.bus.write32(self_ + 0x58, sub);
+        c.bus.write16(sub + 0x20, ((r.next_u32() % 4) * 4) as u16);
+        c.bus.write32(sub + 0x24, FAKE);
+        c.bus.write32(LOG_RESULTS, 0x207);
+        // An empty sequencer list: both list walks return at once.
+        c.bus.write32(seq + ANIM_SEQ_LIST_HEAD, 0);
+        // The node's weight, fade weight and fade target (no fade on every
+        // third seed, edge floats otherwise).
+        c.bus.write32(node + ANIM_NODE_WEIGHT, r.edge_f32());
+        c.bus.write32(node + ANIM_NODE_FADE_WEIGHT, r.edge_f32());
+        let target = if seed % 3 == 0 {
+            0.0f32.to_bits()
+        } else {
+            r.edge_f32()
+        };
+        c.bus.write32(node + ANIM_NODE_FADE_TARGET, target);
+        c.g[A0][0] = self_ as u64;
+        c.g[A1][0] = seq as u64;
+        c.g[A2][0] = node as u64;
+        c.g[A3][0] = (r.next_u32() % 8) as u64;
     }
 }

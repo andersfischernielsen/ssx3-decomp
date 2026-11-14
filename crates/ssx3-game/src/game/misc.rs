@@ -317,6 +317,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         computer_actor_rider_roll_random_trick,
         "ComputerActorRider_RollRandomTrick",
     ),
+    (0x0040_f840, isnan, "isnan"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -15023,6 +15024,30 @@ pub fn wscript_fn_start_object_loop(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// isnan (0x40f840)
+
+/// `int isnan(double x)` (0x40f840): the libc test, `(hx & 0x7fffffff) |
+/// (lx | -lx) >> 31 > 0x7ff00000`, with `hx`/`lx` the two halves of `a0`
+/// (the double is passed in one 64-bit GPR).
+pub fn isnan(c: &mut Cpu) {
+    c.cycles += 14;
+    c.g[V0][0] = c.g[A0][0] << 32;
+    c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64; // lx
+    c.g[A0][0] = ((c.g[A0][0] as i64) >> 32) as u64; // hx
+    c.g[V1][0] = 0x7fff_0000;
+    c.g[A1][0] = sx(0u32.wrapping_sub(c.g[V0][0] as u32));
+    c.g[V1][0] |= 0xffff;
+    c.g[V0][0] |= c.g[A1][0];
+    c.g[A0][0] &= c.g[V1][0];
+    c.g[V0][0] = sx((c.g[V0][0] as u32) >> 31);
+    c.g[V1][0] = 0x7ff0_0000;
+    c.g[A0][0] |= c.g[V0][0];
+    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+    c.g[V0][0] = sx((c.g[A0][0] as u32) >> 31);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -21013,6 +21038,27 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(PARAMS);
             },
         );
+    }
+
+    /// `isnan` on zeroes, normal doubles, floats bit patterns and the
+    /// NaN/signalling-NaN encodings.
+    #[test]
+    fn isnan_matches() {
+        use crate::difftest::{check, scramble, Rng};
+        check(ee::s15::f_0040f840__generated, isnan, 200, &|c, seed| {
+            let mut r = Rng(0x5eed_0bad ^ seed as u64);
+            scramble(c, &mut r);
+            let a0 = match seed % 6 {
+                0 => 0,
+                1 => 0x7ff0_0000_0000_0000, // +inf
+                2 => 0xfff0_0000_0000_0001, // -inf, low word set
+                3 => 0x7ff8_0000_0000_0000, // NaN
+                4 => 0x7ff0_0000_7ff0_0000, // inf high, junk low
+                _ => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+            };
+            c.g[A0][0] = a0;
+            c.pc = 0x0040_f840;
+        });
     }
 }
 

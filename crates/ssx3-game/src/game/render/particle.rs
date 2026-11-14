@@ -434,6 +434,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0037_c8c0, ps2_graphics_man_v46, "PS2GraphicsMan_v46"),
     (0x0037_0dc8, dynamic_emitter_setup, "DynamicEmitter_Setup"),
     (0x0037_12b8, dynamic_emitter_save, "DynamicEmitter_Save"),
+    (
+        0x0037_0c60,
+        dynamic_emitter_alloc_data,
+        "DynamicEmitter_AllocData",
+    ),
+    (
+        0x0037_0cf8,
+        dynamic_emitter_free_data,
+        "DynamicEmitter_FreeData",
+    ),
 ];
 
 /// Same-shard direct callees used above.
@@ -11543,6 +11553,132 @@ pub fn dynamic_emitter_save(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// DynamicEmitter_AllocData (0x370c60)
+
+/// Emitter: element count (+0x178), particle array (+0x1a0), state array
+/// (+0x1a4).
+pub(crate) const EMITTER_COUNT: u32 = 0x178;
+
+pub(crate) const EMITTER_PARTICLES: u32 = 0x1a0;
+
+pub(crate) const EMITTER_STATES: u32 = 0x1a4;
+
+/// The `new (tag, 0, 0)` allocation tags of the two arrays.
+pub(crate) const EMITTER_PARTICLE_TAG: u64 = 0x0049_2650;
+
+pub(crate) const EMITTER_STATE_TAG: u64 = 0x0049_2670;
+
+/// `operator_new_named` (0x317e30, cross-shard).
+pub(crate) const EMITTER_NEW_NAMED: u32 = 0x0031_7e30;
+
+/// `void DynamicEmitter_AllocData(DynamicEmitter* self)` (0x370c60): allocate
+/// the emitter's particle array (`count * 16` bytes, tag 0x492650) and its
+/// state array (tag 0x492670) at `count` elements (`+0x178`), storing them at
+/// `+0x1a0`/`+0x1a4`. Frame 0x40 (s0 = self, s1 = array slot, s2 = count).
+pub fn dynamic_emitter_alloc_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        c.g[A1][0] = EMITTER_PARTICLE_TAG;
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0;
+        frame.save(c, S0, 0x30);
+        c.g[A3][0] = 0;
+        c.g[S0][0] = Addr(r32(c, S1).wrapping_add(EMITTER_COUNT)).lw(c);
+        c.g[S2][0] = sx(r32(c, S1).wrapping_add(EMITTER_PARTICLES));
+        c.g[A0][0] = sx(r32(c, S0) << 4);
+        call_ptr(c, EMITTER_NEW_NAMED, 0x0037_0c98)?;
+        // The compiler's array-new tail: `count - 1` (the `n - 1` of an
+        // inlined element loop), and a `-1` marker when the count is not 0.
+        c.g[V1][0] = sx(r32(c, S0).wrapping_sub(1));
+        if r32(c, S0) != 0 {
+            c.cycles += 2;
+            c.g[A0][0] = u64::MAX;
+        }
+        c.cycles += 11;
+        Addr(r32(c, S2)).sw(c, c.g[V0][0]);
+        c.g[A1][0] = EMITTER_STATE_TAG;
+        c.g[A2][0] = 0;
+        c.g[S0][0] = Addr(r32(c, S1).wrapping_add(EMITTER_COUNT)).lw(c);
+        c.g[A3][0] = 0;
+        c.g[S1][0] = sx(r32(c, S1).wrapping_add(EMITTER_STATES));
+        c.g[A0][0] = sx(r32(c, S0) << 4);
+        call_ptr(c, EMITTER_NEW_NAMED, 0x0037_0ccc)?;
+        c.g[V1][0] = sx(r32(c, S0).wrapping_sub(1));
+        if r32(c, S0) != 0 {
+            c.cycles += 1;
+            c.g[A0][0] = u64::MAX;
+        }
+        c.cycles += 7;
+        Addr(r32(c, S1)).sw(c, c.g[V0][0]);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// DynamicEmitter_FreeData (0x370cf8)
+
+/// Emitter fields: the element count (+0x170), the last index (+0x178), the
+/// particle array (+0x1a0) and the state array (+0x1a4).
+pub(crate) const EMITTER_FREE_COUNT: u32 = 0x170;
+
+pub(crate) const EMITTER_FREE_LAST: u32 = 0x178;
+
+pub(crate) const EMITTER_FREE_PARTICLES: u32 = 0x1a0;
+
+pub(crate) const EMITTER_FREE_STATES: u32 = 0x1a4;
+
+/// `void DynamicEmitter_FreeData(DynamicEmitter* self, int reset)` (0x370cf8):
+/// free the particle and state arrays (`EA_MemFree`, through the function
+/// table) and clear their slots; with `reset`, also clear the element count
+/// and set the last index to -1. Frame 0x30 (s0 = self, s1 = reset).
+pub fn dynamic_emitter_free_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(EMITTER_FREE_PARTICLES)).lw(c);
+        c.g[S1][0] = c.g[A1][0];
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            call_ptr(c, 0x0031_7e98, 0x0037_0d20)?;
+            Addr(r32(c, S0).wrapping_add(EMITTER_FREE_PARTICLES)).sw(c, 0);
+        }
+        c.cycles += 3;
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(EMITTER_FREE_STATES)).lw(c);
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            call_ptr(c, 0x0031_7e98, 0x0037_0d38)?;
+            Addr(r32(c, S0).wrapping_add(EMITTER_FREE_STATES)).sw(c, 0);
+        }
+        c.cycles += 2;
+        c.g[V0][0] = u64::MAX;
+        if c.g[S1][0] != 0 {
+            c.cycles += 2;
+            Addr(r32(c, S0).wrapping_add(EMITTER_FREE_COUNT)).sw(c, 0);
+            Addr(r32(c, S0).wrapping_add(EMITTER_FREE_LAST)).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15137,6 +15273,76 @@ pub(crate) mod tests {
                 c.bus.write32(stream, vt);
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(stream);
+            },
+        );
+    }
+
+    #[test]
+    fn dynamic_emitter_alloc_data_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA};
+        use crate::game::be::beintreward::tests::world;
+        use crate::game::bx::bxstring::tests::heap_init_4;
+        use crate::game::bx::bxstringctor::tests::be_library;
+        check(
+            ssx3_ee::s12::f_00370c60__generated,
+            dynamic_emitter_alloc_data,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0037_0c60, 0);
+                be_library(c);
+                world(c);
+                heap_init_4(c);
+                // The emitter: a junk element count and junk array slots
+                // (some seeds empty, which allocates nothing).
+                let emitter = DATA + 0x100;
+                fill(c, &mut r, emitter + 0x170, 0x40);
+                let count = if seed % 4 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 8
+                };
+                c.bus.write32(emitter + EMITTER_COUNT, count);
+                c.g[A0][0] = emitter as u64;
+            },
+        );
+    }
+
+    /// `DynamicEmitter_FreeData`: arrays present or empty, and `reset` set or
+    /// clear; the heap is up (sizes over the pool range) so `EA_MemFree`
+    /// really returns the blocks.
+    #[test]
+    fn dynamic_emitter_free_data_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA};
+        use crate::game::be::beintreward::tests::world;
+        use crate::game::bx::bxstring::tests::{alloc, heap};
+        use crate::game::bx::bxstringctor::tests::be_library;
+        check(
+            ee::s12::f_00370cf8__generated,
+            dynamic_emitter_free_data,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x37_0cf8, 0);
+                be_library(c);
+                world(c);
+                heap(c);
+                let emitter = DATA + 0x100;
+                fill(c, &mut r, emitter + 0x160, 0x50);
+                let particles = if seed % 3 == 0 {
+                    0
+                } else {
+                    alloc(c, 0x200 + r.next_u32() % 0x100)
+                };
+                let states = if seed % 4 == 0 {
+                    0
+                } else {
+                    alloc(c, 0x200 + r.next_u32() % 0x100)
+                };
+                c.bus.write32(emitter + EMITTER_FREE_PARTICLES, particles);
+                c.bus.write32(emitter + EMITTER_FREE_STATES, states);
+                c.g[A0][0] = sx(emitter);
+                c.g[A1][0] = (seed % 2) as u64;
             },
         );
     }

@@ -204,6 +204,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0034_1aa0, anim_object_ctor, "AnimObject_ctor"),
     (0x0034_1cf0, anim_object_dtor, "AnimObject_dtor"),
     (0x0034_2718, anim_teeter_save, "AnimTeeter_Save"),
+    (0x0034_2c08, debounce_ctor_2, "Debounce_ctor_2"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -15289,6 +15290,140 @@ pub fn anim_object_dtor(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Debounce_ctor_2 (0x342c08)
+
+/// The object's debounce time, stored as the raw bits of an `int` (+0x2c).
+pub(crate) const DEBOUNCE_TIME_WORD: u32 = 0x2c;
+
+/// The object's mode word (+0x30).
+pub(crate) const DEBOUNCE_MODE_WORD: u32 = 0x30;
+
+/// The object's linked move node (`self->node`, +0x18).
+pub(crate) const DEBOUNCE_NODE: u32 = 0x18;
+
+/// A node's flags word (+8).
+pub(crate) const DEBOUNCE_NODE_FLAGS: u32 = 0x8;
+
+/// The definition passed to the constructor: `time` (`float`, +4), `f08` (+8)
+/// and `mode` (+0xc).
+pub(crate) const DEBOUNCE_DEF_TIME: u32 = 0x4;
+
+pub(crate) const DEBOUNCE_DEF_F08: u32 = 0x8;
+
+pub(crate) const DEBOUNCE_DEF_MODE: u32 = 0xc;
+
+/// `D_004A5B64` (gp+0x2a74), whose `+0x10` word is the tick-rate scale.
+#[cfg(test)]
+pub(crate) const DEBOUNCE_RATE_SCALE: u32 = 0x004a_5b64;
+
+/// `void* Debounce_ctor_2(self, list, node, def, src)` (0x342c08): the
+/// `ModObj` constructor with this object's vtable (`0x4906f0`), its debounce
+/// time (`def->time * *(int*)(D_004A5B64 + 0x10)`, truncated) at +0x2c and
+/// `def->f08` at +0x30, then takes over `src`. Finally the node flags follow
+/// `def->mode`: 0 clears bits 0-3, 1 sets bit 0 and bit 2 (clearing 1), and
+/// any other mode sets bit 2 (clearing 1) only when bits 0 and 1 are both set.
+/// Returns `self`. Frame 0x40 (s0 = def, s1 = src, s2 = self).
+pub fn debounce_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 29;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        c.g[S0][0] = c.g[A3][0]; // def
+        frame.save(c, S2, 0x10);
+        c.g[S2][0] = c.g[A0][0]; // self
+        frame.save(c, S1, 0x20);
+        c.g[A3][0] = c.g[A2][0]; // ctor node = our a2
+        c.g[S1][0] = c.g[T0][0]; // our a4 (the source node) = ctor list
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0; // ctor type
+        Callee {
+            addr: 0x0035_5280,
+            f: ee::s11::ModObj_ctor,
+        }
+        .call(c, 0x0034_2c34)?;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_add(0x2a74)).lw(c);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x6f0));
+        c.g[A1][0] = c.g[S1][0];
+        Addr(r32(c, S2).wrapping_add(0xc)).sw(c, c.g[V1][0]); // self->vt
+        c.g[A0][0] = c.g[S2][0];
+        // self->+0x2c = (int)(def->time * (float)*(int*)(D_004A5B64 + 0x10)).
+        c.lwc1(1, r32(c, V0).wrapping_add(0x10));
+        c.cvt_s_w(1, 1);
+        c.lwc1(0, r32(c, S0).wrapping_add(DEBOUNCE_DEF_TIME));
+        c.mul_s(0, 0, 1);
+        c.cvt_w_s(1, 0);
+        c.swc1(1, r32(c, S2).wrapping_add(DEBOUNCE_TIME_WORD));
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(DEBOUNCE_DEF_F08)).lw(c);
+        Addr(r32(c, S2).wrapping_add(DEBOUNCE_MODE_WORD)).sw(c, c.g[V0][0]);
+        Callee {
+            addr: 0x0035_5f10,
+            f: ee::s11::ModObj_TakeOverObject,
+        }
+        .call(c, 0x0034_2c70)?;
+
+        c.g[V1][0] = Addr(r32(c, S0).wrapping_add(DEBOUNCE_DEF_MODE)).lw(c);
+        c.g[V0][0] = 1;
+        // The `+1` tail block runs for every path but the plain `mode >= 2`
+        // one (which leaves the loop directly).
+        let mut tail = true;
+        if c.g[V1][0] != 0 {
+            // mode != 0
+            c.cycles += 2;
+            c.g[A1][0] = Addr(r32(c, S2).wrapping_add(DEBOUNCE_NODE)).lw(c);
+            if c.g[V1][0] != c.g[V0][0] {
+                // mode != 1: touch the flags only when both low bits are set.
+                c.cycles += 5;
+                c.g[V1][0] = 3;
+                c.g[A0][0] = Addr(r32(c, A1).wrapping_add(DEBOUNCE_NODE_FLAGS)).lw(c);
+                c.g[V0][0] = c.g[A0][0] & 3;
+                if c.g[V0][0] != c.g[V1][0] {
+                    c.g[V0][0] = c.g[S2][0];
+                    tail = false;
+                } else {
+                    c.cycles += 5;
+                    c.g[V0][0] = 0xffff_ffff_ffff_fffd; // clear bit 1
+                    c.g[V0][0] &= c.g[A0][0];
+                    c.g[V0][0] |= 0x4;
+                    Addr(r32(c, A1).wrapping_add(DEBOUNCE_NODE_FLAGS)).sw(c, c.g[V0][0]);
+                }
+            } else {
+                // mode == 1: flags |= 1, then flags = (flags & ~2) | 4.
+                c.cycles += 11;
+                c.g[V1][0] = 0xffff_ffff_ffff_fffd;
+                c.g[V0][0] = Addr(r32(c, A1).wrapping_add(DEBOUNCE_NODE_FLAGS)).lw(c);
+                c.g[V0][0] |= 0x1;
+                Addr(r32(c, A1).wrapping_add(DEBOUNCE_NODE_FLAGS)).sw(c, c.g[V0][0]);
+                c.g[A0][0] = Addr(r32(c, S2).wrapping_add(DEBOUNCE_NODE)).lw(c);
+                c.g[V0][0] = Addr(r32(c, A0).wrapping_add(DEBOUNCE_NODE_FLAGS)).lw(c);
+                c.g[V0][0] &= c.g[V1][0];
+                c.g[V0][0] |= 0x4;
+                Addr(r32(c, A0).wrapping_add(DEBOUNCE_NODE_FLAGS)).sw(c, c.g[V0][0]);
+            }
+        } else {
+            // mode == 0: clear bits 0-3.
+            c.cycles += 7;
+            c.g[A0][0] = Addr(r32(c, S2).wrapping_add(DEBOUNCE_NODE)).lw(c);
+            c.g[V1][0] = 0xffff_ffff_ffff_fff0;
+            c.g[V0][0] = Addr(r32(c, A0).wrapping_add(DEBOUNCE_NODE_FLAGS)).lw(c);
+            c.g[V0][0] &= c.g[V1][0];
+            Addr(r32(c, A0).wrapping_add(DEBOUNCE_NODE_FLAGS)).sw(c, c.g[V0][0]);
+        }
+        if tail {
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S2][0];
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -17492,6 +17627,78 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(me);
                 c.g[A1][0] = (r.next_u32() & 0xff) as u64;
                 c.pc = 0x0034_1cf0;
+            },
+        );
+    }
+
+    /// `Debounce_ctor_2` runs the real `ModObj` constructor chain (its
+    /// `WorldObj` and sync-process fixtures mirror `mod_obj_ctor_matches`):
+    /// definitions with mode 0, 1 and >=2, node flags with the focus bit and
+    /// with or without both low bits set, and an empty `a4` source for the
+    /// take-over.
+    #[test]
+    fn debounce_ctor_2_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA, GAME_GP};
+        const SELF: u32 = DATA + 0x100;
+        const NODE: u32 = DATA + 0x200;
+        const DEF: u32 = DATA + 0x300;
+        const PROCS: u32 = DATA + 0x1000;
+        const TAILS: u32 = DATA + 0x1400;
+        const WORLD: u32 = DATA + 0x2000;
+        const FOCUS: u32 = DATA + 0x3000;
+        const SCALE: u32 = DATA + 0x4000;
+        check(
+            ee::s11::f_00342c08__generated,
+            debounce_ctor_2,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_2c08, 0);
+                c.pc = 0x0034_2c08;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                fill(c, &mut r, SELF, 0x10);
+                fill(c, &mut r, NODE, 0x10);
+                let flags = (r.next_u32() & !0xf)
+                    | if seed % 4 == 0 { 0x100 } else { 0 }
+                    | if seed % 2 == 0 { 3 } else { (seed / 8) % 3 };
+                w(c, NODE + DEBOUNCE_NODE_FLAGS, flags);
+                w(c, GAME_GP + 0x2898 + 4, PROCS);
+                for i in 0..4 {
+                    w(c, PROCS + 0x44 * i, r.next_u32());
+                    w(c, PROCS + 0x44 * i + 8, TAILS + 0x40 * i);
+                    w(c, PROCS + 0x44 * i + 0x28, TAILS + 0x40 * i + 0x20);
+                }
+                fill(c, &mut r, 0x0044_aff0, 0x20);
+                // World -> game -> race -> focus manager.
+                w(c, GAME_GP - 0x848, WORLD);
+                w(c, WORLD + 0x84, WORLD + 0x100);
+                w(c, WORLD + 0x100 + 0xc, WORLD + 0x200);
+                w(c, WORLD + 0x200 + 0xa4, FOCUS);
+                w(
+                    c,
+                    FOCUS + 0xd4,
+                    if seed % 3 == 0 { 0 } else { r.next_u32() },
+                );
+                w(c, FOCUS + 0xd8, r.next_u32() % 8);
+                // The definition: a time, the +8 word and the mode.
+                w(c, DEF + DEBOUNCE_DEF_TIME, r.f32(8.0));
+                w(c, DEF + DEBOUNCE_DEF_F08, r.next_u32());
+                w(c, DEF + DEBOUNCE_DEF_MODE, ((seed / 4) % 3) as u32);
+                // The tick-rate scale pointer and its value.
+                w(c, DEBOUNCE_RATE_SCALE, SCALE);
+                w(
+                    c,
+                    SCALE + 0x10,
+                    [0, 1, 2, 60, u32::MAX][(seed % 5) as usize],
+                );
+                // The process-list index, as in `mod_obj_ctor_matches`: it
+                // reaches `ProcessList_Add` as a byte offset into PROCS.
+                let list = (seed % 4) as u64;
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = list;
+                c.g[A2][0] = sx(NODE);
+                c.g[A3][0] = sx(DEF);
+                c.g[T0][0] = 0; // no source node: the take-over takes its empty path
             },
         );
     }

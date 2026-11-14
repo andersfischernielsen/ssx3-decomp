@@ -234,6 +234,31 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         trick_lookup_bonus_trick,
         "Trick_LookupBonusTrick",
     ),
+    (
+        0x0011_75f8,
+        rider_metrix_reset_combo,
+        "RiderMetrix_ResetCombo",
+    ),
+    (
+        0x0011_7990,
+        rider_metrix_get_trick_score,
+        "RiderMetrix_GetTrickScore",
+    ),
+    (
+        0x0011_7ae8,
+        rider_metrix_show_hud_text,
+        "RiderMetrix_ShowHUDText",
+    ),
+    (
+        0x0011_8ff8,
+        rider_metrix_show_trick_name,
+        "RiderMetrix_ShowTrickName",
+    ),
+    (
+        0x0011_a7a8,
+        ridermetrix_bank_pending_score,
+        "RiderMetrix_BankPendingScore",
+    ),
 ];
 
 /// Direct calls (same shard; these go through the shard's override slots, so
@@ -328,6 +353,11 @@ pub(crate) mod callee {
         addr: 0x0012_98c8,
         f: ee::s00::AI_GetFrameCounter,
     };
+
+    pub(crate) use crate::game::lib::snd::callee::RIDER_METRIX_REMOVE_HUD_MESSAGE;
+    pub(crate) use crate::game::lib::snd::callee::RIDER_METRIX_ROUNDED_TRICK_POINTS;
+    pub(crate) use crate::game::lib::snd::callee::RIDER_METRIX_SHOW_HUD_NUMBER as RIDER_METRIX_SHOW_HUD_NUMBER_3;
+    pub(crate) use crate::game::lib::snd::callee::RIDER_METRIX_TRICK_BONUS;
 }
 
 /// `RiderBase` (and its owner/board sub-objects) fields the HUD reads.
@@ -5710,6 +5740,294 @@ pub(crate) fn count_trick_repeats_scan(c: &mut Cpu) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// RiderMetrix_ShowHUDText (0x117ae8).
+
+/// `RiderMetrix` field: the HUD message slot table (0: no messages).
+pub(crate) const RIDER_METRIX_HUD_TABLE: u32 = 0x1b0;
+
+/// A HUD message slot is 0x9c bytes.
+pub(crate) const RIDER_METRIX_HUD_SLOT_SIZE: u32 = 0x9c;
+
+/// `RiderMetrix_FindHUDSlot(RiderMetrix*, int type)`.
+pub(crate) const RIDER_METRIX_FIND_HUD_SLOT: Callee = Callee {
+    addr: 0x0011_7a58,
+    f: ee::s00::f_00117a58,
+};
+
+/// `cHUDFX_Show(fx, int type, const char *text, int style, float time)`.
+pub(crate) const C_HUDFX_SHOW: Callee = Callee {
+    addr: 0x0011_7048,
+    f: ee::s00::f_00117048,
+};
+
+/// `int RiderMetrix_ShowHUDText(RiderMetrix* self, int type, const char*
+/// text, int style, float time)` (0x117ae8): show a HUD message in the slot
+/// `RiderMetrix_FindHUDSlot` picks, and return that slot index (-1 when the
+/// rider has no message table).
+pub fn rider_metrix_show_hud_text(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S4, 0x10);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save_fpr(c, 20, 0x60);
+        c.g[S4][0] = c.g[A3][0];
+        frame.save(c, S0, 0x50);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, S1).wrapping_add(RIDER_METRIX_HUD_TABLE)).lw(c);
+        let has_table = c.g[V0][0] != 0;
+        c.f[20] = c.f[12]; // the decay time
+        if !has_table {
+            c.cycles += 1;
+            c.g[V0][0] = u64::MAX;
+        } else {
+            c.cycles += 14;
+            RIDER_METRIX_FIND_HUD_SLOT.call(c, 0x0011_7b2c)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = RIDER_METRIX_HUD_SLOT_SIZE as u64;
+            c.mult(0, A0, S0, A0); // slot index * slot size
+            c.g[V0][0] = Addr(r32(c, S1).wrapping_add(RIDER_METRIX_HUD_TABLE)).lw(c);
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A2][0] = c.g[S3][0];
+            c.f[12] = c.f[20];
+            c.g[A3][0] = c.g[S4][0];
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            C_HUDFX_SHOW.call(c, 0x0011_7b54)?;
+            c.g[V0][0] = c.g[S0][0];
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `RiderMetrix_RemoveHUDMessage` (0x1179e0).
+pub(crate) const RIDER_METRIX_REMOVE_HUD: u32 = 0x0011_79e0;
+
+/// `void cRiderMetrix::resetComboChain(cRiderMetrix* this)` (0x1175f8):
+/// removes the combo HUD message (id 3), then clears the combo chain count
+/// (+0x9c), the combo points (+0xa0) and the combo timer (+0xa4 = -1.0).
+pub fn rider_metrix_reset_combo(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0x3;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, RIDER_METRIX_REMOVE_HUD, 0x0011_7610)?;
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(1, 0);
+        let this = r32(c, S0);
+        Addr(this).off(0x9c).sw(c, 0);
+        c.swc1(0, this.wrapping_add(0xa4));
+        Addr(this).off(0xa0).sw(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RiderMetrix_ShowTrickName (0x118ff8)
+
+/// `Trick_BuildName(out, id)` (0x116950).
+pub(crate) const OC320_TRICK_BUILD_NAME: Callee = Callee {
+    addr: 0x0011_6950,
+    f: ee::s00::Trick_BuildName,
+};
+
+/// `RiderMetrix_ShowHUDText(self, 0, text, 3.0f, repeat)` (0x117ae8).
+pub(crate) const OC320_SHOW_HUD_TEXT: Callee = Callee {
+    addr: 0x0011_7ae8,
+    f: ee::s00::RiderMetrix_ShowHUDText,
+};
+
+/// `void RiderMetrix_ShowTrickName(RiderMetrix* self, TrickId* id, int
+/// repeat)` (0x118ff8): build the trick's display name into a 0x100-byte
+/// stack buffer and show it as a HUD effect at scale 3, then post the trick
+/// to the script manager.
+pub fn rider_metrix_show_trick_name(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 27;
+        let frame = Frame::open(c, 0x140);
+        frame.save(c, S0, 0x130);
+        frame.save(c, S1, 0x120);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S2, 0x110);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0x100);
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A2][0] = 0xff;
+        OC320_TRICK_BUILD_NAME.call(c, 0x0011_9024)?;
+        c.g[AT][0] = 0x40400000;
+        c.mtc1(1, 12);
+        c.g[A3][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = c.g[SP][0];
+        OC320_SHOW_HUD_TEXT.call(c, 0x0011_9040)?;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xce8));
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0030_9918, 0x0011_904c)?;
+        frame.restore(c, S0, 0x130);
+        frame.restore(c, S1, 0x120);
+        frame.restore(c, S2, 0x110);
+        frame.restore_ra(c, 0x100);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RiderMetrix_BankPendingScore (0x11a7a8)
+// ---------------------------------------------------------------------------
+
+/// The per-slot HUD numbers `RiderMetrix_BankPendingScore` refreshes, and the
+/// "1.5x" size it shows them at.
+pub(crate) const RIDER_METRIX_BANK_SCALE: u32 = 0x3fc0_0000;
+
+// 1.5f
+
+/// `int RiderMetrix_BankPendingScore(cRiderMetrix* self)` (0x11a7a8): refresh
+/// the HUD numbers for the tricks landed this jump (slot 0x25), the pending
+/// base score (0x27) and the banked total (0x28), each only when its value is
+/// positive, and always drop the "wiped out" message (slot 4). Returns the
+/// rounded trick points.
+pub fn ridermetrix_bank_pending_score(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        callee::RIDER_METRIX_ROUNDED_TRICK_POINTS.call(c, 0x0011_a7c4)?;
+        c.g[S1][0] = c.g[V0][0];
+        let no_tricks = (c.g[S1][0] as i64) <= 0;
+        c.g[A0][0] = c.g[S0][0];
+        if !no_tricks {
+            c.cycles += 9;
+            c.g[A1][0] = 1;
+            callee::RIDER_METRIX_REMOVE_HUD_MESSAGE.call(c, 0x0011_a7d8)?;
+            c.g[AT][0] = RIDER_METRIX_BANK_SCALE as u64;
+            c.mtc1(1, 12);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0x25;
+            c.g[A2][0] = c.g[S1][0];
+            c.g[A3][0] = 0;
+            callee::RIDER_METRIX_SHOW_HUD_NUMBER_3.call(c, 0x0011_a7f4)?;
+        }
+
+        c.cycles += 3;
+        c.g[V0][0] = Addr(r32(c, S0)).off(0xa0).lw(c);
+        let no_pending = (c.g[V0][0] as i64) <= 0;
+        c.g[A0][0] = c.g[S0][0];
+        if !no_pending {
+            c.cycles += 9;
+            c.g[A1][0] = 3;
+            callee::RIDER_METRIX_REMOVE_HUD_MESSAGE.call(c, 0x0011_a808)?;
+            c.g[A2][0] = Addr(r32(c, S0)).off(0xa0).lw(c);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[AT][0] = RIDER_METRIX_BANK_SCALE as u64;
+            c.mtc1(1, 12);
+            c.g[A1][0] = 0x27;
+            c.g[A3][0] = 0;
+            callee::RIDER_METRIX_SHOW_HUD_NUMBER_3.call(c, 0x0011_a824)?;
+        }
+
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S0][0];
+        callee::RIDER_METRIX_TRICK_BONUS.call(c, 0x0011_a82c)?;
+        c.g[V1][0] = Addr(r32(c, S0)).off(0x84).lw(c);
+        c.g[S2][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        let no_total = (c.g[S2][0] as i64) <= 0;
+        c.g[A0][0] = c.g[S0][0];
+        if !no_total {
+            c.cycles += 24;
+            // The combo messages this total replaces.
+            for (slot, ret) in [
+                (0x2u64, 0x0011_a844u32),
+                (0x1d, 0x0011_a850),
+                (0x1c, 0x0011_a85c),
+                (0x1e, 0x0011_a868),
+                (0x1f, 0x0011_a874),
+                (0x20, 0x0011_a880),
+            ] {
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = slot;
+                callee::RIDER_METRIX_REMOVE_HUD_MESSAGE.call(c, ret)?;
+            }
+            c.g[AT][0] = RIDER_METRIX_BANK_SCALE as u64;
+            c.mtc1(1, 12);
+            c.g[A2][0] = c.g[S2][0];
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0x28;
+            c.g[A3][0] = 0;
+            callee::RIDER_METRIX_SHOW_HUD_NUMBER_3.call(c, 0x0011_a89c)?;
+        }
+
+        c.cycles += 10;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 4;
+        callee::RIDER_METRIX_REMOVE_HUD_MESSAGE.call(c, 0x0011_a8a8)?;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        c.g[RA][0] = c.ld(frame.at(c, 0));
+        let ra = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x40));
+        c.pc = ra;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x00117990 RiderMetrix_GetTrickScore
+
+/// `int RiderMetrix_GetTrickScore(RiderMetrix *self)` (0x117990): the
+/// accumulated score at 0.01 points a unit, rounded to whole tens:
+/// `(int)(v * 10000 + 5)` floored to a multiple of 10.
+pub fn rider_metrix_get_trick_score(c: &mut Cpu) {
+    c.cycles += 5;
+    c.lwc1(1, (c.g[A0][0] as u32).wrapping_add(0x18));
+    c.g[A1][0] = 0xa;
+    c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x1c4));
+    // (A branch on the multiplier that goes both ways in the original.)
+    c.cycles += 14;
+    c.lwc1(2, (c.g[A0][0] as u32).wrapping_add(0x14));
+    c.mul_s(0, 0, 1);
+    c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x7b04));
+    c.g[AT][0] = 0x40a0_0000;
+    c.mtc1(AT, 3);
+    c.mul_s(0, 0, 2);
+    c.mul_s(0, 0, 4);
+    c.add_s(0, 0, 3);
+    c.cvt_w_s(1, 0);
+    c.mfc1(V0, 1);
+    c.div(0, V0, A1);
+    c.g[V1][0] = c.hi[0];
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7459,6 +7777,212 @@ pub(crate) mod tests {
             rider_metrix_count_trick_repeats,
             150,
             &setup,
+        );
+    }
+
+    use crate::difftest::RA as SENTINEL;
+
+    // -- 0x00117ae8 RiderMetrix_ShowHUDText -----------------------------------
+
+    /// `RiderMetrix_ShowHUDText`: no message table (-1), a fixed type below
+    /// 34 and a searched one (a free slot, or the smallest ratio), the real
+    /// `RiderMetrix_FindHUDSlot` and `cHUDFX_Show` with a text or a null
+    /// one.
+    #[test]
+    fn rider_metrix_show_hud_text_matches() {
+        use crate::difftest::{check_lohi, scramble, Rng, DATA};
+        const SELF: u32 = DATA;
+        const TABLE: u32 = DATA + 0x2000;
+        const TEXT: u32 = DATA + 0x4000;
+        check_lohi(
+            ee::s00::f_00117ae8__generated,
+            rider_metrix_show_hud_text,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x117a_e800 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0011_7ae8;
+                if seed % 5 == 0 {
+                    c.bus.write32(SELF + RIDER_METRIX_HUD_TABLE, 0);
+                } else {
+                    c.bus.write32(SELF + RIDER_METRIX_HUD_TABLE, TABLE);
+                    let count = 0x23 + r.next_u32() % 4;
+                    c.bus.write32(SELF + 0x1b4, count);
+                    // A free slot among the searched ones (35..count), if any.
+                    let free = if seed % 3 == 2 && count > 0x23 {
+                        0x23 + r.next_u32() % (count - 0x23)
+                    } else {
+                        u32::MAX
+                    };
+                    for i in 0..count {
+                        let slot = TABLE + RIDER_METRIX_HUD_SLOT_SIZE * i;
+                        c.bus.write32(slot, if i == free { 0x34 } else { 0x35 });
+                        c.bus.write32(slot + 4, r.edge_f32());
+                        c.bus.write32(slot + 8, r.edge_f32());
+                        c.bus.write32(slot + 0xc, r.next_u32());
+                        c.bus.write32(slot + 0x18, r.next_u32());
+                    }
+                }
+                let n = r.next_u32() % 30;
+                for i in 0..n {
+                    c.bus.write8(TEXT + i, (r.next_u32() % 255 + 1) as u8);
+                }
+                c.bus.write8(TEXT + n, 0);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = if seed % 3 == 0 {
+                    (34 + r.next_u32() % 4) as u64
+                } else {
+                    (r.next_u32() % 34) as u64
+                };
+                c.g[A2][0] = if r.next_u32() % 8 == 0 { 0 } else { sx(TEXT) };
+                c.g[A3][0] = r.next_u32() as u64;
+                c.f[12] = r.edge_f32();
+            },
+        );
+    }
+
+    #[test]
+    fn rider_metrix_reset_combo_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA};
+        check(
+            ee::s00::f_001175f8__generated,
+            rider_metrix_reset_combo,
+            80,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0011_75f8, 0);
+                let this = DATA + 0x200;
+                fill(c, &mut r, this + 0x90, 0x10);
+                // The HUD table: absent in half the seeds, else an offset
+                // into valid RAM so the fixed-slot write lands on RAM.
+                let table = if seed % 2 == 0 { 0 } else { 0x4000 };
+                c.bus.write32(this + 0x1b0, table);
+                c.bus.write32(this + 0x1b4, (seed % 0x28) as u32);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(r.next_u32());
+                c.pc = 0x0011_75f8;
+            },
+        );
+    }
+
+    // -- 0x00118ff8 RiderMetrix_ShowTrickName --------------------------------
+
+    /// A trick id (random bit fields) and name-part tables whose slots point
+    /// at empty or short strings, so the real `Trick_BuildName` copies both
+    /// shapes; the real `RiderMetrix_ShowHUDText` stops at its null slot
+    /// (self+0x1b0), and the real script-manager post runs.
+    #[test]
+    fn rider_metrix_show_trick_name_matches() {
+        check(
+            ee::s00::f_00118ff8__generated,
+            rider_metrix_show_trick_name,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0011_8ff8, 0);
+                let this = DATA + 0x1000;
+                let id = DATA + 0x2000;
+                let strings = DATA + 0x3000;
+                c.bus.write32(this + 0x1b0, 0);
+                c.bus.write32(id, r.next_u32());
+                c.bus.write32(id + 4, r.next_u32());
+                for k in 0..4u32 {
+                    let s = strings + 0x10 * k;
+                    let len = if k == 0 { 0 } else { k + r.next_u32() % 6 };
+                    for i in 0..len {
+                        c.bus.write8(s + i, b'a' + (r.next_u32() % 26) as u8);
+                    }
+                    c.bus.write8(s + len, 0);
+                }
+                for t in [
+                    0x0043_d118u32,
+                    0x0043_d130,
+                    0x0043_cf40,
+                    0x0043_cf60,
+                    0x0043_cf70,
+                    0x0043_cfb0,
+                    0x0043_cfc8,
+                    0x0043_cfe0,
+                    0x0043_d0c0,
+                    0x0043_d160,
+                    0x0043_d2b8,
+                    0x0043_d2d0,
+                    0x0043_d2e0,
+                    0x0043_d100,
+                    0x0043_d320,
+                    GAME_GP - 0x2100,
+                ] {
+                    for slot in 0..0x80u32 {
+                        c.bus
+                            .write32(t + 4 * slot, strings + 0x10 * (r.next_u32() % 4));
+                    }
+                }
+                c.bus.write32(GAME_GP + 0xce8, DATA + 0x4000);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(id);
+                c.g[A2][0] = sx(r.next_u32() % 4);
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0011_8ff8;
+            },
+        );
+    }
+
+    /// RiderMetrix_BankPendingScore: the trick points, the pending score and
+    /// the banked total each negative, zero or positive (the real HUD
+    /// functions return at once on an empty message list).
+    #[test]
+    fn ridermetrix_bank_pending_score_matches() {
+        check(
+            ee::s00::f_0011a7a8__generated,
+            ridermetrix_bank_pending_score,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x11_a7a8, 0);
+                let this = DATA;
+                c.g[A0][0] = sx(this);
+                // No HUD message list: Remove/Show return immediately.
+                c.bus.write32(this + 0x1b0, 0);
+                c.bus.write32(this + 0x1b4, 0);
+                // Trick points = count (+0x14) * factor (+0x1c4) * gp const.
+                c.bus.write32(
+                    this + 0x14,
+                    if seed % 3 == 0 {
+                        0
+                    } else {
+                        (r.next_u32() % 0x1000) as f32 as u32
+                    },
+                );
+                c.bus.write32(this + 0x1c4, 1.0f32.to_bits());
+                c.bus
+                    .write32(this + 0x18, (r.next_u32() % 0x1000) as f32 as u32);
+                c.bus.write32(GAME_GP - 0x7b08, 1.0f32.to_bits());
+                c.bus
+                    .write32(this + 0xa0, [0, 1, 0xffff_ffff, 77][(seed % 4) as usize]);
+                c.bus.write32(this + 0x84, (seed % 3) as u32);
+            },
+        );
+    }
+
+    /// Random score factors (edge-case floats included) and the 10000 /
+    /// 10 constants the function loads from the game image.
+    #[test]
+    fn rider_metrix_get_trick_score_matches() {
+        use crate::difftest::elf_image;
+        use crate::difftest::fakes::machine;
+        const SELF: u32 = DATA + 0x100;
+        check(
+            ee::s00::f_00117990__generated,
+            rider_metrix_get_trick_score,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x11_7990, 0);
+                elf_image(c);
+                c.pc = 0x0011_7990;
+                c.bus.write32(GAME_GP - 0x7b04, 10_000.0f32.to_bits());
+                c.bus.write32(SELF + 0x18, r.edge_f32());
+                c.bus.write32(SELF + 0x14, r.edge_f32());
+                c.bus.write32(SELF + 0x1c4, r.f32(2.0));
+                c.g[A0][0] = sx(SELF);
+            },
         );
     }
 }

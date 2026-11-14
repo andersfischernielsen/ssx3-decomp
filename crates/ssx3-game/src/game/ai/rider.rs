@@ -8,9 +8,11 @@ use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::control::handplantcontrol::gp_4;
@@ -258,6 +260,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Rider_GetPlayerCharacterInfo",
     ),
     (0x0012_20d8, rider_build_light_set, "Rider_BuildLightSet"),
+    (0x0012_8660, player_save_state, "Player_SaveState"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -12616,6 +12619,26 @@ pub fn rider_build_light_set(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// Player_SaveState (0x128660)
+
+/// `RiderBase_SaveState` (0x111ac0), through its override slot.
+pub(crate) const OC326_RIDER_BASE_SAVE_STATE: Callee = Callee {
+    addr: 0x0011_1ac0,
+    f: ee::s00::RiderBase_SaveState,
+};
+
+/// `void Player_SaveState(Player* self, Stream* s)` (0x128660): save the
+/// rider part of the player (the base state's save), forwarded unchanged.
+pub fn player_save_state(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(OC326_RIDER_BASE_SAVE_STATE),
+        0x0012_8670,
+    );
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -16133,6 +16156,86 @@ pub(crate) mod tests {
                 c.bus.write32(block + 0x80, r.f32(1.0));
                 c.g[A0][0] = sx(rider);
                 c.pc = 0x0012_20d8;
+            },
+        );
+    }
+
+    // ----------------------------------------------------- Player_SaveState
+
+    /// Player_SaveState: the real `RiderBase_SaveState` on its own fixture
+    /// (a fake stream, zeroed sub-state objects, targets present or not,
+    /// path indices found or not), forwarded unchanged.
+    #[test]
+    fn player_save_state_matches() {
+        use crate::game::ai::computer::tests::oc258_w32;
+        use crate::game::ai::computer::{
+            RB_PATH_DATA, RB_RIDER, RB_RIDER_AIR_PREDICTOR, RB_RIDER_AI_PATH, RB_RIDER_ANIM,
+            RB_RIDER_BLOCK0, RB_RIDER_BLOCK1, RB_RIDER_METRIX, RB_RIDER_MODEL, RB_RIDER_TARGET0,
+            RB_RIDER_TARGET1, RB_RIDER_TRACK_PATH, RB_TARGET_ID,
+        };
+        check(
+            ee::s00::f_00128660__generated,
+            player_save_state,
+            24,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0012_8660, 40);
+                c.pc = 0x0012_8660;
+                let stream = DATA + 0x10;
+                let vt = vtable(c, &mut r, &[0x8]);
+                oc258_w32(c, stream, vt);
+                let this = DATA + 0x20_0000;
+                crate::difftest::fill(c, &mut r, this, 0xe00 / 4);
+                let rider = DATA + 0x21_0000;
+                oc258_w32(c, this + RB_RIDER, rider);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(stream);
+                // Zeroed part objects (anim, model, air predictor, metrix).
+                for (k, f) in [
+                    RB_RIDER_ANIM,
+                    RB_RIDER_MODEL,
+                    RB_RIDER_AIR_PREDICTOR,
+                    RB_RIDER_METRIX,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    oc258_w32(c, rider + f, DATA + 0x22_0000 + 0x1000 * k as u32);
+                }
+                // The anim's six sequence lists (8 bytes each, `count <= 0`).
+                oc258_w32(c, DATA + 0x22_0000 + 0x50, DATA + 0x22_8000);
+                // Targets: `*field` null or an object with an id.
+                for (k, f) in [RB_RIDER_TARGET0, RB_RIDER_TARGET1].into_iter().enumerate() {
+                    let cell = DATA + 0x23_0000 + 0x400 * k as u32;
+                    let obj = cell + 0x100;
+                    oc258_w32(c, rider + f, cell);
+                    let present = (seed >> k) & 1 != 0;
+                    oc258_w32(c, cell, if present { obj } else { 0 });
+                    oc258_w32(c, obj + RB_TARGET_ID, r.next_u32());
+                }
+                oc258_w32(c, rider + RB_RIDER_BLOCK0, r.next_u32());
+                oc258_w32(c, rider + RB_RIDER_BLOCK1, r.next_u32());
+                // Path data: n track paths of 0x3c bytes (count +0x10, array
+                // +0x14) and n AI paths of 0x40 bytes (count +0x8, array
+                // +0xc); the rider's paths are one of them, a stranger, or
+                // null.
+                let n = seed % 5;
+                let tracks = DATA + 0x24_0000;
+                let ais = DATA + 0x25_0000;
+                oc258_w32(c, RB_PATH_DATA + 0x10, n);
+                oc258_w32(c, RB_PATH_DATA + 0x14, tracks);
+                oc258_w32(c, RB_PATH_DATA + 0x8, n);
+                oc258_w32(c, RB_PATH_DATA + 0xc, ais);
+                for (f, base, stride) in [
+                    (RB_RIDER_TRACK_PATH, tracks, 0x3c),
+                    (RB_RIDER_AI_PATH, ais, 0x40),
+                ] {
+                    let v = match r.next_u32() % 3 {
+                        0 => 0,
+                        1 => base + stride * (r.next_u32() % 5),
+                        _ => r.next_u32(),
+                    };
+                    oc258_w32(c, rider + f, v);
+                }
             },
         );
     }
