@@ -2,7 +2,6 @@
 //! GIF A+D-free REGLIST blocks with `DIRECT`; here those blocks are the
 //! recorded draw (`Step::Gif`, as `crate::capture` reads the packet).
 
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;
 use ssx3_render::direct::{Cmd, Step};
 

@@ -10,7 +10,6 @@
 //! clipper (`PS2GraphicsMan_ClipLineSegment` 0x383a10) are reached only
 //! from slot 73; they are folded in here (`Strips`, `clip`).
 
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::float;
 use ssx3_ee_rt::Cpu;
 use ssx3_render::direct::{Cmd, Step};

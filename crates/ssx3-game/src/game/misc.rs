@@ -15065,7 +15065,6 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
     pub(crate) use crate::game::main::ssxapp::tests::f;
     pub(crate) use crate::game::visualfx::lensfx::tests::painter_sun;
-    use ssx3_ee_rt::cpu::reg::*;
     use ssx3_ee_rt::cpu::sx;
     use ssx3_ee_rt::Cpu;
 

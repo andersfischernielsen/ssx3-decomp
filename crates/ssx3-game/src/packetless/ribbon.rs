@@ -2,7 +2,6 @@
 //! between consecutive vertex rings (`EmitBoardWakeStrips`, built from its
 //! arguments as `crate::capture` reads them) as VU writes.
 
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;
 use ssx3_render::direct::{Cmd, Step};
 

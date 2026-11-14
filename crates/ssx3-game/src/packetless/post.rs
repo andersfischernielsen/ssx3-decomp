@@ -8,7 +8,6 @@
 //! packet is written and the scratchpad stream is left alone; the per-view
 //! parameter resets and the graphics manager's virtual getters stay.
 
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;
 use ssx3_render::direct::{Cmd, PostKind, Recorded};
 
