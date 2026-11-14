@@ -18,11 +18,13 @@ use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::ai::gp as gp_m2;
+pub(crate) use crate::game::ai::ai::spb_length;
 pub(crate) use crate::game::ai::ai::SPIN_ENTER_ANIM_CTRL;
 #[cfg(test)]
 pub(crate) use crate::game::ai::ai::SPIN_ENTER_CHARACTER;
 #[cfg(test)]
 pub(crate) use crate::game::ai::ai::SPIN_ENTER_PLAYER;
+pub(crate) use crate::game::ai::motion::wipeoutmotion::racw_scale;
 pub(crate) use crate::game::ai::rider::add32;
 pub(crate) use crate::game::ai::rider::eq;
 pub(crate) use crate::game::ai::rider::fr_2 as fr;
@@ -405,6 +407,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0010_f1c0,
         rider_dispatch_event_table,
         "Rider_DispatchEventTable",
+    ),
+    (
+        0x0010_d410,
+        computer_actor_rider_score_path_branch,
+        "ComputerActorRider_ScorePathBranch",
     ),
 ];
 
@@ -14369,6 +14376,446 @@ pub fn rider_dispatch_event_table(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// ComputerActorRider_ScorePathBranch (0x10d410)
+
+/// Path flags (`path + 0x38`): solo (bit 0), the three class bits (1-3),
+/// level (bits 4-6: 0 = top speed limit, 3 = minimum speed), speed class
+/// (bits 7-9; above 8 counts as 0).
+pub(crate) const SPB_PATH_FLAGS: u32 = 0x38;
+
+/// Computer fields: the rider (+0x18), the solo-path permission (+0xe04),
+/// the random-bonus switch (+0xe08). Rider fields: position (+0x110),
+/// velocity (+0x1e0), chasing flag (+0xf0) and target (+0xf8), the
+/// rider's current path (+0xab8).
+pub(crate) const SPB_RIDER: u32 = 0x18;
+
+pub(crate) const SPB_SOLO_OK: u32 = 0xe04;
+
+pub(crate) const SPB_RANDOM_BONUS: u32 = 0xe08;
+
+pub(crate) const SPB_R_POS: u32 = 0x110;
+
+pub(crate) const SPB_R_VEL: u32 = 0x1e0;
+
+pub(crate) const SPB_R_CHASING: u32 = 0xf0;
+
+pub(crate) const SPB_R_TARGET: u32 = 0xf8;
+
+pub(crate) const SPB_R_PATH: u32 = 0xab8;
+
+pub(crate) const SPB_CLASS_WEIGHT: Callee = Callee {
+    addr: 0x0010_d870,
+    f: ee::s00::ComputerActorRider_GetPathClassWeight,
+};
+
+pub(crate) const SPB_LOOK_AHEAD: Callee = Callee {
+    addr: 0x0011_2588,
+    f: ee::s00::Rider_GetAIPathLookAheadDist,
+};
+
+pub(crate) const SPB_CLOSEST_POINT: u32 = 0x0026_a428;
+
+pub(crate) const SPB_COUNT_RIDERS: Callee = Callee {
+    addr: 0x0010_fc30,
+    f: ee::s00::AI_CountRidersOnPath,
+};
+
+pub(crate) const SPB_RAND: u32 = 0x0031_7810;
+
+/// The speed class's limit (20/40/60/80/100/120 for classes 1-6, else
+/// 0) into v1, as the level-0 compare chain computes it (s0 = class).
+pub(crate) fn spb_limit_top(c: &mut Cpu) {
+    let class = c.g[S0][0];
+    c.cycles += 3;
+    c.g[V0][0] = 1;
+    for (k, limit) in [(1u64, 0x14u64), (2, 0x28), (3, 0x3c), (4, 0x50)] {
+        if k > 1 {
+            c.cycles += 2;
+        }
+        c.g[V0][0] = k + 1;
+        if class == k {
+            c.cycles += 2;
+            c.g[V1][0] = limit;
+            return;
+        }
+    }
+    c.cycles += 2;
+    c.g[V1][0] = 0x64;
+    if class == 5 {
+        return;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = class ^ 6;
+    c.g[V1][0] = if c.g[V0][0] != 0 { 0 } else { 0x78 };
+}
+
+/// The same limits as the level-3 compare chain computes them (s0 =
+/// class, s2 = 3, v0 = 1 on entry).
+pub(crate) fn spb_limit_min(c: &mut Cpu) {
+    let class = c.g[S0][0];
+    c.cycles += 2;
+    c.g[V0][0] = 2;
+    if class == 1 {
+        c.cycles += 2;
+        c.g[V1][0] = 0x14;
+        return;
+    }
+    c.cycles += 2;
+    c.g[V1][0] = 0x28;
+    if class == 2 {
+        return;
+    }
+    for (k, limit) in [(c.g[S2][0], 0x3cu64), (4, 0x50)] {
+        c.cycles += 2;
+        c.g[V0][0] = if limit == 0x3c { 4 } else { 5 };
+        if class == k {
+            c.cycles += 2;
+            c.g[V1][0] = limit;
+            return;
+        }
+    }
+    c.cycles += 2;
+    c.g[V1][0] = 0x64;
+    if class == 5 {
+        return;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = class ^ 6;
+    c.g[V1][0] = if c.g[V0][0] != 0 { 0 } else { 0x78 };
+}
+
+/// `float ComputerActorRider_ScorePathBranch(ComputerActorRider* self,
+/// Path* path)` (0x10d410): how much the computer rider wants to take
+/// `path` at a branch. 0 when its class weight is 0, a solo path he may
+/// not take, or his speed (`|vel| * k`) is above the path's top limit
+/// (level 0) or below its minimum (level 3); -1 when the path is more
+/// than 5000 away from where he will be; 100 when the rider he chases is
+/// on it. Otherwise the sum of 7 terms over 22: closeness, the level / 3,
+/// crowding (100 / 25 / 0 by the other riders on it), the class weight, a
+/// solo bonus and a random bonus.
+pub fn computer_actor_rider_score_path_branch(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 38;
+        let frame = Frame::open(c, 0xf0);
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+        frame.save(c, S0, 0xc0);
+        frame.save(c, S1, 0xb0);
+        frame.save(c, S2, 0xa0);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x90);
+        frame.save(c, S5, 0x70);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save_fpr(c, 23, 0xe8);
+        frame.save(c, S4, 0x80);
+        frame.save_ra(c, 0x60);
+        frame.save_fpr(c, 22, 0xe0);
+        frame.save_fpr(c, 21, 0xd8);
+        frame.save_fpr(c, 20, 0xd0);
+        // Unpack the path flags.
+        c.g[A3][0] = Addr(r32(c, S3)).off(SPB_PATH_FLAGS).lw(c);
+        c.g[V1][0] = Addr(r32(c, V0)).off(0x84).lw(c);
+        let flags = r32(c, A3) as i32;
+        c.g[V0][0] = sx((flags >> 7) as u32);
+        c.g[A1][0] = sx((flags >> 3) as u32);
+        c.g[S0][0] = c.g[V0][0] & 7;
+        c.g[A2][0] = sx((flags >> 2) as u32);
+        c.g[V0][0] = sx((flags >> 4) as u32);
+        c.g[S5][0] = c.g[A3][0] & 1;
+        c.g[S2][0] = c.g[V0][0] & 7;
+        c.g[A3][0] = sx((flags >> 1) as u32);
+        c.g[V0][0] = ((c.g[S0][0] as i64) < 9) as u64;
+        c.g[S4][0] = Addr(r32(c, V1)).off(0xc).lw(c);
+        if c.g[V0][0] == 0 {
+            c.g[S0][0] = 0;
+        }
+        c.g[A1][0] &= 1;
+        c.g[A2][0] &= 1;
+        c.g[A3][0] &= 1;
+        SPB_CLASS_WEIGHT.call(c, 0x0010_d490)?;
+        c.mov_s(23, 0);
+        c.mtc1(0, 0);
+        c.c_le_s(23, 0);
+        'exit_a: {
+            if c.fcc() {
+                frame.restore(c, S0, 0xc0);
+                break 'exit_a;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, S1)).off(SPB_SOLO_OK).lw(c);
+            if c.g[V0][0] == 0 {
+                c.cycles += 2;
+                if c.g[S5][0] != 0 {
+                    frame.restore(c, S0, 0xc0);
+                    break 'exit_a;
+                }
+                c.cycles += 1;
+            }
+            c.g[V0][0] = Addr(r32(c, S1)).off(SPB_RIDER).lw(c);
+
+            // speed = |vel| * k against the class limit.
+            c.cycles += 14;
+            c.lwc1(1, r32(c, GP).wrapping_sub(0x7cfc));
+            let vel = r32(c, V0).wrapping_add(SPB_R_VEL);
+            spb_length(c, vel, V1);
+            c.mtc1(V1, 0);
+            c.g[A1][0] = c.g[V0][0];
+            c.mul_s(1, 0, 1);
+            let mut check = true;
+            if c.g[S2][0] == 0 {
+                spb_limit_top(c);
+                c.cycles += 5;
+                c.mtc1(V1, 0);
+                c.cvt_s_w(0, 0);
+                c.c_lt_s(0, 1);
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 3;
+                let level3 = c.g[S2][0] == c.g[V0][0];
+                c.g[V0][0] = 1;
+                if level3 {
+                    spb_limit_min(c);
+                    c.cycles += 4;
+                    c.mtc1(V1, 0);
+                    c.cvt_s_w(0, 0);
+                    c.c_lt_s(1, 0);
+                } else {
+                    check = false;
+                }
+            }
+            if check {
+                c.cycles += 2;
+                let out = c.fcc();
+                frame.restore(c, S0, 0xc0);
+                if out {
+                    c.cycles += 3;
+                    c.mtc1(0, 0);
+                    frame.restore(c, S1, 0xb0);
+                    return spb_epilogue(c, frame);
+                }
+            }
+            spb_score(c, frame)?;
+        }
+        c.cycles += 1;
+        frame.restore(c, S1, 0xb0);
+        spb_epilogue(c, frame)
+    })
+}
+
+/// The shared epilogue of `ComputerActorRider_ScorePathBranch` (s0 and s1
+/// already restored).
+pub(crate) fn spb_epilogue(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 11;
+    frame.restore(c, S2, 0xa0);
+    frame.restore(c, S3, 0x90);
+    frame.restore(c, S4, 0x80);
+    frame.restore(c, S5, 0x70);
+    frame.restore_ra(c, 0x60);
+    frame.restore_fpr(c, 23, 0xe8);
+    frame.restore_fpr(c, 22, 0xe0);
+    frame.restore_fpr(c, 21, 0xd8);
+    frame.restore_fpr(c, 20, 0xd0);
+    frame.close(c);
+    Ok(())
+}
+
+/// The scoring part of `ComputerActorRider_ScorePathBranch` (a1 = the
+/// rider, f23 = the class weight, s2 = level, s3 = path, s4 = the AI,
+/// s5 = solo). Ends with s0 restored and f0 = the score.
+pub(crate) fn spb_score(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 49;
+    let vel = r32(c, A1).wrapping_add(SPB_R_VEL);
+    spb_length(c, vel, V0);
+    c.mtc1(V0, 20);
+    c.g[A0][0] = c.g[A1][0];
+    c.g[AT][0] = 0x41b0_0000;
+    c.mtc1(AT, 22);
+    c.g[A1][0] = 1;
+    SPB_LOOK_AHEAD.call(c, 0x0010_d61c)?;
+    // ahead = pos + vel * (look_ahead / |vel|); d = distance to the path.
+    c.g[V0][0] = Addr(r32(c, S1)).off(SPB_RIDER).lw(c);
+    c.div_s(0, 0, 20);
+    let s = sp(c);
+    let vel = r32(c, V0).wrapping_add(SPB_R_VEL);
+    racw_scale(c, V1, 0, vel, s + 0x40);
+    c.g[A0][0] = c.g[S3][0];
+    c.lq(V0, s + 0x40);
+    c.g[A1][0] = sx(s + 0x20);
+    c.g[V1][0] = Addr(r32(c, S1)).off(SPB_RIDER).lw(c);
+    c.g[A2][0] = sx(s + 0x30);
+    c.sq(V0, s + 0x30);
+    c.g[A3][0] = sx(s + 0x50);
+    c.lqc2(3, r32(c, V1).wrapping_add(SPB_R_POS));
+    c.lqc2(4, s + 0x30);
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, s + 0x40);
+    c.g[T0][0] = 1;
+    c.lq(V0, s + 0x40);
+    c.sq(V0, s + 0x20);
+    call_ptr(c, SPB_CLOSEST_POINT, 0x0010_d674)?;
+    // closeness = max(100 - d * d * k, 0)
+    let s = sp(c);
+    c.lwc1(2, s + 0x50);
+    c.lwc1(1, r32(c, GP).wrapping_sub(0x7cf8));
+    c.mul_s(0, 2, 2);
+    c.g[AT][0] = 0x42c8_0000;
+    c.mtc1(AT, 4);
+    c.mtc1(0, 3);
+    c.mul_s(0, 0, 1);
+    c.sub_s(1, 4, 0);
+    c.c_lt_s(1, 3);
+    if c.fcc() {
+        c.mov_s(1, 3);
+    }
+    c.cycles += 6;
+    c.lwc1(0, r32(c, GP).wrapping_sub(0x7cf4));
+    c.c_lt_s(0, 2);
+    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+    c.mtc1(AT, 0);
+    let too_far = c.fcc();
+    frame.restore(c, S0, 0xc0);
+    if too_far {
+        return Ok(());
+    }
+    // sc[0]; chasing a rider on this path: 100.
+    c.cycles += 7;
+    c.lwc1(0, r32(c, GP).wrapping_sub(0x7cf0));
+    c.g[V1][0] = Addr(r32(c, S1)).off(SPB_RIDER).lw(c);
+    c.mul_s(0, 1, 0);
+    c.swc1(0, s);
+    c.g[V0][0] = Addr(r32(c, V1)).off(SPB_R_CHASING).lw(c);
+    if c.g[V0][0] != 0 {
+        c.cycles += 7;
+        c.g[V0][0] = Addr(r32(c, V1)).off(SPB_R_TARGET).lw(c);
+        c.g[V0][0] = sx(r32(c, V0) << 2);
+        c.g[V0][0] = sx(r32(c, S4).wrapping_add(r32(c, V0)));
+        c.g[V1][0] = Addr(r32(c, V0)).off(0x28).lw(c);
+        c.g[A0][0] = Addr(r32(c, V1)).off(SPB_R_PATH).lw(c);
+        let on_path = c.g[A0][0] == c.g[S3][0];
+        c.mov_s(0, 4);
+        if on_path {
+            return Ok(());
+        }
+    }
+    // sc[1] = 0, sc[2] = level * (1/22) * k; crowding.
+    c.cycles += 23;
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 2);
+    c.mtc1(S2, 1);
+    c.cvt_s_w(1, 1);
+    c.lwc1(0, r32(c, GP).wrapping_sub(0x7cec));
+    c.g[A0][0] = c.g[S4][0];
+    c.div_s(20, 2, 22);
+    c.g[A1][0] = c.g[S3][0];
+    c.mtc1(0, 21);
+    c.swc1(21, s + 4);
+    c.mul_s(0, 20, 0);
+    c.mul_s(1, 1, 0);
+    c.swc1(1, s + 8);
+    SPB_COUNT_RIDERS.call(c, 0x0010_d72c)?;
+    c.g[A0][0] = Addr(r32(c, S1)).off(SPB_RIDER).lw(c);
+    c.g[V1][0] = Addr(r32(c, A0)).off(SPB_R_PATH).lw(c);
+    c.g[V1][0] ^= c.g[S3][0];
+    c.g[V1][0] = (c.g[V1][0] < 1) as u64;
+    c.g[V1][0] = sx(r32(c, V0).wrapping_sub(r32(c, V1)));
+    c.g[AT][0] = 0x42c8_0000;
+    c.mtc1(AT, 1);
+    let others = c.g[V1][0] as i64;
+    c.g[V0][0] = 1;
+    if others > 0 {
+        c.cycles += 2;
+        c.mov_s(1, 21);
+        if others == 1 {
+            c.cycles += 2;
+            c.g[AT][0] = 0x41c8_0000;
+            c.mtc1(AT, 1);
+        }
+    }
+    // sc[3] = crowding * 5/22, sc[4] = weight / 22, sc[5] = solo bonus.
+    c.cycles += 11;
+    let s = sp(c);
+    c.g[AT][0] = 0x40a0_0000;
+    c.mtc1(AT, 0);
+    c.g[V0][0] = Addr(r32(c, S1)).off(SPB_SOLO_OK).lw(c);
+    c.div_s(20, 0, 22);
+    c.mul_s(1, 1, 20);
+    c.div_s(20, 23, 22);
+    c.swc1(1, s + 0xc);
+    c.swc1(20, s + 0x10);
+    c.div_s(20, 0, 22);
+    let mut solo = c.g[V0][0] != 0;
+    if solo {
+        c.cycles += 2;
+        solo = c.g[S5][0] != 0;
+    }
+    if solo {
+        c.cycles += 4;
+        c.g[AT][0] = 0x42c8_0000;
+        c.mtc1(AT, 0);
+        c.mul_s(0, 20, 0);
+        c.swc1(0, s + 0x14);
+    } else {
+        Addr(s + 0x14).sw(c, 0);
+    }
+    // sc[6] = random % 100 * 2/22.
+    c.cycles += 6;
+    c.g[AT][0] = 0x4000_0000;
+    c.mtc1(AT, 0);
+    c.g[V0][0] = Addr(r32(c, S1)).off(SPB_RANDOM_BONUS).lw(c);
+    c.div_s(20, 0, 22);
+    if c.g[V0][0] == 0 {
+        Addr(s + 0x18).sw(c, 0);
+    } else {
+        c.cycles += 6;
+        call_ptr(c, SPB_RAND, 0x0010_d7c4)?;
+        c.g[V1][0] = 0x64;
+        c.divu(0, V0, V1);
+        c.cycles += 3;
+        c.g[V0][0] = c.hi[0];
+        let negative = (c.g[V0][0] as i64) < 0;
+        c.g[V1][0] = sx(r32(c, V0) >> 1);
+        if negative {
+            c.cycles += 6;
+            c.g[V0][0] &= 1;
+            c.g[V0][0] |= c.g[V1][0];
+            c.mtc1(V0, 0);
+            c.cvt_s_w(0, 0);
+            c.add_s(0, 0, 0);
+            c.mul_s(0, 0, 20);
+        } else {
+            c.cycles += 4;
+            c.mtc1(V0, 0);
+            c.cvt_s_w(0, 0);
+            c.mul_s(0, 0, 20);
+        }
+        c.cycles += 1;
+        c.swc1(0, sp(c) + 0x18);
+    }
+    // The sum of the 7 terms.
+    c.cycles += 3;
+    c.mtc1(0, 1);
+    c.g[V0][0] = c.g[SP][0];
+    c.g[V1][0] = 6;
+    loop {
+        c.cycles += 7;
+        c.lwc1(0, r32(c, V0));
+        c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(4));
+        let more = (c.g[V1][0] as i64) >= 0;
+        c.add_s(1, 1, 0);
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0010_d818);
+        }
+    }
+    c.cycles += 2;
+    c.mov_s(0, 1);
+    frame.restore(c, S0, 0xc0);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -19855,6 +20302,114 @@ pub(crate) mod tests {
                 c.g[A0][0] = rider as u64;
                 c.g[A1][0] = kinds[seed as usize % kinds.len()];
                 c.f[12] = r.f32(100.0);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_CTRL;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_MAGIC;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_DIST;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_COUNT;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_fake;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_gated;
+
+    // ------------------------------------------- ComputerActorRider_ScorePathBranch
+
+    oc360_gated!(
+        oc360_fake_closest_point,
+        OC360_PREV_CLOSEST_POINT,
+        0x0026_a428,
+        ee::s07::f_0026a428__generated
+    );
+
+    oc360_gated!(
+        oc360_fake_count_riders,
+        OC360_PREV_COUNT_RIDERS,
+        0x0010_fc30,
+        ee::s00::f_0010fc30__generated
+    );
+
+    /// Every flag combination (class weight 0 or not, solo, levels 0-7,
+    /// speed classes 0-7), speeds below and above the limits, the path
+    /// near / far / beyond 5000, chasing a rider on the path or not, 0-3
+    /// other riders on it, the solo and random bonuses. The real class
+    /// weight, look-ahead and `Rand_NextGame`; the path query and the rider
+    /// count are logged fakes.
+    #[test]
+    fn computer_actor_rider_score_path_branch_matches() {
+        use std::ptr::addr_of_mut;
+        {
+            fakes::hook(
+                addr_of_mut!(ee::s07::OVERRIDE_0026A428),
+                oc360_fake_closest_point,
+                &OC360_PREV_CLOSEST_POINT,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s00::OVERRIDE_0010FC30),
+                oc360_fake_count_riders,
+                &OC360_PREV_COUNT_RIDERS,
+            );
+        }
+        covered(
+            ee::s00::f_0010d410__generated,
+            computer_actor_rider_score_path_branch,
+            400,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x0010_d410, 4);
+                c.pc = 0x0010_d410;
+                let this = DATA + 0xc_0000;
+                let rider = this + 0x1000;
+                let path = this + 0x2000;
+                let other_path = this + 0x2100;
+                let world = this + 0x3000;
+                let game = this + 0x3100;
+                let ai = this + 0x3200;
+                let riders = this + 0x4000;
+                c.bus.write32(OC360_CTRL, OC360_MAGIC);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(path);
+                c.bus.write32(path + SPB_PATH_FLAGS, r.next_u32() & 0x3ff);
+                c.bus.write16(this + 0xe00, (r.next_u32() % 4) as u16);
+                c.bus.write32(this + SPB_SOLO_OK, r.next_u32() % 2);
+                c.bus.write32(this + SPB_RANDOM_BONUS, r.next_u32() % 2);
+                c.bus.write32(this + SPB_RIDER, rider);
+                let speed =
+                    [0.0f32, 300.0, 700.0, 1200.0, 2000.0, 5000.0][r.next_u32() as usize % 6];
+                put_vec(c, rider + SPB_R_VEL, [speed.to_bits(), 0, 0, 0]);
+                put_vec(
+                    c,
+                    rider + SPB_R_POS,
+                    [r.f32(100.0), r.f32(100.0), r.f32(100.0), 0],
+                );
+                c.bus.write32(rider + SPB_R_CHASING, r.next_u32() % 2);
+                let target = r.next_u32() % 4;
+                c.bus.write32(rider + SPB_R_TARGET, target);
+                let mine = if r.next_u32() % 2 == 0 {
+                    path
+                } else {
+                    other_path
+                };
+                c.bus.write32(rider + SPB_R_PATH, mine);
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, game);
+                c.bus.write32(game + 0xc, ai);
+                for i in 0..4 {
+                    let other = riders + 0x1000 * i;
+                    c.bus.write32(ai + 0x28 + 4 * i, other);
+                    let p = if r.next_u32() % 2 == 0 {
+                        path
+                    } else {
+                        other_path
+                    };
+                    c.bus.write32(other + SPB_R_PATH, p);
+                }
+                let dist = [0.0f32, 50.0, 1000.0, 6000.0][r.next_u32() as usize % 4];
+                c.bus.write32(OC360_DIST, dist.to_bits());
+                c.bus.write32(OC360_COUNT, r.next_u32() % 4);
             },
         );
     }

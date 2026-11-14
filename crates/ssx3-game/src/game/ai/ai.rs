@@ -16,6 +16,7 @@ use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
@@ -511,6 +512,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0012_fb68,
         rider_natural_air_sub_exit,
         "RiderNaturalAirSub_Exit",
+    ),
+    (0x0012_8af0, ai_update, "AI_Update"),
+    (
+        0x0012_d160,
+        rider_wipeout_sub_update_phase2,
+        "RiderWipeoutSub_UpdatePhase2",
+    ),
+    (
+        0x0012_d4e8,
+        rider_wipeout_sub_update_phase1,
+        "RiderWipeoutSub_UpdatePhase1",
+    ),
+    (
+        0x0012_f730,
+        rider_natural_air_sub_handle_input,
+        "RiderNaturalAirSub_HandleInput",
     ),
 ];
 
@@ -16239,6 +16256,1826 @@ pub fn rider_wipeout_sub_exit(c: &mut Cpu) {
     })
 }
 
+// ------------------------------------------------------------------ AI_Update
+
+/// `AI` fields read by `AI_Update`.
+pub(crate) const AI_UPDATE_FRAME: u32 = 0x8;
+
+pub(crate) const AI_UPDATE_HAVE_COMPUTERS: u32 = 0x14;
+
+pub(crate) const AI_UPDATE_PLAYERS: u32 = 0x40;
+
+pub(crate) const AI_UPDATE_COMPUTERS: u32 = 0x48;
+
+pub(crate) const AI_UPDATE_OTHERS: u32 = 0x5c;
+
+pub(crate) const AI_UPDATE_MISSIONS: u32 = 0x70;
+
+pub(crate) const AI_UPDATE_NUM_PLAYERS: u32 = 0x7c;
+
+pub(crate) const AI_UPDATE_NUM_COMPUTERS: u32 = 0x80;
+
+pub(crate) const AI_UPDATE_NUM_OTHERS: u32 = 0x84;
+
+pub(crate) const AI_UPDATE_NUM_MISSIONS: u32 = 0x88;
+
+pub(crate) const AI_UPDATE_HAVE_OTHERS: u32 = 0x8c;
+
+pub(crate) const AI_UPDATE_FOCUSMAN: u32 = 0xa4;
+
+pub(crate) const AI_UPDATE_DANGERMAN: u32 = 0xa8;
+
+/// A rider record's rider (`Rider_AF0`: `rec ? rec->rider : 0`).
+pub(crate) const AI_UPDATE_REC_RIDER: u32 = 0x18;
+
+/// A rider's model (the `m[]` array of sub-systems).
+pub(crate) const AI_UPDATE_RIDER_MODEL: u32 = 0x77c;
+
+/// `gp-0x848`: the world; `gp-0x6a0`: the debug flags (bit 0: pose only).
+pub(crate) const AI_UPDATE_GP_WORLD: u32 = 0x848;
+
+pub(crate) const AI_UPDATE_GP_FLAGS: u32 = 0x6a0;
+
+pub(crate) const AIU_RACE_TIME_LIMIT: Callee = Callee {
+    addr: 0x0012_bb20,
+    f: ee::s00::AI_UpdateRaceTimeLimit,
+};
+
+pub(crate) const AIU_RACE_STATE: Callee = Callee {
+    addr: 0x0011_3c20,
+    f: ee::s00::AI_UpdateRaceState,
+};
+
+pub(crate) const AIU_RIDER_RELATIONS: Callee = Callee {
+    addr: 0x0010_f560,
+    f: ee::s00::AI_UpdateRiderRelations,
+};
+
+pub(crate) const AIU_FOCUS_BOX: Callee = Callee {
+    addr: 0x0012_0e30,
+    f: ee::s00::Rider_UpdateFocusBox,
+};
+
+pub(crate) const AIU_REFRESH_POSE: Callee = Callee {
+    addr: 0x0012_0ed8,
+    f: ee::s00::Rider_RefreshPose,
+};
+
+pub(crate) const AIU_FOCUSMAN_UPDATE: Callee = Callee {
+    addr: 0x0010_1b60,
+    f: ee::s00::FocusMan_Update,
+};
+
+pub(crate) const AIU_DANGERMAN_UPDATE: Callee = Callee {
+    addr: 0x0010_13a8,
+    f: ee::s00::DangerMan_Update,
+};
+
+/// One per-rider pass of `AI_Update`: call `target` for every collected
+/// rider (`list` 0: `r[]` at `sp+0`) or for a sub-system of its model
+/// (`list` 0x20: `m[]`, plus `field`).
+#[derive(Clone, Copy)]
+pub(crate) struct AiUpdatePass {
+    /// `s0 = n` sits in the delay slot of the `n <= 0` test.
+    early_count: bool,
+    /// Cycles of the block that sets up the loop.
+    prelude: u64,
+    list: u32,
+    field: Option<u32>,
+    target: Target,
+    ret: u32,
+    head: u32,
+}
+
+pub(crate) const fn aiu_rider_pass(addr: u32, f: GuestFn, ret: u32, head: u32) -> AiUpdatePass {
+    AiUpdatePass {
+        early_count: false,
+        prelude: 3,
+        list: 0,
+        field: None,
+        target: Target::Direct(Callee { addr, f }),
+        ret,
+        head,
+    }
+}
+
+pub(crate) const fn aiu_model_pass(
+    early_count: bool,
+    prelude: u64,
+    field: u32,
+    addr: u32,
+    ret: u32,
+    head: u32,
+) -> AiUpdatePass {
+    AiUpdatePass {
+        early_count,
+        prelude,
+        list: 0x20,
+        field: Some(field),
+        target: Target::Table(addr),
+        ret,
+        head,
+    }
+}
+
+/// The full update's passes, in order (after `m[]` is filled).
+pub(crate) const AIU_PASSES: [AiUpdatePass; 24] = [
+    aiu_rider_pass(
+        0x0012_0f20,
+        ee::s00::Rider_BeginFrame,
+        0x0012_8d44,
+        0x0012_8d38,
+    ),
+    aiu_rider_pass(
+        0x0012_1068,
+        ee::s00::Rider_ProcessControlInput,
+        0x0012_8d6c,
+        0x0012_8d60,
+    ),
+    aiu_rider_pass(
+        0x0012_10b0,
+        ee::s00::Rider_UpdateImpacts,
+        0x0012_8d94,
+        0x0012_8d88,
+    ),
+    aiu_rider_pass(
+        0x0012_11f8,
+        ee::s00::Rider_UpdateSlewedParams,
+        0x0012_8dbc,
+        0x0012_8db0,
+    ),
+    aiu_rider_pass(
+        0x0012_16e0,
+        ee::s00::Rider_UpdateMainState,
+        0x0012_8de4,
+        0x0012_8dd8,
+    ),
+    aiu_rider_pass(
+        0x0012_1700,
+        ee::s00::Rider_UpdateAnimation,
+        0x0012_8e0c,
+        0x0012_8e00,
+    ),
+    aiu_rider_pass(
+        0x0012_1728,
+        ee::s00::Rider_UpdatePose,
+        0x0012_8e34,
+        0x0012_8e28,
+    ),
+    aiu_rider_pass(
+        0x0012_1750,
+        ee::s00::Rider_PostUpdateMainState,
+        0x0012_8e5c,
+        0x0012_8e50,
+    ),
+    aiu_rider_pass(
+        0x0012_17f8,
+        ee::s00::Rider_UpdateModel,
+        0x0012_8e84,
+        0x0012_8e78,
+    ),
+    aiu_rider_pass(
+        0x0012_1818,
+        ee::s00::Rider_UpdateProgress,
+        0x0012_8eac,
+        0x0012_8ea0,
+    ),
+    aiu_rider_pass(
+        0x0012_18d0,
+        ee::s00::Rider_UpdateSurfaceFX,
+        0x0012_8ed4,
+        0x0012_8ec8,
+    ),
+    aiu_rider_pass(
+        0x0012_1950,
+        ee::s00::Rider_UpdateHeadingAndAudio,
+        0x0012_8efc,
+        0x0012_8ef0,
+    ),
+    aiu_model_pass(false, 3, 0x3b0, 0x002d_d0b8, 0x0012_8f28, 0x0012_8f18),
+    aiu_model_pass(false, 4, 0x470, 0x002d_abc8, 0x0012_8f58, 0x0012_8f48),
+    aiu_model_pass(false, 4, 0x520, 0x002e_8938, 0x0012_8f88, 0x0012_8f78),
+    aiu_model_pass(false, 4, 0x610, 0x002e_66b8, 0x0012_8fb8, 0x0012_8fa8),
+    aiu_model_pass(false, 4, 0x9c0, 0x002e_add0, 0x0012_8fe8, 0x0012_8fd8),
+    aiu_model_pass(false, 4, 0xad0, 0x002e_f6d0, 0x0012_9018, 0x0012_9008),
+    aiu_model_pass(false, 4, 0xaf0, 0x002d_4c08, 0x0012_9048, 0x0012_9038),
+    aiu_model_pass(false, 4, 0xb00, 0x002e_39d8, 0x0012_9078, 0x0012_9068),
+    aiu_model_pass(false, 4, 0xb40, 0x002d_f920, 0x0012_90a8, 0x0012_9098),
+    aiu_model_pass(true, 2, 0xc70, 0x002f_1150, 0x0012_90d0, 0x0012_90c0),
+    aiu_model_pass(true, 2, 0xd20, 0x002f_6518, 0x0012_90f8, 0x0012_90e8),
+    AiUpdatePass {
+        early_count: true,
+        prelude: 2,
+        list: 0,
+        field: None,
+        target: Target::Direct(Callee {
+            addr: 0x0012_0e88,
+            f: ee::s00::Rider_UpdateAttachedFX,
+        }),
+        ret: 0x0012_911c,
+        head: 0x0012_9110,
+    },
+];
+
+/// The "pose only" pass (debug flag bit 0).
+pub(crate) const AIU_REFRESH_PASS: AiUpdatePass = AiUpdatePass {
+    early_count: true,
+    prelude: 2,
+    list: 0,
+    field: None,
+    target: Target::Direct(AIU_REFRESH_POSE),
+    ret: 0x0012_8ce4,
+    head: 0x0012_8cd8,
+};
+
+/// `gp - off`.
+pub(crate) fn aiu_gp(c: &Cpu, off: u32) -> u32 {
+    (c.g[GP][0] as u32).wrapping_sub(off)
+}
+
+/// One pass over the `s2` collected riders (`s0` counts down, `s1` walks the
+/// list).
+pub(crate) fn ai_update_pass(c: &mut Cpu, p: AiUpdatePass) -> Flow {
+    c.cycles += 2;
+    let none = (c.g[S2][0] as i64) <= 0;
+    if p.early_count {
+        c.g[S0][0] = c.g[S2][0];
+    }
+    if none {
+        return Ok(());
+    }
+    c.cycles += p.prelude;
+    c.g[S1][0] = if p.list == 0 {
+        c.g[SP][0]
+    } else {
+        sx(sp(c).wrapping_add(p.list))
+    };
+    c.g[S0][0] = c.g[S2][0];
+    c.g[A0][0] = Addr(c.g[S1][0] as u32).lw(c);
+    loop {
+        c.cycles += if p.field.is_some() { 6 } else { 5 };
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(4));
+        if let Some(off) = p.field {
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(off));
+        }
+        match p.target {
+            Target::Direct(f) => f.call(c, p.ret)?,
+            Target::Table(addr) => call_ptr(c, addr, p.ret)?,
+        }
+        if c.g[S0][0] == 0 {
+            return Ok(());
+        }
+        c.g[A0][0] = Addr(c.g[S1][0] as u32).lw(c);
+        if event_due(c) {
+            deliver_event_here(c, p.head);
+        }
+    }
+}
+
+/// Append the riders of the `a0` records at `ai+list` to `r[]` (`s2` is the
+/// count so far): `r[s2++] = rec ? rec->rider : 0`.
+pub(crate) fn ai_update_collect(c: &mut Cpu, prelude: u64, list: u32, head: u32) {
+    let none = (c.g[A0][0] as i64) <= 0;
+    c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
+    if none {
+        return;
+    }
+    c.cycles += prelude;
+    c.g[V1][0] = sx(sp(c).wrapping_sub(4));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A2][0] = c.g[A0][0];
+    c.g[A1][0] = sx((c.g[S3][0] as u32).wrapping_add(list));
+    loop {
+        c.cycles += 5;
+        c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(4));
+        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+        c.g[A0][0] = 0;
+        if c.g[V0][0] != 0 {
+            c.cycles += 1;
+            c.g[A0][0] = Addr(c.g[V0][0] as u32).off(AI_UPDATE_REC_RIDER).lw(c);
+        }
+        c.cycles += 4;
+        Addr(c.g[V1][0] as u32).sw(c, c.g[A0][0]);
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(1));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(4));
+        if c.g[A2][0] == 0 {
+            return;
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// `void AI_Update(AI *ai)` (0x128af0): the per-frame AI update. Updates
+/// the race time limit, race state and rider relations; collects the riders
+/// to update (in a mission with a live mission object, the first player and
+/// the mission rider, with the focus box updated; otherwise all players,
+/// computers and others); then either only refreshes their poses (debug
+/// flag `gp-0x6a0` bit 0) or runs every rider stage and every model
+/// sub-system for all of them, stage by stage; then updates the focus and
+/// danger managers and counts the frame.
+pub fn ai_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S3, 0x50);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S2, 0x60);
+        frame.save(c, S0, 0x80);
+        frame.save(c, S1, 0x70);
+        frame.save_ra(c, 0x40);
+        c.g[S2][0] = 0;
+        AIU_RACE_TIME_LIMIT.call(c, 0x0012_8b14)?;
+        c.g[A0][0] = c.g[S3][0];
+        AIU_RACE_STATE.call(c, 0x0012_8b1c)?;
+        c.g[A0][0] = c.g[S3][0];
+        AIU_RIDER_RELATIONS.call(c, 0x0012_8b24)?;
+
+        let ai = c.g[S3][0] as u32;
+        c.g[V0][0] = Addr(ai).off(AI_UPDATE_NUM_MISSIONS).lw(c);
+        let mut mission = false;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(ai).off(AI_UPDATE_NUM_PLAYERS).lw(c);
+            let no_players = (c.g[V0][0] as i64) <= 0;
+            c.g[V0][0] = Addr(aiu_gp(c, AI_UPDATE_GP_WORLD)).lw(c);
+            if no_players {
+                c.cycles += 1;
+                c.g[A0][0] = Addr(ai).off(AI_UPDATE_NUM_PLAYERS).lw(c);
+            } else {
+                mission = true;
+            }
+        } else {
+            c.g[A0][0] = Addr(ai).off(AI_UPDATE_NUM_PLAYERS).lw(c);
+        }
+
+        if mission {
+            // Mission: is the world's mission object live (`+0x70 == 0`)?
+            c.cycles += 4;
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x84).lw(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x34).lw(c);
+            let solo = if c.g[V0][0] == 0 {
+                c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
+                false
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(c.g[V0][0] as u32).off(0x70).lw(c);
+                let busy = c.g[V0][0] != 0;
+                c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
+                !busy
+            };
+            if solo {
+                // r[0] = player 0; focus box of the mission rider.
+                c.cycles += 4;
+                c.g[V0][0] = Addr(ai).off(AI_UPDATE_PLAYERS).lw(c);
+                c.g[S2][0] = 1;
+                c.g[V1][0] = 0;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 1;
+                    c.g[V1][0] = Addr(c.g[V0][0] as u32).off(AI_UPDATE_REC_RIDER).lw(c);
+                }
+                c.cycles += 4;
+                c.g[V0][0] = Addr(ai).off(AI_UPDATE_MISSIONS).lw(c);
+                c.g[A0][0] = 0;
+                Addr(sp(c)).sw(c, c.g[V1][0]);
+                if c.g[V0][0] != 0 {
+                    c.cycles += 2;
+                    c.g[A0][0] = Addr(c.g[V0][0] as u32).off(AI_UPDATE_REC_RIDER).lw(c);
+                }
+            } else {
+                // r[0] = player 0, r[1] = mission rider; focus box of player 0.
+                c.cycles += 4;
+                c.g[V1][0] = Addr(ai).off(AI_UPDATE_PLAYERS).lw(c);
+                c.g[V0][0] = sx(sp(c).wrapping_add(c.g[V0][0] as u32));
+                c.g[A1][0] = 0;
+                if c.g[V1][0] != 0 {
+                    c.cycles += 1;
+                    c.g[A1][0] = Addr(c.g[V1][0] as u32).off(AI_UPDATE_REC_RIDER).lw(c);
+                }
+                c.cycles += 5;
+                c.g[A0][0] = Addr(ai).off(AI_UPDATE_MISSIONS).lw(c);
+                c.g[S2][0] = 2;
+                Addr(c.g[V0][0] as u32).sw(c, c.g[A1][0]);
+                c.g[V0][0] = 0;
+                if c.g[A0][0] != 0 {
+                    c.cycles += 1;
+                    c.g[V0][0] = Addr(c.g[A0][0] as u32).off(AI_UPDATE_REC_RIDER).lw(c);
+                }
+                c.cycles += 3;
+                Addr(sp(c).wrapping_add(4)).sw(c, c.g[V0][0]);
+                c.g[A0][0] = 0;
+                if c.g[V1][0] != 0 {
+                    c.cycles += 1;
+                    c.g[A0][0] = Addr(c.g[V1][0] as u32).off(AI_UPDATE_REC_RIDER).lw(c);
+                }
+            }
+            c.cycles += 4;
+            AIU_FOCUS_BOX.call(c, 0x0012_8bc8)?;
+            c.g[V0][0] = Addr(aiu_gp(c, AI_UPDATE_GP_FLAGS)).lw(c);
+        } else {
+            let ai = c.g[S3][0] as u32;
+            c.cycles += 2;
+            ai_update_collect(c, 5, AI_UPDATE_PLAYERS, 0x0012_8bf0);
+            c.cycles += 3;
+            c.g[V0][0] = Addr(ai).off(AI_UPDATE_HAVE_COMPUTERS).lw(c);
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                c.g[A0][0] = Addr(ai).off(AI_UPDATE_NUM_COMPUTERS).lw(c);
+                ai_update_collect(c, 4, AI_UPDATE_COMPUTERS, 0x0012_8c40);
+                c.cycles += 1;
+            }
+            c.g[V0][0] = Addr(ai).off(AI_UPDATE_HAVE_OTHERS).lw(c);
+            c.cycles += 2;
+            let no_others = c.g[V0][0] == 0;
+            c.g[V0][0] = Addr(aiu_gp(c, AI_UPDATE_GP_FLAGS)).lw(c);
+            if !no_others {
+                c.cycles += 3;
+                c.g[A0][0] = Addr(ai).off(AI_UPDATE_NUM_OTHERS).lw(c);
+                ai_update_collect(c, 4, AI_UPDATE_OTHERS, 0x0012_8c90);
+                c.cycles += 1;
+                c.g[V0][0] = Addr(aiu_gp(c, AI_UPDATE_GP_FLAGS)).lw(c);
+            }
+        }
+
+        c.cycles += 3;
+        c.g[V0][0] &= 1;
+        if c.g[V0][0] != 0 {
+            ai_update_pass(c, AIU_REFRESH_PASS)?;
+            if (c.g[S2][0] as i64) > 0 {
+                c.cycles += 2;
+            }
+        } else {
+            // m[i] = r[i]->model.
+            c.cycles += 2;
+            if (c.g[S2][0] as i64) > 0 {
+                c.cycles += 3;
+                c.g[A0][0] = c.g[SP][0];
+                c.g[S0][0] = c.g[S2][0];
+                loop {
+                    c.cycles += 7;
+                    c.g[V1][0] = Addr(c.g[A0][0] as u32).lw(c);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
+                    c.g[V0][0] = Addr(c.g[V1][0] as u32).off(AI_UPDATE_RIDER_MODEL).lw(c);
+                    Addr(c.g[A0][0] as u32).off(0x20).sw(c, c.g[V0][0]);
+                    let more = c.g[S0][0] != 0;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(4));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0012_8d08);
+                    }
+                }
+            }
+            for p in AIU_PASSES {
+                ai_update_pass(c, p)?;
+            }
+        }
+
+        c.cycles += 14;
+        c.g[A0][0] = Addr(c.g[S3][0] as u32).off(AI_UPDATE_FOCUSMAN).lw(c);
+        AIU_FOCUSMAN_UPDATE.call(c, 0x0012_912c)?;
+        c.g[A0][0] = Addr(c.g[S3][0] as u32).off(AI_UPDATE_DANGERMAN).lw(c);
+        AIU_DANGERMAN_UPDATE.call(c, 0x0012_9134)?;
+        c.g[V0][0] = Addr(c.g[S3][0] as u32).off(AI_UPDATE_FRAME).lw(c);
+        frame.restore(c, S0, 0x80);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+        frame.restore(c, S1, 0x70);
+        Addr(c.g[S3][0] as u32)
+            .off(AI_UPDATE_FRAME)
+            .sw(c, c.g[V0][0]);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `|*v|` with the game's VU0 length macro (`vsqrt`, Q moved to GPR
+/// `gpr`).
+pub(crate) fn spb_length(c: &mut Cpu, v: u32, gpr: usize) {
+    c.lqc2(3, v);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(gpr, 22);
+}
+
+// ---------------------------------------------------------------------------
+// RiderWipeoutSub_UpdatePhase2 (0x12d160)
+
+/// Wipeout sub-state fields: the state (+0), the bounce request (+0x54)
+/// and its velocity (+0x60), the get-up progress (+0x70), the rider
+/// (+0x80). Rider fields: velocity, the "is AI" flag (+0x150), the
+/// surface (+0x438), the ground timer (+0x470), vtable (+0x6c0; slots 0x88
+/// bounce, 0x90 anim speed), handler (+0x77c; +0x30 the anim set), anim
+/// controller (+0x784), camera index (+0x870) and shake flag (+0x87c).
+pub(crate) const UP2_STATE: u32 = 0x0;
+
+pub(crate) const UP2_BOUNCE: u32 = 0x54;
+
+pub(crate) const UP2_BOUNCE_VEL: u32 = 0x60;
+
+pub(crate) const UP2_PROGRESS: u32 = 0x70;
+
+pub(crate) const UP2_RIDER: u32 = 0x80;
+
+pub(crate) const UP2_R_VEL: u32 = 0x1e0;
+
+pub(crate) const UP2_R_IS_AI: u32 = 0x150;
+
+pub(crate) const UP2_R_SURFACE: u32 = 0x438;
+
+pub(crate) const UP2_R_GROUND_TIME: u32 = 0x470;
+
+pub(crate) const UP2_R_VTABLE: u32 = 0x6c0;
+
+pub(crate) const UP2_R_HANDLER: u32 = 0x77c;
+
+pub(crate) const UP2_R_ANIM: u32 = 0x784;
+
+pub(crate) const UP2_R_CAMERA: u32 = 0x870;
+
+pub(crate) const UP2_R_SHAKE: u32 = 0x87c;
+
+pub(crate) const UP2_ADD_SHAKE: u32 = 0x0015_e360;
+
+pub(crate) const UP2_ANIM_SPEED: Callee = Callee {
+    addr: 0x0012_e528,
+    f: ee::s00::RiderWipeoutSub_UpdateAnimSpeed,
+};
+
+pub(crate) const UP2_START_GET_UP: Callee = Callee {
+    addr: 0x0012_e010,
+    f: ee::s00::RiderWipeoutSub_StartGetUp,
+};
+
+pub(crate) const UP2_LAYER_FINISHED: u32 = 0x0031_2ae8;
+
+pub(crate) const UP2_LAYER_ENTRY: u32 = 0x0031_1ae8;
+
+pub(crate) const UP2_CHECK_RESET: Callee = Callee {
+    addr: 0x0011_6120,
+    f: ee::s00::Rider_CheckResetPath,
+};
+
+pub(crate) const UP2_RECOVERY_BOOST: Callee = Callee {
+    addr: 0x0010_f280,
+    f: ee::s00::Rider_AddWipeoutRecoveryBoost,
+};
+
+pub(crate) const UP2_AUDIO: u32 = 0x0028_b180;
+
+pub(crate) const UP2_GRUNT: u32 = 0x0029_f660;
+
+pub(crate) const UP2_END_ANIM_A: Callee = Callee {
+    addr: 0x0012_df48,
+    f: ee::s00::RiderWipeoutSub_PlayEndAnimA,
+};
+
+pub(crate) const UP2_ANIM_SET_B: Callee = Callee {
+    addr: 0x0012_dcb0,
+    f: ee::s00::RiderWipeoutSub_SwitchToAnimSetB,
+};
+
+pub(crate) const UP2_STOP_LOOP: u32 = 0x0029_6e20;
+
+pub(crate) const UP2_STOP_LOOP2: u32 = 0x0029_7438;
+
+pub(crate) const UP2_ANIM_SET_A: Callee = Callee {
+    addr: 0x0012_dd98,
+    f: ee::s00::RiderWipeoutSub_SwitchToAnimSetA,
+};
+
+/// `self->rider` (s0 = self).
+pub(crate) fn up2_rider(c: &mut Cpu) -> u64 {
+    Addr(r32(c, S0)).off(UP2_RIDER).lw(c)
+}
+
+/// `rider->anim->GetLayerAnimEntry(2)` into v0 (a0 from the rider in
+/// `rider_reg`).
+pub(crate) fn up2_layer_entry(c: &mut Cpu, rider_reg: usize, ret: u32) -> crate::call::Flow {
+    c.g[A0][0] = Addr(r32(c, rider_reg)).off(UP2_R_ANIM).lw(c);
+    call_ptr(c, UP2_LAYER_ENTRY, ret)
+}
+
+/// `void RiderWipeoutSub_UpdatePhase2(RiderWipeoutSub* self)` (0x12d160):
+/// the second wipeout phase. Shake the rider's camera by his speed (0..1
+/// of 100 km/h), update the anim speed (half of it to the rider), and
+/// serve a bounce request. An AI rider slower than k gets up (state 4).
+/// Once the layer-2 anim is done (or is 0x1d / 0x19): a rider who is
+/// fast enough to recover (progress >= 1 or on the ground long enough),
+/// or a human slower than the limit (k2, k3 for anim 0x1c), recovers: on
+/// surface 0x12 or as an AI, a fast one resets onto the path with a boost
+/// and a slow one gets up (state 4); a human otherwise gets a boost (a
+/// grunt for anim 0x1c) and the end anim (state 3). Else anim set 1
+/// switches to set B (state 1), and a finished layer to set A. The
+/// recover paths stop the two wipeout sound loops.
+pub fn rider_wipeout_sub_update_phase2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 21, 0x38);
+        frame.save_fpr(c, 20, 0x30);
+        c.g[V0][0] = up2_rider(c);
+        let vel = r32(c, V0).wrapping_add(UP2_R_VEL);
+        spb_length(c, vel, A0);
+        c.mtc1(A0, 20);
+        c.g[V1][0] = Addr(r32(c, V0)).off(UP2_R_CAMERA).lw(c);
+        if (c.g[V1][0] as i64) >= 0 {
+            // t = clamp(speed * k / 100, 0, 1)
+            c.cycles += 9;
+            c.lwc1(0, r32(c, GP).wrapping_sub(0x77c0));
+            c.mtc1(0, 12);
+            c.mul_s(0, 20, 0);
+            c.g[AT][0] = 0x42c8_0000;
+            c.mtc1(AT, 1);
+            c.c_le_s(12, 0);
+            let positive = c.fcc();
+            c.g[V1][0] = up2_rider(c);
+            if positive {
+                c.cycles += 5;
+                c.c_le_s(0, 1);
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(AT, 12);
+                if c.fcc() {
+                    c.cycles += 1;
+                    c.div_s(12, 0, 1);
+                }
+            }
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, V1)).off(UP2_R_SHAKE).lw(c);
+            let shake = c.g[V0][0] != 0;
+            c.g[V0][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+            if shake {
+                // world->game->cameras[rider->camera]->AddShake(4, t, 0)
+                c.cycles += 9;
+                c.g[A1][0] = 4;
+                c.g[V1][0] = Addr(r32(c, V1)).off(UP2_R_CAMERA).lw(c);
+                c.g[A0][0] = Addr(r32(c, V0)).off(0x84).lw(c);
+                c.g[V1][0] = sx(r32(c, V1) << 2);
+                c.mtc1(0, 13);
+                c.g[V0][0] = Addr(r32(c, A0)).off(0x84).lw(c);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                c.g[A0][0] = Addr(r32(c, V0)).off(4).lw(c);
+                call_ptr(c, UP2_ADD_SHAKE, 0x0012_d220)?;
+            }
+        }
+
+        // rider->SetAnimSpeed(UpdateAnimSpeed() / 2) (vtable slot 0x90)
+        c.cycles += 14;
+        c.g[A0][0] = c.g[S0][0];
+        UP2_ANIM_SPEED.call(c, 0x0012_d228)?;
+        c.g[A1][0] = up2_rider(c);
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(AT, 12);
+        c.g[V0][0] = Addr(r32(c, A1)).off(UP2_R_VTABLE).lw(c);
+        c.mul_s(12, 0, 12);
+        c.g[A0][0] = Addr(r32(c, V0)).off(0x90).lh(c);
+        c.g[V1][0] = Addr(r32(c, V0)).off(0x94).lw(c);
+        let method = r32(c, V1);
+        c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+        call_ptr(c, method, 0x0012_d24c)?;
+        'exit: {
+            c.g[V0][0] = Addr(r32(c, S0)).off(UP2_BOUNCE).lw(c);
+            if c.g[V0][0] != 0 {
+                // rider->Bounce(|bounce velocity|) (vtable slot 0x88)
+                c.cycles += 19;
+                let this = r32(c, S0);
+                Addr(this).off(UP2_BOUNCE).sw(c, 0);
+                c.g[A1][0] = up2_rider(c);
+                spb_length(c, this.wrapping_add(UP2_BOUNCE_VEL), V0);
+                c.mtc1(V0, 12);
+                c.g[V0][0] = Addr(r32(c, A1)).off(UP2_R_VTABLE).lw(c);
+                c.g[A0][0] = Addr(r32(c, V0)).off(0x88).lh(c);
+                c.g[V1][0] = Addr(r32(c, V0)).off(0x8c).lw(c);
+                let method = r32(c, V1);
+                c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+                call_ptr(c, method, 0x0012_d29c)?;
+                frame.restore(c, S0, 0x20);
+                break 'exit;
+            }
+            c.g[V1][0] = up2_rider(c);
+            let tail = up2_decide(c, frame)?;
+            if tail {
+                up2_stop_loops(c)?;
+            }
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 6;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x38);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The recover paths' tail: stop the two wipeout sound loops.
+pub(crate) fn up2_stop_loops(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 12;
+    call_ptr(c, UP2_AUDIO, 0x0012_d48c)?;
+    c.g[A1][0] = up2_rider(c);
+    c.g[A0][0] = c.g[V0][0];
+    call_ptr(c, UP2_STOP_LOOP, 0x0012_d498)?;
+    call_ptr(c, UP2_AUDIO, 0x0012_d4a0)?;
+    c.g[A1][0] = up2_rider(c);
+    c.g[A0][0] = c.g[V0][0];
+    call_ptr(c, UP2_STOP_LOOP2, 0x0012_d4ac)
+}
+
+/// The decision part of `RiderWipeoutSub_UpdatePhase2` (v1 = the rider,
+/// f20 = speed). Ok(true): continue with the sound-loop tail; Ok(false):
+/// straight to the exit (s0 is restored by the caller either way).
+pub(crate) fn up2_decide(c: &mut Cpu, _frame: Frame) -> Result<bool, crate::call::Unwound> {
+    // An AI rider slower than k gets up.
+    c.cycles += 4;
+    c.g[V0][0] = Addr(r32(c, V1)).off(UP2_R_IS_AI).lw(c);
+    c.g[V0][0] ^= 1;
+    if c.g[V0][0] == 0 {
+        c.cycles += 5;
+        c.lwc1(0, r32(c, GP).wrapping_sub(0x77bc));
+        c.c_lt_s(20, 0);
+        if c.fcc() {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            UP2_START_GET_UP.call(c, 0x0012_d2d0)?;
+            c.g[V0][0] = 4;
+            Addr(r32(c, S0)).sw(c, 4);
+            return Ok(true);
+        }
+    }
+    c.g[V0][0] = up2_rider(c);
+
+    // Wait for layer 2 (anims 0x1d and 0x19 go on at once).
+    c.cycles += 5;
+    c.g[A1][0] = 2;
+    c.g[A0][0] = Addr(r32(c, V0)).off(UP2_R_ANIM).lw(c);
+    call_ptr(c, UP2_LAYER_FINISHED, 0x0012_d2e8)?;
+    let finished = c.g[V0][0] != 0;
+    c.g[V0][0] = up2_rider(c);
+    if !finished {
+        c.cycles += 6;
+        c.g[A1][0] = 2;
+        up2_layer_entry(c, V0, 0x0012_d2fc)?;
+        c.g[V1][0] = 0x1d;
+        let go = c.g[V0][0] == c.g[V1][0];
+        c.g[A1][0] = 2;
+        if !go {
+            c.cycles += 6;
+            c.g[V0][0] = up2_rider(c);
+            up2_layer_entry(c, V0, 0x0012_d314)?;
+            c.g[V1][0] = 0x19;
+            if c.g[V0][0] != c.g[V1][0] {
+                return Ok(false);
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = up2_rider(c);
+    }
+
+    // The speed limit (k2, or k3 for anim 0x1c).
+    c.cycles += 7;
+    c.g[A1][0] = 2;
+    c.lwc1(21, r32(c, GP).wrapping_sub(0x77b8));
+    up2_layer_entry(c, V0, 0x0012_d334)?;
+    c.g[V1][0] = 0x1c;
+    let anim_1c = c.g[V0][0] == c.g[V1][0];
+    c.lwc1(1, r32(c, S0).wrapping_add(UP2_PROGRESS));
+    if anim_1c {
+        c.cycles += 1;
+        c.lwc1(21, r32(c, GP).wrapping_sub(0x77b4));
+    }
+
+    // a1 = fast: progress >= 1, or the ground timer >= 0.
+    c.cycles += 7;
+    c.g[A1][0] = 0;
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 0);
+    c.c_le_s(0, 1);
+    let mut fast = c.fcc();
+    c.g[A0][0] = up2_rider(c);
+    let rider = r32(c, A0);
+    if !fast {
+        c.cycles += 6;
+        c.lwc1(1, rider.wrapping_add(UP2_R_GROUND_TIME));
+        c.mtc1(0, 0);
+        c.c_le_s(0, 1);
+        let on_ground = c.fcc();
+        c.g[V0][0] = 1;
+        if !on_ground {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 2;
+        fast = c.g[V0][0] != 0;
+    }
+    if fast {
+        c.cycles += 2;
+        c.g[A1][0] = 1;
+    }
+    c.g[V0][0] = Addr(rider).off(UP2_R_IS_AI).lw(c);
+
+    // Recover: a human slower than the limit, or fast.
+    c.cycles += 3;
+    c.g[V0][0] ^= 1;
+    let mut recover = false;
+    if c.g[V0][0] != 0 {
+        c.cycles += 4;
+        c.c_lt_s(20, 21);
+        if c.fcc() {
+            c.g[V1][0] = Addr(rider).off(UP2_R_SURFACE).lw(c);
+            recover = true;
+        }
+    }
+    if !recover {
+        c.cycles += 2;
+        if c.g[A1][0] == 0 {
+            // Anim set 1 switches to set B; a finished layer to set A.
+            c.g[V0][0] = Addr(rider).off(UP2_R_HANDLER).lw(c);
+            c.cycles += 4;
+            c.g[V1][0] = 1;
+            c.g[S1][0] = Addr(r32(c, V0)).off(0x30).lw(c);
+            if c.g[S1][0] == c.g[V1][0] {
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S0][0];
+                UP2_ANIM_SET_B.call(c, 0x0012_d480)?;
+                let set = c.g[S1][0];
+                Addr(r32(c, S0)).sw(c, set);
+                return Ok(true);
+            }
+            c.g[A0][0] = Addr(rider).off(UP2_R_ANIM).lw(c);
+            c.cycles += 4;
+            c.g[A1][0] = 2;
+            call_ptr(c, UP2_LAYER_FINISHED, 0x0012_d4bc)?;
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S0][0];
+                UP2_ANIM_SET_A.call(c, 0x0012_d4cc)?;
+            }
+            return Ok(false);
+        }
+        c.cycles += 1;
+        c.g[V1][0] = Addr(rider).off(UP2_R_SURFACE).lw(c);
+    }
+
+    // On surface 0x12 or as an AI: reset (fast) or get up (slow).
+    c.cycles += 3;
+    c.g[V0][0] = 0x12;
+    let mut special = c.g[V1][0] == c.g[V0][0];
+    if !special {
+        c.cycles += 4;
+        c.g[V0][0] = Addr(r32(c, A0)).off(UP2_R_IS_AI).lw(c);
+        c.g[V0][0] ^= 1;
+        special = c.g[V0][0] == 0;
+    }
+    if special {
+        c.cycles += 2;
+        let was_fast = c.g[A1][0] != 0;
+        c.g[A1][0] = 0;
+        if was_fast {
+            c.cycles += 7;
+            c.g[A2][0] = 3;
+            UP2_CHECK_RESET.call(c, 0x0012_d3e0)?;
+            c.g[A0][0] = up2_rider(c);
+            c.g[A1][0] = 1;
+            UP2_RECOVERY_BOOST.call(c, 0x0012_d3ec)?;
+            return Ok(true);
+        }
+        c.cycles += 4;
+        c.lwc1(0, r32(c, GP).wrapping_sub(0x77b0));
+        c.c_lt_s(20, 0);
+        if !c.fcc() {
+            return Ok(true);
+        }
+        c.cycles += 4;
+        c.g[A0][0] = c.g[S0][0];
+        UP2_START_GET_UP.call(c, 0x0012_d40c)?;
+        c.g[V0][0] = 4;
+    } else {
+        // A human: boost (a grunt for anim 0x1c), the end anim, state 3.
+        c.cycles += 9;
+        UP2_RECOVERY_BOOST.call(c, 0x0012_d41c)?;
+        c.g[V0][0] = up2_rider(c);
+        c.g[A1][0] = 2;
+        up2_layer_entry(c, V0, 0x0012_d42c)?;
+        c.g[V1][0] = 0x1c;
+        if c.g[V0][0] == c.g[V1][0] {
+            c.cycles += 7;
+            call_ptr(c, UP2_AUDIO, 0x0012_d440)?;
+            c.g[A1][0] = up2_rider(c);
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A2][0] = 1;
+            c.g[A3][0] = 0;
+            call_ptr(c, UP2_GRUNT, 0x0012_d454)?;
+        }
+        c.cycles += 3;
+        c.g[A0][0] = c.g[S0][0];
+        UP2_END_ANIM_A.call(c, 0x0012_d45c)?;
+        c.g[V0][0] = 3;
+    }
+    c.cycles += 2;
+    let state = c.g[V0][0];
+    Addr(r32(c, S0)).off(UP2_STATE).sw(c, state);
+    Ok(true)
+}
+
+// ---------------------------------------------------------------------------
+// RiderNaturalAirSub_HandleInput
+// ---------------------------------------------------------------------------
+
+/// `RiderNaturalAirSub` fields: `+0` steer heading, `+4` steer timer,
+/// `+8` tweak flag, `+0xc` hold, `+0x10` held stick id, `+0x14` rider.
+pub(crate) const NAIR_HEADING: u32 = 0x0;
+
+pub(crate) const NAIR_TIMER: u32 = 0x4;
+
+pub(crate) const NAIR_TWEAK: u32 = 0x8;
+
+pub(crate) const NAIR_HOLD: u32 = 0xc;
+
+pub(crate) const NAIR_ID: u32 = 0x10;
+
+pub(crate) const NAIR_RIDER: u32 = 0x14;
+
+/// Rider fields the sub state writes / reads (steer targets and rates).
+pub(crate) const NAIR_RIDER_ANIM: u32 = 0x784;
+
+pub(crate) const NAIR_CHECK_RESET_PATH: Callee = Callee {
+    addr: 0x0011_6120,
+    f: ee::s00::f_00116120,
+};
+
+pub(crate) const NAIR_UPDATE_TWEAK_LAYER: Callee = Callee {
+    addr: 0x0011_63b0,
+    f: ee::s00::f_001163b0,
+};
+
+pub(crate) const NAIR_TRY_HANDPLANT: Callee = Callee {
+    addr: 0x0010_7578,
+    f: ee::s00::f_00107578,
+};
+
+pub(crate) const NAIR_TRY_RAILSLIDE: Callee = Callee {
+    addr: 0x0010_6848,
+    f: ee::s00::f_00106848,
+};
+
+pub(crate) const NAIR_HANDLE_BOOST: Callee = Callee {
+    addr: 0x0011_4130,
+    f: ee::s00::f_00114130,
+};
+
+pub(crate) const NAIR_SET_SUB_STATE: Callee = Callee {
+    addr: 0x0011_fec8,
+    f: ee::s00::f_0011fec8,
+};
+
+/// `Math_Atan(f12)` (through the table).
+pub(crate) const NAIR_MATH_ATAN: u32 = 0x0031_c228;
+
+/// `AnimController_GetLayerAnimId(ctl, layer)`.
+pub(crate) const NAIR_ANIM_LAYER_ID: u32 = 0x0031_2aa0;
+
+/// `AnimController_GetLayerAnimEntry(ctl, layer)`.
+pub(crate) const NAIR_ANIM_LAYER_ENTRY: u32 = 0x0031_1ae8;
+
+/// `AnimController_PlayAnim(ctl, anim, flags, f12 blend)`.
+pub(crate) const NAIR_ANIM_PLAY: u32 = 0x0031_28e8;
+
+/// `void RiderNaturalAirSub_HandleInput(RiderNaturalAirSub* self, const
+/// Input* in)` (0x12f730): the natural-air rider sub state's per-tick
+/// input. Resets / tweak layer / handplant / railslide / boost checks (any
+/// that starts something ends the tick), then the stick (6-bit x, y) turns
+/// into the rider's steer targets: a held stick steers until its timer or
+/// direction runs out. Finally picks the idle air animation (0x11f, then
+/// sub state 5) or the lean animations 9 / 10.
+pub fn rider_natural_air_sub_handle_input(c: &mut Cpu) {
+    guest(c, |c| {
+        let f = |c: &Cpu, n: usize| FpuF32(c.f[n]);
+        let gp = c.g[GP][0] as u32;
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x50);
+        c.g[A2][0] = 0;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_fpr(c, 23, 0x48);
+        frame.save_fpr(c, 22, 0x40);
+        frame.save_fpr(c, 21, 0x38);
+        frame.save_fpr(c, 20, 0x30);
+        let me = Addr(c.g[S0][0] as u32);
+        let input = Addr(c.g[S1][0] as u32);
+        let word = input.lw(c);
+        c.g[A0][0] = me.off(NAIR_RIDER).lw(c);
+        c.g[A1][0] = sx((word as u32 as i32 >> 12) as u32) & 1;
+        NAIR_CHECK_RESET_PATH.call(c, 0x0012_f770)?;
+        'out: {
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x20);
+                break 'out;
+            }
+            // Tweak layer: with the flag, from the stick buttons (0x4000 /
+            // 0x8000); without, released.
+            c.cycles += 3;
+            let tweak = me.off(NAIR_TWEAK).lw(c);
+            c.g[V0][0] = tweak;
+            c.g[A0][0] = me.off(NAIR_RIDER).lw(c);
+            if tweak == 0 {
+                c.cycles += 4;
+                c.g[A1][0] = 0;
+                c.g[A2][0] = 0;
+                NAIR_UPDATE_TWEAK_LAYER.call(c, 0x0012_f7c8)?;
+            } else {
+                c.cycles += 12;
+                let w = input.lw(c);
+                c.g[V0][0] = (w & 0xc000 != 0) as u64;
+                let flag = c.g[V0][0];
+                me.off(NAIR_TWEAK).sw(c, flag);
+                let w = input.lw(c) as u32 as i32;
+                c.g[A2][0] = sx((w >> 15) as u32) & 1;
+                c.g[A1][0] = sx((w >> 14) as u32) & 1;
+                NAIR_UPDATE_TWEAK_LAYER.call(c, 0x0012_f7ac)?;
+                if c.g[V0][0] != 0 {
+                    frame.restore(c, S0, 0x20);
+                    break 'out;
+                }
+                c.cycles += 2;
+            }
+            let w = input.lw(c);
+            c.g[A0][0] = w;
+            // The stick: x from bits 24-29 of the first word, y from bits
+            // 0-5 of the second, each a signed 6-bit value times 1/31.
+            c.cycles += 14;
+            let w2 = input.off(4).lw(c) as u32;
+            c.g[V1][0] = sx(((w as u32) << 2) as i32 as u32);
+            let scale = Addr(gp.wrapping_sub(0x7704)).read_fpu(c);
+            c.f[2] = scale.0;
+            c.g[V0][0] = sx(((w2 << 26) as i32 >> 26) as u32);
+            c.g[V1][0] = sx((((w as u32) << 2) as i32 >> 26) as u32);
+            c.f[0] = FpuF32::from_i32(c.g[V1][0] as u32 as i32).0;
+            c.f[1] = FpuF32::from_i32(c.g[V0][0] as u32 as i32).0;
+            c.g[A0][0] = w & 0x2000;
+            c.f[22] = (f(c, 0) * scale).0;
+            c.f[21] = (f(c, 1) * scale).0;
+            if w & 0x2000 != 0 {
+                // Handplant button: up on the stick picks the variant.
+                c.cycles += 6;
+                c.g[AT][0] = 0x3f00_0000;
+                c.f[0] = 0x3f00_0000;
+                let up = f(c, 0).lt(f(c, 21));
+                abi::set_fcc(c, up);
+                c.g[A1][0] = 1;
+                if !up {
+                    c.cycles += 1;
+                    c.g[A1][0] = 0;
+                }
+                c.cycles += 4;
+                c.g[A0][0] = me.off(NAIR_RIDER).lw(c);
+                NAIR_TRY_HANDPLANT.call(c, 0x0012_f828)?;
+                if c.g[V0][0] != 0 {
+                    frame.restore(c, S0, 0x20);
+                    break 'out;
+                }
+                c.cycles += 2;
+                c.g[AT][0] = 0x3f80_0000;
+                c.f[21] = 0x3f80_0000;
+            }
+            c.cycles += 4;
+            c.g[A0][0] = me.off(NAIR_RIDER).lw(c);
+            NAIR_TRY_RAILSLIDE.call(c, 0x0012_f840)?;
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x20);
+                break 'out;
+            }
+            c.cycles += 7;
+            c.g[A0][0] = me.off(NAIR_RIDER).lw(c);
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            NAIR_HANDLE_BOOST.call(c, 0x0012_f858)?;
+            // The held stick id: a new hold takes the input's id; another
+            // id (or none) ends the hold.
+            let hold = me.off(NAIR_HOLD).lw(c);
+            c.g[V0][0] = u64::MAX;
+            let mut take_id_load = true;
+            if hold != 0 {
+                c.cycles += 3;
+                let id = me.off(NAIR_ID).lw(c);
+                c.g[V1][0] = id;
+                if id != u64::MAX {
+                    c.g[A0][0] = input.off(2).lb(c);
+                    take_id_load = false;
+                } else {
+                    c.cycles += 2;
+                    let v = input.off(2).lb(c);
+                    c.g[V0][0] = v;
+                    me.off(NAIR_ID).sw(c, v);
+                }
+            }
+            if take_id_load {
+                c.cycles += 1;
+                c.g[A0][0] = input.off(2).lb(c);
+            }
+            c.cycles += 3;
+            let id = me.off(NAIR_ID).lw(c);
+            c.g[V0][0] = id;
+            let stick_id = c.g[A0][0];
+            let clear = if stick_id != id {
+                me.off(NAIR_HOLD).sw(c, 0);
+                true
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = u64::MAX;
+                if stick_id != u64::MAX {
+                    false
+                } else {
+                    c.cycles += 1;
+                    me.off(NAIR_HOLD).sw(c, 0);
+                    true
+                }
+            };
+            if clear {
+                c.cycles += 1;
+            }
+            let hold = me.off(NAIR_HOLD).lw(c);
+            c.g[V0][0] = hold;
+            c.cycles += 2;
+            c.g[V0][0] = u64::MAX;
+            if hold == 0 {
+                c.cycles += 3;
+                let id = me.off(NAIR_ID).lw(c);
+                c.g[V1][0] = id;
+                if id != u64::MAX {
+                    c.cycles += 3;
+                    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                    c.f[0] = 0xbf80_0000;
+                    let v = FpuF32(c.f[0]);
+                    me.off(NAIR_TIMER).write_fpu(c, v);
+                }
+            }
+            // The steer limit: the larger of |x| and y.
+            c.cycles += 5;
+            c.f[0] = f(c, 22).abs().0;
+            let le = f(c, 21).le(f(c, 0));
+            abi::set_fcc(c, le);
+            c.f[23] = c.f[21];
+            if le {
+                c.cycles += 1;
+                c.f[23] = c.f[0];
+            }
+            // The stick angle: atan2(y, x) by quadrant.
+            c.cycles += 4;
+            c.f[20] = 0;
+            let x0 = f(c, 22).eq_s(f(c, 20));
+            abi::set_fcc(c, x0);
+            if !x0 {
+                c.cycles += 7;
+                c.f[12] = f(c, 21).div(f(c, 22)).0;
+                call_ptr(c, NAIR_MATH_ATAN, 0x0012_f91c)?;
+                let neg = f(c, 22).lt(f(c, 20));
+                abi::set_fcc(c, neg);
+                c.f[1] = c.f[0];
+                if neg {
+                    c.cycles += 3;
+                    let up = f(c, 20).lt(f(c, 21));
+                    abi::set_fcc(c, up);
+                    if up {
+                        c.cycles += 3;
+                        c.f[0] = Addr(gp.wrapping_sub(0x76f8)).lw(c) as u32;
+                        c.f[1] = (f(c, 1) + f(c, 0)).0;
+                    } else {
+                        c.cycles += 2;
+                        c.f[0] = Addr(gp.wrapping_sub(0x76f4)).lw(c) as u32;
+                        c.f[1] = (f(c, 1) - f(c, 0)).0;
+                    }
+                }
+                c.cycles += 1;
+                c.f[2] = c.f[1];
+                c.cycles += 1;
+                c.f[0] = me.off(NAIR_TIMER).lw(c) as u32;
+            } else {
+                c.cycles += 4;
+                let y0 = f(c, 21).eq_s(f(c, 20));
+                abi::set_fcc(c, y0);
+                c.f[2] = c.f[21];
+                if y0 {
+                    c.cycles += 1;
+                    c.f[0] = me.off(NAIR_TIMER).lw(c) as u32;
+                } else {
+                    c.cycles += 4;
+                    let up = f(c, 20).le(f(c, 21));
+                    abi::set_fcc(c, up);
+                    c.f[2] = Addr(gp.wrapping_sub(0x7700)).lw(c) as u32;
+                    c.f[0] = me.off(NAIR_TIMER).lw(c) as u32;
+                    if up {
+                        c.cycles += 3;
+                        c.f[2] = Addr(gp.wrapping_sub(0x76fc)).lw(c) as u32;
+                    }
+                }
+            }
+            // Keep steering while the timer runs, the stick is past the
+            // timer's limit and points within 90 degrees of the heading.
+            c.cycles += 4;
+            c.f[1] = 0;
+            let mut reset = f(c, 0).lt(f(c, 1));
+            abi::set_fcc(c, reset);
+            if !reset {
+                c.cycles += 7;
+                c.g[AT][0] = 0x3f00_0000;
+                c.f[4] = 0x3f00_0000;
+                c.f[0] = (f(c, 0) - f(c, 4)).max(f(c, 1)).0;
+                reset = f(c, 23).le(f(c, 0));
+                abi::set_fcc(c, reset);
+                if !reset {
+                    c.cycles += 10;
+                    c.f[1] = me.off(NAIR_HEADING).lw(c) as u32;
+                    c.f[0] = Addr(gp.wrapping_sub(0x76f0)).lw(c) as u32;
+                    c.f[3] = (f(c, 2) - f(c, 1)).0;
+                    c.f[0] = (f(c, 3) * f(c, 0) + f(c, 4)).0;
+                    c.f[2] = f(c, 0).to_i32() as u32;
+                    c.f[2] = FpuF32::from_i32(c.f[2] as i32).0;
+                    let below = f(c, 0).lt(f(c, 2));
+                    abi::set_fcc(c, below);
+                    if below {
+                        c.cycles += 3;
+                        c.g[AT][0] = 0x3f80_0000;
+                        c.f[0] = 0x3f80_0000;
+                        c.f[2] = (f(c, 2) - f(c, 0)).0;
+                    }
+                    c.cycles += 9;
+                    c.f[0] = Addr(gp.wrapping_sub(0x76ec)).lw(c) as u32;
+                    c.f[1] = Addr(gp.wrapping_sub(0x76e8)).lw(c) as u32;
+                    c.f[0] = (f(c, 3) - f(c, 2) * f(c, 0)).abs().0;
+                    reset = f(c, 1).lt(f(c, 0));
+                    abi::set_fcc(c, reset);
+                }
+            }
+            if reset {
+                c.cycles += 6;
+                c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                c.f[0] = 0xbf80_0000;
+                c.f[21] = 0;
+                let v = FpuF32(c.f[0]);
+                me.off(NAIR_TIMER).write_fpu(c, v);
+                c.f[22] = c.f[21];
+            }
+            c.g[V1][0] = me.off(NAIR_RIDER).lw(c);
+            // The rider's steer targets (x, y) and rates.
+            c.cycles += 24;
+            c.g[A1][0] = 2;
+            let rate = Addr(gp.wrapping_sub(0x76e4)).read_fpu(c);
+            c.f[1] = rate.0;
+            let rider = Addr(c.g[V1][0] as u32);
+            let v = FpuF32(c.f[22]);
+            rider.off(0x1f8).write_fpu(c, v);
+            rider.off(0x1f4).write_fpu(c, rate);
+            let rider = Addr(me.off(NAIR_RIDER).lw(c) as u32);
+            c.g[V0][0] = rider.0 as i32 as u64;
+            c.f[0] = rider.off(0x1f0).lw(c) as u32;
+            rider.off(0x200).write_fpu(c, rate);
+            let v = FpuF32(c.f[0]);
+            rider.off(0x204).write_fpu(c, v);
+            let rider = Addr(me.off(NAIR_RIDER).lw(c) as u32);
+            c.g[V1][0] = rider.0 as i32 as u64;
+            rider.off(0x224).write_fpu(c, rate);
+            let v = FpuF32(c.f[21]);
+            rider.off(0x228).write_fpu(c, v);
+            let rider = Addr(me.off(NAIR_RIDER).lw(c) as u32);
+            c.g[A0][0] = rider.0 as i32 as u64;
+            rider.off(0x218).write_fpu(c, rate);
+            rider.off(0x21c).sw(c, 0);
+            let rider = me.off(NAIR_RIDER).lw(c);
+            c.g[V0][0] = rider;
+            c.g[A0][0] = Addr(rider as u32).off(NAIR_RIDER_ANIM).lw(c);
+            call_ptr(c, NAIR_ANIM_LAYER_ID, 0x0012_fa34)?;
+            // Not steering at all: the idle air animation, then sub state 5.
+            let rider = Addr(me.off(NAIR_RIDER).lw(c) as u32);
+            c.g[V1][0] = rider.0 as i32 as u64;
+            c.f[1] = 0;
+            c.f[0] = rider.off(0x220).lw(c) as u32;
+            let mut idle = f(c, 0).eq_s(f(c, 1));
+            abi::set_fcc(c, idle);
+            c.g[S1][0] = c.g[V0][0];
+            if idle {
+                c.cycles += 5;
+                c.f[0] = rider.off(0x214).lw(c) as u32;
+                idle = f(c, 0).eq_s(f(c, 1));
+                abi::set_fcc(c, idle);
+                if idle {
+                    c.cycles += 5;
+                    c.f[0] = rider.off(0x1f0).lw(c) as u32;
+                    idle = f(c, 0).eq_s(f(c, 1));
+                    abi::set_fcc(c, idle);
+                    if idle {
+                        c.cycles += 3;
+                        let hold = me.off(NAIR_HOLD).lw(c);
+                        c.g[V0][0] = hold;
+                        idle = hold == 0;
+                    }
+                }
+                if !idle {
+                    c.g[V0][0] = me.off(NAIR_RIDER).lw(c);
+                }
+            } else {
+                c.cycles += 1;
+                c.g[V0][0] = me.off(NAIR_RIDER).lw(c);
+            }
+            if idle {
+                c.cycles += 3;
+                c.g[V0][0] = 0x11f;
+                if c.g[S1][0] != 0x11f {
+                    c.cycles += 6;
+                    c.g[A0][0] = rider.off(NAIR_RIDER_ANIM).lw(c);
+                    c.g[A1][0] = 2;
+                    call_ptr(c, NAIR_ANIM_LAYER_ENTRY, 0x0012_fa9c)?;
+                    c.g[V1][0] = 9;
+                    let landing = c.g[V0][0] == 9;
+                    c.g[A1][0] = 0x11f;
+                    if !landing {
+                        c.cycles += 6;
+                        let rider = me.off(NAIR_RIDER).lw(c);
+                        c.g[V0][0] = rider;
+                        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                        c.f[12] = 0xbf80_0000;
+                        c.g[A2][0] = 0;
+                        c.g[A0][0] = Addr(rider as u32).off(NAIR_RIDER_ANIM).lw(c);
+                        call_ptr(c, NAIR_ANIM_PLAY, 0x0012_fac0)?;
+                    }
+                    c.cycles += 1;
+                }
+                c.g[A0][0] = me.off(NAIR_RIDER).lw(c);
+                c.cycles += 4;
+                c.g[A1][0] = 5;
+                NAIR_SET_SUB_STATE.call(c, 0x0012_facc)?;
+                frame.restore(c, S0, 0x20);
+                break 'out;
+            }
+            // Leaning: animation 9 when the y target is small for the
+            // turn, else 10 (unless layer 2 is landing, entry 9).
+            c.cycles += 6;
+            c.g[A1][0] = 2;
+            c.g[A0][0] = Addr(c.g[V0][0] as u32).off(NAIR_RIDER_ANIM).lw(c);
+            call_ptr(c, NAIR_ANIM_LAYER_ENTRY, 0x0012_fae4)?;
+            c.g[V1][0] = 9;
+            let landing = c.g[V0][0] == 9;
+            c.g[A1][0] = 0xa;
+            if !landing {
+                c.cycles += 14;
+                let rider = Addr(me.off(NAIR_RIDER).lw(c) as u32);
+                c.g[A0][0] = rider.0 as i32 as u64;
+                c.g[AT][0] = 0x3f80_0000;
+                c.f[1] = 0x3f80_0000;
+                c.f[0] = rider.off(0x1f0).read_fpu(c).abs().0;
+                c.g[AT][0] = 0x3f00_0000;
+                c.f[3] = 0x3f00_0000;
+                c.f[1] = (f(c, 1) - f(c, 0)).0;
+                c.f[2] = rider.off(0x220).lw(c) as u32;
+                c.f[1] = (f(c, 1) * f(c, 3)).0;
+                let small = f(c, 2).le(f(c, 1));
+                abi::set_fcc(c, small);
+                if small {
+                    c.g[A1][0] = 9;
+                }
+                c.cycles += 2;
+                let same = c.g[A1][0] == c.g[S1][0];
+                frame.restore(c, S0, 0x20);
+                if same {
+                    break 'out;
+                }
+                c.cycles += 5;
+                c.g[A0][0] = rider.off(NAIR_RIDER_ANIM).lw(c);
+                c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                c.f[12] = 0xbf80_0000;
+                c.g[A2][0] = 0;
+                call_ptr(c, NAIR_ANIM_PLAY, 0x0012_fb44)?;
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 8;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 23, 0x48);
+        frame.restore_fpr(c, 22, 0x40);
+        frame.restore_fpr(c, 21, 0x38);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RiderWipeoutSub_UpdatePhase1 (0x12d4e8, ai.cpp)
+
+/// Wipeout sub fields: phase, "hit the ground" flag, impact velocity
+/// (vec4), recovery timer, the rider.
+pub(crate) const RWS_PHASE: u32 = 0x0;
+
+pub(crate) const RWS_HIT: u32 = 0x54;
+
+pub(crate) const RWS_IMPACT: u32 = 0x60;
+
+pub(crate) const RWS_TIMER: u32 = 0x70;
+
+pub(crate) const RWS_RIDER: u32 = 0x80;
+
+/// Rider fields: ground normal (vec4) and its "up" amount, velocity,
+/// speed float, "player" word, base (+0x30: airborne), anim controller.
+pub(crate) const RWS_RIDER_NORMAL: u32 = 0x370;
+
+pub(crate) const RWS_RIDER_UP: u32 = 0x378;
+
+pub(crate) const RWS_RIDER_VELOCITY: u32 = 0x1e0;
+
+pub(crate) const RWS_RIDER_SPEED: u32 = 0x470;
+
+pub(crate) const RWS_RIDER_PLAYER: u32 = 0x150;
+
+pub(crate) const RWS_RIDER_OBJECT: u32 = 0x6c0;
+
+pub(crate) const RWS_RIDER_BASE: u32 = 0x77c;
+
+pub(crate) const RWS_RIDER_ANIM: u32 = 0x784;
+
+pub(crate) const RWS_UPDATE_ANIM_SPEED: Callee = Callee {
+    addr: 0x0012_e528,
+    f: ee::s00::RiderWipeoutSub_UpdateAnimSpeed,
+};
+
+pub(crate) const RWS_START_GET_UP: Callee = Callee {
+    addr: 0x0012_e010,
+    f: ee::s00::RiderWipeoutSub_StartGetUp,
+};
+
+pub(crate) const RWS_PLAY_FINAL_ANIM: Callee = Callee {
+    addr: 0x0012_e468,
+    f: ee::s00::RiderWipeoutSub_PlayFinalAnim,
+};
+
+pub(crate) const RWS_SWITCH_TO_ANIM_SET_A: Callee = Callee {
+    addr: 0x0012_dd98,
+    f: ee::s00::RiderWipeoutSub_SwitchToAnimSetA,
+};
+
+pub(crate) const RWS_SWITCH_TO_ANIM_SET_B: Callee = Callee {
+    addr: 0x0012_dcb0,
+    f: ee::s00::RiderWipeoutSub_SwitchToAnimSetB,
+};
+
+pub(crate) const RWS_PLAY_END_ANIM_B: Callee = Callee {
+    addr: 0x0012_de80,
+    f: ee::s00::RiderWipeoutSub_PlayEndAnimB,
+};
+
+pub(crate) const RWS_ADD_RECOVERY_BOOST: Callee = Callee {
+    addr: 0x0010_f280,
+    f: ee::s00::Rider_AddWipeoutRecoveryBoost,
+};
+
+pub(crate) const RWS_CHECK_RESET_PATH: Callee = Callee {
+    addr: 0x0011_6120,
+    f: ee::s00::Rider_CheckResetPath,
+};
+
+/// Through the table: anim layer current id / time / layer, set the
+/// layer's speed, "layer finished", the audio system and its wipeout
+/// sounds (final, land, phase end).
+pub(crate) const RWS_ANIM_CURRENT: u32 = 0x0031_1ae8;
+
+pub(crate) const RWS_ANIM_TIME: u32 = 0x0031_2ab0;
+
+pub(crate) const RWS_ANIM_LAYER: u32 = 0x0031_1b20;
+
+pub(crate) const RWS_ANIM_SET_SPEED: u32 = 0x0031_3cf0;
+
+pub(crate) const RWS_ANIM_FINISHED: u32 = 0x0031_2ae8;
+
+pub(crate) const RWS_AUDIO: u32 = 0x0028_b180;
+
+pub(crate) const RWS_SOUND_FINAL: u32 = 0x0029_6868;
+
+pub(crate) const RWS_SOUND_LAND: u32 = 0x0029_6e80;
+
+pub(crate) const RWS_SOUND_PHASE_END: u32 = 0x0029_6310;
+
+/// `vf4.x = |vf3|^2`-style dot of vf3 with `vf5` (`Src::Vec(src)`).
+pub(crate) fn rws_dot(c: &mut Cpu, src: u8) {
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(src));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+}
+
+/// `|impact|` into v0 (Q) from the vec4 at `s0 + 0x60`.
+pub(crate) fn rws_impact_len(c: &mut Cpu) {
+    c.lqc2(3, r32(c, S0).wrapping_add(RWS_IMPACT));
+    rws_dot(c, 3);
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(V0, 22);
+}
+
+/// `anim_current(rider->anim, 2)` with a0 = `rider + 0x784` loaded from
+/// `s0 + 0x80` (the 6/7-cycle re-query blocks).
+pub(crate) fn rws_requery_current(c: &mut Cpu, ret: u32) -> crate::call::Flow {
+    c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(RWS_RIDER));
+    c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(RWS_RIDER_ANIM));
+    call_ptr(c, RWS_ANIM_CURRENT, ret)
+}
+
+/// `void RiderWipeoutSub_UpdatePhase1(RiderWipeoutSub* self)` (0x12d4e8):
+/// the tumbling phase. On the ground hit (`hit`): on the ground and
+/// pushed against a steep enough normal it starts getting up (phase 4,
+/// velocity projected on the normal); otherwise it finishes the final
+/// anim (ids 0x1d / 0x19) or switches to anim set A slowed by the impact
+/// (phase 2); then the phase-end sound, clears `hit` and reports the
+/// impact to the rider. Otherwise, once the anim layer finished (or plays
+/// 0x1d / 0x19): a recovery (timer >= 1 or speed >= 0) ends the wipeout
+/// (phase 3; the player rider checks for a reset instead), else back on
+/// the ground switches to set A (phase 2) or, when the layer finished,
+/// to set B.
+pub fn rider_wipeout_sub_update_phase1(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        frame.save_fpr(c, 21, 0x48);
+        frame.save_fpr(c, 20, 0x40);
+        RWS_UPDATE_ANIM_SPEED.call(c, 0x0012_d504)?;
+        let me = r32(c, S0);
+        c.g[V0][0] = c.lw(me.wrapping_add(RWS_HIT));
+        let hit = c.g[V0][0] != 0;
+        c.g[V0][0] = c.lw(me.wrapping_add(RWS_RIDER));
+        // true: ends through 0x12d82c (one more cycle).
+        let via_82c = if hit {
+            c.cycles += 4;
+            c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(RWS_RIDER_BASE));
+            c.g[V1][0] = c.lw(r32(c, A0).wrapping_add(0x30));
+            c.g[A2][0] = c.g[V0][0];
+            if c.g[V1][0] == 0 {
+                rws_landed(c)?;
+            }
+            // self->hit = 0; rider->vfunc(0x88)(|impact|)
+            c.cycles += 19;
+            let me = r32(c, S0);
+            c.sw(me.wrapping_add(RWS_HIT), 0);
+            c.g[A1][0] = c.lw(me.wrapping_add(RWS_RIDER));
+            rws_impact_len(c);
+            c.mtc1(V0, 12);
+            c.g[V0][0] = c.lw(r32(c, A1).wrapping_add(RWS_RIDER_OBJECT));
+            let vt = r32(c, V0);
+            c.g[A0][0] = c.lh(vt.wrapping_add(0x88));
+            c.g[V1][0] = c.lw(vt.wrapping_add(0x8c));
+            let f = r32(c, V1);
+            c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+            call_ptr(c, f, 0x0012_d708)?;
+            frame.restore(c, S0, 0x30);
+            false
+        } else {
+            'idle: {
+                c.cycles += 5;
+                c.g[A1][0] = 2;
+                c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(RWS_RIDER_ANIM));
+                call_ptr(c, RWS_ANIM_FINISHED, 0x0012_d71c)?;
+                if c.g[V0][0] == 0 {
+                    c.cycles += 7;
+                    c.g[A1][0] = 2;
+                    rws_requery_current(c, 0x0012_d734)?;
+                    c.g[V1][0] = 0x1d;
+                    let final_anim = c.g[V0][0] == c.g[V1][0];
+                    c.g[A1][0] = 2;
+                    if !final_anim {
+                        c.cycles += 6;
+                        rws_requery_current(c, 0x0012_d74c)?;
+                        c.g[V1][0] = 0x19;
+                        if c.g[V0][0] != c.g[V1][0] {
+                            frame.restore(c, S0, 0x30);
+                            break 'idle false;
+                        }
+                    }
+                    c.cycles += 1;
+                }
+                c.lwc1(1, r32(c, S0).wrapping_add(RWS_TIMER));
+
+                // recover = timer >= 1 || rider speed >= 0
+                c.cycles += 7;
+                c.g[A1][0] = 0;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(AT, 0);
+                c.c_le_s(0, 1);
+                let timed = c.fcc();
+                c.g[A2][0] = c.lw(r32(c, S0).wrapping_add(RWS_RIDER));
+                let mut recover = timed;
+                if !timed {
+                    c.cycles += 6;
+                    c.lwc1(1, r32(c, A2).wrapping_add(RWS_RIDER_SPEED));
+                    c.mtc1(0, 0);
+                    c.c_le_s(0, 1);
+                    c.g[V0][0] = 1;
+                    if !c.fcc() {
+                        c.cycles += 1;
+                        c.g[V0][0] = 0;
+                    }
+                    c.cycles += 2;
+                    recover = c.g[V0][0] != 0;
+                }
+                if recover {
+                    c.cycles += 1;
+                    c.g[A1][0] = 1;
+                }
+                c.cycles += 2;
+                let rider = r32(c, A2);
+                if recover {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw(rider.wrapping_add(RWS_RIDER_PLAYER)) ^ 1;
+                    c.g[A0][0] = c.g[A2][0];
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 7;
+                        RWS_ADD_RECOVERY_BOOST.call(c, 0x0012_d7c0)?;
+                        c.g[A0][0] = c.g[S0][0];
+                        RWS_PLAY_END_ANIM_B.call(c, 0x0012_d7c8)?;
+                        c.g[V0][0] = 3;
+                        c.sw(r32(c, S0).wrapping_add(RWS_PHASE), c.g[V0][0]);
+                        break 'idle true;
+                    }
+                    // The player: reset check, boost 1.
+                    c.cycles += 8;
+                    c.g[A1][0] = 0;
+                    c.g[A2][0] = 3;
+                    RWS_CHECK_RESET_PATH.call(c, 0x0012_d7e0)?;
+                    c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(RWS_RIDER));
+                    c.g[A1][0] = 1;
+                    RWS_ADD_RECOVERY_BOOST.call(c, 0x0012_d7ec)?;
+                    frame.restore(c, S0, 0x30);
+                    break 'idle false;
+                }
+                c.g[V0][0] = c.lw(rider.wrapping_add(RWS_RIDER_BASE));
+                c.cycles += 3;
+                c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x30));
+                if c.g[V1][0] == 0 {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S0][0];
+                    RWS_SWITCH_TO_ANIM_SET_A.call(c, 0x0012_d808)?;
+                    c.g[V0][0] = 2;
+                    c.sw(r32(c, S0).wrapping_add(RWS_PHASE), c.g[V0][0]);
+                    break 'idle true;
+                }
+                c.g[A0][0] = c.lw(rider.wrapping_add(RWS_RIDER_ANIM));
+                c.cycles += 4;
+                c.g[A1][0] = 2;
+                call_ptr(c, RWS_ANIM_FINISHED, 0x0012_d81c)?;
+                if c.g[V0][0] == 0 {
+                    frame.restore(c, S0, 0x30);
+                    break 'idle false;
+                }
+                c.cycles += 2;
+                c.g[A0][0] = c.g[S0][0];
+                RWS_SWITCH_TO_ANIM_SET_B.call(c, 0x0012_d82c)?;
+                true
+            }
+        };
+        if via_82c {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore_ra(c, 0x20);
+        frame.restore_fpr(c, 21, 0x48);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The landed part of `RiderWipeoutSub_UpdatePhase1` (a2 = the rider):
+/// get up, the final anim or anim set A; then the phase-end sound.
+pub(crate) fn rws_landed(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 6;
+    let rider = r32(c, A2);
+    c.lwc1(1, rider.wrapping_add(RWS_RIDER_UP));
+    let gp = r32(c, GP);
+    c.lwc1(0, gp.wrapping_sub(0x77ac)); // 0.9
+    c.c_lt_s(0, 1);
+    let mut get_up = false;
+    if c.fcc() {
+        // dot(impact, normal) < |impact| * -0.9
+        c.cycles += 25;
+        c.lwc1(2, gp.wrapping_sub(0x77a8)); // -0.9
+        rws_impact_len(c);
+        c.mtc1(V0, 0);
+        c.lqc2(3, r32(c, S0).wrapping_add(RWS_IMPACT));
+        c.lqc2(5, rider.wrapping_add(RWS_RIDER_NORMAL));
+        rws_dot(c, 5);
+        c.qmfc2(V1, 4);
+        c.mtc1(V1, 1);
+        c.mul_s(0, 0, 2);
+        c.c_lt_s(1, 0);
+        get_up = c.fcc();
+    }
+    if get_up {
+        // Get up; velocity = normal * dot(normal, velocity); phase 4.
+        c.cycles += 23;
+        c.g[A0][0] = c.g[S0][0];
+        RWS_START_GET_UP.call(c, 0x0012_d5a4)?;
+        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(RWS_RIDER));
+        c.g[A0][0] = 4;
+        let rider = r32(c, V0);
+        c.lqc2(3, rider.wrapping_add(RWS_RIDER_NORMAL));
+        c.lqc2(5, rider.wrapping_add(RWS_RIDER_VELOCITY));
+        rws_dot(c, 5);
+        c.qmfc2(V1, 4);
+        c.mtc1(V1, 0);
+        c.mfc1(A1, 0);
+        c.lqc2(4, rider.wrapping_add(RWS_RIDER_NORMAL));
+        c.qmtc2(A1, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        let stk = sp(c);
+        c.sqc2(5, stk.wrapping_add(0x10));
+        c.lq(V1, stk.wrapping_add(0x10));
+        c.sq(V1, stk);
+        c.sq(V1, rider.wrapping_add(RWS_RIDER_VELOCITY));
+        c.sw(r32(c, S0).wrapping_add(RWS_PHASE), c.g[A0][0]);
+    } else {
+        c.g[A0][0] = c.lw(rider.wrapping_add(RWS_RIDER_ANIM));
+        c.cycles += 5;
+        c.g[A1][0] = 2;
+        call_ptr(c, RWS_ANIM_CURRENT, 0x0012_d600)?;
+        c.g[V1][0] = 0x1d;
+        let mut final_anim = c.g[V0][0] == c.g[V1][0];
+        c.g[A1][0] = 2;
+        if !final_anim {
+            c.cycles += 6;
+            rws_requery_current(c, 0x0012_d618)?;
+            c.g[V1][0] = 0x19;
+            final_anim = c.g[V0][0] == c.g[V1][0];
+            if !final_anim {
+                c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(RWS_RIDER));
+            }
+        }
+        if final_anim {
+            c.cycles += 9;
+            c.g[A0][0] = c.g[S0][0];
+            RWS_PLAY_FINAL_ANIM.call(c, 0x0012_d62c)?;
+            call_ptr(c, RWS_AUDIO, 0x0012_d634)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S0][0];
+            call_ptr(c, RWS_SOUND_FINAL, 0x0012_d640)?;
+        } else {
+            // Anim set A at the layer speed scaled by the anim time.
+            c.cycles += 25;
+            c.g[A1][0] = 2;
+            c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(RWS_RIDER_ANIM));
+            call_ptr(c, RWS_ANIM_TIME, 0x0012_d654)?;
+            c.mov_s(21, 0);
+            c.g[A0][0] = c.g[S0][0];
+            RWS_SWITCH_TO_ANIM_SET_A.call(c, 0x0012_d660)?;
+            c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(RWS_RIDER));
+            c.g[A1][0] = 2;
+            c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(RWS_RIDER_ANIM));
+            call_ptr(c, RWS_ANIM_LAYER, 0x0012_d670)?;
+            c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(RWS_RIDER));
+            c.g[A1][0] = 2;
+            c.lwc1(20, r32(c, V0).wrapping_add(0x10));
+            c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(RWS_RIDER_ANIM));
+            call_ptr(c, RWS_ANIM_LAYER, 0x0012_d684)?;
+            c.mul_s(12, 20, 21);
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, RWS_ANIM_SET_SPEED, 0x0012_d694)?;
+            call_ptr(c, RWS_AUDIO, 0x0012_d69c)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S0][0];
+            call_ptr(c, RWS_SOUND_LAND, 0x0012_d6a8)?;
+        }
+        c.g[V0][0] = 2;
+        c.cycles += 1;
+        c.sw(r32(c, S0).wrapping_add(RWS_PHASE), c.g[V0][0]);
+    }
+    c.cycles += 5;
+    call_ptr(c, RWS_AUDIO, 0x0012_d6b8)?;
+    c.g[A1][0] = c.lw(r32(c, S0).wrapping_add(RWS_RIDER));
+    c.g[A0][0] = c.g[V0][0];
+    call_ptr(c, RWS_SOUND_PHASE_END, 0x0012_d6c4)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -20430,6 +22267,1066 @@ pub(crate) mod tests {
             rider_wipeout_sub_exit,
             200,
             &|c, seed| oc325_wipeout_exit_setup(c, seed),
+        );
+    }
+
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_CTRL;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_MAGIC;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_LAYER_ENTRY;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_LAYER_FINISHED;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_fake;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_gated;
+
+    pub(crate) use crate::game::sound::soundsys::tests::oc371_machine;
+    pub(crate) use crate::game::sound::soundsys::tests::oc371_script;
+
+    pub(crate) use crate::game::sound::soundsys::tests::oc371_install_fakes;
+
+    // ------------------------------------------------------------ AI_Update
+
+    /// Gate of the `AI_Update` test fakes (in each test machine's own RAM):
+    /// the rest of the suite reaches the bodies the fakes chain to.
+    pub(crate) const AI_UPDATE_CTRL: u32 = DATA + 0x0f_0350;
+
+    pub(crate) const AI_UPDATE_MAGIC: u32 = 0x4149_5550;
+
+    /// A gated fake for one callee of `AI_Update`: logs the call (registers
+    /// at the call) and returns, or unwinds at the chosen call index.
+    macro_rules! ai_update_fake {
+        ($name:ident, $prev:ident, $addr:expr, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(AI_UPDATE_CTRL) != AI_UPDATE_MAGIC {
+                    return fall_back(c, &$prev, $gen);
+                }
+                let ra = c.g[RA][0] as u32;
+                fake(c, $addr, ra);
+            }
+        };
+    }
+
+    ai_update_fake!(
+        aiu_fake_bb20,
+        AIU_PREV_BB20,
+        0x0012_bb20,
+        ee::s00::f_0012bb20__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_3c20,
+        AIU_PREV_3C20,
+        0x0011_3c20,
+        ee::s00::f_00113c20__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_f560,
+        AIU_PREV_F560,
+        0x0010_f560,
+        ee::s00::f_0010f560__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_0e30,
+        AIU_PREV_0E30,
+        0x0012_0e30,
+        ee::s00::f_00120e30__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_0ed8,
+        AIU_PREV_0ED8,
+        0x0012_0ed8,
+        ee::s00::f_00120ed8__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_0f20,
+        AIU_PREV_0F20,
+        0x0012_0f20,
+        ee::s00::f_00120f20__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_1068,
+        AIU_PREV_1068,
+        0x0012_1068,
+        ee::s00::f_00121068__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_10b0,
+        AIU_PREV_10B0,
+        0x0012_10b0,
+        ee::s00::f_001210b0__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_11f8,
+        AIU_PREV_11F8,
+        0x0012_11f8,
+        ee::s00::f_001211f8__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_16e0,
+        AIU_PREV_16E0,
+        0x0012_16e0,
+        ee::s00::f_001216e0__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_1700,
+        AIU_PREV_1700,
+        0x0012_1700,
+        ee::s00::f_00121700__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_1728,
+        AIU_PREV_1728,
+        0x0012_1728,
+        ee::s00::f_00121728__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_1750,
+        AIU_PREV_1750,
+        0x0012_1750,
+        ee::s00::f_00121750__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_17f8,
+        AIU_PREV_17F8,
+        0x0012_17f8,
+        ee::s00::f_001217f8__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_1818,
+        AIU_PREV_1818,
+        0x0012_1818,
+        ee::s00::f_00121818__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_18d0,
+        AIU_PREV_18D0,
+        0x0012_18d0,
+        ee::s00::f_001218d0__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_1950,
+        AIU_PREV_1950,
+        0x0012_1950,
+        ee::s00::f_00121950__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_0e88,
+        AIU_PREV_0E88,
+        0x0012_0e88,
+        ee::s00::f_00120e88__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_1b60,
+        AIU_PREV_1B60,
+        0x0010_1b60,
+        ee::s00::f_00101b60__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_13a8,
+        AIU_PREV_13A8,
+        0x0010_13a8,
+        ee::s00::f_001013a8__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_d0b8,
+        AIU_PREV_D0B8,
+        0x002d_d0b8,
+        ee::s09::f_002dd0b8__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_abc8,
+        AIU_PREV_ABC8,
+        0x002d_abc8,
+        ee::s09::f_002dabc8__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_8938,
+        AIU_PREV_8938,
+        0x002e_8938,
+        ee::s09::f_002e8938__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_66b8,
+        AIU_PREV_66B8,
+        0x002e_66b8,
+        ee::s09::f_002e66b8__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_add0,
+        AIU_PREV_ADD0,
+        0x002e_add0,
+        ee::s09::f_002eadd0__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_f6d0,
+        AIU_PREV_F6D0,
+        0x002e_f6d0,
+        ee::s09::f_002ef6d0__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_4c08,
+        AIU_PREV_4C08,
+        0x002d_4c08,
+        ee::s09::f_002d4c08__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_39d8,
+        AIU_PREV_39D8,
+        0x002e_39d8,
+        ee::s09::f_002e39d8__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_f920,
+        AIU_PREV_F920,
+        0x002d_f920,
+        ee::s09::f_002df920__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_1150,
+        AIU_PREV_1150,
+        0x002f_1150,
+        ee::s09::f_002f1150__generated
+    );
+
+    ai_update_fake!(
+        aiu_fake_6518,
+        AIU_PREV_6518,
+        0x002f_6518,
+        ee::s09::f_002f6518__generated
+    );
+
+    /// Hook every callee of `AI_Update` (once per process).
+    pub(crate) fn ai_update_install_fakes() {
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0012BB20),
+            aiu_fake_bb20,
+            &AIU_PREV_BB20,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00113C20),
+            aiu_fake_3c20,
+            &AIU_PREV_3C20,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0010F560),
+            aiu_fake_f560,
+            &AIU_PREV_F560,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00120E30),
+            aiu_fake_0e30,
+            &AIU_PREV_0E30,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00120ED8),
+            aiu_fake_0ed8,
+            &AIU_PREV_0ED8,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00120F20),
+            aiu_fake_0f20,
+            &AIU_PREV_0F20,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00121068),
+            aiu_fake_1068,
+            &AIU_PREV_1068,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_001210B0),
+            aiu_fake_10b0,
+            &AIU_PREV_10B0,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_001211F8),
+            aiu_fake_11f8,
+            &AIU_PREV_11F8,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_001216E0),
+            aiu_fake_16e0,
+            &AIU_PREV_16E0,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00121700),
+            aiu_fake_1700,
+            &AIU_PREV_1700,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00121728),
+            aiu_fake_1728,
+            &AIU_PREV_1728,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00121750),
+            aiu_fake_1750,
+            &AIU_PREV_1750,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_001217F8),
+            aiu_fake_17f8,
+            &AIU_PREV_17F8,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00121818),
+            aiu_fake_1818,
+            &AIU_PREV_1818,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_001218D0),
+            aiu_fake_18d0,
+            &AIU_PREV_18D0,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00121950),
+            aiu_fake_1950,
+            &AIU_PREV_1950,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00120E88),
+            aiu_fake_0e88,
+            &AIU_PREV_0E88,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00101B60),
+            aiu_fake_1b60,
+            &AIU_PREV_1B60,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_001013A8),
+            aiu_fake_13a8,
+            &AIU_PREV_13A8,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002DD0B8),
+            aiu_fake_d0b8,
+            &AIU_PREV_D0B8,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002DABC8),
+            aiu_fake_abc8,
+            &AIU_PREV_ABC8,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002E8938),
+            aiu_fake_8938,
+            &AIU_PREV_8938,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002E66B8),
+            aiu_fake_66b8,
+            &AIU_PREV_66B8,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002EADD0),
+            aiu_fake_add0,
+            &AIU_PREV_ADD0,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002EF6D0),
+            aiu_fake_f6d0,
+            &AIU_PREV_F6D0,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002D4C08),
+            aiu_fake_4c08,
+            &AIU_PREV_4C08,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002E39D8),
+            aiu_fake_39d8,
+            &AIU_PREV_39D8,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002DF920),
+            aiu_fake_f920,
+            &AIU_PREV_F920,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002F1150),
+            aiu_fake_1150,
+            &AIU_PREV_1150,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002F6518),
+            aiu_fake_6518,
+            &AIU_PREV_6518,
+        );
+    }
+
+    /// `AI_Update` with every callee faked: the mission paths (no mission
+    /// object, a busy one, a live one; no players), the player / computer /
+    /// other collection (empty, negative and null records, flags off), the
+    /// pose-only flag and the full stage-by-stage update, and unwinds at
+    /// every call index.
+    #[test]
+    fn ai_update_matches() {
+        ai_update_install_fakes();
+        covered(
+            ee::s00::f_00128af0__generated,
+            ai_update,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0012_8af0, 70);
+                c.pc = 0x0012_8af0;
+                c.bus.write32(AI_UPDATE_CTRL, AI_UPDATE_MAGIC);
+                let ai = DATA + 0x1000;
+                c.g[A0][0] = sx(ai);
+                fill(c, &mut r, ai, 0x30);
+                // Rider records (0x40..0x78): null, a record with no rider, or a
+                // record with a rider (whose model is a random word).
+                for i in 0..15u32 {
+                    let slot = ai + AI_UPDATE_PLAYERS + 4 * i;
+                    let rec = DATA + 0x2000 + 0x20 * i;
+                    let rider = DATA + 0x10000 + 0x1000 * i;
+                    match r.next_u32() % 6 {
+                        0 => c.bus.write32(slot, 0),
+                        1 => {
+                            c.bus.write32(slot, rec);
+                            c.bus.write32(rec + AI_UPDATE_REC_RIDER, 0);
+                        }
+                        _ => {
+                            c.bus.write32(slot, rec);
+                            c.bus.write32(rec + AI_UPDATE_REC_RIDER, rider);
+                            let model = r.next_u32();
+                            c.bus.write32(rider + AI_UPDATE_RIDER_MODEL, model);
+                        }
+                    }
+                }
+                let count = |r: &mut crate::difftest::Rng, max: u32| match r.next_u32() % 5 {
+                    0 => 0,
+                    1 => (-1i32 - (r.next_u32() % 3) as i32) as u32,
+                    _ => 1 + r.next_u32() % max,
+                };
+                let players = count(&mut r, 2);
+                let computers = count(&mut r, 3);
+                let others = count(&mut r, 3);
+                c.bus.write32(ai + AI_UPDATE_NUM_PLAYERS, players);
+                c.bus.write32(ai + AI_UPDATE_NUM_COMPUTERS, computers);
+                c.bus.write32(ai + AI_UPDATE_NUM_OTHERS, others);
+                let flag = |r: &mut crate::difftest::Rng| {
+                    if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 1
+                    }
+                };
+                let have_computers = flag(&mut r);
+                let have_others = flag(&mut r);
+                c.bus.write32(ai + AI_UPDATE_HAVE_COMPUTERS, have_computers);
+                c.bus.write32(ai + AI_UPDATE_HAVE_OTHERS, have_others);
+                let missions = match seed % 4 {
+                    0 | 1 => 0,
+                    2 => 1 + r.next_u32() % 2,
+                    _ => (-1i32) as u32,
+                };
+                c.bus.write32(ai + AI_UPDATE_NUM_MISSIONS, missions);
+                // The world's mission object: none, busy, live.
+                let world = DATA + 0x800;
+                let holder = DATA + 0x900;
+                let object = DATA + 0xa00;
+                c.bus.write32(GAME_GP - AI_UPDATE_GP_WORLD, world);
+                c.bus.write32(world + 0x84, holder);
+                let object_ptr = if r.next_u32() % 4 == 0 { 0 } else { object };
+                c.bus.write32(holder + 0x34, object_ptr);
+                let busy = if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() | 1
+                };
+                c.bus.write32(object + 0x70, busy);
+                // Debug flags: bit 0 = pose only.
+                let flags = (r.next_u32() & !1) | (seed / 4 % 3 == 0) as u32;
+                c.bus.write32(GAME_GP - AI_UPDATE_GP_FLAGS, flags);
+            },
+        );
+    }
+
+    // ------------------------------------------- RiderWipeoutSub_UpdatePhase2
+
+    macro_rules! oc360_fake_set_any {
+        ($install:ident; $($name:ident $prev:ident $addr:literal $shard:ident $slot:ident $gen:ident;)*) => {
+            $(oc360_gated!($name, $prev, $addr, ee::$shard::$gen);)*
+            fn $install() {
+                use std::ptr::addr_of_mut;
+                {
+                    $(fakes::hook(addr_of_mut!(ee::$shard::$slot), $name, &$prev);)*
+                }
+            }
+        };
+    }
+
+    oc360_fake_set_any! {
+        oc360_install_up2_fakes;
+        oc360_fake_add_shake OC360_PREV_ADD_SHAKE 0x0015_e360 s01 OVERRIDE_0015E360 f_0015e360__generated;
+        oc360_fake_anim_speed OC360_PREV_ANIM_SPEED 0x0012_e528 s00 OVERRIDE_0012E528 f_0012e528__generated;
+        oc360_fake_check_reset OC360_PREV_CHECK_RESET 0x0011_6120 s00 OVERRIDE_00116120 f_00116120__generated;
+        oc360_fake_recovery_boost OC360_PREV_RECOVERY_BOOST 0x0010_f280 s00 OVERRIDE_0010F280 f_0010f280__generated;
+        oc360_fake_end_anim_a OC360_PREV_END_ANIM_A 0x0012_df48 s00 OVERRIDE_0012DF48 f_0012df48__generated;
+        oc360_fake_anim_set_a OC360_PREV_ANIM_SET_A 0x0012_dd98 s00 OVERRIDE_0012DD98 f_0012dd98__generated;
+        oc360_fake_layer_finished OC360_PREV_LAYER_FINISHED 0x0031_2ae8 s10 OVERRIDE_00312AE8 f_00312ae8__generated;
+        oc360_fake_layer_entry OC360_PREV_LAYER_ENTRY 0x0031_1ae8 s10 OVERRIDE_00311AE8 f_00311ae8__generated;
+        oc360_fake_anim_312660 OC360_PREV_ANIM_312660 0x0031_2660 s10 OVERRIDE_00312660 f_00312660__generated;
+        oc360_fake_anim_30ecd8 OC360_PREV_ANIM_30ECD8 0x0030_ecd8 s10 OVERRIDE_0030ECD8 f_0030ecd8__generated;
+        oc360_fake_anim_311bf0 OC360_PREV_ANIM_311BF0 0x0031_1bf0 s10 OVERRIDE_00311BF0 f_00311bf0__generated;
+        oc360_fake_anim_3128e8 OC360_PREV_ANIM_3128E8 0x0031_28e8 s10 OVERRIDE_003128E8 f_003128e8__generated;
+        oc360_fake_anim_312aa0 OC360_PREV_ANIM_312AA0 0x0031_2aa0 s10 OVERRIDE_00312AA0 f_00312aa0__generated;
+        oc360_fake_speech_on OC360_PREV_SPEECH_ON 0x0029_f0a0 s08 OVERRIDE_0029F0A0 f_0029f0a0__generated;
+        oc360_fake_stop_loop OC360_PREV_STOP_LOOP 0x0029_6e20 s08 OVERRIDE_00296E20 f_00296e20__generated;
+        oc360_fake_stop_loop2 OC360_PREV_STOP_LOOP2 0x0029_7438 s08 OVERRIDE_00297438 f_00297438__generated;
+    }
+
+    /// The camera shake (index < 0, flag off / on, speed clamps), the
+    /// bounce request, an AI getting up, the layer anim (finished, 0x1d,
+    /// 0x19, 0x1c, other), fast (progress or ground timer) or slow, human
+    /// or AI, surface 0x12, anim set 1 or not. The real
+    /// `RiderWipeoutSub_StartGetUp` and `_SwitchToAnimSetB`, the real
+    /// grunt (speech off) and audio instance; the other callees are logged
+    /// fakes.
+    #[test]
+    fn rider_wipeout_sub_update_phase2_matches() {
+        oc360_install_up2_fakes();
+        covered(
+            ee::s00::f_0012d160__generated,
+            rider_wipeout_sub_update_phase2,
+            400,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x0012_d160, 8);
+                c.pc = 0x0012_d160;
+                let this = DATA + 0xd_0000;
+                let rider = this + 0x100;
+                let vt = this + 0x1000;
+                let handler = this + 0x1100;
+                let world = this + 0x1200;
+                let game = this + 0x1300;
+                let cams = this + 0x1400;
+                let skel = this + 0x1500;
+                let arrays = this + 0x1800;
+                let pick = |r: &mut Rng, v: &[f32]| v[r.next_u32() as usize % v.len()].to_bits();
+                c.bus.write32(OC360_CTRL, OC360_MAGIC);
+                c.g[A0][0] = sx(this);
+                fill(c, &mut r, this, 0x40);
+                fill(c, &mut r, rider, 0x400);
+                c.bus
+                    .write32(this + UP2_BOUNCE, (r.next_u32() % 5 == 0) as u32);
+                c.bus
+                    .write32(this + UP2_PROGRESS, pick(&mut r, &[0.0, 0.5, 1.0, 2.0]));
+                c.bus.write32(this + UP2_RIDER, rider);
+                let speed = pick(&mut r, &[0.0, 10.0, 100.0, 500.0, 1000.0, 2000.0, 4000.0]);
+                put_vec(c, rider + UP2_R_VEL, [speed, 0, 0, 0]);
+                c.bus.write32(rider + UP2_R_IS_AI, r.next_u32() % 3);
+                c.bus.write32(
+                    rider + UP2_R_SURFACE,
+                    if r.next_u32() % 3 == 0 { 0x12 } else { 3 },
+                );
+                c.bus
+                    .write32(rider + UP2_R_GROUND_TIME, pick(&mut r, &[-1.0, 0.0, 1.0]));
+                c.bus.write32(rider + UP2_R_VTABLE, vt);
+                for slot in [0x88u32, 0x90] {
+                    c.bus
+                        .write16(vt + slot, (r.next_u32() as i16 as i32 & !3) as u16);
+                    c.bus.write32(vt + slot + 4, FAKE);
+                }
+                c.bus.write32(rider + UP2_R_HANDLER, handler);
+                c.bus.write32(handler + 0x30, r.next_u32() % 2);
+                let camera = if r.next_u32() % 4 == 0 {
+                    u32::MAX
+                } else {
+                    r.next_u32() % 4
+                };
+                c.bus.write32(rider + UP2_R_CAMERA, camera);
+                c.bus.write32(rider + UP2_R_SHAKE, r.next_u32() % 2);
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, game);
+                c.bus.write32(game + 0x84, cams);
+                // RiderWipeoutSub_StartGetUp's skeleton.
+                c.bus.write32(rider + 0x780, skel);
+                c.bus.write32(skel + 0x24, arrays);
+                c.bus.write32(skel + 0x28, arrays + 0x100);
+                c.bus.write32(rider + 0x89c, r.next_u32() % 4);
+                fill(c, &mut r, arrays, 0x80);
+                for i in 0..4 {
+                    c.bus
+                        .write32(skel + 0x140 + 4 * i, pick(&mut r, &[0.5, 1.0, 2.0]));
+                }
+                let finished = (r.next_u32() % 3 == 0) as u32;
+                c.bus.write32(OC360_LAYER_FINISHED, finished);
+                let entry = [0x19u32, 0x1c, 0x1d, 0x7][r.next_u32() as usize % 4];
+                c.bus.write32(OC360_LAYER_ENTRY, entry);
+            },
+        );
+    }
+
+    /// `f` (bit pattern) or zero, or its negation, by `k`.
+    pub(crate) fn oc371_pick_f(r: &mut Rng, k: u32) -> u32 {
+        match k % 4 {
+            0 => 0,
+            1 => r.f32(1.0),
+            2 => r.f32(0.2),
+            _ => r.edge_f32(),
+        }
+    }
+
+    /// Every exit (reset path, tweak layer, handplant, railslide), the
+    /// hold / id bookkeeping (new hold, other id, no id), the stick in all
+    /// quadrants and on the axes, the steer timer (negative, short, long)
+    /// and heading, and the animation choice (idle 0x11f with / without
+    /// play and landing entry 9, lean 9 / 10, same as current). The
+    /// callees are logged fakes with scripted answers, one may unwind.
+    #[test]
+    fn rider_natural_air_sub_handle_input_matches() {
+        oc371_install_fakes();
+        covered(
+            ee::s00::f_0012f730__generated,
+            rider_natural_air_sub_handle_input,
+            400,
+            &|c, seed| {
+                let mut r = oc371_machine(c, seed, 0x0012_f730, 8);
+                c.pc = 0x0012_f730;
+                let me = DATA;
+                let input = DATA + 0x100;
+                let rider = DATA + 0x1000;
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(input);
+                // .lit4: 1/31, -pi/2, pi/2, pi, pi, 1/2pi, 2pi, pi/2, 0.05.
+                put_words(
+                    c,
+                    GAME_GP - 0x7704,
+                    &[
+                        0x3d04_2108,
+                        0xbfc9_0fdb,
+                        0x3fc9_0fdb,
+                        0x4049_0fdb,
+                        0x4049_0fdb,
+                        0x3e22_f983,
+                        0x40c9_0fdb,
+                        0x3fc9_0fdb,
+                        0x3d4c_cccd,
+                    ],
+                );
+                let k = r.next_u32();
+                // Fake answers.
+                oc371_script(c, 0x0011_6120, (k % 10 == 0) as u32);
+                oc371_script(c, 0x0011_63b0, (k / 10 % 10 == 0) as u32);
+                oc371_script(c, 0x0010_7578, (k / 100 % 5 == 0) as u32);
+                oc371_script(c, 0x0010_6848, (k / 500 % 10 == 0) as u32);
+                let ids = [0x11f, 9, 10, r.next_u32() % 0x200];
+                oc371_script(c, 0x0031_2aa0, ids[(r.next_u32() % 4) as usize]);
+                oc371_script(
+                    c,
+                    0x0031_1ae8,
+                    if r.next_u32() % 4 == 0 {
+                        9
+                    } else {
+                        r.next_u32() % 16
+                    },
+                );
+                // The input: buttons, stick x (bits 24-29) and y (bits 0-5).
+                let mut w = r.next_u32();
+                if r.next_u32() % 4 == 0 {
+                    w &= !0x3f00_0000;
+                }
+                let mut w2 = r.next_u32();
+                if r.next_u32() % 4 == 0 {
+                    w2 &= !0x3f;
+                }
+                c.bus.write32(input, w);
+                c.bus.write32(input + 4, w2);
+                let stick_id = match r.next_u32() % 4 {
+                    0 => 0xff,
+                    1 => 3,
+                    _ => r.next_u32() & 0xff,
+                };
+                c.bus.write8(input + 2, stick_id as u8);
+                // The sub state.
+                c.bus.write32(me + NAIR_HEADING, r.f32(4.0));
+                let timer = match r.next_u32() % 4 {
+                    0 => (-1.0f32).to_bits(),
+                    1 => r.f32(0.6),
+                    _ => r.f32(3.0),
+                };
+                c.bus.write32(me + NAIR_TIMER, timer);
+                c.bus.write32(me + NAIR_TWEAK, r.next_u32() % 2);
+                c.bus.write32(me + NAIR_HOLD, r.next_u32() % 2);
+                let id = match r.next_u32() % 3 {
+                    0 => u32::MAX,
+                    1 => 3,
+                    _ => r.next_u32() % 8,
+                };
+                c.bus.write32(me + NAIR_ID, id);
+                c.bus.write32(me + NAIR_RIDER, rider);
+                // The rider: steer fields (zero for the idle path) and its
+                // animation controller.
+                fill(c, &mut r, rider + 0x1f0, 0x10);
+                let z = r.next_u32();
+                for (i, off) in [0x1f0, 0x214, 0x220].into_iter().enumerate() {
+                    let v = if z >> i & 3 != 0 {
+                        0
+                    } else {
+                        oc371_pick_f(&mut r, z >> 8)
+                    };
+                    c.bus.write32(rider + off, v);
+                }
+                c.bus.write32(rider + NAIR_RIDER_ANIM, DATA + 0x3000);
+            },
+        );
+    }
+
+    /// Scripted fake results for fixtures that need exact callee results
+    /// (zero or negative, which the plain fakes cannot return): per callee
+    /// slot up to 8 results (+0x20 * slot), a call counter (+0x400) and a
+    /// "scripted" flag (+0x480). Unscripted slots behave like `fake`.
+    pub(crate) const OC374_SCRIPT: u32 = DATA + 0x28_0000;
+
+    /// A logged fake call to `target` returning the next scripted result
+    /// of `slot` (sign-extended), if the slot is scripted.
+    pub(crate) fn oc374_scripted(c: &mut Cpu, target: u32, slot: u32) {
+        let ra = c.g[RA][0] as u32;
+        let scripted = c.bus.read32(OC374_SCRIPT + 0x480 + 4 * slot) != 0;
+        let mut i = 0;
+        if scripted {
+            let counter = OC374_SCRIPT + 0x400 + 4 * slot;
+            i = c.bus.read32(counter);
+            c.bus.write32(counter, i + 1);
+        }
+        crate::difftest::fakes::fake(c, target, ra);
+        if scripted && c.pc == ra {
+            c.g[V0][0] = sx(c.bus.read32(OC374_SCRIPT + 0x20 * slot + 4 * (i & 7)));
+        }
+    }
+
+    /// Script the results of `slot`.
+    pub(crate) fn oc374_script(c: &mut Cpu, slot: u32, results: &[u32]) {
+        for (i, &v) in results.iter().enumerate() {
+            c.bus.write32(OC374_SCRIPT + 0x20 * slot + 4 * i as u32, v);
+        }
+        c.bus.write32(OC374_SCRIPT + 0x400 + 4 * slot, 0);
+        c.bus.write32(OC374_SCRIPT + 0x480 + 4 * slot, 1);
+    }
+
+    /// A gated scripted fake for an override slot (gate: `OC338_CTRL`).
+    macro_rules! oc374_scripted_fake {
+        ($name:ident, $prev:ident, $addr:expr, $slot:expr, $gen:path) => {
+            static $prev: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                use crate::game::object::movenode::tests::{OC338_CTRL, OC338_MAGIC};
+                if c.bus.read32(OC338_CTRL) != OC338_MAGIC {
+                    return crate::difftest::fakes::fall_back(c, &$prev, $gen);
+                }
+                oc374_scripted(c, $addr, $slot);
+            }
+        };
+    }
+    pub(crate) use oc374_scripted_fake;
+
+    /// RiderWipeoutSub_UpdatePhase1: on the ground hit (airborne or not):
+    /// get up (up > 0.9 and pushed into the normal), the final anim (0x1d
+    /// first or second query, 0x19) or anim set A; not hit: layer finished
+    /// or final anim playing (or neither: nothing), then recovery by the
+    /// timer or the rider speed (player: reset check), else set A on the
+    /// ground or set B when the layer finished. Gated fakes (anim current
+    /// and "finished" scripted); the wipeout helpers without override
+    /// slots (StartGetUp, PlayFinalAnim, PlayEndAnimB, SwitchToAnimSetB)
+    /// run for real on faked anim calls.
+    #[test]
+    fn rider_wipeout_sub_update_phase1_matches() {
+        use crate::difftest::fakes::hook;
+        use crate::game::object::movenode::tests::{OC338_CTRL, OC338_MAGIC};
+        use std::ptr::addr_of_mut;
+        const SELF: u32 = DATA + 0x20_0000;
+        const RIDER: u32 = DATA + 0x21_0000;
+        const BASE: u32 = DATA + 0x22_0000;
+        const VTABLE: u32 = DATA + 0x22_1000;
+        oc374_scripted_fake!(
+            oc374_rws_anim_speed,
+            OC374_PREV_RWS_16,
+            0x0012_e528,
+            16,
+            ee::s00::f_0012e528__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_current,
+            OC374_PREV_RWS_17,
+            0x0031_1ae8,
+            17,
+            ee::s10::f_00311ae8__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_time,
+            OC374_PREV_RWS_18,
+            0x0031_2ab0,
+            18,
+            ee::s10::f_00312ab0__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_layer,
+            OC374_PREV_RWS_19,
+            0x0031_1b20,
+            19,
+            ee::s10::f_00311b20__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_set_speed,
+            OC374_PREV_RWS_20,
+            0x0031_3cf0,
+            20,
+            ee::s10::f_00313cf0__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_finished,
+            OC374_PREV_RWS_21,
+            0x0031_2ae8,
+            21,
+            ee::s10::f_00312ae8__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_sound_final,
+            OC374_PREV_RWS_22,
+            0x0029_6868,
+            22,
+            ee::s08::f_00296868__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_sound_land,
+            OC374_PREV_RWS_23,
+            0x0029_6e80,
+            23,
+            ee::s08::f_00296e80__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_sound_end,
+            OC374_PREV_RWS_24,
+            0x0029_6310,
+            24,
+            ee::s08::f_00296310__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_set_a,
+            OC374_PREV_RWS_25,
+            0x0012_dd98,
+            25,
+            ee::s00::f_0012dd98__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_boost,
+            OC374_PREV_RWS_26,
+            0x0010_f280,
+            26,
+            ee::s00::f_0010f280__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_reset,
+            OC374_PREV_RWS_27,
+            0x0011_6120,
+            27,
+            ee::s00::f_00116120__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_play,
+            OC374_PREV_RWS_28,
+            0x0031_28e8,
+            28,
+            ee::s10::f_003128e8__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_312aa0,
+            OC374_PREV_RWS_29,
+            0x0031_2aa0,
+            29,
+            ee::s10::f_00312aa0__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_312660,
+            OC374_PREV_RWS_30,
+            0x0031_2660,
+            30,
+            ee::s10::f_00312660__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_311bf0,
+            OC374_PREV_RWS_31,
+            0x0031_1bf0,
+            31,
+            ee::s10::f_00311bf0__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_30ecd8,
+            OC374_PREV_RWS_32,
+            0x0030_ecd8,
+            32,
+            ee::s10::f_0030ecd8__generated
+        );
+        oc374_scripted_fake!(
+            oc374_rws_world_matrix,
+            OC374_PREV_RWS_33,
+            0x0011_e098,
+            33,
+            ee::s00::f_0011e098__generated
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0012E528),
+            oc374_rws_anim_speed,
+            &OC374_PREV_RWS_16,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00311AE8),
+            oc374_rws_current,
+            &OC374_PREV_RWS_17,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00312AB0),
+            oc374_rws_time,
+            &OC374_PREV_RWS_18,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00311B20),
+            oc374_rws_layer,
+            &OC374_PREV_RWS_19,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00313CF0),
+            oc374_rws_set_speed,
+            &OC374_PREV_RWS_20,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00312AE8),
+            oc374_rws_finished,
+            &OC374_PREV_RWS_21,
+        );
+        hook(
+            addr_of_mut!(ee::s08::OVERRIDE_00296868),
+            oc374_rws_sound_final,
+            &OC374_PREV_RWS_22,
+        );
+        hook(
+            addr_of_mut!(ee::s08::OVERRIDE_00296E80),
+            oc374_rws_sound_land,
+            &OC374_PREV_RWS_23,
+        );
+        hook(
+            addr_of_mut!(ee::s08::OVERRIDE_00296310),
+            oc374_rws_sound_end,
+            &OC374_PREV_RWS_24,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0012DD98),
+            oc374_rws_set_a,
+            &OC374_PREV_RWS_25,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0010F280),
+            oc374_rws_boost,
+            &OC374_PREV_RWS_26,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00116120),
+            oc374_rws_reset,
+            &OC374_PREV_RWS_27,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003128E8),
+            oc374_rws_play,
+            &OC374_PREV_RWS_28,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00312AA0),
+            oc374_rws_312aa0,
+            &OC374_PREV_RWS_29,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00312660),
+            oc374_rws_312660,
+            &OC374_PREV_RWS_30,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00311BF0),
+            oc374_rws_311bf0,
+            &OC374_PREV_RWS_31,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0030ECD8),
+            oc374_rws_30ecd8,
+            &OC374_PREV_RWS_32,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0011E098),
+            oc374_rws_world_matrix,
+            &OC374_PREV_RWS_33,
+        );
+        covered(
+            ee::s00::f_0012d4e8__generated,
+            rider_wipeout_sub_update_phase1,
+            400,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x12_d4e8, 8);
+                crate::difftest::elf_image(c);
+                c.pc = 0x0012_d4e8;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                c.g[A0][0] = sx(SELF);
+                for off in (0..0x80).step_by(4) {
+                    c.bus.write32(SELF + off, r.next_u32());
+                }
+                c.bus.write32(SELF + RWS_HIT, seed % 2);
+                for i in 0..4 {
+                    let f = r.f32(50.0);
+                    c.bus.write32(SELF + RWS_IMPACT + 4 * i, f);
+                    let f = r.f32(1.0);
+                    c.bus.write32(RIDER + RWS_RIDER_NORMAL + 4 * i, f);
+                    let f = r.f32(40.0);
+                    c.bus.write32(RIDER + RWS_RIDER_VELOCITY + 4 * i, f);
+                }
+                let timer = if r.next_u32() % 2 == 0 { 0.5f32 } else { 1.5 };
+                c.bus.write32(SELF + RWS_TIMER, timer.to_bits());
+                c.bus.write32(SELF + RWS_RIDER, RIDER);
+                c.bus.write32(RIDER + RWS_RIDER_BASE, BASE);
+                c.bus.write32(BASE + 0x30, (seed / 2 % 3 == 0) as u32); // airborne
+                c.bus.write32(RIDER + RWS_RIDER_ANIM, DATA + 0x23_0000);
+                let up = if seed % 3 == 0 { 0.5f32 } else { 0.95 };
+                c.bus.write32(RIDER + RWS_RIDER_UP, up.to_bits());
+                c.bus.write32(RIDER + RWS_RIDER_SPEED, r.f32(10.0));
+                c.bus.write32(RIDER + RWS_RIDER_PLAYER, r.next_u32() % 2);
+                c.bus.write32(RIDER + RWS_RIDER_OBJECT, VTABLE);
+                c.bus.write16(VTABLE + 0x88, (r.next_u32() % 4 * 4) as u16);
+                c.bus.write32(VTABLE + 0x8c, FAKE);
+                let id = |r: &mut Rng| [0x1du32, 0x19, 5][(r.next_u32() % 3) as usize];
+                let ids = [id(&mut r), id(&mut r)];
+                oc374_script(c, 17, &ids);
+                let finished = [r.next_u32() % 2, r.next_u32() % 2];
+                oc374_script(c, 21, &finished);
+            },
         );
     }
 }

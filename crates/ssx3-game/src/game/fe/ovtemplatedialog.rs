@@ -90,6 +90,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ov_screen_pda_template_close,
         "OVScreenPDATemplate_Close",
     ),
+    (0x0020_cfd0, game_ui_update_2, "GameUI_Update"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1007,6 +1008,188 @@ pub fn ov_screen_pda_template_close(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// GameUI_Update (0x20cfd0)
+
+/// The pending UI request (`gp-0x9f4`): 0 none, 1 menu result, 2 replay
+/// finished, 3 close the PDA template, 4 back to the front end.
+pub(crate) const GUU_REQUEST: u32 = 0x9f4;
+
+/// The request jump table (5 words).
+pub(crate) const GUU_TABLE: u32 = 0x0047_1ae0;
+
+/// The world's game (`world+0x84`) fields: UI state manager (+0x48, its
+/// stack at +0x18), replay (+0x28), flags (+0x200, word +8), mode (+0x214).
+pub(crate) const GUU_GAME: u32 = 0x84;
+
+pub(crate) const GUU_UI_MGR: u32 = 0x48;
+
+pub(crate) const GUU_UI_STACK: u32 = 0x18;
+
+pub(crate) const GUU_GET_ACTIVE_STATE: u32 = 0x0039_fa88;
+
+pub(crate) const GUU_HANDLE_MENU_RESULT: Callee = Callee {
+    addr: 0x0020_ccf8,
+    f: ee::s05::GameUI_HandleMenuResult,
+};
+
+pub(crate) const GUU_REPLAY_FINISH: u32 = 0x0027_06f0;
+
+pub(crate) const GUU_BE_GET_INTERFACE: u32 = 0x0014_dd58;
+
+pub(crate) const GUU_CLOSE_ALL: u32 = 0x0039_f840;
+
+pub(crate) const GUU_PDA_CLOSE: Callee = Callee {
+    addr: 0x0020_d190,
+    f: ee::s05::OVScreenPDATemplate_Close,
+};
+
+pub(crate) const GUU_REQUEST_STATE: u32 = 0x0023_1250;
+
+/// `void GameUI_Update()` (0x20cfd0): act on the pending UI request.
+/// 1: handle the menu result. 2: finish the replay, set the game's flag
+/// word, and in mode 2 with the active UI state's id 8, touch BE
+/// interface 7 and close every UI state if the flag at 0x534b30 is set.
+/// 3: close the PDA template and every UI state. 4: request game state
+/// 0xe (2, 0). Requests 2-4 are cleared first.
+pub fn game_ui_update_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        let world = |c: &mut Cpu| Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+        c.g[V1][0] = world(c);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, V1)).off(GUU_GAME).lw(c);
+        c.g[S1][0] = Addr(r32(c, V0)).off(GUU_UI_MGR).lw(c);
+        c.g[A0][0] = sx(r32(c, S1).wrapping_add(GUU_UI_STACK));
+        c.g[S0][0] = 0;
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            call_ptr(c, GUU_GET_ACTIVE_STATE, 0x0020_d000)?;
+            c.g[S0][0] = c.g[V0][0];
+        }
+
+        c.cycles += 4;
+        let request = Addr(r32(c, GP).wrapping_sub(GUU_REQUEST));
+        c.g[V1][0] = request.lw(c);
+        c.g[V0][0] = (c.g[V1][0] < 5) as u64;
+        let in_table = c.g[V0][0] != 0;
+        c.g[V0][0] = 0x47_0000;
+        // The paths that end at the shared exit (restores s0 there).
+        let mut tail = true;
+        if in_table {
+            c.cycles += 6;
+            c.g[V1][0] = sx(r32(c, V1) << 2);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(GUU_TABLE & 0xffff));
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+            c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+            let target = r32(c, A0);
+            match target {
+                0x0020_d02c => {
+                    c.cycles += 4;
+                    GUU_HANDLE_MENU_RESULT.call(c, 0x0020_d034)?;
+                    frame.restore(c, S0, 0x20);
+                    tail = false;
+                }
+                0x0020_d03c => tail = guu_replay_finished(c)?,
+                0x0020_d0b8 => {
+                    c.cycles += 9;
+                    request.sw(c, 0);
+                    GUU_PDA_CLOSE.call(c, 0x0020_d0c0)?;
+                    c.g[V0][0] = world(c);
+                    c.g[V1][0] = Addr(r32(c, V0)).off(GUU_GAME).lw(c);
+                    c.g[A0][0] = Addr(r32(c, V1)).off(GUU_UI_MGR).lw(c);
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(GUU_UI_STACK));
+                    call_ptr(c, GUU_CLOSE_ALL, 0x0020_d0d4)?;
+                    frame.restore(c, S0, 0x20);
+                    tail = false;
+                }
+                0x0020_d0dc => {
+                    c.cycles += 7;
+                    c.g[V0][0] = world(c);
+                    c.g[A1][0] = 0xe;
+                    request.sw(c, 0);
+                    c.g[A2][0] = 2;
+                    c.g[A0][0] = Addr(r32(c, V0)).off(GUU_GAME).lw(c);
+                    c.g[A3][0] = 0;
+                    call_ptr(c, GUU_REQUEST_STATE, 0x0020_d0f8)?;
+                }
+                0x0020_d0f8 => {}
+                _ => {
+                    c.jump_out(target, 0x0020_cfd0, 0x0020_d10c);
+                    return Ok(());
+                }
+            }
+        }
+        if tail {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Request 2 of `GameUI_Update` (s0 = the active UI state or 0, s1 = the
+/// UI manager). Ok(true) when it ends at the shared exit (which restores
+/// s0), Ok(false) when it restored s0 itself (where the original does,
+/// once before the BE call).
+pub(crate) fn guu_replay_finished(c: &mut Cpu) -> Result<bool, crate::call::Unwound> {
+    let frame = Frame { size: 0x30 };
+    c.cycles += 11;
+    let gp = r32(c, GP);
+    c.g[V1][0] = Addr(gp.wrapping_sub(0x848)).lw(c);
+    Addr(gp.wrapping_sub(GUU_REQUEST)).sw(c, 0);
+    c.g[V0][0] = Addr(r32(c, V1)).off(GUU_GAME).lw(c);
+    c.g[A0][0] = Addr(r32(c, V0)).off(0x28).lw(c);
+    call_ptr(c, GUU_REPLAY_FINISH, 0x0020_d050)?;
+    c.g[A1][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+    c.g[A0][0] = 1;
+    let world = r32(c, A1);
+    c.g[V0][0] = Addr(world).off(GUU_GAME).lw(c);
+    c.g[V1][0] = Addr(r32(c, V0)).off(0x200).lw(c);
+    Addr(r32(c, V1)).off(8).sw(c, 1);
+    if c.g[S0][0] == 0 {
+        return Ok(true);
+    }
+    c.cycles += 5;
+    c.g[V0][0] = Addr(world).off(GUU_GAME).lw(c);
+    c.g[A0][0] = 2;
+    c.g[V1][0] = Addr(r32(c, V0)).off(0x214).lw(c);
+    if c.g[V1][0] != c.g[A0][0] {
+        frame.restore(c, S0, 0x20);
+        return Ok(false);
+    }
+    c.cycles += 4;
+    c.g[V1][0] = Addr(r32(c, S0)).off(0x98).lw(c);
+    c.g[V0][0] = 8;
+    let id8 = c.g[V1][0] == c.g[V0][0];
+    frame.restore(c, S0, 0x20);
+    if !id8 {
+        return Ok(false);
+    }
+    c.cycles += 7;
+    c.g[A0][0] = Addr(world).off(0x78).lw(c);
+    c.g[A1][0] = 7;
+    call_ptr(c, GUU_BE_GET_INTERFACE, 0x0020_d098)?;
+    c.g[V1][0] = 0x53_0000;
+    c.g[V0][0] = Addr(0x0053_4b30).lw(c);
+    frame.restore(c, S0, 0x20);
+    if c.g[V0][0] == 0 {
+        return Ok(false);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = sx(r32(c, S1).wrapping_add(GUU_UI_STACK));
+    call_ptr(c, GUU_CLOSE_ALL, 0x0020_d0b0)?;
+    frame.restore(c, S0, 0x20);
+    Ok(false)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1429,6 +1612,164 @@ pub(crate) mod tests {
                     c.bus.write32(template + 8, vt);
                     slot_m2(c, &mut r, vt, 8, FAKE + 0x10);
                 }
+            },
+        );
+    }
+
+    use crate::difftest::elf_image;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fill;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_CTRL;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_MAGIC;
+    use std::sync::atomic::AtomicUsize;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_fake;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_gated;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_ACTIVE_STATE;
+
+    // ------------------------------------------- GameUI_Update
+
+    oc360_gated!(
+        oc360_fake_ui_active_state,
+        OC360_PREV_UI_ACTIVE_STATE,
+        0x0039_fa88,
+        ee::s13::f_0039fa88__generated
+    );
+
+    oc360_gated!(
+        oc360_fake_replay_finish,
+        OC360_PREV_REPLAY_FINISH,
+        0x0027_06f0,
+        ee::s07::f_002706f0__generated
+    );
+
+    oc360_gated!(
+        oc360_fake_be_get_interface,
+        OC360_PREV_BE_GET_INTERFACE,
+        0x0014_dd58,
+        ee::s01::f_0014dd58__generated
+    );
+
+    oc360_gated!(
+        oc360_fake_be_get_instance,
+        OC360_PREV_BE_GET_INSTANCE,
+        0x0014_dc80,
+        ee::s01::f_0014dc80__generated
+    );
+
+    oc360_gated!(
+        oc360_fake_ui_close_all,
+        OC360_PREV_UI_CLOSE_ALL,
+        0x0039_f840,
+        ee::s13::f_0039f840__generated
+    );
+
+    oc360_gated!(
+        oc360_fake_pda_close,
+        OC360_PREV_PDA_CLOSE,
+        0x0020_d190,
+        ee::s05::f_0020d190__generated
+    );
+
+    oc360_gated!(
+        oc360_fake_request_state,
+        OC360_PREV_REQUEST_STATE,
+        0x0023_1250,
+        ee::s06::f_00231250__generated
+    );
+
+    pub(crate) fn oc360_install_ui_fakes() {
+        use std::ptr::addr_of_mut;
+        {
+            fakes::hook(
+                addr_of_mut!(ee::s13::OVERRIDE_0039FA88),
+                oc360_fake_ui_active_state,
+                &OC360_PREV_UI_ACTIVE_STATE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s07::OVERRIDE_002706F0),
+                oc360_fake_replay_finish,
+                &OC360_PREV_REPLAY_FINISH,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+                oc360_fake_be_get_interface,
+                &OC360_PREV_BE_GET_INTERFACE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+                oc360_fake_be_get_instance,
+                &OC360_PREV_BE_GET_INSTANCE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s13::OVERRIDE_0039F840),
+                oc360_fake_ui_close_all,
+                &OC360_PREV_UI_CLOSE_ALL,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s05::OVERRIDE_0020D190),
+                oc360_fake_pda_close,
+                &OC360_PREV_PDA_CLOSE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s06::OVERRIDE_00231250),
+                oc360_fake_request_state,
+                &OC360_PREV_REQUEST_STATE,
+            );
+        }
+    }
+
+    /// Requests 0-6 (5 and 6 are outside the table); the UI stack at 0
+    /// (no state lookup) or not; an active state or none, its id 8 or
+    /// not; game mode 2 or not; the close flag at 0x534b30 set or not.
+    /// Request 1 runs the real `GameUI_HandleMenuResult` on its short path
+    /// (the state's id outside 8..0x23).
+    #[test]
+    fn game_ui_update_matches_2() {
+        oc360_install_ui_fakes();
+        covered(
+            ee::s05::f_0020cfd0__generated,
+            game_ui_update_2,
+            300,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x0020_cfd0, 4);
+                c.pc = 0x0020_cfd0;
+                let world = DATA + 0xa_0000;
+                let game = world + 0x100;
+                let mgr = world + 0x400;
+                let flags = world + 0x500;
+                let state = world + 0x600;
+                let ptrs = world + 0x700;
+                c.bus.write32(OC360_CTRL, OC360_MAGIC);
+                fill(c, &mut r, world, 0x200);
+                let request = seed % 7;
+                c.bus.write32(GAME_GP - GUU_REQUEST, request);
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + GUU_GAME, game);
+                c.bus.write32(world + 0xc0, ptrs);
+                let mgr_word = if r.next_u32() % 5 == 0 {
+                    0u32.wrapping_sub(GUU_UI_STACK)
+                } else {
+                    mgr
+                };
+                c.bus.write32(game + GUU_UI_MGR, mgr_word);
+                c.bus.write32(game + 0x200, flags);
+                c.bus.write32(game + 0x214, 1 + r.next_u32() % 2);
+                let active = if request != 1 && r.next_u32() % 4 == 0 {
+                    0
+                } else {
+                    state
+                };
+                c.bus.write32(OC360_ACTIVE_STATE, active);
+                let id = if request == 1 {
+                    [3, 0x40][r.next_u32() as usize % 2]
+                } else {
+                    [8, 8, 3][r.next_u32() as usize % 3]
+                };
+                c.bus.write32(state + 0x98, id);
+                c.bus.write32(0x0053_4b30, r.next_u32() % 2);
             },
         );
     }

@@ -197,6 +197,17 @@ arguments swapped, which only `SSX3_DIFF_STRICT=args` catches. Diff the
 siblings' generated bodies line by line before sharing a helper, and make
 every difference a parameter.
 
+## Lesson: wave 216
+
+- `addr_of_mut!(ee::sNN::OVERRIDE_X)` and `fakes::hook(...)` are safe: no
+  `unsafe { }` around them (the build warns, and it must be warning-free).
+- Take every return address from the generated `c.g[RA][0] = sx(0x...)`
+  line of that call. A formula (`head + 0x3c + 0x14*i`) was off by 0x3c for
+  one call kind, and only the callee's saved `ra` on the stack showed it.
+- A test whose target has no override slot calls `f_XXXXXXXX` (with `c.pc`
+  set), never `f_XXXXXXXX__generated`: that name only exists once the
+  function is installed.
+
 ## Names (the reorg merges your module into shared unit files)
 
 - Give module-local helpers function-specific names, not `lt`, `at`, `gp`,

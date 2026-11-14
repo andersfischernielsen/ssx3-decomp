@@ -133,6 +133,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         multi_spline_modifier_add_ref,
         "MultiSplineModifier_AddRef",
     ),
+    (0x0035_b708, rail_modifier_ctor, "RailModifier_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2761,6 +2762,381 @@ pub fn multi_spline_modifier_add_ref(c: &mut Cpu) {
     ret(c);
 }
 
+// ---------------------------------------------------------------------------
+// RailModifier_ctor
+// ---------------------------------------------------------------------------
+
+/// `RailModifier` fields: `+0x10`/`+0x20` its bound box (min, max), `+0x30`
+/// the rail reference (id), `+0x34` the descriptor value, `+0x40` the model,
+/// `+0x44` its spatial-hash entry.
+pub(crate) const RAIL_MOD_BOX: u32 = 0x10;
+
+pub(crate) const RAIL_MOD_REF: u32 = 0x30;
+
+pub(crate) const RAIL_MOD_MODEL: u32 = 0x40;
+
+pub(crate) const RAIL_MOD_ENTRY: u32 = 0x44;
+
+/// The `RailModifier` vtable.
+pub(crate) const RAIL_MOD_VTABLE: u32 = 0x0049_11d0;
+
+pub(crate) const RAIL_MOD_BUILD_NODES: Callee = Callee {
+    addr: 0x0035_c0e8,
+    f: ee::s11::RailModifier_BuildRailNodes,
+};
+
+pub(crate) const RAIL_MOD_UPDATE_BOUNDS: Callee = Callee {
+    addr: 0x0035_c040,
+    f: ee::s11::RailModifier_UpdateBounds,
+};
+
+/// `RailModifier* RailModifier_ctor(void* mem, RailDesc* desc, Model*
+/// model)` (0x35b708): sets up the modifier (vtable, rail reference and
+/// value from `desc`); unless the model's object says otherwise (vtable
+/// `+0x160`), takes the model's box grown by 100 on each side; builds the
+/// rail nodes and bounds, inserts its entry into the world's spatial hash,
+/// then removes each segment of its rail track from the hash (freeing hash
+/// nodes left empty). Returns `mem`. Dispatcher-shaped like the original
+/// (its loops can unwind and resume at their heads).
+pub fn rail_modifier_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                0x0035_b708 => {
+                    c.cycles += 32;
+                    let frame = Frame::open(c, 0xc0);
+                    c.g[V0][0] = 0xffff_ffff_ffff_0000;
+                    frame.save(c, S3, 0x70);
+                    c.g[V1][0] = 0x49_0000;
+                    frame.save(c, S1, 0x90);
+                    c.g[S3][0] = c.g[A0][0];
+                    frame.save(c, S0, 0xa0);
+                    c.g[V1][0] = sx(RAIL_MOD_VTABLE);
+                    frame.save(c, S2, 0x80);
+                    c.g[V0][0] |= 0xffff;
+                    frame.save(c, S4, 0x60);
+                    c.g[S1][0] = sx(r32(c, S3).wrapping_add(RAIL_MOD_BOX));
+                    frame.save(c, S5, 0x50);
+                    frame.save_ra(c, 0x40);
+                    frame.save_fpr(c, 20, 0xb0);
+                    let s3 = r32(c, S3);
+                    let (minus1, vt, model) = (c.g[V0][0], c.g[V1][0], c.g[A2][0]);
+                    c.sw(s3.wrapping_add(RAIL_MOD_REF), minus1);
+                    c.sw(s3.wrapping_add(8), vt);
+                    c.sw(s3, 0);
+                    c.sw(s3.wrapping_add(4), 0);
+                    c.sw(s3.wrapping_add(RAIL_MOD_MODEL), model);
+                    c.g[V0][0] = c.lw(r32(c, A1).wrapping_add(4));
+                    let id = c.g[V0][0];
+                    c.sw(s3.wrapping_add(RAIL_MOD_REF), id);
+                    c.g[V1][0] = c.lw(r32(c, A1).wrapping_add(8));
+                    let value = c.g[V1][0];
+                    c.sw(s3.wrapping_add(0x34), value);
+                    // model->obj->vt[0x160](obj).
+                    c.g[A1][0] = c.lw(r32(c, A2).wrapping_add(0xc));
+                    c.g[V1][0] = c.lw(r32(c, A1).wrapping_add(0xc));
+                    c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x160));
+                    c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x164));
+                    let method = r32(c, V0);
+                    c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+                    call_ptr(c, method, 0x0035_b780)?;
+                    if c.g[V0][0] == 0 {
+                        rail_mod_model_box(c);
+                    }
+                    // Nodes, bounds; insert the entry into the hash.
+                    c.cycles += 39;
+                    c.g[A0][0] = c.g[S3][0];
+                    RAIL_MOD_BUILD_NODES.call(c, 0x0035_b824)?;
+                    c.g[A0][0] = c.g[S3][0];
+                    RAIL_MOD_UPDATE_BOUNDS.call(c, 0x0035_b82c)?;
+                    call_ptr(c, 0x002d_1be0, 0x0035_b834)?;
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A0][0] = c.g[SP][0];
+                    c.g[S1][0] = c.lw(r32(c, S3).wrapping_add(RAIL_MOD_ENTRY));
+                    call_ptr(c, 0x0032_8f28, 0x0035_b848)?;
+                    // Child of the hash root for the key at sp+0.
+                    let s = sp(c);
+                    c.g[V1][0] = c.lw(s.wrapping_add(4));
+                    c.g[A3][0] = u64::MAX;
+                    c.g[A1][0] = c.lw(s.wrapping_add(8));
+                    c.g[V0][0] = sx(r32(c, S0).wrapping_add(0x50));
+                    c.g[V1][0] = ((c.g[A3][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    c.g[A2][0] = c.lw(s.wrapping_add(0xc));
+                    if c.g[V1][0] != 0 {
+                        c.g[V0][0] = c.g[S0][0];
+                    }
+                    c.g[A1][0] = ((c.g[A3][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                    c.g[A0][0] = sx(r32(c, V0).wrapping_add(0x28));
+                    c.g[A3][0] = ((c.g[A3][0] as i64) < (c.g[A2][0] as i64)) as u64;
+                    if c.g[A1][0] != 0 {
+                        c.g[A0][0] = c.g[V0][0];
+                    }
+                    c.g[A2][0] = c.g[S1][0];
+                    c.g[V0][0] = sx(r32(c, A0).wrapping_add(0x14));
+                    c.g[A1][0] = 2;
+                    if c.g[A3][0] == 0 {
+                        c.g[A0][0] = c.g[V0][0];
+                    }
+                    c.g[A3][0] = c.g[SP][0];
+                    call_ptr(c, 0x0032_8c20, 0x0035_b88c)?;
+                    // s5 = the rail track (world rail table, by ref id).
+                    call_ptr(c, 0x002d_1bd8, 0x0035_b894)?;
+                    c.g[V1][0] = c.lw(r32(c, V0));
+                    c.g[A1][0] = c.lw(r32(c, S3).wrapping_add(RAIL_MOD_REF));
+                    c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(8));
+                    c.g[V0][0] = c.g[A1][0] & 0xff;
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                    c.g[V1][0] = c.lw(r32(c, V0));
+                    if c.g[V1][0] != 0 {
+                        c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x44));
+                        c.cycles += 7;
+                        c.g[V0][0] = sx(r32(c, A1) >> 8);
+                        c.g[V0][0] = sx(r32(c, V0) << 2);
+                        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                        c.g[V1][0] = c.lw(r32(c, V0));
+                        c.g[V0][0] = sx(r32(c, V1) >> 8);
+                        let some = c.g[V0][0] != 0;
+                        c.g[V0][0] = sx(r32(c, V0) << 2);
+                        if !some {
+                            c.cycles += 1;
+                            c.g[V0][0] = 0;
+                        }
+                        c.cycles += 1;
+                        c.g[S5][0] = c.g[V0][0];
+                    } else {
+                        c.cycles += 2;
+                        c.g[S5][0] = 0;
+                    }
+                    // Its segments (s1), count at +0x20.
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw(r32(c, S5).wrapping_add(0x20));
+                    c.g[S2][0] = 0;
+                    c.g[S1][0] = c.lw(r32(c, S5).wrapping_add(0x24));
+                    if (c.g[V0][0] as i64) <= 0 {
+                        pc = 0x0035_ba58;
+                        continue;
+                    }
+                    c.cycles += 3;
+                    c.g[AT][0] = 0x3f80_0000;
+                    c.mtc1(AT, 20);
+                    c.g[S4][0] = u64::MAX;
+                    pc = 0x0035_b900;
+                }
+                // Segment s1: its box -> sp; remove it from the hash node.
+                0x0035_b900 => {
+                    c.cycles += 44;
+                    let (seg, s) = (r32(c, S1), sp(c));
+                    c.lwc1(0, seg.wrapping_add(0x6c));
+                    c.swc1(0, s);
+                    c.lwc1(1, seg.wrapping_add(0x70));
+                    c.swc1(1, s.wrapping_add(4));
+                    c.lwc1(2, seg.wrapping_add(0x74));
+                    c.swc1(20, s.wrapping_add(0xc));
+                    c.swc1(2, s.wrapping_add(8));
+                    c.lwc1(0, seg.wrapping_add(0x78));
+                    c.swc1(0, s.wrapping_add(0x10));
+                    c.lwc1(1, seg.wrapping_add(0x7c));
+                    c.swc1(1, s.wrapping_add(0x14));
+                    c.lwc1(0, seg.wrapping_add(0x80));
+                    c.swc1(20, s.wrapping_add(0x1c));
+                    c.swc1(0, s.wrapping_add(0x18));
+                    call_ptr(c, 0x002d_1be0, 0x0035_b93c)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A0][0] = sx(sp(c).wrapping_add(0x20));
+                    c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0xa0));
+                    c.g[A1][0] = c.g[SP][0];
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+                    let n = c.g[V0][0];
+                    c.sw(r32(c, S0).wrapping_add(0xa0), n);
+                    call_ptr(c, 0x0032_8f28, 0x0035_b958)?;
+                    let s = sp(c);
+                    c.g[V0][0] = c.lw(s.wrapping_add(0x24));
+                    c.g[V1][0] = sx(r32(c, S0).wrapping_add(0x50));
+                    c.g[A0][0] = c.lw(s.wrapping_add(0x28));
+                    c.g[A1][0] = 2;
+                    c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    c.g[T0][0] = c.lw(s.wrapping_add(0x2c));
+                    if c.g[V0][0] != 0 {
+                        c.g[V1][0] = c.g[S0][0];
+                    }
+                    c.g[A0][0] = ((c.g[S4][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                    c.g[V0][0] = sx(r32(c, V1).wrapping_add(0x28));
+                    c.g[T0][0] = ((c.g[S4][0] as i64) < (c.g[T0][0] as i64)) as u64;
+                    if c.g[A0][0] != 0 {
+                        c.g[V0][0] = c.g[V1][0];
+                    }
+                    c.g[A2][0] = c.g[S1][0];
+                    c.g[S0][0] = sx(r32(c, V0).wrapping_add(0x14));
+                    c.g[A3][0] = sx(sp(c).wrapping_add(0x20));
+                    if c.g[T0][0] != 0 {
+                        c.g[S0][0] = c.g[V0][0];
+                    }
+                    c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0x10));
+                    c.g[T0][0] = c.g[S0][0];
+                    call_ptr(c, 0x0032_84b8, 0x0035_b9a0)?;
+                    // Is the node's bucket block empty (8 words, then the
+                    // 3 lists)?
+                    c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x10));
+                    c.g[V0][0] = c.lw(r32(c, V1));
+                    let mut used = c.g[V0][0] != 0;
+                    for off in [4u32, 8, 0xc, 0x10, 0x14] {
+                        if used {
+                            break;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(off));
+                        used = c.g[V0][0] != 0;
+                    }
+                    if used {
+                        c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+                        pc = 0x0035_ba04;
+                        continue;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x18));
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+                    if c.g[V0][0] != 0 {
+                        pc = 0x0035_ba04;
+                        continue;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x1c));
+                    if c.g[V0][0] != 0 {
+                        pc = 0x0035_ba04;
+                        continue;
+                    }
+                    c.cycles += 3;
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x20));
+                    c.g[A0][0] = 0;
+                    pc = 0x0035_ba18;
+                }
+                // Not empty.
+                0x0035_ba04 => {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    pc = 0x0035_ba34;
+                }
+                0x0035_ba18 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(r32(c, V1));
+                    let used = c.g[V0][0] != 0;
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                    if used {
+                        if back_edge_unwinds(c, 0x0035_ba04) {
+                            return Ok(());
+                        }
+                        pc = 0x0035_ba04;
+                        continue;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[A0][0] as i64) < 3) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+                    if more {
+                        if back_edge_unwinds(c, 0x0035_ba18) {
+                            return Ok(());
+                        }
+                        pc = 0x0035_ba18;
+                        continue;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = 1;
+                    pc = 0x0035_ba34;
+                }
+                // Empty: free the block. Next segment.
+                0x0035_ba34 => {
+                    c.cycles += 2;
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 4;
+                        c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0x10));
+                        call_ptr(c, 0x0031_7e50, 0x0035_ba44)?;
+                        c.sw(r32(c, S0).wrapping_add(0x10), 0);
+                    }
+                    c.g[V0][0] = c.lw(r32(c, S5).wrapping_add(0x20));
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[S1][0] = c.lw(r32(c, S1).wrapping_add(0x64));
+                    if more {
+                        if back_edge_unwinds(c, 0x0035_b900) {
+                            return Ok(());
+                        }
+                        pc = 0x0035_b900;
+                        continue;
+                    }
+                    pc = 0x0035_ba58;
+                }
+                0x0035_ba58 => {
+                    c.cycles += 11;
+                    c.g[V0][0] = c.g[S3][0];
+                    let frame = Frame { size: 0xc0 };
+                    frame.restore(c, S0, 0xa0);
+                    frame.restore(c, S1, 0x90);
+                    frame.restore(c, S2, 0x80);
+                    frame.restore(c, S3, 0x70);
+                    frame.restore(c, S4, 0x60);
+                    frame.restore(c, S5, 0x50);
+                    frame.restore_ra(c, 0x40);
+                    frame.restore_fpr(c, 20, 0xb0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0035_b708, 0x0035_ba84);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// The model's box (`+0x60..0x74`, w = 1) into the modifier's box, grown
+/// by (100, 100, 100, 0) on each side (VU0 sub/add).
+pub(crate) fn rail_mod_model_box(c: &mut Cpu) {
+    c.cycles += 37;
+    c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(RAIL_MOD_MODEL));
+    let (m, s, s3) = (r32(c, V0), sp(c), r32(c, S3));
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 4);
+    c.lwc1(1, m.wrapping_add(0x60));
+    c.g[AT][0] = 0x42c8_0000;
+    c.mtc1(AT, 3);
+    c.swc1(1, s);
+    c.lwc1(0, m.wrapping_add(0x64));
+    c.swc1(0, s.wrapping_add(4));
+    c.lwc1(1, m.wrapping_add(0x68));
+    c.swc1(4, s.wrapping_add(0xc));
+    c.swc1(1, s.wrapping_add(8));
+    c.lwc1(2, m.wrapping_add(0x6c));
+    c.lq(V1, s);
+    c.swc1(2, s.wrapping_add(0x10));
+    c.lwc1(0, m.wrapping_add(0x70));
+    c.swc1(0, s.wrapping_add(0x14));
+    c.lwc1(1, m.wrapping_add(0x74));
+    c.swc1(4, s.wrapping_add(0x1c));
+    c.swc1(1, s.wrapping_add(0x18));
+    c.sq(V1, s.wrapping_add(0x20));
+    c.lq(V0, s.wrapping_add(0x10));
+    c.sq(V1, s3.wrapping_add(0x10));
+    c.sq(V0, s3.wrapping_add(0x20));
+    c.swc1(3, s.wrapping_add(0x28));
+    c.sq(V0, s.wrapping_add(0x30));
+    c.swc1(3, s.wrapping_add(0x20));
+    c.swc1(3, s.wrapping_add(0x24));
+    c.sw(s.wrapping_add(0x2c), 0);
+    c.lqc2(3, s3.wrapping_add(0x10));
+    c.lqc2(4, s.wrapping_add(0x20));
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, s3.wrapping_add(0x10));
+    c.lqc2(3, s3.wrapping_add(0x20));
+    c.lqc2(4, s.wrapping_add(0x20));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, s3.wrapping_add(0x20));
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3678,6 +4054,121 @@ pub(crate) mod tests {
                     _ => r.next_u32(),
                 };
                 c.bus.write32(DATA + 0x200 + MULTI_SPLINE_MODIFIER_REFS, n);
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    pub(crate) use crate::game::lib::snd::tests::oc375_machine;
+    pub(crate) use crate::game::lib::snd::tests::oc375_script;
+
+    /// RailModifier_ctor: the model's object keeps its own box (a fake
+    /// method) or not (a real leaf returning 0: the model box grown by 100,
+    /// VU0); the entry inserted into an empty hash node by the real
+    /// SpatialHash insert (allocation faked); no rail track, a track with
+    /// no packed pointer, or 1-3 segments whose hash nodes' bucket blocks
+    /// are empty (freed) or hold a word in each position checked.
+    #[test]
+    fn rail_modifier_ctor_matches() {
+        covered(
+            ee::s11::f_0035b708__generated,
+            rail_modifier_ctor,
+            300,
+            &|c, seed| {
+                let mut r = oc375_machine(c, seed, 0x0035_b708, 12);
+                c.pc = 0x0035_b708;
+                let frame = crate::difftest::SP - 0xc0;
+                let me = DATA + 0x100;
+                let desc = DATA + 0x200;
+                let model = DATA + 0x300;
+                let obj = DATA + 0x380;
+                let vt = DATA + 0x3c0;
+                let nash = DATA + 0x4000;
+                fill(c, &mut r, me, 0x14);
+                c.bus.write32(me + RAIL_MOD_ENTRY, DATA + 0x900);
+                let track_ix = r.next_u32() % 3;
+                let sub = r.next_u32() % 2;
+                c.bus.write32(desc + 4, track_ix | sub << 8);
+                c.bus.write32(desc + 8, r.next_u32());
+                c.bus.write32(model + 0xc, obj);
+                c.bus.write32(obj + 0xc, vt);
+                c.bus.write16(vt + 0x160, 0);
+                c.bus.write32(
+                    vt + 0x164,
+                    if seed % 2 == 0 {
+                        0x0014_06c0
+                    } else {
+                        fakes::FAKE
+                    },
+                );
+                for i in 0..6 {
+                    c.bus
+                        .write32(model + 0x60 + 4 * i, r.f32(500.0) & 0x7fff_ffff);
+                }
+                // The key words the original reads back from its stack.
+                for off in [4u32, 8, 0xc] {
+                    c.bus.write32(frame + off, r.next_u32() % 50);
+                }
+                for off in [0x24u32, 0x28, 0x2c] {
+                    c.bus.write32(
+                        frame + off,
+                        if r.next_u32() % 2 == 0 {
+                            5
+                        } else {
+                            (-5i32) as u32
+                        },
+                    );
+                }
+                // Hash nodes: the root's slot empty, the others' bucket blocks.
+                for i in 0..0x30 {
+                    c.bus.write32(nash + 4 * i, 0);
+                }
+                for (k, off) in [0x14u32, 0x28, 0x3c, 0x50, 0x64, 0x78, 0x8c]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let block = DATA + 0x4800 + 0x40 * k as u32;
+                    c.bus.write32(nash + off + 0x10, block);
+                    for w in 0..11 {
+                        c.bus.write32(block + 4 * w, 0);
+                    }
+                    if r.next_u32() % 3 != 0 {
+                        c.bus
+                            .write32(block + 4 * (r.next_u32() % 11), r.next_u32() | 1);
+                    }
+                }
+                // World -> rail table -> track -> packed segment list.
+                let world = DATA + 0x600;
+                let v = DATA + 0x640;
+                let a = DATA + 0x680;
+                let t = DATA + 0x6c0;
+                let b = DATA + 0x700;
+                let track = DATA + 0x5800;
+                c.bus.write32(world, v);
+                c.bus.write32(v + 8, a);
+                for i in 0..3 {
+                    c.bus.write32(a + 4 * i, if i == 2 { 0 } else { t });
+                }
+                c.bus.write32(t + 0x44, b);
+                c.bus.write32(b, track << 6);
+                c.bus.write32(b + 4, 0x40);
+                let segs = r.next_u32() % 4;
+                c.bus.write32(track + 0x20, segs);
+                c.bus.write32(track + 0x24, DATA + 0x5900);
+                for k in 0..3u32 {
+                    let seg = DATA + 0x5900 + 0x100 * k;
+                    c.bus.write32(seg + 0x64, seg + 0x100);
+                    for i in 0..6 {
+                        c.bus.write32(seg + 0x6c + 4 * i, r.f32(500.0));
+                    }
+                }
+                oc375_script(c, 0x002d_1be0, nash);
+                oc375_script(c, 0x002d_1bd8, world);
+                oc375_script(c, 0x0031_7d70, DATA + 0x5000);
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(desc);
+                c.g[A2][0] = sx(model);
             },
         );
     }

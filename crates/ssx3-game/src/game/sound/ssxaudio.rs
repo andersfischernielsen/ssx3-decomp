@@ -275,6 +275,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_stop_by_callback,
         "SSXAudioSystem_StopByCallback",
     ),
+    (
+        0x0028_54f8,
+        ssx_audio_system_play_stream,
+        "SSXAudioSystem_PlayStream",
+    ),
 ];
 
 /// gp-relative `.lit4` constants.
@@ -3647,6 +3652,346 @@ pub fn ssx_audio_system_stop_by_callback(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_PlayStream
+// ---------------------------------------------------------------------------
+
+/// `SSXAudioSystem` field: the stream array handle (`StreamArray**`).
+pub(crate) const PLAY_STREAM_ARRAY: u32 = 0x118;
+
+/// `StreamArray` fields: the play-params stack (`+0x1d8`) and its top index.
+pub(crate) const PLAY_STREAM_PARAMS: u32 = 0x1d8;
+
+pub(crate) const PLAY_STREAM_TOP: u32 = 0x1f4;
+
+/// `(x, y)`: `x = top << shift; y = params[field]; x += y` (the address of
+/// element `top` of the per-level array at `params + field`), as the
+/// compiled code computes it, `x` and `y` left in those registers.
+pub(crate) fn play_stream_slot(c: &mut Cpu, x: usize, y: usize, field: u32, shift: u32) -> u32 {
+    c.g[x][0] = c.lw(r32(c, S0).wrapping_add(PLAY_STREAM_TOP));
+    c.g[y][0] = c.lw(r32(c, S1).wrapping_add(field));
+    c.g[x][0] = sx(r32(c, x) << shift);
+    c.g[x][0] = sx(r32(c, x).wrapping_add(r32(c, y)));
+    r32(c, x)
+}
+
+/// `int SSXAudioSystem_PlayStream(SSXAudioSystem* s, int id, const char*
+/// name, int a3, int target, int a5, int a6, int engine, float radius,
+/// int a8)` (0x2854f8): queues stream `id` on the stream array; if that
+/// worked (handle >= 0), pushes a fresh play-params level (defaults: volume
+/// 100/90/50, pan 0x7f, priority 1), sets the vanish radius (`radius`, or
+/// 100 / the engine default when `radius <= 0`), records `a6` and the
+/// target (and which view it is closer to), marks replay-mirrored engine
+/// streams in two-player mode, adds a bank-monitor instance with the stream
+/// attached, pops the level and returns the handle.
+pub fn ssx_audio_system_play_stream(c: &mut Cpu) {
+    guest(c, play_stream_body);
+}
+
+pub(crate) fn play_stream_body(c: &mut Cpu) -> Flow {
+    c.cycles += 28;
+    let frame = Frame::open(c, 0xc0);
+    frame.save(c, S2, 0x80);
+    frame.save(c, S3, 0x70);
+    frame.save(c, S4, 0x60);
+    frame.save(c, S5, 0x50);
+    frame.save(c, S6, 0x40);
+    frame.save(c, S7, 0x30);
+    frame.save(c, FP, 0x20);
+    frame.save_fpr(c, 20, 0xb0);
+    frame.save(c, S0, 0xa0);
+    frame.save(c, S1, 0x90);
+    frame.save_ra(c, 0x10);
+    c.g[S2][0] = c.g[A0][0];
+    c.g[S3][0] = c.g[T0][0];
+    c.g[S5][0] = c.g[T3][0];
+    c.g[S6][0] = c.g[A1][0];
+    c.g[S7][0] = c.g[A2][0];
+    c.g[FP][0] = c.g[A3][0];
+    c.mov_s(20, 12);
+    // StreamArray_Queue(*s->array, id, a5, name, a3); a6 on the stack.
+    c.g[A2][0] = c.g[T1][0];
+    c.g[A3][0] = c.g[S7][0];
+    c.g[T0][0] = c.g[FP][0];
+    c.g[A0][0] = c.lw(r32(c, S2).wrapping_add(PLAY_STREAM_ARRAY));
+    let a6 = c.g[T2][0];
+    c.sw(sp(c), a6);
+    call_ptr(c, 0x002a_ad78, 0x0028_555c)?;
+    c.g[S4][0] = c.g[V0][0];
+    c.g[T1][0] = 0x18;
+    if (c.g[S4][0] as i64) >= 0 {
+        play_stream_push(c)?;
+    }
+    c.cycles += 13;
+    frame.restore(c, S0, 0xa0);
+    frame.restore(c, S1, 0x90);
+    frame.restore(c, S2, 0x80);
+    frame.restore(c, S3, 0x70);
+    frame.restore(c, S4, 0x60);
+    frame.restore(c, S5, 0x50);
+    frame.restore(c, S6, 0x40);
+    frame.restore(c, S7, 0x30);
+    frame.restore(c, FP, 0x20);
+    frame.restore_ra(c, 0x10);
+    frame.restore_fpr(c, 20, 0xb0);
+    frame.close(c);
+    Ok(())
+}
+
+/// The queued path: push a level, fill it, add the instance, pop.
+pub(crate) fn play_stream_push(c: &mut Cpu) -> Flow {
+    c.cycles += 126;
+    // s0 = *s->array; s1 = &s0->params; top++.
+    c.g[V1][0] = c.lw(r32(c, S2).wrapping_add(PLAY_STREAM_ARRAY));
+    c.g[A1][0] = 0;
+    c.g[A2][0] = 8;
+    c.g[S0][0] = c.lw(r32(c, V1));
+    c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(PLAY_STREAM_TOP));
+    c.g[S1][0] = sx(r32(c, S0).wrapping_add(PLAY_STREAM_PARAMS));
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+    let top = c.g[V0][0];
+    c.sw(r32(c, S0).wrapping_add(PLAY_STREAM_TOP), top);
+    // params->entries[top] (24 bytes each, at params[0x20]) = the defaults
+    // at params+4.
+    c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(PLAY_STREAM_TOP));
+    c.g[V0][0] = c.lw(r32(c, S1).wrapping_add(0x20));
+    c.mult(0, V1, V1, T1);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+    let s0 = r32(c, S0);
+    c.ldl(V0, s0.wrapping_add(0x1e3));
+    c.ldr(V0, s0.wrapping_add(0x1dc));
+    c.ldl(A0, s0.wrapping_add(0x1eb));
+    c.ldr(A0, s0.wrapping_add(0x1e4));
+    c.ldl(A3, s0.wrapping_add(0x1f3));
+    c.ldr(A3, s0.wrapping_add(0x1ec));
+    let e = r32(c, V1);
+    c.sdl(V0, e.wrapping_add(7));
+    c.sdr(V0, e);
+    c.sdl(A0, e.wrapping_add(0xf));
+    c.sdr(A0, e.wrapping_add(8));
+    c.sdl(A3, e.wrapping_add(0x17));
+    c.sdr(A3, e.wrapping_add(0x10));
+    // Target word of the level (s0[0x1fc + 4 top]) and [0x34][top] cleared.
+    c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(PLAY_STREAM_TOP));
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.g[V0][0] = sx(r32(c, S0).wrapping_add(r32(c, V0)));
+    c.sw(r32(c, V0).wrapping_add(0x1fc), 0);
+    let a = play_stream_slot(c, V1, V0, 0x34, 2);
+    c.sw(a, 0);
+    // [0x38][top] = the entry's first byte (its volume, sign-extended).
+    c.g[A3][0] = c.lw(r32(c, S0).wrapping_add(PLAY_STREAM_TOP));
+    c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(PLAY_STREAM_TOP));
+    c.g[T0][0] = c.lw(r32(c, S1).wrapping_add(0x20));
+    c.g[A3][0] = sx(r32(c, A3) << 2);
+    c.mult(0, A0, A0, T1);
+    c.g[V0][0] = c.lw(r32(c, S1).wrapping_add(0x38));
+    c.g[A3][0] = sx(r32(c, A3).wrapping_add(r32(c, V0)));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, T0)));
+    c.g[V1][0] = c.lb(r32(c, A0));
+    let vol = c.g[V1][0];
+    c.sw(r32(c, A3), vol);
+    let a = play_stream_slot(c, V0, V1, 0x3c, 2);
+    c.sw(a, 0);
+    // memset(&params[0x40 + 8 top], 0, 8).
+    c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(PLAY_STREAM_TOP));
+    c.g[A0][0] = sx(r32(c, A0) << 3);
+    c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x40));
+    call_ptr(c, 0x0041_6210, 0x0028_563c)?;
+    // The remaining per-level fields.
+    c.g[A0][0] = 0x64;
+    c.g[A1][0] = 0x5a;
+    c.mtc1(0, 0);
+    c.g[A2][0] = 0x32;
+    c.g[A3][0] = 0x7f;
+    c.c_le_s(20, 0);
+    c.g[T0][0] = 1;
+    let a = play_stream_slot(c, V1, V0, 0x60, 2);
+    c.sw(a, 0);
+    let a = play_stream_slot(c, V1, V0, 0x64, 2);
+    c.sw(a, 0);
+    let a = play_stream_slot(c, V0, V1, 0x68, 2);
+    c.swc1(0, a);
+    let a = play_stream_slot(c, V1, V0, 0x6c, 2);
+    c.swc1(0, a);
+    let a = play_stream_slot(c, V0, V1, 0x70, 4);
+    c.sw(a.wrapping_add(4), 0);
+    let a = play_stream_slot(c, V1, V0, 0x70, 4);
+    let v = c.g[A0][0];
+    c.sw(a, v);
+    let a = play_stream_slot(c, V0, V1, 0x70, 4);
+    let v = c.g[A1][0];
+    c.sw(a.wrapping_add(8), v);
+    let a = play_stream_slot(c, V1, V0, 0x70, 4);
+    let v = c.g[A2][0];
+    c.sw(a.wrapping_add(0xc), v);
+    let a = play_stream_slot(c, V0, V1, 0x74, 2);
+    c.sw(a, 0);
+    let a = play_stream_slot(c, V1, V0, 0x80, 2);
+    c.sw(a, 0);
+    let a = play_stream_slot(c, V0, V1, 0x84, 2);
+    c.sw(a, 0);
+    let a = play_stream_slot(c, V1, V0, 0x78, 2);
+    let v = c.g[A3][0];
+    c.sw(a, v);
+    let a = play_stream_slot(c, V0, V1, 0x7c, 2);
+    let v = c.g[T0][0];
+    c.sw(a, v);
+
+    // SndPlayParams_SetRadiusVanish(params, radius, -1).
+    if !c.fcc() {
+        c.cycles += 8;
+        c.g[V0][0] = c.lw(r32(c, S2).wrapping_add(PLAY_STREAM_ARRAY));
+        c.mov_s(12, 20);
+    } else {
+        c.cycles += 2;
+        c.g[V0][0] = c.lw(r32(c, S2).wrapping_add(PLAY_STREAM_ARRAY));
+        c.cycles += 3;
+        if c.g[S5][0] == 0 {
+            c.g[AT][0] = 0x42c8_0000;
+            c.mtc1(AT, 12);
+        } else {
+            c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(0x465c));
+        }
+        c.cycles += 6;
+    }
+    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+    c.mtc1(AT, 13);
+    c.g[A0][0] = c.lw(r32(c, V0));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(PLAY_STREAM_PARAMS));
+    let fell = c.fcc();
+    call_ptr(c, 0x002a_9988, if fell { 0x0028_5790 } else { 0x0028_57b4 })?;
+    c.g[V1][0] = c.lw(r32(c, S2).wrapping_add(PLAY_STREAM_ARRAY));
+
+    // params[0x60][top] = a6 (kept on the stack).
+    c.cycles += 8;
+    c.g[A0][0] = c.lw(r32(c, V1));
+    c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(PLAY_STREAM_TOP));
+    c.g[V1][0] = c.lw(r32(c, A0).wrapping_add(0x238));
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+    c.g[V1][0] = c.lw(sp(c));
+    let v = c.g[V1][0];
+    c.sw(r32(c, V0), v);
+    if c.g[S3][0] != 0 {
+        // target word = target; params[0x64][top] = IsCloserToSecondView.
+        c.cycles += 16;
+        c.g[A2][0] = c.lw(r32(c, S2).wrapping_add(PLAY_STREAM_ARRAY));
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A0][0] = c.g[S2][0];
+        c.g[V1][0] = c.lw(r32(c, A2));
+        c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(PLAY_STREAM_TOP));
+        c.g[V0][0] = sx(r32(c, V0) << 2);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        let target = c.g[S3][0];
+        c.sw(r32(c, V1).wrapping_add(0x1fc), target);
+        c.g[S0][0] = c.lw(r32(c, S2).wrapping_add(PLAY_STREAM_ARRAY));
+        PLAY_STREAM_CLOSER_VIEW.call(c, 0x0028_5800)?;
+        c.g[A0][0] = c.lw(r32(c, S0));
+        c.g[V1][0] = c.lw(r32(c, A0).wrapping_add(PLAY_STREAM_TOP));
+        c.g[A1][0] = c.lw(r32(c, A0).wrapping_add(0x23c));
+        c.g[V1][0] = sx(r32(c, V1) << 2);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+        let v = c.g[V0][0];
+        c.sw(r32(c, V1), v);
+    }
+
+    // Engine streams in two-player mode outside replays: mirrored.
+    c.cycles += 7;
+    call_ptr(c, 0x0014_dc80, 0x0028_5820)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 0;
+    call_ptr(c, 0x0014_dd58, 0x0028_582c)?;
+    let have = c.g[V0][0] != 0;
+    c.g[V0][0] = 0x53_0000;
+    'mode: {
+        if have {
+            c.cycles += 4;
+            c.g[A0][0] = 2;
+            c.g[V1][0] = c.lb(0x0053_5c11);
+            if c.g[V1][0] != c.g[A0][0] {
+                c.g[V0][0] = c.lw(r32(c, S2).wrapping_add(PLAY_STREAM_ARRAY));
+                break 'mode;
+            }
+            c.cycles += 2;
+            if c.g[S5][0] == 0 {
+                c.g[V0][0] = c.lw(r32(c, S2).wrapping_add(PLAY_STREAM_ARRAY));
+                break 'mode;
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S2][0];
+            PLAY_STREAM_REPLAY_PLAYING.call(c, 0x0028_5854)?;
+            if c.g[V0][0] != 0 {
+                c.g[V0][0] = c.lw(r32(c, S2).wrapping_add(PLAY_STREAM_ARRAY));
+                break 'mode;
+            }
+            // params[0x80][top] = 1; params[0x84][top] = a8.
+            c.cycles += 16;
+            c.g[A0][0] = c.lw(r32(c, S2).wrapping_add(PLAY_STREAM_ARRAY));
+            c.g[A1][0] = 1;
+            c.g[V1][0] = c.lw(r32(c, A0));
+            c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(PLAY_STREAM_TOP));
+            c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x258));
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+            c.sw(r32(c, V0), 1);
+            c.g[V1][0] = c.lw(r32(c, S2).wrapping_add(PLAY_STREAM_ARRAY));
+            c.g[A0][0] = c.lw(r32(c, V1));
+            c.g[V1][0] = c.lw(sp(c).wrapping_add(0xc0));
+            c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(PLAY_STREAM_TOP));
+            c.g[A1][0] = c.lw(r32(c, A0).wrapping_add(0x25c));
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A1)));
+            let v = c.g[V1][0];
+            c.sw(r32(c, V0), v);
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.lw(r32(c, S2).wrapping_add(PLAY_STREAM_ARRAY));
+    }
+
+    // BankMonitor_AddInstance(params, handle, 0x7f, 3); attach the stream.
+    c.cycles += 9;
+    c.g[A1][0] = c.g[S4][0];
+    c.g[A2][0] = 0x7f;
+    c.g[A3][0] = 3;
+    c.g[A0][0] = c.lw(r32(c, V0));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(PLAY_STREAM_PARAMS));
+    call_ptr(c, 0x002a_cfe0, 0x0028_58b8)?;
+    c.g[S0][0] = c.g[V0][0];
+    if c.g[S0][0] != 0 {
+        c.cycles += 9;
+        c.g[A0][0] = c.lw(r32(c, S2).wrapping_add(PLAY_STREAM_ARRAY));
+        c.g[A1][0] = c.g[S6][0];
+        call_ptr(c, 0x002a_b188, 0x0028_58d0)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A2][0] = c.g[S7][0];
+        c.g[A3][0] = c.g[FP][0];
+        call_ptr(c, 0x002a_bcf8, 0x0028_58e4)?;
+    }
+    c.g[V1][0] = c.lw(r32(c, S2).wrapping_add(PLAY_STREAM_ARRAY));
+
+    // Pop the level; return the handle.
+    c.cycles += 5;
+    c.g[V0][0] = c.g[S4][0];
+    c.g[A1][0] = c.lw(r32(c, V1));
+    c.g[A0][0] = c.lw(r32(c, A1).wrapping_add(PLAY_STREAM_TOP));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_sub(1));
+    let v = c.g[A0][0];
+    c.sw(r32(c, A1).wrapping_add(PLAY_STREAM_TOP), v);
+    Ok(())
+}
+
+pub(crate) const PLAY_STREAM_CLOSER_VIEW: Callee = Callee {
+    addr: 0x0028_8940,
+    f: ee::s07::SSXAudioSystem_IsCloserToSecondView,
+};
+
+pub(crate) const PLAY_STREAM_REPLAY_PLAYING: Callee = Callee {
+    addr: 0x0028_8ae0,
+    f: ee::s07::SSXAudioSystem_IsReplayPlaying,
+};
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5077,6 +5422,78 @@ pub(crate) mod tests {
                 c.bus
                     .write32(holder, DATA + 0x5_2000 + (r.next_u32() & 0xff0));
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::lib::snd::tests::oc375_machine;
+    pub(crate) use crate::game::lib::snd::tests::oc375_script;
+
+    /// SSXAudioSystem_PlayStream: the queue fails or succeeds; radius
+    /// positive, zero/negative with and without the engine flag; with or
+    /// without a target; the two-player mirror check through each exit; the
+    /// bank monitor returning an instance or none. All callees but memset
+    /// are fakes.
+    #[test]
+    fn ssx_audio_system_play_stream_matches() {
+        covered(
+            ee::s07::f_002854f8__generated,
+            ssx_audio_system_play_stream,
+            300,
+            &|c, seed| {
+                let mut r = oc375_machine(c, seed, 0x0028_54f8, 8);
+                c.pc = 0x0028_54f8;
+                let sys = DATA + 0x100;
+                let pp = DATA + 0x200;
+                let arr = DATA + 0x1000;
+                let params = arr + PLAY_STREAM_PARAMS;
+                c.bus.write32(sys + PLAY_STREAM_ARRAY, pp);
+                c.bus.write32(pp, arr);
+                fill(c, &mut r, arr + 0x1d8, 0x30);
+                c.bus.write32(arr + PLAY_STREAM_TOP, r.next_u32() % 3);
+                // Per-level arrays.
+                for (i, off) in [
+                    0x34u32, 0x38, 0x3c, 0x60, 0x64, 0x68, 0x6c, 0x70, 0x74, 0x78, 0x7c, 0x80, 0x84,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    c.bus
+                        .write32(params + off, DATA + 0x2000 + 0x100 * i as u32);
+                }
+                c.bus.write32(params + 0x20, DATA + 0x3000);
+                fill(c, &mut r, DATA + 0x3000, 0x40);
+                c.g[A0][0] = sx(sys);
+                c.g[T0][0] = if seed % 3 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[T3][0] = if seed % 2 == 0 { 0 } else { 1 };
+                c.f[12] = match seed % 4 {
+                    0 => 0,
+                    1 => 0xbf80_0000,
+                    _ => r.f32(500.0) & 0x7fff_ffff,
+                };
+                c.bus.write32(GAME_GP - 0x465c, 0x41ef_ff88);
+                c.bus.write32(crate::difftest::SP, r.next_u32());
+                c.bus.write8(0x0053_5c11, if seed % 5 == 0 { 1 } else { 2 });
+                oc375_script(
+                    c,
+                    0x002a_ad78,
+                    if seed % 7 == 0 {
+                        0xffff_ffff
+                    } else {
+                        r.next_u32() % 50
+                    },
+                );
+                oc375_script(c, 0x0014_dd58, (seed / 2 % 4 != 0) as u32);
+                oc375_script(c, 0x0028_8ae0, (seed / 3 % 3 == 0) as u32);
+                oc375_script(
+                    c,
+                    0x002a_cfe0,
+                    if seed / 5 % 3 == 0 { 0 } else { DATA + 0x5000 },
+                );
             },
         );
     }

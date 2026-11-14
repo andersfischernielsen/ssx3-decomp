@@ -95,6 +95,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ai_fwd_diff_cache_reset_entries,
         "AIFwdDiffCache_ResetEntries",
     ),
+    (0x0032_8c20, spatial_hash_insert, "SpatialHash_Insert"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2809,6 +2810,391 @@ pub fn ai_fwd_diff_cache_reset_entries(c: &mut Cpu) {
     ret(c);
 }
 
+// ---------------------------------------------------------------------------
+// SpatialHash_Insert (0x328c20, aifwddiff.cpp)
+
+/// Spatial hash root: its cell key (level, x, y, z: 16 bytes) and node.
+pub(crate) const SHI_ROOT_NODE: u32 = 0x10;
+
+/// Node: 8 children (+0x00..0x20), 3 item lists (+0x20..0x2c).
+pub(crate) const SHI_NODE_LISTS: u32 = 0x20;
+
+pub(crate) const SHI_ALLOC: Callee = Callee {
+    addr: 0x0031_7d70,
+    f: ee::s10::EA_MemAllocNamed,
+};
+
+pub(crate) const SHI_INSERT_AT_KEY: Callee = Callee {
+    addr: 0x0032_8660,
+    f: ee::s10::SpatialHash_InsertAtKey,
+};
+
+/// `MEM_fill` (through the table).
+pub(crate) const SHI_MEM_FILL: u32 = 0x003e_6448;
+
+/// The allocator's name for nodes (0x4a0000 + 0x3fc0).
+pub(crate) const SHI_NODE_NAME: u32 = 0x004a_3fc0;
+
+/// `v0 = (int)v0 >> (a0 & 31)` (`srav`: the item cell's coordinate in
+/// the root's level).
+pub(crate) fn shi_srav_v0(c: &mut Cpu) {
+    let v = c.g[V0][0] as u32;
+    c.g[V0][0] = sx((v as i32 >> (r32(c, A0) & 31)) as u32);
+}
+
+/// `nodes = alloc(0x2c)` result in v0: clears the three item lists from
+/// `v0 + 0x20` (`a0 = -1`, `v1 = 2` count down), with the event check at
+/// `head`. `Ok(false)` when an event unwinds.
+pub(crate) fn shi_clear_lists(c: &mut Cpu, head: u32) -> Result<bool, crate::call::Unwound> {
+    loop {
+        c.cycles += 7;
+        c.sw(r32(c, V0), 0);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+        let more = c.g[V1][0] != c.g[A0][0];
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(4));
+        if !more {
+            return Ok(true);
+        }
+        if back_edge_unwinds(c, head) {
+            return Ok(false);
+        }
+    }
+}
+
+/// `void SpatialHash_Insert(Root* root, int list, Item* item, Cell* cell)`
+/// (0x328c20): an empty root takes the item's cell and a fresh node with
+/// the item in list `list`. Otherwise, while the root's cell does not
+/// contain the item's cell, the root grows to its parent cell (a new node
+/// with the old one as the child at its octant); then
+/// `SpatialHash_InsertAtKey` places the item. The generated body is a
+/// dispatcher (re-entered at its loop heads after an event unwind), so the
+/// port keeps the block addresses as states.
+pub fn spatial_hash_insert(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame { size: 0xd0 };
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                0x0032_8c20 => {
+                    c.cycles += 18;
+                    Frame::open(c, 0xd0);
+                    frame.save(c, S2, 0xa0);
+                    frame.save(c, S3, 0x90);
+                    frame.save(c, S5, 0x70);
+                    c.g[S3][0] = c.g[A0][0]; // root
+                    frame.save(c, S7, 0x50);
+                    c.g[S2][0] = sx(r32(c, S3).wrapping_add(SHI_ROOT_NODE));
+                    frame.save(c, S0, 0xc0);
+                    c.g[S7][0] = c.g[A2][0]; // item
+                    frame.save(c, S1, 0xb0);
+                    frame.save(c, S4, 0x80);
+                    frame.save(c, S6, 0x60);
+                    frame.save(c, FP, 0x40);
+                    frame.save_ra(c, 0x30);
+                    let list = frame.at(c, 0x20);
+                    c.sw(list, c.g[A1][0]);
+                    c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(SHI_ROOT_NODE));
+                    c.g[S5][0] = c.g[A3][0]; // cell
+                    pc = if c.g[V0][0] != 0 {
+                        0x0032_8d14
+                    } else {
+                        0x0032_8c68
+                    };
+                }
+                0x0032_8c68 => {
+                    // root->cell = *cell; node = new Node
+                    c.cycles += 20;
+                    let (cell, root) = (r32(c, S5), r32(c, S3));
+                    c.ldl(V0, cell.wrapping_add(7));
+                    c.ldr(V0, cell);
+                    c.ldl(V1, cell.wrapping_add(0xf));
+                    c.ldr(V1, cell.wrapping_add(8));
+                    c.sdl(V0, root.wrapping_add(7));
+                    c.sdr(V0, root);
+                    c.sdl(V1, root.wrapping_add(0xf));
+                    c.sdr(V1, root.wrapping_add(8));
+                    c.g[A1][0] = sx(SHI_NODE_NAME);
+                    c.g[A0][0] = 0x2c;
+                    c.g[A2][0] = 0x2000_0000;
+                    c.g[A3][0] = 0;
+                    SHI_ALLOC.call(c, 0x0032_8ca0)?;
+                    c.g[T0][0] = c.lw(sp(c).wrapping_add(0x20));
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A0][0] = u64::MAX;
+                    c.g[V0][0] = sx(r32(c, S0).wrapping_add(SHI_NODE_LISTS));
+                    c.g[S1][0] = sx(r32(c, T0) << 2);
+                    c.g[V1][0] = 2;
+                    pc = 0x0032_8cb8;
+                }
+                0x0032_8cb8 => {
+                    if !shi_clear_lists(c, 0x0032_8cb8)? {
+                        return Ok(());
+                    }
+                    pc = 0x0032_8cd4;
+                }
+                0x0032_8cd4 => {
+                    // MEM_fill(children); root->node = node; push item
+                    c.cycles += 11;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = 0;
+                    c.g[A2][0] = 0x20;
+                    call_ptr(c, SHI_MEM_FILL, 0x0032_8ce4)?;
+                    c.sw(r32(c, S2), c.g[S0][0]);
+                    c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(SHI_ROOT_NODE));
+                    c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, V0)));
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(SHI_NODE_LISTS));
+                    c.g[V0][0] = c.lw(r32(c, A0));
+                    if c.g[V0][0] != 0 {
+                        c.sw(r32(c, V0).wrapping_add(4), c.g[S7][0]); // head->prev
+                    }
+                    pc = 0x0032_8d00;
+                }
+                0x0032_8d00 => {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(r32(c, A0));
+                    let item = r32(c, S7);
+                    c.sw(item.wrapping_add(4), 0);
+                    c.sw(item, c.g[V0][0]);
+                    c.sw(r32(c, A0), c.g[S7][0]);
+                    pc = 0x0032_8ef8;
+                }
+                0x0032_8d14 => {
+                    c.cycles += 2;
+                    c.g[FP][0] = 1;
+                    pc = 0x0032_8e3c;
+                }
+                0x0032_8d1c => {
+                    c.cycles += 1;
+                    pc = 0x0032_8d20;
+                }
+                0x0032_8d20 => {
+                    // parent = (level + 1, x >> 1, y >> 1, z >> 1); new node
+                    c.cycles += 32;
+                    let root = r32(c, S3);
+                    let stk = sp(c);
+                    c.g[A1][0] = c.lw(root.wrapping_add(4));
+                    c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                    c.g[V0][0] = c.lw(root.wrapping_add(8));
+                    c.g[T1][0] = 0x4a0000;
+                    c.g[V1][0] = c.lw(root.wrapping_add(0xc));
+                    c.g[A1][0] = sx((r32(c, A1) as i32 >> 1) as u32);
+                    c.g[V0][0] = sx((r32(c, V0) as i32 >> 1) as u32);
+                    c.sw(stk.wrapping_add(0x14), c.g[A1][0]);
+                    c.g[V1][0] = sx((r32(c, V1) as i32 >> 1) as u32);
+                    c.sw(stk.wrapping_add(0x10), c.g[A2][0]);
+                    c.sw(stk.wrapping_add(0x1c), c.g[V1][0]);
+                    c.g[A1][0] = sx(SHI_NODE_NAME);
+                    c.sw(stk.wrapping_add(0x18), c.g[V0][0]);
+                    c.g[A0][0] = 0x2c;
+                    c.g[A2][0] = 0x2000_0000;
+                    c.ldl(V0, stk.wrapping_add(0x17));
+                    c.ldr(V0, stk.wrapping_add(0x10));
+                    c.ldl(V1, stk.wrapping_add(0x1f));
+                    c.ldr(V1, stk.wrapping_add(0x18));
+                    c.sdl(V0, stk.wrapping_add(7));
+                    c.sdr(V0, stk);
+                    c.sdl(V1, stk.wrapping_add(0xf));
+                    c.sdr(V1, stk.wrapping_add(8));
+                    c.g[A3][0] = 0;
+                    SHI_ALLOC.call(c, 0x0032_8d84)?;
+                    c.g[S4][0] = c.g[V0][0];
+                    c.g[S6][0] = c.lw(r32(c, S3).wrapping_add(SHI_ROOT_NODE));
+                    c.g[A2][0] = c.g[SP][0];
+                    c.g[A0][0] = u64::MAX;
+                    c.g[V0][0] = sx(r32(c, S4).wrapping_add(SHI_NODE_LISTS));
+                    c.g[V1][0] = 2;
+                    pc = 0x0032_8da0;
+                }
+                0x0032_8da0 => {
+                    if !shi_clear_lists(c, 0x0032_8da0)? {
+                        return Ok(());
+                    }
+                    pc = 0x0032_8dbc;
+                }
+                0x0032_8dbc => {
+                    // MEM_fill(children); the old node is the child at the
+                    // octant (x - 2px) * 16 + (y - 2py) * 8 + (z - 2pz) * 4.
+                    c.cycles += 32;
+                    let parent = r32(c, A2);
+                    let root = r32(c, S3);
+                    c.g[A3][0] = c.lw(parent.wrapping_add(0xc));
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[V1][0] = c.lw(parent.wrapping_add(4));
+                    c.g[A1][0] = 0;
+                    c.g[V0][0] = c.lw(parent.wrapping_add(8));
+                    c.g[A3][0] = sx(r32(c, A3) << 1);
+                    c.g[S2][0] = c.lw(root.wrapping_add(4));
+                    c.g[V1][0] = sx(r32(c, V1) << 1);
+                    c.g[S1][0] = c.lw(root.wrapping_add(8));
+                    c.g[V0][0] = sx(r32(c, V0) << 1);
+                    c.g[S0][0] = c.lw(root.wrapping_add(0xc));
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_sub(r32(c, V1)));
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_sub(r32(c, V0)));
+                    c.g[A2][0] = 0x20;
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_sub(r32(c, A3)));
+                    call_ptr(c, SHI_MEM_FILL, 0x0032_8dfc)?;
+                    let (stk, root) = (sp(c), r32(c, S3));
+                    c.g[S0][0] = sx(r32(c, S0) << 2);
+                    c.g[S1][0] = sx(r32(c, S1) << 3);
+                    c.ldl(V0, stk.wrapping_add(7));
+                    c.ldr(V0, stk);
+                    c.ldl(V1, stk.wrapping_add(0xf));
+                    c.ldr(V1, stk.wrapping_add(8));
+                    c.sdl(V0, root.wrapping_add(7));
+                    c.sdr(V0, root);
+                    c.sdl(V1, root.wrapping_add(0xf));
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(r32(c, S1)));
+                    c.g[S2][0] = sx(r32(c, S2) << 4);
+                    c.sdr(V1, root.wrapping_add(8));
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(r32(c, S2)));
+                    c.sw(root.wrapping_add(SHI_ROOT_NODE), c.g[S4][0]);
+                    c.g[S0][0] = sx(r32(c, S4).wrapping_add(r32(c, S0)));
+                    c.sw(r32(c, S0), c.g[S6][0]);
+                    pc = 0x0032_8e3c;
+                }
+                0x0032_8e3c => {
+                    // contains(root->cell, *cell): same level and same
+                    // coordinates once shifted down by the level difference
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(r32(c, S3));
+                    c.g[V1][0] = c.lw(r32(c, S5));
+                    c.g[A0][0] = sx(r32(c, V0).wrapping_sub(r32(c, V1)));
+                    c.g[A2][0] = c.g[V0][0];
+                    pc = if (c.g[A0][0] as i64) >= 0 {
+                        0x0032_8e58
+                    } else {
+                        0x0032_8e50
+                    };
+                }
+                0x0032_8e50 => {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    pc = 0x0032_8edc;
+                }
+                0x0032_8e58 => {
+                    c.cycles += 2;
+                    if c.g[A0][0] != 0 {
+                        c.g[V0][0] = c.lw(r32(c, S5).wrapping_add(4));
+                        pc = 0x0032_8e9c;
+                    } else {
+                        pc = 0x0032_8e60;
+                    }
+                }
+                0x0032_8e60 => {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw(r32(c, S5).wrapping_add(4));
+                    c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(4));
+                    let differ = c.g[V1][0] != c.g[V0][0];
+                    c.g[A0][0] = 0;
+                    pc = if differ { 0x0032_8e94 } else { 0x0032_8e70 };
+                }
+                0x0032_8e70 => {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw(r32(c, S5).wrapping_add(8));
+                    c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(8));
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.g[A0][0];
+                        pc = 0x0032_8edc;
+                    } else {
+                        pc = 0x0032_8e80;
+                    }
+                }
+                0x0032_8e80 => {
+                    c.cycles += 5;
+                    c.g[V1][0] = c.lw(r32(c, S5).wrapping_add(0xc));
+                    c.g[A0][0] = c.g[FP][0];
+                    c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(0xc));
+                    c.g[V1][0] ^= c.g[V0][0];
+                    if c.g[V1][0] != 0 {
+                        c.g[A0][0] = 0;
+                    }
+                    pc = 0x0032_8e94;
+                }
+                0x0032_8e94 => {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[A0][0];
+                    pc = 0x0032_8edc;
+                }
+                0x0032_8e9c => {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw(r32(c, S3).wrapping_add(4));
+                    shi_srav_v0(c);
+                    let differ = c.g[V0][0] != c.g[V1][0];
+                    c.g[A1][0] = 0;
+                    pc = if differ { 0x0032_8ed8 } else { 0x0032_8eac };
+                }
+                0x0032_8eac => {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(r32(c, S5).wrapping_add(8));
+                    c.g[V1][0] = c.lw(r32(c, S3).wrapping_add(8));
+                    shi_srav_v0(c);
+                    let differ = c.g[V0][0] != c.g[V1][0];
+                    c.g[V0][0] = c.g[A1][0];
+                    pc = if differ { 0x0032_8edc } else { 0x0032_8ec0 };
+                }
+                0x0032_8ec0 => {
+                    c.cycles += 6;
+                    c.g[V0][0] = c.lw(r32(c, S5).wrapping_add(0xc));
+                    c.g[A1][0] = c.g[FP][0];
+                    c.g[V1][0] = c.lw(r32(c, S3).wrapping_add(0xc));
+                    shi_srav_v0(c);
+                    c.g[V0][0] ^= c.g[V1][0];
+                    if c.g[V0][0] != 0 {
+                        c.g[A1][0] = 0;
+                    }
+                    pc = 0x0032_8ed8;
+                }
+                0x0032_8ed8 => {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[A1][0];
+                    pc = 0x0032_8edc;
+                }
+                0x0032_8edc => {
+                    c.cycles += 2;
+                    let outside = c.g[V0][0] == 0;
+                    c.g[A1][0] = c.lw(sp(c).wrapping_add(0x20));
+                    if outside {
+                        if back_edge_unwinds(c, 0x0032_8d20) {
+                            return Ok(());
+                        }
+                        pc = 0x0032_8d20;
+                    } else {
+                        pc = 0x0032_8ee4;
+                    }
+                }
+                0x0032_8ee4 => {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.lw(r32(c, S3).wrapping_add(SHI_ROOT_NODE));
+                    c.g[A2][0] = c.g[S7][0];
+                    c.g[A3][0] = c.g[S5][0];
+                    c.g[T0][0] = c.g[S3][0];
+                    SHI_INSERT_AT_KEY.call(c, 0x0032_8ef8)?;
+                    pc = 0x0032_8ef8;
+                }
+                0x0032_8ef8 => {
+                    c.cycles += 12;
+                    frame.restore(c, S0, 0xc0);
+                    frame.restore(c, S1, 0xb0);
+                    frame.restore(c, S2, 0xa0);
+                    frame.restore(c, S3, 0x90);
+                    frame.restore(c, S4, 0x80);
+                    frame.restore(c, S5, 0x70);
+                    frame.restore(c, S6, 0x60);
+                    frame.restore(c, S7, 0x50);
+                    frame.restore(c, FP, 0x40);
+                    frame.restore_ra(c, 0x30);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0032_8c20, 0x0032_8f28);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3602,6 +3988,109 @@ pub(crate) mod tests {
                 let ev = schedule(c, &mut r, seed, 0x0032_7c68);
                 c.g[GP][0] = GAME_GP as u64;
                 ev
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::ai::ai::tests::oc374_scripted;
+    pub(crate) use crate::game::ai::ai::tests::oc374_scripted_fake;
+
+    /// SpatialHash_Insert: an empty root (new node; list 0-2, or 3 whose
+    /// "head" is a live item) or a root at a level below, at or above the
+    /// item's cell that contains it at once or grows 1-5 levels (coordinates
+    /// 0..16, so the growth ends). Gated fakes for the allocator (the
+    /// first node forced to a known address) and InsertAtKey; real MEM_fill.
+    #[test]
+    fn spatial_hash_insert_matches() {
+        use crate::difftest::fakes::{hook, LOG_RESULTS};
+        use crate::game::object::movenode::tests::{OC338_CTRL, OC338_MAGIC};
+        use std::ptr::addr_of_mut;
+        const ROOT: u32 = DATA + 0x20_0000;
+        const CELL: u32 = DATA + 0x20_0100;
+        const ITEM: u32 = DATA + 0x20_0200;
+        const OTHER: u32 = DATA + 0x20_0300;
+        const NODE: u32 = DATA + 0x20_1000;
+        oc374_scripted_fake!(
+            oc374_shi_alloc,
+            OC374_PREV_SHI_52,
+            0x0031_7d70,
+            52,
+            ee::s10::f_00317d70__generated
+        );
+        oc374_scripted_fake!(
+            oc374_shi_insert_at_key,
+            OC374_PREV_SHI_53,
+            0x0032_8660,
+            53,
+            ee::s10::f_00328660__generated
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc374_shi_alloc,
+            &OC374_PREV_SHI_52,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00328660),
+            oc374_shi_insert_at_key,
+            &OC374_PREV_SHI_53,
+        );
+        covered(
+            ee::s10::f_00328c20__generated,
+            spatial_hash_insert,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x32_8c20, 4);
+                c.pc = 0x0032_8c20;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                c.bus.write32(LOG_RESULTS, NODE);
+                for off in (0..0x40).step_by(4) {
+                    c.bus.write32(NODE + off, r.next_u32());
+                }
+                c.bus.write32(NODE + 0x2c, OTHER);
+                let empty = seed % 4 == 0;
+                let list = if empty && seed % 8 == 4 {
+                    3
+                } else {
+                    r.next_u32() % 3
+                };
+                c.g[A0][0] = sx(ROOT);
+                c.g[A1][0] = list as u64;
+                c.g[A2][0] = sx(ITEM);
+                c.g[A3][0] = sx(CELL);
+                let level = r.next_u32() % 3;
+                let xyz = [r.next_u32() % 16, r.next_u32() % 16, r.next_u32() % 16];
+                c.bus.write32(CELL, level);
+                for i in 0..3 {
+                    c.bus.write32(CELL + 4 + 4 * i, xyz[i as usize]);
+                }
+                c.bus.write32(ITEM, r.next_u32());
+                c.bus.write32(ITEM + 4, r.next_u32());
+                if empty {
+                    c.bus.write32(ROOT + SHI_ROOT_NODE, 0);
+                    for i in 0..4 {
+                        c.bus.write32(ROOT + 4 * i, r.next_u32());
+                    }
+                } else {
+                    c.bus.write32(ROOT + SHI_ROOT_NODE, DATA + 0x20_2000);
+                    // An ancestor of the cell (contains it), or any cell nearby.
+                    let up = r.next_u32() % 3;
+                    let root_level = if seed % 3 == 0 {
+                        level + up
+                    } else {
+                        r.next_u32() % 4
+                    };
+                    c.bus.write32(ROOT, root_level);
+                    for i in 0..3u32 {
+                        let v = if seed % 3 == 0 {
+                            xyz[i as usize] >> up
+                        } else {
+                            r.next_u32() % 16
+                        };
+                        c.bus.write32(ROOT + 4 + 4 * i, v);
+                    }
+                }
             },
         );
     }

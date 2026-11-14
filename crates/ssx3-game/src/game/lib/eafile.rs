@@ -10,6 +10,8 @@ use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ealib::seg_2dcae8::EAFS_MUTEX_LOCK;
+pub(crate) use crate::game::ealib::seg_2dcae8::EAFS_MUTEX_UNLOCK;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -39,6 +41,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ea_file_free_file_handle,
         "EAFile_FreeFileHandle",
     ),
+    (0x003d_dfa8, eafile_service_queue, "EAFile_ServiceQueue"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -931,6 +934,556 @@ pub fn ea_file_free_file_handle(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// EAFile_ServiceQueue
+// ---------------------------------------------------------------------------
+
+/// The EA file system state (`0x519ab0`): `+0x8` highest priority served,
+/// `+0xc` queued count, `+0x10` paused, `+0x14` mutex, `+0x24` the request
+/// being served, `+0x30` the queue head, `+0x34` the open big files.
+pub(crate) const EAFS_STATE: u32 = 0x0051_9ab0;
+
+/// The command jump table (`.rodata`, commands 2..10).
+pub(crate) const EAFS_JUMP_TABLE: u32 = 0x0049_5d80;
+
+/// Request fields: `+0` command (bits 20-23), `+4` cancelled, `+0xc`
+/// result, `+0x10` priority, `+0x18` flags / offset / result, `+0x1c`
+/// size, `+0x20` buffer, `+0x24` file handle, `+0x2c` next.
+pub(crate) const EAFS_REQ_PRIORITY: u32 = 0x10;
+
+pub(crate) const EAFS_REQ_NEXT: u32 = 0x2c;
+
+pub(crate) const EAFS_REQ_HANDLE: u32 = 0x24;
+
+pub(crate) const EAFS_COMPLETE_REQUEST: Callee = Callee {
+    addr: 0x003d_e420,
+    f: ee::s14::f_003de420,
+};
+
+pub(crate) const EAFS_PLATFORM_OPEN: Callee = Callee {
+    addr: 0x003e_3208,
+    f: ee::s14::f_003e3208,
+};
+
+pub(crate) const EAFS_PLATFORM_CLOSE: Callee = Callee {
+    addr: 0x003e_32f8,
+    f: ee::s14::f_003e32f8,
+};
+
+pub(crate) const EAFS_PLATFORM_GET_SIZE: Callee = Callee {
+    addr: 0x003e_34e8,
+    f: ee::s14::f_003e34e8,
+};
+
+pub(crate) const EAFS_PLATFORM_GET_LSN: Callee = Callee {
+    addr: 0x003e_3538,
+    f: ee::s14::f_003e3538,
+};
+
+pub(crate) const EAFS_BIG_FIND_ENTRY: Callee = Callee {
+    addr: 0x003e_2768,
+    f: ee::s14::f_003e2768,
+};
+
+pub(crate) const EAFS_FREE_FILE_HANDLE: Callee = Callee {
+    addr: 0x003d_e8c0,
+    f: ee::s14::f_003de8c0,
+};
+
+pub(crate) const EAFS_PLATFORM_READ: Callee = Callee {
+    addr: 0x003e_3350,
+    f: ee::s14::f_003e3350,
+};
+
+pub(crate) const EAFS_PLATFORM_WRITE: Callee = Callee {
+    addr: 0x003e_3478,
+    f: ee::s14::f_003e3478,
+};
+
+/// libc through the table.
+pub(crate) const EAFS_STRCHR: u32 = 0x0041_6404;
+
+pub(crate) const EAFS_STRNCPY: u32 = 0x0041_6ce0;
+
+pub(crate) const EAFS_STRCPY: u32 = 0x0041_66f4;
+
+pub(crate) const EAFS_STRCMP: u32 = 0x0041_65a8;
+
+/// `void EAFile_ServiceQueue(Request* req)` (0x3ddfa8, `iFILESYS_ExecCommand`):
+/// queues `req` (if any) by priority, then, when nothing is being served
+/// and the queue is not paused, takes the head (if its priority is allowed)
+/// and executes it: open / exists (2, 8: a plain path, or `big|name` /
+/// `|name` looked up in the open big files), close (3), read (4), write
+/// (5), size (6), the others just complete.
+pub fn eafile_service_queue(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x270);
+        c.g[V0][0] = 0x52_0000;
+        frame.save(c, S0, 0x260);
+        frame.save(c, S1, 0x250);
+        c.g[S0][0] = sx(0x0051_9ac4);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S4, 0x220);
+        c.g[S4][0] = 0x52_0000;
+        frame.save(c, S2, 0x240);
+        frame.save(c, S3, 0x230);
+        frame.save_ra(c, 0x210);
+        c.g[A0][0] = c.g[S0][0];
+        EAFS_MUTEX_LOCK.call(c, 0x003d_dfdc)?;
+        let st = Addr(EAFS_STATE);
+        c.g[A0][0] = 0;
+        if c.g[S1][0] != 0 {
+            // Insert behind every request of the same or higher priority.
+            let req = Addr(c.g[S1][0] as u32);
+            c.cycles += 3;
+            let head = Addr(c.g[S0][0] as u32).off(0x1c).lw(c);
+            c.g[V0][0] = head;
+            req.off(EAFS_REQ_NEXT).sw(c, head);
+            if head != 0 {
+                c.cycles += 5;
+                let hp = Addr(head as u32).off(EAFS_REQ_PRIORITY).lw(c);
+                let prio = req.off(EAFS_REQ_PRIORITY).lw(c);
+                c.g[V1][0] = prio;
+                c.g[V0][0] = ((prio as i64) < (hp as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    c.cycles += 1;
+                    c.g[A0][0] = req.off(EAFS_REQ_NEXT).lw(c);
+                    loop {
+                        c.cycles += 3;
+                        let next = Addr(c.g[A0][0] as u32).off(EAFS_REQ_NEXT).lw(c);
+                        c.g[V0][0] = next;
+                        req.off(EAFS_REQ_NEXT).sw(c, next);
+                        if next == 0 {
+                            break;
+                        }
+                        c.cycles += 4;
+                        let np = Addr(next as u32).off(EAFS_REQ_PRIORITY).lw(c);
+                        c.g[V0][0] = ((c.g[V1][0] as i64) < (np as i64)) as u64;
+                        if c.g[V0][0] != 0 {
+                            break;
+                        }
+                        c.g[A0][0] = req.off(EAFS_REQ_NEXT).lw(c);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003d_e008);
+                        }
+                    }
+                }
+            }
+            c.cycles += 2;
+            c.g[V0][0] = sx(EAFS_STATE);
+            let prev = c.g[A0][0];
+            if prev == 0 {
+                c.cycles += 1;
+                let v = c.g[S1][0];
+                st.off(0x30).sw(c, v);
+            } else {
+                c.cycles += 2;
+                let s1 = c.g[S1][0];
+                Addr(prev as u32).off(EAFS_REQ_NEXT).sw(c, s1);
+            }
+            c.cycles += 4;
+            c.g[V1][0] = sx(EAFS_STATE);
+            let n = st.off(0xc).lw(c);
+            c.g[V0][0] = sx((n as u32).wrapping_add(1));
+            let v = c.g[V0][0];
+            st.off(0xc).sw(c, v);
+        }
+        'out: {
+            // Serve the head unless one is being served or the queue is paused.
+            c.cycles += 4;
+            c.g[A0][0] = sx(EAFS_STATE);
+            let busy = st.off(0x24).lw(c);
+            c.g[V0][0] = busy;
+            let mut idle = false;
+            if busy == 0 {
+                c.cycles += 3;
+                let paused = st.off(0x10).lw(c);
+                c.g[V0][0] = paused;
+                if paused == 0 {
+                    c.g[S1][0] = st.off(0x30).lw(c);
+                    idle = true;
+                }
+            }
+            if !idle {
+                c.cycles += 4;
+                c.g[A0][0] = sx(EAFS_STATE + 0x14);
+                EAFS_MUTEX_UNLOCK.call(c, 0x003d_e06c)?;
+                frame.restore(c, S0, 0x260);
+                break 'out;
+            }
+            c.cycles += 2;
+            if c.g[S1][0] == 0 {
+                c.g[S1][0] = 0;
+            } else {
+                c.cycles += 5;
+                let req = Addr(c.g[S1][0] as u32);
+                c.g[V1][0] = req.off(EAFS_REQ_PRIORITY).lw(c);
+                let max = st.off(0x8).lw(c);
+                c.g[V0][0] = ((max as i64) < (c.g[V1][0] as i64)) as u64;
+                if c.g[V0][0] != 0 {
+                    c.g[S1][0] = 0;
+                } else {
+                    c.cycles += 5;
+                    let n = st.off(0xc).lw(c);
+                    c.g[V1][0] = req.off(EAFS_REQ_NEXT).lw(c);
+                    c.g[V0][0] = sx((n as u32).wrapping_sub(1));
+                    let v = c.g[V0][0];
+                    st.off(0xc).sw(c, v);
+                    let v = c.g[V1][0];
+                    st.off(0x30).sw(c, v);
+                }
+            }
+            c.cycles += 6;
+            c.g[V0][0] = sx(EAFS_STATE);
+            c.g[A0][0] = sx(EAFS_STATE + 0x14);
+            let v = c.g[S1][0];
+            st.off(0x24).sw(c, v);
+            EAFS_MUTEX_UNLOCK.call(c, 0x003d_e0b4)?;
+            frame.restore(c, S0, 0x260);
+            if c.g[S1][0] == 0 {
+                break 'out;
+            }
+            let req = Addr(c.g[S1][0] as u32);
+            // A cancelled request completes with 0.
+            c.cycles += 3;
+            c.g[V0][0] = req.off(4).lw(c);
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[A0][0] = 0;
+                EAFS_COMPLETE_REQUEST.call(c, 0x003d_e0d0)?;
+                frame.restore(c, S0, 0x260);
+                break 'out;
+            }
+            c.g[V0][0] = req.lw(c);
+            c.cycles += 6;
+            let cmd = (c.g[V0][0] as u32 >> 20) & 0xf;
+            c.g[V0][0] = cmd as u64;
+            c.g[A0][0] = sx(cmd.wrapping_sub(2));
+            c.g[V1][0] = (c.g[A0][0] < 9) as u64;
+            c.g[V0][0] = 0x49_0000;
+            if c.g[V1][0] == 0 {
+                c.cycles += 1;
+                frame.restore(c, S0, 0x260);
+                break 'out;
+            }
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
+            c.g[V0][0] = sx(EAFS_JUMP_TABLE);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(EAFS_JUMP_TABLE));
+            let target = Addr(c.g[V1][0] as u32).lw(c);
+            c.g[A0][0] = target;
+            match target as u32 {
+                0x003d_e108 => eafile_open_command(c, frame)?,
+                0x003d_e308 => {
+                    // Close: the platform file unless it is inside a big file.
+                    c.cycles += 4;
+                    c.g[V0][0] = 1;
+                    let fh = req.off(EAFS_REQ_HANDLE).lw(c);
+                    c.g[A0][0] = fh;
+                    req.off(0xc).sw(c, 1);
+                    if fh != 0 {
+                        c.cycles += 3;
+                        c.g[V0][0] = Addr(fh as u32).off(8).lw(c);
+                        if c.g[V0][0] != 0 {
+                            req.off(0xc).sw(c, 0);
+                        } else {
+                            c.cycles += 3;
+                            c.g[A0][0] = Addr(fh as u32).lw(c);
+                            EAFS_PLATFORM_CLOSE.call(c, 0x003d_e32c)?;
+                            let v0 = c.g[V0][0];
+                            req.off(0xc).sw(c, v0);
+                        }
+                        c.cycles += 3;
+                        c.g[A0][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+                        EAFS_FREE_FILE_HANDLE.call(c, 0x003d_e338)?;
+                        req.off(EAFS_REQ_HANDLE).sw(c, 0);
+                    }
+                    c.cycles += 5;
+                    let res = req.off(0xc).lw(c);
+                    c.g[A0][0] = (res < 1) as u64;
+                    EAFS_COMPLETE_REQUEST.call(c, 0x003d_e348)?;
+                    frame.restore(c, S0, 0x260);
+                }
+                0x003d_e350 => {
+                    // Read: from the file, or at the entry's offset inside
+                    // its big file.
+                    c.cycles += 3;
+                    c.g[A3][0] = req.off(0x1c).lw(c);
+                    if (c.g[A3][0] as i64) <= 0 {
+                        c.cycles += 4;
+                        c.g[A0][0] = 1;
+                        EAFS_COMPLETE_REQUEST.call(c, 0x003d_e3ac)?;
+                    } else {
+                        c.cycles += 4;
+                        let fh = req.off(EAFS_REQ_HANDLE).lw(c);
+                        c.g[V0][0] = fh;
+                        c.g[A0][0] = Addr(fh as u32).off(8).lw(c);
+                        if c.g[A0][0] == 0 {
+                            c.g[A0][0] = Addr(fh as u32).lw(c);
+                            c.cycles += 5;
+                            c.g[A2][0] = req.off(0x18).lw(c);
+                            c.g[A1][0] = req.off(0x20).lw(c);
+                            EAFS_PLATFORM_READ.call(c, 0x003d_e39c)?;
+                        } else {
+                            c.cycles += 9;
+                            let big = Addr(fh as u32).lw(c);
+                            c.g[V0][0] = big;
+                            c.g[A2][0] = req.off(0x18).lw(c);
+                            c.g[V1][0] = Addr(big as u32).off(0xc).lw(c);
+                            c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                            c.g[A1][0] = req.off(0x20).lw(c);
+                            c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                            EAFS_PLATFORM_READ.call(c, 0x003d_e388)?;
+                        }
+                    }
+                    frame.restore(c, S0, 0x260);
+                }
+                0x003d_e3b4 => {
+                    c.cycles += 8;
+                    c.g[V0][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+                    c.g[A3][0] = req.off(0x1c).lw(c);
+                    c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+                    c.g[A1][0] = req.off(0x20).lw(c);
+                    c.g[A2][0] = req.off(0x18).lw(c);
+                    EAFS_PLATFORM_WRITE.call(c, 0x003d_e3cc)?;
+                    frame.restore(c, S0, 0x260);
+                }
+                0x003d_e3d4 => {
+                    // Size: the handle's size into the request.
+                    c.cycles += 7;
+                    c.g[V1][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+                    c.g[A0][0] = 1;
+                    c.g[V0][0] = Addr(c.g[V1][0] as u32).off(4).lw(c);
+                    let v0 = c.g[V0][0];
+                    req.off(0x18).sw(c, v0);
+                    EAFS_COMPLETE_REQUEST.call(c, 0x003d_e3e8)?;
+                    frame.restore(c, S0, 0x260);
+                }
+                0x003d_e3f0 => {
+                    c.cycles += 3;
+                    let res = req.off(0xc).lw(c);
+                    c.g[A0][0] = (res < 1) as u64;
+                    EAFS_COMPLETE_REQUEST.call(c, 0x003d_e3fc)?;
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x260);
+                }
+                t => {
+                    c.jump_out(t, 0x003d_dfa8, 0x003d_e41c);
+                    return Err(crate::call::Unwound);
+                }
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S1, 0x250);
+        frame.restore(c, S2, 0x240);
+        frame.restore(c, S3, 0x230);
+        frame.restore(c, S4, 0x220);
+        frame.restore_ra(c, 0x210);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The open / exists commands of [`eafile_service_queue`] (`s1` the
+/// request): parse `big|name`, `|name` or a plain path, open the plain path
+/// (exists: close it again; open: size and LSN), else look the name up in
+/// the open big files; free the handle of an exists, complete.
+pub(crate) fn eafile_open_command(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    let req = Addr(c.g[S1][0] as u32);
+    let sp = |c: &Cpu| c.g[SP][0] as u32;
+    c.cycles += 7;
+    let name_buf = sp(c).wrapping_add(0x100);
+    Addr(name_buf).sb(c, 0);
+    c.g[A1][0] = 0x7c;
+    let fh = req.off(EAFS_REQ_HANDLE).lw(c);
+    c.g[A0][0] = sx((fh as u32).wrapping_add(0x10));
+    call_ptr(c, EAFS_STRCHR, 0x003d_e11c)?;
+    let has_bar = c.g[V0][0] != 0;
+    c.g[V1][0] = 0x7c;
+    if !has_bar {
+        // A plain path: open it if the flags ask (bit 0).
+        c.cycles += 4;
+        c.g[V0][0] = req.off(0x18).lw(c) & 1;
+        c.g[S3][0] = 1;
+        if c.g[V0][0] != 0 {
+            c.cycles += 5;
+            c.g[A1][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+            c.g[S3][0] = 3;
+            c.g[A0][0] = sx(sp(c).wrapping_add(0x100));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+            call_ptr(c, EAFS_STRCPY, 0x003d_e1c0)?;
+        }
+        c.cycles += 1;
+        c.g[S2][0] = 0;
+    } else {
+        c.cycles += 4;
+        c.g[A0][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+        c.g[V0][0] = Addr(c.g[A0][0] as u32).off(0x10).lb(c);
+        if c.g[V0][0] != c.g[V1][0] {
+            // `big|name`: the big file's name into the stack buffer.
+            c.g[A1][0] = 0x7c;
+            c.cycles += 15;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
+            call_ptr(c, EAFS_STRCHR, 0x003d_e144)?;
+            c.g[S3][0] = 4;
+            c.g[V1][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+            c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
+            Addr(sp(c)).sb(c, 0);
+            c.g[A0][0] = c.g[SP][0];
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+            c.g[A1][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+            c.g[A2][0] = c.g[S0][0];
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+            call_ptr(c, EAFS_STRNCPY, 0x003d_e16c)?;
+            c.g[V1][0] = sx(sp(c).wrapping_add(c.g[S0][0] as u32));
+            Addr(c.g[V1][0] as u32).sb(c, 0);
+            c.g[A0][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+        } else {
+            // `|name`: any big file.
+            c.cycles += 2;
+            c.g[S3][0] = 2;
+        }
+        // The entry name after the bar.
+        c.cycles += 9;
+        c.g[S0][0] = sx(sp(c).wrapping_add(0x100));
+        c.g[A1][0] = 0x7c;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
+        call_ptr(c, EAFS_STRCHR, 0x003d_e188)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+        call_ptr(c, EAFS_STRCPY, 0x003d_e194)?;
+        c.g[S2][0] = 0;
+    }
+    // A plain path: the platform file.
+    c.cycles += 3;
+    c.g[V0][0] = c.g[S3][0] & 1;
+    if c.g[V0][0] != 0 {
+        c.cycles += 7;
+        let fh = req.off(EAFS_REQ_HANDLE).lw(c);
+        c.g[A1][0] = req.off(0x18).lw(c);
+        c.g[A2][0] = fh;
+        c.g[A0][0] = sx((fh as u32).wrapping_add(0x10));
+        EAFS_PLATFORM_OPEN.call(c, 0x003d_e1e4)?;
+        let opened = c.g[V0][0] != 0;
+        c.g[V1][0] = 8;
+        if opened {
+            c.cycles += 5;
+            let cmd = (req.lw(c) as u32 >> 20) & 0xf;
+            c.g[V0][0] = cmd as u64;
+            c.g[S2][0] = 1;
+            if cmd == 8 {
+                c.cycles += 5;
+                c.g[V0][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+                c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+                EAFS_PLATFORM_CLOSE.call(c, 0x003d_e20c)?;
+            } else {
+                c.cycles += 10;
+                c.g[V0][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+                c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+                EAFS_PLATFORM_GET_SIZE.call(c, 0x003d_e220)?;
+                c.g[V1][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+                let v0 = c.g[V0][0];
+                Addr(c.g[V1][0] as u32).off(4).sw(c, v0);
+                c.g[V0][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+                c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+                EAFS_PLATFORM_GET_LSN.call(c, 0x003d_e234)?;
+                c.g[V1][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+                let v0 = c.g[V0][0];
+                Addr(c.g[V1][0] as u32).off(0xc).sw(c, v0);
+            }
+        }
+    }
+    // Not opened: search the open big files (bit 1: any, bit 2: the named one).
+    c.cycles += 2;
+    if c.g[S2][0] == 0 {
+        c.cycles += 3;
+        c.g[V0][0] = c.g[S3][0] & 6;
+        let search = c.g[V0][0] != 0;
+        c.g[V0][0] = sx(EAFS_STATE);
+        let mut found_none = true;
+        if search {
+            c.cycles += 3;
+            c.g[S0][0] = Addr(EAFS_STATE).off(0x34).lw(c);
+            c.g[S3][0] &= 4;
+            if c.g[S0][0] != 0 {
+                c.cycles += 1;
+                loop {
+                    c.cycles += 2;
+                    c.g[A1][0] = c.g[SP][0];
+                    let mut try_it = true;
+                    if c.g[S3][0] != 0 {
+                        c.cycles += 5;
+                        let big = Addr(c.g[S0][0] as u32);
+                        c.g[A0][0] = big.off(0xc).lw(c);
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
+                        call_ptr(c, EAFS_STRCMP, 0x003d_e274)?;
+                        try_it = c.g[V0][0] == 0;
+                    }
+                    if try_it {
+                        c.cycles += 8;
+                        c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                        c.g[A1][0] = sx(sp(c).wrapping_add(0x100));
+                        c.g[A2][0] = 0;
+                        c.g[A3][0] = sx(sp(c).wrapping_add(0x200));
+                        c.g[T0][0] = sx(sp(c).wrapping_add(0x204));
+                        EAFS_BIG_FIND_ENTRY.call(c, 0x003d_e294)?;
+                        if c.g[V0][0] != 0 {
+                            c.cycles += 10;
+                            c.g[V0][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+                            c.g[S2][0] = 1;
+                            let s0 = c.g[S0][0];
+                            Addr(c.g[V0][0] as u32).sw(c, s0);
+                            c.g[V0][0] = Addr(sp(c).wrapping_add(0x204)).lw(c);
+                            c.g[V1][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+                            let v0 = c.g[V0][0];
+                            Addr(c.g[V1][0] as u32).off(4).sw(c, v0);
+                            c.g[A0][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+                            c.g[V0][0] = Addr(sp(c).wrapping_add(0x200)).lw(c);
+                            let v0 = c.g[V0][0];
+                            Addr(c.g[A0][0] as u32).off(8).sw(c, v0);
+                        }
+                    }
+                    c.g[S0][0] = Addr(c.g[S0][0] as u32).off(0x14).lw(c);
+                    c.cycles += 2;
+                    if c.g[S0][0] == 0 {
+                        found_none = false;
+                        break;
+                    }
+                    c.cycles += 2;
+                    if c.g[S2][0] != 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003d_e260);
+                    }
+                }
+            }
+        }
+        if found_none {
+            c.cycles += 1;
+        }
+    }
+    c.g[V0][0] = req.lw(c);
+    // An exists request frees its handle and keeps the answer.
+    c.cycles += 5;
+    c.g[V1][0] = 8;
+    let cmd = (c.g[V0][0] as u32 >> 20) & 0xf;
+    c.g[V0][0] = cmd as u64;
+    if cmd == 8 {
+        c.cycles += 3;
+        c.g[A0][0] = req.off(EAFS_REQ_HANDLE).lw(c);
+        EAFS_FREE_FILE_HANDLE.call(c, 0x003d_e2f4)?;
+        let s2 = c.g[S2][0];
+        req.off(0x18).sw(c, s2);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S2][0];
+    EAFS_COMPLETE_REQUEST.call(c, 0x003d_e300)?;
+    frame.restore(c, S0, 0x260);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1340,6 +1893,137 @@ pub(crate) mod tests {
                     c.bus.write32(handle + 4 * i, r.next_u32());
                 }
                 c.g[A0][0] = sx(handle);
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+    use crate::difftest::put_words;
+
+    pub(crate) use crate::game::sound::soundsys::tests::oc371_machine;
+    pub(crate) use crate::game::sound::soundsys::tests::oc371_script;
+
+    pub(crate) use crate::game::sound::soundsys::tests::oc371_install_fakes;
+
+    /// A NUL-terminated string at `at`.
+    pub(crate) fn oc371_put_str(c: &mut Cpu, at: u32, text: &str) {
+        for (i, b) in text.bytes().chain([0]).enumerate() {
+            c.bus.write8(at + i as u32, b);
+        }
+    }
+
+    /// Queueing (empty queue, in front, behind several) and serving: busy,
+    /// paused, priority too high, cancelled, every command but write (5:
+    /// its real `EAFile_PlatformWrite` reaches the sceFs semaphores) and
+    /// out-of-range ones. Open / exists with plain paths (open flag on /
+    /// off, open fails or not), `big|name` and `|name` searched through
+    /// big files (named match or not, found or not). libc runs for real;
+    /// the EAFile callees are logged fakes (one may unwind).
+    #[test]
+    fn eafile_service_queue_matches() {
+        oc371_install_fakes();
+        covered(
+            ee::s14::f_003ddfa8__generated,
+            eafile_service_queue,
+            400,
+            &|c, seed| {
+                let mut r = oc371_machine(c, seed, 0x003d_dfa8, 6);
+                c.pc = 0x003d_dfa8;
+                put_words(
+                    c,
+                    EAFS_JUMP_TABLE,
+                    &[
+                        0x003d_e108,
+                        0x003d_e308,
+                        0x003d_e350,
+                        0x003d_e3b4,
+                        0x003d_e3d4,
+                        0x003d_e3f0,
+                        0x003d_e108,
+                        0x003d_e3f0,
+                        0x003d_e3f0,
+                    ],
+                );
+                oc371_script(c, 0x003e_3208, (r.next_u32() % 2) as u32);
+                oc371_script(c, 0x003e_2768, (r.next_u32() % 3 == 0) as u32);
+                let st = EAFS_STATE;
+                let n_queued = r.next_u32() % 4;
+                let mut prio = r.next_u32() % 3;
+                let cmds = [2, 2, 8, 8, 3, 3, 4, 4, 6, 7, 9, 10, 0, 12];
+                let names = ["file.dat", "big|name", "|name", "other|name", "|"];
+                let mut prev = 0u32;
+                for i in 0..n_queued + 1 {
+                    let req = DATA + 0x200 + 0x100 * i;
+                    fill(c, &mut r, req, 0x10);
+                    let cmd = cmds[(r.next_u32() % cmds.len() as u32) as usize];
+                    let w = r.next_u32() & !0x00f0_0000 | cmd << 20;
+                    c.bus.write32(req, w);
+                    c.bus.write32(req + 4, (r.next_u32() % 8 == 0) as u32);
+                    c.bus.write32(req + 0x18, r.next_u32() % 4);
+                    c.bus.write32(req + 0x1c, r.next_u32() % 3);
+                    prio += r.next_u32() % 3;
+                    c.bus.write32(req + EAFS_REQ_PRIORITY, prio);
+                    // The file handle and its path.
+                    let fh = DATA + 0x1000 + 0x100 * i;
+                    let handle = if r.next_u32() % 5 == 0 { 0 } else { fh };
+                    c.bus.write32(req + EAFS_REQ_HANDLE, handle);
+                    c.bus.write32(fh, DATA + 0x3000);
+                    c.bus.write32(fh + 4, r.next_u32());
+                    c.bus.write32(
+                        fh + 8,
+                        if r.next_u32() % 2 == 0 {
+                            0
+                        } else {
+                            r.next_u32() % 0x1000
+                        },
+                    );
+                    c.bus.write32(fh + 0xc, r.next_u32());
+                    let name = names[(r.next_u32() % names.len() as u32) as usize];
+                    oc371_put_str(c, fh + 0x10, name);
+                    c.bus.write32(req + EAFS_REQ_NEXT, 0);
+                    if i < n_queued {
+                        if prev == 0 {
+                            c.bus.write32(st + 0x30, req);
+                        } else {
+                            c.bus.write32(prev + EAFS_REQ_NEXT, req);
+                        }
+                        prev = req;
+                    }
+                }
+                if n_queued == 0 {
+                    c.bus.write32(st + 0x30, 0);
+                }
+                // The new request (last one built), or none.
+                let new_req = DATA + 0x200 + 0x100 * n_queued;
+                c.bus.write32(new_req + EAFS_REQ_PRIORITY, r.next_u32() % 6);
+                c.g[A0][0] = if r.next_u32() % 5 == 0 {
+                    0
+                } else {
+                    sx(new_req)
+                };
+                c.bus.write32(DATA + 0x3000 + 0xc, DATA + 0x3100);
+                c.bus.write32(st + 0x8, r.next_u32() % 8);
+                c.bus.write32(st + 0xc, r.next_u32() % 8);
+                c.bus.write32(st + 0x10, (r.next_u32() % 8 == 0) as u32);
+                c.bus
+                    .write32(st + 0x24, if r.next_u32() % 8 == 0 { DATA } else { 0 });
+                // The open big files, named "big" or "other".
+                let n_big = r.next_u32() % 4;
+                let mut next = 0;
+                for i in (0..n_big).rev() {
+                    let big = DATA + 0x2000 + 0x40 * i;
+                    c.bus.write32(big, r.next_u32());
+                    c.bus.write32(big + 0xc, DATA + 0x2800 + 0x40 * i);
+                    let bn = if r.next_u32() % 2 == 0 {
+                        "big"
+                    } else {
+                        "other"
+                    };
+                    oc371_put_str(c, DATA + 0x2810 + 0x40 * i, bn);
+                    c.bus.write32(big + 0x14, next);
+                    next = big;
+                }
+                c.bus.write32(st + 0x34, next);
             },
         );
     }

@@ -109,6 +109,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "WorldState_WriteObjects",
     ),
     (0x0026_d760, replay_record_snapshot, "Replay_RecordSnapshot"),
+    (0x0026_d818, world_state_write, "WorldState_Write"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1783,6 +1784,182 @@ pub fn replay_record_snapshot(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// WorldState_Write (0x26d818, cReplay::saveFrame, all_in_one_replay.cpp)
+
+/// Globals (gp-relative): the two frame counters written after the time,
+/// the world (`gp - 0x848`: +0x84 the object manager, whose +0xc is the
+/// playback world), the managers that save their state.
+pub(crate) const WSW_COUNTER_A: u32 = 0x2a88;
+
+pub(crate) const WSW_COUNTER_B: u32 = 0x2a8c;
+
+pub(crate) const WSW_WORLD: u32 = 0x848;
+
+pub(crate) const WSW_OBJECT_HOLDER: u32 = 0xce8;
+
+pub(crate) const WSW_CAMERA_MAN: u32 = 0x6f0;
+
+pub(crate) const WSW_EFFECT_MAN: u32 = 0xf00;
+
+pub(crate) const WSW_PARTICLE_MAN: u32 = 0xf38;
+
+pub(crate) const WSW_REWIND_WRITE: Callee = Callee {
+    addr: 0x0026_e9c0,
+    f: ee::s07::ReplayStream_RewindWrite,
+};
+
+pub(crate) const WSW_WRITE_OBJECTS: Callee = Callee {
+    addr: 0x0026_d988,
+    f: ee::s07::WorldState_WriteObjects,
+};
+
+pub(crate) const WSW_WRITE_DEAD_OBJECTS: Callee = Callee {
+    addr: 0x0026_da88,
+    f: ee::s07::WorldState_WriteDeadObjects,
+};
+
+/// Through the table: the timer read, `cBE_getBE`, the BE save, the
+/// savers of the other managers, the rider manager save.
+pub(crate) const WSW_GET_TIME: u32 = 0x0031_78e0;
+
+pub(crate) const WSW_GET_BE: u32 = 0x0014_dc80;
+
+pub(crate) const WSW_BE_SAVE: u32 = 0x0014_df08;
+
+pub(crate) const WSW_SAVE_2D9CB0: u32 = 0x002d_9cb0;
+
+pub(crate) const WSW_SAVE_OBJECTS: u32 = 0x0030_bb10;
+
+pub(crate) const WSW_SAVE_CAMERAS: u32 = 0x0022_9e20;
+
+pub(crate) const WSW_SAVE_EFFECTS: u32 = 0x0034_41a8;
+
+pub(crate) const WSW_SAVE_PARTICLES: u32 = 0x0035_7ca8;
+
+pub(crate) const WSW_SAVE_RIDERS: u32 = 0x0010_3480;
+
+/// `stream->write(a1, a2)` (vtable slot 8 of the stream in s0).
+pub(crate) fn wsw_stream_write(c: &mut Cpu, ret: u32) -> crate::call::Flow {
+    let vt = r32(c, V1);
+    c.g[A0][0] = c.lh(vt.wrapping_add(8));
+    c.g[V0][0] = c.lw(vt.wrapping_add(0xc));
+    let f = r32(c, V0);
+    c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+    call_ptr(c, f, ret)
+}
+
+/// `void cReplay::saveFrame(cReplayFramePtr* stream)` (0x26d818): rewinds
+/// the frame stream and writes the time (0x18 bytes), the two frame
+/// counters, then lets the BE, the object manager, the playback world and
+/// the other managers save into it, the live and dead objects and the
+/// riders last.
+pub fn world_state_write(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 92;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S2, 0x40);
+        c.g[S0][0] = c.g[A1][0]; // stream
+        c.g[S2][0] = c.g[A0][0]; // self
+        frame.save(c, S1, 0x50);
+        frame.save_ra(c, 0x30);
+        c.g[A0][0] = c.g[S0][0];
+        WSW_REWIND_WRITE.call(c, 0x0026_d83c)?;
+        c.g[A0][0] = c.g[SP][0];
+        call_ptr(c, WSW_GET_TIME, 0x0026_d844)?;
+        // write(&time, 0x18)
+        c.g[V1][0] = c.lw(r32(c, S0));
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0x18;
+        wsw_stream_write(c, 0x0026_d860)?;
+        // write(&counter_a, 4)
+        let gp = r32(c, GP);
+        c.g[V1][0] = c.lw(r32(c, S0));
+        c.g[S1][0] = sx(sp(c).wrapping_add(0x20));
+        c.g[A3][0] = c.lw(gp.wrapping_add(WSW_COUNTER_A));
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = 4;
+        c.sw(sp(c).wrapping_add(0x20), c.g[A3][0]);
+        wsw_stream_write(c, 0x0026_d888)?;
+        // write(&counter_b, 4)
+        let gp = r32(c, GP);
+        c.g[A0][0] = c.lw(gp.wrapping_add(WSW_COUNTER_B));
+        c.g[A2][0] = 4;
+        c.g[V1][0] = c.lw(r32(c, S0));
+        c.g[A1][0] = c.g[S1][0];
+        c.sw(sp(c).wrapping_add(0x20), c.g[A0][0]);
+        wsw_stream_write(c, 0x0026_d8ac)?;
+        call_ptr(c, WSW_GET_BE, 0x0026_d8b4)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S0][0];
+        call_ptr(c, WSW_BE_SAVE, 0x0026_d8c0)?;
+        // world->objects->save(stream)
+        let gp = r32(c, GP);
+        c.g[V1][0] = c.lw(gp.wrapping_sub(WSW_WORLD));
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.lw(r32(c, V1).wrapping_add(0x84));
+        c.g[V0][0] = c.lw(r32(c, A2));
+        c.g[A0][0] = c.lh(r32(c, V0).wrapping_add(0x40));
+        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x44));
+        let f = r32(c, V1);
+        c.g[A0][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
+        call_ptr(c, f, 0x0026_d8e0)?;
+        // pbWorld(world->objects)->save(stream)
+        let gp = r32(c, GP);
+        c.g[A0][0] = c.lw(gp.wrapping_sub(WSW_WORLD));
+        c.g[A1][0] = c.g[S0][0];
+        c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(0x84));
+        c.g[A2][0] = c.lw(r32(c, V0).wrapping_add(0xc));
+        c.g[V1][0] = c.lw(r32(c, A2).wrapping_add(0xcc));
+        c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x38));
+        c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x3c));
+        let f = r32(c, V0);
+        c.g[A0][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
+        call_ptr(c, f, 0x0026_d904)?;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, WSW_SAVE_2D9CB0, 0x0026_d90c)?;
+        // The managers' savers: (manager, stream).
+        for (global, minus, saver, ret) in [
+            (WSW_OBJECT_HOLDER, false, WSW_SAVE_OBJECTS, 0x0026_d918),
+            (WSW_CAMERA_MAN, true, WSW_SAVE_CAMERAS, 0x0026_d924),
+            (WSW_EFFECT_MAN, false, WSW_SAVE_EFFECTS, 0x0026_d930),
+            (WSW_PARTICLE_MAN, false, WSW_SAVE_PARTICLES, 0x0026_d93c),
+        ] {
+            let gp = r32(c, GP);
+            let at = if minus {
+                gp.wrapping_sub(global)
+            } else {
+                gp.wrapping_add(global)
+            };
+            c.g[A0][0] = c.lw(at);
+            c.g[A1][0] = c.g[S0][0];
+            call_ptr(c, saver, ret)?;
+        }
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = 1;
+        WSW_WRITE_OBJECTS.call(c, 0x0026_d94c)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[S0][0];
+        WSW_WRITE_DEAD_OBJECTS.call(c, 0x0026_d958)?;
+        // riders: pbWorld(world->objects)->riders (+0xa4)
+        let gp = r32(c, GP);
+        c.g[A0][0] = c.lw(gp.wrapping_sub(WSW_WORLD));
+        c.g[A1][0] = c.g[S0][0];
+        c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(0x84));
+        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0xc));
+        c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0xa4));
+        call_ptr(c, WSW_SAVE_RIDERS, 0x0026_d970)?;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2542,6 +2719,200 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(DATA + 0x300 + (seed & 3));
                 c.bus.write32(DATA + 0x300, r.next_u32());
                 c.bus.write32(DATA + 0x304, r.next_u32());
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ai::tests::oc374_scripted;
+    pub(crate) use crate::game::ai::ai::tests::oc374_scripted_fake;
+
+    /// WorldState_Write: the straight-line save; every callee a gated
+    /// fake (override slots, the stream / object vtables at `FAKE`).
+    #[test]
+    fn world_state_write_matches() {
+        use crate::difftest::fakes::hook;
+        use crate::game::object::movenode::tests::{OC338_CTRL, OC338_MAGIC};
+        use std::ptr::addr_of_mut;
+        const SELF: u32 = DATA + 0x20_0000;
+        const STREAM: u32 = DATA + 0x21_0000;
+        const WORLD: u32 = DATA + 0x22_0000;
+        const OBJECTS: u32 = DATA + 0x22_1000;
+        const PB_WORLD: u32 = DATA + 0x22_2000;
+        const VTABLE: u32 = DATA + 0x22_3000;
+        oc374_scripted_fake!(
+            oc374_wsw_rewind,
+            OC374_PREV_WSW_40,
+            0x0026_e9c0,
+            40,
+            ee::s07::f_0026e9c0__generated
+        );
+        oc374_scripted_fake!(
+            oc374_wsw_time,
+            OC374_PREV_WSW_41,
+            0x0031_78e0,
+            41,
+            ee::s10::f_003178e0__generated
+        );
+        oc374_scripted_fake!(
+            oc374_wsw_get_be,
+            OC374_PREV_WSW_42,
+            0x0014_dc80,
+            42,
+            ee::s01::f_0014dc80__generated
+        );
+        oc374_scripted_fake!(
+            oc374_wsw_be_save,
+            OC374_PREV_WSW_43,
+            0x0014_df08,
+            43,
+            ee::s01::f_0014df08__generated
+        );
+        oc374_scripted_fake!(
+            oc374_wsw_2d9cb0,
+            OC374_PREV_WSW_44,
+            0x002d_9cb0,
+            44,
+            ee::s09::f_002d9cb0__generated
+        );
+        oc374_scripted_fake!(
+            oc374_wsw_objects,
+            OC374_PREV_WSW_45,
+            0x0030_bb10,
+            45,
+            ee::s10::f_0030bb10__generated
+        );
+        oc374_scripted_fake!(
+            oc374_wsw_cameras,
+            OC374_PREV_WSW_46,
+            0x0022_9e20,
+            46,
+            ee::s05::f_00229e20__generated
+        );
+        oc374_scripted_fake!(
+            oc374_wsw_effects,
+            OC374_PREV_WSW_47,
+            0x0034_41a8,
+            47,
+            ee::s11::f_003441a8__generated
+        );
+        oc374_scripted_fake!(
+            oc374_wsw_particles,
+            OC374_PREV_WSW_48,
+            0x0035_7ca8,
+            48,
+            ee::s11::f_00357ca8__generated
+        );
+        oc374_scripted_fake!(
+            oc374_wsw_write_objects,
+            OC374_PREV_WSW_49,
+            0x0026_d988,
+            49,
+            ee::s07::f_0026d988__generated
+        );
+        oc374_scripted_fake!(
+            oc374_wsw_write_dead,
+            OC374_PREV_WSW_50,
+            0x0026_da88,
+            50,
+            ee::s07::f_0026da88__generated
+        );
+        oc374_scripted_fake!(
+            oc374_wsw_riders,
+            OC374_PREV_WSW_51,
+            0x0010_3480,
+            51,
+            ee::s00::f_00103480__generated
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026E9C0),
+            oc374_wsw_rewind,
+            &OC374_PREV_WSW_40,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003178E0),
+            oc374_wsw_time,
+            &OC374_PREV_WSW_41,
+        );
+        hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+            oc374_wsw_get_be,
+            &OC374_PREV_WSW_42,
+        );
+        hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DF08),
+            oc374_wsw_be_save,
+            &OC374_PREV_WSW_43,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002D9CB0),
+            oc374_wsw_2d9cb0,
+            &OC374_PREV_WSW_44,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0030BB10),
+            oc374_wsw_objects,
+            &OC374_PREV_WSW_45,
+        );
+        hook(
+            addr_of_mut!(ee::s05::OVERRIDE_00229E20),
+            oc374_wsw_cameras,
+            &OC374_PREV_WSW_46,
+        );
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_003441A8),
+            oc374_wsw_effects,
+            &OC374_PREV_WSW_47,
+        );
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00357CA8),
+            oc374_wsw_particles,
+            &OC374_PREV_WSW_48,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026D988),
+            oc374_wsw_write_objects,
+            &OC374_PREV_WSW_49,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026DA88),
+            oc374_wsw_write_dead,
+            &OC374_PREV_WSW_50,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00103480),
+            oc374_wsw_riders,
+            &OC374_PREV_WSW_51,
+        );
+        covered(
+            ee::s07::f_0026d818__generated,
+            world_state_write,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x26_d818, 20);
+                c.pc = 0x0026_d818;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                let gp = r32(c, GP);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(STREAM);
+                c.bus.write32(STREAM, VTABLE);
+                c.bus.write16(VTABLE + 8, (r.next_u32() % 4 * 4) as u16);
+                c.bus.write32(VTABLE + 0xc, FAKE);
+                c.bus.write16(VTABLE + 0x40, (r.next_u32() % 4 * 4) as u16);
+                c.bus.write32(VTABLE + 0x44, FAKE + 0x10);
+                c.bus.write16(VTABLE + 0x38, (r.next_u32() % 4 * 4) as u16);
+                c.bus.write32(VTABLE + 0x3c, FAKE + 0x20);
+                c.bus.write32(gp + WSW_COUNTER_A, r.next_u32());
+                c.bus.write32(gp + WSW_COUNTER_B, r.next_u32());
+                c.bus.write32(gp.wrapping_sub(WSW_WORLD), WORLD);
+                c.bus.write32(WORLD + 0x84, OBJECTS);
+                c.bus.write32(OBJECTS, VTABLE);
+                c.bus.write32(OBJECTS + 0xc, PB_WORLD);
+                c.bus.write32(PB_WORLD + 0xcc, VTABLE);
+                c.bus.write32(PB_WORLD + 0xa4, r.next_u32());
+                for g in [WSW_OBJECT_HOLDER, WSW_EFFECT_MAN, WSW_PARTICLE_MAN] {
+                    c.bus.write32(gp + g, r.next_u32());
+                }
+                c.bus.write32(gp.wrapping_sub(WSW_CAMERA_MAN), r.next_u32());
             },
         );
     }

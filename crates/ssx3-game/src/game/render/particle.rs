@@ -456,6 +456,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0038_5260, grid_mesh_base_dtor, "GridMeshBase_dtor"),
     (0x0038_5290, cps2_grid_mesh_dtor, "cPS2GridMesh_dtor"),
+    (
+        0x0037_47a0,
+        bezier_patch_cache_tessellate_patch,
+        "BezierPatchCache_TessellatePatch",
+    ),
 ];
 
 /// Same-shard direct callees used above.
@@ -11844,6 +11849,283 @@ pub fn grid_mesh_base_dtor(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// BezierPatchCache_TessellatePatch (0x3747a0)
+
+/// Cache fields: per level (0-2) the free-slot stacks (+0x30) and counts
+/// (+0x3c), the position slabs (+0x48, slots of 0xc0/0x1b0/0x300 bytes),
+/// UV slabs (+0x54, 0x80/0x120/0x200), second-UV slabs (+0x60), the
+/// entries (+0x18, 12 bytes: patch, flags, normal slot), the normal stacks
+/// (+0x1cc), counts (+0x1d8) and slabs (+0x1b4).
+pub(crate) const TPP_FREE: u32 = 0x30;
+
+pub(crate) const TPP_FREE_COUNT: u32 = 0x3c;
+
+pub(crate) const TPP_POS: [u32; 3] = [0x48, 0x4c, 0x50];
+
+pub(crate) const TPP_UV: [u32; 3] = [0x54, 0x58, 0x5c];
+
+pub(crate) const TPP_UV2: [u32; 3] = [0x60, 0x64, 0x68];
+
+pub(crate) const TPP_ENTRIES: u32 = 0x18;
+
+pub(crate) const TPP_NRM_FREE: u32 = 0x1cc;
+
+pub(crate) const TPP_NRM_COUNT: u32 = 0x1d8;
+
+pub(crate) const TPP_NRM: [u32; 3] = [0x1b4, 0x1b8, 0x1bc];
+
+/// The patch's slot index per level (`patch + 0x1a6 + 2 * level`).
+pub(crate) const TPP_PATCH_SLOT: u32 = 0x1a6;
+
+pub(crate) const TPP_TESS_POSITIONS: Callee = Callee {
+    addr: 0x0037_4180,
+    f: ee::s12::BezierPatchCache_TessPositions,
+};
+
+pub(crate) const TPP_TESS_UVS: Callee = Callee {
+    addr: 0x0037_4298,
+    f: ee::s12::BezierPatchCache_TessUVs,
+};
+
+pub(crate) const TPP_TESS_UV2: Callee = Callee {
+    addr: 0x0037_4440,
+    f: ee::s12::BezierPatchCache_TessUV2,
+};
+
+pub(crate) const TPP_TESS_POSITIONS_ALT: Callee = Callee {
+    addr: 0x0037_4518,
+    f: ee::s12::BezierPatchCache_TessPositionsAlt,
+};
+
+/// `a2 = slab[level] + slot * {0xc0, 0x1b0, 0x300}[level]` (`mult` by
+/// `slot_reg`), or 0 for a level outside 0-2; then `end` (the original's
+/// delay-slot op). s0 = level, s1 = the cache; the caller charged the first
+/// test.
+pub(crate) fn tpp_select_positions(
+    c: &mut Cpu,
+    offs: [u32; 3],
+    slot_reg: usize,
+    end: fn(&mut Cpu),
+) {
+    let level = c.g[S0][0];
+    let cache = r32(c, S1);
+    let (size, off) = if level == 1 {
+        c.cycles += 3;
+        (0x1b0, offs[1])
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = ((level as i64) < 2) as u64;
+        c.g[V0][0] = 2;
+        c.cycles += 2;
+        c.g[A2][0] = 0;
+        if (level as i64) >= 2 {
+            if level != 2 {
+                c.cycles += 2;
+                return end(c);
+            }
+            c.cycles += 2;
+            (0x300, offs[2])
+        } else {
+            if level != 0 {
+                c.cycles += 2;
+                return end(c);
+            }
+            c.cycles += 3;
+            (0xc0, offs[0])
+        }
+    };
+    c.g[V0][0] = size;
+    c.g[V1][0] = Addr(cache).off(off).lw(c);
+    c.cycles += 3;
+    c.mult(0, V0, slot_reg, V0);
+    c.g[A2][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+    end(c);
+}
+
+/// `dest = slab[level] + slot * {0x80, 0x120, 0x200}[level]` (level 1 by
+/// `mult` with s6, the others by shifts of s4), or 0; then `end`.
+pub(crate) fn tpp_select_uvs(c: &mut Cpu, dest: usize, offs: [u32; 3], end: fn(&mut Cpu)) {
+    let level = c.g[S0][0];
+    let cache = r32(c, S1);
+    c.cycles += 2;
+    c.g[V0][0] = ((level as i64) < 2) as u64;
+    if level == 1 {
+        c.cycles += 5;
+        c.g[V0][0] = 0x120;
+        c.g[V1][0] = Addr(cache).off(offs[1]).lw(c);
+        c.mult(0, V0, S6, V0);
+    } else {
+        c.cycles += 2;
+        let high = c.g[V0][0] == 0;
+        c.g[V0][0] = 2;
+        c.cycles += 2;
+        c.g[dest][0] = 0;
+        let shift = if high {
+            if level != 2 {
+                c.cycles += 2;
+                return end(c);
+            }
+            c.cycles += 3;
+            9
+        } else {
+            if level != 0 {
+                c.cycles += 2;
+                return end(c);
+            }
+            c.cycles += 4;
+            7
+        };
+        let off = if shift == 9 { offs[2] } else { offs[0] };
+        c.g[V1][0] = Addr(cache).off(off).lw(c);
+        c.g[V0][0] = sx(r32(c, S4) << shift);
+    }
+    c.g[dest][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+    c.cycles += 1;
+    end(c);
+}
+
+pub(crate) fn tpp_end_v0_one(c: &mut Cpu) {
+    c.g[V0][0] = 1;
+}
+
+pub(crate) fn tpp_end_a0_cache(c: &mut Cpu) {
+    c.g[A0][0] = c.g[S1][0];
+}
+
+/// `int BezierPatchCache_TessellatePatch(BezierPatchCache* self, Patch*
+/// patch, int level, int bit, int normals)` (0x3747a0): take a free slot
+/// of `level` (-1 when none), tessellate the patch's positions, UVs and
+/// second UVs into that slot's slabs, record the patch in the slot's entry
+/// (flags |= 0xc | 1 << bit) and the slot in the patch; with `normals`,
+/// also take a normal slot and tessellate the alternative positions into
+/// it. Returns the slot.
+pub fn bezier_patch_cache_tessellate_patch(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0xa0);
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        c.g[S0][0] = c.g[A2][0];
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S5, 0x40);
+        frame.save(c, S7, 0x20);
+        let cache = r32(c, S1);
+        c.g[V0][0] = sx(cache.wrapping_add(TPP_FREE_COUNT));
+        frame.save(c, FP, 0x10);
+        c.g[A0][0] = sx(r32(c, S0) << 2);
+        frame.save(c, S2, 0x70);
+        c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+        frame.save(c, S3, 0x60);
+        c.g[S5][0] = c.g[A1][0];
+        frame.save(c, S4, 0x50);
+        c.g[S7][0] = c.g[A3][0];
+        frame.save(c, S6, 0x30);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+        c.g[FP][0] = c.g[T0][0];
+        // slot = free[level][--free_count[level]], or -1.
+        if (c.g[V0][0] as i64) <= 0 {
+            c.cycles += 1;
+            c.g[S4][0] = u64::MAX;
+        } else {
+            c.cycles += 8;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+            c.g[A0][0] = sx(cache.wrapping_add(r32(c, A0)));
+            let v = c.g[V0][0];
+            Addr(r32(c, V1)).sw(c, v);
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[V1][0] = Addr(r32(c, A0)).off(TPP_FREE).lw(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+            c.g[S4][0] = Addr(r32(c, V0)).lw(c);
+        }
+
+        // The slot's position (a2), UV (s3) and second-UV (s2) slabs.
+        c.cycles += 3;
+        c.g[V0][0] = 1;
+        c.g[S6][0] = c.g[S4][0];
+        tpp_select_positions(c, TPP_POS, S4, tpp_end_v0_one);
+        tpp_select_uvs(c, S3, TPP_UV, tpp_end_v0_one);
+        tpp_select_uvs(c, S2, TPP_UV2, tpp_end_a0_cache);
+
+        c.cycles += 30;
+        c.g[A1][0] = c.g[S5][0];
+        c.g[A3][0] = c.g[S0][0];
+        TPP_TESS_POSITIONS.call(c, 0x0037_4950)?;
+        c.g[A2][0] = c.g[S3][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S5][0];
+        c.g[A3][0] = c.g[S0][0];
+        TPP_TESS_UVS.call(c, 0x0037_4964)?;
+        c.g[A2][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S5][0];
+        c.g[A3][0] = c.g[S0][0];
+        TPP_TESS_UV2.call(c, 0x0037_4978)?;
+
+        // entry = &entries[level][slot]: patch, flags |= 0xc | 1 << bit.
+        let cache = r32(c, S1);
+        c.g[V0][0] = 0xc;
+        c.g[A2][0] = sx(r32(c, S0) << 2);
+        c.mult(0, V0, S6, V0);
+        c.g[A0][0] = sx(cache.wrapping_add(r32(c, A2)));
+        c.g[A1][0] = Addr(r32(c, A0)).off(TPP_ENTRIES).lw(c);
+        c.g[V1][0] = sx(r32(c, S0) << 1);
+        c.g[V1][0] = sx(r32(c, S5).wrapping_add(r32(c, V1)));
+        c.g[A3][0] = 1;
+        c.g[A0][0] = sx(1u32 << (r32(c, S7) & 31));
+        c.g[S3][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+        let entry = r32(c, S3);
+        let patch = c.g[S5][0];
+        Addr(entry).sw(c, patch);
+        let slot = c.g[S4][0];
+        Addr(r32(c, V1)).off(TPP_PATCH_SLOT).sh(c, slot);
+        c.g[V0][0] = Addr(entry).off(4).lw(c);
+        c.g[V0][0] |= 0xc;
+        c.g[V0][0] |= c.g[A0][0];
+        let flags = c.g[V0][0];
+        Addr(entry).off(4).sw(c, flags);
+        if c.g[FP][0] != 0 {
+            // nslot = nrm_free[level][--nrm_count[level]]
+            c.cycles += 11;
+            let a2 = r32(c, A2);
+            c.g[V1][0] = sx(cache.wrapping_add(TPP_NRM_COUNT));
+            c.g[A0][0] = sx(cache.wrapping_add(a2));
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(a2));
+            c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+            let v = c.g[V0][0];
+            Addr(r32(c, V1)).sw(c, v);
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[V1][0] = Addr(r32(c, A0)).off(TPP_NRM_FREE).lw(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+            c.g[S2][0] = Addr(r32(c, V0)).lw(c);
+            tpp_select_positions(c, TPP_NRM, S2, tpp_end_a0_cache);
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S5][0];
+            c.g[A3][0] = c.g[S0][0];
+            TPP_TESS_POSITIONS_ALT.call(c, 0x0037_4a4c)?;
+            let nslot = c.g[S2][0];
+            Addr(r32(c, S3)).off(8).sw(c, nslot);
+        }
+
+        c.cycles += 13;
+        c.g[V0][0] = c.g[S4][0];
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15641,6 +15923,99 @@ pub(crate) mod tests {
                 };
                 c.g[A0][0] = sx(obj);
                 c.g[A1][0] = flags as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_CTRL;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_MAGIC;
+    use std::sync::atomic::AtomicUsize;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_fake;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_gated;
+
+    // ------------------------------------------- BezierPatchCache_TessellatePatch
+
+    macro_rules! oc360_fake_set12 {
+        ($install:ident; $($name:ident $prev:ident $addr:literal $slot:ident $gen:ident;)*) => {
+            $(oc360_gated!($name, $prev, $addr, ee::s12::$gen);)*
+            fn $install() {
+                use std::ptr::addr_of_mut;
+                {
+                    $(fakes::hook(addr_of_mut!(ee::s12::$slot), $name, &$prev);)*
+                }
+            }
+        };
+    }
+
+    oc360_fake_set12! {
+        oc360_install_tess_fakes;
+        oc360_fake_tess_pos OC360_PREV_TESS_POS 0x0037_4180 OVERRIDE_00374180 f_00374180__generated;
+        oc360_fake_tess_uv OC360_PREV_TESS_UV 0x0037_4298 OVERRIDE_00374298 f_00374298__generated;
+        oc360_fake_tess_uv2 OC360_PREV_TESS_UV2 0x0037_4440 OVERRIDE_00374440 f_00374440__generated;
+        oc360_fake_tess_alt OC360_PREV_TESS_ALT 0x0037_4518 OVERRIDE_00374518 f_00374518__generated;
+    }
+
+    /// Levels -1..3 (outside 0-2 every slab is 0), free stacks empty or
+    /// not, normals on or off; the tessellators are logged fakes.
+    #[test]
+    fn bezier_patch_cache_tessellate_patch_matches() {
+        oc360_install_tess_fakes();
+        covered(
+            ee::s12::f_003747a0__generated,
+            bezier_patch_cache_tessellate_patch,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0037_47a0, 4);
+                c.pc = 0x0037_47a0;
+                let cache = DATA + 0x8_0000;
+                let patch = DATA + 0x8_1000;
+                let stacks = DATA + 0x8_2000;
+                let entries = DATA + 0x8_3000;
+                c.bus.write32(OC360_CTRL, OC360_MAGIC);
+                fill(c, &mut r, cache, 0x80);
+                fill(c, &mut r, patch, 0x70);
+                let level = (seed % 5) as i32 - 1;
+                for l in 0..3 {
+                    let free = stacks + 0x100 * l;
+                    let nfree = stacks + 0x400 + 0x100 * l;
+                    c.bus.write32(cache + TPP_FREE + 4 * l, free);
+                    c.bus.write32(cache + TPP_NRM_FREE + 4 * l, nfree);
+                    let n = if r.next_u32() % 4 == 0 {
+                        0
+                    } else {
+                        1 + r.next_u32() % 4
+                    };
+                    c.bus.write32(cache + TPP_FREE_COUNT + 4 * l, n);
+                    c.bus
+                        .write32(cache + TPP_NRM_COUNT + 4 * l, 1 + r.next_u32() % 4);
+                    for k in 0..8 {
+                        c.bus.write32(free + 4 * k, r.next_u32() % 6);
+                        c.bus.write32(nfree + 4 * k, r.next_u32() % 6);
+                    }
+                    c.bus
+                        .write32(cache + TPP_ENTRIES + 4 * l, entries + 0x100 * l);
+                }
+                fill(c, &mut r, entries, 0xc0);
+                let level_word = level as u32;
+                // A missing level reads entries[level] from the cache's
+                // random words: point them somewhere harmless.
+                // Levels -1 and 3 read their words next to the real ones.
+                if !(0..3).contains(&level) {
+                    let word = |off: u32| cache.wrapping_add(off).wrapping_add(4 * level_word);
+                    c.bus.write32(word(TPP_ENTRIES), entries + 0x400);
+                    c.bus.write32(word(TPP_NRM_COUNT), 2);
+                    if level < 0 {
+                        c.bus.write32(word(TPP_FREE_COUNT), 2);
+                        c.bus.write32(word(TPP_FREE), stacks + 0x800);
+                        c.bus.write32(word(TPP_NRM_FREE), stacks + 0x900);
+                    }
+                }
+                c.g[A0][0] = sx(cache);
+                c.g[A1][0] = sx(patch);
+                c.g[A2][0] = sx(level_word);
+                c.g[A3][0] = (r.next_u32() % 32) as u64;
+                c.g[T0][0] = (r.next_u32() % 2) as u64;
             },
         );
     }

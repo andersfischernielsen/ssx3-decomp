@@ -22,6 +22,8 @@ use crate::events::event_due;
 use crate::events::Resume;
 pub(crate) use crate::game::ai::ai::at as at_2;
 use crate::game::lib::snd;
+pub(crate) use crate::game::sound::bankmonitor::oc374_block_copy;
+pub(crate) use crate::game::sound::soundsys::SNDPP_IS_HANDLE_DONE;
 pub(crate) use crate::game::sound::soundsys::SND_EVENT_TABLE;
 use crate::game::visualfx::boardwakefx as bw;
 use crate::guest::Addr;
@@ -392,6 +394,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "SPCH_HasPendingSentence",
     ),
     (0x003d_b3b8, spch_match_flags, "SPCH_MatchFlags"),
+    (0x003b_6bd0, sndstrm_parse_header, "SNDSTRM_ParseHeader"),
+    (0x003b_a0b0, snd_alloc_voices, "SND_AllocVoices"),
+    (0x003b_aac0, snd_parse_patch, "SND_ParsePatch"),
+    (0x003b_b140, snd_play_patch_voices, "SND_PlayPatchVoices"),
+    (0x003b_b588, snd_play_patch, "SND_PlayPatch"),
+    (0x003d_7418, spch_queue_event_args, "SPCH_QueueEventArgs"),
+    (0x003d_7760, spch_select_request, "SPCH_SelectRequest"),
+    (0x003d_7ec8, spch_dequeue_channel, "SPCH_DequeueChannel"),
+    (0x003d_88c8, spch_choose_sample, "SPCH_ChooseSample"),
+    (
+        0x003d_9088,
+        spch_choose_event_samples,
+        "SPCH_ChooseEventSamples",
+    ),
+    (0x003d_9bd8, spch_play_sentence, "SPCH_PlaySentence"),
+    (0x003d_9fb0, spch_build_sentence, "SPCH_BuildSentence"),
 ];
 
 /// Fields of the driver state block.
@@ -20481,6 +20499,4956 @@ pub fn snd_eaxa_reset(c: &mut Cpu) {
     ret(c);
 }
 
+// ---------------------------------------------------------------------------
+// SPCH_DequeueChannel (0x3d7ec8)
+
+/// The speech queue (0x44fff8): per channel a pending word; request `i`'s
+/// 4-byte key at `+0x74 + 0x60 i` and the next request's index (`lh`, -1
+/// ends) at `+0x6e + 0x60 i`. The accept callback is the word at 0x44ff9c.
+pub(crate) const SDC_QUEUE: u32 = 0x0044_fff8;
+
+pub(crate) const SDC_REQUESTS: u32 = SDC_QUEUE + 0x74;
+
+pub(crate) const SDC_NEXT: u32 = 0x6e;
+
+pub(crate) const SDC_REQUEST_SIZE: u64 = 0x60;
+
+pub(crate) const SDC_CALLBACKS: u32 = 0x0044_ff90;
+
+pub(crate) const SDC_SELECT: Callee = Callee {
+    addr: 0x003d_7a50,
+    f: ee::s14::SPCH_SelectRequestForChannel,
+};
+
+pub(crate) const SDC_FREE_SLOT: Callee = Callee {
+    addr: 0x003d_7c38,
+    f: ee::s14::SPCH_FreeQueueSlot,
+};
+
+pub(crate) const SDC_PURGE: Callee = Callee {
+    addr: 0x003d_7d58,
+    f: ee::s14::SPCH_PurgeChannelRequests,
+};
+
+pub(crate) const SDC_RESET_SENTENCE: Callee = Callee {
+    addr: 0x003d_9a40,
+    f: ee::s14::SPCH_ResetSentence,
+};
+
+pub(crate) const SDC_BUILD_SENTENCE: Callee = Callee {
+    addr: 0x003d_a418,
+    f: ee::s14::SPCH_BuildSentenceWithFallback,
+};
+
+/// `int SPCH_DequeueChannel(int channel)` (0x3d7ec8): if the channel has
+/// pending requests, pick requests until the accept callback (if any)
+/// takes one (rejected ones are freed); none left returns 0. Then purge
+/// the channel's other requests, reset the sentence and build it from the
+/// accepted request and its followers (until one fails or the chain
+/// ends), free the request and return the last build result.
+pub fn spch_dequeue_channel(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = 0x45_0000;
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S3, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[A0][0] = sx(SDC_QUEUE);
+        frame.save(c, RA, 0x90);
+        c.g[V1][0] = sx(r32(c, S0) << 2);
+        frame.save(c, S7, 0x80);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(SDC_QUEUE));
+        frame.save(c, S6, 0x70);
+        c.g[S3][0] = 0;
+        frame.save(c, S5, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S1, 0x20);
+        c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+        c.g[S2][0] = 0;
+        'out: {
+            if c.g[V0][0] == 0 {
+                break 'out;
+            }
+            c.cycles += 5;
+            c.g[V0][0] = 0x45_0000;
+            c.g[S7][0] = sx(SDC_REQUESTS);
+            c.g[S6][0] = sx(SDC_CALLBACKS);
+            c.g[S5][0] = SDC_REQUEST_SIZE;
+            c.g[S4][0] = 1;
+            // Pick a request the callback accepts (s1).
+            loop {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S0][0];
+                SDC_SELECT.call(c, 0x003d_7f30)?;
+                c.g[S1][0] = c.g[V0][0];
+                let none = (c.g[S1][0] as i64) < 0;
+                c.mult(0, V1, S1, S5);
+                if none {
+                    break 'out;
+                }
+                c.cycles += 8;
+                c.g[A0][0] = 1;
+                c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, S7)));
+                c.g[V1][0] = Addr(r32(c, S6)).off(0xc).lw(c);
+                let key = r32(c, V0);
+                let s = sp(c);
+                c.lwl(A1, key.wrapping_add(3));
+                c.lwr(A1, key);
+                c.swl(A1, s + 3);
+                c.swr(A1, s);
+                if c.g[V1][0] != 0 {
+                    c.cycles += 3;
+                    let accept = r32(c, V1);
+                    c.g[A0][0] = c.g[SP][0];
+                    call_ptr(c, accept, 0x003d_7f64)?;
+                    c.g[A0][0] = c.g[V0][0];
+                }
+                c.cycles += 2;
+                if c.g[A0][0] == c.g[S4][0] {
+                    c.cycles += 2;
+                    c.g[S2][0] = 1;
+                } else {
+                    c.cycles += 2;
+                    c.g[A0][0] = c.g[S1][0];
+                    SDC_FREE_SLOT.call(c, 0x003d_7f80)?;
+                }
+                c.cycles += 2;
+                if c.g[S2][0] != 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_7f28);
+                }
+            }
+
+            // Build the sentence along the request chain.
+            c.cycles += 8;
+            c.g[A0][0] = c.g[S1][0];
+            SDC_PURGE.call(c, 0x003d_7f90)?;
+            c.g[S0][0] = c.g[S1][0];
+            SDC_RESET_SENTENCE.call(c, 0x003d_7f98)?;
+            c.g[S5][0] = SDC_REQUEST_SIZE;
+            c.g[V0][0] = 0x45_0000;
+            c.g[S4][0] = u64::MAX;
+            c.g[S2][0] = sx(SDC_QUEUE);
+            loop {
+                c.cycles += 7;
+                c.g[A0][0] = c.g[S0][0];
+                SDC_BUILD_SENTENCE.call(c, 0x003d_7fb0)?;
+                c.mult(0, A0, S0, S5);
+                c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, S2)));
+                c.g[S0][0] = Addr(r32(c, V1)).off(SDC_NEXT).lh(c);
+                c.g[S3][0] = c.g[V0][0];
+                if c.g[S0][0] == c.g[S4][0] {
+                    break;
+                }
+                c.cycles += 2;
+                if c.g[S3][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_7fa8);
+                }
+            }
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S1][0];
+            SDC_FREE_SLOT.call(c, 0x003d_7fd4)?;
+        }
+        c.cycles += 12;
+        c.g[V0][0] = c.g[S3][0];
+        frame.restore(c, RA, 0x90);
+        frame.restore(c, S7, 0x80);
+        frame.restore(c, S6, 0x70);
+        frame.restore(c, S5, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ------------------------------------------------------------ SND_ParsePatch
+
+/// `SND_ParsePatch`'s stack frame size.
+pub(crate) const PARSE_PATCH_FRAME: u32 = 0x3b0;
+
+/// Per-tag values (tags 0..0x2a), one word each: `sp + 4 * tag`.
+pub(crate) const PARSE_PATCH_VALUES: u32 = 0x0;
+
+/// Per-tag payload pointers (tags 0..0x2a): `sp + 0xb0 + 4 * tag`.
+pub(crate) const PARSE_PATCH_PAYLOADS: u32 = 0xb0;
+
+/// Per-tag values (tags 0x80..0xad): `sp + 0x160 + 4 * (tag - 0x80)`.
+pub(crate) const PARSE_PATCH_VALUES_HI: u32 = 0x160;
+
+/// Per-tag payload pointers (tags 0x80..0xad): `sp + 0x220 + 4 * (tag - 0x80)`.
+pub(crate) const PARSE_PATCH_PAYLOADS_HI: u32 = 0x220;
+
+/// The per-channel pitch offsets (6 words, cleared by `memset`).
+pub(crate) const PARSE_PATCH_PITCH: u32 = 0x2e0;
+
+/// The tag stream record `SND_ParseNextTag` fills: read pointer, tag,
+/// value, payload pointer, payload length.
+pub(crate) const PARSE_PATCH_REC: u32 = 0x300;
+
+/// Patch fields: the count of tag-0x14 entries (signed byte) and their
+/// tables (payload pointer, length).
+pub(crate) const PARSE_PATCH_N14: u32 = 0x17;
+
+pub(crate) const PARSE_PATCH_T14_PTR: u32 = 0x34;
+
+pub(crate) const PARSE_PATCH_T14_LEN: u32 = 0x44;
+
+/// Patch fields: the channel count (signed byte), the six sample data
+/// pointers (`+0x98`, tags 0x98..0x9b, 0xa4, 0xa5) and lengths (`+0xb0`,
+/// halves), the per-channel pitches (`+0xbc`, halves), the stream pointer
+/// copy (`+0xc8`).
+pub(crate) const PARSE_PATCH_CHANNELS: u32 = 0x3;
+
+pub(crate) const PARSE_PATCH_DATA: u32 = 0x98;
+
+pub(crate) const PARSE_PATCH_DATA_LEN: u32 = 0xb0;
+
+pub(crate) const PARSE_PATCH_PITCHES: u32 = 0xbc;
+
+pub(crate) const PARSE_PATCH_SRC: u32 = 0xc8;
+
+/// The sound state block (0x50a8e8): its output mode byte (`+0x47`, 2 =
+/// a mode where stereo patches get no pitch offset) and the pitch table
+/// (`+0x2e0`: per channel count, six halves).
+pub(crate) const PARSE_PATCH_SND_STATE: u32 = 0x0050_a8e8;
+
+pub(crate) const PARSE_PATCH_STATE_MODE: u32 = 0x47;
+
+pub(crate) const PARSE_PATCH_STATE_PITCH: u32 = 0x2e0;
+
+pub(crate) const PARSE_PATCH_MEMSET: u32 = 0x0041_6210;
+
+pub(crate) const PARSE_PATCH_NEXT_TAG: Callee = Callee {
+    addr: 0x003c_7388,
+    f: ee::s13::SND_ParseNextTag,
+};
+
+/// `sp + off`.
+#[inline(always)]
+pub(crate) fn parse_patch_at(c: &Cpu, off: u32) -> u32 {
+    sp(c).wrapping_add(off)
+}
+
+/// `sw v, off(sp)`.
+#[inline(always)]
+pub(crate) fn parse_patch_sw(c: &mut Cpu, off: u32, v: u64) {
+    let a = parse_patch_at(c, off);
+    c.sw(a, v);
+}
+
+/// `lw off(sp)`.
+#[inline(always)]
+pub(crate) fn parse_patch_lw(c: &mut Cpu, off: u32) -> u64 {
+    let a = parse_patch_at(c, off);
+    c.lw(a)
+}
+
+/// `lbu off(sp)`.
+#[inline(always)]
+pub(crate) fn parse_patch_lbu(c: &mut Cpu, off: u32) -> u64 {
+    let a = parse_patch_at(c, off);
+    c.lbu(a)
+}
+
+/// `lhu off(sp)`.
+#[inline(always)]
+pub(crate) fn parse_patch_lhu(c: &mut Cpu, off: u32) -> u64 {
+    let a = parse_patch_at(c, off);
+    c.lhu(a)
+}
+
+/// `addu` of two words.
+#[inline(always)]
+pub(crate) fn parse_patch_addu(a: u64, b: u64) -> u64 {
+    sx((a as u32).wrapping_add(b as u32))
+}
+
+/// A countdown loop of the prologue: `do { *p = 0 (word); n--; p -= 4 }
+/// while (n >= 0)` with `n` in t8 and `p` in `reg`, events at the back edge.
+pub(crate) fn parse_patch_clear_down(c: &mut Cpu, reg: usize, head: u32) {
+    loop {
+        c.cycles += 7;
+        let p = r32(c, reg);
+        c.sw(p, 0);
+        c.g[T8][0] = sx((c.g[T8][0] as u32).wrapping_sub(1));
+        let more = (c.g[T8][0] as i64) >= 0;
+        c.g[reg][0] = sx(p.wrapping_sub(4));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// `int SND_ParsePatch(u8** src, Patch* patch)` (0x3baac0): parse a patch's
+/// tag stream (`SND_ParseNextTag`) into `patch`. Tags 0..0x2a and
+/// 0x80..0xad keep their value and payload pointer in tables on the stack
+/// (preset with the patch defaults: volume 0x7f, key 0x3c, pan 0x40, one
+/// channel, rate 0x5622, ...); tag 0x14 appends its payload to the patch's
+/// list, tags 0x98..0x9b, 0xa4 and 0xa5 set the six channel data pointers
+/// and lengths. The stream ends at 0xff (returns 0) or at the 0xfe marker
+/// (returns 1). Then the tables go into the patch fields, each channel's
+/// pitch is the table pitch for the channel count plus the patch's offset
+/// (zero in output mode 2 for stereo patches), and `*src` advances past the
+/// tags.
+pub fn snd_parse_patch(c: &mut Cpu) {
+    let frame = Frame {
+        size: PARSE_PATCH_FRAME,
+    };
+    guest(c, |c| {
+        c.cycles += 26;
+        Frame::open(c, PARSE_PATCH_FRAME);
+        c.g[A2][0] = 0x18;
+        frame.save(c, S6, 0x340);
+        frame.save(c, S4, 0x360);
+        c.g[S6][0] = c.g[A0][0]; // src
+        frame.save(c, S7, 0x330);
+        c.g[S4][0] = c.g[A1][0]; // patch
+        c.g[A0][0] = sx(parse_patch_at(c, PARSE_PATCH_PITCH));
+        frame.save(c, S0, 0x3a0);
+        frame.save(c, S1, 0x390);
+        c.g[A1][0] = 0;
+        frame.save(c, S2, 0x380);
+        frame.save(c, S3, 0x370);
+        frame.save(c, S5, 0x350);
+        frame.save_ra(c, 0x320);
+        c.g[S7][0] = c.g[A0][0];
+        // memset(pitch, 0, 0x18)
+        call_ptr(c, PARSE_PATCH_MEMSET, 0x003b_ab04)?;
+
+        let src = r32(c, S6);
+        c.g[V0][0] = c.lw(src);
+        c.g[S2][0] = sx(parse_patch_at(c, PARSE_PATCH_PAYLOADS));
+        c.g[S0][0] = sx(parse_patch_at(c, PARSE_PATCH_PAYLOADS_HI));
+        c.g[S1][0] = sx(parse_patch_at(c, PARSE_PATCH_REC));
+        let patch = r32(c, S4);
+        c.sw(patch.wrapping_add(PARSE_PATCH_SRC), c.g[V0][0]);
+        c.g[T8][0] = 0x2a;
+        parse_patch_sw(c, PARSE_PATCH_REC, c.g[V0][0]);
+        c.g[V1][0] = sx(parse_patch_at(c, 0x158));
+        // Clear the payload pointers (both tables, top down).
+        parse_patch_clear_down(c, V1, 0x003b_ab28);
+        c.cycles += 5;
+        c.g[A0][0] = sx(patch.wrapping_add(PARSE_PATCH_DATA));
+        c.g[V1][0] = sx(patch.wrapping_add(PARSE_PATCH_DATA_LEN));
+        c.g[T8][0] = 0x2d;
+        c.g[V0][0] = parse_patch_addu(c.g[S0][0], 0xb4);
+        parse_patch_clear_down(c, V0, 0x003b_ab58);
+        // Clear the six channel data pointers and lengths.
+        c.cycles += 3;
+        c.g[V0][0] = c.g[A0][0];
+        c.g[T8][0] = 5;
+        loop {
+            c.cycles += 7;
+            c.sw(r32(c, V0), 0);
+            c.g[T8][0] = sx((c.g[T8][0] as u32).wrapping_sub(1));
+            c.sh(r32(c, V1), 0);
+            c.g[V0][0] = parse_patch_addu(c.g[V0][0], 4);
+            let more = (c.g[T8][0] as i64) >= 0;
+            c.g[V1][0] = parse_patch_addu(c.g[V1][0], 2);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003b_ab80);
+            }
+        }
+
+        // The defaults.
+        c.cycles += 68;
+        c.g[V1][0] = 0x45_0000;
+        c.g[A1][0] = 0x7f;
+        c.g[A3][0] = u64::MAX;
+        c.g[A2][0] = 1;
+        c.g[V0][0] = 0x3c;
+        c.g[V1][0] = sx(0x0044_c580);
+        c.g[A0][0] = 0x40;
+        parse_patch_sw(c, 0x1c, c.g[V0][0]);
+        parse_patch_sw(c, 0x30, c.g[A0][0]);
+        c.g[T0][0] = 0x5622;
+        parse_patch_sw(c, 0x64, c.g[V1][0]);
+        c.g[T1][0] = 5;
+        parse_patch_sw(c, 0x70, c.g[A1][0]);
+        c.g[V0][0] = 8;
+        parse_patch_sw(c, 0x4, 0);
+        c.g[S5][0] = 0; // result: the stream ended without 0xfe
+        parse_patch_sw(c, 0x8, c.g[A1][0]);
+        parse_patch_sw(c, 0xc, 0);
+        parse_patch_sw(c, 0x10, c.g[A1][0]);
+        parse_patch_sw(c, 0x18, 0);
+        parse_patch_sw(c, 0x20, c.g[A3][0]);
+        parse_patch_sw(c, 0x24, c.g[A2][0]);
+        parse_patch_sw(c, 0x28, 0);
+        parse_patch_sw(c, 0x34, 0);
+        parse_patch_sw(c, 0x38, c.g[A1][0]);
+        for off in [0x3c, 0x40, 0x44, 0x48, 0x4c] {
+            parse_patch_sw(c, off, 0);
+        }
+        c.sb(patch.wrapping_add(PARSE_PATCH_N14), 0);
+        for off in [
+            0x5c, 0x68, 0x98, 0x9c, 0xa0, 0xa4, 0xa8, 0x74, 0x78, 0x7c, 0x80, 0x84, 0x88, 0x8c,
+        ] {
+            parse_patch_sw(c, off, 0);
+        }
+        parse_patch_sw(c, 0x168, c.g[A2][0]); // one channel
+        parse_patch_sw(c, 0x170, c.g[T0][0]); // rate
+        parse_patch_sw(c, 0x17c, c.g[A3][0]);
+        parse_patch_sw(c, 0x1e0, c.g[T1][0]);
+        parse_patch_sw(c, 0x190, c.g[V0][0]);
+        parse_patch_sw(c, 0x90, 0);
+        parse_patch_sw(c, 0x94, c.g[A2][0]);
+        parse_patch_sw(c, 0x160, 0);
+        parse_patch_sw(c, 0x174, 0);
+        parse_patch_sw(c, 0x178, c.g[A3][0]);
+        for off in [
+            0x180, 0x1d0, 0x184, 0x1d4, 0x1b0, 0x1d8, 0x1b4, 0x1dc, 0x1e8, 0x1f8, 0x1ec, 0x1fc,
+        ] {
+            parse_patch_sw(c, off, 0);
+        }
+
+        // The tag loop.
+        'parse: loop {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S1][0];
+            PARSE_PATCH_NEXT_TAG.call(c, 0x003b_ae1c)?;
+            let more = c.g[V0][0] != 0;
+            c.g[V1][0] = parse_patch_lw(c, PARSE_PATCH_REC + 0x4);
+            if !more {
+                break 'parse;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003b_acb0);
+            }
+            let sp_ = sp(c);
+            let patch = r32(c, S4);
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 43) as u64;
+            c.g[A0][0] = parse_patch_lw(c, PARSE_PATCH_REC + 0x8);
+            if c.g[V0][0] != 0 {
+                // Tags 0..0x2a: value and payload pointer.
+                c.cycles += 12;
+                c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V1][0] = sx(sp_.wrapping_add(c.g[V0][0] as u32));
+                c.g[A1][0] = 0x14;
+                c.sw(r32(c, V1).wrapping_add(PARSE_PATCH_VALUES), c.g[A0][0]);
+                c.g[V0][0] = parse_patch_lw(c, PARSE_PATCH_REC + 0x4);
+                c.g[A0][0] = parse_patch_lw(c, PARSE_PATCH_REC + 0xc);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V0][0] = parse_patch_addu(c.g[S2][0], c.g[V0][0]);
+                c.sw(r32(c, V0), c.g[A0][0]);
+                c.g[V1][0] = parse_patch_lw(c, PARSE_PATCH_REC + 0x4);
+                c.g[A0][0] = parse_patch_lw(c, PARSE_PATCH_REC + 0xc);
+                if c.g[V1][0] != c.g[A1][0] {
+                    continue 'parse;
+                }
+                // Tag 0x14: append (payload, length) to the patch's list.
+                c.cycles += 13;
+                c.g[V1][0] = c.lb(patch.wrapping_add(PARSE_PATCH_N14));
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[A1][0] = parse_patch_lw(c, PARSE_PATCH_REC + 0x10);
+                c.g[V1][0] = parse_patch_addu(c.g[S4][0], c.g[V1][0]);
+                c.sw(r32(c, V1).wrapping_add(PARSE_PATCH_T14_PTR), c.g[A0][0]);
+                c.g[V0][0] = c.lb(patch.wrapping_add(PARSE_PATCH_N14));
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V0][0] = parse_patch_addu(c.g[S4][0], c.g[V0][0]);
+                c.sw(r32(c, V0).wrapping_add(PARSE_PATCH_T14_LEN), c.g[A1][0]);
+                c.g[V1][0] = c.lbu(patch.wrapping_add(PARSE_PATCH_N14));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+                c.sb(patch.wrapping_add(PARSE_PATCH_N14), c.g[V1][0]);
+                continue 'parse;
+            }
+            c.cycles += 4;
+            c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x80));
+            let high = c.g[A0][0] < 0x2e;
+            c.g[V0][0] = sx((c.g[A0][0] as u32) << 2);
+            if !high {
+                c.cycles += 3;
+                c.g[V0][0] = 0xfe;
+                if c.g[V1][0] != c.g[V0][0] {
+                    continue 'parse;
+                }
+                // The end marker.
+                c.cycles += 2;
+                c.g[S5][0] = 1;
+                break 'parse;
+            }
+            // Tags 0x80..0xad: value and payload pointer.
+            c.cycles += 13;
+            c.g[A1][0] = 0x98;
+            c.g[A0][0] = parse_patch_lw(c, PARSE_PATCH_REC + 0x8);
+            c.g[V1][0] = sx(sp_.wrapping_add(c.g[V0][0] as u32));
+            c.sw(r32(c, V1).wrapping_add(PARSE_PATCH_VALUES_HI), c.g[A0][0]);
+            c.g[V0][0] = parse_patch_lw(c, PARSE_PATCH_REC + 0x4);
+            c.g[V1][0] = parse_patch_lw(c, PARSE_PATCH_REC + 0xc);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x80));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V0][0] = parse_patch_addu(c.g[S0][0], c.g[V0][0]);
+            c.sw(r32(c, V0), c.g[V1][0]);
+            c.g[V1][0] = parse_patch_lw(c, PARSE_PATCH_REC + 0x4);
+            c.g[V0][0] = 0x99;
+            if c.g[V1][0] == c.g[A1][0] {
+                c.cycles += 5;
+                c.g[V0][0] = parse_patch_lw(c, PARSE_PATCH_REC + 0xc);
+                c.g[V1][0] = parse_patch_lhu(c, PARSE_PATCH_REC + 0x10);
+                c.sw(patch.wrapping_add(PARSE_PATCH_DATA), c.g[V0][0]);
+                c.sh(patch.wrapping_add(PARSE_PATCH_DATA_LEN), c.g[V1][0]);
+                continue 'parse;
+            }
+            // The other channel data tags (compared against v0, which
+            // holds the next id): 0x99, 0x9a, 0x9b, 0xa4.
+            for (next, k) in [(0x9au64, 1u32), (0x9b, 2), (0xa4, 3), (0xa5, 4)] {
+                c.cycles += 2;
+                let hit = c.g[V1][0] == c.g[V0][0];
+                c.g[V0][0] = next;
+                if hit {
+                    c.cycles += 5;
+                    c.g[V0][0] = parse_patch_lw(c, PARSE_PATCH_REC + 0xc);
+                    c.g[V1][0] = parse_patch_lhu(c, PARSE_PATCH_REC + 0x10);
+                    c.sw(patch.wrapping_add(PARSE_PATCH_DATA + 4 * k), c.g[V0][0]);
+                    c.sh(patch.wrapping_add(PARSE_PATCH_DATA_LEN + 2 * k), c.g[V1][0]);
+                    continue 'parse;
+                }
+            }
+            // 0xa5.
+            c.cycles += 2;
+            let hit = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = parse_patch_lw(c, PARSE_PATCH_REC + 0xc);
+            if hit {
+                c.cycles += 4;
+                c.g[V1][0] = parse_patch_lhu(c, PARSE_PATCH_REC + 0x10);
+                c.sw(patch.wrapping_add(PARSE_PATCH_DATA + 4 * 5), c.g[V0][0]);
+                c.sh(patch.wrapping_add(PARSE_PATCH_DATA_LEN + 2 * 5), c.g[V1][0]);
+            }
+        }
+
+        // The tables into the patch fields (the compiled order of loads and
+        // stores; the registers they leave are part of the result).
+        parse_patch_store_fields(c);
+
+        if (c.g[S3][0] as i64) > 0 {
+            // Per-channel pitch: table[channels - 1][i] + offset[i].
+            c.cycles += 8;
+            c.g[V0][0] = 0x51_0000;
+            c.g[A1][0] = c.g[S7][0];
+            c.g[A3][0] = sx(PARSE_PATCH_SND_STATE);
+            c.g[T2][0] = 2;
+            c.g[T1][0] = sx(PARSE_PATCH_SND_STATE + PARSE_PATCH_STATE_PITCH);
+            c.g[T0][0] = 0xc;
+            c.g[A2][0] = sx(r32(c, S4).wrapping_add(PARSE_PATCH_PITCHES));
+            loop {
+                let patch = r32(c, S4);
+                c.cycles += 3;
+                c.g[V1][0] = c.lbu(r32(c, A3).wrapping_add(PARSE_PATCH_STATE_MODE));
+                c.g[V0][0] = c.lb(patch.wrapping_add(PARSE_PATCH_CHANNELS));
+                if c.g[V1][0] == c.g[T2][0] {
+                    c.cycles += 2;
+                    if c.g[V0][0] == c.g[V1][0] {
+                        c.sw(r32(c, A1), 0);
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lb(patch.wrapping_add(PARSE_PATCH_CHANNELS));
+                }
+                c.cycles += 15;
+                c.g[V1][0] = sx((c.g[T8][0] as u32) << 1);
+                c.g[A0][0] = c.lhu(r32(c, A1));
+                c.g[T8][0] = parse_patch_addu(c.g[T8][0], 1);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                c.g[A1][0] = parse_patch_addu(c.g[A1][0], 4);
+                c.mult(0, V0, V0, T0);
+                c.g[V1][0] = parse_patch_addu(c.g[V1][0], c.g[V0][0]);
+                c.g[V1][0] = parse_patch_addu(c.g[V1][0], c.g[T1][0]);
+                c.g[V0][0] = c.lhu(r32(c, V1));
+                c.g[V0][0] = parse_patch_addu(c.g[V0][0], c.g[A0][0]);
+                c.sh(r32(c, A2), c.g[V0][0]);
+                c.g[V0][0] = c.lb(patch.wrapping_add(PARSE_PATCH_CHANNELS));
+                c.g[V0][0] = ((c.g[T8][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A2][0] = parse_patch_addu(c.g[A2][0], 2);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_b038);
+                }
+            }
+        }
+
+        // *src = the read pointer; return s5.
+        c.cycles += 14;
+        c.g[V1][0] = parse_patch_lw(c, PARSE_PATCH_REC);
+        c.g[V0][0] = c.g[S5][0];
+        frame.restore(c, S0, 0x3a0);
+        c.sw(r32(c, S6), c.g[V1][0]);
+        frame.restore(c, S1, 0x390);
+        frame.restore(c, S2, 0x380);
+        frame.restore(c, S3, 0x370);
+        frame.restore(c, S4, 0x360);
+        frame.restore(c, S5, 0x350);
+        frame.restore(c, S6, 0x340);
+        frame.restore(c, S7, 0x330);
+        frame.restore_ra(c, 0x320);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// The patch fields from the tag tables (0x3bae24, 125 cycles), in the
+/// compiled order: leaves t8 = 0 (the pitch loop's channel) and s3 = the
+/// channel count << 24.
+pub(crate) fn parse_patch_store_fields(c: &mut Cpu) {
+    let p = r32(c, S4);
+    c.cycles += 125;
+    c.g[V0][0] = parse_patch_lw(c, 0x48);
+    c.g[T8][0] = 0;
+    c.g[V1][0] = parse_patch_lw(c, 0xf8);
+    c.g[S0][0] = parse_patch_lbu(c, 0x4);
+    c.g[V1][0] = parse_patch_addu(c.g[V1][0], c.g[V0][0]);
+    c.g[S1][0] = parse_patch_lbu(c, 0x8);
+    c.g[A0][0] = parse_patch_lbu(c, 0xc);
+    c.g[V0][0] = parse_patch_lbu(c, 0x10);
+    c.g[A1][0] = parse_patch_lbu(c, 0x18);
+    c.g[A2][0] = parse_patch_lbu(c, 0x1c);
+    c.g[A3][0] = parse_patch_lbu(c, 0x20);
+    c.g[T0][0] = parse_patch_lbu(c, 0x24);
+    c.g[T1][0] = parse_patch_lbu(c, 0x28);
+    c.g[T2][0] = parse_patch_lbu(c, 0x30);
+    c.g[T3][0] = parse_patch_lbu(c, 0x34);
+    c.g[T4][0] = parse_patch_lbu(c, 0x38);
+    c.g[T5][0] = parse_patch_lbu(c, 0x3c);
+    c.g[T6][0] = parse_patch_lhu(c, 0x40);
+    c.g[T7][0] = parse_patch_lhu(c, 0x44);
+    c.g[S2][0] = parse_patch_lbu(c, 0x4c);
+    c.sb(p.wrapping_add(0x8), c.g[S0][0]);
+    c.sb(p.wrapping_add(0x9), c.g[S1][0]);
+    c.sb(p.wrapping_add(0xa), c.g[A0][0]);
+    c.sb(p.wrapping_add(0xb), c.g[V0][0]);
+    c.sb(p.wrapping_add(0xc), c.g[A1][0]);
+    c.sb(p.wrapping_add(0xd), c.g[A2][0]);
+    c.sb(p.wrapping_add(0xe), c.g[A3][0]);
+    c.sb(p.wrapping_add(0xf), c.g[T0][0]);
+    c.sb(p.wrapping_add(0x10), c.g[T1][0]);
+    c.sb(p.wrapping_add(0x11), c.g[T2][0]);
+    c.sb(p.wrapping_add(0x12), c.g[T3][0]);
+    c.sb(p.wrapping_add(0x14), c.g[T4][0]);
+    c.sb(p.wrapping_add(0x15), c.g[T5][0]);
+    c.sh(p.wrapping_add(0x4), c.g[T6][0]);
+    c.sh(p.wrapping_add(0x6), c.g[T7][0]);
+    c.sw(p.wrapping_add(0x20), c.g[V1][0]);
+    c.sb(p.wrapping_add(0x16), c.g[S2][0]);
+    c.g[V0][0] = parse_patch_lw(c, 0x5c);
+    c.g[V1][0] = parse_patch_lw(c, 0x64);
+    c.g[A1][0] = parse_patch_lw(c, 0x10c);
+    c.g[A0][0] = parse_patch_lw(c, 0x114);
+    c.g[A1][0] = parse_patch_addu(c.g[A1][0], c.g[V0][0]);
+    c.g[A2][0] = parse_patch_lw(c, 0x124);
+    c.g[A0][0] = parse_patch_addu(c.g[A0][0], c.g[V1][0]);
+    c.g[V0][0] = parse_patch_lw(c, 0x74);
+    c.g[V1][0] = parse_patch_lw(c, 0x80);
+    c.g[A3][0] = parse_patch_lw(c, 0x130);
+    c.g[A2][0] = parse_patch_addu(c.g[A2][0], c.g[V0][0]);
+    c.g[T3][0] = parse_patch_lw(c, 0x68);
+    c.g[A3][0] = parse_patch_addu(c.g[A3][0], c.g[V1][0]);
+    c.g[T4][0] = parse_patch_lw(c, 0x98);
+    c.g[V0][0] = parse_patch_lw(c, 0x9c);
+    c.g[V1][0] = parse_patch_lw(c, 0xa0);
+    c.g[T0][0] = parse_patch_lw(c, 0xa4);
+    c.g[T1][0] = parse_patch_lw(c, 0xa8);
+    c.g[T2][0] = parse_patch_lbu(c, 0x70);
+    c.g[T5][0] = parse_patch_lbu(c, 0x78);
+    c.g[T6][0] = parse_patch_lbu(c, 0x7c);
+    c.g[T7][0] = parse_patch_lbu(c, 0x84);
+    c.g[S0][0] = parse_patch_lhu(c, 0x88);
+    c.sw(p.wrapping_add(0x24), c.g[A1][0]);
+    c.sw(p.wrapping_add(0x28), c.g[A0][0]);
+    c.sw(p.wrapping_add(0x80), c.g[T3][0]);
+    c.sw(p.wrapping_add(0x84), c.g[T4][0]);
+    c.sw(p.wrapping_add(0x88), c.g[V0][0]);
+    c.sw(p.wrapping_add(0x8c), c.g[V1][0]);
+    c.sw(p.wrapping_add(0x90), c.g[T0][0]);
+    c.sw(p.wrapping_add(0x94), c.g[T1][0]);
+    c.sb(p.wrapping_add(0x1a), c.g[T2][0]);
+    c.sw(p.wrapping_add(0x2c), c.g[A2][0]);
+    c.sb(p.wrapping_add(0x1b), c.g[T5][0]);
+    c.sb(p.wrapping_add(0x1c), c.g[T6][0]);
+    c.sw(p.wrapping_add(0x30), c.g[A3][0]);
+    c.sb(p.wrapping_add(0x1d), c.g[T7][0]);
+    c.sh(p.wrapping_add(0x54), c.g[S0][0]);
+    c.g[V0][0] = parse_patch_lbu(c, 0x94);
+    c.g[V1][0] = parse_patch_lbu(c, 0x160);
+    c.g[A0][0] = parse_patch_lbu(c, 0x1e0);
+    c.g[A1][0] = parse_patch_lhu(c, 0x170);
+    c.g[A2][0] = parse_patch_lw(c, 0x174);
+    c.g[A3][0] = parse_patch_lw(c, 0x178);
+    c.g[T0][0] = parse_patch_lw(c, 0x17c);
+    c.g[T7][0] = parse_patch_lbu(c, 0x8c);
+    c.g[S0][0] = parse_patch_lhu(c, 0x90);
+    c.g[T1][0] = parse_patch_lhu(c, 0x190);
+    c.g[T2][0] = parse_patch_lw(c, 0x248);
+    c.g[T3][0] = parse_patch_lw(c, 0x180);
+    c.g[S2][0] = parse_patch_lbu(c, 0x168);
+    c.g[T4][0] = parse_patch_lw(c, 0x1d0);
+    c.g[T6][0] = parse_patch_lw(c, 0x1d4);
+    c.g[S3][0] = sx((c.g[S2][0] as u32) << 24);
+    c.g[T5][0] = parse_patch_lw(c, 0x184);
+    c.g[S1][0] = parse_patch_lw(c, 0x1b0);
+    c.sb(p.wrapping_add(0x1f), c.g[V0][0]);
+    c.sb(p.wrapping_add(0x2), c.g[V1][0]);
+    c.sb(p.wrapping_add(0x13), c.g[A0][0]);
+    c.sh(p.wrapping_add(0x56), c.g[A1][0]);
+    c.sw(p.wrapping_add(0x58), c.g[A2][0]);
+    c.sw(p.wrapping_add(0x5c), c.g[A3][0]);
+    c.sw(p.wrapping_add(0x60), c.g[T0][0]);
+    c.sb(p.wrapping_add(0x1e), c.g[T7][0]);
+    c.sh(p, c.g[S0][0]);
+    c.sh(p.wrapping_add(0x18), c.g[T1][0]);
+    c.sw(p.wrapping_add(0x64), c.g[T2][0]);
+    c.sw(p.wrapping_add(0x68), c.g[T3][0]);
+    parse_patch_sw(c, 0x2e0, c.g[T4][0]);
+    c.sw(p.wrapping_add(0x6c), c.g[T5][0]);
+    parse_patch_sw(c, 0x2e4, c.g[T6][0]);
+    c.sb(p.wrapping_add(PARSE_PATCH_CHANNELS), c.g[S2][0]);
+    c.sw(p.wrapping_add(0x70), c.g[S1][0]);
+    c.g[V0][0] = parse_patch_lw(c, 0x1d8);
+    c.g[V1][0] = parse_patch_lw(c, 0x1b4);
+    c.g[A0][0] = parse_patch_lw(c, 0x1dc);
+    c.g[A2][0] = parse_patch_lw(c, 0x1f8);
+    c.g[T0][0] = parse_patch_lw(c, 0x1fc);
+    c.g[A1][0] = parse_patch_lw(c, 0x1e8);
+    c.g[A3][0] = parse_patch_lw(c, 0x1ec);
+    parse_patch_sw(c, 0x2e8, c.g[V0][0]);
+    c.sw(p.wrapping_add(0x74), c.g[V1][0]);
+    parse_patch_sw(c, 0x2ec, c.g[A0][0]);
+    c.sw(p.wrapping_add(0x78), c.g[A1][0]);
+    parse_patch_sw(c, 0x2f0, c.g[A2][0]);
+    c.sw(p.wrapping_add(0x7c), c.g[A3][0]);
+    parse_patch_sw(c, 0x2f4, c.g[T0][0]);
+}
+
+// ---------------------------------------------------------------------------
+// SND_AllocVoices
+// ---------------------------------------------------------------------------
+
+/// The voices picked by [`snd_alloc_voices`] (`s16[]`, 0x50ac20).
+pub(crate) const SNDV_SELECTED: u32 = 0x0050_ac20;
+
+/// The sound system (0x50a8e8): `+0x3c` steal-equal-priority flag, `+0x180`
+/// the tick, `+0x1f0` the voice array (0x8c bytes each: `+0` handle, `+4`
+/// linked voices (s16), `+0x28` master voice, `+0x2a` priority (u8), `+0x2c`
+/// start tick, `+0x69` in use).
+pub(crate) const SNDV_SYSTEM: u32 = 0x0050_a8e8;
+
+/// The handle serial (`+= 0x100` per allocation, 0x44c478).
+pub(crate) const SNDV_SERIAL: u32 = 0x0044_c478;
+
+pub(crate) const SNDV_STRIDE: u32 = 0x8c;
+
+pub(crate) const SNDV_IS_VOICE_RESERVED: Callee = Callee {
+    addr: 0x003b_a078,
+    f: ee::s13::f_003ba078,
+};
+
+pub(crate) const SNDV_STOP: Callee = Callee {
+    addr: 0x003b_89e0,
+    f: ee::s13::f_003b89e0,
+};
+
+/// `int SND_AllocVoices(int n, int priority, int* handle, int lo, int hi)`
+/// (0x3ba0b0): picks `n` voices in `[lo, hi)`: free ones first (the
+/// oldest), then steals the lowest-priority (and oldest) ones below
+/// `priority` (or at it, with the system flag). With all `n` found, sorts
+/// them, stops what the stolen ones played, marks them in use and links
+/// them to the first, whose handle (serial | voice) goes to `*handle`.
+/// Returns the first voice, or -9.
+pub fn snd_alloc_voices(c: &mut Cpu) {
+    guest(c, |c| {
+        let sp = |c: &Cpu| c.g[SP][0] as u32;
+        let add =
+            |c: &mut Cpu, r: usize, k: u32| c.g[r][0] = sx((c.g[r][0] as u32).wrapping_add(k));
+        let lt = |c: &Cpu, a: usize, b: usize| ((c.g[a][0] as i64) < (c.g[b][0] as i64)) as u64;
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xf0);
+        c.g[V0][0] = sx(-9i32 as u32);
+        frame.save(c, S7, 0x70);
+        frame.save(c, FP, 0x60);
+        c.g[S7][0] = 0;
+        let a3 = c.g[A3][0];
+        Addr(sp(c) + 8).sw(c, a3);
+        c.g[FP][0] = c.g[A0][0];
+        frame.save(c, S0, 0xe0);
+        c.g[A3][0] = c.g[T0][0];
+        frame.save(c, S1, 0xd0);
+        frame.save(c, S2, 0xc0);
+        frame.save(c, S3, 0xb0);
+        frame.save(c, S4, 0xa0);
+        frame.save(c, S5, 0x90);
+        frame.save(c, S6, 0x80);
+        frame.save_ra(c, 0x50);
+        let (a1, a2, v0) = (c.g[A1][0], c.g[A2][0], c.g[V0][0]);
+        Addr(sp(c)).sw(c, a1);
+        Addr(sp(c) + 4).sw(c, a2);
+        Addr(sp(c) + 0xc).sw(c, v0);
+        // Nothing selected yet.
+        if (c.g[FP][0] as i64) > 0 {
+            c.cycles += 4;
+            c.g[V0][0] = sx(SNDV_SELECTED);
+            c.g[V1][0] = u64::MAX;
+            c.g[S3][0] = c.g[FP][0];
+            loop {
+                c.cycles += 7;
+                let v1 = c.g[V1][0];
+                Addr(c.g[V0][0] as u32).sh(c, v1);
+                add(c, S3, u32::MAX);
+                add(c, V0, 2);
+                if c.g[S3][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_a110);
+                }
+            }
+        }
+        c.cycles += 5;
+        c.g[V1][0] = 0x45_0000;
+        let serial = Addr(SNDV_SERIAL).lw(c);
+        c.g[V0][0] = sx((serial as u32).wrapping_add(0x100));
+        let v0 = c.g[V0][0];
+        Addr(SNDV_SERIAL).sw(c, v0);
+        if (v0 as i64) < 0 {
+            c.cycles += 1;
+            Addr(SNDV_SERIAL).sw(c, 0);
+        }
+        // Pass 1: for each of the n, the oldest free unreserved voice.
+        c.cycles += 2;
+        c.g[S3][0] = 0;
+        if (c.g[FP][0] as i64) > 0 {
+            c.cycles += 5;
+            c.g[V0][0] = sx(SNDV_SELECTED);
+            c.g[V1][0] = sx((c.g[S7][0] as u32) << 1);
+            c.g[S4][0] = sx((c.g[V1][0] as u32).wrapping_add(SNDV_SELECTED));
+            c.g[S1][0] = Addr(sp(c) + 8).lw(c);
+            loop {
+                c.cycles += 7;
+                c.g[S2][0] = u64::MAX;
+                add(c, S3, 1);
+                c.g[S6][0] = u64::MAX;
+                let s3 = c.g[S3][0];
+                Addr(sp(c) + 0x14).sw(c, s3);
+                c.g[V0][0] = lt(c, S1, A3);
+                if c.g[V0][0] != 0 {
+                    c.cycles += 5;
+                    c.g[V0][0] = SNDV_STRIDE as u64;
+                    c.g[V1][0] = 0x51_0000;
+                    c.mult(0, S3, S1, V0);
+                    c.g[S5][0] = sx(SNDV_SYSTEM);
+                    loop {
+                        c.cycles += 5;
+                        let voices = Addr(c.g[S5][0] as u32).off(0x1f0).lw(c);
+                        c.g[V0][0] = voices;
+                        c.g[S0][0] = sx((voices as u32).wrapping_add(c.g[S3][0] as u32));
+                        c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x69).lb(c);
+                        if c.g[V1][0] == 0 {
+                            c.cycles += 6;
+                            frame.save(c, A3, 0x30);
+                            c.g[A0][0] = c.g[S1][0];
+                            c.g[A1][0] = c.g[S7][0];
+                            SNDV_IS_VOICE_RESERVED.call(c, 0x003b_a1b4)?;
+                            let reserved = c.g[V0][0] != 0;
+                            frame.restore(c, A3, 0x30);
+                            if reserved {
+                                c.cycles += 1;
+                            } else {
+                                c.cycles += 4;
+                                c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x2c).lw(c);
+                                c.g[V0][0] = (c.g[V1][0] < c.g[S2][0]) as u64;
+                                if c.g[V0][0] != 0 {
+                                    c.cycles += 2;
+                                    c.g[S2][0] = c.g[V1][0];
+                                    c.g[S6][0] = c.g[S1][0];
+                                    c.cycles += 1;
+                                }
+                            }
+                        }
+                        add(c, S1, 1);
+                        c.cycles += 3;
+                        c.g[V0][0] = lt(c, S1, A3);
+                        add(c, S3, SNDV_STRIDE);
+                        if c.g[V0][0] == 0 {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003b_a190);
+                        }
+                    }
+                }
+                c.cycles += 2;
+                let found = (c.g[S6][0] as i64) >= 0;
+                c.g[S3][0] = Addr(sp(c) + 0x14).lw(c);
+                if found {
+                    c.cycles += 4;
+                    let s6 = c.g[S6][0];
+                    Addr(c.g[S4][0] as u32).sh(c, s6);
+                    add(c, S7, 1);
+                    add(c, S4, 2);
+                    c.g[S3][0] = Addr(sp(c) + 0x14).lw(c);
+                }
+                c.cycles += 3;
+                c.g[V0][0] = lt(c, S3, FP);
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[S1][0] = Addr(sp(c) + 8).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_a160);
+                }
+            }
+        }
+        // Pass 2: steal the lowest priority below ours, oldest first.
+        c.cycles += 3;
+        c.g[V0][0] = lt(c, S7, FP);
+        c.g[S3][0] = c.g[S7][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 9;
+            c.g[V0][0] = sx(SNDV_SELECTED);
+            c.g[V1][0] = sx((c.g[S7][0] as u32) << 1);
+            c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_add(SNDV_SELECTED));
+            let tag = Addr(sp(c)).lw(c);
+            c.g[V0][0] = sx((tag as u32).wrapping_sub(1));
+            let v0 = c.g[V0][0];
+            Addr(sp(c) + 0x10).sw(c, v0);
+            c.g[V1][0] = 0x51_0000;
+            'pass2: loop {
+                c.cycles += 11;
+                c.g[S4][0] = Addr(sp(c) + 0x10).lw(c);
+                c.g[V1][0] = sx(SNDV_SYSTEM);
+                c.g[S1][0] = Addr(sp(c) + 8).lw(c);
+                c.g[V0][0] = Addr(SNDV_SYSTEM).off(0x3c).lbu(c);
+                c.g[S2][0] = 0xffff_ffff_ffff_0000;
+                c.g[V1][0] = Addr(sp(c)).lw(c);
+                c.g[S6][0] = u64::MAX;
+                if c.g[V0][0] != 0 {
+                    c.g[S4][0] = c.g[V1][0];
+                }
+                c.g[V0][0] = lt(c, S1, A3);
+                c.g[S2][0] |= 0xffff;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 5;
+                    c.g[V0][0] = SNDV_STRIDE as u64;
+                    c.g[V1][0] = 0x51_0000;
+                    c.mult(0, S5, S1, V0);
+                    c.g[T0][0] = sx(SNDV_SYSTEM);
+                    loop {
+                        c.cycles += 10;
+                        frame.save(c, A2, 0x20);
+                        c.g[A0][0] = c.g[S1][0];
+                        frame.save(c, A3, 0x30);
+                        c.g[A1][0] = c.g[S7][0];
+                        frame.save(c, T0, 0x40);
+                        SNDV_IS_VOICE_RESERVED.call(c, 0x003b_a290)?;
+                        frame.restore(c, A2, 0x20);
+                        frame.restore(c, A3, 0x30);
+                        let reserved = c.g[V0][0] != 0;
+                        frame.restore(c, T0, 0x40);
+                        if reserved {
+                            c.cycles += 1;
+                        } else {
+                            c.cycles += 6;
+                            c.g[V1][0] = Addr(c.g[T0][0] as u32).off(0x1f0).lw(c);
+                            c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S5][0] as u32));
+                            let prio = Addr(c.g[S0][0] as u32).off(0x2a).lbu(c);
+                            c.g[V0][0] = (prio < 0x65) as u64;
+                            if c.g[V0][0] != 0 {
+                                c.cycles += 4;
+                                c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x2a).lbu(c);
+                                c.g[V0][0] = lt(c, V1, S4);
+                                let mut pick = false;
+                                if c.g[V0][0] != 0 {
+                                    // A lower priority.
+                                    c.cycles += 3;
+                                    c.g[S4][0] = c.g[V1][0];
+                                    c.g[S2][0] = Addr(c.g[S0][0] as u32).off(0x2c).lw(c);
+                                    pick = true;
+                                } else {
+                                    c.cycles += 2;
+                                    if c.g[V1][0] == c.g[S4][0] {
+                                        // The same: the older one.
+                                        c.cycles += 4;
+                                        c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x2c).lw(c);
+                                        c.g[V0][0] = (c.g[V1][0] < c.g[S2][0]) as u64;
+                                        if c.g[V0][0] != 0 {
+                                            c.cycles += 1;
+                                            c.g[S2][0] = c.g[V1][0];
+                                            pick = true;
+                                        }
+                                    }
+                                }
+                                if pick {
+                                    c.cycles += 1;
+                                    c.g[S6][0] = c.g[S1][0];
+                                    c.cycles += 1;
+                                }
+                            }
+                        }
+                        add(c, S1, 1);
+                        c.cycles += 3;
+                        c.g[V0][0] = lt(c, S1, A3);
+                        add(c, S5, SNDV_STRIDE);
+                        if c.g[V0][0] == 0 {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003b_a278);
+                        }
+                    }
+                }
+                c.cycles += 2;
+                if (c.g[S6][0] as i64) < 0 {
+                    add(c, S3, 1);
+                } else {
+                    c.cycles += 5;
+                    let s6 = c.g[S6][0];
+                    Addr(c.g[A2][0] as u32).sh(c, s6);
+                    add(c, S7, 1);
+                    c.g[V0][0] = lt(c, S7, FP);
+                    add(c, A2, 2);
+                    if c.g[V0][0] == 0 {
+                        break 'pass2;
+                    }
+                    c.cycles += 1;
+                    add(c, S3, 1);
+                }
+                c.cycles += 3;
+                c.g[V0][0] = lt(c, S3, FP);
+                c.g[V1][0] = 0x51_0000;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_a238);
+                }
+            }
+        }
+        c.cycles += 2;
+        let all = c.g[S7][0] == c.g[FP][0];
+        c.g[V0][0] = Addr(sp(c) + 0xc).lw(c);
+        if all {
+            snd_alloc_voices_take(c)?;
+        }
+        c.cycles += 12;
+        for (r, off) in [
+            (S0, 0xe0),
+            (S1, 0xd0),
+            (S2, 0xc0),
+            (S3, 0xb0),
+            (S4, 0xa0),
+            (S5, 0x90),
+            (S6, 0x80),
+            (S7, 0x70),
+            (FP, 0x60),
+        ] {
+            frame.restore(c, r, off);
+        }
+        frame.restore_ra(c, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// [`snd_alloc_voices`] with all `s7` voices found: sort them, the handle,
+/// stop what the stolen voices played, claim them, link them to the first.
+/// Leaves the result in `v0`.
+pub(crate) fn snd_alloc_voices_take(c: &mut Cpu) -> crate::call::Flow {
+    let sp = |c: &Cpu| c.g[SP][0] as u32;
+    let add = |c: &mut Cpu, r: usize, k: u32| c.g[r][0] = sx((c.g[r][0] as u32).wrapping_add(k));
+    let add_reg = |c: &mut Cpu, d: usize, s: usize| {
+        c.g[d][0] = sx((c.g[d][0] as u32).wrapping_add(c.g[s][0] as u32))
+    };
+    let lt = |c: &Cpu, a: usize, b: usize| ((c.g[a][0] as i64) < (c.g[b][0] as i64)) as u64;
+    c.cycles += 4;
+    c.g[S5][0] = 0x51_0000;
+    c.g[T2][0] = sx((c.g[S7][0] as u32).wrapping_sub(1));
+    c.g[T4][0] = c.g[S5][0];
+    c.g[T3][0] = 1;
+    // Bubble sort.
+    loop {
+        c.cycles += 2;
+        c.g[S3][0] = 0;
+        if (c.g[T2][0] as i64) > 0 {
+            c.cycles += 4;
+            c.g[T0][0] = sx(SNDV_SELECTED);
+            c.g[T1][0] = c.g[T2][0];
+            c.g[A3][0] = sx((c.g[S3][0] as u32).wrapping_add(1));
+            loop {
+                c.cycles += 9;
+                c.g[V0][0] = sx((c.g[S3][0] as u32) << 1);
+                c.g[V1][0] = sx((c.g[A3][0] as u32) << 1);
+                c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                c.g[A0][0] = Addr(c.g[A1][0] as u32).lh(c);
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).lh(c);
+                c.g[V0][0] = lt(c, V0, A0);
+                c.g[A2][0] = Addr(c.g[V1][0] as u32).lhu(c);
+                if c.g[V0][0] != 0 {
+                    c.cycles += 3;
+                    let (a2, a0) = (c.g[A2][0], c.g[A0][0]);
+                    Addr(c.g[A1][0] as u32).sh(c, a2);
+                    c.g[T3][0] = 0;
+                    Addr(c.g[V1][0] as u32).sh(c, a0);
+                }
+                c.cycles += 4;
+                c.g[S3][0] = c.g[A3][0];
+                c.g[V0][0] = lt(c, S3, T1);
+                c.g[A3][0] = sx((c.g[S3][0] as u32).wrapping_add(1));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_a360);
+                }
+            }
+        }
+        c.cycles += 2;
+        if c.g[T3][0] != 0 {
+            break;
+        }
+        c.g[T3][0] = 1;
+        if event_due(c) {
+            deliver_event_here(c, 0x003b_a348);
+        }
+    }
+    // The handle: serial | first voice.
+    c.cycles += 9;
+    c.g[V1][0] = 0x45_0000;
+    c.g[V0][0] = Addr(SNDV_SERIAL).lw(c);
+    c.g[V1][0] = Addr(SNDV_SELECTED).lh(c);
+    c.g[V0][0] |= c.g[V1][0];
+    c.g[V1][0] = Addr(sp(c) + 4).lw(c);
+    let v0 = c.g[V0][0];
+    Addr(c.g[V1][0] as u32).sw(c, v0);
+    c.g[V0][0] = Addr(SNDV_SELECTED).lh(c);
+    let v0 = c.g[V0][0];
+    Addr(sp(c) + 0xc).sw(c, v0);
+    if (c.g[S7][0] as i64) > 0 {
+        // Claim: stop what a stolen voice played (its master's handle for
+        // a linked one), mark in use, start tick, priority.
+        c.cycles += 7;
+        c.g[V0][0] = 0x51_0000;
+        c.g[S4][0] = SNDV_STRIDE as u64;
+        c.g[S2][0] = sx(SNDV_SYSTEM);
+        c.g[S6][0] = 1;
+        c.g[S1][0] = sx(SNDV_SELECTED);
+        c.g[S3][0] = c.g[S7][0];
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = Addr(c.g[S1][0] as u32).lh(c);
+            c.g[A1][0] = Addr(c.g[S2][0] as u32).off(0x1f0).lw(c);
+            c.mult(0, V0, V0, S4);
+            c.g[S0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x69).lb(c);
+            c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+            if c.g[V1][0] != 0 {
+                c.cycles += 2;
+                if (c.g[A0][0] as i64) < 0 {
+                    c.cycles += 4;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x28).lh(c);
+                    c.mult(0, V1, V0, S4);
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+                }
+                c.cycles += 2;
+                SNDV_STOP.call(c, 0x003b_a424)?;
+            }
+            c.cycles += 8;
+            let voice = Addr(c.g[S0][0] as u32);
+            let s6 = c.g[S6][0];
+            voice.off(0x69).sb(c, s6);
+            add(c, S1, 2);
+            add(c, S3, u32::MAX);
+            c.g[V0][0] = Addr(c.g[S2][0] as u32).off(0x180).lw(c);
+            c.g[V1][0] = Addr(sp(c)).lw(c);
+            let (v0, v1) = (c.g[V0][0], c.g[V1][0]);
+            voice.off(0x2c).sw(c, v0);
+            voice.off(0x2a).sb(c, v1);
+            if c.g[S3][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003b_a3e8);
+            }
+        }
+    }
+    // The first voice holds the handle and the list; the others point to it.
+    c.cycles += 25;
+    c.g[V0][0] = 0x51_0000;
+    c.g[A0][0] = Addr(SNDV_SELECTED).lh(c);
+    c.g[T1][0] = sx(SNDV_SYSTEM);
+    c.g[A1][0] = SNDV_STRIDE as u64;
+    c.g[V0][0] = Addr(sp(c) + 4).lw(c);
+    c.mult(0, A0, A0, A1);
+    c.g[T0][0] = u64::MAX;
+    c.g[S3][0] = 1;
+    c.g[A2][0] = Addr(c.g[V0][0] as u32).lw(c);
+    c.g[A3][0] = lt(c, S3, S7);
+    c.g[V0][0] = Addr(SNDV_SYSTEM).off(0x1f0).lw(c);
+    add_reg(c, A0, V0);
+    let a2 = c.g[A2][0];
+    Addr(c.g[A0][0] as u32).sw(c, a2);
+    c.g[V1][0] = Addr(SNDV_SELECTED).lh(c);
+    c.g[V0][0] = Addr(SNDV_SYSTEM).off(0x1f0).lw(c);
+    c.mult(0, V1, V1, A1);
+    c.g[A0][0] = Addr(SNDV_SELECTED).lhu(c);
+    add_reg(c, V1, V0);
+    let a0 = c.g[A0][0];
+    Addr(c.g[V1][0] as u32).off(4).sh(c, a0);
+    c.g[V0][0] = Addr(SNDV_SELECTED).lh(c);
+    c.g[V1][0] = Addr(SNDV_SYSTEM).off(0x1f0).lw(c);
+    c.mult(0, V0, V0, A1);
+    add_reg(c, V0, V1);
+    let t0 = c.g[T0][0];
+    Addr(c.g[V0][0] as u32).off(0x28).sh(c, t0);
+    if c.g[A3][0] != 0 {
+        c.cycles += 6;
+        c.g[T2][0] = c.g[S5][0];
+        c.g[T0][0] = SNDV_STRIDE as u64;
+        c.g[V0][0] = sx(SNDV_SELECTED);
+        c.g[T3][0] = u64::MAX;
+        c.g[A3][0] = sx(SNDV_SELECTED + 2);
+        loop {
+            c.cycles += 23;
+            c.g[V1][0] = Addr(SNDV_SELECTED).lh(c);
+            c.g[A1][0] = sx((c.g[S3][0] as u32) << 1);
+            c.g[V0][0] = Addr(SNDV_SYSTEM).off(0x1f0).lw(c);
+            add(c, S3, 1);
+            c.mult(0, V1, V1, T0);
+            c.g[A0][0] = Addr(c.g[A3][0] as u32).lhu(c);
+            c.g[A2][0] = lt(c, S3, S7);
+            add_reg(c, V1, V0);
+            add_reg(c, V1, A1);
+            let a0 = c.g[A0][0];
+            Addr(c.g[V1][0] as u32).off(4).sh(c, a0);
+            c.g[V0][0] = Addr(c.g[A3][0] as u32).lh(c);
+            c.g[V1][0] = Addr(SNDV_SYSTEM).off(0x1f0).lw(c);
+            c.mult(0, V0, V0, T0);
+            add_reg(c, V0, V1);
+            let t3 = c.g[T3][0];
+            Addr(c.g[V0][0] as u32).sw(c, t3);
+            c.g[V1][0] = Addr(c.g[A3][0] as u32).lh(c);
+            c.g[A0][0] = Addr(SNDV_SYSTEM).off(0x1f0).lw(c);
+            add(c, A3, 2);
+            c.mult(0, V1, V1, T0);
+            c.g[V0][0] = Addr(SNDV_SELECTED).lhu(c);
+            add_reg(c, V1, A0);
+            let v0 = c.g[V0][0];
+            Addr(c.g[V1][0] as u32).off(0x28).sh(c, v0);
+            if c.g[A2][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003b_a4c0);
+            }
+        }
+    }
+    c.cycles += 1;
+    c.g[V0][0] = Addr(sp(c) + 0xc).lw(c);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// SND_PlayPatchVoices
+// ---------------------------------------------------------------------------
+
+pub(crate) const SNDP_NEXT_VOICE_GROUP: Callee = Callee {
+    addr: 0x003c_6158,
+    f: ee::s13::f_003c6158,
+};
+
+pub(crate) const SNDP_GET_GROUP_VOICE_RANGE: Callee = Callee {
+    addr: 0x003c_0c18,
+    f: ee::s13::f_003c0c18,
+};
+
+pub(crate) const SNDP_ALLOC_VOICES: Callee = Callee {
+    addr: 0x003b_a0b0,
+    f: ee::s13::f_003ba0b0,
+};
+
+pub(crate) const SNDP_RANDOM_RANGE: Callee = Callee {
+    addr: 0x003c_72a0,
+    f: ee::s13::f_003c72a0,
+};
+
+pub(crate) const SNDP_MIDI_TO_VOLUME: Callee = Callee {
+    addr: 0x003b_c570,
+    f: ee::s13::f_003bc570,
+};
+
+pub(crate) const SNDP_RANDOM: Callee = Callee {
+    addr: 0x003b_c5c8,
+    f: ee::s13::f_003bc5c8,
+};
+
+pub(crate) const SNDP_CALC_PITCH: Callee = Callee {
+    addr: 0x003b_a938,
+    f: ee::s13::f_003ba938,
+};
+
+pub(crate) const SNDP_CALC_SEND: Callee = Callee {
+    addr: 0x003b_a740,
+    f: ee::s13::f_003ba740,
+};
+
+pub(crate) const SNDP_CALC_VOLUME: Callee = Callee {
+    addr: 0x003b_a7b0,
+    f: ee::s13::f_003ba7b0,
+};
+
+pub(crate) const SNDP_START_VOICES: Callee = Callee {
+    addr: 0x003c_3ee0,
+    f: ee::s13::f_003c3ee0,
+};
+
+pub(crate) const SNDP_CHANNEL_RELEASE: Callee = Callee {
+    addr: 0x003b_a550,
+    f: ee::s13::f_003ba550,
+};
+
+/// Resume points of [`snd_play_patch_voices`] (its loop heads) and its
+/// internal stages.
+pub(crate) const SNDP_ENTRY: u32 = 0x003b_b140;
+
+pub(crate) const SNDP_GROUP: u32 = 0x003b_b1b8;
+
+pub(crate) const SNDP_COPY: u32 = 0x003b_b470;
+
+pub(crate) const SNDP_START: u32 = 0x003b_b490;
+
+pub(crate) const SNDP_RELEASE: u32 = 0x003b_b508;
+
+pub(crate) const SNDP_FAIL: u32 = 0x003b_b530;
+
+pub(crate) const SNDP_NEXT: u32 = 0x003b_b538;
+
+pub(crate) const SNDP_EXIT: u32 = 0x003b_b554;
+
+/// `int SND_PlayPatchVoices(int a0, int a1, int a2, const Note* note,
+/// const Patch* patch, int t1, int t2, int detune)` (0x3bb140): for each
+/// voice group of the patch, allocates its voices and sets up the channel
+/// (volume, pitch from key and detune with random spread, envelope,
+/// pan / send, LFO phases, the patch's voice list), then starts them; when
+/// starting fails, releases the voices and tries the next group. Returns
+/// the handle (`-9` if none started). Dispatcher-shaped: an event at a loop
+/// back edge can unwind, and the function is re-entered at that head.
+pub fn snd_play_patch_voices(c: &mut Cpu) {
+    guest(c, |c| {
+        let sp = |c: &Cpu| c.g[SP][0] as u32;
+        let s1 = |c: &Cpu| Addr(c.g[S1][0] as u32);
+        let s2 = |c: &Cpu| Addr(c.g[S2][0] as u32);
+        let s4 = |c: &Cpu| Addr(c.g[S4][0] as u32);
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                SNDP_ENTRY => {
+                    c.cycles += 30;
+                    let frame = Frame::open(c, 0xd0);
+                    c.g[V1][0] = sx(-9i32 as u32);
+                    frame.save(c, S2, 0xa0);
+                    frame.save(c, S4, 0x80);
+                    c.g[S2][0] = c.g[T0][0];
+                    frame.save(c, S7, 0x50);
+                    c.g[S4][0] = c.g[A3][0];
+                    frame.save(c, FP, 0x40);
+                    c.g[S7][0] = 0x7f;
+                    frame.save(c, S0, 0xc0);
+                    c.g[FP][0] = c.g[T3][0];
+                    frame.save(c, S1, 0xb0);
+                    frame.save(c, S3, 0x90);
+                    frame.save(c, S5, 0x70);
+                    frame.save(c, S6, 0x60);
+                    frame.save_ra(c, 0x30);
+                    // The note's key, velocity and pan.
+                    c.g[V0][0] = s4(c).lb(c);
+                    let v0 = c.g[V0][0];
+                    Addr(sp(c) + 0x24).sw(c, v0);
+                    c.g[A3][0] = s4(c).off(1).lb(c);
+                    let a3 = c.g[A3][0];
+                    Addr(sp(c) + 0x28).sw(c, a3);
+                    c.g[V0][0] = s4(c).off(5).lb(c);
+                    for (r, off) in [
+                        (A0, 0x10),
+                        (A1, 0x14),
+                        (A2, 0x18),
+                        (T1, 0x1c),
+                        (T2, 0x20),
+                        (V0, 0x2c),
+                        (V1, 8),
+                    ] {
+                        let v = c.g[r][0];
+                        Addr(sp(c) + off).sw(c, v);
+                    }
+                    Addr(sp(c) + 0xc).sw(c, 0);
+                    pc = SNDP_NEXT;
+                }
+                SNDP_NEXT => {
+                    c.cycles += 6;
+                    c.g[A0][0] = sx(sp(c) + 0xc);
+                    c.g[A1][0] = c.g[S2][0];
+                    SNDP_NEXT_VOICE_GROUP.call(c, 0x003b_b544)?;
+                    c.g[S5][0] = c.g[V0][0];
+                    if c.g[S5][0] != 0 {
+                        c.g[A1][0] = c.g[SP][0];
+                        if crate::events::back_edge_unwinds(c, SNDP_GROUP) {
+                            return Ok(());
+                        }
+                        pc = SNDP_GROUP;
+                    } else {
+                        c.cycles += 1;
+                        c.g[V0][0] = Addr(sp(c) + 8).lw(c);
+                        pc = SNDP_EXIT;
+                    }
+                }
+                SNDP_GROUP => {
+                    // The group's voices.
+                    c.cycles += 12;
+                    c.g[A2][0] = sx(sp(c) + 4);
+                    c.g[A0][0] = c.g[S5][0];
+                    SNDP_GET_GROUP_VOICE_RANGE.call(c, 0x003b_b1c4)?;
+                    c.g[T0][0] = Addr(sp(c) + 4).lw(c);
+                    c.g[A2][0] = sx(sp(c) + 8);
+                    c.g[A0][0] = s2(c).off(3).lb(c);
+                    c.g[A1][0] = s2(c).off(0xc).lb(c);
+                    c.g[A3][0] = Addr(sp(c)).lw(c);
+                    SNDP_ALLOC_VOICES.call(c, 0x003b_b1dc)?;
+                    c.g[S3][0] = c.g[V0][0];
+                    c.g[V0][0] = SNDV_STRIDE as u64;
+                    if (c.g[S3][0] as i64) < 0 {
+                        pc = SNDP_NEXT;
+                        continue;
+                    }
+                    snd_play_patch_setup_channel(c)?;
+                    // The patch's voice list.
+                    c.cycles += 32;
+                    c.g[V1][0] = s4(c).off(0xe).lhu(c);
+                    c.g[A0][0] = c.g[S3][0];
+                    c.g[S0][0] = 0;
+                    let v1 = c.g[V1][0];
+                    s1(c).off(0x6a).sh(c, v1);
+                    c.g[V0][0] = s4(c).off(0xc).lhu(c);
+                    s1(c).off(0x86).sh(c, 0);
+                    let v0 = c.g[V0][0];
+                    s1(c).off(0x88).sh(c, v0);
+                    SNDP_CALC_PITCH.call(c, 0x003b_b40c)?;
+                    let ch = s1(c);
+                    let (p, n) = (s2(c), s4(c));
+                    c.g[V0][0] = Addr(sp(c) + 0x10).lw(c);
+                    let v0 = c.g[V0][0];
+                    ch.off(0x12).sh(c, v0);
+                    c.g[V0][0] = ch.off(0x4c).lhu(c);
+                    c.g[V1][0] = Addr(sp(c) + 0x14).lw(c);
+                    let v1 = c.g[V1][0];
+                    ch.off(0x10).sh(c, v1);
+                    c.g[V1][0] = n.off(8).lhu(c);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    let v0 = c.g[V0][0];
+                    ch.off(0x1c).sh(c, v0);
+                    c.g[V1][0] = n.off(0xa).lhu(c);
+                    let v1 = c.g[V1][0];
+                    ch.off(0x1e).sh(c, v1);
+                    c.g[V0][0] = p.off(0x60).lw(c);
+                    let v0 = c.g[V0][0];
+                    ch.off(0x18).sw(c, v0);
+                    c.g[V1][0] = p.off(0x58).lw(c);
+                    let v1 = c.g[V1][0];
+                    ch.off(0x14).sw(c, v1);
+                    c.g[V0][0] = p.off(0x56).lhu(c);
+                    let v0 = c.g[V0][0];
+                    ch.off(0x20).sh(c, v0);
+                    c.g[V1][0] = p.off(0x13).lbu(c);
+                    let v1 = c.g[V1][0];
+                    ch.off(0x22).sb(c, v1);
+                    c.g[A0][0] = p.off(3).lbu(c);
+                    let (s5, a0) = (c.g[S5][0], c.g[A0][0]);
+                    ch.off(0x24).sh(c, s5);
+                    ch.off(0x23).sb(c, a0);
+                    c.g[V0][0] = p.off(3).lb(c);
+                    c.g[V1][0] = sx(p.0.wrapping_add(0xbc));
+                    if (c.g[V0][0] as i64) <= 0 {
+                        pc = SNDP_START;
+                    } else {
+                        c.cycles += 1;
+                        c.g[A0][0] = sx(ch.0.wrapping_add(0x50));
+                        pc = SNDP_COPY;
+                    }
+                }
+                SNDP_COPY => {
+                    c.cycles += 8;
+                    c.g[V0][0] = Addr(c.g[V1][0] as u32).lhu(c);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(2));
+                    let v0 = c.g[V0][0];
+                    Addr(c.g[A0][0] as u32).sh(c, v0);
+                    c.g[V0][0] = s2(c).off(3).lb(c);
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(2));
+                    if c.g[V0][0] != 0 {
+                        if crate::events::back_edge_unwinds(c, SNDP_COPY) {
+                            return Ok(());
+                        }
+                    } else {
+                        pc = SNDP_START;
+                    }
+                }
+                SNDP_START => {
+                    c.cycles += 21;
+                    c.g[V1][0] = s4(c).off(4).lbu(c);
+                    c.g[A1][0] = c.g[S3][0];
+                    c.g[A0][0] = 0;
+                    let v1 = c.g[V1][0];
+                    s1(c).off(0x5f).sb(c, v1);
+                    c.g[A3][0] = Addr(sp(c) + 0x2c).lw(c);
+                    c.g[V0][0] = s2(c).off(0x16).lbu(c);
+                    let (a3, v0) = (c.g[A3][0], c.g[V0][0]);
+                    s1(c).off(0x61).sb(c, a3);
+                    s1(c).off(0x60).sb(c, v0);
+                    SNDP_CALC_SEND.call(c, 0x003b_b4b4)?;
+                    c.g[A0][0] = c.g[S3][0];
+                    SNDP_CALC_VOLUME.call(c, 0x003b_b4bc)?;
+                    c.g[A3][0] = s4(c).off(0xe).lhu(c);
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[T0][0] = s4(c).off(0x12).lhu(c);
+                    c.g[A2][0] = c.g[S3][0];
+                    c.g[A1][0] = Addr(sp(c) + 0x18).lw(c);
+                    c.g[T1][0] = s4(c).off(0x14).lhu(c);
+                    c.g[T2][0] = s4(c).off(0x16).lhu(c);
+                    SNDP_START_VOICES.call(c, 0x003b_b4dc)?;
+                    let started = (c.g[V0][0] as i64) >= 0;
+                    c.g[V0][0] = Addr(sp(c) + 8).lw(c);
+                    if started {
+                        pc = SNDP_EXIT;
+                        continue;
+                    }
+                    // Not started: release the voices.
+                    c.cycles += 3;
+                    c.g[V0][0] = s2(c).off(3).lb(c);
+                    c.g[S0][0] = 0;
+                    if (c.g[V0][0] as i64) <= 0 {
+                        pc = SNDP_FAIL;
+                    } else {
+                        c.cycles += 6;
+                        c.g[V0][0] = SNDV_STRIDE as u64;
+                        c.g[V1][0] = 0x51_0000;
+                        c.mult(0, S1, S3, V0);
+                        c.g[S3][0] = sx(SNDV_SYSTEM);
+                        c.g[V0][0] = Addr(SNDV_SYSTEM).off(0x1f0).lw(c);
+                        pc = SNDP_RELEASE;
+                    }
+                }
+                SNDP_RELEASE => {
+                    c.cycles += 10;
+                    c.g[V1][0] = sx((c.g[S0][0] as u32) << 1);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[A0][0] = Addr(c.g[V0][0] as u32).off(4).lh(c);
+                    SNDP_CHANNEL_RELEASE.call(c, 0x003b_b520)?;
+                    c.g[V0][0] = s2(c).off(3).lb(c);
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[V0][0] = Addr(c.g[S3][0] as u32).off(0x1f0).lw(c);
+                        if crate::events::back_edge_unwinds(c, SNDP_RELEASE) {
+                            return Ok(());
+                        }
+                    } else {
+                        pc = SNDP_FAIL;
+                    }
+                }
+                SNDP_FAIL => {
+                    c.cycles += 2;
+                    c.g[V0][0] = sx(-9i32 as u32);
+                    let v0 = c.g[V0][0];
+                    Addr(sp(c) + 8).sw(c, v0);
+                    pc = SNDP_NEXT;
+                }
+                SNDP_EXIT => {
+                    c.cycles += 12;
+                    let frame = Frame { size: 0xd0 };
+                    for (r, off) in [
+                        (S0, 0xc0),
+                        (S1, 0xb0),
+                        (S2, 0xa0),
+                        (S3, 0x90),
+                        (S4, 0x80),
+                        (S5, 0x70),
+                        (S6, 0x60),
+                        (S7, 0x50),
+                        (FP, 0x40),
+                    ] {
+                        frame.restore(c, r, off);
+                    }
+                    frame.restore_ra(c, 0x30);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, SNDP_ENTRY, 0x003b_b584);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// [`snd_play_patch_voices`]: the channel (`s1`, voice `s3`) from the patch
+/// (`s2`): volume, pitch, envelope, pan, sends and LFOs, up to the voice
+/// list.
+pub(crate) fn snd_play_patch_setup_channel(c: &mut Cpu) -> crate::call::Flow {
+    let sp = |c: &Cpu| c.g[SP][0] as u32;
+    let s1 = |c: &Cpu| Addr(c.g[S1][0] as u32);
+    let s2 = |c: &Cpu| Addr(c.g[S2][0] as u32);
+    c.cycles += 8;
+    c.g[A0][0] = 0x51_0000;
+    c.mult(0, V0, S3, V0);
+    c.g[A0][0] = sx(SNDV_SYSTEM);
+    c.g[V1][0] = Addr(SNDV_SYSTEM).off(0x1f0).lw(c);
+    c.g[A0][0] = s2(c).off(0x12).lb(c);
+    c.g[S0][0] = s2(c).off(0x11).lb(c);
+    c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    // Volume: the patch's, with a random spread, clamped to 0..127.
+    if c.g[A0][0] != 0 {
+        c.cycles += 5;
+        SNDP_RANDOM_RANGE.call(c, 0x003b_b210)?;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        let ok = (c.g[S0][0] as i64) >= 0;
+        c.g[V0][0] = ((c.g[S0][0] as i64) < 128) as u64;
+        if !ok {
+            c.cycles += 2;
+            c.g[S0][0] = 0;
+        } else {
+            c.cycles += 1;
+            if c.g[V0][0] == 0 {
+                c.g[S0][0] = c.g[S7][0];
+            }
+        }
+    }
+    c.cycles += 13;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[S6][0] = 0x64;
+    SNDP_MIDI_TO_VOLUME.call(c, 0x003b_b234)?;
+    let v0 = c.g[V0][0];
+    s1(c).off(0x4c).sh(c, v0);
+    // Pitch: the patch's, minus 100 cents per key below the root, detune.
+    c.g[V1][0] = s2(c).off(4).lhu(c);
+    let v1 = c.g[V1][0];
+    s1(c).off(0x84).sh(c, v1);
+    c.g[V0][0] = s2(c).off(0xd).lb(c);
+    c.g[A3][0] = Addr(sp(c) + 0x1c).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A3][0] as u32));
+    c.mult(0, V0, V0, S6);
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+    let v0 = c.g[V0][0];
+    s1(c).off(0x84).sh(c, v0);
+    if c.g[FP][0] != 0 {
+        c.cycles += 2;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[FP][0] as u32));
+        let v0 = c.g[V0][0];
+        s1(c).off(0x84).sh(c, v0);
+    }
+    c.cycles += 3;
+    c.g[A0][0] = s2(c).off(6).lh(c);
+    if c.g[A0][0] != 0 {
+        c.cycles += 6;
+        SNDP_RANDOM_RANGE.call(c, 0x003b_b278)?;
+        c.g[V1][0] = s1(c).off(0x84).lhu(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        let v1 = c.g[V1][0];
+        s1(c).off(0x84).sh(c, v1);
+    }
+    c.g[V0][0] = s2(c).off(0x20).lw(c);
+    c.cycles += 10;
+    let (ch, p) = (s1(c), s2(c));
+    c.g[V1][0] = Addr(sp(c) + 0x24).lw(c);
+    let v0 = c.g[V0][0];
+    ch.off(0x70).sw(c, v0);
+    c.g[A0][0] = sx((c.g[V1][0] as u32) << 16);
+    c.g[V1][0] = p.off(0x24).lw(c);
+    let (a0, v1) = (c.g[A0][0], c.g[V1][0]);
+    ch.off(0x38).sw(c, a0);
+    ch.off(0x74).sw(c, v1);
+    ch.off(0x30).sw(c, 0);
+    // Pan: the patch's with a random spread, clamped, scaled by the note's.
+    c.g[A0][0] = p.off(0x15).lb(c);
+    c.g[S0][0] = p.off(0x14).lb(c);
+    if c.g[A0][0] != 0 {
+        c.cycles += 3;
+        SNDP_RANDOM_RANGE.call(c, 0x003b_b2b8)?;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    }
+    let (ch, p) = (s1(c), s2(c));
+    c.cycles += 5;
+    c.g[V0][0] = ((c.g[S0][0] as i64) < 128) as u64;
+    c.g[V1][0] = u64::MAX;
+    if c.g[V0][0] == 0 {
+        c.g[S0][0] = c.g[S7][0];
+    }
+    c.cycles += 25;
+    c.g[V1][0] = (-1 < (c.g[S0][0] as i64)) as u64;
+    if c.g[V1][0] == 0 {
+        c.g[S0][0] = 0;
+    }
+    c.g[V1][0] = Addr(sp(c) + 0x20).lw(c);
+    c.mult(0, V0, S0, V1);
+    c.div(0, V0, S7);
+    c.g[V0][0] = c.lo[0];
+    let v0 = c.g[V0][0];
+    ch.off(0x2b).sb(c, v0);
+    c.g[V0][0] = Addr(sp(c) + 0x28).lw(c);
+    c.g[V1][0] = p.off(0x10).lb(c);
+    let v0 = c.g[V0][0];
+    ch.off(0x64).sb(c, v0);
+    c.mult(0, V1, V1, S6);
+    let v1 = c.g[V1][0];
+    ch.off(0x82).sh(c, v1);
+    // The envelope: its first segment's rate.
+    c.g[A0][0] = p.off(0x28).lw(c);
+    let a0 = c.g[A0][0];
+    ch.off(0x6c).sw(c, a0);
+    c.g[V0][0] = p.off(0x1a).lb(c);
+    ch.off(0x5d).sb(c, 0);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 16);
+    let v0 = c.g[V0][0];
+    ch.off(0x40).sw(c, v0);
+    c.g[V1][0] = p.off(0xf).lbu(c);
+    let v1 = c.g[V1][0];
+    ch.off(0x5c).sb(c, v1);
+    c.g[V0][0] = p.off(0xe).lbu(c);
+    let v0 = c.g[V0][0];
+    ch.off(0x5e).sb(c, v0);
+    c.g[V1][0] = Addr(a0 as u32).lw(c);
+    let v1 = c.g[V1][0];
+    ch.off(0x44).sw(c, v1);
+    if (v1 as i64) < 0 {
+        c.cycles += 3;
+        c.g[V0][0] = 0x7fff_ffff;
+        ch.off(0x44).sw(c, 0x7fff_ffff);
+    }
+    c.cycles += 8;
+    c.g[A0][0] = ch.off(0x6c).lw(c);
+    c.g[A1][0] = ch.off(0x40).lw(c);
+    c.g[V0][0] = Addr(c.g[A0][0] as u32).off(4).lw(c);
+    c.g[V1][0] = ch.off(0x44).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 16);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+    c.cycles += 16;
+    c.div(0, V0, V1);
+    c.g[V0][0] = c.lo[0];
+    let v0 = c.g[V0][0];
+    ch.off(0x3c).sw(c, v0);
+    // Envelope rates, LFO depths, the bend range.
+    for (from, to, width, r) in [
+        (0x2c, 0x78, 4, V1),
+        (0x30, 0x7c, 4, V0),
+        (0x1b, 0x65, 1, V1),
+        (0x1d, 0x66, 1, V0),
+        (0x54, 0x80, 2, V1),
+    ] {
+        let v = match width {
+            4 => p.off(from).lw(c),
+            2 => p.off(from).lhu(c),
+            _ => p.off(from).lbu(c),
+        };
+        c.g[r][0] = v;
+        match width {
+            4 => ch.off(to).sw(c, v),
+            2 => ch.off(to).sh(c, v),
+            _ => ch.off(to).sb(c, v),
+        }
+    }
+    // LFO phases: random within the patch's ranges.
+    c.g[V0][0] = p.off(0x1c).lb(c);
+    if c.g[V0][0] == 0 {
+        ch.off(0x67).sb(c, 0);
+    } else {
+        c.cycles += 6;
+        SNDP_RANDOM.call(c, 0x003b_b3a8)?;
+        c.g[V1][0] = s2(c).off(0x1c).lb(c);
+        c.divu(0, V0, V1);
+        c.cycles += 2;
+        c.g[A0][0] = c.hi[0];
+        let a0 = c.g[A0][0];
+        s1(c).off(0x67).sb(c, a0);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = s2(c).off(0x1e).lbu(c);
+    if c.g[V0][0] == 0 {
+        s1(c).off(0x68).sb(c, 0);
+    } else {
+        c.cycles += 6;
+        SNDP_RANDOM.call(c, 0x003b_b3d4)?;
+        c.g[V1][0] = s2(c).off(0x1d).lbu(c);
+        c.divu(0, V0, V1);
+        c.cycles += 2;
+        c.g[A0][0] = c.hi[0];
+        let a0 = c.g[A0][0];
+        s1(c).off(0x68).sb(c, a0);
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// SND_PlayPatch
+// ---------------------------------------------------------------------------
+
+pub(crate) const SNDPP_NEXT_HANDLE_SERIAL: Callee = Callee {
+    addr: 0x003b_b0c8,
+    f: ee::s13::f_003bb0c8,
+};
+
+pub(crate) const SNDPP_PARSE_PATCH: Callee = Callee {
+    addr: 0x003b_aac0,
+    f: ee::s13::f_003baac0,
+};
+
+pub(crate) const SNDPP_PLAY_PATCH_VOICES: Callee = Callee {
+    addr: 0x003b_b140,
+    f: ee::s13::f_003bb140,
+};
+
+pub(crate) const SNDPP_FIRE_EVENTS: Callee = Callee {
+    addr: 0x003b_5f98,
+    f: ee::s13::f_003b5f98,
+};
+
+pub(crate) const SNDPP_HANDLE_TO_CHANNEL: Callee = Callee {
+    addr: 0x003b_a6e8,
+    f: ee::s13::f_003ba6e8,
+};
+
+/// The voice array pointer (`SNDV_SYSTEM + 0x1f0`).
+pub(crate) const SNDPP_VOICES: u32 = 0x0050_aad8;
+
+/// `int SND_PlayPatch(int owner, const u8* patch, int a2, int a3, const
+/// Note* note)` (0x3bb588): parses the patch's layers; each whose key and
+/// velocity ranges hold the note is played (`SND_PlayPatchVoices`, its
+/// events fired). A failure stops what was started. Of the handles still
+/// playing, a single one is unlinked; several are linked by a fresh serial
+/// (the last one marked as the group's end). Returns the last handle,
+/// `-8` without a patch, `-9` if nothing played.
+pub fn snd_play_patch(c: &mut Cpu) {
+    guest(c, |c| {
+        let sp = |c: &Cpu| c.g[SP][0] as u32;
+        let add =
+            |c: &mut Cpu, r: usize, k: u32| c.g[r][0] = sx((c.g[r][0] as u32).wrapping_add(k));
+        let lt = |c: &Cpu, a: usize, b: usize| ((c.g[a][0] as i64) < (c.g[b][0] as i64)) as u64;
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x1c0);
+        c.g[V1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x180);
+        frame.save(c, S5, 0x160);
+        c.g[S3][0] = 0;
+        frame.save(c, S6, 0x150);
+        c.g[S5][0] = c.g[A0][0];
+        frame.save(c, S7, 0x140);
+        c.g[S6][0] = 0;
+        frame.save(c, FP, 0x130);
+        c.g[S7][0] = c.g[T0][0];
+        frame.save(c, S0, 0x1b0);
+        c.g[FP][0] = sx(-9i32 as u32);
+        frame.save(c, S1, 0x1a0);
+        frame.save(c, S2, 0x190);
+        frame.save(c, S4, 0x170);
+        frame.save_ra(c, 0x120);
+        let (a1, a2, a3) = (c.g[A1][0], c.g[A2][0], c.g[A3][0]);
+        Addr(sp(c) + 0x104).sw(c, a2);
+        Addr(sp(c) + 0x108).sw(c, a3);
+        Addr(sp(c) + 0x100).sw(c, a1);
+        Addr(sp(c) + 0x10c).sw(c, 0);
+        Addr(sp(c) + 0x110).sw(c, 0);
+        c.g[V0][0] = sx(-8i32 as u32);
+        'out: {
+            if c.g[V1][0] == 0 {
+                break 'out;
+            }
+            c.cycles += 12;
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(4));
+            if c.g[S5][0] == 0 {
+                c.g[S5][0] = c.g[V1][0];
+            }
+            let v0 = c.g[V0][0];
+            Addr(sp(c) + 0x100).sw(c, v0);
+            let note = Addr(c.g[S7][0] as u32);
+            c.g[S2][0] = note.off(2).lb(c);
+            c.g[S1][0] = note.off(3).lb(c);
+            SNDPP_NEXT_HANDLE_SERIAL.call(c, 0x003b_b600)?;
+            let v0 = c.g[V0][0];
+            Addr(sp(c) + 0x114).sw(c, v0);
+            c.g[S0][0] = sx(sp(c) + 0xd0);
+            c.g[V0][0] = sx(sp(c) + 0x100);
+            let v0 = c.g[V0][0];
+            Addr(sp(c) + 0x118).sw(c, v0);
+            c.g[A0][0] = Addr(sp(c) + 0x118).lw(c);
+            // Each layer of the patch.
+            let failed = 'layers: loop {
+                c.cycles += 6;
+                c.g[A1][0] = c.g[SP][0];
+                SNDPP_PARSE_PATCH.call(c, 0x003b_b620)?;
+                c.g[S4][0] = c.g[V0][0];
+                c.g[V0][0] = Addr(sp(c) + 0x10c).lw(c);
+                let seeded = c.g[V0][0] != 0;
+                c.g[V0][0] = Addr(sp(c) + 8).lbu(c);
+                if !seeded {
+                    // The detune spread, drawn once.
+                    c.cycles += 3;
+                    c.g[A0][0] = Addr(sp(c)).lh(c);
+                    c.g[V0][0] = 1;
+                    if c.g[A0][0] != 0 {
+                        c.cycles += 4;
+                        SNDP_RANDOM_RANGE.call(c, 0x003b_b644)?;
+                        let v0 = c.g[V0][0];
+                        Addr(sp(c) + 0x110).sw(c, v0);
+                        c.g[V0][0] = 1;
+                    }
+                    c.cycles += 2;
+                    let v0 = c.g[V0][0];
+                    Addr(sp(c) + 0x10c).sw(c, v0);
+                    c.g[V0][0] = Addr(sp(c) + 8).lbu(c);
+                }
+                // Key (s1) and velocity (s2) within the layer's ranges.
+                'skip: {
+                    let sext8 = |v: u64| ((v as u32) << 24) as i32 >> 24;
+                    c.cycles += 5;
+                    c.g[V0][0] = sx(sext8(c.g[V0][0]) as u32);
+                    c.g[V0][0] = lt(c, S1, V0);
+                    let out = c.g[V0][0] != 0;
+                    c.g[V0][0] = Addr(sp(c) + 9).lbu(c);
+                    if out {
+                        break 'skip;
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = sx(sext8(c.g[V0][0]) as u32);
+                    c.g[V0][0] = lt(c, V0, S1);
+                    let out = c.g[V0][0] != 0;
+                    c.g[V0][0] = Addr(sp(c) + 0xa).lbu(c);
+                    if out {
+                        break 'skip;
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = sx(sext8(c.g[V0][0]) as u32);
+                    c.g[V0][0] = lt(c, S2, V0);
+                    let out = c.g[V0][0] != 0;
+                    c.g[V0][0] = Addr(sp(c) + 0xb).lbu(c);
+                    if out {
+                        break 'skip;
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = sx(sext8(c.g[V0][0]) as u32);
+                    c.g[V0][0] = lt(c, V0, S2);
+                    let out = c.g[V0][0] != 0;
+                    c.g[A0][0] = Addr(sp(c) + 0x104).lw(c);
+                    if out {
+                        break 'skip;
+                    }
+                    c.cycles += 11;
+                    c.g[A2][0] = c.g[S5][0];
+                    c.g[A1][0] = Addr(sp(c) + 0x108).lw(c);
+                    c.g[A3][0] = c.g[S7][0];
+                    c.g[T3][0] = Addr(sp(c) + 0x110).lw(c);
+                    c.g[T0][0] = c.g[SP][0];
+                    c.g[T1][0] = c.g[S2][0];
+                    c.g[T2][0] = c.g[S1][0];
+                    SNDPP_PLAY_PATCH_VOICES.call(c, 0x003b_b6c4)?;
+                    c.g[FP][0] = c.g[V0][0];
+                    c.g[A0][0] = c.g[SP][0];
+                    if (c.g[FP][0] as i64) < 0 {
+                        break 'layers true;
+                    }
+                    c.cycles += 5;
+                    let h = c.g[FP][0];
+                    Addr(c.g[S0][0] as u32).sw(c, h);
+                    add(c, S3, 1);
+                    add(c, S0, 4);
+                    c.g[A1][0] = 1;
+                    SNDPP_FIRE_EVENTS.call(c, 0x003b_b6e4)?;
+                }
+                c.cycles += 2;
+                let more = c.g[S4][0] != 0;
+                c.g[A0][0] = Addr(sp(c) + 0x118).lw(c);
+                if !more {
+                    break 'layers false;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_b618);
+                }
+            };
+            'stop: {
+                if !failed {
+                    // Keep the handles still playing.
+                    c.cycles += 3;
+                    c.g[V0][0] = c.g[S3][0];
+                    c.g[S3][0] = 0;
+                    if (c.g[V0][0] as i64) > 0 {
+                        c.cycles += 4;
+                        c.g[S1][0] = sx(sp(c) + 0xd0);
+                        c.g[S0][0] = c.g[V0][0];
+                        c.g[S2][0] = c.g[S1][0];
+                        loop {
+                            c.cycles += 4;
+                            c.g[A0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                            SNDPP_IS_HANDLE_DONE.call(c, 0x003b_b710)?;
+                            let done = c.g[V0][0] != 0;
+                            add(c, S0, u32::MAX);
+                            if !done {
+                                c.cycles += 4;
+                                c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                                add(c, S3, 1);
+                                let v0 = c.g[V0][0];
+                                Addr(c.g[S2][0] as u32).sw(c, v0);
+                                add(c, S2, 4);
+                            }
+                            c.cycles += 2;
+                            add(c, S1, 4);
+                            if c.g[S0][0] == 0 {
+                                break;
+                            }
+                            if event_due(c) {
+                                deliver_event_here(c, 0x003b_b708);
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = 1;
+                    if c.g[S3][0] == 0 {
+                        break 'stop;
+                    }
+                    c.cycles += 2;
+                    if c.g[S3][0] == 1 {
+                        // One: not part of a group.
+                        c.cycles += 5;
+                        c.g[A0][0] = Addr(sp(c) + 0xd0).lw(c);
+                        SNDPP_HANDLE_TO_CHANNEL.call(c, 0x003b_b748)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        c.g[V0][0] = SNDV_STRIDE as u64;
+                        if (c.g[V1][0] as i64) >= 0 {
+                            c.cycles += 7;
+                            c.g[A0][0] = 0x51_0000;
+                            c.mult(0, V0, V1, V0);
+                            c.g[V1][0] = Addr(SNDPP_VOICES).lw(c);
+                            c.g[S6][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            let ch = Addr(c.g[S6][0] as u32);
+                            ch.off(0x27).sb(c, 0);
+                            ch.off(0x26).sb(c, 0);
+                        }
+                    } else {
+                        // Several: one group (the serial), the last its end.
+                        c.cycles += 2;
+                        c.g[V0][0] = 0x51_0000;
+                        if (c.g[S3][0] as i64) > 0 {
+                            c.cycles += 4;
+                            c.g[S0][0] = c.g[S3][0];
+                            c.g[S3][0] = sx(SNDV_SYSTEM);
+                            c.g[S2][0] = SNDV_STRIDE as u64;
+                            c.g[S1][0] = sx(sp(c) + 0xd0);
+                            loop {
+                                c.cycles += 5;
+                                c.g[A0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                                SNDPP_HANDLE_TO_CHANNEL.call(c, 0x003b_b790)?;
+                                c.g[V1][0] = c.g[V0][0];
+                                let none = (c.g[V1][0] as i64) < 0;
+                                c.mult(0, V1, V1, S2);
+                                if !none {
+                                    c.cycles += 5;
+                                    c.g[V0][0] = Addr(c.g[S3][0] as u32).off(0x1f0).lw(c);
+                                    c.g[S6][0] =
+                                        sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                    c.g[V0][0] = Addr(sp(c) + 0x114).lw(c);
+                                    let ch = Addr(c.g[S6][0] as u32);
+                                    let v0 = c.g[V0][0];
+                                    ch.off(0x27).sb(c, 0);
+                                    ch.off(0x26).sb(c, v0);
+                                }
+                                c.cycles += 3;
+                                add(c, S0, u32::MAX);
+                                add(c, S1, 4);
+                                if c.g[S0][0] == 0 {
+                                    break;
+                                }
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x003b_b788);
+                                }
+                            }
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = 1;
+                        Addr(c.g[S6][0] as u32).off(0x27).sb(c, 1);
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[FP][0];
+                    break 'out;
+                }
+            }
+            // Stop what was started.
+            c.cycles += 2;
+            c.g[S0][0] = c.g[S3][0];
+            if (c.g[S3][0] as i64) > 0 {
+                c.cycles += 2;
+                c.g[S1][0] = sx(sp(c) + 0xd0);
+                c.g[A0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                loop {
+                    c.cycles += 5;
+                    add(c, S0, u32::MAX);
+                    add(c, S1, 4);
+                    SNDV_STOP.call(c, 0x003b_b7e4)?;
+                    if c.g[S0][0] == 0 {
+                        break;
+                    }
+                    c.g[A0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003b_b7d8);
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[FP][0];
+        }
+        c.cycles += 12;
+        for (r, off) in [
+            (S0, 0x1b0),
+            (S1, 0x1a0),
+            (S2, 0x190),
+            (S3, 0x180),
+            (S4, 0x170),
+            (S5, 0x160),
+            (S6, 0x150),
+            (S7, 0x140),
+            (FP, 0x130),
+        ] {
+            frame.restore(c, r, off);
+        }
+        frame.restore_ra(c, 0x120);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SNDSTRM_ParseHeader (0x3b6bd0, EA sound library streams)
+
+/// The stream table (`SndStream*[]`, 0x510000 - 0x5f60).
+pub(crate) const SNDSTRM_TABLE: u32 = 0x0050_a0a0;
+
+/// The sound system globals (0x510000 - 0x5718): +0x179 the number of
+/// stream-marker callbacks (signed byte), +0x1c8 the callbacks.
+pub(crate) const SNDSTRM_SYS: u32 = 0x0050_a8e8;
+
+pub(crate) const SNDSTRM_SYS_CALLBACK_COUNT: u32 = 0x179;
+
+pub(crate) const SNDSTRM_SYS_CALLBACKS: u32 = 0x1c8;
+
+/// Stream fields: file handle, play state byte, current/new header words,
+/// current/new format blocks (0x68 bytes), "format changed" flag, marker
+/// ids and values (zero-terminated), the current and next segment.
+pub(crate) const SNDSTRM_FILE: u32 = 0x0;
+
+pub(crate) const SNDSTRM_STATE: u32 = 0x10;
+
+pub(crate) const SNDSTRM_HEADER: u32 = 0x14;
+
+pub(crate) const SNDSTRM_NEW_HEADER: u32 = 0x18;
+
+pub(crate) const SNDSTRM_FORMAT: u32 = 0x1c;
+
+pub(crate) const SNDSTRM_NEW_FORMAT: u32 = 0x84;
+
+pub(crate) const SNDSTRM_FORMAT_CHANGED: u32 = 0x9c;
+
+pub(crate) const SNDSTRM_MARKERS: u32 = 0xcc;
+
+pub(crate) const SNDSTRM_MARKER_VALUES: u32 = 0xdc;
+
+pub(crate) const SNDSTRM_FIRST_SEGMENT: u32 = 0x11c;
+
+pub(crate) const SNDSTRM_SEGMENT: u32 = 0x134;
+
+pub(crate) const SNDSTRM_PARSE_STREAM_HEADER: Callee = Callee {
+    addr: 0x003b_b820,
+    f: ee::s13::SND_ParseStreamHeader,
+};
+
+pub(crate) const SNDSTRM_CALC_DATA_RATE: Callee = Callee {
+    addr: 0x003b_6948,
+    f: ee::s13::SNDSTRM_CalcDataRate,
+};
+
+pub(crate) const SNDSTRM_START_PLAYBACK: Callee = Callee {
+    addr: 0x003b_68b8,
+    f: ee::s13::SNDSTRM_StartPlayback,
+};
+
+/// `StreamFile_ReleaseChunk(file, chunk)` and `memcmp` (through the table).
+pub(crate) const SNDSTRM_RELEASE_CHUNK_3: u32 = 0x003e_13e8;
+
+pub(crate) const SNDSTRM_MEMCMP: u32 = 0x0041_5fc8;
+
+/// `int SNDSTRM_ParseHeader(int stream, StreamChunk* chunk)` (0x3b6bd0):
+/// moves the stream to its next segment, parses the chunk's header into
+/// the stream's new header and format, reports the pending markers to the
+/// marker callbacks (message 3: id, value, segment's +0xc) and clears
+/// them, releases the chunk and sets the segment's data rate. A header or
+/// format that differs from the current one (or a flagged change) while
+/// one is playing stops the stream (state 2); otherwise the new one is
+/// taken over and playback starts (state 1) if it is not running yet.
+/// Returns 0.
+pub fn sndstrm_parse_header(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xf0);
+        frame.save(c, S0, 0xe0);
+        frame.save(c, S1, 0xd0);
+        frame.save(c, S2, 0xc0);
+        c.g[V0][0] = sx(SNDSTRM_TABLE);
+        c.g[A0][0] = sx(r32(c, A0) << 2);
+        frame.save(c, S4, 0xa0);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(SNDSTRM_TABLE));
+        frame.save(c, S5, 0x90);
+        frame.save(c, S6, 0x80);
+        frame.save(c, S7, 0x70);
+        frame.save(c, FP, 0x60);
+        frame.save_ra(c, 0x50);
+        let chunk_slot = frame.at(c, 0x40);
+        c.sw(chunk_slot, c.g[A1][0]);
+        frame.save(c, S3, 0xb0);
+        c.g[S3][0] = c.lw(r32(c, A0)); // the stream
+        let stream = r32(c, S3);
+        c.g[V0][0] = c.lw(stream.wrapping_add(SNDSTRM_SEGMENT));
+        // segment = segment ? segment->next : first segment
+        if c.g[V0][0] != 0 {
+            c.cycles += 1;
+            c.g[V0][0] = c.lw(r32(c, V0));
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = c.lw(stream.wrapping_add(SNDSTRM_FIRST_SEGMENT));
+        }
+
+        c.cycles += 24;
+        c.sw(stream.wrapping_add(SNDSTRM_SEGMENT), c.g[V0][0]);
+        c.g[S6][0] = c.lw(stream.wrapping_add(SNDSTRM_SEGMENT));
+        let stk = sp(c);
+        c.g[V1][0] = sx(stream.wrapping_add(SNDSTRM_HEADER));
+        c.g[V0][0] = c.lw(stk.wrapping_add(0x40));
+        c.g[A2][0] = sx(stream.wrapping_add(SNDSTRM_NEW_HEADER));
+        c.g[A3][0] = sx(stream.wrapping_add(SNDSTRM_NEW_FORMAT));
+        c.g[A0][0] = 0;
+        c.g[A1][0] = sx(r32(c, V0).wrapping_add(8));
+        c.sw(stk.wrapping_add(0x48), c.g[V1][0]);
+        c.sw(stk.wrapping_add(0x4c), c.g[A2][0]);
+        c.g[T0][0] = c.g[SP][0];
+        c.sw(stk.wrapping_add(0x44), c.g[A3][0]);
+        c.g[T1][0] = sx(r32(c, S6).wrapping_add(0x25));
+        SNDSTRM_PARSE_STREAM_HEADER.call(c, 0x003b_6c64)?;
+
+        let stk = sp(c);
+        let stream = r32(c, S3);
+        c.g[V1][0] = c.lw(stk);
+        c.g[V0][0] = 0;
+        c.g[A0][0] = sx(stream.wrapping_add(SNDSTRM_MARKERS));
+        c.g[A1][0] = 0;
+        c.sb(r32(c, S6).wrapping_add(0x24), 0);
+        c.g[V0][0] = c.g[A0][0];
+        c.sw(r32(c, S6).wrapping_add(0x18), c.g[V1][0]);
+        c.g[V1][0] = c.lw(r32(c, V0));
+        c.g[S7][0] = c.g[A0][0];
+        if c.g[V1][0] != 0 {
+            // Report each pending marker to every marker callback.
+            c.cycles += 5;
+            c.g[S4][0] = c.g[A1][0];
+            c.g[FP][0] = 3;
+            c.g[S2][0] = sx(stream.wrapping_add(SNDSTRM_MARKER_VALUES));
+            c.sw(stk.wrapping_add(0x20), c.g[FP][0]); // msg.type = 3
+            loop {
+                c.cycles += 16;
+                let stk = sp(c);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, S4)));
+                c.g[S4][0] = sx(r32(c, S4).wrapping_add(4));
+                c.g[S1][0] = 0;
+                c.g[V0][0] = c.lw(r32(c, A0));
+                c.sw(stk.wrapping_add(0x24), c.g[V0][0]);
+                c.g[V1][0] = c.lw(r32(c, S2));
+                c.sw(stk.wrapping_add(0x28), c.g[V1][0]);
+                c.g[V0][0] = c.lw(r32(c, S6).wrapping_add(0xc));
+                c.sw(stk.wrapping_add(0x30), c.g[V0][0]);
+                c.sw(r32(c, A0), 0);
+                c.sw(r32(c, S2), 0);
+                c.g[A0][0] = sx(SNDSTRM_SYS);
+                c.g[V0][0] = c.lb(SNDSTRM_SYS + SNDSTRM_SYS_CALLBACK_COUNT);
+                let none = (c.g[V0][0] as i64) <= 0;
+                c.g[S2][0] = sx(r32(c, S2).wrapping_add(4));
+                if !none {
+                    c.cycles += 4;
+                    c.g[A2][0] = 0x510000;
+                    c.g[S5][0] = sx(SNDSTRM_SYS);
+                    c.g[S0][0] = sx(SNDSTRM_SYS + SNDSTRM_SYS_CALLBACKS);
+                    c.g[V1][0] = c.lw(r32(c, S0));
+                    loop {
+                        c.cycles += 8;
+                        c.g[A0][0] = sx(sp(c).wrapping_add(0x20));
+                        c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                        let callback = r32(c, V1);
+                        c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+                        call_ptr(c, callback, 0x003b_6d00)?;
+                        c.g[V0][0] = c.lb(r32(c, S5).wrapping_add(SNDSTRM_SYS_CALLBACK_COUNT));
+                        c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] == 0 {
+                            break;
+                        }
+                        c.g[V1][0] = c.lw(r32(c, S0));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003b_6cf0);
+                        }
+                    }
+                }
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S7][0];
+                c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, S4)));
+                c.g[V1][0] = c.lw(r32(c, V0));
+                if c.g[V1][0] == 0 {
+                    break;
+                }
+                let msg = sp(c).wrapping_add(0x20);
+                c.sw(msg, c.g[FP][0]);
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_6ca0);
+                }
+            }
+        }
+
+        c.cycles += 12;
+        let stk = sp(c);
+        c.g[A1][0] = c.lw(stk.wrapping_add(0x40));
+        c.g[A0][0] = c.lw(r32(c, S3).wrapping_add(SNDSTRM_FILE));
+        call_ptr(c, SNDSTRM_RELEASE_CHUNK_3, 0x003b_6d30)?;
+        c.g[A0][0] = c.lw(sp(c).wrapping_add(0x4c));
+        SNDSTRM_CALC_DATA_RATE.call(c, 0x003b_6d38)?;
+        let stk = sp(c);
+        c.g[A0][0] = c.lw(stk.wrapping_add(0x48));
+        c.g[A2][0] = 4;
+        c.sw(r32(c, S6).wrapping_add(0x10), c.g[V0][0]);
+        c.g[A1][0] = c.lw(stk.wrapping_add(0x4c));
+        call_ptr(c, SNDSTRM_MEMCMP, 0x003b_6d4c)?;
+        // The header or the format changed (or a change is flagged).
+        let mut changed = false;
+        if c.g[V0][0] != 0 {
+            changed = true;
+        } else {
+            c.cycles += 6;
+            c.g[A1][0] = c.lw(sp(c).wrapping_add(0x44));
+            c.g[A0][0] = sx(r32(c, S3).wrapping_add(SNDSTRM_FORMAT));
+            c.g[A2][0] = 0x68;
+            call_ptr(c, SNDSTRM_MEMCMP, 0x003b_6d64)?;
+            if c.g[V0][0] != 0 {
+                changed = true;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(SNDSTRM_FORMAT_CHANGED));
+                if c.g[V0][0] != 0 {
+                    c.cycles += 1;
+                    changed = true;
+                }
+            }
+        }
+        let mut stopped = false;
+        if changed {
+            c.g[V0][0] = c.lhu(r32(c, S3).wrapping_add(SNDSTRM_HEADER));
+            c.cycles += 2;
+            let idle = c.g[V0][0] == 0;
+            c.g[V1][0] = 2;
+            if !idle {
+                // A stream is playing in another format: stop it.
+                c.cycles += 4;
+                c.g[V0][0] = 0;
+                c.sb(r32(c, S3).wrapping_add(SNDSTRM_STATE), c.g[V1][0]);
+                frame.restore(c, S0, 0xe0);
+                stopped = true;
+            } else {
+                // Take over the new header word and format block.
+                c.cycles += 10;
+                let stream = r32(c, S3);
+                c.g[A1][0] = c.lw(sp(c).wrapping_add(0x44));
+                c.g[V1][0] = sx(stream.wrapping_add(SNDSTRM_FORMAT));
+                c.lwl(A3, stream.wrapping_add(SNDSTRM_NEW_HEADER + 3));
+                c.lwr(A3, stream.wrapping_add(SNDSTRM_NEW_HEADER));
+                c.swl(A3, stream.wrapping_add(SNDSTRM_HEADER + 3));
+                c.swr(A3, stream.wrapping_add(SNDSTRM_HEADER));
+                c.g[V0][0] = c.g[A1][0] | c.g[V1][0];
+                c.g[V0][0] &= 7;
+                let aligned = c.g[V0][0] == 0;
+                c.g[V0][0] = sx(stream.wrapping_add(0xe4));
+                oc374_block_copy(
+                    c,
+                    A1,
+                    V1,
+                    V0,
+                    !aligned,
+                    [A3, T0, A0, A2],
+                    0x003b_6dbc,
+                    [A3, T0, A0, A2],
+                    0x003b_6e10,
+                );
+                c.cycles += 5;
+                let (s, d) = (r32(c, A1), r32(c, V1));
+                c.ldl(A3, s.wrapping_add(7));
+                c.ldr(A3, s);
+                c.sdl(A3, d.wrapping_add(7));
+                c.sdr(A3, d);
+                c.sw(r32(c, S3).wrapping_add(SNDSTRM_FORMAT_CHANGED), 0);
+            }
+        }
+        if !stopped {
+            c.cycles += 6;
+            c.g[V0][0] = c.lbu(r32(c, S3).wrapping_add(SNDSTRM_STATE));
+            c.g[S0][0] = 1;
+            c.g[V0][0] = sx(((r32(c, V0) << 24) as i32 >> 24) as u32);
+            let playing = c.g[V0][0] == c.g[S0][0];
+            c.g[V0][0] = 0;
+            if !playing {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S3][0];
+                SNDSTRM_START_PLAYBACK.call(c, 0x003b_6e70)?;
+                c.sb(r32(c, S3).wrapping_add(SNDSTRM_STATE), c.g[S0][0]);
+                c.g[V0][0] = 0;
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0xe0);
+        }
+        c.cycles += 11;
+        frame.restore(c, S1, 0xd0);
+        frame.restore(c, S2, 0xc0);
+        frame.restore(c, S3, 0xb0);
+        frame.restore(c, S4, 0xa0);
+        frame.restore(c, S5, 0x90);
+        frame.restore(c, S6, 0x80);
+        frame.restore(c, S7, 0x70);
+        frame.restore(c, FP, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_ChooseSample
+// ---------------------------------------------------------------------------
+
+/// Speech selection set: `+0x61` count of chosen samples, `+0x62` the
+/// chosen sample indices (200 at most).
+pub(crate) const SPCH_SET_COUNT: u32 = 0x61;
+
+pub(crate) const SPCH_SET_LIST: u32 = 0x62;
+
+pub(crate) const SPCH_SET_MAX: u64 = 200;
+
+/// Condition block: `+4` signed count, `+8` condition ids (0xfe: "mark"
+/// slot), `+0x10` mark targets (bit 7 set: mark bit `& 0x7f`).
+pub(crate) const SPCH_COND_COUNT: u32 = 0x4;
+
+pub(crate) const SPCH_COND_IDS: u32 = 0x8;
+
+pub(crate) const SPCH_COND_MARKS: u32 = 0x10;
+
+pub(crate) const SPCH_COND_MARK: u64 = 0xfe;
+
+pub(crate) const SPCH_MATCH_CONDITIONS: Callee = Callee {
+    addr: 0x003d_85c8,
+    f: ee::s14::SPCH_MatchConditions,
+};
+
+pub(crate) const SPCH_IS_SAMPLE_ALLOWED: Callee = Callee {
+    addr: 0x003d_8780,
+    f: ee::s14::SPCH_IsSampleAllowed,
+};
+
+pub(crate) const SPCH_HISTORY_FIND: Callee = Callee {
+    addr: 0x003d_6e30,
+    f: ee::s14::SPCH_HistoryFind,
+};
+
+/// `int SPCH_ChooseSample(SelSet* set, Sel* sel, short* event, Cond* cond,
+/// u32* tbl)` (0x3d88c8): finds the samples of event `*event` whose
+/// conditions hold (`cond`'s ids against the event's mask words and `tbl`),
+/// that match and are allowed, appends every one not in the history to
+/// `set` (and, when `cond` has mark slots, sets the sample's mark bits in
+/// `sel`); if none was new, appends the one played longest ago. Returns the
+/// number appended.
+pub fn spch_choose_sample(c: &mut Cpu) {
+    guest(c, spch_choose_sample_body);
+}
+
+pub(crate) fn spch_choose_sample_body(c: &mut Cpu) -> Flow {
+    c.cycles += 25;
+    let frame = Frame::open(c, 0xd0);
+    c.g[V0][0] = u64::MAX;
+    frame.save(c, S7, 0xa0);
+    frame.save(c, S5, 0x80);
+    frame.save(c, S4, 0x70);
+    frame.save(c, S2, 0x50);
+    frame.save(c, RA, 0xc0);
+    frame.save(c, FP, 0xb0);
+    frame.save(c, S6, 0x90);
+    frame.save(c, S3, 0x60);
+    frame.save(c, S1, 0x40);
+    frame.save(c, S0, 0x30);
+    c.g[S7][0] = 0;
+    c.g[S5][0] = c.g[A1][0];
+    c.g[S4][0] = c.g[A3][0];
+    c.g[S2][0] = c.g[A0][0];
+    c.g[A1][0] = 0;
+    c.g[A3][0] = c.lb(r32(c, S4).wrapping_add(SPCH_COND_COUNT));
+    // Locals: event, tbl, sample count, best age, best index, entry stride,
+    // "cond has mark slots", next entry, entries base.
+    let s = sp(c);
+    let (event, tbl) = (c.g[A2][0], c.g[T0][0]);
+    c.sw(s, event);
+    c.sw(s.wrapping_add(4), tbl);
+    c.sw(s.wrapping_add(0xc), 0);
+    c.sw(s.wrapping_add(0x10), u64::MAX);
+    c.sw(s.wrapping_add(0x18), 0);
+    c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x1734));
+
+    // Does the condition block have a mark slot (id 0xfe)?
+    if (c.g[A3][0] as i64) > 0 {
+        c.cycles += 4;
+        c.g[V1][0] = c.lbu(r32(c, S4).wrapping_add(SPCH_COND_IDS));
+        c.g[V0][0] = SPCH_COND_MARK;
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+        if c.g[V1][0] == SPCH_COND_MARK {
+            c.cycles += 3;
+            c.g[V1][0] = 1;
+            c.sw(sp(c).wrapping_add(0x18), 1);
+        } else {
+            loop {
+                c.cycles += 3;
+                let more = (c.g[A1][0] as i64) < (c.g[A3][0] as i64);
+                c.g[V0][0] = sx(r32(c, S4).wrapping_add(r32(c, A1)));
+                if !more {
+                    break;
+                }
+                c.cycles += 4;
+                c.g[A0][0] = SPCH_COND_MARK;
+                c.g[V1][0] = c.lbu(r32(c, V0).wrapping_add(SPCH_COND_IDS));
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+                if c.g[V1][0] == SPCH_COND_MARK {
+                    c.cycles += 2;
+                    c.g[A0][0] = 1;
+                    c.sw(sp(c).wrapping_add(0x18), 1);
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_8948);
+                }
+            }
+        }
+    }
+
+    // s3 = the event's sample header; its condition mask words must all
+    // overlap the table words of the condition ids.
+    c.cycles += 17;
+    c.g[V1][0] = c.lw(sp(c));
+    c.g[T3][0] = 1;
+    c.g[A1][0] = 0;
+    c.g[V0][0] = c.lh(r32(c, V1));
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A2)));
+    c.g[S3][0] = c.lw(r32(c, V0));
+    c.g[A0][0] = c.lbu(r32(c, S3).wrapping_add(5));
+    let count = c.g[A0][0];
+    c.sw(sp(c).wrapping_add(8), count);
+    c.g[V1][0] = c.lbu(r32(c, S3).wrapping_add(4));
+    c.g[A3][0] = c.g[V1][0] & 0xf;
+    c.g[V0][0] = sx(r32(c, A3).wrapping_add(2));
+    c.mult(0, V0, A0, V0);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(0xf));
+    c.g[V0][0] &= 0x3ffc;
+    c.g[A0][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
+    if c.g[A3][0] != 0 {
+        c.cycles += 4;
+        c.g[A2][0] = c.g[A0][0];
+        c.g[T0][0] = sx(r32(c, S4).wrapping_add(SPCH_COND_IDS));
+        c.g[T2][0] = 0xff;
+        c.g[T1][0] = 0xfe;
+        'masks: loop {
+            c.cycles += 4;
+            c.g[V0][0] = sx(r32(c, T0).wrapping_add(r32(c, A1)));
+            c.g[V0][0] = c.lbu(r32(c, V0));
+            let id = c.g[V0][0];
+            if id != 0 {
+                c.cycles += 2;
+                if id != 0xff {
+                    c.cycles += 2;
+                    c.g[V1][0] = c.lw(sp(c).wrapping_add(4));
+                    if id != 0xfe {
+                        c.cycles += 7;
+                        c.g[V0][0] = sx(r32(c, V0) << 2);
+                        c.g[A0][0] = c.lw(r32(c, A2));
+                        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                        c.g[V1][0] = c.lw(r32(c, V0));
+                        c.g[A0][0] &= c.g[V1][0];
+                        if c.g[A0][0] == 0 {
+                            c.g[T3][0] = 0;
+                            break 'masks;
+                        }
+                    }
+                    c.cycles += 1;
+                }
+            }
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+            c.cycles += 3;
+            let more = (c.g[A1][0] as i64) < (c.g[A3][0] as i64);
+            c.g[V0][0] = more as u64;
+            c.g[A2][0] = sx(r32(c, A2).wrapping_add(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_89c0);
+            }
+        }
+    }
+
+    c.cycles += 2;
+    c.g[A0][0] = sx(r32(c, S3).wrapping_add(0xc));
+    let tail = if c.g[T3][0] != 0 {
+        spch_choose_sample_scan(c)?
+    } else {
+        true
+    };
+    if tail {
+        c.cycles += 1;
+        c.g[V0][0] = c.g[S7][0];
+    }
+    c.cycles += 12;
+    for (reg, off) in [
+        (RA, 0xc0),
+        (FP, 0xb0),
+        (S7, 0xa0),
+        (S6, 0x90),
+        (S5, 0x80),
+        (S4, 0x70),
+        (S3, 0x60),
+        (S2, 0x50),
+        (S1, 0x40),
+        (S0, 0x30),
+    ] {
+        frame.restore(c, reg, off);
+    }
+    frame.close(c);
+    Ok(())
+}
+
+/// Appends sample `idx` to the set if there is room; `a0` = appended (0/1).
+pub(crate) fn spch_choose_sample_append(c: &mut Cpu, from_stack: bool) {
+    c.cycles += 4;
+    c.g[V0][0] = c.lbu(r32(c, S2).wrapping_add(SPCH_SET_COUNT));
+    c.g[V0][0] = (c.g[V0][0] < SPCH_SET_MAX) as u64;
+    c.g[A0][0] = 0;
+    if c.g[V0][0] != 0 {
+        c.cycles += if from_stack { 8 } else { 7 };
+        c.g[V1][0] = c.lbu(r32(c, S2).wrapping_add(SPCH_SET_COUNT));
+        c.g[A0][0] = 1;
+        let idx = if from_stack {
+            c.g[V0][0] = c.lw(sp(c).wrapping_add(0x10));
+            c.g[V0][0]
+        } else {
+            c.g[S0][0]
+        };
+        c.g[V1][0] = sx(r32(c, S2).wrapping_add(r32(c, V1)));
+        c.sb(r32(c, V1).wrapping_add(SPCH_SET_LIST), idx);
+        c.g[V0][0] = c.lbu(r32(c, S2).wrapping_add(SPCH_SET_COUNT));
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+        let n = c.g[V0][0];
+        c.sb(r32(c, S2).wrapping_add(SPCH_SET_COUNT), n);
+    }
+}
+
+/// Sets the mark bits of the sample entry at `s1`: for each mark slot of
+/// the condition block whose target has bit 7, `bits[target & 0x7f] |= 1 <<
+/// entry[slot]` (`bits` at `t0`). `a3` = the condition count.
+pub(crate) fn spch_choose_sample_mark(c: &mut Cpu, head: u32) {
+    c.cycles += 3;
+    c.g[T2][0] = 0xfe;
+    c.g[T1][0] = 1;
+    c.g[A1][0] = sx(r32(c, S4).wrapping_add(SPCH_COND_MARKS));
+    loop {
+        c.cycles += 3;
+        c.g[V0][0] = c.lbu(r32(c, A1).wrapping_sub(8));
+        if c.g[V0][0] == SPCH_COND_MARK {
+            c.cycles += 4;
+            c.g[A0][0] = c.lbu(r32(c, A1));
+            c.g[V0][0] = c.g[A0][0] & 0x80;
+            let marked = c.g[V0][0] != 0;
+            c.g[A0][0] &= 0x7f;
+            if marked {
+                c.cycles += 8;
+                c.g[V0][0] = sx(r32(c, S1).wrapping_add(r32(c, A2)));
+                c.g[A0][0] = sx(r32(c, A0) << 2);
+                c.g[V1][0] = c.lbu(r32(c, V0));
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, T0)));
+                c.g[V0][0] = c.lw(r32(c, A0));
+                c.g[V1][0] = sx(r32(c, T1) << (r32(c, V1) & 31));
+                c.g[V0][0] |= c.g[V1][0];
+                let w = c.g[V0][0];
+                c.sw(r32(c, A0), w);
+            }
+            c.cycles += 1;
+        }
+        c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+        c.cycles += 3;
+        let more = (c.g[A2][0] as i64) < (c.g[A3][0] as i64);
+        c.g[V0][0] = more as u64;
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// The conditions hold: walk the samples, then fall back to the oldest.
+/// True when the exit goes through the caller's `+1; v0 = s7` tail.
+pub(crate) fn spch_choose_sample_scan(c: &mut Cpu) -> Result<bool, crate::call::Unwound> {
+    c.cycles += 9;
+    c.g[V0][0] = c.lbu(r32(c, S3).wrapping_add(4));
+    c.g[S1][0] = sx(r32(c, S3).wrapping_add(0xe));
+    c.g[V0][0] &= 0xf;
+    let base = c.g[A0][0];
+    c.sw(sp(c).wrapping_add(0x20), base);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(2));
+    let stride = c.g[V0][0];
+    c.sw(sp(c).wrapping_add(0x14), stride);
+    c.g[V0][0] = c.lw(sp(c).wrapping_add(8));
+    c.g[S0][0] = 0;
+    if c.g[V0][0] != 0 {
+        c.cycles += 2;
+        c.g[S6][0] = 0xffff_ffff_ffff_fffc;
+        loop {
+            // MatchConditions(sel, cond, tbl, entry).
+            c.cycles += 10;
+            c.g[A2][0] = c.lw(sp(c).wrapping_add(4));
+            c.g[A0][0] = c.g[S5][0];
+            c.g[A1][0] = c.g[S4][0];
+            c.g[A3][0] = c.g[S1][0];
+            SPCH_MATCH_CONDITIONS.call(c, 0x003d_8a54)?;
+            c.g[FP][0] = sx(r32(c, S0).wrapping_add(1));
+            c.g[V1][0] = c.lw(sp(c).wrapping_add(0x14));
+            c.g[V1][0] = sx(r32(c, S1).wrapping_add(r32(c, V1)));
+            let next = c.g[V1][0];
+            c.sw(sp(c).wrapping_add(0x1c), next);
+            // True: the count is already in v1 (skips the `+1` load).
+            let loaded = 'sample: {
+                if c.g[V0][0] == 0 {
+                    break 'sample false;
+                }
+                // IsSampleAllowed(event, header, i).
+                c.cycles += 6;
+                c.g[A0][0] = c.lw(sp(c));
+                c.g[A1][0] = c.g[S3][0];
+                c.g[A2][0] = c.g[S0][0];
+                SPCH_IS_SAMPLE_ALLOWED.call(c, 0x003d_8a78)?;
+                let allowed = c.g[V0][0] != 0;
+                c.g[A0][0] = c.g[S3][0];
+                if !allowed {
+                    break 'sample false;
+                }
+                // HistoryFind(header, i): > 0 is its age in the history.
+                c.cycles += 5;
+                c.g[A1][0] = c.g[S0][0];
+                SPCH_HISTORY_FIND.call(c, 0x003d_8a88)?;
+                c.g[V1][0] = c.g[V0][0];
+                c.g[A0][0] = c.lw(sp(c).wrapping_add(0xc));
+                if (c.g[V1][0] as i64) > 0 {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = c.lw(sp(c).wrapping_add(8));
+                        break 'sample true;
+                    }
+                    // The oldest so far.
+                    c.cycles += 3;
+                    let (age, i) = (c.g[V1][0], c.g[S0][0]);
+                    c.sw(sp(c).wrapping_add(0xc), age);
+                    c.sw(sp(c).wrapping_add(0x10), i);
+                    break 'sample false;
+                }
+                // New: append it, then set its mark bits.
+                spch_choose_sample_append(c, false);
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(sp(c).wrapping_add(0x18));
+                c.g[S7][0] = sx(r32(c, S7).wrapping_add(r32(c, A0)));
+                if c.g[V0][0] == 0 {
+                    break 'sample false;
+                }
+                c.cycles += 14;
+                c.g[V0][0] = c.lbu(r32(c, S5).wrapping_add(4));
+                c.g[A2][0] = 0;
+                c.g[V1][0] = c.lbu(r32(c, S5).wrapping_add(6));
+                c.g[V0][0] = sx(r32(c, V0) >> 2);
+                c.g[A3][0] = c.lb(r32(c, S4).wrapping_add(SPCH_COND_COUNT));
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(3));
+                c.g[V1][0] = sx(r32(c, V1) << 2);
+                c.g[V0][0] &= c.g[S6][0];
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(3));
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(8));
+                c.g[V1][0] &= c.g[S6][0];
+                c.g[V0][0] = sx(r32(c, S5).wrapping_add(r32(c, V0)));
+                c.g[T0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                if (c.g[A3][0] as i64) > 0 {
+                    spch_choose_sample_mark(c, 0x003d_8b28);
+                }
+                false
+            };
+            if !loaded {
+                c.cycles += 1;
+                c.g[V1][0] = c.lw(sp(c).wrapping_add(8));
+            }
+            // s0 = i + 1; continue while s0 < count; s1 = the next entry.
+            c.cycles += 4;
+            c.g[S0][0] = c.g[FP][0];
+            c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+            c.g[S1][0] = c.lw(sp(c).wrapping_add(0x1c));
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_8a40);
+            }
+        }
+    }
+    Ok(spch_choose_sample_fallback(c))
+}
+
+/// After the walk: none new but an old one seen: append the oldest (and
+/// mark its bits). Returns whether the exit takes the caller's tail.
+pub(crate) fn spch_choose_sample_fallback(c: &mut Cpu) -> bool {
+    c.cycles += 2;
+    c.g[V0][0] = c.g[S7][0];
+    if c.g[S7][0] != 0 {
+        return false;
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.lw(sp(c).wrapping_add(0x10));
+    let none = c.g[A0][0] == u64::MAX;
+    c.g[V0][0] = c.g[S7][0];
+    if none {
+        return false;
+    }
+    spch_choose_sample_append(c, true);
+    c.cycles += 3;
+    c.g[V1][0] = c.lw(sp(c).wrapping_add(0x18));
+    c.g[S7][0] = c.g[A0][0];
+    if c.g[V1][0] == 0 {
+        return true;
+    }
+    c.cycles += 18;
+    c.g[V1][0] = c.lw(sp(c).wrapping_add(0x20));
+    c.g[A2][0] = 0;
+    c.g[V0][0] = c.lbu(r32(c, S5).wrapping_add(4));
+    c.lo[0] = c.g[V1][0];
+    c.g[A0][0] = c.lw(sp(c).wrapping_add(0x14));
+    c.g[V1][0] = c.lw(sp(c).wrapping_add(0x10));
+    c.g[V0][0] = sx(r32(c, V0) >> 2);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(3));
+    c.g[A3][0] = c.lb(r32(c, S4).wrapping_add(SPCH_COND_COUNT));
+    // s1 = base + best * stride (+2 below): the best entry.
+    c.madd(0, S1, V1, A0);
+    c.g[V0][0] &= 0x7c;
+    c.g[V1][0] = c.lbu(r32(c, S5).wrapping_add(6));
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(8));
+    c.g[V0][0] = sx(r32(c, S5).wrapping_add(r32(c, V0)));
+    c.g[V1][0] = sx(r32(c, V1) << 2);
+    c.g[S1][0] = sx(r32(c, S1).wrapping_add(2));
+    c.g[T0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+    if (c.g[A3][0] as i64) > 0 {
+        spch_choose_sample_mark(c, 0x003d_8c30);
+    }
+    true
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_BuildSentence
+// ---------------------------------------------------------------------------
+
+/// Speech event header: `+0` event id, `+6` part count, `+7` packed
+/// table sizes, `+8` signed repeat count, `+0xa` flags (bit 0: always use
+/// the bank field, bit 3: argument masks), `+0xc` the part offsets.
+pub(crate) const SPCH_EVENT_PARTS: u32 = 0x6;
+
+pub(crate) const SPCH_EVENT_FLAGS: u32 = 0xa;
+
+/// Per-bank tables: `{u16 event, int limit}` (8 bytes), the bank mode words.
+pub(crate) const SPCH_BANK_LAST: u32 = 0x0045_0660;
+
+pub(crate) const SPCH_BANK_MODE: u32 = 0x0045_06a0;
+
+pub(crate) const SPCH_FIND_EVENT: Callee = Callee {
+    addr: 0x003d_7110,
+    f: ee::s14::SPCH_FindEvent,
+};
+
+pub(crate) const SPCH_FIND_BANK_USER_DATA_2: Callee = Callee {
+    addr: 0x003d_81f0,
+    f: ee::s14::SPCH_FindBankUserData,
+};
+
+pub(crate) const SPCH_FIND_BANK_FIELD14: Callee = Callee {
+    addr: 0x003d_82b0,
+    f: ee::s14::SPCH_FindBankField14,
+};
+
+pub(crate) const SPCH_EVAL_PART_CHOICE: Callee = Callee {
+    addr: 0x003d_b208,
+    f: ee::s14::SPCH_EvalPartChoice,
+};
+
+pub(crate) const SPCH_PICK_WEIGHTED: Callee = Callee {
+    addr: 0x003d_8cb0,
+    f: ee::s14::SPCH_PickWeighted,
+};
+
+pub(crate) const SPCH_RANDOM_NO_REPEAT: Callee = Callee {
+    addr: 0x003d_b5c0,
+    f: ee::s14::SPCH_RandomNoRepeat,
+};
+
+pub(crate) const SPCH_CHECK_EVENT_MASKS: Callee = Callee {
+    addr: 0x003d_9ed0,
+    f: ee::s14::SPCH_CheckEventMasks,
+};
+
+pub(crate) const SPCH_CHOOSE_EVENT_SAMPLES: Callee = Callee {
+    addr: 0x003d_9088,
+    f: ee::s14::SPCH_ChooseEventSamples,
+};
+
+pub(crate) const SPCH_RESOLVE_EVENT_PARTS: Callee = Callee {
+    addr: 0x003d_95b8,
+    f: ee::s14::SPCH_ResolveEventParts,
+};
+
+pub(crate) const SPCH_SENTENCE_APPEND: Callee = Callee {
+    addr: 0x003d_9ac8,
+    f: ee::s14::SPCH_SentenceAppend,
+};
+
+/// `int SPCH_BuildSentence(int* args)` (0x3d9fb0): finds the speech event
+/// `args[0]` and its bank; unless the bank's last event repeats past its
+/// limit, evaluates the argument masks (20 two-bit tests against
+/// `args[1..]`), orders the event's parts by weight, and tries them in that
+/// order: a part that passes its chance roll and masks gets its samples
+/// chosen and resolved, then the sentence appended. Returns the first
+/// resolution (0: none; -1: the event has no parts).
+pub fn spch_build_sentence(c: &mut Cpu) {
+    guest(c, build_sentence_body);
+}
+
+pub(crate) fn build_sentence_body(c: &mut Cpu) -> Flow {
+    c.cycles += 25;
+    let frame = Frame::open(c, 0x280);
+    frame.save(c, FP, 0x260);
+    frame.save(c, S2, 0x200);
+    frame.save(c, S1, 0x1f0);
+    frame.save(c, RA, 0x270);
+    frame.save(c, S7, 0x250);
+    frame.save(c, S6, 0x240);
+    frame.save(c, S5, 0x230);
+    frame.save(c, S4, 0x220);
+    frame.save(c, S3, 0x210);
+    frame.save(c, S0, 0x1e0);
+    c.g[FP][0] = c.g[A0][0];
+    c.g[A0][0] = sx(sp(c).wrapping_add(0x1a0));
+    // key = { args[0] }, part choice flag = 0.
+    c.sb(sp(c).wrapping_add(0x1b0), 0);
+    let args = r32(c, FP);
+    c.lwl(V0, args.wrapping_add(3));
+    c.lwr(V0, args);
+    let s = sp(c);
+    c.swl(V0, s.wrapping_add(0x1a3));
+    c.swr(V0, s.wrapping_add(0x1a0));
+    c.g[S1][0] = 0;
+    SPCH_FIND_EVENT.call(c, 0x003d_a000)?;
+    c.g[S2][0] = c.g[V0][0];
+    let s = sp(c);
+    c.sw(s.wrapping_add(0x1bc), 0);
+    c.sw(s.wrapping_add(0x1c4), 0);
+    c.sw(s.wrapping_add(0x1cc), 0);
+    'out: {
+        if c.g[S2][0] == 0 {
+            break 'out;
+        }
+        c.cycles += 5;
+        c.g[A0][0] = sx(sp(c).wrapping_add(0x1a0));
+        c.g[A1][0] = sx(sp(c).wrapping_add(0x1b4));
+        SPCH_FIND_BANK_USER_DATA_2.call(c, 0x003d_a020)?;
+        let found = c.g[V0][0] != 0;
+        c.g[A0][0] = c.lw(sp(c).wrapping_add(0x1b4));
+        if !found {
+            break 'out;
+        }
+        // Repeating the bank's last event within its limit: nothing.
+        c.cycles += 9;
+        c.g[V0][0] = 0x45_0000;
+        c.g[T0][0] = sx(SPCH_BANK_LAST);
+        c.g[A1][0] = c.lhu(r32(c, S2));
+        c.g[A3][0] = sx(r32(c, A0) << 3);
+        c.g[T1][0] = c.g[A0][0];
+        c.g[V1][0] = sx(r32(c, A3).wrapping_add(r32(c, T0)));
+        c.g[V0][0] = c.lhu(r32(c, V1));
+        c.g[A2][0] = 1;
+        if c.g[A1][0] == c.g[V0][0] {
+            c.cycles += 3;
+            c.g[A0][0] = c.lb(r32(c, S2).wrapping_add(8));
+            c.g[V1][0] = sx(r32(c, T0).wrapping_add(r32(c, A3)));
+            if (c.g[A0][0] as i64) > 0 {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(4));
+                c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    c.g[A2][0] = 0;
+                }
+            }
+        }
+        c.cycles += 2;
+        c.g[V0][0] = 0x45_0000;
+        if c.g[A2][0] == 0 {
+            break 'out;
+        }
+        // s6 = the bank's mode (mode 1 only for events with flag bit 0).
+        c.cycles += 7;
+        c.g[V1][0] = sx(r32(c, T1) << 2);
+        c.g[V0][0] = sx(SPCH_BANK_MODE);
+        c.g[A0][0] = c.lbu(r32(c, S2).wrapping_add(SPCH_EVENT_FLAGS));
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        c.g[A0][0] &= 1;
+        c.g[S6][0] = c.lw(r32(c, V1));
+        if c.g[A0][0] == 0 {
+            c.cycles += 2;
+            c.g[V0][0] = c.g[S6][0] ^ 1;
+            if c.g[V0][0] == 0 {
+                c.g[S6][0] = 0;
+            }
+        }
+        c.cycles += 2;
+        c.g[A0][0] = sx(sp(c).wrapping_add(0x1a0));
+        if c.g[S6][0] != 0 {
+            c.cycles += 4;
+            c.g[A0][0] = sx(sp(c).wrapping_add(0x1a0));
+            SPCH_FIND_BANK_FIELD14.call(c, 0x003d_a0a0)?;
+            let v = c.g[V0][0];
+            c.sw(sp(c).wrapping_add(0x1cc), v);
+            c.g[A0][0] = sx(sp(c).wrapping_add(0x1a0));
+        }
+        // Part choice, then the parts ordered by weight at sp+0.
+        c.cycles += 11;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A2][0] = c.g[FP][0];
+        c.g[A3][0] = sx(sp(c).wrapping_add(0x1b0));
+        SPCH_EVAL_PART_CHOICE.call(c, 0x003d_a0b8)?;
+        let v = c.g[V0][0];
+        c.sw(sp(c).wrapping_add(0x1c0), v);
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[SP][0];
+        SPCH_PICK_WEIGHTED.call(c, 0x003d_a0c8)?;
+        c.g[V0][0] = c.lbu(r32(c, S2).wrapping_add(SPCH_EVENT_PARTS));
+        let parts = c.g[V0][0];
+        c.sw(sp(c).wrapping_add(0x1b8), parts);
+        if (parts as i64) <= 0 {
+            c.cycles += 3;
+            c.g[V1][0] = u64::MAX;
+            c.sw(sp(c).wrapping_add(0x1bc), u64::MAX);
+            break 'out;
+        }
+        // The argument mask (flag bit 3): bit i set when test i passes.
+        c.cycles += 6;
+        c.g[V0][0] = c.lbu(r32(c, S2).wrapping_add(SPCH_EVENT_FLAGS));
+        c.g[T4][0] = 1;
+        c.g[V0][0] = sx(r32(c, V0) >> 3);
+        c.g[V0][0] &= 1;
+        let masks = c.g[V0][0];
+        c.sw(sp(c).wrapping_add(0x1c8), masks);
+        if masks != 0 {
+            build_sentence_arg_mask(c);
+        }
+        c.cycles += 2;
+        c.sw(sp(c).wrapping_add(0x1bc), 0);
+        if c.g[T4][0] == 0 {
+            break 'out;
+        }
+        build_sentence_parts(c)?;
+    }
+    c.cycles += 13;
+    c.g[V0][0] = c.lw(sp(c).wrapping_add(0x1bc));
+    for (reg, off) in [
+        (RA, 0x270),
+        (FP, 0x260),
+        (S7, 0x250),
+        (S6, 0x240),
+        (S5, 0x230),
+        (S4, 0x220),
+        (S3, 0x210),
+        (S2, 0x200),
+        (S1, 0x1f0),
+        (S0, 0x1e0),
+    ] {
+        frame.restore(c, reg, off);
+    }
+    frame.close(c);
+    Ok(())
+}
+
+/// The argument mask: test i (2 bits of the event's mask word) is 1:
+/// `args[i + 1] != 0`, 2: `args[i + 1] != -1`; the result at sp+0x1c4.
+pub(crate) fn build_sentence_arg_mask(c: &mut Cpu) {
+    c.cycles += 28;
+    c.g[A1][0] = c.lw(sp(c).wrapping_add(0x1b8));
+    c.g[A2][0] = 0xffff_ffff_ffff_fffc;
+    c.g[V1][0] = c.lbu(r32(c, S2).wrapping_add(7));
+    c.g[T1][0] = 1;
+    c.g[A0][0] = sx(r32(c, A1) << 1);
+    c.g[T2][0] = 0;
+    c.g[A1][0] = sx(r32(c, V1) << 24);
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(3));
+    c.g[V1][0] &= 0xf;
+    c.g[A1][0] = sx(((r32(c, A1) as i32) >> 28) as u32);
+    c.g[V0][0] = sx(r32(c, V1) << 1);
+    c.g[A0][0] &= 0x3fc;
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0xc));
+    c.g[V1][0] = sx(r32(c, A1) << 1);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(3));
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+    c.g[V0][0] &= c.g[A2][0];
+    c.g[A0][0] = sx(r32(c, S2).wrapping_add(r32(c, A0)));
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(3));
+    c.g[V1][0] &= c.g[A2][0];
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+    c.g[A3][0] = 0;
+    c.g[A0][0] = c.lw(r32(c, A0));
+    c.g[T0][0] = 1;
+    c.g[T3][0] = 2;
+    c.g[A2][0] = sx(r32(c, FP).wrapping_add(4));
+    loop {
+        c.cycles += 6;
+        c.g[V0][0] = sx(r32(c, A3) << 1);
+        c.g[A1][0] = c.lw(r32(c, A2));
+        c.g[V0][0] = sx(r32(c, A0) >> (r32(c, V0) & 31));
+        c.g[V0][0] &= 3;
+        c.g[V1][0] = 0;
+        if c.g[V0][0] == c.g[T0][0] {
+            c.cycles += 3;
+            c.g[V1][0] = c.g[T0][0];
+            if c.g[A1][0] == 0 {
+                c.g[V1][0] = 0;
+            }
+        } else {
+            c.cycles += 2;
+            let two = c.g[V0][0] == c.g[T3][0];
+            c.g[V0][0] = !c.g[A1][0];
+            c.cycles += 2;
+            if two {
+                c.g[V1][0] = c.g[T0][0];
+                if c.g[V0][0] == 0 {
+                    c.g[V1][0] = 0;
+                }
+            }
+        }
+        c.cycles += 2;
+        if c.g[V1][0] != 0 {
+            c.g[T2][0] |= c.g[T1][0];
+        }
+        c.cycles += 6;
+        c.g[V0][0] = sx(r32(c, T1) << 1);
+        c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+        c.g[T1][0] = c.g[V0][0] & 0xfffe;
+        c.g[V0][0] = ((c.g[A3][0] as i64) < 20) as u64;
+        c.g[A2][0] = sx(r32(c, A2).wrapping_add(4));
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003d_a168);
+        }
+    }
+    c.cycles += 1;
+    let mask = c.g[T2][0];
+    c.sw(sp(c).wrapping_add(0x1c4), mask);
+}
+
+/// Tries the parts in weight order until one resolves (sp+0x1bc != 0).
+pub(crate) fn build_sentence_parts(c: &mut Cpu) -> Flow {
+    c.cycles += 6;
+    c.g[A2][0] = sx(r32(c, S2).wrapping_add(0xc));
+    c.g[V0][0] = sx(sp(c).wrapping_add(0x70));
+    let (offs, set) = (c.g[A2][0], c.g[V0][0]);
+    c.sw(sp(c).wrapping_add(0x1d0), offs);
+    c.sw(sp(c).wrapping_add(0x1d4), set);
+    c.g[V0][0] = sx(sp(c).wrapping_add(r32(c, S1)));
+    loop {
+        // s3 = the next part index (in range, or done).
+        c.cycles += 3;
+        c.g[S3][0] = c.lbu(r32(c, V0));
+        c.g[S0][0] = 1;
+        c.cycles += 4;
+        c.g[V1][0] = c.lw(sp(c).wrapping_add(0x1b8));
+        c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V1][0] as i64)) as u64;
+        c.g[A1][0] = c.lw(sp(c).wrapping_add(0x1d0));
+        if c.g[V0][0] == 0 {
+            return Ok(());
+        }
+        // s1 = the part (event + 4 offs[s3]); roll its chance.
+        c.cycles += 15;
+        c.g[S4][0] = sx(r32(c, S3) << 1);
+        c.g[S7][0] = sx(r32(c, S1).wrapping_add(1));
+        c.g[A0][0] = 0x64;
+        c.g[V1][0] = sx(r32(c, S4).wrapping_add(r32(c, A1)));
+        c.g[V0][0] = c.lhu(r32(c, V1));
+        c.g[A1][0] = u64::MAX;
+        c.g[V0][0] = sx(r32(c, V0) << 2);
+        c.g[S1][0] = sx(r32(c, S2).wrapping_add(r32(c, V0)));
+        SPCH_RANDOM_NO_REPEAT.call(c, 0x003d_a228)?;
+        'part: {
+            c.g[A0][0] = c.lbu(r32(c, S1).wrapping_add(1));
+            c.g[V1][0] = c.g[S0][0];
+            c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A0][0] as i64)) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[V1][0] = 0;
+            }
+            c.g[A0][0] = c.g[S2][0];
+            if c.g[V1][0] == 0 {
+                break 'part;
+            }
+            c.cycles += 5;
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A2][0] = c.g[FP][0];
+            SPCH_CHECK_EVENT_MASKS.call(c, 0x003d_a24c)?;
+            let ok = c.g[V0][0] != 0;
+            c.g[A2][0] = c.lw(sp(c).wrapping_add(0x1c8));
+            if !ok {
+                break 'part;
+            }
+            // With argument masks, the part's mask must equal ours.
+            c.cycles += 2;
+            let masks = c.g[A2][0] != 0;
+            c.g[A2][0] = c.lw(sp(c).wrapping_add(0x1c4));
+            if masks {
+                c.cycles += 25;
+                c.g[V0][0] = c.lbu(r32(c, S2).wrapping_add(7));
+                c.g[V1][0] = c.lbu(r32(c, S2).wrapping_add(6));
+                c.g[A1][0] = sx(r32(c, V0) << 24);
+                c.g[V0][0] &= 0xf;
+                c.g[A1][0] = sx(((r32(c, A1) as i32) >> 28) as u32);
+                c.g[A0][0] = sx(r32(c, V0) << 1);
+                c.g[V1][0] = sx(r32(c, V1) << 1);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(3));
+                c.g[V0][0] = sx(r32(c, A1) << 1);
+                c.g[V1][0] &= 0x3fc;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A1)));
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(0xc));
+                c.g[A1][0] = 0xffff_ffff_ffff_fffc;
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(3));
+                c.g[V1][0] = sx(r32(c, S2).wrapping_add(r32(c, V1)));
+                c.g[A0][0] &= c.g[A1][0];
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(3));
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+                c.g[V0][0] &= c.g[A1][0];
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, S4)));
+                c.g[V0][0] = c.lhu(r32(c, V1).wrapping_add(4));
+                c.g[V0][0] ^= c.g[A2][0];
+                if c.g[V0][0] != 0 {
+                    c.g[S0][0] = 0;
+                }
+            }
+            c.cycles += 2;
+            c.g[A0][0] = c.lw(sp(c).wrapping_add(0x1d4));
+            if c.g[S0][0] == 0 {
+                break 'part;
+            }
+            // Clear the choice set (twelve 8-byte slots' flags and its
+            // counts), choose the samples.
+            c.cycles += 6;
+            c.g[S0][0] = sx(sp(c).wrapping_add(0x70));
+            let s = sp(c);
+            c.sb(s.wrapping_add(0xd1), 0);
+            c.g[V1][0] = 0xb;
+            c.sb(s.wrapping_add(0xd0), 0);
+            c.g[V0][0] = sx(r32(c, A0).wrapping_add(0x5f));
+            loop {
+                c.cycles += 7;
+                c.sb(r32(c, V0), 0);
+                c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+                let more = (c.g[V1][0] as i64) >= 0;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(8));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_a2e0);
+                }
+            }
+            c.cycles += 9;
+            c.g[T0][0] = c.lbu(sp(c).wrapping_add(0x1b0));
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A3][0] = c.lw(sp(c).wrapping_add(0x1c0));
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A2][0] = c.g[FP][0];
+            c.g[T1][0] = c.g[S6][0];
+            SPCH_CHOOSE_EVENT_SAMPLES.call(c, 0x003d_a318)?;
+            let chosen = (c.g[V0][0] as i64) > 0;
+            c.g[T0][0] = c.lw(sp(c).wrapping_add(0x1cc));
+            if !chosen {
+                break 'part;
+            }
+            c.cycles += 7;
+            c.g[A0][0] = sx(sp(c).wrapping_add(0x1a0));
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A2][0] = c.g[S1][0];
+            c.g[A3][0] = c.g[S6][0];
+            SPCH_RESOLVE_EVENT_PARTS.call(c, 0x003d_a334)?;
+            let resolved = c.g[V0][0];
+            c.sw(sp(c).wrapping_add(0x1bc), resolved);
+            if resolved == 0 {
+                break 'part;
+            }
+            c.cycles += 7;
+            c.g[A1][0] = c.lw(sp(c).wrapping_add(0x1b4));
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A3][0] = c.g[S1][0];
+            c.g[T0][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S2][0];
+            c.g[T1][0] = c.g[FP][0];
+            SPCH_SENTENCE_APPEND.call(c, 0x003d_a358)?;
+        }
+        c.cycles += 3;
+        c.g[A1][0] = c.lw(sp(c).wrapping_add(0x1bc));
+        c.g[S1][0] = c.g[S7][0];
+        if c.g[A1][0] != 0 {
+            return Ok(());
+        }
+        c.cycles += 4;
+        c.g[A2][0] = c.lw(sp(c).wrapping_add(0x1b8));
+        c.g[V0][0] = ((c.g[S7][0] as i64) < (c.g[A2][0] as i64)) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[V0][0] = sx(sp(c).wrapping_add(r32(c, S1)));
+        if !more {
+            return Ok(());
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003d_a1e8);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_ChooseEventSamples
+// ---------------------------------------------------------------------------
+
+/// Speech choice set: `+0x60` the part's slot count; slots of 8 bytes from
+/// `+0`: `+0` bank (-1: none), `+2` sample, `+4` set start, `+5` length,
+/// `+7` done flag.
+pub(crate) const SPCH_CHOICE_SLOTS: u32 = 0x60;
+
+pub(crate) const SPCH_MATCH_FLAGS: Callee = Callee {
+    addr: 0x003d_b3b8,
+    f: ee::s14::SPCH_MatchFlags,
+};
+
+pub(crate) const SPCH_FIND_BANK_BY_ID: Callee = Callee {
+    addr: 0x003d_6d50,
+    f: ee::s14::SPCH_FindBankById,
+};
+
+pub(crate) const SPCH_FIND_BANK: Callee = Callee {
+    addr: 0x003d_6db8,
+    f: ee::s14::SPCH_FindBank,
+};
+
+pub(crate) const SPCH_BANK_HAS_SAMPLE: Callee = Callee {
+    addr: 0x003d_6cf8,
+    f: ee::s14::SPCH_BankHasSample,
+};
+
+pub(crate) const SPCH_CHOOSE_SAMPLE: Callee = Callee {
+    addr: 0x003d_88c8,
+    f: ee::s14::SPCH_ChooseSample,
+};
+
+/// `int SPCH_ChooseEventSamples(SelSet* set, u8* part, int* args, u8 a,
+/// u8 b, int mode)` (0x3d9088): if the part has fewer than 13 slots, its
+/// mode bits (`part[4] & 3`) suit `mode` and its flags match `(a, b)`:
+/// clears the part's mark words and, up to 200 rounds, resolves each slot
+/// whose conditions hold (its bank by id, by argument or by argument with a
+/// sample check) and chooses its samples (SPCH_ChooseSample). Returns 1
+/// when every slot resolved, else 0. Dispatcher-shaped like the original
+/// (its loops can unwind and resume at their heads).
+pub fn spch_choose_event_samples(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                0x003d_9088 => {
+                    c.cycles += 22;
+                    let frame = Frame::open(c, 0xb0);
+                    frame.save(c, FP, 0x90);
+                    frame.save(c, S7, 0x80);
+                    frame.save(c, S6, 0x70);
+                    frame.save(c, S4, 0x50);
+                    frame.save(c, RA, 0xa0);
+                    frame.save(c, S5, 0x60);
+                    frame.save(c, S3, 0x40);
+                    frame.save(c, S2, 0x30);
+                    frame.save(c, S1, 0x20);
+                    frame.save(c, S0, 0x10);
+                    c.g[S7][0] = c.g[A0][0];
+                    c.g[S4][0] = c.g[A1][0];
+                    c.g[S6][0] = c.g[A2][0];
+                    // Locals: ret = 1 (sp+0), tries = 200 (sp+8).
+                    c.g[V1][0] = c.lbu(r32(c, S4).wrapping_add(4));
+                    c.sw(sp(c), 1);
+                    c.g[V0][0] = 0xc8;
+                    c.g[FP][0] = sx(r32(c, V1) >> 2);
+                    c.sw(sp(c).wrapping_add(8), 0xc8);
+                    c.g[V0][0] = ((c.g[FP][0] as i64) < 13) as u64;
+                    pc = if c.g[V0][0] == 0 {
+                        0x003d_9128
+                    } else {
+                        0x003d_90e0
+                    };
+                }
+                // Do the part's mode bits (part[4] & 3) suit `mode` (t1)?
+                0x003d_90e0 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw(sp(c));
+                    c.g[V1][0] &= 3;
+                    let t = c.g[V1][0] != c.g[V0][0];
+                    c.g[V0][0] = 2;
+                    pc = if t { 0x003d_90f8 } else { 0x003d_90f0 };
+                }
+                0x003d_90f0 => {
+                    c.cycles += 2;
+                    if c.g[T1][0] == c.g[V0][0] {
+                        c.g[V0][0] = 1;
+                        pc = 0x003d_910c;
+                    } else {
+                        pc = 0x003d_90f8;
+                    }
+                }
+                0x003d_90f8 => {
+                    c.cycles += 2;
+                    let t = c.g[V1][0] != c.g[V0][0];
+                    c.g[V0][0] = (c.g[V1][0] < 1) as u64;
+                    pc = if t { 0x003d_910c } else { 0x003d_9100 };
+                }
+                0x003d_9100 => {
+                    c.cycles += 2;
+                    let t = c.g[T1][0] != c.g[V1][0];
+                    c.g[V0][0] = 1;
+                    pc = if t { 0x003d_910c } else { 0x003d_9108 };
+                }
+                0x003d_9108 => {
+                    c.cycles += 1;
+                    c.g[V0][0] = (c.g[V1][0] < 1) as u64;
+                    pc = 0x003d_910c;
+                }
+                0x003d_910c => {
+                    c.cycles += 2;
+                    let t = c.g[V0][0] == 0;
+                    c.g[A0][0] = c.g[A3][0] & 0xff;
+                    pc = if t { 0x003d_9128 } else { 0x003d_9114 };
+                }
+                // SPCH_MatchFlags(a, b, part).
+                0x003d_9114 => {
+                    c.cycles += 5;
+                    c.g[A1][0] = c.g[T0][0] & 0xff;
+                    c.g[A2][0] = c.g[S4][0];
+                    SPCH_MATCH_FLAGS.call(c, 0x003d_9120)?;
+                    if c.g[V0][0] != 0 {
+                        c.g[V0][0] = c.lbu(r32(c, S4).wrapping_add(4));
+                        pc = 0x003d_9130;
+                    } else {
+                        pc = 0x003d_9128;
+                    }
+                }
+                // ret = 0.
+                0x003d_9128 => {
+                    c.cycles += 2;
+                    c.sw(sp(c), 0);
+                    pc = 0x003d_938c;
+                }
+                // Clear the part's mark words.
+                0x003d_9130 => {
+                    c.cycles += 11;
+                    c.g[A1][0] = 0;
+                    c.g[V1][0] = c.lbu(r32(c, S4).wrapping_add(6));
+                    c.g[V0][0] = sx(r32(c, V0) >> 2);
+                    c.g[A0][0] = c.lbu(r32(c, S4).wrapping_add(5));
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(3));
+                    c.g[V1][0] = sx(r32(c, V1) << 2);
+                    c.g[V0][0] &= 0x7c;
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(8));
+                    c.g[V0][0] = sx(r32(c, S4).wrapping_add(r32(c, V0)));
+                    let t = c.g[A0][0] == 0;
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                    if t {
+                        pc = 0x003d_917c;
+                    } else {
+                        c.cycles += 1;
+                        c.g[V1][0] = c.g[V0][0];
+                        pc = 0x003d_9160;
+                    }
+                }
+                0x003d_9160 => {
+                    c.cycles += 7;
+                    c.sw(r32(c, V1), 0);
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+                    c.g[V0][0] = c.lbu(r32(c, S4).wrapping_add(5));
+                    c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+                    if more {
+                        if back_edge_unwinds(c, 0x003d_9160) {
+                            return Ok(());
+                        }
+                        pc = 0x003d_9160;
+                    } else {
+                        pc = 0x003d_917c;
+                    }
+                }
+                0x003d_917c => {
+                    c.cycles += 3;
+                    let n = c.g[FP][0];
+                    c.sb(r32(c, S7).wrapping_add(SPCH_CHOICE_SLOTS), n);
+                    c.g[V0][0] = c.lw(sp(c).wrapping_add(8));
+                    c.g[V1][0] = 1;
+                    pc = 0x003d_9188;
+                }
+                // A round: all = 1 (sp+4), tries-- (sp+8), slot i = 0.
+                0x003d_9188 => {
+                    c.cycles += 5;
+                    let all = c.g[V1][0];
+                    c.sw(sp(c).wrapping_add(4), all);
+                    c.g[S5][0] = 0;
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+                    let t = c.g[FP][0] == 0;
+                    let tries = c.g[V0][0];
+                    c.sw(sp(c).wrapping_add(8), tries);
+                    if t {
+                        pc = 0x003d_9368;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V1][0] = sx(r32(c, S4).wrapping_add(8));
+                        c.g[S2][0] = c.g[S7][0];
+                        let list = c.g[V1][0];
+                        c.sw(sp(c).wrapping_add(0xc), list);
+                        pc = 0x003d_91a8;
+                    }
+                }
+                // Slot i: s3 = the condition (part + 4 list[i]); check its
+                // mark conditions (t1 = holds).
+                0x003d_91a8 => {
+                    c.cycles += 9;
+                    c.g[V0][0] = c.lw(sp(c).wrapping_add(0xc));
+                    c.g[T1][0] = 1;
+                    c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, S5)));
+                    c.g[V0][0] = c.lbu(r32(c, V1));
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    c.g[S3][0] = sx(r32(c, S4).wrapping_add(r32(c, V0)));
+                    c.g[T0][0] = c.lb(r32(c, S3).wrapping_add(4));
+                    let t = (c.g[T0][0] as i64) <= 0;
+                    c.g[A3][0] = 0;
+                    if t {
+                        pc = 0x003d_9258;
+                    } else {
+                        c.cycles += 5;
+                        c.g[A2][0] = 0xffff_ffff_ffff_fffc;
+                        c.g[T2][0] = 0xff;
+                        c.g[A1][0] = sx(r32(c, S3).wrapping_add(0x10));
+                        pc = 0x003d_91e0;
+                    }
+                }
+                // Condition k: id 0xff with a marked target (bit 7) needs
+                // that mark word of the selection to be set.
+                0x003d_91e0 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lbu(r32(c, A1).wrapping_sub(8));
+                    if c.g[V0][0] != c.g[T2][0] {
+                        c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                        pc = 0x003d_924c;
+                        continue;
+                    }
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lbu(r32(c, A1));
+                    let t = c.g[A0][0] == c.g[V0][0];
+                    c.g[V0][0] = c.g[A0][0] & 0x80;
+                    if t {
+                        pc = 0x003d_9248;
+                        continue;
+                    }
+                    c.cycles += 2;
+                    if c.g[V0][0] == 0 {
+                        c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                        pc = 0x003d_924c;
+                        continue;
+                    }
+                    c.cycles += 13;
+                    c.g[V0][0] = c.lbu(r32(c, S4).wrapping_add(4));
+                    c.g[V1][0] = c.lbu(r32(c, S4).wrapping_add(6));
+                    c.g[V0][0] = sx(r32(c, V0) >> 2);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(3));
+                    c.g[V1][0] = sx(r32(c, V1) << 2);
+                    c.g[V0][0] &= c.g[A2][0];
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(3));
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(8));
+                    c.g[V1][0] &= c.g[A2][0];
+                    c.g[V0][0] = sx(r32(c, S4).wrapping_add(r32(c, V0)));
+                    c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                    let t = c.g[V1][0] == 0;
+                    c.g[A0][0] &= 0x7f;
+                    if t {
+                        pc = 0x003d_9248;
+                        continue;
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = sx(r32(c, A0) << 2);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                    c.g[V1][0] = c.lw(r32(c, V0));
+                    if c.g[V1][0] == 0 {
+                        c.g[T1][0] = 0;
+                        pc = 0x003d_9258;
+                    } else {
+                        pc = 0x003d_9248;
+                    }
+                }
+                0x003d_9248 => {
+                    c.cycles += 1;
+                    c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                    pc = 0x003d_924c;
+                }
+                0x003d_924c => {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[T0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+                    if more {
+                        if back_edge_unwinds(c, 0x003d_91e0) {
+                            return Ok(());
+                        }
+                        pc = 0x003d_91e0;
+                    } else {
+                        pc = 0x003d_9258;
+                    }
+                }
+                0x003d_9258 => {
+                    c.cycles += 2;
+                    if c.g[T1][0] == 0 {
+                        // Not yet: all = 0.
+                        c.cycles += 2;
+                        c.sw(sp(c).wrapping_add(4), 0);
+                        pc = 0x003d_9358;
+                        continue;
+                    }
+                    c.g[V0][0] = c.lbu(r32(c, S2).wrapping_add(7));
+                    c.cycles += 2;
+                    if c.g[V0][0] != 0 {
+                        c.g[S5][0] = sx(r32(c, S5).wrapping_add(1));
+                        pc = 0x003d_935c;
+                        continue;
+                    }
+                    // Resolve the slot: start = set count, bank/sample = -1;
+                    // kind (cond+3): 0 bank by id, 1 bank of argument
+                    // cond+2, 2 bank by id holding the argument's sample.
+                    c.cycles += 10;
+                    c.g[V0][0] = c.lbu(r32(c, S7).wrapping_add(0x61));
+                    c.g[A2][0] = u64::MAX;
+                    c.g[V1][0] = 1;
+                    let start = c.g[V0][0];
+                    c.sb(r32(c, S2).wrapping_add(4), start);
+                    c.g[A0][0] = c.lhu(r32(c, S3));
+                    c.g[A1][0] = c.lbu(r32(c, S3).wrapping_add(3));
+                    c.g[S0][0] = c.lbu(r32(c, S3).wrapping_add(2));
+                    c.sh(r32(c, S2).wrapping_add(2), u64::MAX);
+                    c.sh(r32(c, S2), u64::MAX);
+                    if c.g[A1][0] == c.g[V1][0] {
+                        // Bank of argument s0 (< 20), else none.
+                        c.cycles += 3;
+                        let ok = c.g[S0][0] < 0x14;
+                        c.g[V0][0] = sx(r32(c, S0) << 2);
+                        if ok {
+                            c.cycles += 5;
+                            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S6)));
+                            c.g[A1][0] = c.lhu(r32(c, V0));
+                            SPCH_FIND_BANK.call(c, 0x003d_92e0)?;
+                            let bank = c.g[V0][0];
+                            c.sh(r32(c, S2), bank);
+                        } else {
+                            c.cycles += 2;
+                            c.sh(r32(c, S2), u64::MAX);
+                        }
+                        pc = 0x003d_931c;
+                        continue;
+                    }
+                    c.cycles += 2;
+                    let kind0 = c.g[A1][0] == 0;
+                    c.g[V0][0] = 2;
+                    if kind0 {
+                        c.cycles += 4;
+                        SPCH_FIND_BANK_BY_ID.call(c, 0x003d_92b8)?;
+                        let bank = c.g[V0][0];
+                        c.sh(r32(c, S2), bank);
+                        pc = 0x003d_931c;
+                        continue;
+                    }
+                    c.cycles += 2;
+                    if c.g[A1][0] != c.g[V0][0] {
+                        c.cycles += 2;
+                        c.g[V1][0] = c.lh(r32(c, S2));
+                        pc = 0x003d_9320;
+                        continue;
+                    }
+                    // Kind 2: the bank, if it holds sample args[s0].
+                    c.cycles += 10;
+                    SPCH_FIND_BANK_BY_ID.call(c, 0x003d_92f0)?;
+                    c.g[V1][0] = sx(r32(c, S0) << 2);
+                    c.g[S1][0] = c.g[V0][0];
+                    c.g[S0][0] = sx(r32(c, V1).wrapping_add(r32(c, S6)));
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A1][0] = c.lw(r32(c, S0));
+                    SPCH_BANK_HAS_SAMPLE.call(c, 0x003d_9308)?;
+                    if c.g[V0][0] == 0 {
+                        c.g[S1][0] = u64::MAX;
+                    } else {
+                        c.cycles += 2;
+                        c.g[V0][0] = c.lhu(r32(c, S0));
+                        let sample = c.g[V0][0];
+                        c.sh(r32(c, S2).wrapping_add(2), sample);
+                    }
+                    c.cycles += 1;
+                    let bank = c.g[S1][0];
+                    c.sh(r32(c, S2), bank);
+                    pc = 0x003d_931c;
+                }
+                0x003d_931c => {
+                    c.cycles += 1;
+                    c.g[V1][0] = c.lh(r32(c, S2));
+                    pc = 0x003d_9320;
+                }
+                // No bank: ret = 0. Else choose the slot's samples.
+                0x003d_9320 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = u64::MAX;
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    let none = c.g[V0][0] == 0;
+                    c.g[S0][0] = 1;
+                    if none {
+                        if back_edge_unwinds(c, 0x003d_9128) {
+                            return Ok(());
+                        }
+                        pc = 0x003d_9128;
+                        continue;
+                    }
+                    c.cycles += 8;
+                    c.g[A3][0] = c.g[S3][0];
+                    c.g[A0][0] = c.g[S7][0];
+                    c.g[A1][0] = c.g[S4][0];
+                    c.g[A2][0] = c.g[S2][0];
+                    c.g[T0][0] = c.g[S6][0];
+                    SPCH_CHOOSE_SAMPLE.call(c, 0x003d_9348)?;
+                    if c.g[V0][0] == 0 {
+                        c.sw(sp(c), 0);
+                        pc = 0x003d_938c;
+                        continue;
+                    }
+                    c.cycles += 2;
+                    let len = c.g[V0][0];
+                    c.sb(r32(c, S2).wrapping_add(5), len);
+                    let done = c.g[S0][0];
+                    c.sb(r32(c, S2).wrapping_add(7), done);
+                    pc = 0x003d_9358;
+                }
+                0x003d_9358 => {
+                    c.cycles += 1;
+                    c.g[S5][0] = sx(r32(c, S5).wrapping_add(1));
+                    pc = 0x003d_935c;
+                }
+                0x003d_935c => {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[S5][0] as i64) < (c.g[FP][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_add(8));
+                    if more {
+                        if back_edge_unwinds(c, 0x003d_91a8) {
+                            return Ok(());
+                        }
+                        pc = 0x003d_91a8;
+                    } else {
+                        pc = 0x003d_9368;
+                    }
+                }
+                // Another round while some slot waits and tries are left;
+                // out of tries: ret = 0.
+                0x003d_9368 => {
+                    c.cycles += 3;
+                    c.g[V1][0] = c.lw(sp(c).wrapping_add(4));
+                    let all = c.g[V1][0] != 0;
+                    c.g[V0][0] = c.lw(sp(c).wrapping_add(8));
+                    if !all {
+                        c.cycles += 2;
+                        let again = (c.g[V0][0] as i64) > 0;
+                        c.g[V1][0] = 1;
+                        if again {
+                            if back_edge_unwinds(c, 0x003d_9188) {
+                                return Ok(());
+                            }
+                            pc = 0x003d_9188;
+                            continue;
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw(sp(c));
+                    c.g[V0][0] = c.lw(sp(c).wrapping_add(8));
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = 0;
+                    }
+                    let ret = c.g[V1][0];
+                    c.sw(sp(c), ret);
+                    pc = 0x003d_938c;
+                }
+                0x003d_938c => {
+                    c.cycles += 13;
+                    c.g[V0][0] = c.lw(sp(c));
+                    let frame = Frame { size: 0xb0 };
+                    for (reg, off) in [
+                        (RA, 0xa0),
+                        (FP, 0x90),
+                        (S7, 0x80),
+                        (S6, 0x70),
+                        (S5, 0x60),
+                        (S4, 0x50),
+                        (S3, 0x40),
+                        (S2, 0x30),
+                        (S1, 0x20),
+                        (S0, 0x10),
+                    ] {
+                        frame.restore(c, reg, off);
+                    }
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x003d_9088, 0x003d_93c0);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_PlaySentence
+// ---------------------------------------------------------------------------
+
+/// The built sentence (0x450700): `+0` its bank, `+4` part count; per part
+/// (stride 0x5c): `+0x194` flags byte, `+0x18c` event, `+0x190` part
+/// header, `+0x198` its 4-byte key; the chosen slots `{s16 bank, u16
+/// sample}` at `+0xc` (stride 8).
+pub(crate) const SPCH_SENTENCE: u32 = 0x0045_0700;
+
+pub(crate) const SPCH_SENTENCE_PART: u32 = 0x5c;
+
+/// The play callback (`0x44ff98`).
+pub(crate) const SPCH_PLAY_CALLBACK_2: u32 = 0x0044_ff98;
+
+pub(crate) const SPCH_NOTIFY_PART_CALLBACK: Callee = Callee {
+    addr: 0x003d_b040,
+    f: ee::s14::SPCH_NotifyPartCallback,
+};
+
+pub(crate) const SPCH_FIND_BANK_TYPE_2: Callee = Callee {
+    addr: 0x003d_8330,
+    f: ee::s14::SPCH_FindBankType,
+};
+
+pub(crate) const SPCH_GET_EVENT_PARAM: Callee = Callee {
+    addr: 0x003d_b3e0,
+    f: ee::s14::SPCH_GetEventParam,
+};
+
+pub(crate) const SPCH_DECODE_SAMPLE_ENTRY_2: Callee = Callee {
+    addr: 0x003d_b838,
+    f: ee::s14::SPCH_DecodeSampleEntry,
+};
+
+pub(crate) const SPCH_NOTIFY_PLAY_CALLBACK: Callee = Callee {
+    addr: 0x003d_9830,
+    f: ee::s14::SPCH_NotifyPlayCallback,
+};
+
+pub(crate) const SPCH_RESET_SENTENCE: Callee = Callee {
+    addr: 0x003d_9a40,
+    f: ee::s14::SPCH_ResetSentence,
+};
+
+/// `int SPCH_PlaySentence(int bank)` (0x3d9bd8): if the built sentence
+/// belongs to `bank` and has parts, plays each part: notifies the part
+/// callback; with a play callback set, decodes each chosen sample of each
+/// slot (up to 4 per slot) and hands it to the callback; notifies the play
+/// callback; the first part also records the bank's last event (counting
+/// repeats). Resets the sentence and returns the number of slots played.
+pub fn spch_play_sentence(c: &mut Cpu) {
+    guest(c, play_sentence_body);
+}
+
+pub(crate) fn play_sentence_body(c: &mut Cpu) -> Flow {
+    c.cycles += 18;
+    let frame = Frame::open(c, 0xf0);
+    frame.save(c, S1, 0x60);
+    frame.save(c, RA, 0xe0);
+    frame.save(c, FP, 0xd0);
+    frame.save(c, S7, 0xc0);
+    frame.save(c, S6, 0xb0);
+    frame.save(c, S5, 0xa0);
+    frame.save(c, S4, 0x90);
+    frame.save(c, S3, 0x80);
+    frame.save(c, S2, 0x70);
+    frame.save(c, S0, 0x50);
+    c.g[S1][0] = sx(SPCH_SENTENCE);
+    c.g[V1][0] = c.lw(SPCH_SENTENCE);
+    let bank = c.g[A0][0];
+    c.sw(sp(c).wrapping_add(0x24), bank);
+    c.g[V0][0] = 0;
+    // Locals: played slots (sp+0x28), part count (+0x2c), part i (+0x30),
+    // key (sp+0, also the callbacks' argument: +0x34).
+    c.sw(sp(c).wrapping_add(0x28), 0);
+    if c.g[V1][0] == c.g[A0][0] {
+        c.cycles += 2;
+        c.g[V0][0] = c.lw(r32(c, S1).wrapping_add(4));
+        c.g[V0][0] = (0 < (c.g[V0][0] as i64)) as u64;
+    }
+    c.cycles += 2;
+    if c.g[V0][0] != 0 {
+        c.cycles += 4;
+        c.g[V0][0] = c.lw(r32(c, S1).wrapping_add(4));
+        c.sw(sp(c).wrapping_add(0x30), 0);
+        let parts = c.g[V0][0];
+        c.sw(sp(c).wrapping_add(0x2c), parts);
+        if (parts as i64) > 0 {
+            c.cycles += 2;
+            let s = sp(c);
+            c.sw(s.wrapping_add(0x34), s as u64);
+            loop {
+                play_sentence_part(c)?;
+                c.cycles += 5;
+                c.g[T0][0] = c.lw(sp(c).wrapping_add(0x40));
+                c.g[T1][0] = c.lw(sp(c).wrapping_add(0x2c));
+                c.g[V0][0] = ((c.g[T0][0] as i64) < (c.g[T1][0] as i64)) as u64;
+                let next = c.g[T0][0];
+                c.sw(sp(c).wrapping_add(0x30), next);
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_9c48);
+                }
+            }
+        }
+    }
+    c.cycles += 15;
+    SPCH_RESET_SENTENCE.call(c, 0x003d_9e98)?;
+    c.g[V0][0] = c.lw(sp(c).wrapping_add(0x28));
+    for (reg, off) in [
+        (RA, 0xe0),
+        (FP, 0xd0),
+        (S7, 0xc0),
+        (S6, 0xb0),
+        (S5, 0xa0),
+        (S4, 0x90),
+        (S3, 0x80),
+        (S2, 0x70),
+        (S1, 0x60),
+        (S0, 0x50),
+    ] {
+        frame.restore(c, reg, off);
+    }
+    frame.close(c);
+    Ok(())
+}
+
+/// Part `i` (sp+0x30); `i + 1` left at sp+0x40.
+pub(crate) fn play_sentence_part(c: &mut Cpu) -> Flow {
+    c.cycles += 32;
+    c.g[V1][0] = c.lw(sp(c).wrapping_add(0x30));
+    c.g[A0][0] = SPCH_SENTENCE_PART as u64;
+    c.g[A1][0] = 0x45_0000;
+    c.g[T0][0] = 0x45_0000;
+    c.mult(0, S0, V1, A0);
+    c.g[A1][0] = sx(SPCH_SENTENCE + 0x198);
+    c.g[A3][0] = sx(r32(c, V1).wrapping_add(1));
+    c.g[T0][0] = sx(SPCH_SENTENCE);
+    let next = c.g[A3][0];
+    c.sw(sp(c).wrapping_add(0x40), next);
+    c.g[S1][0] = sx(r32(c, A1).wrapping_sub(0xc));
+    c.g[A0][0] = c.g[SP][0];
+    c.g[V0][0] = sx(r32(c, S0).wrapping_add(r32(c, T0)));
+    c.g[V1][0] = sx(r32(c, S0).wrapping_add(r32(c, A1)));
+    c.g[S1][0] = sx(r32(c, S1).wrapping_add(r32(c, S0)));
+    c.g[A2][0] = c.lbu(r32(c, V0).wrapping_add(0x194));
+    c.g[A1][0] = c.lw(r32(c, S1));
+    c.g[A3][0] = c.g[V1][0];
+    // key -> sp+0 (unaligned copy through t1).
+    let key = r32(c, V1);
+    c.lwl(T1, key.wrapping_add(3));
+    c.lwr(T1, key);
+    let s = sp(c);
+    c.swl(T1, s.wrapping_add(3));
+    c.swr(T1, s);
+    SPCH_NOTIFY_PART_CALLBACK.call(c, 0x003d_9ca0)?;
+    c.g[S1][0] = c.lw(r32(c, S1));
+    c.g[T1][0] = sx(SPCH_SENTENCE + 0x190);
+    c.g[T2][0] = sx(SPCH_PLAY_CALLBACK_2 - 8);
+    let event = c.g[S1][0];
+    c.sw(sp(c).wrapping_add(0x38), event);
+    c.g[S0][0] = sx(r32(c, T1).wrapping_add(r32(c, S0)));
+    c.g[V0][0] = c.lw(SPCH_PLAY_CALLBACK_2);
+    c.g[S3][0] = c.lw(r32(c, S0));
+    if c.g[V0][0] != 0 {
+        // The bank type (sp+0x20), then each slot j of the part.
+        c.cycles += 7;
+        c.g[A1][0] = sx(sp(c).wrapping_add(0x20));
+        c.g[A0][0] = c.g[SP][0];
+        SPCH_FIND_BANK_TYPE_2.call(c, 0x003d_9cd4)?;
+        c.g[V1][0] = c.lbu(r32(c, S3).wrapping_add(4));
+        c.g[FP][0] = sx(r32(c, V1) >> 2);
+        c.g[A1][0] = 0;
+        if c.g[FP][0] != 0 {
+            c.cycles += 5;
+            c.g[V0][0] = sx(r32(c, S3).wrapping_add(8));
+            c.g[S7][0] = sx(sp(c).wrapping_add(0x1c));
+            let list = c.g[V0][0];
+            c.sw(sp(c).wrapping_add(0x3c), list);
+            c.g[V1][0] = c.lw(sp(c).wrapping_add(0x3c));
+            loop {
+                play_sentence_slot(c)?;
+                c.cycles += 4;
+                c.g[A1][0] = c.g[S6][0];
+                c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[FP][0] as i64)) as u64;
+                c.g[V1][0] = c.lw(sp(c).wrapping_add(0x3c));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_9cf8);
+                }
+            }
+        }
+    }
+    // SPCH_NotifyPlayCallback(part header, key, played); count its slots.
+    c.cycles += 18;
+    c.g[V0][0] = sx(SPCH_SENTENCE + 0x190);
+    c.g[V1][0] = SPCH_SENTENCE_PART as u64;
+    c.g[A2][0] = c.lw(sp(c).wrapping_add(0x28));
+    c.lo[0] = c.g[V0][0];
+    c.g[A1][0] = c.g[SP][0];
+    c.g[V0][0] = c.lw(sp(c).wrapping_add(0x30));
+    c.madd(0, S0, V0, V1);
+    c.g[A0][0] = c.lw(r32(c, S0));
+    SPCH_NOTIFY_PLAY_CALLBACK.call(c, 0x003d_9dfc)?;
+    c.g[V1][0] = c.lw(r32(c, S0));
+    c.g[A0][0] = c.lw(sp(c).wrapping_add(0x30));
+    c.g[V0][0] = c.lbu(r32(c, V1).wrapping_add(4));
+    c.g[V1][0] = c.lw(sp(c).wrapping_add(0x28));
+    c.g[V0][0] = sx(r32(c, V0) >> 2);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+    let played = c.g[V1][0];
+    c.sw(sp(c).wrapping_add(0x28), played);
+    if c.g[A0][0] == 0 {
+        // First part: the bank's last event = key (repeat count 1), or
+        // one more repeat of it.
+        c.cycles += 9;
+        c.g[A3][0] = c.lw(sp(c).wrapping_add(0x24));
+        c.g[V0][0] = sx(SPCH_BANK_LAST);
+        c.g[A0][0] = c.lhu(sp(c));
+        c.g[A1][0] = sx(r32(c, A3) << 3);
+        c.g[A2][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+        c.g[V1][0] = c.lhu(r32(c, A2));
+        c.g[T1][0] = 0x45_0000;
+        if c.g[A0][0] == c.g[V1][0] {
+            c.cycles += 7;
+            c.g[T0][0] = sx(SPCH_BANK_LAST + 4);
+            c.g[V1][0] = sx(r32(c, A1).wrapping_add(r32(c, T0)));
+            c.g[V0][0] = c.lw(r32(c, V1));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+            let n = c.g[V0][0];
+            c.sw(r32(c, V1), n);
+        } else {
+            c.cycles += 8;
+            c.g[A3][0] = 1;
+            c.g[T1][0] = sx(SPCH_BANK_LAST + 4);
+            c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, T1)));
+            let s = sp(c);
+            c.lwl(T2, s.wrapping_add(3));
+            c.lwr(T2, s);
+            let at = r32(c, A2);
+            c.swl(T2, at.wrapping_add(3));
+            c.swr(T2, at);
+            c.sw(r32(c, V0), 1);
+        }
+    }
+    Ok(())
+}
+
+/// Slot j (a1) of the part: s5/s4 = its chosen bank/sample entry; plays
+/// its (up to 4) samples (0xff: none). Leaves `s6` = j + 1.
+pub(crate) fn play_sentence_slot(c: &mut Cpu) -> Flow {
+    c.cycles += 18;
+    c.g[A3][0] = sx(SPCH_SENTENCE + 0xc);
+    c.g[A0][0] = c.lw(sp(c).wrapping_add(0x28));
+    c.g[T0][0] = sx(SPCH_SENTENCE + 0x10);
+    c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+    c.g[V1][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+    c.g[A0][0] = c.lbu(r32(c, V0));
+    c.g[V1][0] = sx(r32(c, V1) << 3);
+    c.g[S5][0] = sx(r32(c, V1).wrapping_add(r32(c, A3)));
+    c.g[S4][0] = sx(r32(c, V1).wrapping_add(r32(c, T0)));
+    c.g[A0][0] = sx(r32(c, A0) << 2);
+    c.g[S1][0] = 0;
+    c.g[A0][0] = sx(r32(c, S3).wrapping_add(r32(c, A0)));
+    c.g[S6][0] = sx(r32(c, A1).wrapping_add(1));
+    c.g[S2][0] = sx(r32(c, A0).wrapping_add(0xc));
+    c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, S1)));
+    loop {
+        c.cycles += 4;
+        c.g[T1][0] = 0xff;
+        c.g[A1][0] = c.lbu(r32(c, V0));
+        if c.g[A1][0] != 0xff {
+            // param = GetEventParam(event, id); decode the sample entry
+            // (bank table[slot bank], slot sample) into sp+0x10.
+            c.cycles += 13;
+            c.g[A0][0] = c.lw(sp(c).wrapping_add(0x38));
+            SPCH_GET_EVENT_PARAM.call(c, 0x003d_9d58)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x1734));
+            c.g[V0][0] = c.lh(r32(c, S5));
+            c.g[A2][0] = sx(sp(c).wrapping_add(0x10));
+            c.g[A1][0] = c.lhu(r32(c, S4));
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+            c.g[A0][0] = c.lw(r32(c, V0));
+            SPCH_DECODE_SAMPLE_ENTRY_2.call(c, 0x003d_9d7c)?;
+            let decoded = c.g[V0][0] != 0;
+            c.g[V0][0] = sx(r32(c, S7).wrapping_add(r32(c, S1)));
+            if decoded {
+                // callback(key, param, 1 << type[k], bank type).
+                c.cycles += 12;
+                c.g[T2][0] = sx(SPCH_PLAY_CALLBACK_2 - 8);
+                c.g[V1][0] = c.lbu(r32(c, V0));
+                c.g[V0][0] = 1;
+                c.g[T0][0] = c.lw(SPCH_PLAY_CALLBACK_2);
+                c.g[V1][0] = sx(1u32 << (r32(c, V1) & 31));
+                c.g[A3][0] = c.lw(sp(c).wrapping_add(0x20));
+                c.g[A0][0] = c.lw(sp(c).wrapping_add(0x34));
+                c.g[A2][0] = sx(c.g[V1][0] as u32);
+                c.g[A1][0] = c.g[S0][0];
+                let callback = r32(c, T0);
+                call_ptr(c, callback, 0x003d_9db4)?;
+            }
+            c.cycles += 1;
+        }
+        c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[S1][0] as i64) < 4) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, S1)));
+        if !more {
+            return Ok(());
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003d_9d40);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_SelectRequest
+// ---------------------------------------------------------------------------
+
+/// The speech request queue: 16 entries at 0x44fff8 + 0x60 i: `+0x64`
+/// queued time, `+0x68` (u16) tie-break stamp, `+0x6a` in use, `+0x6b`
+/// bank, `+0x6c` busy, `+0x70` its event (`+0` id, `+2` lifetime, `+4`
+/// priority, `+0xa` flags), `+0x74` key.
+pub(crate) const SPCH_QUEUE_BASE: u32 = 0x0044_fff8;
+
+pub(crate) const SPCH_QUEUE_ENTRY: u32 = 0x60;
+
+pub(crate) const SPCH_GET_TIME: Callee = Callee {
+    addr: 0x003d_b9a0,
+    f: ee::s14::SPCH_GetTime,
+};
+
+pub(crate) const SPCH_FREE_QUEUE_SLOT_2: Callee = Callee {
+    addr: 0x003d_7c38,
+    f: ee::s14::SPCH_FreeQueueSlot,
+};
+
+/// `int SPCH_SelectRequest(IdList* list, int bank)` (0x3d7760): picks the
+/// queued request of `bank` to play: in use, not busy, its event in `list`
+/// (if given), not past its lifetime (expired ones are freed), and in mode-1
+/// banks not outranked by the bank entry for its key; highest priority
+/// wins, then the oldest, then the larger stamp. Returns its index or -1.
+/// Dispatcher-shaped like the original (its loops can unwind and resume at
+/// their heads).
+pub fn spch_select_request(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                0x003d_7760 => {
+                    c.cycles += 28;
+                    let frame = Frame::open(c, 0xd0);
+                    frame.save(c, S5, 0x80);
+                    frame.save(c, S4, 0x70);
+                    frame.save(c, FP, 0xb0);
+                    frame.save(c, S7, 0xa0);
+                    frame.save(c, S3, 0x60);
+                    frame.save(c, S2, 0x50);
+                    frame.save(c, S1, 0x40);
+                    frame.save(c, S0, 0x30);
+                    frame.save(c, RA, 0xc0);
+                    frame.save(c, S6, 0x90);
+                    c.g[S5][0] = c.g[A1][0];
+                    c.g[S4][0] = c.g[A0][0];
+                    // fp = 1; best priority s7 = 0; best s2 = -1; stride s1;
+                    // best age s0 = 0xffffffff (sign-extended).
+                    c.g[FP][0] = 1;
+                    c.g[S7][0] = 0;
+                    c.g[S2][0] = u64::MAX;
+                    c.g[S1][0] = SPCH_QUEUE_ENTRY as u64;
+                    c.g[S0][0] = u64::MAX;
+                    SPCH_GET_TIME.call(c, 0x003d_77b0)?;
+                    // now = time + offset (sp+0x14); i (t5) = 0, max pri t9.
+                    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x174c));
+                    c.g[A0][0] = 0x45_0000;
+                    c.g[S3][0] = sx(SPCH_QUEUE_BASE);
+                    c.g[T9][0] = 0;
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                    c.g[T5][0] = 0;
+                    let now = c.g[V0][0];
+                    c.sw(sp(c).wrapping_add(0x14), now);
+                    c.mult(0, A0, T5, S1);
+                    pc = 0x003d_77d0;
+                }
+                // Request i (t5; a0 = its offset): in use, this bank, idle?
+                0x003d_77d0 => {
+                    c.cycles += 4;
+                    c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, S3)));
+                    c.g[V0][0] = c.lbu(r32(c, V1).wrapping_add(0x6a));
+                    c.g[S6][0] = sx(r32(c, T5).wrapping_add(1));
+                    if c.g[V0][0] == 0 {
+                        pc = 0x003d_7a0c;
+                        continue;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lbu(r32(c, V1).wrapping_add(0x6b));
+                    if c.g[V0][0] != c.g[S5][0] {
+                        c.g[T5][0] = c.g[S6][0];
+                        pc = 0x003d_7a10;
+                        continue;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lh(r32(c, V1).wrapping_add(0x6c));
+                    if c.g[V0][0] != 0 {
+                        c.g[T5][0] = c.g[S6][0];
+                        pc = 0x003d_7a10;
+                        continue;
+                    }
+                    // t3 = its event; t7 expired = 0, t4 blocked = 0,
+                    // t8 in list = 1.
+                    c.cycles += 10;
+                    c.g[A1][0] = 0x45_0000;
+                    c.g[T7][0] = 0;
+                    c.g[A1][0] = sx(SPCH_QUEUE_BASE + 0x70);
+                    c.g[T4][0] = 0;
+                    c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, A1)));
+                    c.g[T8][0] = 1;
+                    c.g[T3][0] = c.lw(r32(c, V0));
+                    c.g[T6][0] = 0x45_0000;
+                    c.g[T2][0] = sx(r32(c, S5) << 2);
+                    if c.g[S4][0] == 0 {
+                        pc = 0x003d_7880;
+                        continue;
+                    }
+                    // Is the event id in the list?
+                    c.cycles += 6;
+                    c.g[V0][0] = c.lw(r32(c, S4));
+                    c.g[T0][0] = 0;
+                    c.g[A2][0] = c.lhu(r32(c, T3));
+                    c.g[A0][0] = 0;
+                    c.g[A3][0] = c.g[V0][0];
+                    if (c.g[V0][0] as i64) <= 0 {
+                        pc = 0x003d_787c;
+                        continue;
+                    }
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw(r32(c, S4).wrapping_add(4));
+                    c.g[V0][0] = c.lhu(r32(c, V1));
+                    c.g[A1][0] = c.g[V1][0];
+                    if c.g[V0][0] == c.g[A2][0] {
+                        c.cycles += 2;
+                        c.g[T0][0] = 1;
+                        pc = 0x003d_787c;
+                    } else {
+                        c.cycles += 1;
+                        c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                        pc = 0x003d_785c;
+                    }
+                }
+                0x003d_785c => {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[A3][0] as i64)) as u64;
+                    let done = c.g[V0][0] == 0;
+                    c.g[V0][0] = sx(r32(c, A0) << 1);
+                    if done {
+                        pc = 0x003d_787c;
+                        continue;
+                    }
+                    c.cycles += 4;
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A1)));
+                    c.g[V1][0] = c.lhu(r32(c, V0));
+                    let other = c.g[V1][0] != c.g[A2][0];
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                    if other {
+                        if back_edge_unwinds(c, 0x003d_785c) {
+                            return Ok(());
+                        }
+                        pc = 0x003d_785c;
+                    } else {
+                        c.cycles += 1;
+                        c.g[T0][0] = 1;
+                        pc = 0x003d_787c;
+                    }
+                }
+                0x003d_787c => {
+                    c.cycles += 1;
+                    c.g[T8][0] = c.g[T0][0];
+                    pc = 0x003d_7880;
+                }
+                // age (t1) = now - queued; expired (t7) past a lifetime.
+                0x003d_7880 => {
+                    c.cycles += 9;
+                    c.mult(0, A1, T5, S1);
+                    c.g[V0][0] = 0x45_0000;
+                    c.g[A2][0] = sx(SPCH_QUEUE_BASE);
+                    c.g[A0][0] = c.lhu(r32(c, T3).wrapping_add(2));
+                    c.g[V0][0] = sx(r32(c, A2).wrapping_add(r32(c, A1)));
+                    c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x64));
+                    c.g[V0][0] = c.lw(sp(c).wrapping_add(0x14));
+                    c.g[T1][0] = sx(r32(c, V0).wrapping_sub(r32(c, V1)));
+                    if c.g[A0][0] != 0 {
+                        c.cycles += 4;
+                        c.g[V0][0] = c.g[A0][0];
+                        c.g[T7][0] = c.g[FP][0];
+                        c.g[V0][0] = (c.g[V0][0] < c.g[T1][0]) as u64;
+                        if c.g[V0][0] == 0 {
+                            c.g[T7][0] = 0;
+                        }
+                    }
+                    // Mode-1 bank and an event with flag bit 0: blocked?
+                    c.cycles += 5;
+                    c.g[V0][0] = sx(r32(c, T6).wrapping_add(0x6a0));
+                    c.g[V0][0] = sx(r32(c, T2).wrapping_add(r32(c, V0)));
+                    c.g[V1][0] = c.lw(r32(c, V0));
+                    if c.g[V1][0] != c.g[FP][0] {
+                        pc = 0x003d_7970;
+                        continue;
+                    }
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lbu(r32(c, T3).wrapping_add(0xa));
+                    c.g[V0][0] &= 1;
+                    let plain = c.g[V0][0] == 0;
+                    c.g[V0][0] = sx(r32(c, A2).wrapping_add(0x74));
+                    if plain {
+                        pc = 0x003d_7970;
+                        continue;
+                    }
+                    // Find the bank entry of the request's key (sp+0) in
+                    // the 8-entry table at 0x44ffb8; its slot -> sp+0x10.
+                    c.cycles += 14;
+                    c.g[V1][0] = 0x45_0000;
+                    c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                    c.g[T0][0] = sx(0x0044_ffb8);
+                    let key = r32(c, V0);
+                    c.lwl(V1, key.wrapping_add(3));
+                    c.lwr(V1, key);
+                    let s = sp(c);
+                    c.swl(V1, s.wrapping_add(3));
+                    c.g[T2][0] = 0;
+                    c.swr(V1, s);
+                    c.g[T4][0] = sx(sp(c).wrapping_add(0x10));
+                    c.g[A1][0] = c.g[SP][0];
+                    c.g[T6][0] = 0;
+                    c.g[A2][0] = 0;
+                    c.g[A3][0] = c.g[T0][0];
+                    pc = 0x003d_7910;
+                }
+                0x003d_7910 => {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw(r32(c, T0));
+                    c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                    if c.g[A0][0] != 0 {
+                        c.cycles += 4;
+                        c.g[V1][0] = c.lbu(r32(c, A1).wrapping_add(2));
+                        c.g[V0][0] = c.lbu(r32(c, A0).wrapping_add(9));
+                        if c.g[V0][0] == c.g[V1][0] {
+                            c.cycles += 4;
+                            c.g[V1][0] = c.lbu(r32(c, A0).wrapping_add(8));
+                            c.g[V0][0] = c.lbu(r32(c, A1).wrapping_add(3));
+                            if c.g[V1][0] == c.g[V0][0] {
+                                let slot = c.g[A3][0];
+                                c.sw(r32(c, T4), slot);
+                                if back_edge_unwinds(c, 0x003d_7850) {
+                                    return Ok(());
+                                }
+                                pc = 0x003d_7850;
+                                continue;
+                            }
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[T0][0] = sx(r32(c, T0).wrapping_add(8));
+                    c.g[V0][0] = ((c.g[A2][0] as i64) < 8) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[A3][0] = sx(r32(c, A3).wrapping_add(8));
+                    if more {
+                        if back_edge_unwinds(c, 0x003d_7910) {
+                            return Ok(());
+                        }
+                        pc = 0x003d_7910;
+                    } else {
+                        pc = 0x003d_794c;
+                    }
+                }
+                // Found (t6 = 1).
+                0x003d_7850 => {
+                    c.cycles += 2;
+                    c.g[T6][0] = 1;
+                    pc = 0x003d_794c;
+                }
+                // blocked (t4) = found and priority < the entry's.
+                0x003d_794c => {
+                    c.cycles += 2;
+                    c.g[A1][0] = c.lw(sp(c).wrapping_add(0x10));
+                    if c.g[T6][0] != 0 {
+                        c.cycles += 6;
+                        c.g[T2][0] = c.g[FP][0];
+                        c.g[A0][0] = c.lhu(r32(c, T3).wrapping_add(4));
+                        c.g[V0][0] = c.lw(r32(c, A1));
+                        c.g[V1][0] = c.lhu(r32(c, V0).wrapping_add(0x16));
+                        c.g[A0][0] = (c.g[A0][0] < c.g[V1][0]) as u64;
+                        if c.g[A0][0] == 0 {
+                            c.g[T2][0] = 0;
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[T4][0] = c.g[T2][0];
+                    pc = 0x003d_7970;
+                }
+                0x003d_7970 => {
+                    c.cycles += 2;
+                    if c.g[T7][0] != 0 {
+                        // Expired: free it (t9 kept on the stack).
+                        c.cycles += 5;
+                        let s = sp(c).wrapping_add(0x20);
+                        c.sq(T9, s);
+                        c.g[A0][0] = c.g[T5][0];
+                        SPCH_FREE_QUEUE_SLOT_2.call(c, 0x003d_7984)?;
+                        let s = sp(c).wrapping_add(0x20);
+                        c.lq(T9, s);
+                        pc = 0x003d_7a0c;
+                        continue;
+                    }
+                    c.cycles += 2;
+                    if c.g[T8][0] == 0 {
+                        c.g[T5][0] = c.g[S6][0];
+                        pc = 0x003d_7a10;
+                        continue;
+                    }
+                    c.cycles += 2;
+                    if c.g[T4][0] != 0 {
+                        c.g[T5][0] = c.g[S6][0];
+                        pc = 0x003d_7a10;
+                        continue;
+                    }
+                    // Higher priority: the new best.
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lhu(r32(c, T3).wrapping_add(4));
+                    c.g[V0][0] = ((c.g[T9][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 6;
+                        c.g[S2][0] = c.g[T5][0];
+                        c.g[S0][0] = c.g[T1][0];
+                        c.mult(0, A0, S2, S1);
+                        c.g[T9][0] = c.g[V1][0];
+                        c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, S3)));
+                        pc = 0x003d_7a08;
+                        continue;
+                    }
+                    // Same priority: younger, or as old with a larger stamp.
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[T9][0] {
+                        c.g[T5][0] = c.g[S6][0];
+                        pc = 0x003d_7a10;
+                        continue;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[T1][0] < c.g[S0][0]) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.cycles += 2;
+                        if c.g[T1][0] != c.g[S0][0] {
+                            c.g[T5][0] = c.g[S6][0];
+                            pc = 0x003d_7a10;
+                            continue;
+                        }
+                        c.cycles += 6;
+                        c.mult(0, V0, T5, S1);
+                        c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, S3)));
+                        c.g[V0][0] = c.lhu(r32(c, V1).wrapping_add(0x68));
+                        c.g[V0][0] = (c.g[S7][0] < c.g[V0][0]) as u64;
+                        if c.g[V0][0] == 0 {
+                            c.g[T5][0] = c.g[S6][0];
+                            pc = 0x003d_7a10;
+                            continue;
+                        }
+                        c.cycles += 1;
+                    }
+                    c.g[S2][0] = c.g[T5][0];
+                    c.cycles += 3;
+                    c.g[S0][0] = c.g[T1][0];
+                    c.mult(0, V1, S2, S1);
+                    c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, S3)));
+                    pc = 0x003d_7a08;
+                }
+                // The best's stamp (s7).
+                0x003d_7a08 => {
+                    c.cycles += 1;
+                    c.g[S7][0] = c.lhu(r32(c, V0).wrapping_add(0x68));
+                    c.cycles += 1;
+                    c.g[T5][0] = c.g[S6][0];
+                    pc = 0x003d_7a10;
+                }
+                0x003d_7a0c => {
+                    c.cycles += 1;
+                    c.g[T5][0] = c.g[S6][0];
+                    pc = 0x003d_7a10;
+                }
+                0x003d_7a10 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[T5][0] as i64) < 16) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.mult(0, A0, T5, S1);
+                    if more {
+                        if back_edge_unwinds(c, 0x003d_77d0) {
+                            return Ok(());
+                        }
+                        pc = 0x003d_77d0;
+                        continue;
+                    }
+                    c.cycles += 13;
+                    c.g[V0][0] = c.g[S2][0];
+                    let frame = Frame { size: 0xd0 };
+                    for (reg, off) in [
+                        (RA, 0xc0),
+                        (FP, 0xb0),
+                        (S7, 0xa0),
+                        (S6, 0x90),
+                        (S5, 0x80),
+                        (S4, 0x70),
+                        (S3, 0x60),
+                        (S2, 0x50),
+                        (S1, 0x40),
+                        (S0, 0x30),
+                    ] {
+                        frame.restore(c, reg, off);
+                    }
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x003d_7760, 0x003d_7a50);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_QueueEventArgs
+// ---------------------------------------------------------------------------
+
+/// Per-bank queue state (0x44fff8 + 4 bank): `+0` queued count, `+0x20`
+/// newest request, `+0x40` newest non-chained request.
+pub(crate) const SPCH_BANK_QUEUED: u32 = 0x0044_fff8;
+
+pub(crate) const SPCH_ALLOC_QUEUE_SLOT: Callee = Callee {
+    addr: 0x003d_72a0,
+    f: ee::s14::SPCH_AllocQueueSlot,
+};
+
+/// `int SPCH_QueueEventArgs(int* args)` (0x3d7418): queues speech event
+/// `args[0]` with its 20 argument words (not re-entrantly: gp+0x1758).
+/// Finds the event and the bank entry of its key; a plain event must pass
+/// its chance roll and takes its own priority; a chained event (flag bit
+/// 5) follows the bank's newest requests (both must be valid) at their
+/// priority. Allocates a queue slot (a chained event frees the newest on
+/// failure), stamps it (time, a per-tick sequence at gp+0x1754), copies the
+/// arguments and updates the bank's newest/queued state. Returns 1 when
+/// queued. Dispatcher-shaped like the original (its loops can unwind and
+/// resume at their heads).
+pub fn spch_queue_event_args(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                0x003d_7418 => {
+                    c.cycles += 15;
+                    let frame = Frame::open(c, 0xa0);
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x1758));
+                    frame.save(c, S6, 0x80);
+                    frame.save(c, S5, 0x70);
+                    frame.save(c, S4, 0x60);
+                    frame.save(c, S3, 0x50);
+                    frame.save(c, RA, 0x90);
+                    frame.save(c, S2, 0x40);
+                    frame.save(c, S1, 0x30);
+                    frame.save(c, S0, 0x20);
+                    // s6 newest = -1, s5 result = 0, s4 args, s3 chained = -1.
+                    c.g[S6][0] = u64::MAX;
+                    c.g[S5][0] = 0;
+                    c.g[S4][0] = c.g[A0][0];
+                    c.g[S3][0] = u64::MAX;
+                    if c.g[V0][0] != 0 {
+                        pc = 0x003d_76c0;
+                        continue;
+                    }
+                    // Busy; key = args[0] at sp+0; find the event.
+                    c.cycles += 11;
+                    c.g[V0][0] = 1;
+                    c.g[A0][0] = c.g[SP][0];
+                    c.sw((c.g[GP][0] as u32).wrapping_add(0x1758), 1);
+                    let args = r32(c, S4);
+                    c.lwl(V0, args.wrapping_add(3));
+                    c.lwr(V0, args);
+                    let s = sp(c);
+                    c.swl(V0, s.wrapping_add(3));
+                    c.swr(V0, s);
+                    SPCH_FIND_EVENT.call(c, 0x003d_7474)?;
+                    c.g[S2][0] = c.g[V0][0];
+                    let none = c.g[S2][0] == 0;
+                    c.g[V0][0] = 0x45_0000;
+                    if none {
+                        pc = 0x003d_76c0;
+                        continue;
+                    }
+                    // Find the bank entry (8 at 0x44ffb8) of the key.
+                    c.cycles += 8;
+                    c.g[A2][0] = c.g[SP][0];
+                    c.g[A1][0] = sx(0x0044_ffb8);
+                    c.g[T3][0] = sx(sp(c).wrapping_add(0x10));
+                    c.g[T4][0] = 0;
+                    c.g[T1][0] = sx(sp(c).wrapping_add(0x14));
+                    c.g[T2][0] = 0;
+                    c.g[A3][0] = 0;
+                    c.g[T0][0] = c.g[A1][0];
+                    pc = 0x003d_74a0;
+                }
+                0x003d_74a0 => {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw(r32(c, A1));
+                    c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                    if c.g[A0][0] != 0 {
+                        c.cycles += 4;
+                        c.g[V1][0] = c.lbu(r32(c, A2).wrapping_add(2));
+                        c.g[V0][0] = c.lbu(r32(c, A0).wrapping_add(9));
+                        if c.g[V0][0] == c.g[V1][0] {
+                            c.cycles += 4;
+                            c.g[V1][0] = c.lbu(r32(c, A0).wrapping_add(8));
+                            c.g[V0][0] = c.lbu(r32(c, A2).wrapping_add(3));
+                            if c.g[V1][0] == c.g[V0][0] {
+                                // Found: its slot -> sp+0x14.
+                                let slot = c.g[T0][0];
+                                c.sw(r32(c, T1), slot);
+                                c.cycles += 2;
+                                c.g[T2][0] = 1;
+                                if back_edge_unwinds(c, 0x003d_74dc) {
+                                    return Ok(());
+                                }
+                                pc = 0x003d_74dc;
+                                continue;
+                            }
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_add(8));
+                    c.g[V0][0] = ((c.g[A3][0] as i64) < 8) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[T0][0] = sx(r32(c, T0).wrapping_add(8));
+                    if more {
+                        if back_edge_unwinds(c, 0x003d_74a0) {
+                            return Ok(());
+                        }
+                        pc = 0x003d_74a0;
+                    } else {
+                        pc = 0x003d_74dc;
+                    }
+                }
+                0x003d_74dc => {
+                    // Found: the bank index (slot word 1) -> sp+0x10.
+                    c.cycles += 2;
+                    c.g[V1][0] = c.lw(sp(c).wrapping_add(0x14));
+                    if c.g[T2][0] != 0 {
+                        c.cycles += 3;
+                        c.g[T4][0] = 1;
+                        c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(4));
+                        let bank = c.g[V0][0];
+                        c.sw(r32(c, T3), bank);
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[S5][0];
+                    if c.g[T4][0] == 0 {
+                        pc = 0x003d_76c4;
+                        continue;
+                    }
+                    // s1 = chained (flag bit 5).
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lbu(r32(c, S2).wrapping_add(0xa));
+                    c.g[V0][0] = sx(r32(c, V0) >> 5);
+                    c.g[S1][0] = c.g[V0][0] & 1;
+                    c.g[A0][0] = c.lw(sp(c).wrapping_add(0x10));
+                    if c.g[S1][0] != 0 {
+                        // The bank's newest (s6) and newest plain (s3)
+                        // requests, both < 16; priority of the plain one.
+                        c.cycles += 13;
+                        c.g[V1][0] = 0x45_0000;
+                        c.g[A3][0] = sx(SPCH_BANK_QUEUED);
+                        c.g[V0][0] = sx(r32(c, A0) << 2);
+                        c.g[A1][0] = c.g[A0][0];
+                        c.g[V1][0] = sx(r32(c, A3).wrapping_add(r32(c, V0)));
+                        c.g[V0][0] = c.g[V1][0];
+                        c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x40));
+                        c.g[A2][0] = c.lw(r32(c, V0).wrapping_add(0x20));
+                        c.g[V1][0] = (c.g[A0][0] < 0x10) as u64;
+                        c.g[V0][0] = (c.g[A2][0] < 0x10) as u64;
+                        if c.g[V1][0] == 0 {
+                            c.g[V0][0] = 0;
+                        }
+                        let bad = c.g[V0][0] == 0;
+                        c.g[V0][0] = 0x60;
+                        if bad {
+                            pc = 0x003d_76c0;
+                            continue;
+                        }
+                        c.cycles += 6;
+                        c.g[S3][0] = c.g[A0][0];
+                        c.mult(0, V1, S3, V0);
+                        c.g[S6][0] = c.g[A2][0];
+                        c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, A3)));
+                        c.g[V0][0] = c.lw(r32(c, V0).wrapping_add(0x70));
+                        c.cycles += 2;
+                        c.g[A0][0] = c.lhu(r32(c, V0).wrapping_add(4));
+                    } else {
+                        // The chance roll (event +9), own priority.
+                        c.cycles += 7;
+                        c.g[S0][0] = c.lb(r32(c, S2).wrapping_add(9));
+                        c.g[A0][0] = 0x64;
+                        c.g[A1][0] = u64::MAX;
+                        SPCH_RANDOM_NO_REPEAT.call(c, 0x003d_7570)?;
+                        c.g[S0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        let missed = c.g[S0][0] != 0;
+                        c.g[V0][0] = c.g[S5][0];
+                        if missed {
+                            pc = 0x003d_76c4;
+                            continue;
+                        }
+                        c.cycles += 2;
+                        c.g[A0][0] = c.lhu(r32(c, S2).wrapping_add(4));
+                        c.cycles += 1;
+                        c.g[A1][0] = c.lw(sp(c).wrapping_add(0x10));
+                    }
+                    // slot = SPCH_AllocQueueSlot(priority, bank, chained).
+                    c.cycles += 5;
+                    c.g[A2][0] = c.g[S1][0];
+                    SPCH_ALLOC_QUEUE_SLOT.call(c, 0x003d_7598)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    if (c.g[S0][0] as i64) < 0 {
+                        c.cycles += 2;
+                        c.g[V0][0] = c.g[S5][0];
+                        if c.g[S1][0] != 0 {
+                            c.cycles += 4;
+                            c.g[A0][0] = c.g[S3][0];
+                            SPCH_FREE_QUEUE_SLOT_2.call(c, 0x003d_75b4)?;
+                            c.g[V0][0] = c.g[S5][0];
+                        }
+                        pc = 0x003d_76c4;
+                        continue;
+                    }
+                    // Sequence within the same time stamp.
+                    c.cycles += 6;
+                    SPCH_GET_TIME.call(c, 0x003d_75c4)?;
+                    c.g[T1][0] = c.g[V0][0];
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x1750));
+                    if c.g[T1][0] != c.g[V0][0] {
+                        c.sh((c.g[GP][0] as u32).wrapping_add(0x1754), 0);
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lhu((c.g[GP][0] as u32).wrapping_add(0x1754));
+                        c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+                        let seq = c.g[V0][0];
+                        c.sh((c.g[GP][0] as u32).wrapping_add(0x1754), seq);
+                    }
+                    // Fill the request (t0 = slot * 0x60).
+                    c.cycles += 19;
+                    c.g[T3][0] = 0x60;
+                    c.g[V0][0] = 0x45_0000;
+                    c.mult(0, T0, S0, T3);
+                    c.g[T2][0] = sx(SPCH_BANK_QUEUED);
+                    c.g[A1][0] = c.lbu(sp(c).wrapping_add(0x10));
+                    c.g[T4][0] = c.g[V0][0];
+                    c.g[A2][0] = c.lhu((c.g[GP][0] as u32).wrapping_add(0x1754));
+                    c.g[A3][0] = u64::MAX;
+                    let now = c.g[T1][0];
+                    c.sw((c.g[GP][0] as u32).wrapping_add(0x1750), now);
+                    c.g[V1][0] = sx(r32(c, T2).wrapping_add(r32(c, T0)));
+                    c.g[V0][0] = sx(r32(c, T0).wrapping_add(r32(c, T2)));
+                    let (event, req) = (c.g[S2][0], r32(c, V0));
+                    c.sw(r32(c, V1).wrapping_add(0x70), event);
+                    c.g[A0][0] = c.g[V1][0];
+                    let bank = c.g[A1][0];
+                    c.sb(req.wrapping_add(0x6b), bank);
+                    let seq = c.g[A2][0];
+                    c.sh(req.wrapping_add(0x68), seq);
+                    c.sw(r32(c, A0).wrapping_add(0x64), now);
+                    c.sh(req.wrapping_add(0x6e), u64::MAX);
+                    let chained = c.g[S1][0];
+                    c.sh(req.wrapping_add(0x6c), chained);
+                    if chained != 0 {
+                        // The newest request chains to this one.
+                        c.cycles += 3;
+                        c.mult(0, V1, S6, T3);
+                        c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, T2)));
+                        let slot = c.g[S0][0];
+                        c.sh(r32(c, V0).wrapping_add(0x6e), slot);
+                    }
+                    // Copy the 20 argument words to +0x74.
+                    c.cycles += 4;
+                    c.g[V0][0] = sx(r32(c, T2).wrapping_add(0x74));
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[V1][0] = sx(r32(c, T0).wrapping_add(r32(c, V0)));
+                    c.g[A1][0] = 0x13;
+                    pc = 0x003d_7648;
+                }
+                0x003d_7648 => {
+                    c.cycles += 7;
+                    c.g[V0][0] = c.lw(r32(c, A0));
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_sub(1));
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(4));
+                    let w = c.g[V0][0];
+                    c.sw(r32(c, V1), w);
+                    let more = (c.g[A1][0] as i64) >= 0;
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+                    if more {
+                        if back_edge_unwinds(c, 0x003d_7648) {
+                            return Ok(());
+                        }
+                        pc = 0x003d_7648;
+                        continue;
+                    }
+                    // Plain: one more queued; mark in use; newest (+plain).
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x60;
+                    if c.g[S1][0] == 0 {
+                        c.cycles += 8;
+                        c.g[V0][0] = c.lw(sp(c).wrapping_add(0x10));
+                        c.g[A0][0] = sx(r32(c, T4).wrapping_sub(8));
+                        c.g[V0][0] = sx(r32(c, V0) << 2);
+                        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                        c.g[V1][0] = c.lw(r32(c, V0));
+                        c.g[V1][0] = sx(r32(c, V1).wrapping_add(1));
+                        let n = c.g[V1][0];
+                        c.sw(r32(c, V0), n);
+                        c.g[V0][0] = 0x60;
+                    }
+                    c.cycles += 10;
+                    c.g[V1][0] = c.lw(sp(c).wrapping_add(0x10));
+                    c.mult(0, V0, S0, V0);
+                    c.g[A1][0] = sx(r32(c, T4).wrapping_sub(8));
+                    c.g[A2][0] = sx(r32(c, V1) << 2);
+                    c.g[A0][0] = 1;
+                    c.g[V1][0] = sx(r32(c, A1).wrapping_add(r32(c, A2)));
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A1)));
+                    c.sb(r32(c, V0).wrapping_add(0x6a), 1);
+                    let slot = c.g[S0][0];
+                    c.sw(r32(c, V1).wrapping_add(0x20), slot);
+                    if c.g[S1][0] == 0 {
+                        c.cycles += 2;
+                        c.g[V0][0] = c.g[V1][0];
+                        c.sw(r32(c, V0).wrapping_add(0x40), slot);
+                    }
+                    c.cycles += 1;
+                    c.g[S5][0] = 1;
+                    pc = 0x003d_76c0;
+                }
+                0x003d_76c0 => {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[S5][0];
+                    pc = 0x003d_76c4;
+                }
+                0x003d_76c4 => {
+                    c.cycles += 11;
+                    let frame = Frame { size: 0xa0 };
+                    for (reg, off) in [
+                        (RA, 0x90),
+                        (S6, 0x80),
+                        (S5, 0x70),
+                        (S4, 0x60),
+                        (S3, 0x50),
+                        (S2, 0x40),
+                        (S1, 0x30),
+                        (S0, 0x20),
+                    ] {
+                        frame.restore(c, reg, off);
+                    }
+                    c.sw((c.g[GP][0] as u32).wrapping_add(0x1758), 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x003d_7418, 0x003d_76f0);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     crate::difftest::events::driven!(oc238_gen_prebuffering, ee::s13::f_003b70f8__generated);
@@ -28795,6 +33763,1832 @@ pub(crate) mod tests {
                 c.pc = 0x003c_cf40;
                 c.g[A0][0] = sx(DATA + 0x300);
                 crate::difftest::fill(c, &mut r, DATA + 0x300, 0x30);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_CTRL;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_MAGIC;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_BUILD_QUEUE;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_SELECT_QUEUE;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_fake;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_gated;
+
+    pub(crate) use crate::game::sound::soundsys::tests::OC371_RANGE;
+
+    pub(crate) use crate::game::ealib::seg_2dcae8::tests::oc371_sequence;
+    pub(crate) use crate::game::sound::soundsys::tests::oc371_machine;
+    pub(crate) use crate::game::sound::soundsys::tests::oc371_script;
+
+    pub(crate) use crate::game::sound::soundsys::tests::oc371_install_fakes;
+
+    // ------------------------------------------- SPCH_DequeueChannel
+
+    macro_rules! oc360_fake_set14 {
+        ($install:ident; $($name:ident $prev:ident $addr:literal $slot:ident $gen:ident;)*) => {
+            $(oc360_gated!($name, $prev, $addr, ee::s14::$gen);)*
+            fn $install() {
+                use std::ptr::addr_of_mut;
+                {
+                    $(fakes::hook(addr_of_mut!(ee::s14::$slot), $name, &$prev);)*
+                }
+            }
+        };
+    }
+
+    oc360_fake_set14! {
+        oc360_install_spch_fakes;
+        oc360_fake_spch_select OC360_PREV_SPCH_SELECT 0x003d_7a50 OVERRIDE_003D7A50 f_003d7a50__generated;
+        oc360_fake_spch_free OC360_PREV_SPCH_FREE 0x003d_7c38 OVERRIDE_003D7C38 f_003d7c38__generated;
+        oc360_fake_spch_purge OC360_PREV_SPCH_PURGE 0x003d_7d58 OVERRIDE_003D7D58 f_003d7d58__generated;
+        oc360_fake_spch_reset OC360_PREV_SPCH_RESET 0x003d_9a40 OVERRIDE_003D9A40 f_003d9a40__generated;
+        oc360_fake_spch_build OC360_PREV_SPCH_BUILD 0x003d_a418 OVERRIDE_003DA418 f_003da418__generated;
+    }
+
+    /// A channel without requests; requests picked until one is accepted
+    /// (callback or none, which accepts) or none is left; sentence chains
+    /// ending at -1 or at a failed build.
+    pub(crate) fn sdc_setup(c: &mut Cpu, seed: u32, calls: u32) -> Rng {
+        let mut r = machine(c, seed, 0x003d_7ec8, calls);
+        c.pc = 0x003d_7ec8;
+        c.bus.write32(OC360_CTRL, OC360_MAGIC);
+        let channel = r.next_u32() % 4;
+        for ch in 0..4 {
+            let pending = if r.next_u32() % 5 == 0 { 0 } else { 1 };
+            c.bus.write32(SDC_QUEUE + 4 * ch, pending);
+        }
+        // Requests 0-3: keys and next links.
+        for i in 0..4u32 {
+            let req = SDC_QUEUE + 0x60 * i;
+            c.bus.write32(SDC_REQUESTS + 0x60 * i, r.next_u32());
+            let next = match r.next_u32() % 3 {
+                0 => 0xffff,
+                _ => (r.next_u32() % 4) as u16 as u32,
+            };
+            c.bus.write16(req + SDC_NEXT, next as u16);
+        }
+        let callback = if r.next_u32() % 4 == 0 { 0 } else { FAKE };
+        c.bus.write32(SDC_CALLBACKS + 0xc, callback);
+        // Callback answers (forced fake results: 1 accepts).
+        for i in 0..8 {
+            let v = if r.next_u32() % 2 == 0 { 1 } else { 2 };
+            c.bus.write32(fakes::LOG_RESULTS + 4 * i, v);
+        }
+        c.bus.write32(OC360_SELECT_QUEUE, 0);
+        c.bus.write32(OC360_BUILD_QUEUE, 0);
+        for i in 0..8 {
+            let pick = if i == 7 || r.next_u32() % 6 == 0 {
+                u32::MAX
+            } else {
+                r.next_u32() % 4
+            };
+            c.bus.write32(OC360_SELECT_QUEUE + 4 + 4 * i, pick);
+            let ok = if i == 7 {
+                0
+            } else {
+                (r.next_u32() % 3 != 0) as u32
+            };
+            c.bus.write32(OC360_BUILD_QUEUE + 4 + 4 * i, ok);
+        }
+        c.g[A0][0] = channel as u64;
+        r
+    }
+
+    #[test]
+    fn spch_dequeue_channel_matches() {
+        use crate::difftest::events::{check_events, schedule};
+        oc360_install_spch_fakes();
+        covered(
+            ee::s14::f_003d7ec8__generated,
+            spch_dequeue_channel,
+            300,
+            &|c, seed| {
+                sdc_setup(c, seed, 10);
+            },
+        );
+        check_events(
+            ee::s14::f_003d7ec8__generated,
+            spch_dequeue_channel,
+            300,
+            &|c, seed| {
+                let mut r = sdc_setup(c, seed, 0);
+                schedule(c, &mut r, seed, 0x003d_7ec8)
+            },
+        );
+    }
+
+    /// One tag of a patch stream: id, payload length (0..4: a big-endian
+    /// value; 5..: payload only), payload bytes.
+    pub(crate) fn parse_patch_put_tag(
+        c: &mut Cpu,
+        r: &mut Rng,
+        at: &mut u32,
+        tag: u8,
+        value: Option<u32>,
+    ) {
+        c.bus.write8(*at, tag);
+        *at += 1;
+        if tag == 0xfd || tag == 0xfe || tag == 0xff {
+            return;
+        }
+        let len = match value {
+            Some(_) => 1 + r.next_u32() % 4,
+            None => r.next_u32() % 9,
+        };
+        c.bus.write8(*at, len as u8);
+        *at += 1;
+        let v = value.unwrap_or_else(|| r.next_u32());
+        for i in 0..len {
+            let b = if value.is_some() {
+                // Big endian: the low `len` bytes of the value.
+                (v >> (8 * (len - 1 - i))) as u8
+            } else {
+                r.next_u32() as u8
+            };
+            c.bus.write8(*at, b);
+            *at += 1;
+        }
+    }
+
+    /// `SND_ParsePatch`: random tag streams (values for tags 0..0x2a with
+    /// the 0x14 list, the 0x80..0xad tags with every channel data tag,
+    /// ignored ids, bare 0xfd markers, long payloads), ending at 0xff
+    /// (result 0) or 0xfe (result 1); channel counts 0..6 and negative,
+    /// the output mode byte 2 or not (stereo patches lose their pitch
+    /// offsets in mode 2).
+    #[test]
+    fn snd_parse_patch_matches() {
+        check(
+            ee::s13::f_003baac0__generated,
+            snd_parse_patch,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3baac0, 0);
+                c.pc = 0x003b_aac0;
+                let (src, patch, stream) = (DATA, DATA + 0x100, DATA + 0x1000);
+                fill(c, &mut r, patch, 0x40);
+                fill(c, &mut r, stream, 0x100);
+                // The sound state: output mode and the pitch table.
+                let mode = if seed % 2 == 0 { 2 } else { r.next_u32() % 4 };
+                c.bus
+                    .write8(PARSE_PATCH_SND_STATE + PARSE_PATCH_STATE_MODE, mode as u8);
+                fill(
+                    c,
+                    &mut r,
+                    PARSE_PATCH_SND_STATE + PARSE_PATCH_STATE_PITCH,
+                    0x20,
+                );
+                let mut at = stream;
+                let n = r.next_u32() % 24;
+                for _ in 0..n {
+                    let (tag, value) = match r.next_u32() % 12 {
+                        0 => (0x14, None),
+                        1 | 2 => ((r.next_u32() % 43) as u8, None),
+                        3 => (
+                            0x82,
+                            Some(match r.next_u32() % 5 {
+                                0 => 0x80 | r.next_u32() % 0x80,
+                                1 => 2,
+                                _ => r.next_u32() % 7,
+                            }),
+                        ),
+                        4 | 5 => {
+                            let ids = [0x98u8, 0x99, 0x9a, 0x9b, 0xa4, 0xa5];
+                            (ids[(r.next_u32() % 6) as usize], None)
+                        }
+                        6 | 7 => ((0x80 + r.next_u32() % 0x2e) as u8, None),
+                        8 => ((0x2b + r.next_u32() % 0x55) as u8, None),
+                        9 => ((0xae + r.next_u32() % 0x4e) as u8, None),
+                        10 => (0xfd, None),
+                        _ => ((r.next_u32() % 43) as u8, Some(r.next_u32())),
+                    };
+                    parse_patch_put_tag(c, &mut r, &mut at, tag, value);
+                }
+                // Sometimes a stereo patch for the mode-2 path.
+                if seed % 3 == 0 {
+                    parse_patch_put_tag(c, &mut r, &mut at, 0x82, Some(2));
+                }
+                let end = if seed % 4 == 1 { 0xff } else { 0xfe };
+                c.bus.write8(at, end);
+                c.bus.write32(src, stream);
+                c.g[A0][0] = sx(src);
+                c.g[A1][0] = sx(patch);
+            },
+        );
+    }
+
+    /// Up to four voices out of a random window of 16: free ones (in use
+    /// or not, reserved by an earlier pick, older / newer), then stolen
+    /// ones by priority (lower, equal with the system flag on / off, too
+    /// high, >= 0x65) and age; all found or not (-9); the sort, the serial
+    /// wrap, stopping stolen voices (own handle or the master's). The real
+    /// `SND_IsVoiceReserved` runs; `SND_Stop` is a logged fake (may unwind).
+    #[test]
+    fn snd_alloc_voices_matches() {
+        oc371_install_fakes();
+        crate::difftest::check(
+            ee::s13::f_003ba0b0__generated,
+            snd_alloc_voices,
+            500,
+            &|c, seed| {
+                let mut r = oc371_machine(c, seed, 0x003b_a0b0, 4);
+                c.pc = 0x003b_a0b0;
+                let voices = DATA + 0x1000;
+                let n = match seed % 7 {
+                    6 => u32::MAX,
+                    k => k.min(4),
+                };
+                c.g[A0][0] = sx(n);
+                c.g[A1][0] = (r.next_u32() % 0x70) as u64;
+                c.g[A2][0] = sx(DATA + 0x800);
+                let lo = r.next_u32() % 4;
+                c.g[A3][0] = lo as u64;
+                c.g[T0][0] = (lo + r.next_u32() % 13) as u64;
+                c.bus.write8(SNDV_SYSTEM + 0x3c, (r.next_u32() % 2) as u8);
+                c.bus.write32(SNDV_SYSTEM + 0x180, r.next_u32());
+                c.bus.write32(SNDV_SYSTEM + 0x1f0, voices);
+                let serial = if r.next_u32() % 4 == 0 {
+                    0x7fff_ff40
+                } else {
+                    r.next_u32() & 0xffff_ff00
+                };
+                c.bus.write32(SNDV_SERIAL, serial);
+                for i in 0..8 {
+                    c.bus
+                        .write16(SNDV_SELECTED + 2 * i, (r.next_u32() % 16) as u16);
+                }
+                let free_odds = 1 + r.next_u32() % 4;
+                for i in 0..16 {
+                    let v = voices + SNDV_STRIDE * i;
+                    fill(c, &mut r, v, SNDV_STRIDE / 4);
+                    if r.next_u32() % 3 == 0 {
+                        c.bus.write32(v, r.next_u32() | 0x8000_0000);
+                    }
+                    c.bus.write16(v + 0x28, (r.next_u32() % 16) as u16);
+                    let prio = match r.next_u32() % 4 {
+                        0 => 0x65 + r.next_u32() % 0x20,
+                        _ => r.next_u32() % 0x70,
+                    };
+                    c.bus.write8(v + 0x2a, prio as u8);
+                    c.bus.write32(v + 0x2c, r.next_u32() % 6);
+                    c.bus
+                        .write8(v + 0x69, (r.next_u32() % free_odds != 0) as u8);
+                }
+            },
+        );
+    }
+
+    /// The sound system for a real `SND_AllocVoices`: 16 voices at
+    /// `voices`, some free.
+    pub(crate) fn oc371_voice_system(c: &mut Cpu, r: &mut Rng, voices: u32) {
+        c.bus.write8(SNDV_SYSTEM + 0x3c, (r.next_u32() % 2) as u8);
+        c.bus.write32(SNDV_SYSTEM + 0x180, r.next_u32());
+        c.bus.write32(SNDV_SYSTEM + 0x1f0, voices);
+        c.bus.write32(SNDV_SERIAL, r.next_u32() & 0xffff_ff00);
+        for i in 0..8 {
+            c.bus
+                .write16(SNDV_SELECTED + 2 * i, (r.next_u32() % 16) as u16);
+        }
+        let free_odds = 1 + r.next_u32() % 4;
+        for i in 0..16 {
+            let v = voices + SNDV_STRIDE * i;
+            fill(c, r, v, SNDV_STRIDE / 4);
+            c.bus.write16(v + 0x28, (r.next_u32() % 16) as u16);
+            c.bus.write8(v + 0x2a, (r.next_u32() % 0x70) as u8);
+            c.bus.write32(v + 0x2c, r.next_u32() % 6);
+            c.bus
+                .write8(v + 0x69, (r.next_u32() % free_odds != 0) as u8);
+        }
+    }
+
+    /// Up to three voice groups (the real `SND_AllocVoices` finds voices or
+    /// not), every random spread on / off, volume and pan clamps, detune,
+    /// negative envelope length, LFO phases, 0-3 voices copied, starting
+    /// failing (release, next group) or not. The other callees are logged
+    /// fakes (one may unwind).
+    #[test]
+    fn snd_play_patch_voices_matches() {
+        oc371_install_fakes();
+        covered(
+            ee::s13::f_003bb140__generated,
+            snd_play_patch_voices,
+            400,
+            &|c, seed| {
+                let mut r = oc371_machine(c, seed, 0x003b_b140, 10);
+                c.pc = 0x003b_b140;
+                let note = DATA + 0x100;
+                let patch = DATA + 0x200;
+                let env = DATA + 0x400;
+                oc371_voice_system(c, &mut r, DATA + 0x1000);
+                let groups = r.next_u32() % 4;
+                let seq: Vec<u32> = (0..groups).map(|i| 0x10 + i).chain([0]).collect();
+                oc371_sequence(c, 0x003c_6158, &seq);
+                oc371_script(
+                    c,
+                    0x003c_3ee0,
+                    if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        0xffff_fff0
+                    },
+                );
+                oc371_script(c, 0x003c_72a0, (r.next_u32() % 0x100).wrapping_sub(0x80));
+                oc371_script(c, 0x003b_c5c8, r.next_u32());
+                // The voice range [lo, hi) GetGroupVoiceRange would give.
+                let frame = crate::difftest::SP - 0xd0;
+                let lo = r.next_u32() % 6;
+                c.bus.write32(frame, lo);
+                c.bus.write32(frame + 4, lo + r.next_u32() % 11);
+                fill(c, &mut r, note, 8);
+                fill(c, &mut r, patch, 0x30);
+                c.bus.write8(patch + 3, (r.next_u32() % 4) as u8);
+                c.bus.write8(patch + 0xc, (r.next_u32() % 0x70) as u8);
+                for off in [0x12, 0x15, 0x1c, 0x1e] {
+                    if r.next_u32() % 2 == 0 {
+                        c.bus.write8(patch + off, 0);
+                    }
+                }
+                if r.next_u32() % 2 == 0 {
+                    c.bus.write16(patch + 6, 0);
+                }
+                c.bus.write32(patch + 0x28, env);
+                let len = match r.next_u32() % 3 {
+                    0 => r.next_u32() | 0x8000_0000,
+                    _ => 1 + r.next_u32() % 0x1000,
+                };
+                c.bus.write32(env, len);
+                c.bus.write32(env + 4, r.next_u32());
+                c.g[A0][0] = r.next_u32() as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+                c.g[A3][0] = sx(note);
+                c.g[T0][0] = sx(patch);
+                c.g[T1][0] = (r.next_u32() % 0x80) as u64;
+                c.g[T2][0] = (r.next_u32() % 0x80) as u64;
+                c.g[T3][0] = if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+            },
+        );
+    }
+
+    /// One or two patch layers (the real `SND_ParsePatch` with its tag
+    /// reader faked: a `0xfe` "more" tag, then the end), key / velocity in
+    /// or out of the layer ranges, the real `SND_PlayPatchVoices` (and
+    /// `SND_AllocVoices`) succeeding or failing (stop what started), the
+    /// handles done or not, one or several kept (channels found or not).
+    /// The other callees are logged fakes (one may unwind).
+    #[test]
+    fn snd_play_patch_matches() {
+        oc371_install_fakes();
+        crate::difftest::check(
+            ee::s13::f_003bb588__generated,
+            snd_play_patch,
+            300,
+            &|c, seed| {
+                let mut r = oc371_machine(c, seed, 0x003b_b588, 12);
+                c.pc = 0x003b_b588;
+                let note = DATA + 0x100;
+                oc371_voice_system(c, &mut r, DATA + 0x1000);
+                c.bus.write32(SNDPP_VOICES, DATA + 0x1000);
+                // The tag word `SND_ParsePatch` reads (its frame + 0x304).
+                c.bus.write32(crate::difftest::SP - 0x26c, 0xfe);
+                let layers = if r.next_u32() % 2 == 0 {
+                    vec![0]
+                } else {
+                    vec![1, 0]
+                };
+                oc371_sequence(c, 0x003c_7388, &layers);
+                let groups: Vec<u32> = match r.next_u32() % 4 {
+                    0 => vec![0],
+                    1 => vec![0x10, 0],
+                    2 => vec![0x10, 0x11, 0, 0x12, 0],
+                    _ => vec![0x10, 0, 0x11, 0],
+                };
+                oc371_sequence(c, 0x003c_6158, &groups);
+                c.bus.write32(OC371_RANGE, 1);
+                let lo = r.next_u32() % 6;
+                c.bus.write32(OC371_RANGE + 4, lo);
+                c.bus.write32(OC371_RANGE + 8, lo + r.next_u32() % 11);
+                oc371_script(
+                    c,
+                    0x003c_3ee0,
+                    if r.next_u32() % 3 == 0 {
+                        0xffff_fff0
+                    } else {
+                        0
+                    },
+                );
+                oc371_script(c, 0x003b_8ab8, (r.next_u32() % 3 == 0) as u32);
+                oc371_script(
+                    c,
+                    0x003b_a6e8,
+                    if r.next_u32() % 4 == 0 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % 16
+                    },
+                );
+                fill(c, &mut r, note, 8);
+                let key = |r: &mut Rng| match r.next_u32() % 4 {
+                    0 => 0x80 + r.next_u32() % 0x80,
+                    _ => r.next_u32() % 0x80,
+                };
+                c.bus.write8(note + 2, key(&mut r) as u8);
+                c.bus.write8(note + 3, key(&mut r) as u8);
+                c.g[A0][0] = if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[A1][0] = if r.next_u32() % 8 == 0 {
+                    0
+                } else {
+                    sx(DATA + 0x200)
+                };
+                c.g[A2][0] = r.next_u32() as u64;
+                c.g[A3][0] = r.next_u32() as u64;
+                c.g[T0][0] = sx(note);
+            },
+        );
+    }
+
+    /// SNDSTRM_ParseHeader: first or next segment; 0-4 pending markers
+    /// reported to 0-2 marker callbacks (fakes; or a negative count); a
+    /// header that differs, a format that differs, a flagged change or
+    /// none, with a playing (stop) or idle stream (take over, aligned and
+    /// unaligned copies); playback already running or started. Gated fakes
+    /// for SND_ParseStreamHeader, StreamFile_ReleaseChunk,
+    /// SNDSTRM_CalcDataRate and SNDSTRM_StartPlayback; real memcmp.
+    #[test]
+    fn sndstrm_parse_header_matches() {
+        use crate::difftest::fakes::{fake, fall_back, hook};
+        use crate::game::object::movenode::tests::{oc338_fake, OC338_CTRL, OC338_MAGIC};
+        use std::ptr::addr_of_mut;
+        use std::sync::atomic::AtomicUsize;
+        oc338_fake!(
+            oc374_fake_parse_stream_header,
+            OC374_PREV_PARSE_STREAM_HEADER,
+            0x003b_b820,
+            ee::s13::f_003bb820__generated
+        );
+        oc338_fake!(
+            oc374_fake_release_chunk,
+            OC374_PREV_RELEASE_CHUNK,
+            0x003e_13e8,
+            ee::s14::f_003e13e8__generated
+        );
+        oc338_fake!(
+            oc374_fake_calc_data_rate,
+            OC374_PREV_CALC_DATA_RATE,
+            0x003b_6948,
+            ee::s13::f_003b6948__generated
+        );
+        oc338_fake!(
+            oc374_fake_start_playback,
+            OC374_PREV_START_PLAYBACK,
+            0x003b_68b8,
+            ee::s13::f_003b68b8__generated
+        );
+        hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003BB820),
+            oc374_fake_parse_stream_header,
+            &OC374_PREV_PARSE_STREAM_HEADER,
+        );
+        hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E13E8),
+            oc374_fake_release_chunk,
+            &OC374_PREV_RELEASE_CHUNK,
+        );
+        hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B6948),
+            oc374_fake_calc_data_rate,
+            &OC374_PREV_CALC_DATA_RATE,
+        );
+        hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B68B8),
+            oc374_fake_start_playback,
+            &OC374_PREV_START_PLAYBACK,
+        );
+        const CHUNK: u32 = DATA + 0x5000;
+        const PREV: u32 = DATA + 0x3000;
+        const SEGMENT: u32 = DATA + 0x3100;
+        covered(
+            ee::s13::f_003b6bd0__generated,
+            sndstrm_parse_header,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3b_6bd0, 8);
+                c.pc = 0x003b_6bd0;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                let stream = DATA + 0x1000 + 4 * (seed / 7 % 2);
+                let idx = seed % 4;
+                c.g[A0][0] = idx as u64;
+                c.g[A1][0] = sx(CHUNK);
+                c.bus.write32(SNDSTRM_TABLE + 4 * idx, stream);
+                for off in (0..0x140).step_by(4) {
+                    c.bus.write32(stream + off, r.next_u32());
+                }
+                for off in (0..0x40).step_by(4) {
+                    c.bus.write32(SEGMENT + off, r.next_u32());
+                    c.bus.write32(CHUNK + off, r.next_u32());
+                }
+                if seed % 2 == 0 {
+                    c.bus.write32(stream + SNDSTRM_SEGMENT, 0);
+                    c.bus.write32(stream + SNDSTRM_FIRST_SEGMENT, SEGMENT);
+                } else {
+                    c.bus.write32(stream + SNDSTRM_SEGMENT, PREV);
+                    c.bus.write32(PREV, SEGMENT);
+                }
+                let case = seed % 6;
+                // Pending markers (none when the formats are to match).
+                let markers = if case >= 2 { 0 } else { r.next_u32() % 5 };
+                for i in 0..4 {
+                    let id = if i < markers {
+                        1 + r.next_u32() % 1000
+                    } else {
+                        0
+                    };
+                    c.bus.write32(stream + SNDSTRM_MARKERS + 4 * i, id);
+                    c.bus
+                        .write32(stream + SNDSTRM_MARKER_VALUES + 4 * i, r.next_u32());
+                }
+                c.bus.write32(stream + SNDSTRM_MARKERS + 4 * markers, 0);
+                if case >= 2 {
+                    for i in 0..4 {
+                        c.bus.write32(stream + SNDSTRM_MARKER_VALUES + 4 * i, 0);
+                    }
+                }
+                let flag = if case == 2 { 1 + r.next_u32() % 4 } else { 0 };
+                c.bus.write32(stream + SNDSTRM_FORMAT_CHANGED, flag);
+                if case >= 1 {
+                    let h = c.bus.read32(stream + SNDSTRM_HEADER);
+                    c.bus.write32(stream + SNDSTRM_NEW_HEADER, h);
+                }
+                if case >= 2 {
+                    for off in (0..0x68).step_by(4) {
+                        let w = c.bus.read32(stream + SNDSTRM_NEW_FORMAT + off);
+                        c.bus.write32(stream + SNDSTRM_FORMAT + off, w);
+                    }
+                }
+                if seed / 6 % 2 == 0 {
+                    c.bus.write16(stream + SNDSTRM_HEADER, 0);
+                    if case >= 1 {
+                        c.bus.write16(stream + SNDSTRM_NEW_HEADER, 0);
+                    }
+                }
+                c.bus.write8(
+                    stream + SNDSTRM_STATE,
+                    if seed % 5 == 0 { 1 } else { r.next_u32() as u8 },
+                );
+                let callbacks = [0xffu8, 0, 1, 2][(seed / 3 % 4) as usize];
+                c.bus
+                    .write8(SNDSTRM_SYS + SNDSTRM_SYS_CALLBACK_COUNT, callbacks);
+                for i in 0..2 {
+                    c.bus
+                        .write32(SNDSTRM_SYS + SNDSTRM_SYS_CALLBACKS + 4 * i, FAKE + 0x10 * i);
+                }
+            },
+        );
+    }
+
+    /// The gate of this module's fakes (in each test machine's RAM).
+    pub(crate) const OC375_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC375_MAGIC: u32 = 0x0c37_5a7e;
+
+    /// Scripted results: up to 16 `(target, v0)` pairs (v0 sign-extended).
+    pub(crate) const OC375_TAB: u32 = OC375_CTRL + 0x10;
+
+    /// A logged fake (may unwind) whose `v0` comes from the script.
+    pub(crate) fn oc375_fake(c: &mut Cpu, target: u32) {
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, target, ra);
+        if c.pc != ra {
+            return;
+        }
+        for i in 0..16 {
+            if c.bus.read32(OC375_TAB + 8 * i) == target {
+                let v = c.bus.read32(OC375_TAB + 8 * i + 4);
+                let h = c.g[V1][0];
+                c.g[V0][0] = match v {
+                    OC375_COIN => h >> 7 & 1,
+                    OC375_SMALL => sx(((h >> 9) % 5) as u32).wrapping_sub(2),
+                    _ => sx(v),
+                };
+            }
+        }
+    }
+
+    /// Scripted `v0` markers: 0 or 1, or -2..2, from the call's hash.
+    pub(crate) const OC375_COIN: u32 = 0x7fff_c014;
+
+    pub(crate) const OC375_SMALL: u32 = 0x7fff_5a11;
+
+    /// Script `v0` for calls to `target`.
+    pub(crate) fn oc375_script(c: &mut Cpu, target: u32, v0: u32) {
+        for i in 0..16 {
+            let t = c.bus.read32(OC375_TAB + 8 * i);
+            if t == 0 || t == target {
+                c.bus.write32(OC375_TAB + 8 * i, target);
+                c.bus.write32(OC375_TAB + 8 * i + 4, v0);
+                return;
+            }
+        }
+        panic!("oc375 script full");
+    }
+
+    /// Fake machine: the gate on, the fakes hooked.
+    pub(crate) fn oc375_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        oc375_install_fakes();
+        let r = machine(c, seed, salt, calls);
+        c.bus.write32(OC375_CTRL, OC375_MAGIC);
+        r
+    }
+
+    macro_rules! oc375_gated {
+        ($name:ident, $prev:ident, $addr:expr, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(OC375_CTRL) == OC375_MAGIC {
+                    return oc375_fake(c, $addr);
+                }
+                fakes::fall_back(c, &$prev, $gen)
+            }
+        };
+    }
+
+    oc375_gated!(
+        oc375_fake_stream_queue,
+        OC375_PREV_STREAM_QUEUE,
+        0x002a_ad78,
+        ee::s08::f_002aad78__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_radius_vanish,
+        OC375_PREV_RADIUS_VANISH,
+        0x002a_9988,
+        ee::s08::f_002a9988__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_closer_view,
+        OC375_PREV_CLOSER_VIEW,
+        0x0028_8940,
+        ee::s07::f_00288940__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_get_be,
+        OC375_PREV_GET_BE,
+        0x0014_dc80,
+        ee::s01::f_0014dc80__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_get_interface,
+        OC375_PREV_GET_INTERFACE,
+        0x0014_dd58,
+        ee::s01::f_0014dd58__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_replay_playing,
+        OC375_PREV_REPLAY_PLAYING,
+        0x0028_8ae0,
+        ee::s07::f_00288ae0__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_bank_add,
+        OC375_PREV_BANK_ADD,
+        0x002a_cfe0,
+        ee::s08::f_002acfe0__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_get_stream,
+        OC375_PREV_GET_STREAM,
+        0x002a_b188,
+        ee::s08::f_002ab188__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_set_stream,
+        OC375_PREV_SET_STREAM,
+        0x002a_bcf8,
+        ee::s08::f_002abcf8__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_match_conditions,
+        OC375_PREV_MATCH_CONDITIONS,
+        0x003d_85c8,
+        ee::s14::f_003d85c8__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_sample_allowed,
+        OC375_PREV_SAMPLE_ALLOWED,
+        0x003d_8780,
+        ee::s14::f_003d8780__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_history_find,
+        OC375_PREV_HISTORY_FIND,
+        0x003d_6e30,
+        ee::s14::f_003d6e30__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_mc_queue_push,
+        OC375_PREV_MC_QUEUE_PUSH,
+        0x0030_c7c0,
+        ee::s10::f_0030c7c0__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_mc_current,
+        OC375_PREV_MC_CURRENT,
+        0x0030_aeb8,
+        ee::s10::f_0030aeb8__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_mc_find,
+        OC375_PREV_MC_FIND,
+        0x0030_b388,
+        ee::s10::f_0030b388__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_mc_type2,
+        OC375_PREV_MC_TYPE2,
+        0x0030_b8c0,
+        ee::s10::f_0030b8c0__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_mc_find_by_id,
+        OC375_PREV_MC_FIND_BY_ID,
+        0x0030_b320,
+        ee::s10::f_0030b320__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_mc_sound_sys,
+        OC375_PREV_MC_SOUND_SYS,
+        0x0028_b180,
+        ee::s07::f_0028b180__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_mc_abort_sound,
+        OC375_PREV_MC_ABORT_SOUND,
+        0x0029_dbb0,
+        ee::s08::f_0029dbb0__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_mc_be_q1,
+        OC375_PREV_MC_BE_Q1,
+        0x0015_3e28,
+        ee::s01::f_00153e28__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_mc_be_q2,
+        OC375_PREV_MC_BE_Q2,
+        0x0015_3dd0,
+        ee::s01::f_00153dd0__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_mc_be_q3,
+        OC375_PREV_MC_BE_Q3,
+        0x0015_3ed8,
+        ee::s01::f_00153ed8__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_mc_be_q4,
+        OC375_PREV_MC_BE_Q4,
+        0x0015_3fd8,
+        ee::s01::f_00153fd8__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_mc_be_q5,
+        OC375_PREV_MC_BE_Q5,
+        0x0015_3e80,
+        ee::s01::f_00153e80__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_mc_be_q6,
+        OC375_PREV_MC_BE_Q6,
+        0x0015_3d78,
+        ee::s01::f_00153d78__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_find_event,
+        OC375_PREV_FIND_EVENT,
+        0x003d_7110,
+        ee::s14::f_003d7110__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_find_bank_user_data,
+        OC375_PREV_FIND_BANK_USER_DATA,
+        0x003d_81f0,
+        ee::s14::f_003d81f0__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_eval_part_choice,
+        OC375_PREV_EVAL_PART_CHOICE,
+        0x003d_b208,
+        ee::s14::f_003db208__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_pick_weighted,
+        OC375_PREV_PICK_WEIGHTED,
+        0x003d_8cb0,
+        ee::s14::f_003d8cb0__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_random_no_repeat,
+        OC375_PREV_RANDOM_NO_REPEAT,
+        0x003d_b5c0,
+        ee::s14::f_003db5c0__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_check_event_masks,
+        OC375_PREV_CHECK_EVENT_MASKS,
+        0x003d_9ed0,
+        ee::s14::f_003d9ed0__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_resolve_event_parts,
+        OC375_PREV_RESOLVE_EVENT_PARTS,
+        0x003d_95b8,
+        ee::s14::f_003d95b8__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_sentence_append,
+        OC375_PREV_SENTENCE_APPEND,
+        0x003d_9ac8,
+        ee::s14::f_003d9ac8__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_match_flags,
+        OC375_PREV_MATCH_FLAGS,
+        0x003d_b3b8,
+        ee::s14::f_003db3b8__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_find_bank_by_id,
+        OC375_PREV_FIND_BANK_BY_ID,
+        0x003d_6d50,
+        ee::s14::f_003d6d50__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_notify_part,
+        OC375_PREV_NOTIFY_PART,
+        0x003d_b040,
+        ee::s14::f_003db040__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_find_bank_type,
+        OC375_PREV_FIND_BANK_TYPE,
+        0x003d_8330,
+        ee::s14::f_003d8330__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_decode_sample,
+        OC375_PREV_DECODE_SAMPLE,
+        0x003d_b838,
+        ee::s14::f_003db838__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_notify_play,
+        OC375_PREV_NOTIFY_PLAY,
+        0x003d_9830,
+        ee::s14::f_003d9830__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_reset_sentence,
+        OC375_PREV_RESET_SENTENCE,
+        0x003d_9a40,
+        ee::s14::f_003d9a40__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_get_time,
+        OC375_PREV_GET_TIME,
+        0x003d_b9a0,
+        ee::s14::f_003db9a0__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_free_queue_slot,
+        OC375_PREV_FREE_QUEUE_SLOT,
+        0x003d_7c38,
+        ee::s14::f_003d7c38__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_alloc_queue_slot,
+        OC375_PREV_ALLOC_QUEUE_SLOT,
+        0x003d_72a0,
+        ee::s14::f_003d72a0__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_instance_slot,
+        OC375_PREV_INSTANCE_SLOT,
+        0x002b_1220,
+        ee::s08::f_002b1220__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_current_request,
+        OC375_PREV_CURRENT_REQUEST,
+        0x002a_b150,
+        ee::s08::f_002ab150__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_add_timer,
+        OC375_PREV_ADD_TIMER,
+        0x002a_dca0,
+        ee::s08::f_002adca0__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_volume_scale,
+        OC375_PREV_VOLUME_SCALE,
+        0x002a_b0d0,
+        ee::s08::f_002ab0d0__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_clear_prebuffer,
+        OC375_PREV_CLEAR_PREBUFFER,
+        0x002b_1248,
+        ee::s08::f_002b1248__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_build_nodes,
+        OC375_PREV_BUILD_NODES,
+        0x0035_c0e8,
+        ee::s11::f_0035c0e8__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_update_bounds,
+        OC375_PREV_UPDATE_BOUNDS,
+        0x0035_c040,
+        ee::s11::f_0035c040__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_get_nash,
+        OC375_PREV_GET_NASH,
+        0x002d_1be0,
+        ee::s09::f_002d1be0__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_world_instance,
+        OC375_PREV_WORLD_INSTANCE,
+        0x002d_1bd8,
+        ee::s09::f_002d1bd8__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_key_from_aabb,
+        OC375_PREV_KEY_FROM_AABB,
+        0x0032_8f28,
+        ee::s10::f_00328f28__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_hash_remove,
+        OC375_PREV_HASH_REMOVE,
+        0x0032_84b8,
+        ee::s10::f_003284b8__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_delete,
+        OC375_PREV_DELETE,
+        0x0031_7e50,
+        ee::s10::f_00317e50__generated
+    );
+
+    oc375_gated!(
+        oc375_fake_alloc_named,
+        OC375_PREV_ALLOC_NAMED,
+        0x0031_7d70,
+        ee::s10::f_00317d70__generated
+    );
+
+    //@FAKES@
+
+    pub(crate) fn oc375_install_fakes() {
+        use std::ptr::addr_of_mut;
+        // SAFETY: override slots are plain fn pointers; `hook` serialises.
+        {
+            fakes::hook(
+                addr_of_mut!(ee::s08::OVERRIDE_002AAD78),
+                oc375_fake_stream_queue,
+                &OC375_PREV_STREAM_QUEUE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s08::OVERRIDE_002A9988),
+                oc375_fake_radius_vanish,
+                &OC375_PREV_RADIUS_VANISH,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s07::OVERRIDE_00288940),
+                oc375_fake_closer_view,
+                &OC375_PREV_CLOSER_VIEW,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+                oc375_fake_get_be,
+                &OC375_PREV_GET_BE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+                oc375_fake_get_interface,
+                &OC375_PREV_GET_INTERFACE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s07::OVERRIDE_00288AE0),
+                oc375_fake_replay_playing,
+                &OC375_PREV_REPLAY_PLAYING,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s08::OVERRIDE_002ACFE0),
+                oc375_fake_bank_add,
+                &OC375_PREV_BANK_ADD,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s08::OVERRIDE_002AB188),
+                oc375_fake_get_stream,
+                &OC375_PREV_GET_STREAM,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s08::OVERRIDE_002ABCF8),
+                oc375_fake_set_stream,
+                &OC375_PREV_SET_STREAM,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003D85C8),
+                oc375_fake_match_conditions,
+                &OC375_PREV_MATCH_CONDITIONS,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003D8780),
+                oc375_fake_sample_allowed,
+                &OC375_PREV_SAMPLE_ALLOWED,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003D6E30),
+                oc375_fake_history_find,
+                &OC375_PREV_HISTORY_FIND,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_0030C7C0),
+                oc375_fake_mc_queue_push,
+                &OC375_PREV_MC_QUEUE_PUSH,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_0030AEB8),
+                oc375_fake_mc_current,
+                &OC375_PREV_MC_CURRENT,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_0030B388),
+                oc375_fake_mc_find,
+                &OC375_PREV_MC_FIND,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_0030B8C0),
+                oc375_fake_mc_type2,
+                &OC375_PREV_MC_TYPE2,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_0030B320),
+                oc375_fake_mc_find_by_id,
+                &OC375_PREV_MC_FIND_BY_ID,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s07::OVERRIDE_0028B180),
+                oc375_fake_mc_sound_sys,
+                &OC375_PREV_MC_SOUND_SYS,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s08::OVERRIDE_0029DBB0),
+                oc375_fake_mc_abort_sound,
+                &OC375_PREV_MC_ABORT_SOUND,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s01::OVERRIDE_00153E28),
+                oc375_fake_mc_be_q1,
+                &OC375_PREV_MC_BE_Q1,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s01::OVERRIDE_00153DD0),
+                oc375_fake_mc_be_q2,
+                &OC375_PREV_MC_BE_Q2,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s01::OVERRIDE_00153ED8),
+                oc375_fake_mc_be_q3,
+                &OC375_PREV_MC_BE_Q3,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s01::OVERRIDE_00153FD8),
+                oc375_fake_mc_be_q4,
+                &OC375_PREV_MC_BE_Q4,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s01::OVERRIDE_00153E80),
+                oc375_fake_mc_be_q5,
+                &OC375_PREV_MC_BE_Q5,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s01::OVERRIDE_00153D78),
+                oc375_fake_mc_be_q6,
+                &OC375_PREV_MC_BE_Q6,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003D7110),
+                oc375_fake_find_event,
+                &OC375_PREV_FIND_EVENT,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003D81F0),
+                oc375_fake_find_bank_user_data,
+                &OC375_PREV_FIND_BANK_USER_DATA,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003DB208),
+                oc375_fake_eval_part_choice,
+                &OC375_PREV_EVAL_PART_CHOICE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003D8CB0),
+                oc375_fake_pick_weighted,
+                &OC375_PREV_PICK_WEIGHTED,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003DB5C0),
+                oc375_fake_random_no_repeat,
+                &OC375_PREV_RANDOM_NO_REPEAT,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003D9ED0),
+                oc375_fake_check_event_masks,
+                &OC375_PREV_CHECK_EVENT_MASKS,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003D95B8),
+                oc375_fake_resolve_event_parts,
+                &OC375_PREV_RESOLVE_EVENT_PARTS,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003D9AC8),
+                oc375_fake_sentence_append,
+                &OC375_PREV_SENTENCE_APPEND,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003DB3B8),
+                oc375_fake_match_flags,
+                &OC375_PREV_MATCH_FLAGS,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003D6D50),
+                oc375_fake_find_bank_by_id,
+                &OC375_PREV_FIND_BANK_BY_ID,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003DB040),
+                oc375_fake_notify_part,
+                &OC375_PREV_NOTIFY_PART,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003D8330),
+                oc375_fake_find_bank_type,
+                &OC375_PREV_FIND_BANK_TYPE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003DB838),
+                oc375_fake_decode_sample,
+                &OC375_PREV_DECODE_SAMPLE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003D9830),
+                oc375_fake_notify_play,
+                &OC375_PREV_NOTIFY_PLAY,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003D9A40),
+                oc375_fake_reset_sentence,
+                &OC375_PREV_RESET_SENTENCE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003DB9A0),
+                oc375_fake_get_time,
+                &OC375_PREV_GET_TIME,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003D7C38),
+                oc375_fake_free_queue_slot,
+                &OC375_PREV_FREE_QUEUE_SLOT,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s14::OVERRIDE_003D72A0),
+                oc375_fake_alloc_queue_slot,
+                &OC375_PREV_ALLOC_QUEUE_SLOT,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s08::OVERRIDE_002B1220),
+                oc375_fake_instance_slot,
+                &OC375_PREV_INSTANCE_SLOT,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s08::OVERRIDE_002AB150),
+                oc375_fake_current_request,
+                &OC375_PREV_CURRENT_REQUEST,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s08::OVERRIDE_002ADCA0),
+                oc375_fake_add_timer,
+                &OC375_PREV_ADD_TIMER,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s08::OVERRIDE_002AB0D0),
+                oc375_fake_volume_scale,
+                &OC375_PREV_VOLUME_SCALE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s08::OVERRIDE_002B1248),
+                oc375_fake_clear_prebuffer,
+                &OC375_PREV_CLEAR_PREBUFFER,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s11::OVERRIDE_0035C0E8),
+                oc375_fake_build_nodes,
+                &OC375_PREV_BUILD_NODES,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s11::OVERRIDE_0035C040),
+                oc375_fake_update_bounds,
+                &OC375_PREV_UPDATE_BOUNDS,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s09::OVERRIDE_002D1BE0),
+                oc375_fake_get_nash,
+                &OC375_PREV_GET_NASH,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s09::OVERRIDE_002D1BD8),
+                oc375_fake_world_instance,
+                &OC375_PREV_WORLD_INSTANCE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00328F28),
+                oc375_fake_key_from_aabb,
+                &OC375_PREV_KEY_FROM_AABB,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_003284B8),
+                oc375_fake_hash_remove,
+                &OC375_PREV_HASH_REMOVE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+                oc375_fake_delete,
+                &OC375_PREV_DELETE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+                oc375_fake_alloc_named,
+                &OC375_PREV_ALLOC_NAMED,
+            );
+            //@HOOKS@
+        }
+    }
+
+    /// SPCH_ChooseSample: condition blocks with and without mark slots
+    /// (none, -1 count), mask words that fail or pass, samples that match,
+    /// are allowed, new or old (history age), a full or open set, and the
+    /// fallback to the oldest. The three callees are fakes.
+    #[test]
+    fn spch_choose_sample_matches() {
+        covered(
+            ee::s14::f_003d88c8__generated,
+            spch_choose_sample,
+            300,
+            &|c, seed| {
+                let mut r = oc375_machine(c, seed, 0x003d_88c8, 12);
+                c.pc = 0x003d_88c8;
+                let set = DATA + 0x100;
+                let sel = DATA + 0x4000;
+                let event = DATA + 0x500;
+                let table = DATA + 0x600;
+                let cond = DATA + 0x700;
+                let tbl = DATA + 0x2000;
+                let header = DATA + 0x800;
+                fill(c, &mut r, set, 0x80);
+                c.bus
+                    .write8(set + SPCH_SET_COUNT, (196 + r.next_u32() % 6) as u8);
+                fill(c, &mut r, sel, 0x200);
+                c.bus.write16(event, 1);
+                c.bus.write32(GAME_GP + 0x1734, table);
+                c.bus.write32(table + 4, header);
+                // Header: cond count n (low nibble), sample count, entries
+                // from +0xe (stride n + 2), the n mask words after them.
+                fill(c, &mut r, header, 0x40);
+                let n = if seed % 5 == 0 { 0 } else { r.next_u32() % 4 };
+                c.bus.write8(header + 4, (0x30 | n) as u8);
+                c.bus.write8(header + 5, (r.next_u32() % 6) as u8);
+                // Condition ids: none, ignored (0, 0xff), mark slots, or ids.
+                fill(c, &mut r, cond, 8);
+                c.bus.write8(
+                    cond + SPCH_COND_COUNT,
+                    ((r.next_u32() % 6) as u8).wrapping_sub(1),
+                );
+                for i in 0..8 {
+                    let id = match r.next_u32() % 5 {
+                        0 => 0,
+                        1 => 0xff,
+                        2 => 0xfe,
+                        _ => 1 + r.next_u32() % 0x20,
+                    };
+                    c.bus.write8(cond + SPCH_COND_IDS + i, id as u8);
+                }
+                fill(c, &mut r, tbl, 0x40);
+                if seed % 4 == 0 {
+                    for _ in 0..8 {
+                        c.bus.write32(tbl + 4 * (r.next_u32() % 0x21), 0);
+                    }
+                }
+                c.g[A0][0] = sx(set);
+                c.g[A1][0] = sx(sel);
+                c.g[A2][0] = sx(event);
+                c.g[A3][0] = sx(cond);
+                c.g[T0][0] = sx(tbl);
+                oc375_script(c, 0x003d_85c8, if seed % 9 == 0 { 0 } else { OC375_COIN });
+                oc375_script(c, 0x003d_8780, OC375_COIN);
+                oc375_script(c, 0x003d_6e30, OC375_SMALL);
+            },
+        );
+    }
+
+    /// A speech sample table for the real SPCH_ChooseSample: `gp+0x1734`
+    /// -> table, entry 1 -> a header with no condition masks and 1-3
+    /// samples (callee fakes decide match/allowed/history).
+    pub(crate) fn oc375_sample_table(c: &mut Cpu, r: &mut Rng) {
+        let table = DATA + 0x6000;
+        let header = DATA + 0x6100;
+        c.bus.write32(GAME_GP + 0x1734, table);
+        c.bus.write32(table + 4, header);
+        fill(c, r, header, 0x10);
+        c.bus.write8(header + 4, 0x30);
+        c.bus.write8(header + 5, (1 + r.next_u32() % 3) as u8);
+    }
+
+    /// SPCH_BuildSentence: no event / no bank, the bank's last event
+    /// repeating within its limit or not, bank modes 0/1/2 (with and
+    /// without flag bit 0), no parts, argument masks on (20 tests over
+    /// args of 0, -1 and others) or off, parts whose roll, masks or mask
+    /// word fail, and parts that go through the real ChooseEventSamples
+    /// (returning 0 or a choice, then resolved or not). Callees with
+    /// override slots are fakes; FindBankField14 runs on an empty table.
+    #[test]
+    fn spch_build_sentence_matches() {
+        covered(
+            ee::s14::f_003d9fb0__generated,
+            spch_build_sentence,
+            300,
+            &|c, seed| {
+                let mut r = oc375_machine(c, seed, 0x003d_9fb0, 14);
+                c.pc = 0x003d_9fb0;
+                let frame = crate::difftest::SP - 0x280;
+                let args = DATA + 0x100;
+                let ev = DATA + 0x1000;
+                for i in 0..22 {
+                    let v = match r.next_u32() % 3 {
+                        0 => 0,
+                        1 => u32::MAX,
+                        _ => r.next_u32(),
+                    };
+                    c.bus.write32(args + 4 * i, v);
+                }
+                // Bank index, its last event and limit, its mode.
+                let bank = r.next_u32() % 4;
+                c.bus.write32(frame + 0x1b4, bank);
+                let id = r.next_u32() % 3;
+                c.bus.write16(
+                    SPCH_BANK_LAST + 8 * bank,
+                    (if seed % 3 == 0 { id } else { 7 }) as u16,
+                );
+                c.bus
+                    .write32(SPCH_BANK_LAST + 8 * bank + 4, r.next_u32() % 4);
+                c.bus.write32(SPCH_BANK_MODE + 4 * bank, r.next_u32() % 3);
+                // The event: id, repeat count, flags, parts at +0xc.
+                fill(c, &mut r, ev, 0x80);
+                let parts = if seed % 17 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 3
+                };
+                c.bus.write16(ev, id as u16);
+                c.bus.write8(ev + SPCH_EVENT_PARTS, parts as u8);
+                c.bus
+                    .write8(ev + 7, (r.next_u32() % 4 | (r.next_u32() % 4) << 4) as u8);
+                c.bus.write8(ev + 8, (r.next_u32() % 5) as u8);
+                c.bus
+                    .write8(ev + SPCH_EVENT_FLAGS, (r.next_u32() % 16) as u8);
+                for i in 0..4 {
+                    c.bus.write16(ev + 0xc + 2 * i, (0x10 + 0x10 * i) as u16);
+                }
+                // Parts (ChooseEventSamples headers) at ev + 0x40 * (i + 1).
+                for i in 0..4 {
+                    let part = ev + 0x40 * (i + 1);
+                    c.bus.write8(part + 1, (r.next_u32() % 101) as u8);
+                    c.bus.write8(part + 4, (1 + r.next_u32() % 2) as u8 * 4);
+                    c.bus.write8(part + 5, (r.next_u32() % 3) as u8);
+                    c.bus.write8(part + 6, 0);
+                    for k in 0..4 {
+                        c.bus.write8(part + 8 + k, 4 + k as u8);
+                    }
+                    for k in 0..4 {
+                        let e = part + 0x10 + 4 * k;
+                        c.bus
+                            .write8(e + 3, if r.next_u32() % 3 == 0 { 3 } else { 0 });
+                        c.bus.write8(e + 4, 0);
+                    }
+                }
+                // The weight order at sp+0.
+                for i in 0..8 {
+                    c.bus.write8(frame + i, (r.next_u32() % 5) as u8);
+                }
+                oc375_sample_table(c, &mut r);
+                oc375_script(c, 0x003d_7110, if seed % 19 == 0 { 0 } else { ev });
+                oc375_script(c, 0x003d_81f0, if seed % 23 == 0 { 0 } else { 1 });
+                oc375_script(c, 0x003d_b5c0, r.next_u32() % 100);
+                oc375_script(c, 0x003d_9ed0, OC375_COIN);
+                oc375_script(c, 0x003d_95b8, OC375_COIN);
+                oc375_script(c, 0x003d_b3b8, if seed % 5 == 0 { 0 } else { 1 });
+                oc375_script(c, 0x003d_6d50, 1);
+                oc375_script(c, 0x003d_85c8, 1);
+                oc375_script(c, 0x003d_8780, 1);
+                oc375_script(c, 0x003d_6e30, OC375_SMALL);
+                c.g[A0][0] = sx(args);
+            },
+        );
+    }
+
+    /// SPCH_ChooseEventSamples: too many slots, each mode-bit/mode pair,
+    /// flags that match or not; slots whose mark conditions fail (cleared
+    /// mark words: rounds until the 200 tries run out) or hold, done or
+    /// not; banks by id (found or none), by argument (FindBank, argument
+    /// index in range or not) and by id with a sample check
+    /// (BankHasSample), and the real SPCH_ChooseSample choosing samples
+    /// or none. FindBank and BankHasSample run for real on a 3-bank table.
+    #[test]
+    fn spch_choose_event_samples_matches() {
+        covered(
+            ee::s14::f_003d9088__generated,
+            spch_choose_event_samples,
+            300,
+            &|c, seed| {
+                let mut r = oc375_machine(c, seed, 0x003d_9088, 10);
+                c.pc = 0x003d_9088;
+                let set = DATA + 0x100;
+                let part = DATA + 0x400;
+                let args = DATA + 0x800;
+                // Banks: three sample headers (id 0x40+i, arg key i+5,
+                // 3 samples by index), the count at gp+0x1738.
+                let table = DATA + 0x6000;
+                c.bus.write32(GAME_GP + 0x1734, table);
+                c.bus.write32(GAME_GP + 0x1738, 3);
+                for i in 0..3u32 {
+                    let h = DATA + 0x6100 + 0x80 * i;
+                    c.bus.write32(table + 4 * i, h);
+                    fill(c, &mut r, h, 0x20);
+                    c.bus.write16(h, (0x40 + i) as u16);
+                    c.bus.write16(h + 2, (5 + i) as u16);
+                    c.bus.write8(h + 4, (0x30 | r.next_u32() % 2) as u8);
+                    c.bus.write8(h + 5, (1 + r.next_u32() % 3) as u8);
+                    c.bus.write16(h + 0xa, 3);
+                }
+                fill(c, &mut r, set, 0x20);
+                c.bus.write8(set + 0x61, (r.next_u32() % 5) as u8);
+                for i in 0..22 {
+                    let v = match r.next_u32() % 3 {
+                        0 => 5 + r.next_u32() % 4,
+                        1 => r.next_u32() % 6,
+                        _ => r.next_u32(),
+                    };
+                    c.bus.write32(args + 4 * i, v);
+                }
+                // The part: slot count / mode bits, words to clear, its
+                // conditions at part + 0x20 * (k + 1).
+                fill(c, &mut r, part, 0x100);
+                let n = if seed % 13 == 0 {
+                    13 + r.next_u32() % 3
+                } else {
+                    r.next_u32() % 5
+                };
+                c.bus.write8(part + 4, (n << 2 | r.next_u32() % 4) as u8);
+                c.bus.write8(part + 5, (r.next_u32() % 4) as u8);
+                c.bus.write8(part + 6, (r.next_u32() % 3) as u8);
+                for k in 0..4u32 {
+                    c.bus.write8(part + 8 + k, (8 * (k + 1)) as u8);
+                    let cond = part + 0x20 * (k + 1);
+                    c.bus.write16(cond, (0x40 + r.next_u32() % 4) as u16);
+                    c.bus.write8(
+                        cond + 2,
+                        (if r.next_u32() % 5 == 0 {
+                            0x15
+                        } else {
+                            r.next_u32() % 22
+                        }) as u8,
+                    );
+                    c.bus.write8(cond + 3, (r.next_u32() % 4) as u8);
+                    c.bus
+                        .write8(cond + 4, ((r.next_u32() % 4) as u8).wrapping_sub(1));
+                    for j in 0..3 {
+                        let id = if r.next_u32() % 2 == 0 {
+                            0xff
+                        } else {
+                            r.next_u32() % 0x20
+                        };
+                        c.bus.write8(cond + 8 + j, id as u8);
+                        let target =
+                            r.next_u32() % 8 | (if r.next_u32() % 3 == 0 { 0 } else { 0x80 });
+                        c.bus.write8(cond + 0x10 + j, target as u8);
+                    }
+                }
+                c.g[A0][0] = sx(set);
+                c.g[A1][0] = sx(part);
+                c.g[A2][0] = sx(args);
+                c.g[A3][0] = r.next_u32() as u64;
+                c.g[T0][0] = r.next_u32() as u64;
+                c.g[T1][0] = (r.next_u32() % 3) as u64;
+                oc375_script(c, 0x003d_b3b8, if seed % 7 == 0 { 0 } else { 1 });
+                oc375_script(c, 0x003d_6d50, OC375_SMALL);
+                oc375_script(c, 0x003d_85c8, if seed % 4 == 0 { OC375_COIN } else { 1 });
+                oc375_script(c, 0x003d_8780, 1);
+                oc375_script(c, 0x003d_6e30, OC375_SMALL);
+            },
+        );
+    }
+
+    /// SPCH_PlaySentence: another bank's sentence or no parts; 1-3 parts
+    /// with and without the play callback, part headers with 0-3 slots,
+    /// sample ids 0xff (none) or decoded / not decoded, and the first
+    /// part's key repeating the bank's last event or replacing it.
+    /// GetEventParam runs for real; the callback is a fake address.
+    #[test]
+    fn spch_play_sentence_matches() {
+        covered(
+            ee::s14::f_003d9bd8__generated,
+            spch_play_sentence,
+            300,
+            &|c, seed| {
+                let mut r = oc375_machine(c, seed, 0x003d_9bd8, 12);
+                c.pc = 0x003d_9bd8;
+                let bank = r.next_u32() % 4;
+                let event = DATA + 0x2000;
+                fill(c, &mut r, event, 0x40);
+                c.bus.write8(event + 6, (r.next_u32() % 4) as u8);
+                c.bus
+                    .write32(SPCH_SENTENCE, if seed % 9 == 0 { bank + 1 } else { bank });
+                let parts = if seed % 11 == 0 {
+                    u32::MAX
+                } else {
+                    r.next_u32() % 4
+                };
+                c.bus.write32(SPCH_SENTENCE + 4, parts);
+                // Chosen slots: small banks, any samples.
+                for k in 0..16 {
+                    c.bus
+                        .write16(SPCH_SENTENCE + 0xc + 8 * k, (r.next_u32() % 3) as u16);
+                    c.bus
+                        .write16(SPCH_SENTENCE + 0x10 + 8 * k, r.next_u32() as u16);
+                }
+                for i in 0..3 {
+                    let at = SPCH_SENTENCE + SPCH_SENTENCE_PART * i;
+                    let header = DATA + 0x3000 + 0x100 * i;
+                    c.bus.write8(at + 0x194, r.next_u32() as u8);
+                    c.bus.write32(at + 0x18c, event);
+                    c.bus.write32(at + 0x190, header);
+                    c.bus.write32(
+                        at + 0x198,
+                        if r.next_u32() % 2 == 0 {
+                            7
+                        } else {
+                            r.next_u32()
+                        },
+                    );
+                    fill(c, &mut r, header, 0x20);
+                    c.bus.write8(header + 4, ((r.next_u32() % 4) << 2) as u8);
+                    for k in 0..4 {
+                        c.bus.write8(header + 8 + k, (r.next_u32() % 4) as u8);
+                    }
+                    for k in 0..0x14 {
+                        let id = if r.next_u32() % 3 == 0 {
+                            0xff
+                        } else {
+                            r.next_u32() % 8
+                        };
+                        c.bus.write8(header + 0xc + k, id as u8);
+                    }
+                }
+                c.bus.write16(SPCH_BANK_LAST + 8 * bank, 7);
+                c.bus.write32(
+                    SPCH_PLAY_CALLBACK_2,
+                    if seed % 3 == 0 { 0 } else { fakes::FAKE },
+                );
+                let table = DATA + 0x6000;
+                c.bus.write32(GAME_GP + 0x1734, table);
+                for i in 0..3 {
+                    c.bus.write32(table + 4 * i, DATA + 0x6100 + 0x80 * i);
+                }
+                oc375_script(c, 0x003d_b838, OC375_COIN);
+                c.g[A0][0] = bank as u64;
+            },
+        );
+    }
+
+    /// SPCH_SelectRequest: 16 queued requests, free or in use, of this
+    /// bank or another, busy or idle, with or without an id list (empty,
+    /// containing the id or not), lifetimes that expire (freed) or not,
+    /// mode-1 banks with flagged events whose key finds a bank entry of
+    /// higher or lower priority, and ties in priority, age and stamp.
+    #[test]
+    fn spch_select_request_matches() {
+        covered(
+            ee::s14::f_003d7760__generated,
+            spch_select_request,
+            300,
+            &|c, seed| {
+                let mut r = oc375_machine(c, seed, 0x003d_7760, 6);
+                c.pc = 0x003d_7760;
+                let bank = r.next_u32() % 3;
+                c.bus.write32(GAME_GP + 0x174c, 0);
+                oc375_script(c, 0x003d_b9a0, 1000);
+                c.bus
+                    .write32(SPCH_BANK_MODE + 4 * bank, if seed % 3 == 0 { 0 } else { 1 });
+                for i in 0..16u32 {
+                    let e = SPCH_QUEUE_BASE + SPCH_QUEUE_ENTRY * i;
+                    let ev = DATA + 0x2000 + 0x20 * i;
+                    c.bus.write32(e + 0x64, 1000 - r.next_u32() % 4);
+                    c.bus.write16(e + 0x68, (r.next_u32() % 3) as u16);
+                    c.bus.write8(e + 0x6a, (r.next_u32() % 5 != 0) as u8);
+                    c.bus.write8(
+                        e + 0x6b,
+                        (if r.next_u32() % 4 == 0 {
+                            bank + 1
+                        } else {
+                            bank
+                        }) as u8,
+                    );
+                    c.bus.write16(e + 0x6c, (r.next_u32() % 6 == 0) as u16);
+                    c.bus.write32(e + 0x70, ev);
+                    c.bus.write32(e + 0x74, 0x0101_0000 * (r.next_u32() % 3));
+                    c.bus.write16(ev, (r.next_u32() % 6) as u16);
+                    c.bus.write16(
+                        ev + 2,
+                        (if r.next_u32() % 2 == 0 {
+                            0
+                        } else {
+                            r.next_u32() % 5
+                        }) as u16,
+                    );
+                    c.bus.write16(ev + 4, (r.next_u32() % 3) as u16);
+                    c.bus.write8(ev + 0xa, r.next_u32() as u8);
+                }
+                // Bank entries for keys 0x0101 / 0x0202 (bytes 2/3).
+                let table = 0x0044_ffb8;
+                for k in 0..8u32 {
+                    let ent = DATA + 0x3000 + 0x20 * k;
+                    let used = r.next_u32() % 3 != 0;
+                    c.bus.write32(table + 8 * k, if used { ent } else { 0 });
+                    let b = (k % 3) as u8;
+                    c.bus.write8(ent + 8, b);
+                    c.bus.write8(ent + 9, b);
+                    c.bus.write16(ent + 0x16, (r.next_u32() % 4) as u16);
+                }
+                // The id list.
+                let list = DATA + 0x500;
+                let ids = DATA + 0x540;
+                c.bus.write32(list, r.next_u32() % 4);
+                c.bus.write32(list + 4, ids);
+                for k in 0..4 {
+                    c.bus.write16(ids + 2 * k, (r.next_u32() % 6) as u16);
+                }
+                c.g[A0][0] = if seed % 4 == 0 { 0 } else { sx(list) };
+                c.g[A1][0] = bank as u64;
+            },
+        );
+    }
+
+    /// SPCH_QueueEventArgs: re-entered (busy flag), no event, no bank
+    /// entry for the key, plain events passing or missing their roll,
+    /// chained events whose bank has valid or invalid newest requests, the
+    /// slot allocation failing (chained: the newest is freed) or not, the
+    /// same or a new time stamp, and the argument copy.
+    #[test]
+    fn spch_queue_event_args_matches() {
+        covered(
+            ee::s14::f_003d7418__generated,
+            spch_queue_event_args,
+            300,
+            &|c, seed| {
+                let mut r = oc375_machine(c, seed, 0x003d_7418, 6);
+                c.pc = 0x003d_7418;
+                let args = DATA + 0x100;
+                let ev = DATA + 0x1000;
+                fill(c, &mut r, args, 20);
+                let k = r.next_u32() % 3;
+                c.bus.write8(args + 2, k as u8);
+                c.bus.write8(args + 3, k as u8);
+                c.bus.write32(GAME_GP + 0x1758, (seed % 17 == 0) as u32);
+                c.bus.write32(GAME_GP + 0x1750, 1000);
+                c.bus.write16(GAME_GP + 0x1754, r.next_u32() as u16);
+                fill(c, &mut r, ev, 4);
+                c.bus.write8(ev + 9, (r.next_u32() % 100) as u8);
+                c.bus.write8(ev + 0xa, if seed % 2 == 0 { 0x20 } else { 0 });
+                // Bank entries (key bytes k, k) and their bank indices.
+                let table = 0x0044_ffb8;
+                for i in 0..8u32 {
+                    let ent = DATA + 0x3000 + 0x20 * i;
+                    c.bus
+                        .write32(table + 8 * i, if r.next_u32() % 3 == 0 { 0 } else { ent });
+                    c.bus.write32(table + 8 * i + 4, r.next_u32() % 3);
+                    c.bus.write8(ent + 8, (i % 4) as u8);
+                    c.bus.write8(ent + 9, (i % 4) as u8);
+                }
+                for b in 0..3u32 {
+                    let pick = |r: &mut Rng| {
+                        if r.next_u32() % 5 == 0 {
+                            16 + r.next_u32() % 4
+                        } else {
+                            r.next_u32() % 16
+                        }
+                    };
+                    let a = pick(&mut r);
+                    let p = pick(&mut r);
+                    c.bus.write32(SPCH_BANK_QUEUED + 4 * b + 0x20, a);
+                    c.bus.write32(SPCH_BANK_QUEUED + 4 * b + 0x40, p);
+                    c.bus.write32(SPCH_BANK_QUEUED + 4 * b, r.next_u32() % 4);
+                }
+                for i in 0..16u32 {
+                    c.bus
+                        .write32(SPCH_QUEUE_BASE + SPCH_QUEUE_ENTRY * i + 0x70, ev);
+                }
+                oc375_script(c, 0x003d_7110, if seed % 13 == 0 { 0 } else { ev });
+                oc375_script(c, 0x003d_b5c0, r.next_u32() % 100);
+                oc375_script(
+                    c,
+                    0x003d_72a0,
+                    if seed % 5 == 0 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % 16
+                    },
+                );
+                oc375_script(c, 0x003d_b9a0, 1000 + seed % 2);
+                c.g[A0][0] = sx(args);
             },
         );
     }

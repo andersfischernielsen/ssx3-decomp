@@ -75,6 +75,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         wscript_fn_add_halo_modifier,
         "WScriptFn_AddHaloModifier",
     ),
+    (
+        0x002f_d420,
+        world_obj_factory_particle_node,
+        "WorldObjFactory_ParticleNode",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2630,6 +2635,302 @@ pub fn wscript_fn_add_rail_modifier(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// WorldObjFactory_ParticleNode (0x2fd420, worldobjfactory.cpp)
+
+/// The particle-node defaults: the guard word (`gp + 0x2514` = 0x4a5604)
+/// and the 0xe0-byte template (0x500000 - 0x49c0).
+pub(crate) const WOFPN_INIT_GUARD: u32 = 0x2514;
+
+pub(crate) const WOFPN_TEMPLATE: u32 = 0x004f_b640;
+
+/// Parameter types by index (2: float).
+pub(crate) const WOFPN_PARAM_TYPES: u32 = 0x0044_60b0;
+
+/// The world object table pointer (`gp + 0x16c8`) and the default world
+/// object holder (`gp + 0xce8`, object at +0x290).
+pub(crate) const WOFPN_OBJECT_TABLE: u32 = 0x16c8;
+
+pub(crate) const WOFPN_DEFAULT_HOLDER: u32 = 0xce8;
+
+/// The factory's 12-byte "done" result (0x4d0000 - 0x6f68).
+pub(crate) const WOFPN_RESULT: u32 = 0x004c_9098;
+
+/// Node fields: the object id word (+0xd8, -1: the default object), the
+/// lifetime (+0x1c) clamped to the max (+0x14).
+pub(crate) const WOFPN_NODE_OBJECT: u32 = 0xd8;
+
+pub(crate) const WOFPN_ALLOC: Callee = Callee {
+    addr: 0x0031_7d70,
+    f: ee::s10::EA_MemAllocNamed,
+};
+
+pub(crate) const WOFPN_DELETE: Callee = Callee {
+    addr: 0x0031_7e50,
+    f: ee::s10::__builtin_delete,
+};
+
+pub(crate) const WOFPN_ATTACH_MODIFIER: Callee = Callee {
+    addr: 0x002f_ae38,
+    f: ee::s10::WorldObjFactory_AttachModifier,
+};
+
+/// `memcpy` and the particle-node ctor (through the table).
+pub(crate) const WOFPN_MEMCPY: u32 = 0x003e_6574;
+
+pub(crate) const WOFPN_NODE_CTOR: u32 = 0x0035_78a8;
+
+/// The guarded static init of the particle-node template.
+pub(crate) fn wofpn_init_template(c: &mut Cpu) {
+    c.cycles += 72;
+    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+    c.mtc1(AT, 1); // -1.0
+    c.g[V0][0] = sx(WOFPN_TEMPLATE);
+    c.g[AT][0] = 0x4080_0000;
+    c.mtc1(AT, 2); // 4.0
+    c.g[A0][0] = 1;
+    c.mtc1(0, 0); // 0.0
+    c.g[V1][0] = 0xffff_ffff_ffff_0000;
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 3); // 1.0
+    c.g[A2][0] = 0x10;
+    let t = WOFPN_TEMPLATE;
+    c.swc1(1, t + 0x8);
+    c.g[V1][0] |= 0xffff;
+    c.swc1(2, t + 0x10);
+    c.sw(t, c.g[A0][0]);
+    c.sw(t + 0x4, 0);
+    c.swc1(3, t + 0xc);
+    for off in (0x14..=0x80).step_by(4) {
+        c.swc1(0, t + off);
+    }
+    c.g[AT][0] = 0x41a0_0000;
+    c.mtc1(AT, 1); // 20.0
+    c.swc1(3, t + 0x84);
+    c.g[A1][0] = c.lbu(t + 0xdc);
+    c.swc1(3, t + 0xb4);
+    c.sw(t + 0xc4, c.g[A2][0]);
+    c.swc1(0, t + 0xcc);
+    c.swc1(1, t + 0xd4);
+    c.sw(t + 0xd8, c.g[V1][0]);
+    let guard = r32(c, GP).wrapping_add(WOFPN_INIT_GUARD);
+    c.sw(guard, c.g[A0][0]);
+    for off in [0x88, 0x8c, 0x90] {
+        c.swc1(0, t + off);
+    }
+    for off in [0x94, 0x98, 0x9c, 0xa0, 0xa4] {
+        c.swc1(3, t + off);
+    }
+    for off in [0xa8, 0xac, 0xb0, 0xb8, 0xbc, 0xc0] {
+        c.swc1(0, t + off);
+    }
+    c.sw(t + 0xc8, 0);
+    c.sw(t + 0xd0, c.g[A0][0]);
+    c.sb(sp(c), c.g[A1][0]);
+}
+
+/// `Result WorldObjFactory_ParticleNode(int n, Param* params)` (0x2fd420;
+/// the 12-byte result through the hidden pointer in a0): allocates a
+/// particle node from the default template, applies the `n` params
+/// (16 bytes each: index, value, -, type; an int given for a float slot
+/// is converted), looks up its world object (by id, or the default one),
+/// and unless the object's modifier refuses it (AttachModifier: > 0 frees
+/// the node, < 0 keeps it) clamps the lifetime and creates the particle
+/// node on the object. A missing object frees the node.
+pub fn world_obj_factory_particle_node(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x80);
+        let guard = r32(c, GP).wrapping_add(WOFPN_INIT_GUARD);
+        c.g[V0][0] = c.lw(guard);
+        frame.save(c, S1, 0x60);
+        frame.save(c, S2, 0x50);
+        c.g[S1][0] = 0x500000;
+        frame.save(c, S4, 0x30);
+        c.g[S2][0] = c.g[A0][0]; // result
+        frame.save(c, S5, 0x20);
+        c.g[S4][0] = c.g[A1][0]; // n
+        frame.save(c, S0, 0x70);
+        c.g[S5][0] = c.g[A2][0]; // params
+        frame.save(c, S3, 0x40);
+        frame.save_ra(c, 0x10);
+        if c.g[V0][0] == 0 {
+            wofpn_init_template(c);
+        }
+
+        // node = alloc(0xe0); node->object = -1; memcpy(node, template, 0xe0)
+        c.cycles += 17;
+        c.g[A0][0] = 0xe0;
+        c.g[A1][0] = sx(0x0049_0000 - 0x68e8);
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        c.g[S3][0] = 0x4d0000;
+        WOFPN_ALLOC.call(c, 0x002f_d594)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A2][0] = 0xe0;
+        c.g[V0][0] = u64::MAX;
+        c.g[A1][0] = sx(WOFPN_TEMPLATE);
+        c.g[A0][0] = c.g[S0][0];
+        c.sw(r32(c, S0).wrapping_add(WOFPN_NODE_OBJECT), c.g[V0][0]);
+        call_ptr(c, WOFPN_MEMCPY, 0x002f_d5b4)?;
+        c.g[A2][0] = c.g[S5][0];
+        if (c.g[S4][0] as i64) > 0 {
+            c.cycles += 5;
+            c.g[V0][0] = 0x440000;
+            c.g[A1][0] = c.g[S4][0];
+            c.g[T0][0] = sx(WOFPN_PARAM_TYPES);
+            c.g[A3][0] = 2;
+            loop {
+                c.cycles += 8;
+                let param = r32(c, A2);
+                c.g[V0][0] = c.lw(param);
+                c.g[V1][0] = c.lw(param.wrapping_add(0xc));
+                c.g[V0][0] = sx(r32(c, V0) << 2);
+                c.g[A0][0] = sx(r32(c, V0).wrapping_add(r32(c, S0)));
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, T0)));
+                c.g[V0][0] = c.lw(r32(c, V0));
+                let convert = c.g[V1][0] != c.g[V0][0] && {
+                    c.cycles += 2;
+                    c.g[V0][0] == c.g[A3][0]
+                };
+                if convert {
+                    c.cycles += 4;
+                    c.lwc1(0, param.wrapping_add(4));
+                    c.cvt_s_w(0, 0);
+                    c.swc1(0, r32(c, A0));
+                } else {
+                    c.g[V0][0] = c.lw(param.wrapping_add(4));
+                    c.cycles += 1;
+                    c.sw(r32(c, A0), c.g[V0][0]);
+                }
+                c.cycles += 3;
+                c.g[A1][0] = sx(r32(c, A1).wrapping_sub(1));
+                let more = c.g[A1][0] != 0;
+                c.g[A2][0] = sx(param.wrapping_add(0x10));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_d5d0);
+                }
+            }
+        }
+
+        // obj = id == -1 ? default object : table[id & 0xff] entry id >> 8
+        c.cycles += 4;
+        c.g[A2][0] = c.lw(r32(c, S0).wrapping_add(WOFPN_NODE_OBJECT));
+        c.g[V0][0] = !c.g[A2][0];
+        let gp = r32(c, GP);
+        c.g[A1][0] = c.lw(gp.wrapping_add(WOFPN_OBJECT_TABLE));
+        if c.g[V0][0] == 0 {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(gp.wrapping_add(WOFPN_DEFAULT_HOLDER));
+            c.g[S1][0] = c.lw(r32(c, V0).wrapping_add(0x290));
+        } else {
+            c.cycles += 8;
+            c.g[V0][0] = c.g[A2][0] & 0xff;
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[V1][0] = c.lw(r32(c, A1));
+            c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(8));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+            c.g[V1][0] = c.lw(r32(c, V0));
+            if c.g[V1][0] != 0 {
+                c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x1c));
+                c.cycles += 7;
+                c.g[V0][0] = sx(r32(c, A2) >> 8);
+                c.g[V0][0] = sx(r32(c, V0) << 2);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                c.g[V1][0] = c.lw(r32(c, V0));
+                c.g[V0][0] = sx(r32(c, V1) >> 8);
+                let some = c.g[V0][0] != 0;
+                c.g[V0][0] = sx(r32(c, V0) << 2);
+                if !some {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0;
+                }
+                c.cycles += 1;
+                c.g[A2][0] = c.g[V0][0];
+            } else {
+                c.cycles += 2;
+                c.g[A2][0] = 0;
+            }
+            c.cycles += 1;
+            c.g[S1][0] = c.g[A2][0];
+        }
+
+        'done: {
+            c.cycles += 2;
+            if c.g[S1][0] == 0 {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S0][0];
+                WOFPN_DELETE.call(c, 0x002f_d694)?;
+                break 'done;
+            }
+            c.g[A0][0] = c.lw(r32(c, S1).wrapping_add(0xc));
+            c.cycles += 2;
+            c.g[A1][0] = 0xd;
+            if c.g[A0][0] != 0 {
+                c.cycles += 4;
+                c.g[A2][0] = c.g[S0][0];
+                WOFPN_ATTACH_MODIFIER.call(c, 0x002f_d6ac)?;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 2;
+                    if (c.g[V0][0] as i64) > 0 {
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[S0][0];
+                        WOFPN_DELETE.call(c, 0x002f_d6c4)?;
+                    }
+                    break 'done;
+                }
+            } else {
+                c.cycles += 1;
+            }
+            // lifetime = min(lifetime, max)
+            let node = r32(c, S0);
+            c.lwc1(0, node.wrapping_add(0x1c));
+            c.cycles += 5;
+            c.lwc1(1, node.wrapping_add(0x14));
+            c.c_lt_s(1, 0);
+            if c.fcc() {
+                c.swc1(1, node.wrapping_add(0x1c));
+            }
+            c.cycles += 12;
+            c.g[A0][0] = 0x2c;
+            c.g[A1][0] = sx(0x0049_0000 - 0x68d0);
+            c.g[A2][0] = 0x2000_0000;
+            c.g[A3][0] = 0;
+            WOFPN_ALLOC.call(c, 0x002f_d6fc)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 1;
+            c.g[A2][0] = c.g[S1][0];
+            c.g[A3][0] = c.g[S0][0];
+            c.g[T0][0] = 0;
+            call_ptr(c, WOFPN_NODE_CTOR, 0x002f_d714)?;
+        }
+
+        // *result = factory "done" result
+        c.cycles += 17;
+        c.g[A1][0] = sx(WOFPN_RESULT); // s3 (0x4d0000) - 0x6f68
+        let (src, dst) = (r32(c, A1), r32(c, S2));
+        c.ldl(V0, src.wrapping_add(7));
+        c.ldr(V0, src);
+        c.g[V1][0] = c.lw(src.wrapping_add(8));
+        c.sdl(V0, dst.wrapping_add(7));
+        c.sdr(V0, dst);
+        c.sw(dst.wrapping_add(8), c.g[V1][0]);
+        c.g[V0][0] = c.g[S2][0];
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3629,6 +3930,154 @@ pub(crate) mod tests {
                 let _r = machine(c, seed, 0x2f_f1c8, 0);
                 c.pc = 0x002f_f1c8;
                 modifier_fixture(c, seed, 0x0044_0000 + RAIL_PARAM_TYPES_OFF);
+            },
+        );
+    }
+
+    /// WorldObjFactory_ParticleNode: template initialised or not; 0-3
+    /// params (or a negative count) with matching / mismatching types
+    /// (int to float conversions); the default object or one from the
+    /// object table (missing slot, empty entry, found), with and without a
+    /// modifier that accepts (0), frees (> 0) or keeps (< 0) the node.
+    /// Gated fakes for alloc, delete, the particle-node ctor and
+    /// AttachModifier (sign-extended result); real memcpy.
+    #[test]
+    fn world_obj_factory_particle_node_matches() {
+        use crate::difftest::fakes::{fake, fall_back, hook};
+        use crate::game::object::movenode::tests::{oc338_fake, OC338_CTRL, OC338_MAGIC};
+        use std::ptr::addr_of_mut;
+        use std::sync::atomic::AtomicUsize;
+        const BASE: u32 = DATA + 0x20_0000;
+        const PARAMS: u32 = BASE;
+        const RESULT: u32 = BASE + 0x100;
+        const ATTACH_RESULT: u32 = BASE + 0x120;
+        const HOLDER: u32 = BASE + 0x400;
+        const TABLE_PTR: u32 = BASE + 0x800;
+        const TABLE: u32 = BASE + 0x810;
+        const SLOTS: u32 = BASE + 0x900;
+        const SLOT: u32 = BASE + 0xa00;
+        const ENTRIES: u32 = BASE + 0xb00;
+        const OBJ: u32 = BASE + 0x1_0000;
+        oc338_fake!(
+            oc374_fake_wofpn_alloc,
+            OC374_PREV_WOFPN_ALLOC,
+            0x0031_7d70,
+            ee::s10::f_00317d70__generated
+        );
+        oc338_fake!(
+            oc374_fake_wofpn_delete,
+            OC374_PREV_WOFPN_DELETE,
+            0x0031_7e50,
+            ee::s10::f_00317e50__generated
+        );
+        oc338_fake!(
+            oc374_fake_wofpn_ctor,
+            OC374_PREV_WOFPN_CTOR,
+            0x0035_78a8,
+            ee::s11::f_003578a8__generated
+        );
+        static OC374_PREV_ATTACH: AtomicUsize = AtomicUsize::new(0);
+        fn oc374_fake_attach_modifier(c: &mut Cpu) {
+            if c.bus.read32(OC338_CTRL) != OC338_MAGIC {
+                return fall_back(c, &OC374_PREV_ATTACH, ee::s10::f_002fae38__generated);
+            }
+            let ra = c.g[RA][0] as u32;
+            fake(c, 0x002f_ae38, ra);
+            if c.pc == ra {
+                c.g[V0][0] = sx(c.bus.read32(ATTACH_RESULT));
+            }
+        }
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc374_fake_wofpn_alloc,
+            &OC374_PREV_WOFPN_ALLOC,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc374_fake_wofpn_delete,
+            &OC374_PREV_WOFPN_DELETE,
+        );
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_003578A8),
+            oc374_fake_wofpn_ctor,
+            &OC374_PREV_WOFPN_CTOR,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_002FAE38),
+            oc374_fake_attach_modifier,
+            &OC374_PREV_ATTACH,
+        );
+        covered(
+            ee::s10::f_002fd420__generated,
+            world_obj_factory_particle_node,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f_d420, 6);
+                c.pc = 0x002f_d420;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                let gp = r32(c, GP);
+                c.g[A0][0] = sx(RESULT);
+                for i in 0..3 {
+                    c.bus.write32(WOFPN_RESULT + 4 * i, r.next_u32());
+                }
+                let initialised = seed % 2;
+                c.bus.write32(gp + WOFPN_INIT_GUARD, initialised);
+                for off in (0..0xe0).step_by(4) {
+                    let f = r.f32(100.0);
+                    c.bus.write32(WOFPN_TEMPLATE + off, f);
+                }
+                for i in 0..56 {
+                    c.bus.write32(WOFPN_PARAM_TYPES + 4 * i, r.next_u32() % 4);
+                }
+                // The object: default (-1) or table entry (id >> 8, slot).
+                let which = seed / 2 % 5;
+                let id: u32 = match which {
+                    0 => u32::MAX,
+                    1 => 3,          // slot 3 is empty
+                    2 => 2 << 8 | 1, // entry 2 is empty
+                    _ => 1 << 8 | 1,
+                };
+                if initialised == 1 {
+                    c.bus.write32(WOFPN_TEMPLATE + WOFPN_NODE_OBJECT, id);
+                }
+                let n = [0u32, 1, 2, 3, 0xffff_ffff][(seed / 10 % 5) as usize];
+                c.g[A1][0] = sx(n);
+                c.g[A2][0] = sx(PARAMS);
+                for i in 0..3 {
+                    let p = PARAMS + 0x10 * i;
+                    let idx = if i == 0 && initialised == 0 {
+                        54
+                    } else {
+                        r.next_u32() % 56
+                    };
+                    c.bus.write32(p, idx);
+                    let value = if idx == 54 { id } else { r.next_u32() };
+                    c.bus.write32(p + 4, value);
+                    c.bus.write32(p + 8, r.next_u32());
+                    let ty = if idx == 54 {
+                        c.bus.read32(WOFPN_PARAM_TYPES + 4 * 54)
+                    } else {
+                        r.next_u32() % 4
+                    };
+                    c.bus.write32(p + 0xc, ty);
+                }
+                let obj = if seed % 7 == 0 { 0 } else { OBJ };
+                c.bus.write32(gp + WOFPN_DEFAULT_HOLDER, HOLDER);
+                c.bus.write32(HOLDER + 0x290, obj);
+                c.bus.write32(gp + WOFPN_OBJECT_TABLE, TABLE_PTR);
+                c.bus.write32(TABLE_PTR, TABLE);
+                c.bus.write32(TABLE + 8, SLOTS);
+                for i in 0..4 {
+                    c.bus.write32(SLOTS + 4 * i, if i == 3 { 0 } else { SLOT });
+                }
+                c.bus.write32(SLOT + 0x1c, ENTRIES);
+                c.bus
+                    .write32(ENTRIES + 4, (OBJ >> 2) << 8 | (r.next_u32() & 0xff));
+                c.bus.write32(ENTRIES + 8, r.next_u32() & 0xff);
+                let modifier = if seed % 3 == 0 { 0 } else { DATA + 0x30_0000 };
+                c.bus.write32(OBJ + 0xc, modifier);
+                let attach = [0u32, 0, 1, 0xffff_ffff][(seed / 3 % 4) as usize];
+                c.bus.write32(ATTACH_RESULT, attach);
             },
         );
     }

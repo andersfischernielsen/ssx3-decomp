@@ -270,6 +270,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_try_start_handplant,
         "Rider_TryStartHandplant",
     ),
+    (
+        0x0010_7e70,
+        rider_resolve_rider_collision,
+        "Rider_ResolveRiderCollision",
+    ),
+    (0x0010_8388, rider_play_bump_anim, "Rider_PlayBumpAnim"),
+    (0x0011_4298, rider_launch_into_air, "Rider_LaunchIntoAir"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -12927,6 +12934,1463 @@ pub fn rider_try_start_handplant(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod rrc {
+
+    /// Position (vector).
+    pub const POS: u32 = 0x110;
+
+    /// Board axes (three vectors) the wipeout direction is picked from.
+    pub const AXIS_Z: u32 = 0x160;
+
+    pub const AXIS_Y: u32 = 0x170;
+
+    pub const AXIS_X: u32 = 0x180;
+
+    /// Facing vector compared with the collision normal in the air.
+    pub const FACING: u32 = 0x1c0;
+
+    /// Velocity (vector): the impulse is added here.
+    pub const VEL: u32 = 0x1e0;
+
+    /// Launch argument of `AirPredictor_Prime` (float).
+    pub const LAUNCH: u32 = 0x2e4;
+
+    /// Ground normal (vector): on the ground the impulse loses this part.
+    pub const GROUND_NORMAL: u32 = 0x370;
+
+    /// The rider's actor subobject (its vtable pointer).
+    pub const ACTOR: u32 = 0x6c0;
+
+    /// The state handler (`+0x30`: air state).
+    pub const HANDLER: u32 = 0x77c;
+
+    /// The air predictor.
+    pub const PREDICTOR: u32 = 0x788;
+
+    /// The other rider's index into this rider's collision records
+    /// (0x24 bytes each, the distance at `+8`).
+    pub const OTHER_INDEX: u32 = 0x86c;
+
+    pub const RECORD_SIZE: u32 = 0x24;
+
+    pub const RECORD_DIST: u32 = 0x8;
+
+    /// Debug flags word (bit 5: every rider hit wipes out).
+    pub const DEBUG_FLAGS: u32 = 0x0053_08d0;
+
+    /// `.lit4`: the impulse clamp (555.56), the bump threshold (40.0), the
+    /// forced wipeout speed and the wipeout threshold (both 599.97), and
+    /// the speed past which a front hit picks from all six falls.
+    pub const LIT_CLAMP: u32 = 0x7e6c;
+
+    pub const LIT_BUMP_MIN: u32 = 0x7e68;
+
+    pub const LIT_FORCED: u32 = 0x7e64;
+
+    pub const LIT_WIPEOUT_MIN: u32 = 0x7e60;
+
+    pub const GP_FAST_FALL: u32 = 0x1b94;
+}
+
+// ---------------------------------------------------------------------------
+// Rider_LaunchIntoAir: rider fields it touches.
+
+/// `+0x110`: the position (nudged along the ground heading on flat take-offs).
+pub(crate) const LAUNCH_POS: u32 = 0x110;
+
+/// `+0x1c0`: the board's up vector.
+pub(crate) const LAUNCH_UP: u32 = 0x1c0;
+
+/// `+0x1e0`: the velocity (z at +0x1e8).
+pub(crate) const LAUNCH_VEL: u32 = 0x1e0;
+
+/// `+0x2d4` (halfword): flags; 0x20 keeps the speed on flat take-offs.
+pub(crate) const LAUNCH_FLAGS: u32 = 0x2d4;
+
+/// `+0x2e4`: the maximum speed.
+pub(crate) const LAUNCH_MAX_SPEED: u32 = 0x2e4;
+
+/// `+0x320`/`+0x324`: the stance words compared for `InterruptTrick`.
+pub(crate) const LAUNCH_STANCE_A: u32 = 0x320;
+
+pub(crate) const LAUNCH_STANCE_B: u32 = 0x324;
+
+/// `+0x370`: the ground direction (vec4), its z (+0x378) the slope cosine.
+pub(crate) const LAUNCH_DIR: u32 = 0x370;
+
+/// `+0x380`: the ground heading (vec4), its z at +0x388.
+pub(crate) const LAUNCH_HEADING: u32 = 0x380;
+
+/// `+0x3a0`: the ground side vector (vec4), its z at +0x3a8.
+pub(crate) const LAUNCH_SIDE: u32 = 0x3a0;
+
+/// `+0x3c0`: the flattened, normalised heading written here.
+pub(crate) const LAUNCH_FLAT_HEADING: u32 = 0x3c0;
+
+/// `+0x434`: the sub state (11..13 skip the take-off damping).
+pub(crate) const LAUNCH_SUB_STATE: u32 = 0x434;
+
+/// `+0x5a4`: the forward air speed out; `+0x5a8`: launched with a push.
+pub(crate) const LAUNCH_AIR_FORWARD: u32 = 0x5a4;
+
+pub(crate) const LAUNCH_PUSHED: u32 = 0x5a8;
+
+/// `+0x77c`: the owner (frame of the take-off at +0x10, jump flag +0x14).
+pub(crate) const LAUNCH_OWNER: u32 = 0x77c;
+
+/// `+0x790`: the rider's metrix.
+pub(crate) const LAUNCH_METRIX: u32 = 0x790;
+
+/// `+0x86c`: the rider id passed to the replay.
+pub(crate) const LAUNCH_RIDER_ID: u32 = 0x86c;
+
+/// `void Rider_LaunchIntoAir(Rider *r, float push)` (0x114298): the jump
+/// impulse at take-off. A negative `push` is an ollie-less drop (the owner's
+/// jump flag +0x14 = -1, a fixed small impulse); otherwise the impulse is
+/// `push² * f(speed)` clamped to 361..708. On a rail (main state 4) it goes
+/// along the board's up vector; otherwise along the ground direction plus a
+/// fifth of the side vector, and on steep enough lips the velocity is also
+/// steered toward the side by a slope factor. Then the replay, the world
+/// script (jump event), the trick metrix (interrupt) and the boost meter are
+/// told. On steep lips the backward part of the change is undone with speed;
+/// on flat ground the lateral part of the velocity is removed (and slowed),
+/// the speed is capped at the maximum, early take-offs are damped, and the
+/// forward air speed (+0x5a4) and the pushed flag (+0x5a8) are stored.
+pub fn rider_launch_into_air(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, 0x130);
+        setf(c, 0, FpuF32(0));
+        frame.save(c, S0, 0xe0);
+        frame.save(c, S1, 0xd0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 26, 0x120);
+        c.g[S1][0] = 0;
+        frame.save_ra(c, 0xc0);
+        let push = setf(c, 26, fr(c, 12));
+        frame.save_fpr(c, 27, 0x128);
+        let negative = fcc(c, push.lt(fr(c, 0)));
+        for (f, off) in [
+            (25, 0x118),
+            (24, 0x110),
+            (23, 0x108),
+            (22, 0x100),
+            (21, 0xf8),
+            (20, 0xf0),
+        ] {
+            frame.save_fpr(c, f, off);
+        }
+        let r = r32(c, S0);
+        let s = sp(c);
+        // f23 = |velocity|; the old velocity at sp.
+        v_length(c, p(r, LAUNCH_VEL), V0, 23);
+        qcopy(c, V0, p(r, LAUNCH_VEL), s);
+
+        if negative {
+            c.cycles += 5;
+            c.g[V1][0] = c.lw(p(r, LAUNCH_OWNER));
+            c.g[V0][0] = u64::MAX;
+            ldf(c, 21, gp(c, -0x7bf0));
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+        } else {
+            // f21 = push² * (speed < 972 ? speed * k + 361 : 708), clamped.
+            c.cycles += 5;
+            let knee = ldf(c, 0, gp(c, -0x7bec));
+            let slow = fcc(c, fr(c, 23).lt(knee));
+            setf(c, 21, push * push);
+            if slow {
+                c.cycles += 5;
+                let k = ldf(c, 0, gp(c, -0x7be8));
+                let base = ldf(c, 1, gp(c, -0x7be4));
+                let v = fr(c, 23) * k;
+                setf(c, 0, v + base);
+            } else {
+                c.cycles += 1;
+                ldf(c, 0, gp(c, -0x7be0));
+            }
+            c.cycles += 7;
+            let scaled = setf(c, 21, fr(c, 21) * fr(c, 0));
+            let lo = ldf(c, 0, gp(c, -0x7bdc));
+            let hi = ldf(c, 1, gp(c, -0x7bd8));
+            if fcc(c, lo.le(scaled)) {
+                setf(c, 0, scaled.min(hi));
+            }
+            c.cycles += 1;
+            setf(c, 21, fr(c, 0));
+        }
+
+        // f20 = cos(lo angle), f27 = cos(hi angle).
+        c.cycles += 12;
+        ldf(c, 12, gp(c, -0x7bd4));
+        call_ptr(c, 0x0031_c040, 0x0011_437c)?;
+        ldf(c, 12, gp(c, -0x7bd0));
+        setf(c, 20, fr(c, 0));
+        call_ptr(c, 0x0031_c040, 0x0011_4388)?;
+        setf(c, 27, fr(c, 0));
+        c.g[A0][0] = c.g[S0][0];
+        Callee {
+            addr: 0x0011_fe98,
+            f: ee::s00::Rider_GetMainState,
+        }
+        .call(c, 0x0011_4394)?;
+        c.g[V1][0] = 0x4;
+        let r = r32(c, S0);
+        let s = sp(c);
+        if c.g[V0][0] == c.g[V1][0] {
+            // On a rail: velocity += up * f21.
+            c.cycles += 15;
+            qcopy(c, V0, p(r, LAUNCH_UP), p(s, 0x20));
+            v_scale(c, V1, 21, p(s, 0x20), p(s, 0x30));
+            qcopy(c, V0, p(s, 0x30), p(s, 0x10));
+            v_add(c, p(r, LAUNCH_VEL), p(s, 0x10), p(r, LAUNCH_VEL));
+            c.g[V0][0] = c.lw(gp(c, -0x848));
+        } else {
+            launch_ground_push(c)?;
+        }
+
+        // Tell the replay, the world script, the metrix and the boost meter.
+        c.cycles += 26;
+        let r = r32(c, S0);
+        c.g[A2][0] = c.lw(p(r, LAUNCH_METRIX));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+        c.g[A1][0] = c.lw(p(r, LAUNCH_RIDER_ID));
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0xfc));
+        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x28));
+        call_ptr(c, 0x0027_07e0, 0x0011_47b8)?;
+        c.g[A0][0] = c.lw(gp(c, 0xce8));
+        call_ptr(c, 0x0030_9848, 0x0011_47c0)?;
+        let r = r32(c, S0);
+        c.g[V0][0] = c.lw(p(r, LAUNCH_STANCE_B));
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A1][0] = c.lw(p(r, LAUNCH_STANCE_A));
+        c.g[A0][0] = c.lw(p(r, LAUNCH_METRIX));
+        c.g[A1][0] ^= c.g[V0][0];
+        c.g[A1][0] = (0u64 < c.g[A1][0]) as u64;
+        Callee {
+            addr: 0x0011_9e38,
+            f: ee::s00::RiderMetrix_InterruptTrick,
+        }
+        .call(c, 0x0011_47dc)?;
+        setf(c, 12, fr(c, 0));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0x1;
+        Callee {
+            addr: 0x0010_e098,
+            f: ee::s00::Rider_AddBoost,
+        }
+        .call(c, 0x0011_47ec)?;
+
+        let r = r32(c, S0);
+        let s = sp(c);
+        let margin = ldf(c, 0, gp(c, -0x7bc0));
+        let slope_cos = ldf(c, 1, p(r, LAUNCH_DIR + 8));
+        let limit = setf(c, 0, fr(c, 27) + margin);
+        if fcc(c, limit.lt(slope_cos)) {
+            launch_undo_backward(c, r, s);
+        }
+
+        launch_flat_ground(c, r, s);
+        launch_cap_and_damp(c)?;
+
+        // Forward air speed: (velocity · dir) * |(axis × velocity)^ × dir|.
+        let r = r32(c, S0);
+        let s = sp(c);
+        c.cycles += 23;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xea0));
+        let axis = c.g[V0][0] as u32;
+        v_cross(c, axis, p(r, LAUNCH_VEL), p(s, 0x30));
+        qcopy(c, V0, p(s, 0x30), p(s, 0x20));
+        let cl = v_length(c, p(s, 0x20), V1, 1);
+        if !fcc(c, fr(c, 0).lt(cl)) {
+            stf(c, 0, p(r, LAUNCH_AIR_FORWARD));
+        } else {
+            c.cycles += 37;
+            let one = li_f(c, 0, 0x3f80_0000);
+            setf(c, 0, one.div(cl));
+            v_scale(c, V0, 0, p(s, 0x20), p(s, 0x20));
+            v_cross(c, p(s, 0x20), p(r, LAUNCH_DIR), p(s, 0x40));
+            c.lq(V0, p(s, 0x40));
+            v_dot(c, p(r, LAUNCH_VEL), p(r, LAUNCH_DIR));
+            c.qmfc2(V1, 4);
+            c.mtc1(V1, 0);
+            c.sq(V0, p(s, 0x30));
+            let len = v_length(c, p(s, 0x30), V1, 1);
+            setf(c, 0, fr(c, 0) * len);
+            stf(c, 0, p(r, LAUNCH_AIR_FORWARD));
+        }
+
+        c.cycles += 5;
+        setf(c, 0, FpuF32(0));
+        let pushed = fcc(c, fr(c, 0).lt(fr(c, 26)));
+        c.g[V0][0] = 0x1;
+        if !pushed {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 14;
+        c.sw(p(r, LAUNCH_PUSHED), c.g[V0][0]);
+        frame.restore(c, S0, 0xe0);
+        frame.restore(c, S1, 0xd0);
+        frame.restore_ra(c, 0xc0);
+        for (f, off) in [
+            (27, 0x128),
+            (26, 0x120),
+            (25, 0x118),
+            (24, 0x110),
+            (23, 0x108),
+            (22, 0x100),
+            (21, 0xf8),
+            (20, 0xf0),
+        ] {
+            frame.restore_fpr(c, f, off);
+        }
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// [`rider_launch_into_air`] off a rail (the `+0x378` slope cosine loaded
+/// into f2): the push goes along `normalize(dir + side * 0.2)` (at sp+0x10);
+/// when the side's z, the slope factor `t` (f25) and the velocity's z are all
+/// non-negative, the velocity is steered toward the side instead
+/// ([`launch_steer`]). Leaves `v0` = the world.
+pub(crate) fn launch_ground_push(c: &mut Cpu) -> crate::call::Flow {
+    let r = r32(c, S0);
+    let s = sp(c);
+    ldf(c, 2, p(r, LAUNCH_DIR + 8));
+    c.cycles += 37;
+    let span = setf(c, 1, fr(c, 27) - fr(c, 20));
+    ldf(c, 0, gp(c, -0x7bcc));
+    v_scale(c, V0, 0, p(r, LAUNCH_SIDE), p(s, 0x40));
+    let one = li_f(c, 24, 0x3f80_0000);
+    c.lq(V0, p(s, 0x40));
+    let rel = setf(c, 2, fr(c, 2) - fr(c, 20));
+    let inv = setf(c, 1, one.div(span));
+    c.sq(V0, p(s, 0x30));
+    v_add(c, p(r, LAUNCH_DIR), p(s, 0x30), p(s, 0x40));
+    let zero = setf(c, 22, FpuF32(0));
+    qcopy(c, V0, p(s, 0x40), p(s, 0x20));
+    v_normalize(c, p(s, 0x20), p(s, 0x40));
+    let t = setf(c, 25, rel * inv);
+    let side_z = ldf(c, 0, p(r, LAUNCH_SIDE + 8));
+    qcopy(c, V0, p(s, 0x40), p(s, 0x10));
+    let mut steer = false;
+    if !fcc(c, side_z.lt(zero)) {
+        c.cycles += 3;
+        if !fcc(c, t.lt(zero)) {
+            c.cycles += 5;
+            let vz = ldf(c, 0, p(r, LAUNCH_VEL + 8));
+            steer = !fcc(c, vz.lt(zero));
+        }
+    }
+    if steer {
+        return launch_steer(c);
+    }
+    // velocity += dir * f21.
+    c.cycles += 13;
+    v_scale(c, V1, 21, p(s, 0x10), p(s, 0x30));
+    qcopy(c, V0, p(s, 0x30), p(s, 0x20));
+    v_add(c, p(r, LAUNCH_VEL), p(s, 0x20), p(r, LAUNCH_VEL));
+    c.g[V0][0] = c.lw(gp(c, -0x848));
+    Ok(())
+}
+
+/// The steered push: `flat` = the ground direction without z (sp+0x20),
+/// `side` = the side vector without its `flat` part (sp+0x30), `vdir` = the
+/// velocity without its `flat` part (sp+0x40), all normalised; `f` =
+/// `t * (side.z - sin 0) / (sin 20° - sin 0)` clamped to 0..0.95; the push
+/// direction becomes `normalize(dir * (1-f) + side * f)` and the velocity
+/// `v * (1-f) + vdir * f * speed + dir * push * 0.5`. Sets `s1` (steered).
+pub(crate) fn launch_steer(c: &mut Cpu) -> crate::call::Flow {
+    let r = r32(c, S0);
+    let s = sp(c);
+    ldf(c, 1, p(r, LAUNCH_DIR));
+    c.cycles += 101;
+    setf(c, 12, fr(c, 22));
+    ldf(c, 0, p(r, LAUNCH_DIR + 4));
+    stf(c, 1, p(s, 0x30));
+    stf(c, 0, p(s, 0x34));
+    stf(c, 22, p(s, 0x38));
+    stf(c, 22, p(s, 0x3c));
+    v_normalize(c, p(s, 0x30), p(s, 0x40));
+    qcopy(c, V0, p(s, 0x40), p(s, 0x20));
+    // side - flat * (side · flat), normalised.
+    v_dot(c, p(r, LAUNCH_SIDE), p(s, 0x20));
+    c.qmfc2(V1, 4);
+    c.mtc1(V1, 0);
+    v_scale(c, A0, 0, p(s, 0x20), p(s, 0x60));
+    qcopy(c, V0, p(s, 0x60), p(s, 0x50));
+    v_sub(c, p(r, LAUNCH_SIDE), p(s, 0x50), p(s, 0x60));
+    qcopy(c, V0, p(s, 0x60), p(s, 0x40));
+    v_normalize(c, p(s, 0x40), p(s, 0x60));
+    qcopy(c, V0, p(s, 0x60), p(s, 0x30));
+    // velocity - flat * (velocity · flat), normalised.
+    v_dot(c, p(r, LAUNCH_VEL), p(s, 0x20));
+    c.qmfc2(V1, 4);
+    c.mtc1(V1, 0);
+    v_scale(c, A0, 0, p(s, 0x20), p(s, 0x70));
+    qcopy(c, V0, p(s, 0x70), p(s, 0x60));
+    v_sub(c, p(r, LAUNCH_VEL), p(s, 0x60), p(s, 0x70));
+    qcopy(c, V0, p(s, 0x70), p(s, 0x50));
+    v_normalize(c, p(s, 0x50), p(s, 0x70));
+    qcopy(c, V0, p(s, 0x70), p(s, 0x40));
+    call_ptr(c, 0x0031_bf60, 0x0011_4620)?;
+    ldf(c, 12, gp(c, -0x7bc8));
+    setf(c, 20, fr(c, 0));
+    call_ptr(c, 0x0031_bf60, 0x0011_462c)?;
+    let r = r32(c, S0);
+    let s = sp(c);
+    let range = setf(c, 0, fr(c, 0) - fr(c, 20));
+    let side_z = ldf(c, 1, p(s, 0x38));
+    let cap = ldf(c, 4, gp(c, -0x7bc4));
+    let rel = setf(c, 1, side_z - fr(c, 20));
+    let inv = setf(c, 0, fr(c, 24).div(range));
+    let tf = setf(c, 1, fr(c, 25) * rel);
+    let f = setf(c, 3, tf * inv);
+    let positive = fcc(c, fr(c, 22).le(f));
+    setf(c, 2, fr(c, 22));
+    if positive {
+        c.cycles += 1;
+        setf(c, 2, f.min(cap));
+    }
+
+    c.cycles += 81;
+    let f = setf(c, 3, fr(c, 2));
+    c.g[S1][0] = 0x1;
+    setf(c, 0, fr(c, 24) - f);
+    li_f(c, 2, 0x3f00_0000);
+    // dir = normalize(dir * (1-f) + side * f), at sp+0x10 and sp+0x50.
+    v_scale(c, V0, 0, p(s, 0x10), p(s, 0x80));
+    setf(c, 1, f * fr(c, 23));
+    qcopy(c, V0, p(s, 0x80), p(s, 0x70));
+    v_scale(c, V1, 3, p(s, 0x30), p(s, 0x90));
+    qcopy(c, V0, p(s, 0x90), p(s, 0x80));
+    v_add(c, p(s, 0x70), p(s, 0x80), p(s, 0x90));
+    qcopy(c, V0, p(s, 0x90), p(s, 0x60));
+    v_normalize(c, p(s, 0x60), p(s, 0x90));
+    c.lq(V0, p(s, 0x90));
+    c.sq(V0, p(s, 0x10));
+    c.sq(V0, p(s, 0x50));
+    // velocity = v * (1-f) + vdir * f * speed + dir * push * 0.5.
+    v_scale(c, V1, 0, p(r, LAUNCH_VEL), p(s, 0x80));
+    qcopy(c, V0, p(s, 0x80), p(s, 0x70));
+    v_scale(c, V1, 1, p(s, 0x40), p(s, 0x90));
+    qcopy(c, V0, p(s, 0x90), p(s, 0x80));
+    v_add(c, p(s, 0x70), p(s, 0x80), p(s, 0x90));
+    qcopy(c, V0, p(s, 0x90), p(s, 0x60));
+    v_scale(c, V1, 21, p(s, 0x10), p(s, 0xb0));
+    qcopy(c, V0, p(s, 0xb0), p(s, 0xa0));
+    v_scale(c, V1, 2, p(s, 0xa0), p(s, 0xb0));
+    qcopy(c, V0, p(s, 0xb0), p(s, 0x90));
+    v_add(c, p(s, 0x60), p(s, 0x90), p(s, 0xb0));
+    c.lq(V0, p(s, 0xb0));
+    c.sq(V0, p(r, LAUNCH_VEL));
+    c.sq(V0, p(s, 0x50));
+    c.g[V0][0] = c.lw(gp(c, -0x848));
+    Ok(())
+}
+
+/// On a lip steeper than the high angle (+0.02): when the change of the
+/// velocity's xy points backward (`old · dv < 0`), take `dv * k` back off,
+/// `k` ramping 0..1 as the old speed goes from half to 70% of the maximum.
+pub(crate) fn launch_undo_backward(c: &mut Cpu, r: u32, s: u32) {
+    c.cycles += 24;
+    v_sub(c, p(r, LAUNCH_VEL), s, p(s, 0x20));
+    c.lq(V0, s);
+    c.lq(V1, p(s, 0x20));
+    c.sq(V0, p(s, 0x20));
+    c.sw(p(s, 0x28), 0);
+    c.sq(V1, p(s, 0x10));
+    let zero = ldf(c, 4, p(s, 0x28));
+    c.sw(p(s, 0x18), 0);
+    v_dot(c, p(s, 0x20), p(s, 0x10));
+    c.qmfc2(V0, 4);
+    c.mtc1(V0, 0);
+    if !fcc(c, fr(c, 0).lt(zero)) {
+        return;
+    }
+    c.cycles += 9;
+    let max = ldf(c, 0, p(r, LAUNCH_MAX_SPEED));
+    let half = li_f(c, 1, 0x3f00_0000);
+    let k70 = ldf(c, 2, gp(c, -0x7bbc));
+    let a = setf(c, 3, max * half);
+    let speed = fr(c, 23);
+    let above = fcc(c, a.le(speed));
+    let b = setf(c, 0, max * k70);
+    if !above {
+        c.cycles += 1;
+        setf(c, 0, fr(c, 4));
+    } else {
+        c.cycles += 3;
+        if !fcc(c, speed.le(b)) {
+            c.cycles += 4;
+            li_f(c, 0, 0x3f80_0000);
+        } else {
+            c.cycles += 5;
+            let span = setf(c, 1, b - a);
+            let rel = setf(c, 0, speed - a);
+            setf(c, 0, rel.div(span));
+        }
+    }
+    c.cycles += 12;
+    v_scale(c, V1, 0, p(s, 0x10), p(s, 0x40));
+    qcopy(c, V0, p(s, 0x40), p(s, 0x30));
+    v_sub(c, p(r, LAUNCH_VEL), p(s, 0x30), p(r, LAUNCH_VEL));
+}
+
+/// The ground heading flattened (z = 0) and normalised (or the default
+/// 0x4ff140 when x and y are 0) goes to +0x3c0; when the heading's z is
+/// within ±0.05 (flat ground) the velocity loses its part along it, the
+/// position moves 4 units along it, and unless flag 0x20 is set the
+/// velocity is scaled by ~0.8.
+pub(crate) fn launch_flat_ground(c: &mut Cpu, r: u32, s: u32) {
+    c.lq(V0, p(r, LAUNCH_HEADING));
+    c.cycles += 10;
+    let hz = ldf(c, 2, p(r, LAUNCH_HEADING + 8));
+    c.sq(V0, p(s, 0x10));
+    c.sw(p(s, 0x18), 0);
+    let hx = ldf(c, 0, p(s, 0x10));
+    let zero = ldf(c, 1, p(s, 0x18));
+    let ax = setf(c, 0, hx.abs());
+    let nonzero_x = fcc(c, zero.lt(ax));
+    let hy = ldf(c, 0, p(s, 0x14));
+    let mut nonzero = nonzero_x;
+    if !nonzero_x {
+        c.cycles += 5;
+        let ay = setf(c, 0, hy.abs());
+        nonzero = fcc(c, zero.lt(ay));
+        c.g[V0][0] = 0x50_0000;
+    }
+    if nonzero {
+        c.cycles += 19;
+        v_length(c, p(s, 0x10), V0, 0);
+        c.mfc1(V1, 0);
+        c.qmtc2(V1, 3);
+        c.vu0().div(0, 3, 3, 0);
+        c.lqc2(4, p(s, 0x10));
+        c.vu0().waitq();
+        c.vu0().mul(0b1111, 5, 4, Src::Q);
+        c.sqc2(5, p(s, 0x10));
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xec0));
+        c.lq(V1, c.g[V0][0] as u32);
+        c.sq(V1, p(s, 0x10));
+    }
+
+    c.cycles += 6;
+    let lim = ldf(c, 0, gp(c, -0x7bb8));
+    c.lq(V0, p(s, 0x10));
+    let below = fcc(c, hz.lt(lim));
+    c.sq(V0, p(r, LAUNCH_FLAT_HEADING));
+    if !below {
+        c.cycles += 1;
+        return;
+    }
+    c.cycles += 5;
+    let neg_lim = ldf(c, 0, gp(c, -0x7bb4));
+    if !fcc(c, neg_lim.lt(hz)) {
+        return;
+    }
+    c.cycles += 47;
+    v_dot(c, p(r, LAUNCH_VEL), p(s, 0x10));
+    c.qmfc2(V0, 4);
+    c.mtc1(V0, 0);
+    v_dot(c, p(s, 0x10), p(s, 0x10));
+    c.qmfc2(V1, 4);
+    c.mtc1(V1, 1);
+    setf(c, 0, fr(c, 0).div(fr(c, 1)));
+    li_f(c, 2, 0x4080_0000);
+    v_scale(c, V1, 0, p(s, 0x10), p(s, 0x30));
+    qcopy(c, V0, p(s, 0x30), p(s, 0x20));
+    v_sub(c, p(r, LAUNCH_VEL), p(s, 0x20), p(r, LAUNCH_VEL));
+    v_scale(c, V1, 2, p(s, 0x10), p(s, 0x40));
+    qcopy(c, V0, p(s, 0x40), p(s, 0x30));
+    v_add(c, p(r, LAUNCH_POS), p(s, 0x30), p(r, LAUNCH_POS));
+    c.g[V0][0] = c.lh(p(r, LAUNCH_FLAGS));
+    c.g[V0][0] &= 0x20;
+    if c.g[V0][0] != 0 {
+        return;
+    }
+    c.cycles += 6;
+    ldf(c, 0, gp(c, -0x7bb0));
+    v_scale(c, V0, 0, p(r, LAUNCH_VEL), p(r, LAUNCH_VEL));
+    c.cycles += 1;
+}
+
+/// Cap the speed at the maximum (f1, +0x2e4); then, for a real push outside
+/// sub states 11..13, scale the velocity by the take-off damping: 0.694 for
+/// the first 0.539 s after the owner's take-off frame (+0x10), then ramping
+/// to 1. Leaves `v0` = 0x500000 and f0 = 0.
+pub(crate) fn launch_cap_and_damp(c: &mut Cpu) -> crate::call::Flow {
+    let r = r32(c, S0);
+    let max = ldf(c, 1, p(r, LAUNCH_MAX_SPEED));
+    c.cycles += 13;
+    let len = v_length(c, p(r, LAUNCH_VEL), V0, 0);
+    if fcc(c, max.lt(len)) {
+        c.cycles += 6;
+        setf(c, 0, max.div(len));
+        v_scale(c, V0, 0, p(r, LAUNCH_VEL), p(r, LAUNCH_VEL));
+    }
+
+    c.cycles += 5;
+    let zero = setf(c, 0, FpuF32(0));
+    let pushing = fcc(c, zero.le(fr(c, 26)));
+    c.g[V0][0] = 0x50_0000;
+    if !pushing {
+        return Ok(());
+    }
+    c.cycles += 5;
+    c.g[V0][0] = c.lw(p(r, LAUNCH_SUB_STATE));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xb));
+    c.g[V0][0] = (c.g[V0][0] < 0x3u64) as u64;
+    let skip = c.g[V0][0] != 0;
+    c.g[V0][0] = 0x50_0000;
+    if skip {
+        return Ok(());
+    }
+    c.cycles += 14;
+    Callee {
+        addr: 0x0012_98c8,
+        f: ee::s00::AI_GetFrameCounter,
+    }
+    .call(c, 0x0011_4b04)?;
+    let r = r32(c, S0);
+    c.g[A0][0] = c.lw(p(r, LAUNCH_OWNER));
+    let per_frame = ldf(c, 1, gp(c, -0x7bac));
+    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x10));
+    let early = ldf(c, 2, gp(c, -0x7ba8));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+    c.mtc1(V0, 0);
+    let frames = FpuF32::from_i32(c.f[0] as i32);
+    let t = setf(c, 0, frames * per_frame);
+    if !fcc(c, t.le(early)) {
+        let since = setf(c, 1, t - early);
+        c.cycles += 9;
+        let floor = ldf(c, 3, gp(c, -0x7ba0));
+        let rate = ldf(c, 2, gp(c, -0x7b9c));
+        let one = li_f(c, 0, 0x3f80_0000);
+        let u = setf(c, 1, since * rate);
+        let u = setf(c, 1, u.min(one));
+        let rest = setf(c, 0, one - u);
+        let rest = setf(c, 0, rest * floor);
+        setf(c, 0, u + rest);
+    } else {
+        c.cycles += 3;
+        ldf(c, 0, gp(c, -0x7ba4));
+    }
+    c.cycles += 7;
+    v_scale(c, V0, 0, p(r, LAUNCH_VEL), p(r, LAUNCH_VEL));
+    c.g[V0][0] = 0x50_0000;
+    setf(c, 0, FpuF32(0));
+    Ok(())
+}
+
+pub(crate) const RRC_GET_SUB_STATE: Callee = Callee {
+    addr: 0x0011_fee8,
+    f: ee::s00::Rider_GetSubState,
+};
+
+pub(crate) const RRC_GET_MAIN_STATE: Callee = Callee {
+    addr: 0x0011_fe98,
+    f: ee::s00::Rider_GetMainState,
+};
+
+pub(crate) const RRC_IS_ON_GROUND: Callee = Callee {
+    addr: 0x0012_31a8,
+    f: ee::s00::Rider_IsOnGround,
+};
+
+pub(crate) const RRC_AIR_PREDICTOR_PRIME: Callee = Callee {
+    addr: 0x0011_35b8,
+    f: ee::s00::AirPredictor_Prime,
+};
+
+pub(crate) const RRC_START_WIPEOUT: Callee = Callee {
+    addr: 0x0010_eb30,
+    f: ee::s00::Rider_StartWipeout,
+};
+
+pub(crate) const RRC_PLAY_BUMP_ANIM: Callee = Callee {
+    addr: 0x0010_8388,
+    f: ee::s00::Rider_PlayBumpAnim,
+};
+
+pub(crate) const RRC_REPORT_HIT0: Callee = Callee {
+    addr: 0x0010_e228,
+    f: ee::s00::Rider_ReportRiderHit0,
+};
+
+pub(crate) const RRC_REPORT_HIT1: Callee = Callee {
+    addr: 0x0010_e2e8,
+    f: ee::s00::Rider_ReportRiderHit1,
+};
+
+pub(crate) const RRC_REPORT_HIT2: Callee = Callee {
+    addr: 0x0010_e3a8,
+    f: ee::s00::Rider_ReportRiderHit2,
+};
+
+pub(crate) const RRC_REPORT_HIT3: Callee = Callee {
+    addr: 0x0010_e468,
+    f: ee::s00::Rider_ReportRiderHit3,
+};
+
+/// `Rand_NextGame` (AIrand), through the function table.
+pub(crate) const RRC_RAND: u32 = 0x0031_7810;
+
+/// `lwc1 fN, gp - off`.
+pub(crate) fn rrc_lit(c: &mut Cpu, f: usize, off: u32) {
+    let a = (c.g[GP][0] as u32).wrapping_sub(off);
+    c.lwc1(f, a);
+}
+
+/// `void Rider_ResolveRiderCollision(Rider* self, Rider* other, vec4* n,
+/// bool flag, float speed)` (0x107e70): pushes the rider away from another
+/// rider along the normal `n` with the clamped impulse `speed`
+/// (|speed| <= 555.56; on the ground without the part along the ground
+/// normal; in the air it primes the air predictor and, when moving into the
+/// hit, ignores the speed). Unless the rider is in the air state 2 or sub
+/// state 9 (10 skips everything), a hit of at least 40 plays a bump
+/// animation and a hit past 599.97 (or always, with debug flag bit 5) a
+/// wipeout picked from the board axis closest to `n` (falls forward from a
+/// random choice, back, sideways); then reports the hit to the other rider
+/// (`Rider_ReportRiderHit0..3`, by kind and `flag`).
+///
+/// Registers: s2 = self, s4 = other, s3 = n, s5 = flag, f20 = speed,
+/// f21 = |speed| (the hit strength), f22 = clamped impulse.
+pub fn rider_resolve_rider_collision(c: &mut Cpu) {
+    guest(c, |c| {
+        // Prologue.
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x110);
+        frame.save(c, S2, 0xc0);
+        frame.save(c, S3, 0xb0);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S4, 0xa0);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, S5, 0x90);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save_fpr(c, 20, 0xf0);
+        c.g[S5][0] = c.g[A3][0];
+        frame.save(c, S0, 0xe0);
+        c.mov_s(20, 12);
+        frame.save(c, S1, 0xd0);
+        frame.save_ra(c, 0x80);
+        frame.save_fpr(c, 22, 0x100);
+        frame.save_fpr(c, 21, 0xf8);
+        RRC_GET_SUB_STATE.call(c, 0x0010_7eb4)?;
+        c.g[V1][0] = 0xa;
+        frame.restore(c, S0, 0xe0);
+        if c.g[V0][0] != 0xa {
+            rrc_body(c, frame)?;
+        }
+        // Epilogue (s0 already restored on every path).
+        c.cycles += 11;
+        frame.restore(c, S1, 0xd0);
+        frame.restore(c, S2, 0xc0);
+        frame.restore(c, S3, 0xb0);
+        frame.restore(c, S4, 0xa0);
+        frame.restore(c, S5, 0x90);
+        frame.restore_ra(c, 0x80);
+        frame.restore_fpr(c, 22, 0x100);
+        frame.restore_fpr(c, 21, 0xf8);
+        frame.restore_fpr(c, 20, 0xf0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Everything after the sub-state-10 check; returns with s0 restored.
+pub(crate) fn rrc_body(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    use rrc::*;
+    let n = c.g[S3][0] as u32;
+
+    // f21 = |speed|, f22 = speed clamped to +-555.56.
+    c.cycles += 7;
+    rrc_lit(c, 1, LIT_CLAMP);
+    c.abs_s(21, 20);
+    c.neg_s(0, 1);
+    c.c_le_s(0, 20);
+    let above_min = c.fcc();
+    c.mov_s(22, 0);
+    if above_min {
+        c.cycles += 1;
+        c.min_s(22, 20, 1);
+    }
+
+    // impulse = n * f22 (at sp+0x10, copied to sp).
+    c.cycles += 11;
+    let s10 = frame.at(c, 0x10);
+    v_scale(c, V0, 22, n, s10);
+    c.g[A0][0] = c.g[S2][0];
+    let s00 = frame.at(c, 0);
+    qcopy(c, V0, s10, s00);
+    RRC_IS_ON_GROUND.call(c, 0x0010_7f04)?;
+    let on_ground = c.g[V0][0] != 0;
+    c.g[A0][0] = c.g[S2][0];
+    let me = c.g[S2][0] as u32;
+    if on_ground {
+        // vel += impulse - ground_normal * (impulse . ground_normal).
+        c.cycles += 28;
+        let s00 = frame.at(c, 0);
+        v_dot(c, s00, me + GROUND_NORMAL);
+        c.qmfc2(V0, 4);
+        c.mtc1(V0, 0);
+        let s30 = frame.at(c, 0x30);
+        v_scale(c, V1, 0, me + GROUND_NORMAL, s30);
+        let s20 = frame.at(c, 0x20);
+        qcopy(c, V0, s30, s20);
+        v_sub(c, s00, s20, s30);
+        let s10 = frame.at(c, 0x10);
+        qcopy(c, V0, s30, s10);
+        v_add(c, me + VEL, s10, me + VEL);
+    } else {
+        // vel += impulse; in the air (main state 1, or 2 with air state 1)
+        // prime the air predictor.
+        c.cycles += 8;
+        let s00 = frame.at(c, 0);
+        v_add(c, me + VEL, s00, me + VEL);
+        c.g[S0][0] = 1;
+        RRC_GET_MAIN_STATE.call(c, 0x0010_7f94)?;
+        let mut air = false;
+        if c.g[V0][0] == c.g[S0][0] {
+            c.g[V1][0] = Addr(me + ACTOR).lw(c);
+            air = true;
+        } else {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S2][0];
+            RRC_GET_MAIN_STATE.call(c, 0x0010_7fa4)?;
+            c.g[V1][0] = 2;
+            if c.g[V0][0] == 2 {
+                c.cycles += 4;
+                c.g[V0][0] = Addr(me + HANDLER).lw(c);
+                c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x30)).lw(c);
+                if c.g[V1][0] == c.g[S0][0] {
+                    c.cycles += 1;
+                    c.g[V1][0] = Addr(me + ACTOR).lw(c);
+                    air = true;
+                }
+            }
+        }
+        if air {
+            rrc_prime_air(c, frame)?;
+        }
+    }
+
+    // Air state 2 and sub state 9 stop here; so do hits under 40.
+    c.cycles += 5;
+    c.g[A0][0] = c.g[S2][0];
+    RRC_GET_MAIN_STATE.call(c, 0x0010_8050)?;
+    c.g[V1][0] = 2;
+    if c.g[V0][0] == 2 {
+        frame.restore(c, S0, 0xe0);
+        return Ok(());
+    }
+    c.cycles += 5;
+    c.g[A0][0] = c.g[S2][0];
+    RRC_GET_SUB_STATE.call(c, 0x0010_8064)?;
+    c.g[V1][0] = 9;
+    if c.g[V0][0] == 9 {
+        frame.restore(c, S0, 0xe0);
+        return Ok(());
+    }
+    c.cycles += 5;
+    rrc_lit(c, 0, LIT_BUMP_MIN);
+    c.c_lt_s(21, 0);
+    if c.fcc() {
+        frame.restore(c, S0, 0xe0);
+        return Ok(());
+    }
+
+    rrc_hit(c, frame)
+}
+
+/// The air branch: `AirPredictor_Prime(predictor, actor->getPosition(),
+/// actor->getDirection(), self->launch)`, then the hit strength drops to 0
+/// when the rider moves into the hit (`(n . facing) * impulse > 0`).
+/// v1 holds the actor's vtable.
+pub(crate) fn rrc_prime_air(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    use rrc::*;
+    c.cycles += 33;
+    let me = c.g[S2][0] as u32;
+    c.g[S0][0] = sx(me.wrapping_add(ACTOR));
+    let vt = c.g[V1][0] as u32;
+    c.g[A0][0] = Addr(vt.wrapping_add(0x28)).lh(c);
+    c.g[V0][0] = Addr(vt.wrapping_add(0x2c)).lw(c);
+    let target = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, 0x0010_7fd8)?;
+    let me = c.g[S2][0] as u32;
+    c.g[V1][0] = Addr(me + ACTOR).lw(c);
+    c.g[S1][0] = c.g[V0][0];
+    let vt = c.g[V1][0] as u32;
+    c.g[A0][0] = Addr(vt.wrapping_add(0x10)).lh(c);
+    c.g[V0][0] = Addr(vt.wrapping_add(0x14)).lw(c);
+    let target = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, 0x0010_7ff0)?;
+    let me = c.g[S2][0] as u32;
+    c.g[A0][0] = Addr(me + PREDICTOR).lw(c);
+    c.g[A2][0] = c.g[V0][0];
+    c.lwc1(12, me + LAUNCH);
+    c.g[A1][0] = c.g[S1][0];
+    RRC_AIR_PREDICTOR_PRIME.call(c, 0x0010_8004)?;
+    let me = c.g[S2][0] as u32;
+    let n = c.g[S3][0] as u32;
+    let s10 = frame.at(c, 0x10);
+    c.lq(V0, me + FACING);
+    c.mtc1(0, 1);
+    c.sq(V0, s10);
+    v_dot(c, n, s10);
+    c.qmfc2(V1, 4);
+    c.mtc1(V1, 0);
+    c.mul_s(0, 0, 22);
+    c.c_lt_s(1, 0);
+    if c.fcc() {
+        c.mov_s(21, 1);
+    }
+    Ok(())
+}
+
+/// A hit of at least 40: the `RiderHitInfo` at sp+0x40 (contact point
+/// `pos + n * record.dist`, velocity direction, `n`, impulse), then a bump
+/// or a wipeout and the report to the other rider.
+pub(crate) fn rrc_hit(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    use rrc::*;
+    c.cycles += 40;
+    let me = c.g[S2][0] as u32;
+    let n = c.g[S3][0] as u32;
+    c.g[V0][0] = Addr((c.g[S4][0] as u32).wrapping_add(OTHER_INDEX)).lw(c);
+    c.g[V1][0] = RECORD_SIZE as u64;
+    c.g[A1][0] = 0x0053_0000;
+    c.mult(0, A0, V0, V1);
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(me));
+    c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(RECORD_DIST));
+    let s30 = frame.at(c, 0x30);
+    let s20 = frame.at(c, 0x20);
+    let s10 = frame.at(c, 0x10);
+    v_scale(c, V1, 0, n, s30);
+    qcopy(c, V0, s30, s20);
+    v_add(c, me + POS, s20, s30);
+    c.lq(V0, s30);
+    c.sq(V0, s10);
+    let info = frame.at(c, 0x40);
+    c.sq(V0, info);
+    v_normalize(c, me + VEL, s20);
+    c.g[V0][0] = Addr(DEBUG_FLAGS).lw(c);
+    c.lq(V1, n);
+    c.lq(A0, s20);
+    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 5) as u32);
+    c.g[V0][0] &= 1;
+    let s60 = frame.at(c, 0x60);
+    c.sq(V1, s60);
+    let s50 = frame.at(c, 0x50);
+    c.sq(A0, s50);
+    let s70 = frame.at(c, 0x70);
+    c.swc1(22, s70);
+    let forced = c.g[V0][0] != 0;
+    c.sq(A0, s10);
+    if forced {
+        c.cycles += 1;
+        rrc_lit(c, 21, LIT_FORCED);
+    }
+
+    c.cycles += 5;
+    rrc_lit(c, 0, LIT_WIPEOUT_MIN);
+    c.c_lt_s(0, 21);
+    let wipeout = c.fcc();
+    c.g[A0][0] = c.g[S2][0];
+    if !wipeout {
+        // Rider_PlayBumpAnim(self, &info, 0), then report hit 2 / 0.
+        c.cycles += 5;
+        c.g[A1][0] = sx(frame.at(c, 0x40));
+        c.g[A2][0] = 0;
+        RRC_PLAY_BUMP_ANIM.call(c, 0x0010_8338)?;
+        let flag = c.g[S5][0] != 0;
+        c.g[A0][0] = c.g[S2][0];
+        if flag {
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S4][0];
+            RRC_REPORT_HIT2.call(c, 0x0010_8348)?;
+        } else {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S4][0];
+            RRC_REPORT_HIT0.call(c, 0x0010_8358)?;
+        }
+        frame.restore(c, S0, 0xe0);
+        return Ok(());
+    }
+
+    rrc_pick_wipeout(c, frame)?;
+
+    // Rider_StartWipeout(self, anim, flag, 0, &info), then report hit 3 / 1.
+    c.cycles += 7;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A2][0] = c.g[S5][0];
+    c.g[A3][0] = 0;
+    c.g[T0][0] = sx(frame.at(c, 0x40));
+    RRC_START_WIPEOUT.call(c, 0x0010_8304)?;
+    let flag = c.g[S5][0] != 0;
+    c.g[A0][0] = c.g[S2][0];
+    c.cycles += 4;
+    c.g[A1][0] = c.g[S4][0];
+    if flag {
+        RRC_REPORT_HIT3.call(c, 0x0010_8314)?;
+    } else {
+        RRC_REPORT_HIT1.call(c, 0x0010_8324)?;
+    }
+    frame.restore(c, S0, 0xe0);
+    Ok(())
+}
+
+/// The wipeout animation (into a1) from the board axis most aligned with
+/// `n`: the up axis (dy) falls forward (a random one of three, or six when
+/// moving fast) or back (0x14a/0x14b at random), the side axis 0x14b, the
+/// forward axis 0x149 / 0x148 by its sign.
+pub(crate) fn rrc_pick_wipeout(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    use rrc::*;
+    c.cycles += 38;
+    let me = c.g[S2][0] as u32;
+    let n = c.g[S3][0] as u32;
+    let s10 = frame.at(c, 0x10);
+    c.lq(V0, me + AXIS_Z);
+    c.lq(V1, me + AXIS_Y);
+    c.sq(V0, s10);
+    v_dot(c, s10, n);
+    c.qmfc2(A0, 4);
+    c.mtc1(A0, 4); // f4 = dz
+    c.lq(V0, me + AXIS_X);
+    c.sq(V1, s10);
+    c.abs_s(0, 4);
+    v_dot(c, s10, n);
+    c.qmfc2(V1, 4);
+    c.mtc1(V1, 1); // f1 = dy
+    c.abs_s(3, 1);
+    c.sq(V0, s10);
+    c.c_lt_s(0, 3);
+    v_dot(c, s10, n);
+    c.qmfc2(V0, 4);
+    c.mtc1(V0, 2); // f2 = dx
+    let mut dy_major = c.fcc();
+    if dy_major {
+        c.cycles += 4;
+        c.abs_s(0, 2);
+        c.c_lt_s(0, 3);
+        dy_major = c.fcc();
+    }
+    if dy_major {
+        c.cycles += 5;
+        c.mtc1(0, 0);
+        c.c_lt_s(1, 0);
+        let fall_forward = c.fcc();
+        let fast = (c.g[GP][0] as u32).wrapping_add(GP_FAST_FALL);
+        c.lwc1(0, fast);
+        if fall_forward {
+            c.cycles += 13;
+            let me = c.g[S2][0] as u32;
+            let _ = v_length(c, me + VEL, V0, 1);
+            c.c_lt_s(0, 1);
+            if c.fcc() {
+                c.cycles += 4;
+                call_ptr(c, RRC_RAND, 0x0010_8234)?;
+                c.g[V1][0] = 6;
+            } else {
+                c.cycles += 3;
+                call_ptr(c, RRC_RAND, 0x0010_8244)?;
+                c.g[V1][0] = 3;
+            }
+            c.cycles += 3;
+            c.divu(0, V0, V1);
+            c.cycles += 3;
+            c.g[A0][0] = c.hi[0];
+            let k = c.g[A0][0];
+            c.g[V0][0] = 1;
+            if k == 0 {
+                c.cycles += 2;
+                c.g[A1][0] = 0x14e;
+                return Ok(());
+            }
+            c.cycles += 2;
+            c.g[V0][0] = 2;
+            if k == 1 {
+                c.cycles += 2;
+                c.g[A1][0] = 0x14f;
+                return Ok(());
+            }
+            c.cycles += 2;
+            c.g[A1][0] = 0x151;
+            if k == 2 {
+                return Ok(());
+            }
+            c.cycles += 5;
+            c.g[V1][0] = k ^ 3;
+            c.g[A1][0] = 0x150;
+            c.g[V0][0] = 0x14d;
+            if c.g[V1][0] == 0 {
+                c.g[A1][0] = 0x14d;
+            }
+            return Ok(());
+        }
+        c.cycles += 7;
+        call_ptr(c, RRC_RAND, 0x0010_829c)?;
+        c.g[V0][0] &= 1;
+        c.g[A1][0] = 0x14b;
+        c.g[V1][0] = 0x14a;
+        if c.g[V0][0] == 0 {
+            c.g[A1][0] = 0x14a;
+        }
+        return Ok(());
+    }
+
+    c.cycles += 5;
+    c.abs_s(2, 2);
+    c.abs_s(0, 4);
+    c.c_lt_s(0, 2);
+    if c.fcc() {
+        c.cycles += 5;
+        c.abs_s(0, 1);
+        c.c_lt_s(0, 2);
+        c.g[A1][0] = 0x14b;
+        if c.fcc() {
+            return Ok(());
+        }
+    }
+    c.cycles += 5;
+    c.mtc1(0, 0);
+    c.c_lt_s(4, 0);
+    c.g[A1][0] = 0x148;
+    if c.fcc() {
+        c.cycles += 1;
+        c.g[A1][0] = 0x149;
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Rider_PlayBumpAnim (0x108388, rider.cpp)
+
+/// Rider fields: the rider base (states at +0xde0 / +0xde4, board press at
+/// +0x1d0), the anim controller, the forward and side axes, the velocity,
+/// "goofy" flag and the spin angle.
+pub(crate) const RPBA_BASE: u32 = 0x77c;
+
+pub(crate) const RPBA_ANIM: u32 = 0x784;
+
+pub(crate) const RPBA_SIDE: u32 = 0x1a0;
+
+pub(crate) const RPBA_FORWARD: u32 = 0x1b0;
+
+pub(crate) const RPBA_VELOCITY: u32 = 0x1e0;
+
+pub(crate) const RPBA_GOOFY: u32 = 0x320;
+
+pub(crate) const RPBA_SPIN: u32 = 0x2dc;
+
+/// Bump info fields: the bump normal and the impact speed.
+pub(crate) const RPBA_INFO_NORMAL: u32 = 0x20;
+
+pub(crate) const RPBA_INFO_SPEED: u32 = 0x30;
+
+pub(crate) const RPBA_GET_MAIN_STATE: Callee = Callee {
+    addr: 0x0011_fe98,
+    f: ee::s00::Rider_GetMainState,
+};
+
+pub(crate) const RPBA_GET_SUB_STATE: Callee = Callee {
+    addr: 0x0011_fee8,
+    f: ee::s00::Rider_GetSubState,
+};
+
+pub(crate) const RPBA_SET_SUB_STATE: Callee = Callee {
+    addr: 0x0011_fec8,
+    f: ee::s00::Rider_SetSubState,
+};
+
+pub(crate) const RPBA_BOARD_PRESS_CANCEL: Callee = Callee {
+    addr: 0x0013_1348,
+    f: ee::s00::RiderBoardPressSub_Cancel,
+};
+
+/// `cRiderAnimBase_play(anim, id, 0, -1.0f)`, `AIrand`, the audio system
+/// instance and `SSXAudioSystem_SpeechRiderBump` (through the table).
+pub(crate) const RPBA_ANIM_PLAY: u32 = 0x0031_28e8;
+
+pub(crate) const RPBA_AI_RAND: u32 = 0x0031_7810;
+
+pub(crate) const RPBA_AUDIO_INSTANCE: u32 = 0x0028_b180;
+
+pub(crate) const RPBA_SPEECH_BUMP: u32 = 0x002a_0e70;
+
+/// `f1 = dot(axis, normal)` the way the port's VU0 macro code does it
+/// (vf3 = the axis spilled through the stack, vf5 = the normal).
+pub(crate) fn rpba_dot_into_vf4(c: &mut Cpu) {
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+}
+
+/// `play(anim, id, 0, -1.0f)` with `a0`/`a1` set: `at = -1.0f` into f12.
+pub(crate) fn rpba_play(c: &mut Cpu, ret: u32) -> crate::call::Flow {
+    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+    c.mtc1(AT, 12);
+    c.g[A2][0] = 0;
+    call_ptr(c, RPBA_ANIM_PLAY, ret)
+}
+
+/// One `spin += (AIrand() % n [- 2]) * k` step's random part: `a0` gets the
+/// remainder, f2 the step (`.lit4` at `gp - lit`), f1 the spin.
+pub(crate) fn rpba_rand_step(c: &mut Cpu, ret: u32, n: u64, lit: u32) -> crate::call::Flow {
+    c.cycles += 7;
+    call_ptr(c, RPBA_AI_RAND, ret)?;
+    c.g[V1][0] = n;
+    let k = r32(c, GP).wrapping_sub(lit);
+    c.lwc1(2, k);
+    c.divu(0, V0, V1);
+    c.cycles += 3;
+    Ok(())
+}
+
+/// `void Rider_PlayBumpAnim(Rider* self, BumpInfo* info, int speak)`
+/// (0x108388): in main state 0 or 4 and sub state 0, 1 (cancels the board
+/// press), 2 or 7, plays the bump animation for the bump normal: front
+/// (0x37) or back (0x38) bumps, else a side bump by the side of the hit
+/// (flipped for goofy riders): a hard one (0x3a/0x3c, with a random half
+/// turn added to a small spin) for slow-ish bumps at speed outside main
+/// state 4, a soft one (0x39/0x3b) otherwise. Then the bump speech (if
+/// `speak`) and sub state 3.
+pub fn rider_play_bump_anim(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S3, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S2, 0x30);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save_ra(c, 0x10);
+        frame.save_fpr(c, 20, 0x60);
+        RPBA_GET_MAIN_STATE.call(c, 0x0010_83b4)?;
+        if c.g[V0][0] != 0 {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            RPBA_GET_MAIN_STATE.call(c, 0x0010_83c4)?;
+            c.g[V1][0] = 4;
+            if c.g[V0][0] != c.g[V1][0] {
+                frame.restore(c, S0, 0x50);
+                return rpba_epilogue(c, frame);
+            }
+        }
+        c.cycles += 5;
+        c.g[A0][0] = c.g[S0][0];
+        RPBA_GET_SUB_STATE.call(c, 0x0010_83d8)?;
+        c.g[V1][0] = 1;
+        if c.g[V0][0] == c.g[V1][0] {
+            c.cycles += 5;
+            c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(RPBA_BASE));
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x1d0));
+            RPBA_BOARD_PRESS_CANCEL.call(c, 0x0010_83f0)?;
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
+            RPBA_GET_SUB_STATE.call(c, 0x0010_8400)?;
+            if c.g[V0][0] != 0 {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S0][0];
+                RPBA_GET_SUB_STATE.call(c, 0x0010_8410)?;
+                c.g[V1][0] = 2;
+                if c.g[V0][0] != c.g[V1][0] {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S0][0];
+                    RPBA_GET_SUB_STATE.call(c, 0x0010_8424)?;
+                    c.g[V1][0] = 7;
+                    if c.g[V0][0] != c.g[V1][0] {
+                        frame.restore(c, S0, 0x50);
+                        return rpba_epilogue(c, frame);
+                    }
+                    c.cycles += 1;
+                }
+            }
+        }
+        c.lq(V0, r32(c, S0).wrapping_add(RPBA_FORWARD));
+
+        // d = dot(forward, normal)
+        c.cycles += 16;
+        c.g[S2][0] = 0; // played
+        let gp = r32(c, GP);
+        c.lwc1(0, gp.wrapping_sub(0x7e5c)); // 0.70710677
+        let stk = sp(c);
+        c.sq(V0, stk);
+        c.lqc2(3, stk);
+        c.lqc2(5, r32(c, S1).wrapping_add(RPBA_INFO_NORMAL));
+        rpba_dot_into_vf4(c);
+        c.qmfc2(V1, 4);
+        c.mtc1(V1, 1);
+        c.c_lt_s(0, 1);
+        c.g[A1][0] = 0x37;
+        let mut front_back = c.fcc();
+        if front_back {
+            c.cycles += 2;
+        } else {
+            c.cycles += 5;
+            c.lwc1(0, gp.wrapping_sub(0x7e58)); // -0.70710677
+            c.c_lt_s(1, 0);
+            c.g[A1][0] = 0x38;
+            front_back = c.fcc();
+            if front_back {
+                c.cycles += 1;
+            }
+        }
+        if front_back {
+            c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(RPBA_ANIM));
+            c.cycles += 6;
+            rpba_play(c, 0x0010_84a4)?;
+        } else {
+            // side = dot(side axis, normal), negated for goofy riders
+            c.cycles += 14;
+            c.lq(V0, r32(c, S0).wrapping_add(RPBA_SIDE));
+            c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(RPBA_GOOFY));
+            let stk = sp(c);
+            c.sq(V0, stk);
+            c.lqc2(3, stk);
+            c.lqc2(5, r32(c, S1).wrapping_add(RPBA_INFO_NORMAL));
+            rpba_dot_into_vf4(c);
+            c.qmfc2(A0, 4);
+            c.mtc1(A0, 20);
+            if c.g[V1][0] != 0 {
+                c.neg_s(20, 20);
+            }
+            let hard = 'hard: {
+                c.cycles += 5;
+                c.lwc1(1, r32(c, S1).wrapping_add(RPBA_INFO_SPEED));
+                c.lwc1(0, gp.wrapping_sub(0x7e54)); // 1111.1111
+                c.c_lt_s(1, 0);
+                if !c.fcc() {
+                    break 'hard false;
+                }
+                // |velocity| > 1388.8889
+                c.cycles += 14;
+                c.lwc1(0, gp.wrapping_sub(0x7e50));
+                c.lqc2(3, r32(c, S0).wrapping_add(RPBA_VELOCITY));
+                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                c.vu0().sqrt(4, 0);
+                c.vu0().waitq();
+                c.cfc2(V0, 22);
+                c.mtc1(V0, 1);
+                c.c_lt_s(0, 1);
+                if !c.fcc() {
+                    break 'hard false;
+                }
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S0][0];
+                RPBA_GET_MAIN_STATE.call(c, 0x0010_8538)?;
+                c.g[V1][0] = 4;
+                c.g[V0][0] != c.g[V1][0]
+            };
+            if hard {
+                // A small spin (|a| < 2 pi) gets a random number of half turns.
+                c.cycles += 6;
+                let spin = r32(c, S0).wrapping_add(RPBA_SPIN);
+                c.lwc1(2, spin);
+                c.lwc1(1, gp.wrapping_sub(0x7e4c)); // 2 pi
+                c.abs_s(0, 2);
+                c.c_lt_s(0, 1);
+                if c.fcc() {
+                    c.cycles += 4;
+                    c.mtc1(0, 0);
+                    c.c_lt_s(2, 0);
+                    if c.fcc() {
+                        rpba_rand_step(c, 0x0010_8574, 3, 0x7e48)?; // -pi
+                        c.g[A0][0] = c.hi[0];
+                        c.lwc1(1, r32(c, S0).wrapping_add(RPBA_SPIN));
+                    } else {
+                        c.cycles += 3;
+                        c.c_lt_s(0, 2);
+                        if c.fcc() {
+                            rpba_rand_step(c, 0x0010_85a8, 3, 0x7e44)?; // pi
+                            c.g[A0][0] = c.hi[0];
+                            c.lwc1(1, r32(c, S0).wrapping_add(RPBA_SPIN));
+                        } else {
+                            rpba_rand_step(c, 0x0010_85d0, 5, 0x7e40)?; // pi
+                            c.lwc1(1, r32(c, S0).wrapping_add(RPBA_SPIN));
+                            c.g[A0][0] = c.hi[0];
+                            c.g[A0][0] = sx(r32(c, A0).wrapping_sub(2));
+                        }
+                    }
+                    c.cycles += 5;
+                    c.mtc1(A0, 0);
+                    c.cvt_s_w(0, 0);
+                    c.mul_s(0, 0, 2);
+                    c.add_s(1, 1, 0);
+                    c.swc1(1, r32(c, S0).wrapping_add(RPBA_SPIN));
+                }
+                c.cycles += 5;
+                c.mtc1(0, 0);
+                c.c_lt_s(20, 0);
+                c.g[A1][0] = 0x3c;
+                if c.fcc() {
+                    c.cycles += 1;
+                    c.g[A1][0] = 0x3a;
+                }
+                c.cycles += 8;
+                c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(RPBA_ANIM));
+                c.g[A2][0] = 0;
+                c.g[S2][0] = 1; // played
+                rpba_play(c, 0x0010_8634)?;
+            } else {
+                c.cycles += 5;
+                c.mtc1(0, 0);
+                c.c_lt_s(20, 0);
+                c.g[A1][0] = 0x3b;
+                if c.fcc() {
+                    c.cycles += 1;
+                    c.g[A1][0] = 0x39;
+                }
+                c.cycles += 5;
+                c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(RPBA_ANIM));
+                rpba_play(c, 0x0010_8668)?;
+            }
+        }
+
+        c.cycles += 2;
+        c.g[A0][0] = c.g[S0][0];
+        if c.g[S3][0] != 0 {
+            c.cycles += 7;
+            call_ptr(c, RPBA_AUDIO_INSTANCE, 0x0010_8678)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A2][0] = c.g[S2][0];
+            c.g[A1][0] = c.g[S0][0];
+            call_ptr(c, RPBA_SPEECH_BUMP, 0x0010_8688)?;
+            c.g[A0][0] = c.g[S0][0];
+        }
+        c.cycles += 3;
+        c.g[A1][0] = 3;
+        RPBA_SET_SUB_STATE.call(c, 0x0010_8694)?;
+        frame.restore(c, S0, 0x50);
+        rpba_epilogue(c, frame)
+    })
+}
+
+/// `Rider_PlayBumpAnim`'s epilogue (s0 already reloaded).
+pub(crate) fn rpba_epilogue(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 7;
+    frame.restore(c, S1, 0x40);
+    frame.restore(c, S2, 0x30);
+    frame.restore(c, S3, 0x20);
+    frame.restore_ra(c, 0x10);
+    frame.restore_fpr(c, 20, 0x60);
+    frame.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -16613,6 +18077,458 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(rider);
                 c.g[A1][0] = r.next_u32() as u64 & 1;
                 c.pc = 0x0010_7578;
+            },
+        );
+    }
+
+    use std::sync::atomic::AtomicUsize;
+
+    /// `Rider_LaunchIntoAir` against the generated body: negative and
+    /// positive pushes over both speed ranges and the clamp, rail and ground
+    /// take-offs, the steered push (all three gates and the 0..0.95 clamp),
+    /// steep lips with forward and backward changes (all three `k` ranges),
+    /// zero and non-zero headings on flat and sloped ground with flag 0x20,
+    /// the speed cap, sub states 11..13, early and late damping, and a zero
+    /// forward cross product. The real callees take their short paths: the
+    /// replay is busy, the metrix is idle (no points, so no boost).
+    #[test]
+    fn rider_launch_into_air_matches() {
+        check(
+            ee::s00::f_00114298__generated,
+            rider_launch_into_air,
+            250,
+            &|c, seed| {
+                let mut r = Rng(0x5eed_1142_98aa ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0011_4298;
+                let rider = DATA;
+                let owner = DATA + 0x2000;
+                let metrix = DATA + 0x3000;
+                let world = DATA + 0x4000;
+                let sys = DATA + 0x4100;
+                let clock = DATA + 0x4200;
+                let replay = DATA + 0x5000;
+                let wscript = DATA + 0x6000;
+                c.g[A0][0] = sx(rider);
+                let fl = |v: f32| v.to_bits();
+
+                // Push: negative, zero, or 0..1.6.
+                c.f[12] = match seed % 6 {
+                    0 => fl(-0.5),
+                    1 => 0,
+                    _ => r.f32(1.6) & 0x7fff_ffff,
+                };
+                // Velocity: slow or fast; z of either sign, sometimes all 0.
+                let range = if seed % 2 == 0 { 600.0 } else { 1500.0 };
+                let vel = if seed % 37 == 5 {
+                    [0, 0, 0, 0]
+                } else {
+                    [r.f32(range), r.f32(range), r.f32(range * 0.5), 0]
+                };
+                put_vec(c, rider + LAUNCH_VEL, vel);
+                put_vec(
+                    c,
+                    rider + LAUNCH_UP,
+                    [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0],
+                );
+                put_vec(
+                    c,
+                    rider + LAUNCH_POS,
+                    [r.f32(1e4), r.f32(1e4), r.f32(1e3), fl(1.0)],
+                );
+                // Ground direction, its z the slope cosine (both sides of
+                // cos 50° and cos 70° + 0.02).
+                let slope = [fl(0.9), fl(0.5), fl(0.3), fl(0.36), fl(0.7)][(seed / 3 % 5) as usize];
+                put_vec(c, rider + LAUNCH_DIR, [r.f32(1.0), r.f32(1.0), slope, 0]);
+                let side_z = if seed % 4 == 0 {
+                    r.f32(1.0)
+                } else {
+                    r.f32(0.4) & 0x7fff_ffff
+                };
+                put_vec(c, rider + LAUNCH_SIDE, [r.f32(1.0), r.f32(1.0), side_z, 0]);
+                // Heading: zero xy sometimes; z flat or sloped.
+                let (hx, hy) = match seed % 7 {
+                    0 => (0, 0),
+                    1 => (0, r.f32(1.0)),
+                    _ => (r.f32(1.0), r.f32(1.0)),
+                };
+                let hz = if seed % 3 == 0 {
+                    r.f32(0.5)
+                } else {
+                    r.f32(0.06)
+                };
+                put_vec(c, rider + LAUNCH_HEADING, [hx, hy, hz, r.f32(1.0)]);
+                c.bus
+                    .write16(rider + LAUNCH_FLAGS, (r.next_u32() & 0x30) as u16);
+                c.bus.write32(
+                    rider + LAUNCH_MAX_SPEED,
+                    fl(200.0 + (r.next_u32() % 2400) as f32),
+                );
+                c.bus.write32(rider + LAUNCH_SUB_STATE, r.next_u32() % 16);
+                c.bus
+                    .write32(rider + 0x304, if seed % 5 == 0 { 3 } else { 0 });
+                let stance = r.next_u32() % 3;
+                c.bus.write32(rider + LAUNCH_STANCE_A, stance);
+                c.bus.write32(rider + LAUNCH_STANCE_B, r.next_u32() % 3);
+                c.bus.write32(rider + LAUNCH_RIDER_ID, r.next_u32() % 8);
+                c.bus.write32(rider + LAUNCH_OWNER, owner);
+                c.bus.write32(rider + LAUNCH_METRIX, metrix);
+
+                // Owner: main state (4 = rail), take-off frame.
+                let state = if seed % 4 == 1 { 4 } else { r.next_u32() % 4 };
+                c.bus.write32(owner + 0xde0, state);
+                let now = 1000 + r.next_u32() % 1000;
+                c.bus.write32(owner + 0x10, now - r.next_u32() % 90);
+                // Metrix idle (InterruptTrick banks nothing).
+                c.bus.write32(metrix + 0x70, 1);
+                // World -> system: replay (busy) and frame clock.
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, sys);
+                c.bus.write32(sys + 0x28, replay);
+                c.bus.write32(sys + 0xc, clock);
+                c.bus.write32(clock + 8, now);
+                for off in [0x0, 0x60c, 0x610, 0x61c, 0x620] {
+                    c.bus.write32(replay + off, 1);
+                }
+                // World script with a few queued events.
+                c.bus.write32(GAME_GP + 0xce8, wscript);
+                c.bus.write32(wscript + 0x40, r.next_u32() % 4);
+                // Default heading and the cross axis.
+                put_vec(c, 0x004f_f140, [fl(1.0), 0, 0, 0]);
+                let axis = if seed % 11 == 3 {
+                    [0, 0, 0, 0]
+                } else {
+                    [0, 0, fl(1.0), 0]
+                };
+                put_vec(c, 0x004f_f160, axis);
+            },
+        );
+    }
+
+    /// Gate of this test's callee fakes (other tests' machines fall back).
+    pub(crate) const RRC_CTRL: u32 = DATA + 0x20_5000;
+
+    pub(crate) const RRC_MAGIC: u32 = 0x7e70_c011;
+
+    macro_rules! rrc_gated {
+        ($name:ident, $prev:ident, $addr:expr, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(RRC_CTRL) != RRC_MAGIC {
+                    return fakes::fall_back(c, &$prev, $gen);
+                }
+                let ra = c.g[RA][0] as u32;
+                fakes::fake(c, $addr, ra);
+            }
+        };
+    }
+
+    rrc_gated!(
+        rrc_fake_start_wipeout,
+        RRC_PREV_START_WIPEOUT,
+        0x0010_eb30,
+        ee::s00::f_0010eb30__generated
+    );
+
+    rrc_gated!(
+        rrc_fake_air_predictor_prime,
+        RRC_PREV_AIR_PREDICTOR_PRIME,
+        0x0011_35b8,
+        ee::s00::f_001135b8__generated
+    );
+
+    rrc_gated!(
+        rrc_fake_hit0,
+        RRC_PREV_HIT0,
+        0x0010_e228,
+        ee::s00::f_0010e228__generated
+    );
+
+    rrc_gated!(
+        rrc_fake_hit1,
+        RRC_PREV_HIT1,
+        0x0010_e2e8,
+        ee::s00::f_0010e2e8__generated
+    );
+
+    rrc_gated!(
+        rrc_fake_hit2,
+        RRC_PREV_HIT2,
+        0x0010_e3a8,
+        ee::s00::f_0010e3a8__generated
+    );
+
+    rrc_gated!(
+        rrc_fake_hit3,
+        RRC_PREV_HIT3,
+        0x0010_e468,
+        ee::s00::f_0010e468__generated
+    );
+
+    /// Rider_StartWipeout, AirPredictor_Prime and the four hit reports
+    /// become logging fakes (they reach animation, sound and the game).
+    pub(crate) fn rrc_install_fakes() {
+        use std::ptr::addr_of_mut;
+        fakes::hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0010EB30),
+            rrc_fake_start_wipeout,
+            &RRC_PREV_START_WIPEOUT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s00::OVERRIDE_001135B8),
+            rrc_fake_air_predictor_prime,
+            &RRC_PREV_AIR_PREDICTOR_PRIME,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0010E228),
+            rrc_fake_hit0,
+            &RRC_PREV_HIT0,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0010E2E8),
+            rrc_fake_hit1,
+            &RRC_PREV_HIT1,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0010E3A8),
+            rrc_fake_hit2,
+            &RRC_PREV_HIT2,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0010E468),
+            rrc_fake_hit3,
+            &RRC_PREV_HIT3,
+        );
+    }
+
+    /// `Rider_ResolveRiderCollision` against the generated body. Sub state
+    /// 10 (skip), 9 (impulse only) or one that keeps Rider_PlayBumpAnim on
+    /// its early return (3..8, 0xb); main state 0 (ground), 1 (air), 2
+    /// (air state 0/1: ground or predictor) or 3; impulses around the
+    /// clamp, the bump and the wipeout thresholds (and edge values);
+    /// random board axes, normals and velocities (all wipeout directions),
+    /// the debug flag bit 5, the fast-fall threshold, `flag` 0/1/random.
+    /// The actor's methods are table fakes, Rand_NextGame is real (the
+    /// game's Rand state), the other callees are gated fakes, some
+    /// unwinding.
+    #[test]
+    fn rider_resolve_rider_collision_matches() {
+        rrc_install_fakes();
+        covered(
+            ee::s00::f_00107e70__generated,
+            rider_resolve_rider_collision,
+            600,
+            &|c, seed| {
+                let base = DATA + 0x20_0000;
+                let me = base;
+                let other = base + 0x1000;
+                let n = base + 0x2000;
+                let handler = base + 0x3000;
+                let mut r = machine(c, seed, 0x107e70, 4);
+                c.pc = 0x0010_7e70;
+                c.bus.write32(RRC_CTRL, RRC_MAGIC);
+                let f = |x: f32| x.to_bits();
+
+                // .lit4 constants and the fast-fall threshold.
+                for (off, v) in [
+                    (rrc::LIT_CLAMP, 0x440a_e38e),
+                    (rrc::LIT_BUMP_MIN, 0x421f_fb37),
+                    (rrc::LIT_FORCED, 0x4415_fe56),
+                    (rrc::LIT_WIPEOUT_MIN, 0x4415_fe56),
+                ] {
+                    c.bus.write32(GAME_GP - off, v);
+                }
+                let fast = match seed % 3 {
+                    0 => 0x0042_fdd0,
+                    1 => f(300.0),
+                    _ => r.f32(600.0),
+                };
+                c.bus.write32(GAME_GP + rrc::GP_FAST_FALL, fast);
+                // Rand_NextGame state.
+                for i in 0..8u32 {
+                    c.bus.write32(0x004f_f030 + 4 * i, r.next_u32());
+                }
+                c.bus.write32(rrc::DEBUG_FLAGS, r.next_u32());
+
+                // The rider: random floats, then the fields.
+                for i in 0..0x240 {
+                    c.bus.write32(me + 4 * i, r.f32(2.0));
+                }
+                for off in [rrc::POS, rrc::FACING, rrc::VEL] {
+                    put_vec(
+                        c,
+                        me + off,
+                        [r.f32(300.0), r.f32(300.0), r.f32(300.0), r.f32(1.0)],
+                    );
+                }
+                if seed % 11 == 0 {
+                    put_vec(c, me + rrc::VEL, [0, 0, 0, 0]);
+                }
+                c.bus.write32(me + rrc::LAUNCH, r.edge_f32());
+                c.bus.write32(me + rrc::HANDLER, handler);
+                c.bus.write32(me + rrc::PREDICTOR, r.next_u32());
+                let vt = fakes::vtable(c, &mut r, &[0x28, 0x10]);
+                c.bus.write32(me + rrc::ACTOR, vt);
+                // Record index (records at +8 inside the rider, before POS).
+                c.bus.write32(other + rrc::OTHER_INDEX, r.next_u32() % 7);
+                for i in 0..7 {
+                    c.bus
+                        .write32(me + i * rrc::RECORD_SIZE + rrc::RECORD_DIST, r.f32(3.0));
+                }
+
+                // States.
+                let sub = match seed % 9 {
+                    0 => 10,
+                    1 => 9,
+                    k => [3, 4, 5, 6, 8, 0xb, 0x20][(k as usize + seed as usize / 9) % 7],
+                };
+                let main = match seed / 9 % 6 {
+                    0 => 0,
+                    1 | 2 => 1,
+                    3 | 4 => 2,
+                    _ => 3,
+                };
+                c.bus.write32(handler + 0xde4, sub);
+                c.bus.write32(handler + 0xde0, main);
+                c.bus.write32(handler + 0x30, r.next_u32() % 2);
+
+                // Normal and impulse.
+                put_vec(c, n, [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(0.1)]);
+                c.f[12] = match seed % 7 {
+                    0 => r.f32(40.0),
+                    1 => r.f32(100.0),
+                    2 | 3 => r.f32(1200.0),
+                    4 => r.f32(600.0),
+                    5 => r.edge_f32(),
+                    _ => r.f32(5000.0),
+                };
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(other);
+                c.g[A2][0] = sx(n);
+                c.g[A3][0] = match seed % 5 {
+                    0 | 1 => 0,
+                    2 | 3 => 1,
+                    _ => (r.next_u32() as u64) << 32 | 2,
+                };
+            },
+        );
+    }
+
+    /// Rider_PlayBumpAnim: main states 0/4/other and sub states 0/1/2/7/
+    /// other; front, back and side bumps (goofy or not), slow and fast
+    /// impacts, velocity below and above the limit, a small negative /
+    /// zero / positive or a large spin; with and without speech. Gated
+    /// fakes for the board-press cancel, the anim play, AIrand, the bump
+    /// speech and Rider_SetSubState; real state getters and audio instance.
+    #[test]
+    fn rider_play_bump_anim_matches() {
+        use crate::difftest::fakes::{fake, fall_back, hook};
+        use crate::game::object::movenode::tests::{oc338_fake, OC338_CTRL, OC338_MAGIC};
+        use std::ptr::addr_of_mut;
+        use std::sync::atomic::AtomicUsize;
+        oc338_fake!(
+            oc374_fake_board_press_cancel,
+            OC374_PREV_BOARD_PRESS_CANCEL,
+            0x0013_1348,
+            ee::s00::f_00131348__generated
+        );
+        oc338_fake!(
+            oc374_fake_anim_play,
+            OC374_PREV_ANIM_PLAY,
+            0x0031_28e8,
+            ee::s10::f_003128e8__generated
+        );
+        oc338_fake!(
+            oc374_fake_ai_rand,
+            OC374_PREV_AI_RAND,
+            0x0031_7810,
+            ee::s10::f_00317810__generated
+        );
+        oc338_fake!(
+            oc374_fake_speech_bump,
+            OC374_PREV_SPEECH_BUMP,
+            0x002a_0e70,
+            ee::s08::f_002a0e70__generated
+        );
+        oc338_fake!(
+            oc374_fake_set_sub_state,
+            OC374_PREV_SET_SUB_STATE,
+            0x0011_fec8,
+            ee::s00::f_0011fec8__generated
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00131348),
+            oc374_fake_board_press_cancel,
+            &OC374_PREV_BOARD_PRESS_CANCEL,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003128E8),
+            oc374_fake_anim_play,
+            &OC374_PREV_ANIM_PLAY,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317810),
+            oc374_fake_ai_rand,
+            &OC374_PREV_AI_RAND,
+        );
+        hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002A0E70),
+            oc374_fake_speech_bump,
+            &OC374_PREV_SPEECH_BUMP,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0011FEC8),
+            oc374_fake_set_sub_state,
+            &OC374_PREV_SET_SUB_STATE,
+        );
+        const RIDER: u32 = DATA + 0x1000;
+        const BASE: u32 = DATA + 0x3000;
+        const INFO: u32 = DATA + 0x5000;
+        covered(
+            ee::s00::f_00108388__generated,
+            rider_play_bump_anim,
+            400,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10_8388, 6);
+                crate::difftest::elf_image(c);
+                c.pc = 0x0010_8388;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                c.g[A0][0] = sx(RIDER);
+                c.g[A1][0] = sx(INFO);
+                c.g[A2][0] = (seed / 2 % 2) as u64;
+                c.bus.write32(RIDER + RPBA_BASE, BASE);
+                c.bus.write32(RIDER + RPBA_ANIM, DATA + 0x6000);
+                let main = [0u32, 0, 0, 4, 4, 2][(seed % 6) as usize];
+                let sub = [0u32, 1, 2, 7, 0, 2, 3][(seed / 6 % 7) as usize];
+                c.bus.write32(BASE + 0xde0, main);
+                c.bus.write32(BASE + 0xde4, sub);
+                for i in 0..4 {
+                    let f = r.f32(1.0);
+                    c.bus.write32(RIDER + RPBA_FORWARD + 4 * i, f);
+                    let f = r.f32(1.0);
+                    c.bus.write32(RIDER + RPBA_SIDE + 4 * i, f);
+                    let f = r.f32(1.0);
+                    c.bus.write32(INFO + RPBA_INFO_NORMAL + 4 * i, f);
+                    let f = r.f32(1500.0);
+                    c.bus.write32(RIDER + RPBA_VELOCITY + 4 * i, f);
+                }
+                c.bus.write32(RIDER + RPBA_GOOFY, r.next_u32() % 2);
+                let speed = if seed % 3 == 0 {
+                    r.f32(4000.0)
+                } else {
+                    r.f32(1100.0)
+                };
+                c.bus.write32(INFO + RPBA_INFO_SPEED, speed & 0x7fff_ffff);
+                let spin = match seed % 5 {
+                    0 => 0,
+                    1 => r.f32(6.0),
+                    2 => r.f32(6.0) | 0x8000_0000,
+                    3 => r.f32(6.0) & 0x7fff_ffff,
+                    _ => r.f32(100.0),
+                };
+                c.bus.write32(RIDER + RPBA_SPIN, spin);
             },
         );
     }

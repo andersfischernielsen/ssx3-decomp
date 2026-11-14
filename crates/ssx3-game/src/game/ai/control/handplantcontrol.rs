@@ -24,6 +24,8 @@ pub(crate) use crate::game::ai::computer::li_f;
 pub(crate) use crate::game::ai::computer::lt_2 as lt;
 pub(crate) use crate::game::ai::computer::lw;
 pub(crate) use crate::game::ai::computer::setf_2 as setf;
+pub(crate) use crate::game::ai::motion::wipeoutmotion::racw_dot_vf3_vf5;
+pub(crate) use crate::game::ai::motion::wipeoutmotion::racw_scale;
 pub(crate) use crate::game::ai::rider::at;
 pub(crate) use crate::game::ai::rider::copy_contact;
 pub(crate) use crate::game::ai::rider::epilogue;
@@ -202,6 +204,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0013_99e0, rider_air_state_enter, "RiderAirState_Enter"),
     (0x0013_fad8, obj_ptr_array_sort, "ObjPtrArray_Sort"),
+    (
+        0x0013_aa48,
+        rider_air_state_collide_walls_2,
+        "RiderAirState_CollideWalls",
+    ),
 ];
 
 /// Direct call targets, as the generated body calls them (the shard alias,
@@ -9977,6 +9984,236 @@ pub fn obj_ptr_array_sort(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// RiderAirState_CollideWalls (0x13aa48)
+
+/// The air state's rider (`self + 4`).
+pub(crate) const RACW_RIDER: u32 = 0x4;
+
+/// Rider fields: hull centre, velocity, vtable (slot 0x40: IsHuman),
+/// overlap list, wall hint, sphere tree.
+pub(crate) const RACW_R_CENTRE: u32 = 0x180;
+
+pub(crate) const RACW_R_VEL: u32 = 0x1e0;
+
+pub(crate) const RACW_R_VTABLE: u32 = 0x6c0;
+
+pub(crate) const RACW_R_OVERLAP: u32 = 0x860;
+
+pub(crate) const RACW_R_WALL_HINT: u32 = 0x868;
+
+pub(crate) const RACW_R_SPHERE_TREE: u32 = 0xaa0;
+
+/// Stack frame: the hit (normal at +0x10, surface word at +0x4c), the hull
+/// at +0x80, the impact record at +0x3e0 and the vector temporaries.
+pub(crate) const RACW_HIT_NORMAL: u32 = 0x10;
+
+pub(crate) const RACW_HULL: u32 = 0x80;
+
+pub(crate) const RACW_SUB_STATE: u32 = 0x0011_fee8;
+
+pub(crate) const RACW_COLL_HULL_CTOR: u32 = 0x0032_f650;
+
+pub(crate) const RACW_FIND_CLOSEST_CONTACT: u32 = 0x0033_42d0;
+
+pub(crate) const RACW_TRANSLATE: u32 = 0x0010_6538;
+
+pub(crate) const RACW_BUILD_WORLD_MATRIX: u32 = 0x0011_e098;
+
+pub(crate) const RACW_HANDLE_IMPACT: u32 = 0x0010_5d98;
+
+pub(crate) const RACW_COLL_HULL_DTOR: u32 = 0x0032_f708;
+
+/// `int RiderAirState_CollideWalls(RiderAirState* self, Vec4* normal_out)`
+/// (0x13aa48): unless the rider is in sub-state 9, sweep his collision hull
+/// (centre `rider+0x180`) through the overlap list. On a contact at
+/// distance `d >= 0`: translate the rider out along the hit normal by
+/// `d * k`; if he is moving into the wall (`-n . vel >= 0`), push his
+/// velocity back along the normal by `(-n . vel) + max(k2 * (-n . vel), k3)`
+/// (a bounce), rebuild his world matrix, report the impact (hit position,
+/// normal, the unit velocity direction, the surface word at hit+0x4c, the
+/// speed into the wall), store the normal in `*normal_out` and return 1.
+/// Otherwise 0. The hull is destroyed on every path past the sweep.
+pub fn rider_air_state_collide_walls_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x490);
+        let at = |c: &Cpu, o: u32| sp(c).wrapping_add(o);
+        frame.save(c, S1, 0x460);
+        frame.save(c, S4, 0x430);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x470);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S2, 0x450);
+        frame.save(c, S3, 0x440);
+        frame.save_ra(c, 0x420);
+        frame.save_fpr(c, 21, 0x488);
+        frame.save_fpr(c, 20, 0x480);
+        c.g[A0][0] = Addr(r32(c, S1)).off(RACW_RIDER).lw(c);
+        call_ptr(c, RACW_SUB_STATE, 0x0013_aa7c)?;
+        c.g[V1][0] = 9;
+        'done: {
+            if c.g[V0][0] == c.g[V1][0] {
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+                break 'done;
+            }
+            c.g[S0][0] = Addr(r32(c, S1)).off(RACW_RIDER).lw(c);
+
+            // CollHull hull(rider->sphere_tree, !rider->IsHuman())
+            c.cycles += 29;
+            c.g[S2][0] = sx(at(c, RACW_HULL));
+            c.mtc1(0, 21);
+            c.g[S3][0] = c.g[S2][0];
+            let rider = r32(c, S0);
+            c.g[V1][0] = Addr(rider).off(RACW_R_VTABLE).lw(c);
+            c.g[A1][0] = sx(rider.wrapping_add(RACW_R_VTABLE));
+            c.g[A0][0] = Addr(r32(c, V1)).off(0x40).lh(c);
+            c.g[V0][0] = Addr(r32(c, V1)).off(0x44).lw(c);
+            let method = r32(c, V0);
+            c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+            call_ptr(c, method, 0x0013_aab4)?;
+            c.g[A1][0] = Addr(r32(c, S0)).off(RACW_R_SPHERE_TREE).lw(c);
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A2][0] = c.g[V0][0] ^ 1;
+            call_ptr(c, RACW_COLL_HULL_CTOR, 0x0013_aac4)?;
+
+            // hull.centre = rider->centre; d = FindClosestContact(overlap,
+            // &hull, &hit, wall_hint)
+            c.g[V1][0] = Addr(r32(c, S1)).off(RACW_RIDER).lw(c);
+            c.g[A0][0] = 1;
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A2][0] = c.g[SP][0];
+            let rider = r32(c, V1);
+            c.lq(V0, rider.wrapping_add(RACW_R_CENTRE));
+            Addr(at(c, 0x88)).sw(c, 1);
+            c.sq(V0, at(c, 0x90));
+            c.sq(V0, at(c, 0x3a0));
+            c.g[A3][0] = Addr(rider).off(RACW_R_WALL_HINT).lw(c);
+            c.g[A0][0] = Addr(rider).off(RACW_R_OVERLAP).lw(c);
+            call_ptr(c, RACW_FIND_CLOSEST_CONTACT, 0x0013_aaf0)?;
+            c.mov_s(1, 0);
+            c.c_lt_s(1, 21);
+            let missed = c.fcc();
+            c.g[A0][0] = c.g[S3][0];
+            let mut hit = false;
+            if !missed {
+                // Translate the rider out of the wall: n * k * d.
+                c.cycles += 40;
+                c.lwc1(0, r32(c, GP).wrapping_sub(0x7190));
+                c.g[A1][0] = sx(at(c, 0x3a0));
+                let s = sp(c);
+                racw_scale(c, V1, 0, s + RACW_HIT_NORMAL, s + 0x3c0);
+                c.lq(V0, at(c, 0x3c0));
+                c.sq(V0, at(c, 0x3b0));
+                racw_scale(c, V1, 1, s + 0x3b0, s + 0x3c0);
+                c.lq(V0, at(c, 0x3c0));
+                c.g[A0][0] = Addr(r32(c, S1)).off(RACW_RIDER).lw(c);
+                c.sq(V0, at(c, 0x3a0));
+                call_ptr(c, RACW_TRANSLATE, 0x0013_ab4c)?;
+
+                // f20 = -n . vel
+                c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                c.mtc1(AT, 0);
+                let s = sp(c);
+                racw_scale(c, V0, 0, s + RACW_HIT_NORMAL, s + 0x3c0);
+                c.lq(V0, at(c, 0x3c0));
+                c.g[A0][0] = Addr(r32(c, S1)).off(RACW_RIDER).lw(c);
+                c.sq(V0, at(c, 0x3b0));
+                c.lqc2(3, at(c, 0x3b0));
+                c.lqc2(5, r32(c, A0).wrapping_add(RACW_R_VEL));
+                racw_dot_vf3_vf5(c);
+                c.qmfc2(V1, 4);
+                c.mtc1(V1, 20);
+                c.c_lt_s(20, 21);
+                hit = !c.fcc();
+                if !hit {
+                    c.cycles += 1;
+                    c.g[A0][0] = c.g[S3][0];
+                }
+            }
+            if !hit {
+                c.cycles += 4;
+                c.g[A1][0] = 2;
+                call_ptr(c, RACW_COLL_HULL_DTOR, 0x0013_abb0)?;
+                c.g[V0][0] = 0;
+                break 'done;
+            }
+
+            // dir = vel / |vel|; push = max(f20 * k2, k3)
+            c.cycles += 18;
+            c.lwc1(0, r32(c, GP).wrapping_sub(0x718c));
+            c.lqc2(3, r32(c, A0).wrapping_add(RACW_R_VEL));
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.vu0().rsqrt(0, 3, 4, 0);
+            c.vu0().waitq();
+            c.vu0().mul(0b1111, 5, 3, Src::Q);
+            c.sqc2(5, at(c, 0x3c0));
+            c.lwc1(1, r32(c, GP).wrapping_sub(0x7188));
+            c.mul_s(0, 20, 0);
+            c.lq(V0, at(c, 0x3c0));
+            c.c_lt_s(0, 1);
+            let below = c.fcc();
+            c.sq(V0, at(c, 0x3b0));
+            if below {
+                c.cycles += 1;
+                c.mov_s(0, 1);
+            }
+
+            // vel += n * (f20 + push)
+            c.cycles += 32;
+            c.add_s(0, 20, 0);
+            let s = sp(c);
+            racw_scale(c, V1, 0, s + RACW_HIT_NORMAL, s + 0x3d0);
+            c.lq(V0, at(c, 0x3d0));
+            c.g[V1][0] = Addr(r32(c, S1)).off(RACW_RIDER).lw(c);
+            c.sq(V0, at(c, 0x3c0));
+            let vel = r32(c, V1).wrapping_add(RACW_R_VEL);
+            c.lqc2(3, vel);
+            c.lqc2(4, at(c, 0x3c0));
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, vel);
+            c.g[A0][0] = Addr(r32(c, S1)).off(RACW_RIDER).lw(c);
+            call_ptr(c, RACW_BUILD_WORLD_MATRIX, 0x0013_ac40)?;
+
+            // Rider_HandleImpact(rider, {hit pos, dir, normal, f20},
+            // hit.surface)
+            c.lq(V0, at(c, 0x3b0));
+            c.g[A1][0] = sx(at(c, 0x3e0));
+            c.lq(A3, sp(c));
+            c.lq(V1, at(c, 0x10));
+            c.g[A0][0] = Addr(r32(c, S1)).off(RACW_RIDER).lw(c);
+            c.g[A2][0] = Addr(at(c, 0x4c)).lw(c);
+            c.sq(V0, at(c, 0x3f0));
+            c.sq(A3, at(c, 0x3e0));
+            c.sq(V1, at(c, 0x400));
+            c.swc1(20, at(c, 0x410));
+            call_ptr(c, RACW_HANDLE_IMPACT, 0x0013_ac6c)?;
+            c.lq(V0, at(c, 0x10));
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = 2;
+            c.sq(V0, r32(c, S4));
+            call_ptr(c, RACW_COLL_HULL_DTOR, 0x0013_ac80)?;
+            c.g[V0][0] = 1;
+        }
+        c.cycles += 10;
+        frame.restore(c, S0, 0x470);
+        frame.restore(c, S1, 0x460);
+        frame.restore(c, S2, 0x450);
+        frame.restore(c, S3, 0x440);
+        frame.restore(c, S4, 0x430);
+        frame.restore_ra(c, 0x420);
+        frame.restore_fpr(c, 21, 0x488);
+        frame.restore_fpr(c, 20, 0x480);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     #[test]
@@ -12771,6 +13008,93 @@ pub(crate) mod tests {
                 c.g[A0][0] = first as u64;
                 c.g[A1][0] = last as u64;
                 c.g[A2][0] = (DATA + 0x300) as u64;
+            },
+        );
+    }
+
+    // ------------------------------------------- RiderAirState_CollideWalls
+
+    pub(crate) static RACW_PREV_HANDLE_IMPACT: AtomicUsize = AtomicUsize::new(0);
+
+    /// `Rider_HandleImpact` as a logged fake under the wipeout tests' gate
+    /// (`PUA_CTRL`): their fakes already stand in for the hull, the sweep
+    /// and `Rider_Translate`.
+    pub(crate) fn racw_fake_handle_impact(c: &mut Cpu) {
+        use crate::game::ai::motion::wipeoutmotion::tests::{pua_fake, PUA_CTRL, PUA_MAGIC};
+        if c.bus.read32(PUA_CTRL) != PUA_MAGIC {
+            return fakes::fall_back(c, &RACW_PREV_HANDLE_IMPACT, ee::s00::f_00105d98__generated);
+        }
+        pua_fake(c, RACW_HANDLE_IMPACT);
+    }
+
+    /// Sub-state 9 (nothing), no contact, a contact the rider moves away
+    /// from, and a bounce (the push below and above its floor). The hull,
+    /// the sweep, `Rider_Translate` and `Rider_HandleImpact` are logged
+    /// fakes (one may unwind); `Rider_GetSubState` and
+    /// `Rider_BuildWorldMatrix` run for real.
+    #[test]
+    fn rider_air_state_collide_walls_matches_2() {
+        use crate::game::ai::motion::wipeoutmotion::tests::{
+            pua_install_fakes, PUA_CTRL, PUA_HIT_A_TEMPLATE, PUA_MAGIC,
+        };
+        pua_install_fakes();
+        {
+            fakes::hook(
+                std::ptr::addr_of_mut!(ee::s00::OVERRIDE_00105D98),
+                racw_fake_handle_impact,
+                &RACW_PREV_HANDLE_IMPACT,
+            );
+        }
+        covered(
+            ee::s01::f_0013aa48__generated,
+            rider_air_state_collide_walls_2,
+            300,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x0013_aa48, 6);
+                c.pc = 0x0013_aa48;
+                let state = DATA + 0x6_0000;
+                let rider = DATA + 0x6_1000;
+                let handler = DATA + 0x6_3000;
+                let vt = DATA + 0x6_4000;
+                let out = DATA + 0x6_5000;
+                let pick = |r: &mut Rng, v: &[f32]| v[r.next_u32() as usize % v.len()].to_bits();
+                let comps = [-12.0f32, -3.0, -1.0, -0.5, 0.0, 0.5, 1.0, 3.0, 12.0];
+                let vec = |c: &mut Cpu, r: &mut Rng, at: u32| {
+                    for i in 0..3 {
+                        c.bus.write32(at + 4 * i, pick(r, &comps));
+                    }
+                    c.bus.write32(at + 12, pick(r, &[0.0, 1.0]));
+                };
+                c.bus.write32(PUA_CTRL, PUA_MAGIC);
+                c.g[A0][0] = sx(state);
+                c.g[A1][0] = sx(out);
+                c.bus.write32(state + RACW_RIDER, rider);
+                // Rider_GetSubState: rider->handler->sub_state.
+                c.bus.write32(rider + 0x77c, handler);
+                let sub = if seed % 6 == 0 { 9 } else { r.next_u32() % 12 };
+                c.bus.write32(handler + 0xde4, sub);
+                c.bus.write32(rider + RACW_R_VTABLE, vt);
+                c.bus
+                    .write16(vt + 0x40, (r.next_u32() as i16 as i32 & !3) as u16);
+                c.bus.write32(vt + 0x44, FAKE);
+                for off in [RACW_R_OVERLAP, RACW_R_WALL_HINT, RACW_R_SPHERE_TREE] {
+                    c.bus.write32(rider + off, r.next_u32());
+                }
+                vec(c, &mut r, rider + RACW_R_CENTRE);
+                vec(c, &mut r, rider + RACW_R_VEL);
+                // Rider_BuildWorldMatrix's inputs (orientation, position).
+                vec(c, &mut r, rider + 0x110);
+                put_vec(
+                    c,
+                    rider + 0x120,
+                    [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)],
+                );
+                // The contact distance and the hit.
+                c.bus
+                    .write32(PUA_CTRL + 4, pick(&mut r, &[-1.0, 0.0, 0.25, 2.0, 2.0]));
+                fill(c, &mut r, PUA_HIT_A_TEMPLATE, 0x18);
+                vec(c, &mut r, PUA_HIT_A_TEMPLATE + 0x10);
             },
         );
     }

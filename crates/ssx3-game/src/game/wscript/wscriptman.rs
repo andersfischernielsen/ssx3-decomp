@@ -8,6 +8,7 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
 use crate::events;
@@ -357,6 +358,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0030_a5c0,
         wscript_man_run_kill_script,
         "WScriptMan_RunKillScript",
+    ),
+    (
+        0x0030_a868,
+        wscript_man_mission_command,
+        "WScriptMan_MissionCommand",
     ),
 ];
 
@@ -4284,6 +4290,487 @@ pub fn wscript_man_run_kill_script(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// WScriptMan_MissionCommand
+// ---------------------------------------------------------------------------
+
+/// `WScriptMan` fields: `+0` the current context, `+0x1c4` the event queue,
+/// `+0x2ac` the mission mode, `+0x2b4`/`+0x2b8` the process lists.
+pub(crate) const MISSION_CMD_QUEUE: u32 = 0x1c4;
+
+pub(crate) const MISSION_CMD_MODE: u32 = 0x2ac;
+
+pub(crate) const MISSION_CMD_LIST_B: u32 = 0x2b4;
+
+pub(crate) const MISSION_CMD_LIST_A: u32 = 0x2b8;
+
+/// Mission object fields: `+0x20` its id, `+0x5c` its vtable.
+pub(crate) const MISSION_CMD_ID: u32 = 0x20;
+
+pub(crate) const MISSION_CMD_VT: u32 = 0x5c;
+
+/// The two `switch (cmd)` jump tables (19 and 20 entries).
+pub(crate) const MISSION_CMD_TABLE1: u32 = 0x0048_9930;
+
+pub(crate) const MISSION_CMD_TABLE2: u32 = 0x0048_9980;
+
+pub(crate) const MISSION_CMD_PROCESS: Callee = Callee {
+    addr: 0x0030_a728,
+    f: ee::s10::WScriptMan_ProcessCommand,
+};
+
+pub(crate) const MISSION_CMD_QUEUE_PUSH: Callee = Callee {
+    addr: 0x0030_c7c0,
+    f: ee::s10::WScriptMan_EventQueuePush,
+};
+
+pub(crate) const MISSION_CMD_CURRENT: Callee = Callee {
+    addr: 0x0030_aeb8,
+    f: ee::s10::WScriptMan_GetCurrentMission,
+};
+
+pub(crate) const MISSION_CMD_FIND: Callee = Callee {
+    addr: 0x0030_b388,
+    f: ee::s10::WScriptProcessList_FindMissionById,
+};
+
+pub(crate) const MISSION_CMD_TYPE2_ACTIVE: Callee = Callee {
+    addr: 0x0030_b8c0,
+    f: ee::s10::WScriptMan_IsMissionType2Active,
+};
+
+/// `int WScriptMan_MissionCommand(WScriptMan* m, int id, int cmd, int ctx)`
+/// (0x30a868): mission command `cmd` on mission `id` (-1: the current
+/// mission) under context `ctx` (-1: keep). Unless `cmd` is 15 or 19 it
+/// needs the mission game mode and an active race. Commands 0-2/18 go to
+/// ProcessCommand, 8/9/11 to the event queue (unless the queue is busy);
+/// 3/4/5/17 call the mission's start/stop/abort/restart methods; 12-16/19
+/// ask the BE mission interface (completed, unlocked, available, ...).
+/// The context is put back; returns the answer (0/1).
+pub fn wscript_man_mission_command(c: &mut Cpu) {
+    guest(c, mission_command_body);
+}
+
+pub(crate) fn mission_command_body(c: &mut Cpu) -> Flow {
+    c.cycles += 16;
+    let frame = Frame::open(c, 0x80);
+    c.g[V0][0] = 0xf;
+    frame.save(c, S0, 0x70);
+    frame.save(c, S1, 0x60);
+    frame.save(c, S2, 0x50);
+    frame.save(c, S3, 0x40);
+    frame.save(c, S4, 0x30);
+    frame.save(c, S5, 0x20);
+    frame.save(c, S6, 0x10);
+    frame.save_ra(c, 0);
+    c.g[S0][0] = 0;
+    c.g[S1][0] = c.g[A1][0];
+    c.g[S2][0] = c.g[A2][0];
+    c.g[S3][0] = c.g[A0][0];
+    c.g[S4][0] = c.g[A3][0];
+    // s0 = forced (cmd 15 or 19).
+    if c.g[S2][0] != 0xf {
+        c.cycles += 3;
+        c.g[V0][0] = 0x13;
+        if c.g[S2][0] == 0x13 {
+            c.cycles += 1;
+            c.g[S0][0] = 1;
+        }
+    } else {
+        c.cycles += 1;
+        c.g[S0][0] = 1;
+    }
+    c.cycles += 7;
+    call_ptr(c, 0x0014_dc80, 0x0030_a8c0)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 0;
+    call_ptr(c, 0x0014_dd58, 0x0030_a8cc)?;
+    c.g[V0][0] = u64::MAX;
+    'run: {
+        if c.g[S0][0] == 0 {
+            // Mission mode and a race running, or return 0.
+            c.cycles += 5;
+            c.g[A0][0] = 4;
+            c.g[V1][0] = c.lb(0x0053_5c10);
+            c.g[V0][0] = 0;
+            if c.g[V1][0] != 4 {
+                break 'run;
+            }
+            c.cycles += 7;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+            c.g[A1][0] = 1;
+            c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(0x84));
+            c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0xc));
+            c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x7c));
+            c.g[V0][0] = 0;
+            if c.g[A0][0] != 1 {
+                break 'run;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = u64::MAX;
+        }
+        // Switch to the context (the old one in s6).
+        c.cycles += 2;
+        c.g[S6][0] = c.lw(r32(c, S3));
+        if c.g[S4][0] != c.g[V0][0] {
+            c.cycles += 1;
+            let ctx = c.g[S4][0];
+            c.sw(r32(c, S3), ctx);
+        }
+        mission_command_first(c)?;
+
+        // obj = the current mission; s4 = the BE mission interface.
+        c.cycles += 11;
+        c.g[S5][0] = 0;
+        MISSION_CMD_CURRENT.call(c, 0x0030_a994)?;
+        c.g[S0][0] = c.g[V0][0];
+        call_ptr(c, 0x0014_dc80, 0x0030_a99c)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0xa;
+        call_ptr(c, 0x0014_dd58, 0x0030_a9a8)?;
+        c.g[S4][0] = c.g[V0][0];
+        let in_table = c.g[S2][0] < 0x14;
+        c.g[V0][0] = 0x49_0000;
+        let restore = if in_table {
+            c.cycles += 6;
+            let target = mission_command_table(c, MISSION_CMD_TABLE2);
+            match target {
+                0x0030_ac68 => true,
+                0x0030_a9d0 => mission_command_method(c, 0x88)?,
+                0x0030_aa3c => mission_command_method(c, 0x10)?,
+                0x0030_aa70 => mission_command_method(c, 0x98)?,
+                0x0030_aac4 => mission_command_method(c, 0xa0)?,
+                0x0030_ab20 => {
+                    mission_command_ask(c, 0x0015_3e28, 4, 0x0030_ab48, MissionAsk::NonZero)?
+                }
+                0x0030_ab50 => {
+                    mission_command_ask(c, 0x0015_3dd0, 4, 0x0030_ab78, MissionAsk::NonZero)?
+                }
+                0x0030_ab80 => mission_command_available(c)?,
+                0x0030_abd8 => {
+                    mission_command_ask(c, 0x0015_3fd8, 5, 0x0030_ac00, MissionAsk::Last)?
+                }
+                0x0030_ac0c => {
+                    mission_command_ask(c, 0x0015_3e80, 4, 0x0030_ac34, MissionAsk::NonZero)?
+                }
+                0x0030_ac3c => {
+                    mission_command_ask(c, 0x0015_3d78, 3, 0x0030_ac64, MissionAsk::NonZero)?
+                }
+                _ => {
+                    c.jump_out(target, 0x0030_a868, 0x0030_ac98);
+                    return Ok(());
+                }
+            }
+        } else {
+            true
+        };
+        if restore {
+            c.cycles += 1;
+            let old = c.g[S6][0];
+            c.sw(r32(c, S3), old);
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.g[S5][0];
+    }
+    c.cycles += 10;
+    for (reg, off) in [
+        (S0, 0x70),
+        (S1, 0x60),
+        (S2, 0x50),
+        (S3, 0x40),
+        (S4, 0x30),
+        (S5, 0x20),
+        (S6, 0x10),
+    ] {
+        frame.restore(c, reg, off);
+    }
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `a0 = table[cmd]` (the jump target, left in `a0` as the original does).
+pub(crate) fn mission_command_table(c: &mut Cpu, table: u32) -> u32 {
+    c.g[V1][0] = sx(r32(c, S2) << 2);
+    c.g[V0][0] = sx(table);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+    c.g[A0][0] = c.lw(r32(c, V1));
+    r32(c, A0)
+}
+
+/// The first switch: ProcessCommand or the event queue.
+pub(crate) fn mission_command_first(c: &mut Cpu) -> Flow {
+    c.cycles += 3;
+    let in_table = c.g[S2][0] < 0x13;
+    c.g[V0][0] = 0x49_0000;
+    if in_table {
+        c.cycles += 6;
+        let target = mission_command_table(c, MISSION_CMD_TABLE1);
+        match target {
+            0x0030_a938 => {
+                c.cycles += 6;
+                c.g[A0][0] = c.g[S3][0];
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A2][0] = c.g[S2][0];
+                MISSION_CMD_PROCESS.call(c, 0x0030_a948)?;
+                c.g[A0][0] = c.g[S3][0];
+                return Ok(());
+            }
+            0x0030_a950 => {
+                // Queue the command unless the queue is busy (1..9).
+                c.cycles += 6;
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x84));
+                c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x28));
+                c.g[A0][0] = c.lw(r32(c, A0));
+                c.g[A1][0] = 0;
+                if c.g[A0][0] != 0 {
+                    c.cycles += 1;
+                    c.g[A1][0] = ((c.g[A0][0] as i64) < 10) as u64;
+                }
+                c.cycles += 2;
+                c.g[A0][0] = c.g[S3][0];
+                if c.g[A1][0] != 0 {
+                    return Ok(());
+                }
+                c.cycles += 5;
+                c.g[A3][0] = c.lw(r32(c, S3));
+                c.g[A0][0] = sx(r32(c, S3).wrapping_add(MISSION_CMD_QUEUE));
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A2][0] = c.g[S2][0];
+                MISSION_CMD_QUEUE_PUSH.call(c, 0x0030_a988)?;
+            }
+            0x0030_a988 => {}
+            _ => {
+                c.jump_out(target, 0x0030_a868, 0x0030_ac98);
+                return Err(crate::call::Unwound);
+            }
+        }
+    }
+    c.cycles += 1;
+    c.g[A0][0] = c.g[S3][0];
+    Ok(())
+}
+
+/// Commands 3/4/5/17: find mission `id` (in list A, and for 3/17 then list
+/// B; -1: the current one) and call its vtable method `slot`; 3 and 5 then
+/// tell the sound system. Stores the context back itself (false: the
+/// caller's tail does not).
+pub(crate) fn mission_command_method(c: &mut Cpu, slot: u32) -> Result<bool, crate::call::Unwound> {
+    c.cycles += 4;
+    c.g[V0][0] = u64::MAX;
+    let current = c.g[S1][0] == c.g[V0][0];
+    // The vtable already loaded into v0 (3/17's first lookup found it).
+    let mut loaded = false;
+    match slot {
+        0x88 => {
+            c.g[A0][0] = sx(r32(c, S3).wrapping_add(MISSION_CMD_LIST_A));
+            if !current {
+                c.cycles += 5;
+                c.g[A1][0] = c.g[S1][0];
+                MISSION_CMD_FIND.call(c, 0x0030_a9e8)?;
+                c.g[S0][0] = c.g[V0][0];
+                if c.g[S0][0] != 0 {
+                    c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(MISSION_CMD_VT));
+                    loaded = true;
+                } else {
+                    c.cycles += 4;
+                    c.g[A0][0] = sx(r32(c, S3).wrapping_add(MISSION_CMD_LIST_B));
+                    c.g[A1][0] = c.g[S1][0];
+                    MISSION_CMD_FIND.call(c, 0x0030_aa00)?;
+                    c.g[S0][0] = c.g[V0][0];
+                }
+            }
+        }
+        0xa0 => {
+            if !current {
+                c.cycles += 6;
+                c.g[A0][0] = sx(r32(c, S3).wrapping_add(MISSION_CMD_LIST_A));
+                c.g[A1][0] = c.g[S1][0];
+                MISSION_CMD_FIND.call(c, 0x0030_aae0)?;
+                c.g[S0][0] = c.g[V0][0];
+                if c.g[S0][0] != 0 {
+                    c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(MISSION_CMD_VT));
+                    loaded = true;
+                } else {
+                    c.cycles += 4;
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[A0][0] = sx(r32(c, S3).wrapping_add(MISSION_CMD_LIST_B));
+                    MISSION_CMD_FIND.call(c, 0x0030_aaf8)?;
+                    c.g[S0][0] = c.g[V0][0];
+                }
+            }
+        }
+        _ => {
+            c.g[A1][0] = c.g[S1][0];
+            if !current {
+                c.cycles += 3;
+                c.g[A0][0] = sx(r32(c, S3).wrapping_add(MISSION_CMD_LIST_A));
+                MISSION_CMD_FIND.call(
+                    c,
+                    if slot == 0x10 {
+                        0x0030_aa54
+                    } else {
+                        0x0030_aa88
+                    },
+                )?;
+                c.g[S0][0] = c.g[V0][0];
+            }
+        }
+    }
+    if !loaded {
+        c.cycles += 2;
+        if c.g[S0][0] == 0 {
+            let old = c.g[S6][0];
+            c.sw(r32(c, S3), old);
+            return Ok(false);
+        }
+        c.cycles += match slot {
+            0x10 => 4,
+            0x98 => 12,
+            _ => 1,
+        };
+        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(MISSION_CMD_VT));
+    }
+    // obj->method(): a0 = obj + delta.
+    let ret = match slot {
+        0x88 => {
+            c.cycles += 11;
+            0x0030_aa20
+        }
+        0x98 => 0x0030_aaa8,
+        _ => {
+            if slot == 0xa0 {
+                c.cycles += 2;
+            }
+            c.g[A0][0] = c.lh(r32(c, V0).wrapping_add(slot));
+            c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(slot + 4));
+            c.cycles += 4;
+            0x0030_ab18
+        }
+    };
+    if slot == 0x88 || slot == 0x98 {
+        c.g[A0][0] = c.lh(r32(c, V0).wrapping_add(slot));
+        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(slot + 4));
+    }
+    let method = r32(c, V1);
+    c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+    call_ptr(c, method, ret)?;
+    match slot {
+        0x88 => {
+            // Sound: mission started (id).
+            call_ptr(c, 0x0028_b180, 0x0030_aa28)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S1][0];
+            call_ptr(c, 0x0029_d6e0, 0x0030_aa34)?;
+        }
+        0x98 => {
+            // Sound: mission aborted.
+            call_ptr(c, 0x0028_b180, 0x0030_aab0)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x0029_dbb0, 0x0030_aabc)?;
+        }
+        _ => {}
+    }
+    let old = c.g[S6][0];
+    c.sw(r32(c, S3), old);
+    Ok(false)
+}
+
+/// How a BE mission query's result becomes the answer.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum MissionAsk {
+    /// `answer = result != 0`.
+    NonZero,
+    /// `answer = result == -1` (no next mission).
+    Last,
+}
+
+/// `id` (-1: the current mission's id, if there is one); false (and v0
+/// = -1, a0 = iface) when there is none.
+pub(crate) fn mission_command_resolve_id(c: &mut Cpu) -> bool {
+    c.cycles += 4;
+    c.g[V0][0] = u64::MAX;
+    c.g[A0][0] = c.g[S4][0];
+    if c.g[S1][0] != c.g[V0][0] {
+        return true;
+    }
+    c.cycles += 2;
+    if c.g[S0][0] != 0 {
+        c.g[S1][0] = c.lw(r32(c, S0).wrapping_add(MISSION_CMD_ID));
+    }
+    c.cycles += 2;
+    c.g[A0][0] = c.g[S4][0];
+    c.g[S1][0] != c.g[V0][0]
+}
+
+/// Commands 12/13/14/15/19: `answer = query(iface, id)`.
+pub(crate) fn mission_command_ask(
+    c: &mut Cpu,
+    query: u32,
+    cost: u64,
+    ret: u32,
+    how: MissionAsk,
+) -> Result<bool, crate::call::Unwound> {
+    if mission_command_resolve_id(c) {
+        c.cycles += cost;
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, query, ret)?;
+        if how == MissionAsk::Last {
+            c.g[V0][0] = !c.g[V0][0];
+            c.g[S5][0] = (c.g[V0][0] < 1) as u64;
+        } else {
+            c.g[S5][0] = (c.g[V0][0] != 0) as u64;
+        }
+    }
+    Ok(true)
+}
+
+/// Command 16: available (not in mode 1, no type-2 mission running).
+pub(crate) fn mission_command_available(c: &mut Cpu) -> Result<bool, crate::call::Unwound> {
+    c.cycles += 4;
+    c.g[V0][0] = u64::MAX;
+    if c.g[S1][0] == c.g[V0][0] {
+        c.cycles += 2;
+        if c.g[S0][0] != 0 {
+            c.g[S1][0] = c.lw(r32(c, S0).wrapping_add(MISSION_CMD_ID));
+        }
+        c.cycles += 2;
+        if c.g[S1][0] == c.g[V0][0] {
+            let old = c.g[S6][0];
+            c.sw(r32(c, S3), old);
+            return Ok(false);
+        }
+        c.cycles += 1;
+    }
+    c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(MISSION_CMD_MODE));
+    c.cycles += 3;
+    c.g[S0][0] = 1;
+    if c.g[V0][0] == c.g[S0][0] {
+        let old = c.g[S6][0];
+        c.sw(r32(c, S3), old);
+        return Ok(false);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S3][0];
+    MISSION_CMD_TYPE2_ACTIVE.call(c, 0x0030_abb8)?;
+    if c.g[V0][0] != 0 {
+        let old = c.g[S6][0];
+        c.sw(r32(c, S3), old);
+        return Ok(false);
+    }
+    c.cycles += 6;
+    c.g[A0][0] = c.g[S4][0];
+    c.g[A1][0] = c.g[S1][0];
+    call_ptr(c, 0x0015_3ed8, 0x0030_abcc)?;
+    c.g[S5][0] = 0;
+    if c.g[V0][0] != 0 {
+        c.g[S5][0] = c.g[S0][0];
+    }
+    Ok(true)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6505,6 +6992,115 @@ pub(crate) mod tests {
                 c.bus.write32(OC330_CTRL + 4, (seed % 2 == 0) as u32);
                 c.bus.write32(OC330_CTRL + 8, 0);
                 c.pc = 0x0030_a5c0;
+            },
+        );
+    }
+
+    use crate::difftest::put_words;
+
+    pub(crate) use crate::game::lib::snd::tests::oc375_machine;
+    pub(crate) use crate::game::lib::snd::tests::oc375_script;
+    pub(crate) use crate::game::lib::snd::tests::OC375_COIN;
+    pub(crate) use crate::game::lib::snd::tests::OC375_SMALL;
+
+    /// WScriptMan_MissionCommand: every command 0..21 (both jump tables are
+    /// written), forced (15/19) or gated by the game mode and the race,
+    /// with a context or -1, the event queue busy or free, mission id or
+    /// -1 (current mission or none), lookups that find the mission or not,
+    /// and the BE queries' answers. ProcessCommand runs for real (with no
+    /// process to touch); cmd 3's sound call (0x29d6e0, no override slot)
+    /// is never reached: the fake before it unwinds.
+    #[test]
+    fn wscript_man_mission_command_matches() {
+        covered(
+            ee::s10::f_0030a868__generated,
+            wscript_man_mission_command,
+            300,
+            &|c, seed| {
+                let mut r = oc375_machine(c, seed, 0x0030_a868, 10);
+                c.pc = 0x0030_a868;
+                put_words(
+                    c,
+                    MISSION_CMD_TABLE1,
+                    &[
+                        0x30a938, 0x30a938, 0x30a938, 0x30a988, 0x30a988, 0x30a988, 0x30a988,
+                        0x30a988, 0x30a950, 0x30a950, 0x30a988, 0x30a950, 0x30a988, 0x30a988,
+                        0x30a988, 0x30a988, 0x30a988, 0x30a988, 0x30a938,
+                    ],
+                );
+                put_words(
+                    c,
+                    MISSION_CMD_TABLE2,
+                    &[
+                        0x30ac68, 0x30ac68, 0x30ac68, 0x30a9d0, 0x30aa3c, 0x30aa70, 0x30ac68,
+                        0x30ac68, 0x30ac68, 0x30ac68, 0x30ac68, 0x30ac68, 0x30ab50, 0x30ab20,
+                        0x30ac0c, 0x30ac3c, 0x30ab80, 0x30aac4, 0x30ac68, 0x30abd8,
+                    ],
+                );
+                let man = DATA + 0x100;
+                let world = DATA + 0x400;
+                let p = DATA + 0x500;
+                let q = DATA + 0x600;
+                let busy = DATA + 0x700;
+                let obj = DATA + 0x3000;
+                c.bus.write32(man, r.next_u32());
+                c.bus.write32(man + 0x2a4, 0);
+                c.bus
+                    .write32(man + MISSION_CMD_MODE, (seed / 7 % 3 == 0) as u32);
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, p);
+                c.bus.write32(p + 0xc, q);
+                c.bus.write32(q + 0x7c, (seed % 11 != 0) as u32);
+                c.bus.write32(p + 0x28, busy);
+                c.bus.write32(busy, [0, 5, 20][(seed / 3 % 3) as usize]);
+                c.bus
+                    .write8(0x0053_5c10, if seed % 13 == 0 { 3 } else { 4 });
+                let vt = fakes::vtable(c, &mut r, &[0x88, 0x10, 0x98, 0xa0]);
+                c.bus.write32(obj + MISSION_CMD_VT, vt);
+                c.bus.write32(
+                    obj + MISSION_CMD_ID,
+                    if seed / 5 % 3 == 0 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % 40
+                    },
+                );
+                let cmd = seed % 22;
+                let any_id = seed / 22 % 3 != 0;
+                let current = seed / 2 % 4 != 0;
+                let found = seed / 4 % 3 != 0;
+                c.g[A0][0] = sx(man);
+                c.g[A1][0] = if any_id {
+                    (r.next_u32() % 40) as u64
+                } else {
+                    u64::MAX
+                };
+                c.g[A2][0] = cmd as u64;
+                c.g[A3][0] = if seed % 2 == 0 {
+                    u64::MAX
+                } else {
+                    (r.next_u32() % 8) as u64
+                };
+                oc375_script(c, 0x0030_aeb8, if current { obj } else { 0 });
+                oc375_script(c, 0x0030_b388, if found { obj } else { 0 });
+                oc375_script(c, 0x0030_b320, 0);
+                oc375_script(c, 0x0030_b8c0, OC375_COIN);
+                for query in [
+                    0x0015_3e28,
+                    0x0015_3dd0,
+                    0x0015_3ed8,
+                    0x0015_3e80,
+                    0x0015_3d78,
+                ] {
+                    oc375_script(c, query, OC375_COIN);
+                }
+                oc375_script(c, 0x0015_3fd8, OC375_SMALL);
+                // Cmd 3 with a mission: unwind at its method or the sound-system
+                // getter, so the real 0x29d6e0 never runs.
+                if cmd == 3 {
+                    let at = (if any_id { 6 } else { 5 }) + seed / 3 % 2;
+                    c.bus.write32(fakes::LOG_UNWIND_AT, at);
+                }
             },
         );
     }
