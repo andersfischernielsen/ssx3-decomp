@@ -2,7 +2,6 @@
 //! the glyph sprites as the GIF data the generated bodies send `DIRECT`
 //! (`eaaa404^:docs/investigation/n2-capture/direct2d.md` §6), one `Step::Gif`.
 
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;
 use ssx3_render::direct::{Cmd, Step};
 

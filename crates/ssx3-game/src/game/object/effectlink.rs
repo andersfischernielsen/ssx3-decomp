@@ -5,6 +5,7 @@ use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::reg;
+use crate::abi::ret;
 use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -13,6 +14,8 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::lh_2 as lh;
 pub(crate) use crate::game::ai::computer::sd;
 pub(crate) use crate::game::fe::feasyncfile::at_2 as at;
@@ -125,6 +128,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         dynamic_particle_modifier_ctor,
         "DynamicParticleModifier_ctor",
     ),
+    (
+        0x0034_5720,
+        modifier_list_push_back,
+        "ModifierList_PushBack",
+    ),
+    (0x0034_6120, halo_modifier_ctor, "HaloModifier_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1469,6 +1478,115 @@ pub fn dynamic_particle_modifier_ctor(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// HaloModifier_ctor (0x346120).
+
+/// `ParticleModifier_BaseCtor(ParticleModifier*, void* owner)` (0x345798).
+pub(crate) const HALO_MODIFIER_CTOR_BASE_CTOR: Callee = Callee {
+    addr: 0x0034_5798,
+    f: ee::s11::ParticleModifier_BaseCtor,
+};
+
+/// The HaloModifier class vtable.
+pub(crate) const HALO_MODIFIER_CTOR_VTABLE: u32 = 0x0049_1220;
+
+/// gp-relative: the live HaloModifier count (`D_004A4000`).
+pub(crate) const HALO_MODIFIER_CTOR_COUNT: u32 = 0xf10;
+
+/// `HaloModifier* HaloModifier_ctor(HaloModifier* self, HaloDesc* desc,
+/// void* owner)` (0x346120): base particle-modifier constructor on `owner`,
+/// this class's vtable, then copy the description: words `+4`, `+8` to
+/// `+0x24`, `+0x28`; the quaternion stored `(w, x, y, z)` at `+0xc..+0x1c`
+/// to `(x, y, z, w)` at `+0x10` (through a 16-byte stack temporary); `+0x1c`
+/// to `+0x20`, `+0x20` to `+0x2c`; `+0x30 = 0`. Bumps the live count.
+pub fn halo_modifier_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 39;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        c.g[A1][0] = c.g[A2][0];
+        HALO_MODIFIER_CTOR_BASE_CTOR.call(c, 0x0034_6140)?;
+        let gp = r32(c, GP);
+        let this = r32(c, S1);
+        let desc = r32(c, S0);
+        c.g[A1][0] = Addr(gp.wrapping_add(HALO_MODIFIER_CTOR_COUNT)).lw(c);
+        c.g[V1][0] = sx(HALO_MODIFIER_CTOR_VTABLE);
+        c.g[V0][0] = c.g[S1][0];
+        Addr(this.wrapping_add(8)).sw(c, sx(HALO_MODIFIER_CTOR_VTABLE));
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+        frame.restore_ra(c, 0x10);
+        c.g[V1][0] = Addr(desc.wrapping_add(4)).lw(c);
+        let v1 = c.g[V1][0];
+        Addr(this.wrapping_add(0x24)).sw(c, v1);
+        c.g[A0][0] = Addr(desc.wrapping_add(8)).lw(c);
+        let a0 = c.g[A0][0];
+        Addr(this.wrapping_add(0x28)).sw(c, a0);
+        // The quaternion, reordered through the stack.
+        c.lwc1(0, desc.wrapping_add(0x10));
+        c.lwc1(1, desc.wrapping_add(0x14));
+        c.lwc1(2, desc.wrapping_add(0x18));
+        c.lwc1(3, desc.wrapping_add(0xc));
+        let tmp = frame.at(c, 0);
+        c.swc1(0, tmp);
+        c.swc1(1, tmp.wrapping_add(4));
+        c.swc1(2, tmp.wrapping_add(8));
+        c.swc1(3, tmp.wrapping_add(0xc));
+        c.lq(V1, tmp);
+        c.sq(V1, this.wrapping_add(0x10));
+        c.lwc1(0, desc.wrapping_add(0x1c));
+        c.swc1(0, this.wrapping_add(0x20));
+        c.g[V1][0] = Addr(desc.wrapping_add(0x20)).lw(c);
+        Addr(this.wrapping_add(0x30)).sw(c, 0);
+        let v1 = c.g[V1][0];
+        Addr(this.wrapping_add(0x2c)).sw(c, v1);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        let count = c.g[A1][0];
+        Addr(gp.wrapping_add(HALO_MODIFIER_CTOR_COUNT)).sw(c, count);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ModifierList_PushBack (0x345720).
+
+/// `void ModifierList_PushBack(Link* list, Link* node)` (0x345720): append
+/// `node` after the last link of the list (`next` at `+0`, `prev` at `+4`;
+/// the list head is a link itself).
+pub fn modifier_list_push_back(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = Addr(r32(c, A0)).lw(c);
+    if c.g[V0][0] != 0 {
+        c.cycles += 1;
+        c.g[A0][0] = Addr(r32(c, A0)).lw(c);
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = Addr(r32(c, A0)).lw(c);
+            if c.g[V0][0] == 0 {
+                c.cycles += 1;
+                break;
+            }
+            c.g[A0][0] = Addr(r32(c, A0)).lw(c);
+            if event_due(c) {
+                deliver_event_here(c, 0x0034_5730);
+            }
+        }
+    }
+    let node = r32(c, A1);
+    Addr(node).sw(c, 0);
+    c.cycles += 3;
+    let last = c.g[A0][0];
+    Addr(node.wrapping_add(4)).sw(c, last);
+    let node64 = c.g[A1][0];
+    Addr(last as u32).sw(c, node64);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2345,5 +2463,80 @@ pub(crate) mod tests {
                 c.g[T0][0] = sx(POS);
             },
         );
+    }
+
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+
+    pub(crate) use crate::game::lib::snd::tests::oc337_events;
+
+    // -- HaloModifier_ctor --------------------------------------------------
+
+    /// A random description and modifier; the real base constructor.
+    #[test]
+    fn halo_modifier_ctor_matches() {
+        check(
+            ee::s11::f_00346120__generated,
+            halo_modifier_ctor,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_6120, 0);
+                c.pc = 0x0034_6120;
+                let this = DATA + 0x400;
+                let desc = DATA + 0x800;
+                fill(c, &mut r, this, 0x10);
+                fill(c, &mut r, desc, 0x10);
+                for i in 0..4 {
+                    c.bus.write32(desc + 0xc + 4 * i, r.edge_f32());
+                }
+                c.bus.write32(GAME_GP + 0xf04, r.next_u32());
+                c.bus
+                    .write32(GAME_GP + HALO_MODIFIER_CTOR_COUNT, r.next_u32());
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(desc);
+                c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    // -- ModifierList_PushBack ----------------------------------------------
+
+    /// A list of 0..5 links (the head at `DATA`) and a new node with junk
+    /// in its link words.
+    pub(crate) fn oc337_push_back_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x34_5720, 0);
+        c.pc = 0x0034_5720;
+        let head = DATA;
+        let links = r.next_u32() % 6;
+        let mut prev = head;
+        for i in 0..links {
+            let link = DATA + 0x100 + 0x20 * i;
+            c.bus.write32(prev, link);
+            c.bus.write32(link + 4, prev);
+            prev = link;
+        }
+        c.bus.write32(prev, 0);
+        let node = DATA + 0x400;
+        fill(c, &mut r, node, 4);
+        c.g[A0][0] = sx(head);
+        c.g[A1][0] = sx(node);
+    }
+
+    driven!(oc337_gen_push_back, ee::s11::f_00345720__generated);
+
+    driven!(oc337_hand_push_back, modifier_list_push_back);
+
+    #[test]
+    fn modifier_list_push_back_matches() {
+        check(
+            ee::s11::f_00345720__generated,
+            modifier_list_push_back,
+            200,
+            &oc337_push_back_setup,
+        );
+        check_events(oc337_gen_push_back, oc337_hand_push_back, 60, &|c, seed| {
+            oc337_push_back_setup(c, seed);
+            oc337_events(c, seed, 0x0034_5720)
+        });
     }
 }

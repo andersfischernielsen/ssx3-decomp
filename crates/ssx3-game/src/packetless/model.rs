@@ -2,7 +2,6 @@
 //! lighting and render state as the generated code computes them
 //! (`eaaa404^:docs/investigation/n2-capture/models.md`), the mesh chain by address.
 
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;
 use ssx3_render::direct::{Cmd, Step};
 

@@ -10,7 +10,6 @@
 //! renderer drew completes without running it, `frame_sink::skip_chain`).
 //! No texture is bound to VRAM (the renderer takes them from TexMan).
 
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;
 
 use super::*;

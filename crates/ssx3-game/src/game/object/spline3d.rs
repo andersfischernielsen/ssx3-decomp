@@ -3,6 +3,7 @@
 
 use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Frame;
@@ -15,6 +16,7 @@ pub(crate) use crate::game::object::movenode::ONE;
 pub(crate) use crate::game::object::railmodifier::oc308_stream_call;
 pub(crate) use crate::game::object::railmodifier::STREAM_WRITE_BYTES;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -36,6 +38,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0034_5538,
         spline_modifier_save_path,
         "SplineModifier_SavePath",
+    ),
+    (
+        0x0034_54e8,
+        spline_modifier_get_path_length,
+        "SplineModifier_GetPathLength",
     ),
 ];
 
@@ -220,6 +227,50 @@ pub fn spline_modifier_save_path(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// SplineModifier_GetPathLength (0x3454e8).
+
+/// `float SplineModifier_GetPathLength(SplineModifier* m)` (0x3454e8)
+/// (`cSpline_calcLength`): the spline (`m->owner(+8)->spline(+0x68)`) has
+/// `count` (`+0x20`) nodes linked from `+0x24` through `+0x64`; walk to the
+/// last one and return its start distance (`+0x84`) plus its length
+/// (`+0xc`).
+pub fn spline_modifier_get_path_length(c: &mut Cpu) {
+    c.cycles += 7;
+    let m = r32(c, A0);
+    c.g[V0][0] = Addr(m.wrapping_add(8)).lw(c);
+    c.g[A0][0] = 1;
+    c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x68)).lw(c);
+    let spline = r32(c, V1);
+    c.g[A1][0] = Addr(spline.wrapping_add(0x20)).lw(c);
+    c.g[V0][0] = (1i64 < c.g[A1][0] as i64) as u64;
+    let walk = c.g[V0][0] != 0;
+    c.g[V1][0] = Addr(spline.wrapping_add(0x24)).lw(c);
+    if walk {
+        c.cycles += 1;
+        c.g[A0][0] = sx(r32(c, A1).wrapping_sub(1));
+        loop {
+            c.cycles += 7;
+            c.g[A0][0] = sx(r32(c, A0).wrapping_sub(1));
+            let more = c.g[A0][0] != 0;
+            c.g[V1][0] = Addr(r32(c, V1).wrapping_add(0x64)).lw(c);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0034_5508);
+            }
+        }
+    }
+    c.cycles += 4;
+    let node = r32(c, V1);
+    c.lwc1(1, node.wrapping_add(0xc));
+    c.lwc1(0, node.wrapping_add(0x84));
+    let length = FpuF32(c.f[0]) + FpuF32(c.f[1]);
+    c.f[0] = length.0;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -316,6 +367,59 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA + (r.next_u32() & 0xff0));
                 c.g[A1][0] = sx(stream);
                 c.pc = 0x0034_5538;
+            },
+        );
+    }
+
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+
+    pub(crate) use crate::game::lib::snd::tests::oc337_events;
+
+    // -- SplineModifier_GetPathLength ---------------------------------------
+
+    /// A spline of `count` nodes (-1..6, so also the no-walk counts 0 and 1)
+    /// linked through `+0x64`, with edge-case lengths and distances.
+    pub(crate) fn oc337_path_length_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x34_54e8, 0);
+        c.pc = 0x0034_54e8;
+        let m = DATA;
+        let owner = DATA + 0x100;
+        let spline = DATA + 0x200;
+        let nodes = DATA + 0x1000;
+        c.bus.write32(m + 8, owner);
+        c.bus.write32(owner + 0x68, spline);
+        let count = (r.next_u32() % 8) as i32 - 1;
+        c.bus.write32(spline + 0x20, count as u32);
+        c.bus.write32(spline + 0x24, nodes);
+        for i in 0..8u32 {
+            let n = nodes + 0x100 * i;
+            c.bus.write32(n + 0x64, n + 0x100);
+            c.bus.write32(n + 0xc, r.edge_f32());
+            c.bus.write32(n + 0x84, r.edge_f32());
+        }
+        c.g[A0][0] = sx(m);
+    }
+
+    driven!(oc337_gen_path_length, ee::s11::f_003454e8__generated);
+
+    driven!(oc337_hand_path_length, spline_modifier_get_path_length);
+
+    #[test]
+    fn spline_modifier_get_path_length_matches() {
+        check(
+            ee::s11::f_003454e8__generated,
+            spline_modifier_get_path_length,
+            200,
+            &oc337_path_length_setup,
+        );
+        check_events(
+            oc337_gen_path_length,
+            oc337_hand_path_length,
+            60,
+            &|c, seed| {
+                oc337_path_length_setup(c, seed);
+                oc337_events(c, seed, 0x0034_54e8)
             },
         );
     }

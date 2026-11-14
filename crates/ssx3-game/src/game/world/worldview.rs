@@ -7,8 +7,11 @@ use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
+use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::bx::bxstringctor::vdot4;
@@ -31,6 +34,7 @@ pub(crate) use crate::game::render::particle::p;
 pub(crate) use crate::game::render::particle::setf;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -124,6 +128,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x003a_9e50,
         world_cache_point_box_distance,
         "cWorldCache_PointBoxDistance",
+    ),
+    (
+        0x003a_ae68,
+        c_ps2_chunk_resolve_resolve,
+        "cPS2ChunkResolve_Resolve",
+    ),
+    (
+        0x003a_b498,
+        cps2_chunk_resolve_release,
+        "cPS2ChunkResolve_Release",
     ),
 ];
 
@@ -1934,6 +1948,1369 @@ pub fn world_cache_point_box_distance(c: &mut Cpu) {
     ret(c);
 }
 
+pub(crate) mod ccr_release {
+
+    pub const ENTRY: u32 = 0x003a_b498;
+
+    pub const END: u32 = 0x003a_be40;
+
+    /// The message jump table (.rodata, 23 entries).
+    pub const TABLE: u32 = 0x0049_5010;
+
+    pub const MESSAGES: u64 = 0x17;
+
+    /// `self` fields: vtable, the spatial hash (world cells), a base index.
+    pub const SELF_VT: u32 = 0x8;
+
+    pub const SELF_HASH: u32 = 0xc;
+
+    pub const SELF_BASE: u32 = 0x10;
+
+    /// Spatial hash: update counter; eight roots of 0x14 bytes, picked by
+    /// the key's signs (x: +0x50, y: +0x28, z: +0x14), node pointer at +0x10.
+    pub const HASH_UPDATES: u32 = 0xa0;
+
+    pub const ROOT_NODE: u32 = 0x10;
+
+    /// Item fields: kind (+8); a list's count (+0x20) and first item (+0x24);
+    /// an item's next (+0x64).
+    pub const ITEM_KIND: u32 = 0x8;
+
+    pub const LIST_COUNT: u32 = 0x20;
+
+    pub const LIST_FIRST: u32 = 0x24;
+
+    pub const ITEM_NEXT: u32 = 0x64;
+
+    /// gp-relative globals.
+    pub const GP_MISSION_MAN: u32 = 0x2a90;
+
+    pub const GP_WP_FILES: u32 = 0x16c8;
+
+    pub const GP_AMBIENT: u32 = 0x84c;
+    // gp - 0x84c
+    pub const GP_WORLD: u32 = 0x848;
+    // gp - 0x848
+    /// Callees.
+    pub const KEY_FROM_BOX: u32 = 0x0032_8f28;
+
+    pub const HASH_REMOVE: u32 = 0x0032_84b8;
+
+    pub const DELETE: u32 = 0x0031_7e50;
+}
+
+/// Exit of the message switch: through 0x3abe10 (`v0 = data`) or straight
+/// to the epilogue (v0 already set).
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum CcrExit {
+    ResultData,
+    Epilogue,
+}
+
+/// `void* func_003AB498(char* self, unsigned msg, unsigned param, char* data)`
+/// (0x3ab498, named `cPS2ChunkResolve_Release` here): the world view's message
+/// handler. Messages 1/3/5/6/7/8 re-file items in the spatial hash (box from
+/// the item, key, `SpatialHash_Remove`, delete the root node when it is
+/// empty); 9/10 forward `param >> 8` to the mission manager's vtable slot
+/// 50; the others call one subsystem each (sound banks, waypoints, occlusion,
+/// avalanche reset ...). Returns `data` (0 for message 14). Frame 0xc0
+/// (box at 0, key at 0x20, ra 0x30, s0-s6, f20 at 0xb0).
+pub fn cps2_chunk_resolve_release(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame { size: 0xc0 };
+        c.cycles += 15;
+        Frame::open(c, 0xc0);
+        c.g[V0][0] = (c.g[A1][0] < ccr_release::MESSAGES) as u64;
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S3, 0x70);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S4, 0x60);
+        c.g[S3][0] = c.g[A3][0];
+        frame.save(c, S1, 0x90);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, S2, 0x80);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S6, 0x40);
+        frame.save_ra(c, 0x30);
+        frame.save_fpr(c, 20, 0xb0);
+
+        let exit = if c.g[V0][0] == 0 {
+            CcrExit::ResultData
+        } else {
+            ccr_dispatch(c)?
+        };
+        if exit == CcrExit::ResultData {
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S3][0];
+        }
+        c.cycles += 11;
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.restore_fpr(c, 20, 0xb0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The jump table and the message bodies.
+pub(crate) fn ccr_dispatch(c: &mut Cpu) -> Result<CcrExit, crate::call::Unwound> {
+    use ccr_release as k;
+    c.cycles += 7;
+    c.g[V0][0] = sx(k::TABLE);
+    c.g[V1][0] = sx(r32(c, A1) << 2);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(k::TABLE));
+    c.g[A0][0] = c.lw(r32(c, V1));
+    match r32(c, A0) {
+        // 0, 2, 4, 12, 16: nothing.
+        0x003a_be10 => Ok(CcrExit::ResultData),
+        // 1: re-file `data` (box at +0x158) as kind 1.
+        0x003a_b4f0 => {
+            c.cycles += 46;
+            ccr_std_update(c, 0x158, 1, CCR_SCAN_1)
+        }
+        // 3: box at +0x60, kind 0.
+        0x003a_b664 => {
+            c.cycles += 46;
+            ccr_std_update(c, 0x60, 0, CCR_SCAN_3)
+        }
+        // 5: kind word 7, box at +0x68, kind 2.
+        0x003a_bbb0 => {
+            c.cycles += 48;
+            c.g[V0][0] = 7;
+            c.sw(r32(c, S3).wrapping_add(k::ITEM_KIND), 7);
+            ccr_std_update(c, 0x68, 2, CCR_SCAN_5)
+        }
+        // 6: if self->vt[22](data): kind word 6, box at +0x44, kind 2.
+        0x003a_b918 => {
+            c.cycles += 8;
+            c.g[V1][0] = c.lw(r32(c, S4).wrapping_add(k::SELF_VT));
+            c.g[A1][0] = c.g[S3][0];
+            c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0xb0));
+            c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0xb4));
+            let target = r32(c, V0);
+            c.g[A0][0] = sx(r32(c, S4).wrapping_add(r32(c, A0)));
+            call_ptr(c, target, 0x003a_b930)?;
+            let refile = c.g[V0][0] != 0;
+            c.g[V0][0] = 6;
+            if !refile {
+                return Ok(CcrExit::ResultData);
+            }
+            c.cycles += 47;
+            c.sw(r32(c, S3).wrapping_add(k::ITEM_KIND), 6);
+            ccr_std_update(c, 0x44, 2, CCR_SCAN_6)
+        }
+        // 7: kind word 8, box at +0x28, kind 2.
+        0x003a_ba70 => {
+            c.cycles += 48;
+            c.g[V0][0] = 8;
+            c.sw(r32(c, S3).wrapping_add(k::ITEM_KIND), 8);
+            ccr_std_update(c, 0x28, 2, CCR_SCAN_7)
+        }
+        // 8: every item of the list.
+        0x003a_b798 => ccr_list_update(c),
+        // 9: mission manager vt[50](param >> 8).
+        0x003a_b628 => {
+            c.cycles += 4;
+            c.g[A2][0] = c.lw(r32(c, GP).wrapping_add(k::GP_MISSION_MAN));
+            c.g[A1][0] = sx(r32(c, S0) >> 8);
+            c.g[V0][0] = c.lw(r32(c, A2).wrapping_add(0x10d8));
+            ccr_mission_call(c)
+        }
+        // 10: mission manager vt[50]((param >> 8) + self->base).
+        0x003a_b638 => {
+            c.cycles += 5;
+            c.g[A2][0] = c.lw(r32(c, GP).wrapping_add(k::GP_MISSION_MAN));
+            c.g[V1][0] = sx(r32(c, S0) >> 8);
+            c.g[A1][0] = c.lw(r32(c, S4).wrapping_add(k::SELF_BASE));
+            c.g[V0][0] = c.lw(r32(c, A2).wrapping_add(0x10d8));
+            c.g[A1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+            ccr_mission_call(c)
+        }
+        // 13: func_002B6B30(func_0028B1C8()->+0x4c, data, param).
+        0x003a_bd04 => {
+            c.cycles += 8;
+            call_ptr(c, 0x0028_b1c8, 0x003a_bd0c)?;
+            c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(0x4c));
+            c.g[A2][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S3][0];
+            call_ptr(c, 0x002b_6b30, 0x003a_bd1c)?;
+            Ok(ccr_done(c))
+        }
+        // 17: func_0016CF18(param).
+        0x003a_bd24 => {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x0016_cf18, 0x003a_bd2c)?;
+            Ok(ccr_done(c))
+        }
+        // 15: WPFile_Unload(&files->table[param & 0xff]) if loaded.
+        0x003a_bd34 => {
+            c.cycles += 3;
+            c.g[A3][0] = c.lw(r32(c, GP).wrapping_add(k::GP_WP_FILES));
+            c.g[A1][0] = c.g[S0][0] & 0xff;
+            if c.g[A3][0] == 0 {
+                return Ok(CcrExit::ResultData);
+            }
+            c.cycles += 8;
+            c.g[V0][0] = 0xc;
+            c.mult(0, A1, A1, V0);
+            c.g[V1][0] = c.lw(r32(c, A3).wrapping_add(0x8));
+            c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x4));
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A1)));
+            call_ptr(c, 0x002b_b5a8, 0x003a_bd58)?;
+            Ok(ccr_done(c))
+        }
+        // 18: func_00278A58(global, param & 0xff).
+        0x003a_bd60 => {
+            c.cycles += 5;
+            c.g[A0][0] = c.lw(r32(c, GP).wrapping_sub(k::GP_AMBIENT));
+            c.g[A1][0] = c.g[S0][0] & 0xff;
+            call_ptr(c, 0x0027_8a58, 0x003a_bd6c)?;
+            Ok(ccr_done(c))
+        }
+        // 20: SSXAudioSystem_UnloadMemoryBank(func_0028B180(), param, data).
+        0x003a_bd74 => {
+            c.cycles += 8;
+            call_ptr(c, 0x0028_b180, 0x003a_bd7c)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A2][0] = c.g[S3][0];
+            call_ptr(c, 0x0028_6d18, 0x003a_bd8c)?;
+            Ok(ccr_done(c))
+        }
+        // 19: the BE's interface 10, stub(param & 0xff).
+        0x003a_bd94 => {
+            c.cycles += 10;
+            call_ptr(c, 0x0014_dc80, 0x003a_bd9c)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0xa;
+            call_ptr(c, 0x0014_dd58, 0x003a_bda8)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S0][0] & 0xff;
+            call_ptr(c, 0x0015_47e0, 0x003a_bdb4)?;
+            Ok(ccr_done(c))
+        }
+        // 21: func_00210608(data).
+        0x003a_bdbc => {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S3][0];
+            call_ptr(c, 0x0021_0608, 0x003a_bdc4)?;
+            Ok(ccr_done(c))
+        }
+        // 11: func_00242570(GameModule_GetOcclusionMan(), data).
+        0x003a_bdcc => {
+            c.cycles += 7;
+            Callee {
+                addr: 0x003a_d198,
+                f: ee::s13::GameModule_GetOcclusionMan,
+            }
+            .call(c, 0x003a_bdd4)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S3][0];
+            call_ptr(c, 0x0024_2570, 0x003a_bde0)?;
+            Ok(ccr_done(c))
+        }
+        // 14: func_0012A490(world->+0x84->+0xc, param & 0xff); returns 0.
+        0x003a_bde8 => {
+            c.cycles += 8;
+            c.g[V1][0] = c.lw(r32(c, GP).wrapping_sub(k::GP_WORLD));
+            c.g[A1][0] = c.g[S0][0] & 0xff;
+            c.g[S3][0] = 0;
+            c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x84));
+            c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(0xc));
+            call_ptr(c, 0x0012_a490, 0x003a_be00)?;
+            Ok(ccr_done(c))
+        }
+        // 22: cAvalanche_reset().
+        0x003a_be08 => {
+            c.cycles += 2;
+            call_ptr(c, 0x002d_9b40, 0x003a_be10)?;
+            Ok(CcrExit::ResultData)
+        }
+        pc => {
+            c.jump_out(pc, k::ENTRY, k::END);
+            Err(crate::call::Unwound)
+        }
+    }
+}
+
+/// `v0 = data` in the delay slot of the branch to the epilogue.
+pub(crate) fn ccr_done(c: &mut Cpu) -> CcrExit {
+    c.g[V0][0] = c.g[S3][0];
+    CcrExit::Epilogue
+}
+
+/// Messages 9/10 (0x3ab64c, a2 = the manager, a1 = the argument, v0 = its
+/// vtable): `vt[50].fn(mgr + vt[50].delta, a1)`.
+pub(crate) fn ccr_mission_call(c: &mut Cpu) -> Result<CcrExit, crate::call::Unwound> {
+    c.cycles += 6;
+    c.g[A0][0] = c.lh(r32(c, V0).wrapping_add(0x190));
+    c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x194));
+    let target = r32(c, V1);
+    c.g[A0][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
+    call_ptr(c, target, 0x003a_b65c)?;
+    Ok(ccr_done(c))
+}
+
+/// How one copy of the inlined "is the node empty" scan differs: the cycles
+/// after the eighth child, the item loop's resume points, whether it is the
+/// message-5 copy (different tail), and the call return addresses.
+#[derive(Clone, Copy)]
+pub(crate) struct CcrScan {
+    key_ret: u32,
+    remove_ret: u32,
+    after_children: u64,
+    items_head: u32,
+    msg5: bool,
+}
+
+pub(crate) const CCR_SCAN_1: CcrScan = CcrScan {
+    key_ret: 0x003a_b54c,
+    remove_ret: 0x003a_b598,
+    after_children: 3,
+    items_head: 0x003a_b608,
+    msg5: false,
+};
+
+pub(crate) const CCR_SCAN_3: CcrScan = CcrScan {
+    key_ret: 0x003a_b6c0,
+    remove_ret: 0x003a_b70c,
+    after_children: 2,
+    items_head: 0x003a_b778,
+    msg5: false,
+};
+
+pub(crate) const CCR_SCAN_6: CcrScan = CcrScan {
+    key_ret: 0x003a_b998,
+    remove_ret: 0x003a_b9e4,
+    after_children: 2,
+    items_head: 0x003a_ba50,
+    msg5: false,
+};
+
+pub(crate) const CCR_SCAN_7: CcrScan = CcrScan {
+    key_ret: 0x003a_bad4,
+    remove_ret: 0x003a_bb20,
+    after_children: 3,
+    items_head: 0x003a_bb90,
+    msg5: false,
+};
+
+pub(crate) const CCR_SCAN_5: CcrScan = CcrScan {
+    key_ret: 0x003a_bc14,
+    remove_ret: 0x003a_bc60,
+    after_children: 1,
+    items_head: 0x003a_bcd0,
+    msg5: true,
+};
+
+/// Message 5's "not empty" block (event resume point).
+pub(crate) const CCR_NOT_EMPTY: u32 = 0x003a_bcc4;
+
+/// The item's box (`base + off`: min xyz, max xyz) on the stack with w =
+/// 1.0 from FPU register `one`; a0 = the key's slot (sp + 0x20), a1 = the box.
+pub(crate) fn ccr_fill_box(c: &mut Cpu, base: u32, off: u32, one: usize) {
+    let s = sp(c);
+    let src = base.wrapping_add(off);
+    c.lwc1(0, src);
+    c.g[A0][0] = sx(s.wrapping_add(0x20));
+    c.g[A1][0] = c.g[SP][0];
+    c.swc1(0, s);
+    c.lwc1(0, src.wrapping_add(0x4));
+    c.swc1(0, s + 0x4);
+    c.lwc1(1, src.wrapping_add(0x8));
+    c.swc1(one, s + 0xc);
+    c.swc1(1, s + 0x8);
+    c.lwc1(0, src.wrapping_add(0xc));
+    c.swc1(0, s + 0x10);
+    c.lwc1(1, src.wrapping_add(0x10));
+    c.swc1(1, s + 0x14);
+    c.lwc1(0, src.wrapping_add(0x14));
+    c.swc1(one, s + 0x1c);
+    c.swc1(0, s + 0x18);
+}
+
+/// The inlined `update_B498` up to `SpatialHash_Remove` (box already on the
+/// stack): count the update, key from the box, the root by the key's signs
+/// (s0), remove `item` (kind `kind`) from its node. Leaves v1 = the node and
+/// v0 = its first child.
+pub(crate) fn ccr_remove(
+    c: &mut Cpu,
+    item: u64,
+    kind: u64,
+    key_ret: u32,
+    remove_ret: u32,
+) -> crate::call::Flow {
+    use ccr_release as k;
+    c.g[S0][0] = c.lw(r32(c, S4).wrapping_add(k::SELF_HASH));
+    let updates = sx((c.lw(r32(c, S0).wrapping_add(k::HASH_UPDATES)) as u32).wrapping_add(1));
+    c.g[V0][0] = updates;
+    c.sw(r32(c, S0).wrapping_add(k::HASH_UPDATES), updates);
+    call_ptr(c, k::KEY_FROM_BOX, key_ret)?;
+    let s = sp(c);
+    let kx = c.lw(s + 0x24) as i64;
+    let ky = c.lw(s + 0x28) as i64;
+    let kz = c.lw(s + 0x2c) as i64;
+    let hash = r32(c, S0);
+    let rx = if -1 < kx {
+        hash
+    } else {
+        hash.wrapping_add(0x50)
+    };
+    let ry = if -1 < ky { rx } else { rx.wrapping_add(0x28) };
+    let root = if -1 < kz { ry } else { ry.wrapping_add(0x14) };
+    c.g[V1][0] = sx(rx);
+    c.g[V0][0] = sx(ry);
+    c.g[S0][0] = sx(root);
+    c.g[A0][0] = c.lw(root.wrapping_add(k::ROOT_NODE));
+    c.g[A1][0] = kind;
+    c.g[A2][0] = item;
+    c.g[A3][0] = sx(s.wrapping_add(0x20));
+    c.g[T0][0] = c.g[S0][0];
+    call_ptr(c, k::HASH_REMOVE, remove_ret)?;
+    c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(k::ROOT_NODE));
+    c.g[V0][0] = c.lw(r32(c, V1));
+    Ok(())
+}
+
+/// Messages 1/3/5/6/7 after the block's charge: box from `data + off`,
+/// remove as `kind`, then delete the root's node if it is empty.
+pub(crate) fn ccr_std_update(
+    c: &mut Cpu,
+    off: u32,
+    kind: u64,
+    scan: CcrScan,
+) -> Result<CcrExit, crate::call::Unwound> {
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 2);
+    let data = r32(c, S3);
+    ccr_fill_box(c, data, off, 2);
+    let item = c.g[S3][0];
+    ccr_remove(c, item, kind, scan.key_ret, scan.remove_ret)?;
+
+    // Empty: no children (+0..+0x1c) and no items (+0x20..+0x28).
+    let empty = 'scan: {
+        let node = r32(c, V1);
+        for i in 0..8u32 {
+            if i > 0 {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(node.wrapping_add(4 * i));
+            }
+            let child = c.g[V0][0] != 0;
+            if scan.msg5 && i == 7 {
+                if child {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    break 'scan false;
+                }
+                c.g[V1][0] = sx(node.wrapping_add(0x20));
+                break;
+            }
+            c.g[V0][0] = 0;
+            if child {
+                break 'scan false;
+            }
+        }
+        c.cycles += scan.after_children;
+        if !scan.msg5 {
+            c.g[V1][0] = sx(node.wrapping_add(0x20));
+        }
+        c.g[A0][0] = 0;
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(r32(c, V1));
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+            if c.g[V0][0] != 0 {
+                if scan.msg5 && event_due(c) {
+                    deliver_event_here(c, CCR_NOT_EMPTY);
+                }
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+                break 'scan false;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[A0][0] as i64) < 3) as u64;
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, scan.items_head);
+            }
+        }
+        c.cycles += if scan.msg5 { 1 } else { 2 };
+        c.g[V0][0] = 1;
+        true
+    };
+
+    // 0x3abcec: delete the empty node.
+    c.cycles += 2;
+    c.g[V0][0] = c.g[S3][0];
+    if !empty {
+        return Ok(CcrExit::Epilogue);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(ccr_release::ROOT_NODE));
+    call_ptr(c, ccr_release::DELETE, 0x003a_bcfc)?;
+    c.sw(r32(c, S0).wrapping_add(ccr_release::ROOT_NODE), 0);
+    Ok(CcrExit::ResultData)
+}
+
+/// Message 8 (0x3ab798): for each of the list's items (count `data+0x20`,
+/// first `data+0x24`, next `+0x64`): kind word 1, box at +0x6c, remove as
+/// kind 2, delete the root's node if it is empty.
+pub(crate) fn ccr_list_update(c: &mut Cpu) -> Result<CcrExit, crate::call::Unwound> {
+    use ccr_release as k;
+    c.cycles += 4;
+    c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(k::LIST_COUNT));
+    c.g[S2][0] = 0;
+    c.g[S1][0] = c.lw(r32(c, S3).wrapping_add(k::LIST_FIRST));
+    if (c.g[V0][0] as i64) <= 0 {
+        return Ok(CcrExit::ResultData);
+    }
+    c.cycles += 4;
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 20);
+    c.g[S6][0] = 1;
+    c.g[S5][0] = u64::MAX;
+    loop {
+        // 0x3ab7b8
+        c.cycles += 44;
+        let item = r32(c, S1);
+        c.sw(item.wrapping_add(k::ITEM_KIND), c.g[S6][0]);
+        ccr_fill_box(c, item, 0x6c, 20);
+        let item = c.g[S1][0];
+        ccr_remove(c, item, 2, 0x003a_b810, 0x003a_b858)?;
+
+        let empty = 'scan: {
+            let node = r32(c, V1);
+            for i in 0..8u32 {
+                if i > 0 {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(node.wrapping_add(4 * i));
+                }
+                let child = c.g[V0][0] != 0;
+                if i == 6 {
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+                } else if child && i < 6 {
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+                }
+                if child {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    break 'scan false;
+                }
+            }
+            c.cycles += 3;
+            c.g[V1][0] = sx(node.wrapping_add(0x20));
+            c.g[A0][0] = 0;
+            loop {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(r32(c, V1));
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                if c.g[V0][0] != 0 {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003a_b8bc);
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    break 'scan false;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A0][0] as i64) < 3) as u64;
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003a_b8d0);
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 1;
+            true
+        };
+
+        // 0x3ab8ec
+        c.cycles += 2;
+        if empty {
+            c.cycles += 4;
+            c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(k::ROOT_NODE));
+            call_ptr(c, k::DELETE, 0x003a_b8fc)?;
+            c.sw(r32(c, S0).wrapping_add(k::ROOT_NODE), 0);
+        }
+        c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(k::LIST_COUNT));
+        // 0x3ab904
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        c.g[S1][0] = c.lw(r32(c, S1).wrapping_add(k::ITEM_NEXT));
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003a_b7b8);
+        }
+    }
+    c.cycles += 2;
+    Ok(ccr_done(c))
+}
+
+// ---------------------------------------------------------------------------
+// cPS2ChunkResolve_Resolve (0x3aae68)
+
+pub(crate) const CRR_ENTRY: u32 = 0x003a_ae68;
+
+pub(crate) const CRR_END: u32 = 0x003a_b494;
+
+/// The message switch's jump table (`.rodata`, messages 0..22).
+pub(crate) const CRR_JUMP_TABLE: u32 = 0x0049_4fb0;
+
+pub(crate) const CRR_MSG_COUNT: u64 = 0x17;
+
+/// Stream names handed to the world's stream handler (messages 9 and 10).
+pub(crate) const CRR_STRM_TEX: u32 = 0x0049_4f88;
+
+pub(crate) const CRR_STRM_LPG: u32 = 0x0049_4f98;
+
+/// Resolver fields: its vtable, the spatial hash set (eight hashes of 0x14
+/// bytes, picked by the signs of the key), the section's base index.
+pub(crate) const CRR_VTABLE: u32 = 0x8;
+
+pub(crate) const CRR_HASHES: u32 = 0xc;
+
+pub(crate) const CRR_BASE_INDEX: u32 = 0x10;
+
+/// Resolver vtable slots (`{delta, fn}` pairs).
+pub(crate) const CRR_VT_REGISTER_B: u32 = 0x28;
+
+// message 2
+pub(crate) const CRR_VT_REGISTER_A: u32 = 0x48;
+
+// message 0
+pub(crate) const CRR_VT_INSTANCE: u32 = 0x68;
+
+// message 3
+pub(crate) const CRR_VT_REGISTER_C: u32 = 0x70;
+
+// message 4
+pub(crate) const CRR_VT_OCCLUDER: u32 = 0x88;
+
+// message 5
+pub(crate) const CRR_VT_PATCH_LIST: u32 = 0x90;
+
+// message 8
+pub(crate) const CRR_VT_GENERIC: u32 = 0x98;
+
+// message 12
+pub(crate) const CRR_VT_VOLUME: u32 = 0xa0;
+
+// message 7
+pub(crate) const CRR_VT_VISIBLE: u32 = 0xa8;
+
+// message 6
+
+/// Chunk fields: the spatial kind (+8), a patch list's count and head
+/// (+0x20/+0x24, linked through +0x64), and the bounding boxes per chunk
+/// type (min xyz then max xyz, six floats).
+pub(crate) const CRR_OBJ_KIND: u32 = 0x8;
+
+pub(crate) const CRR_OBJ_COUNT: u32 = 0x20;
+
+pub(crate) const CRR_OBJ_LIST: u32 = 0x24;
+
+pub(crate) const CRR_NODE_NEXT: u32 = 0x64;
+
+pub(crate) const CRR_NODE_BOX: u32 = 0x6c;
+
+pub(crate) const CRR_MODEL_COUNTER: u32 = 0x1a2;
+
+pub(crate) const CRR_MODEL_BOX: u32 = 0x158;
+
+pub(crate) const CRR_INSTANCE_BOX: u32 = 0x60;
+
+pub(crate) const CRR_VISIBLE_BOX: u32 = 0x44;
+
+pub(crate) const CRR_VOLUME_BOX: u32 = 0x28;
+
+pub(crate) const CRR_OCCLUDER_BOX: u32 = 0x68;
+
+/// Globals: `gp+0x2a90` the world view (its vtable at +0x10d8, the stream
+/// handler in slot 0x170), `gp+0x16c8` the script resources (`D_004A47B8`),
+/// `gp-0x84c` the locator table owner, `gp-0x848` the world.
+pub(crate) const CRR_GP_WORLD_VIEW: u32 = 0x2a90;
+
+pub(crate) const CRR_GP_SCRIPT_RES: u32 = 0x16c8;
+
+pub(crate) const CRR_GP_LOCATORS_NEG: u32 = 0x84c;
+
+pub(crate) const CRR_GP_WORLD_NEG: u32 = 0x848;
+
+pub(crate) const CRR_SPATIAL_KEY: u32 = 0x0032_8f28;
+
+// SpatialKey_FromAABB
+pub(crate) const CRR_SPATIAL_INSERT: u32 = 0x0032_8c20;
+
+// SpatialHash_Insert
+pub(crate) const CRR_AUDIO_GAME_MODULE: u32 = 0x0028_b1c8;
+
+// SSXAudioSystem_GetGameModule
+pub(crate) const CRR_WORLD_SOUND_LOADED: u32 = 0x002b_6b08;
+
+// cWorldSound_OnSectionLoaded
+pub(crate) const CRR_CAMERA_RELOAD: u32 = 0x0016_cec8;
+
+// CameraTriggerMan_ReloadIf_Global
+pub(crate) const CRR_PAINTER_SET: u32 = 0x002b_b348;
+
+// cWorldPainterMan_SetFileData
+pub(crate) const CRR_SCRIPT_TABLE: u32 = 0x0023_0430;
+
+// GameModule_CreateSectionScriptTable
+pub(crate) const CRR_LOCATORS_SET: u32 = 0x0027_8a10;
+
+// ScriptEngine_SetLocatorTable
+pub(crate) const CRR_AUDIO_INSTANCE: u32 = 0x0028_b180;
+
+// SSXAudioSystem_GetInstance
+pub(crate) const CRR_AUDIO_LOAD_BANK: u32 = 0x0028_6ca8;
+
+// SSXAudioSystem_LoadMemoryBank
+pub(crate) const CRR_GET_BE: u32 = 0x0014_dc80;
+
+// cBE_getBE
+pub(crate) const CRR_BE_INTERFACE: u32 = 0x0014_dd58;
+
+// BELibrary_GetInterface
+pub(crate) const CRR_MISSION_STUB: u32 = 0x0015_47d8;
+
+// BEMissionInt_EmptyStub_47d8
+pub(crate) const CRR_RACE_PATH_SET: u32 = 0x0021_05d0;
+
+// RaceProgress_SetPathData
+pub(crate) const CRR_ADD_OCCLUDER: u32 = 0x0024_2540;
+
+// OcclusionMan_AddOccluder
+pub(crate) const CRR_TRACK_PATHS: u32 = 0x0012_a340;
+
+// AI_SetTrackPathsBuffer
+pub(crate) const CRR_MEM_FREE: u32 = 0x0031_7e98;
+
+// EA_MemFree
+pub(crate) const CRR_AVALANCHE_SET: u32 = 0x002d_9fb8;
+
+// Avalanche_SetHistoryData
+
+pub(crate) const CRR_SCRIPT_CACHE_SET: Callee = Callee {
+    addr: 0x003a_ca10,
+    f: ee::s13::cWScriptCache_SetData,
+};
+
+pub(crate) const CRR_APP_GAME_MODULE: Callee = Callee {
+    addr: 0x003a_d188,
+    f: ee::s13::SSXApp_GetGameModule,
+};
+
+pub(crate) const CRR_OCCLUSION_MAN: Callee = Callee {
+    addr: 0x003a_d198,
+    f: ee::s13::GameModule_GetOcclusionMan,
+};
+
+/// How a message handler leaves: the shared tails of the original.
+pub(crate) enum CrrExit {
+    /// 0x3ab464: `v0 = obj`, reload s0, epilogue.
+    Plain,
+    /// 0x3ab468: `v0` already set, reload s0, epilogue.
+    Done,
+    /// 0x3ab46c: s0 already reloaded, epilogue.
+    Epilogue,
+    /// The jump table pointed at the entry: run the function again.
+    Restart,
+}
+
+/// `char* cPS2ChunkResolve::resolve(eBxStreamDataType type /*a1*/,
+/// tResourceID rid /*a2*/, char* data /*a3*/)` (0x3aae68): hand a streamed
+/// chunk to whoever owns its type, and return `data`.
+///
+/// - 1 (model): bump the model's counter (+0x1a2) by the section's base
+///   index and insert it into the spatial hash (kind 1).
+/// - 0, 2, 4: register through a resolver virtual (+0x48, +0x28, +0x70).
+/// - 3 (instance): resolver virtual +0x68, then insert (kind 0).
+/// - 5, 6, 7: resolver virtual (+0x88, +0xa8 only inserting when it returns
+///   non-zero, +0xa0), set the chunk's kind to 7, 6, 8 and insert it (kind 2).
+/// - 8: resolver virtual +0x90, then mark every patch in the chunk's list
+///   kind 1 and insert it (kind 2).
+/// - 9, 10: the world view's stream handler with "strm_tex"/"strm_lpg" and
+///   the texture index (`rid >> 8`, plus the base index for 10).
+/// - 11-22: occluders, the generic resolver virtual, world sounds, track
+///   paths (freeing the data when rejected), painter files, script tables,
+///   camera triggers, locators, mission data, sound banks, race paths and
+///   avalanche history.
+///
+/// Spatial inserts build the box at `sp` (w = 1), get its key into `sp+0x20`
+/// (`SpatialKey_FromAABB`) and pick one of the eight hashes at
+/// `resolver+0xc` by the signs of the key's x, y, z.
+pub fn c_ps2_chunk_resolve_resolve(c: &mut Cpu) {
+    if c.pc != CRR_ENTRY {
+        return ee::s13::f_003aae68__entries(c);
+    }
+    c.cycles += 15;
+    let frame = Frame::open(c, 0xc0);
+    c.g[V0][0] = (c.g[A1][0] < CRR_MSG_COUNT) as u64;
+    frame.save(c, S0, 0xa0);
+    frame.save(c, S2, 0x80);
+    c.g[S0][0] = c.g[A2][0];
+    frame.save(c, S3, 0x70);
+    c.g[S2][0] = c.g[A3][0];
+    frame.save(c, S1, 0x90);
+    c.g[S3][0] = c.g[A0][0];
+    frame.save(c, S4, 0x60);
+    frame.save(c, S5, 0x50);
+    frame.save(c, S6, 0x40);
+    frame.save_ra(c, 0x30);
+    frame.save_fpr(c, 20, 0xb0);
+    let exit = if c.g[V0][0] == 0 {
+        Ok(CrrExit::Plain)
+    } else {
+        crr_dispatch(c)
+    };
+    let exit = match exit {
+        Ok(CrrExit::Restart) => {
+            c.pc = CRR_ENTRY;
+            return c_ps2_chunk_resolve_resolve(c);
+        }
+        Ok(e) => e,
+        Err(Unwound) => return,
+    };
+    if let CrrExit::Plain = exit {
+        c.cycles += 1;
+        c.g[V0][0] = c.g[S2][0];
+    }
+    if !matches!(exit, CrrExit::Epilogue) {
+        c.cycles += 1;
+        frame.restore(c, S0, 0xa0);
+    }
+    c.cycles += 10;
+    frame.restore(c, S1, 0x90);
+    frame.restore(c, S2, 0x80);
+    frame.restore(c, S3, 0x70);
+    frame.restore(c, S4, 0x60);
+    frame.restore(c, S5, 0x50);
+    frame.restore(c, S6, 0x40);
+    frame.restore_ra(c, 0x30);
+    frame.restore_fpr(c, 20, 0xb0);
+    frame.close(c);
+}
+
+/// The jump table dispatch (0x3aaea4) and the handlers.
+pub(crate) fn crr_dispatch(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 7;
+    c.g[V0][0] = 0x0049_0000;
+    c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
+    c.g[V0][0] = sx(CRR_JUMP_TABLE);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(CRR_JUMP_TABLE));
+    c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+    let target = c.g[A0][0] as u32;
+    match target {
+        CRR_ENTRY => {
+            if event_due(c) {
+                deliver_event_here(c, CRR_ENTRY);
+            }
+            Ok(CrrExit::Restart)
+        }
+        0x003a_aec0 => crr_model(c),
+        0x003a_af5c => crr_stream(c, false),
+        0x003a_af88 => crr_stream(c, true),
+        0x003a_afc8 => crr_instance(c),
+        0x003a_b06c => {
+            c.cycles += 5;
+            crr_vmethod(c, CRR_VT_REGISTER_B);
+            crr_vcall_obj(c)
+        }
+        0x003a_b080 => {
+            c.cycles += 5;
+            crr_vmethod(c, CRR_VT_REGISTER_A);
+            crr_vcall_obj(c)
+        }
+        0x003a_b094 => crr_visible(c),
+        0x003a_b0dc => crr_volume(c),
+        0x003a_b120 => crr_patch_list(c),
+        0x003a_b200 => crr_occluder_box(c),
+        0x003a_b2bc => {
+            c.cycles += 4;
+            crr_vmethod(c, CRR_VT_REGISTER_C);
+            crr_vcall_obj(c)
+        }
+        0x003a_b2dc => crr_generic(c),
+        0x003a_b300 => crr_world_sound(c),
+        0x003a_b320 => crr_camera_triggers(c),
+        0x003a_b334 => crr_painter(c),
+        0x003a_b354 => crr_script_table(c),
+        0x003a_b38c => crr_locators(c),
+        0x003a_b3a4 => crr_sound_bank(c),
+        0x003a_b3c4 => crr_mission(c),
+        0x003a_b3f4 => {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, CRR_RACE_PATH_SET, 0x003a_b3fc)?;
+            c.g[V0][0] = c.g[S2][0];
+            Ok(CrrExit::Done)
+        }
+        0x003a_b404 => crr_occluder(c),
+        0x003a_b420 => crr_track_paths(c),
+        0x003a_b45c => {
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, CRR_AVALANCHE_SET, 0x003a_b464)?;
+            Ok(CrrExit::Plain)
+        }
+        _ => {
+            c.jump_out(target, CRR_ENTRY, CRR_END);
+            Err(Unwound)
+        }
+    }
+}
+
+/// Read resolver vtable slot `slot` (`v1 = vtable`, `a0 = delta`,
+/// `v0 = fn`) with `a1 = data`.
+pub(crate) fn crr_vmethod(c: &mut Cpu, slot: u32) {
+    c.g[V1][0] = Addr(r32(c, S3).wrapping_add(CRR_VTABLE)).lw(c);
+    c.g[A1][0] = c.g[S2][0];
+    c.g[A0][0] = Addr(r32(c, V1).wrapping_add(slot)).lh(c);
+    c.g[V0][0] = Addr(r32(c, V1).wrapping_add(slot + 4)).lw(c);
+}
+
+/// `jalr v0` with `a0 = resolver + delta`, returning to `ret`.
+pub(crate) fn crr_vcall(c: &mut Cpu, ret: u32) -> Flow {
+    let f = c.g[V0][0] as u32;
+    c.g[A0][0] = sx(r32(c, S3).wrapping_add(r32(c, A0)));
+    call_ptr(c, f, ret)
+}
+
+/// 0x3ab2cc: the virtual alone, return `data`.
+pub(crate) fn crr_vcall_obj(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 4;
+    crr_vcall(c, 0x003a_b2d4)?;
+    c.g[V0][0] = c.g[S2][0];
+    Ok(CrrExit::Done)
+}
+
+/// Load the chunk's box at `data+off` into f5, f0..f4; `a0 = sp+0x20` (the
+/// key), `a1 = sp` (the box).
+pub(crate) fn crr_load_box(c: &mut Cpu, off: u32) {
+    let obj = r32(c, S2).wrapping_add(off);
+    c.lwc1(5, obj);
+    c.g[A0][0] = sx(sp(c).wrapping_add(0x20));
+    c.lwc1(0, obj.wrapping_add(0x4));
+    c.g[A1][0] = c.g[SP][0];
+    c.lwc1(1, obj.wrapping_add(0x8));
+    c.lwc1(2, obj.wrapping_add(0xc));
+    c.lwc1(3, obj.wrapping_add(0x10));
+    c.lwc1(4, obj.wrapping_add(0x14));
+}
+
+/// Store the box at `sp` as `{min, 1}, {max, 1}`, `s0 = resolver->hashes`,
+/// and get its key (`SpatialKey_FromAABB(sp+0x20, sp)`), returning to `ret`.
+pub(crate) fn crr_box_key(c: &mut Cpu, ret: u32) -> Flow {
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(1, 6);
+    c.g[S0][0] = Addr(r32(c, S3).wrapping_add(CRR_HASHES)).lw(c);
+    let s = sp(c);
+    c.swc1(5, s);
+    c.swc1(0, s.wrapping_add(0x4));
+    c.swc1(1, s.wrapping_add(0x8));
+    c.swc1(2, s.wrapping_add(0x10));
+    c.swc1(3, s.wrapping_add(0x14));
+    c.swc1(4, s.wrapping_add(0x18));
+    c.swc1(6, s.wrapping_add(0x1c));
+    c.swc1(6, s.wrapping_add(0xc));
+    call_ptr(c, CRR_SPATIAL_KEY, ret)
+}
+
+/// Pick the hash by the key's signs (x >= 0: +0, else +0x50; y: +0 or
+/// +0x28; z: +0 or +0x14) and insert the chunk with `kind`
+/// (`SpatialHash_Insert(hash, kind, data, sp+0x20)`, 0x3ab2a8).
+pub(crate) fn crr_insert(c: &mut Cpu, kind: u64) -> Result<CrrExit, Unwound> {
+    let s = sp(c);
+    c.g[V0][0] = Addr(s.wrapping_add(0x24)).lw(c);
+    c.g[A3][0] = u64::MAX;
+    c.g[V1][0] = sx(r32(c, S0).wrapping_add(0x50));
+    c.g[A1][0] = Addr(s.wrapping_add(0x28)).lw(c);
+    c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+    c.g[A2][0] = Addr(s.wrapping_add(0x2c)).lw(c);
+    if c.g[V0][0] != 0 {
+        c.g[V1][0] = c.g[S0][0];
+    }
+    c.g[A1][0] = ((c.g[A3][0] as i64) < (c.g[A1][0] as i64)) as u64;
+    c.g[A0][0] = sx(r32(c, V1).wrapping_add(0x28));
+    c.g[A3][0] = ((c.g[A3][0] as i64) < (c.g[A2][0] as i64)) as u64;
+    if c.g[A1][0] != 0 {
+        c.g[A0][0] = c.g[V1][0];
+    }
+    c.g[A2][0] = c.g[S2][0];
+    c.g[V0][0] = sx(r32(c, A0).wrapping_add(0x14));
+    c.g[A1][0] = kind;
+    c.cycles += 5;
+    if c.g[A3][0] == 0 {
+        c.g[A0][0] = c.g[V0][0];
+    }
+    c.g[A3][0] = sx(s.wrapping_add(0x20));
+    call_ptr(c, CRR_SPATIAL_INSERT, 0x003a_b2b4)?;
+    c.g[V0][0] = c.g[S2][0];
+    Ok(CrrExit::Done)
+}
+
+/// Message 1 (0x3aaec0): a model.
+pub(crate) fn crr_model(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 39;
+    c.g[V1][0] = Addr(r32(c, S3).wrapping_add(CRR_BASE_INDEX)).lhu(c);
+    let counter = Addr(r32(c, S2).wrapping_add(CRR_MODEL_COUNTER));
+    c.g[V0][0] = counter.lhu(c);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+    let bumped = c.g[V0][0];
+    counter.sh(c, bumped);
+    crr_load_box(c, CRR_MODEL_BOX);
+    crr_box_key(c, 0x003a_af20)?;
+    crr_insert(c, 1)
+}
+
+/// Messages 9 and 10 (0x3aaf5c, 0x3aaf88): the world view's stream handler
+/// `(view + delta, data, name, 0, 0, index)`.
+pub(crate) fn crr_stream(c: &mut Cpu, lightmaps: bool) -> Result<CrrExit, Unwound> {
+    let view_at = r32(c, GP).wrapping_add(CRR_GP_WORLD_VIEW);
+    if lightmaps {
+        c.cycles += 12;
+        c.g[T2][0] = Addr(view_at).lw(c);
+        c.g[V0][0] = sx(r32(c, S0) >> 8);
+        c.g[T1][0] = Addr(r32(c, S3).wrapping_add(CRR_BASE_INDEX)).lw(c);
+        c.g[V1][0] = Addr(r32(c, T2).wrapping_add(0x10d8)).lw(c);
+        c.g[A2][0] = sx(CRR_STRM_LPG);
+        c.g[T1][0] = sx(r32(c, V0).wrapping_add(r32(c, T1)));
+    } else {
+        c.cycles += 11;
+        c.g[T2][0] = Addr(view_at).lw(c);
+        c.g[A2][0] = sx(CRR_STRM_TEX);
+        c.g[T1][0] = sx(r32(c, S0) >> 8);
+        c.g[V1][0] = Addr(r32(c, T2).wrapping_add(0x10d8)).lw(c);
+    }
+    c.g[A1][0] = c.g[S2][0];
+    c.g[A3][0] = 0;
+    c.g[T0][0] = 0;
+    c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x170)).lh(c);
+    c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x174)).lw(c);
+    c.cycles += 4;
+    let f = c.g[V0][0] as u32;
+    c.g[A0][0] = sx(r32(c, T2).wrapping_add(r32(c, A0)));
+    call_ptr(c, f, 0x003a_afc0)?;
+    c.g[V0][0] = c.g[S2][0];
+    Ok(CrrExit::Done)
+}
+
+/// Message 3 (0x3aafc8): an instance.
+pub(crate) fn crr_instance(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 41;
+    crr_vmethod(c, CRR_VT_INSTANCE);
+    crr_vcall(c, 0x003a_afe0)?;
+    crr_load_box(c, CRR_INSTANCE_BOX);
+    crr_box_key(c, 0x003a_b030)?;
+    crr_insert(c, 0)
+}
+
+/// 0x3ab240: key and insert with kind 2.
+pub(crate) fn crr_insert_kind2(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 26;
+    crr_box_key(c, 0x003a_b270)?;
+    crr_insert(c, 2)
+}
+
+/// Message 6 (0x3ab094): inserted (kind 6) only when the virtual accepts it.
+pub(crate) fn crr_visible(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 8;
+    crr_vmethod(c, CRR_VT_VISIBLE);
+    crr_vcall(c, 0x003a_b0ac)?;
+    let accepted = c.g[V0][0] != 0;
+    c.g[V0][0] = 6;
+    if !accepted {
+        return Ok(CrrExit::Plain);
+    }
+    c.cycles += 10;
+    let kind = c.g[V0][0];
+    Addr(r32(c, S2).wrapping_add(CRR_OBJ_KIND)).sw(c, kind);
+    crr_load_box(c, CRR_VISIBLE_BOX);
+    crr_insert_kind2(c)
+}
+
+/// Message 7 (0x3ab0dc): a volume (kind 8).
+pub(crate) fn crr_volume(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 17;
+    crr_vmethod(c, CRR_VT_VOLUME);
+    crr_vcall(c, 0x003a_b0f4)?;
+    c.g[V1][0] = 8;
+    Addr(r32(c, S2).wrapping_add(CRR_OBJ_KIND)).sw(c, 8);
+    crr_load_box(c, CRR_VOLUME_BOX);
+    crr_insert_kind2(c)
+}
+
+/// Message 5 (0x3ab200): an occluder box (kind 7).
+pub(crate) fn crr_occluder_box(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 16;
+    crr_vmethod(c, CRR_VT_OCCLUDER);
+    crr_vcall(c, 0x003a_b218)?;
+    c.g[V1][0] = 7;
+    Addr(r32(c, S2).wrapping_add(CRR_OBJ_KIND)).sw(c, 7);
+    crr_load_box(c, CRR_OCCLUDER_BOX);
+    crr_insert_kind2(c)
+}
+
+/// Message 8 (0x3ab120): a patch list; every patch gets kind 1 and is
+/// inserted (s1 = patch, s4 = index, s5 = -1, s6 = 1, f20 = 1.0).
+pub(crate) fn crr_patch_list(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 10;
+    c.g[V1][0] = Addr(r32(c, S3).wrapping_add(CRR_VTABLE)).lw(c);
+    c.g[A1][0] = c.g[S2][0];
+    c.g[S4][0] = 0;
+    c.g[A0][0] = Addr(r32(c, V1).wrapping_add(CRR_VT_PATCH_LIST)).lh(c);
+    c.g[V0][0] = Addr(r32(c, V1).wrapping_add(CRR_VT_PATCH_LIST + 4)).lw(c);
+    crr_vcall(c, 0x003a_b13c)?;
+    c.g[V1][0] = Addr(r32(c, S2).wrapping_add(CRR_OBJ_COUNT)).lw(c);
+    c.g[S1][0] = Addr(r32(c, S2).wrapping_add(CRR_OBJ_LIST)).lw(c);
+    if (c.g[V1][0] as i64) <= 0 {
+        return Ok(CrrExit::Plain);
+    }
+    c.cycles += 4;
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(1, 20);
+    c.g[S6][0] = 1;
+    c.g[S5][0] = u64::MAX;
+    loop {
+        c.cycles += 40;
+        let node = r32(c, S1);
+        let s = sp(c);
+        c.lwc1(0, node.wrapping_add(CRR_NODE_BOX));
+        c.g[A0][0] = sx(s.wrapping_add(0x20));
+        let kind = c.g[S6][0];
+        Addr(node.wrapping_add(CRR_OBJ_KIND)).sw(c, kind);
+        c.g[A1][0] = c.g[SP][0];
+        c.swc1(0, s);
+        c.g[S4][0] = sx(r32(c, S4).wrapping_add(1));
+        c.lwc1(0, node.wrapping_add(CRR_NODE_BOX + 0x4));
+        c.g[S0][0] = Addr(r32(c, S3).wrapping_add(CRR_HASHES)).lw(c);
+        c.swc1(0, s.wrapping_add(0x4));
+        c.lwc1(1, node.wrapping_add(CRR_NODE_BOX + 0x8));
+        c.swc1(20, s.wrapping_add(0xc));
+        c.swc1(1, s.wrapping_add(0x8));
+        c.lwc1(0, node.wrapping_add(CRR_NODE_BOX + 0xc));
+        c.swc1(0, s.wrapping_add(0x10));
+        c.lwc1(1, node.wrapping_add(CRR_NODE_BOX + 0x10));
+        c.swc1(1, s.wrapping_add(0x14));
+        c.lwc1(0, node.wrapping_add(CRR_NODE_BOX + 0x14));
+        c.swc1(20, s.wrapping_add(0x1c));
+        c.swc1(0, s.wrapping_add(0x18));
+        call_ptr(c, CRR_SPATIAL_KEY, 0x003a_b1a8)?;
+        // Pick the hash (as `crr_insert`, with s5 = -1 and t0 for z).
+        let s = sp(c);
+        c.g[V0][0] = Addr(s.wrapping_add(0x24)).lw(c);
+        c.g[V1][0] = sx(r32(c, S0).wrapping_add(0x50));
+        c.g[A1][0] = Addr(s.wrapping_add(0x28)).lw(c);
+        c.g[A2][0] = c.g[S1][0];
+        c.g[V0][0] = ((c.g[S5][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        c.g[T0][0] = Addr(s.wrapping_add(0x2c)).lw(c);
+        if c.g[V0][0] != 0 {
+            c.g[V1][0] = c.g[S0][0];
+        }
+        c.g[A1][0] = ((c.g[S5][0] as i64) < (c.g[A1][0] as i64)) as u64;
+        c.g[A0][0] = sx(r32(c, V1).wrapping_add(0x28));
+        c.g[T0][0] = ((c.g[S5][0] as i64) < (c.g[T0][0] as i64)) as u64;
+        if c.g[A1][0] != 0 {
+            c.g[A0][0] = c.g[V1][0];
+        }
+        c.g[A3][0] = sx(s.wrapping_add(0x20));
+        c.g[V0][0] = sx(r32(c, A0).wrapping_add(0x14));
+        c.g[A1][0] = 2;
+        if c.g[T0][0] == 0 {
+            c.g[A0][0] = c.g[V0][0];
+        }
+        call_ptr(c, CRR_SPATIAL_INSERT, 0x003a_b1e8)?;
+        c.g[V0][0] = Addr(r32(c, S2).wrapping_add(CRR_OBJ_COUNT)).lw(c);
+        c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[S1][0] = Addr(r32(c, S1).wrapping_add(CRR_NODE_NEXT)).lw(c);
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003a_b158);
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[S2][0];
+    Ok(CrrExit::Done)
+}
+
+/// Message 12 (0x3ab2dc): resolver virtual +0x98 `(rid, data)`.
+pub(crate) fn crr_generic(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 9;
+    c.g[V1][0] = Addr(r32(c, S3).wrapping_add(CRR_VTABLE)).lw(c);
+    c.g[A1][0] = c.g[S0][0];
+    c.g[A2][0] = c.g[S2][0];
+    c.g[A0][0] = Addr(r32(c, V1).wrapping_add(CRR_VT_GENERIC)).lh(c);
+    c.g[V0][0] = Addr(r32(c, V1).wrapping_add(CRR_VT_GENERIC + 4)).lw(c);
+    crr_vcall(c, 0x003a_b2f8)?;
+    c.g[V0][0] = c.g[S2][0];
+    Ok(CrrExit::Done)
+}
+
+/// Message 13 (0x3ab300): `cWorldSound_OnSectionLoaded(gameModule->+0x4c,
+/// data, rid)`.
+pub(crate) fn crr_world_sound(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 8;
+    call_ptr(c, CRR_AUDIO_GAME_MODULE, 0x003a_b308)?;
+    c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x4c)).lw(c);
+    c.g[A2][0] = c.g[S0][0];
+    c.g[A1][0] = c.g[S2][0];
+    call_ptr(c, CRR_WORLD_SOUND_LOADED, 0x003a_b318)?;
+    c.g[V0][0] = c.g[S2][0];
+    Ok(CrrExit::Done)
+}
+
+/// Message 17 (0x3ab320): `CameraTriggerMan_ReloadIf_Global(rid, data)`.
+pub(crate) fn crr_camera_triggers(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 5;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = c.g[S2][0];
+    call_ptr(c, CRR_CAMERA_RELOAD, 0x003a_b32c)?;
+    c.g[V0][0] = c.g[S2][0];
+    Ok(CrrExit::Done)
+}
+
+/// Message 15 (0x3ab334): `cWorldPainterMan_SetFileData(res[2], rid & 0xff,
+/// data)` when the script resources exist.
+pub(crate) fn crr_painter(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 3;
+    c.g[V0][0] = Addr(r32(c, GP).wrapping_add(CRR_GP_SCRIPT_RES)).lw(c);
+    c.g[A1][0] = c.g[S0][0] & 0xff;
+    if c.g[V0][0] == 0 {
+        return Ok(CrrExit::Plain);
+    }
+    c.cycles += 5;
+    c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x8)).lw(c);
+    c.g[A2][0] = c.g[S2][0];
+    call_ptr(c, CRR_PAINTER_SET, 0x003a_b34c)?;
+    c.g[V0][0] = c.g[S2][0];
+    Ok(CrrExit::Done)
+}
+
+/// Message 16 (0x3ab354): `cWScriptCache_SetData(res[1], rid & 0xff, data)`,
+/// then `GameModule_CreateSectionScriptTable(SSXApp_GetGameModule(), rid &
+/// 0xff)` when the script resources exist.
+pub(crate) fn crr_script_table(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 3;
+    c.g[V0][0] = Addr(r32(c, GP).wrapping_add(CRR_GP_SCRIPT_RES)).lw(c);
+    c.g[S0][0] &= 0xff;
+    if c.g[V0][0] == 0 {
+        return Ok(CrrExit::Plain);
+    }
+    c.cycles += 11;
+    c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x4)).lw(c);
+    c.g[A1][0] = c.g[S0][0];
+    c.g[A2][0] = c.g[S2][0];
+    CRR_SCRIPT_CACHE_SET.call(c, 0x003a_b370)?;
+    CRR_APP_GAME_MODULE.call(c, 0x003a_b378)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = c.g[S0][0];
+    call_ptr(c, CRR_SCRIPT_TABLE, 0x003a_b384)?;
+    c.g[V0][0] = c.g[S2][0];
+    Ok(CrrExit::Done)
+}
+
+/// Message 18 (0x3ab38c): `ScriptEngine_SetLocatorTable(*(gp-0x84c),
+/// rid & 0xff, data)`.
+pub(crate) fn crr_locators(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 6;
+    c.g[A0][0] = Addr(r32(c, GP).wrapping_sub(CRR_GP_LOCATORS_NEG)).lw(c);
+    c.g[A1][0] = c.g[S0][0] & 0xff;
+    c.g[A2][0] = c.g[S2][0];
+    call_ptr(c, CRR_LOCATORS_SET, 0x003a_b39c)?;
+    c.g[V0][0] = c.g[S2][0];
+    Ok(CrrExit::Done)
+}
+
+/// Message 20 (0x3ab3a4): `SSXAudioSystem_LoadMemoryBank(GetInstance(),
+/// rid, data)`.
+pub(crate) fn crr_sound_bank(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 8;
+    call_ptr(c, CRR_AUDIO_INSTANCE, 0x003a_b3ac)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = c.g[S0][0];
+    c.g[A2][0] = c.g[S2][0];
+    call_ptr(c, CRR_AUDIO_LOAD_BANK, 0x003a_b3bc)?;
+    c.g[V0][0] = c.g[S2][0];
+    Ok(CrrExit::Done)
+}
+
+/// Message 19 (0x3ab3c4): the mission interface (BE interface 10) gets
+/// `(rid & 0xff, data + 4, *data)` (an empty stub in this build).
+pub(crate) fn crr_mission(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 12;
+    call_ptr(c, CRR_GET_BE, 0x003a_b3cc)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 0xa;
+    call_ptr(c, CRR_BE_INTERFACE, 0x003a_b3d8)?;
+    c.g[A3][0] = Addr(r32(c, S2)).lw(c);
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = c.g[S0][0] & 0xff;
+    c.g[A2][0] = sx(r32(c, S2).wrapping_add(0x4));
+    call_ptr(c, CRR_MISSION_STUB, 0x003a_b3ec)?;
+    c.g[V0][0] = c.g[S2][0];
+    Ok(CrrExit::Done)
+}
+
+/// Message 11 (0x3ab404): `OcclusionMan_AddOccluder(GetOcclusionMan(), data)`.
+pub(crate) fn crr_occluder(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 7;
+    CRR_OCCLUSION_MAN.call(c, 0x003a_b40c)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = c.g[S2][0];
+    call_ptr(c, CRR_ADD_OCCLUDER, 0x003a_b418)?;
+    c.g[V0][0] = c.g[S2][0];
+    Ok(CrrExit::Done)
+}
+
+/// Message 14 (0x3ab420): `AI_SetTrackPathsBuffer(world->+0x84->+0xc,
+/// rid & 0xff, rid >> 8, data)`; a rejected buffer is freed.
+pub(crate) fn crr_track_paths(c: &mut Cpu) -> Result<CrrExit, Unwound> {
+    c.cycles += 9;
+    c.g[V1][0] = Addr(r32(c, GP).wrapping_sub(CRR_GP_WORLD_NEG)).lw(c);
+    c.g[A2][0] = sx(r32(c, S0) >> 8);
+    c.g[A1][0] = c.g[S0][0] & 0xff;
+    c.g[A3][0] = c.g[S2][0];
+    c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x84)).lw(c);
+    c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0xc)).lw(c);
+    call_ptr(c, CRR_TRACK_PATHS, 0x003a_b43c)?;
+    let kept = c.g[V0][0] != 0;
+    c.g[V0][0] = c.g[S2][0];
+    if kept {
+        return Ok(CrrExit::Done);
+    }
+    c.cycles += 2;
+    let no_data = c.g[S2][0] == 0;
+    let s0_at = sp(c).wrapping_add(0xa0);
+    c.lq(S0, s0_at);
+    if no_data {
+        return Ok(CrrExit::Epilogue);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S2][0];
+    call_ptr(c, CRR_MEM_FREE, 0x003a_b454)?;
+    c.g[V0][0] = c.g[S2][0];
+    Ok(CrrExit::Done)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2872,6 +4249,589 @@ pub(crate) mod tests {
                     c.bus.write32(POS + axis * 4, p);
                     c.bus.write32(BMIN + axis * 4, lo);
                     c.bus.write32(BMAX + axis * 4, hi);
+                }
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_RESULTS;
+    use crate::difftest::put_words;
+    use crate::difftest::GAME_GP;
+    use std::sync::atomic::AtomicUsize;
+
+    /// Gate of this test's callee fakes (in the machine's RAM).
+    pub(crate) const CCR_CTRL: u32 = DATA + 0xf_fff0;
+
+    pub(crate) const CCR_MAGIC: u32 = 0x5eed_b498;
+
+    /// The message jump table (.rodata 0x495010) from the game image.
+    pub(crate) const CCR_TABLE_WORDS: [u32; 23] = [
+        0x003a_be10,
+        0x003a_b4f0,
+        0x003a_be10,
+        0x003a_b664,
+        0x003a_be10,
+        0x003a_bbb0,
+        0x003a_b918,
+        0x003a_ba70,
+        0x003a_b798,
+        0x003a_b628,
+        0x003a_b638,
+        0x003a_bdcc,
+        0x003a_be10,
+        0x003a_bd04,
+        0x003a_bde8,
+        0x003a_bd34,
+        0x003a_be10,
+        0x003a_bd24,
+        0x003a_bd60,
+        0x003a_bd94,
+        0x003a_bd74,
+        0x003a_bdbc,
+        0x003a_be08,
+    ];
+
+    // Fixture layout.
+    pub(crate) const CCR_SELF: u32 = DATA + 0x4_0000;
+
+    pub(crate) const CCR_VT6: u32 = DATA + 0x4_1000;
+
+    pub(crate) const CCR_HASH: u32 = DATA + 0x4_2000;
+
+    pub(crate) const CCR_NODES: u32 = DATA + 0x4_3000;
+
+    pub(crate) const CCR_ITEM: u32 = DATA + 0x5_0000;
+
+    pub(crate) const CCR_LIST: u32 = DATA + 0x5_1000;
+
+    pub(crate) const CCR_MISSION: u32 = DATA + 0x6_0000;
+
+    pub(crate) const CCR_MISSION_VT: u32 = DATA + 0x6_1000;
+
+    pub(crate) const CCR_WPF: u32 = DATA + 0x6_2000;
+
+    pub(crate) const CCR_WPF_TABLE: u32 = DATA + 0x6_3000;
+
+    pub(crate) const CCR_WORLD: u32 = DATA + 0x6_5000;
+
+    pub(crate) const CCR_AUDIO: u32 = DATA + 0x8_0000;
+
+    macro_rules! ccr_gated {
+        ($name:ident, $prev:ident, $addr:expr, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(CCR_CTRL) == CCR_MAGIC {
+                    return fakes::fake_call(c, $addr);
+                }
+                fakes::fall_back(c, &$prev, $gen)
+            }
+        };
+    }
+
+    ccr_gated!(
+        ccr_fake_key,
+        CCR_PREV_KEY,
+        0x0032_8f28,
+        ee::s10::f_00328f28__generated
+    );
+
+    ccr_gated!(
+        ccr_fake_remove,
+        CCR_PREV_REMOVE,
+        0x0032_84b8,
+        ee::s10::f_003284b8__generated
+    );
+
+    ccr_gated!(
+        ccr_fake_delete,
+        CCR_PREV_DELETE,
+        0x0031_7e50,
+        ee::s10::f_00317e50__generated
+    );
+
+    ccr_gated!(
+        ccr_fake_28b1c8,
+        CCR_PREV_28B1C8,
+        0x0028_b1c8,
+        ee::s07::f_0028b1c8__generated
+    );
+
+    ccr_gated!(
+        ccr_fake_278a58,
+        CCR_PREV_278A58,
+        0x0027_8a58,
+        ee::s07::f_00278a58__generated
+    );
+
+    ccr_gated!(
+        ccr_fake_28b180,
+        CCR_PREV_28B180,
+        0x0028_b180,
+        ee::s07::f_0028b180__generated
+    );
+
+    ccr_gated!(
+        ccr_fake_2b6b30,
+        CCR_PREV_2B6B30,
+        0x002b_6b30,
+        ee::s08::f_002b6b30__generated
+    );
+
+    ccr_gated!(
+        ccr_fake_16cf18,
+        CCR_PREV_16CF18,
+        0x0016_cf18,
+        ee::s02::f_0016cf18__generated
+    );
+
+    ccr_gated!(
+        ccr_fake_14dc80,
+        CCR_PREV_14DC80,
+        0x0014_dc80,
+        ee::s01::f_0014dc80__generated
+    );
+
+    ccr_gated!(
+        ccr_fake_14dd58,
+        CCR_PREV_14DD58,
+        0x0014_dd58,
+        ee::s01::f_0014dd58__generated
+    );
+
+    ccr_gated!(
+        ccr_fake_210608,
+        CCR_PREV_210608,
+        0x0021_0608,
+        ee::s05::f_00210608__generated
+    );
+
+    ccr_gated!(
+        ccr_fake_3ad198,
+        CCR_PREV_3AD198,
+        0x003a_d198,
+        ee::s13::f_003ad198__generated
+    );
+
+    ccr_gated!(
+        ccr_fake_242570,
+        CCR_PREV_242570,
+        0x0024_2570,
+        ee::s06::f_00242570__generated
+    );
+
+    ccr_gated!(
+        ccr_fake_12a490,
+        CCR_PREV_12A490,
+        0x0012_a490,
+        ee::s00::f_0012a490__generated
+    );
+
+    ccr_gated!(
+        ccr_fake_2d9b40,
+        CCR_PREV_2D9B40,
+        0x002d_9b40,
+        ee::s09::f_002d9b40__generated
+    );
+
+    /// Gated fakes in the callees' override slots (once per process). The
+    /// callees without a slot run for real on short paths: WPFile_Unload on
+    /// an unloaded entry, the bank unload on a slot that does not match, the
+    /// empty BE stub.
+    #[allow(unused_unsafe)]
+    pub(crate) fn ccr_install_fakes() {
+        use std::ptr::addr_of_mut;
+        unsafe {
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00328F28),
+                ccr_fake_key,
+                &CCR_PREV_KEY,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_003284B8),
+                ccr_fake_remove,
+                &CCR_PREV_REMOVE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+                ccr_fake_delete,
+                &CCR_PREV_DELETE,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s07::OVERRIDE_0028B1C8),
+                ccr_fake_28b1c8,
+                &CCR_PREV_28B1C8,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s07::OVERRIDE_00278A58),
+                ccr_fake_278a58,
+                &CCR_PREV_278A58,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s07::OVERRIDE_0028B180),
+                ccr_fake_28b180,
+                &CCR_PREV_28B180,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s08::OVERRIDE_002B6B30),
+                ccr_fake_2b6b30,
+                &CCR_PREV_2B6B30,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s02::OVERRIDE_0016CF18),
+                ccr_fake_16cf18,
+                &CCR_PREV_16CF18,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+                ccr_fake_14dc80,
+                &CCR_PREV_14DC80,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+                ccr_fake_14dd58,
+                &CCR_PREV_14DD58,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s05::OVERRIDE_00210608),
+                ccr_fake_210608,
+                &CCR_PREV_210608,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s13::OVERRIDE_003AD198),
+                ccr_fake_3ad198,
+                &CCR_PREV_3AD198,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s06::OVERRIDE_00242570),
+                ccr_fake_242570,
+                &CCR_PREV_242570,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s00::OVERRIDE_0012A490),
+                ccr_fake_12a490,
+                &CCR_PREV_12A490,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s09::OVERRIDE_002D9B40),
+                ccr_fake_2d9b40,
+                &CCR_PREV_2D9B40,
+            );
+        }
+    }
+
+    /// One message per seed (half of them the spatial-hash ones, a few out
+    /// of range, one with the upper half of a1 set), the hash's eight root
+    /// nodes with zero or one non-empty word (so every scan exit is taken),
+    /// random key signs, a 0..3-item list for message 8.
+    pub(crate) fn ccr_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0xb498, 6);
+        c.bus.write32(CCR_CTRL, CCR_MAGIC);
+        put_words(c, ccr_release::TABLE, &CCR_TABLE_WORDS);
+
+        let msg: u64 = if seed % 2 == 0 {
+            [1, 3, 5, 6, 7, 8][(seed / 2 % 6) as usize]
+        } else {
+            match seed / 2 % 25 {
+                23 => 0x17 + (r.next_u32() % 0x100) as u64,
+                24 => 1u64 << 32 | 1,
+                m => m as u64,
+            }
+        };
+        let param: u64 = if msg == 20 {
+            // A bank slot that does not match: the unload returns at once.
+            ((r.next_u32() % 16) << 8 | (1 + r.next_u32() % 255)) as u64
+        } else {
+            (r.next_u32() as u64) << 32 | r.next_u32() as u64
+        };
+        if msg == 20 {
+            c.bus.write32(LOG_RESULTS, CCR_AUDIO);
+        }
+
+        // self: vtable (slot 22 at +0xb0), the hash, a base index.
+        c.bus.write32(CCR_SELF + ccr_release::SELF_VT, CCR_VT6);
+        c.bus.write32(CCR_SELF + ccr_release::SELF_HASH, CCR_HASH);
+        c.bus
+            .write32(CCR_SELF + ccr_release::SELF_BASE, r.next_u32());
+        c.bus.write16(CCR_VT6 + 0xb0, (r.next_u32() as u16) & !3);
+        let slot22 = if r.next_u32() % 3 == 0 {
+            0x0014_06c0
+        } else {
+            FAKE
+        };
+        c.bus.write32(CCR_VT6 + 0xb4, slot22);
+
+        // The hash: update counter, eight roots and their nodes.
+        c.bus
+            .write32(CCR_HASH + ccr_release::HASH_UPDATES, r.next_u32());
+        for k in 0..8u32 {
+            let node = CCR_NODES + 0x40 * k;
+            c.bus
+                .write32(CCR_HASH + 0x14 * k + ccr_release::ROOT_NODE, node);
+            let busy = r.next_u32() % 14;
+            for w in 0..11u32 {
+                let v = if w == busy { r.next_u32() | 1 } else { 0 };
+                c.bus.write32(node + 4 * w, v);
+            }
+        }
+        // The key (x, y, z words) the fake KEY_FROM_BOX leaves on the stack.
+        let key = crate::difftest::SP - 0xc0 + 0x24;
+        for i in 0..3 {
+            let v = r.next_u32();
+            c.bus.write32(
+                key + 4 * i,
+                if r.next_u32() % 2 == 0 {
+                    v >> 1
+                } else {
+                    v | 1 << 31
+                },
+            );
+        }
+
+        // data: boxes everywhere, a list of 0..3 items (count may be <= 0).
+        for i in 0..0x60u32 {
+            let f = r.f32(100.0);
+            c.bus.write32(CCR_ITEM + 4 * i, f);
+        }
+        let count = (r.next_u32() % 5) as i32 - 1;
+        c.bus
+            .write32(CCR_ITEM + ccr_release::LIST_COUNT, count as u32);
+        c.bus.write32(CCR_ITEM + ccr_release::LIST_FIRST, CCR_LIST);
+        for i in 0..4u32 {
+            let e = CCR_LIST + 0x100 * i;
+            for w in 0..0x22u32 {
+                let f = r.f32(100.0);
+                c.bus.write32(e + 4 * w, f);
+            }
+            c.bus.write32(e + ccr_release::ITEM_NEXT, e + 0x100);
+        }
+
+        // gp globals: mission manager (vt slot 50 at +0x190), waypoint files
+        // (unloaded entries), an ambient pointer, the world.
+        let gp = GAME_GP;
+        c.bus.write32(gp + ccr_release::GP_MISSION_MAN, CCR_MISSION);
+        c.bus.write32(CCR_MISSION + 0x10d8, CCR_MISSION_VT);
+        c.bus
+            .write16(CCR_MISSION_VT + 0x190, (r.next_u32() as u16) & !3);
+        c.bus.write32(CCR_MISSION_VT + 0x194, FAKE + 0x40);
+        let wpf = if r.next_u32() % 3 == 0 { 0 } else { CCR_WPF };
+        c.bus.write32(gp + ccr_release::GP_WP_FILES, wpf);
+        c.bus.write32(CCR_WPF + 0x8, CCR_WPF + 0x100);
+        c.bus.write32(CCR_WPF + 0x104, CCR_WPF_TABLE);
+        c.bus.write32(gp - ccr_release::GP_AMBIENT, r.next_u32());
+        c.bus.write32(gp - ccr_release::GP_WORLD, CCR_WORLD);
+        c.bus.write32(CCR_WORLD + 0x84, CCR_WORLD + 0x100);
+        fill(c, &mut r, CCR_WORLD + 0x100, 8);
+
+        c.g[A0][0] = CCR_SELF as u64;
+        c.g[A1][0] = msg;
+        c.g[A2][0] = param;
+        c.g[A3][0] = CCR_ITEM as u64;
+        c.pc = ccr_release::ENTRY;
+    }
+
+    /// The world view's message handler against the generated body.
+    #[test]
+    fn cps2_chunk_resolve_release_matches() {
+        ccr_install_fakes();
+        covered(
+            ee::s13::f_003ab498__generated,
+            cps2_chunk_resolve_release,
+            500,
+            &|c, seed| ccr_setup(c, seed),
+        );
+    }
+
+    /// The gate of this module's callee fakes (outside the fakes' pointer
+    /// range 0x800000..0x840000 and their log).
+    pub(crate) const OC368_CTRL: u32 = 0x008f_0000;
+
+    pub(crate) const OC368_MAGIC: u32 = 0x0c36_8a5e;
+
+    /// The jump table's words (`.rodata` 0x494fb0, from the ELF).
+    pub(crate) const OC368_CRR_TABLE: [u32; 23] = [
+        0x003a_b080,
+        0x003a_aec0,
+        0x003a_b06c,
+        0x003a_afc8,
+        0x003a_b2bc,
+        0x003a_b200,
+        0x003a_b094,
+        0x003a_b0dc,
+        0x003a_b120,
+        0x003a_af5c,
+        0x003a_af88,
+        0x003a_b404,
+        0x003a_b2dc,
+        0x003a_b300,
+        0x003a_b420,
+        0x003a_b334,
+        0x003a_b354,
+        0x003a_b320,
+        0x003a_b38c,
+        0x003a_b3c4,
+        0x003a_b3a4,
+        0x003a_b3f4,
+        0x003a_b45c,
+    ];
+
+    /// Gated logging fakes in the callees' override slots: with the gate set
+    /// a call is logged (`fakes::fake`: random pointer result, forced
+    /// results, unwinds); otherwise the slot's previous body runs.
+    macro_rules! oc368_gated_fakes {
+        ($($name:ident: $slot:expr => $gen:expr, $addr:expr;)*) => {
+            $(
+                mod $name {
+                    use super::{OC368_CTRL, OC368_MAGIC};
+                    use crate::difftest::fakes;
+                    use ssx3_ee as ee;
+                    use ssx3_ee_rt::cpu::reg::RA;
+                    use ssx3_ee_rt::Cpu;
+                    use std::sync::atomic::AtomicUsize;
+                    pub static PREV: AtomicUsize = AtomicUsize::new(0);
+                    pub fn fake(c: &mut Cpu) {
+                        if c.bus.read32(OC368_CTRL) != OC368_MAGIC {
+                            return fakes::fall_back(c, &PREV, $gen);
+                        }
+                        let ra = c.g[RA][0] as u32;
+                        fakes::fake(c, $addr, ra);
+                    }
+                }
+            )*
+            fn oc368_install_fakes() {
+                $(
+                    fakes::hook(std::ptr::addr_of_mut!($slot), $name::fake, &$name::PREV);
+                )*
+            }
+        };
+    }
+
+    oc368_gated_fakes! {
+        oc368_fk_spatial_key: ee::s10::OVERRIDE_00328F28 => ee::s10::f_00328f28__generated, 0x0032_8f28;
+        oc368_fk_insert_at_key: ee::s10::OVERRIDE_00328660 => ee::s10::f_00328660__generated, 0x0032_8660;
+        oc368_fk_alloc: ee::s10::OVERRIDE_00317D70 => ee::s10::f_00317d70__generated, 0x0031_7d70;
+        oc368_fk_free: ee::s10::OVERRIDE_00317E98 => ee::s10::f_00317e98__generated, 0x0031_7e98;
+        oc368_fk_memset: ee::s14::OVERRIDE_003E6448 => ee::s14::f_003e6448__generated, 0x003e_6448;
+        oc368_fk_audio_module: ee::s07::OVERRIDE_0028B1C8 => ee::s07::f_0028b1c8__generated, 0x0028_b1c8;
+        oc368_fk_locators: ee::s07::OVERRIDE_00278A10 => ee::s07::f_00278a10__generated, 0x0027_8a10;
+        oc368_fk_audio_instance: ee::s07::OVERRIDE_0028B180 => ee::s07::f_0028b180__generated, 0x0028_b180;
+        oc368_fk_load_bank: ee::s07::OVERRIDE_00286CA8 => ee::s07::f_00286ca8__generated, 0x0028_6ca8;
+        oc368_fk_path_free: ee::s07::OVERRIDE_0026AF00 => ee::s07::f_0026af00__generated, 0x0026_af00;
+        oc368_fk_path_set: ee::s07::OVERRIDE_0026AD70 => ee::s07::f_0026ad70__generated, 0x0026_ad70;
+        oc368_fk_world_sound: ee::s08::OVERRIDE_002B6B08 => ee::s08::f_002b6b08__generated, 0x002b_6b08;
+        oc368_fk_script_cache: ee::s13::OVERRIDE_003ACA10 => ee::s13::f_003aca10__generated, 0x003a_ca10;
+        oc368_fk_app_module: ee::s13::OVERRIDE_003AD188 => ee::s13::f_003ad188__generated, 0x003a_d188;
+        oc368_fk_occlusion_man: ee::s13::OVERRIDE_003AD198 => ee::s13::f_003ad198__generated, 0x003a_d198;
+        oc368_fk_get_be: ee::s01::OVERRIDE_0014DC80 => ee::s01::f_0014dc80__generated, 0x0014_dc80;
+        oc368_fk_be_interface: ee::s01::OVERRIDE_0014DD58 => ee::s01::f_0014dd58__generated, 0x0014_dd58;
+        oc368_fk_race_path: ee::s05::OVERRIDE_002105D0 => ee::s05::f_002105d0__generated, 0x0021_05d0;
+        oc368_fk_find_section: ee::s05::OVERRIDE_0022E0E0 => ee::s05::f_0022e0e0__generated, 0x0022_e0e0;
+        oc368_fk_add_occluder: ee::s06::OVERRIDE_00242540 => ee::s06::f_00242540__generated, 0x0024_2540;
+        oc368_fk_avalanche: ee::s09::OVERRIDE_002D9FB8 => ee::s09::f_002d9fb8__generated, 0x002d_9fb8;
+    }
+
+    /// Every message (0-22) and out-of-range ones, against fakes for the
+    /// override-slot callees; the slotless callees run for real on short
+    /// paths: SpatialHash_Insert (empty hash, then the same key again),
+    /// WPFile_SetData (data not a relocatable file), the section script
+    /// table (no scripts), the camera triggers (no data), the mission stub,
+    /// AI_SetTrackPathsBuffer (forced section numbers 0x11..0x15 or a
+    /// pointer; both results, freeing or not).
+    #[test]
+    fn c_ps2_chunk_resolve_resolve_matches() {
+        oc368_install_fakes();
+        fakes::covered(
+            ee::s13::f_003aae68__generated,
+            c_ps2_chunk_resolve_resolve,
+            300,
+            &|c, seed| {
+                const BASE: u32 = 0x00a0_0000;
+                const SELF: u32 = BASE;
+                const VT: u32 = BASE + 0x100;
+                const HASHES: u32 = BASE + 0x400;
+                const OBJ: u32 = BASE + 0x1000;
+                const NODES: u32 = BASE + 0x2000;
+                const VIEW: u32 = BASE + 0x3000;
+                const VIEW_VT: u32 = BASE + 0x3200;
+                const RES: u32 = BASE + 0x4000;
+                const RES_SCRIPTS: u32 = BASE + 0x4100;
+                const RES_TABLE: u32 = BASE + 0x4200;
+                const PAINTER: u32 = BASE + 0x5000;
+                const PAINTER_FILES: u32 = BASE + 0x5100;
+                const WORLD: u32 = BASE + 0x6000;
+                const WORLD_AI: u32 = BASE + 0x6100;
+
+                let mut r = fakes::machine(c, seed, 0x3aae68, 6);
+                c.pc = CRR_ENTRY;
+                c.bus.write32(OC368_CTRL, OC368_MAGIC);
+                put_words(c, CRR_JUMP_TABLE, &OC368_CRR_TABLE);
+                let msg = seed % 25;
+                let round = seed / 25;
+                c.g[A1][0] = match msg {
+                    23 => 23 + (r.next_u32() & 0xff) as u64,
+                    24 => sx(r.next_u32() | 0x8000_0000),
+                    m => m as u64,
+                };
+
+                // The resolver and its vtable.
+                c.g[A0][0] = sx(SELF);
+                c.bus.write32(SELF + CRR_VTABLE, VT);
+                c.bus.write32(SELF + CRR_HASHES, HASHES);
+                c.bus.write32(SELF + CRR_BASE_INDEX, r.next_u32());
+                let slots = [0x28, 0x48, 0x68, 0x70, 0x88, 0x90, 0x98, 0xa0, 0xa8];
+                for (i, off) in slots.into_iter().enumerate() {
+                    let delta = (r.next_u32() as i16 as i32 & !3) as u16;
+                    c.bus.write16(VT + off, delta);
+                    c.bus.write32(VT + off + 4, FAKE + 0x10 * i as u32);
+                }
+                if round % 2 == 0 {
+                    // Visibility test rejects (a real leaf returning 0).
+                    c.bus.write32(VT + CRR_VT_VISIBLE + 4, 0x0014_06c0);
+                }
+
+                // The chunk: random boxes, a patch list.
+                fill(c, &mut r, OBJ, 0x70);
+                c.bus.write32(OBJ, 0x20);
+                let count = [0i32, 1, 2, 3, -2][(round % 5) as usize];
+                c.bus.write32(OBJ + CRR_OBJ_COUNT, count as u32);
+                c.bus.write32(OBJ + CRR_OBJ_LIST, NODES);
+                for i in 0..3 {
+                    let node = NODES + 0x100 * i;
+                    fill(c, &mut r, node + CRR_NODE_BOX, 6);
+                    c.bus.write32(node + CRR_NODE_NEXT, node + 0x100);
+                }
+                let obj = match msg {
+                    17 => 0,
+                    14 if round % 3 == 0 => 0,
+                    _ => OBJ,
+                };
+                c.g[A3][0] = sx(obj);
+                let hi = [0u32, 1, 2, 3, 5, r.next_u32() >> 8][(round % 6) as usize];
+                c.g[A2][0] = sx((hi << 8) | (r.next_u32() & 0xff));
+
+                // The world view's stream handler.
+                c.bus.write32(GAME_GP + CRR_GP_WORLD_VIEW, VIEW);
+                c.bus.write32(VIEW + 0x10d8, VIEW_VT);
+                c.bus
+                    .write16(VIEW_VT + 0x170, (r.next_u32() & 0xfffc) as u16);
+                c.bus.write32(VIEW_VT + 0x174, FAKE + 0x200);
+
+                // Script resources (or none), painter files, the world.
+                let res = if round % 4 == 1 { 0 } else { RES };
+                c.bus.write32(GAME_GP + CRR_GP_SCRIPT_RES, res);
+                c.bus.write32(RES + 4, RES_SCRIPTS);
+                c.bus.write32(RES_SCRIPTS + 4, RES_TABLE);
+                c.bus.write32(RES + 8, PAINTER);
+                c.bus.write32(PAINTER + 4, PAINTER_FILES);
+                c.bus.write32(GAME_GP - CRR_GP_LOCATORS_NEG, r.next_u32());
+                c.bus.write32(GAME_GP - CRR_GP_WORLD_NEG, WORLD);
+                c.bus.write32(WORLD + 0x84, WORLD_AI);
+                c.bus.write32(WORLD_AI + 0x78, r.next_u32());
+                if msg == 14 && round % 2 == 1 {
+                    // AI_SetTrackPathsBuffer's section number (first call).
+                    c.bus.write32(LOG_RESULTS, 0x11 + r.next_u32() % 5);
                 }
             },
         );

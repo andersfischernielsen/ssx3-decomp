@@ -131,6 +131,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         modifier_block_take_particle_list,
         "ModifierBlock_TakeParticleList",
     ),
+    (
+        0x0035_2f08,
+        modifier_block_clear_transform_finished,
+        "ModifierBlock_ClearTransformFinished",
+    ),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect(c, addr)`.
@@ -1682,6 +1687,40 @@ pub fn modifier_block_set_transform_radius(c: &mut Cpu) {
     frame.close(c);
 }
 
+// ----------------------------------- ModifierBlock_ClearTransformFinished
+
+/// Vtable entry 7 (`{delta, fn}` at +0x38): the transform modifier's
+/// "clear finished" method.
+pub(crate) const MODIFIER_BLOCK_CLEAR_FINISHED_SLOT: u32 = 0x38;
+
+/// `void ModifierBlock_ClearTransformFinished(tModifierBlock* b)`
+/// (0x00352f08, `tModifierBlock::clearComplete`): if the block has a
+/// transform modifier (+0), call its virtual "clear finished" method.
+pub fn modifier_block_clear_transform_finished(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = Addr(r32(c, A0)).lw(c);
+        frame.restore_ra(c, 0);
+        if c.g[A1][0] != 0 {
+            c.cycles += 6;
+            let modifier = r32(c, A1);
+            c.g[V0][0] = Addr(modifier).lw(c);
+            let vt = r32(c, V0);
+            c.g[A0][0] = Addr(vt.wrapping_add(MODIFIER_BLOCK_CLEAR_FINISHED_SLOT)).lh(c);
+            c.g[V1][0] = Addr(vt.wrapping_add(MODIFIER_BLOCK_CLEAR_FINISHED_SLOT + 4)).lw(c);
+            c.g[A0][0] = sx(modifier.wrapping_add(r32(c, A0)));
+            let method = r32(c, V1);
+            call_ptr(c, method, 0x0035_2f30)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2446,6 +2485,34 @@ pub(crate) mod tests {
                     .write16(vt + 0x78, ((r.next_u32() as i16) & !3) as u16);
                 c.bus.write32(vt + 0x7c, FAKE);
                 c.g[A0][0] = sx(obj);
+            },
+        );
+    }
+
+    /// `ModifierBlock_ClearTransformFinished`: no transform modifier, or one
+    /// whose method (a fake through a fake vtable) is called on the
+    /// adjusted `this`.
+    #[test]
+    fn modifier_block_clear_transform_finished_matches() {
+        covered(
+            ee::s11::f_00352f08__generated,
+            modifier_block_clear_transform_finished,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_2f08, 1);
+                c.pc = 0x0035_2f08;
+                let block = DATA + 0x5_0000;
+                let modifier = DATA + 0x5_1000;
+                let vt = DATA + 0x5_2000;
+                let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+                c.bus
+                    .write16(vt + MODIFIER_BLOCK_CLEAR_FINISHED_SLOT, delta as u16);
+                c.bus
+                    .write32(vt + MODIFIER_BLOCK_CLEAR_FINISHED_SLOT + 4, FAKE);
+                c.bus.write32(modifier, vt);
+                c.bus
+                    .write32(block, if seed % 4 == 0 { 0 } else { modifier });
+                c.g[A0][0] = sx(block);
             },
         );
     }

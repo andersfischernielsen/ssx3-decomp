@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -85,6 +86,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0026_e6e0,
         replay_highlight_slot_begin,
         "Replay_HighlightSlotBegin",
+    ),
+    (
+        0x0026_e7f8,
+        replay_highlight_slot_detach,
+        "Replay_HighlightSlotDetach",
     ),
 ];
 
@@ -763,6 +769,20 @@ pub fn replay_highlight_slot_begin(c: &mut Cpu) {
     })
 }
 
+// ------------------------------------------------ Replay_HighlightSlotDetach
+
+/// The replay highlight slot's attached object (`+0xb0`).
+pub(crate) const REPLAY_HIGHLIGHT_SLOT_OBJECT: u32 = 0xb0;
+
+/// `void Replay_HighlightSlotDetach(ReplayHighlightSlot* slot)` (0x26e7f8):
+/// forget the slot's attached object (`slot->object = NULL`).
+pub fn replay_highlight_slot_detach(c: &mut Cpu) {
+    c.cycles += 2;
+    let slot = Addr(abi::arg(c, 0));
+    slot.off(REPLAY_HIGHLIGHT_SLOT_OBJECT).sw(c, 0);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1132,8 +1152,6 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::oc318_gated;
 
     use std::sync::atomic::AtomicUsize;
-    use std::sync::atomic::Ordering;
-    use std::sync::Once;
 
     pub(crate) const CTRL_HIGHLIGHT: u32 = DATA + 0x6_0020;
 
@@ -1151,11 +1169,11 @@ pub(crate) mod tests {
     );
 
     pub(crate) fn replay_highlight_install() {
-        static ONCE: Once = Once::new();
-        ONCE.call_once(|| unsafe {
-            OC318_PREV_HIGHLIGHT.store(ee::s07::OVERRIDE_0026D730 as usize, Ordering::Relaxed);
-            ee::s07::OVERRIDE_0026D730 = oc318_fake_highlight_set_value;
-        });
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s07::OVERRIDE_0026D730),
+            oc318_fake_highlight_set_value,
+            &OC318_PREV_HIGHLIGHT,
+        );
     }
 
     /// A slot object, a rider and a data block: aligned and unaligned
@@ -1207,6 +1225,24 @@ pub(crate) mod tests {
                 replay_highlight_setup(c, seed);
                 let mut r = Rng(0x0026_e601 ^ seed as u64);
                 schedule(c, &mut r, seed, 0x0026_e6e0)
+            },
+        );
+    }
+
+    /// `Replay_HighlightSlotDetach` on a slot with a random object.
+    #[test]
+    fn replay_highlight_slot_detach_matches() {
+        check(
+            ee::s07::f_0026e7f8__generated,
+            replay_highlight_slot_detach,
+            64,
+            &|c, seed| {
+                let mut r = Rng(0x0026_e7f8 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0026_e7f8;
+                c.g[A0][0] = sx(DATA + 0x100);
+                c.bus
+                    .write32(DATA + 0x100 + REPLAY_HIGHLIGHT_SLOT_OBJECT, r.next_u32());
             },
         );
     }

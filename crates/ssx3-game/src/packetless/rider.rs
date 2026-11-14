@@ -4,7 +4,6 @@
 //! `DrawSkinnedModel` and slot 100 `DrawSkinnedModelShadow` (bone batches
 //! from the scratchpad, then the model file's prebuilt chains).
 
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;
 use ssx3_render::direct::{Cmd, Step};
 

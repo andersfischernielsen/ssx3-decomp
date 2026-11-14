@@ -14,6 +14,7 @@ pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
 pub(crate) use crate::game::dirtysock::tags::lbu_r;
+pub(crate) use crate::game::ealib::seg_2dcae8::SFIR_MEM_COPY;
 pub(crate) use crate::game::fe::debugfe::at;
 pub(crate) use crate::game::fe::festatetrophyroom::r;
 pub(crate) use crate::game::main::gamemode::low;
@@ -42,6 +43,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003a_7058, cstream_man_set_rate, "cStreamMan_SetRate"),
     (0x003a_7098, c_stream_man_update, "cStreamMan_Update"),
     (0x003a_7218, cstream_man_decompress, "cStreamMan_Decompress"),
+    (
+        0x003a_7238,
+        cstreamman_parse_chunks,
+        "cStreamMan_ParseChunks",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -561,6 +567,510 @@ pub fn cstream_man_decompress(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// cStreamMan_ParseChunks
+// ---------------------------------------------------------------------------
+
+pub(crate) const SMPC_ALLOC_RESOURCE: Callee = Callee {
+    addr: 0x003a_8a90,
+    f: ee::s13::f_003a8a90,
+};
+
+pub(crate) const SMPC_RESOLVE_RESOURCE: Callee = Callee {
+    addr: 0x003a_8cd0,
+    f: ee::s13::f_003a8cd0,
+};
+
+/// `cStreamMan` chunk parser fields: `+0` the world cache, `+0x94` group,
+/// `+0x98` chunks remaining, `+0xa0` bytes of a split header, `+0xa4` the
+/// split header, `+0xac` retry the allocation, `+0xb8` id, `+0xbc` key,
+/// `+0xc0` bytes left, `+0xc4` resolve an empty chunk, `+0xc8` copying,
+/// `+0xcc` the allocation, `+0xd0` the copy destination.
+pub(crate) const SMPC_REMAINING: u32 = 0x98;
+
+pub(crate) const SMPC_PARTIAL: u32 = 0xa0;
+
+pub(crate) const SMPC_RETRY: u32 = 0xac;
+
+pub(crate) const SMPC_SIZE: u32 = 0xc0;
+
+pub(crate) const SMPC_ENTRY: u32 = 0x003a_7238;
+
+/// [`cstreamman_parse_chunks`]: `cWorldCache_AllocResource(cache, group,
+/// id, key, size)` for the current chunk, its result to `+0xcc`; true
+/// when it answered "later" (-1).
+pub(crate) fn smpc_alloc(c: &mut Cpu, ret: u32) -> Result<bool, crate::call::Unwound> {
+    let me = Addr(c.g[S0][0] as u32);
+    c.g[A0][0] = me.lw(c);
+    c.g[A1][0] = me.off(0x94).lw(c);
+    c.g[A2][0] = me.off(0xb8).lw(c);
+    c.g[A3][0] = me.off(0xbc).lw(c);
+    c.g[T0][0] = me.off(SMPC_SIZE).lw(c);
+    SMPC_ALLOC_RESOURCE.call(c, ret)?;
+    let later = c.g[V0][0] == c.g[S4][0];
+    let v0 = c.g[V0][0];
+    me.off(0xcc).sw(c, v0);
+    Ok(later)
+}
+
+/// [`cstreamman_parse_chunks`]: the header in the stack buffer (`sp`) to
+/// id / key / size (`v0` its 8 bytes).
+pub(crate) fn smpc_header(c: &mut Cpu) {
+    let me = Addr(c.g[S0][0] as u32);
+    let sp_m2 = c.g[SP][0] as u32;
+    c.g[A0][0] = Addr(sp_m2).lbu(c);
+    c.g[V1][0] = Addr(sp_m2 + 4).lw(c);
+    c.g[V0][0] <<= 24;
+    c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
+    c.g[V0][0] &= c.g[S5][0];
+    let (a0, v1, v0) = (c.g[A0][0], c.g[V1][0], c.g[V0][0]);
+    me.off(0xb8).sw(c, a0);
+    me.off(0xbc).sw(c, v1);
+    me.off(SMPC_SIZE).sw(c, v0);
+}
+
+/// `int cStreamMan_ParseChunks(cStreamMan* self, int* count, u8** data)`
+/// (0x3a7238): consumes streamed bytes: 8-byte chunk headers (id, 24-bit
+/// size, key; a header split across calls is kept at `+0xa4`), each
+/// chunk's space from the world cache (0 if "later": the caller retries),
+/// its bytes copied there (or skipped) and resolved when complete, until
+/// no chunks remain; keeps a trailing partial header. Dispatcher-shaped:
+/// its loops resume at their heads.
+pub fn cstreamman_parse_chunks(c: &mut Cpu) {
+    guest(c, |c| {
+        let me = |c: &Cpu| Addr(c.g[S0][0] as u32);
+        let count = |c: &Cpu| Addr(c.g[S2][0] as u32);
+        let data = |c: &Cpu| Addr(c.g[S3][0] as u32);
+        let sp_m2 = |c: &Cpu| c.g[SP][0] as u32;
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                SMPC_ENTRY => {
+                    c.cycles += 18;
+                    let frame = Frame::open(c, 0x90);
+                    frame.save(c, S4, 0x40);
+                    frame.save(c, S5, 0x30);
+                    frame.save(c, S0, 0x80);
+                    c.g[S0][0] = c.g[A0][0];
+                    frame.save(c, S2, 0x60);
+                    c.g[S2][0] = c.g[A1][0];
+                    frame.save(c, S3, 0x50);
+                    c.g[S3][0] = c.g[A2][0];
+                    frame.save(c, S6, 0x20);
+                    frame.save(c, S1, 0x70);
+                    c.g[S4][0] = u64::MAX;
+                    frame.save_ra(c, 0x10);
+                    c.g[S6][0] = 1;
+                    c.g[S5][0] = 0xff_ffff;
+                    c.cycles += 1;
+                    c.g[V1][0] = count(c).lw(c);
+                    pc = 0x003a_74f0;
+                }
+                0x003a_7280 => {
+                    // Loop head: retry, a new header, or more bytes.
+                    c.cycles += 2;
+                    if c.g[V0][0] == 0 {
+                        c.g[V0][0] = me(c).off(SMPC_SIZE).lw(c);
+                        c.cycles += 2;
+                        if c.g[V0][0] != 0 {
+                            c.g[A2][0] = count(c).lw(c);
+                            pc = 0x003a_7414;
+                        } else {
+                            pc = 0x003a_72c0;
+                        }
+                    } else {
+                        c.cycles += 1;
+                        c.g[A0][0] = me(c).lw(c);
+                        pc = 0x003a_728c;
+                    }
+                }
+                0x003a_728c => {
+                    // Retry the allocation.
+                    c.cycles += 7;
+                    if smpc_alloc(c, 0x003a_72a0)? {
+                        pc = 0x003a_73e8;
+                        continue;
+                    }
+                    c.cycles += 2;
+                    me(c).off(SMPC_RETRY).sw(c, 0);
+                    if c.g[V0][0] != 0 {
+                        pc = 0x003a_73f8;
+                    } else {
+                        c.cycles += 2;
+                        c.g[V0][0] = me(c).off(SMPC_SIZE).lw(c);
+                        pc = 0x003a_7404;
+                    }
+                }
+                0x003a_72c0 => {
+                    // A new header: complete a split one or read all 8.
+                    c.cycles += 3;
+                    c.g[V0][0] = me(c).off(SMPC_PARTIAL).lw(c);
+                    c.g[T0][0] = c.g[SP][0];
+                    if c.g[V0][0] == 0 {
+                        c.cycles += 3;
+                        let s4 = c.g[S4][0];
+                        Addr(sp_m2(c) + 4).sw(c, s4);
+                        c.g[A0][0] = c.g[SP][0];
+                        c.g[A1][0] = 7;
+                        pc = 0x003a_7378;
+                        continue;
+                    }
+                    c.cycles += 3;
+                    let s4 = c.g[S4][0];
+                    Addr(sp_m2(c) + 4).sw(c, s4);
+                    c.g[A2][0] = 0;
+                    if (c.g[V0][0] as i64) <= 0 {
+                        pc = 0x003a_72fc;
+                    } else {
+                        c.cycles += 2;
+                        c.g[A3][0] = c.g[V0][0];
+                        c.g[A1][0] = sx(me(c).0.wrapping_add(0xa4));
+                        pc = 0x003a_72e0;
+                    }
+                }
+                0x003a_72e0 => {
+                    // The kept bytes of the split header.
+                    c.cycles += 7;
+                    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[V1][0] = Addr(c.g[V0][0] as u32).lbu(c);
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+                    c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[A3][0] as i64)) as u64;
+                    let v1 = c.g[V1][0];
+                    Addr(c.g[A0][0] as u32).sb(c, v1);
+                    if c.g[V0][0] != 0 {
+                        if crate::events::back_edge_unwinds(c, 0x003a_72e0) {
+                            return Ok(());
+                        }
+                    } else {
+                        pc = 0x003a_72fc;
+                    }
+                }
+                0x003a_72fc => {
+                    c.cycles += 4;
+                    c.g[A2][0] = me(c).off(SMPC_PARTIAL).lw(c);
+                    c.g[V0][0] = ((c.g[A2][0] as i64) < 8) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[V0][0] = Addr(sp_m2(c)).ld(c);
+                    if more {
+                        c.cycles += 1;
+                        pc = 0x003a_7310;
+                    } else {
+                        pc = 0x003a_7344;
+                    }
+                }
+                0x003a_7310 => {
+                    // The rest of the split header from the data.
+                    c.cycles += 12;
+                    c.g[V0][0] = data(c).lw(c);
+                    c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+                    c.g[V1][0] = Addr(c.g[V0][0] as u32).lbu(c);
+                    c.g[A1][0] = ((c.g[A2][0] as i64) < 8) as u64;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+                    let (v0, v1) = (c.g[V0][0], c.g[V1][0]);
+                    data(c).sw(c, v0);
+                    Addr(c.g[A0][0] as u32).sb(c, v1);
+                    c.g[V0][0] = sx((count(c).lw(c) as u32).wrapping_sub(1));
+                    let v0 = c.g[V0][0];
+                    count(c).sw(c, v0);
+                    if c.g[A1][0] != 0 {
+                        if crate::events::back_edge_unwinds(c, 0x003a_7310) {
+                            return Ok(());
+                        }
+                    } else {
+                        c.cycles += 1;
+                        c.g[V0][0] = Addr(sp_m2(c)).ld(c);
+                        pc = 0x003a_7344;
+                    }
+                }
+                0x003a_7344 => {
+                    c.cycles += 10;
+                    smpc_header(c);
+                    me(c).off(SMPC_PARTIAL).sw(c, 0);
+                    pc = 0x003a_73c8;
+                }
+                0x003a_7378 => {
+                    // A whole header from the data.
+                    c.cycles += 11;
+                    c.g[V0][0] = data(c).lw(c);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+                    c.g[V1][0] = Addr(c.g[V0][0] as u32).lbu(c);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+                    let (v0, v1) = (c.g[V0][0], c.g[V1][0]);
+                    data(c).sw(c, v0);
+                    Addr(c.g[A0][0] as u32).sb(c, v1);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+                    c.g[V0][0] = sx((count(c).lw(c) as u32).wrapping_sub(1));
+                    let v0 = c.g[V0][0];
+                    count(c).sw(c, v0);
+                    if (c.g[A1][0] as i64) >= 0 {
+                        if crate::events::back_edge_unwinds(c, 0x003a_7378) {
+                            return Ok(());
+                        }
+                    } else {
+                        c.cycles += 9;
+                        c.g[V0][0] = Addr(sp_m2(c)).ld(c);
+                        smpc_header(c);
+                        pc = 0x003a_73c8;
+                    }
+                }
+                0x003a_73c8 => {
+                    c.cycles += 8;
+                    if smpc_alloc(c, 0x003a_73e0)? {
+                        pc = 0x003a_73e8;
+                        continue;
+                    }
+                    c.cycles += 2;
+                    if c.g[V0][0] == 0 {
+                        c.g[V0][0] = me(c).off(SMPC_SIZE).lw(c);
+                        pc = 0x003a_7404;
+                    } else {
+                        pc = 0x003a_73f8;
+                    }
+                }
+                0x003a_73e8 => {
+                    // "Later": stop, the caller retries.
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    pc = 0x003a_756c;
+                }
+                0x003a_73f8 => {
+                    // Space: copy into it.
+                    c.cycles += 3;
+                    let (v0, s6) = (c.g[V0][0], c.g[S6][0]);
+                    me(c).off(0xd0).sw(c, v0);
+                    me(c).off(0xc8).sw(c, s6);
+                    c.cycles += 1;
+                    c.g[A2][0] = count(c).lw(c);
+                    pc = 0x003a_7414;
+                }
+                0x003a_7404 => {
+                    // No space: skip it (an empty chunk still resolves).
+                    c.cycles += 2;
+                    let size = c.g[V0][0];
+                    me(c).off(0xc8).sw(c, 0);
+                    if size == 0 {
+                        c.cycles += 1;
+                        let s6 = c.g[S6][0];
+                        me(c).off(0xc4).sw(c, s6);
+                    }
+                    c.cycles += 1;
+                    c.g[A2][0] = count(c).lw(c);
+                    pc = 0x003a_7414;
+                }
+                0x003a_7414 => {
+                    // The chunk's bytes in this data.
+                    c.cycles += 2;
+                    c.g[S1][0] = c.g[A2][0];
+                    if c.g[A2][0] == 0 {
+                        pc = 0x003a_74d8;
+                        continue;
+                    }
+                    c.cycles += 7;
+                    c.g[V0][0] = me(c).off(SMPC_SIZE).lw(c);
+                    c.g[A0][0] = me(c).off(0xc8).lw(c);
+                    c.g[V1][0] = ((c.g[V0][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                    if c.g[V1][0] != 0 {
+                        c.g[S1][0] = c.g[V0][0];
+                    }
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+                    let v0 = c.g[V0][0];
+                    me(c).off(SMPC_SIZE).sw(c, v0);
+                    if c.g[A0][0] != 0 {
+                        c.cycles += 9;
+                        c.g[A0][0] = me(c).off(0xd0).lw(c);
+                        c.g[A2][0] = c.g[S1][0];
+                        c.g[A1][0] = data(c).lw(c);
+                        call_ptr(c, SFIR_MEM_COPY.addr, 0x003a_7448)?;
+                        c.g[V0][0] = me(c).off(0xd0).lw(c);
+                        c.g[V1][0] = me(c).off(SMPC_SIZE).lw(c);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                        let v0 = c.g[V0][0];
+                        me(c).off(0xd0).sw(c, v0);
+                        if c.g[V1][0] == 0 {
+                            // Complete: resolve with the allocation.
+                            c.cycles += 11;
+                            let m = me(c);
+                            c.g[A0][0] = m.lw(c);
+                            c.g[A1][0] = m.off(0x94).lw(c);
+                            c.g[A2][0] = m.off(0xb8).lw(c);
+                            c.g[A3][0] = m.off(0xbc).lw(c);
+                            c.g[T0][0] = m.off(0xcc).lw(c);
+                            SMPC_RESOLVE_RESOURCE.call(c, 0x003a_7474)?;
+                            let m = me(c);
+                            c.g[V0][0] = m.off(SMPC_REMAINING).lw(c);
+                            m.off(0xcc).sw(c, 0);
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                            let v0 = c.g[V0][0];
+                            m.off(SMPC_REMAINING).sw(c, v0);
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = data(c).lw(c);
+                    } else {
+                        c.cycles += 2;
+                        if c.g[V0][0] != 0 {
+                            c.g[V0][0] = data(c).lw(c);
+                        } else {
+                            // A skipped chunk ends: resolve an empty one.
+                            c.cycles += 5;
+                            let m = me(c);
+                            c.g[V0][0] = m.off(SMPC_REMAINING).lw(c);
+                            c.g[V1][0] = m.off(0xc4).lw(c);
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                            let v0 = c.g[V0][0];
+                            m.off(SMPC_REMAINING).sw(c, v0);
+                            if c.g[V1][0] != 0 {
+                                c.cycles += 7;
+                                c.g[A0][0] = m.lw(c);
+                                c.g[T0][0] = sx((c.g[GP][0] as u32).wrapping_add(0x16e0));
+                                c.g[A1][0] = m.off(0x94).lw(c);
+                                c.g[A2][0] = m.off(0xb8).lw(c);
+                                c.g[A3][0] = m.off(0xbc).lw(c);
+                                SMPC_RESOLVE_RESOURCE.call(c, 0x003a_74bc)?;
+                                me(c).off(0xc4).sw(c, 0);
+                            }
+                            c.cycles += 1;
+                            c.g[V0][0] = data(c).lw(c);
+                        }
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    let v0 = c.g[V0][0];
+                    data(c).sw(c, v0);
+                    c.g[V1][0] = sx((count(c).lw(c) as u32).wrapping_sub(c.g[S1][0] as u32));
+                    let v1 = c.g[V1][0];
+                    count(c).sw(c, v1);
+                    pc = 0x003a_74d8;
+                }
+                0x003a_74d8 => {
+                    // All chunks done: drop the rest.
+                    c.cycles += 3;
+                    c.g[V0][0] = me(c).off(SMPC_REMAINING).lw(c);
+                    if c.g[V0][0] != 0 {
+                        c.g[V1][0] = count(c).lw(c);
+                        pc = 0x003a_74f0;
+                    } else {
+                        c.cycles += 2;
+                        count(c).sw(c, 0);
+                        pc = 0x003a_7518;
+                    }
+                }
+                0x003a_74f0 => {
+                    // Go on while a header fits, a chunk continues or a
+                    // retry is due.
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < 8) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[V0][0] = me(c).off(SMPC_RETRY).lw(c);
+                        if crate::events::back_edge_unwinds(c, 0x003a_7280) {
+                            return Ok(());
+                        }
+                        pc = 0x003a_7280;
+                        continue;
+                    }
+                    c.cycles += 2;
+                    if (c.g[V1][0] as i64) > 0 {
+                        c.cycles += 3;
+                        c.g[V0][0] = me(c).off(SMPC_SIZE).lw(c);
+                        let going = c.g[V0][0] != 0;
+                        c.g[V0][0] = me(c).off(SMPC_RETRY).lw(c);
+                        if going {
+                            if crate::events::back_edge_unwinds(c, 0x003a_7280) {
+                                return Ok(());
+                            }
+                            pc = 0x003a_7280;
+                            continue;
+                        }
+                    } else {
+                        c.g[V0][0] = me(c).off(SMPC_RETRY).lw(c);
+                    }
+                    c.cycles += 2;
+                    if c.g[V0][0] != 0 {
+                        c.g[A0][0] = me(c).lw(c);
+                        if crate::events::back_edge_unwinds(c, 0x003a_728c) {
+                            return Ok(());
+                        }
+                        pc = 0x003a_728c;
+                    } else {
+                        pc = 0x003a_7518;
+                    }
+                }
+                0x003a_7518 => {
+                    // Keep a trailing partial header.
+                    c.cycles += 3;
+                    c.g[V0][0] = count(c).lw(c);
+                    if c.g[V0][0] == 0 {
+                        c.g[V0][0] = 1;
+                        pc = 0x003a_756c;
+                        continue;
+                    }
+                    c.cycles += 4;
+                    let v0 = c.g[V0][0];
+                    me(c).off(SMPC_PARTIAL).sw(c, v0);
+                    c.g[V0][0] = count(c).lw(c);
+                    c.g[A1][0] = 0;
+                    if (c.g[V0][0] as i64) <= 0 {
+                        pc = 0x003a_7568;
+                    } else {
+                        c.cycles += 3;
+                        c.g[A2][0] = sx(me(c).0.wrapping_add(0xa4));
+                        c.g[V1][0] = data(c).lw(c);
+                        pc = 0x003a_7540;
+                    }
+                }
+                0x003a_7540 => {
+                    c.cycles += 10;
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+                    c.g[V0][0] = Addr(c.g[V1][0] as u32).lbu(c);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+                    let (v0, v1) = (c.g[V0][0], c.g[V1][0]);
+                    Addr(c.g[A0][0] as u32).sb(c, v0);
+                    data(c).sw(c, v1);
+                    c.g[V0][0] = count(c).lw(c);
+                    c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[V1][0] = data(c).lw(c);
+                        if crate::events::back_edge_unwinds(c, 0x003a_7540) {
+                            return Ok(());
+                        }
+                    } else {
+                        pc = 0x003a_7568;
+                    }
+                }
+                0x003a_7568 => {
+                    c.cycles += 1;
+                    c.g[V0][0] = 1;
+                    pc = 0x003a_756c;
+                }
+                0x003a_756c => {
+                    c.cycles += 10;
+                    let frame = Frame { size: 0x90 };
+                    for (r, off) in [
+                        (S0, 0x80),
+                        (S1, 0x70),
+                        (S2, 0x60),
+                        (S3, 0x50),
+                        (S4, 0x40),
+                        (S5, 0x30),
+                        (S6, 0x20),
+                    ] {
+                        frame.restore(c, r, off);
+                    }
+                    frame.restore_ra(c, 0x10);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, SMPC_ENTRY, 0x003a_7594);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -881,6 +1391,80 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(DATA + 0x400);
                 c.g[A2][0] = sx(DATA + 0x600);
                 c.g[A3][0] = sx(DATA + 0x800);
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    pub(crate) use crate::game::sound::soundsys::tests::oc371_machine;
+    pub(crate) use crate::game::sound::soundsys::tests::oc371_script;
+
+    pub(crate) use crate::game::sound::soundsys::tests::oc371_install_fakes;
+
+    /// A stream of chunks (sizes 0-20) in 0-40 bytes: a split header kept
+    /// from before (0-7 bytes) or none, a chunk in progress (copying or
+    /// skipping, empty ones resolving) or a pending retry; the cache
+    /// answering "later", no space or space; chunks running out; a
+    /// trailing partial header kept. The real `EA_MemCopy` copies; the
+    /// cache callees are logged fakes (one may unwind).
+    #[test]
+    fn cstreamman_parse_chunks_matches() {
+        oc371_install_fakes();
+        covered(
+            ee::s13::f_003a7238__generated,
+            cstreamman_parse_chunks,
+            500,
+            &|c, seed| {
+                let mut r = oc371_machine(c, seed, 0x003a_7238, 6);
+                c.pc = 0x003a_7238;
+                let me = DATA;
+                let stream = DATA + 0x1000;
+                fill(c, &mut r, me, 0x38);
+                c.bus.write32(me + SMPC_REMAINING, 1 + r.next_u32() % 4);
+                c.bus.write32(
+                    me + SMPC_PARTIAL,
+                    if r.next_u32() % 3 == 0 {
+                        r.next_u32() % 8
+                    } else {
+                        0
+                    },
+                );
+                c.bus
+                    .write32(me + SMPC_RETRY, (r.next_u32() % 5 == 0) as u32);
+                c.bus.write32(
+                    me + SMPC_SIZE,
+                    if r.next_u32() % 3 == 0 {
+                        r.next_u32() % 16
+                    } else {
+                        0
+                    },
+                );
+                c.bus.write32(me + 0xc4, r.next_u32() % 2);
+                c.bus.write32(me + 0xc8, r.next_u32() % 2);
+                c.bus.write32(me + 0xd0, DATA + 0x8000);
+                // The stream: headers (id, 24-bit size, key) and their bytes.
+                let mut at = stream;
+                while at < stream + 0x40 {
+                    let size = r.next_u32() % 21;
+                    c.bus.write8(at, r.next_u32() as u8);
+                    c.bus.write8(at + 1, size as u8);
+                    c.bus.write16(at + 2, 0);
+                    c.bus.write32(at + 4, r.next_u32());
+                    fill(c, &mut r, at + 8, (size + 3) / 4);
+                    at += 8 + size;
+                }
+                c.bus.write32(DATA + 0x100, r.next_u32() % 41);
+                c.bus.write32(DATA + 0x104, stream);
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(DATA + 0x100);
+                c.g[A2][0] = sx(DATA + 0x104);
+                let space = match r.next_u32() % 4 {
+                    0 => u32::MAX,
+                    1 => 0,
+                    _ => DATA + 0x9000,
+                };
+                oc371_script(c, 0x003a_8a90, space);
             },
         );
     }

@@ -90,6 +90,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         mesh_anim_randomize_nodes,
         "MeshAnim_RandomizeNodes",
     ),
+    (0x0035_2208, mesh_anim_v01, "MeshAnim_v01"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -2275,6 +2276,38 @@ pub fn intersect_info_clear(c: &mut Cpu) {
     })
 }
 
+/// Object vtable pointer offset (all `WorldObj`-derived classes).
+pub(crate) const OC339_OBJ_VTABLE: u32 = 0xc;
+
+// ---------------------------------------------------------------------------
+// MeshAnim_v01 (0x352208)
+
+/// The `MeshAnim` vtable (`0x490000 - 0x928`).
+pub(crate) const MESH_ANIM_VTABLE_ADDR: u32 = 0x0048_f6d8;
+
+pub(crate) const MESH_ANIM_BASE_DTOR: Callee = Callee {
+    addr: 0x0034_fbf0,
+    f: ee::s11::WorldObj_dtor,
+};
+
+/// `MeshAnim::~MeshAnim(MeshAnim* self, int flags)` (0x352208): restore the
+/// `MeshAnim` vtable, then run the `WorldObj` destructor.
+pub fn mesh_anim_v01(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x0049_0000;
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx(MESH_ANIM_VTABLE_ADDR);
+        c.sw(r32(c, V1).wrapping_add(OC339_OBJ_VTABLE), c.g[V0][0]);
+        MESH_ANIM_BASE_DTOR.call(c, 0x0035_2224)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3057,6 +3090,50 @@ pub(crate) mod tests {
                 let info = DATA + 0x100;
                 fill(c, &mut r, info, 0x30);
                 c.g[A0][0] = sx(info);
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    /// A `WorldObj` at `obj` with an instance at `inst` (random flags,
+    /// pointing back or not) and process-list neighbours or not, as
+    /// `world_obj_dtor_matches` builds it. Flags in `a1` without the delete
+    /// bit, so nothing is freed.
+    pub(crate) fn oc339_world_obj(c: &mut Cpu, r: &mut Rng, seed: u32, obj: u32) {
+        let inst = obj + 0x100;
+        fill(c, r, obj, 8);
+        c.bus.write16(obj + 0x10, (r.next_u32() % 8) as u16);
+        if seed % 3 == 0 {
+            c.bus.write32(obj + 4, 0);
+        } else {
+            c.bus.write32(obj + 4, obj + 0x200);
+            c.bus
+                .write32(obj + 8, if seed % 3 == 1 { 0 } else { obj + 0x300 });
+        }
+        c.bus
+            .write32(obj + 0x18, if seed % 7 == 0 { 0 } else { inst });
+        c.bus.write32(inst + 0x8, r.next_u32());
+        c.bus
+            .write32(inst + 0xc, if seed % 2 == 0 { obj } else { r.next_u32() });
+        c.g[A0][0] = obj as u64;
+        c.g[A1][0] = (r.next_u32() & !1) as u64;
+    }
+
+    /// `MeshAnim_v01`: the `world_obj_dtor_matches` fixture; the real
+    /// `WorldObj` destructor runs.
+    #[test]
+    fn mesh_anim_v01_matches() {
+        check(
+            ee::s11::f_00352208__generated,
+            mesh_anim_v01,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x35_2208 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0035_2208;
+                c.g[GP][0] = GAME_GP as u64;
+                oc339_world_obj(c, &mut r, seed, DATA);
             },
         );
     }

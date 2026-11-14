@@ -164,6 +164,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0036_a3b0, morton_spread8, "Morton_Spread8"),
     (0x0037_0018, emitter_ctor, "Emitter_ctor"),
     (0x0037_0b60, dynamic_emitter_ctor, "DynamicEmitter_ctor"),
+    (
+        0x0036_a190,
+        graphics_man_destroy_grid_mesh,
+        "GraphicsMan_DestroyGridMesh",
+    ),
 ];
 
 /// The game's render-context singleton (`gp+0x2a90`, `D_004A5B80`): its
@@ -6575,6 +6580,28 @@ pub fn emitter_ctor(c: &mut Cpu) {
     })
 }
 
+// -------------------------------------------- GraphicsMan_DestroyGridMesh
+
+pub(crate) const GRAPHICS_MAN_DEFERRED_DELETE_PUSH: Callee = Callee {
+    addr: 0x0036_a1c0,
+    f: ee::s12::DeferredDelete_Push,
+};
+
+/// `void GraphicsMan_DestroyGridMesh(GraphicsMan* gm, GridMesh* mesh)`
+/// (0x0036a190): hand the mesh to the deferred-delete queue.
+pub fn graphics_man_destroy_grid_mesh(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        GRAPHICS_MAN_DEFERRED_DELETE_PUSH.call(c, 0x0036_a1a0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7559,6 +7586,46 @@ pub(crate) mod tests {
                 scramble(c, &mut r);
                 c.g[A0][0] = DATA as u64;
                 fill(c, &mut r, DATA, 0x80);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    pub(crate) use crate::game::object::movenode::tests::oc338_fake;
+    pub(crate) use crate::game::object::movenode::tests::OC338_CTRL;
+    pub(crate) use crate::game::object::movenode::tests::OC338_MAGIC;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    oc338_fake!(
+        oc338_fake_deferred_push,
+        OC338_PREV_DEFERRED_PUSH,
+        0x0036_a1c0,
+        ee::s12::f_0036a1c0__generated
+    );
+
+    /// `GraphicsMan_DestroyGridMesh`: the mesh goes to a logging fake of
+    /// `DeferredDelete_Push`.
+    #[test]
+    fn graphics_man_destroy_grid_mesh_matches() {
+        hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0036A1C0),
+            oc338_fake_deferred_push,
+            &OC338_PREV_DEFERRED_PUSH,
+        );
+        covered(
+            ee::s12::f_0036a190__generated,
+            graphics_man_destroy_grid_mesh,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0036_a190, 1);
+                c.pc = 0x0036_a190;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                c.g[A0][0] = sx(DATA + 0x5_0000);
+                c.g[A1][0] = sx(DATA + 0x5_1000 + (r.next_u32() & 0xff0));
             },
         );
     }

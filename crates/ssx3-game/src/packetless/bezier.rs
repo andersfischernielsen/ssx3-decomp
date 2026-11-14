@@ -5,7 +5,6 @@
 //! packets `BuildPatchPacket` writes when a slot is filled) and the glitter
 //! pass (`RenderPatchFX` → native `DrawPatchFX`) stay guest calls.
 
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;
 use ssx3_render::direct::{Cmd, Step};
 

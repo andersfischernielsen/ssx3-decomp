@@ -666,8 +666,8 @@ def rename_tokens(text, ren):
     if plain:
         alts.append(r'(?<![A-Za-z0-9_.:])(?:' + '|'.join(re.escape(k) for k in sorted(plain, key=len, reverse=True)) + r')')
     rx = re.compile('(' + '|'.join(alts) + r')(?![A-Za-z0-9_])')
-    # Do not touch string literals: split on them.
-    parts = re.split(r'("(?:[^"\\]|\\.)*")', text)
+    # Do not touch string literals or line comments: split on them.
+    parts = re.split(r'("(?:[^"\\]|\\.)*"|//[^\n]*)', text)
     return ''.join(p if i % 2 else rx.sub(lambda m: ren[m.group(1)], p) for i, p in enumerate(parts))
 
 
@@ -876,7 +876,11 @@ def build(parsed, allov, target, seed=None):
                     vis = mv.group(1) if mv else ''
                     out = []
                     parse_use_tree(re.sub(r'^(pub(\([^)]*\))?\s+)?use\s+', '', b_).rstrip(';'), [], out)
+                    me = 'crate::game::' + '::'.join(t) + ('::tests' if test_scope else '')
                     for p_, a_, n_ in out:
+                        # An import of this unit's own item: the item is here now.
+                        if not a_ and p_ == f'{me}::{n_}':
+                            continue
                         if not n_ or p_.endswith('*') or p_.startswith(('super', 'self')):
                             lines.append(attr + vis + 'use ' + p_ + (f' as {a_}' if a_ else '') + ';')
                             continue

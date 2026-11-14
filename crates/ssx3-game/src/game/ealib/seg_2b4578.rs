@@ -43,8 +43,6 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
 
     use std::sync::atomic::AtomicUsize;
-    use std::sync::atomic::Ordering;
-    use std::sync::Once;
 
     // ------------------------------------------------------------ fake callees
 
@@ -78,14 +76,7 @@ pub(crate) mod tests {
             }
             return;
         }
-        let p = prev.load(Ordering::Relaxed);
-        let f: fn(&mut Cpu) = if p == 0 {
-            fallback
-        } else {
-            // SAFETY: `p` was read from the same slot (a `fn(&mut Cpu)`).
-            unsafe { std::mem::transmute::<usize, fn(&mut Cpu)>(p) }
-        };
-        f(c)
+        crate::difftest::fakes::fall_back(c, prev, fallback)
     }
 
     macro_rules! oc327_hook {
@@ -107,11 +98,11 @@ pub(crate) mod tests {
     );
 
     pub(crate) fn oc327_install_refpack() {
-        static ONCE: Once = Once::new();
-        ONCE.call_once(|| unsafe {
-            OC327_PREV_REFPACK.store(ee::s13::OVERRIDE_003B4740 as usize, Ordering::Relaxed);
-            ee::s13::OVERRIDE_003B4740 = oc327_fake_refpack;
-        });
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s13::OVERRIDE_003B4740),
+            oc327_fake_refpack,
+            &OC327_PREV_REFPACK,
+        );
     }
 
     /// `EAC_Unpack`: a one-call wrapper (the decompressor is a fake).
