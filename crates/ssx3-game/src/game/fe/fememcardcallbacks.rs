@@ -10,6 +10,7 @@ use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
 use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -278,6 +279,7 @@ pub(crate) mod callee {
 
     use super::ee;
     use super::Callee;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_MEM_ALLOC_NAMED_2;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STR_HASH;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_SET_CREATE_ANIM;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_OBJECT_SET_ANIM;
@@ -1445,12 +1447,9 @@ pub(crate) const MEMCARD_CARD_VT_SLOT_NAME: u32 = 0x70;
 /// of the card in `slot`.
 pub(crate) const MEMCARD_FORMAT_SLOT_NAME: u32 = 0x0024_1dc8;
 
-/// `StrHash` (0x317670), `operator_new_named` (0x317e30), `EA_MemFree`
-/// (0x317e98), `UStr_Copy` (0x2c2508) and `UStr_Sprintf` (0x2c26d0).
-pub(crate) const MEMCARD_STR_HASH: u32 = 0x0031_7670;
-
-pub(crate) const MEMCARD_NEW_NAMED: u32 = 0x0031_7e30;
-
+/// `EA_MemFree` (0x317e98), `UStr_Copy` (0x2c2508) and `UStr_Sprintf`
+/// (0x2c26d0); `StrHash` and `operator_new_named` are the unit's `STR_HASH`
+/// and `callee::OPERATOR_NEW_NAMED`.
 pub(crate) const MEMCARD_MEM_FREE: u32 = 0x0031_7e98;
 
 pub(crate) const MEMCARD_USTR_COPY: u32 = 0x002c_2508;
@@ -1462,8 +1461,12 @@ pub(crate) const MEMCARD_TEMP_STRING_TAG: u32 = 0x0045_e2a0;
 
 pub(crate) const MEMCARD_TEMP_STRING_FLAGS: u64 = 0x100;
 
-/// The size of most message buffers (the overwrite question's is 0x640).
+/// The size of most message buffers.
 pub(crate) const MEMCARD_TEMP_STRING_SIZE: u64 = 0x7d0;
+/// The size the game uses for the buffers of the messages that format a slot or
+/// card name in (overwrite, different card, checking card), and for the stack
+/// buffer `OnNotEnoughSpace2` builds its text in (the card name follows it).
+pub(crate) const MEMCARD_NAME_STRING_SIZE: u32 = 0x640;
 
 // Text ids (the format strings take the card's or the slot's name).
 /// `kT_CMNContinue`.
@@ -1606,11 +1609,9 @@ pub(crate) const MEMCARD_TEXT_BOX_NAME: u32 = 0x0046_78b0;
 /// `kT_MEMNoCardsPS2`.
 pub(crate) const MEMCARD_TEXT_NO_CARDS: u32 = 0x0046_78c8;
 
-/// `UIScreen_FindObject(screen, hash)` (0x39d860) and
-/// `UIText_SetWrappedWideString(text, str)` (0x3a0d00); UI-object vtable slot
-/// `0x48` shows or hides it.
-pub(crate) const MEMCARD_UI_SCREEN_FIND_OBJECT: u32 = 0x0039_d860;
-
+/// `UIText_SetWrappedWideString(text, str)` (0x3a0d00; `UIScreen_FindObject` is
+/// `callee::UI_SCREEN_FIND_OBJECT_2`); UI-object vtable slot `0x48` shows or
+/// hides it.
 pub(crate) const MEMCARD_UI_TEXT_SET_WRAPPED: u32 = 0x003a_0d00;
 
 pub(crate) const MEMCARD_UI_VT_SHOW: u32 = 0x48;
@@ -1635,8 +1636,8 @@ pub(crate) const MEMCARD_POPUP_TAG: u32 = 0x0045_e130;
 
 pub(crate) const MEMCARD_POPUP_SIZE: u64 = 0xbfc;
 
-/// `EA_MemAllocNamed` (0x317d70) and `UIStateMgr_PushPopup` (0x39f290).
-pub(crate) const MEMCARD_MEM_ALLOC_NAMED: u32 = 0x0031_7d70;
+/// `UIStateMgr_PushPopup` (0x39f290; `EA_MemAllocNamed` is
+/// `callee::EA_MEM_ALLOC_NAMED_2`).
 
 pub(crate) const MEMCARD_UI_PUSH_POPUP: u32 = 0x0039_f290;
 
@@ -1727,12 +1728,6 @@ pub(crate) const MEMCARD_RESET_AFTER_SAVE: Callee = Callee {
     f: ee::s04::MemCardStateBase_ResetAfterSave,
 };
 
-/// `MemCardStateBase_SetUseSaveTitle` (0x1d9308), through its override slot.
-pub(crate) const MEMCARD_SET_USE_SAVE_TITLE: Callee = Callee {
-    addr: 0x001d_9308,
-    f: ee::s04::MemCardStateBase_SetUseSaveTitle,
-};
-
 // ---------------------------------------------------------------------------
 // The steps the callbacks are made of. None charges cycles: the callers charge
 // them where the original does. Registers a step leaves are the original's;
@@ -1765,7 +1760,7 @@ pub(crate) fn memcard_text(c: &mut Cpu, name: u32, rets: [u32; 2]) -> Flow {
     c.g[S1][0] = Addr(r32(c, S0).wrapping_add(4)).lw(c);
     c.g[V0][0] = Addr(r32(c, S1).wrapping_add(MEMCARD_TEXT_DB_VT_FIND)).lh(c);
     c.g[S0][0] = sx(r32(c, S0).wrapping_add(r32(c, V0)));
-    call_ptr(c, MEMCARD_STR_HASH, rets[0])?;
+    call_ptr(c, STR_HASH, rets[0])?;
     c.g[V1][0] = Addr(r32(c, S1).wrapping_add(MEMCARD_TEXT_DB_VT_FIND + 4)).lw(c);
     c.g[A0][0] = c.g[S0][0];
     c.g[A1][0] = c.g[V0][0];
@@ -1835,7 +1830,7 @@ pub(crate) fn memcard_popup_option(
     c.g[V1][0] = Addr(r32(c, S2).wrapping_add(MEMCARD_TEXT_DB_VT_FIND)).lh(c);
     c.g[S1][0] = sx(r32(c, S1).wrapping_add(r32(c, V0)));
     c.g[S0][0] = sx(r32(c, S0).wrapping_add(r32(c, V1)));
-    call_ptr(c, MEMCARD_STR_HASH, rets[0])?;
+    call_ptr(c, STR_HASH, rets[0])?;
     c.g[V1][0] = Addr(r32(c, S2).wrapping_add(MEMCARD_TEXT_DB_VT_FIND + 4)).lw(c);
     c.g[A0][0] = c.g[S0][0];
     c.g[A1][0] = c.g[V0][0];
@@ -1874,7 +1869,7 @@ pub(crate) fn memcard_new_temp_string(c: &mut Cpu, size: u64, ret: u32) -> Flow 
     c.g[A2][0] = MEMCARD_TEMP_STRING_FLAGS;
     c.g[A3][0] = 0;
     c.g[A0][0] = size;
-    call_ptr(c, MEMCARD_NEW_NAMED, ret)
+    callee::OPERATOR_NEW_NAMED.call(c, ret)
 }
 
 /// Free the message buffer in register `buf` if there is one; `s0` is
@@ -2009,7 +2004,7 @@ pub fn mem_card_ui_on_load_done(c: &mut Cpu) {
         frame.save(c, S1, 0x10);
         frame.save_ra(c, 0);
         c.g[A1][0] = 0;
-        MEMCARD_SET_USE_SAVE_TITLE.call(c, 0x001d_67e4)?;
+        MEM_CARD_STATE_BASE_SET_USE_SAVE_TITLE.call(c, 0x001d_67e4)?;
         c.g[A1][0] = memcard_fe(c) as u64;
         c.g[V0][0] = 1;
         c.g[V1][0] = Addr(r32(c, A1).wrapping_add(MEMCARD_FE_LOAD_FROM_PAUSE)).lw(c);
@@ -2049,7 +2044,7 @@ pub fn mem_card_ui_confirm_overwrite(c: &mut Cpu) {
         frame.save(c, S1, 0x70);
         frame.save(c, S2, 0x60);
         frame.save_ra(c, 0x50);
-        memcard_new_temp_string(c, 0x640, 0x001d_6914)?;
+        memcard_new_temp_string(c, MEMCARD_NAME_STRING_SIZE as u64, 0x001d_6914)?;
         c.g[A0][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
         c.g[S2][0] = c.g[V0][0];
         call_ptr(c, MEMCARD_MC_MANAGER_GET, 0x001d_6920)?;
@@ -2113,109 +2108,93 @@ pub fn mem_card_state_base_show_create_edit_msg(c: &mut Cpu) {
     })
 }
 
-/// The body `MemCardUI_OnLoadFailed` and `MemCardUI_OnSaveFailed` share:
-/// format `text` with the current card's name and show it as message `msg`
-/// as a single "Continue" option. `msg_first`: the save reply stores the
-/// message id before formatting, the load reply just before showing it.
-pub(crate) fn memcard_show_card_failure(
-    c: &mut Cpu,
-    text: u32,
-    msg: u32,
-    msg_first: bool,
-    rets: [u32; 11],
-) -> Flow {
-    // 0x000..0x200: the card name.
-    let frame = Frame::open(c, 0x260);
-    c.g[A0][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
-    frame.save(c, S0, 0x250);
-    frame.save(c, S1, 0x240);
-    frame.save(c, S2, 0x230);
-    frame.save(c, S3, 0x220);
-    frame.save(c, S4, 0x210);
-    frame.save_ra(c, 0x200);
-    call_ptr(c, MEMCARD_MC_MANAGER_GET, rets[0])?;
-    c.g[S0][0] = c.g[V0][0];
-    memcard_new_temp_string(c, MEMCARD_TEMP_STRING_SIZE, rets[1])?;
-    c.g[S4][0] = c.g[V0][0];
-    if msg_first {
-        // Left in v1/v0 across the call, as the original does.
-        c.g[V1][0] = memcard_fe(c) as u64;
-        c.g[V0][0] = msg as u64;
-        memcard_set_message(c, msg);
-    }
-    let s0 = c.g[S0][0];
-    memcard_card_name(c, s0, c.g[SP][0], rets[2])?;
-    memcard_text(c, text, [rets[3], rets[4]])?;
-    let (buf, sp) = (c.g[S4][0], c.g[SP][0]);
-    memcard_sprintf(c, buf, sp, rets[5])?;
-    if !msg_first {
-        memcard_set_message(c, msg);
-    }
-    let s4 = c.g[S4][0];
-    memcard_show_message(c, s4, 1, 0, 0, rets[6])?;
-    memcard_popup_option(c, A1, MEMCARD_TEXT_CONTINUE, 0, [rets[7], rets[8], rets[9]])?;
-    memcard_free_temp_string(c, frame, S4, 0x250, rets[10])?;
-    c.cycles += 7;
-    frame.restore(c, S1, 0x240);
-    frame.restore(c, S2, 0x230);
-    frame.restore(c, S3, 0x220);
-    frame.restore(c, S4, 0x210);
-    frame.restore_ra(c, 0x200);
-    frame.close(c);
-    Ok(())
-}
-
 /// `void MemCardUI_OnLoadFailed(void)` (0x1d6ad0): the load failed; show
-/// `kT_MEMOVLoadFailedPS2NGC` with the card's name.
+/// `kT_MEMOVLoadFailedPS2NGC` with the card's name (message 0xa, stored just before it
+/// is shown) as a single "Continue" option.
 pub fn mem_card_ui_on_load_failed(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 76;
-        memcard_show_card_failure(
+        // 0x000..0x200: the card name.
+        let frame = Frame::open(c, 0x260);
+        c.g[A0][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
+        frame.save(c, S0, 0x250);
+        frame.save(c, S1, 0x240);
+        frame.save(c, S2, 0x230);
+        frame.save(c, S3, 0x220);
+        frame.save(c, S4, 0x210);
+        frame.save_ra(c, 0x200);
+        call_ptr(c, MEMCARD_MC_MANAGER_GET, 0x001d_6af8)?;
+        c.g[S0][0] = c.g[V0][0];
+        memcard_new_temp_string(c, MEMCARD_TEMP_STRING_SIZE, 0x001d_6b14)?;
+        c.g[S4][0] = c.g[V0][0];
+        let (manager, sp) = (c.g[S0][0], c.g[SP][0]);
+        memcard_card_name(c, manager, sp, 0x001d_6b28)?;
+        memcard_text(c, MEMCARD_TEXT_LOAD_FAILED, [0x001d_6b48, 0x001d_6b58])?;
+        let buf = c.g[S4][0];
+        memcard_sprintf(c, buf, sp, 0x001d_6b68)?;
+        memcard_set_message(c, MEMCARD_MSG_LOAD_FAILED);
+        memcard_show_message(c, buf, 1, 0, 0, 0x001d_6ba0)?;
+        memcard_popup_option(
             c,
-            MEMCARD_TEXT_LOAD_FAILED,
-            MEMCARD_MSG_LOAD_FAILED,
-            false,
-            [
-                0x001d_6af8,
-                0x001d_6b14,
-                0x001d_6b28,
-                0x001d_6b48,
-                0x001d_6b58,
-                0x001d_6b68,
-                0x001d_6ba0,
-                0x001d_6bd4,
-                0x001d_6be4,
-                0x001d_6bf8,
-                0x001d_6c08,
-            ],
-        )
+            A1,
+            MEMCARD_TEXT_CONTINUE,
+            0,
+            [0x001d_6bd4, 0x001d_6be4, 0x001d_6bf8],
+        )?;
+        memcard_free_temp_string(c, frame, S4, 0x250, 0x001d_6c08)?;
+        c.cycles += 7;
+        frame.restore(c, S1, 0x240);
+        frame.restore(c, S2, 0x230);
+        frame.restore(c, S3, 0x220);
+        frame.restore(c, S4, 0x210);
+        frame.restore_ra(c, 0x200);
+        frame.close(c);
+        Ok(())
     })
 }
 
 /// `void MemCardUI_OnSaveFailed(void)` (0x1d6c28): the save failed; show
-/// `kT_MEMOVSaveFailed` with the card's name.
+/// `kT_MEMOVSaveFailed` with the card's name (message 0xb, stored before the
+/// name is formatted) as a single "Continue" option.
 pub fn mem_card_ui_on_save_failed(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 77;
-        memcard_show_card_failure(
+        // 0x000..0x200: the card name.
+        let frame = Frame::open(c, 0x260);
+        c.g[A0][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
+        frame.save(c, S0, 0x250);
+        frame.save(c, S1, 0x240);
+        frame.save(c, S2, 0x230);
+        frame.save(c, S3, 0x220);
+        frame.save(c, S4, 0x210);
+        frame.save_ra(c, 0x200);
+        call_ptr(c, MEMCARD_MC_MANAGER_GET, 0x001d_6c50)?;
+        c.g[S0][0] = c.g[V0][0];
+        memcard_new_temp_string(c, MEMCARD_TEMP_STRING_SIZE, 0x001d_6c6c)?;
+        c.g[S4][0] = c.g[V0][0];
+        memcard_set_message(c, MEMCARD_MSG_SAVE_FAILED);
+        let (manager, sp) = (c.g[S0][0], c.g[SP][0]);
+        memcard_card_name(c, manager, sp, 0x001d_6c8c)?;
+        memcard_text(c, MEMCARD_TEXT_SAVE_FAILED, [0x001d_6cac, 0x001d_6cbc])?;
+        let buf = c.g[S4][0];
+        memcard_sprintf(c, buf, sp, 0x001d_6ccc)?;
+        memcard_show_message(c, buf, 1, 0, 0, 0x001d_6cfc)?;
+        memcard_popup_option(
             c,
-            MEMCARD_TEXT_SAVE_FAILED,
-            MEMCARD_MSG_SAVE_FAILED,
-            true,
-            [
-                0x001d_6c50,
-                0x001d_6c6c,
-                0x001d_6c8c,
-                0x001d_6cac,
-                0x001d_6cbc,
-                0x001d_6ccc,
-                0x001d_6cfc,
-                0x001d_6d30,
-                0x001d_6d40,
-                0x001d_6d54,
-                0x001d_6d64,
-            ],
-        )
+            A1,
+            MEMCARD_TEXT_CONTINUE,
+            0,
+            [0x001d_6d30, 0x001d_6d40, 0x001d_6d54],
+        )?;
+        memcard_free_temp_string(c, frame, S4, 0x250, 0x001d_6d64)?;
+        c.cycles += 7;
+        frame.restore(c, S1, 0x240);
+        frame.restore(c, S2, 0x230);
+        frame.restore(c, S3, 0x220);
+        frame.restore(c, S4, 0x210);
+        frame.restore_ra(c, 0x200);
+        frame.close(c);
+        Ok(())
     })
 }
 
@@ -2383,28 +2362,6 @@ pub fn mem_card_ui_on_save_corrupt(c: &mut Cpu) {
     })
 }
 
-/// The frame of the four replies that show one formatted or copied text in a
-/// 0x240 frame (the card name at `sp`, `s0..s2` saved at 0x230..0x210).
-pub(crate) fn memcard_open_0x240(c: &mut Cpu) -> Frame {
-    let frame = Frame::open(c, 0x240);
-    frame.save(c, S0, 0x230);
-    frame.save(c, S1, 0x220);
-    frame.save(c, S2, 0x210);
-    frame.save_ra(c, 0x200);
-    frame
-}
-
-/// Free the buffer in `s2` and close a [`memcard_open_0x240`] frame.
-pub(crate) fn memcard_close_0x240(c: &mut Cpu, frame: Frame, free_ret: u32) -> Flow {
-    memcard_free_temp_string(c, frame, S2, 0x230, free_ret)?;
-    c.cycles += 5;
-    frame.restore(c, S1, 0x220);
-    frame.restore(c, S2, 0x210);
-    frame.restore_ra(c, 0x200);
-    frame.close(c);
-    Ok(())
-}
-
 /// `void MemCardUI_ShowCorruptSave(void)` (0x1d7190): the selected save is
 /// corrupt; ask (Yes/No, No selected) with `kT_MEMCorruptSavePS2` and the
 /// card's name, and set the popup's `v25` flag.
@@ -2432,7 +2389,13 @@ pub fn mem_card_ui_show_corrupt_save(c: &mut Cpu) {
         let s2 = c.g[S2][0];
         memcard_show_message(c, s2, 0, 0, 1, 0x001d_725c)?;
         memcard_popup_v25(c, 1, 0x001d_727c)?;
-        memcard_close_0x240(c, frame, 0x001d_728c)
+        memcard_free_temp_string(c, frame, S2, 0x230, 0x001d_728c)?;
+        c.cycles += 5;
+        frame.restore(c, S1, 0x220);
+        frame.restore(c, S2, 0x210);
+        frame.restore_ra(c, 0x200);
+        frame.close(c);
+        Ok(())
     })
 }
 
@@ -2453,7 +2416,11 @@ pub(crate) fn memcard_buffer_and_card_name(c: &mut Cpu, rets: [u32; 3]) -> Flow 
 pub fn mem_card_ui_confirm_format(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 58;
-        let frame = memcard_open_0x240(c);
+        let frame = Frame::open(c, 0x240);
+        frame.save(c, S0, 0x230);
+        frame.save(c, S1, 0x220);
+        frame.save(c, S2, 0x210);
+        frame.save_ra(c, 0x200);
         memcard_buffer_and_card_name(c, [0x001d_7344, 0x001d_7350, 0x001d_7360])?;
         memcard_text(c, MEMCARD_TEXT_FORMAT_CARD, [0x001d_7380, 0x001d_7390])?;
         let (buf, sp) = (c.g[S2][0], c.g[SP][0]);
@@ -2462,13 +2429,19 @@ pub fn mem_card_ui_confirm_format(c: &mut Cpu) {
         let s2 = c.g[S2][0];
         memcard_show_message(c, s2, 0, 0, 1, 0x001d_73d8)?;
         memcard_popup_v25(c, 1, 0x001d_73f8)?;
-        memcard_close_0x240(c, frame, 0x001d_7408)
+        memcard_free_temp_string(c, frame, S2, 0x230, 0x001d_7408)?;
+        c.cycles += 5;
+        frame.restore(c, S1, 0x220);
+        frame.restore(c, S2, 0x210);
+        frame.restore_ra(c, 0x200);
+        frame.close(c);
+        Ok(())
     })
 }
 
 /// `void cFEMemCard_callbackConfirmFormatDone(void)` (`MemCardUI_OnFormatDone`,
-/// 0x1d7420): the card is formatted; show `kT_MEMOVFormatComplete` with an OK
-/// button and "Continue".
+/// 0x1d7420): the card is formatted; show `kT_MEMOVFormatComplete` as a single
+/// "Continue" option.
 pub fn mem_card_ui_on_format_done(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 66;
@@ -2504,7 +2477,11 @@ pub fn mem_card_ui_on_format_done(c: &mut Cpu) {
 pub fn mem_card_ui_on_format_failed(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 71;
-        let frame = memcard_open_0x240(c);
+        let frame = Frame::open(c, 0x240);
+        frame.save(c, S0, 0x230);
+        frame.save(c, S1, 0x220);
+        frame.save(c, S2, 0x210);
+        frame.save_ra(c, 0x200);
         memcard_buffer_and_card_name(c, [0x001d_7574, 0x001d_7580, 0x001d_7590])?;
         memcard_text(c, MEMCARD_TEXT_FORMAT_FAILED, [0x001d_75b0, 0x001d_75c0])?;
         let (buf, sp) = (c.g[S2][0], c.g[SP][0]);
@@ -2514,35 +2491,14 @@ pub fn mem_card_ui_on_format_failed(c: &mut Cpu) {
         memcard_show_message(c, s2, 1, 0, 0, 0x001d_7608)?;
         memcard_text(c, MEMCARD_TEXT_CONTINUE, [0x001d_7628, 0x001d_7638])?;
         memcard_popup_set_option(c, 0, 0x001d_765c)?;
-        memcard_close_0x240(c, frame, 0x001d_766c)
+        memcard_free_temp_string(c, frame, S2, 0x230, 0x001d_766c)?;
+        c.cycles += 5;
+        frame.restore(c, S1, 0x220);
+        frame.restore(c, S2, 0x210);
+        frame.restore_ra(c, 0x200);
+        frame.close(c);
+        Ok(())
     })
-}
-
-/// The 0x260 frame of the replies that format the card's name (at `sp`):
-/// `s0..s4` saved at 0x250..0x210, `ra` at 0x200.
-pub(crate) fn memcard_open_0x260(c: &mut Cpu) -> Frame {
-    let frame = Frame::open(c, 0x260);
-    c.g[A0][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
-    frame.save(c, S0, 0x250);
-    frame.save(c, S1, 0x240);
-    frame.save(c, S2, 0x230);
-    frame.save(c, S3, 0x220);
-    frame.save(c, S4, 0x210);
-    frame.save_ra(c, 0x200);
-    frame
-}
-
-/// Free the buffer in `s4` and close a [`memcard_open_0x260`] frame.
-pub(crate) fn memcard_close_0x260(c: &mut Cpu, frame: Frame, free_ret: u32) -> Flow {
-    memcard_free_temp_string(c, frame, S4, 0x250, free_ret)?;
-    c.cycles += 7;
-    frame.restore(c, S1, 0x240);
-    frame.restore(c, S2, 0x230);
-    frame.restore(c, S3, 0x220);
-    frame.restore(c, S4, 0x210);
-    frame.restore_ra(c, 0x200);
-    frame.close(c);
-    Ok(())
 }
 
 /// `void cFEMemCard_callbackConfirmDelete(void)` (`MemCardUI_ConfirmDelete`,
@@ -2554,7 +2510,11 @@ pub fn mem_card_ui_confirm_delete(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 17;
         // 0x000..0x200: the slot name.
-        let frame = memcard_open_0x240(c);
+        let frame = Frame::open(c, 0x240);
+        frame.save(c, S0, 0x230);
+        frame.save(c, S1, 0x220);
+        frame.save(c, S2, 0x210);
+        frame.save_ra(c, 0x200);
         c.g[A0][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
         call_ptr(c, MEMCARD_MC_MANAGER_GET, 0x001d_76a8)?;
         c.g[S0][0] = c.g[V0][0];
@@ -2609,13 +2569,21 @@ pub fn mem_card_ui_confirm_delete(c: &mut Cpu) {
     })
 }
 
-/// `void MemCardUI_OnCardNotDetected2(void)` (0x1d77e8): no card, without the
-/// way on: `kT_MEMOVNotDetectedPS2` with the card's name (message 0x12), no
-/// options "Retry" / "Cancel".
+/// `void MemCardUI_OnCardNotDetected2(void)` (0x1d77e8): no card, with no
+/// "continue without a card" check: show `kT_MEMOVNotDetectedPS2` with the
+/// card's name (message 0x12) as a two-option popup labelled "Retry" (0) and
+/// "Cancel" (1).
 pub fn mem_card_ui_on_card_not_detected2(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 98;
-        let frame = memcard_open_0x260(c);
+        let frame = Frame::open(c, 0x260);
+        c.g[A0][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
+        frame.save(c, S0, 0x250);
+        frame.save(c, S1, 0x240);
+        frame.save(c, S2, 0x230);
+        frame.save(c, S3, 0x220);
+        frame.save(c, S4, 0x210);
+        frame.save_ra(c, 0x200);
         call_ptr(c, MEMCARD_MC_MANAGER_GET, 0x001d_7810)?;
         c.g[S0][0] = c.g[V0][0];
         memcard_new_temp_string(c, MEMCARD_TEMP_STRING_SIZE, 0x001d_782c)?;
@@ -2641,7 +2609,15 @@ pub fn mem_card_ui_on_card_not_detected2(c: &mut Cpu) {
             1,
             [0x001d_7944, 0x001d_7954, 0x001d_7968],
         )?;
-        memcard_close_0x260(c, frame, 0x001d_7978)
+        memcard_free_temp_string(c, frame, S4, 0x250, 0x001d_7978)?;
+        c.cycles += 7;
+        frame.restore(c, S1, 0x240);
+        frame.restore(c, S2, 0x230);
+        frame.restore(c, S3, 0x220);
+        frame.restore(c, S4, 0x210);
+        frame.restore_ra(c, 0x200);
+        frame.close(c);
+        Ok(())
     })
 }
 
@@ -2670,7 +2646,14 @@ pub(crate) fn memcard_too_big_text(c: &mut Cpu, buf: u64, name: u64, rets: [u32;
 pub fn mem_card_ui_on_not_enough_space(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 85;
-        let frame = memcard_open_0x260(c);
+        let frame = Frame::open(c, 0x260);
+        c.g[A0][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
+        frame.save(c, S0, 0x250);
+        frame.save(c, S1, 0x240);
+        frame.save(c, S2, 0x230);
+        frame.save(c, S3, 0x220);
+        frame.save(c, S4, 0x210);
+        frame.save_ra(c, 0x200);
         call_ptr(c, MEMCARD_MC_MANAGER_GET, 0x001d_79c0)?;
         c.g[S2][0] = c.g[V0][0];
         memcard_new_temp_string(c, MEMCARD_TEMP_STRING_SIZE, 0x001d_79dc)?;
@@ -2693,13 +2676,21 @@ pub fn mem_card_ui_on_not_enough_space(c: &mut Cpu) {
             0,
             [0x001d_7ac0, 0x001d_7ad0, 0x001d_7ae4],
         )?;
-        memcard_close_0x260(c, frame, 0x001d_7af4)
+        memcard_free_temp_string(c, frame, S4, 0x250, 0x001d_7af4)?;
+        c.cycles += 7;
+        frame.restore(c, S1, 0x240);
+        frame.restore(c, S2, 0x230);
+        frame.restore(c, S3, 0x220);
+        frame.restore(c, S4, 0x210);
+        frame.restore_ra(c, 0x200);
+        frame.close(c);
+        Ok(())
     })
 }
 
 /// `void MemCardUI_OnNotEnoughSpace2(void)` (0x1d7b18): the same message
 /// built in a stack buffer instead of a "Temp String" (no free): the text at
-/// `sp`, the card's name at `sp + 0x640` (in `s3`).
+/// `sp`, the card's name after it (in `s3`).
 pub fn mem_card_ui_on_not_enough_space2(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 83;
@@ -2711,11 +2702,9 @@ pub fn mem_card_ui_on_not_enough_space2(c: &mut Cpu) {
         frame.save(c, S3, 0x670);
         frame.save_ra(c, 0x660);
         call_ptr(c, MEMCARD_MC_MANAGER_GET, 0x001d_7b3c)?;
-        // a0 and v1 are the state and the id here: both die in the callee.
         memcard_set_message(c, MEMCARD_MSG_NOT_ENOUGH_SPACE);
-        c.g[V1][0] = MEMCARD_MSG_NOT_ENOUGH_SPACE as u64;
         c.g[S2][0] = c.g[V0][0];
-        c.g[S3][0] = sx(r32(c, SP).wrapping_add(0x640));
+        c.g[S3][0] = sx(r32(c, SP).wrapping_add(MEMCARD_NAME_STRING_SIZE));
         let (manager, name) = (c.g[S2][0], c.g[S3][0]);
         memcard_card_name(c, manager, name, 0x001d_7b60)?;
         let sp = c.g[SP][0];
@@ -2769,7 +2758,7 @@ pub fn mem_card_ui_on_name_exists(c: &mut Cpu) {
         c.g[S2][0] = sx(r32(c, S2).wrapping_add(r32(c, V1)));
         c.g[V0][0] = Addr(r32(c, S1).wrapping_add(MEMCARD_TEXT_DB_VT_FIND)).lh(c);
         c.g[S0][0] = sx(r32(c, S0).wrapping_add(r32(c, V0)));
-        call_ptr(c, MEMCARD_STR_HASH, 0x001d_7cb8)?;
+        call_ptr(c, STR_HASH, 0x001d_7cb8)?;
         c.g[V1][0] = Addr(r32(c, S1).wrapping_add(MEMCARD_TEXT_DB_VT_FIND + 4)).lw(c);
         c.g[A0][0] = c.g[S0][0];
         c.g[A1][0] = c.g[V0][0];
@@ -2810,11 +2799,18 @@ pub fn mem_card_ui_on_name_exists(c: &mut Cpu) {
 pub fn mem_card_ui_on_different_card(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 77;
-        let frame = memcard_open_0x260(c);
+        let frame = Frame::open(c, 0x260);
+        c.g[A0][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
+        frame.save(c, S0, 0x250);
+        frame.save(c, S1, 0x240);
+        frame.save(c, S2, 0x230);
+        frame.save(c, S3, 0x220);
+        frame.save(c, S4, 0x210);
+        frame.save_ra(c, 0x200);
         call_ptr(c, MEMCARD_MC_MANAGER_GET, 0x001d_7d98)?;
         let (manager, sp) = (c.g[V0][0], c.g[SP][0]);
         memcard_card_name(c, manager, sp, 0x001d_7da8)?;
-        memcard_new_temp_string(c, 0x640, 0x001d_7dc0)?;
+        memcard_new_temp_string(c, MEMCARD_NAME_STRING_SIZE as u64, 0x001d_7dc0)?;
         c.g[S4][0] = c.g[V0][0];
         memcard_text(c, MEMCARD_TEXT_DIFFERENT_CARD, [0x001d_7de4, 0x001d_7df4])?;
         let buf = c.g[S4][0];
@@ -2911,7 +2907,11 @@ pub fn mem_card_ui_on_delete_done(c: &mut Cpu) {
 pub fn mem_card_ui_on_delete_failed(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 71;
-        let frame = memcard_open_0x240(c);
+        let frame = Frame::open(c, 0x240);
+        frame.save(c, S0, 0x230);
+        frame.save(c, S1, 0x220);
+        frame.save(c, S2, 0x210);
+        frame.save_ra(c, 0x200);
         memcard_buffer_and_card_name(c, [0x001d_804c, 0x001d_8058, 0x001d_8068])?;
         memcard_text(c, MEMCARD_TEXT_DELETE_FAILED, [0x001d_8088, 0x001d_8098])?;
         let (buf, sp) = (c.g[S2][0], c.g[SP][0]);
@@ -2972,10 +2972,10 @@ pub(crate) fn memcard_no_cards_box(c: &mut Cpu, frame: Frame, rets: [u32; 9]) ->
     c.cycles += 10;
     c.g[A0][0] = sx(MEMCARD_TEXT_BOX_NAME);
     c.g[S0][0] = memcard_fe(c) as u64;
-    call_ptr(c, MEMCARD_STR_HASH, rets[0])?;
+    call_ptr(c, STR_HASH, rets[0])?;
     c.g[A0][0] = Addr(r32(c, S0).wrapping_add(MEMCARD_FE_SCREEN)).lw(c);
     c.g[A1][0] = c.g[V0][0];
-    call_ptr(c, MEMCARD_UI_SCREEN_FIND_OBJECT, rets[1])?;
+    call_ptr(c, callee::UI_SCREEN_FIND_OBJECT_2, rets[1])?;
     c.g[S3][0] = c.g[V0][0];
     let found = c.g[S3][0] != 0;
     c.g[A1][0] = 0x0046_0000;
@@ -3004,34 +3004,17 @@ pub(crate) fn memcard_no_cards_box(c: &mut Cpu, frame: Frame, rets: [u32; 9]) ->
     Ok(())
 }
 
-/// The 0x50 frame of the "no cards" replies: `s0..s3` at 0x40..0x10, `ra` at 0.
-pub(crate) fn memcard_open_0x50(c: &mut Cpu) -> Frame {
-    let frame = Frame::open(c, 0x50);
-    frame.save(c, S0, 0x40);
-    frame.save(c, S1, 0x30);
-    frame.save(c, S2, 0x20);
-    frame.save(c, S3, 0x10);
-    frame.save_ra(c, 0);
-    frame
-}
-
-/// Close a [`memcard_open_0x50`] frame (`s0` is already restored).
-pub(crate) fn memcard_close_0x50(c: &mut Cpu, frame: Frame) -> Flow {
-    c.cycles += 6;
-    frame.restore(c, S1, 0x30);
-    frame.restore(c, S2, 0x20);
-    frame.restore(c, S3, 0x10);
-    frame.restore_ra(c, 0);
-    frame.close(c);
-    Ok(())
-}
-
 /// `void MemCardUI_OnNoCards(void)` (0x1d8240): no memory card at all. Back
 /// to state 1 and the menu mode, and put `kT_MEMNoCardsPS2` in the text box.
 pub fn mem_card_ui_on_no_cards(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 12;
-        let frame = memcard_open_0x50(c);
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
         c.g[A2][0] = memcard_fe(c) as u64;
         c.g[V1][0] = 1;
         Addr(r32(c, A2).wrapping_add(MEMCARD_FE_STATE)).sw(c, c.g[V1][0]);
@@ -3057,7 +3040,13 @@ pub fn mem_card_ui_on_no_cards(c: &mut Cpu) {
                 0x001d_8338,
             ],
         )?;
-        memcard_close_0x50(c, frame)
+        c.cycles += 6;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
     })
 }
 
@@ -3135,7 +3124,13 @@ pub fn mem_card_ui_check_cards_present(c: &mut Cpu) {
                 ],
             )?;
         }
-        memcard_close_0x50(c, frame)
+        c.cycles += 6;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
     })
 }
 
@@ -3193,7 +3188,7 @@ pub fn mem_card_state_base_show_message(c: &mut Cpu) {
             c.g[A0][0] = MEMCARD_POPUP_SIZE;
             c.g[A2][0] = MEMCARD_TEMP_STRING_FLAGS;
             c.g[A3][0] = 0;
-            call_ptr(c, MEMCARD_MEM_ALLOC_NAMED, 0x001d_85d8)?;
+            call_ptr(c, callee::EA_MEM_ALLOC_NAMED_2, 0x001d_85d8)?;
             // new cFEPopupConfirm(engine, fe, text, single, a3, t0, selected, t2)
             c.g[A2][0] = memcard_fe(c) as u64;
             c.g[A0][0] = c.g[V0][0];
@@ -3279,13 +3274,13 @@ pub fn c_fe_popup_confirm_init_buttons(c: &mut Cpu) {
         c.g[S5][0] = c.g[A2][0];
         c.g[A0][0] = sx(POPUP_TEXT_YES);
         c.g[S2][0] = sx(r32(c, S1).wrapping_add(POPUP_OPTIONS));
-        call_ptr(c, MEMCARD_STR_HASH, 0x001d_9acc)?;
+        call_ptr(c, STR_HASH, 0x001d_9acc)?;
         c.g[A2][0] = c.g[V0][0];
         c.g[A1][0] = 0;
         c.g[A0][0] = c.g[S2][0];
         call_ptr(c, POPUP_SET_OPTION_TEXT_ID, 0x001d_9adc)?;
         c.g[A0][0] = sx(POPUP_TEXT_NO);
-        call_ptr(c, MEMCARD_STR_HASH, 0x001d_9ae8)?;
+        call_ptr(c, STR_HASH, 0x001d_9ae8)?;
         c.g[A2][0] = c.g[V0][0];
         c.g[A0][0] = c.g[S2][0];
         c.g[A1][0] = 1;
@@ -3467,10 +3462,10 @@ pub fn c_fe_state_net_help_popup_ctor(c: &mut Cpu) {
 /// (`v(+0x38)(visible)`) if the screen (the state in `s4`) has it.
 pub(crate) fn memcard_object_visible(c: &mut Cpu, name: u32, visible: u64, rets: [u32; 3]) -> Flow {
     c.g[A0][0] = sx(name);
-    call_ptr(c, MEMCARD_STR_HASH, rets[0])?;
+    call_ptr(c, STR_HASH, rets[0])?;
     c.g[A0][0] = Addr(r32(c, S4).wrapping_add(MEMCARD_FE_SCREEN)).lw(c);
     c.g[A1][0] = c.g[V0][0];
-    call_ptr(c, MEMCARD_UI_SCREEN_FIND_OBJECT, rets[1])?;
+    call_ptr(c, callee::UI_SCREEN_FIND_OBJECT_2, rets[1])?;
     c.g[A2][0] = c.g[V0][0];
     let found = c.g[A2][0] != 0;
     c.g[A1][0] = visible;
@@ -3488,7 +3483,7 @@ pub(crate) fn memcard_object_visible(c: &mut Cpu, name: u32, visible: u64, rets:
 /// The screen's value named by the string at `name`, into `s5`.
 pub(crate) fn memcard_screen_value(c: &mut Cpu, name: u32, rets: [u32; 2]) -> Flow {
     c.g[A0][0] = sx(name);
-    call_ptr(c, MEMCARD_STR_HASH, rets[0])?;
+    call_ptr(c, STR_HASH, rets[0])?;
     c.g[A0][0] = Addr(r32(c, S4).wrapping_add(MEMCARD_FE_SCREEN)).lw(c);
     c.g[A1][0] = c.g[V0][0];
     call_ptr(c, MEMCARD_UI_SCREEN_LOOKUP_VALUE, rets[1])?;
@@ -3497,15 +3492,12 @@ pub(crate) fn memcard_screen_value(c: &mut Cpu, name: u32, rets: [u32; 2]) -> Fl
 }
 
 /// The screen's "text box message" object, into `s3`; true when there is one.
-pub(crate) fn memcard_find_text_box(
-    c: &mut Cpu,
-    rets: [u32; 2],
-) -> Result<bool, crate::call::Unwound> {
+pub(crate) fn memcard_find_text_box(c: &mut Cpu, rets: [u32; 2]) -> Result<bool, Unwound> {
     c.g[A0][0] = sx(MEMCARD_TEXT_BOX_NAME);
-    call_ptr(c, MEMCARD_STR_HASH, rets[0])?;
+    call_ptr(c, STR_HASH, rets[0])?;
     c.g[A0][0] = Addr(r32(c, S4).wrapping_add(MEMCARD_FE_SCREEN)).lw(c);
     c.g[A1][0] = c.g[V0][0];
-    call_ptr(c, MEMCARD_UI_SCREEN_FIND_OBJECT, rets[1])?;
+    call_ptr(c, callee::UI_SCREEN_FIND_OBJECT_2, rets[1])?;
     c.g[S3][0] = c.g[V0][0];
     c.g[A3][0] = 0;
     Ok(c.g[S3][0] != 0)
@@ -3558,7 +3550,7 @@ pub fn mem_card_state_base_set_mode(c: &mut Cpu) {
             memcard_screen_value(c, MEMCARD_NAME_FILE_DISPLAY, [0x001d_963c, 0x001d_9648])?;
             if memcard_find_text_box(c, [0x001d_9658, 0x001d_9664])? {
                 c.cycles += 9;
-                memcard_new_temp_string(c, 0x640, 0x001d_9684)?;
+                memcard_new_temp_string(c, MEMCARD_NAME_STRING_SIZE as u64, 0x001d_9684)?;
                 c.g[A0][0] = c.g[S0][0];
                 c.g[S2][0] = c.g[V0][0];
                 c.g[A2][0] = Addr(r32(c, A0).wrapping_add(MEMCARD_MC_CARD_SLOT)).lw(c);
@@ -3592,7 +3584,7 @@ pub fn mem_card_state_base_set_mode(c: &mut Cpu) {
                     memcard_screen_value(c, MEMCARD_NAME_OFF, [0x001d_9550, 0x001d_955c])?;
                     if memcard_find_text_box(c, [0x001d_956c, 0x001d_9578])? {
                         c.cycles += 12;
-                        memcard_new_temp_string(c, 0x640, 0x001d_9598)?;
+                        memcard_new_temp_string(c, MEMCARD_NAME_STRING_SIZE as u64, 0x001d_9598)?;
                         c.g[A0][0] = Addr(memcard_gp(c, MEMCARD_APP_GP)).lw(c);
                         c.g[S2][0] = c.g[V0][0];
                         call_ptr(c, MEMCARD_MC_MANAGER_GET, 0x001d_95a4)?;
@@ -4244,7 +4236,8 @@ pub(crate) mod tests {
     pub(crate) const MEMCARD_T_MC: u32 = DATA + 0x20_8000;
 
     /// A vtable at `vt` whose `slots` call the fakes, each with a small random
-    /// `this` delta.
+    /// `this` delta. Like `difftest::fakes::vtable`, but at a fixed address:
+    /// some tests then point one slot at a real function (`RET_ZERO`).
     pub(crate) fn memcard_t_vtable(c: &mut Cpu, r: &mut Rng, vt: u32, slots: &[u32]) {
         for (i, &off) in slots.iter().enumerate() {
             c.bus.write16(vt + off, (r.next_u32() & 0x70) as u16);
