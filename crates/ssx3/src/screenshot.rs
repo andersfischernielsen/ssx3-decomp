@@ -8,7 +8,7 @@ pub fn save(
     height: u32,
     rgba: &[u32],
 ) -> std::io::Result<std::path::PathBuf> {
-    use std::io::{Error, ErrorKind, Write};
+    use std::io::{Error, ErrorKind};
     // The encoder uses u32 arithmetic for its scanline allocation.
     let size = width.checked_mul(height);
     let bytes = size.and_then(|n| n.checked_mul(4)?.checked_add(height));
@@ -30,15 +30,29 @@ pub fn save(
             .create_new(true)
             .open(&path)
         {
-            Ok(mut file) => {
-                file.write_all(&data)?;
-                file.flush()?;
+            Ok(file) => {
+                write_capture(file, &path, &data)?;
                 return Ok(path);
             }
             Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(e),
         }
     }
+}
+
+fn write_capture(
+    mut file: impl std::io::Write,
+    path: &std::path::Path,
+    data: &[u8],
+) -> std::io::Result<()> {
+    let result = file.write_all(data).and_then(|()| file.flush());
+    // Windows must have the file closed before it can be removed. Preserve
+    // the write error even if best-effort cleanup also fails.
+    drop(file);
+    if result.is_err() {
+        let _ = std::fs::remove_file(path);
+    }
+    result
 }
 
 #[cfg(test)]
@@ -86,5 +100,73 @@ mod tests {
         // A directory below a file can never be a valid destination.
         let file = std::env::current_exe().unwrap();
         assert!(save(&file.join("shots"), &mut 0, 1, 1, &[0]).is_err());
+    }
+
+    #[test]
+    fn partial_write_and_flush_failures_remove_only_the_new_capture() {
+        use std::io::Write;
+
+        struct FailingFile {
+            file: std::fs::File,
+            fail_flush: bool,
+            wrote: bool,
+        }
+        impl Write for FailingFile {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                if !self.fail_flush && self.wrote {
+                    return Err(std::io::Error::other("injected write failure"));
+                }
+                self.wrote = true;
+                let count = if self.fail_flush {
+                    bytes.len()
+                } else {
+                    bytes.len().min(8)
+                };
+                self.file.write(&bytes[..count])
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                if self.fail_flush {
+                    Err(std::io::Error::other("injected flush failure"))
+                } else {
+                    self.file.flush()
+                }
+            }
+        }
+
+        let dir = std::env::temp_dir().join(format!("ssx3-write-failure-{}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        let existing = dir.join("existing.png");
+        std::fs::write(&existing, b"keep this capture").unwrap();
+        let data = crate::png::encode(1, 1, &[0]);
+        for fail_flush in [false, true] {
+            let path = dir.join(format!("new-{fail_flush}.png"));
+            let file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .unwrap();
+            let writer = FailingFile {
+                file,
+                fail_flush,
+                wrote: false,
+            };
+            let error = write_capture(writer, &path, &data).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                if fail_flush {
+                    "injected flush failure"
+                } else {
+                    "injected write failure"
+                }
+            );
+            assert!(
+                !path.exists(),
+                "failed capture must be removed after closing its file"
+            );
+            assert_eq!(std::fs::read(&existing).unwrap(), b"keep this capture");
+        }
+        std::fs::remove_file(existing).unwrap();
+        std::fs::remove_dir(dir).unwrap();
     }
 }
