@@ -28,7 +28,9 @@ fn bz_clip(c: u32, src: u32, v: u32) -> vec4<f32> {
     return fq(c, 0u) * p.x + fq(c, 1u) * p.y + fq(c, 2u) * p.z + fq(c, 3u) * p.w;
 }
 
-// CLIP judgement bits (+x -x +y -y +z -z) against |w|.
+// CLIP judgement bits (+x -x +y -y +z -z) against |w|. The CPU mirrors this
+// and `bz_clip` (bezier.rs: `flags` and `clip` for SSX3_GPU_CHECK,
+// `clip_flags` for the fan triage); keep them in sync.
 fn bz_flags(h: vec4<f32>) -> u32 {
     let a = abs(h.w);
     return select(0u, 1u, h.x > a) | select(0u, 2u, h.x < -a) | select(0u, 4u, h.y > a) | select(0u, 8u, h.y < -a)
@@ -155,6 +157,7 @@ fn bezier_vertex(vi: u32, c: u32) -> VOut {
         o.nrm = vec4<f32>(bitcast<vec4<f32>>(data[src + 3u * v + 2u]).xyz, 1.0);
         return o;
     }
+    // CPU mirror: bezier.rs `fan_dropped` (also in `fan_draws`); keep in sync.
     let dropped = (fa & 16u) != 0u || (f0 & f1 & f2) != 0u;
     if (fa == 0u || dropped || SHADOW_PASS) {
         return bz_killed();

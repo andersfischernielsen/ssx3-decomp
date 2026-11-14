@@ -510,4 +510,49 @@ mod tests {
         }
         assert!(clipped > 8, "{clipped} grids with clipped triangles");
     }
+
+    /// `bezier::gpu::check` notices a plan without the fan calls of
+    /// triangles the program clipped (all of a pass's fans dropped).
+    #[test]
+    fn check_sees_missing_fans() {
+        use crate::bezier::gpu::{uni, FANS};
+        let mut clipped = 0;
+        for seed in 0..64 {
+            let entry = 0x0610;
+            let mut gif = Vec::new();
+            assert!(run(
+                entry,
+                0x250,
+                0,
+                &mut grid_input(seed),
+                &mut VuState::default(),
+                &mut |p| gif.extend_from_slice(p)
+            ));
+            // (Strip packets alone: 1 + 48 and 1 + 24 qwords.)
+            if gif.len() <= 74 {
+                continue;
+            }
+            let calls = plan_gpu(entry, 0x250, 0, &mut grid_input(seed)).expect("planned");
+            // The fan calls left out, the data of the first moved to the
+            // strip call after it.
+            let mut cut: Vec<crate::gpu::GpuCall> = Vec::new();
+            let mut source = None;
+            for mut c in calls {
+                if c.uniforms[uni::INFO][0] == FANS {
+                    if matches!(c.link, crate::gpu::Link::Source(_)) {
+                        source = Some((c.data, c.link));
+                    }
+                    continue;
+                }
+                if let Some((data, link)) = source.take() {
+                    (c.data, c.link) = (data, link);
+                    c.uniforms[uni::INFO][3] = 0;
+                }
+                cut.push(c);
+            }
+            assert!(crate::gpu::check(HASH, &cut, &gif).is_some(), "seed {seed}");
+            clipped += 1;
+        }
+        assert!(clipped > 8, "{clipped} grids with clipped triangles");
+    }
 }
