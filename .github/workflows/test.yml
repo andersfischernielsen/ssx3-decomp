@@ -38,6 +38,11 @@ jobs:
       - name: Python tools
         run: python3 -m py_compile tools/*.py
 
+      - name: Screenshot tests (no game data)
+        run: |
+          rustc --edition=2021 -D warnings --test tools/test_screenshots.rs -o "$RUNNER_TEMP/ssx3-screenshot-tests"
+          "$RUNNER_TEMP/ssx3-screenshot-tests"
+
       - name: Test
         run: >
           cargo test
