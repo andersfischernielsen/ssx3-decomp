@@ -6363,6 +6363,35 @@
 0x0011a0c0    RiderMetrix_ReturnZero_a0c0
 0x0010f280    Rider_AddWipeoutRecoveryBoost
 0x00356f10    PositionModifier_ctor_2
+# Phase 2 wave: oc337
+0x001d66b0    MemCardUI_OnSaveDone
+0x001d67c8    MemCardUI_OnLoadDone
+0x001d68e8    MemCardUI_ConfirmOverwrite
+0x001d69e0    MemCardStateBase_ShowCreateEditMsg
+0x001d6ad0    MemCardUI_OnLoadFailed
+0x001d6c28    MemCardUI_OnSaveFailed
+0x001d6d88    MemCardUI_OnCardNotDetected
+0x001d7010    MemCardUI_OnSaveCorrupt
+0x001d7190    MemCardUI_ShowCorruptSave
+0x001d7318    MemCardUI_ConfirmFormat
+0x001d7420    MemCardUI_OnFormatDone
+0x001d7548    MemCardUI_OnFormatFailed
+0x001d7688    MemCardUI_ConfirmDelete
+0x001d77e8    MemCardUI_OnCardNotDetected2
+0x001d7998    MemCardUI_OnNotEnoughSpace
+0x001d7b18    MemCardUI_OnNotEnoughSpace2
+0x001d7c68    MemCardUI_OnNameExists
+0x001d7d70    MemCardUI_OnDifferentCard
+0x001d7ed0    MemCardUI_OnDeleteDone
+0x001d8020    MemCardUI_OnDeleteFailed
+0x001d8240    MemCardUI_OnNoCards
+0x001d83a8    MemCardUI_CheckCardsPresent
+0x001d8c38    MemCardStateBase_ResetAfterSave
+0x001d8530    MemCardStateBase_ShowMessage
+0x001d9a80    cFEPopupConfirm_InitButtons
+0x001d9bd0    cFEPopupConfirm_v26
+0x001d9d48    cFEStateNetHelpPopup_ctor
+0x001d9470    MemCardStateBase_SetMode
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
