@@ -67,6 +67,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0032_0330, mem_pool32_alloc, "MEM_Pool32Alloc"),
     (0x0031_d700, c_csi_cubic_spline_init, "cCSICubicSpline_Init"),
     (0x0032_0448, mem_pool512_alloc, "MEM_Pool512Alloc"),
+    (0x0031_d790, csi_cubic_spline_free, "cCSICubicSpline_Free"),
+    (0x0031_ffd8, dlheap_more_core, "DLHeap_MoreCore"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -2751,6 +2753,89 @@ pub fn c_csi_cubic_spline_init(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// cCSICubicSpline_Free (0x31d790)
+
+pub(crate) const SPLINEFREE_MEM_FREE: Callee = Callee {
+    addr: 0x0031_7e98,
+    f: ee::s10::f_00317e98,
+};
+
+/// `void cCSICubicSpline_Free(cCSICubicSpline* s)` (0x31d790): free the point
+/// array `s+8` when present, then clear its "allocated"/"solved" bits in the
+/// word at `s+0` (masks 2 and 4).
+pub fn csi_cubic_spline_free(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = Addr(r32(c, S0)).off(0x8).lw(c);
+        if c.g[A0][0] != 0 {
+            c.cycles += 4;
+            SPLINEFREE_MEM_FREE.call(c, 0x0031_d7b4)?;
+            let at = r32(c, S0);
+            Addr(at).off(0x8).sw(c, 0);
+        }
+        c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+        c.cycles += 9;
+        c.g[V1][0] = 0xffff_ffff_ffff_fffd; // ~2
+        c.g[A0][0] = 0xffff_ffff_ffff_fffb; // ~4
+        frame.restore_ra(c, 0);
+        c.g[V0][0] &= c.g[V1][0];
+        c.g[V0][0] &= c.g[A0][0];
+        let at = r32(c, S0);
+        Addr(at).sw(c, c.g[V0][0]);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `unsigned int DLHeap_MoreCore(DLHeapList* list, long incr)` (0x0031ffd8):
+/// dlmalloc's morecore hook. A negative `incr` moves the list's current offset
+/// back by it and returns the new offset; otherwise returns the old offset
+/// (storing `old + incr`) or -1 when the list has no room left.
+pub fn dlheap_more_core(c: &mut Cpu) {
+    c.cycles += 2;
+    let list = abi::arg(c, 0);
+    c.g[A2][0] = c.g[A0][0];
+    let incr = c.g[A1][0] as i64;
+    let base = list; // a2 == a0
+    if incr < 0 {
+        c.cycles += 6;
+        let cur = Addr(base.wrapping_add(0x8));
+        c.g[V0][0] = cur.lw(c);
+        c.g[V1][0] = sx(c.g[A1][0] as u32);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        let ra = c.g[RA][0] as u32;
+        cur.sw(c, c.g[V0][0]);
+        c.pc = ra;
+    } else {
+        c.cycles += 10;
+        c.g[A3][0] = Addr(base.wrapping_add(0x8)).lw(c);
+        c.g[V0][0] = sx(c.g[A1][0] as u32);
+        c.g[V1][0] = Addr(base.wrapping_add(0x4)).lw(c);
+        c.g[A0][0] = Addr(base.wrapping_add(0xc)).lw(c);
+        c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[V1][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+        if c.g[V1][0] != 0 {
+            // Past the end of the list.
+            c.cycles += 3;
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+            abi::ret(c);
+        } else {
+            c.cycles += 3;
+            let ra = c.g[RA][0] as u32;
+            Addr(base.wrapping_add(0x8)).sw(c, c.g[V0][0]);
+            c.g[V0][0] = c.g[A3][0];
+            c.pc = ra;
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3860,6 +3945,88 @@ pub(crate) mod tests {
                     _ => (r.next_u32() % 300) as u64,
                 };
                 c.pc = 0x0031_d700;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC329_CTRL;
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC329_MAGIC;
+
+    // -- cCSICubicSpline_Free --------------------------------------------
+
+    static OC329_PREV_EA_MEM_FREE: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    pub(crate) fn oc329_fake_ea_mem_free(c: &mut Cpu) {
+        if c.bus.read32(OC329_CTRL) != OC329_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &OC329_PREV_EA_MEM_FREE,
+                ee::s10::f_00317e98__generated,
+            );
+        }
+        fake(c, 0x0031_7e98, c.g[RA][0] as u32);
+    }
+
+    #[test]
+    fn csi_cubic_spline_free_matches() {
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317E98),
+            oc329_fake_ea_mem_free,
+            &OC329_PREV_EA_MEM_FREE,
+        );
+        check(
+            ee::s10::f_0031d790__generated,
+            csi_cubic_spline_free,
+            40,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x31_d790, 0);
+                c.pc = 0x0031_d790;
+                c.bus.write32(OC329_CTRL, OC329_MAGIC);
+                let s = DATA + 0x200;
+                c.bus.write32(s, seed.wrapping_mul(0x9e37_79b9));
+                // The point array is absent in half the seeds.
+                c.bus
+                    .write32(s + 8, if seed % 2 == 0 { 0 } else { DATA + 0x3000 });
+                c.g[A0][0] = sx(s);
+            },
+        );
+    }
+
+    /// `DLHeap_MoreCore`: a negative increment moves the offset back, a
+    /// positive one returns the old offset unless the list is full (-1).
+    #[test]
+    fn dlheap_more_core_matches() {
+        check(
+            ee::s10::f_0031ffd8__generated,
+            dlheap_more_core,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x31ff_d800 ^ seed as u64);
+                let list = DATA;
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = sx(list);
+                let incr = match seed % 3 {
+                    0 => -(1 + (r.next_u32() % 0x1000) as i64),
+                    1 => (r.next_u32() % 0x1000) as i64,
+                    _ => (r.next_u32() % 0x10000) as i64 - 0x8000,
+                };
+                c.g[A1][0] = sx(incr as u32);
+                c.bus.write32(list, r.next_u32());
+                c.bus.write32(list + 4, r.next_u32());
+                c.bus.write32(list + 8, r.next_u32());
+                c.bus.write32(list + 0xc, r.next_u32());
+                // Half the positive seeds use a list with no room left.
+                if seed % 2 == 0 {
+                    c.bus.write32(list + 4, (r.next_u32() % 0x100) as u32);
+                    c.bus
+                        .write32(list + 8, 0x100 - (r.next_u32() % 0x10) as u32);
+                    c.bus.write32(list + 0xc, r.next_u32() % 0x20);
+                }
+                c.pc = 0x0031_ffd8;
             },
         );
     }

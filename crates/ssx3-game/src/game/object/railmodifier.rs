@@ -359,6 +359,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0036_1038, object_v01, "Object_v01"),
     (0x0036_1290, intersect_info_dtor_2, "IntersectInfo_dtor_2"),
+    (
+        0x0036_12c0,
+        intersect_info_reset_matrix,
+        "IntersectInfo_ResetMatrix",
+    ),
+    (0x0036_1d50, particle_v01, "Particle_v01"),
 ];
 
 /// The matrix record table of `DeferMan_InternMatrixRecord`.
@@ -6153,6 +6159,62 @@ pub fn intersect_info_dtor_2(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// IntersectInfo_ResetMatrix (0x3612c0)
+
+#[cfg(test)]
+/// The identity matrix copied into every `IntersectInfo` (`D_004FF1A0`).
+pub(crate) const IIRM_IDENTITY: u32 = 0x004f_f1a0;
+
+#[cfg(test)]
+/// `IntersectInfo` matrix offset.
+pub(crate) const IIRM_MATRIX: u32 = 0x90;
+
+/// `void IntersectInfo_ResetMatrix(IntersectInfo* self)` (0x3612c0): copy the
+/// identity quadwords at `D_004FF1A0` into `self->matrix` (VU0 macro-mode
+/// `lqc2`/`sqc2`, vf1..vf4).
+pub fn intersect_info_reset_matrix(c: &mut Cpu) {
+    c.cycles += 13;
+    c.g[V0][0] = 0x50_0000;
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x90));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xe60));
+    let src = c.g[V0][0] as u32;
+    let dst = c.g[A0][0] as u32;
+    c.lqc2(1, src);
+    c.lqc2(2, src.wrapping_add(0x10));
+    c.lqc2(3, src.wrapping_add(0x20));
+    c.lqc2(4, src.wrapping_add(0x30));
+    c.sqc2(1, dst);
+    c.sqc2(2, dst.wrapping_add(0x10));
+    c.sqc2(3, dst.wrapping_add(0x20));
+    c.sqc2(4, dst.wrapping_add(0x30));
+    abi::ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// Particle_v01 (0x361d50)
+
+/// The particle node's base destructor (0x3553c0), cross-shard.
+pub(crate) const PARTICLE_BASE_DTOR: u32 = 0x0035_53c0;
+
+/// `cParticleNode::~cParticleNode(this)` (0x361d50): install the
+/// `cParticleNode` vtable and run the base destructor.
+pub fn particle_v01(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x490000;
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x11a0));
+        c.sw(r32(c, V1).wrapping_add(0xc), c.g[V0][0]);
+        call_ptr(c, PARTICLE_BASE_DTOR, 0x0036_1d6c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8751,6 +8813,77 @@ pub(crate) mod tests {
                 };
                 c.g[RA][0] = SENTINEL as u64;
                 c.pc = 0x0036_1290;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::animation::rideranim::tests::CTRL;
+    pub(crate) use crate::game::animation::rideranim::tests::MAGIC;
+
+    pub(crate) use crate::game::animation::rideranim::tests::active;
+    pub(crate) use crate::game::animation::rideranim::tests::chain;
+    pub(crate) use crate::game::animation::rideranim::tests::fake_ret;
+    pub(crate) use crate::game::animation::rideranim::tests::install;
+
+    // -- 0x3612c0 IntersectInfo_ResetMatrix --------------------------------
+
+    /// The identity quadwords at `D_004FF1A0` copied over a random matrix.
+    #[test]
+    fn intersect_info_reset_matrix_matches() {
+        check(
+            ee::s12::f_003612c0__generated,
+            intersect_info_reset_matrix,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x3612_c0 ^ (seed as u64) << 9);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                elf_image(c);
+                for k in 0..4u32 {
+                    put_vec(
+                        c,
+                        IIRM_IDENTITY + 0x10 * k,
+                        [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+                    );
+                }
+                let this = DATA + 0x1000;
+                for k in 0..4u32 {
+                    put_vec(
+                        c,
+                        this + IIRM_MATRIX + 0x10 * k,
+                        [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+                    );
+                }
+                c.g[A0][0] = this as u64;
+            },
+        );
+    }
+
+    // -- Particle_v01 --------------------------------------------------------
+
+    pub(crate) fn fake_particle_base_dtor(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 6, fake_particle_base_dtor);
+        }
+        fake_ret(c, 8);
+    }
+
+    #[test]
+    fn particle_v01_matches() {
+        install(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_003553C0),
+            fake_particle_base_dtor,
+            6,
+        );
+        check(
+            ee::s12::f_00361d50__generated,
+            particle_v01,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x0036_1d50, 1);
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.bus.write32(CTRL, MAGIC);
+                c.pc = 0x0036_1d50;
             },
         );
     }

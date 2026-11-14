@@ -166,6 +166,20 @@ loop (`'scan: loop` ... `break 'scan;`), and a `macro_rules!` that emits
 `static $prev` puts the static at the *invocation* site's scope: do not also
 declare it by hand.
 
+## Lesson: keep the generated block structure (wave 214)
+
+- An exit block that wraps a loop in the generated body (`'b_X: { 'l_Y: loop
+  { ... break 'b_X; } }`) must wrap it in the port too. Put inside the loop,
+  every exit restarts the loop and the function never returns (the test hits
+  the cycle budget).
+- A branch that jumps straight to the epilogue skips everything between: the
+  `c.cycles += 1; v0 = s2` of the normal path must not run on the early exit.
+- API shapes writers got wrong: `Frame::open(c, size)`,
+  `frame.restore(c, reg, off)`; bind `vtable(c, ...)` to a `let` before
+  passing it to `c.bus.write32`.
+- Constants only your tests read: mark them `#[cfg(test)]` (otherwise the
+  game build warns that they are never used, and it must build warning-free).
+
 ## Names (the reorg merges your module into shared unit files)
 
 - Give module-local helpers function-specific names, not `lt`, `at`, `gp`,

@@ -781,6 +781,37 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_is_character_speaking,
         "SSXAudioSystem_IsCharacterSpeaking",
     ),
+    (0x0029_0c10, audio_eval_curve_table, "Audio_EvalCurveTable"),
+    (
+        0x0029_6e20,
+        ssx_audio_system_stop_wipeout_loop,
+        "SSXAudioSystem_StopWipeoutLoop",
+    ),
+    (
+        0x0029_7438,
+        ssx_audio_system_stop_wipeout_loop_2,
+        "SSXAudioSystem_StopWipeoutLoop2",
+    ),
+    (
+        0x0029_f000,
+        ssx_audio_system_get_speech_category_volume,
+        "SSXAudioSystem_GetSpeechCategoryVolume",
+    ),
+    (
+        0x0029_f620,
+        ssx_audio_system_get_grunt_bank_id,
+        "SSXAudioSystem_GetGruntBankId",
+    ),
+    (
+        0x002a_0e70,
+        ssx_audio_system_rider_say_2077,
+        "SSXAudioSystem_RiderSay2077",
+    ),
+    (
+        0x002a_1820,
+        ssx_audio_system_get_rider_rivalry,
+        "SSXAudioSystem_GetRiderRivalry",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -17965,6 +17996,626 @@ pub fn ssx_audio_system_calc_surface_loop_remote_group1(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Audio_EvalCurveTable (0x290c10)
+
+#[cfg(test)]
+/// The five 5-point curves `Audio_EvalCurveTable` indexes (`.rodata`):
+/// `{ float t[5]; float v[5]; }`, 0x28 bytes each.
+pub(crate) const AECT_TABLE: u32 = 0x0044_5898;
+
+#[cfg(test)]
+pub(crate) const AECT_CURVE_SIZE: u32 = 0x28;
+
+/// `float Audio_EvalCurveTable(int i, float x)` (0x290c10): evaluate control
+/// curve `i` (0x28 bytes each, `&D_00445898[i]`) at `x` through
+/// `Audio_EvalCurve5`, in f12.
+pub fn audio_eval_curve_table(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        c.g[V1][0] = 0x28;
+        c.g[V0][0] = 0x44_0000;
+        c.mult(0, A0, A0, V1); // a0 = i * 0x28 (also LO/HI)
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = sx(0x44_0000u32.wrapping_add(0x5898));
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        Callee {
+            addr: 0x0029_0b58,
+            f: ee::s07::Audio_EvalCurve5,
+        }
+        .call(c, 0x0029_0c30)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_GetSpeechCategoryVolume (0x29f000)
+
+/// Speech category types handled specially by
+/// [`ssx_audio_system_get_speech_category_volume`]: 2 (the "fade to default"
+/// curve) and 0xB (the category gain table at `self + 0x5730`).
+pub(crate) const SCV_FADE_TYPE: u64 = 2;
+
+pub(crate) const SCV_TABLE_TYPE: u64 = 0xb;
+
+/// `float SSXAudioSystem_GetSpeechCategoryVolume(SSXAudioSystem* self,
+/// int voice, int type, int channel)` (0x29f000): a non-zero `voice` means
+/// "no speech category" (0). Type 2 sets the fade mode from the two constants
+/// and then looks the channel gain up (`SSXAudioSystem_GetChannelGainPtr`),
+/// type 0xB returns the category table (`self + 0x5730`), and every other
+/// type goes straight to the channel gain lookup.
+pub fn ssx_audio_system_get_speech_category_volume(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A2][0]; // type
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0]; // self
+        frame.save_ra(c, 0);
+        let voice_set = c.g[A1][0] != 0;
+        c.g[S2][0] = c.g[A3][0]; // channel
+        if voice_set {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+            c.cycles += 1;
+            c.lq(16, frame.at(c, 0x30));
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = SCV_FADE_TYPE;
+            let not_fade = c.g[S0][0] != c.g[V0][0];
+            c.g[V0][0] = SCV_TABLE_TYPE;
+            if !not_fade {
+                c.cycles += 5;
+                c.lwc1(12, r32(c, GP).wrapping_sub(0x457c));
+                c.lwc1(13, r32(c, GP).wrapping_sub(0x4578));
+                c.g[A1][0] = 0;
+                call_ptr(c, 0x0028_7f00, 0x0029_f040)?;
+                c.g[V0][0] = SCV_TABLE_TYPE;
+            }
+            c.cycles += 2;
+            let not_table = c.g[S0][0] != c.g[V0][0];
+            c.g[A0][0] = c.g[S1][0];
+            if not_table {
+                c.cycles += 5;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A2][0] = c.g[S2][0];
+                call_ptr(c, 0x0028_7968, 0x0029_f060)?;
+                c.lq(16, frame.at(c, 0x30));
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = sx(r32(c, S1).wrapping_add(0x5730));
+                c.cycles += 1;
+                c.lq(16, frame.at(c, 0x30));
+            }
+        }
+        c.cycles += 5;
+        c.lq(17, frame.at(c, 0x20));
+        c.lq(18, frame.at(c, 0x10));
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_GetRiderRivalry (0x2a1820)
+
+/// Rider fields: "is human" and "is local".
+pub(crate) const GRR_HUMAN: u32 = 0x874;
+
+pub(crate) const GRR_LOCAL: u32 = 0x87c;
+
+/// The rider's embedded scripting object (its vtable) and the `v07` slot.
+pub(crate) const GRR_OBJECT: u32 = 0x6c0;
+
+pub(crate) const GRR_V07: u32 = 0x38;
+
+/// Audio system word 0x78: 2 while a "rivalry" track is playing, which makes
+/// the rivalry 2 straight away.
+pub(crate) const GRR_TRACK_MODE: u32 = 0x78;
+
+/// `int SSXAudioSystem_GetRiderRivalry(SSXAudioSystem* self, Rider* a,
+/// Rider* b)` (0x2a1820): 2 when the audio system is in track mode 2 or when
+/// both riders are human and local; otherwise the BE aggression interface's
+/// rival state of a against b, or 2 while either "level" is 2 or more.
+pub fn ssx_audio_system_get_rider_rivalry(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S3, 0x50);
+        frame.save(c, S4, 0x40);
+        c.g[S3][0] = c.g[A1][0]; // a
+        frame.save(c, S0, 0x80);
+        frame.save(c, S1, 0x70);
+        frame.save(c, S2, 0x60);
+        frame.save(c, S5, 0x30);
+        frame.save(c, S6, 0x20);
+        frame.save(c, S7, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S4][0] = c.g[A2][0]; // b
+        call_ptr(c, 0x0028_b1d8, 0x002a_1854)?; // SSXAudioSystem_GetInstance
+        c.g[V1][0] = Addr(r32(c, V0).wrapping_add(GRR_TRACK_MODE)).lw(c);
+        c.g[V0][0] = 0x2;
+        let track_mode = c.g[V1][0] == c.g[V0][0];
+        // Delay slot: restore s0 before the branch.
+        c.lq(16, frame.at(c, 0x80));
+        if !track_mode {
+            'exit: {
+                // Is a human and local? (either flag alone is enough)
+                c.cycles += 3;
+                c.g[V0][0] = Addr(r32(c, S3).wrapping_add(GRR_HUMAN)).lw(c);
+                let a_not_human = c.g[V0][0] == 0;
+                c.g[V1][0] = 0;
+                if !a_not_human {
+                    c.cycles += 2;
+                    c.g[V0][0] = Addr(r32(c, S3).wrapping_add(GRR_LOCAL)).lw(c);
+                    c.g[V1][0] = (c.g[V0][0] > 0) as u64;
+                }
+                c.cycles += 2;
+                if c.g[V1][0] != 0 {
+                    // ... and is b?
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(r32(c, S4).wrapping_add(GRR_HUMAN)).lw(c);
+                    let b_not_human = c.g[V0][0] == 0;
+                    c.g[V1][0] = 0;
+                    if !b_not_human {
+                        c.cycles += 2;
+                        c.g[V0][0] = Addr(r32(c, S4).wrapping_add(GRR_LOCAL)).lw(c);
+                        c.g[V1][0] = (c.g[V0][0] > 0) as u64;
+                    }
+                    c.cycles += 2;
+                    let both = c.g[V1][0] != 0;
+                    c.g[V0][0] = 0x2;
+                    if both {
+                        break 'exit;
+                    }
+                }
+                // The full comparison through the BE aggression interface.
+                c.cycles += 41;
+                c.g[S5][0] = sx(r32(c, S3).wrapping_add(GRR_OBJECT));
+                call_ptr(c, 0x0015_5a50, 0x002a_18a4)?; // BEAggressionInt_GetThis
+                c.g[V1][0] = Addr(r32(c, S3).wrapping_add(GRR_OBJECT)).lw(c);
+                c.g[S1][0] = c.g[V0][0];
+                c.g[S6][0] = sx(r32(c, S4).wrapping_add(GRR_OBJECT));
+                c.g[S7][0] = 0x2;
+                c.g[A0][0] = Addr(r32(c, V1).wrapping_add(GRR_V07)).lh(c);
+                c.g[V0][0] = Addr(r32(c, V1).wrapping_add(GRR_V07 + 4)).lw(c);
+                let f = c.g[V0][0] as u32;
+                c.g[A0][0] = sx(r32(c, S5).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, f, 0x002a_18c4)?; // a->v07()
+                c.g[V1][0] = Addr(r32(c, S4).wrapping_add(GRR_OBJECT)).lw(c);
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A0][0] = Addr(r32(c, V1).wrapping_add(GRR_V07)).lh(c);
+                c.g[V0][0] = Addr(r32(c, V1).wrapping_add(GRR_V07 + 4)).lw(c);
+                let f = c.g[V0][0] as u32;
+                c.g[A0][0] = sx(r32(c, S6).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, f, 0x002a_18dc)?; // b->v07()
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A2][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S1][0];
+                call_ptr(c, 0x0015_5b50, 0x002a_18ec)?; // GetRivalLevel(this, a, b)
+                c.g[S0][0] = c.g[V0][0];
+                call_ptr(c, 0x0015_5a50, 0x002a_18f4)?; // BEAggressionInt_GetThis
+                c.g[V1][0] = Addr(r32(c, S4).wrapping_add(GRR_OBJECT)).lw(c);
+                c.g[S2][0] = c.g[V0][0];
+                c.g[A0][0] = Addr(r32(c, V1).wrapping_add(GRR_V07)).lh(c);
+                c.g[V0][0] = Addr(r32(c, V1).wrapping_add(GRR_V07 + 4)).lw(c);
+                let f = c.g[V0][0] as u32;
+                c.g[A0][0] = sx(r32(c, S6).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, f, 0x002a_190c)?; // b->v07()
+                c.g[V1][0] = Addr(r32(c, S3).wrapping_add(GRR_OBJECT)).lw(c);
+                c.g[S1][0] = c.g[V0][0];
+                c.g[A0][0] = Addr(r32(c, V1).wrapping_add(GRR_V07)).lh(c);
+                c.g[V0][0] = Addr(r32(c, V1).wrapping_add(GRR_V07 + 4)).lw(c);
+                let f = c.g[V0][0] as u32;
+                c.g[A0][0] = sx(r32(c, S5).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, f, 0x002a_1924)?; // a->v07()
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A2][0] = c.g[V0][0];
+                call_ptr(c, 0x0015_5b50, 0x002a_1934)?; // GetRivalLevel(this, b, a)
+                c.g[S0][0] = ((c.g[S0][0] as i64) < 2i64) as u64;
+                let level_a_high = c.g[S0][0] == 0;
+                c.g[V0][0] = ((c.g[V0][0] as i64) < 2i64) as u64;
+                if level_a_high {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[S7][0];
+                } else {
+                    c.cycles += 2;
+                    let level_b_high = c.g[V0][0] == 0;
+                    c.g[V0][0] = c.g[S7][0];
+                    if !level_b_high {
+                        // Both levels below 2: ask the rival state.
+                        c.cycles += 20;
+                        call_ptr(c, 0x0015_5a50, 0x002a_1950)?; // GetThis
+                        c.g[S1][0] = c.g[V0][0];
+                        c.g[V1][0] = Addr(r32(c, S3).wrapping_add(GRR_OBJECT)).lw(c);
+                        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(GRR_V07)).lh(c);
+                        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(GRR_V07 + 4)).lw(c);
+                        let f = c.g[V0][0] as u32;
+                        c.g[A0][0] = sx(r32(c, S5).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, f, 0x002a_1968)?; // a->v07()
+                        c.g[V1][0] = Addr(r32(c, S4).wrapping_add(GRR_OBJECT)).lw(c);
+                        c.g[S0][0] = c.g[V0][0];
+                        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(GRR_V07)).lh(c);
+                        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(GRR_V07 + 4)).lw(c);
+                        let f = c.g[V0][0] as u32;
+                        c.g[A0][0] = sx(r32(c, S6).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, f, 0x002a_1980)?; // b->v07()
+                        c.g[A0][0] = c.g[S1][0];
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A2][0] = c.g[V0][0];
+                        call_ptr(c, 0x0015_5ab0, 0x002a_1990)?; // GetRivalState
+                        let state_set = c.g[V0][0] != 0;
+                        c.g[V1][0] = c.g[V0][0] ^ 0x1;
+                        c.cycles += 2;
+                        if !state_set {
+                            c.g[S7][0] = 0;
+                        } else {
+                            c.g[V0][0] = 0x1;
+                            if c.g[V1][0] == 0 {
+                                c.g[S7][0] = c.g[V0][0];
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.g[S7][0];
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.lq(16, frame.at(c, 0x80));
+        }
+        c.cycles += 10;
+        c.lq(17, frame.at(c, 0x70));
+        c.lq(18, frame.at(c, 0x60));
+        c.lq(19, frame.at(c, 0x50));
+        c.lq(20, frame.at(c, 0x40));
+        c.lq(21, frame.at(c, 0x30));
+        c.lq(22, frame.at(c, 0x20));
+        c.lq(23, frame.at(c, 0x10));
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_RiderSay2077 (0x2a0e70)
+
+/// Rider: along-track progress (speech only while negative), the two
+/// "human"/"local" flags, the scripting object and the `v05`/`v09` slots.
+pub(crate) const RS2077_PROGRESS: u32 = 0x470;
+
+pub(crate) const RS2077_HUMAN: u32 = 0x874;
+
+pub(crate) const RS2077_LOCAL: u32 = 0x87c;
+
+pub(crate) const RS2077_OBJECT: u32 = 0x6c0;
+
+pub(crate) const RS2077_V05: u32 = 0x28;
+
+pub(crate) const RS2077_V09: u32 = 0x48;
+
+/// Audio system: the speech system, the post hook (`gp + 0x173c`) and the
+/// listener radius.
+pub(crate) const RS2077_SPEECH: u32 = 0x5560;
+
+pub(crate) const RS2077_POST_HOOK_GP: u32 = 0x173c;
+
+pub(crate) const RS2077_RADIUS_GP: u32 = 0x5e8;
+
+/// The spoken code.
+pub(crate) const RS2077_CODE: u64 = 0x2077;
+
+/// `void SSXAudioSystem_RiderSay2077(SSXAudioSystem* sys, Rider* rider,
+/// int play)` (0x2a0e70): the "wipeout" line. Silent / replaying / AI-or-
+/// followed-elsewhere / still on course riders get nothing; then, with the
+/// speech system's instance ready, the rider's "surface" method decides
+/// whether a grunt plays (a negative listener distance means nothing is
+/// played) and, when `play` is set, the rider is human and local, the line is
+/// posted for its character with its speech mask via the speech context and
+/// the post hook.
+pub fn ssx_audio_system_rider_say_2077(c: &mut Cpu) {
+    let frame = Frame { size: 0x70 };
+    guest(c, |c| {
+        c.cycles += 14;
+        Frame::open(c, 0x70);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S0, 0x50);
+        c.g[S1][0] = c.g[A0][0]; // sys
+        frame.save(c, S4, 0x10);
+        c.g[S0][0] = c.g[A1][0]; // rider
+        frame.save(c, S2, 0x30);
+        c.g[S4][0] = c.g[A2][0]; // play
+        frame.save(c, S3, 0x20);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 20, 0x60);
+        Callee {
+            addr: 0x0029_f0a0,
+            f: ee::s08::SSXAudioSystem_IsSpeechVolumeOn,
+        }
+        .call(c, 0x002a_0ea0)?;
+        'exit: {
+            if c.g[V0][0] == 0 {
+                frame.restore(c, S0, 0x50);
+                break 'exit;
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S1][0];
+            Callee {
+                addr: 0x0028_8ae0,
+                f: ee::s07::SSXAudioSystem_IsReplayPlaying,
+            }
+            .call(c, 0x002a_0eb0)?;
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x50);
+                break 'exit;
+            }
+            // The rider's v09 (behind the start / AI?) or a non-local rider
+            // means "check the followed rider".
+            c.cycles += 10;
+            c.g[V1][0] = Addr(r32(c, S0).wrapping_add(RS2077_OBJECT)).lw(c);
+            c.g[A1][0] = sx(r32(c, S0).wrapping_add(RS2077_OBJECT));
+            c.g[S3][0] = c.g[A1][0];
+            c.g[S2][0] = 0;
+            c.g[A0][0] = Addr(r32(c, V1).wrapping_add(RS2077_V09)).lh(c);
+            c.g[V0][0] = Addr(r32(c, V1).wrapping_add(RS2077_V09 + 4)).lw(c);
+            let f = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, f, 0x002a_0ed8)?;
+            if c.g[V0][0] != 0 {
+                c.g[S2][0] = 0x1;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(r32(c, S0).wrapping_add(RS2077_LOCAL)).lw(c);
+                if c.g[V0][0] == 0 {
+                    c.g[S2][0] = 0x1;
+                }
+            }
+            // Unless the rider is AI or not local, it must be the followed one.
+            c.cycles += 2;
+            let check_followed = c.g[S2][0] == 0;
+            c.g[A0][0] = c.g[S1][0];
+            if !check_followed {
+                c.cycles += 4;
+                c.g[A1][0] = u64::MAX;
+                call_ptr(c, 0x0028_5d98, 0x002a_0efc)?; // FindRider(sys, -1)
+                if c.g[V0][0] != c.g[S0][0] {
+                    frame.restore(c, S0, 0x50);
+                    break 'exit;
+                }
+            }
+            // Still behind the start line?
+            c.cycles += 6;
+            c.lwc1(0, r32(c, S0).wrapping_add(RS2077_PROGRESS));
+            c.mtc1(0, 20);
+            c.c_le_s(20, 0);
+            let ahead = c.fcc();
+            c.g[V0][0] = 0x1;
+            if !ahead {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x50);
+                break 'exit;
+            }
+            c.cycles += 6;
+            c.g[S2][0] = sx(r32(c, S1).wrapping_add(RS2077_SPEECH));
+            c.g[A1][0] = 0;
+            c.g[A0][0] = c.g[S2][0];
+            Callee {
+                addr: 0x002b_0e28,
+                f: ee::s08::SpeechSystem_IsInstanceReady,
+            }
+            .call(c, 0x002a_0f38)?;
+            if c.g[V0][0] == 0 {
+                frame.restore(c, S0, 0x50);
+                break 'exit;
+            }
+            'late: {
+                c.cycles += 11;
+                c.g[V1][0] = Addr(r32(c, S0).wrapping_add(RS2077_OBJECT)).lw(c);
+                c.g[A0][0] = Addr(r32(c, V1).wrapping_add(RS2077_V05)).lh(c);
+                c.g[V0][0] = Addr(r32(c, V1).wrapping_add(RS2077_V05 + 4)).lw(c);
+                let f = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, f, 0x002a_0f54)?; // rider->v05()
+                c.lwc1(12, r32(c, GP).wrapping_add(RS2077_RADIUS_GP));
+                c.g[A1][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S1][0];
+                call_ptr(c, 0x0028_8b40, 0x002a_0f64)?; // FindViewInRange
+                let far = (c.g[V0][0] as i64) < 0;
+                c.g[A0][0] = c.g[S1][0];
+                if far {
+                    break 'late;
+                }
+                c.cycles += 6;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A2][0] = 0x2;
+                c.g[A3][0] = 0;
+                Callee {
+                    addr: 0x0029_f660,
+                    f: ee::s08::SSXAudioSystem_PlayRiderGrunt,
+                }
+                .call(c, 0x002a_0f7c)?;
+                if c.g[S4][0] == 0 {
+                    frame.restore(c, S0, 0x50);
+                    break 'exit;
+                }
+                // Human and local only.
+                c.cycles += 3;
+                c.g[V0][0] = Addr(r32(c, S0).wrapping_add(RS2077_HUMAN)).lw(c);
+                let not_human = c.g[V0][0] == 0;
+                c.g[V1][0] = 0;
+                if !not_human {
+                    c.cycles += 2;
+                    c.g[V0][0] = Addr(r32(c, S0).wrapping_add(RS2077_LOCAL)).lw(c);
+                    c.g[V1][0] = (c.g[V0][0] > 0) as u64;
+                }
+                c.cycles += 2;
+                if c.g[V1][0] == 0 {
+                    frame.restore(c, S0, 0x50);
+                    break 'exit;
+                }
+                c.cycles += 16;
+                c.g[A0][0] = c.g[S0][0];
+                Callee {
+                    addr: 0x0029_f330,
+                    f: ee::s08::SSXAudioSystem_GetRiderSpeechMask,
+                }
+                .call(c, 0x002a_0fa8)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[S1][0] = c.g[V0][0];
+                call_ptr(c, 0x0012_3128, 0x002a_0fb4)?; // Rider_GetCharacter
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A3][0] = c.g[S0][0];
+                c.g[T0][0] = c.g[V0][0];
+                c.mov_s(12, 20);
+                c.g[A1][0] = 0;
+                c.g[A2][0] = RS2077_CODE;
+                c.g[T1][0] = 0;
+                c.g[T2][0] = 0;
+                Callee {
+                    addr: 0x002b_1458,
+                    f: ee::s08::SpeechSystem_SetEventContext,
+                }
+                .call(c, 0x002a_0fd8)?;
+                let accepted = c.g[V0][0] != 0;
+                c.g[A0][0] = 0x1;
+                if accepted {
+                    c.cycles += 8;
+                    c.g[A1][0] = 0;
+                    c.g[A2][0] = RS2077_CODE;
+                    call_ptr(c, 0x003d_8008, 0x002a_0fec)?; // SPCH_MakeId(1, 0, code)
+                    c.g[V1][0] = Addr(r32(c, GP).wrapping_add(RS2077_POST_HOOK_GP)).lw(c);
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A2][0] = c.g[S1][0];
+                    let hook = c.g[V1][0] as u32;
+                    c.g[A1][0] = 0x1;
+                    call_ptr(c, hook, 0x002a_1000)?;
+                }
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x50);
+        }
+        c.cycles += 8;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_GetGruntBankId (0x29f620)
+
+/// The rider's audio object (`self+0x6c0`).
+pub const GRUNT_RIDER_AUDIO: u32 = 0x6c0;
+
+/// `int SSXAudioSystem_GetGruntBankId(void* self, void* rider)` (0x29f620):
+/// ask the rider's audio object (vtable slot at `+0x38`) whether it has an
+/// audio bank; 0xf when it does, 0xe otherwise.
+pub fn ssx_audio_system_get_grunt_bank_id(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(GRUNT_RIDER_AUDIO)).lw(c);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(GRUNT_RIDER_AUDIO));
+        c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x38)).lh(c);
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x3c)).lw(c);
+        let target = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x0029_f640);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0029_f640)?;
+        c.g[A0][0] = 0xe;
+        c.g[V1][0] = 0xf;
+        if c.g[V0][0] == 0 {
+            c.g[V1][0] = c.g[A0][0];
+        }
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = c.g[V1][0];
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_StopWipeoutLoop2 / _StopWipeoutLoop (0x297438 / 0x296e20).
+
+/// `SSXAudioSystem_GetInstance()` (`gp + 0x410`).
+pub(crate) const SSX_AUDIO_GET_INSTANCE: u32 = 0x0028_b180;
+
+/// The sound system pointer inside the audio system.
+pub(crate) const SSX_AUDIO_SOUND: u32 = 0x118;
+
+/// The bank monitor inside the sound system.
+pub(crate) const SSX_AUDIO_BANK_MONITOR: u32 = 0x1d8;
+
+/// The second wipeout loop's bank-monitor handle in the rider.
+pub(crate) const WIPEOUT_LOOP_2_HANDLE: u32 = 0x778;
+
+/// The first wipeout loop's bank-monitor handle in the rider.
+pub(crate) const WIPEOUT_LOOP_HANDLE: u32 = 0x774;
+
+/// `void SSXAudioSystem_StopWipeoutLoop2(unused, rider)` (0x297438): when the
+/// rider still has a second wipeout-loop handle (`+0x778`, negative for
+/// none), stop it on the bank monitor with a 0.75 s fade and mark it unused.
+pub fn ssx_audio_system_stop_wipeout_loop_2(c: &mut Cpu) {
+    stop_wipeout_loop(c, WIPEOUT_LOOP_2_HANDLE, 0x0029_745c, 0x0029_747c);
+}
+
+/// `void SSXAudioSystem_StopWipeoutLoop(unused, rider)` (0x296e20): the same
+/// for the first loop's handle (`+0x774`).
+pub fn ssx_audio_system_stop_wipeout_loop(c: &mut Cpu) {
+    stop_wipeout_loop(c, WIPEOUT_LOOP_HANDLE, 0x0029_6e44, 0x0029_6e64);
+}
+
+/// The shared body of the two: frame 0x20 (s0 = rider).
+pub(crate) fn stop_wipeout_loop(c: &mut Cpu, handle_off: u32, ret_get: u32, ret_stop: u32) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(handle_off)).lw(c);
+        if (c.g[V0][0] as i64) < 0 {
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 13;
+            call_ptr(c, SSX_AUDIO_GET_INSTANCE, ret_get)?;
+            c.g[V1][0] = Addr(r32(c, V0).wrapping_add(SSX_AUDIO_SOUND)).lw(c);
+            c.g[A2][0] = 0x1;
+            c.g[A1][0] = Addr(r32(c, S0).wrapping_add(handle_off)).lw(c);
+            c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+            c.g[AT][0] = 0x3f40_0000;
+            c.mtc1(1, 12); // f12 = 0.75 (fade seconds)
+            c.g[RA][0] = sx(ret_stop);
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(SSX_AUDIO_BANK_MONITOR));
+            BANK_MONITOR_STOP_HANDLE.call(c, ret_stop)?;
+            c.g[V0][0] = u64::MAX;
+            c.sw(r32(c, S0).wrapping_add(handle_off), c.g[V0][0]);
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -23704,6 +24355,218 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(RIDER);
                 c.g[A2][0] = sx(OUT);
                 c.g[A3][0] = sx(OUT + 4);
+            },
+        );
+    }
+
+    use crate::game::sound::soundsys::tests::rs207d_world as rs207d_world_m2;
+
+    // The world's addresses (the same ones `rs207d_world_m2` uses).
+    pub(crate) const OC330_SYS: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC330_RIDER_A: u32 = DATA + 0x21_0000;
+
+    pub(crate) const OC330_RIDER_B: u32 = DATA + 0x21_1000;
+
+    // -- 0x290c10 Audio_EvalCurveTable --------------------------------------
+
+    /// Index 0..4 into the five curves (times 0,1,2,3,4 at `i*0x28`, values
+    /// 0,10,20,30,40 at `+0x14`), `x` in, below, inside and above the range,
+    /// with f12 as the argument.
+    #[test]
+    fn audio_eval_curve_table_matches() {
+        check(
+            ee::s07::f_00290c10__generated,
+            audio_eval_curve_table,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x2900_c10 ^ (seed as u64) << 7);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let i = r.next_u32() % 5;
+                c.g[A0][0] = i as u64;
+                let x = match seed % 6 {
+                    0 => -1.0f32,
+                    1 => 0.0,
+                    2 => 2.5,
+                    3 => 3.99,
+                    4 => 4.0,
+                    _ => 9.0,
+                };
+                c.f[12] = x.to_bits();
+                let base = AECT_TABLE + i * AECT_CURVE_SIZE;
+                for k in 0..5u32 {
+                    c.bus.write32(base + 4 * k, (k as f32).to_bits());
+                    c.bus
+                        .write32(base + 0x14 + 4 * k, (10.0 * k as f32).to_bits());
+                }
+            },
+        );
+    }
+
+    // -- 0x29f000 SSXAudioSystem_GetSpeechCategoryVolume -------------------
+
+    /// A voice argument set and clear; types 0, 2, 0xB and others; the
+    /// channel in a3. The fade-mode and gain-pointer callees are real.
+    #[test]
+    fn ssx_audio_system_get_speech_category_volume_matches() {
+        check(
+            ee::s08::f_0029f000__generated,
+            ssx_audio_system_get_speech_category_volume,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x29f0_00 ^ (seed as u64) << 11);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let this = DATA + 0x1000;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = if seed % 4 == 0 { 1 } else { 0 };
+                let ty = [0u32, 1, 2, 0xb, 0x2077][(seed / 2 % 5) as usize];
+                c.g[A2][0] = ty as u64;
+                c.g[A3][0] = (r.next_u32() % 4) as u64;
+                // The gain table the 0xB category returns.
+                c.bus.write32(this + 0x5730, r.next_u32());
+                c.bus.write32(this + 0x5734, r.next_u32());
+            },
+        );
+    }
+
+    // -- 0x2a1820 SSXAudioSystem_GetRiderRivalry ---------------------------
+
+    /// The 2077 world (BE aggression singletons, player records, riders) with
+    /// the audio instance's track mode 2 or not, and the riders' human/local
+    /// flags from the world; the BE interface leaves run for real.
+    #[test]
+    fn ssx_audio_system_get_rider_rivalry_matches() {
+        check(
+            ee::s08::f_002a1820__generated,
+            ssx_audio_system_get_rider_rivalry,
+            150,
+            &|c, seed| {
+                let mut r = rs207d_world_m2(c, seed);
+                c.pc = 0x002a_1820;
+                c.g[A0][0] = OC330_SYS as u64;
+                c.g[A1][0] = OC330_RIDER_A as u64;
+                c.g[A2][0] = OC330_RIDER_B as u64;
+                // The audio instance and its track mode (2 for some seeds).
+                let audio = DATA + 0x21_c000;
+                c.bus.write32(GAME_GP + 0x410, audio);
+                c.bus.write32(
+                    audio + GRR_TRACK_MODE,
+                    if seed % 4 == 0 { 2 } else { r.next_u32() % 3 },
+                );
+                // Extra variety in the two "human"/"local" flags.
+                for rider in [OC330_RIDER_A, OC330_RIDER_B] {
+                    c.bus.write32(rider + GRR_HUMAN, r.next_u32() % 2);
+                    c.bus.write32(rider + GRR_LOCAL, r.next_u32() % 2);
+                }
+            },
+        );
+    }
+
+    // -- 0x2a0e70 SSXAudioSystem_RiderSay2077 ------------------------------
+
+    /// The 2077 world with a listener radius that puts the riders in range:
+    /// speech off, replaying, AI / followed / local riders, on-course riders,
+    /// an instance that is not ready, the view check, the grunt (short path)
+    /// and the masked line with accepted and rejected speech contexts.
+    #[test]
+    fn ssx_audio_system_rider_say_2077_matches() {
+        check(
+            ee::s08::f_002a0e70__generated,
+            ssx_audio_system_rider_say_2077,
+            120,
+            &|c, seed| {
+                let mut r = rs207d_world_m2(c, seed);
+                c.pc = 0x002a_0e70;
+                c.g[A0][0] = OC330_SYS as u64;
+                c.g[A1][0] = OC330_RIDER_A as u64;
+                c.g[A2][0] = (seed % 2) as u64;
+                // A radius that hears the riders at (1,2,3).
+                c.bus.write32(GAME_GP + RS2077_RADIUS_GP, 10.0f32.to_bits());
+                // The grunt checks read the rider's character index.
+                c.bus.write32(OC330_RIDER_A + 0xec, r.next_u32() % 4);
+            },
+        );
+    }
+
+    /// `SSXAudioSystem_GetGruntBankId`: the rider's audio object vtable
+    /// (fake) reports a bank, or a real leaf returning 0 reports none.
+    #[test]
+    fn ssx_audio_system_get_grunt_bank_id_matches() {
+        check(
+            ee::s08::f_0029f620__generated,
+            ssx_audio_system_get_grunt_bank_id,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x29f620, 0);
+                let this = DATA;
+                let vt = DATA + 0x8_0000;
+                let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+                c.bus.write16(vt + 0x38, delta as u16);
+                c.bus.write32(
+                    vt + 0x3c,
+                    if seed % 2 == 0 {
+                        0x0014_06c0 // RiderIface_HasVisited: returns 0
+                    } else {
+                        FAKE
+                    },
+                );
+                c.bus.write32(this + GRUNT_RIDER_AUDIO, vt);
+                c.g[A1][0] = sx(this);
+                c.pc = 0x0029_f620;
+            },
+        );
+    }
+
+    /// A rider with the wipeout-loop handle (`off`) at -1 or a small id,
+    /// its audio system (`gp + 0x410` -> sound -> bank monitor) and 64 free
+    /// bank-monitor instances (so the stop's instance search walks them).
+    pub(crate) fn wipeout_loop_setup(c: &mut Cpu, seed: u32, off: u32) {
+        use crate::difftest::fakes::machine;
+        const AUDIO: u32 = DATA + 0x100;
+        const PTR_CELL: u32 = DATA + 0x200;
+        const SND: u32 = DATA + 0x300;
+        const MONITOR: u32 = DATA + 0x1000;
+        const INSTANCES: u32 = DATA + 0x4000;
+        let mut r = machine(c, seed, 0x297438, 0);
+        c.bus.write32(GAME_GP + 0x410, AUDIO);
+        c.bus.write32(AUDIO + SSX_AUDIO_SOUND, PTR_CELL);
+        c.bus.write32(PTR_CELL, SND);
+        c.bus.write32(SND + SSX_AUDIO_BANK_MONITOR, MONITOR);
+        c.bus.write32(MONITOR + 0x8ec, INSTANCES);
+        let handle = if seed % 3 == 0 {
+            u32::MAX
+        } else {
+            r.next_u32() & 0x7fff_ffff
+        };
+        c.bus.write32(DATA + 0x800 + off, handle);
+        c.g[A0][0] = sx(DATA + 0x600);
+        c.g[A1][0] = sx(DATA + 0x800);
+    }
+
+    #[test]
+    fn ssx_audio_system_stop_wipeout_loop_2_matches() {
+        check(
+            ee::s08::f_00297438__generated,
+            ssx_audio_system_stop_wipeout_loop_2,
+            160,
+            &|c, seed| {
+                wipeout_loop_setup(c, seed, WIPEOUT_LOOP_2_HANDLE);
+                c.pc = 0x0029_7438;
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_audio_system_stop_wipeout_loop_matches() {
+        check(
+            ee::s08::f_00296e20__generated,
+            ssx_audio_system_stop_wipeout_loop,
+            160,
+            &|c, seed| {
+                wipeout_loop_setup(c, seed, WIPEOUT_LOOP_HANDLE);
+                c.pc = 0x0029_6e20;
             },
         );
     }

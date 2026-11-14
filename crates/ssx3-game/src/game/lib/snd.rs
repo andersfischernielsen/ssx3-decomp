@@ -11,9 +11,11 @@ use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -307,6 +309,48 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003d_9a40, spch_reset_sentence, "SPCH_ResetSentence"),
     (0x003d_9ac8, spch_sentence_append, "SPCH_SentenceAppend"),
     (0x003d_b208, spch_eval_part_choice, "SPCH_EvalPartChoice"),
+    (0x003b_7d80, sndstrm_set_prebuffer, "SNDSTRM_SetPrebuffer"),
+    (0x003b_7fb8, sndstrm_set_pitch, "SNDSTRM_SetPitch"),
+    (
+        0x003c_0be8,
+        snd_iop_release_channel_callback,
+        "SND_IopReleaseChannelCallback",
+    ),
+    (0x003c_6ce8, sndstrm_stop_slot, "SNDSTRM_StopSlot"),
+    (0x003c_7cc0, snd_dec_alloc_thunk, "SND_DecAllocThunk"),
+    (0x003c_7ce0, snd_dec_free_thunk, "SND_DecFreeThunk"),
+    (0x003c_8430, snd_ee_voice_finish, "SND_EeVoiceFinish"),
+    (
+        0x003c_8598,
+        snd_ee_voice_set_aux_send,
+        "SND_EeVoiceSetAuxSend",
+    ),
+    (
+        0x003c_8b40,
+        snd_ee_voice_set_time_stretch,
+        "SND_EeVoiceSetTimeStretch",
+    ),
+    (0x003c_93f8, snd_dec_utk_free, "SND_DecUtk_Free"),
+    (0x003c_d1a8, snd_utk_alloc, "SND_UtkAlloc"),
+    (0x003c_d1d0, snd_utk_free, "SND_UtkFree"),
+    (0x003c_ddb8, snd_utk_reset, "SND_UtkReset"),
+    (0x003c_e078, snd_utk_get_state, "SND_UtkGetState"),
+    (
+        0x003c_e1b0,
+        snd_channel_start_stream_voices,
+        "SND_ChannelStartStreamVoices",
+    ),
+    (0x003d_6d50, spch_find_bank_by_id, "SPCH_FindBankById"),
+    (0x003d_6ee8, spch_history_push, "SPCH_HistoryPush"),
+    (0x003d_76f0, spch_queue_event, "SPCH_QueueEvent"),
+    (0x003d_8040, spch_service_channel, "SPCH_ServiceChannel"),
+    (0x003d_83b8, spch_find_bank_data_ptr, "SPCH_FindBankDataPtr"),
+    (
+        0x003d_a418,
+        spch_build_sentence_with_fallback,
+        "SPCH_BuildSentenceWithFallback",
+    ),
+    (0x003d_b9a0, spch_get_time, "SPCH_GetTime"),
 ];
 
 /// Fields of the driver state block.
@@ -15958,6 +16002,36 @@ pub(crate) mod callee {
         addr: 0x0035_5658,
         f: ee::s11::ModObj_LinkParticleModifier,
     };
+
+    pub const SND_LOCK: Callee = Callee {
+        addr: 0x003b_58a0,
+        f: ee::s13::SND_Lock,
+    };
+
+    pub const SND_UNLOCK: Callee = Callee {
+        addr: 0x003b_58d8,
+        f: ee::s13::SND_Unlock,
+    };
+
+    pub const SNDSTRM_FIND_REQUEST: Callee = Callee {
+        addr: 0x003b_7a70,
+        f: ee::s13::SNDSTRM_FindRequest,
+    };
+
+    pub const MOD_OBJ_SAVE: Callee = Callee {
+        addr: 0x0035_6b30,
+        f: ee::s11::ModObj_Save,
+    };
+
+    pub const STREAM_BUFFER_QUEUE: Callee = Callee {
+        addr: 0x002a_a320,
+        f: ee::s08::StreamBuffer_Queue,
+    };
+
+    pub const STRCPY: Callee = Callee {
+        addr: 0x0041_66f4,
+        f: ee::s15::strcpy,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -18570,6 +18644,1238 @@ pub fn snd_dsp_resample_init(c: &mut Cpu) {
             deliver_event_here(c, 0x003c_bb50);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// SND_ChannelStartStreamVoices (0x3ce1b0)
+
+pub(crate) const SND_VOICE_START: Callee = Callee {
+    addr: 0x003c_8158,
+    f: ee::s14::f_003c8158,
+};
+
+pub(crate) const SND_VOICE_ACTIVATE: Callee = Callee {
+    addr: 0x003c_83a0,
+    f: ee::s14::f_003c83a0,
+};
+
+/// `int SND_ChannelStartStreamVoices(SND_Channel* ch, int entryOff,
+/// void* stream, int rate, int a3, int t0, int t1, int t2, int t3)`
+/// (0x3ce1b0): start the stream voices of the channel entry
+/// `*(soundState+0x1f0) + entryOff`. Nothing happens when the entry's flags
+/// (+0x24) say "done" (bit 3) or "not streaming" (bit 2 missing); otherwise
+/// each of the `+0x23` voices is started with its rate, the seven channel
+/// parameters are applied, and each voice is activated.
+pub fn snd_channel_start_stream_voices(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0xe0);
+        c.g[V0][0] = 0x8c;
+        frame.save(c, S1, 0xc0);
+        c.mult(0, A1, A1, V0); // entryOff * sizeof(entry)
+        frame.save(c, S4, 0x90);
+        c.g[V1][0] = 0x0051_0000;
+        frame.save(c, S7, 0x60);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x5718));
+        frame.save(c, FP, 0x50);
+        c.g[S7][0] = c.g[T2][0];
+        frame.save(c, S0, 0xd0);
+        c.g[FP][0] = c.g[A2][0];
+        frame.save(c, S2, 0xb0);
+        frame.save(c, S3, 0xa0);
+        frame.save(c, S5, 0x80);
+        frame.save(c, S6, 0x70);
+        frame.save_ra(c, 0x40);
+        c.g[V0][0] = Addr(r32(c, V1)).off(0x1f0).lw(c);
+        let spv = sp(c);
+        Addr(spv).off(0x30).sw(c, c.g[A3][0]);
+        Addr(spv).off(0x34).sw(c, c.g[T0][0]);
+        c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        Addr(spv).off(0x38).sw(c, c.g[T1][0]);
+        c.g[A0][0] = Addr(r32(c, S1)).off(0x24).lhu(c);
+        c.g[V0][0] = c.g[A0][0] & 0x8;
+        let done = c.g[V0][0] != 0;
+        c.g[S4][0] = c.g[T3][0];
+        'b_3ce348: {
+            'b_3ce344: {
+                if !done {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.g[A0][0] & 0x4;
+                    let not_streaming = c.g[V0][0] == 0;
+                    let spv = sp(c);
+                    c.lq(16, spv.wrapping_add(0xd0));
+                    if not_streaming {
+                        break 'b_3ce348;
+                    }
+                    'b_3ce2b0: {
+                        c.cycles += 3;
+                        c.g[T2][0] = Addr(r32(c, S1)).off(0x23).lbu(c);
+                        let no_voices = c.g[T2][0] == 0;
+                        c.g[S2][0] = 0;
+                        if no_voices {
+                            break 'b_3ce2b0;
+                        }
+                        c.cycles += 6;
+                        c.g[S6][0] = c.g[V1][0];
+                        c.g[S5][0] = u64::MAX;
+                        c.g[S3][0] = sx((c.g[S4][0] as u32).wrapping_add(0x18));
+                        c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x4));
+                        c.g[V0][0] = Addr(r32(c, S4)).off(0x7).lbu(c);
+                        loop {
+                            c.cycles += 26;
+                            c.g[T0][0] = 0xffff_ffff_ffff_0000;
+                            c.g[V1][0] = Addr(r32(c, S0)).lh(c);
+                            c.g[A2][0] = 0;
+                            let spv = sp(c);
+                            c.sw(spv.wrapping_add(0x28), c.g[S2][0]);
+                            c.g[A3][0] = 0;
+                            let spv = sp(c);
+                            c.sw(spv.wrapping_add(0x20), c.g[V0][0]);
+                            c.g[T0][0] |= 0xffff;
+                            c.g[V0][0] = Addr(r32(c, S6)).off(0x2f).lbu(c);
+                            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                            c.g[A0][0] = Addr(r32(c, S6)).off(0x30).lbu(c);
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2));
+                            let spv = sp(c);
+                            c.sw(spv, c.g[S5][0]);
+                            c.sw(spv.wrapping_add(0x8), c.g[S5][0]);
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            let spv = sp(c);
+                            c.sw(spv.wrapping_add(0x10), 0);
+                            c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+                            c.sw(spv.wrapping_add(0x18), 0);
+                            c.g[T1][0] = Addr(r32(c, S3)).lw(c);
+                            c.g[A1][0] = Addr(r32(c, S7)).off(0x3).lbu(c);
+                            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x4));
+                            c.g[T3][0] = Addr(r32(c, S1)).off(0x14).lw(c);
+                            SND_VOICE_START.call(c, 0x003c_e2a0)?;
+                            c.g[T2][0] = Addr(r32(c, S1)).off(0x23).lbu(c);
+                            c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[T2][0] as i64)) as u64;
+                            if c.g[V0][0] == 0 {
+                                break 'b_3ce2b0;
+                            }
+                            c.g[V0][0] = Addr(r32(c, S4)).off(0x7).lbu(c);
+                            if event_due(c) {
+                                deliver_event_here(c, 0x003c_e248);
+                            }
+                        }
+                    }
+                    c.cycles += 23;
+                    c.g[A0][0] = Addr(r32(c, S1)).off(0x4).lh(c);
+                    c.g[S2][0] = 0;
+                    call_ptr(c, 0x003c_25e0, 0x003c_e2bc)?; // pitch
+                    c.g[A0][0] = Addr(r32(c, S1)).off(0x4).lh(c);
+                    call_ptr(c, 0x003c_38e0, 0x003c_e2c4)?; // pan
+                    c.g[A0][0] = Addr(r32(c, S1)).off(0x4).lh(c);
+                    c.g[A1][0] = 0;
+                    call_ptr(c, 0x003c_27e0, 0x003c_e2d0)?; // send
+                    c.g[A0][0] = Addr(r32(c, S1)).off(0x4).lh(c);
+                    c.g[A1][0] = c.g[FP][0];
+                    call_ptr(c, 0x003c_3010, 0x003c_e2dc)?; // time stretch
+                    let spv = sp(c);
+                    c.g[A1][0] = Addr(spv).off(0x30).lw(c);
+                    c.g[A0][0] = Addr(r32(c, S1)).off(0x4).lh(c);
+                    call_ptr(c, 0x003c_30c8, 0x003c_e2e8)?; // distortion
+                    let spv = sp(c);
+                    c.g[A1][0] = Addr(spv).off(0x34).lw(c);
+                    c.g[A0][0] = Addr(r32(c, S1)).off(0x4).lh(c);
+                    call_ptr(c, 0x003c_3178, 0x003c_e2f4)?; // lowpass
+                    c.g[A0][0] = Addr(r32(c, S1)).off(0x4).lh(c);
+                    let spv = sp(c);
+                    c.g[A1][0] = Addr(spv).off(0x38).lw(c);
+                    call_ptr(c, 0x003c_3250, 0x003c_e300)?; // highpass
+                    c.g[V0][0] = Addr(r32(c, S1)).off(0x23).lbu(c);
+                    let no_voices = c.g[V0][0] == 0;
+                    c.g[V0][0] = 0x0051_0000;
+                    if no_voices {
+                        break 'b_3ce344;
+                    }
+                    c.cycles += 3;
+                    c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x4));
+                    c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5718));
+                    c.g[V0][0] = Addr(r32(c, S3)).off(0x2f).lbu(c);
+                    loop {
+                        c.cycles += 11;
+                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                        c.g[A0][0] = Addr(r32(c, S3)).off(0x30).lbu(c);
+                        c.g[V1][0] = Addr(r32(c, S0)).lh(c);
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2));
+                        c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+                        SND_VOICE_ACTIVATE.call(c, 0x003c_e334)?;
+                        c.g[V0][0] = Addr(r32(c, S1)).off(0x23).lbu(c);
+                        c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] == 0 {
+                            break 'b_3ce344;
+                        }
+                        c.g[V0][0] = Addr(r32(c, S3)).off(0x2f).lbu(c);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003c_e318);
+                        }
+                    }
+                }
+            }
+            c.cycles += 1;
+            let spv = sp(c);
+            c.lq(16, spv.wrapping_add(0xd0));
+        }
+        c.cycles += 12;
+        c.g[V0][0] = 0;
+        frame.restore(c, S1, 0xc0);
+        frame.restore(c, S2, 0xb0);
+        frame.restore(c, S3, 0xa0);
+        frame.restore(c, S4, 0x90);
+        frame.restore(c, S5, 0x80);
+        frame.restore(c, S6, 0x70);
+        frame.restore(c, S7, 0x60);
+        frame.restore(c, FP, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_HistoryPush (0x3d6ee8)
+
+/// `void SPCH_HistoryPush(u8* hist, u8 value)` (0x3d6ee8): push `value` into
+/// the speech history ring. The header at `hist+6` is the ring length, `+4`
+/// its flag/length byte, `+5` the wrap byte; the data starts at
+/// `hist + ((wrap * ((flags & 0xf) + 2) + 0xf) & 0x3ffc) + (flags & 0xf) * 4`
+/// plus a skip count when bit 7 of the flags is set. The byte at the write
+/// position is the countdown of occupied entries; the value goes one past
+/// it, and the count wraps to 0 at the ring length.
+pub fn spch_history_push(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[A3][0] = c.g[A0][0];
+    c.g[T1][0] = Addr(r32(c, A3)).off(0x6).lbu(c);
+    let empty = c.g[T1][0] == 0;
+    c.g[T2][0] = 0;
+    if !empty {
+        {
+            c.cycles += 12;
+            c.g[A0][0] = Addr(r32(c, A3)).off(0x4).lbu(c);
+            c.g[A2][0] = Addr(r32(c, A3)).off(0x5).lbu(c);
+            c.g[V1][0] = c.g[A0][0] & 0xf;
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2));
+            c.g[A0][0] &= 0x80;
+            c.mult(0, V0, A2, V0);
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xf));
+            c.g[V0][0] &= 0x3ffc;
+            c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            let no_skip = c.g[A0][0] == 0;
+            c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            if !no_skip {
+                c.cycles += 7;
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x7));
+                c.g[V1][0] = u64::MAX;
+                c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(0xe));
+                c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                if c.g[V1][0] != 0 {
+                    c.g[V0][0] = c.g[A0][0];
+                }
+                c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 3) as u32);
+                c.g[T2][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+            }
+        }
+        {
+            c.cycles += 5;
+            c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[T2][0] as u32));
+            c.g[V1][0] = Addr(r32(c, A0)).lbu(c);
+            c.g[V0][0] = (c.g[V1][0] < c.g[T1][0]) as u64;
+            let full = c.g[V0][0] == 0;
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            if !full {
+                c.cycles += 1;
+                c.sb(r32(c, V0).wrapping_add(1), c.g[A1][0]);
+            }
+        }
+        c.cycles += 6;
+        c.g[V0][0] = Addr(r32(c, A3)).off(0x6).lbu(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+        c.g[V1][0] &= 0xff;
+        c.g[V0][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+        if c.g[V0][0] == 0 {
+            c.g[V1][0] = 0;
+        }
+        c.sb(r32(c, A0), c.g[V1][0]);
+    }
+    c.cycles += 2;
+    let ra = c.g[RA][0] as u32;
+    c.pc = ra;
+}
+
+// ---------------------------------------------------------------------------
+// SND_EeVoiceSetAuxSend (0x3c8598)
+
+#[cfg(test)]
+/// The voice table the sound library points at (`D_00515B40 + 0x1dc`).
+pub(crate) const EVAS_VOICES_PTR: u32 = 0x0051_5d1c;
+
+/// Per-voice stride, the aux-send float and the "send set" flag byte.
+pub(crate) const EVAS_VOICE_SIZE: u32 = 0x60;
+
+pub(crate) const EVAS_AUX_SEND: u32 = 0x38;
+
+/// `void SND_EeVoiceSetAuxSend(int voice, int send, float level)` (0x3c8598):
+/// `voices[voice].aux_send[send] = level` and mark the voice's sends dirty.
+/// f12 carries `level`.
+pub fn snd_ee_voice_set_aux_send(c: &mut Cpu) {
+    c.cycles += 14;
+    c.g[V0][0] = EVAS_VOICE_SIZE as u64;
+    c.g[A2][0] = 0x51_0000;
+    c.mult(0, A0, A0, V0); // a0 = voice * 0x60
+    let base = 0x51_0000u32.wrapping_add(0x5b40);
+    c.g[A2][0] = sx(base);
+    c.g[V0][0] = Addr(base.wrapping_add(0x1dc)).lw(c);
+    c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+    c.g[A3][0] = 0x1;
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    c.swc1(12, (c.g[V0][0] as u32).wrapping_add(EVAS_AUX_SEND));
+    c.g[V1][0] = Addr(base.wrapping_add(0x1dc)).lw(c);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    let ra = c.g[RA][0] as u32;
+    // Delay slot of the return: flag the voice's sends as set.
+    c.sb((c.g[A0][0] as u32).wrapping_add(1), c.g[A3][0]);
+    c.pc = ra;
+}
+
+// ---------------------------------------------------------------------------
+// SND_UtkFree (0x3cd1d0)
+
+#[cfg(test)]
+/// The sound-library allocator's free hook (`D_00517608`).
+pub(crate) const UTK_FREE_HOOK: u32 = 0x0051_7608;
+
+/// `void SND_UtkFree(void* p)` (0x3cd1d0): hand `a0` to the library's free
+/// hook (a function pointer in `D_00517608`).
+pub fn snd_utk_free(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        c.g[V1][0] = 0x51_0000;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = Addr(0x51_0000u32.wrapping_add(0x7608)).lw(c);
+        frame.save_ra(c, 0);
+        let target = c.g[V0][0] as u32;
+        call_ptr(c, target, 0x003c_d1e8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_EeVoiceSetTimeStretch (0x3c8b40)
+
+#[cfg(test)]
+/// The voice table [`snd_ee_voice_set_time_stretch`] indexes, and the
+/// per-voice stretch value at `+0x4c`.
+pub(crate) const EVTS_VOICES_PTR: u32 = 0x0051_5d1c;
+
+pub(crate) const EVTS_VOICE_SIZE: u32 = 0x60;
+
+pub(crate) const EVTS_STRETCH: u32 = 0x4c;
+
+/// `void SND_EeVoiceSetTimeStretch(int voice, float ratio)` (0x3c8b40): set
+/// the voice's time-stretch ratio (`voices[voice] + 0x4c`) through
+/// `SND_DspStretch_SetRatio` when it is set. f12 carries `ratio`.
+pub fn snd_ee_voice_set_time_stretch(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        c.g[V1][0] = EVTS_VOICE_SIZE as u64;
+        c.g[A2][0] = 0x51_0000;
+        c.mult(0, A0, A0, V1); // a0 = voice * 0x60
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = Addr(0x51_0000u32.wrapping_add(0x5d1c)).lw(c);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(EVTS_STRETCH)).lw(c);
+        let unset = c.g[A0][0] == 0;
+        // Delay slot: restore ra before the branch.
+        frame.restore_ra(c, 0);
+        if !unset {
+            c.cycles += 3;
+            Callee {
+                addr: 0x003c_b110,
+                f: ee::s14::SND_DspStretch_SetRatio,
+            }
+            .call(c, 0x003c_8b70)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_BuildSentenceWithFallback (0x3da418)
+
+/// Speech sentence table entry size (`&D_0044FFF8.e[idx]`, the field at
+/// `0x45006c`).
+pub const SPCH_SENTENCE_STRIDE: u32 = 0x60;
+
+/// The `lui` half of the sentence table address (`0x450000`).
+pub const SPCH_TABLE_HI: u32 = 0x0045_0000;
+
+/// The `addiu` offset of the sentence table (`0x6c`).
+pub const SPCH_SENTENCE_OFF: u32 = 0x6c;
+
+/// The fallback string callback (`D_0044FF90.cb` at `0x44ffa0`).
+pub const SPCH_FALLBACK_CB: u32 = 0x0044_ffa0;
+
+/// `SPCH_BuildSentence` (0x3d9fb0).
+pub const SPCH_BUILD_SENTENCE: Callee = Callee {
+    addr: 0x003d_9fb0,
+    f: ee::s14::SPCH_BuildSentence,
+};
+
+/// `int SPCH_BuildSentenceWithFallback(int idx)` (0x3da418): build the
+/// sentence for entry `idx` (`&0x45006c + idx*0x60`); when that yields
+/// nothing, ask the fallback callback (`*(0x44ffa0)`) for successive strings
+/// (index 0, 1, ...) and retry, stopping at a non-positive callback result
+/// or a built sentence. Returns the sentence id, or 0 when nothing was built.
+pub fn spch_build_sentence_with_fallback(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        c.g[V1][0] = SPCH_SENTENCE_STRIDE as u64;
+        let frame = Frame::open(c, 0x60);
+        // a0 = the entry offset (idx * 0x60), then `addiu` the base.
+        c.mult(0, A0, A0, V1);
+        c.g[V0][0] = SPCH_TABLE_HI as u64;
+        frame.save(c, S3, 0x30);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(SPCH_SENTENCE_OFF));
+        frame.save(c, S1, 0x10);
+        frame.save(c, 31, 0x50); // `sq ra`
+        c.g[S3][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        frame.save(c, S4, 0x40);
+        frame.save(c, S2, 0x20);
+        c.g[A0][0] = c.g[S3][0];
+        frame.save(c, S0, 0x0);
+        SPCH_BUILD_SENTENCE.call(c, 0x003d_a450)?;
+        c.g[S1][0] = c.g[V0][0];
+        let mut built = c.g[S1][0] != 0;
+        c.g[V1][0] = u64::MAX;
+        if !built {
+            c.cycles += 5;
+            c.g[V0][0] = 0x0045_0000;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x70));
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x10)).lw(c);
+            let no_cb = c.g[V1][0] == 0;
+            c.g[S4][0] = c.g[V0][0];
+            if !no_cb {
+                c.cycles += 2;
+                c.g[S2][0] = 0;
+                c.g[V0][0] = Addr((c.g[S4][0] as u32).wrapping_add(0x10)).lw(c);
+                'fallback: loop {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S2][0];
+                    let target = c.g[V0][0] as u32;
+                    c.g[A1][0] = c.g[S3][0];
+                    call_ptr(c, target, 0x003d_a484)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    let k = c.g[S0][0];
+                    if (k as i64) >= 0 {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[S3][0];
+                        SPCH_BUILD_SENTENCE.call(c, 0x003d_a498)?;
+                        c.g[S1][0] = c.g[V0][0];
+                    }
+                    c.cycles += 2;
+                    built = c.g[S1][0] != 0;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                    if !built {
+                        c.cycles += 2;
+                        if (k as i64) > 0 {
+                            c.g[V0][0] = Addr((c.g[S4][0] as u32).wrapping_add(0x10)).lw(c);
+                            if event_due(c) {
+                                deliver_event_here(c, 0x003d_a478);
+                            }
+                            continue 'fallback;
+                        }
+                    }
+                    break;
+                }
+            }
+            c.cycles += 1;
+            c.g[V1][0] = u64::MAX;
+        }
+        c.cycles += 11;
+        c.g[V0][0] = 0;
+        c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[S1][0] as i64)) as u64;
+        frame.restore(c, 31, 0x50);
+        if c.g[V1][0] != 0 {
+            c.g[V0][0] = c.g[S1][0];
+        }
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore(c, S0, 0x0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_UtkGetState (0x3ce078)
+
+/// Tool-kit state word offsets in the sound system: `+4`, `+0xd44`, `+0xd5c`.
+pub const SND_UTK_STATE_FIELDS: [u32; 3] = [0x4, 0xd44, 0xd5c];
+
+/// `void SND_UtkGetState(void* out, void* self)` (0x3ce078): copy the three
+/// tool-kit state words of `self` (`+4`, `+0xd44`, `+0xd5c`) to `out`
+/// (`out[0..3]`). The copy is a 3-word store through an unaligned
+/// doubleword load/store pair, as compiled.
+pub fn snd_utk_get_state(c: &mut Cpu) {
+    c.cycles += 16;
+    let src = c.g[A1][0] as u32;
+    let dst = c.g[A0][0] as u32;
+    c.g[A3][0] = Addr(src.wrapping_add(SND_UTK_STATE_FIELDS[1])).lw(c);
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x10));
+    c.g[V1][0] = Addr(src.wrapping_add(SND_UTK_STATE_FIELDS[0])).lw(c);
+    c.g[V0][0] = c.g[A0][0];
+    c.g[A2][0] = Addr(src.wrapping_add(SND_UTK_STATE_FIELDS[2])).lw(c);
+    c.sw(sp(c), c.g[V1][0]);
+    c.sw(sp(c).wrapping_add(8), c.g[A2][0]);
+    c.sw(sp(c).wrapping_add(4), c.g[A3][0]);
+    c.ldl(3, sp(c).wrapping_add(7));
+    c.ldr(3, sp(c));
+    c.g[A1][0] = Addr(sp(c).wrapping_add(8)).lw(c);
+    c.sdl(3, dst.wrapping_add(7));
+    c.sdr(3, dst);
+    c.sw(dst.wrapping_add(8), c.g[A1][0]);
+    let ra = c.g[RA][0] as u32;
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x10));
+    c.pc = ra;
+}
+
+// ---------------------------------------------------------------------------
+// SND_DecFreeThunk (0x3c7ce0)
+
+/// `void SND_DecFreeThunk(void* p)` (0x3c7ce0): the 7-cycle forwarding
+/// wrapper around `SND_MemFree(p)` (through the function table).
+pub fn snd_dec_free_thunk(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x003b_5e98), 0x003c_7cf0);
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_FindBankDataPtr (0x3d83b8)
+
+/// The bank descriptor table (`.data`): eight `{ void* p; }` entries.
+#[cfg(test)]
+pub(crate) const SPCH_BANK_TABLE: u32 = 0x0044_ffb8;
+
+/// `int SPCH_FindBankDataPtr(u8* key, u8** data)` (0x3d83b8): find the bank
+/// descriptor whose byte +9 matches `key[2]` and byte +8 matches `key[3]`
+/// (scanning at most eight entries); when found, return 1 and write the
+/// bank's data pointer plus the size derived from its u16 at +0x10.
+pub fn spch_find_bank_data_ptr(c: &mut Cpu) {
+    c.cycles += 8;
+    let frame = Frame::open(c, 0x10);
+    c.g[V0][0] = 0x450000;
+    c.g[T2][0] = c.g[A1][0];
+    c.g[A2][0] = sx(r32(c, V0).wrapping_sub(0x48));
+    c.g[T3][0] = 0;
+    c.g[T1][0] = c.g[SP][0];
+    c.g[T0][0] = 0;
+    c.g[A3][0] = 0;
+    loop {
+        c.cycles += 3;
+        let entry = Addr(r32(c, A2)).lw(c);
+        c.g[A1][0] = entry;
+        let mut found = false;
+        if entry == 0 {
+            c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+        } else {
+            let e = entry as u32;
+            c.cycles += 4;
+            c.g[V1][0] = Addr(e.wrapping_add(9)).lbu(c);
+            c.g[V0][0] = Addr(r32(c, A0).wrapping_add(2)).lbu(c);
+            if c.g[V1][0] != c.g[V0][0] {
+                c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+            } else {
+                c.cycles += 4;
+                c.g[V1][0] = Addr(e.wrapping_add(8)).lbu(c);
+                c.g[V0][0] = Addr(r32(c, A0).wrapping_add(3)).lbu(c);
+                if c.g[V1][0] != c.g[V0][0] {
+                    c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                } else {
+                    c.cycles += 3;
+                    c.sw(r32(c, T1), c.g[A2][0]);
+                    c.g[T0][0] = 1;
+                    found = true;
+                }
+            }
+        }
+        if found {
+            break;
+        }
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[A3][0] as i64) < 8) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[A2][0] = sx(r32(c, A2).wrapping_add(8));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003d_83d8);
+        }
+    }
+    c.cycles += 2;
+    let not_found = c.g[T0][0] == 0;
+    c.g[A1][0] = Addr(r32(c, SP)).lw(c);
+    if !not_found {
+        c.cycles += 11;
+        // ~3 = 0xffff_ffff_ffff_fffc, the 4-byte alignment mask.
+        c.g[A0][0] = 0xffff_ffff_ffff_0000;
+        c.g[A0][0] |= 0xfffc;
+        c.g[T3][0] = 1;
+        c.g[V1][0] = Addr(r32(c, A1)).lw(c);
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x10)).lhu(c);
+        c.g[V0][0] = sx(r32(c, V0) << 1);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(3));
+        c.g[V0][0] &= c.g[A0][0];
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x18));
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        c.sw(r32(c, T2), c.g[V1][0]);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = c.g[T3][0];
+    frame.close(c);
+}
+
+// ---------------------------------------------------------------------------
+// SND_EeVoiceFinish (0x3c8430)
+
+/// `SND_EeVoiceStop` (0x3c8468), same shard.
+pub(crate) const SND_EE_VOICE_STOP: Callee = Callee {
+    addr: 0x003c_8468,
+    f: ee::s14::SND_EeVoiceStop,
+};
+
+#[cfg(test)]
+/// The sound library's per-voice handler (`D_00515B48`).
+pub(crate) const SND_VOICE_HANDLER: u32 = 0x0051_5b48;
+
+/// `void SND_EeVoiceFinish(int voice)` (0x3c8430): stop the voice, then let
+/// the sound library's handler finish it.
+pub fn snd_ee_voice_finish(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        SND_EE_VOICE_STOP.call(c, 0x003c_8444)?;
+        c.g[V1][0] = 0x510000;
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x5b48)).lw(c);
+        let handler = r32(c, V0);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, handler, 0x003c_8454)?;
+        frame.restore(c, 16, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_FindBankById (0x3d6d50).
+
+/// `D_004A4824` (`gp + 0x1734`): the speech bank pointer table, 8 slots.
+pub(crate) const SPCH_FIND_BANK_TABLE: u32 = 0x1734;
+
+/// `D_004A4828` (`gp + 0x1738`): the number of used table slots.
+pub(crate) const SPCH_FIND_BANK_COUNT: u32 = 0x1738;
+
+/// `int SPCH_FindBankById(u16 id)` (0x3d6d50): walk the bank table and
+/// return the index of the first bank whose id word (+0) is `id`, else -1.
+/// The slot offset counts in 16.16 fixed point (`a2 += 0x10000`, the index
+/// being the high half) so the loop's exit test reads the old index.
+pub fn spch_find_bank_by_id(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V1][0] = Addr(r32(c, GP).wrapping_add(SPCH_FIND_BANK_TABLE)).lw(c);
+    let no_table = c.g[V1][0] == 0;
+    c.g[A0][0] &= 0xffff;
+    if no_table {
+        c.cycles += 2;
+        c.g[V0][0] = u64::MAX;
+        ret(c);
+        return;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr(r32(c, GP).wrapping_add(SPCH_FIND_BANK_COUNT)).lw(c);
+    let no_banks = (c.g[V0][0] as i64) <= 0;
+    c.g[A1][0] = 0;
+    if !no_banks {
+        c.cycles += 4;
+        c.g[A3][0] = c.g[V0][0];
+        c.g[A2][0] = 0x1_0000;
+        c.g[T0][0] = 0x1_0000;
+        'scan: loop {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(r32(c, V0)).lhu(c);
+                let hit = c.g[V0][0] == c.g[A0][0];
+                c.g[V0][0] = c.g[A2][0];
+                if hit {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[A1][0];
+                    ret(c);
+                    return;
+                }
+            } else {
+                c.g[V0][0] = c.g[A2][0];
+            }
+            c.cycles += 5;
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+            c.g[A1][0] = sx(((r32(c, V0) as i32) >> 16) as u32);
+            c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[A3][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A2][0] = sx(r32(c, A2).wrapping_add(r32(c, T0)));
+            if !more {
+                break 'scan;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_6d78);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = u64::MAX;
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// SND_IopReleaseChannelCallback (0x3c0be8).
+
+/// The IOP-resident sound state block (`0x510000 - 0x5718 = 0x50a8e8`,
+/// built by the original as that sum; the test's fixture writes it).
+#[allow(dead_code)]
+pub(crate) const SND_RELEASE_STATE: u32 = 0x0050_a8e8;
+
+/// The state block's channel-count byte, added to the callback's index.
+pub(crate) const SND_RELEASE_STATE_B: u32 = 0x30;
+
+/// The state block's free-channel byte, added to the callback's index.
+pub(crate) const SND_RELEASE_STATE_A: u32 = 0x2f;
+
+/// One voice channel's stride (in the channel table at state + 0x1f0).
+pub(crate) const SND_RELEASE_CHANNEL_SIZE: u64 = 0x8c;
+
+/// `void SND_IopReleaseChannelCallback(int index)` (0x3c0be8): release the
+/// channel at `index` shifted by the two IOP state counters (the RPC that
+/// the IOP side calls back with a slot number).
+pub fn snd_iop_release_channel_callback(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x51_0000;
+        frame.save_ra(c, 0);
+        c.g[T2][0] = c.g[A0][0];
+        c.g[V1][0] = SND_RELEASE_CHANNEL_SIZE;
+        c.g[T3][0] = c.g[V0][0];
+        c.mult(0, V1, T2, V1);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x5718));
+        c.g[V1][0] = Addr(r32(c, V0).wrapping_add(SND_RELEASE_STATE_B)).lbu(c);
+        c.g[A1][0] = Addr(r32(c, V0).wrapping_add(SND_RELEASE_STATE_A)).lbu(c);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+        c.g[RA][0] = sx(0x003c_0c0c);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A1)));
+        SND_CHANNEL_RELEASE.call(c, 0x003c_0c0c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_DecUtk_Free (0x3c93f8).
+
+/// `void SND_DecUtk_Free(UtkDecoder *self)` (0x3c93f8): free the sample
+/// buffer (`self + 0x28`) when there is one. The frame's saved `ra` is
+/// reloaded before the branch and again after the free, so both paths
+/// return through the same `jr`.
+pub fn snd_dec_utk_free(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr(r32(c, A0).wrapping_add(0x28)).lw(c);
+        let empty = c.g[A0][0] == 0;
+        frame.restore_ra(c, 0);
+        if !empty {
+            c.cycles += 3;
+            SND_UTK_FREE.call(c, 0x003c_9414)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_UtkReset (0x3cddb8).
+
+/// `void *SND_UtkReset(Utk *self)` (0x3cddb8): clear the decoder's queue
+/// state and mark it running; returns `self`.
+pub fn snd_utk_reset(c: &mut Cpu) {
+    c.cycles += 11;
+    c.g[V0][0] = 0x1;
+    c.sw(r32(c, A0).wrapping_add(0xd44), 0);
+    c.sw(r32(c, A0).wrapping_add(0xd64), c.g[V0][0]);
+    c.g[V0][0] = c.g[A0][0];
+    c.sw(r32(c, A0).wrapping_add(0xd54), 0);
+    c.sw(r32(c, A0).wrapping_add(0xd58), 0);
+    c.sh(r32(c, A0).wrapping_add(0xd50), 0);
+    c.sh(r32(c, A0).wrapping_add(0xd52), 0);
+    c.sw(r32(c, A0).wrapping_add(0xd5c), 0);
+    let ra = c.g[RA][0] as u32;
+    c.sw(r32(c, A0).wrapping_add(0xd60), 0);
+    c.pc = ra;
+}
+
+// ---------------------------------------------------------------------------
+// Callees.
+
+/// `SND_ChannelRelease(int index)` 0x3ba550.
+pub(crate) const SND_CHANNEL_RELEASE: Callee = Callee {
+    addr: 0x003b_a550,
+    f: ee::s13::SND_ChannelRelease,
+};
+
+/// `SND_UtkFree(void *buffer)` 0x3cd1d0.
+pub(crate) const SND_UTK_FREE: Callee = Callee {
+    addr: 0x003c_d1d0,
+    f: ee::s14::f_003cd1d0,
+};
+
+// ---------------------------------------------------------------------------
+// SNDSTRM_SetPitch (0x3b7fb8)
+
+/// Stream object fields: the voice handle the stream plays on (`+4`) and the
+/// requested pitch scale (`+0xf8`, a halfword).
+pub(crate) const SNDSTRM_HANDLE: u32 = 0x4;
+
+pub(crate) const SNDSTRM_PITCH: u32 = 0xf8;
+
+/// The largest pitch scale a stream accepts.
+pub(crate) const SNDSTRM_MAX_PITCH: u64 = 0x4000;
+
+pub(crate) const SNDSTRM_GET_STREAM_6: Callee = Callee {
+    addr: 0x003b_6a38,
+    f: ee::s13::SNDSTRM_GetStream,
+};
+
+pub(crate) const SNDSTRM_SET_PITCH: Callee = Callee {
+    addr: 0x003b_8790,
+    f: ee::s13::SND_SetPitch,
+};
+
+/// `int SNDSTRM_SetPitch(int stream, int pitch)` (0x3b7fb8): set the stream's
+/// pitch scale (clamped to 0x4000) and apply it to its voice handle; -8 when
+/// there is no such stream.
+pub fn sndstrm_set_pitch(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        SNDSTRM_GET_STREAM_6.call(c, 0x003b_7fcc)?;
+        c.g[A2][0] = c.g[V0][0];
+        let no_stream = c.g[A2][0] == 0;
+        c.g[V1][0] = ((c.g[S0][0] as i64) < 16385i64) as u64;
+        if no_stream {
+            c.cycles += 1;
+            c.g[V0][0] = sx(0xffff_fff8);
+        } else {
+            c.cycles += 8;
+            c.g[V0][0] = SNDSTRM_MAX_PITCH;
+            if c.g[V1][0] == 0 {
+                c.g[S0][0] = c.g[V0][0];
+            }
+            c.g[A0][0] = Addr(r32(c, A2).wrapping_add(SNDSTRM_HANDLE)).lw(c);
+            c.g[A1][0] = c.g[S0][0];
+            Addr(r32(c, A2)).off(SNDSTRM_PITCH).sh(c, c.g[S0][0]);
+            SNDSTRM_SET_PITCH.call(c, 0x003b_7ff0)?;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_QueueEvent (0x3d76f0)
+
+/// The speech queue's "servicing" flag, `gp + 0x1758` (read by
+/// `SPCH_QueueEventArgs`).
+#[cfg(test)]
+pub(crate) const SPCH_QUEUE_BUSY: u32 = 0x1758;
+
+/// The loop back edge of the vararg copy.
+pub(crate) const SPCH_QUEUE_EVENT_LOOP: u32 = 0x003d_7730;
+
+pub(crate) const SPCH_QUEUE_EVENT_ARGS: Callee = Callee {
+    addr: 0x003d_7418,
+    f: ee::s14::SPCH_QueueEventArgs,
+};
+
+/// `void SPCH_QueueEvent(int id, int n, ...)` (0x3d76f0): copy the event id
+/// and its `n` varargs into the 20-word argument buffer on the frame (the
+/// original's `__builtin_next_arg` walk over the home area) and queue the
+/// event. The loop back edge checks events.
+pub fn spch_queue_event(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0xd0);
+        Addr(frame.at(c, 0xa0)).sd(c, c.g[A2][0]);
+        frame.save(c, 31, 0x50);
+        c.g[A2][0] = sx(frame.at(c, 0xa0));
+        Addr(frame.at(c, 0xa8)).sd(c, c.g[A3][0]);
+        Addr(frame.at(c, 0xb0)).sd(c, c.g[T0][0]);
+        Addr(frame.at(c, 0xb8)).sd(c, c.g[T1][0]);
+        Addr(frame.at(c, 0xc0)).sd(c, c.g[T2][0]);
+        Addr(frame.at(c, 0xc8)).sd(c, c.g[T3][0]);
+        c.swc1(12, frame.at(c, 0x90));
+        c.swc1(14, frame.at(c, 0x94));
+        c.swc1(16, frame.at(c, 0x98));
+        c.swc1(18, frame.at(c, 0x9c));
+        let empty = (c.g[A1][0] as i64) <= 0;
+        Addr(frame.at(c, 0)).sw(c, c.g[A0][0]);
+        if !empty {
+            c.cycles += 1;
+            c.g[V1][0] = sx(frame.at(c, 0x4));
+            loop {
+                c.cycles += 7;
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x8));
+                c.g[A1][0] = sx(r32(c, A1).wrapping_sub(0x1));
+                c.g[V0][0] = Addr(r32(c, A2).wrapping_sub(0x8)).lw(c);
+                Addr(r32(c, V1)).sw(c, c.g[V0][0]);
+                let more = c.g[A1][0] != 0;
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, SPCH_QUEUE_EVENT_LOOP);
+                }
+            }
+        }
+        c.cycles += 5;
+        c.g[A0][0] = c.g[SP][0];
+        SPCH_QUEUE_EVENT_ARGS.call(c, 0x003d_7754)?;
+        frame.restore(c, 31, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_ServiceChannel (0x3d8040)
+
+/// The speech queue's "being serviced" flag, `gp + 0x175c`.
+pub(crate) const SPCH_SERVICE_BUSY: u32 = 0x175c;
+
+pub(crate) const SPCH_HAS_PENDING_SENTENCE: Callee = Callee {
+    addr: 0x003d_a3f0,
+    f: ee::s14::f_003da3f0,
+};
+
+pub(crate) const SPCH_DEQUEUE_CHANNEL: Callee = Callee {
+    addr: 0x003d_7ec8,
+    f: ee::s14::f_003d7ec8,
+};
+
+pub(crate) const SPCH_PLAY_SENTENCE: Callee = Callee {
+    addr: 0x003d_9bd8,
+    f: ee::s14::f_003d9bd8,
+};
+
+/// `void* SPCH_ServiceChannel(SpchChannel* ch)` (0x3d8040): start the next
+/// sentence of a speech channel unless another service run is already in
+/// progress (the busy flag at `gp + 0x175c`). A sentence is started when one
+/// is pending, or when dequeuing this channel produced a request; the flag
+/// is cleared again on the way out.
+pub fn spch_service_channel(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_add(SPCH_SERVICE_BUSY)).lw(c);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0);
+        c.g[S1][0] = 0;
+        frame.save(c, 31, 0x20);
+        let busy = c.g[V0][0] != 0;
+        c.g[S0][0] = c.g[A0][0];
+        if busy {
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S1][0];
+        } else {
+            c.cycles += 5;
+            c.g[V0][0] = 1;
+            Addr(r32(c, GP)).off(SPCH_SERVICE_BUSY).sw(c, c.g[V0][0]);
+            SPCH_HAS_PENDING_SENTENCE.call(c, 0x003d_806c)?;
+            let pending = c.g[V0][0] != 0;
+            let play = if pending {
+                true
+            } else {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S0][0];
+                SPCH_DEQUEUE_CHANNEL.call(c, 0x003d_807c)?;
+                let nothing = c.g[V0][0] == 0;
+                c.g[V0][0] = c.g[S1][0];
+                !nothing
+            };
+            if play {
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S0][0];
+                SPCH_PLAY_SENTENCE.call(c, 0x003d_808c)?;
+                c.g[S1][0] = c.g[V0][0];
+                c.cycles += 1;
+                c.g[V0][0] = c.g[S1][0];
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, 31, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore(c, S0, 0);
+        Addr(r32(c, GP)).off(SPCH_SERVICE_BUSY).sw(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_UtkAlloc (0x3cd1a8)
+
+/// The utility-allocator function pointer in the sound library's table
+/// (`0x510000 + 0x7604`).
+pub(crate) const SND_UTK_ALLOC_FN: u32 = 0x7604;
+
+/// `void* SND_UtkAlloc(int size)` (0x3cd1a8): forward to the utility
+/// allocator installed at `0x517604`, with the arguments untouched.
+pub fn snd_utk_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        c.g[V1][0] = 0x0051_0000;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(SND_UTK_ALLOC_FN)).lw(c);
+        frame.save_ra(c, 0);
+        let target = c.g[V0][0] as u32;
+        call_ptr(c, target, 0x003c_d1c0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+#[cfg(test)]
+/// `SND_Lock` / `SND_Unlock` call these hooks.
+pub(crate) const SND_LOCK_HOOK: u32 = 0x0044_c46c;
+
+#[cfg(test)]
+pub(crate) const SND_UNLOCK_HOOK: u32 = 0x0044_c470;
+
+#[cfg(test)]
+pub(crate) const SND_LOCK_DEPTH: u32 = SND_STATE + 0x176;
+
+#[cfg(test)]
+pub(crate) const SND_STREAMS: u32 = 0x0050_a0a0;
+
+#[cfg(test)]
+pub(crate) const SND_STREAM_COUNT: u32 = 0x0050_a92e;
+
+/// The SPCH time-provider hook (`0x450000 - 0x50`).
+pub(crate) const SPCH_TIME_HOOK: u32 = 0x0044_ffb0;
+
+// ---------------------------------------------------------------------------
+// Ports.
+
+/// `int SPCH_GetTime(void)` (0x3db9a0): call the time-provider hook when one
+/// is installed, else return 0.
+pub fn spch_get_time(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V0][0] = 0x45_0000;
+    let frame = Frame::open(c, 0x10);
+    c.g[V0][0] = Addr(SPCH_TIME_HOOK).lw(c);
+    c.g[V1][0] = 0;
+    frame.save(c, RA, 0);
+    if c.g[V0][0] != 0 {
+        c.cycles += 3;
+        let target = r32(c, V0);
+        if call_ptr(c, target, 0x003d_b9c0).is_err() {
+            return;
+        }
+        c.g[V1][0] = c.g[V0][0];
+    }
+    c.cycles += 4;
+    frame.restore(c, RA, 0);
+    c.g[V0][0] = c.g[V1][0];
+    frame.close(c);
+}
+
+/// `int SNDSTRM_SetPrebuffer(int handle, int blocks)` (0x3b7d80): under the
+/// sound lock, set the request's prebuffer size (`+0x20`, a `short`) when the
+/// request exists; -8 otherwise.
+pub fn sndstrm_set_prebuffer(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = 0xffff_ffff_ffff_fff8;
+        callee::SND_LOCK.call(c, 0x003b_7da4)?;
+        c.g[A0][0] = c.g[S0][0];
+        callee::SNDSTRM_FIND_REQUEST.call(c, 0x003b_7dac)?;
+        c.g[V1][0] = c.g[V0][0];
+        c.g[V0][0] = sx((c.g[S1][0] as u32) << 16);
+        if c.g[V1][0] != 0 {
+            c.cycles += 3;
+            c.g[S2][0] = 0;
+            c.g[V0][0] = sx((r32(c, V0) as i32 >> 16) as u32);
+            Addr(r32(c, V1)).off(0x20).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 9;
+        callee::SND_UNLOCK.call(c, 0x003b_7dcc)?;
+        c.g[V0][0] = c.g[S2][0];
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SND_DecAllocThunk(int size)` (0x3c7cc0): hand `size` to the driver's
+/// allocator (its result is left in `v0`).
+pub fn snd_dec_alloc_thunk(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        call_ptr(c, 0x003b_5c60, 0x003c_7cd0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `SND_Stop(handle)` (0x003b89e0).
+pub(crate) const SND_STOP: Callee = Callee {
+    addr: 0x003b_89e0,
+    f: ee::s13::SND_Stop,
+};
+
+/// `SNDSTRM_RunCallbacks()` (0x003c7080).
+pub(crate) const SNDSTRM_RUN_CALLBACKS: Callee = Callee {
+    addr: 0x003c_7080,
+    f: ee::s13::SNDSTRM_RunCallbacks,
+};
+
+/// `SNDSTRM_StopSlotUnsupported(slot, arg, handle)` (0x003c6ce0).
+pub(crate) const SNDSTRM_STOP_SLOT_UNSUPPORTED: Callee = Callee {
+    addr: 0x003c_6ce0,
+    f: ee::s13::SNDSTRM_StopSlotUnsupported,
+};
+
+/// `SND_MemFree(ptr)` (0x003b5e98).
+pub(crate) const SND_MEM_FREE: Callee = Callee {
+    addr: 0x003b_5e98,
+    f: ee::s13::SND_MemFree,
+};
+
+/// Offset of the slot pointer array inside the table.
+pub(crate) const SNDSTRM_SLOT_ARRAY: u32 = 0x304;
+
+#[cfg(test)]
+/// Stream slot: the stream name/handle word.
+pub(crate) const SNDSTRM_SLOT_NAME: u32 = 0x0;
+
+/// Stream slot: the buffer count byte.
+pub(crate) const SNDSTRM_SLOT_COUNT: u32 = 0x62;
+
+/// Stream slot: the 4-byte buffer pointer array.
+pub(crate) const SNDSTRM_SLOT_BUFFERS: u32 = 0x64;
+
+/// `int SNDSTRM_StopSlot(int index)` (0x003c6ce8): stop the stream in slot
+/// `index`, stop that slot's handles, clear the slot's name and free every
+/// buffer it still holds.
+pub fn sndstrm_stop_slot(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 27;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = 0x51_0000;
+        frame.save(c, S0, 0x30);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x57b8));
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = sx((c.g[S0][0] as u32) << 2);
+        frame.save(c, S1, 0x20);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[S1][0] = Addr((c.g[V0][0] as u32).wrapping_add(SNDSTRM_SLOT_ARRAY)).lw(c);
+        c.g[S2][0] = 0;
+        c.g[A0][0] = Addr(c.g[S1][0] as u32).lw(c);
+        SND_STOP.call(c, 0x003c_6d24)?;
+        SNDSTRM_RUN_CALLBACKS.call(c, 0x003c_6d2c)?;
+        c.g[A2][0] = 0x7fff_0000;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = c.g[A2][0] | 0xffff;
+        SNDSTRM_STOP_SLOT_UNSUPPORTED.call(c, 0x003c_6d40)?;
+        c.g[V1][0] = u64::MAX;
+        c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(SNDSTRM_SLOT_COUNT)).lbu(c);
+        Addr(c.g[S1][0] as u32).sw(c, c.g[V1][0]);
+        let empty = c.g[V0][0] == 0;
+        c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(SNDSTRM_SLOT_BUFFERS));
+        if !empty {
+            c.cycles += 1;
+            loop {
+                c.cycles += 3;
+                c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                if c.g[A0][0] != 0 {
+                    c.cycles += 3;
+                    SND_MEM_FREE.call(c, 0x003c_6d6c)?;
+                }
+                c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(SNDSTRM_SLOT_COUNT)).lbu(c);
+                c.cycles += 4;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_6d58);
+                }
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x30);
+        c.g[V0][0] = 0;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -25719,6 +27025,754 @@ pub(crate) mod tests {
                 for i in 0..0x40u32 / 4 {
                     c.bus.write32(obj + i * 4, r.next_u32());
                 }
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+
+    pub(crate) use crate::game::animation::rideranim::tests::CTRL;
+    pub(crate) use crate::game::animation::rideranim::tests::MAGIC;
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC329_CTRL;
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC329_MAGIC;
+    use std::ptr::addr_of_mut;
+    use std::sync::Once;
+
+    pub(crate) use crate::game::animation::rideranim::tests::active;
+    pub(crate) use crate::game::animation::rideranim::tests::chain;
+    pub(crate) use crate::game::animation::rideranim::tests::fake_ret;
+    pub(crate) use crate::game::animation::rideranim::tests::install;
+    pub(crate) use crate::game::object::movenode::tests::oc336_fake;
+    pub(crate) use crate::game::object::movenode::tests::oc336_fall_through;
+    pub(crate) use crate::game::object::movenode::tests::oc336_install;
+    pub(crate) use crate::game::object::movenode::tests::OC336_CTRL;
+    pub(crate) use crate::game::object::movenode::tests::OC336_MAGIC;
+
+    // -- SND_ChannelStartStreamVoices -------------------------------------
+
+    static OC329_PREV_VOICE_START: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    pub(crate) fn oc329_fake_voice_start(c: &mut Cpu) {
+        if c.bus.read32(OC329_CTRL) != OC329_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &OC329_PREV_VOICE_START,
+                ee::s14::f_003c8158__generated,
+            );
+        }
+        fake(c, 0x003c_8158, c.g[RA][0] as u32);
+    }
+
+    static OC329_PREV_VOICE_ACTIVATE: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    pub(crate) fn oc329_fake_voice_activate(c: &mut Cpu) {
+        if c.bus.read32(OC329_CTRL) != OC329_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &OC329_PREV_VOICE_ACTIVATE,
+                ee::s14::f_003c83a0__generated,
+            );
+        }
+        fake(c, 0x003c_83a0, c.g[RA][0] as u32);
+    }
+
+    #[test]
+    fn snd_channel_start_stream_voices_matches() {
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003C8158),
+            oc329_fake_voice_start,
+            &OC329_PREV_VOICE_START,
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003C83A0),
+            oc329_fake_voice_activate,
+            &OC329_PREV_VOICE_ACTIVATE,
+        );
+        check(
+            ee::s14::f_003ce1b0__generated,
+            snd_channel_start_stream_voices,
+            160,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c_e1b0, 0);
+                c.pc = 0x003c_e1b0;
+                c.bus.write32(OC329_CTRL, OC329_MAGIC);
+                let state = 0x0050_a8e8;
+                let entries = DATA + 0x4000;
+                let entry = entries;
+                let aux = DATA + 0x5000;
+                let voices = DATA + 0x5100;
+                let t2p = DATA + 0x5200;
+                c.bus.write32(state + 0x1f0, entries);
+                // Entry flags (+0x24, lhu): bit 3 skips, bit 2 missing skips.
+                let flags: u32 = match seed % 3 {
+                    0 => 8,
+                    1 => 0,
+                    _ => 4,
+                };
+                c.bus.write16(entry + 0x24, flags as u16);
+                c.bus
+                    .write8(entry + 0x23, if seed % 5 == 0 { 0 } else { 2 });
+                // The voice id list (+4, lh each) and the entry's +0x14.
+                c.bus.write16(entry + 4, 0);
+                c.bus.write16(entry + 6, 0);
+                c.bus.write32(entry + 0x14, r.next_u32());
+                // The auxiliary struct the loop reads.
+                c.bus.write32(aux + 0x18, voices);
+                c.bus.write32(voices, r.next_u32());
+                c.bus.write32(voices + 4, r.next_u32());
+                c.bus.write8(aux + 7, (seed % 4) as u8);
+                c.bus.write8(t2p + 3, (seed % 3) as u8);
+                c.bus.write8(state + 0x2f, 2);
+                c.bus.write8(state + 0x30, 3);
+                c.g[A0][0] = sx(DATA + 0x6000);
+                c.g[A1][0] = 0;
+                c.g[A2][0] = 0x1111;
+                c.g[A3][0] = 0x2222;
+                c.g[T0][0] = 0x3333;
+                c.g[T1][0] = 0x4444;
+                c.g[T2][0] = sx(t2p);
+                c.g[T3][0] = sx(aux);
+            },
+        );
+    }
+
+    // -- SPCH_HistoryPush -------------------------------------------------
+
+    #[test]
+    fn spch_history_push_matches() {
+        check(
+            ee::s14::f_003d6ee8__generated,
+            spch_history_push,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d_6ee8, 0);
+                c.pc = 0x003d_6ee8;
+                let hist = DATA + 0x8000;
+                for i in 0..0x1400u32 {
+                    c.bus.write32(hist + 4 * i, r.next_u32());
+                }
+                // flags (+4): length nibble (0..15) and the skip bit; wrap (+5);
+                // ring length (+6).
+                let flags = (seed % 16) | if seed % 4 == 0 { 0x80 } else { 0 };
+                c.bus.write8(hist + 4, flags as u8);
+                c.bus.write8(hist + 5, (seed % 37) as u8);
+                c.bus.write8(hist + 6, (seed % 9) as u8);
+                c.g[A0][0] = sx(hist);
+                c.g[A1][0] = (seed % 251) as u64;
+            },
+        );
+    }
+
+    // -- 0x3c8598 SND_EeVoiceSetAuxSend ------------------------------------
+
+    /// Aux sends 0..3 of voices 0..7, `level` from the edge cases.
+    #[test]
+    fn snd_ee_voice_set_aux_send_matches() {
+        check(
+            ee::s14::f_003c8598__generated,
+            snd_ee_voice_set_aux_send,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x3c85_98 ^ (seed as u64) << 5);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(EVAS_VOICES_PTR, DATA + 0x2000);
+                c.g[A0][0] = (r.next_u32() % 8) as u64;
+                c.g[A1][0] = (r.next_u32() % 4) as u64;
+                c.f[12] = r.edge_f32();
+            },
+        );
+    }
+
+    // -- 0x3cd1d0 SND_UtkFree ----------------------------------------------
+
+    /// The free hook is a fake (the miss hook), reached with the pointer in
+    /// `a0`; some seeds unwind inside it.
+    #[test]
+    fn snd_utk_free_matches() {
+        check(
+            ee::s14::f_003cd1d0__generated,
+            snd_utk_free,
+            60,
+            &|c, seed| {
+                machine(c, seed, 0x003c_d1d0, 1);
+                let p = DATA + 0x2000 + 0x40 * (seed % 8);
+                c.g[A0][0] = p as u64;
+                c.bus
+                    .write32(UTK_FREE_HOOK, if seed % 3 == 0 { 0 } else { FAKE });
+                c.pc = 0x003c_d1d0;
+            },
+        );
+    }
+
+    // -- 0x3c8b40 SND_EeVoiceSetTimeStretch --------------------------------
+
+    /// Voices 0..7 with and without a stretch value; the real
+    /// `SND_DspStretch_SetRatio` on the voice.
+    #[test]
+    fn snd_ee_voice_set_time_stretch_matches() {
+        check(
+            ee::s14::f_003c8b40__generated,
+            snd_ee_voice_set_time_stretch,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x3c8b_40 ^ (seed as u64) << 13);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let voices = DATA + 0x2000;
+                c.bus.write32(EVTS_VOICES_PTR, voices);
+                let voice = r.next_u32() % 8;
+                c.g[A0][0] = voice as u64;
+                c.f[12] = if seed % 5 == 0 {
+                    1.0f32.to_bits()
+                } else {
+                    r.f32(4.0)
+                };
+                let stretch = if seed % 3 == 0 {
+                    0
+                } else {
+                    voices + EVTS_VOICE_SIZE * voice
+                };
+                c.bus
+                    .write32(voices + EVTS_VOICE_SIZE * voice + EVTS_STRETCH, stretch);
+                // The stretch object's ratio field at +0x24.
+                if stretch != 0 {
+                    c.bus.write32(stretch + 0x24, r.edge_f32());
+                }
+            },
+        );
+    }
+
+    /// `SPCH_BuildSentenceWithFallback`: no entry matches (the real
+    /// `SPCH_BuildSentence` returns 0 through `SPCH_FindEvent` on empty
+    /// event tables), the fallback callback null (return 0 at once), a real
+    /// leaf returning 0 (one iteration), and a fake callback that unwinds on
+    /// its second call (the retry loop, then the unwind).
+    #[test]
+    fn spch_build_sentence_with_fallback_matches() {
+        check(
+            ee::s14::f_003da418__generated,
+            spch_build_sentence_with_fallback,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3da418, 0);
+                // a0 = the entry index; the entry lands at DATA+0x4c.
+                c.g[A0][0] = 40223;
+                c.g[RA][0] = 0x0012_3450;
+                c.pc = 0x003d_a418;
+                c.bus.write32(
+                    SPCH_FALLBACK_CB,
+                    match seed % 4 {
+                        0 | 3 => 0,
+                        1 => 0x0014_06c0, // RiderIface_HasVisited: returns 0
+                        _ => 0x0000_5000, // outside the function table: the fake
+                    },
+                );
+                if seed % 4 == 2 {
+                    // The fake returns a positive value: the loop retries,
+                    // and the second call unwinds.
+                    c.bus.write32(LOG_UNWIND_AT, 1);
+                }
+                fill(c, &mut r, 0x0080_004c, 0x20);
+                c.bus.write32(0x0080_004c, 0);
+            },
+        );
+    }
+
+    /// `SND_UtkGetState`: random state words, copied into a destination in
+    /// the test data area (the unaligned doubleword copy).
+    #[test]
+    fn snd_utk_get_state_matches() {
+        check(
+            ee::s14::f_003ce078__generated,
+            snd_utk_get_state,
+            120,
+            &|c, seed| {
+                let mut r = Rng(0x3ce0_7800 ^ seed as u64);
+                scramble(c, &mut r);
+                let src = DATA + 0x2000;
+                c.g[A0][0] = sx(DATA + 0x400);
+                c.g[A1][0] = sx(src);
+                for off in SND_UTK_STATE_FIELDS {
+                    c.bus.write32(src + off, r.next_u32());
+                }
+                fill(c, &mut r, DATA + 0x400, 4);
+            },
+        );
+    }
+
+    /// `SND_DecFreeThunk`: the real `SND_MemFree` with no sound heap state
+    /// (its "unknown pointer" short path), any pointer.
+    #[test]
+    fn snd_dec_free_thunk_matches() {
+        check(
+            ee::s14::f_003c7ce0__generated,
+            snd_dec_free_thunk,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c7ce0, 0);
+                c.g[A0][0] = (r.next_u32() as u64) & 0x0fff_ffff;
+                c.pc = 0x003c_7ce0;
+            },
+        );
+    }
+
+    // -- SPCH_FindBankDataPtr ------------------------------------------------
+
+    #[test]
+    fn spch_find_bank_data_ptr_matches() {
+        check(
+            ee::s14::f_003d83b8__generated,
+            spch_find_bank_data_ptr,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003d_83b8, 0);
+                let key = DATA + 0x1000;
+                let out = DATA + 0x1400;
+                c.g[A0][0] = key as u64;
+                c.g[A1][0] = out as u64;
+                let want2 = (seed % 251) as u8;
+                let want3 = (seed / 7 % 251) as u8;
+                c.bus.write8(key + 2, want2);
+                c.bus.write8(key + 3, want3);
+                // Where a matching entry sits, when it is not a null one.
+                let match_at = seed % 9;
+                for i in 0..8u32 {
+                    let slot_addr = SPCH_BANK_TABLE + 8 * i;
+                    let null = (seed + i) % 5 == 0;
+                    if null {
+                        c.bus.write32(slot_addr, 0);
+                        continue;
+                    }
+                    let entry = DATA + 0x2000 + 0x40 * i;
+                    c.bus.write32(slot_addr, entry);
+                    c.bus
+                        .write8(entry + 8, if i == match_at { want3 } else { want3 ^ 0xff });
+                    c.bus
+                        .write8(entry + 9, if i == match_at { want2 } else { want2 ^ 0x55 });
+                    c.bus.write16(entry + 0x10, r.next_u32() as u16);
+                }
+                c.pc = 0x003d_83b8;
+            },
+        );
+    }
+
+    // -- SND_EeVoiceFinish ---------------------------------------------------
+
+    pub(crate) fn fake_voice_stop(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 14, fake_voice_stop);
+        }
+        fake_ret(c, 11);
+    }
+
+    #[test]
+    fn snd_ee_voice_finish_matches() {
+        install(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003C8468),
+            fake_voice_stop,
+            14,
+        );
+        check(
+            ee::s14::f_003c8430__generated,
+            snd_ee_voice_finish,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003c_8430, 1);
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.bus.write32(SND_VOICE_HANDLER, FAKE);
+                c.bus.write32(CTRL, MAGIC);
+                c.bus.write32(CTRL + 8, r.next_u32());
+                c.bus.write32(CTRL + 0xc, r.next_u32());
+                c.pc = 0x003c_8430;
+            },
+        );
+    }
+
+    /// `SPCH_FindBankById`: no table, an empty table, and 1-6 slots with
+    /// null banks and bank ids that match the request or not. The request's
+    /// high half is junk (the function masks it).
+    #[test]
+    fn spch_find_bank_by_id_matches() {
+        const BANKS: u32 = DATA + 0x1000;
+        const TABLE: u32 = DATA + 0x200;
+        check(
+            ee::s14::f_003d6d50__generated,
+            spch_find_bank_by_id,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x3d6d_5000 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x003d_6d50;
+                c.g[GP][0] = GAME_GP as u64;
+                let count = if seed % 5 == 0 {
+                    0
+                } else {
+                    1 + (r.next_u32() % 6) as i32
+                };
+                c.bus.write32(
+                    GAME_GP + SPCH_FIND_BANK_TABLE,
+                    if seed % 7 == 0 { 0 } else { TABLE },
+                );
+                c.bus.write32(GAME_GP + SPCH_FIND_BANK_COUNT, count as u32);
+                let id = r.next_u32() as u16;
+                let sel = (r.next_u32() % 6) as u32;
+                for i in 0..6u32 {
+                    let bank = BANKS + 0x40 * i;
+                    c.bus
+                        .write32(TABLE + 4 * i, if r.next_u32() % 4 == 0 { 0 } else { bank });
+                    c.bus.write16(
+                        bank,
+                        if i == sel && seed % 3 != 0 {
+                            id
+                        } else {
+                            r.next_u32() as u16
+                        },
+                    );
+                }
+                c.g[A0][0] = sx((r.next_u32() & 0xffff_0000) | id as u32);
+            },
+        );
+    }
+
+    /// `SND_IopReleaseChannelCallback`: the IOP state block's two counters
+    /// (0..3) and a small callback index, so every channel the release
+    /// touches is a free one in a zeroed channel table.
+    #[test]
+    fn snd_iop_release_channel_callback_matches() {
+        use crate::difftest::fakes::machine;
+        const TABLE: u32 = DATA + 0x1000;
+        const CHANNELS: u32 = 0x1f0;
+        check(
+            ee::s13::f_003c0be8__generated,
+            snd_iop_release_channel_callback,
+            160,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c0be8, 0);
+                c.pc = 0x003c_0be8;
+                c.bus.write32(SND_RELEASE_STATE + CHANNELS, TABLE);
+                c.bus.write8(
+                    SND_RELEASE_STATE + SND_RELEASE_STATE_B,
+                    (r.next_u32() % 4) as u8,
+                );
+                c.bus.write8(
+                    SND_RELEASE_STATE + SND_RELEASE_STATE_A,
+                    (r.next_u32() % 4) as u8,
+                );
+                c.g[A0][0] = (r.next_u32() % 4) as u64;
+            },
+        );
+    }
+
+    /// `SND_DecUtk_Free`: a decoder whose buffer word (+0x28) is null or a
+    /// pointer; the free goes through `SND_UtkFree`, whose one indirect call
+    /// is a fake.
+    #[test]
+    fn snd_dec_utk_free_matches() {
+        use crate::difftest::fakes::machine;
+        check(
+            ee::s14::f_003c93f8__generated,
+            snd_dec_utk_free,
+            160,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x3c93f8, 1);
+                c.pc = 0x003c_93f8;
+                let dec = DATA + 0x100;
+                c.bus
+                    .write32(dec + 0x28, if seed % 3 == 0 { 0 } else { DATA + 0x400 });
+                c.g[A0][0] = sx(dec);
+            },
+        );
+    }
+
+    /// `SND_UtkReset`: the eight queue words after an object at a random
+    /// (16-byte aligned) address.
+    #[test]
+    fn snd_utk_reset_matches() {
+        check(
+            ee::s14::f_003cddb8__generated,
+            snd_utk_reset,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x3cdd_b800 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x003c_ddb8;
+                c.g[A0][0] = sx(DATA + (r.next_u32() & 0x3_fff0));
+            },
+        );
+    }
+
+    // ------------------------------------------------------- SNDSTRM_SetPitch
+
+    /// Streams exist (count 4) or the index is out of range; pitches below,
+    /// at and above the 0x4000 clamp. The voice handle is invalid (negative),
+    /// so the real `SND_SetPitch` takes its error path.
+    #[test]
+    fn sndstrm_set_pitch_matches() {
+        const STREAM_COUNT: u32 = 0x0050_a92e;
+        const STREAMS: u32 = 0x0050_a0a0;
+        check(
+            ee::s13::f_003b7fb8__generated,
+            sndstrm_set_pitch,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3b_7fb8, 0);
+                c.pc = 0x003b_7fb8;
+                let stream = DATA + 0x400;
+                c.bus.write8(STREAM_COUNT, 4);
+                for i in 0..4u32 {
+                    c.bus.write32(STREAMS + 4 * i, stream + 0x40 * i);
+                }
+                let out_of_range = seed % 3 == 0;
+                let index = if out_of_range { 6 } else { seed % 4 };
+                c.g[A0][0] = sx(index);
+                let st = stream + 0x40 * (index & 3);
+                let pitch = match seed % 4 {
+                    0 => r.next_u32() & 0x3fff,
+                    1 => 0x4000,
+                    2 => 0x4001 + (r.next_u32() & 0xffff),
+                    _ => r.next_u32() | 0x8000_0000,
+                };
+                c.g[A1][0] = sx(pitch);
+                c.bus
+                    .write32(st + SNDSTRM_HANDLE, 0x8000_0000 | r.next_u32());
+                c.bus.write32(st + SNDSTRM_PITCH, r.next_u32());
+            },
+        );
+    }
+
+    // --------------------------------------------------------- SPCH_QueueEvent
+
+    /// 0..7 varargs around the event id; the real `SPCH_QueueEventArgs` walks
+    /// its zeroed event table (no match) and returns on the short path.
+    #[test]
+    fn spch_queue_event_matches() {
+        check(
+            ee::s14::f_003d76f0__generated,
+            spch_queue_event,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d_76f0, 0);
+                c.pc = 0x003d_76f0;
+                c.bus.write32(GAME_GP + SPCH_QUEUE_BUSY, 0);
+                c.g[A0][0] = sx(1 + r.next_u32() % 0x40);
+                c.g[A1][0] = sx((seed % 8) as u32);
+                c.g[A2][0] = sx(r.next_u32());
+                c.g[A3][0] = sx(r.next_u32());
+                c.g[T0][0] = sx(r.next_u32());
+                c.g[T1][0] = sx(r.next_u32());
+                c.g[T2][0] = sx(r.next_u32());
+                c.g[T3][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    // ----------------------------------------------------- SPCH_ServiceChannel
+
+    /// Busy (the flag was already set: nothing happens) or idle with nothing
+    /// pending and a real `SPCH_DequeueChannel` that finds no request.
+    #[test]
+    fn spch_service_channel_matches() {
+        const PENDING_CHANNEL: u32 = 0x0045_0700;
+        const PENDING_COUNT: u32 = 0x0045_0704;
+        check(
+            ee::s14::f_003d8040__generated,
+            spch_service_channel,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d_8040, 0);
+                c.pc = 0x003d_8040;
+                let channel = DATA + 0x400;
+                c.g[A0][0] = sx(channel);
+                if seed % 2 == 0 {
+                    c.bus
+                        .write32(GAME_GP + SPCH_SERVICE_BUSY, 1 + (r.next_u32() & 3));
+                } else {
+                    c.bus.write32(GAME_GP + SPCH_SERVICE_BUSY, 0);
+                }
+                // No sentence pending for this channel.
+                c.bus.write32(PENDING_CHANNEL, channel ^ 4);
+                c.bus.write32(PENDING_COUNT, 0);
+            },
+        );
+    }
+
+    // ----------------------------------------------------------- SND_UtkAlloc
+
+    /// The allocator slot points at a fake; the call may unwind.
+    #[test]
+    fn snd_utk_alloc_matches() {
+        covered(
+            ee::s14::f_003cd1a8__generated,
+            snd_utk_alloc,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c_d1a8, 1);
+                c.pc = 0x003c_d1a8;
+                c.bus.write32(0x0051_7604, FAKE + 0x10 * (seed % 4));
+                c.g[A0][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    /// A fake SND lock/unlock hook and stream-table state: a random nesting
+    /// depth; `streams_ready` installs one stream whose request list holds one
+    /// node matching handle 0.
+    pub(crate) fn snd_world(c: &mut Cpu, r: &mut Rng, streams_ready: bool) {
+        c.bus.write32(SND_LOCK_HOOK, FAKE);
+        c.bus.write32(SND_UNLOCK_HOOK, FAKE + 0x10);
+        c.bus.write8(SND_LOCK_DEPTH, (r.next_u32() & 0xff) as u8);
+        let count = if streams_ready { 1 } else { 0 };
+        c.bus.write8(SND_STREAM_COUNT, count);
+        let stream = DATA + 0x4000;
+        let node = DATA + 0x5000;
+        c.bus.write32(SND_STREAMS, stream);
+        c.bus
+            .write32(stream + 0x11c, if streams_ready { node } else { 0 });
+        c.bus.write32(node, 0); // next
+        c.bus.write32(node + 0xc, 0); // the handle it matches
+    }
+
+    // ------------------------------------------------------------ SPCH_GetTime
+
+    #[test]
+    fn spch_get_time_matches() {
+        covered(
+            ee::s14::f_003db9a0__generated,
+            spch_get_time,
+            300,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3db9, 1);
+                c.pc = 0x003d_b9a0;
+                // No hook (returns 0), or a fake the function has to call.
+                c.bus
+                    .write32(SPCH_TIME_HOOK, if seed % 4 < 2 { 0 } else { FAKE });
+            },
+        );
+    }
+
+    // ------------------------------------------------- SNDSTRM_SetPrebuffer
+
+    #[test]
+    fn sndstrm_set_prebuffer_matches() {
+        covered(
+            ee::s13::f_003b7d80__generated,
+            sndstrm_set_prebuffer,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3b7d, 1);
+                c.pc = 0x003b_7d80;
+                let found = seed % 2 == 0;
+                snd_world(c, &mut r, found);
+                // Handle 0 with a matching request, or a negative handle (no
+                // request at all).
+                c.g[A0][0] = if found { 0 } else { 0xffff_ffff_ffff_ffff };
+                c.g[A1][0] = if seed % 5 == 0 {
+                    r.edge_f32() as u64
+                } else {
+                    r.next_u32() as u64
+                };
+            },
+        );
+    }
+
+    // ---------------------------------------------------- SND_DecAllocThunk
+
+    #[test]
+    fn snd_dec_alloc_thunk_matches() {
+        check(
+            ee::s14::f_003c7cc0__generated,
+            snd_dec_alloc_thunk,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x003c_7cc0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x003c_7cc0;
+                // Zeroed heap: SND_MemAlloc clamps against a zero limit and
+                // returns 0 without touching the arena.
+                c.bus.write32(SND_STATE + 0x234, 0);
+                c.g[A0][0] = (1 + r.next_u32() % 0xff) as u64;
+            },
+        );
+    }
+
+    // ------------------------------------------------------------ SNDSTRM
+
+    oc336_fake!(
+        sndstrm_fake_stop,
+        SNDSTRM_PREV_STOP,
+        0x003b_89e0,
+        ee::s13::f_003b89e0__generated
+    );
+
+    oc336_fake!(
+        sndstrm_fake_callbacks,
+        SNDSTRM_PREV_CALLBACKS,
+        0x003c_7080,
+        ee::s13::f_003c7080__generated
+    );
+
+    oc336_fake!(
+        sndstrm_fake_stop_unsupported,
+        SNDSTRM_PREV_UNSUPPORTED,
+        0x003c_6ce0,
+        ee::s13::f_003c6ce0__generated
+    );
+
+    oc336_fake!(
+        sndstrm_fake_mem_free,
+        SNDSTRM_PREV_MEM_FREE,
+        0x003b_5e98,
+        ee::s13::f_003b5e98__generated
+    );
+
+    pub(crate) fn sndstrm_stop_slot_install() {
+        oc336_install!(
+            ee::s13::OVERRIDE_003B89E0 => sndstrm_fake_stop => SNDSTRM_PREV_STOP,
+            ee::s13::OVERRIDE_003C7080 => sndstrm_fake_callbacks => SNDSTRM_PREV_CALLBACKS,
+            ee::s13::OVERRIDE_003C6CE0 => sndstrm_fake_stop_unsupported => SNDSTRM_PREV_UNSUPPORTED,
+            ee::s13::OVERRIDE_003B5E98 => sndstrm_fake_mem_free => SNDSTRM_PREV_MEM_FREE,
+        );
+    }
+
+    /// `SNDSTRM_StopSlot`: an empty slot, a slot with only its name (no
+    /// buffers) and a slot with 1..5 buffers (some NULL, so some are freed);
+    /// `SND_Stop`, `SNDSTRM_RunCallbacks`,
+    /// `SNDSTRM_StopSlotUnsupported` and `SND_MemFree` are logging fakes.
+    #[test]
+    fn sndstrm_stop_slot_matches() {
+        sndstrm_stop_slot_install();
+        const SLOT: u32 = DATA + 0x1000;
+        covered(
+            ee::s13::f_003c6ce8__generated,
+            sndstrm_stop_slot,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003c_6ce8, 4);
+                c.bus.write32(OC336_CTRL, OC336_MAGIC);
+                let index = seed % 4;
+                c.bus
+                    .write32(SNDSTRM_SLOT_BASE + 4 * index + SNDSTRM_SLOT_ARRAY, SLOT);
+                let count = (seed % 6) as u8;
+                c.bus.write32(SLOT + SNDSTRM_SLOT_NAME, r.next_u32());
+                c.bus.write8(SLOT + SNDSTRM_SLOT_COUNT, count);
+                for i in 0..count as u32 {
+                    let buf = if (seed + i as u32) % 3 == 0 {
+                        0
+                    } else {
+                        DATA + 0x2000 + 0x10 * i
+                    };
+                    c.bus.write32(SLOT + SNDSTRM_SLOT_BUFFERS + 4 * i, buf);
+                }
+                for i in count as u32..8 {
+                    c.bus
+                        .write32(SLOT + SNDSTRM_SLOT_BUFFERS + 4 * i, r.next_u32());
+                }
+                c.g[A0][0] = sx(index as u32);
             },
         );
     }

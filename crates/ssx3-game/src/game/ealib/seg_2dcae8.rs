@@ -28,6 +28,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003d_e7b0, ea_file_free_request, "EAFile_FreeRequest"),
     (0x003e_2768, ea_file_big_find_entry, "EAFile_BigFindEntry"),
     (0x0041_6404, strchr, "strchr"),
+    (0x003e_0118, stream_file_on_close, "StreamFile_OnClose"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -776,6 +777,70 @@ pub fn strchr(c: &mut Cpu) {
     ret(c);
 }
 
+// ---------------------------------------------------------------------------
+// StreamFile_OnClose (0x3e0118)
+
+/// Stream file fields OnClose touches: the pending request (`+0x174`), the
+/// refill priority (`+0x40`) and its name buffer (`+0x6c`).
+pub(crate) const SFOC_REQUEST: u32 = 0x174;
+
+pub(crate) const SFOC_PRIORITY: u32 = 0x40;
+
+pub(crate) const SFOC_NAME: u32 = 0x6c;
+
+/// The callback an opened stream sets on its request (`func_003E00D8`).
+pub(crate) const SFOC_READ_CALLBACK: u32 = 0x003e_00d8;
+
+pub(crate) const SFOC_RELEASE_REQUEST: Callee = Callee {
+    addr: 0x003d_d310,
+    f: ee::s14::EAFile_ReleaseRequest,
+};
+
+pub(crate) const SFOC_QUEUE_OPEN: Callee = Callee {
+    addr: 0x003d_d4e8,
+    f: ee::s14::EAFile_QueueOpen,
+};
+
+pub(crate) const SFOC_SET_REQUEST_CALLBACK: Callee = Callee {
+    addr: 0x003d_cf70,
+    f: ee::s14::EAFile_SetRequestCallback,
+};
+
+/// `void StreamFile_OnClose(int, int, StreamFile* st)` (0x3e0118): release
+/// the current file request, then queue a fresh open of the stream's name
+/// (`EAFile_QueueOpen(st + 0x6c, 1, st->priority, st)`) and, when that
+/// produced a request, set the stream's read callback on it. The request
+/// handle lives at `st + 0x174`.
+pub fn stream_file_on_close(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A2][0];
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(SFOC_REQUEST)).lw(c);
+        SFOC_RELEASE_REQUEST.call(c, 0x003e_0130)?;
+        c.g[A2][0] = Addr(r32(c, S0).wrapping_add(SFOC_PRIORITY)).lw(c);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(SFOC_NAME));
+        c.g[A1][0] = 1;
+        c.g[A3][0] = c.g[S0][0];
+        SFOC_QUEUE_OPEN.call(c, 0x003e_0144)?;
+        let failed = c.g[V0][0] == 0;
+        Addr(r32(c, S0)).off(SFOC_REQUEST).sw(c, c.g[V0][0]);
+        if !failed {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = sx(SFOC_READ_CALLBACK);
+            SFOC_SET_REQUEST_CALLBACK.call(c, 0x003e_015c)?;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -976,6 +1041,92 @@ pub(crate) mod tests {
                     c.bus.write32(req - 4 + 4 * i, r.next_u32());
                 }
                 c.g[A0][0] = sx(req);
+            },
+        );
+    }
+
+    // ------------------------------------------------------- StreamFile_OnClose
+
+    /// A real EAFile request pool, handle pool, mutex and service queue on
+    /// their short paths, a stream whose old request releases cleanly
+    /// (state 0 in the request table) and a NUL-terminated name.
+    #[test]
+    fn stream_file_on_close_matches() {
+        const POOL: u32 = 0x0051_9ab0;
+        const MUTEX: u32 = POOL + 0x14;
+        const SLOTS: u32 = DATA + 0x1000;
+        const HANDLES: u32 = DATA + 0x4000;
+        const QUEUED: u32 = DATA + 0x8000;
+        const FILE: u32 = DATA + 0x1_0000;
+        const NAME: u32 = FILE + SFOC_NAME;
+        // The request hash table (0x519ad8): zeroed entries mean "no state",
+        // so the released request has nothing to free first.
+        const TABLE: u32 = DATA + 0x2_0000;
+        const OLD_REQUEST: u32 = DATA + 0x3_0000;
+        const HANDLE_COUNT: u32 = POOL + 0x4;
+        const HANDLE_SLOTS: u32 = POOL + 0x2c;
+        check(
+            ee::s14::f_003e0118__generated,
+            stream_file_on_close,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e_0118, 0);
+                c.pc = 0x003e_0118;
+                // The request pool: 1..6 slots, the first free one anywhere.
+                let count = 1 + r.next_u32() % 6;
+                c.bus.write32(POOL, count);
+                c.bus.write32(POOL + 0x28, SLOTS);
+                // The handle pool: 1..6 slots, all free.
+                let handles = 1 + r.next_u32() % 6;
+                c.bus.write32(HANDLE_COUNT, handles);
+                c.bus.write32(HANDLE_SLOTS, HANDLES);
+                for i in 0..6u32 {
+                    c.bus.write32(HANDLES + 0x110 * i, 0);
+                }
+                // Mutex: owner never a fake thread id, depth, semaphore.
+                c.bus
+                    .write32(MUTEX + 0x4, 0x7700_0000 | r.next_u32() & 0xffff);
+                c.bus.write32(MUTEX + 0x8, r.next_u32() & 3);
+                c.bus.write32(MUTEX + 0xc, r.next_u32() & 0xff);
+                c.bus.write32(0x0045_0de4, r.next_u32() & 1);
+                let free = r.next_u32() % count;
+                for i in 0..8u32 {
+                    let mut w = r.next_u32();
+                    if i == free {
+                        w &= !0x00f0_0000;
+                    } else if i < free && w & 0x00f0_0000 == 0 {
+                        w |= 0x0010_0000;
+                    }
+                    c.bus.write32(SLOTS + 0x30 * i, w);
+                }
+                c.bus.write32(0x0045_0c0c, r.next_u32() & 0xf_ffff);
+                // The service queue: a request active; 0..2 queued.
+                c.bus.write32(POOL + 0x24, QUEUED + 0x100);
+                let queued = seed % 3;
+                c.bus
+                    .write32(POOL + 0x30, if queued == 0 { 0 } else { QUEUED });
+                for k in 0..queued {
+                    let q = QUEUED + 0x40 * k;
+                    c.bus.write32(q + 0x10, r.next_u32() % 8);
+                    c.bus
+                        .write32(q + 0x2c, if k + 1 < queued { q + 0x40 } else { 0 });
+                }
+                c.bus.write32(POOL + 0xc, r.next_u32() & 0xff);
+                // The stream file: its old request, priority and name.
+                // 0x519ad8 is the request table the EAFile release path
+                // indexes by the request pointer's top byte (0 here).
+                c.bus.write32(0x0051_9ad8, TABLE);
+                for i in 0..0x10u32 {
+                    c.bus.write32(OLD_REQUEST + 4 * i, 0);
+                }
+                c.bus.write32(FILE + SFOC_REQUEST, OLD_REQUEST);
+                c.bus.write32(FILE + SFOC_PRIORITY, r.next_u32() & 0x7f);
+                let len = r.next_u32() % 0x40;
+                for i in 0..len {
+                    c.bus.write8(NAME + i, b'a' + (r.next_u32() % 26) as u8);
+                }
+                c.bus.write8(NAME + len, 0);
+                c.g[A2][0] = sx(FILE);
             },
         );
     }

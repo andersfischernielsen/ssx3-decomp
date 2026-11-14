@@ -183,3 +183,15 @@ pub fn hook(slot: *mut fn(&mut Cpu), fake: fn(&mut Cpu), prev: &std::sync::atomi
         *slot = fake;
     }
 }
+
+/// What a gated fake runs with its gate off: the body [`hook`] found in the
+/// slot (`prev`), or `generated` if the fake was never hooked.
+pub fn fall_back(c: &mut Cpu, prev: &std::sync::atomic::AtomicUsize, generated: fn(&mut Cpu)) {
+    let p = prev.load(std::sync::atomic::Ordering::Relaxed);
+    if p == 0 {
+        return generated(c);
+    }
+    // SAFETY: `hook` stored a `fn(&mut Cpu)` read from an override slot.
+    let f = unsafe { std::mem::transmute::<usize, fn(&mut Cpu)>(p) };
+    f(c)
+}

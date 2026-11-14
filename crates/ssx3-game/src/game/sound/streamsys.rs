@@ -186,6 +186,18 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         stream_array_get_current_request,
         "StreamArray_GetCurrentRequest",
     ),
+    (
+        0x002a_9f38,
+        stream_buffer_set_pitch,
+        "StreamBuffer_SetPitch",
+    ),
+    (0x002a_a320, stream_buffer_queue, "StreamBuffer_Queue"),
+    (0x002a_ad78, stream_array_queue, "StreamArray_Queue"),
+    (
+        0x002a_bcf8,
+        sound_request_set_stream,
+        "SoundRequest_SetStream",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -214,6 +226,9 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_POLL_FREE;
     pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_SET_PITCH;
+
+    pub(crate) use crate::game::lib::snd::callee::STRCPY;
+    pub(crate) use crate::game::lib::snd::callee::STREAM_BUFFER_QUEUE;
 }
 
 /// Cross-shard calls the generator emitted as `call_indirect(c, addr)`: they
@@ -1997,6 +2012,148 @@ pub fn stream_buffer_get_current_request(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// StreamBuffer_Queue (0x2aa320)
+
+/// The stream's big-file handle (`self+0x74`).
+pub const STREAM_BUFFER_BIG: u32 = 0x74;
+
+/// The stream handle (`self+8`).
+pub const STREAM_BUFFER_HANDLE: u32 = 0x8;
+
+/// The stream's inline request buffer (`self+0x14`).
+pub const STREAM_BUFFER_INLINE: u32 = 0x14;
+
+/// `BigFile_FindEntry` (0x3e2ce0).
+pub const BIG_FILE_FIND_ENTRY: u32 = 0x003e_2ce0;
+
+/// `SNDSTRM_Queue` (0x3b78d8).
+pub const OC331_SNDSTRM_QUEUE: u32 = 0x003b_78d8;
+
+/// `int StreamBuffer_Queue(void* self, int handle, void* src, int off)`
+/// (0x2aa320): queue a stream request. When the stream has a big-file
+/// handle, look the entry up first (its size at `sp`) and add it to the
+/// offset; then `SNDSTRM_Queue(stream, handle, buffer, off)`, where the
+/// buffer is `src` for the big-file case and the caller's `src` otherwise.
+pub fn stream_buffer_queue(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(STREAM_BUFFER_BIG)).lw(c);
+        let has_big = c.g[A0][0] != 0;
+        c.g[S2][0] = c.g[A3][0];
+        if has_big {
+            c.cycles += 10;
+            c.g[A1][0] = c.g[A2][0];
+            c.g[A3][0] = c.g[SP][0];
+            c.g[A2][0] = 0;
+            c.g[T0][0] = 0;
+            call_ptr(c, BIG_FILE_FIND_ENTRY, 0x002a_a364)?;
+            c.g[A3][0] = Addr(c.g[SP][0] as u32).lw(c);
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A0][0] = Addr(r32(c, S0).wrapping_add(STREAM_BUFFER_HANDLE)).lw(c);
+            c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(STREAM_BUFFER_INLINE));
+            c.g[A3][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A3][0] as u32));
+        } else {
+            c.cycles += 2;
+            c.g[A0][0] = Addr(r32(c, S0).wrapping_add(STREAM_BUFFER_HANDLE)).lw(c);
+        }
+        c.cycles += 8;
+        call_ptr(c, OC331_SNDSTRM_QUEUE, 0x002a_a380)?;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int StreamArray_Queue(void* self, int i, int a, int b, int c)` (0x2aad78):
+/// queue the `i`-th entry of the array at `self+8`; -1 when it is null.
+pub fn stream_array_queue(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A3][0];
+        c.g[V0][0] = Addr(r32(c, A0)).off(0x8).lw(c);
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+        c.g[A0][0] = Addr(r32(c, A1)).lw(c);
+        let entry = c.g[A0][0];
+        c.g[A3][0] = c.g[T0][0];
+        if entry != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[A2][0];
+            c.g[A2][0] = c.g[V1][0];
+            callee::STREAM_BUFFER_QUEUE.call(c, 0x002a_adb0)?;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int StreamBuffer_SetPitch(void* self, int pitch)` (0x2a9f38): set the
+/// stream's pitch under the sound lock.
+pub fn stream_buffer_set_pitch(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        call_ptr(c, 0x003b_58a0, 0x002a_9f54)?;
+        c.g[A0][0] = Addr(r32(c, S0)).off(0x8).lw(c);
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x003b_7fb8, 0x002a_9f60)?;
+        call_ptr(c, 0x003b_58d8, 0x002a_9f68)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SoundRequest_SetStream(SoundRequest* self, int a1, char* name,
+/// int a3)` (0x2abcf8): store the id, copy the stream name to `+0x10` and the
+/// last argument to `+0x50`.
+pub fn sound_request_set_stream(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A3][0];
+        Addr(r32(c, S0)).off(0xc).sw(c, c.g[A1][0]);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(0x10));
+        c.g[A1][0] = c.g[A2][0];
+        callee::STRCPY.call(c, 0x002a_bd20)?;
+        Addr(r32(c, S0)).off(0x50).sw(c, c.g[S1][0]);
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3230,6 +3387,123 @@ pub(crate) mod tests {
                 c.bus
                     .write8(0x0051_0000 - 0x5718 + 0x176, r.next_u32() as u8);
                 c.g[A0][0] = sx(SELF);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::lib::snd::tests::snd_world;
+
+    /// `StreamBuffer_Queue`: the real `SNDSTRM_Queue` takes its "no such
+    /// stream" short path (no stream table); handles positive and negative.
+    #[test]
+    fn stream_buffer_queue_matches() {
+        check(
+            ee::s08::f_002aa320__generated,
+            stream_buffer_queue,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2aa320, 0);
+                let this = DATA;
+                // (The big-file branch is not exercised: it runs the
+                // `BigFile_FindEntry` dispatcher, whose zeroed-data path
+                // could not be bounded.)
+                c.bus.write32(this + STREAM_BUFFER_BIG, 0);
+                let handle = if seed % 3 == 0 {
+                    0xffff_ffff
+                } else {
+                    r.next_u32() % 0x100
+                };
+                c.bus.write32(this + STREAM_BUFFER_HANDLE, handle);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(DATA + 0x1_8000);
+                c.g[A2][0] = sx(DATA + 0x1_9000);
+                c.g[A3][0] = (r.next_u32() % 0x4000) as u64;
+                c.pc = 0x002a_a320;
+            },
+        );
+    }
+
+    // ------------------------------------------------------ StreamArray_Queue
+
+    #[test]
+    fn stream_array_queue_matches() {
+        check(
+            ee::s08::f_002aad78__generated,
+            stream_array_queue,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x002a_ad78 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x002a_ad78;
+                let this = DATA;
+                let array = DATA + 0x1000;
+                let entry = DATA + 0x2000;
+                let i = seed % 4;
+                c.bus.write32(this + 8, array);
+                c.bus
+                    .write32(array + 4 * i, if seed % 2 == 0 { 0 } else { entry });
+                // Keep the queued buffer on StreamBuffer_Queue's short path.
+                c.bus.write32(entry + 0x74, 0);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = i as u64;
+                c.g[A2][0] = sx(DATA + 0x3000);
+                c.g[A3][0] = sx(DATA + 0x4000);
+                c.g[T0][0] = sx(DATA + 0x5000);
+            },
+        );
+    }
+
+    // ------------------------------------------------ StreamBuffer_SetPitch
+
+    #[test]
+    fn stream_buffer_set_pitch_matches() {
+        covered(
+            ee::s08::f_002a9f38__generated,
+            stream_buffer_set_pitch,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a9f, 1);
+                c.pc = 0x002a_9f38;
+                // No streams: the handle resolves to no stream and the pitch
+                // setter takes its early return.
+                snd_world(c, &mut r, false);
+                let this = DATA;
+                c.bus.write32(this + 8, 0xffff_ffff);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = if seed % 5 == 0 {
+                    r.edge_f32() as u64
+                } else {
+                    r.next_u32() as u64
+                };
+            },
+        );
+    }
+
+    // ------------------------------------------------ SoundRequest_SetStream
+
+    #[test]
+    fn sound_request_set_stream_matches() {
+        check(
+            ee::s08::f_002abcf8__generated,
+            sound_request_set_stream,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x002a_bcf8 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x002a_bcf8;
+                let req = DATA;
+                let src = DATA + 0x1000;
+                let n = 1 + r.next_u32() % 24;
+                for k in 0..n {
+                    c.bus.write8(src + k, 1 + (r.next_u32() % 0x7e) as u8);
+                }
+                for k in n..n + 48 {
+                    c.bus.write8(src + k, 0);
+                }
+                c.g[A0][0] = sx(req);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = sx(src);
+                c.g[A3][0] = r.next_u32() as u64;
             },
         );
     }
