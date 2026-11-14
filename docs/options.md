@@ -2,7 +2,7 @@
 
 Most options can be changed in the game with the settings overlay (F10): display rate,
 field of view, aspect ratio, resolution, anisotropic filtering and fullscreen apply at once; renderer, sound,
-pads and memory card, game files and intro movies after a restart. They are saved in
+pads and memory card, game files, intro movies and fast math after a restart. They are saved in
 `saves/ssx3-settings.cfg` (next to the memory card in a standalone build)
 as `SSX3_*` lines; an environment variable of the same name overrides the file. The
 overlay's last rows are a debug group for the real-time lighting (views, sun, casters,
@@ -50,6 +50,7 @@ through the native renderer too.
 | `SSX3_ANISO=16` | Anisotropic filtering, 1 (off) to 16 (default), for textures with mipmaps (texture-pack replacements). |
 | `SSX3_CATCHUP=0` | Turn off catch-up (window; settings "Keep speed when slow", on by default). The window always runs the game on the wall clock at the game rate, whatever the display's refresh rate (a 60 Hz display at a 120 Hz game rate gets two game updates per image). When the host itself is too slow, catch-up queues extra updates per image (at most 4) and keeps the audio device fed from the wall clock; off, the game slows down instead. Replays and headless runs never use it. |
 | `SSX3_AA`, `SSX3_LOD_BIAS`, `SSX3_AO`, `SSX3_BLOOM`, `SSX3_SNOW` | Modern graphics options (F10, all off by default): see [`plans/modern-graphics.md`](plans/modern-graphics.md). `SSX3_GFX_SHOW=ao` shows the AO mask. |
+| `SSX3_FAST_MATH=1` | Fast math (F10, off by default): the renderer's float math in host `f32` instead of PS2-exact; same game, tiny visual differences (snow glints). Off is byte-identical. |
 | `SSX3_SHADOWS=1` | "Real-time lighting" (F10, experimental): the terrain, trails and snow spray lit by the renderer in linear light (a sun with shadows from the whole loaded world and tree cut-outs, a sky hemisphere, the world's lights and lamp glows, an exposure per course) instead of the game's baked layer, whose colour stays, blurred; see [`plans/shadow-maps.md`](plans/shadow-maps.md) and [`plans/terrain-lighting.md`](plans/terrain-lighting.md). Tuning and debug views: "Real-time lighting: tuning and debugging" below. |
 | `SSX3_ASPECT=4:3\|16:9\|stretch` | The classic fixed-aspect image (512×448 scaled, letterboxed) instead of following the window. |
 | `SSX3_RENDER_SCALE=2` (up to 8) | N× internal resolution (native renderer; with `SSX3_RENDER=emu SSX3_RENDER_NATIVE=all`, the emulated GS's). |
