@@ -25183,15 +25183,6 @@ pub(crate) mod tests {
 
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    /// The body running under `slot` when `fake` is installed over it, kept so
-    /// the fake can chain to it (never the fake itself).
-    fn keep_prev(slot: fn(&mut Cpu), fake: fn(&mut Cpu), prev: &AtomicUsize) {
-        let cur = slot as usize;
-        if cur != fake as usize && cur != 0 {
-            prev.store(cur, Ordering::Relaxed);
-        }
-    }
-
     /// Runs the body a fake replaced (nothing when there was none).
     fn run_prev(c: &mut Cpu, prev: &AtomicUsize) {
         let p = prev.load(Ordering::Relaxed);
@@ -25233,42 +25224,23 @@ pub(crate) mod tests {
         c.pc = c.g[RA][0] as u32;
     }
 
-    /// Installs the fakes and puts the previous bodies back on drop.
-    pub(crate) struct WscriptFakeSlots {
-        has_kill_script: fn(&mut Cpu),
-        world_object: fn(&mut Cpu),
-    }
+    /// Installs the fakes (once per process; see [`crate::difftest::fakes::hook`]).
+    pub(crate) struct WscriptFakeSlots;
 
     impl WscriptFakeSlots {
         pub(crate) fn install() -> Self {
-            unsafe {
-                let saved = Self {
-                    has_kill_script: ssx3_ee::s10::OVERRIDE_0030A598,
-                    world_object: ssx3_ee::s13::OVERRIDE_003A6B78,
-                };
-                keep_prev(
-                    saved.has_kill_script,
-                    wscript_fake_has_kill_script,
-                    &PREV_HAS_KILL,
-                );
-                keep_prev(
-                    saved.world_object,
-                    wscript_fake_world_object,
-                    &PREV_WORLD_OBJECT,
-                );
-                ssx3_ee::s10::OVERRIDE_0030A598 = wscript_fake_has_kill_script;
-                ssx3_ee::s13::OVERRIDE_003A6B78 = wscript_fake_world_object;
-                saved
-            }
-        }
-    }
-
-    impl Drop for WscriptFakeSlots {
-        fn drop(&mut self) {
-            unsafe {
-                ssx3_ee::s10::OVERRIDE_0030A598 = self.has_kill_script;
-                ssx3_ee::s13::OVERRIDE_003A6B78 = self.world_object;
-            }
+            use std::ptr::addr_of_mut;
+            crate::difftest::fakes::hook(
+                addr_of_mut!(ssx3_ee::s10::OVERRIDE_0030A598),
+                wscript_fake_has_kill_script,
+                &PREV_HAS_KILL,
+            );
+            crate::difftest::fakes::hook(
+                addr_of_mut!(ssx3_ee::s13::OVERRIDE_003A6B78),
+                wscript_fake_world_object,
+                &PREV_WORLD_OBJECT,
+            );
+            Self
         }
     }
 
@@ -25287,29 +25259,17 @@ pub(crate) mod tests {
         crate::difftest::fakes::fake(c, crate::game::object::instanceman::MESH_RAND, ret);
     }
 
-    /// Installs the RNG fake and puts the previous body back on drop.
-    pub(crate) struct MeshAnimFakeSlots {
-        rand: fn(&mut Cpu),
-    }
+    /// Installs the RNG fake (once per process; see [`crate::difftest::fakes::hook`]).
+    pub(crate) struct MeshAnimFakeSlots;
 
     impl MeshAnimFakeSlots {
         pub(crate) fn install() -> Self {
-            unsafe {
-                let saved = Self {
-                    rand: ssx3_ee::s10::OVERRIDE_003177F0,
-                };
-                keep_prev(saved.rand, mesh_anim_fake_rand, &PREV_RAND);
-                ssx3_ee::s10::OVERRIDE_003177F0 = mesh_anim_fake_rand;
-                saved
-            }
-        }
-    }
-
-    impl Drop for MeshAnimFakeSlots {
-        fn drop(&mut self) {
-            unsafe {
-                ssx3_ee::s10::OVERRIDE_003177F0 = self.rand;
-            }
+            crate::difftest::fakes::hook(
+                std::ptr::addr_of_mut!(ssx3_ee::s10::OVERRIDE_003177F0),
+                mesh_anim_fake_rand,
+                &PREV_RAND,
+            );
+            Self
         }
     }
 
@@ -25370,53 +25330,39 @@ pub(crate) mod tests {
         c.g[V0][0] = c.bus.read32(STREAM_FAKE_CONTROL + 12) as u64;
     }
 
-    /// Installs the fakes and puts the previous bodies back on drop.
-    pub(crate) struct StreamFakeSlots {
-        get_state: fn(&mut Cpu),
-        is_playing: fn(&mut Cpu),
-        time_left: fn(&mut Cpu),
-        add_timer: fn(&mut Cpu),
-        instance_slot: fn(&mut Cpu),
-    }
+    /// Installs the fakes (once per process; see [`crate::difftest::fakes::hook`]).
+    pub(crate) struct StreamFakeSlots;
 
     impl StreamFakeSlots {
         pub(crate) fn install() -> Self {
-            unsafe {
-                let saved = Self {
-                    get_state: ssx3_ee::s08::OVERRIDE_002AAE08,
-                    is_playing: ssx3_ee::s08::OVERRIDE_002AB028,
-                    time_left: ssx3_ee::s08::OVERRIDE_002AAE78,
-                    add_timer: ssx3_ee::s08::OVERRIDE_002ADCA0,
-                    instance_slot: ssx3_ee::s08::OVERRIDE_002B1220,
-                };
-                keep_prev(saved.get_state, stream_fake_get_state, &PREV_GET_STATE);
-                keep_prev(saved.is_playing, stream_fake_is_playing, &PREV_IS_PLAYING);
-                keep_prev(saved.time_left, stream_fake_time_left, &PREV_TIME_LEFT);
-                keep_prev(saved.add_timer, stream_fake_add_timer, &PREV_ADD_TIMER);
-                keep_prev(
-                    saved.instance_slot,
-                    stream_fake_instance_slot,
-                    &PREV_INSTANCE_SLOT,
-                );
-                ssx3_ee::s08::OVERRIDE_002AAE08 = stream_fake_get_state;
-                ssx3_ee::s08::OVERRIDE_002AB028 = stream_fake_is_playing;
-                ssx3_ee::s08::OVERRIDE_002AAE78 = stream_fake_time_left;
-                ssx3_ee::s08::OVERRIDE_002ADCA0 = stream_fake_add_timer;
-                ssx3_ee::s08::OVERRIDE_002B1220 = stream_fake_instance_slot;
-                saved
-            }
-        }
-    }
-
-    impl Drop for StreamFakeSlots {
-        fn drop(&mut self) {
-            unsafe {
-                ssx3_ee::s08::OVERRIDE_002AAE08 = self.get_state;
-                ssx3_ee::s08::OVERRIDE_002AB028 = self.is_playing;
-                ssx3_ee::s08::OVERRIDE_002AAE78 = self.time_left;
-                ssx3_ee::s08::OVERRIDE_002ADCA0 = self.add_timer;
-                ssx3_ee::s08::OVERRIDE_002B1220 = self.instance_slot;
-            }
+            use ssx3_ee::s08::*;
+            use std::ptr::addr_of_mut;
+            crate::difftest::fakes::hook(
+                addr_of_mut!(OVERRIDE_002AAE08),
+                stream_fake_get_state,
+                &PREV_GET_STATE,
+            );
+            crate::difftest::fakes::hook(
+                addr_of_mut!(OVERRIDE_002AB028),
+                stream_fake_is_playing,
+                &PREV_IS_PLAYING,
+            );
+            crate::difftest::fakes::hook(
+                addr_of_mut!(OVERRIDE_002AAE78),
+                stream_fake_time_left,
+                &PREV_TIME_LEFT,
+            );
+            crate::difftest::fakes::hook(
+                addr_of_mut!(OVERRIDE_002ADCA0),
+                stream_fake_add_timer,
+                &PREV_ADD_TIMER,
+            );
+            crate::difftest::fakes::hook(
+                addr_of_mut!(OVERRIDE_002B1220),
+                stream_fake_instance_slot,
+                &PREV_INSTANCE_SLOT,
+            );
+            Self
         }
     }
 

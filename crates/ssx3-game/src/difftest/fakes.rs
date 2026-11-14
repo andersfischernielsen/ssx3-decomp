@@ -155,3 +155,31 @@ pub fn vtable(c: &mut Cpu, r: &mut Rng, slots: &[u32]) -> u32 {
     }
     vt
 }
+
+/// Puts the gated test fake `fake` in an override slot, remembering in `prev`
+/// what the slot held (the body the fake runs when its gate is off).
+///
+/// Each fake is hooked once per process: later calls do nothing. A fake that
+/// re-records `prev` after another fake was chained on top of it would make
+/// the two fall back to each other, and a test reaching the slot with neither
+/// gate set would loop forever. Hooked once, every chain follows install
+/// order and ends at the generated body. Never put the old body back on drop
+/// either (a fake chained on top meanwhile would be lost or loop).
+pub fn hook(slot: *mut fn(&mut Cpu), fake: fn(&mut Cpu), prev: &std::sync::atomic::AtomicUsize) {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    static HOOKED: Mutex<Option<HashSet<usize>>> = Mutex::new(None);
+    let mut hooked = HOOKED.lock().unwrap_or_else(|p| p.into_inner());
+    if !hooked
+        .get_or_insert_with(HashSet::new)
+        .insert(fake as usize)
+    {
+        return;
+    }
+    // SAFETY: override slots are plain `fn` pointers; every test hooks them
+    // under this lock.
+    unsafe {
+        prev.store(*slot as usize, std::sync::atomic::Ordering::Relaxed);
+        *slot = fake;
+    }
+}

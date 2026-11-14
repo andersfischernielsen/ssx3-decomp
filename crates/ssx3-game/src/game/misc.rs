@@ -19391,17 +19391,9 @@ pub(crate) mod tests {
         ee::s10::f_003128e8__generated
     );
 
-    /// Put `fake` in `slot` unless it is there, chaining to what was there.
+    /// Put `fake` in `slot` once, chaining to what was there.
     pub(crate) fn bow_hook(slot: *mut fn(&mut Cpu), fake: fn(&mut Cpu), prev: &AtomicUsize) {
-        // SAFETY: the slots are plain `fn` pointers; tests swap them the
-        // same way (gated fakes fall back to the previous function).
-        unsafe {
-            let cur = *slot;
-            if cur as usize != fake as usize {
-                prev.store(cur as usize, Ordering::Relaxed);
-                *slot = fake;
-            }
-        }
+        crate::difftest::fakes::hook(slot, fake, prev);
     }
 
     #[allow(unused_unsafe)]

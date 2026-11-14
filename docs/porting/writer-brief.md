@@ -135,10 +135,12 @@ pointer return (rider simulations then spin for minutes or forever), so:
 - Gate the fake on a magic word in the *machine's* RAM: `if c.bus.read32(CTRL)
   != MAGIC { return <the body it replaced>(c) }`. Write `MAGIC` at `CTRL` in
   your own fixture (both sides of the diff get their own machine).
-- Chain to the body that was in the slot at install (`static AtomicUsize`,
-  skip it when it is the fake itself), or fall back to the generated body when
-  nothing was installed. Install once (`Once`) or restore on `Drop`, but never
-  leave a slot pointing at an ungated fake.
+- Install with `crate::difftest::fakes::hook(addr_of_mut!(slot), fake,
+  &PREV)` and, with the gate off, run the body in `PREV`. `hook` installs each
+  fake once per process. Never re-record `PREV` per test and never put the old
+  body back on `Drop`: two fakes on one slot then fall back to each other and
+  a rider test loops forever (wave 213: `bow_fake_anim_current` and
+  `oc318_fake_air_get_anim` on `0x311ae8`).
 - The same rule goes for `c.pc` fakes and for helpers you put in another
   unit's `mod tests`: state whose absence hangs a rider test is worse than a
   failing test.
