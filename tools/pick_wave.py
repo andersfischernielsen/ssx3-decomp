@@ -11,7 +11,8 @@ range). The weight of an unported function is
 (calls from the profile, bytes from generated/functions.tsv), which is a
 better proxy for time than size. Functions already installed (`overrides.txt`
 or any `oc*.rs` OVERRIDES) and functions assigned to an earlier `wave*.txt` are
-skipped. Output: `OUTDIR/waveN-<module>.txt`, 50 per module, hottest first.
+skipped. Output: `OUTDIR/waveN-<module>.txt`, 50 per module, hottest first;
+once the profiled functions run out, unprofiled ones follow in address order.
 
 The dossiers (reference C++) are made separately with `refdossier2.py`; for
 functions with no C++ body the dossier says "asm only" and the generated Rust
@@ -92,6 +93,11 @@ def main(argv):
         cf = c / frames
         rows.append((cf * size[a], cf, size[a], a))
     rows.sort(reverse=True)
+    # Then the functions the profile never saw, in address order (a source
+    # file's functions sit together, so writers and the reorg get whole units).
+    seen = {r[3] for r in rows}
+    rows += [(0.0, 0.0, size[a], a) for a in sorted(size)
+             if a not in assigned and a not in seen and a not in calls]
 
     n = int(os.environ.get('SSX3_WAVE_SIZE', 50))
     for k, m in enumerate(mods):
