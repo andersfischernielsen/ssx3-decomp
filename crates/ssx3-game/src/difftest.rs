@@ -165,6 +165,19 @@ pub fn compare(generated: GuestFn, hand: GuestFn, setup: &dyn Fn(&mut Cpu)) -> R
             )
         })
     };
+    // Registers some callees do not take, which callers may leave holding
+    // anything (slots: 1-4 a0-a3, 5 f12, 6 f13).
+    for k in calls_a.iter_mut().chain(calls_b.iter_mut()) {
+        let unused: &[usize] = match k[0] {
+            0x0031b748 => &[3, 4, 5, 6], // Mat4_ToPosQuat(out *, mat *)
+            0x0031b7a8 => &[3, 4, 5, 6], // Quat_FromMatrix(out *, mat *)
+            0x0031be50 => &[3, 4, 6],    // Math_SinCos(sin *, cos *, angle)
+            _ => &[],
+        };
+        for &s in unused {
+            k[s] = 0;
+        }
+    }
     let same_callees =
         calls_a.len() == calls_b.len() && calls_a.iter().zip(&calls_b).all(|(x, y)| x[0] == y[0]);
     if same_callees {
