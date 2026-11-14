@@ -444,6 +444,18 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         dynamic_emitter_free_data,
         "DynamicEmitter_FreeData",
     ),
+    (
+        0x0037_0d60,
+        dynamic_emitter_reset_particles,
+        "DynamicEmitter_ResetParticles",
+    ),
+    (
+        0x0037_d090,
+        ps2_graphics_man_set_texture_filter,
+        "PS2GraphicsMan_SetTextureFilter",
+    ),
+    (0x0038_5260, grid_mesh_base_dtor, "GridMeshBase_dtor"),
+    (0x0038_5290, cps2_grid_mesh_dtor, "cPS2GridMesh_dtor"),
 ];
 
 /// Same-shard direct callees used above.
@@ -11679,6 +11691,159 @@ pub fn dynamic_emitter_free_data(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// DynamicEmitter_ResetParticles (0x370d60)
+
+/// `void DynamicEmitter_ResetParticles(DynamicEmitter* e)` (0x370d60):
+/// clear the live counter `+0x17c` and the loop state `+0x1e0`, then write
+/// the zero vector (`0x4ff120`) into each of the `+0x178` position and
+/// velocity entries `vec4A` arrays at `+0x1a0` and `+0x1a4`.
+pub fn dynamic_emitter_reset_particles(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[A2][0] = c.g[A0][0];
+    c.g[A3][0] = 0;
+    c.g[V0][0] = Addr(r32(c, A2)).off(0x178).lw(c);
+    let empty = (c.g[V0][0] as i64) <= 0;
+    let at = r32(c, A2);
+    Addr(at).off(0x17c).sw(c, 0);
+    if !empty {
+        c.cycles += 3;
+        c.g[V0][0] = 0x0050_0000;
+        c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xee0)); // 0x4ff120
+        loop {
+            c.cycles += 15;
+            c.g[V1][0] = Addr(r32(c, A2)).off(0x1a0).lw(c);
+            c.g[A1][0] = sx((c.g[A3][0] as u32) << 4);
+            let zero = r32(c, T0);
+            c.lq(2, zero);
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+            c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            let pos = r32(c, V1);
+            c.sq(2, pos);
+            c.g[A0][0] = Addr(r32(c, A2)).off(0x1a4).lw(c);
+            let zero = r32(c, T0);
+            c.lq(2, zero);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            let vel = r32(c, A1);
+            c.sq(2, vel);
+            let at = r32(c, A2);
+            Addr(at).off(0x17c).sw(c, 0);
+            c.g[V0][0] = Addr(r32(c, A2)).off(0x178).lw(c);
+            c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            let at = r32(c, A2);
+            Addr(at).off(0x1e0).sw(c, 0);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0037_0d80);
+            }
+        }
+    }
+    c.cycles += 2;
+    let ra = c.g[RA][0] as u32;
+    c.pc = ra;
+}
+
+// ---------------------------------------------------------------------------
+// cPS2GridMesh_dtor (0x385290)
+
+/// `cMemMan_free` (0x317e98), cross-shard.
+pub(crate) const CMEM_FREE: u32 = 0x0031_7e98;
+
+/// `GridMeshBase_dtor` (0x385260), same shard.
+pub(crate) const GRID_MESH_BASE_DTOR: Callee = Callee {
+    addr: 0x0038_5260,
+    f: ee::s12::GridMeshBase_dtor,
+};
+
+/// `void cPS2GridMesh::~cPS2GridMesh(this, int flags)` (0x385290): free the
+/// DMA chain at +0x19c when present, then run the base destructor.
+pub fn cps2_grid_mesh_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x490000;
+        frame.save(c, 16, 0x20);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x3208));
+        frame.save(c, 17, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.sw(r32(c, S0).wrapping_add(0x4), c.g[V0][0]);
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0x19c)).lw(c);
+        let no_chain = c.g[A0][0] == 0;
+        c.g[S1][0] = c.g[A1][0];
+        if !no_chain {
+            c.cycles += 2;
+            call_ptr(c, CMEM_FREE, 0x0038_52c4)?;
+        }
+        c.cycles += 8;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        GRID_MESH_BASE_DTOR.call(c, 0x0038_52d0)?;
+        frame.restore(c, 16, 0x20);
+        frame.restore(c, 17, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// PS2GraphicsMan_SetTextureFilter (0x37d090)
+
+/// The graphics manager's texture slot 1 filter field.
+pub(crate) const PS2GM_FILTER: u32 = 0x18f4;
+
+/// `TexMan_SetTex1Filter(TexMan* man, int index, ...)` (0x369130).
+pub(crate) const PS2GM_SET_TEX1_FILTER: Callee = Callee {
+    addr: 0x0036_9130,
+    f: ee::s12::TexMan_SetTex1Filter,
+};
+
+/// `void PS2GraphicsMan_SetTextureFilter(GraphicsMan* gs)` (0x37d090): apply
+/// the filter of the texture-function descriptor kept at `gs + 0x18f4`: the
+/// 7-cycle forwarding wrapper for `TexMan_SetTex1Filter(gs->descriptor)`.
+pub fn ps2_graphics_man_set_texture_filter(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr(r32(c, A0).wrapping_add(PS2GM_FILTER)).lw(c);
+        PS2GM_SET_TEX1_FILTER.call(c, 0x0037_d0a0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `__builtin_delete`.
+pub(crate) const BUILTIN_DELETE: u32 = 0x0031_7e50;
+
+/// `void* GridMeshBase_dtor(GridMeshBase* self, int flags)` (0x385260):
+/// install the class vtable and, when `flags & 1`, delete the object.
+pub fn grid_mesh_base_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x49_0000;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(0x49_0000u32.wrapping_add(0x3938));
+        c.g[A1][0] &= 1;
+        Addr(r32(c, A0)).off(0x4).sw(c, c.g[V0][0]);
+        if c.g[A1][0] != 0 {
+            c.cycles += 2;
+            c.g[RA][0] = sx(0x0038_5284);
+            call_ptr(c, BUILTIN_DELETE, 0x0038_5284)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15343,6 +15508,139 @@ pub(crate) mod tests {
                 c.bus.write32(emitter + EMITTER_FREE_STATES, states);
                 c.g[A0][0] = sx(emitter);
                 c.g[A1][0] = (seed % 2) as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::animation::rideranim::tests::CTRL;
+    pub(crate) use crate::game::animation::rideranim::tests::MAGIC;
+
+    pub(crate) use crate::game::animation::rideranim::tests::active;
+    pub(crate) use crate::game::animation::rideranim::tests::chain;
+    pub(crate) use crate::game::animation::rideranim::tests::fake_ret;
+    pub(crate) use crate::game::animation::rideranim::tests::install;
+
+    // -- DynamicEmitter_ResetParticles -----------------------------------
+
+    #[test]
+    fn dynamic_emitter_reset_particles_matches() {
+        check(
+            ee::s12::f_00370d60__generated,
+            dynamic_emitter_reset_particles,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x37_0d60, 0);
+                c.pc = 0x0037_0d60;
+                let e = DATA + 0x400;
+                c.bus.write32(e + 0x178, seed % 5);
+                c.bus.write32(e + 0x17c, 3);
+                c.bus.write32(e + 0x1a0, DATA + 0x2000);
+                c.bus.write32(e + 0x1a4, DATA + 0x3000);
+                // The zero vector the loop copies from 0x4ff120.
+                for i in 0..4u32 {
+                    c.bus.write32(0x004f_f120 + 4 * i, r.next_u32());
+                }
+                for i in 0..0x40u32 {
+                    c.bus.write32(DATA + 0x2000 + 4 * i, r.next_u32());
+                    c.bus.write32(DATA + 0x3000 + 4 * i, r.next_u32());
+                }
+                c.g[A0][0] = sx(e);
+            },
+        );
+    }
+
+    // -- slot 3: cMemMan_free (0x317e98) -------------------------------------
+
+    pub(crate) fn fake_mem_free(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 3, fake_mem_free);
+        }
+        fake_ret(c, 4);
+    }
+
+    #[test]
+    fn cps2_grid_mesh_dtor_matches() {
+        install(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317E98),
+            fake_mem_free,
+            3,
+        );
+        check(
+            ee::s12::f_00385290__generated,
+            cps2_grid_mesh_dtor,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0038_5290, 1);
+                let mesh = DATA + 0x1000;
+                c.g[A0][0] = mesh as u64;
+                // Flags 0 keep the base destructor on its no-delete path.
+                c.g[A1][0] = 0;
+                c.bus.write32(
+                    mesh + 0x19c,
+                    if seed % 2 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 0x1000
+                    },
+                );
+                c.bus.write32(CTRL, MAGIC);
+                c.pc = 0x0038_5290;
+            },
+        );
+    }
+
+    // ---------------------------------------------- PS2GraphicsMan_SetTextureFilter
+
+    /// The manager and the texture-function table are fixture data; the real
+    /// `TexMan_SetTex1Filter` rewrites the descriptor's word at `+0x40`.
+    #[test]
+    fn ps2_graphics_man_set_texture_filter_matches() {
+        check(
+            ee::s12::f_0037d090__generated,
+            ps2_graphics_man_set_texture_filter,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0037_d090 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0037_d090;
+                let man = DATA + 0x40;
+                let table = DATA + 0x200;
+                let descriptor = DATA + 0x1000;
+                c.g[A0][0] = sx(man);
+                c.bus.write32(man + PS2GM_FILTER, table);
+                let index = (seed % 4) as u32;
+                c.bus.write32(table + index * 4 + 8, descriptor);
+                c.g[A1][0] = sx(index);
+                c.g[A2][0] = sx(r.next_u32());
+                c.g[A3][0] = sx(r.next_u32());
+                c.g[T0][0] = sx(r.next_u32());
+                c.g[T1][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    // ----------------------------------------------------- GridMeshBase_dtor
+
+    #[test]
+    fn grid_mesh_base_dtor_matches() {
+        covered(
+            ee::s12::f_00385260__generated,
+            grid_mesh_base_dtor,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3852, 8);
+                c.pc = 0x0038_5260;
+                // A small address counts as a pool block in the test machine
+                // (every pool base is 0), so the delete takes the pool-free
+                // path instead of walking an empty heap.
+                let obj = 0x100 + 8 * (r.next_u32() % 0x80);
+                let flags = if seed % 3 == 0 {
+                    r.next_u32() & !1
+                } else {
+                    r.next_u32() | 1
+                };
+                c.g[A0][0] = sx(obj);
+                c.g[A1][0] = flags as u64;
             },
         );
     }

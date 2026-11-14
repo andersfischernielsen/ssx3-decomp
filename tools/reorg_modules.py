@@ -1163,6 +1163,11 @@ def apply(mods):
             open(f, 'w').write(render_unit(path, U))
         written.append(path)
     write_mods(all_units())
+    # The staging modules are now in their units (`stage_wave.py unstage`
+    # removes their Cargo.toml and lib.rs lines).
+    if not unassigned:
+        for m in mods:
+            os.remove(os.path.join(SRC, m + '.rs'))
     return written, unassigned
 
 

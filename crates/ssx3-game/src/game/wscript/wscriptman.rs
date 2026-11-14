@@ -353,6 +353,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         wscript_man_collect_set_save,
         "WScriptMan_CollectSetSave",
     ),
+    (
+        0x0030_a5c0,
+        wscript_man_run_kill_script,
+        "WScriptMan_RunKillScript",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4228,6 +4233,57 @@ pub fn wscript_man_collect_set_save(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// WScriptMan_RunKillScript (0x30a5c0)
+
+/// Script-manager fields: the running "kill" script handle and the script
+/// object, plus the world's script-function lookup.
+pub(crate) const RKS_RUNNING: u32 = 0x290;
+
+pub(crate) const RKS_SCRIPT: u32 = 0x28c;
+
+pub(crate) const RKS_GET_OBJECT_SCRIPT_FUNC: u32 = 0x003a_6b78;
+
+pub(crate) const RKS_CALL_FUNC: Callee = Callee {
+    addr: 0x0030_9c88,
+    f: ee::s10::WScriptMan_CallFunc,
+};
+
+/// `void WScriptMan_RunKillScript(WScriptMan* self, int id)` (0x30a5c0): look
+/// `id` up as an object script function (slot 4) of the manager's script
+/// object and, when found (`!= -1`), call it with the handle; the handle is
+/// published in `self+0x290` for the duration.
+pub fn wscript_man_run_kill_script(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = c.g[A1][0];
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.sw(r32(c, S0).wrapping_add(RKS_RUNNING), c.g[V0][0]);
+        c.g[A2][0] = 0x4;
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(RKS_SCRIPT)).lw(c);
+        call_ptr(c, RKS_GET_OBJECT_SCRIPT_FUNC, 0x0030_a5e4)?;
+        c.g[V1][0] = !(0u64 | c.g[V0][0]);
+        let not_found = c.g[V1][0] == 0;
+        // Delay slot: the handle is the argument for the call.
+        c.sw(sp(c), c.g[V0][0]);
+        if !not_found {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[SP][0];
+            RKS_CALL_FUNC.call(c, 0x0030_a5fc)?;
+        }
+        c.cycles += 5;
+        c.sw(r32(c, S0).wrapping_add(RKS_RUNNING), 0);
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6318,6 +6374,96 @@ pub(crate) mod tests {
                 c.bus.write32(obj, vt);
                 c.g[A0][0] = (DATA + 0x200) as u64;
                 c.g[A1][0] = obj as u64;
+            },
+        );
+    }
+
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+
+    /// Magic word that turns the gated test fakes on. It lives in each test
+    /// machine's own RAM (`DATA + 0xf0000`, below the fakes' call log), so the
+    /// rest of the suite reaches the fakes' chained-to bodies instead.
+    pub(crate) const OC330_CTRL: u32 = DATA + 0x0f_0000;
+
+    pub(crate) const OC330_MAGIC: u32 = 0x4f43_3330;
+
+    /// The bodies the slots held before a test fake was installed.
+    pub(crate) static OC330_PREV: [AtomicUsize; 4] = [const { AtomicUsize::new(0) }; 4];
+
+    /// Replace a generated slot with `fake` (once), remembering what it held.
+    pub(crate) fn oc330_install(slot: *mut fn(&mut Cpu), fake: fn(&mut Cpu), idx: usize) {
+        crate::difftest::fakes::hook(slot, fake, &OC330_PREV[idx]);
+    }
+
+    /// Run the body a slot held before our fake (if any).
+    pub(crate) fn oc330_chain(c: &mut Cpu, idx: usize, mine: fn(&mut Cpu)) {
+        let p = OC330_PREV[idx].load(Ordering::Relaxed);
+        if p != 0 && p != mine as usize {
+            let f: GuestFn = unsafe { std::mem::transmute(p) };
+            f(c);
+        }
+    }
+
+    pub(crate) fn oc330_active(c: &mut Cpu) -> bool {
+        c.bus.read32(OC330_CTRL) == OC330_MAGIC
+    }
+
+    // -- 0x30a5c0 WScriptMan_RunKillScript ---------------------------------
+
+    /// A gated fake for the world's script-function lookup: `OC330_CTRL+4` chooses
+    /// "not found" (-1) or the handle at `OC330_CTRL+8`.
+    pub(crate) fn oc330_fake_get_object_script_func(c: &mut Cpu) {
+        if !oc330_active(c) {
+            return oc330_chain(c, 0, oc330_fake_get_object_script_func);
+        }
+        let missing = c.bus.read32(OC330_CTRL + 4) != 0;
+        c.g[V0][0] = if missing { u64::MAX } else { 5 };
+        c.g[V1][0] = 0;
+        c.cycles += 6;
+        let ra = c.g[RA][0] as u32;
+        c.pc = ra;
+    }
+
+    /// A gated fake for the script call: records the handle argument in `v0`.
+    pub(crate) fn oc330_fake_call_func(c: &mut Cpu) {
+        if !oc330_active(c) {
+            return oc330_chain(c, 1, oc330_fake_call_func);
+        }
+        c.g[V0][0] = Addr(r32(c, A1)).lw(c);
+        c.cycles += 4;
+        let ra = c.g[RA][0] as u32;
+        c.pc = ra;
+    }
+
+    /// The handle published in `self+0x290`, the script object lookup's
+    /// "found" and "not found" branches, and the script call.
+    #[test]
+    fn wscript_man_run_kill_script_matches() {
+        oc330_install(
+            std::ptr::addr_of_mut!(ee::s13::OVERRIDE_003A6B78),
+            oc330_fake_get_object_script_func,
+            0,
+        );
+        oc330_install(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00309C88),
+            oc330_fake_call_func,
+            1,
+        );
+        check(
+            ee::s10::f_0030a5c0__generated,
+            wscript_man_run_kill_script,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0030_a5c0, 1);
+                let this = DATA + 0x1000;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.bus.write32(this + RKS_SCRIPT, 0);
+                c.bus.write32(OC330_CTRL, OC330_MAGIC);
+                c.bus.write32(OC330_CTRL + 4, (seed % 2 == 0) as u32);
+                c.bus.write32(OC330_CTRL + 8, 0);
+                c.pc = 0x0030_a5c0;
             },
         );
     }

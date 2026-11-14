@@ -108,6 +108,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         debounce_kill_restorable,
         "Debounce_KillRestorable",
     ),
+    (0x0034_2fa8, debounce_save, "Debounce_Save"),
+    (
+        0x0034_51c0,
+        spline_modifier_init_path,
+        "SplineModifier_InitPath",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -210,6 +216,8 @@ pub(crate) mod callee {
         addr: 0x0034_42e0,
         f: ee::s11::f_003442e0,
     };
+
+    pub(crate) use crate::game::lib::snd::callee::MOD_OBJ_SAVE;
 }
 
 /// `GetHashValue32` (0x317670) and the UI object lookups, which the generator
@@ -2092,6 +2100,138 @@ pub(crate) fn debounce_kill_restorable_body(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// SplineModifier_InitPath (0x3451c0).
+
+/// `World_GetInstance()` (`gp + 0x16c8`, the instance cell); the test's
+/// fixture sets it.
+#[allow(dead_code)]
+pub(crate) const SPLINE_INIT_GP_INSTANCE: u32 = 0x16c8;
+
+/// The instance's array of model sets.
+pub(crate) const SPLINE_INIT_SETS: u32 = 0x8;
+
+/// A model set's reference array.
+pub(crate) const SPLINE_INIT_REFS: u32 = 0x44;
+
+/// A track node's value word.
+pub(crate) const SPLINE_INIT_NODE_VALUE: u32 = 0x24;
+
+/// A track reference's id (`self + 0`), index (`+4`), node (`+8`) and the
+/// cached path length (`+0xc`).
+pub(crate) const SPLINE_INIT_INDEX: u32 = 0x4;
+
+pub(crate) const SPLINE_INIT_NODE: u32 = 0x8;
+
+pub(crate) const SPLINE_INIT_LENGTH: u32 = 0xc;
+
+/// `cSpline_calcLength` for a `cTrack`: the spline object is at node + 0x68,
+/// its key count at +0x20 and its current key at +0x24 (the test's fixture
+/// builds that node).
+#[allow(dead_code)]
+pub(crate) const SPLINE_INIT_SPLINE: u32 = 0x68;
+
+/// `void SplineModifier_InitPath(SplineFollow *self, u32 id)` (0x3451c0):
+/// store the track id, look the track node up in the instance's model sets
+/// (`sets[id & 0xff]`, then `refs[id >> 8]`, then `ref << 2`), cache the
+/// node's value at +8, clear the key index and store the path length.
+pub fn spline_modifier_init_path(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x0034_51d8);
+        c.sw(r32(c, S0), c.g[A1][0]);
+        call_ptr(c, 0x002d_1bd8, 0x0034_51d8)?;
+        c.g[V1][0] = Addr(r32(c, V0)).lw(c); // the world
+        c.g[A1][0] = Addr(r32(c, S0)).lw(c); // the id
+        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(SPLINE_INIT_SETS)).lw(c);
+        c.g[V0][0] = c.g[A1][0] & 0xff;
+        c.g[V0][0] = sx(r32(c, V0) << 2);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+        c.g[V1][0] = Addr(r32(c, V0)).lw(c); // the model set
+        let no_set = c.g[V1][0] == 0;
+        c.g[V0][0] = sx(r32(c, A1) >> 8);
+        if no_set {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 7;
+            c.g[A0][0] = Addr(r32(c, V1).wrapping_add(SPLINE_INIT_REFS)).lw(c);
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+            c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+            c.g[V0][0] = sx(r32(c, V1) >> 8);
+            let no_ref = c.g[V0][0] == 0;
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            if no_ref {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+        }
+        c.cycles += 10;
+        c.g[V0][0] = Addr(r32(c, V0).wrapping_add(SPLINE_INIT_NODE_VALUE)).lw(c);
+        c.g[A0][0] = c.g[S0][0];
+        c.sw(r32(c, S0).wrapping_add(SPLINE_INIT_INDEX), 0);
+        c.g[RA][0] = sx(0x0034_5230);
+        c.sw(r32(c, S0).wrapping_add(SPLINE_INIT_NODE), c.g[V0][0]);
+        SPLINE_GET_PATH_LENGTH.call(c, 0x0034_5230)?;
+        c.swc1(0, r32(c, S0).wrapping_add(SPLINE_INIT_LENGTH));
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `SplineModifier_GetPathLength(cSpline *self)` 0x3454e8.
+pub(crate) const SPLINE_GET_PATH_LENGTH: Callee = Callee {
+    addr: 0x0034_54e8,
+    f: ee::s11::SplineModifier_GetPathLength,
+};
+
+/// `void Debounce_Save(void* self, void* stream)` (0x342fa8): write the base
+/// object, then the 0x2c and 0x30 fields through the stream's 4-byte writer.
+pub fn debounce_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        callee::MOD_OBJ_SAVE.call(c, 0x0034_2fc4)?;
+        c.g[V1][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A1][0] = sx(r32(c, S1).wrapping_add(0x2c));
+        c.g[A2][0] = 4;
+        c.g[A0][0] = Addr(r32(c, V1)).off(0x8).lh(c);
+        c.g[V0][0] = Addr(r32(c, V1)).off(0xc).lw(c);
+        let target = r32(c, V0);
+        c.g[RA][0] = sx(0x0034_2fe0);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+        if call_ptr(c, target, 0x0034_2fe0).is_err() {
+            return Ok(());
+        }
+        c.g[V1][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A1][0] = sx(r32(c, S1).wrapping_add(0x30));
+        c.g[A2][0] = 4;
+        c.g[A0][0] = Addr(r32(c, V1)).off(0x8).lh(c);
+        c.g[V0][0] = Addr(r32(c, V1)).off(0xc).lw(c);
+        let target = r32(c, V0);
+        c.g[RA][0] = sx(0x0034_2ffc);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+        call_ptr(c, target, 0x0034_2ffc)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3038,6 +3178,88 @@ pub(crate) mod tests {
                 c.bus
                     .write32(block + 0x18, if seed % 7 == 0 { 0 } else { parent });
                 c.bus.write32(block + 0xc, r.next_u32());
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    /// `SplineModifier_InitPath`: a self with a track id (its low byte
+    /// indexing the world's model sets, its high byte the set's refs) whose
+    /// lookup finds a node, no set, or a ref with no pointer; `SND`-style
+    /// spline data behind the node keeps `GetPathLength` short.
+    #[test]
+    fn spline_modifier_init_path_matches() {
+        use crate::difftest::fakes::machine;
+        const SELF: u32 = DATA;
+        const INSTANCE: u32 = DATA + 0x100;
+        const WORLD: u32 = DATA + 0x200;
+        const SETS: u32 = DATA + 0x300;
+        const SET: u32 = DATA + 0x400;
+        const REFS: u32 = DATA + 0x500;
+        const NODE: u32 = DATA + 0x800;
+        const SPLINE: u32 = DATA + 0x1000;
+        const LIST: u32 = DATA + 0x1100;
+        check(
+            ee::s11::f_003451c0__generated,
+            spline_modifier_init_path,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3451c0, 0);
+                c.pc = 0x0034_51c0;
+                // World_GetInstance() -> a cell holding the world pointer.
+                c.bus.write32(GAME_GP + SPLINE_INIT_GP_INSTANCE, INSTANCE);
+                c.bus.write32(INSTANCE, WORLD);
+                c.bus.write32(WORLD + SPLINE_INIT_SETS, SETS);
+                let id = ((r.next_u32() % 3) << 8) | (r.next_u32() % 3);
+                let no_set = seed % 5 == 0;
+                c.bus
+                    .write32(SETS + 4 * (id & 0xff), if no_set { 0 } else { SET });
+                c.bus.write32(SET + SPLINE_INIT_REFS, REFS);
+                // refToPtr: (refs[idx] >> 8) << 2 = the node address.
+                let refs = match seed % 3 {
+                    0 => 0,
+                    _ => (NODE >> 2) << 8,
+                };
+                c.bus.write32(REFS + 4 * (id >> 8), refs);
+                c.bus.write32(NODE + SPLINE_INIT_NODE_VALUE, r.next_u32());
+                c.bus.write32(NODE + SPLINE_INIT_SPLINE, SPLINE);
+                c.bus.write32(SPLINE + 0x20, r.next_u32() % 2);
+                c.bus.write32(SPLINE + 0x24, LIST);
+                for k in 0..0x40 {
+                    c.bus.write32(LIST + 4 * k, r.f32(4.0));
+                }
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(id);
+            },
+        );
+    }
+
+    // --------------------------------------------------------- Debounce_Save
+
+    #[test]
+    fn debounce_save_matches() {
+        covered(
+            ee::s11::f_00342fa8__generated,
+            debounce_save,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x342f, 8);
+                c.pc = 0x0034_2fa8;
+                let obj = DATA;
+                let stream = DATA + 0x1000;
+                let table = DATA + 0x2000;
+                // The stream's first word points at the writer table; entry 1
+                // is the writer the whole Save chain calls.
+                c.bus.write32(stream, table);
+                c.bus
+                    .write16(table + 8, ((r.next_u32() as i16) & !3) as u16);
+                c.bus.write32(table + 0xc, FAKE);
+                // No modifier block: skip ModifierBlock_Save.
+                c.bus.write32(obj + 0x1c, 0);
+                fill(c, &mut r, obj + 0x20, 4);
+                c.g[A0][0] = sx(obj);
+                c.g[A1][0] = sx(stream);
             },
         );
     }

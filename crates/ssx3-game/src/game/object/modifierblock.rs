@@ -121,6 +121,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         modifier_block_free_rail_modifiers,
         "ModifierBlock_FreeRailModifiers",
     ),
+    (
+        0x0035_2c38,
+        modifier_block_set_transform_radius,
+        "ModifierBlock_SetTransformRadius",
+    ),
+    (
+        0x0035_3398,
+        modifier_block_take_particle_list,
+        "ModifierBlock_TakeParticleList",
+    ),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect(c, addr)`.
@@ -1583,6 +1593,95 @@ pub fn modifier_block_free_rail_modifiers(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// ModifierBlock_TakeParticleList (0x353398).
+
+/// `void ModifierBlock_TakeParticleList(ModifierBlock *self, List *list)`
+/// (0x353398): for each particle node in `list`, call its vtable slot +0x18
+/// method on `node + delta`, push the node onto the block's list
+/// (`self + 0x10`), then clear the source list's head and tail.
+pub fn modifier_block_take_particle_list(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S0, 0x40);
+        frame.save_ra(c, 0);
+        frame.save(c, S1, 0x30);
+        c.g[S1][0] = Addr(r32(c, S2)).lw(c);
+        let empty = c.g[S1][0] == 0;
+        c.g[S3][0] = c.g[A0][0];
+        if !empty {
+            c.cycles += 2;
+            c.g[V0][0] = Addr(r32(c, S1).wrapping_add(0x8)).lw(c);
+            'nodes: loop {
+                c.cycles += 11;
+                c.g[S0][0] = Addr(r32(c, S1)).lw(c);
+                let slot = crate::call::VSlot::read(c, c.g[V0][0], 0x18);
+                c.g[A0][0] = sx(r32(c, S1).wrapping_add(slot.delta as u32));
+                c.g[V1][0] = slot.func;
+                call_ptr(c, slot.func as u32, 0x0035_33dc)?;
+                c.g[A1][0] = c.g[S1][0];
+                c.g[RA][0] = sx(0x0035_33e8);
+                c.g[A0][0] = sx(r32(c, S3).wrapping_add(0x10));
+                MODIFIER_LIST_PUSH_BACK.call(c, 0x0035_33e8)?;
+                c.g[S1][0] = c.g[S0][0];
+                if c.g[S1][0] == 0 {
+                    break 'nodes;
+                }
+                c.g[V0][0] = Addr(r32(c, S1).wrapping_add(0x8)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_33c8);
+                }
+            }
+        }
+        c.cycles += 9;
+        c.sw(r32(c, S2).wrapping_add(0x4), 0);
+        c.sw(r32(c, S2), 0);
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ModifierList_PushBack(List *list, void *node)` 0x345720.
+pub(crate) const MODIFIER_LIST_PUSH_BACK: Callee = Callee {
+    addr: 0x0034_5720,
+    f: ee::s11::f_00345720,
+};
+
+/// `void tModifierBlock_setRadius(tModifierBlock* self, ...)` (0x352c38): call
+/// the handler at slot `+0x7c` of the vtable held by `*(*self)` with the
+/// adjusted `this` (`*(*self) + slot +0x78`).
+pub fn modifier_block_set_transform_radius(c: &mut Cpu) {
+    c.cycles += 5;
+    let frame = Frame::open(c, 0x10);
+    frame.save_ra(c, 0);
+    c.g[A1][0] = Addr(r32(c, A0)).lw(c);
+    frame.restore_ra(c, 0);
+    if c.g[A1][0] != 0 {
+        c.cycles += 6;
+        c.g[V0][0] = Addr(r32(c, A1)).lw(c);
+        c.g[A0][0] = Addr(r32(c, V0)).off(0x78).lh(c);
+        c.g[V1][0] = Addr(r32(c, V0)).off(0x7c).lw(c);
+        let target = r32(c, V1);
+        c.g[RA][0] = sx(0x0035_2c60);
+        c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+        if call_ptr(c, target, 0x0035_2c60).is_err() {
+            return;
+        }
+        frame.restore_ra(c, 0);
+    }
+    c.cycles += 2;
+    frame.close(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2277,6 +2376,76 @@ pub(crate) mod tests {
                     .write32(crate::difftest::fakes::LOG_UNWIND_AT, u32::MAX);
                 let mut r = Rng(0x3533_0001 ^ seed as u64);
                 schedule(c, &mut r, seed, 0x0035_3300)
+            },
+        );
+    }
+
+    /// `ModifierBlock_TakeParticleList`: an empty list, or 1-3 particle
+    /// nodes with vtable slot +0x18 methods (fakes); the block's own list
+    /// starts empty or holds an entry.
+    #[test]
+    fn modifier_block_take_particle_list_matches() {
+        use crate::difftest::fakes::covered;
+        use crate::difftest::fakes::machine;
+        use crate::difftest::fakes::vtable;
+        const BLOCK: u32 = DATA + 0x100;
+        const LIST: u32 = DATA + 0x200;
+        const BLOCK_LIST: u32 = DATA + 0x300;
+        const NODES: u32 = DATA + 0x1000;
+        covered(
+            ee::s11::f_00353398__generated,
+            modifier_block_take_particle_list,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x353398, 4);
+                c.pc = 0x0035_3398;
+                c.bus.write32(BLOCK + 0x10, BLOCK_LIST);
+                let n = if seed % 5 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 3
+                };
+                let mut prev = 0u32;
+                for k in 0..n {
+                    let node = NODES + 0x100 * k;
+                    if k == 0 {
+                        c.bus.write32(LIST, node);
+                    } else {
+                        c.bus.write32(prev, node);
+                    }
+                    c.bus.write32(node, 0);
+                    let vt = vtable(c, &mut r, &[0x18]);
+                    c.bus.write32(node + 8, vt);
+                    prev = node;
+                }
+                c.bus.write32(LIST + 4, if n == 0 { 0 } else { NODES });
+                c.g[A0][0] = sx(BLOCK);
+                c.g[A1][0] = sx(LIST);
+            },
+        );
+    }
+
+    // ------------------------- ModifierBlock_SetTransformRadius
+
+    #[test]
+    fn modifier_block_set_transform_radius_matches() {
+        covered(
+            ee::s11::f_00352c38__generated,
+            modifier_block_set_transform_radius,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x352c, 1);
+                c.pc = 0x0035_2c38;
+                let obj = DATA;
+                let holder = DATA + 0x100;
+                let vt = DATA + 0x200;
+                let wired = seed % 4 != 0;
+                c.bus.write32(obj, if wired { holder } else { 0 });
+                c.bus.write32(holder, vt);
+                c.bus
+                    .write16(vt + 0x78, ((r.next_u32() as i16) & !3) as u16);
+                c.bus.write32(vt + 0x7c, FAKE);
+                c.g[A0][0] = sx(obj);
             },
         );
     }

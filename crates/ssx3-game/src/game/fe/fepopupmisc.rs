@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -496,6 +497,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001e_8fc8,
         ov_screen_multiplayer_standings_on_widget_action,
         "OVScreenMultiplayerStandings_OnWidgetAction",
+    ),
+    (
+        0x001e_1548,
+        message_center_empty_trigger,
+        "MessageCenter_EmptyTrigger",
     ),
 ];
 
@@ -4972,6 +4978,17 @@ pub fn message_center_update(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// MessageCenter_EmptyTrigger (0x1e1548)
+
+/// `void MessageCenter_EmptyTrigger(void)` (0x1e1548): the trigger slot the
+/// message center leaves empty — it only consumes its two-cycle block and
+/// returns.
+pub fn message_center_empty_trigger(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6869,6 +6886,22 @@ pub(crate) mod tests {
                     let kind = r.next_u32() % 7;
                     oc258_w32(c, 0x0044_1630 + 0x14 * i, kind);
                 }
+            },
+        );
+    }
+
+    // ------------------------------------------------ MessageCenter_EmptyTrigger
+
+    #[test]
+    fn message_center_empty_trigger_matches() {
+        check(
+            ee::s04::f_001e1548__generated,
+            message_center_empty_trigger,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x001e_1548 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x001e_1548;
             },
         );
     }

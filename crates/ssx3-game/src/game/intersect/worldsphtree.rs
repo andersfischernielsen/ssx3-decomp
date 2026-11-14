@@ -205,6 +205,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0034_1cf0, anim_object_dtor, "AnimObject_dtor"),
     (0x0034_2718, anim_teeter_save, "AnimTeeter_Save"),
     (0x0034_2c08, debounce_ctor_2, "Debounce_ctor_2"),
+    (0x0034_21a0, anim_teeter_ctor_3, "AnimTeeter_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -15424,6 +15425,135 @@ pub fn debounce_ctor_2(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// AnimTeeter_ctor (0x3421a0)
+
+/// `AnimObject_BaseCtor` (0x34d9b0), same shard.
+pub(crate) const ANIM_OBJECT_BASE_CTOR: Callee = Callee {
+    addr: 0x0034_d9b0,
+    f: ee::s11::AnimObject_BaseCtor,
+};
+
+/// `IntersectInfo_GetDuration` (0x351508), same shard.
+pub(crate) const INTERSECT_INFO_GET_DURATION: Callee = Callee {
+    addr: 0x0035_1508,
+    f: ee::s11::IntersectInfo_GetDuration,
+};
+
+/// The pool constants the teeter's rates scale by (gp-relative): two 30 Hz
+/// steps, the per-byte duration scale, and one more 30 Hz step.
+pub(crate) const POOL_RATE: u32 = 0x2b6c;
+
+pub(crate) const POOL_RATE_MAX: u32 = 0x2b68;
+
+pub(crate) const POOL_PER_BYTE: u32 = 0x2b64;
+
+pub(crate) const POOL_FRAME: u32 = 0x2b60;
+
+/// `void* AnimTeeter_ctor(AnimTeeter* self, int a1, char* obj, char* def)`
+/// (0x3421a0): set up the base animation object and copy the teeter's rate,
+/// speed and fade parameters out of its definition record.
+pub fn anim_teeter_ctor_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x40);
+        c.g[T0][0] = 0;
+        frame.save(c, 16, 0x30);
+        frame.save(c, 17, 0x20);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, 18, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S2][0] = c.g[A3][0];
+        c.g[A0][0] = sx(r32(c, S1).wrapping_add(0x30));
+        c.g[A3][0] = c.g[S0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0x4;
+        ANIM_OBJECT_BASE_CTOR.call(c, 0x0034_21d4)?;
+        c.g[V0][0] = 0x490000;
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x78)).lw(c);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x8f8));
+        c.mtc1(0, 2); // f2 = 0.0f (the "no instance" default)
+        c.sw(r32(c, S1).wrapping_add(0x50), c.g[V0][0]);
+        let no_instance = c.g[A0][0] == 0;
+        c.g[S0][0] = Addr(r32(c, S0).wrapping_add(0x80)).lw(c);
+        if !no_instance {
+            c.cycles += 3;
+            INTERSECT_INFO_GET_DURATION.call(c, 0x0034_21f8)?;
+            c.mov_s(2, 0); // f2 = duration
+        }
+        // setRate(self->f10, def->f20, duration): negative rates keep the
+        // duration, others are per-frame steps.
+        c.cycles += 6;
+        c.lwc1(1, r32(c, S2).wrapping_add(0x20));
+        c.mtc1(0, 0);
+        c.c_le_s(0, 1);
+        c.g[V0][0] = sx(r32(c, S1).wrapping_add(0x10));
+        if c.fcc() {
+            c.cycles += 3;
+            c.lwc1(0, r32(c, GP).wrapping_sub(POOL_RATE));
+            c.mul_s(0, 1, 0);
+        } else {
+            c.cycles += 1;
+            c.mov_s(0, 2);
+        }
+        // setRateMax(self->f14, def->f24, info): a negative rate takes the
+        // info record's +0x14 instead.
+        c.cycles += 7;
+        c.swc1(0, r32(c, V0));
+        c.mtc1(0, 0);
+        c.lwc1(1, r32(c, S2).wrapping_add(0x24));
+        c.c_lt_s(1, 0);
+        c.g[V0][0] = sx(r32(c, S1).wrapping_add(0x14));
+        if !c.fcc() {
+            c.cycles += 2;
+            c.lwc1(0, r32(c, GP).wrapping_sub(POOL_RATE_MAX));
+            c.mul_s(0, 1, 0);
+        } else {
+            c.cycles += 2;
+            c.lwc1(0, r32(c, S0).wrapping_add(0x14));
+        }
+        // The copied parameters.
+        c.cycles += 37;
+        c.swc1(0, r32(c, V0));
+        c.g[V1][0] = Addr(r32(c, GP).wrapping_add(0x2a74)).lw(c);
+        c.g[V0][0] = c.g[S1][0];
+        c.lwc1(0, r32(c, S2).wrapping_add(0x8));
+        c.lwc1(2, r32(c, GP).wrapping_sub(POOL_PER_BYTE));
+        c.swc1(0, r32(c, S1).wrapping_add(0xc));
+        c.lwc1(3, r32(c, GP).wrapping_sub(POOL_FRAME));
+        c.lwc1(1, r32(c, S2).wrapping_add(0x4));
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x56)).lhu(c);
+        c.mul_s(1, 1, 2);
+        frame.restore(c, 16, 0x30);
+        c.g[A0][0] |= 0x1;
+        frame.restore_ra(c, 0);
+        c.swc1(1, r32(c, S1).wrapping_add(0x8));
+        c.lwc1(0, r32(c, S2).wrapping_add(0xc));
+        c.lwc1(1, r32(c, V1).wrapping_add(0x10));
+        c.cvt_s_w(1, 1);
+        c.mul_s(0, 0, 3);
+        c.div_s(0, 0, 1);
+        c.swc1(0, r32(c, S1).wrapping_add(0x18));
+        c.g[V1][0] = Addr(r32(c, S2).wrapping_add(0x1c)).lw(c);
+        c.sw(r32(c, S1).wrapping_add(0x2c), c.g[V1][0]);
+        c.lwc1(0, r32(c, S2).wrapping_add(0x14));
+        c.mul_s(0, 0, 3);
+        c.swc1(0, r32(c, S1).wrapping_add(0x24));
+        c.lwc1(1, r32(c, S2).wrapping_add(0x18));
+        c.swc1(1, r32(c, S1).wrapping_add(0x1c));
+        c.lwc1(0, r32(c, S2).wrapping_add(0x10));
+        c.sh(r32(c, S1).wrapping_add(0x56), c.g[A0][0]);
+        c.swc1(0, r32(c, S1).wrapping_add(0x20));
+        c.sw(r32(c, S1), 0);
+        c.sw(r32(c, S1).wrapping_add(0x4), 0);
+        c.sw(r32(c, S1).wrapping_add(0x28), 0);
+        frame.restore(c, 17, 0x20);
+        frame.restore(c, 18, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -17699,6 +17829,91 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(NODE);
                 c.g[A3][0] = sx(DEF);
                 c.g[T0][0] = 0; // no source node: the take-over takes its empty path
+            },
+        );
+    }
+
+    pub(crate) use crate::game::animation::rideranim::tests::CTRL;
+    pub(crate) use crate::game::animation::rideranim::tests::MAGIC;
+
+    pub(crate) use crate::game::animation::rideranim::tests::active;
+    pub(crate) use crate::game::animation::rideranim::tests::chain;
+    pub(crate) use crate::game::animation::rideranim::tests::fake_ret;
+    pub(crate) use crate::game::animation::rideranim::tests::install;
+
+    // -- AnimTeeter_ctor -----------------------------------------------------
+
+    pub(crate) fn fake_anim_object_base_ctor(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 4, fake_anim_object_base_ctor);
+        }
+        fake_ret(c, 9);
+    }
+
+    pub(crate) fn fake_intersect_info_get_duration(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 5, fake_intersect_info_get_duration);
+        }
+        c.f[0] = c.bus.read32(CTRL + 8);
+        c.g[V0][0] = c.bus.read32(CTRL + 0xc) as u64;
+        c.cycles += 7;
+        let ra = c.g[RA][0] as u32;
+        c.pc = ra;
+    }
+
+    #[test]
+    fn anim_teeter_ctor_matches() {
+        install(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_0034D9B0),
+            fake_anim_object_base_ctor,
+            4,
+        );
+        install(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_00351508),
+            fake_intersect_info_get_duration,
+            5,
+        );
+        check(
+            ee::s11::f_003421a0__generated,
+            anim_teeter_ctor_3,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0034_21a0, 2);
+                let (self_, obj, def, info, inst, dur) = (
+                    DATA + 0x1000,
+                    DATA + 0x2000,
+                    DATA + 0x3000,
+                    DATA + 0x4000,
+                    DATA + 0x5000,
+                    DATA + 0x6000,
+                );
+                c.g[A0][0] = self_ as u64;
+                c.g[A1][0] = (DATA + 0x900) as u64;
+                c.g[A2][0] = obj as u64;
+                c.g[A3][0] = def as u64;
+                c.bus
+                    .write32(self_ + 0x78, if seed % 3 == 0 { 0 } else { inst });
+                c.bus.write16(self_ + 0x56, r.next_u32() as u16);
+                c.bus.write32(obj + 0x80, info);
+                for off in [0x4u32, 0x8, 0xc, 0x10, 0x14, 0x18, 0x1c, 0x20, 0x24] {
+                    c.bus.write32(def + off, r.edge_f32());
+                }
+                c.bus.write32(info + 0x14, r.edge_f32());
+                // The 30 Hz and 1e-6 pools and the pool-info global.
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x2b6c), 0.033_333_335f32.to_bits());
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x2b68), 0.033_333_335f32.to_bits());
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x2b60), 0.033_333_335f32.to_bits());
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x2b64), 1.0e-6f32.to_bits());
+                c.bus.write32(GAME_GP.wrapping_add(0x2a74), dur);
+                c.bus.write32(dur + 0x10, 1 + r.next_u32() % 30);
+                c.bus.write32(CTRL, MAGIC);
+                c.bus.write32(CTRL + 8, r.edge_f32());
+                c.bus.write32(CTRL + 0xc, r.next_u32());
+                c.pc = 0x0034_21a0;
             },
         );
     }

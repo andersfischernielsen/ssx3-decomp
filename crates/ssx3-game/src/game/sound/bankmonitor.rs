@@ -524,6 +524,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         speech_system_apply_event_context,
         "SpeechSystem_ApplyEventContext",
     ),
+    (
+        0x002a_d940,
+        bank_monitor_timer_kill,
+        "BankMonitor_TimerKill",
+    ),
+    (
+        0x002b_0e28,
+        speech_system_is_instance_ready,
+        "SpeechSystem_IsInstanceReady",
+    ),
+    (
+        0x002b_0f48,
+        speech_system_on_spch_event,
+        "SpeechSystem_OnSpchEvent",
+    ),
 ];
 
 /// Same-shard direct callees used above.
@@ -8592,6 +8607,157 @@ pub fn bank_monitor_find_free_timer(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// BankMonitor_TimerKill (0x2ad940)
+
+pub(crate) const BANKKILL_TIMER_DISABLE: Callee = Callee {
+    addr: 0x002a_d990,
+    f: ee::s08::f_002ad990,
+};
+
+pub(crate) const BANKKILL_TIMER_SET_PERIOD: Callee = Callee {
+    addr: 0x002a_d970,
+    f: ee::s08::f_002ad970,
+};
+
+/// `void BankMonitor_TimerKill(BankMonitor* m)` (0x2ad940): disarm the timer
+/// (`m+0` = 0) and set its period to -1 (`m+4` and `m+8`).
+pub fn bank_monitor_timer_kill(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        BANKKILL_TIMER_DISABLE.call(c, 0x002a_d954)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = u64::MAX;
+        BANKKILL_TIMER_SET_PERIOD.call(c, 0x002a_d960)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SpeechSystem_OnSpchEvent (0x2b0f48)
+
+pub(crate) const SPCH_SPEECH_PLAY_EVENT: Callee = Callee {
+    addr: 0x002b_04d8,
+    f: ee::s08::f_002b04d8,
+};
+
+/// `int SpeechSystem_OnSpchEvent(SpeechSystem* self, SpeechEvent* ev)`
+/// (0x2b0f48): hand the event to the first of the two speech instances
+/// (`self+4`, instance pointers) that plays it (a non-negative result),
+/// calling the instance's callback (`self+0xc`) with the result when the
+/// instance index `self+0x10` matches. -1 when neither plays it.
+pub fn speech_system_on_spch_event(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = 0;
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[V1][0] = Addr(r32(c, S2)).off(0x4).lw(c);
+        'l_2b0f70: loop {
+            'b_2b0fb8: {
+                c.cycles += 5;
+                c.g[V0][0] = sx((c.g[S1][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+                if c.g[A0][0] == 0 {
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                    break 'b_2b0fb8;
+                }
+                c.cycles += 5;
+                c.g[A1][0] = c.g[S3][0];
+                SPCH_SPEECH_PLAY_EVENT.call(c, 0x002b_0f8c)?;
+                c.g[S0][0] = c.g[V0][0];
+                if (c.g[S0][0] as i64) < 0 {
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                    break 'b_2b0fb8;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = Addr(r32(c, S2)).off(0x10).lw(c);
+                if c.g[V0][0] != c.g[S1][0] {
+                    c.g[V0][0] = c.g[S0][0];
+                    break 'l_2b0f70;
+                }
+                // The active instance's callback.
+                c.cycles += 5;
+                c.g[V0][0] = Addr(r32(c, S2)).off(0xc).lw(c);
+                let callback = c.g[V0][0] as u32;
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, callback, 0x002b_0fb0)?;
+                c.g[V0][0] = c.g[S0][0];
+                break 'l_2b0f70;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[S1][0] as i64) < 2i64) as u64;
+            if c.g[V0][0] == 0 {
+                c.cycles += 1;
+                c.g[V0][0] = u64::MAX;
+                break 'l_2b0f70;
+            }
+            c.g[V1][0] = Addr(r32(c, S2)).off(0x4).lw(c);
+            if event_due(c) {
+                deliver_event_here(c, 0x002b_0f70);
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SpeechSystem_IsInstanceReady (0x2b0e28)
+
+/// The speech system's instance array (at `speech + 4`).
+pub(crate) const SIR_INSTANCES: u32 = 0x4;
+
+/// `bool SpeechSystem_IsInstanceReady(SpeechSystem* self, int i)`
+/// (0x2b0e28): whether instance `i` of the speech system's array exists and
+/// its stream is ready (`SpeechInstance_IsStreamReady`), false when the slot
+/// is empty.
+pub fn speech_system_is_instance_ready(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, A0).wrapping_add(SIR_INSTANCES)).lw(c);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = Addr(c.g[A1][0] as u32).lw(c);
+        let empty = c.g[A0][0] == 0;
+        c.g[V0][0] = 0;
+        if !empty {
+            c.cycles += 2;
+            Callee {
+                addr: 0x002b_0290,
+                f: ee::s08::SpeechInstance_IsStreamReady,
+            }
+            .call(c, 0x002b_0e50)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -12406,6 +12572,121 @@ pub(crate) mod tests {
                         .write32(t + 4, if free { 0xffff_ffff } else { (seed ^ i) | 1 });
                     c.bus.write32(t, r.next_u32());
                 }
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+
+    use crate::game::sound::soundsys::tests::rs207d_world;
+
+    pub(crate) use crate::game::sound::soundsys::tests::OC330_SYS;
+
+    /// Gated slot replacements (the suite runs tests in parallel): a fake
+    /// runs only while this magic is in the machine's RAM, else the generated
+    /// body (the slot's default: the tests do not install the ports).
+    pub(crate) const OC329_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC329_MAGIC: u32 = 0x0c32_9f01;
+
+    // -- BankMonitor_TimerKill -------------------------------------------
+
+    #[test]
+    fn bank_monitor_timer_kill_matches() {
+        check(
+            ee::s08::f_002ad940__generated,
+            bank_monitor_timer_kill,
+            20,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_d940, 0);
+                c.pc = 0x002a_d940;
+                let m = DATA + 0x300;
+                for i in 0..4u32 {
+                    c.bus.write32(m + 4 * i, r.next_u32());
+                }
+                c.g[A0][0] = sx(m);
+            },
+        );
+    }
+
+    // -- SpeechSystem_OnSpchEvent ----------------------------------------
+
+    static OC329_PREV_SPEECH_PLAY_EVENT: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    pub(crate) fn oc329_fake_speech_play_event(c: &mut Cpu) {
+        if c.bus.read32(OC329_CTRL) != OC329_MAGIC || c.bus.read32(OC329_CTRL + 4) == 0 {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &OC329_PREV_SPEECH_PLAY_EVENT,
+                ee::s08::f_002b04d8__generated,
+            );
+        }
+        fake(c, 0x002b_04d8, c.g[RA][0] as u32);
+    }
+
+    #[test]
+    fn speech_system_on_spch_event_matches() {
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s08::OVERRIDE_002B04D8),
+            oc329_fake_speech_play_event,
+            &OC329_PREV_SPEECH_PLAY_EVENT,
+        );
+        check(
+            ee::s08::f_002b0f48__generated,
+            speech_system_on_spch_event,
+            160,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2b_0f48, 0);
+                c.pc = 0x002b_0f48;
+                c.bus.write32(OC329_CTRL, OC329_MAGIC);
+                let sys = DATA + 0x200;
+                let insts = DATA + 0x400;
+                let ev = DATA + 0x800;
+                // The real callee finds no bank (id 0x1234 in an empty bank
+                // table) and answers -1.
+                let use_fake = (seed % 3 != 0) as u32;
+                c.bus.write32(OC329_CTRL + 4, use_fake);
+                c.bus.write32(
+                    crate::difftest::fakes::LOG_RESULTS,
+                    if use_fake == 1 { 5 } else { 0 },
+                );
+                c.bus.write32(crate::difftest::fakes::LOG_RESULTS + 4, 7);
+                // Instance 0 and 1: present or absent.
+                for i in 0..2u32 {
+                    let inst = insts + 0x40 * i;
+                    let present = (seed >> i) & 1 != 0;
+                    c.bus
+                        .write32(sys + 4 + 4 * i, if present { inst } else { 0 });
+                    c.bus.write32(inst + 0xf0, 0); // no banks
+                    c.bus.write32(inst + 0xf4, DATA + 0x1000);
+                }
+                // The active instance index and the callback (a leaf that
+                // returns 0).
+                c.bus.write32(sys + 0xc, 0x0014_06c0);
+                c.bus.write32(sys + 0x10, (seed % 3) as u32);
+                c.bus.write32(ev, 0x1234);
+                c.g[A0][0] = sx(sys);
+                c.g[A1][0] = sx(ev);
+            },
+        );
+    }
+
+    // -- 0x2b0e28 SpeechSystem_IsInstanceReady ------------------------------
+
+    /// The speech system of the 2077 world (its stream array), slot 0 with a
+    /// stream (ready or not) and the empty slots 1..3.
+    #[test]
+    fn speech_system_is_instance_ready_matches() {
+        check(
+            ee::s08::f_002b0e28__generated,
+            speech_system_is_instance_ready,
+            60,
+            &|c, seed| {
+                rs207d_world(c, seed);
+                c.pc = 0x002b_0e28;
+                c.g[A0][0] = (OC330_SYS + 0x5560) as u64;
+                c.g[A1][0] = (seed % 4) as u64;
             },
         );
     }

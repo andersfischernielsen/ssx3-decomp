@@ -34,6 +34,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ea_file_alloc_file_handle,
         "EAFile_AllocFileHandle",
     ),
+    (
+        0x003d_e8c0,
+        ea_file_free_file_handle,
+        "EAFile_FreeFileHandle",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -872,6 +877,60 @@ pub fn ea_file_queue_close(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// EAFile_FreeFileHandle (0x3de8c0)
+
+#[cfg(test)]
+/// The EAFile file-handle pool mutex (`0x520000 - 0x653c`).
+pub(crate) const EAF_HANDLE_MUTEX: u32 = 0x0051_9ac4;
+
+/// Size of one EAFile file-handle record.
+pub(crate) const EAF_HANDLE_SIZE: u64 = 0x110;
+
+pub(crate) const EAF_MUTEX_LOCK: Callee = Callee {
+    addr: 0x003e_5700,
+    f: ee::s14::EAMutex_Lock,
+};
+
+pub(crate) const EAF_MUTEX_UNLOCK: Callee = Callee {
+    addr: 0x003e_5760,
+    f: ee::s14::EAMutex_Unlock,
+};
+
+pub(crate) const EAF_MEMSET: Callee = Callee {
+    addr: 0x003e_6448,
+    f: ee::s14::EA_MemSet,
+};
+
+/// `void EAFile_FreeFileHandle(EAFileHandle* handle)` (0x3de8c0): under the
+/// file-handle pool mutex, clear the 0x110-byte handle record (a free handle
+/// is an all-zero record).
+pub fn ea_file_free_file_handle(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = 0x0052_0000;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x653c));
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[S0][0];
+        EAF_MUTEX_LOCK.call(c, 0x003d_e8e4)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = EAF_HANDLE_SIZE;
+        EAF_MEMSET.call(c, 0x003d_e8f4)?;
+        c.g[A0][0] = c.g[S0][0];
+        EAF_MUTEX_UNLOCK.call(c, 0x003d_e8fc)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1256,6 +1315,31 @@ pub(crate) mod tests {
                 c.g[A0][0] = ID as u64;
                 c.g[A1][0] = 1 + (r.next_u32() % 0x100) as u64;
                 c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    // --------------------------------------------------- EAFile_FreeFileHandle
+
+    /// A real handle pool mutex (short path) and a handle record to clear.
+    #[test]
+    fn ea_file_free_file_handle_matches() {
+        check(
+            ee::s14::f_003de8c0__generated,
+            ea_file_free_file_handle,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d_e8c0, 4);
+                c.pc = 0x003d_e8c0;
+                let owner = 0x40 + seed % 3;
+                c.bus.write32(EAF_HANDLE_MUTEX + 4, owner);
+                c.bus.write32(EAF_HANDLE_MUTEX + 8, 1 + seed % 2);
+                c.bus.write32(EAF_HANDLE_MUTEX, r.next_u32() & 0xff);
+                let handle = DATA + 0x100 + (r.next_u32() % 0x40) * 4;
+                for i in 0..(EAF_HANDLE_SIZE / 4) as u32 {
+                    c.bus.write32(handle + 4 * i, r.next_u32());
+                }
+                c.g[A0][0] = sx(handle);
             },
         );
     }

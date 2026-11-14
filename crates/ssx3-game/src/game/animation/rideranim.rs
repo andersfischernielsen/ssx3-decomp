@@ -110,6 +110,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_anim_seq_end_type02,
         "RiderAnim_SeqEndType02",
     ),
+    (
+        0x0010_4b48,
+        rider_anim_seq_end_type05,
+        "RiderAnim_SeqEndType05",
+    ),
+    (
+        0x0010_4c18,
+        rider_anim_seq_end_type04,
+        "RiderAnim_SeqEndType04",
+    ),
+    (
+        0x0010_4ca0,
+        rider_anim_seq_end_type00,
+        "RiderAnim_SeqEndType00",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2120,6 +2135,86 @@ pub(crate) fn seq_end_replace(c: &mut Cpu, ret: u32, anim: u32) -> crate::call::
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// RiderAnim sequence-end handlers (0x104b48, 0x104c18)
+
+/// `RiderAnim_ClearFlagsAndPlayAnim` (0x312bd0): cross-shard, so the generated
+/// code calls it through the function table.
+pub(crate) const RIDER_ANIM_CLEAR_FLAGS_AND_PLAY_ANIM: u32 = 0x0031_2bd0;
+
+/// The animation id used when the rider has an animation chain.
+pub(crate) const SEQ_END_ANIM_CHAIN: u64 = 0x1b4;
+
+/// The animation id used when the rider has no animation chain.
+pub(crate) const SEQ_END_ANIM_NO_CHAIN: u64 = 0x11f;
+
+/// `RiderAnim_SeqEndType05` (0x104b48): the sequence-end handler for state
+/// type 05. It plays animation 0x1b4 when the rider's animation chain
+/// (`RiderAnim+0x64`) is present, 0x11f otherwise, through
+/// `RiderAnim_ClearFlagsAndPlayAnim(a, b, c, anim)`.
+pub fn rider_anim_seq_end_type05(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, A0).wrapping_add(0x64)).lw(c);
+        let has_chain = c.g[V0][0] != 0;
+        c.g[A3][0] = SEQ_END_ANIM_CHAIN;
+        if !has_chain {
+            c.cycles += 1;
+            c.g[A3][0] = SEQ_END_ANIM_NO_CHAIN;
+        }
+        c.cycles += 5;
+        call_ptr(c, RIDER_ANIM_CLEAR_FLAGS_AND_PLAY_ANIM, 0x0010_4b68)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `RiderAnim_SeqEndType04` (0x104c18): the sequence-end handler for state
+/// type 04; always plays animation 5.
+pub fn rider_anim_seq_end_type04(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A3][0] = 0x5;
+        call_ptr(c, RIDER_ANIM_CLEAR_FLAGS_AND_PLAY_ANIM, 0x0010_4c28)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RiderAnim_SeqEndType00 (0x104ca0)
+
+/// `AnimSeqList_Remove` (0x3145f8), reached through the function table.
+pub(crate) const RIDER_ANIM_LIST_REMOVE: u32 = 0x0031_45f8;
+
+/// The sequence-end result the rider animation dispatcher expects.
+pub(crate) const RIDER_ANIM_SEQ_END_RESULT: u64 = 0x1b6;
+
+/// `int RiderAnim_SeqEndType00(RiderAnim* anim, AnimSeqList* list, AnimSeq*
+/// seq)` (0x104ca0): unlink and free `seq` from `list` (`AnimSeqList_Remove`,
+/// through the function table) and return 0x1b6, the "sequence ended"
+/// selector.
+pub fn rider_anim_seq_end_type00(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A2][0];
+        call_ptr(c, RIDER_ANIM_LIST_REMOVE, 0x0010_4cb4)?;
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = RIDER_ANIM_SEQ_END_RESULT;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3016,5 +3111,139 @@ pub(crate) mod tests {
         c.g[A1][0] = seq as u64;
         c.g[A2][0] = node as u64;
         c.g[A3][0] = (r.next_u32() % 8) as u64;
+    }
+
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+
+    /// Magic word that turns the gated test fakes on. It lives in each test
+    /// machine's own RAM (`DATA + 0xf0000`, below the fakes' call log), so the
+    /// rest of the suite reaches the fakes' chained-to bodies instead.
+    pub(crate) const CTRL: u32 = DATA + 0x0f_0000;
+
+    pub(crate) const MAGIC: u32 = 0x4f43_3332;
+
+    /// The bodies the slots held before a test fake was installed.
+    pub(crate) static PREV: [AtomicUsize; 16] = [const { AtomicUsize::new(0) }; 16];
+
+    /// Replace a generated slot with `fake` (once), remembering what it held.
+    pub(crate) fn install(slot: *mut fn(&mut Cpu), fake: fn(&mut Cpu), idx: usize) {
+        crate::difftest::fakes::hook(slot, fake, &PREV[idx]);
+    }
+
+    /// Run the body a slot held before our fake (if any).
+    pub(crate) fn chain(c: &mut Cpu, idx: usize, mine: fn(&mut Cpu)) {
+        let p = PREV[idx].load(Ordering::Relaxed);
+        if p != 0 && p != mine as usize {
+            let f: GuestFn = unsafe { std::mem::transmute(p) };
+            f(c);
+        }
+    }
+
+    pub(crate) fn active(c: &mut Cpu) -> bool {
+        c.bus.read32(CTRL) == MAGIC
+    }
+
+    /// Return to the caller after `cycles`, with `v0`/`v1` clobbered.
+    pub(crate) fn fake_ret(c: &mut Cpu, cycles: u64) {
+        c.g[V0][0] = c.bus.read32(CTRL + 8) as u64;
+        c.g[V1][0] = c.bus.read32(CTRL + 0xc) as u64;
+        c.cycles += cycles;
+        let ra = c.g[RA][0] as u32;
+        c.pc = ra;
+    }
+
+    // -- slot 0: RiderAnim_ClearFlagsAndPlayAnim (0x312bd0) ------------------
+
+    pub(crate) fn fake_clear_flags_and_play_anim(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 0, fake_clear_flags_and_play_anim);
+        }
+        if c.bus.read32(CTRL + 4) != 0 {
+            // Ask the caller to unwind.
+            c.pc = 0xdead_0000;
+            return;
+        }
+        fake_ret(c, 5);
+    }
+
+    pub(crate) fn install_seq_end_fakes() {
+        install(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00312BD0),
+            fake_clear_flags_and_play_anim,
+            0,
+        );
+    }
+
+    #[test]
+    fn rider_anim_seq_end_type05_matches() {
+        install_seq_end_fakes();
+        check(
+            ee::s00::f_00104b48__generated,
+            rider_anim_seq_end_type05,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_4b48, 1);
+                let anim = DATA + 0x1000;
+                c.g[A0][0] = anim as u64;
+                c.g[A1][0] = (DATA + 0x2000) as u64;
+                c.g[A2][0] = (DATA + 0x3000) as u64;
+                // The rider's animation chain, absent on every third seed.
+                c.bus
+                    .write32(anim + 0x64, if seed % 3 == 0 { 0 } else { r.next_u32() });
+                c.bus.write32(CTRL, MAGIC);
+                c.bus.write32(CTRL + 4, (seed % 4 == 0) as u32);
+                c.pc = 0x0010_4b48;
+            },
+        );
+    }
+
+    #[test]
+    fn rider_anim_seq_end_type04_matches() {
+        install_seq_end_fakes();
+        check(
+            ee::s00::f_00104c18__generated,
+            rider_anim_seq_end_type04,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x0010_4c18, 1);
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.g[A1][0] = (DATA + 0x2000) as u64;
+                c.g[A2][0] = (DATA + 0x3000) as u64;
+                c.bus.write32(CTRL, MAGIC);
+                c.bus.write32(CTRL + 4, (seed % 4 == 0) as u32);
+                c.pc = 0x0010_4c18;
+            },
+        );
+    }
+
+    // -------------------------------------------------- RiderAnim_SeqEndType00
+
+    /// Lists of 0..3 sequences, none of them the one to remove, so the real
+    /// `AnimSeqList_Remove` only walks the chain.
+    #[test]
+    fn rider_anim_seq_end_type00_matches() {
+        check(
+            ee::s00::f_00104ca0__generated,
+            rider_anim_seq_end_type00,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10_4ca0, 0);
+                c.pc = 0x0010_4ca0;
+                let list = DATA + 0x400;
+                let seq = DATA + 0x9000;
+                let n = seed % 4;
+                for i in 0..4u32 {
+                    let node = list + 0x100 * (i + 1);
+                    c.bus
+                        .write32(node + 0xc8, if i + 1 < n { node + 0x100 } else { 0 });
+                }
+                c.bus
+                    .write32(list + 4, if n == 0 { 0 } else { list + 0x100 });
+                c.bus.write32(list, n ^ (r.next_u32() & 0xf));
+                c.g[A1][0] = sx(list);
+                c.g[A2][0] = sx(seq);
+            },
+        );
     }
 }

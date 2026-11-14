@@ -126,6 +126,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         multi_spline_modifier_save,
         "MultiSplineModifier_Save",
     ),
+    (0x0035_9f30, spline_modifier_save, "SplineModifier_Save"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2698,6 +2699,46 @@ pub fn multi_spline_modifier_save(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// SplineModifier_Save (0x359f30)
+
+pub(crate) const SPLINE_SAVE_PATH: Callee = Callee {
+    addr: 0x0034_5538,
+    f: ee::s11::SplineModifier_SavePath,
+};
+
+/// `void cSplineModifier::writeToReplayFrame(cSplineModifier* self, void*
+/// stream)` (0x359f30): write `self + 0x10` (0x50 bytes) through the stream's
+/// second virtual method (`stream->v02(ptr, len)`, slot at vtable `+8`), then
+/// the spline path (`self + 0xd8`).
+pub fn spline_modifier_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x30);
+        c.g[A2][0] = 0x50;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A1][0] = sx(r32(c, S1).wrapping_add(0x10));
+        c.g[V1][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x8)).lh(c);
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0xc)).lw(c);
+        let target = c.g[V0][0] as u32;
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+        call_ptr(c, target, 0x0035_9f64)?;
+        c.g[A0][0] = sx(r32(c, S1).wrapping_add(0xd8));
+        c.g[A1][0] = c.g[S0][0];
+        SPLINE_SAVE_PATH.call(c, 0x0035_9f70)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3567,6 +3608,31 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = sx(ME);
                 c.g[A1][0] = sx(STREAM);
+            },
+        );
+    }
+
+    // ------------------------------------------------------ SplineModifier_Save
+
+    /// A stream whose vtable slot 1 (offset 8) is a fake byte writer; both
+    /// the direct call and `SplineModifier_SavePath`'s write go through it.
+    #[test]
+    fn spline_modifier_save_matches() {
+        covered(
+            ee::s11::f_00359f30__generated,
+            spline_modifier_save,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_9f30, 3);
+                c.pc = 0x0035_9f30;
+                let stream = DATA + 0x1000;
+                let vt = DATA + 0x2000;
+                c.bus.write32(stream, vt);
+                let delta = (r.next_u32() as i16 & !3) as u32;
+                c.bus.write16(vt + 8, delta as u16);
+                c.bus.write32(vt + 0xc, FAKE);
+                c.g[A0][0] = sx(DATA + (r.next_u32() & 0xff0));
+                c.g[A1][0] = sx(stream);
             },
         );
     }

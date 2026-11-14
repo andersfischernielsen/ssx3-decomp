@@ -313,6 +313,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ComputerActorRider_ComputeRubberBand",
     ),
     (0x0010_eb30, rider_start_wipeout, "Rider_StartWipeout"),
+    (
+        0x0010_cbe0,
+        computer_actor_rider_pick_random_trick,
+        "ComputerActorRider_PickRandomTrick",
+    ),
+    (
+        0x0010_f280,
+        rider_add_wipeout_recovery_boost,
+        "Rider_AddWipeoutRecoveryBoost",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -10043,6 +10053,170 @@ pub fn rider_start_wipeout(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// ComputerActorRider_PickRandomTrick (0x10cbe0)
+
+/// `AIrand` (0x317810), cross-shard.
+pub(crate) const AI_RAND: u32 = 0x0031_7810;
+
+/// `cBE_getBE` (0x14dc80), cross-shard.
+pub(crate) const CBE_GET_BE: u32 = 0x0014_dc80;
+
+/// `BELibrary_GetInterface` (0x14dd58), cross-shard.
+pub(crate) const CBE_GET_INTERFACE: u32 = 0x0014_dd58;
+
+/// `BEBAGTInt_GetTrickField0` (0x1500d8), cross-shard.
+pub(crate) const BE_GET_TRICK_FIELD0: u32 = 0x0015_00d8;
+
+/// `Rider_GetTrickSkillFactor` (0x120038), same shard.
+pub(crate) const RIDER_GET_TRICK_SKILL_FACTOR: Callee = Callee {
+    addr: 0x0012_0038,
+    f: ee::s00::Rider_GetTrickSkillFactor,
+};
+
+/// The per-trick field lookup (0x312820), cross-shard.
+pub(crate) const TRICK_FIELD: u32 = 0x0031_2820;
+
+/// The trick-usage counters, one `int` per trick id (`self+0xe7c`).
+pub(crate) const TRICK_USE_COUNTS: u32 = 0xe7c;
+
+/// `int ComputerActorRider_PickRandomTrick(ComputerActorRider* self, float t)`
+/// (0x10cbe0): pick one of the rider's 15 fitted tricks at random and return
+/// its index, recording the remaining air time in +0xe34 and the trick's
+/// duration in +0xe2c. Returns -1 while there is not enough air time.
+pub fn computer_actor_rider_pick_random_trick(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, 17, 0x20);
+        frame.save_fpr(c, 22, 0x50);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, 16, 0x30);
+        c.mov_s(22, 12); // t
+        frame.save(c, 18, 0x10);
+        frame.save_fpr(c, 21, 0x48);
+        frame.save_fpr(c, 20, 0x40);
+        frame.save_ra(c, 0);
+        c.sw(r32(c, S1).wrapping_add(0xe24), 0);
+        c.sw(r32(c, S1).wrapping_add(0xe28), 0);
+        c.swc1(22, r32(c, S1).wrapping_add(0xe30));
+        call_ptr(c, AI_RAND, 0x0010_cc18)?;
+        c.g[V1][0] = 0xf;
+        c.divu(0, V0, V1);
+        c.cycles += 38;
+        c.g[S2][0] = c.hi[0]; // idx = rand % 15
+        call_ptr(c, CBE_GET_BE, 0x0010_cc34)?;
+        c.g[A1][0] = 0x6;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, CBE_GET_INTERFACE, 0x0010_cc40)?;
+        // The rider's anim object's virtual at vtable +0x38.
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x18)).lw(c);
+        c.g[S0][0] = c.g[V0][0];
+        c.g[V1][0] = Addr(r32(c, A0).wrapping_add(0x6c0)).lw(c);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x6c0));
+        c.g[A1][0] = Addr(r32(c, V1).wrapping_add(0x38)).lh(c);
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x3c)).lw(c);
+        let anim_get = r32(c, V0);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A1)));
+        call_ptr(c, anim_get, 0x0010_cc60)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S2][0];
+        call_ptr(c, BE_GET_TRICK_FIELD0, 0x0010_cc70)?;
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x18)).lw(c);
+        c.g[S0][0] = c.g[V0][0]; // anim
+        RIDER_GET_TRICK_SKILL_FACTOR.call(c, 0x0010_cc7c)?;
+        c.g[V0][0] = Addr(r32(c, S1).wrapping_add(0x18)).lw(c);
+        c.mov_s(20, 0); // spd = skill factor
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = 0x2;
+        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x784)).lw(c);
+        call_ptr(c, TRICK_FIELD, 0x0010_cc94)?;
+        c.div_s(21, 0, 20); // a = field2 / spd
+        c.g[V0][0] = Addr(r32(c, S1).wrapping_add(0x18)).lw(c);
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = 0x1;
+        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x784)).lw(c);
+        call_ptr(c, TRICK_FIELD, 0x0010_ccac)?;
+        c.div_s(0, 0, 20); // b = field1 / spd
+        c.c_lt_s(22, 21); // t < a?
+        let too_early = c.fcc();
+        c.g[V0][0] = u64::MAX;
+        if !too_early {
+            c.cycles += 5;
+            c.sub_s(0, 21, 0); // a - b
+            c.sub_s(1, 22, 21); // t - a
+            c.swc1(0, r32(c, S1).wrapping_add(0xe2c));
+            let unknown = c.g[S2][0] == c.g[V0][0];
+            c.swc1(1, r32(c, S1).wrapping_add(0xe34));
+            if !unknown {
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[S2][0] as i64) < 15) as u64;
+                let out_of_range = c.g[V0][0] == 0;
+                c.g[V0][0] = sx(r32(c, S1).wrapping_add(TRICK_USE_COUNTS));
+                if !out_of_range {
+                    c.cycles += 5;
+                    c.g[A0][0] = sx(r32(c, S2) << 2);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                    c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(1));
+                    c.sw(r32(c, V0), c.g[V1][0]);
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S2][0];
+        }
+        // Too early: return -1 (v0 set before the branch).
+        c.cycles += 9;
+        frame.restore(c, 16, 0x30);
+        frame.restore(c, 17, 0x20);
+        frame.restore(c, 18, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 22, 0x50);
+        frame.restore_fpr(c, 21, 0x48);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `Rider_AddBoost(Rider* r, int kind, float amount)` (0x0010e098).
+pub(crate) const RIDER_ADD_BOOST: Callee = Callee {
+    addr: 0x0010_e098,
+    f: ee::s00::Rider_AddBoost,
+};
+
+/// Rider: the rider-metrics pointer at +0x790.
+pub(crate) const RIDER_METRIX_PTR: u32 = 0x790;
+
+/// `void Rider_AddWipeoutRecoveryBoost(Rider* r)` (0x0010f280): convert the
+/// recovery boost the rider earned into a boost.
+pub fn rider_add_wipeout_recovery_boost(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(RIDER_METRIX_PTR)).lw(c);
+        // `RiderMetrix_GetRecoveryBoost` has no override slot: call its
+        // generated entry.
+        Callee {
+            addr: 0x0011_9bb0,
+            f: ee::s00::f_00119bb0,
+        }
+        .call(c, 0x0010_f298)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.mov_s(12, 0);
+        c.g[A1][0] = 0x1;
+        RIDER_ADD_BOOST.call(c, 0x0010_f2a8)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -14131,6 +14305,195 @@ pub(crate) mod tests {
                 c.g[A2][0] = flag as u64;
                 c.g[A3][0] = r.next_u32() as u64;
                 c.g[T0][0] = sx(WT_EVT);
+            },
+        );
+    }
+
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+
+    use crate::difftest::fakes::fake;
+    pub(crate) use crate::game::animation::rideranim::tests::CTRL;
+    pub(crate) use crate::game::animation::rideranim::tests::MAGIC;
+    use std::ptr::addr_of_mut;
+    use std::sync::Once;
+
+    pub(crate) use crate::game::animation::rideranim::tests::active;
+    pub(crate) use crate::game::animation::rideranim::tests::chain;
+    pub(crate) use crate::game::animation::rideranim::tests::install;
+    pub(crate) use crate::game::object::movenode::tests::oc336_fake;
+    pub(crate) use crate::game::object::movenode::tests::oc336_fall_through;
+    pub(crate) use crate::game::object::movenode::tests::oc336_install;
+    pub(crate) use crate::game::object::movenode::tests::OC336_CTRL;
+    pub(crate) use crate::game::object::movenode::tests::OC336_MAGIC;
+
+    // -- ComputerActorRider_PickRandomTrick ----------------------------------
+    //
+    // slots: 8 AIrand, 9 cBE_getBE, 10 BELibrary_GetInterface,
+    //        11 BEBAGTInt_GetTrickField0, 12 Rider_GetTrickSkillFactor,
+    //        13 the per-trick field lookup.
+
+    pub(crate) fn fake_ai_rand(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 8, fake_ai_rand);
+        }
+        c.g[V0][0] = c.bus.read32(CTRL + 0x10) as u64;
+        c.cycles += 4;
+        let ra = c.g[RA][0] as u32;
+        c.pc = ra;
+    }
+
+    pub(crate) fn fake_get_be(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 9, fake_get_be);
+        }
+        c.g[V0][0] = c.bus.read32(CTRL + 0x14) as u64;
+        c.cycles += 4;
+        let ra = c.g[RA][0] as u32;
+        c.pc = ra;
+    }
+
+    pub(crate) fn fake_get_interface(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 10, fake_get_interface);
+        }
+        c.g[V0][0] = c.bus.read32(CTRL + 0x18) as u64;
+        c.cycles += 4;
+        let ra = c.g[RA][0] as u32;
+        c.pc = ra;
+    }
+
+    pub(crate) fn fake_get_trick_field(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 11, fake_get_trick_field);
+        }
+        c.g[V0][0] = c.bus.read32(CTRL + 0x1c) as u64;
+        c.cycles += 4;
+        let ra = c.g[RA][0] as u32;
+        c.pc = ra;
+    }
+
+    pub(crate) fn fake_get_skill_factor(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 12, fake_get_skill_factor);
+        }
+        c.f[0] = c.bus.read32(CTRL + 0x20);
+        c.cycles += 4;
+        let ra = c.g[RA][0] as u32;
+        c.pc = ra;
+    }
+
+    pub(crate) fn fake_trick_field(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 13, fake_trick_field);
+        }
+        // Field 2 and field 1 of the trick, by the a2 selector.
+        c.f[0] = c.bus.read32(CTRL + 0x20 + 4 * (r32(c, A2) & 3));
+        c.cycles += 4;
+        let ra = c.g[RA][0] as u32;
+        c.pc = ra;
+    }
+
+    pub(crate) fn install_pick_trick_fakes() {
+        install(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317810),
+            fake_ai_rand,
+            8,
+        );
+        install(
+            std::ptr::addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+            fake_get_be,
+            9,
+        );
+        install(
+            std::ptr::addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+            fake_get_interface,
+            10,
+        );
+        install(
+            std::ptr::addr_of_mut!(ee::s01::OVERRIDE_001500D8),
+            fake_get_trick_field,
+            11,
+        );
+        install(
+            std::ptr::addr_of_mut!(ee::s00::OVERRIDE_00120038),
+            fake_get_skill_factor,
+            12,
+        );
+        install(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00312820),
+            fake_trick_field,
+            13,
+        );
+    }
+
+    #[test]
+    fn computer_actor_rider_pick_random_trick_matches() {
+        install_pick_trick_fakes();
+        check(
+            ee::s00::f_0010cbe0__generated,
+            computer_actor_rider_pick_random_trick,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_cbe0, 4);
+                let (self_, rider, anim) = (DATA + 0x1000, DATA + 0x2000, DATA + 0x3000);
+                c.g[A0][0] = self_ as u64;
+                c.f[12] = r.edge_f32();
+                c.bus.write32(self_ + 0x18, rider);
+                // The rider's anim object virtual at vtable +0x38.
+                let vt = vtable(c, &mut r, &[0x38]);
+                c.bus.write32(rider + 0x6c0, vt);
+                c.bus.write32(rider + 0x784, anim);
+                // The six callees' answers.
+                c.bus.write32(CTRL, MAGIC);
+                c.bus.write32(CTRL + 0x10, r.next_u32());
+                c.bus.write32(CTRL + 0x14, DATA + 0x4000);
+                c.bus.write32(CTRL + 0x18, DATA + 0x4800);
+                c.bus.write32(CTRL + 0x1c, r.next_u32() % 15);
+                c.bus
+                    .write32(CTRL + 0x20, (0.5 + (r.next_u32() % 4) as f32).to_bits());
+                c.bus.write32(CTRL + 0x24, r.f32(4.0));
+                c.bus.write32(CTRL + 0x28, r.f32(4.0));
+                c.pc = 0x0010_cbe0;
+            },
+        );
+    }
+
+    // ------------------------------------------------------------- rider
+
+    oc336_fake!(
+        rider_fake_add_boost,
+        RIDER_PREV_ADD_BOOST,
+        0x0010_e098,
+        ee::s00::f_0010e098__generated
+    );
+
+    pub(crate) fn rider_add_wipeout_recovery_boost_install() {
+        oc336_install!(
+            ee::s00::OVERRIDE_0010E098 => rider_fake_add_boost => RIDER_PREV_ADD_BOOST,
+        );
+    }
+
+    /// `Rider_AddWipeoutRecoveryBoost`: the real
+    /// `RiderMetrix_GetRecoveryBoost` on a metrics block (a1 = 0 keeps it on
+    /// its short path) returns the boost, which goes to `Rider_AddBoost` (a
+    /// logging fake).
+    #[test]
+    fn rider_add_wipeout_recovery_boost_matches() {
+        rider_add_wipeout_recovery_boost_install();
+        const RIDER: u32 = DATA + 0x100;
+        const METRIX: u32 = DATA + 0x1000;
+        covered(
+            ee::s00::f_0010f280__generated,
+            rider_add_wipeout_recovery_boost,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_f280, 1);
+                c.bus.write32(OC336_CTRL, OC336_MAGIC);
+                c.bus.write32(RIDER + RIDER_METRIX_PTR, METRIX);
+                fill(c, &mut r, METRIX, 0x80);
+                c.g[A0][0] = sx(RIDER);
+                c.g[A1][0] = 0;
             },
         );
     }

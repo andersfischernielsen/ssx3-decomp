@@ -65,6 +65,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         wscript_fn_get_progress_flag_bit,
         "WScriptFn_GetProgressFlagBit",
     ),
+    (
+        0x002f_f1c8,
+        wscript_fn_add_rail_modifier,
+        "WScriptFn_AddRailModifier",
+    ),
+    (
+        0x0030_57c0,
+        wscript_fn_add_halo_modifier,
+        "WScriptFn_AddHaloModifier",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2168,6 +2178,458 @@ pub fn world_obj_factory_anim_teeter(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// WScriptFn_AddHaloModifier (0x3057c0)
+
+/// The halo-modifier parameter record built on every call (`0x4fbd68`), and
+/// its static-init guard (`gp+0x2764`).
+pub(crate) const HALO_TEMPLATE: u32 = 0x004f_bd68;
+
+pub(crate) const HALO_TEMPLATE_GUARD: u32 = 0x2764;
+
+/// The script-parameter type table the modifier loop reads: `0x440000`
+/// plus this (`0x4466b0`).
+pub(crate) const HALO_PARAM_TYPES_OFF: u32 = 0x66b0;
+
+/// `cLunoVar WScriptFn_AddHaloModifier(cLunoVar* out, int n, WsParam* params)`
+/// (0x3057c0): copy the halo-modifier record template (`0x4fbd68`, built on
+/// the first call), apply the `n` script parameters to the copy (integers
+/// copied, floats converted for type-2 entries), resolve the record's id to
+/// an object, and when that object is a move node with a live halo interface
+/// add the halo modifier. The record (12 bytes) is returned in `*out`.
+pub fn wscript_fn_add_halo_modifier(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x90);
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_add(HALO_TEMPLATE_GUARD)).lw(c);
+        frame.save(c, S0, 0x80);
+        c.g[A3][0] = 0x0050_0000;
+        frame.save(c, S2, 0x60);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S3, 0x50);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S1, 0x70);
+        c.g[S3][0] = c.g[A0][0];
+        let inited = c.g[V0][0] != 0;
+        frame.save_ra(c, 0x40);
+        if !inited {
+            // First call: build the template in place. The trailing byte is
+            // passed through unchanged (the copy constructor's byte).
+            c.cycles += 22;
+            c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x4298));
+            c.g[V1][0] = 0xffff_ffff_ffff_0000;
+            c.g[AT][0] = 0x3f80_0000; // 1.0
+            c.mtc1(1, 0);
+            c.g[V1][0] |= 0xffff;
+            c.g[A2][0] = Addr(HALO_TEMPLATE.wrapping_add(0x24)).lbu(c);
+            c.g[A0][0] = u64::MAX;
+            c.g[AT][0] = 0x42c8_0000; // 100.0
+            c.mtc1(1, 1);
+            c.g[A1][0] = 1;
+            Addr(HALO_TEMPLATE).sw(c, c.g[V1][0]);
+            Addr(HALO_TEMPLATE.wrapping_add(0x24)).sb(c, c.g[A2][0]);
+            Addr(HALO_TEMPLATE.wrapping_add(0x8)).sw(c, c.g[A0][0]);
+            c.swc1(0, HALO_TEMPLATE.wrapping_add(0x18));
+            c.swc1(1, HALO_TEMPLATE.wrapping_add(0x1c));
+            let guard = r32(c, GP).wrapping_add(HALO_TEMPLATE_GUARD);
+            Addr(guard).sw(c, c.g[A1][0]);
+            Addr(HALO_TEMPLATE.wrapping_add(0x4)).sw(c, 0);
+            c.swc1(0, HALO_TEMPLATE.wrapping_add(0xc));
+            c.swc1(0, HALO_TEMPLATE.wrapping_add(0x10));
+            c.swc1(0, HALO_TEMPLATE.wrapping_add(0x14));
+            Addr(HALO_TEMPLATE.wrapping_add(0x20)).sw(c, 0);
+            let spv = sp(c);
+            c.sb(spv, c.g[A2][0]);
+        }
+        'b_3058c8: {
+            // The stack copy of the record, id preset to -1.
+            c.cycles += 10;
+            c.g[V0][0] = 0xffff_ffff_ffff_0000;
+            let spv = sp(c);
+            c.g[S1][0] = sx(spv.wrapping_add(0x10));
+            c.g[V0][0] |= 0xffff;
+            c.g[A2][0] = 0x28;
+            c.g[A1][0] = sx(HALO_TEMPLATE);
+            let buf = r32(c, S1);
+            c.sw(buf, c.g[V0][0]);
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x003e_6574, 0x0030_5868)?; // EA_MemCopy
+            let no_params = (c.g[S0][0] as i64) <= 0;
+            c.g[A2][0] = c.g[S2][0];
+            if no_params {
+                break 'b_3058c8;
+            }
+            c.cycles += 4;
+            c.g[V0][0] = 0x0044_0000;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add(HALO_PARAM_TYPES_OFF));
+            c.g[A3][0] = 2;
+            loop {
+                // One script parameter: `idx` selects the record word, the
+                // type table decides whether a value is converted to float.
+                'b_3058bc: {
+                    'b_3058b8: {
+                        c.cycles += 8;
+                        c.g[V0][0] = Addr(r32(c, A2)).lw(c);
+                        c.g[V1][0] = Addr(r32(c, A2)).off(0xc).lw(c);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                        c.g[V0][0] = Addr(r32(c, V0)).lw(c);
+                        if c.g[V1][0] == c.g[V0][0] {
+                            c.g[V0][0] = Addr(r32(c, A2)).off(4).lw(c);
+                            break 'b_3058b8;
+                        }
+                        c.cycles += 2;
+                        if c.g[V0][0] != c.g[A3][0] {
+                            c.g[V0][0] = Addr(r32(c, A2)).off(4).lw(c);
+                            break 'b_3058b8;
+                        }
+                        c.cycles += 4;
+                        let val = r32(c, A2).wrapping_add(4);
+                        c.lwc1(0, val);
+                        c.cvt_s_w(0, 0);
+                        c.swc1(0, r32(c, A0));
+                        break 'b_3058bc;
+                    }
+                    c.cycles += 1;
+                    c.sw(r32(c, A0), c.g[V0][0]);
+                    break 'b_3058bc;
+                }
+                c.cycles += 3;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+                let more = c.g[A1][0] != 0;
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x10));
+                if !more {
+                    break 'b_3058c8;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0030_5880);
+                }
+            }
+        }
+        // Resolve the record's id to an object (v0), -1 meaning "the
+        // currently controlled object".
+        'b_305924: {
+            {
+                c.cycles += 4;
+                c.g[A2][0] = Addr(r32(c, S1)).lw(c);
+                c.g[V0][0] = !(0u64 | c.g[A2][0]);
+                let not_minus_one = c.g[V0][0] != 0;
+                c.g[A1][0] = Addr(r32(c, GP).wrapping_add(0x16c8)).lw(c);
+                if !not_minus_one {
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(r32(c, GP).wrapping_add(0xce8)).lw(c);
+                    c.g[V0][0] = Addr(r32(c, V0).wrapping_add(0x290)).lw(c);
+                    break 'b_305924;
+                }
+            }
+            {
+                c.cycles += 8;
+                c.g[V0][0] = c.g[A2][0] & 0xff;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V1][0] = Addr(r32(c, A1)).lw(c);
+                c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x8)).lw(c);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+                let no_slot = c.g[V1][0] == 0;
+                c.g[V0][0] = sx((c.g[A2][0] as u32) >> 8);
+                if !no_slot {
+                    c.cycles += 7;
+                    c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x1c)).lw(c);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+                    c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+                    let found = c.g[V0][0] != 0;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    if found {
+                        break 'b_305924;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        // A live move node: call its halo-interface test and, when it says
+        // yes, add the modifier.
+        'b_305964: {
+            'b_305960: {
+                c.cycles += 2;
+                let no_obj = c.g[V0][0] == 0;
+                c.g[V1][0] = 0x004d_0000;
+                if no_obj {
+                    break 'b_305960;
+                }
+                c.cycles += 3;
+                c.g[S0][0] = Addr(r32(c, V0).wrapping_add(0xc)).lw(c);
+                let no_node = c.g[S0][0] == 0;
+                c.g[V0][0] = c.g[S3][0];
+                if no_node {
+                    break 'b_305964;
+                }
+                {
+                    c.cycles += 7;
+                    c.g[V1][0] = Addr(r32(c, S0).wrapping_add(0xc)).lw(c);
+                    c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x80)).lh(c);
+                    c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x84)).lw(c);
+                    let target = c.g[V0][0] as u32;
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, target, 0x0030_594c)?;
+                    let no_interface = c.g[V0][0] == 0;
+                    c.g[A0][0] = c.g[S0][0];
+                    if !no_interface {
+                        c.cycles += 2;
+                        c.g[A1][0] = c.g[S1][0];
+                        call_ptr(c, 0x0035_5eb0, 0x0030_595c)?; // addHalo
+                    }
+                }
+                c.cycles += 1;
+                c.g[V1][0] = 0x004d_0000;
+                break 'b_305960;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S3][0];
+            break 'b_305964;
+        }
+        // Return the record by value: 12 bytes from the static result.
+        c.cycles += 14;
+        c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6f68));
+        let res = r32(c, A3);
+        c.ldl(4, res.wrapping_add(7));
+        c.ldr(4, res);
+        c.g[A1][0] = Addr(res).off(0x8).lw(c);
+        let out = r32(c, S3);
+        c.sdl(4, out.wrapping_add(7));
+        c.sdr(4, out);
+        Addr(out).off(0x8).sw(c, c.g[A1][0]);
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// WScriptFn_AddRailModifier (0x2ff1c8)
+
+/// The rail-modifier record template (`0x4fba28`), its static-init guard
+/// (`gp+0x2540`) and its parameter type table (`0x446470`).
+pub(crate) const RAIL_TEMPLATE: u32 = 0x004f_ba28;
+
+pub(crate) const RAIL_TEMPLATE_GUARD: u32 = 0x2540;
+
+pub(crate) const RAIL_PARAM_TYPES_OFF: u32 = 0x6470;
+
+/// `cLunoVar WScriptFn_AddRailModifier(cLunoVar* out, int n, WsParam* params)`
+/// (0x2ff1c8): same shape as `WScriptFn_AddHaloModifier` for the rail
+/// modifier: copy the 16-byte template `0x4fba28` (built on the first call),
+/// apply the parameters, resolve the object from the record's first word and
+/// — only when the second word (the rail id) is not -1 — add the rail
+/// modifier to the object's move node.
+pub fn wscript_fn_add_rail_modifier(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x70);
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_add(RAIL_TEMPLATE_GUARD)).lw(c);
+        frame.save(c, S0, 0x60);
+        c.g[A3][0] = 0x0050_0000;
+        frame.save(c, S2, 0x40);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S3, 0x30);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S1, 0x50);
+        c.g[S3][0] = c.g[A0][0];
+        let inited = c.g[V0][0] != 0;
+        frame.save_ra(c, 0x20);
+        if !inited {
+            c.cycles += 12;
+            c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x45d8));
+            c.g[V0][0] = 0xffff_ffff_ffff_0000;
+            c.g[A2][0] = Addr(RAIL_TEMPLATE.wrapping_add(0xc)).lbu(c);
+            c.g[V0][0] |= 0xffff;
+            Addr(RAIL_TEMPLATE).sw(c, c.g[V0][0]);
+            c.g[A0][0] = u64::MAX;
+            Addr(RAIL_TEMPLATE.wrapping_add(0xc)).sb(c, c.g[A2][0]);
+            c.g[A1][0] = 1;
+            Addr(RAIL_TEMPLATE.wrapping_add(0x4)).sw(c, c.g[V0][0]);
+            Addr(RAIL_TEMPLATE.wrapping_add(0x8)).sw(c, c.g[A0][0]);
+            let guard = r32(c, GP).wrapping_add(RAIL_TEMPLATE_GUARD);
+            Addr(guard).sw(c, c.g[A1][0]);
+            let spv = sp(c);
+            c.sb(spv, c.g[A2][0]);
+        }
+        'b_2ff2b0: {
+            c.cycles += 11;
+            c.g[V0][0] = 0xffff_ffff_ffff_0000;
+            let spv = sp(c);
+            c.g[S1][0] = sx(spv.wrapping_add(0x10));
+            c.g[V0][0] |= 0xffff;
+            c.g[A2][0] = 0x10;
+            c.g[A1][0] = sx(RAIL_TEMPLATE);
+            c.sw(spv.wrapping_add(0x14), c.g[V0][0]);
+            c.g[A0][0] = c.g[S1][0];
+            c.sw(spv.wrapping_add(0x10), c.g[V0][0]);
+            call_ptr(c, 0x003e_6574, 0x002f_f24c)?; // EA_MemCopy
+            let no_params = (c.g[S0][0] as i64) <= 0;
+            c.g[A2][0] = c.g[S2][0];
+            if no_params {
+                break 'b_2ff2b0;
+            }
+            c.cycles += 5;
+            c.g[V0][0] = 0x0044_0000;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add(RAIL_PARAM_TYPES_OFF));
+            c.g[A3][0] = 2;
+            loop {
+                'b_2ff2a4: {
+                    'b_2ff2a0: {
+                        c.cycles += 8;
+                        c.g[V0][0] = Addr(r32(c, A2)).lw(c);
+                        c.g[V1][0] = Addr(r32(c, A2)).off(0xc).lw(c);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                        c.g[V0][0] = Addr(r32(c, V0)).lw(c);
+                        if c.g[V1][0] == c.g[V0][0] {
+                            c.g[V0][0] = Addr(r32(c, A2)).off(4).lw(c);
+                            break 'b_2ff2a0;
+                        }
+                        c.cycles += 2;
+                        if c.g[V0][0] != c.g[A3][0] {
+                            c.g[V0][0] = Addr(r32(c, A2)).off(4).lw(c);
+                            break 'b_2ff2a0;
+                        }
+                        c.cycles += 4;
+                        let val = r32(c, A2).wrapping_add(4);
+                        c.lwc1(0, val);
+                        c.cvt_s_w(0, 0);
+                        c.swc1(0, r32(c, A0));
+                        break 'b_2ff2a4;
+                    }
+                    c.cycles += 1;
+                    c.sw(r32(c, A0), c.g[V0][0]);
+                    break 'b_2ff2a4;
+                }
+                c.cycles += 3;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+                let more = c.g[A1][0] != 0;
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x10));
+                if !more {
+                    break 'b_2ff2b0;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_f268);
+                }
+            }
+        }
+        // Resolve the record's id (word 0) to an object; the result is v1.
+        'b_2ff310: {
+            {
+                c.cycles += 4;
+                c.g[A2][0] = Addr(r32(c, S1)).lw(c);
+                c.g[V0][0] = !(0u64 | c.g[A2][0]);
+                let not_minus_one = c.g[V0][0] != 0;
+                c.g[A1][0] = Addr(r32(c, GP).wrapping_add(0x16c8)).lw(c);
+                if !not_minus_one {
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(r32(c, GP).wrapping_add(0xce8)).lw(c);
+                    c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x290)).lw(c);
+                    break 'b_2ff310;
+                }
+            }
+            'b_2ff30c: {
+                {
+                    c.cycles += 8;
+                    c.g[V0][0] = c.g[A2][0] & 0xff;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V1][0] = Addr(r32(c, A1)).lw(c);
+                    c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x8)).lw(c);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+                    let no_slot = c.g[V1][0] == 0;
+                    c.g[V0][0] = sx((c.g[A2][0] as u32) >> 8);
+                    if !no_slot {
+                        c.cycles += 7;
+                        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x1c)).lw(c);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+                        c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+                        let found = c.g[V0][0] != 0;
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                        if found {
+                            break 'b_2ff30c;
+                        }
+                    }
+                }
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+            c.cycles += 1;
+            c.g[V1][0] = c.g[V0][0];
+        }
+        // The rail id (word 1) must be set, the node alive and its rail
+        // interface present.
+        'b_2ff354: {
+            c.cycles += 4;
+            c.g[V0][0] = Addr(r32(c, S1)).off(0x4).lw(c);
+            c.g[V0][0] = !(0u64 | c.g[V0][0]);
+            if c.g[V0][0] == 0 {
+                c.g[V1][0] = 0x004d_0000;
+                break 'b_2ff354;
+            }
+            c.cycles += 3;
+            c.g[S0][0] = Addr(r32(c, V1).wrapping_add(0xc)).lw(c);
+            let no_node = c.g[S0][0] == 0;
+            c.g[V1][0] = 0x004d_0000;
+            if no_node {
+                break 'b_2ff354;
+            }
+            {
+                c.cycles += 7;
+                c.g[V1][0] = Addr(r32(c, S0).wrapping_add(0xc)).lw(c);
+                c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x80)).lh(c);
+                c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x84)).lw(c);
+                let target = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x002f_f340)?;
+                let no_interface = c.g[V0][0] == 0;
+                c.g[A0][0] = c.g[S0][0];
+                if !no_interface {
+                    c.cycles += 2;
+                    c.g[A1][0] = c.g[S1][0];
+                    call_ptr(c, 0x0035_5e38, 0x002f_f350)?; // addRail
+                }
+            }
+            c.cycles += 1;
+            c.g[V1][0] = 0x004d_0000;
+            break 'b_2ff354;
+        }
+        c.cycles += 15;
+        c.g[V0][0] = c.g[S3][0];
+        c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6f68));
+        let res = r32(c, A3);
+        c.ldl(4, res.wrapping_add(7));
+        c.ldr(4, res);
+        c.g[A1][0] = Addr(res).off(0x8).lw(c);
+        let out = r32(c, S3);
+        c.sdl(4, out.wrapping_add(7));
+        c.sdr(4, out);
+        Addr(out).off(0x8).sw(c, c.g[A1][0]);
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3066,6 +3528,106 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(n);
                 c.g[A2][0] = sx(e);
                 c.g[A3][0] = 0;
+            },
+        );
+    }
+
+    // -- WScriptFn_AddHaloModifier / AddRailModifier ----------------------
+
+    /// The record template guard, the id tables at `gp+0x16c8` / `gp+0xce8`,
+    /// the object → node → vtable chain, and the script parameters both
+    /// modifier ports consume. `types` is the parameter type table.
+    /// Modes: 0 the record keeps id -1, 1 the id resolves to nothing, 2 the
+    /// object has no node, 3 the node's halo/rail interface answers `0`.
+    pub(crate) fn modifier_fixture(c: &mut Cpu, seed: u32, types: u32) {
+        let params = DATA + 0x1000;
+        let node = DATA + 0x3000;
+        let vt = DATA + 0x3100;
+        let obj = DATA + 0x3200;
+        let holder = DATA + 0x3400;
+        let slots = DATA + 0x3500;
+        let second = DATA + 0x3600;
+        let id = (2u32 << 8) | 1;
+        let mode = (seed / 2) % 4;
+        let inited = (seed >> 1) & 1;
+        let n = if mode == 0 { (seed / 8) % 2 } else { 3 };
+
+        c.bus.write32(GAME_GP + 0x2764, inited);
+        c.bus.write32(GAME_GP + 0x2540, inited);
+        // Type table: index 0 integer, index 1 float conversion, index 2
+        // matching integer.
+        for (i, t) in [0u32, 2, 2, 0, 0, 0, 0, 0].iter().enumerate() {
+            c.bus.write32(types + 4 * i as u32, *t);
+        }
+        if n > 0 {
+            if mode == 0 {
+                // A parameter that leaves the record's id alone.
+                c.bus.write32(params, 3);
+                c.bus.write32(params + 4, 0x4142_0000);
+                c.bus.write32(params + 0xc, 0);
+            } else {
+                c.bus.write32(params, 0); // idx 0: the object id
+                c.bus.write32(params + 4, id);
+                c.bus.write32(params + 0xc, 3);
+            }
+        }
+        if n > 1 {
+            c.bus.write32(params + 0x10, 1); // idx 1: a float
+            c.bus.write32(params + 0x14, 0x4120_0000);
+            c.bus.write32(params + 0x1c, 3);
+        }
+        if n > 2 {
+            c.bus.write32(params + 0x20, 2); // idx 2: an integer
+            c.bus.write32(params + 0x24, 0x1122_3344);
+            c.bus.write32(params + 0x2c, 2);
+        }
+        // The "current object" for id -1: *(*(gp+0xce8)+0x290).
+        let p = DATA + 0x3700;
+        c.bus.write32(GAME_GP + 0xce8, p);
+        c.bus.write32(p + 0x290, DATA + 0x3780);
+        // The id table: *D_004A47B8 -> holder -> slots -> slot -> second.
+        c.bus.write32(GAME_GP + 0x16c8, holder);
+        c.bus.write32(holder, 0);
+        c.bus.write32(holder + 8, slots);
+        c.bus.write32(slots, 0);
+        c.bus
+            .write32(slots + 4, if mode >= 2 { slots + 0x50 } else { 0 });
+        c.bus.write32(slots + 0x50 + 0x1c, second);
+        c.bus.write32(second + 2 * 4, (obj >> 2) << 8);
+        c.bus.write32(obj + 0xc, if mode >= 3 { node } else { 0 });
+        c.bus.write32(node + 0xc, vt);
+        c.bus.write16(vt + 0x80, 0);
+        // A real leaf that answers 0, so the add-modifier call is skipped.
+        c.bus.write32(vt + 0x84, 0x0014_06c0);
+        c.g[A0][0] = sx(DATA + 0x200);
+        c.g[A1][0] = n as u64;
+        c.g[A2][0] = sx(params);
+    }
+
+    #[test]
+    fn wscript_fn_add_halo_modifier_matches() {
+        check(
+            ee::s10::f_003057c0__generated,
+            wscript_fn_add_halo_modifier,
+            240,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x30_57c0, 0);
+                c.pc = 0x0030_57c0;
+                modifier_fixture(c, seed, 0x0044_0000 + HALO_PARAM_TYPES_OFF);
+            },
+        );
+    }
+
+    #[test]
+    fn wscript_fn_add_rail_modifier_matches() {
+        check(
+            ee::s10::f_002ff1c8__generated,
+            wscript_fn_add_rail_modifier,
+            240,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2f_f1c8, 0);
+                c.pc = 0x002f_f1c8;
+                modifier_fixture(c, seed, 0x0044_0000 + RAIL_PARAM_TYPES_OFF);
             },
         );
     }

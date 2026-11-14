@@ -220,6 +220,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_sound_get_trigger_ids,
         "cWorldSound_GetTriggerIds",
     ),
+    (
+        0x002b_5758,
+        world_trigger_instance_stop,
+        "WorldTriggerInstance_Stop",
+    ),
 ];
 
 /// Direct-call targets (dossier callees, found by address in `generated/ee`).
@@ -3671,6 +3676,111 @@ pub fn world_sound_get_trigger_ids(c: &mut Cpu) {
     ret(c);
 }
 
+/// `SSXAudioSystem_GetInstance` (0x0028b180): the audio singleton.
+pub(crate) const SSX_AUDIO_GET_INSTANCE: Callee = Callee {
+    addr: 0x0028_b180,
+    f: ee::s07::SSXAudioSystem_GetInstance,
+};
+
+/// `CrowdAudio_RemoveSource(crowd, sourceId, fadeSeconds)` (0x002a72d8).
+pub(crate) const CROWD_AUDIO_REMOVE_SOURCE: Callee = Callee {
+    addr: 0x002a_72d8,
+    f: ee::s08::CrowdAudio_RemoveSource,
+};
+
+/// `BankMonitor_StopHandle(monitor, handle, kind, fadeSeconds)` (0x002ad5f0).
+pub(crate) const BANK_MONITOR_STOP_HANDLE: Callee = Callee {
+    addr: 0x002a_d5f0,
+    f: ee::s08::BankMonitor_StopHandle,
+};
+
+/// World-trigger instance: the sound handle at +0x30.
+pub(crate) const WORLD_TRIGGER_HANDLE: u32 = 0x30;
+
+/// World-trigger instance: non-zero when the trigger owns a crowd source.
+pub(crate) const WORLD_TRIGGER_CROWD: u32 = 0x38;
+
+/// World-trigger instance: the "active" byte.
+pub(crate) const WORLD_TRIGGER_ACTIVE: u32 = 0x40;
+
+/// World-trigger instance: the sound instance/request words.
+pub(crate) const WORLD_TRIGGER_SND: u32 = 0x60;
+
+/// World-trigger instance: the fade value.
+pub(crate) const WORLD_TRIGGER_FADE: u32 = 0x68;
+
+/// `void WorldTriggerInstance_Stop(sWorldTrigger70* t)` (0x002b5758): stop
+/// the trigger's crowd-audio source or sound instance (fading it out over
+/// 0.25 s), then reset the handle, the active flag and the sound words.
+pub fn world_trigger_instance_stop(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = c.g[S0][0] as u32;
+        c.g[V0][0] = Addr(this.wrapping_add(WORLD_TRIGGER_CROWD)).lw(c);
+        let crowd = c.g[V0][0] != 0;
+        c.g[V0][0] = sx(0xffff_d8f1); // -9999: "no handle"
+        let mut done = false;
+        if crowd {
+            c.cycles += 3;
+            c.g[V1][0] = Addr(this.wrapping_add(WORLD_TRIGGER_HANDLE)).lw(c);
+            let no_handle = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = u64::MAX;
+            if no_handle {
+                done = true;
+            } else {
+                c.cycles += 9;
+                SSX_AUDIO_GET_INSTANCE.call(c, 0x002b_5788)?;
+                c.g[A1][0] = Addr(this.wrapping_add(WORLD_TRIGGER_HANDLE)).lw(c);
+                c.g[AT][0] = 0x3e80_0000; // 0.25f
+                c.mtc1(1, 12);
+                c.g[A0][0] = c.g[V0][0];
+                CROWD_AUDIO_REMOVE_SOURCE.call(c, 0x002b_579c)?;
+                c.g[V0][0] = u64::MAX;
+                done = true;
+            }
+        }
+        if !done {
+            c.cycles += 3;
+            c.g[V1][0] = Addr(this.wrapping_add(WORLD_TRIGGER_HANDLE)).lw(c);
+            let no_handle = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = u64::MAX;
+            if !no_handle {
+                c.cycles += 11;
+                SSX_AUDIO_GET_INSTANCE.call(c, 0x002b_57b8)?;
+                c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x118)).lw(c);
+                c.g[A2][0] = 0x1;
+                c.g[A1][0] = Addr(this.wrapping_add(WORLD_TRIGGER_HANDLE)).lw(c);
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                c.g[AT][0] = 0x3e80_0000; // 0.25f
+                c.mtc1(1, 12);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1d8));
+                BANK_MONITOR_STOP_HANDLE.call(c, 0x002b_57d8)?;
+                c.g[V0][0] = u64::MAX;
+            }
+        }
+        // Epilogue: clear the handle, deactivate, reset fade and sound words.
+        c.cycles += 14;
+        c.g[V1][0] = 0x4a_0000;
+        Addr(this.wrapping_add(WORLD_TRIGGER_HANDLE)).sw(c, c.g[V0][0]);
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(1, 0); // f0 = -1.0f
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x35a8)).lbu(c);
+        c.swc1(0, this.wrapping_add(WORLD_TRIGGER_FADE));
+        Addr(this.wrapping_add(WORLD_TRIGGER_ACTIVE)).sb(c, c.g[V0][0]);
+        Addr(this.wrapping_add(WORLD_TRIGGER_SND + 0xc)).sw(c, 0);
+        Addr(this.wrapping_add(WORLD_TRIGGER_SND)).sw(c, 0);
+        Addr(this.wrapping_add(WORLD_TRIGGER_SND + 0x4)).sw(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5109,6 +5219,50 @@ pub(crate) mod tests {
                 let mode = schedule(c, &mut r, seed, 0x002b_8190);
                 c.next_event = c.cycles + 2 + (r.next_u32() % 40) as u64;
                 mode
+            },
+        );
+    }
+
+    /// `WorldTriggerInstance_Stop`: a crowd source (stopped through
+    /// `CrowdAudio_RemoveSource`), a sound instance (stopped through
+    /// `BankMonitor_StopHandle`) and neither (no call), each with and without
+    /// a valid handle.
+    #[test]
+    fn world_trigger_instance_stop_matches() {
+        const SELF: u32 = DATA + 0x100;
+        const AUDIO: u32 = DATA + 0x1000;
+        const STREAMS: u32 = DATA + 0x2000;
+        const REQUEST: u32 = DATA + 0x3000;
+        check(
+            ee::s08::f_002b5758__generated,
+            world_trigger_instance_stop,
+            120,
+            &|c, seed| {
+                let mut r = Rng(0x002b_5758 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                // The audio singleton and its stream list.
+                c.bus.write32(GAME_GP.wrapping_add(0x410), AUDIO);
+                c.bus.write32(AUDIO + 0x18, 0); // no crowd source: short path
+                c.bus.write32(AUDIO + 0x118, STREAMS);
+                c.bus.write32(STREAMS, REQUEST);
+                // No bank-monitor instances in the request's monitor.
+                c.bus.write32(REQUEST + 0x1d8 + 0x8ec, 0);
+                // The trigger instance.
+                c.bus.write32(
+                    SELF + WORLD_TRIGGER_HANDLE,
+                    match seed % 3 {
+                        0 => 0xffff_d8f1, // -9999: nothing to stop
+                        _ => r.next_u32() % 0x100,
+                    },
+                );
+                c.bus.write32(SELF + WORLD_TRIGGER_CROWD, (seed % 2) as u32);
+                c.bus.write32(SELF + WORLD_TRIGGER_ACTIVE, r.next_u32());
+                c.bus.write32(SELF + 0x60, r.next_u32());
+                c.bus.write32(SELF + 0x64, r.next_u32());
+                c.bus.write32(SELF + 0x68, r.edge_f32());
+                c.bus.write32(SELF + 0x6c, r.next_u32());
+                c.g[A0][0] = sx(SELF);
             },
         );
     }
