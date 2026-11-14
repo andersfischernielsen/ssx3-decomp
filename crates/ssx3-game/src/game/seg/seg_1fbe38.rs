@@ -2770,8 +2770,6 @@ pub(crate) mod tests {
     pub(crate) use crate::game::object::debouncenode::tests::RET_ALLOC;
     pub(crate) use crate::game::object::debouncenode::tests::RET_BASE_CTOR;
     use std::sync::atomic::AtomicUsize;
-    use std::sync::atomic::Ordering;
-    use std::sync::Once;
 
     /// `WorldObjFactory_Hide`: `n` entries at DATA+0x8000 (the first one, when
     /// present, carries the id `0x123`), the world's object reference table at
@@ -3427,13 +3425,16 @@ pub(crate) mod tests {
     /// `AnimTeeter`'s create path: the allocator, `checkActiveNode` and the
     /// animated object's base constructor are faked.
     pub(crate) fn oc327_install_teeter() {
-        static ONCE: Once = Once::new();
-        ONCE.call_once(|| unsafe {
-            OC327_PREV_ATTACH.store(ee::s10::OVERRIDE_002FAE38 as usize, Ordering::Relaxed);
-            ee::s10::OVERRIDE_002FAE38 = oc327_fake_attach;
-            OC327_PREV_BASE_CTOR.store(ee::s11::OVERRIDE_0034D9B0 as usize, Ordering::Relaxed);
-            ee::s11::OVERRIDE_0034D9B0 = oc327_fake_base_ctor;
-        });
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_002FAE38),
+            oc327_fake_attach,
+            &OC327_PREV_ATTACH,
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_0034D9B0),
+            oc327_fake_base_ctor,
+            &OC327_PREV_BASE_CTOR,
+        );
         oc327_install_alloc();
     }
 

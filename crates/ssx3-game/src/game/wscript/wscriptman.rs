@@ -5892,7 +5892,11 @@ pub(crate) mod tests {
     /// picks at `WSM_CTRL + 4` (-1 = none).
     pub(crate) fn wsm_fake_find_func(c: &mut Cpu) {
         if c.bus.read32(WSM_CTRL) != WSM_MAGIC {
-            return ee::s13::f_003a6b78__generated(c);
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(wsm_fake_find_func),
+                ee::s13::f_003a6b78__generated,
+            );
         }
         let ra = c.g[RA][0] as u32;
         fakes::fake(c, WSM_FIND_FUNC, ra);
@@ -5905,7 +5909,11 @@ pub(crate) mod tests {
         ($name:ident, $addr:expr, $gen:path) => {
             fn $name(c: &mut Cpu) {
                 if c.bus.read32(WSM_CTRL) != WSM_MAGIC {
-                    return $gen(c);
+                    return crate::difftest::fakes::fall_back(
+                        c,
+                        crate::difftest::fakes::prev_cell($name),
+                        $gen,
+                    );
                 }
                 let ra = c.g[RA][0] as u32;
                 fakes::fake(c, $addr, ra);
@@ -5956,18 +5964,51 @@ pub(crate) mod tests {
     pub(crate) fn wsm_install_fakes() {
         // The allocator's slot is shared with the PushLoopingAnim fakes.
         asl_install_fakes();
-        static ONCE: std::sync::Once = std::sync::Once::new();
-        ONCE.call_once(|| unsafe {
-            ee::s13::OVERRIDE_003A6B78 = wsm_fake_find_func;
-            ee::s10::OVERRIDE_003097E0 = wsm_fake_post;
-            ee::s05::OVERRIDE_00226600 = wsm_fake_value;
-            ee::s05::OVERRIDE_002224A8 = wsm_fake_call_init;
-            ee::s05::OVERRIDE_002224B8 = wsm_fake_call_run;
-            ee::s05::OVERRIDE_00224DA0 = wsm_fake_table_ctor;
-            ee::s05::OVERRIDE_00225B90 = wsm_fake_release;
-            ee::s13::OVERRIDE_003ADC50 = wsm_fake_cache_entry;
-            ee::s10::OVERRIDE_00317E50 = wsm_fake_free;
-        });
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s13::OVERRIDE_003A6B78),
+            wsm_fake_find_func,
+            crate::difftest::fakes::prev_cell(wsm_fake_find_func),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_003097E0),
+            wsm_fake_post,
+            crate::difftest::fakes::prev_cell(wsm_fake_post),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s05::OVERRIDE_00226600),
+            wsm_fake_value,
+            crate::difftest::fakes::prev_cell(wsm_fake_value),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s05::OVERRIDE_002224A8),
+            wsm_fake_call_init,
+            crate::difftest::fakes::prev_cell(wsm_fake_call_init),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s05::OVERRIDE_002224B8),
+            wsm_fake_call_run,
+            crate::difftest::fakes::prev_cell(wsm_fake_call_run),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s05::OVERRIDE_00224DA0),
+            wsm_fake_table_ctor,
+            crate::difftest::fakes::prev_cell(wsm_fake_table_ctor),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s05::OVERRIDE_00225B90),
+            wsm_fake_release,
+            crate::difftest::fakes::prev_cell(wsm_fake_release),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s13::OVERRIDE_003ADC50),
+            wsm_fake_cache_entry,
+            crate::difftest::fakes::prev_cell(wsm_fake_cache_entry),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            wsm_fake_free,
+            crate::difftest::fakes::prev_cell(wsm_fake_free),
+        );
     }
 
     /// Objects that post the trigger event or not (a real leaf returning 0),

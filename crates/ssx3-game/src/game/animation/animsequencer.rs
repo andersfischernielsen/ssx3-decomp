@@ -1814,8 +1814,8 @@ pub(crate) mod tests {
 
     // ------------------------------------------------ AnimSeqList_PushLoopingAnim
 
-    /// Gate of the plain logged fakes below (without it they run the
-    /// generated body).
+    /// Gate of the plain logged fakes below (without it they run what their
+    /// slot held before).
     pub(crate) const ASL_CTRL: u32 = DATA + 0x5_9000;
 
     pub(crate) const ASL_MAGIC: u32 = 0x3145_88a5;
@@ -1824,7 +1824,11 @@ pub(crate) mod tests {
         ($name:ident, $addr:expr, $gen:path) => {
             fn $name(c: &mut Cpu) {
                 if c.bus.read32(ASL_CTRL) != ASL_MAGIC {
-                    return $gen(c);
+                    return crate::difftest::fakes::fall_back(
+                        c,
+                        crate::difftest::fakes::prev_cell($name),
+                        $gen,
+                    );
                 }
                 let ra = c.g[RA][0] as u32;
                 fakes::fake(c, $addr, ra);
@@ -1855,14 +1859,31 @@ pub(crate) mod tests {
     );
 
     pub(crate) fn asl_install_fakes() {
-        static ONCE: std::sync::Once = std::sync::Once::new();
-        ONCE.call_once(|| unsafe {
-            ee::s10::OVERRIDE_00317D70 = asl_fake_alloc;
-            ee::s10::OVERRIDE_00313508 = asl_fake_ctor;
-            ee::s10::OVERRIDE_00313C50 = asl_fake_track_anim;
-            ee::s10::OVERRIDE_00313CF0 = asl_fake_track_time;
-            ee::s10::OVERRIDE_00313D40 = asl_fake_track_loop;
-        });
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            asl_fake_alloc,
+            crate::difftest::fakes::prev_cell(asl_fake_alloc),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00313508),
+            asl_fake_ctor,
+            crate::difftest::fakes::prev_cell(asl_fake_ctor),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00313C50),
+            asl_fake_track_anim,
+            crate::difftest::fakes::prev_cell(asl_fake_track_anim),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00313CF0),
+            asl_fake_track_time,
+            crate::difftest::fakes::prev_cell(asl_fake_track_time),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00313D40),
+            asl_fake_track_loop,
+            crate::difftest::fakes::prev_cell(asl_fake_track_loop),
+        );
     }
 
     /// A list with a few sequences; the real `PushNew` links the new one in

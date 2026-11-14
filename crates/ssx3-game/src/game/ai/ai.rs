@@ -19252,7 +19252,11 @@ pub(crate) mod tests {
     /// picks at `SPIN_CTRL + 4`.
     pub(crate) fn spin_fake_can_reverse(c: &mut Cpu) {
         if c.bus.read32(SPIN_CTRL) != SPIN_MAGIC {
-            return ee::s00::f_00114db8__generated(c);
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(spin_fake_can_reverse),
+                ee::s00::f_00114db8__generated,
+            );
         }
         let ra = c.g[RA][0] as u32;
         fakes::fake(c, SPIN_CAN_REVERSE, ra);
@@ -19263,18 +19267,27 @@ pub(crate) mod tests {
 
     pub(crate) fn spin_fake_play(c: &mut Cpu) {
         if c.bus.read32(SPIN_CTRL) != SPIN_MAGIC {
-            return ee::s10::f_003128e8__generated(c);
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(spin_fake_play),
+                ee::s10::f_003128e8__generated,
+            );
         }
         let ra = c.g[RA][0] as u32;
         fakes::fake(c, SPIN_ANIM_PLAY, ra);
     }
 
     pub(crate) fn spin_install_fakes() {
-        static ONCE: std::sync::Once = std::sync::Once::new();
-        ONCE.call_once(|| unsafe {
-            ee::s00::OVERRIDE_00114DB8 = spin_fake_can_reverse;
-            ee::s10::OVERRIDE_003128E8 = spin_fake_play;
-        });
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s00::OVERRIDE_00114DB8),
+            spin_fake_can_reverse,
+            crate::difftest::fakes::prev_cell(spin_fake_can_reverse),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_003128E8),
+            spin_fake_play,
+            crate::difftest::fakes::prev_cell(spin_fake_play),
+        );
     }
 
     /// No reverse, or a reverse of angles around +-pi (the floor's
@@ -20161,8 +20174,6 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::oc318_gated;
     use std::ptr::addr_of_mut;
     use std::sync::atomic::AtomicUsize;
-    use std::sync::atomic::Ordering;
-    use std::sync::Once;
 
     pub(crate) const CTRL_AIR: u32 = DATA + 0x6_0030;
 
@@ -20171,13 +20182,7 @@ pub(crate) mod tests {
     // ------------------------------------------- ModObj_AddParticleModifier
 
     pub(crate) fn oc318_fall_through(c: &mut Cpu, prev: &AtomicUsize, gen: fn(&mut Cpu)) {
-        let p = prev.load(Ordering::Relaxed);
-        if p == 0 {
-            return gen(c);
-        }
-        // SAFETY: `p` was read from the same slot (a `fn(&mut Cpu)`).
-        let f = unsafe { std::mem::transmute::<usize, fn(&mut Cpu)>(p) };
-        f(c)
+        crate::difftest::fakes::fall_back(c, prev, gen)
     }
 
     // --------------------------------------- RiderNaturalAirSub_Exit
@@ -20225,31 +20230,22 @@ pub(crate) mod tests {
 
     pub(crate) fn rider_natural_air_install() {
         crate::game::misc::tests::bow_install_fakes();
-        static ONCE: Once = Once::new();
-        ONCE.call_once(|| unsafe {
-            let hook = |slot: *mut fn(&mut Cpu), f: fn(&mut Cpu), prev: &AtomicUsize| {
-                let cur = *slot;
-                if cur as usize != f as usize {
-                    prev.store(cur as usize, Ordering::Relaxed);
-                    *slot = f;
-                }
-            };
-            hook(
-                addr_of_mut!(ee::s10::OVERRIDE_00311AE8),
-                oc318_fake_air_get_anim,
-                &OC318_PREV_AIR_ANIM,
-            );
-            hook(
-                addr_of_mut!(ee::s10::OVERRIDE_00311E88),
-                oc318_fake_air_fade_out,
-                &OC318_PREV_AIR_FADE,
-            );
-            hook(
-                addr_of_mut!(ee::s10::OVERRIDE_00311B20),
-                oc318_fake_air_get_seq,
-                &OC318_PREV_AIR_SEQ,
-            );
-        });
+        use crate::difftest::fakes::hook;
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00311AE8),
+            oc318_fake_air_get_anim,
+            &OC318_PREV_AIR_ANIM,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00311E88),
+            oc318_fake_air_fade_out,
+            &OC318_PREV_AIR_FADE,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00311B20),
+            oc318_fake_air_get_seq,
+            &OC318_PREV_AIR_SEQ,
+        );
     }
 
     /// `RiderNaturalAirSub_Exit`: released or not, the layer entry at

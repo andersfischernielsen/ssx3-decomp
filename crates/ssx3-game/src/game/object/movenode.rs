@@ -299,6 +299,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         position_modifier_ctor_2,
         "PositionModifier_ctor_2",
     ),
+    (
+        0x0035_5e38,
+        mod_obj_add_rail_modifier_2,
+        "ModObj_AddRailModifier",
+    ),
+    (
+        0x0035_5eb0,
+        mod_obj_add_halo_modifier,
+        "ModObj_AddHaloModifier",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4770,6 +4780,126 @@ pub fn position_modifier_ctor_2(c: &mut Cpu) {
     c.pc = ra;
 }
 
+// ------------------------------------------------- ModObj_AddRailModifier
+
+/// `cMemMan_alloc` (0x317d70, another shard: through the function table).
+pub(crate) const OC338_MEM_MAN_ALLOC: u32 = 0x0031_7d70;
+
+/// `ModObj::modifierBlock` (+0x1c): the object's modifier block (may be null).
+pub(crate) const MOD_OBJ_ADD_RAIL_BLOCK: u32 = 0x1c;
+
+/// `ModObj` +0x18: the owner passed to the modifier constructors.
+pub(crate) const MOD_OBJ_ADD_RAIL_OWNER: u32 = 0x18;
+
+/// `tAddRailData` +4: the rail id looked up in the block.
+pub(crate) const MOD_OBJ_ADD_RAIL_ID: u32 = 0x4;
+
+pub(crate) const MOD_OBJ_HAS_RAIL_MODIFIER: Callee = Callee {
+    addr: 0x0035_3418,
+    f: ee::s11::ModifierBlock_HasRailModifier,
+};
+
+pub(crate) const MOD_OBJ_RAIL_MODIFIER_CTOR: Callee = Callee {
+    addr: 0x0035_b708,
+    f: ee::s11::RailModifier_ctor,
+};
+
+pub(crate) const MOD_OBJ_SET_RAIL_MODIFIER: Callee = Callee {
+    addr: 0x0035_56a8,
+    f: ee::s11::ModObj_SetRailModifier,
+};
+
+/// `void ModObj_AddRailModifier(ModObj* o, const tAddRailData* desc)`
+/// (0x00355e38, `cMoveNode::addRail`): unless the object's modifier block
+/// already has a rail modifier for `desc->id`, allocate a 0x90-byte rail
+/// modifier (`D_0048E9B8` tag), construct it from the descriptor and install
+/// it on the object.
+pub fn mod_obj_add_rail_modifier_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(MOD_OBJ_ADD_RAIL_BLOCK)).lw(c);
+        c.g[S1][0] = c.g[A1][0];
+        let mut present = false;
+        if c.g[A0][0] != 0 {
+            c.cycles += 4;
+            c.g[A1][0] = Addr(r32(c, S1).wrapping_add(MOD_OBJ_ADD_RAIL_ID)).lw(c);
+            MOD_OBJ_HAS_RAIL_MODIFIER.call(c, 0x0035_5e60)?;
+            present = c.g[V0][0] != 0;
+        }
+        if !present {
+            c.cycles += 14;
+            c.g[A0][0] = 0x90;
+            c.g[A1][0] = sx(0x0048_e9b8); // D_0048E9B8
+            c.g[A2][0] = 0x2000_0000;
+            c.g[A3][0] = 0;
+            call_ptr(c, OC338_MEM_MAN_ALLOC, 0x0035_5e80)?;
+            c.g[A2][0] = Addr(r32(c, S0).wrapping_add(MOD_OBJ_ADD_RAIL_OWNER)).lw(c);
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S1][0];
+            MOD_OBJ_RAIL_MODIFIER_CTOR.call(c, 0x0035_5e90)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[V0][0];
+            MOD_OBJ_SET_RAIL_MODIFIER.call(c, 0x0035_5e9c)?;
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ------------------------------------------------- ModObj_AddHaloModifier
+
+pub(crate) const MOD_OBJ_HALO_MODIFIER_CTOR: Callee = Callee {
+    addr: 0x0034_6120,
+    f: ee::s11::HaloModifier_ctor,
+};
+
+pub(crate) const MOD_OBJ_LINK_PARTICLE_MODIFIER: Callee = Callee {
+    addr: 0x0035_5658,
+    f: ee::s11::ModObj_LinkParticleModifier,
+};
+
+/// `void ModObj_AddHaloModifier(ModObj* o, const tAddHaloData* desc)`
+/// (0x00355eb0, `cMoveNode::addHalo`): allocate a 0x40-byte halo modifier
+/// (`D_0048E9A8` tag), construct it from the descriptor (owner `o+0x18`)
+/// and link it into the object's particle (effect) modifiers.
+pub fn mod_obj_add_halo_modifier(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x30);
+        c.g[A3][0] = 0;
+        frame.save(c, S1, 0x10);
+        c.g[A2][0] = 0x2000_0000;
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x40;
+        c.g[A1][0] = sx(0x0048_e9a8); // D_0048E9A8
+        call_ptr(c, OC338_MEM_MAN_ALLOC, 0x0035_5ee0)?;
+        c.g[A2][0] = Addr(r32(c, S0).wrapping_add(MOD_OBJ_ADD_RAIL_OWNER)).lw(c);
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[V0][0];
+        MOD_OBJ_HALO_MODIFIER_CTOR.call(c, 0x0035_5ef0)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        MOD_OBJ_LINK_PARTICLE_MODIFIER.call(c, 0x0035_5efc)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7534,6 +7664,233 @@ pub(crate) mod tests {
                 fill(c, &mut r, DST_BLOCK + 0x20, 0x10);
                 c.g[A0][0] = sx(TARGET);
                 c.g[A1][0] = sx(SOURCE);
+            },
+        );
+    }
+
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+    pub(crate) use crate::game::lib::snd::snd_channel_find_max_voice;
+
+    /// Magic word that turns this module's gated fakes on, in each test
+    /// machine's own RAM (other tests reach the bodies the slots held).
+    pub(crate) const OC338_CTRL: u32 = DATA + 0x0e_3380;
+
+    pub(crate) const OC338_MAGIC: u32 = 0x4f43_3338;
+
+    /// A gated logging fake for an override slot: logs the caller's
+    /// registers and returns a pointer (or unwinds at the setup's index).
+    macro_rules! oc338_fake {
+        ($name:ident, $prev:ident, $addr:expr, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(OC338_CTRL) != OC338_MAGIC {
+                    return fall_back(c, &$prev, $gen);
+                }
+                let ra = c.g[RA][0] as u32;
+                fake(c, $addr, ra);
+            }
+        };
+    }
+    pub(crate) use oc338_fake;
+
+    oc338_fake!(
+        oc338_fake_alloc,
+        OC338_PREV_ALLOC,
+        0x0031_7d70,
+        ee::s10::f_00317d70__generated
+    );
+
+    oc338_fake!(
+        oc338_fake_set_rail,
+        OC338_PREV_SET_RAIL,
+        0x0035_56a8,
+        ee::s11::f_003556a8__generated
+    );
+
+    oc338_fake!(
+        oc338_fake_particle_base_ctor,
+        OC338_PREV_PARTICLE_BASE_CTOR,
+        0x0034_5798,
+        ee::s11::f_00345798__generated
+    );
+
+    oc338_fake!(
+        oc338_fake_link_particle,
+        OC338_PREV_LINK_PARTICLE,
+        0x0035_5658,
+        ee::s11::f_00355658__generated
+    );
+
+    pub(crate) static OC338_PREV_HAS_RAIL: AtomicUsize = AtomicUsize::new(0);
+
+    /// `ModifierBlock_HasRailModifier`: logs, then answers the word at
+    /// `OC338_CTRL + 4` (0 = no rail modifier yet).
+    pub(crate) fn oc338_fake_has_rail(c: &mut Cpu) {
+        if c.bus.read32(OC338_CTRL) != OC338_MAGIC {
+            return fall_back(c, &OC338_PREV_HAS_RAIL, ee::s11::f_00353418__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fake(c, 0x0035_3418, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(OC338_CTRL + 4) as u64;
+        }
+    }
+
+    /// Where the fake allocator's block goes (away from the fakes' hashed
+    /// pointers, which stay below `DATA + 0x40000`).
+    pub(crate) const OC338_BLOCK: u32 = DATA + 0x4_8000;
+
+    /// `ModObj_AddRailModifier`: no block, a block that already has the
+    /// rail (early exit), and one without it. The real rail constructor
+    /// runs up to its first virtual call (a logging fake through a fake
+    /// vtable), where the seed always unwinds (past it the constructor
+    /// builds rail nodes); so `ModObj_SetRailModifier` is not reached.
+    #[test]
+    fn mod_obj_add_rail_modifier_matches() {
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00353418),
+            oc338_fake_has_rail,
+            &OC338_PREV_HAS_RAIL,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc338_fake_alloc,
+            &OC338_PREV_ALLOC,
+        );
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_003556A8),
+            oc338_fake_set_rail,
+            &OC338_PREV_SET_RAIL,
+        );
+        const OBJ: u32 = DATA + 0x5_0000;
+        const DESC: u32 = DATA + 0x5_1000;
+        const OWNER: u32 = DATA + 0x5_2000;
+        const OWNER_INNER: u32 = DATA + 0x5_3000;
+        const OWNER_VT: u32 = DATA + 0x5_4000;
+        covered(
+            ee::s11::f_00355e38__generated,
+            mod_obj_add_rail_modifier_2,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_5e38, 3);
+                c.pc = 0x0035_5e38;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                let has_block = seed % 3 != 0;
+                let present = has_block && seed % 3 == 1 && r.next_u32() % 2 == 0;
+                c.bus.write32(
+                    OC338_CTRL + 4,
+                    if present { 1 + r.next_u32() % 7 } else { 0 },
+                );
+                fill(c, &mut r, OBJ, 0x10);
+                fill(c, &mut r, DESC, 0x10);
+                c.bus.write32(
+                    OBJ + MOD_OBJ_ADD_RAIL_BLOCK,
+                    if has_block { DATA + 0x5_8000 } else { 0 },
+                );
+                // Owner chain read by the rail constructor before its
+                // first virtual call: owner+0xc -> +0xc -> vtable+0x160.
+                c.bus.write32(OBJ + MOD_OBJ_ADD_RAIL_OWNER, OWNER);
+                c.bus.write32(OWNER + 0xc, OWNER_INNER);
+                c.bus.write32(OWNER_INNER + 0xc, OWNER_VT);
+                c.bus
+                    .write16(OWNER_VT + 0x160, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(OWNER_VT + 0x164, FAKE);
+                let alloc_index = has_block as u32;
+                c.bus.write32(LOG_RESULTS + 4 * alloc_index, OC338_BLOCK);
+                if !present {
+                    // Always unwind by the constructor's virtual call.
+                    let ctor_call = alloc_index + 1;
+                    c.bus.write32(LOG_UNWIND_AT, r.next_u32() % (ctor_call + 1));
+                }
+                c.g[A0][0] = sx(OBJ);
+                c.g[A1][0] = sx(DESC);
+            },
+        );
+    }
+
+    driven!(oc338_gen_find_max_voice, ee::s13::f_003c6580__generated);
+
+    driven!(oc338_hand_find_max_voice, snd_channel_find_max_voice);
+
+    /// `SND_ChannelFindMaxVoice`: counts <= 0 (no loop) and 1..40 voices of
+    /// random priorities (ties, negatives), with events delivered and
+    /// unwinding at the loop's back edge.
+    #[test]
+    fn snd_channel_find_max_voice_matches() {
+        check_events(
+            oc338_gen_find_max_voice,
+            oc338_hand_find_max_voice,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x003c_6580 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                let table = DATA + 0x5_0000;
+                c.bus.write32(
+                    crate::game::lib::snd::SND_CHANNEL_FIND_MAX_VOICE_TABLE,
+                    table,
+                );
+                let channel = r.next_u32() % 4;
+                for i in 0..48 {
+                    let p = match r.next_u32() % 4 {
+                        0 => 0xffff,
+                        1 => 7,
+                        _ => r.next_u32() & 0xffff,
+                    };
+                    c.bus.write16(table + 4 + channel * 0x8c + 2 * i, p as u16);
+                }
+                c.g[A0][0] = channel as u64;
+                c.g[A1][0] = match seed % 7 {
+                    0 => 0,
+                    1 => sx(0x8000_0000 | r.next_u32()),
+                    _ => (1 + r.next_u32() % 40) as u64,
+                };
+                schedule(c, &mut r, seed, 0x003c_6580)
+            },
+        );
+    }
+
+    /// `ModObj_AddHaloModifier`: the allocator, the particle base
+    /// constructor and the particle-modifier link are logging fakes; the
+    /// real halo constructor copies the descriptor and bumps the counter
+    /// at `gp+0xf10`.
+    #[test]
+    fn mod_obj_add_halo_modifier_matches() {
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc338_fake_alloc,
+            &OC338_PREV_ALLOC,
+        );
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00345798),
+            oc338_fake_particle_base_ctor,
+            &OC338_PREV_PARTICLE_BASE_CTOR,
+        );
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00355658),
+            oc338_fake_link_particle,
+            &OC338_PREV_LINK_PARTICLE,
+        );
+        const OBJ: u32 = DATA + 0x5_0000;
+        const DESC: u32 = DATA + 0x5_1000;
+        covered(
+            ee::s11::f_00355eb0__generated,
+            mod_obj_add_halo_modifier,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_5eb0, 3);
+                c.pc = 0x0035_5eb0;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                c.bus.write32(LOG_RESULTS, OC338_BLOCK);
+                fill(c, &mut r, OBJ, 0x10);
+                fill(c, &mut r, DESC, 0x10);
+                c.bus.write32(GAME_GP + 0xf10, r.next_u32());
+                c.g[A0][0] = sx(OBJ);
+                c.g[A1][0] = sx(DESC);
             },
         );
     }

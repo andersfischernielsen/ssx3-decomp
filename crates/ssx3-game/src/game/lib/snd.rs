@@ -351,6 +351,47 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "SPCH_BuildSentenceWithFallback",
     ),
     (0x003d_b9a0, spch_get_time, "SPCH_GetTime"),
+    (0x003b_68b8, sndstrm_start_playback, "SNDSTRM_StartPlayback"),
+    (
+        0x003c_6580,
+        snd_channel_find_max_voice,
+        "SND_ChannelFindMaxVoice",
+    ),
+    (0x003c_95f0, snd_dec_utk_free_loop, "SND_DecUtk_FreeLoop"),
+    (
+        0x003c_a5e8,
+        snd_dec_eaxa_free_stream,
+        "SND_DecEaxa_FreeStream",
+    ),
+    (
+        0x003c_a610,
+        snd_dec_eaxa_init_stream,
+        "SND_DecEaxa_InitStream",
+    ),
+    (0x003c_cef0, snd_eaxa_alloc, "SND_EaxaAlloc"),
+    (0x003c_cf18, snd_eaxa_free, "SND_EaxaFree"),
+    (0x003c_cf40, snd_eaxa_reset, "SND_EaxaReset"),
+    (
+        0x003c_e0e0,
+        snd_ee_voice_get_master_channel,
+        "SND_EeVoiceGetMasterChannel",
+    ),
+    (
+        0x003c_e118,
+        snd_ee_voice_get_sub_index,
+        "SND_EeVoiceGetSubIndex",
+    ),
+    (
+        0x003c_e378,
+        sndstrm_find_by_channel,
+        "SNDSTRM_FindByChannel",
+    ),
+    (
+        0x003d_a3f0,
+        spch_has_pending_sentence,
+        "SPCH_HasPendingSentence",
+    ),
+    (0x003d_b3b8, spch_match_flags, "SPCH_MatchFlags"),
 ];
 
 /// Fields of the driver state block.
@@ -19878,6 +19919,568 @@ pub fn sndstrm_stop_slot(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// SND_DecUtk_FreeLoop (0x3c95f0).
+
+/// `SND_UtkFree(void*)` (0x3cd1d0).
+pub(crate) const DEC_UTK_FREE_LOOP_UTK_FREE: Callee = Callee {
+    addr: 0x003c_d1d0,
+    f: ee::s14::SND_UtkFree,
+};
+
+/// The UTK decoder's work buffer.
+pub(crate) const DEC_UTK_FREE_LOOP_BUFFER: u32 = 0x1c;
+
+/// `void SND_DecUtk_FreeLoop(UtkDecoder* dec)` (0x3c95f0): give the
+/// decoder's work buffer (`+0x1c`) back with `SND_UtkFree`, if it has one.
+pub fn snd_dec_utk_free_loop(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let dec = r32(c, A0);
+        c.g[A0][0] = Addr(dec.wrapping_add(DEC_UTK_FREE_LOOP_BUFFER)).lw(c);
+        frame.restore_ra(c, 0);
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            DEC_UTK_FREE_LOOP_UTK_FREE.call(c, 0x003c_960c)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SNDSTRM_FindByChannel (0x3ce378).
+
+/// The sound library's state (`D_0050A8E8`): the channel count byte at
+/// `+0x2f`/`+0x30` offsets, the stream count at `+0x46`, the channel array
+/// pointer at `+0x1f0` (0x8c bytes per channel).
+pub(crate) const SND_STATE_OC337: u32 = 0x0050_a8e8;
+
+/// The stream count byte in [`SND_STATE_OC337`].
+pub(crate) const SND_STATE_OC337_STREAM_COUNT: u32 = 0x46;
+
+/// The stream slot table (`D_005157B8 + 0x304`, one pointer per stream).
+pub(crate) const SNDSTRM_FIND_BY_CHANNEL_SLOTS: u32 = 0x0051_5abc;
+
+/// `int SNDSTRM_FindByChannel(int channel)` (0x3ce378): the index of the
+/// first stream slot whose stream's handle (`*slot`) maps to `channel`
+/// (`SND_HandleToChannel`), or -1.
+pub fn sndstrm_find_by_channel(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        c.g[V0][0] = 0x51_0000;
+        let frame = Frame::open(c, 0x50);
+        c.g[V1][0] = sx(SND_STATE_OC337);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S2, 0x20);
+        c.g[S0][0] = 0;
+        c.g[V0][0] = Addr(SND_STATE_OC337 + SND_STATE_OC337_STREAM_COUNT).lbu(c);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        'found: {
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[S3][0] = c.g[V1][0];
+                c.g[V0][0] = sx(0x0051_57b8);
+                c.g[S1][0] = sx(SNDSTRM_FIND_BY_CHANNEL_SLOTS);
+                loop {
+                    c.cycles += 3;
+                    c.g[A0][0] = Addr(r32(c, S1)).lw(c);
+                    if c.g[A0][0] != 0 {
+                        c.cycles += 5;
+                        c.g[A0][0] = Addr(r32(c, A0)).lw(c);
+                        call_ptr(c, 0x003b_a6e8, 0x003c_e3d0)?;
+                        if c.g[V0][0] == c.g[S2][0] {
+                            c.cycles += 2;
+                            c.g[V0][0] = c.g[S0][0];
+                            break 'found;
+                        }
+                    }
+                    c.g[V0][0] = Addr(r32(c, S3).wrapping_add(SND_STATE_OC337_STREAM_COUNT)).lbu(c);
+                    c.cycles += 4;
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(4));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003c_e3b8);
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = u64::MAX;
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_DecEaxa_InitStream (0x3ca610).
+
+/// `int SND_EeVoiceGetMasterChannel(int voice)` (0x3ce0e0).
+pub(crate) const DEC_EAXA_INIT_MASTER_CHANNEL: Callee = Callee {
+    addr: 0x003c_e0e0,
+    f: ee::s14::SND_EeVoiceGetMasterChannel,
+};
+
+/// `int SNDSTRM_FindByChannel(int channel)` (0x3ce378).
+pub(crate) const DEC_EAXA_INIT_FIND_BY_CHANNEL: Callee = Callee {
+    addr: 0x003c_e378,
+    f: ee::s14::SNDSTRM_FindByChannel,
+};
+
+/// `int SND_EeVoiceGetSubIndex(int voice)` (0x3ce118).
+pub(crate) const DEC_EAXA_INIT_SUB_INDEX: Callee = Callee {
+    addr: 0x003c_e118,
+    f: ee::s14::SND_EeVoiceGetSubIndex,
+};
+
+/// `void* SND_EaxaAlloc(int size)` (0x3ccef0).
+pub(crate) const DEC_EAXA_INIT_ALLOC: Callee = Callee {
+    addr: 0x003c_cef0,
+    f: ee::s14::SND_EaxaAlloc,
+};
+
+/// `EaxaState* SND_EaxaReset(EaxaState*)` (0x3ccf40).
+pub(crate) const DEC_EAXA_INIT_RESET: Callee = Callee {
+    addr: 0x003c_cf40,
+    f: ee::s14::SND_EaxaReset,
+};
+
+/// The EA-XA decoder's two methods (`+0`, `+4`).
+pub(crate) const DEC_EAXA_INIT_METHOD0: u32 = 0x003c_a460;
+
+pub(crate) const DEC_EAXA_INIT_METHOD1: u32 = 0x003c_a5e8;
+
+/// `void SND_DecEaxa_InitStream(EaxaDecoder* dec, StreamDesc* desc)`
+/// (0x3ca610): set up an EA-XA stream decoder for the voice `desc+0x1c`:
+/// its methods (`+0`, `+4`), the stream of the voice's master channel
+/// (`+0x30`), the voice's sub index (byte `+0x38`), `desc+0x24` to `+0x2c`,
+/// `desc+0xc` to `+0x24`, cleared counters (`+0x20`, `+0x28`, `+0x34`) and a
+/// fresh 0xa8-byte EA-XA state (`+0x1c`).
+pub fn snd_dec_eaxa_init_stream(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 37;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x3d_0000;
+        frame.save(c, S0, 0x20);
+        c.g[V1][0] = 0x3d_0000;
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = sx(DEC_EAXA_INIT_METHOD1);
+        c.g[V0][0] = sx(DEC_EAXA_INIT_METHOD0);
+        let dec = r32(c, S0);
+        Addr(dec.wrapping_add(4)).sw(c, sx(DEC_EAXA_INIT_METHOD1));
+        Addr(dec).sw(c, sx(DEC_EAXA_INIT_METHOD0));
+        c.g[S1][0] = c.g[A1][0];
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x1c)).lw(c);
+        DEC_EAXA_INIT_MASTER_CHANNEL.call(c, 0x003c_a648)?;
+        c.g[A0][0] = c.g[V0][0];
+        DEC_EAXA_INIT_FIND_BY_CHANNEL.call(c, 0x003c_a650)?;
+        let v0 = c.g[V0][0];
+        Addr(r32(c, S0).wrapping_add(0x30)).sw(c, v0);
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x1c)).lw(c);
+        DEC_EAXA_INIT_SUB_INDEX.call(c, 0x003c_a65c)?;
+        let (dec, desc) = (r32(c, S0), r32(c, S1));
+        let sub = c.g[V0][0];
+        Addr(dec.wrapping_add(0x38)).sb(c, sub);
+        c.g[A0][0] = 0xa8;
+        c.g[V0][0] = Addr(desc.wrapping_add(0x24)).lw(c);
+        Addr(dec.wrapping_add(0x20)).sw(c, 0);
+        let v0 = c.g[V0][0];
+        Addr(dec.wrapping_add(0x2c)).sw(c, v0);
+        c.g[V1][0] = Addr(desc.wrapping_add(0xc)).lw(c);
+        Addr(dec.wrapping_add(0x28)).sw(c, 0);
+        Addr(dec.wrapping_add(0x34)).sw(c, 0);
+        let v1 = c.g[V1][0];
+        Addr(dec.wrapping_add(0x24)).sw(c, v1);
+        DEC_EAXA_INIT_ALLOC.call(c, 0x003c_a684)?;
+        c.g[A0][0] = c.g[V0][0];
+        DEC_EAXA_INIT_RESET.call(c, 0x003c_a68c)?;
+        let state = c.g[V0][0];
+        Addr(r32(c, S0).wrapping_add(0x1c)).sw(c, state);
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SNDSTRM_StartPlayback (0x3b68b8).
+
+/// `int SNDSTRM_StartChannel(int, void*, void*, void*)` (0x3c6760).
+pub(crate) const START_PLAYBACK_START_CHANNEL: Callee = Callee {
+    addr: 0x003c_6760,
+    f: ee::s13::SNDSTRM_StartChannel,
+};
+
+/// `int SND_ApplyChannelParams(int handle, ChannelParams*)` (0x3b8cc8).
+pub(crate) const START_PLAYBACK_APPLY_PARAMS: Callee = Callee {
+    addr: 0x003b_8cc8,
+    f: ee::s13::SND_ApplyChannelParams,
+};
+
+/// `void SNDSTRM_StartPlayback(Stream* s)` (0x3b68b8): start the stream's
+/// channel (`SNDSTRM_StartChannel(s+8 word, s+0x14, s+0x1c, s+0xec)`, the
+/// handle to `+4`), apply the parameter block `+0x104` when its flag
+/// (`+0x114`) is set, and mark the stream playing (byte `+0x10`). The
+/// C++ is a `do { ... } while (++i == 0)` loop: it runs once.
+pub fn sndstrm_start_playback(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x20);
+        let strm = r32(c, S0);
+        c.g[A1][0] = sx(strm.wrapping_add(0x14));
+        frame.save(c, S3, 0x10);
+        c.g[A2][0] = sx(strm.wrapping_add(0x1c));
+        frame.save_ra(c, 0);
+        c.g[A3][0] = sx(strm.wrapping_add(0xec));
+        c.g[S3][0] = 0;
+        c.g[S2][0] = sx(strm.wrapping_add(0x104));
+        c.g[A0][0] = Addr(strm.wrapping_add(8)).lw(c);
+        c.g[S1][0] = sx(strm.wrapping_add(0x114));
+        START_PLAYBACK_START_CHANNEL.call(c, 0x003b_68f4)?;
+        let handle = c.g[V0][0];
+        Addr(r32(c, S0).wrapping_add(4)).sw(c, handle);
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, S1)).lw(c);
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[A0][0] = Addr(r32(c, S0).wrapping_add(4)).lw(c);
+                c.g[A1][0] = c.g[S2][0];
+                START_PLAYBACK_APPLY_PARAMS.call(c, 0x003b_6910)?;
+            }
+            c.g[S2][0] = sx(r32(c, S2).wrapping_add(0x18));
+            c.cycles += 3;
+            c.g[S3][0] = sx(r32(c, S3).wrapping_add(1));
+            let again = c.g[S3][0] == 0;
+            c.g[S1][0] = sx(r32(c, S1).wrapping_add(0x18));
+            if !again {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003b_68f8);
+            }
+        }
+        c.cycles += 9;
+        c.g[V0][0] = 1;
+        frame.restore(c, S1, 0x30);
+        Addr(r32(c, S0).wrapping_add(0x10)).sb(c, 1);
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_EeVoiceGetSubIndex (0x3ce118).
+
+/// Channel record size in the channel array (`SND_STATE_OC337 + 0x1f0`).
+pub(crate) const SND_CHANNEL_SIZE_OC337: u32 = 0x8c;
+
+/// `int SND_EeVoiceGetSubIndex(int voice)` (0x3ce118): the voice's channel
+/// index is `voice + state[0x30] + state[0x2f]`; if that channel has a
+/// master (`+0x28` != -1), the 1-based slot (1..5) of the index among the
+/// master's sub-voice halfwords (`+6..+0xe`), else 0.
+pub fn snd_ee_voice_get_sub_index(c: &mut Cpu) {
+    c.cycles += 14;
+    c.g[V0][0] = 0x51_0000;
+    c.g[T0][0] = SND_CHANNEL_SIZE_OC337 as u64;
+    c.g[V0][0] = sx(SND_STATE_OC337);
+    c.g[A2][0] = u64::MAX;
+    c.g[V1][0] = Addr(SND_STATE_OC337 + 0x30).lbu(c);
+    c.g[A1][0] = Addr(SND_STATE_OC337 + 0x2f).lbu(c);
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+    c.g[A3][0] = Addr(SND_STATE_OC337 + 0x1f0).lw(c);
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A1)));
+    c.mult(0, V0, A0, T0);
+    c.g[V0][0] = sx(r32(c, A3).wrapping_add(r32(c, V0)));
+    c.g[V0][0] = Addr(r32(c, V0).wrapping_add(0x28)).lh(c);
+    let has_master = c.g[V0][0] != c.g[A2][0];
+    c.mult(0, V1, V0, T0);
+    if !has_master {
+        c.cycles += 2;
+        c.g[V0][0] = 0;
+        return ret(c);
+    }
+    c.cycles += 4;
+    c.g[A1][0] = 1;
+    c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, A3)));
+    c.g[V1][0] = sx(r32(c, V0).wrapping_add(6));
+    loop {
+        c.cycles += 3;
+        c.g[V0][0] = Addr(r32(c, V1)).lh(c);
+        if c.g[V0][0] == c.g[A0][0] {
+            c.cycles += 2;
+            c.g[V0][0] = c.g[A1][0];
+            return ret(c);
+        }
+        c.cycles += 4;
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+        c.g[V0][0] = ((c.g[A1][0] as i64) < 6) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(2));
+        if !more {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+            return ret(c);
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003c_e170);
+        }
+    }
+}
+
+// ------------------------------------------------ SND_ChannelFindMaxVoice
+
+/// `D_0050AAD8`: pointer to the channel table (0x8c bytes per channel; the
+/// voice priorities are halfwords from +4).
+pub(crate) const SND_CHANNEL_FIND_MAX_VOICE_TABLE: u32 = 0x0050_aad8;
+
+/// `int SND_ChannelFindMaxVoice(int channel, int count)` (0x003c6580): the
+/// index of the voice with the highest priority among the channel's first
+/// `count` voices (the first on ties), or -1 if there are none.
+pub fn snd_channel_find_max_voice(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[V0][0] = c.g[A0][0];
+    c.g[T0][0] = u64::MAX; // best priority
+    c.g[T1][0] = u64::MAX; // its voice
+    c.g[A3][0] = 0; // voice index
+    if (c.g[A1][0] as i64) > 0 {
+        c.cycles += 7;
+        c.g[V1][0] = 0x8c;
+        c.g[A0][0] = 0x0051_0000;
+        c.mult(0, V1, V0, V1);
+        c.g[V0][0] = Addr(SND_CHANNEL_FIND_MAX_VOICE_TABLE).lw(c);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(4));
+        // v1: the current priority halfword.
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        loop {
+            c.cycles += 4;
+            c.g[A2][0] = Addr(r32(c, V1)).lh(c);
+            let higher = (c.g[T0][0] as i64) < (c.g[A2][0] as i64);
+            c.g[V0][0] = higher as u64;
+            if higher {
+                c.cycles += 3;
+                c.g[T0][0] = c.g[A2][0];
+                c.g[T1][0] = c.g[A3][0];
+            }
+            c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+            c.cycles += 3;
+            let more = (c.g[A3][0] as i64) < (c.g[A1][0] as i64);
+            c.g[V0][0] = more as u64;
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(2));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003c_65b0);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[T1][0];
+    ret(c);
+}
+
+// -------------------------------------------------------- SPCH_MatchFlags
+
+/// `bool SPCH_MatchFlags(u8 want, u8 ignore, const u8* ev)` (0x003db3b8):
+/// whether the event's flag byte `ev[3]` equals `want` on every bit of the
+/// mask byte `ev[2]` that `ignore` does not clear.
+pub fn spch_match_flags(c: &mut Cpu) {
+    c.cycles += 10;
+    c.g[A1][0] &= 0xff;
+    let ev = r32(c, A2);
+    c.g[V0][0] = Addr(ev.wrapping_add(3)).lbu(c);
+    c.g[V1][0] = Addr(ev.wrapping_add(2)).lbu(c);
+    c.g[A0][0] &= 0xff;
+    c.g[A1][0] = !c.g[A1][0];
+    c.g[V0][0] ^= c.g[A0][0];
+    c.g[V1][0] &= c.g[A1][0];
+    c.g[V0][0] &= c.g[V1][0];
+    c.g[V0][0] = (c.g[V0][0] == 0) as u64;
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// SND_DecEaxa_FreeStream (0x3ca5e8)
+
+/// The EAXA decoder stream's buffer pointer.
+pub(crate) const SND_DEC_EAXA_STREAM_BUFFER: u32 = 0x1c;
+
+pub(crate) const SND_EAXA_FREE: Callee = Callee {
+    addr: 0x003c_cf18,
+    f: ee::s14::SND_EaxaFree,
+};
+
+/// `void SND_DecEaxa_FreeStream(DecStream* s)` (0x3ca5e8): hand the stream's
+/// buffer (`+0x1c`) back to the sound library's allocator when it has one.
+pub fn snd_dec_eaxa_free_stream(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw(r32(c, A0).wrapping_add(SND_DEC_EAXA_STREAM_BUFFER));
+        frame.restore_ra(c, 0);
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            SND_EAXA_FREE.call(c, 0x003c_a604)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SPCH_HasPendingSentence (0x3da3f0)
+
+/// The speech library's current sentence: `{owner, pending count}`.
+pub(crate) const SPCH_CURRENT_SENTENCE: u32 = 0x0045_0700;
+
+/// `bool SPCH_HasPendingSentence(int owner)` (0x3da3f0): whether the current
+/// sentence belongs to `owner` and still has a positive pending count.
+pub fn spch_has_pending_sentence(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[V1][0] = 0x0045_0000;
+    c.g[A1][0] = 0;
+    c.g[V0][0] = c.lw(SPCH_CURRENT_SENTENCE);
+    c.g[A2][0] = sx(SPCH_CURRENT_SENTENCE);
+    if c.g[V0][0] == c.g[A0][0] {
+        c.cycles += 2;
+        c.g[V0][0] = c.lw(SPCH_CURRENT_SENTENCE + 4);
+        c.g[A1][0] = (0 < c.g[V0][0] as i64) as u64;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A1][0];
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// SND_EaxaFree (0x3ccf18) / SND_EaxaAlloc (0x3ccef0)
+
+/// The sound library's allocator hook (`D_00517604`).
+pub(crate) const SND_EAXA_ALLOC_HOOK: u32 = 0x0051_7604;
+
+/// The sound library's free hook (`D_00517608`).
+pub(crate) const SND_EAXA_FREE_HOOK: u32 = 0x0051_7608;
+
+/// `void SND_EaxaFree(void* p)` (0x3ccf18): forward to the free hook
+/// installed at `0x517608`, arguments untouched.
+pub fn snd_eaxa_free(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        c.g[V1][0] = 0x0051_0000;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = c.lw(SND_EAXA_FREE_HOOK);
+        frame.save_ra(c, 0);
+        let target = c.g[V0][0] as u32;
+        call_ptr(c, target, 0x003c_cf30)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void* SND_EaxaAlloc(int size)` (0x3ccef0): forward to the allocator hook
+/// installed at `0x517604`, arguments untouched.
+pub fn snd_eaxa_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        c.g[V1][0] = 0x0051_0000;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = c.lw(SND_EAXA_ALLOC_HOOK);
+        frame.save_ra(c, 0);
+        let target = c.g[V0][0] as u32;
+        call_ptr(c, target, 0x003c_cf08)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_EeVoiceGetMasterChannel (0x3ce0e0)
+
+/// The sound library's EE voice state (`0x510000 - 0x5718`).
+pub(crate) const SND_EE_VOICE_STATE: u32 = 0x0050_a8e8;
+
+/// Voice-table pointer in that state.
+pub(crate) const SND_EE_VOICE_TABLE_2: u32 = 0x1f0;
+
+/// Size of one voice record.
+pub(crate) const SND_EE_VOICE_SIZE: u32 = 0x8c;
+
+/// A voice's master channel (`short`, -1 = the voice is its own master).
+pub(crate) const SND_EE_VOICE_MASTER: u32 = 0x28;
+
+/// `int SND_EeVoiceGetMasterChannel(int voice)` (0x3ce0e0): offset the voice
+/// by the state's two base indices (bytes `+0x30`, `+0x2f`) and return its
+/// master channel, or the offset voice itself when the master is -1.
+pub fn snd_ee_voice_get_master_channel(c: &mut Cpu) {
+    c.cycles += 14;
+    let state = SND_EE_VOICE_STATE;
+    c.g[V0][0] = sx(state);
+    c.g[A1][0] = SND_EE_VOICE_SIZE as u64;
+    c.g[A2][0] = c.lbu(state.wrapping_add(0x30));
+    c.g[A3][0] = c.lbu(state.wrapping_add(0x2f));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A2)));
+    c.g[V1][0] = c.lw(state.wrapping_add(SND_EE_VOICE_TABLE_2));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A3)));
+    c.mult(0, A1, A0, A1);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+    c.g[V0][0] = c.lh(r32(c, V1).wrapping_add(SND_EE_VOICE_MASTER));
+    c.g[A1][0] = !c.g[V0][0];
+    if c.g[A1][0] == 0 {
+        c.g[V0][0] = c.g[A0][0];
+    }
+    ret(c);
+}
+
+// ------------------------------------------------------------- SND_EaxaReset
+
+/// `SndEaxa* SND_EaxaReset(SndEaxa* eaxa)` (0x3ccf40): clear the EA-XA
+/// decoder's input pointer, sizes and both predictor histories; returns
+/// `eaxa`.
+pub fn snd_eaxa_reset(c: &mut Cpu) {
+    c.cycles += 7;
+    c.g[V0][0] = c.g[A0][0];
+    let eaxa = Addr(abi::arg(c, 0));
+    for off in [0xc, 0x8, 0x4, 0x98, 0x9c] {
+        eaxa.off(off).sw(c, 0);
+    }
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     crate::difftest::events::driven!(oc238_gen_prebuffering, ee::s13::f_003b70f8__generated);
@@ -27773,6 +28376,425 @@ pub(crate) mod tests {
                         .write32(SLOT + SNDSTRM_SLOT_BUFFERS + 4 * i, r.next_u32());
                 }
                 c.g[A0][0] = sx(index as u32);
+            },
+        );
+    }
+
+    /// Gated slot fakes (the suite runs tests in parallel): a fake runs only
+    /// while its magic is at this address of the machine's RAM, else the body
+    /// the slot held.
+    pub(crate) const OC337_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC337_MAGIC_START_CHANNEL: u32 = 0x0c33_7a02;
+
+    /// Arm the fake whose magic is `magic`.
+    pub(crate) fn oc337_arm(c: &mut Cpu, magic: u32) {
+        c.bus.write32(OC337_CTRL, magic);
+    }
+
+    /// Run event seeds: after the fixture, schedule an event at the first
+    /// back edge (for both bodies alike).
+    pub(crate) fn oc337_events(c: &mut Cpu, seed: u32, entry: u32) -> Events {
+        let mut r = Rng(entry as u64 ^ (seed as u64) << 12);
+        let mode = schedule(c, &mut r, seed, entry);
+        if mode != Events::Off {
+            c.next_event = c.cycles + 4;
+        }
+        mode
+    }
+
+    // -- SND_DecUtk_FreeLoop ------------------------------------------------
+
+    /// With and without a work buffer; the library's free hook is a fake
+    /// (the miss hook), unwinding for some seeds.
+    #[test]
+    fn snd_dec_utk_free_loop_matches() {
+        covered(
+            ee::s14::f_003c95f0__generated,
+            snd_dec_utk_free_loop,
+            90,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c_95f0, 1);
+                c.pc = 0x003c_95f0;
+                let dec = DATA + 0x100;
+                fill(c, &mut r, dec, 0x10);
+                let buf = if seed % 3 == 0 {
+                    0
+                } else {
+                    DATA + 0x2000 + 0x40 * (seed % 8)
+                };
+                c.bus.write32(dec + DEC_UTK_FREE_LOOP_BUFFER, buf);
+                c.bus.write32(0x0051_7608, FAKE);
+                c.g[A0][0] = sx(dec);
+            },
+        );
+    }
+
+    // -- Sound channel tables (FindByChannel, InitStream, GetSubIndex) ------
+
+    /// The channel array (8 records of 0x8c bytes).
+    pub(crate) const OC337_CHANNELS: u32 = DATA + 0x1000;
+
+    /// Stream objects (their first word is a channel handle).
+    pub(crate) const OC337_STREAMS: u32 = DATA + 0x2000;
+
+    /// The sound state's channel tables: 8 channels with handles
+    /// `i | k << 8` (k 0..2), a live byte (`+0x69`), a master (`+0x28`: -1 or
+    /// 0..7) and five sub-voice halfwords (`+6..+0xe`); 0..6 stream slots
+    /// (some empty) whose streams carry a live handle, a stale one (`k = 3`)
+    /// or a negative one. `SND_HandleToChannel` runs for real on them.
+    pub(crate) fn oc337_snd_tables(c: &mut Cpu, r: &mut Rng) {
+        let st = SND_STATE_OC337;
+        c.bus.write8(st + 0x30, (r.next_u32() % 2) as u8);
+        c.bus.write8(st + 0x2f, (r.next_u32() % 2) as u8);
+        c.bus.write32(st + 0x1f0, OC337_CHANNELS);
+        c.bus.write16(st + 0x17e, 8);
+        for i in 0..8u32 {
+            let e = OC337_CHANNELS + SND_CHANNEL_SIZE_OC337 * i;
+            c.bus.write32(e, i | (r.next_u32() % 3) << 8);
+            c.bus.write8(e + 0x69, (r.next_u32() % 4 != 0) as u8);
+            let master = if r.next_u32() % 3 == 0 {
+                0xffff
+            } else {
+                r.next_u32() % 8
+            };
+            c.bus.write16(e + 0x28, master as u16);
+            for k in 0..5 {
+                c.bus.write16(e + 6 + 2 * k, (r.next_u32() % 9) as u16);
+            }
+        }
+        let count = r.next_u32() % 7;
+        c.bus.write8(st + SND_STATE_OC337_STREAM_COUNT, count as u8);
+        for j in 0..6u32 {
+            let s = OC337_STREAMS + 0x10 * j;
+            let slot = if r.next_u32() % 5 == 0 { 0 } else { s };
+            c.bus.write32(SNDSTRM_FIND_BY_CHANNEL_SLOTS + 4 * j, slot);
+            let ch = r.next_u32() % 8;
+            let handle = match r.next_u32() % 4 {
+                0 => 0x8000_0000 | r.next_u32(),
+                1 => ch | 0x300,
+                _ => c.bus.read32(OC337_CHANNELS + SND_CHANNEL_SIZE_OC337 * ch),
+            };
+            c.bus.write32(s, handle);
+        }
+    }
+
+    // -- SNDSTRM_FindByChannel ----------------------------------------------
+
+    /// Channels 0..7, -8 (what `SND_HandleToChannel` answers for a dead
+    /// handle, so dead streams match) and an unused 9.
+    pub(crate) fn oc337_find_by_channel_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3c_e378, 0);
+        c.pc = 0x003c_e378;
+        oc337_snd_tables(c, &mut r);
+        let channel: i32 = match seed % 6 {
+            0 => -8,
+            1 => 9,
+            _ => (r.next_u32() % 8) as i32,
+        };
+        c.g[A0][0] = channel as i64 as u64;
+    }
+
+    driven!(oc337_gen_find_by_channel, ee::s14::f_003ce378__generated);
+
+    driven!(oc337_hand_find_by_channel, sndstrm_find_by_channel);
+
+    #[test]
+    fn sndstrm_find_by_channel_matches() {
+        check(
+            ee::s14::f_003ce378__generated,
+            sndstrm_find_by_channel,
+            200,
+            &oc337_find_by_channel_setup,
+        );
+        check_events(
+            oc337_gen_find_by_channel,
+            oc337_hand_find_by_channel,
+            60,
+            &|c, seed| {
+                oc337_find_by_channel_setup(c, seed);
+                oc337_events(c, seed, 0x003c_e378)
+            },
+        );
+    }
+
+    // -- SND_DecEaxa_InitStream ---------------------------------------------
+
+    /// The real master-channel, stream and sub-index lookups on the channel
+    /// tables; the EA-XA allocator hook (`0x517604`) is a fake returning a
+    /// block (unwinding for some seeds), `SND_EaxaReset` is real.
+    #[test]
+    fn snd_dec_eaxa_init_stream_matches() {
+        covered(
+            ee::s14::f_003ca610__generated,
+            snd_dec_eaxa_init_stream,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c_a610, 1);
+                c.pc = 0x003c_a610;
+                oc337_snd_tables(c, &mut r);
+                c.bus.write32(0x0051_7604, FAKE);
+                c.bus.write32(LOG_RESULTS, DATA + 0x3_0000);
+                let dec = DATA + 0x4000;
+                let desc = DATA + 0x4100;
+                fill(c, &mut r, dec, 0x10);
+                fill(c, &mut r, desc, 0x10);
+                c.bus.write32(desc + 0x1c, r.next_u32() % 6);
+                c.g[A0][0] = sx(dec);
+                c.g[A1][0] = sx(desc);
+            },
+        );
+    }
+
+    // -- SNDSTRM_StartPlayback ----------------------------------------------
+
+    pub(crate) static OC337_PREV_START_CHANNEL: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc337_fake_start_channel(c: &mut Cpu) {
+        if c.bus.read32(OC337_CTRL) != OC337_MAGIC_START_CHANNEL {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &OC337_PREV_START_CHANNEL,
+                ee::s13::f_003c6760__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fake(c, 0x003c_6760, ra);
+    }
+
+    /// A fake `SNDSTRM_StartChannel` (sometimes unwinding) answering a
+    /// pointer or a negative handle; with the parameter flag set, the real
+    /// `SND_ApplyChannelParams` finds no channel for it (no channels: count
+    /// `+0x17e` is 0) and returns at once.
+    #[test]
+    fn sndstrm_start_playback_matches() {
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s13::OVERRIDE_003C6760),
+            oc337_fake_start_channel,
+            &OC337_PREV_START_CHANNEL,
+        );
+        covered(
+            ee::s13::f_003b68b8__generated,
+            sndstrm_start_playback,
+            90,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3b_68b8, 1);
+                c.pc = 0x003b_68b8;
+                oc337_arm(c, OC337_MAGIC_START_CHANNEL);
+                c.bus.write16(SND_STATE_OC337 + 0x17e, 0);
+                let strm = DATA + 0x400;
+                fill(c, &mut r, strm, 0x50);
+                c.bus.write32(
+                    strm + 0x114,
+                    if seed % 2 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                let handle = match seed % 3 {
+                    0 => 0,
+                    1 => 0xffff_fff8,
+                    _ => 0x8000_0000 | r.next_u32(),
+                };
+                c.bus.write32(LOG_RESULTS, handle);
+                c.g[A0][0] = sx(strm);
+            },
+        );
+    }
+
+    // -- SND_EeVoiceGetSubIndex ---------------------------------------------
+
+    /// Voices 0..5 on the channel tables; for half the seeds the channel's
+    /// index is planted in one of its master's sub-voice slots.
+    pub(crate) fn oc337_sub_index_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3c_e118, 0);
+        c.pc = 0x003c_e118;
+        oc337_snd_tables(c, &mut r);
+        let voice = r.next_u32() % 6;
+        let st = SND_STATE_OC337;
+        let index = voice + c.bus.read8(st + 0x30) as u32 + c.bus.read8(st + 0x2f) as u32;
+        let master = c
+            .bus
+            .read16(OC337_CHANNELS + SND_CHANNEL_SIZE_OC337 * index + 0x28);
+        if seed % 2 == 0 && master != 0xffff {
+            let slot = r.next_u32() % 5;
+            c.bus.write16(
+                OC337_CHANNELS + SND_CHANNEL_SIZE_OC337 * master as u32 + 6 + 2 * slot,
+                index as u16,
+            );
+        }
+        c.g[A0][0] = voice as u64;
+    }
+
+    driven!(oc337_gen_sub_index, ee::s14::f_003ce118__generated);
+
+    driven!(oc337_hand_sub_index, snd_ee_voice_get_sub_index);
+
+    #[test]
+    fn snd_ee_voice_get_sub_index_matches() {
+        check_lohi(
+            ee::s14::f_003ce118__generated,
+            snd_ee_voice_get_sub_index,
+            200,
+            &oc337_sub_index_setup,
+        );
+        check_events(oc337_gen_sub_index, oc337_hand_sub_index, 60, &|c, seed| {
+            oc337_sub_index_setup(c, seed);
+            oc337_events(c, seed, 0x003c_e118)
+        });
+    }
+
+    /// `SPCH_MatchFlags`: random bytes (junk above the low byte of the
+    /// arguments), with the matching case forced half the time.
+    #[test]
+    fn spch_match_flags_matches() {
+        check(
+            ee::s14::f_003db3b8__generated,
+            spch_match_flags,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x003d_b3b8 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.pc = 0x003d_b3b8;
+                let ev = DATA + 0x100 + (r.next_u32() & 0xff);
+                fill(c, &mut r, DATA + 0x100, 0x48);
+                if seed % 2 == 0 {
+                    // want == ev[3] on the masked bits.
+                    let flags = c.bus.read8(ev + 3) as u64;
+                    c.g[A0][0] = (c.g[A0][0] & !0xff) | flags;
+                }
+                if seed % 5 == 0 {
+                    c.bus.write8(ev + 2, 0);
+                }
+                c.g[A2][0] = sx(ev);
+            },
+        );
+    }
+
+    /// `SND_DecEaxa_FreeStream`: a stream with no buffer (no call) or one
+    /// the real `SND_EaxaFree` hands to the fake free hook.
+    #[test]
+    fn snd_dec_eaxa_free_stream_matches() {
+        covered(
+            ee::s14::f_003ca5e8__generated,
+            snd_dec_eaxa_free_stream,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c_a5e8, 1);
+                c.pc = 0x003c_a5e8;
+                c.bus.write32(SND_EAXA_FREE_HOOK, FAKE);
+                let buf = if seed % 3 == 0 { 0 } else { r.next_u32() };
+                c.bus.write32(DATA + SND_DEC_EAXA_STREAM_BUFFER, buf);
+                c.g[A0][0] = DATA as u64;
+            },
+        );
+    }
+
+    /// `SPCH_HasPendingSentence`: the owner matches (sign-extended word) or
+    /// not; the pending count is negative, zero or positive.
+    #[test]
+    fn spch_has_pending_sentence_matches() {
+        check(
+            ee::s14::f_003da3f0__generated,
+            spch_has_pending_sentence,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3d_a3f0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x003d_a3f0;
+                let owner = r.next_u32();
+                c.bus.write32(SPCH_CURRENT_SENTENCE, owner);
+                let count = match seed % 3 {
+                    0 => 0,
+                    1 => r.next_u32() | 0x8000_0000,
+                    _ => (r.next_u32() >> 1).max(1),
+                };
+                c.bus.write32(SPCH_CURRENT_SENTENCE + 4, count);
+                c.g[A0][0] = match seed % 4 {
+                    0 => r.next_u32() as u64,
+                    // Same low word, upper half not the sign extension.
+                    1 => owner as u64 | 0x1_0000_0000,
+                    _ => sx(owner),
+                };
+            },
+        );
+    }
+
+    /// `SND_EaxaFree`: the free hook is a fake that must be called.
+    #[test]
+    fn snd_eaxa_free_matches() {
+        covered(
+            ee::s14::f_003ccf18__generated,
+            snd_eaxa_free,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c_cf18, 1);
+                c.pc = 0x003c_cf18;
+                c.bus.write32(SND_EAXA_FREE_HOOK, FAKE + 0x10 * (seed % 4));
+                c.g[A0][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// `SND_EaxaAlloc`: the allocator hook is a fake that must be called.
+    #[test]
+    fn snd_eaxa_alloc_matches() {
+        covered(
+            ee::s14::f_003ccef0__generated,
+            snd_eaxa_alloc,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c_cef0, 1);
+                c.pc = 0x003c_cef0;
+                c.bus.write32(SND_EAXA_ALLOC_HOOK, FAKE + 0x10 * (seed % 4));
+                c.g[A0][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// `SND_EeVoiceGetMasterChannel`: small base indices and voice; the
+    /// master is -1 (returns the voice) or a random short.
+    #[test]
+    fn snd_ee_voice_get_master_channel_matches() {
+        check_lohi(
+            ee::s14::f_003ce0e0__generated,
+            snd_ee_voice_get_master_channel,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3c_e0e0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x003c_e0e0;
+                let b30 = r.next_u32() % 8;
+                let b2f = r.next_u32() % 8;
+                let voice = r.next_u32() % 16;
+                c.bus.write8(SND_EE_VOICE_STATE + 0x30, b30 as u8);
+                c.bus.write8(SND_EE_VOICE_STATE + 0x2f, b2f as u8);
+                c.bus
+                    .write32(SND_EE_VOICE_STATE + SND_EE_VOICE_TABLE_2, DATA);
+                let idx = voice + b30 + b2f;
+                let master = if seed % 3 == 0 {
+                    0xffff
+                } else {
+                    r.next_u32() as u16
+                };
+                c.bus
+                    .write16(DATA + idx * SND_EE_VOICE_SIZE + SND_EE_VOICE_MASTER, master);
+                // Upper half of a0 is junk: the adds are 32-bit.
+                c.g[A0][0] = (c.g[A0][0] & !0xffff_ffff) | voice as u64;
+            },
+        );
+    }
+
+    /// `SND_EaxaReset` on a decoder full of random words.
+    #[test]
+    fn snd_eaxa_reset_matches() {
+        check(
+            ee::s14::f_003ccf40__generated,
+            snd_eaxa_reset,
+            32,
+            &|c, seed| {
+                let mut r = Rng(0x003c_cf40 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x003c_cf40;
+                c.g[A0][0] = sx(DATA + 0x300);
+                crate::difftest::fill(c, &mut r, DATA + 0x300, 0x30);
             },
         );
     }

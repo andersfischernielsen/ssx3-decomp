@@ -318,6 +318,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ComputerActorRider_RollRandomTrick",
     ),
     (0x0040_f840, isnan, "isnan"),
+    (0x0010_01d8, crt_frame_dummy, "frame_dummy"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -15048,6 +15049,37 @@ pub fn isnan(c: &mut Cpu) {
     ret(c);
 }
 
+// --------------------------------------------------------------- frame_dummy
+
+/// `__register_frame_info_table` (0x414728, cross-shard).
+pub(crate) const FRAME_DUMMY_REGISTER: u32 = 0x0041_4728;
+
+/// The `.eh_frame` table (`0x440000 - 0x3200`) and its static object.
+pub(crate) const FRAME_DUMMY_EH_FRAME: u32 = 0x0044_0000 - 0x3200;
+
+pub(crate) const FRAME_DUMMY_OBJECT: u32 = 0x004a_0000 + 0x5d48;
+
+/// `static void frame_dummy(void)` (0x1001d8): crtbegin's init step,
+/// `__register_frame_info_table(__EH_FRAME_BEGIN__, &object)`, with the
+/// frame-pointer frame gcc gives it (`fp` saved, `sp` restored from `fp`).
+pub fn crt_frame_dummy(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, FP, 0x10);
+        frame.save_ra(c, 0);
+        c.g[FP][0] = c.g[SP][0];
+        c.g[A0][0] = sx(FRAME_DUMMY_EH_FRAME);
+        c.g[A1][0] = sx(FRAME_DUMMY_OBJECT);
+        call_ptr(c, FRAME_DUMMY_REGISTER, 0x0010_0200)?;
+        c.g[SP][0] = c.g[FP][0];
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -17874,6 +17906,11 @@ pub(crate) mod tests {
 
     pub(crate) const CAJ_CTRL: u32 = crate::difftest::DATA + 0x5000;
 
+    /// Gate of the `caj_fake_*` callees (other tests' machines fall back).
+    pub(crate) const CAJ_GATE: u32 = CAJ_CTRL + 0x40;
+
+    pub(crate) const CAJ_MAGIC: u32 = 0x1009_e0fa;
+
     /// Log a fake call's argument registers, `ra`, `sp` and cycles at
     /// `CAJ_REC + slot * 0x80` (the RAM comparison checks them).
     pub(crate) fn caj_record(c: &mut Cpu, slot: u32) {
@@ -17903,6 +17940,13 @@ pub(crate) mod tests {
     /// `FindJumpMarker`: found = ctrl+0; writes below (ctrl+4) and four
     /// marker words through a2, a3, t0, t1, t2.
     pub(crate) fn caj_fake_find_jump_marker(c: &mut Cpu) {
+        if c.bus.read32(CAJ_GATE) != CAJ_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(caj_fake_find_jump_marker),
+                ssx3_ee::s00::f_0010b980__generated,
+            );
+        }
         caj_record(c, 0);
         let found = c.bus.read32(CAJ_CTRL);
         let below = c.bus.read32(CAJ_CTRL + 4);
@@ -17919,6 +17963,13 @@ pub(crate) mod tests {
 
     /// `CruiseFollowPath`: only logged.
     pub(crate) fn caj_fake_cruise_follow_path(c: &mut Cpu) {
+        if c.bus.read32(CAJ_GATE) != CAJ_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(caj_fake_cruise_follow_path),
+                ssx3_ee::s00::f_00100680__generated,
+            );
+        }
         caj_record(c, 1);
         c.cycles += 7;
         abi::ret(c);
@@ -17926,6 +17977,13 @@ pub(crate) mod tests {
 
     /// `GetSteerTarget(&v, self)`: writes a vector from ctrl+0x10.
     pub(crate) fn caj_fake_get_steer_target(c: &mut Cpu) {
+        if c.bus.read32(CAJ_GATE) != CAJ_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(caj_fake_get_steer_target),
+                ssx3_ee::s00::f_00100610__generated,
+            );
+        }
         caj_record(c, 2);
         let v = c.g[A0][0] as u32;
         for i in 0..4 {
@@ -17938,42 +17996,42 @@ pub(crate) mod tests {
 
     /// `ComputeSteer`: returns the steer at ctrl+8 in f0.
     pub(crate) fn caj_fake_compute_steer(c: &mut Cpu) {
+        if c.bus.read32(CAJ_GATE) != CAJ_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(caj_fake_compute_steer),
+                ssx3_ee::s00::f_00100348__generated,
+            );
+        }
         caj_record(c, 3);
         c.f[0] = c.bus.read32(CAJ_CTRL + 8);
         c.cycles += 9;
         abi::ret(c);
     }
 
-    /// Installs the fakes in the callees' override slots; restores them on
-    /// drop.
-    pub(crate) struct CajSlots([fn(&mut Cpu); 4]);
-
-    impl CajSlots {
-        fn install() -> CajSlots {
-            unsafe {
-                let saved = CajSlots([
-                    ssx3_ee::s00::OVERRIDE_0010B980,
-                    ssx3_ee::s00::OVERRIDE_00100680,
-                    ssx3_ee::s00::OVERRIDE_00100610,
-                    ssx3_ee::s00::OVERRIDE_00100348,
-                ]);
-                ssx3_ee::s00::OVERRIDE_0010B980 = caj_fake_find_jump_marker;
-                ssx3_ee::s00::OVERRIDE_00100680 = caj_fake_cruise_follow_path;
-                ssx3_ee::s00::OVERRIDE_00100610 = caj_fake_get_steer_target;
-                ssx3_ee::s00::OVERRIDE_00100348 = caj_fake_compute_steer;
-                saved
-            }
-        }
-    }
-
-    impl Drop for CajSlots {
-        fn drop(&mut self) {
-            unsafe {
-                ssx3_ee::s00::OVERRIDE_0010B980 = self.0[0];
-                ssx3_ee::s00::OVERRIDE_00100680 = self.0[1];
-                ssx3_ee::s00::OVERRIDE_00100610 = self.0[2];
-                ssx3_ee::s00::OVERRIDE_00100348 = self.0[3];
-            }
+    /// Hooks the fakes in the callees' override slots (once per process; with
+    /// [`CAJ_GATE`] clear they run what the slots held before).
+    pub(crate) fn caj_install_fakes() {
+        let slots: [(*mut fn(&mut Cpu), fn(&mut Cpu)); 4] = [
+            (
+                std::ptr::addr_of_mut!(ssx3_ee::s00::OVERRIDE_0010B980),
+                caj_fake_find_jump_marker,
+            ),
+            (
+                std::ptr::addr_of_mut!(ssx3_ee::s00::OVERRIDE_00100680),
+                caj_fake_cruise_follow_path,
+            ),
+            (
+                std::ptr::addr_of_mut!(ssx3_ee::s00::OVERRIDE_00100610),
+                caj_fake_get_steer_target,
+            ),
+            (
+                std::ptr::addr_of_mut!(ssx3_ee::s00::OVERRIDE_00100348),
+                caj_fake_compute_steer,
+            ),
+        ];
+        for (slot, fake) in slots {
+            crate::difftest::fakes::hook(slot, fake, crate::difftest::fakes::prev_cell(fake));
         }
     }
 
@@ -17986,7 +18044,7 @@ pub(crate) mod tests {
     fn computer_actor_rider_cruise_approach_jump_matches() {
         use crate::difftest::fakes::machine;
         use crate::difftest::{check, elf_image};
-        let _slots = CajSlots::install();
+        caj_install_fakes();
         check(
             ee::s00::f_001009e0__generated,
             computer_actor_rider_cruise_approach_jump,
@@ -18018,7 +18076,8 @@ pub(crate) mod tests {
                 let height = if seed % 3 == 0 { 20000.0f32 } else { 5.0 };
                 c.bus
                     .write32(CAJ_RIDER_AT + CAJ_RIDER_HEIGHT, height.to_bits());
-                // The fakes' answers.
+                // The fakes' gate and answers.
+                c.bus.write32(CAJ_GATE, CAJ_MAGIC);
                 c.bus.write32(CAJ_CTRL, (seed % 5 != 0) as u32);
                 c.bus.write32(CAJ_CTRL + 4, (seed % 2) as u32);
                 let steer = match seed % 7 {
@@ -21050,6 +21109,22 @@ pub(crate) mod tests {
             c.g[A0][0] = a0;
             c.pc = 0x0040_f840;
         });
+    }
+
+    /// `frame_dummy` over the real `__register_frame_info_table` (it links
+    /// the static object into the list at 0x52ade8).
+    #[test]
+    fn crt_frame_dummy_matches() {
+        check(
+            ee::s00::f_001001d8__generated,
+            crt_frame_dummy,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_01d8, 0);
+                c.pc = 0x0010_01d8;
+                c.bus.write32(0x0052_ade8, r.next_u32());
+            },
+        );
     }
 }
 

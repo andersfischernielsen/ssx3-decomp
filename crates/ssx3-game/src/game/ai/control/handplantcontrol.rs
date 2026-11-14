@@ -10641,8 +10641,16 @@ pub(crate) mod tests {
     /// side of the ray the hit lies on (so the arm's `(velocity - hit) .
     /// direction` test takes both sides), bit 2 the trigger object at
     /// `frame+0x50` and bit 3 the animation object at `frame+0x54`; bits 8-9
-    /// are the trigger-entry index.
+    /// are the trigger-entry index. Gated on [`RAY_CTRL`]: other machines
+    /// (and [`setup_air`]'s real ray) run what the slot held before.
     pub(crate) fn fake_cast_board_ray(c: &mut Cpu) {
+        if c.bus.read32(RAY_CTRL) != RAY_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &RAY_PREV,
+                ssx3_ee::s01::f_0013a7b0__generated,
+            );
+        }
         let v = Addr(SEEDWORD).lw(c) as u32;
         let out = abi::arg(c, 1);
         put_vec(c, out, [0, 0, 0, 0x3f80_0000]);
@@ -10661,17 +10669,22 @@ pub(crate) mod tests {
         abi::ret(c);
     }
 
-    /// Puts the `CastBoardRay` override slot back (the generated body is its
-    /// default: the game's own replacement is installed by
-    /// `ssx3_game::install`, which the tests do not run).
-    pub(crate) struct RaySlot;
+    /// Gate of [`fake_cast_board_ray`]: the fixtures that want the fake write
+    /// [`RAY_MAGIC`] here.
+    pub(crate) const RAY_CTRL: u32 = SEEDWORD + 0x10;
 
-    impl Drop for RaySlot {
-        fn drop(&mut self) {
-            unsafe {
-                ssx3_ee::s01::OVERRIDE_0013A7B0 = ssx3_ee::s01::f_0013a7b0__generated;
-            }
-        }
+    pub(crate) const RAY_MAGIC: u32 = 0x13a7_b0fa;
+
+    static RAY_PREV: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    /// Hooks [`fake_cast_board_ray`] in the `CastBoardRay` slot (once per
+    /// process; the slot is never put back).
+    pub(crate) fn install_ray_fake() {
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ssx3_ee::s01::OVERRIDE_0013A7B0),
+            fake_cast_board_ray,
+            &RAY_PREV,
+        );
     }
 
     /// The board-contact arm, which the real function cannot reach in a test
@@ -10682,6 +10695,7 @@ pub(crate) mod tests {
         let mut r = machine(c, seed, 0x139c_88, 12);
         globals(c);
         rider_fixture(c, &mut r);
+        w(c, RAY_CTRL, RAY_MAGIC);
         // Bit 0 clear: a hit. Bit 1 varies the arm's side test, bits 2/3 the
         // trigger and animation objects, bits 8-9 the trigger entry.
         w(c, SEEDWORD, (seed % 8) * 2 | ((seed % 4) << 8));
@@ -10705,6 +10719,7 @@ pub(crate) mod tests {
         let mut r = machine(c, seed, 0x139c_f8, 10);
         globals(c);
         rider_fixture(c, &mut r);
+        w(c, RAY_CTRL, RAY_MAGIC);
         w(c, SEEDWORD, r.next_u32());
         w(
             c,
@@ -10744,10 +10759,7 @@ pub(crate) mod tests {
     /// animation-object and landing-chain branches, all driven by the fake.
     #[test]
     fn rider_air_state_post_update_board_contact_matches() {
-        let _slot = RaySlot;
-        unsafe {
-            ssx3_ee::s01::OVERRIDE_0013A7B0 = fake_cast_board_ray;
-        }
+        install_ray_fake();
         check_strict(
             ssx3_ee::s01::f_00139c88__generated,
             rider_air_state_post_update,
@@ -10759,10 +10771,7 @@ pub(crate) mod tests {
     /// A randomized sweep over everything the function reads.
     #[test]
     fn rider_air_state_post_update_fuzz_matches() {
-        let _slot = RaySlot;
-        unsafe {
-            ssx3_ee::s01::OVERRIDE_0013A7B0 = fake_cast_board_ray;
-        }
+        install_ray_fake();
         check_strict(
             ssx3_ee::s01::f_00139c88__generated,
             rider_air_state_post_update,
@@ -12647,8 +12656,6 @@ pub(crate) mod tests {
     use crate::difftest::fakes::fake;
 
     use std::sync::atomic::AtomicUsize;
-    use std::sync::atomic::Ordering;
-    use std::sync::Once;
 
     // -- 0x001399e0 RiderAirState_Enter ---------------------------------------
 
@@ -12705,13 +12712,7 @@ pub(crate) mod tests {
                     let ra = c.g[RA][0] as u32;
                     return fake(c, $addr, ra);
                 }
-                let p = $prev.load(Ordering::Relaxed);
-                if p == 0 || p == $name as *const () as usize {
-                    return $gen(c);
-                }
-                // SAFETY: `p` was read from the same slot (a `fn(&mut Cpu)`).
-                let f = unsafe { std::mem::transmute::<usize, fn(&mut Cpu)>(p) };
-                f(c)
+                crate::difftest::fakes::fall_back(c, &$prev, $gen)
             }
         };
     }
@@ -12729,11 +12730,11 @@ pub(crate) mod tests {
     );
 
     pub(crate) fn obj_ptr_array_sort_install() {
-        static ONCE: Once = Once::new();
-        ONCE.call_once(|| unsafe {
-            OC318_PREV_MERGE_SORT.store(ee::s01::OVERRIDE_0013F8F8 as usize, Ordering::Relaxed);
-            ee::s01::OVERRIDE_0013F8F8 = oc318_fake_merge_sort;
-        });
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s01::OVERRIDE_0013F8F8),
+            oc318_fake_merge_sort,
+            &OC318_PREV_MERGE_SORT,
+        );
     }
 
     /// `ObjPtrArray_Sort` over empty, inverted, single and 2/3/16-element

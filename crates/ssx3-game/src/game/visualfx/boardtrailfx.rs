@@ -5573,6 +5573,12 @@ pub(crate) mod tests {
     /// Control words the fake callees read.
     pub(crate) const CTRL: u32 = DATA + 0x200;
 
+    /// Gate of the fake callees: [`setup`] writes [`TRAIL_MAGIC`] here (other
+    /// tests' machines fall back).
+    pub(crate) const TRAIL_GATE: u32 = CTRL + 0x10;
+
+    pub(crate) const TRAIL_MAGIC: u32 = 0x2e89_38fa;
+
     /// `difftest::check`, also requiring the caller-saved scratch state and
     /// LO/HI to match: the fake callees hash every register into their result
     /// and into RAM, and `div`/`mult` leave LO/HI a later read could see.
@@ -5597,6 +5603,13 @@ pub(crate) mod tests {
     /// `cBoardTrailFX_IsActive(self)`: bit 0 of the control word is the
     /// answer, the fade it stores at `self+0x9c` comes from the upper bits.
     pub(crate) fn fake_is_active(c: &mut Cpu) {
+        if c.bus.read32(TRAIL_GATE) != TRAIL_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(fake_is_active),
+                ssx3_ee::s09::f_002e87e8__generated,
+            );
+        }
         let r = c.bus.read32(CTRL);
         w(c, SELF + 0x9c, r >> 8);
         c.g[V0][0] = (r & 1) as u64;
@@ -5606,6 +5619,13 @@ pub(crate) mod tests {
     /// `func_0011FE98(rider)`: the rider sub-state. 0/1/2/12 reach every
     /// comparison the body makes on it.
     pub(crate) fn fake_sub_state(c: &mut Cpu) {
+        if c.bus.read32(TRAIL_GATE) != TRAIL_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(fake_sub_state),
+                ssx3_ee::s00::f_0011fe98__generated,
+            );
+        }
         let r = c.bus.read32(CTRL + 4);
         c.g[V0][0] = [0u64, 1, 2, 0xc][(r & 3) as usize];
         abi::ret(c);
@@ -5614,6 +5634,13 @@ pub(crate) mod tests {
     /// `func_00312AA0(animbase, 2)`: the animation state. The body tests
     /// `(v0 - 0x17) < 8`, so 0x16/0x17/0x1e/0x1f cover both sides.
     pub(crate) fn fake_anim_state(c: &mut Cpu) {
+        if c.bus.read32(TRAIL_GATE) != TRAIL_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(fake_anim_state),
+                ssx3_ee::s10::f_00312aa0__generated,
+            );
+        }
         let r = c.bus.read32(CTRL + 8);
         c.g[V0][0] = [0x16u64, 0x17, 0x1e, 0x1f][(r & 3) as usize];
         abi::ret(c);
@@ -5622,45 +5649,41 @@ pub(crate) mod tests {
     /// `func_0031C228(x)`: a float blend helper returning f0 (the body then
     /// does `mov.s f12, f0`).
     pub(crate) fn fake_blend(c: &mut Cpu) {
+        if c.bus.read32(TRAIL_GATE) != TRAIL_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(fake_blend),
+                ssx3_ee::s10::f_0031c228__generated,
+            );
+        }
         let r = c.bus.read32(CTRL + 0xc);
         c.f[0] = r;
         abi::ret(c);
     }
 
-    /// Installs the fake callees and puts the generated defaults back.
-    pub(crate) struct Slots {
-        is_active: fn(&mut Cpu),
-        sub_state: fn(&mut Cpu),
-        anim_state: fn(&mut Cpu),
-        blend: fn(&mut Cpu),
-    }
-
-    impl Slots {
-        fn install() -> Slots {
-            unsafe {
-                let saved = Slots {
-                    is_active: ssx3_ee::s09::OVERRIDE_002E87E8,
-                    sub_state: ssx3_ee::s00::OVERRIDE_0011FE98,
-                    anim_state: ssx3_ee::s10::OVERRIDE_00312AA0,
-                    blend: ssx3_ee::s10::OVERRIDE_0031C228,
-                };
-                ssx3_ee::s09::OVERRIDE_002E87E8 = fake_is_active;
-                ssx3_ee::s00::OVERRIDE_0011FE98 = fake_sub_state;
-                ssx3_ee::s10::OVERRIDE_00312AA0 = fake_anim_state;
-                ssx3_ee::s10::OVERRIDE_0031C228 = fake_blend;
-                saved
-            }
-        }
-    }
-
-    impl Drop for Slots {
-        fn drop(&mut self) {
-            unsafe {
-                ssx3_ee::s09::OVERRIDE_002E87E8 = self.is_active;
-                ssx3_ee::s00::OVERRIDE_0011FE98 = self.sub_state;
-                ssx3_ee::s10::OVERRIDE_00312AA0 = self.anim_state;
-                ssx3_ee::s10::OVERRIDE_0031C228 = self.blend;
-            }
+    /// Hooks the fake callees (once per process; with [`TRAIL_GATE`] clear they run
+    /// what their slots held before).
+    pub(crate) fn trail_install_fakes() {
+        let slots: [(*mut fn(&mut Cpu), fn(&mut Cpu)); 4] = [
+            (
+                std::ptr::addr_of_mut!(ssx3_ee::s09::OVERRIDE_002E87E8),
+                fake_is_active,
+            ),
+            (
+                std::ptr::addr_of_mut!(ssx3_ee::s00::OVERRIDE_0011FE98),
+                fake_sub_state,
+            ),
+            (
+                std::ptr::addr_of_mut!(ssx3_ee::s10::OVERRIDE_00312AA0),
+                fake_anim_state,
+            ),
+            (
+                std::ptr::addr_of_mut!(ssx3_ee::s10::OVERRIDE_0031C228),
+                fake_blend,
+            ),
+        ];
+        for (slot, fake) in slots {
+            crate::difftest::fakes::hook(slot, fake, crate::difftest::fakes::prev_cell(fake));
         }
     }
 
@@ -5688,7 +5711,8 @@ pub(crate) mod tests {
         // The pseudo-random word at `gp_6+0xa0c` that the emit path advances.
         w(c, GAME_GP + 0xa0c, r.next_u32());
 
-        // The fake callees' answers.
+        // The fake callees' gate and answers.
+        w(c, TRAIL_GATE, TRAIL_MAGIC);
         w(c, CTRL, r.next_u32());
         w(c, CTRL + 4, r.next_u32());
         w(c, CTRL + 8, r.next_u32());
@@ -5761,7 +5785,7 @@ pub(crate) mod tests {
 
     #[test]
     fn c_board_trail_fx_update_matches() {
-        let _slots = Slots::install();
+        trail_install_fakes();
         check_strict(
             ssx3_ee::s09::f_002e8938__generated,
             c_board_trail_fx_update,

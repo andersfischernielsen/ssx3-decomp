@@ -14,6 +14,7 @@ use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Target;
 use crate::call::VSlot;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::ai::gp as gp_m2;
@@ -322,6 +323,88 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0010_f280,
         rider_add_wipeout_recovery_boost,
         "Rider_AddWipeoutRecoveryBoost",
+    ),
+    (
+        0x0010_0250,
+        computer_actor_rider_compute_steer_flat,
+        "ComputerActorRider_ComputeSteerFlat",
+    ),
+    (
+        0x0010_0b90,
+        computer_actor_rider_cruise_chase_rival,
+        "ComputerActorRider_CruiseChaseRival",
+    ),
+    (
+        0x0010_8c80,
+        computer_actor_rider_ctor,
+        "ComputerActorRider_ctor",
+    ),
+    (
+        0x0010_8e88,
+        computer_actor_rider_init,
+        "ComputerActorRider_Init",
+    ),
+    (
+        0x0010_8fa8,
+        computer_actor_rider_dtor,
+        "ComputerActorRider_dtor",
+    ),
+    (
+        0x0010_a8e8,
+        computer_actor_rider_load_state,
+        "ComputerActorRider_LoadState",
+    ),
+    (
+        0x0010_ad78,
+        computer_actor_rider_think_board_press,
+        "ComputerActorRider_ThinkBoardPress",
+    ),
+    (
+        0x0010_aed8,
+        computer_actor_rider_think_railslide,
+        "ComputerActorRider_ThinkRailslide",
+    ),
+    (
+        0x0010_bc98,
+        computer_actor_rider_has_path_event_0f,
+        "ComputerActorRider_HasPathEvent0F",
+    ),
+    (
+        0x0010_c450,
+        computer_actor_rider_get_aggression_mode,
+        "ComputerActorRider_GetAggressionMode",
+    ),
+    (
+        0x0010_c758,
+        computer_actor_rider_init_difficulty,
+        "ComputerActorRider_InitDifficulty",
+    ),
+    (
+        0x0010_c9a8,
+        computer_actor_rider_set_attribs_for_peak,
+        "ComputerActorRider_SetAttribsForPeak",
+    ),
+    (
+        0x0010_e2e8,
+        rider_report_rider_hit1,
+        "Rider_ReportRiderHit1",
+    ),
+    (
+        0x0010_e3a8,
+        rider_report_rider_hit2,
+        "Rider_ReportRiderHit2",
+    ),
+    (
+        0x0010_e468,
+        rider_report_rider_hit3,
+        "Rider_ReportRiderHit3",
+    ),
+    (0x0010_e770, rider_v13_2, "Rider_v13"),
+    (0x0010_e7d0, rider_v14_2, "Rider_v14"),
+    (
+        0x0010_f1c0,
+        rider_dispatch_event_table,
+        "Rider_DispatchEventTable",
     ),
 ];
 
@@ -9290,7 +9373,7 @@ pub fn computer_actor_rider_compute_rubber_band(c: &mut Cpu) {
         c.g[A2][0] = c.g[V0][0];
         let this = Addr(r32(c, S0));
 
-        // Whether the rubber band applies at_m2 all.
+        // Whether the rubber band applies at all.
         let mut applies = false;
         if c.g[A2][0] != 0 {
             c.cycles += 4;
@@ -9468,12 +9551,12 @@ pub(crate) const WIPE_ZERO: u32 = WIPE_HI - 0xed0;
 
 pub(crate) const WIPE_AXIS: u32 = WIPE_HI - 0xea0;
 
-/// `.lit4` (gp_m2-relative, subtracted): +pi/2 and -pi/2.
+/// `.lit4` (gp-relative, subtracted): +pi/2 and -pi/2.
 pub(crate) const WIPE_GP_HALF_PI: u32 = 0x7cb8;
 
 pub(crate) const WIPE_GP_NEG_HALF_PI: u32 = 0x7cb4;
 
-/// gp_m2+0x1b18: the default blend id passed to the animation setup.
+/// gp+0x1b18: the default blend id passed to the animation setup.
 pub(crate) const WIPE_GP_BLEND: u32 = 0x1b18;
 
 /// Stack frame (0x1e0) layout.
@@ -9581,7 +9664,7 @@ pub(crate) const WIPE_ORIENT_OFFSET: u32 = 0x0031_1bf0;
 
 pub(crate) const WIPE_ANIM_PLAY: u32 = 0x0031_28e8;
 
-/// `lwc1 f, at_m2`, returning the value.
+/// `lwc1 f, at`, returning the value.
 pub(crate) fn wipe_ldf(c: &mut Cpu, f: usize, at_m2: u32) -> FpuF32 {
     let v = Addr(at_m2).read_fpu(c);
     c.f[f] = v.0;
@@ -9602,7 +9685,7 @@ pub(crate) fn wipe_copy(c: &mut Cpu, reg: usize, from: u32, to: &[u32]) {
     }
 }
 
-/// `vf5 = a - b` (all lanes) stored at_m2 `out`.
+/// `vf5 = a - b` (all lanes) stored at `out`.
 pub(crate) fn wipe_vsub(c: &mut Cpu, a: u32, b: u32, out: u32) {
     c.lqc2(3, a);
     c.lqc2(4, b);
@@ -9610,7 +9693,7 @@ pub(crate) fn wipe_vsub(c: &mut Cpu, a: u32, b: u32, out: u32) {
     c.sqc2(5, out);
 }
 
-/// `vf5 = a + b` (all lanes) stored at_m2 `out`.
+/// `vf5 = a + b` (all lanes) stored at `out`.
 pub(crate) fn wipe_vadd(c: &mut Cpu, a: u32, b: u32, out: u32) {
     c.lqc2(3, a);
     c.lqc2(4, b);
@@ -9618,7 +9701,7 @@ pub(crate) fn wipe_vadd(c: &mut Cpu, a: u32, b: u32, out: u32) {
     c.sqc2(5, out);
 }
 
-/// `vf5 = v * f20` (f20 = -1: the negated vector) stored at_m2 `out`; the
+/// `vf5 = v * f20` (f20 = -1: the negated vector) stored at `out`; the
 /// scale passes through v1 and vf3 as in the original.
 pub(crate) fn wipe_vscale_f20(c: &mut Cpu, v: u32, out: u32) {
     c.mfc1(V1, 20);
@@ -9628,7 +9711,7 @@ pub(crate) fn wipe_vscale_f20(c: &mut Cpu, v: u32, out: u32) {
     c.sqc2(5, out);
 }
 
-/// `vf8 = a * b` (quaternion product) stored at_m2 `out`.
+/// `vf8 = a * b` (quaternion product) stored at `out`.
 pub(crate) fn wipe_qmul(c: &mut Cpu, a: u32, b: u32, out: u32) {
     c.lqc2(4, a);
     c.lqc2(5, b);
@@ -9708,8 +9791,8 @@ pub(crate) fn wipe_quarter_turn_right(c: &mut Cpu, rider: u32) -> Flow {
     Ok(())
 }
 
-/// `{axis.x, axis.y, axis.z} * sin, cos` (sin/cos at_m2 `sincos(sp)`) built in
-/// the frame's first quadword and stored at_m2 `anim + 0x40`. `axis_reg`
+/// `{axis.x, axis.y, axis.z} * sin, cos` (sin/cos at `sincos(sp)`) built in
+/// the frame's first quadword and stored at `anim + 0x40`. `axis_reg`
 /// holds the axis address, `hi_reg` 0x500000 (its x is read through it),
 /// `anim_reg` the controller.
 pub(crate) fn wipe_store_offset_quat(
@@ -9791,7 +9874,7 @@ pub(crate) fn wipe_hips_node(c: &mut Cpu, rider: u32) {
     wipe_copy(c, V0, s + WIPE_V0, &[s + WIPE_Q, s + WIPE_Q_COPY]);
 }
 
-/// `Invert(xf)` with the conjugate rotation already at_m2 `Q`: the position
+/// `Invert(xf)` with the conjugate rotation already at `Q`: the position
 /// `-(rotate(Q, pos - 0) ) + 0` into `XF_POS`, the rotation into `XF_ROT`
 /// (copies in `Q_COPY`, `XF_COPY`; temporaries `t`/`u` as the original).
 pub(crate) fn wipe_invert(c: &mut Cpu, pos: u32, t: u32, u: u32) {
@@ -9806,7 +9889,7 @@ pub(crate) fn wipe_invert(c: &mut Cpu, pos: u32, t: u32, u: u32) {
 }
 
 /// `Combine(a, b)`: rotation `a.rot * b.rot` into `Q`/`Q_COPY`, position
-/// `rotate(a.rot, b.pos - 0) + a.pos` left at_m2 `V2` (the caller copies it
+/// `rotate(a.rot, b.pos - 0) + a.pos` left at `V2` (the caller copies it
 /// out).
 pub(crate) fn wipe_combine(c: &mut Cpu, a_rot: u32, a_pos: u32, b_pos: u32, b_rot: u32) {
     let s = sp(c);
@@ -9823,7 +9906,7 @@ pub(crate) fn wipe_combine(c: &mut Cpu, a_rot: u32, a_pos: u32, b_pos: u32, b_ro
 /// int sprayArg, const ImpactInfo* evt)` (0x0010eb30): the rider wipes
 /// out. A controller rumble scaled by the impact strength; the metrics
 /// note the wipeout (its score as boost), the audio system the wipeout,
-/// grunt and crowd fall; a dynamic snow spray at_m2 the impact point; sub
+/// grunt and crowd fall; a dynamic snow spray at the impact point; sub
 /// state 0xd. A sideways rail stance (3 / 4) is turned a quarter back
 /// first. Then the stance and slew state are cleared, the wipeout
 /// animation `anim` is set up and its first frame's hips transform `y`
@@ -9890,7 +9973,7 @@ pub fn rider_start_wipeout(c: &mut Cpu) {
         c.g[A1][0] = c.g[S3][0];
         call_ptr(c, WIPE_CROWD_FALL, 0x0010_ebf4)?;
 
-        // Snow spray at_m2 the impact point; sub state 0xd.
+        // Snow spray at the impact point; sub state 0xd.
         c.g[A1][0] = c.g[S1][0];
         let evt = r32(c, A1);
         c.g[A0][0] = Addr(r32(c, S3).wrapping_add(WIPE_HANDLER)).lw(c);
@@ -10212,6 +10295,4075 @@ pub fn rider_add_wipeout_recovery_boost(c: &mut Cpu) {
         RIDER_ADD_BOOST.call(c, 0x0010_f2a8)?;
         frame.restore(c, S0, 0x10);
         frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ----------------------------------------- ComputerActorRider_ComputeSteerFlat
+
+/// `.lit4` scale of the steering when the flatness factor is not 1
+/// (0.12667641, at `gp - 0x7ff0`).
+pub(crate) const STEER_FLAT_LIT_SCALE: u32 = 0x7ff0;
+
+/// `float ComputerActorRider_ComputeSteerFlat(ComputerActorRider* self,
+/// const Vec4* v)` (0x100250): the steering for direction `v` on flat
+/// ground. With the model's (`self+0x18`) forward axis `a` (`+0x1a0`) and
+/// side axis `b` (`+0x1c0`): `u = normalize(v - a * dot(v, a))`, steer
+/// `r = -dot(u, b)`; returned as is when the flatness factor
+/// (`self+0xdf4`) is 1, else `r * 0.12667641 * factor`.
+///
+/// The VU0 macro sequence is the original's (scratch vectors on a 0x50
+/// stack frame).
+pub fn computer_actor_rider_compute_steer_flat(c: &mut Cpu) {
+    use crate::game::ai::computer::{v_dot, v_normalize};
+    use ssx3_ee_rt::vu0::{Src, X};
+    c.cycles += 55;
+    let this = r32(c, A0);
+    c.g[A2][0] = Addr(this).off(0x18).lw(c);
+    let frame = Frame::open(c, 0x50);
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 1); // 1.0
+    let model = r32(c, A2);
+    let s = sp(c);
+    c.lq(V0, model.wrapping_add(0x1a0));
+    c.sq(V0, s);
+    c.lq(V1, model.wrapping_add(0x1c0));
+    c.sq(V1, s.wrapping_add(0x10));
+    let v = r32(c, A1);
+    // v - a * dot(v, a)
+    v_dot(c, v, s);
+    c.qmfc2(V0, 4);
+    c.mtc1(V0, 0);
+    c.mfc1(V1, 0);
+    c.lqc2(4, s);
+    c.qmtc2(V1, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, s.wrapping_add(0x40));
+    c.lq(V0, s.wrapping_add(0x40));
+    c.sq(V0, s.wrapping_add(0x30));
+    c.lqc2(3, v);
+    c.lqc2(4, s.wrapping_add(0x30));
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, s.wrapping_add(0x40));
+    c.lq(V0, s.wrapping_add(0x40));
+    c.sq(V0, s.wrapping_add(0x20));
+    // normalized, then -dot(u, b)
+    v_normalize(c, s.wrapping_add(0x20), s.wrapping_add(0x40));
+    c.lwc1(2, this.wrapping_add(0xdf4)); // flatness factor
+    c.lq(V0, s.wrapping_add(0x40));
+    c.c_eq_s(2, 1);
+    c.sq(V0, s.wrapping_add(0x30));
+    v_dot(c, s.wrapping_add(0x30), s.wrapping_add(0x10));
+    c.qmfc2(V1, 4);
+    c.mtc1(V1, 0);
+    let unit = c.fcc();
+    c.neg_s(1, 0);
+    if unit {
+        c.cycles += 1;
+        c.mov_s(0, 1);
+    } else {
+        c.cycles += 4;
+        let a = r32(c, GP).wrapping_sub(STEER_FLAT_LIT_SCALE);
+        c.lwc1(0, a);
+        c.mul_s(0, 1, 0);
+        c.mul_s(0, 0, 2);
+    }
+    c.cycles += 2;
+    frame.close(c);
+}
+
+// ----------------------------------------- ComputerActorRider_CruiseChaseRival
+
+/// `.lit4` constants of `ComputerActorRider_CruiseChaseRival` (offsets below
+/// `gp`): 1/2pi, 2pi and the angle thresholds 90, 50 and 15 degrees.
+pub(crate) const CHASE_RIVAL_LIT_INV_2PI: u32 = 0x7fbc;
+
+pub(crate) const CHASE_RIVAL_LIT_2PI: u32 = 0x7fb8;
+
+pub(crate) const CHASE_RIVAL_LIT_BEHIND: u32 = 0x7fb4;
+
+pub(crate) const CHASE_RIVAL_LIT_WIDE: u32 = 0x7fb0;
+
+pub(crate) const CHASE_RIVAL_LIT_NARROW: u32 = 0x7fac;
+
+/// `void ComputerActorRider_CruiseChaseRival(ComputerActorRider* self,
+/// ControlInput* pad)` (0x100b90): the "chase the rival" cruise step. The
+/// rival is AI rider slot `self+0xe70`; its record in the model
+/// (`model + slot*0x24`: distance +8, heading +0xc) gives the heading
+/// difference, wrapped to [-pi, pi]; own speed from the model velocity,
+/// the rival's from its path interface (`+0x6c0`, vtable +0x10).
+///
+/// - behind (|angle| > 90 deg): steer at the path; when the rival is
+///   farther than 200 and slower, set the pad's low 6 bits of `+4` to 0x1f;
+/// - otherwise aim 300 units ahead of the rival (its position, vtable
+///   +0x28, plus its normalized velocity * 300): within 15 deg crouch and
+///   boost, within 50 deg or slower than the rival cruise-crouch, faster
+///   set the 0x1f bits; then steer at that point;
+/// - pack the steering (`* 31`, 6 bits at bit 20) into the pad flags, then
+///   resolve the jump state: a jump marker (descriptor 0, rival slot -1),
+///   no target rider (descriptor 1), or a target the rival is not busy
+///   with (vtable +0x40; descriptor 2).
+///
+/// The original's blocks are laid out in address order and entered by
+/// falling out of the previous one; each `'b_…` label is one of them.
+pub fn computer_actor_rider_cruise_chase_rival(c: &mut Cpu) {
+    use crate::game::ai::computer::{cruise, jump_desc_copy, v_normalize, vu0_length_sq};
+    use ssx3_ee_rt::vu0::{Src, X};
+    /// Rider fields.
+    const R_MODEL: u32 = 0x18;
+    const R_MARKER_DIST: u32 = 0xdf0;
+    const R_TARGET: u32 = 0xe70;
+    const R_JUMP_STATE: u32 = 0xf38;
+    /// Rider-slot record in the model: `0x24` bytes, distance and heading.
+    const REC_SIZE: u64 = 0x24;
+    const REC_DIST: u32 = 0x8;
+    const REC_HEADING: u32 = 0xc;
+    /// Model fields: heading, velocity.
+    const M_HEADING: u32 = 0x4cc;
+    const M_VELOCITY: u32 = 0x1e0;
+    /// The rival's path interface (`{delta, fn}` slots).
+    const E_IFACE: u32 = 0x6c0;
+    const IFACE_GET_VELOCITY: u32 = 0x10;
+    const IFACE_GET_POSITION: u32 = 0x28;
+    const IFACE_BUSY: u32 = 0x40;
+    /// The jump descriptors (`0x440000 - 0x30e0`).
+    const JUMP_DESCS: u32 = 0x0044_0000 - 0x30e0;
+    let gp_lit = |c: &Cpu, off: u32| r32(c, GP).wrapping_sub(off);
+    guest(c, |c| {
+        c.cycles += 39;
+        let frame = Frame::open(c, 0xf0);
+        let a = gp_lit(c, CHASE_RIVAL_LIT_INV_2PI);
+        c.lwc1(0, a); // 1 / 2pi
+        frame.save(c, S0, 0xc0);
+        frame.save(c, S3, 0x90);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S4, 0x80);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save(c, S1, 0xb0);
+        c.g[S4][0] = REC_SIZE;
+        frame.save(c, S2, 0xa0);
+        frame.save(c, S5, 0x70);
+        frame.save_ra(c, 0x60);
+        frame.save_fpr(c, 23, 0xe8);
+        frame.save_fpr(c, 22, 0xe0);
+        frame.save_fpr(c, 21, 0xd8);
+        frame.save_fpr(c, 20, 0xd0);
+        let this = r32(c, S0);
+        c.g[V0][0] = Addr(gp_lit(c, 0x848)).lw(c);
+        c.g[V1][0] = Addr(this).off(R_TARGET).lw(c);
+        c.g[A2][0] = Addr(this).off(R_MODEL).lw(c);
+        c.mult(0, V1, V1, S4);
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(AT, 3); // 0.5
+        c.lwc1(2, r32(c, A2).wrapping_add(M_HEADING));
+        c.g[A0][0] = Addr(r32(c, V0)).off(0x84).lw(c);
+        c.g[V0][0] = Addr(this).off(R_TARGET).lw(c);
+        c.g[V1][0] = abi::addu(c.g[A2][0], c.g[V1][0]);
+        c.g[S5][0] = Addr(r32(c, A0)).off(0xc).lw(c); // the AI
+        c.lwc1(1, r32(c, V1).wrapping_add(REC_HEADING));
+        c.g[V0][0] = sx(r32(c, V0) << 2);
+        c.g[V0][0] = abi::addu(c.g[S5][0], c.g[V0][0]);
+        c.sub_s(1, 1, 2);
+        // The rival.
+        c.g[S1][0] = Addr(r32(c, V0)).off(0x28).lw(c);
+        // floor(diff / 2pi + 0.5)
+        c.mul_s(0, 1, 0);
+        c.add_s(0, 0, 3);
+        c.cvt_w_s(2, 0);
+        c.cvt_s_w(2, 2);
+        c.c_lt_s(0, 2);
+        if c.fcc() {
+            c.cycles += 3;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 0);
+            c.sub_s(2, 2, 0);
+        }
+
+        'b_100e3c: {
+            'b_100d2c: {
+                c.cycles += 35;
+                let a = gp_lit(c, CHASE_RIVAL_LIT_2PI);
+                c.lwc1(0, a); // 2pi
+                c.lqc2(3, r32(c, A2).wrapping_add(M_VELOCITY));
+                vu0_length_sq(c);
+                c.cfc2(V0, 22);
+                c.mtc1(V0, 23); // own speed
+                let rival = r32(c, S1);
+                c.g[V1][0] = Addr(rival).off(E_IFACE).lw(c);
+                c.g[S2][0] = sx(rival.wrapping_add(E_IFACE));
+                c.mul_s(0, 2, 0);
+                let a = gp_lit(c, CHASE_RIVAL_LIT_BEHIND);
+                c.lwc1(20, a); // pi/2
+                let vt = r32(c, V1);
+                c.g[A0][0] = Addr(vt).off(IFACE_GET_VELOCITY).lh(c);
+                c.g[V0][0] = Addr(vt).off(IFACE_GET_VELOCITY + 4).lw(c);
+                c.sub_s(0, 1, 0); // the wrapped angle
+                c.g[A0][0] = abi::addu(c.g[S2][0], c.g[A0][0]);
+                c.abs_s(21, 0);
+                let target = r32(c, V0);
+                call_ptr(c, target, 0x0010_0c90)?;
+                c.c_lt_s(20, 21);
+                c.lqc2(3, r32(c, V0));
+                vu0_length_sq(c);
+                c.cfc2(V1, 22);
+                c.mtc1(V1, 22); // rival speed
+                if !c.fcc() {
+                    c.g[V1][0] = Addr(r32(c, S1)).off(E_IFACE).lw(c);
+                    break 'b_100d2c;
+                }
+                // Behind: steer at the path.
+                c.cycles += 17;
+                c.g[A0][0] = c.g[SP][0];
+                c.g[A1][0] = c.g[S0][0];
+                cruise::GET_STEER_TARGET.call(c, 0x0010_0cd0)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[SP][0];
+                cruise::COMPUTE_STEER.call(c, 0x0010_0cdc)?;
+                c.g[V1][0] = Addr(r32(c, S0)).off(R_TARGET).lw(c);
+                c.mov_s(2, 0);
+                c.g[V0][0] = Addr(r32(c, S0)).off(R_MODEL).lw(c);
+                c.mult(0, V1, V1, S4);
+                c.g[AT][0] = 0x4348_0000; // 200.0
+                c.mtc1(AT, 1);
+                c.g[V0][0] = abi::addu(c.g[V0][0], c.g[V1][0]);
+                c.lwc1(0, r32(c, V0).wrapping_add(REC_DIST));
+                c.c_lt_s(1, 0);
+                if !c.fcc() {
+                    break 'b_100e3c;
+                }
+                c.cycles += 4;
+                c.c_lt_s(22, 23);
+                c.g[V1][0] = 0xffff_ffff_ffff_ffc0;
+                if !c.fcc() {
+                    break 'b_100e3c;
+                }
+                c.cycles += 5;
+                let pad = Addr(r32(c, S3)).off(4);
+                c.g[V0][0] = (pad.lw(c) & c.g[V1][0]) | 0x1f;
+                let w = c.g[V0][0];
+                pad.sw(c, w);
+                break 'b_100e3c;
+            }
+            // Ahead: aim 300 units ahead of the rival.
+            'b_100e30: {
+                'b_100e0c: {
+                    'b_100df8: {
+                        'b_100dec: {
+                            c.cycles += 39;
+                            let vt = r32(c, V1);
+                            c.g[A0][0] = Addr(vt).off(IFACE_GET_VELOCITY).lh(c);
+                            c.g[V0][0] = Addr(vt).off(IFACE_GET_VELOCITY + 4).lw(c);
+                            let target = r32(c, V0);
+                            c.g[A0][0] = abi::addu(c.g[S2][0], c.g[A0][0]);
+                            call_ptr(c, target, 0x0010_0d3c)?;
+                            let s = sp(c);
+                            let vel = r32(c, V0);
+                            v_normalize(c, vel, s.wrapping_add(0x10));
+                            c.lq(V0, s.wrapping_add(0x10));
+                            c.sq(V0, s);
+                            c.g[V1][0] = Addr(r32(c, S1)).off(E_IFACE).lw(c);
+                            let vt = r32(c, V1);
+                            c.g[A0][0] = Addr(vt).off(IFACE_GET_POSITION).lh(c);
+                            c.g[V0][0] = Addr(vt).off(IFACE_GET_POSITION + 4).lw(c);
+                            let target = r32(c, V0);
+                            c.g[A0][0] = abi::addu(c.g[S2][0], c.g[A0][0]);
+                            call_ptr(c, target, 0x0010_0d80)?;
+                            // position + direction * 300
+                            let s = sp(c);
+                            c.g[AT][0] = 0x4396_0000; // 300.0
+                            c.mtc1(AT, 1);
+                            c.mfc1(A0, 1);
+                            c.lqc2(4, s);
+                            c.qmtc2(A0, 3);
+                            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                            c.sqc2(5, s.wrapping_add(0x30));
+                            let a = gp_lit(c, CHASE_RIVAL_LIT_WIDE);
+                            c.lwc1(0, a); // 50 degrees
+                            c.lq(V1, s.wrapping_add(0x30));
+                            c.c_lt_s(21, 0);
+                            c.sq(V1, s.wrapping_add(0x20));
+                            c.lqc2(3, r32(c, V0));
+                            c.lqc2(4, s.wrapping_add(0x20));
+                            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                            c.sqc2(5, s.wrapping_add(0x30));
+                            c.lq(V0, s.wrapping_add(0x30));
+                            let wide = c.fcc();
+                            c.sq(V0, s.wrapping_add(0x10));
+                            if !wide {
+                                break 'b_100dec;
+                            }
+                            c.cycles += 5;
+                            let a = gp_lit(c, CHASE_RIVAL_LIT_NARROW);
+                            c.lwc1(0, a); // 15 degrees
+                            c.c_lt_s(21, 0);
+                            c.g[A0][0] = c.g[S0][0];
+                            if !c.fcc() {
+                                break 'b_100df8;
+                            }
+                            c.cycles += 4;
+                            c.g[A1][0] = c.g[S3][0];
+                            cruise::CROUCH_AND_BOOST.call(c, 0x0010_0de4)?;
+                            c.g[A0][0] = c.g[S0][0];
+                            break 'b_100e30;
+                        }
+                        // Outside 50 degrees: crouch when slower.
+                        c.cycles += 3;
+                        c.c_lt_s(23, 22);
+                        if !c.fcc() {
+                            break 'b_100e0c;
+                        }
+                    }
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[S3][0];
+                    cruise::SET_CRUISE_CROUCH.call(c, 0x0010_0e04)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    break 'b_100e30;
+                }
+                // Not slower: faster sets the 0x1f bits.
+                c.cycles += 4;
+                c.c_lt_s(22, 23);
+                c.g[V1][0] = 0xffff_ffff_ffff_ffc0;
+                if c.fcc() {
+                    c.cycles += 4;
+                    let pad = Addr(r32(c, S3)).off(4);
+                    c.g[V0][0] = (pad.lw(c) & c.g[V1][0]) | 0x1f;
+                    let w = c.g[V0][0];
+                    pad.sw(c, w);
+                }
+                c.cycles += 1;
+                c.g[A0][0] = c.g[S0][0];
+            }
+            c.cycles += 3;
+            c.g[A1][0] = sx(sp(c).wrapping_add(0x10));
+            cruise::COMPUTE_STEER.call(c, 0x0010_0e38)?;
+            c.mov_s(2, 0);
+        }
+
+        // Pack the steering, then the jump state.
+        'b_100f54: {
+            c.cycles += 26;
+            c.g[AT][0] = 0x41f8_0000; // 31.0
+            c.mtc1(AT, 0);
+            c.g[V0][0] = 0xffff_ffff_fc0f_0000;
+            let pad = r32(c, S3);
+            c.g[V1][0] = Addr(pad).lw(c);
+            c.g[V0][0] |= 0xffff;
+            c.mul_s(0, 2, 0);
+            c.g[S2][0] = 1;
+            c.g[V1][0] &= c.g[V0][0];
+            c.g[S1][0] = sx(r32(c, S0).wrapping_add(R_MARKER_DIST));
+            let s = sp(c);
+            Addr(s).off(0x54).sw(c, 1);
+            c.g[A0][0] = c.g[S0][0];
+            c.cvt_w_s(1, 0);
+            c.mfc1(V0, 1);
+            c.g[A2][0] = sx(s.wrapping_add(0x40));
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A3][0] = sx(s.wrapping_add(0x44));
+            c.g[T0][0] = sx(s.wrapping_add(0x48));
+            c.g[T1][0] = sx(s.wrapping_add(0x4c));
+            c.g[V0][0] &= 0x3f;
+            c.g[T2][0] = sx(s.wrapping_add(0x50));
+            c.g[V0][0] = sx(r32(c, V0) << 20);
+            c.g[V1][0] |= c.g[V0][0];
+            let flags = c.g[V1][0];
+            Addr(pad).sw(c, flags);
+            cruise::FIND_JUMP_MARKER.call(c, 0x0010_0e9c)?;
+            let none = c.g[V0][0] == 0;
+            c.g[V0][0] = u64::MAX;
+            if !none {
+                c.cycles += 9;
+                c.g[V1][0] = 0x44_0000;
+                Addr(r32(c, S0)).off(R_TARGET).sw(c, u64::MAX);
+                c.g[A2][0] = sx(JUMP_DESCS);
+                jump_desc_copy(c, V0, JUMP_DESCS, 7, 0);
+                Addr(r32(c, S0)).off(R_JUMP_STATE).sh(c, 0);
+                break 'b_100f54;
+            }
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = sx(sp(c).wrapping_add(0x54));
+            cruise::SELECT_TARGET_RIDER.call(c, 0x0010_0ed4)?;
+            let selected = c.g[V0][0] != 0;
+            c.g[V0][0] = Addr(sp(c)).off(0x54).lw(c);
+            if !selected {
+                c.cycles += 8;
+                c.g[V0][0] = sx(JUMP_DESCS);
+                jump_desc_copy(c, A3, JUMP_DESCS, 0xf, 0x8);
+                let state = c.g[S2][0];
+                Addr(r32(c, S0)).off(R_JUMP_STATE).sh(c, state);
+                break 'b_100f54;
+            }
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                return finish(c, frame, false);
+            }
+            // Is the rival busy?
+            c.cycles += 12;
+            c.g[V0][0] = Addr(r32(c, S1)).off(0x80).lw(c);
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[V0][0] = abi::addu(c.g[S5][0], c.g[V0][0]);
+            c.g[A0][0] = Addr(r32(c, V0)).off(0x28).lw(c);
+            c.g[V1][0] = Addr(r32(c, A0)).off(E_IFACE).lw(c);
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(E_IFACE));
+            let vt = r32(c, V1);
+            c.g[A1][0] = Addr(vt).off(IFACE_BUSY).lh(c);
+            c.g[V0][0] = Addr(vt).off(IFACE_BUSY + 4).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = abi::addu(c.g[A0][0], c.g[A1][0]);
+            call_ptr(c, target, 0x0010_0f2c)?;
+            if c.g[V0][0] != 0 {
+                return finish(c, frame, false);
+            }
+            c.cycles += 8;
+            c.g[V0][0] = 0x44_0000;
+            c.g[V1][0] = 2;
+            c.g[V0][0] = sx(JUMP_DESCS);
+            jump_desc_copy(c, A2, JUMP_DESCS, 0x17, 0x10);
+            let state = c.g[V1][0];
+            Addr(r32(c, S0)).off(R_JUMP_STATE).sh(c, state);
+        }
+        finish(c, frame, true)
+    });
+
+    /// The epilogue (`fall` = entered by falling into it: one more cycle).
+    fn finish(c: &mut Cpu, frame: Frame, fall: bool) -> crate::call::Flow {
+        if fall {
+            c.cycles += 1;
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0xc0);
+        frame.restore(c, S1, 0xb0);
+        frame.restore(c, S2, 0xa0);
+        frame.restore(c, S3, 0x90);
+        frame.restore(c, S4, 0x80);
+        frame.restore(c, S5, 0x70);
+        frame.restore_ra(c, 0x60);
+        frame.restore_fpr(c, 23, 0xe8);
+        frame.restore_fpr(c, 22, 0xe0);
+        frame.restore_fpr(c, 21, 0xd8);
+        frame.restore_fpr(c, 20, 0xd0);
+        frame.close(c);
+        Ok(())
+    }
+}
+
+// -- ComputerActorRider_dtor ----------------------------------------------
+//
+// Register-level helpers: the destructor is gcc's virtual-inheritance
+// boilerplate whose every register value can be seen by an event at one of
+// its 42 loop heads (it is re-entered there), so it is written as the
+// sequence of register operations the compiled code performs.
+
+/// `rd = imm` (lui/li).
+#[inline(always)]
+pub(crate) fn cad_li(c: &mut Cpu, rd: usize, v: u64) {
+    c.g[rd][0] = v;
+}
+
+/// `rd = rs` (move).
+#[inline(always)]
+pub(crate) fn cad_mov(c: &mut Cpu, rd: usize, rs: usize) {
+    c.g[rd][0] = c.g[rs][0];
+}
+
+/// `rd = sx(rs + imm)` (addiu).
+#[inline(always)]
+pub(crate) fn cad_addiu(c: &mut Cpu, rd: usize, rs: usize, imm: i32) {
+    c.g[rd][0] = sx((c.g[rs][0] as u32).wrapping_add(imm as u32));
+}
+
+/// `rd = sx(rs + rt)` (addu).
+#[inline(always)]
+pub(crate) fn cad_addu(c: &mut Cpu, rd: usize, rs: usize, rt: usize) {
+    c.g[rd][0] = sx((c.g[rs][0] as u32).wrapping_add(c.g[rt][0] as u32));
+}
+
+/// `rd = sx(rs - rt)` (subu).
+#[inline(always)]
+pub(crate) fn cad_subu(c: &mut Cpu, rd: usize, rs: usize, rt: usize) {
+    c.g[rd][0] = sx((c.g[rs][0] as u32).wrapping_sub(c.g[rt][0] as u32));
+}
+
+/// `rd = rs & imm` (andi).
+#[inline(always)]
+pub(crate) fn cad_andi(c: &mut Cpu, rd: usize, rs: usize, imm: u64) {
+    c.g[rd][0] = c.g[rs][0] & imm;
+}
+
+/// The address `off(base)`.
+#[inline(always)]
+pub(crate) fn cad_ea(c: &Cpu, base: usize, off: u32) -> u32 {
+    (c.g[base][0] as u32).wrapping_add(off)
+}
+
+/// `lw rd, off(base)` (sign-extended).
+#[inline(always)]
+pub(crate) fn cad_lw(c: &mut Cpu, rd: usize, base: usize, off: u32) {
+    let a = cad_ea(c, base, off);
+    c.g[rd][0] = c.lw(a);
+}
+
+/// `ld rd, off(base)`.
+#[inline(always)]
+pub(crate) fn cad_ld(c: &mut Cpu, rd: usize, base: usize, off: u32) {
+    let a = cad_ea(c, base, off);
+    c.g[rd][0] = c.ld(a);
+}
+
+/// `lhu rd, off(base)`.
+#[inline(always)]
+pub(crate) fn cad_lhu(c: &mut Cpu, rd: usize, base: usize, off: u32) {
+    let a = cad_ea(c, base, off);
+    c.g[rd][0] = c.lhu(a);
+}
+
+/// `sw rt, off(base)`.
+#[inline(always)]
+pub(crate) fn cad_sw(c: &mut Cpu, rt: usize, base: usize, off: u32) {
+    let a = cad_ea(c, base, off);
+    let v = c.g[rt][0];
+    c.sw(a, v);
+}
+
+/// `sd rt, off(base)`.
+#[inline(always)]
+pub(crate) fn cad_sd(c: &mut Cpu, rt: usize, base: usize, off: u32) {
+    let a = cad_ea(c, base, off);
+    let v = c.g[rt][0];
+    c.sd(a, v);
+}
+
+/// `sh rt, off(base)`.
+#[inline(always)]
+pub(crate) fn cad_sh(c: &mut Cpu, rt: usize, base: usize, off: u32) {
+    let a = cad_ea(c, base, off);
+    let v = c.g[rt][0];
+    c.sh(a, v);
+}
+
+/// `sq rt, off(base)` (all 128 bits).
+#[inline(always)]
+pub(crate) fn cad_sq(c: &mut Cpu, rt: usize, base: usize, off: u32) {
+    let a = cad_ea(c, base, off);
+    c.sq(rt, a);
+}
+
+/// `lq rt, off(base)`.
+#[inline(always)]
+pub(crate) fn cad_lq(c: &mut Cpu, rt: usize, base: usize, off: u32) {
+    let a = cad_ea(c, base, off);
+    c.lq(rt, a);
+}
+
+/// The registers of one vtable copy loop: 32 bytes per pass from `src` to
+/// `dst` through the four `tmp` registers, until `src` reaches `end`.
+#[derive(Clone, Copy)]
+pub(crate) struct CadCopy {
+    src: usize,
+    dst: usize,
+    end: usize,
+    tmp: [usize; 4],
+}
+
+/// One vtable copy loop at `head` (11 cycles a pass, an event check at the
+/// back edge). True when an event unwound the thread: the caller returns at
+/// once, and the trampoline re-enters the destructor at `head` later.
+pub(crate) fn cad_copy(c: &mut Cpu, head: u32, k: CadCopy) -> bool {
+    loop {
+        c.cycles += 11;
+        for (i, &t) in k.tmp.iter().enumerate() {
+            cad_ld(c, t, k.src, 8 * i as u32);
+        }
+        for (i, &t) in k.tmp.iter().enumerate() {
+            cad_sd(c, t, k.dst, 8 * i as u32);
+        }
+        cad_addiu(c, k.src, k.src, 0x20);
+        let more = c.g[k.src][0] != c.g[k.end][0];
+        cad_addiu(c, k.dst, k.dst, 0x20);
+        if !more {
+            return false;
+        }
+        if back_edge_unwinds(c, head) {
+            return true;
+        }
+    }
+}
+
+/// `Rider_dtor`, called directly.
+pub(crate) const CAD_RIDER_DTOR: Callee = Callee {
+    addr: 0x0011_b978,
+    f: ee::s00::f_0011b978,
+};
+
+/// `ComputerActorRider::~ComputerActorRider(this, in_chrg)` (0x108fa8,
+/// 0x400-byte frame): gcc's destructor for a class with a virtual `Rider`
+/// base and eleven effect members that share that base.
+///
+/// For the object itself and then for each subobject (its virtual-base
+/// pointer at `this + 0x3a0, 0x398, 0x384, 0x364, 0x358, 0x340, 0x2b8, 0x2a4,
+/// 0x288, 0x224, 0x200, 0x1f0, 0x1e4, 0x1c0, 0x1b0, 0x100, 0xa0, 0x24, 0x18`)
+/// it stores the in-destructor vtables into the virtual base (`+0x6e8`,
+/// `+0x6d0` = 0x459b90, `+0x6c0`), copies the two construction vtables (0x48
+/// and 0xb0 bytes, from 0x4585f0-0x459b90) onto the stack, moves their
+/// this-adjust halfword (`+8`) by the subobject's offset inside the virtual
+/// base and installs the stack copies. Between the object and the subobjects
+/// it destroys the members (`RiderBase_DtorCheatCode` .. `cBoardWakeFX_dtor`,
+/// each `(member, 0)`), before the last two the wipeout state
+/// (`RiderWipeoutState_dtor(this + 0x30, 0)`). Then `in_chrg & 2` destroys
+/// the virtual base (`Rider_dtor(*(this + 0x18), 0)`) and `in_chrg & 1`
+/// frees the object (`__builtin_delete`).
+///
+/// Each copy loop checks events at its back edge and the destructor is
+/// re-entered at that loop head after an unwind, so the body dispatches on
+/// `pc` like the original and keeps all its state in the registers.
+pub fn computer_actor_rider_dtor(c: &mut Cpu) {
+    let mut pc = c.pc;
+    loop {
+        match pc {
+            // Prologue. `this->vptr` (+0xde8) and the Rider virtual base
+            // (`*(this + 0x18)`) get the in-destructor vtables.
+            0x0010_8fa8 => {
+                c.cycles += 37;
+                cad_addiu(c, SP, SP, -0x400);
+                cad_li(c, V0, 0x0046_0000);
+                cad_sq(c, S0, SP, 0x3f0);
+                cad_li(c, V1, 0x0046_0000);
+                cad_sq(c, S1, SP, 0x3e0);
+                cad_mov(c, S0, A0);
+                cad_sq(c, S2, SP, 0x3d0);
+                cad_addiu(c, V0, V0, -0x7a10);
+                cad_sq(c, S3, SP, 0x3c0);
+                cad_addiu(c, A3, V1, -0x79e8);
+                cad_sq(c, S4, SP, 0x3b0);
+                cad_mov(c, T0, V1);
+                cad_sq(c, S5, SP, 0x3a0);
+                cad_li(c, V1, 0x0046_0000);
+                cad_sq(c, S6, SP, 0x390);
+                cad_mov(c, S2, V1);
+                cad_sq(c, S7, SP, 0x380);
+                cad_addiu(c, V1, V1, -0x79a0);
+                cad_sq(c, FP, SP, 0x370);
+                cad_mov(c, T4, A1);
+                cad_sd(c, RA, SP, 0x360);
+                cad_li(c, T6, 0x0046_0000);
+                cad_sw(c, V0, S0, 0xde8);
+                cad_li(c, T7, 0x0046_0000);
+                cad_lw(c, A0, S0, 0x18);
+                cad_li(c, V0, 0x0046_0000);
+                cad_addiu(c, V0, V0, -0x6470);
+                cad_li(c, A2, 0x0046_0000);
+                cad_sw(c, A3, A0, 0x6e8);
+                cad_addiu(c, T2, SP, 0x100);
+                cad_addiu(c, T3, SP, 0x150);
+                cad_addiu(c, S1, SP, 0x50);
+                cad_lw(c, A0, S0, 0x18);
+                cad_sw(c, V0, A0, 0x6d0);
+                cad_lw(c, V0, S0, 0x18);
+                let t = c.g[T4][0] != 0;
+                cad_sw(c, V1, V0, 0x6c0);
+                if t {
+                    pc = 0x0010_9114;
+                    continue;
+                }
+                pc = 0x0010_903c;
+            }
+            // Not in charge (in_chrg == 0): the Rider base gets construction
+            // vtables built on the stack (0x48 bytes at sp+0x200, 0xb0 at sp+0x250),
+            // their this-adjust halfwords moved by `this - (vbase - 0xf50)`.
+            0x0010_903c => {
+                c.cycles += 5;
+                cad_mov(c, V1, A3);
+                cad_addiu(c, V0, SP, 0x200);
+                cad_addiu(c, A0, V1, 0x40);
+                cad_mov(c, A3, V0);
+                cad_addiu(c, T5, SP, 0x250);
+                pc = 0x0010_9050;
+            }
+            0x0010_9050 => {
+                if cad_copy(
+                    c,
+                    0x0010_9050,
+                    CadCopy {
+                        src: V1,
+                        dst: V0,
+                        end: A0,
+                        tmp: [A1, T1, S3, S4],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_907c;
+            }
+            0x0010_907c => {
+                c.cycles += 14;
+                cad_ld(c, A0, V1, 0);
+                cad_sd(c, A0, V0, 0);
+                cad_lw(c, A0, S0, 0x18);
+                cad_addiu(c, V0, T0, -0x79e8);
+                cad_lhu(c, V1, V0, 0x8);
+                cad_addiu(c, T0, S2, -0x79a0);
+                cad_sw(c, A3, A0, 0x6e8);
+                cad_addiu(c, T1, T0, 0xa0);
+                cad_mov(c, A1, T5);
+                cad_lw(c, V0, S0, 0x18);
+                cad_addiu(c, V0, V0, -0xf50);
+                cad_subu(c, A3, S0, V0);
+                cad_addu(c, V1, V1, A3);
+                cad_sh(c, V1, SP, 0x208);
+                pc = 0x0010_90b4;
+            }
+            0x0010_90b4 => {
+                if cad_copy(
+                    c,
+                    0x0010_90b4,
+                    CadCopy {
+                        src: T0,
+                        dst: A1,
+                        end: T1,
+                        tmp: [S4, V0, V1, A0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_90e0;
+            }
+            0x0010_90e0 => {
+                c.cycles += 13;
+                cad_ld(c, T1, T0, 0);
+                cad_ld(c, S3, T0, 0x8);
+                cad_sd(c, T1, A1, 0);
+                cad_addiu(c, A0, S2, -0x79a0);
+                cad_sd(c, S3, A1, 0x8);
+                cad_lw(c, A1, S0, 0x18);
+                cad_lhu(c, V1, A0, 0xa0);
+                cad_lhu(c, V0, A0, 0x8);
+                cad_sw(c, T5, A1, 0x6c0);
+                cad_addu(c, V1, V1, A3);
+                cad_addu(c, V0, V0, A3);
+                cad_sh(c, V1, SP, 0x2f0);
+                cad_sh(c, V0, SP, 0x258);
+                pc = 0x0010_9114;
+            }
+            // The ComputerActorRider level is done: `this->vptr` = 0x458710, the
+            // Rider base gets 0x458738 / 0x459b90 / 0x458780; spill the member
+            // addresses and the in_chrg bits; stack copies at sp+0x100 / sp+0x150.
+            0x0010_9114 => {
+                c.cycles += 59;
+                cad_lw(c, A0, S0, 0x18);
+                cad_addiu(c, V0, T6, -0x78f0);
+                cad_sw(c, V0, S0, 0xde8);
+                cad_addiu(c, V1, T7, -0x78c8);
+                cad_sw(c, V1, A0, 0x6e8);
+                cad_andi(c, A3, T4, 0x1);
+                cad_li(c, A0, 0x0046_0000);
+                cad_addiu(c, T1, S0, 0xc70);
+                cad_lw(c, V0, S0, 0x18);
+                cad_addiu(c, A1, A0, -0x6470);
+                cad_sw(c, A3, SP, 0x320);
+                cad_addiu(c, S3, S0, 0xb40);
+                cad_sw(c, A1, V0, 0x6d0);
+                cad_addiu(c, S4, S0, 0xb00);
+                cad_sw(c, T1, SP, 0x304);
+                cad_addiu(c, A1, S0, 0xaf0);
+                cad_sw(c, S3, SP, 0x348);
+                cad_addiu(c, T1, S0, 0xad0);
+                cad_addiu(c, A0, A2, -0x7880);
+                cad_addiu(c, S3, S0, 0x9c0);
+                cad_lw(c, V0, S0, 0x18);
+                cad_andi(c, T4, T4, 0x2);
+                cad_sw(c, S4, SP, 0x340);
+                cad_addiu(c, T0, V1, 0x40);
+                cad_sw(c, A1, SP, 0x33c);
+                cad_addiu(c, S4, S0, 0x610);
+                cad_sw(c, T1, SP, 0x32c);
+                cad_addiu(c, A1, S0, 0x3b0);
+                cad_sw(c, A0, V0, 0x6c0);
+                cad_addiu(c, T1, S0, 0x290);
+                cad_addiu(c, V0, S0, 0x520);
+                cad_addiu(c, A0, S0, 0x470);
+                cad_sw(c, V0, SP, 0x354);
+                cad_mov(c, A3, T2);
+                cad_sw(c, A0, SP, 0x334);
+                cad_addiu(c, V0, S0, 0x230);
+                cad_sw(c, A1, SP, 0x300);
+                cad_addiu(c, A0, S0, 0x210);
+                cad_addiu(c, A1, S0, 0x200);
+                cad_sw(c, T1, SP, 0x344);
+                cad_sw(c, V0, SP, 0x324);
+                cad_addiu(c, T1, S0, 0x1f0);
+                cad_sw(c, A0, SP, 0x31c);
+                cad_addiu(c, V0, S0, 0x1d0);
+                cad_sw(c, A1, SP, 0x318);
+                cad_addiu(c, A0, S0, 0x1c0);
+                cad_addiu(c, A1, S0, 0x110);
+                cad_sw(c, T1, SP, 0x314);
+                cad_sw(c, V0, SP, 0x310);
+                cad_addiu(c, T1, S0, 0xb0);
+                cad_sw(c, A0, SP, 0x308);
+                cad_addiu(c, V0, S0, 0xa0);
+                cad_sw(c, A1, SP, 0x358);
+                cad_addiu(c, A0, S0, 0x30);
+                cad_addiu(c, A1, S0, 0x20);
+                cad_sw(c, S3, SP, 0x35c);
+                cad_sw(c, S4, SP, 0x30c);
+                cad_addiu(c, T5, S0, 0xd20);
+                cad_sw(c, T1, SP, 0x350);
+                pc = 0x0010_9200;
+            }
+            0x0010_9200 => {
+                c.cycles += 11;
+                cad_addiu(c, S6, S0, 0x3a0);
+                cad_sw(c, V0, SP, 0x34c);
+                cad_addiu(c, S2, S0, 0x390);
+                cad_sw(c, A0, SP, 0x338);
+                cad_addiu(c, S3, S0, 0x370);
+                cad_sw(c, A1, SP, 0x330);
+                cad_addiu(c, S4, S0, 0x360);
+                cad_sw(c, T4, SP, 0x328);
+                cad_addiu(c, S5, S0, 0x350);
+                cad_addiu(c, S7, S0, 0x2c0);
+                cad_addiu(c, FP, S0, 0x2b0);
+                pc = 0x0010_922c;
+            }
+            0x0010_922c => {
+                if cad_copy(
+                    c,
+                    0x0010_922c,
+                    CadCopy {
+                        src: V1,
+                        dst: A3,
+                        end: T0,
+                        tmp: [T1, V0, A0, A1],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_9258;
+            }
+            0x0010_9258 => {
+                c.cycles += 14;
+                cad_ld(c, T0, V1, 0);
+                cad_mov(c, A1, T3);
+                cad_sd(c, T0, A3, 0);
+                cad_lw(c, V1, S0, 0x18);
+                cad_addiu(c, A0, T7, -0x78c8);
+                cad_addiu(c, A3, A2, -0x7880);
+                cad_sw(c, T2, V1, 0x6e8);
+                cad_addiu(c, T1, A3, 0xa0);
+                cad_lw(c, V0, S0, 0x18);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_addiu(c, V0, V0, -0xdf0);
+                cad_subu(c, T0, S0, V0);
+                cad_addu(c, V1, V1, T0);
+                cad_sh(c, V1, SP, 0x108);
+                pc = 0x0010_9290;
+            }
+            0x0010_9290 => {
+                if cad_copy(
+                    c,
+                    0x0010_9290,
+                    CadCopy {
+                        src: A3,
+                        dst: A1,
+                        end: T1,
+                        tmp: [T2, V0, V1, A0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_92bc;
+            }
+            // Finish the Rider base; destroy the members (not in charge), then
+            // the virtual base at `*(this + 0x3a0)` gets 0x0045_8928 / 0x459b90 / 0x0045_8970
+            // (stack copies at sp+0 / sp+0x50, reused by every subobject below).
+            0x0010_92bc => {
+                c.cycles += 58;
+                cad_ld(c, T1, A3, 0);
+                cad_ld(c, T2, A3, 0x8);
+                cad_sd(c, T1, A1, 0);
+                cad_addiu(c, A2, A2, -0x7880);
+                cad_sd(c, T2, A1, 0x8);
+                cad_mov(c, A0, T5);
+                cad_lw(c, V1, S0, 0x18);
+                cad_li(c, A1, 0);
+                cad_sw(c, T3, V1, 0x6c0);
+                cad_lhu(c, V0, A2, 0x8);
+                cad_addu(c, V0, V0, T0);
+                cad_sh(c, V0, SP, 0x158);
+                if call_ptr(c, 0x002f_6388, 0x0010_92f0).is_err() {
+                    return;
+                }
+                cad_lw(c, A0, SP, 0x304);
+                cad_li(c, A1, 0);
+                if call_ptr(c, 0x002f_0fe8, 0x0010_92fc).is_err() {
+                    return;
+                }
+                cad_lw(c, A0, SP, 0x348);
+                cad_li(c, A1, 0);
+                if call_ptr(c, 0x002d_f1c8, 0x0010_9308).is_err() {
+                    return;
+                }
+                cad_lw(c, A0, SP, 0x340);
+                cad_li(c, A1, 0);
+                if call_ptr(c, 0x002e_37d0, 0x0010_9314).is_err() {
+                    return;
+                }
+                cad_lw(c, A0, SP, 0x33c);
+                cad_li(c, A1, 0);
+                if call_ptr(c, 0x002d_4a70, 0x0010_9320).is_err() {
+                    return;
+                }
+                cad_lw(c, A0, SP, 0x32c);
+                cad_li(c, A1, 0);
+                if call_ptr(c, 0x002e_f530, 0x0010_932c).is_err() {
+                    return;
+                }
+                cad_lw(c, A0, SP, 0x35c);
+                cad_li(c, A1, 0);
+                if call_ptr(c, 0x002e_ac60, 0x0010_9338).is_err() {
+                    return;
+                }
+                cad_lw(c, A0, SP, 0x30c);
+                cad_li(c, A1, 0);
+                if call_ptr(c, 0x002e_64c0, 0x0010_9344).is_err() {
+                    return;
+                }
+                cad_lw(c, A0, SP, 0x354);
+                cad_li(c, A1, 0);
+                if call_ptr(c, 0x002e_83f0, 0x0010_9350).is_err() {
+                    return;
+                }
+                cad_lw(c, A0, SP, 0x334);
+                cad_li(c, A1, 0);
+                if call_ptr(c, 0x002d_a8e8, 0x0010_935c).is_err() {
+                    return;
+                }
+                cad_lw(c, A0, SP, 0x300);
+                cad_li(c, A1, 0);
+                if call_ptr(c, 0x002d_cda0, 0x0010_9368).is_err() {
+                    return;
+                }
+                cad_lw(c, V1, S0, 0x3a0);
+                cad_li(c, A0, 0x0046_0000);
+                cad_addiu(c, V0, A0, -0x76d8);
+                cad_li(c, A1, 0x0046_0000);
+                cad_sw(c, V0, V1, 0x6e8);
+                cad_mov(c, A3, V0);
+                cad_addiu(c, A0, A1, -0x6470);
+                cad_li(c, A2, 0x0046_0000);
+                cad_lw(c, V0, S0, 0x3a0);
+                cad_addiu(c, A1, A2, -0x7690);
+                cad_addiu(c, T0, A3, 0x40);
+                cad_mov(c, A2, SP);
+                cad_sw(c, A0, V0, 0x6d0);
+                cad_lw(c, V1, S0, 0x3a0);
+                cad_sw(c, A1, V1, 0x6c0);
+                pc = 0x0010_93a4;
+            }
+            0x0010_93a4 => {
+                if cad_copy(
+                    c,
+                    0x0010_93a4,
+                    CadCopy {
+                        src: A3,
+                        dst: A2,
+                        end: T0,
+                        tmp: [T1, T2, V0, V1],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_93d0;
+            }
+            0x0010_93d0 => {
+                c.cycles += 16;
+                cad_lw(c, V0, S6, 0);
+                cad_li(c, A1, 0x0046_0000);
+                cad_ld(c, T0, A3, 0);
+                cad_addiu(c, A0, A1, -0x76d8);
+                cad_sd(c, T0, A2, 0);
+                cad_li(c, A1, 0x0046_0000);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A2, A1, -0x7690);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_mov(c, A1, S1);
+                cad_lw(c, V0, S6, 0);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_addiu(c, V0, V0, -0x10);
+                cad_subu(c, T2, S6, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_9410;
+            }
+            0x0010_9410 => {
+                if cad_copy(
+                    c,
+                    0x0010_9410,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [T0, T1, V0, V1],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_943c;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x398)`
+            // gets 0x0045_8d08 / 0x459b90 / 0x0045_8d50.
+            0x0010_943c => {
+                c.cycles += 26;
+                cad_ld(c, A0, A2, 0);
+                cad_ld(c, A3, A2, 0x8);
+                cad_sd(c, A0, A1, 0);
+                cad_li(c, V0, 0x0046_0000);
+                cad_sd(c, A3, A1, 0x8);
+                cad_li(c, V1, 0x0046_0000);
+                cad_addiu(c, A1, V0, -0x7690);
+                cad_addiu(c, A0, V1, -0x72f8);
+                cad_lw(c, V0, S6, 0);
+                cad_li(c, A3, 0x0046_0000);
+                cad_addiu(c, A2, A3, -0x6470);
+                cad_li(c, T0, 0x0046_0000);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, A3, T0, -0x72b0);
+                cad_mov(c, T1, A0);
+                cad_mov(c, T0, SP);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_lw(c, V1, S2, 0x8);
+                cad_addu(c, V0, V0, T2);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, S2, 0x8);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, S2, 0x8);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_94a4;
+            }
+            0x0010_94a4 => {
+                if cad_copy(
+                    c,
+                    0x0010_94a4,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [T2, V0, V1, A0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_94d0;
+            }
+            0x0010_94d0 => {
+                c.cycles += 16;
+                cad_lw(c, V0, S2, 0x8);
+                cad_li(c, A1, 0x0046_0000);
+                cad_ld(c, A2, T1, 0);
+                cad_addiu(c, A0, A1, -0x72f8);
+                cad_sd(c, A2, T0, 0);
+                cad_li(c, A1, 0x0046_0000);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A2, A1, -0x72b0);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_mov(c, A1, S1);
+                cad_lw(c, V0, S2, 0x8);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_addiu(c, V0, V0, -0x10);
+                cad_subu(c, T2, S2, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_9510;
+            }
+            0x0010_9510 => {
+                if cad_copy(
+                    c,
+                    0x0010_9510,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [T0, T1, V0, V1],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_953c;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x384)`
+            // gets 0x0045_8830 / 0x459b90 / 0x0045_8878.
+            0x0010_953c => {
+                c.cycles += 26;
+                cad_ld(c, A0, A2, 0);
+                cad_ld(c, A3, A2, 0x8);
+                cad_sd(c, A0, A1, 0);
+                cad_li(c, V0, 0x0046_0000);
+                cad_sd(c, A3, A1, 0x8);
+                cad_li(c, V1, 0x0046_0000);
+                cad_addiu(c, A1, V0, -0x72b0);
+                cad_addiu(c, A0, V1, -0x77d0);
+                cad_lw(c, V0, S2, 0x8);
+                cad_li(c, A3, 0x0046_0000);
+                cad_addiu(c, A2, A3, -0x6470);
+                cad_li(c, T0, 0x0046_0000);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, A3, T0, -0x7788);
+                cad_mov(c, T1, A0);
+                cad_mov(c, T0, SP);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_lw(c, V1, S3, 0x14);
+                cad_addu(c, V0, V0, T2);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, S3, 0x14);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, S3, 0x14);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_95a4;
+            }
+            0x0010_95a4 => {
+                if cad_copy(
+                    c,
+                    0x0010_95a4,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [T2, V0, V1, A0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_95d0;
+            }
+            0x0010_95d0 => {
+                c.cycles += 16;
+                cad_lw(c, V0, S3, 0x14);
+                cad_li(c, A1, 0x0046_0000);
+                cad_ld(c, A2, T1, 0);
+                cad_addiu(c, A0, A1, -0x77d0);
+                cad_sd(c, A2, T0, 0);
+                cad_li(c, A1, 0x0046_0000);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A2, A1, -0x7788);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_mov(c, A1, S1);
+                cad_lw(c, V0, S3, 0x14);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_addiu(c, V0, V0, -0x20);
+                cad_subu(c, T2, S3, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_9610;
+            }
+            0x0010_9610 => {
+                if cad_copy(
+                    c,
+                    0x0010_9610,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [T0, T1, V0, V1],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_963c;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x364)`
+            // gets 0x0045_8b18 / 0x459b90 / 0x0045_8b60.
+            0x0010_963c => {
+                c.cycles += 26;
+                cad_ld(c, A0, A2, 0);
+                cad_ld(c, A3, A2, 0x8);
+                cad_sd(c, A0, A1, 0);
+                cad_li(c, V0, 0x0046_0000);
+                cad_sd(c, A3, A1, 0x8);
+                cad_li(c, V1, 0x0046_0000);
+                cad_addiu(c, A1, V0, -0x7788);
+                cad_addiu(c, A0, V1, -0x74e8);
+                cad_lw(c, V0, S3, 0x14);
+                cad_li(c, A3, 0x0046_0000);
+                cad_addiu(c, A2, A3, -0x6470);
+                cad_li(c, T0, 0x0046_0000);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, A3, T0, -0x74a0);
+                cad_mov(c, T1, A0);
+                cad_mov(c, T0, SP);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_lw(c, V1, S4, 0x4);
+                cad_addu(c, V0, V0, T2);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, S4, 0x4);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, S4, 0x4);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_96a4;
+            }
+            0x0010_96a4 => {
+                if cad_copy(
+                    c,
+                    0x0010_96a4,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [T2, S3, V0, V1],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_96d0;
+            }
+            0x0010_96d0 => {
+                c.cycles += 16;
+                cad_lw(c, V0, S4, 0x4);
+                cad_li(c, A1, 0x0046_0000);
+                cad_ld(c, A2, T1, 0);
+                cad_li(c, V1, 0x0046_0000);
+                cad_sd(c, A2, T0, 0);
+                cad_addiu(c, A0, A1, -0x74e8);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A2, V1, -0x74a0);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_mov(c, A1, S1);
+                cad_lw(c, V0, S4, 0x4);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_addiu(c, V0, V0, -0x10);
+                cad_subu(c, T2, S4, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_9710;
+            }
+            0x0010_9710 => {
+                if cad_copy(
+                    c,
+                    0x0010_9710,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [A0, T0, T1, S3],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_973c;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x358)`
+            // gets 0x0045_8a20 / 0x459b90 / 0x0045_8a68.
+            0x0010_973c => {
+                c.cycles += 26;
+                cad_ld(c, V0, A2, 0);
+                cad_ld(c, V1, A2, 0x8);
+                cad_sd(c, V0, A1, 0);
+                cad_li(c, T0, 0x0046_0000);
+                cad_sd(c, V1, A1, 0x8);
+                cad_li(c, T1, 0x0046_0000);
+                cad_lw(c, V0, S4, 0x4);
+                cad_addiu(c, A1, T0, -0x74a0);
+                cad_addiu(c, A0, T1, -0x75e0);
+                cad_li(c, S3, 0x0046_0000);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, A2, S3, -0x6470);
+                cad_li(c, S4, 0x0046_0000);
+                cad_mov(c, T1, A0);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_addiu(c, A3, S4, -0x7598);
+                cad_lw(c, V1, S5, 0x8);
+                cad_mov(c, T0, SP);
+                cad_addu(c, V0, V0, T2);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, S5, 0x8);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, S5, 0x8);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_97a4;
+            }
+            0x0010_97a4 => {
+                if cad_copy(
+                    c,
+                    0x0010_97a4,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [V0, V1, A0, A1],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_97d0;
+            }
+            0x0010_97d0 => {
+                c.cycles += 16;
+                cad_lw(c, V0, S5, 0x8);
+                cad_li(c, A2, 0x0046_0000);
+                cad_ld(c, A3, T1, 0);
+                cad_addiu(c, A0, A2, -0x75e0);
+                cad_sd(c, A3, T0, 0);
+                cad_li(c, V1, 0x0046_0000);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A2, V1, -0x7598);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_mov(c, A1, S1);
+                cad_lw(c, V0, S5, 0x8);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_addiu(c, V0, V0, -0x10);
+                cad_subu(c, T2, S5, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_9810;
+            }
+            0x0010_9810 => {
+                if cad_copy(
+                    c,
+                    0x0010_9810,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [A0, T0, T1, S3],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_983c;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x340)`
+            // gets 0x0045_8c10 / 0x459b90 / 0x0045_8c58.
+            0x0010_983c => {
+                c.cycles += 26;
+                cad_ld(c, S4, A2, 0);
+                cad_ld(c, V0, A2, 0x8);
+                cad_sd(c, S4, A1, 0);
+                cad_li(c, A3, 0x0046_0000);
+                cad_sd(c, V0, A1, 0x8);
+                cad_li(c, T0, 0x0046_0000);
+                cad_lw(c, V0, S5, 0x8);
+                cad_li(c, A2, 0x0046_0000);
+                cad_addiu(c, A1, A2, -0x7598);
+                cad_addiu(c, A0, A3, -0x73f0);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, A2, T0, -0x6470);
+                cad_li(c, T1, 0x0046_0000);
+                cad_mov(c, T0, SP);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_addiu(c, A3, T1, -0x73a8);
+                cad_lw(c, V1, S7, 0x80);
+                cad_mov(c, T1, A0);
+                cad_addu(c, V0, V0, T2);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, S7, 0x80);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, S7, 0x80);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_98a4;
+            }
+            0x0010_98a4 => {
+                if cad_copy(
+                    c,
+                    0x0010_98a4,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [T2, S3, S4, V0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_98d0;
+            }
+            0x0010_98d0 => {
+                c.cycles += 16;
+                cad_lw(c, V0, S7, 0x80);
+                cad_li(c, V1, 0x0046_0000);
+                cad_ld(c, A1, T1, 0);
+                cad_addiu(c, A0, V1, -0x73f0);
+                cad_sd(c, A1, T0, 0);
+                cad_li(c, S3, 0x0046_0000);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A2, S3, -0x73a8);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_mov(c, A1, S1);
+                cad_lw(c, V0, S7, 0x80);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_addiu(c, V0, V0, -0x90);
+                cad_subu(c, T2, S7, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_9910;
+            }
+            0x0010_9910 => {
+                if cad_copy(
+                    c,
+                    0x0010_9910,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [S4, V0, V1, A0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_993c;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x2b8)`
+            // gets 0x0045_8e00 / 0x459b90 / 0x0045_8e48.
+            0x0010_993c => {
+                c.cycles += 26;
+                cad_ld(c, A3, A2, 0);
+                cad_ld(c, T0, A2, 0x8);
+                cad_sd(c, A3, A1, 0);
+                cad_li(c, V0, 0x0046_0000);
+                cad_sd(c, T0, A1, 0x8);
+                cad_addiu(c, A0, V0, -0x7200);
+                cad_li(c, S4, 0x0046_0000);
+                cad_li(c, V1, 0x0046_0000);
+                cad_lw(c, V0, S7, 0x80);
+                cad_addiu(c, A1, S4, -0x73a8);
+                cad_addiu(c, A2, V1, -0x6470);
+                cad_li(c, T0, 0x0046_0000);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, A3, T0, -0x71b8);
+                cad_mov(c, T1, A0);
+                cad_mov(c, T0, SP);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_lw(c, V1, FP, 0x8);
+                cad_addu(c, V0, V0, T2);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, FP, 0x8);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, FP, 0x8);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_99a4;
+            }
+            0x0010_99a4 => {
+                if cad_copy(
+                    c,
+                    0x0010_99a4,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [T2, S3, S4, V0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_99d0;
+            }
+            0x0010_99d0 => {
+                c.cycles += 16;
+                cad_lw(c, V0, FP, 0x8);
+                cad_li(c, V1, 0x0046_0000);
+                cad_ld(c, A1, T1, 0);
+                cad_addiu(c, A0, V1, -0x7200);
+                cad_sd(c, A1, T0, 0);
+                cad_li(c, S3, 0x0046_0000);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A2, S3, -0x71b8);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_mov(c, A1, S1);
+                cad_lw(c, V0, FP, 0x8);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_addiu(c, V0, V0, -0x10);
+                cad_subu(c, T2, FP, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_9a10;
+            }
+            0x0010_9a10 => {
+                if cad_copy(
+                    c,
+                    0x0010_9a10,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [S4, V0, V1, A0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_9a3c;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x2a4)`
+            // gets 0x0045_8ef8 / 0x459b90 / 0x0045_8f40.
+            0x0010_9a3c => {
+                c.cycles += 27;
+                cad_ld(c, A3, A2, 0);
+                cad_ld(c, T0, A2, 0x8);
+                cad_sd(c, A3, A1, 0);
+                cad_li(c, V0, 0x0046_0000);
+                cad_sd(c, T0, A1, 0x8);
+                cad_addiu(c, A0, V0, -0x7108);
+                cad_li(c, S4, 0x0046_0000);
+                cad_li(c, V1, 0x0046_0000);
+                cad_lw(c, V0, FP, 0x8);
+                cad_addiu(c, A1, S4, -0x71b8);
+                cad_addiu(c, A2, V1, -0x6470);
+                cad_li(c, T0, 0x0046_0000);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, A3, T0, -0x70c0);
+                cad_mov(c, T1, A0);
+                cad_mov(c, T0, SP);
+                cad_lw(c, S3, SP, 0x344);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_lw(c, V1, S3, 0x14);
+                cad_addu(c, V0, V0, T2);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, S3, 0x14);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, S3, 0x14);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_9aa8;
+            }
+            0x0010_9aa8 => {
+                if cad_copy(
+                    c,
+                    0x0010_9aa8,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [S4, V0, V1, A0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_9ad4;
+            }
+            0x0010_9ad4 => {
+                c.cycles += 18;
+                cad_lw(c, A1, SP, 0x344);
+                cad_li(c, A2, 0x0046_0000);
+                cad_addiu(c, A0, A2, -0x7108);
+                cad_li(c, V1, 0x0046_0000);
+                cad_lw(c, V0, A1, 0x14);
+                cad_addiu(c, A2, V1, -0x70c0);
+                cad_ld(c, A3, T1, 0);
+                cad_mov(c, A1, S1);
+                cad_sd(c, A3, T0, 0);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_lw(c, T0, SP, 0x344);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_lw(c, V0, T0, 0x14);
+                cad_addiu(c, V0, V0, -0x20);
+                cad_subu(c, T2, T0, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_9b1c;
+            }
+            0x0010_9b1c => {
+                if cad_copy(
+                    c,
+                    0x0010_9b1c,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [T1, S3, S4, V0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_9b48;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x288)`
+            // gets 0x0045_8ff0 / 0x459b90 / 0x0045_9038.
+            0x0010_9b48 => {
+                c.cycles += 28;
+                cad_ld(c, V1, A2, 0);
+                cad_ld(c, A0, A2, 0x8);
+                cad_sd(c, V1, A1, 0);
+                cad_li(c, T1, 0x0046_0000);
+                cad_sd(c, A0, A1, 0x8);
+                cad_li(c, S3, 0x0046_0000);
+                cad_lw(c, V1, SP, 0x344);
+                cad_addiu(c, A0, S3, -0x7010);
+                cad_addiu(c, A1, T1, -0x70c0);
+                cad_li(c, S4, 0x0046_0000);
+                cad_lw(c, V0, V1, 0x14);
+                cad_addiu(c, A2, S4, -0x6470);
+                cad_li(c, T0, 0x0046_0000);
+                cad_mov(c, T1, A0);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, A3, T0, -0x6fc8);
+                cad_mov(c, T0, SP);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_lw(c, S3, SP, 0x324);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_lw(c, V1, S3, 0x58);
+                cad_addu(c, V0, V0, T2);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, S3, 0x58);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, S3, 0x58);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_9bb8;
+            }
+            0x0010_9bb8 => {
+                if cad_copy(
+                    c,
+                    0x0010_9bb8,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [S4, V0, V1, A0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_9be4;
+            }
+            0x0010_9be4 => {
+                c.cycles += 18;
+                cad_lw(c, A1, SP, 0x324);
+                cad_li(c, A2, 0x0046_0000);
+                cad_addiu(c, A0, A2, -0x7010);
+                cad_li(c, V1, 0x0046_0000);
+                cad_lw(c, V0, A1, 0x58);
+                cad_addiu(c, A2, V1, -0x6fc8);
+                cad_ld(c, A3, T1, 0);
+                cad_mov(c, A1, S1);
+                cad_sd(c, A3, T0, 0);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_lw(c, T0, SP, 0x324);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_lw(c, V0, T0, 0x58);
+                cad_addiu(c, V0, V0, -0x60);
+                cad_subu(c, T2, T0, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_9c2c;
+            }
+            0x0010_9c2c => {
+                if cad_copy(
+                    c,
+                    0x0010_9c2c,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [T1, S3, S4, V0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_9c58;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x224)`
+            // gets 0x0045_90e8 / 0x459b90 / 0x0045_9130.
+            0x0010_9c58 => {
+                c.cycles += 28;
+                cad_ld(c, V1, A2, 0);
+                cad_ld(c, A0, A2, 0x8);
+                cad_sd(c, V1, A1, 0);
+                cad_li(c, T1, 0x0046_0000);
+                cad_sd(c, A0, A1, 0x8);
+                cad_li(c, S3, 0x0046_0000);
+                cad_lw(c, V1, SP, 0x324);
+                cad_addiu(c, A0, S3, -0x6f18);
+                cad_addiu(c, A1, T1, -0x6fc8);
+                cad_li(c, S4, 0x0046_0000);
+                cad_lw(c, V0, V1, 0x58);
+                cad_addiu(c, A2, S4, -0x6470);
+                cad_li(c, T0, 0x0046_0000);
+                cad_mov(c, T1, A0);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, A3, T0, -0x6ed0);
+                cad_mov(c, T0, SP);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_lw(c, S3, SP, 0x31c);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_lw(c, V1, S3, 0x14);
+                cad_addu(c, V0, V0, T2);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, S3, 0x14);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, S3, 0x14);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_9cc8;
+            }
+            0x0010_9cc8 => {
+                if cad_copy(
+                    c,
+                    0x0010_9cc8,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [S4, V0, V1, A0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_9cf4;
+            }
+            0x0010_9cf4 => {
+                c.cycles += 18;
+                cad_lw(c, A1, SP, 0x31c);
+                cad_li(c, A2, 0x0046_0000);
+                cad_addiu(c, A0, A2, -0x6f18);
+                cad_li(c, V1, 0x0046_0000);
+                cad_lw(c, V0, A1, 0x14);
+                cad_addiu(c, A2, V1, -0x6ed0);
+                cad_ld(c, A3, T1, 0);
+                cad_mov(c, A1, S1);
+                cad_sd(c, A3, T0, 0);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_lw(c, T0, SP, 0x31c);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_lw(c, V0, T0, 0x14);
+                cad_addiu(c, V0, V0, -0x20);
+                cad_subu(c, T2, T0, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_9d3c;
+            }
+            0x0010_9d3c => {
+                if cad_copy(
+                    c,
+                    0x0010_9d3c,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [T1, S3, S4, V0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_9d68;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x200)`
+            // gets 0x0045_91e0 / 0x459b90 / 0x0045_9228.
+            0x0010_9d68 => {
+                c.cycles += 27;
+                cad_ld(c, V1, A2, 0);
+                cad_ld(c, A0, A2, 0x8);
+                cad_sd(c, V1, A1, 0);
+                cad_li(c, T1, 0x0046_0000);
+                cad_sd(c, A0, A1, 0x8);
+                cad_li(c, S3, 0x0046_0000);
+                cad_lw(c, V1, SP, 0x31c);
+                cad_addiu(c, A1, T1, -0x6ed0);
+                cad_addiu(c, A0, S3, -0x6e20);
+                cad_li(c, S4, 0x0046_0000);
+                cad_lw(c, V0, V1, 0x14);
+                cad_addiu(c, A2, S4, -0x6470);
+                cad_li(c, T0, 0x0046_0000);
+                cad_mov(c, T1, A0);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, A3, T0, -0x6dd8);
+                cad_mov(c, T0, SP);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_lw(c, V1, S0, 0x200);
+                cad_addu(c, V0, V0, T2);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, S0, 0x200);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, S0, 0x200);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_9dd4;
+            }
+            0x0010_9dd4 => {
+                if cad_copy(
+                    c,
+                    0x0010_9dd4,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [T2, S3, S4, V0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_9e00;
+            }
+            0x0010_9e00 => {
+                c.cycles += 18;
+                cad_lw(c, V1, SP, 0x318);
+                cad_li(c, A1, 0x0046_0000);
+                cad_addiu(c, A0, A1, -0x6e20);
+                cad_li(c, S4, 0x0046_0000);
+                cad_lw(c, V0, V1, 0);
+                cad_mov(c, A1, S1);
+                cad_ld(c, A2, T1, 0);
+                cad_sd(c, A2, T0, 0);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A2, S4, -0x6dd8);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_lw(c, V0, V1, 0);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_lw(c, A0, SP, 0x318);
+                cad_addiu(c, V0, V0, -0x10);
+                cad_subu(c, T2, A0, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_9e48;
+            }
+            0x0010_9e48 => {
+                if cad_copy(
+                    c,
+                    0x0010_9e48,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [T0, T1, S3, S4],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_9e74;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x1f0)`
+            // gets 0x0045_92d8 / 0x459b90 / 0x0045_9320.
+            0x0010_9e74 => {
+                c.cycles += 27;
+                cad_ld(c, V0, A2, 0);
+                cad_ld(c, V1, A2, 0x8);
+                cad_sd(c, V0, A1, 0);
+                cad_li(c, T0, 0x0046_0000);
+                cad_sd(c, V1, A1, 0x8);
+                cad_li(c, T1, 0x0046_0000);
+                cad_addiu(c, A1, T0, -0x6dd8);
+                cad_li(c, V1, 0x0046_0000);
+                cad_lw(c, S4, SP, 0x318);
+                cad_addiu(c, A3, V1, -0x6ce0);
+                cad_addiu(c, A0, T1, -0x6d28);
+                cad_li(c, S3, 0x0046_0000);
+                cad_lw(c, V0, S4, 0);
+                cad_addiu(c, A2, S3, -0x6470);
+                cad_mov(c, T1, A0);
+                cad_mov(c, T0, SP);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_lw(c, V1, S0, 0x1f0);
+                cad_addu(c, V0, V0, T2);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, S0, 0x1f0);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, S0, 0x1f0);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_9ee0;
+            }
+            0x0010_9ee0 => {
+                if cad_copy(
+                    c,
+                    0x0010_9ee0,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [A0, A1, A2, A3],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_9f0c;
+            }
+            0x0010_9f0c => {
+                c.cycles += 18;
+                cad_lw(c, T2, SP, 0x314);
+                cad_li(c, S3, 0x0046_0000);
+                cad_addiu(c, A0, S3, -0x6d28);
+                cad_li(c, A3, 0x0046_0000);
+                cad_lw(c, V0, T2, 0);
+                cad_ld(c, S4, T1, 0);
+                cad_sd(c, S4, T0, 0);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A2, A3, -0x6ce0);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_mov(c, A1, S1);
+                cad_lw(c, V0, T2, 0);
+                cad_lw(c, T0, SP, 0x314);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_addiu(c, V0, V0, -0x10);
+                cad_subu(c, T2, T0, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_9f54;
+            }
+            0x0010_9f54 => {
+                if cad_copy(
+                    c,
+                    0x0010_9f54,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [T1, S3, S4, V0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_9f80;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x1e4)`
+            // gets 0x0045_93d0 / 0x459b90 / 0x0045_9418.
+            0x0010_9f80 => {
+                c.cycles += 28;
+                cad_ld(c, V1, A2, 0);
+                cad_ld(c, A0, A2, 0x8);
+                cad_sd(c, V1, A1, 0);
+                cad_li(c, T1, 0x0046_0000);
+                cad_sd(c, A0, A1, 0x8);
+                cad_li(c, S3, 0x0046_0000);
+                cad_lw(c, V1, SP, 0x314);
+                cad_addiu(c, A0, S3, -0x6c30);
+                cad_addiu(c, A1, T1, -0x6ce0);
+                cad_li(c, S4, 0x0046_0000);
+                cad_lw(c, V0, V1, 0);
+                cad_addiu(c, A2, S4, -0x6470);
+                cad_li(c, T0, 0x0046_0000);
+                cad_mov(c, T1, A0);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, A3, T0, -0x6be8);
+                cad_mov(c, T0, SP);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_lw(c, S3, SP, 0x310);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_lw(c, V1, S3, 0x14);
+                cad_addu(c, V0, V0, T2);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, S3, 0x14);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, S3, 0x14);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_9ff0;
+            }
+            0x0010_9ff0 => {
+                if cad_copy(
+                    c,
+                    0x0010_9ff0,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [S4, V0, V1, A0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_a01c;
+            }
+            0x0010_a01c => {
+                c.cycles += 18;
+                cad_lw(c, A1, SP, 0x310);
+                cad_li(c, A2, 0x0046_0000);
+                cad_addiu(c, A0, A2, -0x6c30);
+                cad_li(c, V1, 0x0046_0000);
+                cad_lw(c, V0, A1, 0x14);
+                cad_addiu(c, A2, V1, -0x6be8);
+                cad_ld(c, A3, T1, 0);
+                cad_mov(c, A1, S1);
+                cad_sd(c, A3, T0, 0);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_lw(c, T0, SP, 0x310);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_lw(c, V0, T0, 0x14);
+                cad_addiu(c, V0, V0, -0x20);
+                cad_subu(c, T2, T0, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_a064;
+            }
+            0x0010_a064 => {
+                if cad_copy(
+                    c,
+                    0x0010_a064,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [T1, S3, S4, V0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_a090;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x1c0)`
+            // gets 0x0045_94c8 / 0x459b90 / 0x0045_9510.
+            0x0010_a090 => {
+                c.cycles += 27;
+                cad_ld(c, V1, A2, 0);
+                cad_ld(c, A0, A2, 0x8);
+                cad_sd(c, V1, A1, 0);
+                cad_li(c, T1, 0x0046_0000);
+                cad_sd(c, A0, A1, 0x8);
+                cad_li(c, S3, 0x0046_0000);
+                cad_lw(c, V1, SP, 0x310);
+                cad_addiu(c, A1, T1, -0x6be8);
+                cad_addiu(c, A0, S3, -0x6b38);
+                cad_li(c, S4, 0x0046_0000);
+                cad_lw(c, V0, V1, 0x14);
+                cad_addiu(c, A2, S4, -0x6470);
+                cad_li(c, T0, 0x0046_0000);
+                cad_mov(c, T1, A0);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, A3, T0, -0x6af0);
+                cad_mov(c, T0, SP);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_lw(c, V1, S0, 0x1c0);
+                cad_addu(c, V0, V0, T2);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, S0, 0x1c0);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, S0, 0x1c0);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_a0fc;
+            }
+            0x0010_a0fc => {
+                if cad_copy(
+                    c,
+                    0x0010_a0fc,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [T2, S3, S4, V0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_a128;
+            }
+            0x0010_a128 => {
+                c.cycles += 18;
+                cad_lw(c, V1, SP, 0x308);
+                cad_li(c, A1, 0x0046_0000);
+                cad_addiu(c, A0, A1, -0x6b38);
+                cad_li(c, S4, 0x0046_0000);
+                cad_lw(c, V0, V1, 0);
+                cad_mov(c, A1, S1);
+                cad_ld(c, A2, T1, 0);
+                cad_sd(c, A2, T0, 0);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A2, S4, -0x6af0);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_lw(c, V0, V1, 0);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_lw(c, A0, SP, 0x308);
+                cad_addiu(c, V0, V0, -0x10);
+                cad_subu(c, T2, A0, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_a170;
+            }
+            0x0010_a170 => {
+                if cad_copy(
+                    c,
+                    0x0010_a170,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [T0, T1, S3, S4],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_a19c;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x1b0)`
+            // gets 0x0045_95c0 / 0x459b90 / 0x0045_9608.
+            0x0010_a19c => {
+                c.cycles += 28;
+                cad_ld(c, V0, A2, 0);
+                cad_ld(c, V1, A2, 0x8);
+                cad_sd(c, V0, A1, 0);
+                cad_li(c, T0, 0x0046_0000);
+                cad_sd(c, V1, A1, 0x8);
+                cad_li(c, T1, 0x0046_0000);
+                cad_addiu(c, A1, T0, -0x6af0);
+                cad_li(c, V1, 0x0046_0000);
+                cad_lw(c, S4, SP, 0x308);
+                cad_addiu(c, A3, V1, -0x69f8);
+                cad_addiu(c, A0, T1, -0x6a40);
+                cad_li(c, S3, 0x0046_0000);
+                cad_lw(c, V0, S4, 0);
+                cad_addiu(c, A2, S3, -0x6470);
+                cad_mov(c, T1, A0);
+                cad_mov(c, T0, SP);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_lw(c, A1, SP, 0x358);
+                cad_addu(c, V0, V0, T2);
+                cad_lw(c, V1, A1, 0xa0);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, A1, 0xa0);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, A1, 0xa0);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_a20c;
+            }
+            0x0010_a20c => {
+                if cad_copy(
+                    c,
+                    0x0010_a20c,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [A2, A3, T2, S3],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_a238;
+            }
+            0x0010_a238 => {
+                c.cycles += 17;
+                cad_lw(c, S4, SP, 0x358);
+                cad_li(c, V1, 0x0046_0000);
+                cad_addiu(c, A0, V1, -0x6a40);
+                cad_li(c, S3, 0x0046_0000);
+                cad_lw(c, V0, S4, 0xa0);
+                cad_ld(c, A1, T1, 0);
+                cad_sd(c, A1, T0, 0);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A2, S3, -0x69f8);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_mov(c, A1, S1);
+                cad_lw(c, V0, S4, 0xa0);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_addiu(c, V0, V0, -0xb0);
+                cad_subu(c, T2, S4, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_a27c;
+            }
+            0x0010_a27c => {
+                if cad_copy(
+                    c,
+                    0x0010_a27c,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [S4, V0, V1, A0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_a2a8;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x100)`
+            // gets 0x0045_98a8 / 0x459b90 / 0x0045_98f0.
+            0x0010_a2a8 => {
+                c.cycles += 28;
+                cad_ld(c, A3, A2, 0);
+                cad_ld(c, T0, A2, 0x8);
+                cad_sd(c, A3, A1, 0);
+                cad_li(c, V0, 0x0046_0000);
+                cad_sd(c, T0, A1, 0x8);
+                cad_addiu(c, A0, V0, -0x6758);
+                cad_lw(c, A3, SP, 0x358);
+                cad_li(c, S4, 0x0046_0000);
+                cad_addiu(c, A1, S4, -0x69f8);
+                cad_li(c, V1, 0x0046_0000);
+                cad_lw(c, V0, A3, 0xa0);
+                cad_addiu(c, A2, V1, -0x6470);
+                cad_li(c, T0, 0x0046_0000);
+                cad_mov(c, T1, A0);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, A3, T0, -0x6710);
+                cad_mov(c, T0, SP);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_lw(c, S3, SP, 0x350);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_lw(c, V1, S3, 0x50);
+                cad_addu(c, V0, V0, T2);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, S3, 0x50);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, S3, 0x50);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_a318;
+            }
+            0x0010_a318 => {
+                if cad_copy(
+                    c,
+                    0x0010_a318,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [S4, V0, V1, A0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_a344;
+            }
+            0x0010_a344 => {
+                c.cycles += 18;
+                cad_lw(c, A1, SP, 0x350);
+                cad_li(c, A2, 0x0046_0000);
+                cad_addiu(c, A0, A2, -0x6758);
+                cad_li(c, V1, 0x0046_0000);
+                cad_lw(c, V0, A1, 0x50);
+                cad_addiu(c, A2, V1, -0x6710);
+                cad_ld(c, A3, T1, 0);
+                cad_mov(c, A1, S1);
+                cad_sd(c, A3, T0, 0);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_lw(c, T0, SP, 0x350);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_lw(c, V0, T0, 0x50);
+                cad_addiu(c, V0, V0, -0x60);
+                cad_subu(c, T2, T0, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_a38c;
+            }
+            0x0010_a38c => {
+                if cad_copy(
+                    c,
+                    0x0010_a38c,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [T1, S3, S4, V0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_a3b8;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0xa0)`
+            // gets 0x0045_96b8 / 0x459b90 / 0x0045_9700.
+            0x0010_a3b8 => {
+                c.cycles += 27;
+                cad_ld(c, V1, A2, 0);
+                cad_ld(c, A0, A2, 0x8);
+                cad_sd(c, V1, A1, 0);
+                cad_li(c, T1, 0x0046_0000);
+                cad_sd(c, A0, A1, 0x8);
+                cad_li(c, S3, 0x0046_0000);
+                cad_lw(c, V1, SP, 0x350);
+                cad_addiu(c, A1, T1, -0x6710);
+                cad_addiu(c, A0, S3, -0x6948);
+                cad_li(c, S4, 0x0046_0000);
+                cad_lw(c, V0, V1, 0x50);
+                cad_addiu(c, A2, S4, -0x6470);
+                cad_li(c, T0, 0x0046_0000);
+                cad_mov(c, T1, A0);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, A3, T0, -0x6900);
+                cad_mov(c, T0, SP);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_lw(c, V1, S0, 0xa0);
+                cad_addu(c, V0, V0, T2);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, S0, 0xa0);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, S0, 0xa0);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_a424;
+            }
+            0x0010_a424 => {
+                if cad_copy(
+                    c,
+                    0x0010_a424,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [T2, S3, S4, V0],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_a450;
+            }
+            0x0010_a450 => {
+                c.cycles += 18;
+                cad_lw(c, V1, SP, 0x34c);
+                cad_li(c, A1, 0x0046_0000);
+                cad_addiu(c, A0, A1, -0x6948);
+                cad_li(c, S4, 0x0046_0000);
+                cad_lw(c, V0, V1, 0);
+                cad_mov(c, A1, S1);
+                cad_ld(c, A2, T1, 0);
+                cad_sd(c, A2, T0, 0);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A2, S4, -0x6900);
+                cad_addiu(c, T0, A2, 0xa0);
+                cad_lw(c, V0, V1, 0);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_lw(c, A0, SP, 0x34c);
+                cad_addiu(c, V0, V0, -0x10);
+                cad_subu(c, A3, A0, V0);
+                cad_addu(c, V1, V1, A3);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_a498;
+            }
+            0x0010_a498 => {
+                if cad_copy(
+                    c,
+                    0x0010_a498,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: T0,
+                        tmp: [T1, T2, S3, S4],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_a4c4;
+            }
+            // Finish the previous subobject; destroy the wipeout state member
+            // (this+0x30); the virtual base at `*(this + 0x24)` gets 0x0045_99a0 / 0x0045_99e8.
+            0x0010_a4c4 => {
+                c.cycles += 31;
+                cad_ld(c, V0, A2, 0);
+                cad_ld(c, V1, A2, 0x8);
+                cad_sd(c, V0, A1, 0);
+                cad_li(c, T1, 0x0046_0000);
+                cad_sd(c, V1, A1, 0x8);
+                cad_li(c, S4, 0x0046_0000);
+                cad_lw(c, A0, SP, 0x338);
+                cad_addiu(c, A2, T1, -0x6900);
+                cad_lw(c, T2, SP, 0x34c);
+                cad_li(c, A1, 0);
+                cad_lw(c, V1, T2, 0);
+                cad_sw(c, S1, V1, 0x6c0);
+                cad_lhu(c, V0, A2, 0x8);
+                cad_addu(c, V0, V0, A3);
+                cad_sh(c, V0, SP, 0x58);
+                if call_ptr(c, 0x0013_6ad0, 0x0010_a504).is_err() {
+                    return;
+                }
+                cad_lw(c, S3, SP, 0x330);
+                cad_addiu(c, V0, S4, -0x6660);
+                cad_mov(c, A3, V0);
+                cad_li(c, A1, 0x0046_0000);
+                cad_lw(c, V1, S3, 0x4);
+                cad_addiu(c, A0, A1, -0x6470);
+                cad_li(c, A2, 0x0046_0000);
+                cad_addiu(c, T0, A3, 0x40);
+                cad_sw(c, V0, V1, 0x6e8);
+                cad_addiu(c, A1, A2, -0x6618);
+                cad_mov(c, A2, SP);
+                cad_lw(c, V0, S3, 0x4);
+                cad_sw(c, A0, V0, 0x6d0);
+                cad_lw(c, V1, S3, 0x4);
+                cad_sw(c, A1, V1, 0x6c0);
+                pc = 0x0010_a540;
+            }
+            0x0010_a540 => {
+                if cad_copy(
+                    c,
+                    0x0010_a540,
+                    CadCopy {
+                        src: A3,
+                        dst: A2,
+                        end: T0,
+                        tmp: [T1, T2, S3, S4],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_a56c;
+            }
+            0x0010_a56c => {
+                c.cycles += 18;
+                cad_lw(c, V1, SP, 0x330);
+                cad_li(c, A1, 0x0046_0000);
+                cad_addiu(c, A0, A1, -0x6660);
+                cad_li(c, S4, 0x0046_0000);
+                cad_lw(c, V0, V1, 0x4);
+                cad_mov(c, A1, S1);
+                cad_ld(c, T0, A3, 0);
+                cad_sd(c, T0, A2, 0);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A2, S4, -0x6618);
+                cad_addiu(c, A3, A2, 0xa0);
+                cad_lw(c, V0, V1, 0x4);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_lw(c, A0, SP, 0x330);
+                cad_addiu(c, V0, V0, -0x10);
+                cad_subu(c, T2, A0, V0);
+                cad_addu(c, V1, V1, T2);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_a5b4;
+            }
+            0x0010_a5b4 => {
+                if cad_copy(
+                    c,
+                    0x0010_a5b4,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: A3,
+                        tmp: [T0, T1, S3, S4],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_a5e0;
+            }
+            // Finish the previous subobject; the virtual base at `*(this + 0x18)`
+            // gets 0x0045_9a98 / 0x459b90 / 0x0045_9ae0.
+            0x0010_a5e0 => {
+                c.cycles += 27;
+                cad_ld(c, V0, A2, 0);
+                cad_ld(c, V1, A2, 0x8);
+                cad_sd(c, V0, A1, 0);
+                cad_li(c, T0, 0x0046_0000);
+                cad_sd(c, V1, A1, 0x8);
+                cad_li(c, T1, 0x0046_0000);
+                cad_addiu(c, A1, T0, -0x6618);
+                cad_li(c, V1, 0x0046_0000);
+                cad_lw(c, S4, SP, 0x330);
+                cad_addiu(c, A3, V1, -0x6520);
+                cad_addiu(c, A0, T1, -0x6568);
+                cad_li(c, S3, 0x0046_0000);
+                cad_lw(c, V0, S4, 0x4);
+                cad_addiu(c, A2, S3, -0x6470);
+                cad_mov(c, T1, A0);
+                cad_mov(c, T0, SP);
+                cad_sw(c, S1, V0, 0x6c0);
+                cad_addiu(c, T3, T1, 0x40);
+                cad_lhu(c, V0, A1, 0x8);
+                cad_lw(c, V1, S0, 0x18);
+                cad_addu(c, V0, V0, T2);
+                cad_sh(c, V0, SP, 0x58);
+                cad_sw(c, A0, V1, 0x6e8);
+                cad_lw(c, V0, S0, 0x18);
+                cad_sw(c, A2, V0, 0x6d0);
+                cad_lw(c, V1, S0, 0x18);
+                cad_sw(c, A3, V1, 0x6c0);
+                pc = 0x0010_a64c;
+            }
+            0x0010_a64c => {
+                if cad_copy(
+                    c,
+                    0x0010_a64c,
+                    CadCopy {
+                        src: T1,
+                        dst: T0,
+                        end: T3,
+                        tmp: [A0, A1, A2, A3],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_a678;
+            }
+            0x0010_a678 => {
+                c.cycles += 16;
+                cad_lw(c, V0, S0, 0x18);
+                cad_li(c, T2, 0x0046_0000);
+                cad_ld(c, S3, T1, 0);
+                cad_li(c, A3, 0x0046_0000);
+                cad_sd(c, S3, T0, 0);
+                cad_addiu(c, A0, T2, -0x6568);
+                cad_sw(c, SP, V0, 0x6e8);
+                cad_addiu(c, A2, A3, -0x6520);
+                cad_addiu(c, T0, A2, 0xa0);
+                cad_mov(c, A1, S1);
+                cad_lw(c, V0, S0, 0x18);
+                cad_lhu(c, V1, A0, 0x8);
+                cad_addiu(c, V0, V0, -0x20);
+                cad_subu(c, A3, S0, V0);
+                cad_addu(c, V1, V1, A3);
+                cad_sh(c, V1, SP, 0x8);
+                pc = 0x0010_a6b8;
+            }
+            0x0010_a6b8 => {
+                if cad_copy(
+                    c,
+                    0x0010_a6b8,
+                    CadCopy {
+                        src: A2,
+                        dst: A1,
+                        end: T0,
+                        tmp: [T1, T2, S3, S4],
+                    },
+                ) {
+                    return;
+                }
+                pc = 0x0010_a6e4;
+            }
+            // Finish the last subobject; in_chrg & 2 destroys the Rider virtual base.
+            0x0010_a6e4 => {
+                c.cycles += 13;
+                cad_ld(c, V0, A2, 0);
+                cad_ld(c, V1, A2, 0x8);
+                cad_sd(c, V0, A1, 0);
+                cad_li(c, T1, 0x0046_0000);
+                cad_sd(c, V1, A1, 0x8);
+                cad_lw(c, V1, S0, 0x18);
+                cad_addiu(c, A0, T1, -0x6520);
+                cad_sw(c, S1, V1, 0x6c0);
+                cad_lhu(c, V0, A0, 0x8);
+                cad_lw(c, T2, SP, 0x328);
+                cad_addu(c, V0, V0, A3);
+                let t = c.g[T2][0] == 0;
+                cad_sh(c, V0, SP, 0x58);
+                if t {
+                    pc = 0x0010_a724;
+                    continue;
+                }
+                pc = 0x0010_a718;
+            }
+            0x0010_a718 => {
+                c.cycles += 3;
+                cad_lw(c, A0, S0, 0x18);
+                cad_li(c, A1, 0);
+                if CAD_RIDER_DTOR.call(c, 0x0010_a724).is_err() {
+                    return;
+                }
+                pc = 0x0010_a724;
+            }
+            // in_chrg & 1: free the object.
+            0x0010_a724 => {
+                c.cycles += 3;
+                cad_lw(c, S3, SP, 0x320);
+                if c.g[S3][0] == 0 {
+                    cad_lq(c, S0, SP, 0x3f0);
+                    pc = 0x0010_a73c;
+                    continue;
+                }
+                pc = 0x0010_a730;
+            }
+            0x0010_a730 => {
+                c.cycles += 3;
+                cad_mov(c, A0, S0);
+                if call_ptr(c, 0x0031_7e50, 0x0010_a738).is_err() {
+                    return;
+                }
+                cad_lq(c, S0, SP, 0x3f0);
+                pc = 0x0010_a73c;
+            }
+            // Epilogue.
+            0x0010_a73c => {
+                c.cycles += 11;
+                cad_lq(c, S1, SP, 0x3e0);
+                cad_lq(c, S2, SP, 0x3d0);
+                cad_lq(c, S3, SP, 0x3c0);
+                cad_lq(c, S4, SP, 0x3b0);
+                cad_lq(c, S5, SP, 0x3a0);
+                cad_lq(c, S6, SP, 0x390);
+                cad_lq(c, S7, SP, 0x380);
+                cad_lq(c, FP, SP, 0x370);
+                cad_ld(c, RA, SP, 0x360);
+                let ra = c.g[RA][0] as u32;
+                cad_addiu(c, SP, SP, 0x400);
+                c.pc = ra;
+                return;
+            }
+            _ => {
+                c.jump_out(pc, 0x0010_8fa8, 0x0010_a768);
+                return;
+            }
+        }
+    }
+}
+
+/// The object `computer_actor_rider_dtor_matches` destroys.
+#[cfg(test)]
+pub(crate) const CAD_THIS: u32 = 0x0080_1000;
+
+/// `rN + off` (32-bit address arithmetic on a register).
+#[inline(always)]
+pub(crate) fn oc344_at(c: &Cpu, reg: usize, off: u32) -> u32 {
+    r32(c, reg).wrapping_add(off)
+}
+
+/// `gp - off` (a small-data constant).
+#[inline(always)]
+pub(crate) fn oc344_gp(c: &Cpu, off: u32) -> u32 {
+    r32(c, GP).wrapping_sub(off)
+}
+
+/// `lui/ori at, bits; mtc1 at, f` (a float literal through `at`).
+#[inline(always)]
+pub(crate) fn oc344_lit(c: &mut Cpu, f: usize, bits: u32) {
+    c.g[AT][0] = sx(bits);
+    c.mtc1(AT, f);
+}
+
+/// The compiled VU0 vector length: `VF4.x = |VF3|` into Q (dot product,
+/// `vsqrt`, `vwaitq`).
+#[inline(always)]
+pub(crate) fn oc344_vu0_length_vf3(c: &mut Cpu) {
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+}
+
+// ---------------------------------------------------------------------------
+// ComputerActorRider ctor / Init / LoadState (0x108c80, 0x108e88, 0x10a8e8;
+// all_in_one_ai.cpp `cComputer`)
+
+/// The fields of a `cComputer` that point at its virtual-base `cRider`
+/// (`this+0xf50`), stored in this order.
+pub(crate) const COMPUTER_CTOR_RIDER_LINKS: [u32; 31] = [
+    0xd20, 0xc70, 0xb40, 0xb00, 0xaf0, 0xad0, 0x9c0, 0x610, 0x520, 0x470, 0x3b0, 0x3a0, 0x398,
+    0x384, 0x364, 0x358, 0x340, 0x2b8, 0x2a4, 0x288, 0x224, 0x200, 0x1f0, 0x1e4, 0x1c0, 0x1b0,
+    0x100, 0xa0, 0x70, 0x24, 0x18,
+];
+
+/// The rider pointer (`this+0x18`).
+pub(crate) const COMPUTER_RIDER: u32 = 0x18;
+
+pub(crate) const COMPUTER_RIDER_CTOR: Callee = Callee {
+    addr: 0x0011_b698,
+    f: ee::s00::f_0011b698,
+};
+
+pub(crate) const COMPUTER_RIDER_BASE_CTOR: Callee = Callee {
+    addr: 0x0010_fcd8,
+    f: ee::s00::f_0010fcd8,
+};
+
+pub(crate) const COMPUTER_INIT: Callee = Callee {
+    addr: 0x0010_8e88,
+    f: ee::s00::f_00108e88,
+};
+
+/// `cComputer* cComputer::cComputer(cComputer* this, bool inChrg, bool
+/// isActor)` (0x108c80). As the most-derived object (`inChrg`) it points
+/// every virtual-base link at its `cRider` (`this+0xf50`) and constructs it;
+/// then the `cRiderHandler` base (`RiderBase_ctor(this, 0)`), and the rider's
+/// three vtables (script object 0x458618, script rider 0x459b90, rider
+/// 0x458660). As a base subobject it copies the script-object and rider
+/// vtables to the stack and adjusts their `this` deltas by the subobject
+/// offset (gcc 2.9x thunks). Then the AI vtable (`+0xde8` = 0x4585f0), the
+/// actor flag (`rider+0x878`), `ComputerActorRider_Init(this)`; returns
+/// `this`.
+pub fn computer_actor_rider_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x140);
+        frame.save(c, S0, 0x130);
+        frame.save(c, S1, 0x120);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x110);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x100);
+        c.g[S2][0] = c.g[A2][0];
+        if c.g[S1][0] != 0 {
+            c.cycles += 34;
+            let me = r32(c, S0);
+            c.g[V0][0] = sx(me.wrapping_add(0xf50));
+            c.g[A0][0] = c.g[V0][0];
+            for off in COMPUTER_CTOR_RIDER_LINKS {
+                c.sw(me.wrapping_add(off), c.g[V0][0]);
+            }
+            COMPUTER_RIDER_CTOR.call(c, 0x0010_8d2c)?;
+        }
+        c.cycles += 19;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        COMPUTER_RIDER_BASE_CTOR.call(c, 0x0010_8d38)?;
+        let me = r32(c, S0);
+        c.g[V1][0] = c.lw(me.wrapping_add(COMPUTER_RIDER));
+        c.g[V0][0] = 0x46_0000;
+        c.g[A2][0] = sx(0x46_0000u32.wrapping_sub(0x79e8));
+        c.g[A0][0] = 0x46_0000;
+        c.sw(oc344_at(c, V1, 0x6e8), c.g[A2][0]);
+        c.g[A0][0] = sx(0x46_0000u32.wrapping_sub(0x6470));
+        c.g[V1][0] = 0x46_0000;
+        c.g[A3][0] = c.g[V0][0];
+        c.g[A1][0] = c.lw(me.wrapping_add(COMPUTER_RIDER));
+        c.g[T3][0] = c.g[V1][0];
+        c.g[V1][0] = sx(0x46_0000u32.wrapping_sub(0x79a0));
+        c.g[T2][0] = 0x46_0000;
+        c.sw(oc344_at(c, A1, 0x6d0), c.g[A0][0]);
+        c.g[V0][0] = c.lw(me.wrapping_add(COMPUTER_RIDER));
+        c.sw(oc344_at(c, V0, 0x6c0), c.g[V1][0]);
+        if c.g[S1][0] == 0 {
+            // A base subobject: the script-object vtable (0x48 bytes) to sp.
+            c.cycles += 4;
+            c.g[A1][0] = c.g[A2][0];
+            c.g[V1][0] = c.g[SP][0];
+            c.g[V0][0] = sx(r32(c, A1).wrapping_add(0x40));
+            c.g[T1][0] = sx(sp(c).wrapping_add(0x50));
+            loop {
+                c.cycles += 11;
+                let src = r32(c, A1);
+                c.g[A0][0] = c.ld(src);
+                c.g[A2][0] = c.ld(src.wrapping_add(0x8));
+                c.g[T0][0] = c.ld(src.wrapping_add(0x10));
+                c.g[T4][0] = c.ld(src.wrapping_add(0x18));
+                let dst = r32(c, V1);
+                c.sd(dst, c.g[A0][0]);
+                c.sd(dst.wrapping_add(0x8), c.g[A2][0]);
+                c.sd(dst.wrapping_add(0x10), c.g[T0][0]);
+                c.sd(dst.wrapping_add(0x18), c.g[T4][0]);
+                c.g[A1][0] = sx(src.wrapping_add(0x20));
+                let more = c.g[A1][0] != c.g[V0][0];
+                c.g[V1][0] = sx(dst.wrapping_add(0x20));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0010_8d88);
+                }
+            }
+            c.cycles += 14;
+            c.g[V0][0] = c.lw(oc344_at(c, S0, COMPUTER_RIDER));
+            c.g[A0][0] = sx(r32(c, A3).wrapping_sub(0x79e8));
+            c.g[T5][0] = c.ld(r32(c, A1));
+            c.sd(r32(c, V1), c.g[T5][0]);
+            c.sw(oc344_at(c, V0, 0x6e8), c.g[SP][0]);
+            c.g[T0][0] = sx(r32(c, T3).wrapping_sub(0x79a0));
+            c.g[V1][0] = c.lhu(oc344_at(c, A0, 0x8));
+            c.g[A1][0] = sx(r32(c, T0).wrapping_add(0xa0));
+            c.g[V0][0] = c.lw(oc344_at(c, S0, COMPUTER_RIDER));
+            c.g[A2][0] = c.g[T1][0];
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0xf50));
+            c.g[A3][0] = sx(r32(c, S0).wrapping_sub(r32(c, V0)));
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A3)));
+            c.sh(sp(c).wrapping_add(0x8), c.g[V1][0]);
+            // The rider vtable (0xb0 bytes) to sp+0x50.
+            loop {
+                c.cycles += 11;
+                let src = r32(c, T0);
+                c.g[T4][0] = c.ld(src);
+                c.g[T5][0] = c.ld(src.wrapping_add(0x8));
+                c.g[V0][0] = c.ld(src.wrapping_add(0x10));
+                c.g[V1][0] = c.ld(src.wrapping_add(0x18));
+                let dst = r32(c, A2);
+                c.sd(dst, c.g[T4][0]);
+                c.sd(dst.wrapping_add(0x8), c.g[T5][0]);
+                c.sd(dst.wrapping_add(0x10), c.g[V0][0]);
+                c.sd(dst.wrapping_add(0x18), c.g[V1][0]);
+                c.g[T0][0] = sx(src.wrapping_add(0x20));
+                let more = c.g[T0][0] != c.g[A1][0];
+                c.g[A2][0] = sx(dst.wrapping_add(0x20));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0010_8dec);
+                }
+            }
+            c.cycles += 13;
+            c.g[A0][0] = sx(r32(c, T3).wrapping_sub(0x79a0));
+            c.g[A1][0] = c.lw(oc344_at(c, S0, COMPUTER_RIDER));
+            c.g[V1][0] = c.lhu(oc344_at(c, A0, 0xa0));
+            c.g[V0][0] = c.lhu(oc344_at(c, A0, 0x8));
+            let src = r32(c, T0);
+            c.g[A0][0] = c.ld(src);
+            c.g[T3][0] = c.ld(src.wrapping_add(0x8));
+            let dst = r32(c, A2);
+            c.sd(dst, c.g[A0][0]);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A3)));
+            c.sd(dst.wrapping_add(0x8), c.g[T3][0]);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A3)));
+            c.sw(oc344_at(c, A1, 0x6c0), c.g[T1][0]);
+            c.sh(sp(c).wrapping_add(0x58), c.g[V0][0]);
+            c.sh(sp(c).wrapping_add(0xf0), c.g[V1][0]);
+        }
+        c.cycles += 3;
+        c.g[V0][0] = sx(r32(c, T2).wrapping_sub(0x7a10));
+        c.sw(oc344_at(c, S0, 0xde8), c.g[V0][0]);
+        if c.g[S2][0] != 0 {
+            c.cycles += 3;
+            c.g[V1][0] = c.lw(oc344_at(c, S0, COMPUTER_RIDER));
+            c.g[V0][0] = 0x1;
+            c.sw(oc344_at(c, V1, 0x878), c.g[V0][0]);
+        }
+        c.cycles += 9;
+        c.g[A0][0] = c.g[S0][0];
+        COMPUTER_INIT.call(c, 0x0010_8e6c)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x120);
+        frame.restore(c, S0, 0x130);
+        frame.restore(c, S2, 0x110);
+        frame.restore_ra(c, 0x100);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The AI state words `ComputerActorRider_Init` zeroes, in store order.
+pub(crate) const COMPUTER_INIT_ZEROED: [u32; 15] = [
+    0xe10, 0xe14, 0xe18, 0xe20, 0xe24, 0xe28, 0xe1c, 0xe2c, 0xe38, 0xe3c, 0xe30, 0xe34, 0xdf0,
+    0xe74, 0xe78,
+];
+
+/// The think-handler table (`0x43cf20`, 8-byte entries); `+0xf38` selects
+/// the entry copied to `+0xf44`.
+pub(crate) const COMPUTER_THINK_TABLE: u32 = 0x0043_cf20;
+
+pub(crate) const COMPUTER_INIT_DIFFICULTY: Callee = Callee {
+    addr: 0x0010_cab8,
+    f: ee::s00::f_0010cab8,
+};
+
+pub(crate) const COMPUTER_RESET_TRICK_COUNTS: Callee = Callee {
+    addr: 0x0010_d170,
+    f: ee::s00::f_0010d170,
+};
+
+/// `void ComputerActorRider_Init(cComputer* this)` (0x108e88): reset the AI
+/// state (`+0xe0c` and `+0xe70` = -1, the counters at 0xdf0..0xe78 = 0, the
+/// two targets at `+0xe50`/`+0xe60` from the zero vector at 0x4ff130), set
+/// the difficulty (`InitDifficulty_2`), the skill scale `+0xdf4` = 1.0, the
+/// think handler (entry 1 of the table at 0x43cf20 into `+0xf44`, index
+/// `+0xf38` = 1), clear the three 0x3c-byte trick plans (`+0xe7c`, `+0xeb8`,
+/// `+0xef4`) and the trick counts.
+pub fn computer_actor_rider_init(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 64;
+        let frame = Frame::open(c, 0x30);
+        c.g[A1][0] = 0x50_0000;
+        frame.save(c, S0, 0x20);
+        c.g[A1][0] = sx(0x50_0000u32.wrapping_sub(0xed0));
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = u64::MAX;
+        let me = r32(c, S0);
+        c.sw(me.wrapping_add(0xe0c), c.g[S1][0]);
+        for off in COMPUTER_INIT_ZEROED {
+            c.sw(me.wrapping_add(off), 0);
+        }
+        c.sh(me.wrapping_add(0xf38), 0);
+        c.sw(me.wrapping_add(0xf30), 0);
+        c.sw(me.wrapping_add(0xf34), 0);
+        let zero = r32(c, A1);
+        c.lq(V0, zero);
+        c.sq(V0, me.wrapping_add(0xe50));
+        c.lq(V1, zero);
+        c.sw(me.wrapping_add(0xe40), 0);
+        c.sq(V1, me.wrapping_add(0xe60));
+        COMPUTER_INIT_DIFFICULTY.call(c, 0x0010_8f0c)?;
+        oc344_lit(c, 0, 0x3f80_0000);
+        c.g[V0][0] = 0x44_0000;
+        c.g[V0][0] = sx(COMPUTER_THINK_TABLE);
+        let me = r32(c, S0);
+        c.sw(me.wrapping_add(0xe70), c.g[S1][0]);
+        c.swc1(0, me.wrapping_add(0xdf4));
+        c.g[V1][0] = 0x1;
+        c.ldl(A0, COMPUTER_THINK_TABLE + 0xf);
+        c.ldr(A0, COMPUTER_THINK_TABLE + 0x8);
+        c.sdl(A0, me.wrapping_add(0xf4b));
+        c.sdr(A0, me.wrapping_add(0xf44));
+        c.sh(me.wrapping_add(0xf38), c.g[V1][0]);
+        for (off, ret_to) in [
+            (0xe7c, 0x0010_8f4c),
+            (0xeb8, 0x0010_8f5c),
+            (0xef4, 0x0010_8f6c),
+        ] {
+            c.g[A0][0] = sx(r32(c, S0).wrapping_add(off));
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0x3c;
+            call_ptr(c, 0x003e_6448, ret_to)?;
+        }
+        c.g[A0][0] = c.g[S0][0];
+        COMPUTER_RESET_TRICK_COUNTS.call(c, 0x0010_8f74)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const COMPUTER_RIDER_BASE_LOAD_STATE: Callee = Callee {
+    addr: 0x0011_1d98,
+    f: ee::s00::f_00111d98,
+};
+
+/// `void ComputerActorRider_LoadState(cComputer* this, Stream* s)`
+/// (0x10a8e8): the `cRiderHandler` state (`RiderBase_LoadState`), then the
+/// AI block (`s->Read(this+0xdf0, 0x150)`), then re-point the think handler
+/// (`+0xf44`) at the table entry the loaded index (`+0xf38`) names.
+pub fn computer_actor_rider_load_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 29;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        COMPUTER_RIDER_BASE_LOAD_STATE.call(c, 0x0010_a904)?;
+        let stream = r32(c, S0);
+        c.g[V1][0] = c.lw(stream);
+        c.g[A1][0] = sx(r32(c, S1).wrapping_add(0xdf0));
+        c.g[A2][0] = 0x150;
+        let vt = c.g[V1][0];
+        let read = VSlot::read(c, vt, 0x10);
+        c.g[V0][0] = read.func;
+        c.g[A0][0] = sx(stream.wrapping_add(read.delta as u32));
+        call_ptr(c, read.func as u32, 0x0010_a920)?;
+        let me = r32(c, S1);
+        c.g[A0][0] = c.lh(me.wrapping_add(0xf38));
+        c.g[V1][0] = 0x44_0000;
+        c.g[V1][0] = sx(COMPUTER_THINK_TABLE);
+        frame.restore(c, S0, 0x20);
+        c.g[V0][0] = sx(r32(c, A0) << 3);
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+        let entry = r32(c, V0);
+        c.ldl(V1, entry.wrapping_add(0x7));
+        c.ldr(V1, entry);
+        c.sdl(V1, me.wrapping_add(0xf4b));
+        c.sdr(V1, me.wrapping_add(0xf44));
+        c.sh(me.wrapping_add(0xf38), c.g[A0][0]);
+        frame.restore(c, S1, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ComputerActorRider think handlers (0x10ad78, 0x10aed8, 0x10bc98)
+
+pub(crate) const BOARD_PRESS_FIND_MARKER: Callee = Callee {
+    addr: 0x0010_bbf8,
+    f: ee::s00::f_0010bbf8,
+};
+
+pub(crate) const BOARD_PRESS_GET_STEER_TARGET: Callee = Callee {
+    addr: 0x0010_0610,
+    f: ee::s00::f_00100610,
+};
+
+pub(crate) const BOARD_PRESS_COMPUTE_STEER: Callee = Callee {
+    addr: 0x0010_0348,
+    f: ee::s00::f_00100348,
+};
+
+/// The rider's up vector (`rider+0x1a0`).
+pub(crate) const COMPUTER_RIDER_UP: u32 = 0x1a0;
+
+/// `void ComputerActorRider_ThinkBoardPress(cComputer* this, Pad* pad)`
+/// (0x10ad78): the CPU rider's input during a board press. Looks for a
+/// board-press marker (`FindBoardPressMarker`, which also says whether to
+/// press nose or tail: lean -1 or +1), steers (`ComputeSteer` towards
+/// `GetSteerTarget`, x31 into pad bits 18..23). With a marker: lean into pad
+/// word 1 bits 0..5 (x31), and, when `clamp(2 * up.z, -1, 1)` is larger
+/// than a dead zone, that value x31 into pad bits 24..29; without one the
+/// lean bits are cleared.
+pub fn computer_actor_rider_think_board_press(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x30);
+        frame.save_fpr(c, 20, 0x60);
+        frame.save_ra(c, 0x20);
+        c.g[A1][0] = sx(sp(c).wrapping_add(0x10));
+        BOARD_PRESS_FIND_MARKER.call(c, 0x0010_ada0)?;
+        oc344_lit(c, 20, 0x3f80_0000);
+        c.g[S2][0] = c.g[V0][0];
+        c.g[V0][0] = c.lw(sp(c).wrapping_add(0x10));
+        c.g[A0][0] = c.g[SP][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            oc344_lit(c, 20, 0xbf80_0000);
+        }
+        // 0x10adc0: steer.
+        c.cycles += 19;
+        c.g[A1][0] = c.g[S1][0];
+        BOARD_PRESS_GET_STEER_TARGET.call(c, 0x0010_adc8)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[SP][0];
+        BOARD_PRESS_COMPUTE_STEER.call(c, 0x0010_add4)?;
+        oc344_lit(c, 3, 0x41f8_0000);
+        c.g[V1][0] = 0xffff_ffff_ff03_0000;
+        let pad = r32(c, S0);
+        c.g[A0][0] = c.lw(pad);
+        c.g[V1][0] |= 0xffff;
+        c.mul_s(0, 0, 3);
+        c.g[A1][0] = c.g[A0][0] & c.g[V1][0];
+        c.cvt_w_s(1, 0);
+        c.mfc1(V0, 1);
+        c.g[V0][0] &= 0x3f;
+        c.g[V0][0] = sx(r32(c, V0) << 18);
+        c.g[A1][0] |= c.g[V0][0];
+        c.sw(pad, c.g[A1][0]);
+        if c.g[S2][0] == 0 {
+            // No marker: clear the lean.
+            c.cycles += 4;
+            c.g[V0][0] = c.lw(pad.wrapping_add(0x4));
+            c.g[V1][0] = 0xffff_ffff_ffff_ffc0;
+            c.g[V0][0] &= c.g[V1][0];
+            c.sw(pad.wrapping_add(0x4), c.g[V0][0]);
+            c.cycles += 1;
+            frame.restore(c, S0, 0x50);
+        } else {
+            c.cycles += 22;
+            c.g[A0][0] = c.lw(pad.wrapping_add(0x4));
+            c.mul_s(0, 20, 3);
+            c.g[V0][0] = 0xffff_ffff_ffff_ffc0;
+            oc344_lit(c, 1, 0xbf80_0000);
+            c.g[A0][0] &= c.g[V0][0];
+            oc344_lit(c, 4, 0x3f80_0000);
+            c.cvt_w_s(2, 0);
+            c.mfc1(V0, 2);
+            c.g[V0][0] &= 0x3f;
+            c.g[A0][0] |= c.g[V0][0];
+            c.sw(pad.wrapping_add(0x4), c.g[A0][0]);
+            c.g[V1][0] = c.lw(oc344_at(c, S1, COMPUTER_RIDER));
+            c.lq(V0, oc344_at(c, V1, COMPUTER_RIDER_UP));
+            c.sq(V0, sp(c));
+            c.lwc1(0, sp(c).wrapping_add(0x8));
+            c.add_s(0, 0, 0);
+            c.c_le_s(1, 0);
+            let above = c.fcc();
+            c.mov_s(2, 1);
+            if above {
+                c.cycles += 1;
+                c.min_s(2, 0, 4);
+            }
+            c.cycles += 6;
+            c.lwc1(1, oc344_gp(c, 0x7e2c));
+            c.abs_s(0, 2);
+            c.c_lt_s(1, 0);
+            if c.fcc() {
+                c.cycles += 11;
+                c.mul_s(0, 2, 3);
+                c.g[V1][0] = 0xffff_ffff_c0ff_0000;
+                c.g[V1][0] |= 0xffff;
+                c.g[V1][0] &= c.g[A1][0];
+                c.cvt_w_s(1, 0);
+                c.mfc1(V0, 1);
+                c.g[V0][0] &= 0x3f;
+                c.g[V0][0] = sx(r32(c, V0) << 24);
+                c.g[V1][0] |= c.g[V0][0];
+                c.sw(pad, c.g[V1][0]);
+                c.cycles += 1;
+            }
+            frame.restore(c, S0, 0x50);
+        }
+        c.cycles += 6;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const RAILSLIDE_FIND_JUMP_MARKER: Callee = Callee {
+    addr: 0x0010_b980,
+    f: ee::s00::f_0010b980,
+};
+
+pub(crate) const RAILSLIDE_PLAN_AIR_TRICKS: Callee = Callee {
+    addr: 0x0010_bfa8,
+    f: ee::s00::f_0010bfa8,
+};
+
+pub(crate) const RAILSLIDE_FIND_SPEED_MARKER: Callee = Callee {
+    addr: 0x0010_bb18,
+    f: ee::s00::f_0010bb18,
+};
+
+/// The rider's velocity (`rider+0x1e0`) and state (`rider+0x328`).
+pub(crate) const COMPUTER_RIDER_VEL: u32 = 0x1e0;
+
+pub(crate) const COMPUTER_RIDER_STATE: u32 = 0x328;
+
+/// `void ComputerActorRider_ThinkRailslide(cComputer* this, Pad* pad)`
+/// (0x10aed8): the CPU rider's input on a rail. Looks for a jump marker
+/// (`FindJumpMarker`; its distance goes to `+0xe20`) and presses bits
+/// 17..24; with a marker and a trick to plan, presses bits 13/14 too and
+/// plans the air tricks (`PlanAirTricks`), done. Otherwise balances
+/// (`clamp(2 * up.z, -1, 1)` x31 into bits 25..30 past a dead zone), leans
+/// (+-31 into pad word 1 by the sign of `+0xe38`) unless the rider is in
+/// state 3/4 or the layer-2 animation is 0xe, and, with a speed marker
+/// (`FindSpeedMarker`) whose speed (`+0xdf0` - k) is above the rider's,
+/// presses bit 16.
+pub fn computer_actor_rider_think_railslide(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x50);
+        c.g[A3][0] = sx(sp(c).wrapping_add(0x14));
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x30);
+        c.g[A1][0] = sx(r32(c, S0).wrapping_add(0xdf0));
+        frame.save_fpr(c, 21, 0x68);
+        c.g[A2][0] = sx(sp(c).wrapping_add(0x10));
+        frame.save_fpr(c, 20, 0x60);
+        c.g[T0][0] = sx(sp(c).wrapping_add(0x18));
+        c.g[T1][0] = sx(sp(c).wrapping_add(0x1c));
+        c.g[T2][0] = sx(sp(c).wrapping_add(0x20));
+        RAILSLIDE_FIND_JUMP_MARKER.call(c, 0x0010_af14)?;
+        'body: {
+            let s = sp(c);
+            c.g[A3][0] = c.lw(s.wrapping_add(0x18));
+            c.g[A0][0] = 0x1fe_0000;
+            c.sw(oc344_at(c, S0, 0xe20), c.g[A3][0]);
+            let pad = r32(c, S1);
+            c.g[V1][0] = c.lw(pad);
+            c.g[V1][0] |= c.g[A0][0];
+            let found = c.g[V0][0] != 0;
+            c.sw(pad, c.g[V1][0]);
+            if found {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(s.wrapping_add(0x10));
+                let no_trick = c.g[V0][0] == 0;
+                c.g[V0][0] = c.g[V1][0] | 0x6000;
+                if !no_trick {
+                    c.cycles += 8;
+                    c.g[A1][0] = c.lw(s.wrapping_add(0x1c));
+                    c.g[A2][0] = c.lw(s.wrapping_add(0x20));
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[T0][0] = c.lw(s.wrapping_add(0x14));
+                    c.sw(pad, c.g[V0][0]);
+                    RAILSLIDE_PLAN_AIR_TRICKS.call(c, 0x0010_af54)?;
+                    frame.restore(c, S0, 0x50);
+                    break 'body;
+                }
+            }
+            // 0x10af5c: balance.
+            c.cycles += 13;
+            c.g[V1][0] = c.lw(oc344_at(c, S0, COMPUTER_RIDER));
+            oc344_lit(c, 20, 0xbf80_0000);
+            c.lq(V0, oc344_at(c, V1, COMPUTER_RIDER_UP));
+            oc344_lit(c, 21, 0x3f80_0000);
+            c.sq(V0, sp(c));
+            c.lwc1(0, sp(c).wrapping_add(0x8));
+            c.add_s(0, 0, 0);
+            c.c_le_s(20, 0);
+            let above = c.fcc();
+            c.mov_s(2, 20);
+            if above {
+                c.cycles += 1;
+                c.min_s(2, 0, 21);
+            }
+            c.cycles += 6;
+            c.lwc1(1, oc344_gp(c, 0x7e28));
+            c.abs_s(0, 2);
+            c.c_lt_s(1, 0);
+            if !c.fcc() {
+                c.g[V1][0] = c.lw(oc344_at(c, S0, COMPUTER_RIDER));
+            } else {
+                c.cycles += 14;
+                oc344_lit(c, 0, 0x41f8_0000);
+                c.g[V1][0] = 0xffff_ffff_81ff_0000;
+                let pad = r32(c, S1);
+                c.g[A0][0] = c.lw(pad);
+                c.g[V1][0] |= 0xffff;
+                c.mul_s(0, 2, 0);
+                c.g[A0][0] &= c.g[V1][0];
+                c.cvt_w_s(1, 0);
+                c.mfc1(V0, 1);
+                c.g[V0][0] &= 0x3f;
+                c.g[V0][0] = sx(r32(c, V0) << 25);
+                c.g[A0][0] |= c.g[V0][0];
+                c.sw(pad, c.g[A0][0]);
+                c.g[V1][0] = c.lw(oc344_at(c, S0, COMPUTER_RIDER));
+            }
+            // 0x10afe4: lean, unless in state 3/4 or animation 0xe.
+            c.cycles += 5;
+            c.g[V0][0] = c.lw(oc344_at(c, V1, COMPUTER_RIDER_STATE));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x3));
+            let skip = c.g[V0][0] < 0x2;
+            c.g[V0][0] = skip as u64;
+            c.g[A0][0] = c.g[S0][0];
+            if !skip {
+                c.cycles += 6;
+                c.g[A0][0] = c.lw(oc344_at(c, V1, 0x784));
+                c.g[A1][0] = 0x2;
+                call_ptr(c, 0x0031_1ae8, 0x0010_b004)?;
+                c.g[V1][0] = 0xe;
+                let grinding = c.g[V0][0] == c.g[V1][0];
+                c.g[A0][0] = c.g[S0][0];
+                if !grinding {
+                    c.cycles += 6;
+                    c.lwc1(1, oc344_at(c, S0, 0xe38));
+                    c.mtc1(0, 0);
+                    c.c_lt_s(1, 0);
+                    let negative = c.fcc();
+                    c.mov_s(2, 20);
+                    if negative {
+                        c.cycles += 1;
+                        c.mov_s(2, 21);
+                    }
+                    c.cycles += 12;
+                    oc344_lit(c, 0, 0x41f8_0000);
+                    c.g[A0][0] = 0xffff_ffff_ffff_ffc0;
+                    let pad = r32(c, S1);
+                    c.g[V1][0] = c.lw(pad.wrapping_add(0x4));
+                    c.mul_s(0, 2, 0);
+                    c.g[V1][0] &= c.g[A0][0];
+                    c.cvt_w_s(1, 0);
+                    c.mfc1(V0, 1);
+                    c.g[V0][0] &= 0x3f;
+                    c.g[V1][0] |= c.g[V0][0];
+                    c.sw(pad.wrapping_add(0x4), c.g[V1][0]);
+                    c.g[A0][0] = c.g[S0][0];
+                }
+            }
+            // 0x10b05c: speed marker.
+            c.cycles += 16;
+            c.g[A1][0] = sx(r32(c, S0).wrapping_add(0xdf0));
+            c.g[A2][0] = sx(sp(c).wrapping_add(0x24));
+            RAILSLIDE_FIND_SPEED_MARKER.call(c, 0x0010_b068)?;
+            c.g[V1][0] = c.lw(oc344_at(c, S0, COMPUTER_RIDER));
+            c.lqc2(3, oc344_at(c, V1, COMPUTER_RIDER_VEL));
+            oc344_vu0_length_vf3(c);
+            c.cfc2(A0, 22);
+            c.mtc1(A0, 2);
+            let found = c.g[V0][0] != 0;
+            c.g[V0][0] = c.lw(sp(c).wrapping_add(0x24));
+            if found {
+                c.cycles += 2;
+                if c.g[V0][0] == 0 {
+                    frame.restore(c, S0, 0x50);
+                    break 'body;
+                }
+                c.cycles += 7;
+                c.lwc1(0, oc344_at(c, S0, 0xdf0));
+                c.lwc1(1, oc344_gp(c, 0x7e24));
+                c.sub_s(0, 0, 1);
+                c.c_lt_s(2, 0);
+                let slower = c.fcc();
+                c.g[V1][0] = 0x1_0000;
+                if slower {
+                    c.cycles += 3;
+                    let pad = r32(c, S1);
+                    c.g[V0][0] = c.lw(pad);
+                    c.g[V0][0] |= c.g[V1][0];
+                    c.sw(pad, c.g[V0][0]);
+                }
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x50);
+        }
+        c.cycles += 6;
+        frame.restore(c, S1, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.restore_fpr(c, 21, 0x68);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The path event type `HasPathEvent0F` looks for.
+pub(crate) const PATH_EVENT_0F: u64 = 0xf;
+
+/// `bool ComputerActorRider_HasPathEvent0F(cComputer* this)` (0x10bc98):
+/// query up to 12 track events around the rider's track position
+/// (`track->Query(events, 12, dist, side)`, slot 8 of the track at
+/// `rider+0xab8`, with `rider+0x4c0`/`+0x4c4`) and return whether one of
+/// them (16-byte records on the stack) has type 0xf.
+pub fn computer_actor_rider_has_path_event_0f(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0xd0);
+        c.g[A2][0] = 0xc;
+        frame.save_ra(c, 0xc0);
+        c.g[A1][0] = c.g[SP][0];
+        c.g[V0][0] = c.lw(oc344_at(c, A0, COMPUTER_RIDER));
+        c.g[A3][0] = c.lw(oc344_at(c, V0, 0xab8));
+        c.lwc1(13, oc344_at(c, V0, 0x4c4));
+        c.g[V1][0] = c.lw(oc344_at(c, A3, 0x34));
+        c.lwc1(12, oc344_at(c, V0, 0x4c0));
+        let vt = c.g[V1][0];
+        let query = VSlot::read(c, vt, 0x8);
+        c.g[V0][0] = query.func;
+        c.g[A0][0] = sx(r32(c, A3).wrapping_add(query.delta as u32));
+        call_ptr(c, query.func as u32, 0x0010_bccc)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A0][0] = 0;
+        let mut found = false;
+        if (c.g[A1][0] as i64) > 0 {
+            c.cycles += 2;
+            c.g[A2][0] = PATH_EVENT_0F;
+            c.g[V1][0] = c.g[SP][0];
+            loop {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(r32(c, V1));
+                if c.g[V0][0] == c.g[A2][0] {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x1;
+                    found = true;
+                    break;
+                }
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                c.cycles += 3;
+                let more = (c.g[A0][0] as i64) < (c.g[A1][0] as i64);
+                c.g[V0][0] = more as u64;
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x10));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0010_bce0);
+                }
+            }
+        }
+        if !found {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0xc0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Computer rider difficulty.
+
+/// The aggression-mode jump table (`.rodata`, one entry per level 1..5).
+pub(crate) const AGGRESSION_MODE_TABLE: u32 = 0x0045_6a70;
+
+/// `short ComputerActorRider_GetAggressionMode(self, int level, int mode)`
+/// (0x10c450): how aggressively a computer rider of difficulty `level`
+/// (1..5) plays in race `mode`. Levels 1 and 2: 1 for modes 1 and 2, else 2;
+/// level 3: 0 for mode 1, else 1; level 4: 1 for modes other than 1 and 2;
+/// level 5 and out-of-range levels: 0.
+pub fn computer_actor_rider_get_aggression_mode(c: &mut Cpu) {
+    c.cycles += 4;
+    let level_m1 = r32(c, A1).wrapping_sub(1);
+    c.g[V1][0] = sx(level_m1);
+    if level_m1 >= 5 {
+        c.cycles += 3;
+        c.g[V0][0] = 0;
+        return ret(c);
+    }
+    // The jump through the table: v1 = &table[level - 1], a0 = the target.
+    c.cycles += 6;
+    let entry = (level_m1 << 2).wrapping_add(AGGRESSION_MODE_TABLE);
+    c.g[V1][0] = sx(entry);
+    c.g[A0][0] = Addr(entry).lw(c);
+    let mode = c.g[A2][0];
+    match level_m1 {
+        0 | 1 => {
+            c.cycles += 3;
+            c.g[A0][0] = 1;
+            c.g[V1][0] = mode ^ 2;
+            if mode == 1 {
+                c.cycles += 2;
+                c.g[V0][0] = 1;
+            } else {
+                // Level 1 takes the branch (1 cycle), level 2 falls through
+                // to a `b` (2 cycles).
+                c.cycles += if level_m1 == 0 { 3 } else { 4 };
+                c.g[V0][0] = if mode == 2 { 1 } else { 2 };
+            }
+        }
+        2 => {
+            c.cycles += 5;
+            c.g[V1][0] = 1;
+            c.g[V0][0] = (mode != 1) as u64;
+        }
+        3 => {
+            c.cycles += 3;
+            c.g[A0][0] = 1;
+            c.g[V0][0] = 0;
+            if mode != 1 {
+                c.cycles += 4;
+                c.g[V1][0] = mode ^ 2;
+                c.g[V0][0] = (mode != 2) as u64;
+            } else {
+                c.cycles += 2;
+            }
+        }
+        _ => {
+            c.cycles += 3;
+            c.g[V1][0] = 1;
+            c.g[V0][0] = 0;
+        }
+    }
+    ret(c)
+}
+
+/// `cBE_getBE` / `BELibrary_GetInstance`.
+pub(crate) const INIT_DIFF_BE_GET_BE: u32 = 0x0014_dc80;
+
+/// `cBE_getInterface` / `BELibrary_GetInterface(be, index)`.
+pub(crate) const INIT_DIFF_BE_GET_INTERFACE: u32 = 0x0014_dd58;
+
+/// `BENewPlayerInt_GetDifficulty(iface, isRace)`.
+pub(crate) const INIT_DIFF_GET_DIFFICULTY: u32 = 0x0014_7cb8;
+
+/// `BENewRaceInt_GetTrack(iface)`.
+pub(crate) const INIT_DIFF_GET_TRACK: u32 = 0x0014_4be0;
+
+/// The race settings block (`D_00535BC8`): +0x48 race kind, +0x4a override.
+pub(crate) const INIT_DIFF_RACE_SETTINGS: u32 = 0x0053_5bc8;
+
+/// The cheat flags word (`D_005308D0`); bit 2 maxes the computer riders.
+pub(crate) const INIT_DIFF_CHEATS: u32 = 0x0053_08d0;
+
+pub(crate) const INIT_DIFF_GET_AGGRESSION_MODE: Callee = Callee {
+    addr: 0x0010_c450,
+    f: ee::s00::ComputerActorRider_GetAggressionMode,
+};
+
+pub(crate) const INIT_DIFF_APPLY_DIFFICULTY: Callee = Callee {
+    addr: 0x0010_c4f8,
+    f: ee::s00::ComputerActorRider_ApplyDifficulty,
+};
+
+/// Computer rider fields: aggression mode (short), "max level in mode 3"
+/// flag, CPU-controlled-race flag, skill A and B.
+pub(crate) const CAR_AGGRESSION: u32 = 0xe00;
+
+pub(crate) const CAR_TOP_LEVEL: u32 = 0xe04;
+
+pub(crate) const CAR_RACE_FLAG: u32 = 0xe08;
+
+pub(crate) const CAR_SKILL_A: u32 = 0xdf8;
+
+pub(crate) const CAR_SKILL_B: u32 = 0xdfc;
+
+/// `void ComputerActorRider_InitDifficulty(cComputer *self)` (0x10c758,
+/// `cComputer_updateRiderDifficulty`): read the rider's difficulty level
+/// (its controller's virtual at +0x38, -1 meaning level 1), set the
+/// aggression mode, flags and individual difficulty, then apply the race's
+/// overrides: the max-AI cheat (skills 100/1.0, tune -100/100/2) or a
+/// course boost of skill B (+25% on track 4, +10% on tracks 2 and 3,
+/// clamped to 1.0).
+pub fn computer_actor_rider_init_difficulty(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = 1;
+        frame.save(c, S3, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x20);
+        c.g[S3][0] = 1;
+        frame.save_ra(c, 0);
+        // level = rider->controller.GetDifficultyLevel(); mode = world mode.
+        let rider = Addr(r32(c, S1)).off(0x18).lw(c);
+        c.g[A2][0] = Addr(r32(c, V0)).off(0xc0).lw(c);
+        let ctl = (rider as u32).wrapping_add(0x6c0);
+        let vt = Addr(ctl).lw(c);
+        c.g[A1][0] = vt;
+        c.g[S2][0] = Addr(r32(c, A2)).lw(c);
+        c.g[V1][0] = Addr(vt as u32).off(0x38).lh(c);
+        c.g[V0][0] = Addr(vt as u32).off(0x3c).lw(c);
+        c.g[A0][0] = sx(ctl.wrapping_add(r32(c, V1)));
+        let method = r32(c, V0);
+        call_ptr(c, method, 0x0010_c7a4)?;
+        let got = c.g[V0][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.g[V1][0] = (-1i64 < got as i64) as u64;
+        c.g[A2][0] = c.g[S2][0];
+        if c.g[V1][0] != 0 {
+            c.g[S3][0] = got;
+        }
+        c.g[A1][0] = c.g[S3][0];
+        INIT_DIFF_GET_AGGRESSION_MODE.call(c, 0x0010_c7c0)?;
+        let this = Addr(r32(c, S1));
+        let aggression = c.g[V0][0];
+        this.off(CAR_AGGRESSION).sh(c, aggression);
+        if c.g[S3][0] != c.g[S0][0] {
+            c.cycles += 1;
+            this.off(CAR_TOP_LEVEL).sw(c, 0);
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 3;
+            if c.g[S2][0] != 3 {
+                this.off(CAR_TOP_LEVEL).sw(c, 0);
+            } else {
+                c.cycles += 2;
+                let level = c.g[S3][0];
+                this.off(CAR_TOP_LEVEL).sw(c, level);
+            }
+        }
+
+        // Race kinds 1, 5 and 6 set the race flag.
+        c.cycles += 12;
+        call_ptr(c, INIT_DIFF_BE_GET_BE, 0x0010_c7e8)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, INIT_DIFF_BE_GET_INTERFACE, 0x0010_c7f4)?;
+        c.g[S0][0] = 0x53_0000;
+        let kind = Addr(INIT_DIFF_RACE_SETTINGS).off(0x48).lb(c);
+        c.g[V1][0] = kind;
+        let flagged = if kind == 1 {
+            true
+        } else {
+            c.cycles += 2;
+            if kind == 6 {
+                true
+            } else {
+                c.cycles += 2;
+                kind == 5
+            }
+        };
+        let this = Addr(r32(c, S1));
+        if flagged {
+            c.cycles += 2;
+            c.g[V0][0] = 1;
+            this.off(CAR_RACE_FLAG).sw(c, 1);
+        } else {
+            c.g[V0][0] = 5;
+            this.off(CAR_RACE_FLAG).sw(c, 0);
+        }
+
+        // Individual difficulty from the player interface.
+        c.cycles += 23;
+        c.g[S0][0] = sx(INIT_DIFF_RACE_SETTINGS);
+        call_ptr(c, INIT_DIFF_BE_GET_BE, 0x0010_c830)?;
+        c.g[A1][0] = 1;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, INIT_DIFF_BE_GET_INTERFACE, 0x0010_c83c)?;
+        let kind = Addr(r32(c, S0)).off(0x48).lb(c);
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = (kind < 1) as u64;
+        call_ptr(c, INIT_DIFF_GET_DIFFICULTY, 0x0010_c84c)?;
+        c.g[A2][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S3][0];
+        INIT_DIFF_APPLY_DIFFICULTY.call(c, 0x0010_c85c)?;
+        call_ptr(c, INIT_DIFF_BE_GET_BE, 0x0010_c864)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, INIT_DIFF_BE_GET_INTERFACE, 0x0010_c870)?;
+        c.g[S2][0] = c.g[V0][0];
+        // Aggression override: 4 -> 0, 5 -> 2.
+        let over = Addr(r32(c, S0)).off(0x4a).lb(c);
+        c.g[V1][0] = over;
+        c.g[V0][0] = 5;
+        let this = Addr(r32(c, S1));
+        c.cycles += 2;
+        if over == 4 {
+            this.off(CAR_AGGRESSION).sh(c, 0);
+            c.cycles += 1;
+        } else if over == 5 {
+            c.cycles += 3;
+            c.g[V0][0] = 2;
+            this.off(CAR_AGGRESSION).sh(c, 2);
+        }
+        c.g[V1][0] = 0x53_0000;
+
+        c.cycles += 5;
+        let cheats = Addr(INIT_DIFF_CHEATS).lw(c);
+        c.g[V0][0] = ((cheats as u32) >> 2) as u64 & 1;
+        c.g[A2][0] = 1;
+        if c.g[V0][0] != 0 {
+            // Max-AI cheat.
+            c.cycles += 19;
+            c.g[AT][0] = 0x42c8_0000;
+            c.mtc1(1, 2);
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 1);
+            c.g[A0][0] = sx(r32(c, S3).wrapping_sub(1));
+            let this = r32(c, S1);
+            c.g[V1][0] = Addr(this).off(0x18).lw(c);
+            c.g[A1][0] = 2;
+            c.g[AT][0] = 0xffff_ffff_c2c8_0000;
+            c.mtc1(1, 0);
+            c.g[A0][0] = (c.g[A0][0] < 2) as u64;
+            c.swc1(1, this.wrapping_add(CAR_SKILL_B));
+            c.swc1(2, this.wrapping_add(CAR_SKILL_A));
+            Addr(this).off(CAR_TOP_LEVEL).sw(c, 1);
+            c.swc1(0, r32(c, V1).wrapping_add(0xdc));
+            c.g[V0][0] = Addr(this).off(0x18).lw(c);
+            c.swc1(2, r32(c, V0).wrapping_add(0xe0));
+            c.g[V1][0] = Addr(this).off(0x18).lw(c);
+            Addr(r32(c, V1)).off(0xe4).sw(c, 2);
+            c.cycles += 2;
+            let mode = if c.g[A0][0] != 0 { 2 } else { 1 };
+            Addr(this).off(CAR_AGGRESSION).sh(c, mode);
+        } else {
+            // Course boost of skill B.
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, INIT_DIFF_GET_TRACK, 0x0010_c918)?;
+            c.g[V1][0] = 4;
+            let scale = if c.g[V0][0] == 4 {
+                c.cycles += 4;
+                c.g[AT][0] = 0x3e80_0000;
+                c.mtc1(1, 0);
+                let this = r32(c, S1);
+                c.lwc1(1, this.wrapping_add(CAR_SKILL_B));
+                true
+            } else {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S2][0];
+                call_ptr(c, INIT_DIFF_GET_TRACK, 0x0010_c93c)?;
+                c.g[V1][0] = 2;
+                let tenth = if c.g[V0][0] == 2 {
+                    let this = r32(c, S1);
+                    c.lwc1(1, this.wrapping_add(CAR_SKILL_B));
+                    true
+                } else {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S2][0];
+                    call_ptr(c, INIT_DIFF_GET_TRACK, 0x0010_c950)?;
+                    c.g[V1][0] = 3;
+                    let this = r32(c, S1);
+                    if c.g[V0][0] != 3 {
+                        c.lwc1(0, this.wrapping_add(CAR_SKILL_B));
+                        false
+                    } else {
+                        c.cycles += 1;
+                        c.lwc1(1, this.wrapping_add(CAR_SKILL_B));
+                        true
+                    }
+                };
+                if tenth {
+                    c.cycles += 1;
+                    let lit = r32(c, GP).wrapping_sub(0x7d1c);
+                    c.lwc1(0, lit);
+                }
+                tenth
+            };
+            let this = r32(c, S1);
+            if scale {
+                c.cycles += 4;
+                c.mul_s(0, 1, 0);
+                c.add_s(1, 1, 0);
+                c.swc1(1, this.wrapping_add(CAR_SKILL_B));
+                c.lwc1(0, this.wrapping_add(CAR_SKILL_B));
+            }
+            c.cycles += 6;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 1);
+            c.c_lt_s(1, 0);
+            if c.fcc() {
+                c.swc1(1, this.wrapping_add(CAR_SKILL_B));
+            }
+        }
+
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `BENewRaceInt_GetTrackPeak(iface)`.
+pub(crate) const PEAK_ATTRIBS_GET_TRACK_PEAK: u32 = 0x0014_4c98;
+
+/// `BECharInt_SetAllAttribs(iface, rider, level)`.
+pub(crate) const PEAK_ATTRIBS_SET_ALL: u32 = 0x0014_8aa8;
+
+/// One call of the rider controller's virtual at +0x38 (the rider index)
+/// for `ComputerActorRider_SetAttribsForPeak`: `a0` holds the rider.
+pub(crate) fn peak_attribs_rider_index(c: &mut Cpu, ret_to: u32) -> crate::call::Flow {
+    let ctl = r32(c, A0).wrapping_add(0x6c0);
+    let vt = Addr(ctl).lw(c);
+    c.g[V1][0] = vt;
+    let delta = Addr(vt as u32).off(0x38).lh(c);
+    c.g[A1][0] = delta;
+    c.g[V0][0] = Addr(vt as u32).off(0x3c).lw(c);
+    c.g[A0][0] = sx(ctl.wrapping_add(delta as u32));
+    let method = r32(c, V0);
+    call_ptr(c, method, ret_to)
+}
+
+/// `void ComputerActorRider_SetAttribsForPeak(cComputer *self)` (0x10c9a8):
+/// set all of the rider's character attributes for the current track's
+/// peak: level 7 on peak 2, 4 on peak 1, else 1.
+pub fn computer_actor_rider_set_attribs_for_peak(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        call_ptr(c, INIT_DIFF_BE_GET_BE, 0x0010_c9c4)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 3;
+        call_ptr(c, INIT_DIFF_BE_GET_INTERFACE, 0x0010_c9d0)?;
+        c.g[S2][0] = c.g[V0][0];
+        call_ptr(c, INIT_DIFF_BE_GET_BE, 0x0010_c9d8)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, INIT_DIFF_BE_GET_INTERFACE, 0x0010_c9e4)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, PEAK_ATTRIBS_GET_TRACK_PEAK, 0x0010_c9f0)?;
+        c.g[V1][0] = 2;
+        let (level, rets) = if c.g[V0][0] == 2 {
+            c.cycles += 13;
+            c.g[A0][0] = Addr(r32(c, S1)).off(0x18).lw(c);
+            (7, (0x0010_ca18, 0x0010_ca28))
+        } else {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, PEAK_ATTRIBS_GET_TRACK_PEAK, 0x0010_ca38)?;
+            c.g[V1][0] = 1;
+            c.g[A0][0] = Addr(r32(c, S1)).off(0x18).lw(c);
+            if c.g[V0][0] == 1 {
+                c.cycles += 12;
+                (4, (0x0010_ca5c, 0x0010_ca6c))
+            } else {
+                c.cycles += 11;
+                (1, (0x0010_ca8c, 0x0010_ca9c))
+            }
+        };
+        peak_attribs_rider_index(c, rets.0)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A2][0] = level;
+        call_ptr(c, PEAK_ATTRIBS_SET_ALL, rets.1)?;
+        frame.restore(c, S0, 0x30);
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Rider-vs-rider hits.
+
+/// `SSXAudioSystem_PlayRiderBumpSound(audio, a, b)`.
+pub(crate) const HIT_PLAY_BUMP_SOUND: u32 = 0x0029_8138;
+
+/// `SSXAudioSystem_PlayHitBoostSound(audio, rider)`.
+pub(crate) const HIT_PLAY_HIT_BOOST_SOUND: u32 = 0x0029_8d00;
+
+/// The shape of `Rider_ReportRiderHit0..2` (entry `base`): rider `a` (a0)
+/// hit rider `b` (a1): play `sound(audio, a, b)`, the collision speech
+/// `(audio, b, a, speech_kind, speech_variant)`, and add aggression of
+/// `event` from `b`'s index towards `a`'s.
+/// `sound_args`: the registers the sound call's `a1`/`a2` come from (Hit1
+/// passes `(a, b)`, Hit2 `(b, a)`).
+pub(crate) fn report_rider_hit(
+    c: &mut Cpu,
+    base: u32,
+    sound: u32,
+    sound_args: (usize, usize),
+    speech: (u64, u64),
+    event: u64,
+) {
+    guest(c, |c| {
+        c.cycles += 47;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        call_ptr(c, HIT_AUDIO_INSTANCE, base + 0x20)?;
+        c.g[A1][0] = c.g[sound_args.0][0];
+        c.g[A2][0] = c.g[sound_args.1][0];
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, sound, base + 0x30)?;
+        call_ptr(c, HIT_AUDIO_INSTANCE, base + 0x38)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.g[T0][0] = speech.1;
+        c.g[A3][0] = speech.0;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, HIT_SPEECH_COLLISION, base + 0x50)?;
+        call_ptr(c, HIT_AGGRESSION_INSTANCE, base + 0x58)?;
+        c.g[S2][0] = c.g[V0][0];
+        hit_rider_index(c, S0, base + 0x74)?;
+        c.g[S0][0] = c.g[V0][0];
+        hit_rider_index(c, S1, base + 0x90)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[V0][0];
+        c.g[A3][0] = event;
+        call_ptr(c, HIT_ADD_AGGRESSION, base + 0xa4)?;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Rider_ReportRiderHit1(Rider *a, Rider *b)` (0x10e2e8): rider `a`
+/// hit rider `b`: collision sound, collision speech (kind 1, variant 1),
+/// aggression event 1.
+pub fn rider_report_rider_hit1(c: &mut Cpu) {
+    report_rider_hit(
+        c,
+        0x0010_e2e8,
+        HIT_PLAY_COLLISION_SOUND,
+        (S1, S0),
+        (1, 1),
+        1,
+    );
+}
+
+/// `void Rider_ReportRiderHit2(Rider *a, Rider *b)` (0x10e3a8): a bump:
+/// bump sound, collision speech (kind 0, variant 0), aggression event 2.
+pub fn rider_report_rider_hit2(c: &mut Cpu) {
+    report_rider_hit(c, 0x0010_e3a8, HIT_PLAY_BUMP_SOUND, (S0, S1), (0, 0), 2);
+}
+
+pub(crate) const HIT_KNOCKDOWN_OPPONENT: Callee = Callee {
+    addr: 0x0011_9400,
+    f: ee::s00::RiderMetrix_OnKnockdownOpponent,
+};
+
+pub(crate) const HIT_ADD_BOOST: Callee = Callee {
+    addr: 0x0010_e098,
+    f: ee::s00::Rider_AddBoost,
+};
+
+/// `void Rider_ReportRiderHit3(Rider *a, Rider *b)` (0x10e468): rider `b`
+/// knocked rider `a` down: bump sound, collision speech (kind 0, variant
+/// 1), hit-boost sound for `b`, aggression event 3 from `b` towards `a`,
+/// then `b`'s knockdown metric and the boost it earns (kind 2).
+pub fn rider_report_rider_hit3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 60;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        call_ptr(c, HIT_AUDIO_INSTANCE, 0x0010_e48c)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, HIT_PLAY_BUMP_SOUND, 0x0010_e49c)?;
+        call_ptr(c, HIT_AUDIO_INSTANCE, 0x0010_e4a4)?;
+        c.g[T0][0] = 1;
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A3][0] = 0;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, HIT_SPEECH_COLLISION, 0x0010_e4bc)?;
+        call_ptr(c, HIT_AUDIO_INSTANCE, 0x0010_e4c4)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, HIT_PLAY_HIT_BOOST_SOUND, 0x0010_e4d0)?;
+        call_ptr(c, HIT_AGGRESSION_INSTANCE, 0x0010_e4d8)?;
+        c.g[S3][0] = c.g[V0][0];
+        // b's index (the controller pointer goes to a1, s0 keeps b).
+        c.g[A1][0] = c.g[S0][0];
+        hit_rider_index(c, A1, 0x0010_e4f4)?;
+        c.g[S2][0] = c.g[V0][0];
+        hit_rider_index(c, S1, 0x0010_e510)?;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[V0][0];
+        c.g[A3][0] = 3;
+        call_ptr(c, HIT_ADD_AGGRESSION, 0x0010_e524)?;
+        c.g[A0][0] = Addr(r32(c, S0)).off(0x790).lw(c);
+        HIT_KNOCKDOWN_OPPONENT.call(c, 0x0010_e52c)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.mov_s(12, 0);
+        c.g[A1][0] = 2;
+        HIT_ADD_BOOST.call(c, 0x0010_e53c)?;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Rider sound-event virtuals.
+
+/// `SSXAudioSystem_PlayRiderSfx(audio, kind, rider, volume)`.
+pub(crate) const RIDER_SFX_PLAY: u32 = 0x0029_ced8;
+
+/// `SSXAudioSystem_ArcadeSay(audio, rider, line)`.
+pub(crate) const RIDER_SFX_ARCADE_SAY: u32 = 0x002a_3b18;
+
+/// The shape of `Rider_v13`/`Rider_v14` (entry `base`): add `amount` (f12)
+/// to the float at `self + field`, play rider sound `kind` at volume 1.0
+/// and the arcade speech line `line`.
+pub(crate) fn rider_sfx_event(c: &mut Cpu, base: u32, field: u32, kind: u64, line: u64) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let at = r32(c, S0).wrapping_add(field);
+        c.lwc1(0, at);
+        c.add_s(0, 0, 12);
+        c.swc1(0, at);
+        call_ptr(c, HIT_AUDIO_INSTANCE, base + 0x20)?;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 12);
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = kind;
+        call_ptr(c, RIDER_SFX_PLAY, base + 0x38)?;
+        call_ptr(c, HIT_AUDIO_INSTANCE, base + 0x40)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A2][0] = line;
+        call_ptr(c, RIDER_SFX_ARCADE_SAY, base + 0x50)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Rider_v13(Rider *self, float amount)` (0x10e770): add `amount` to
+/// the float at +0x2e8, play rider sound 0 and arcade line 1.
+pub fn rider_v13_2(c: &mut Cpu) {
+    rider_sfx_event(c, 0x0010_e770, 0x2e8, 0, 1);
+}
+
+/// `void Rider_v14(Rider *self, float amount)` (0x10e7d0): add `amount` to
+/// the float at +0x2ec, play rider sound 1 and arcade line 2.
+pub fn rider_v14_2(c: &mut Cpu) {
+    rider_sfx_event(c, 0x0010_e7d0, 0x2ec, 1, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Rider event dispatch.
+
+/// The event jump table (`.rodata`, kinds 0..7).
+pub(crate) const RIDER_EVENT_TABLE: u32 = 0x0045_6af0;
+
+pub(crate) const RIDER_EVENT_AWARD_BONUS_BOOST: Callee = Callee {
+    addr: 0x0010_e8b8,
+    f: ee::s00::Rider_AwardBonusBoost,
+};
+
+pub(crate) const RIDER_EVENT_CHECK_RESET_PATH: Callee = Callee {
+    addr: 0x0011_6120,
+    f: ee::s00::Rider_CheckResetPath,
+};
+
+/// `void Rider_DispatchEventTable(Rider *self, int kind, float amount)`
+/// (0x10f1c0): run a course event on the rider. Kinds 1..3 call the rider
+/// controller's virtuals +0x68/+0x70/+0x78 (`Rider_v13..v15`), 4 adds
+/// boost (kind 8), 5 resets the rider to the path (reason 4), 6 awards a
+/// bonus boost of `(int)amount`; 0, 7 and out-of-range kinds do nothing.
+pub fn rider_dispatch_event_table(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        c.g[A2][0] = c.g[A0][0];
+        let kind = c.g[A1][0];
+        c.g[V0][0] = (kind < 8) as u64;
+        frame.save_ra(c, 0);
+        if kind < 8 {
+            c.cycles += 7;
+            let entry = ((kind as u32) << 2).wrapping_add(RIDER_EVENT_TABLE);
+            c.g[V0][0] = sx(RIDER_EVENT_TABLE);
+            c.g[V1][0] = sx(entry);
+            c.g[A0][0] = Addr(entry).lw(c);
+            let this = r32(c, A2);
+            match kind {
+                1..=3 => {
+                    // The controller's virtual at 0x68 + 8 * (kind - 1).
+                    c.cycles += if kind == 3 { 4 } else { 5 };
+                    let slot = 0x68 + 8 * (kind as u32 - 1);
+                    let ctl = this.wrapping_add(0x6c0);
+                    let vt = Addr(ctl).lw(c);
+                    c.g[V1][0] = vt;
+                    c.g[A1][0] = sx(ctl);
+                    let delta = Addr(vt as u32).off(slot).lh(c);
+                    c.g[V0][0] = Addr(vt as u32).off(slot + 4).lw(c);
+                    c.cycles += 4;
+                    c.g[A0][0] = sx(ctl.wrapping_add(delta as u32));
+                    let method = r32(c, V0);
+                    call_ptr(c, method, 0x0010_f230)?;
+                }
+                4 => {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[A2][0];
+                    c.g[A1][0] = 8;
+                    HIT_ADD_BOOST.call(c, 0x0010_f244)?;
+                }
+                6 => {
+                    c.cycles += 6;
+                    c.cvt_w_s(0, 12);
+                    c.mfc1(A1, 0);
+                    c.g[A0][0] = c.g[A2][0];
+                    RIDER_EVENT_AWARD_BONUS_BOOST.call(c, 0x0010_f25c)?;
+                }
+                5 => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[A2][0];
+                    c.g[A1][0] = 0;
+                    c.g[A2][0] = 4;
+                    RIDER_EVENT_CHECK_RESET_PATH.call(c, 0x0010_f274)?;
+                    c.cycles += 1;
+                }
+                _ => {
+                    c.cycles += 1;
+                }
+            }
+        } else {
+            c.cycles += 1;
+        }
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
         frame.close(c);
         Ok(())
     })
@@ -12088,7 +16240,7 @@ pub(crate) mod tests {
     /// world of collision objects).
     pub(crate) fn fake_collide_volume(c: &mut Cpu) {
         if c.bus.read32(FCC_CTRL) != FCC_MAGIC {
-            return ssx3_ee::s11::f_00333ef8__generated(c);
+            return fakes::fall_back(c, &FCC_PREV, ssx3_ee::s11::f_00333ef8__generated);
         }
         let count = c.bus.read32(FCC_CTRL + 4);
         let template = c.bus.read32(FCC_CTRL + 8);
@@ -12103,17 +16255,29 @@ pub(crate) mod tests {
         abi::ret(c);
     }
 
-    /// Installs the gated fakes ([`fake_collide_volume`],
+    /// What the slots of [`fake_collide_volume`] and [`fake_closest_point`]
+    /// held before them.
+    static FCC_PREV: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    static UDF_PREV: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    /// Hooks the gated fakes ([`fake_collide_volume`],
     /// [`fake_closest_point`]) in their callees' slots once for the whole
     /// test process: without their magic word in a machine's RAM they run
-    /// the generated body, so other tests are unaffected (and no test
+    /// what the slot held before, so other tests are unaffected (and no test
     /// restores a slot under another one running in parallel).
     pub(crate) fn install_fake_slots() {
-        static ONCE: std::sync::Once = std::sync::Once::new();
-        ONCE.call_once(|| unsafe {
-            ssx3_ee::s11::OVERRIDE_00333EF8 = fake_collide_volume;
-            ssx3_ee::s07::OVERRIDE_0026A638 = fake_closest_point;
-        });
+        use std::ptr::addr_of_mut;
+        fakes::hook(
+            addr_of_mut!(ssx3_ee::s11::OVERRIDE_00333EF8),
+            fake_collide_volume,
+            &FCC_PREV,
+        );
+        fakes::hook(
+            addr_of_mut!(ssx3_ee::s07::OVERRIDE_0026A638),
+            fake_closest_point,
+            &UDF_PREV,
+        );
     }
 
     // ------------------------------------------------ Rider_UpdateDistToFinish
@@ -12128,7 +16292,7 @@ pub(crate) mod tests {
     /// distance along the path in f0 (the real one walks a course path).
     pub(crate) fn fake_closest_point(c: &mut Cpu) {
         if c.bus.read32(UDF_CTRL) != UDF_MAGIC {
-            return ssx3_ee::s07::f_0026a638__generated(c);
+            return fakes::fall_back(c, &UDF_PREV, ssx3_ee::s07::f_0026a638__generated);
         }
         c.f[0] = c.bus.read32(UDF_CTRL + 4);
         c.f[1] = 0x4000_0000;
@@ -13852,8 +18016,8 @@ pub(crate) mod tests {
 
     // ------------------------------------------------------ Rider_StartWipeout
 
-    /// Fixture area (clear of the fakes' pointer results at_m2 DATA..+0x40000
-    /// and their log at_m2 DATA+0x100000).
+    /// Fixture area (clear of the fakes' pointer results at DATA..+0x40000
+    /// and their log at DATA+0x100000).
     pub(crate) const WT_CTRL: u32 = DATA + 0x20_0000;
 
     pub(crate) const WT_MAGIC: u32 = 0x10eb_30a5;
@@ -13901,13 +18065,13 @@ pub(crate) mod tests {
         }
     }
 
-    /// A slot replacement: the fake while this fixture is loaded, else the
-    /// generated body.
+    /// A slot replacement: the fake while this fixture is loaded, else what
+    /// the slot held before (see [`wipe_install_fakes`]).
     macro_rules! wipe_gated {
         ($name:ident, $addr:expr, $gen:path) => {
             fn $name(c: &mut Cpu) {
                 if c.bus.read32(WT_CTRL) != WT_MAGIC {
-                    return $gen(c);
+                    return fakes::fall_back(c, fakes::prev_cell($name), $gen);
                 }
                 wipe_fake(c, $addr)
             }
@@ -14148,48 +18312,53 @@ pub(crate) mod tests {
         ee::s10::f_00311318__generated
     );
 
-    #[allow(unused_unsafe)]
+    /// Hooks every `wipe_gated!` fake (once per process; each falls back to
+    /// what its slot held before).
     pub(crate) fn wipe_install_fakes() {
-        unsafe {
-            ee::s00::OVERRIDE_0010E098 = wipe_fake_0010e098;
-            ee::s00::OVERRIDE_00111AA0 = wipe_fake_00111aa0;
-            ee::s00::OVERRIDE_0011FEC8 = wipe_fake_0011fec8;
-            ee::s00::OVERRIDE_0011DFE0 = wipe_fake_0011dfe0;
-            ee::s00::OVERRIDE_00116930 = wipe_fake_00116930;
-            ee::s00::OVERRIDE_0011FA10 = wipe_fake_0011fa10;
-            ee::s00::OVERRIDE_0011E098 = wipe_fake_0011e098;
-            ee::s00::OVERRIDE_0011FE78 = wipe_fake_0011fe78;
-            ee::s00::OVERRIDE_00117838 = wipe_fake_00117838;
-            ee::s00::OVERRIDE_00117948 = wipe_fake_00117948;
-            ee::s00::OVERRIDE_00117B88 = wipe_fake_00117b88;
-            ee::s00::OVERRIDE_001179E0 = wipe_fake_001179e0;
-            ee::s00::OVERRIDE_00117908 = wipe_fake_00117908;
-            ee::s07::OVERRIDE_0028B180 = wipe_fake_0028b180;
-            ee::s07::OVERRIDE_00287920 = wipe_fake_00287920;
-            ee::s07::OVERRIDE_00288AE0 = wipe_fake_00288ae0;
-            ee::s07::OVERRIDE_00285D98 = wipe_fake_00285d98;
-            ee::s08::OVERRIDE_00296310 = wipe_fake_00296310;
-            ee::s10::OVERRIDE_00311B48 = wipe_fake_00311b48;
-            ee::s10::OVERRIDE_0031BE50 = wipe_fake_0031be50;
-            ee::s10::OVERRIDE_003128E8 = wipe_fake_003128e8;
-            ee::s10::OVERRIDE_003142E8 = wipe_fake_003142e8;
-            ee::s10::OVERRIDE_00313CF0 = wipe_fake_00313cf0;
-            ee::s10::OVERRIDE_00314418 = wipe_fake_00314418;
-            ee::s10::OVERRIDE_00314760 = wipe_fake_00314760;
-            ee::s10::OVERRIDE_003115C8 = wipe_fake_003115c8;
-            ee::s10::OVERRIDE_00314518 = wipe_fake_00314518;
-            ee::s10::OVERRIDE_00314588 = wipe_fake_00314588;
-            ee::s10::OVERRIDE_00313AD8 = wipe_fake_00313ad8;
-            ee::s10::OVERRIDE_00313A10 = wipe_fake_00313a10;
-            ee::s10::OVERRIDE_00313A70 = wipe_fake_00313a70;
-            ee::s10::OVERRIDE_00313BA8 = wipe_fake_00313ba8;
-            ee::s10::OVERRIDE_00313A20 = wipe_fake_00313a20;
-            ee::s10::OVERRIDE_00313C50 = wipe_fake_00313c50;
-            ee::s10::OVERRIDE_00313D28 = wipe_fake_00313d28;
-            ee::s10::OVERRIDE_003145F8 = wipe_fake_003145f8;
-            ee::s10::OVERRIDE_00313C08 = wipe_fake_00313c08;
-            ee::s10::OVERRIDE_00317E50 = wipe_fake_00317e50;
-            ee::s10::OVERRIDE_00311318 = wipe_fake_00311318;
+        use std::ptr::addr_of_mut;
+        let slots: [(*mut fn(&mut Cpu), fn(&mut Cpu)); 39] = [
+            (addr_of_mut!(ee::s00::OVERRIDE_0010E098), wipe_fake_0010e098),
+            (addr_of_mut!(ee::s00::OVERRIDE_00111AA0), wipe_fake_00111aa0),
+            (addr_of_mut!(ee::s00::OVERRIDE_0011FEC8), wipe_fake_0011fec8),
+            (addr_of_mut!(ee::s00::OVERRIDE_0011DFE0), wipe_fake_0011dfe0),
+            (addr_of_mut!(ee::s00::OVERRIDE_00116930), wipe_fake_00116930),
+            (addr_of_mut!(ee::s00::OVERRIDE_0011FA10), wipe_fake_0011fa10),
+            (addr_of_mut!(ee::s00::OVERRIDE_0011E098), wipe_fake_0011e098),
+            (addr_of_mut!(ee::s00::OVERRIDE_0011FE78), wipe_fake_0011fe78),
+            (addr_of_mut!(ee::s00::OVERRIDE_00117838), wipe_fake_00117838),
+            (addr_of_mut!(ee::s00::OVERRIDE_00117948), wipe_fake_00117948),
+            (addr_of_mut!(ee::s00::OVERRIDE_00117B88), wipe_fake_00117b88),
+            (addr_of_mut!(ee::s00::OVERRIDE_001179E0), wipe_fake_001179e0),
+            (addr_of_mut!(ee::s00::OVERRIDE_00117908), wipe_fake_00117908),
+            (addr_of_mut!(ee::s07::OVERRIDE_0028B180), wipe_fake_0028b180),
+            (addr_of_mut!(ee::s07::OVERRIDE_00287920), wipe_fake_00287920),
+            (addr_of_mut!(ee::s07::OVERRIDE_00288AE0), wipe_fake_00288ae0),
+            (addr_of_mut!(ee::s07::OVERRIDE_00285D98), wipe_fake_00285d98),
+            (addr_of_mut!(ee::s08::OVERRIDE_00296310), wipe_fake_00296310),
+            (addr_of_mut!(ee::s10::OVERRIDE_00311B48), wipe_fake_00311b48),
+            (addr_of_mut!(ee::s10::OVERRIDE_0031BE50), wipe_fake_0031be50),
+            (addr_of_mut!(ee::s10::OVERRIDE_003128E8), wipe_fake_003128e8),
+            (addr_of_mut!(ee::s10::OVERRIDE_003142E8), wipe_fake_003142e8),
+            (addr_of_mut!(ee::s10::OVERRIDE_00313CF0), wipe_fake_00313cf0),
+            (addr_of_mut!(ee::s10::OVERRIDE_00314418), wipe_fake_00314418),
+            (addr_of_mut!(ee::s10::OVERRIDE_00314760), wipe_fake_00314760),
+            (addr_of_mut!(ee::s10::OVERRIDE_003115C8), wipe_fake_003115c8),
+            (addr_of_mut!(ee::s10::OVERRIDE_00314518), wipe_fake_00314518),
+            (addr_of_mut!(ee::s10::OVERRIDE_00314588), wipe_fake_00314588),
+            (addr_of_mut!(ee::s10::OVERRIDE_00313AD8), wipe_fake_00313ad8),
+            (addr_of_mut!(ee::s10::OVERRIDE_00313A10), wipe_fake_00313a10),
+            (addr_of_mut!(ee::s10::OVERRIDE_00313A70), wipe_fake_00313a70),
+            (addr_of_mut!(ee::s10::OVERRIDE_00313BA8), wipe_fake_00313ba8),
+            (addr_of_mut!(ee::s10::OVERRIDE_00313A20), wipe_fake_00313a20),
+            (addr_of_mut!(ee::s10::OVERRIDE_00313C50), wipe_fake_00313c50),
+            (addr_of_mut!(ee::s10::OVERRIDE_00313D28), wipe_fake_00313d28),
+            (addr_of_mut!(ee::s10::OVERRIDE_003145F8), wipe_fake_003145f8),
+            (addr_of_mut!(ee::s10::OVERRIDE_00313C08), wipe_fake_00313c08),
+            (addr_of_mut!(ee::s10::OVERRIDE_00317E50), wipe_fake_00317e50),
+            (addr_of_mut!(ee::s10::OVERRIDE_00311318), wipe_fake_00311318),
+        ];
+        for (slot, fake) in slots {
+            fakes::hook(slot, fake, fakes::prev_cell(fake));
         }
     }
 
@@ -14209,7 +18378,7 @@ pub(crate) mod tests {
     /// (`0x312660`, with the real `AnimController_PlayAnimImpl` and
     /// `AnimSeqList_Clear` on an empty list: fp = 0 is what the speech call
     /// leaves in that stack slot), the bone sampler (no channels: the
-    /// identity transform at_m2 0x4ff230, randomised) and the orientation
+    /// identity transform at 0x4ff230, randomised) and the orientation
     /// offset (six empty layers) also run for real. Every slotted callee is
     /// a logged fake, one of which may unwind.
     #[test]
@@ -14226,7 +18395,7 @@ pub(crate) mod tests {
                 c.bus.write32(WT_CTRL, WT_MAGIC);
                 c.g[30] = [0, 0];
 
-                // gp_m2: +-pi/2, the blend id (0, != gp_m2+0x2860), the anim table.
+                // gp: +-pi/2, the blend id (0, != gp+0x2860), the anim table.
                 let gp_m2 = GAME_GP;
                 c.bus.write32(
                     gp_m2 - WIPE_GP_HALF_PI,
@@ -14494,6 +18663,1198 @@ pub(crate) mod tests {
                 fill(c, &mut r, METRIX, 0x80);
                 c.g[A0][0] = sx(RIDER);
                 c.g[A1][0] = 0;
+            },
+        );
+    }
+
+    use crate::difftest::events::driven;
+
+    use crate::difftest::CYCLE_BUDGET;
+    use crate::difftest::SP as TEST_SP;
+
+    use crate::difftest::fakes::fake_call;
+    use crate::game::ai::computer::HIT_INDEX_SLOT;
+
+    /// `ComputerActorRider_ComputeSteerFlat`: random axes and directions
+    /// (some zero), flatness factor 1 or not, the real `.lit4` scale.
+    #[test]
+    fn computer_actor_rider_compute_steer_flat_matches() {
+        check(
+            ee::s00::f_00100250__generated,
+            computer_actor_rider_compute_steer_flat,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0010_0250 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0010_0250;
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(GAME_GP - STEER_FLAT_LIT_SCALE, 0x3e01_b776);
+                let (me, model, v) = (DATA, DATA + 0x1000, DATA + 0x2000);
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(v);
+                c.bus.write32(me + 0x18, model);
+                let vec = |r: &mut Rng| {
+                    if seed % 11 == 0 {
+                        [0, 0, 0, 0]
+                    } else {
+                        [r.f32(2.0), r.f32(2.0), r.f32(2.0), r.f32(2.0)]
+                    }
+                };
+                let (a, b, d) = (vec(&mut r), vec(&mut r), vec(&mut r));
+                put_vec(c, model + 0x1a0, a);
+                put_vec(c, model + 0x1c0, b);
+                put_vec(c, v, d);
+                let f = match seed % 3 {
+                    0 => 1.0f32.to_bits(),
+                    1 => r.f32(2.0),
+                    _ => r.edge_f32(),
+                };
+                c.bus.write32(me + 0xdf4, f);
+            },
+        );
+    }
+
+    /// `ComputerActorRider_CruiseChaseRival` on the cruise fixture of
+    /// `ComputerActorRider_CruiseFollowPath` (same steering, crouch, boost,
+    /// jump-marker and target-rider callees, all real): the rival is AI slot
+    /// 1..3, whose path interface returns a random velocity and position
+    /// (fakes, forced pointers) and is busy or not (fake / the real zero
+    /// leaf); headings over the whole circle (behind, within 15 and 50
+    /// degrees, outside), record distances below and above 200, the real
+    /// `.lit4` constants.
+    #[test]
+    fn computer_actor_rider_cruise_chase_rival_matches() {
+        use crate::game::ai::computer::tests::{
+            cruise_setup, MODEL, PMF, RIDER_2, RIDER_ENTRY, WORLD,
+        };
+        check(
+            ee::s00::f_00100b90__generated,
+            computer_actor_rider_cruise_chase_rival,
+            240,
+            &|c, seed| {
+                cruise_setup(c, seed);
+                let mut r = Rng(0x0010_0b90 ^ (seed as u64) << 20);
+                c.pc = 0x0010_0b90;
+                // The `.lit4` constants: 1/2pi, 2pi, 90/50/15 degrees.
+                for (off, v) in [
+                    (CHASE_RIVAL_LIT_INV_2PI, 0x3e22_f983),
+                    (CHASE_RIVAL_LIT_2PI, 0x40c9_0fdb),
+                    (CHASE_RIVAL_LIT_BEHIND, 0x3fc9_0fdc),
+                    (CHASE_RIVAL_LIT_WIDE, 0x3f5f_66f4),
+                    (CHASE_RIVAL_LIT_NARROW, 0x3e86_0a93),
+                ] {
+                    c.bus.write32(GAME_GP - off, v);
+                }
+                // The rival: AI slot 1..3 (`ai + 0x28 + 4*slot`).
+                let slot = 1 + seed % 3;
+                let ai = WORLD + 0x200;
+                c.bus.write32(RIDER_2 + 0xe70, slot);
+                for i in 1..4u32 {
+                    c.bus
+                        .write32(ai + 0x28 + 4 * i, RIDER_ENTRY + 0x100 * (i - 1));
+                }
+                let entry = RIDER_ENTRY + 0x100 * (slot - 1);
+                c.bus.write32(entry + 0x6c0, PMF);
+                // Its path interface: velocity, position (fakes whose forced
+                // results point at random vectors) and "busy".
+                let (vel, pos) = (DATA + 0x9_0000, DATA + 0x9_0100);
+                c.bus.write16(PMF + 0x10, 0);
+                c.bus.write32(PMF + 0x14, FAKE + 0x30);
+                c.bus.write16(PMF + 0x28, 0);
+                c.bus.write32(PMF + 0x2c, FAKE + 0x50);
+                if seed % 4 == 0 {
+                    c.bus.write32(PMF + 0x44, 0x0014_06c0);
+                }
+                put_words(c, LOG_RESULTS, &[vel, vel, pos]);
+                put_vec(c, vel, [r.f32(150.0), r.f32(150.0), r.f32(150.0), 0]);
+                put_vec(c, pos, [r.f32(500.0), r.f32(500.0), r.f32(500.0), 0]);
+                // Headings and the slot record (distance, heading).
+                c.bus.write32(MODEL + 0x4cc, r.f32(3.2));
+                let rec = MODEL + 0x24 * slot;
+                c.bus.write32(
+                    rec + 0x8,
+                    match seed % 5 {
+                        0 => 0,
+                        1 => r.f32(400.0) & 0x7fff_ffff,
+                        2 => 200.0f32.to_bits(),
+                        3 => r.f32(150.0),
+                        _ => r.edge_f32(),
+                    },
+                );
+                c.bus.write32(rec + 0xc, r.f32(6.4));
+            },
+        );
+    }
+
+    /// Gate of this test's callee fakes (other tests' machines fall back).
+    pub(crate) const CAD_CTRL: u32 = DATA + 0xf_f000;
+
+    pub(crate) const CAD_MAGIC: u32 = 0xcad0_d70e;
+
+    macro_rules! cad_gated {
+        ($name:ident, $prev:ident, $addr:expr, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(CAD_CTRL) != CAD_MAGIC {
+                    return fakes::fall_back(c, &$prev, $gen);
+                }
+                let ra = c.g[RA][0] as u32;
+                fakes::fake(c, $addr, ra);
+            }
+        };
+    }
+
+    cad_gated!(
+        cad_fake_audio_instance,
+        CAD_PREV_AUDIO_INSTANCE,
+        0x0028_b180,
+        ee::s07::f_0028b180__generated
+    );
+
+    cad_gated!(
+        cad_fake_kill_rider_timers,
+        CAD_PREV_KILL_RIDER_TIMERS,
+        0x0029_2ae8,
+        ee::s07::f_00292ae8__generated
+    );
+
+    cad_gated!(
+        cad_fake_script_unregister,
+        CAD_PREV_SCRIPT_UNREGISTER,
+        0x0028_32d8,
+        ee::s07::f_002832d8__generated
+    );
+
+    cad_gated!(
+        cad_fake_script_dtor,
+        CAD_PREV_SCRIPT_DTOR,
+        0x0028_3228,
+        ee::s07::f_00283228__generated
+    );
+
+    cad_gated!(
+        cad_fake_delete,
+        CAD_PREV_DELETE,
+        0x0031_7e50,
+        ee::s10::f_00317e50__generated
+    );
+
+    /// `Rider_dtor`'s callees that need a game (audio system, script
+    /// objects, the allocator) become logging fakes.
+    pub(crate) fn cad_install_fakes() {
+        use std::ptr::addr_of_mut;
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0028B180),
+            cad_fake_audio_instance,
+            &CAD_PREV_AUDIO_INSTANCE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00292AE8),
+            cad_fake_kill_rider_timers,
+            &CAD_PREV_KILL_RIDER_TIMERS,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_002832D8),
+            cad_fake_script_unregister,
+            &CAD_PREV_SCRIPT_UNREGISTER,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00283228),
+            cad_fake_script_dtor,
+            &CAD_PREV_SCRIPT_DTOR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            cad_fake_delete,
+            &CAD_PREV_DELETE,
+        );
+    }
+
+    /// Virtual bases the subobjects point at (zeroed; the first is the
+    /// `Rider` base `Rider_dtor` reads: every optional pointer 0).
+    pub(crate) const CAD_VBASES: [u32; 4] = [
+        DATA + 0x1_0000,
+        DATA + 0x1_4000,
+        DATA + 0x1_8000,
+        DATA + 0x1_c000,
+    ];
+
+    /// Words of the object that hold a virtual-base pointer: the ones the
+    /// destructor reads, the members' own (`+0` of each member, the wipeout
+    /// state's `+0x40`).
+    pub(crate) const CAD_HOLDERS: [u32; 31] = [
+        0x18, 0x24, 0xa0, 0x100, 0x1b0, 0x1c0, 0x1e4, 0x1f0, 0x200, 0x224, 0x288, 0x2a4, 0x2b8,
+        0x340, 0x358, 0x364, 0x384, 0x398, 0x3a0, 0x3b0, 0x470, 0x520, 0x610, 0x9c0, 0xad0, 0xaf0,
+        0xb00, 0xb40, 0xc70, 0xd20, 0x70,
+    ];
+
+    /// The object at `CAD_THIS` (members' other fields 0: their destructors
+    /// free nothing), random vtable sources, `in_chrg` by seed: 0 (not in
+    /// charge), 1 (free), 2 (destroy the base), 3, or random bits.
+    pub(crate) fn cad_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        c.bus.write32(CAD_CTRL, CAD_MAGIC);
+        fill(c, r, 0x0045_8600, (0x0045_9c00 - 0x0045_8600) / 4);
+        for &h in CAD_HOLDERS.iter() {
+            let vb = CAD_VBASES[(r.next_u32() % 4) as usize];
+            c.bus.write32(CAD_THIS + h, vb);
+        }
+        c.bus.write32(CAD_THIS + 0x18, CAD_VBASES[0]);
+        c.g[A0][0] = sx(CAD_THIS);
+        c.g[A1][0] = match seed % 5 {
+            k @ 0..=3 => k as u64,
+            _ => (r.next_u32() as u64) << 32 | (r.next_u32() | 4) as u64,
+        };
+        c.pc = 0x0010_8fa8;
+    }
+
+    /// `ComputerActorRider_dtor` against the generated body: every `in_chrg`
+    /// path, with real member destructors and fakes (some unwinding) under
+    /// `Rider_dtor` and for the final free.
+    #[test]
+    fn computer_actor_rider_dtor_matches() {
+        cad_install_fakes();
+        covered(
+            ee::s00::f_00108fa8__generated,
+            computer_actor_rider_dtor,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10_8fa8, 11);
+                cad_fixture(c, &mut r, seed);
+            },
+        );
+    }
+
+    driven!(cad_generated_driven, ee::s00::f_00108fa8__generated);
+
+    driven!(cad_hand_driven, computer_actor_rider_dtor);
+
+    /// The copy loops' event checks: delivered, and unwinding with the
+    /// destructor re-entered at the loop head (both sides driven like the
+    /// trampoline).
+    #[test]
+    fn computer_actor_rider_dtor_events_match() {
+        cad_install_fakes();
+        check_events(cad_generated_driven, cad_hand_driven, 45, &|c, seed| {
+            let mut r = machine(c, seed, 0x10_8fa9, 0);
+            cad_fixture(c, &mut r, seed / 3);
+            schedule(c, &mut r, seed, 0x0010_8fa8)
+        });
+    }
+
+    /// Gate of this module's test fakes (in each test machine's own RAM).
+    pub(crate) const OC344_CTRL: u32 = DATA + 0x0f_0200;
+
+    pub(crate) const OC344_MAGIC: u32 = 0x4f43_3434;
+
+    /// Forced callee results: 8 records `{target, v0, f0, flags}` (flags:
+    /// 1 = set v0 (sign-extended), 2 = set f0).
+    pub(crate) const OC344_RESULTS: u32 = OC344_CTRL + 0x10;
+
+    /// The record `OverlapList_FindNearestRail` writes to its `a2` (0x20 bytes).
+    pub(crate) const OC344_RAIL_OUT: u32 = OC344_CTRL + 0x100;
+
+    /// Restore the callee-saved registers a caller saved in its frame and
+    /// return from it (a stand-in for a slot-less callee that would run
+    /// away on test data; the generated callers return through their
+    /// `c.pc` checks).
+    pub(crate) fn oc344_pop_frame(c: &mut Cpu, size: u32, saved: &[(usize, u32)], ra_off: u32) {
+        let s = sp(c);
+        for &(reg, off) in saved {
+            c.lq(reg, s.wrapping_add(off));
+        }
+        c.g[RA][0] = c.ld(s.wrapping_add(ra_off));
+        c.g[SP][0] = sx(s.wrapping_add(size));
+        c.cycles += 5;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// The logging fake, plus the results the fixture forced for `target`.
+    pub(crate) fn oc344_fake_body(c: &mut Cpu, target: u32) {
+        let ra = c.g[RA][0] as u32;
+        if target == 0x0014_0738 && ra == 0x0011_b6b8 {
+            // Rider_InitData from Rider_ctor: return from Rider_ctor.
+            oc344_pop_frame(c, 0x40, &[(S2, 0x10), (S0, 0x30), (S1, 0x20)], 0);
+            return;
+        }
+        let out = r32(c, A2);
+        fakes::fake(c, target, ra);
+        if c.pc != ra {
+            return;
+        }
+        for i in 0..8 {
+            let e = OC344_RESULTS + 0x10 * i;
+            let t = c.bus.read32(e);
+            if t == 0 {
+                break;
+            }
+            if t == target {
+                let flags = c.bus.read32(e + 0xc);
+                if flags & 1 != 0 {
+                    c.g[V0][0] = sx(c.bus.read32(e + 4));
+                }
+                if flags & 2 != 0 {
+                    c.f[0] = c.bus.read32(e + 8);
+                }
+            }
+        }
+        if target == 0x0033_4680 {
+            for k in 0..8 {
+                let w = c.bus.read32(OC344_RAIL_OUT + 4 * k);
+                c.bus.write32(out.wrapping_add(4 * k), w);
+            }
+        }
+    }
+
+    /// The machine's `miss` hook: `RiderBase_LoadState`'s first stream read
+    /// returns from `RiderBase_LoadState`; everything else is faked.
+    pub(crate) fn oc344_miss(c: &mut Cpu, target: u32) {
+        if c.g[RA][0] as u32 == 0x0011_1dcc {
+            oc344_pop_frame(c, 0x50, &[(S0, 0x40), (S1, 0x30)], 0x20);
+            return;
+        }
+        oc344_fake_body(c, target);
+    }
+
+    /// The event hook of the ctor test (`next_event` 0): the first back edge
+    /// inside `RiderBase_ctor` returns from it (its sub-object ctors
+    /// allocate).
+    pub(crate) fn oc344_ctor_event(c: &mut Cpu) -> bool {
+        assert!(c.cycles < CYCLE_BUDGET, "runaway at pc {:#x}", c.pc);
+        if (0x0010_fcd8..0x0011_12b4).contains(&c.pc) {
+            oc344_pop_frame(
+                c,
+                0x1270,
+                &[
+                    (S0, 0x1260),
+                    (S1, 0x1250),
+                    (S2, 0x1240),
+                    (S3, 0x1230),
+                    (S4, 0x1220),
+                    (S5, 0x1210),
+                    (S6, 0x1200),
+                    (S7, 0x11f0),
+                    (30, 0x11e0),
+                ],
+                0x11d0,
+            );
+            c.next_event = CYCLE_BUDGET;
+            return true;
+        }
+        false
+    }
+
+    macro_rules! oc344_gated {
+        ($name:ident, $prev:ident, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(OC344_CTRL) != OC344_MAGIC {
+                    return fakes::fall_back(c, &$prev, $gen);
+                }
+                let target = c.pc;
+                oc344_fake_body(c, target);
+            }
+        };
+    }
+
+    oc344_gated!(
+        oc344_fake_289b18,
+        OC344_PREV_289B18,
+        ee::s07::f_00289b18__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_312bd0,
+        OC344_PREV_312BD0,
+        ee::s10::f_00312bd0__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_314668,
+        OC344_PREV_314668,
+        ee::s10::f_00314668__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_311ae8,
+        OC344_PREV_311AE8,
+        ee::s10::f_00311ae8__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_334680,
+        OC344_PREV_334680,
+        ee::s11::f_00334680__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_2f6ac8,
+        OC344_PREV_2F6AC8,
+        ee::s09::f_002f6ac8__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_140738,
+        OC344_PREV_140738,
+        ee::s01::f_00140738__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_10cab8,
+        OC344_PREV_10CAB8,
+        ee::s00::f_0010cab8__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_10d170,
+        OC344_PREV_10D170,
+        ee::s00::f_0010d170__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_11fe98,
+        OC344_PREV_11FE98,
+        ee::s00::f_0011fe98__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_11fec8,
+        OC344_PREV_11FEC8,
+        ee::s00::f_0011fec8__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_11fe78,
+        OC344_PREV_11FE78,
+        ee::s00::f_0011fe78__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_10bbf8,
+        OC344_PREV_10BBF8,
+        ee::s00::f_0010bbf8__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_100610,
+        OC344_PREV_100610,
+        ee::s00::f_00100610__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_100348,
+        OC344_PREV_100348,
+        ee::s00::f_00100348__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_10b980,
+        OC344_PREV_10B980,
+        ee::s00::f_0010b980__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_10bfa8,
+        OC344_PREV_10BFA8,
+        ee::s00::f_0010bfa8__generated
+    );
+
+    oc344_gated!(
+        oc344_fake_10bb18,
+        OC344_PREV_10BB18,
+        ee::s00::f_0010bb18__generated
+    );
+
+    /// Put the gated fakes in their slots (once per process).
+    #[allow(unused_unsafe)]
+    pub(crate) fn oc344_install() {
+        use std::ptr::addr_of_mut;
+        unsafe {
+            fakes::hook(
+                addr_of_mut!(ee::s07::OVERRIDE_00289B18),
+                oc344_fake_289b18,
+                &OC344_PREV_289B18,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00312BD0),
+                oc344_fake_312bd0,
+                &OC344_PREV_312BD0,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00314668),
+                oc344_fake_314668,
+                &OC344_PREV_314668,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00311AE8),
+                oc344_fake_311ae8,
+                &OC344_PREV_311AE8,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s11::OVERRIDE_00334680),
+                oc344_fake_334680,
+                &OC344_PREV_334680,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s09::OVERRIDE_002F6AC8),
+                oc344_fake_2f6ac8,
+                &OC344_PREV_2F6AC8,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s01::OVERRIDE_00140738),
+                oc344_fake_140738,
+                &OC344_PREV_140738,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s00::OVERRIDE_0010CAB8),
+                oc344_fake_10cab8,
+                &OC344_PREV_10CAB8,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s00::OVERRIDE_0010D170),
+                oc344_fake_10d170,
+                &OC344_PREV_10D170,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s00::OVERRIDE_0011FE98),
+                oc344_fake_11fe98,
+                &OC344_PREV_11FE98,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s00::OVERRIDE_0011FEC8),
+                oc344_fake_11fec8,
+                &OC344_PREV_11FEC8,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s00::OVERRIDE_0011FE78),
+                oc344_fake_11fe78,
+                &OC344_PREV_11FE78,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s00::OVERRIDE_0010BBF8),
+                oc344_fake_10bbf8,
+                &OC344_PREV_10BBF8,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s00::OVERRIDE_00100610),
+                oc344_fake_100610,
+                &OC344_PREV_100610,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s00::OVERRIDE_00100348),
+                oc344_fake_100348,
+                &OC344_PREV_100348,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s00::OVERRIDE_0010B980),
+                oc344_fake_10b980,
+                &OC344_PREV_10B980,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s00::OVERRIDE_0010BFA8),
+                oc344_fake_10bfa8,
+                &OC344_PREV_10BFA8,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s00::OVERRIDE_0010BB18),
+                oc344_fake_10bb18,
+                &OC344_PREV_10BB18,
+            );
+        }
+    }
+
+    /// Scrambled machine, fakes on, this module's miss hook.
+    pub(crate) fn oc344_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        let r = machine(c, seed, salt, calls);
+        c.bus.write32(OC344_CTRL, OC344_MAGIC);
+        c.hooks.miss = oc344_miss;
+        r
+    }
+
+    /// Force the result of calls to `target` (v0 sign-extended, and/or f0).
+    pub(crate) fn oc344_force(c: &mut Cpu, target: u32, v0: Option<u32>, f0: Option<u32>) {
+        for i in 0..8 {
+            let e = OC344_RESULTS + 0x10 * i;
+            if c.bus.read32(e) == 0 {
+                c.bus.write32(e, target);
+                c.bus.write32(e + 4, v0.unwrap_or(0));
+                c.bus.write32(e + 8, f0.unwrap_or(0));
+                c.bus
+                    .write32(e + 0xc, v0.is_some() as u32 | (f0.is_some() as u32) << 1);
+                return;
+            }
+        }
+        panic!("too many forced results");
+    }
+
+    /// A random float vector with `w` 0.
+    pub(crate) fn oc344_vec(r: &mut Rng, range: f32) -> [u32; 4] {
+        [r.f32(range), r.f32(range), r.f32(range), 0]
+    }
+
+    /// `ComputerActorRider_ctor`: most-derived (with the `cRider` links and
+    /// `Rider_ctor`, returned from at its first call) and base-subobject
+    /// (the vtable copies with adjusted deltas), actor or not.
+    /// `RiderBase_ctor` returns at its first back edge (event hook);
+    /// `ComputerActorRider_Init` runs for real with faked callees.
+    #[test]
+    fn computer_actor_rider_ctor_matches() {
+        oc344_install();
+        covered(
+            ee::s00::f_00108c80__generated,
+            computer_actor_rider_ctor,
+            120,
+            &|c, seed| {
+                let mut r = oc344_machine(c, seed, 0x0010_8c80, 2);
+                let me = DATA + 0x1000;
+                let rider = DATA + 0x4000;
+                fill(c, &mut r, me, 0x400);
+                // A base subobject's virtual-base links already point at the
+                // rider (RiderBase_ctor stores through them).
+                for off in COMPUTER_CTOR_RIDER_LINKS {
+                    c.bus.write32(me + off, rider);
+                }
+                // The vtables the copies read, and Init's tables.
+                fill(c, &mut r, 0x0045_85f0, 0x100);
+                fill(c, &mut r, 0x0045_9b80, 0x8);
+                fill(c, &mut r, 0x004f_f130, 0x4);
+                fill(c, &mut r, 0x0043_cf20, 0x4);
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64 | 1
+                };
+                c.g[A2][0] = if seed % 3 == 0 { 0 } else { 1 };
+                c.next_event = 0;
+                c.hooks.event = oc344_ctor_event;
+                c.pc = 0x0010_8c80;
+            },
+        );
+    }
+
+    /// `ComputerActorRider_Init`: the resets, faked difficulty and trick
+    /// counts, the real memsets.
+    #[test]
+    fn computer_actor_rider_init_matches() {
+        oc344_install();
+        covered(
+            ee::s00::f_00108e88__generated,
+            computer_actor_rider_init,
+            200,
+            &|c, seed| {
+                let mut r = oc344_machine(c, seed, 0x0010_8e88, 2);
+                let me = DATA + 0x1000;
+                fill(c, &mut r, me + 0xdf0, 0x60);
+                fill(c, &mut r, 0x004f_f130, 0x4);
+                fill(c, &mut r, COMPUTER_THINK_TABLE, 0x4);
+                c.g[A0][0] = sx(me);
+                c.pc = 0x0010_8e88;
+            },
+        );
+    }
+
+    /// `ComputerActorRider_LoadState`: `RiderBase_LoadState` returns at its
+    /// first stream read; the AI block read is faked; table indexes around
+    /// the table (also negative).
+    #[test]
+    fn computer_actor_rider_load_state_matches() {
+        oc344_install();
+        covered(
+            ee::s00::f_0010a8e8__generated,
+            computer_actor_rider_load_state,
+            200,
+            &|c, seed| {
+                let mut r = oc344_machine(c, seed, 0x0010_a8e8, 1);
+                let me = DATA + 0x1000;
+                let stream = DATA + 0x3000;
+                fill(c, &mut r, me + 0xf30, 0x8);
+                let vt = vtable(c, &mut r, &[0x10]);
+                c.bus.write32(stream, vt);
+                fill(c, &mut r, COMPUTER_THINK_TABLE - 0x20, 0x20);
+                let index = (r.next_u32() % 9) as i32 - 2;
+                c.bus.write16(me + 0xf38, index as u16);
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(stream);
+                c.pc = 0x0010_a8e8;
+            },
+        );
+    }
+
+    /// `ComputerActorRider_ThinkBoardPress`: marker or not, nose or tail,
+    /// steer from the faked `ComputeSteer`, balance past the dead zone or
+    /// not.
+    #[test]
+    fn computer_actor_rider_think_board_press_matches() {
+        oc344_install();
+        covered(
+            ee::s00::f_0010ad78__generated,
+            computer_actor_rider_think_board_press,
+            200,
+            &|c, seed| {
+                let mut r = oc344_machine(c, seed, 0x0010_ad78, 3);
+                let me = DATA + 0x1000;
+                let pad = DATA + 0x3000;
+                let rider = DATA + 0x4000;
+                c.bus.write32(me + COMPUTER_RIDER, rider);
+                put_vec(
+                    c,
+                    rider + COMPUTER_RIDER_UP,
+                    [r.f32(1.0), r.f32(1.0), r.edge_f32(), r.f32(1.0)],
+                );
+                fill(c, &mut r, pad, 2);
+                c.bus.write32(GAME_GP - 0x7e2c, 0x3e80_0000);
+                // FindBoardPressMarker's nose/tail word (sp+0x10).
+                let side = if seed % 2 == 0 { 0 } else { r.next_u32() };
+                c.bus.write32(TEST_SP - 0x70 + 0x10, side);
+                let marker = (seed % 3 != 0) as u32;
+                oc344_force(c, 0x0010_bbf8, Some(marker), None);
+                let steer = r.f32(1.5);
+                oc344_force(c, 0x0010_0348, None, Some(steer));
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(pad);
+                c.pc = 0x0010_ad78;
+            },
+        );
+    }
+
+    /// `ComputerActorRider_ThinkRailslide`: jump marker with or without a
+    /// trick plan, balance, lean (state 3/4, animation 0xe, sign of
+    /// `+0xe38`), speed marker with or without a speed, faster or slower.
+    #[test]
+    fn computer_actor_rider_think_railslide_matches() {
+        oc344_install();
+        covered(
+            ee::s00::f_0010aed8__generated,
+            computer_actor_rider_think_railslide,
+            240,
+            &|c, seed| {
+                let mut r = oc344_machine(c, seed, 0x0010_aed8, 4);
+                let me = DATA + 0x1000;
+                let pad = DATA + 0x3000;
+                let rider = DATA + 0x4000;
+                c.bus.write32(me + COMPUTER_RIDER, rider);
+                c.bus.write32(me + 0xe38, r.edge_f32());
+                c.bus.write32(me + 0xdf0, r.f32(80.0));
+                put_vec(
+                    c,
+                    rider + COMPUTER_RIDER_UP,
+                    [r.f32(1.0), r.f32(1.0), r.edge_f32(), r.f32(1.0)],
+                );
+                put_vec(c, rider + COMPUTER_RIDER_VEL, oc344_vec(&mut r, 60.0));
+                c.bus
+                    .write32(rider + COMPUTER_RIDER_STATE, r.next_u32() % 6);
+                c.bus.write32(rider + 0x784, DATA + 0x8000);
+                fill(c, &mut r, pad, 2);
+                c.bus.write32(GAME_GP - 0x7e28, 0x3e80_0000);
+                c.bus.write32(GAME_GP - 0x7e24, 0x40a0_0000);
+                // FindJumpMarker's outputs (sp+0x10..0x20) and
+                // FindSpeedMarker's (sp+0x24).
+                let s = TEST_SP - 0x70;
+                fill(c, &mut r, s + 0x10, 5);
+                if seed % 3 == 0 {
+                    c.bus.write32(s + 0x10, 0);
+                }
+                let speed = if seed % 4 == 0 { 0 } else { r.next_u32() };
+                c.bus.write32(s + 0x24, speed);
+                oc344_force(c, 0x0010_b980, Some((seed % 5 < 2) as u32), None);
+                oc344_force(c, 0x0031_1ae8, Some(0xd + r.next_u32() % 2), None);
+                oc344_force(c, 0x0010_bb18, Some((seed % 7 != 0) as u32), None);
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(pad);
+                c.pc = 0x0010_aed8;
+            },
+        );
+    }
+
+    /// `ComputerActorRider_HasPathEvent0F`: no events (0 or negative), and
+    /// up to 12 events with or without a type-0xf one.
+    #[test]
+    fn computer_actor_rider_has_path_event_0f_matches() {
+        oc344_install();
+        covered(
+            ee::s00::f_0010bc98__generated,
+            computer_actor_rider_has_path_event_0f,
+            200,
+            &|c, seed| {
+                let mut r = oc344_machine(c, seed, 0x0010_bc98, 1);
+                let me = DATA + 0x1000;
+                let rider = DATA + 0x2000;
+                let track = DATA + 0x3000;
+                c.bus.write32(me + COMPUTER_RIDER, rider);
+                c.bus.write32(rider + 0xab8, track);
+                c.bus.write32(rider + 0x4c0, r.f32(1000.0));
+                c.bus.write32(rider + 0x4c4, r.f32(10.0));
+                let vt = vtable(c, &mut r, &[0x8]);
+                c.bus.write32(track + 0x34, vt);
+                let count = match seed % 6 {
+                    0 => 0,
+                    1 => u32::MAX,
+                    _ => 1 + r.next_u32() % 12,
+                };
+                oc344_force(c, FAKE, Some(count), None);
+                let events = TEST_SP - 0xd0;
+                for i in 0..12 {
+                    let ty = if r.next_u32() % 8 == 0 {
+                        0xf
+                    } else {
+                        r.next_u32() % 0x20
+                    };
+                    c.bus.write32(events + 0x10 * i, ty);
+                }
+                c.g[A0][0] = sx(me);
+                c.pc = 0x0010_bc98;
+            },
+        );
+    }
+
+    /// `GetAggressionMode`'s jump table as the ELF holds it.
+    pub(crate) const OC345_AGGRESSION_TABLE: [u32; 5] = [
+        0x0010_c478,
+        0x0010_c498,
+        0x0010_c4ac,
+        0x0010_c4c0,
+        0x0010_c4dc,
+    ];
+
+    /// `Rider_DispatchEventTable`'s jump table as the ELF holds it.
+    pub(crate) const OC345_EVENT_TABLE: [u32; 8] = [
+        0x0010_f274,
+        0x0010_f1f0,
+        0x0010_f204,
+        0x0010_f218,
+        0x0010_f238,
+        0x0010_f264,
+        0x0010_f24c,
+        0x0010_f274,
+    ];
+
+    /// Every level (in and out of 1..5) against modes 0..3.
+    #[test]
+    fn computer_actor_rider_get_aggression_mode_matches() {
+        check(
+            ee::s00::f_0010c450__generated,
+            computer_actor_rider_get_aggression_mode,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10_c450, 0);
+                c.pc = 0x0010_c450;
+                put_words(c, AGGRESSION_MODE_TABLE, &OC345_AGGRESSION_TABLE);
+                let levels: [u64; 9] = [0, 1, 2, 3, 4, 5, 6, u64::MAX, 0x1_0000_0002];
+                c.g[A1][0] = levels[seed as usize % levels.len()];
+                let modes: [u64; 6] = [0, 1, 2, 3, u64::MAX, 0x1_0000_0001];
+                c.g[A2][0] = modes[(seed as usize / 9 + r.next_u32() as usize) % modes.len()];
+            },
+        );
+    }
+
+    /// The BE library singleton and its interface table: every
+    /// `GetInterface` is a fake virtual call (slot 8).
+    pub(crate) fn oc345_belibrary(c: &mut Cpu, r: &mut Rng) {
+        c.bus.write32(GAME_GP - 0x1f04, DATA + 0x1000);
+        c.bus.write32(GAME_GP - 0x1efc, 0);
+        let vt = vtable(c, r, &[8]);
+        c.bus.write32(0x0053_08a8, DATA + 0x1100);
+        c.bus.write32(DATA + 0x1104, vt);
+    }
+
+    /// A rider whose controller's virtual +0x38 is the real leaf
+    /// `SSXAudioSystem_GetInstance` (0x28b180), so it returns the word at
+    /// gp+0x410 (`value`, negative values too).
+    pub(crate) fn oc345_rider_returning(c: &mut Cpu, self_at: u32, rider: u32, value: u32) {
+        let vt = DATA + 0x5000;
+        c.bus.write32(self_at + 0x18, rider);
+        c.bus.write32(rider + 0x6c0, vt);
+        c.bus.write16(vt + 0x38, 0);
+        c.bus.write32(vt + 0x3c, 0x0028_b180);
+        c.bus.write32(GAME_GP + 0x410, value);
+    }
+
+    /// InitDifficulty with the real callees (the ELF image supplies the
+    /// jump tables and literals): levels -5..6, modes 0..3, race kinds,
+    /// overrides, the max-AI cheat and tracks 2/3/4/other. The three
+    /// `GetInterface` calls are fakes (some unwind).
+    #[test]
+    fn computer_actor_rider_init_difficulty_matches() {
+        covered(
+            ee::s00::f_0010c758__generated,
+            computer_actor_rider_init_difficulty,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10_c758, 3);
+                elf_image(c);
+                oc345_belibrary(c, &mut r);
+                let me = DATA + 0x2000;
+                let rider = DATA + 0x4000;
+                let levels = [-5i32, -1, 0, 1, 1, 2, 3, 4, 5, 6];
+                let level = levels[r.next_u32() as usize % levels.len()];
+                oc345_rider_returning(c, me, rider, level as u32);
+                // The world's race mode.
+                let world = DATA + 0x6000;
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0xc0, world + 0x100);
+                c.bus.write32(world + 0x100, r.next_u32() % 4);
+                // GetDifficulty: character 0's difficulties.
+                c.bus
+                    .write16(0x004a_6ca8 + 0x280, (r.next_u32() % 3) as u16);
+                c.bus
+                    .write16(0x004a_6ca8 + 0x284, (r.next_u32() % 3) as u16);
+                let kinds = [0u8, 1, 2, 5, 6];
+                c.bus.write8(
+                    INIT_DIFF_RACE_SETTINGS + 0x48,
+                    kinds[r.next_u32() as usize % kinds.len()],
+                );
+                let overs = [0u8, 4, 5];
+                c.bus.write8(
+                    INIT_DIFF_RACE_SETTINGS + 0x4a,
+                    overs[r.next_u32() as usize % overs.len()],
+                );
+                c.bus.write32(
+                    INIT_DIFF_CHEATS,
+                    if seed % 4 == 0 {
+                        0x4
+                    } else {
+                        r.next_u32() & !4
+                    },
+                );
+                c.bus
+                    .write32(0x0053_5c08, [0u32, 2, 3, 4][(seed as usize / 4) % 4]);
+                c.bus.write32(me + CAR_SKILL_B, r.f32(150.0));
+                c.g[A0][0] = me as u64;
+            },
+        );
+    }
+
+    /// SetAttribsForPeak on peaks 0..3 (track 0's peak word) with rider
+    /// indices 0..7; the `GetInterface` calls are fakes (some unwind) and
+    /// `SetAllAttribs` runs for real.
+    #[test]
+    fn computer_actor_rider_set_attribs_for_peak_matches() {
+        covered(
+            ee::s00::f_0010c9a8__generated,
+            computer_actor_rider_set_attribs_for_peak,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10_c9a8, 2);
+                oc345_belibrary(c, &mut r);
+                let me = DATA + 0x2000;
+                oc345_rider_returning(c, me, DATA + 0x4000, r.next_u32() % 8);
+                c.bus.write32(0x0053_5c08, 0);
+                c.bus.write32(0x0043_d950 + 0x54, seed % 4);
+                c.g[A0][0] = me as u64;
+            },
+        );
+    }
+
+    /// The Rider_ReportRiderHit0 fixture (see its test): no sound views,
+    /// speech volume 0, fake GetRiderIndex methods, real AddAggression on
+    /// filled records. `first_index` is the fake-call number of the first
+    /// GetRiderIndex.
+    pub(crate) fn oc345_hit_fixture(
+        c: &mut Cpu,
+        seed: u32,
+        salt: u64,
+        calls: u32,
+        first_index: u32,
+    ) {
+        use crate::game::be::beintaggression::{AGGRESSION_MESSAGES_OFF, AGGRESSION_RECORDS};
+        let mut r = machine(c, seed, salt, calls);
+        let gp = GAME_GP;
+        let world = DATA + 0x5_0000;
+        let audio = DATA + 0x1_0000;
+        let agg = DATA + 0x6_0000;
+        let (a, b) = (DATA, DATA + 0x1000);
+        c.bus.write32(gp + 0x410, audio);
+        c.bus.write32(audio + 0x62fc, 0);
+        c.bus.write32(gp - 0x848, world);
+        c.bus.write32(world + 0x84, world + 0x100);
+        c.bus.write32(world + 0x100 + 0x84, world + 0x300);
+        c.bus.write32(world + 0x300 + 0x10, 0);
+        c.bus.write32(world + 0x100 + 0x28, world + 0x200);
+        c.bus.write32(world + 0x200, 1 + r.next_u32() % 9);
+        c.bus.write32(gp - 0x1ea4, agg);
+        for rider in [a, b] {
+            let vt = vtable(c, &mut r, &[0x28, HIT_INDEX_SLOT]);
+            c.bus.write32(rider + 0x6c0, vt);
+            // No sfx table: the bump and hit-boost sounds stop early.
+            c.bus.write32(rider + 0x874, 0);
+        }
+        let rider = 1 + r.next_u32() % 2;
+        let rival = 1 + r.next_u32() % 3;
+        c.bus.write32(LOG_RESULTS + 4 * first_index, rider);
+        c.bus.write32(LOG_RESULTS + 4 * (first_index + 1), rival);
+        let pick = |r: &mut Rng, v: &[i32]| v[(r.next_u32() as usize) % v.len()];
+        for idx in 0..4u32 {
+            c.bus.write32(0x0053_05b0 + 4 * idx, idx);
+            let rec = 0x0053_5b20 + 0x1c * idx;
+            let flag = pick(&mut r, &[-1, 0, 1]) as u32;
+            c.bus.write32(rec + 0xc, flag);
+            c.bus.write32(rec + 0x10, r.next_u32() % 4);
+            c.bus.write8(rec + 0x11, (r.next_u32() % 5) as u8);
+        }
+        for profile in 0..3u32 {
+            for ch in 0..5u32 {
+                for rv in 0..5u32 {
+                    let e = AGGRESSION_RECORDS + profile * 0x9b50 + ch * 0xf88 + rv * 3;
+                    c.bus
+                        .write8(e + 0xbc1, pick(&mut r, &[-1, 0, 1, 2, 3, 4]) as u8);
+                    c.bus
+                        .write8(e + 0xbc2, pick(&mut r, &[-1, 0, 1, 2, 3, 4, 5]) as u8);
+                    c.bus.write8(
+                        e + 0xbc3,
+                        pick(&mut r, &[-3, 0, 4, 9, 14, 15, 19, 24, 30]) as u8,
+                    );
+                }
+            }
+        }
+        c.bus
+            .write8(AGGRESSION_MESSAGES_OFF, (r.next_u32() % 2) as u8);
+        c.g[A0][0] = a as u64;
+        c.g[A1][0] = b as u64;
+    }
+
+    /// Rider_ReportRiderHit1: as Hit0 (the collision sound's position
+    /// method is fake call 0).
+    #[test]
+    fn rider_report_rider_hit1_matches() {
+        covered(
+            ee::s00::f_0010e2e8__generated,
+            rider_report_rider_hit1,
+            200,
+            &|c, seed| oc345_hit_fixture(c, seed, 0x10_e2e8, 3, 1),
+        );
+    }
+
+    /// Rider_ReportRiderHit2: the bump sound stops early (no sfx table), so
+    /// the GetRiderIndex fakes are calls 0 and 1.
+    #[test]
+    fn rider_report_rider_hit2_matches() {
+        covered(
+            ee::s00::f_0010e3a8__generated,
+            rider_report_rider_hit2,
+            200,
+            &|c, seed| oc345_hit_fixture(c, seed, 0x10_e3a8, 2, 0),
+        );
+    }
+
+    /// Rider_ReportRiderHit3: as Hit2, plus the real knockdown metric (no
+    /// HUD: +0x1b0 = 0) and AddBoost (boost state 3 returns at once).
+    #[test]
+    fn rider_report_rider_hit3_matches() {
+        covered(
+            ee::s00::f_0010e468__generated,
+            rider_report_rider_hit3,
+            200,
+            &|c, seed| {
+                oc345_hit_fixture(c, seed, 0x10_e468, 2, 0);
+                let b = DATA + 0x1000;
+                c.bus.write32(b + 0x790, DATA + 0x3000);
+                c.bus.write32(b + 0x304, 3);
+            },
+        );
+    }
+
+    /// Rider_v13/v14 with the real sound callees on their short paths: the
+    /// rider has no sfx table, arcade speech is off or the rider's +0x470
+    /// is not negative.
+    pub(crate) fn oc345_sfx_fixture(c: &mut Cpu, seed: u32, salt: u64, field: u32) {
+        let mut r = machine(c, seed, salt, 0);
+        let audio = DATA + 0x1_0000;
+        let rider = DATA + 0x2000;
+        c.bus.write32(GAME_GP + 0x410, audio);
+        let speech_on = if seed % 2 == 0 { 0 } else { 0x3f80_0000 };
+        c.bus.write32(audio + 0x62bc + 0xa0, speech_on);
+        c.bus.write32(rider + 0x874, 0);
+        c.bus.write32(rider + 0x470, r.f32(10.0) & 0x7fff_ffff);
+        c.bus.write32(rider + field, r.edge_f32());
+        c.f[12] = r.edge_f32();
+        c.g[A0][0] = rider as u64;
+    }
+
+    #[test]
+    fn rider_v13_matches() {
+        check(
+            ee::s00::f_0010e770__generated,
+            rider_v13_2,
+            60,
+            &|c, seed| oc345_sfx_fixture(c, seed, 0x10_e770, 0x2e8),
+        );
+    }
+
+    #[test]
+    fn rider_v14_matches() {
+        check(
+            ee::s00::f_0010e7d0__generated,
+            rider_v14_2,
+            60,
+            &|c, seed| oc345_sfx_fixture(c, seed, 0x10_e7d0, 0x2ec),
+        );
+    }
+
+    /// Gate for the DispatchEventTable fakes (in each test machine's RAM).
+    pub(crate) const OC345_CTRL: u32 = DATA + 0x0f_8000;
+
+    pub(crate) const OC345_MAGIC: u32 = 0x4f43_3435;
+
+    pub(crate) static OC345_PREV_AWARD: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC345_PREV_RESET: AtomicUsize = AtomicUsize::new(0);
+
+    /// Gated fake for `Rider_AwardBonusBoost` (0x10e8b8).
+    pub(crate) fn oc345_fake_award_bonus_boost(c: &mut Cpu) {
+        if c.bus.read32(OC345_CTRL) != OC345_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &OC345_PREV_AWARD,
+                ee::s00::f_0010e8b8__generated,
+            );
+        }
+        fake_call(c, 0x0010_e8b8);
+    }
+
+    /// Gated fake for `Rider_CheckResetPath` (0x116120).
+    pub(crate) fn oc345_fake_check_reset_path(c: &mut Cpu) {
+        if c.bus.read32(OC345_CTRL) != OC345_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &OC345_PREV_RESET,
+                ee::s00::f_00116120__generated,
+            );
+        }
+        fake_call(c, 0x0011_6120);
+    }
+
+    /// Every event kind 0..9 (and a huge one): the controller virtuals are
+    /// fakes, AwardBonusBoost and CheckResetPath gated fakes, AddBoost real
+    /// (boost state 3 returns at once).
+    #[test]
+    fn rider_dispatch_event_table_matches() {
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s00::OVERRIDE_0010E8B8),
+            oc345_fake_award_bonus_boost,
+            &OC345_PREV_AWARD,
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s00::OVERRIDE_00116120),
+            oc345_fake_check_reset_path,
+            &OC345_PREV_RESET,
+        );
+        covered(
+            ee::s00::f_0010f1c0__generated,
+            rider_dispatch_event_table,
+            220,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10_f1c0, 1);
+                c.pc = 0x0010_f1c0;
+                c.bus.write32(OC345_CTRL, OC345_MAGIC);
+                put_words(c, RIDER_EVENT_TABLE, &OC345_EVENT_TABLE);
+                let rider = DATA + 0x2000;
+                let vt = vtable(c, &mut r, &[0x68, 0x70, 0x78]);
+                c.bus.write32(rider + 0x6c0, vt);
+                c.bus.write32(rider + 0x304, 3);
+                let kinds: [u64; 11] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, u64::MAX];
+                c.g[A0][0] = rider as u64;
+                c.g[A1][0] = kinds[seed as usize % kinds.len()];
+                c.f[12] = r.f32(100.0);
             },
         );
     }

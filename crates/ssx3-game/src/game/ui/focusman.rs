@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -33,6 +34,18 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "FocusMan_CollectNodeObjects",
     ),
     (0x0010_3480, focus_man_save_state, "FocusMan_SaveState"),
+    (
+        0x0010_3308,
+        focus_man_remove_section_objects,
+        "FocusMan_RemoveSectionObjects",
+    ),
+    (0x0010_3358, focus_man_reset, "FocusMan_Reset"),
+    (
+        0x0010_33f8,
+        focus_man_remove_focus_box,
+        "FocusMan_RemoveFocusBox",
+    ),
+    (0x0010_3578, focus_man_load_state, "FocusMan_LoadState"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1303,6 +1316,290 @@ pub fn focus_man_save_state(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Focus manager (`cFocusMan`).
+//
+// Layout: `+0` focus box count, box i at `+0x20 + 0x20*i` (0x10 bytes) with
+// its owner at `+0x10 + 0x20*i`, `+0xd0` current focus (-1 none), `+0xd4`
+// loaded flag, `+0xd8` object count, `+0xdc` object pointers.
+
+/// Object count.
+pub(crate) const FOCUS_MAN_OBJECT_COUNT: u32 = 0xd8;
+
+/// Object pointers.
+pub(crate) const FOCUS_MAN_OBJECTS: u32 = 0xdc;
+
+/// The current focus (-1: none).
+pub(crate) const FOCUS_MAN_CURRENT: u32 = 0xd0;
+
+/// `void FocusMan_RemoveSectionObjects(cFocusMan *fm, int section)`
+/// (0x103308): keep only the objects whose section byte (+0x78) is not
+/// `section`, compacting the list in place.
+pub fn focus_man_remove_section_objects(c: &mut Cpu) {
+    let fm = c.g[A0][0] as u32;
+    c.cycles += 4;
+    c.g[V0][0] = c.lw(fm.wrapping_add(FOCUS_MAN_OBJECT_COUNT));
+    c.g[T1][0] = 0;
+    c.g[T0][0] = 0;
+    if (c.g[V0][0] as i64) > 0 {
+        c.cycles += 2;
+        c.g[A2][0] = sx(fm.wrapping_add(FOCUS_MAN_OBJECTS));
+        c.g[A3][0] = c.g[A2][0];
+        loop {
+            c.cycles += 4;
+            c.g[V1][0] = c.lw(c.g[A2][0] as u32);
+            c.g[V0][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0x78));
+            if c.g[V0][0] != c.g[A1][0] {
+                // Kept.
+                c.cycles += 4;
+                c.sw(c.g[A3][0] as u32, c.g[V1][0]);
+                c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(1));
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(4));
+            }
+            c.g[V0][0] = c.lw(fm.wrapping_add(FOCUS_MAN_OBJECT_COUNT));
+            c.cycles += 4;
+            c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(1));
+            c.g[V0][0] = ((c.g[T1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(4));
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0010_3320);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.sw(fm.wrapping_add(FOCUS_MAN_OBJECT_COUNT), c.g[T0][0]);
+    ret(c);
+}
+
+/// `void cFocusMan::reset()` (0x103358): clear flag 0x100 of every object
+/// (+0x8), empty the object list and set the current focus to -1.
+pub fn focus_man_reset(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[T0][0] = c.g[A0][0];
+    let fm = c.g[T0][0] as u32;
+    c.g[V0][0] = c.lw(fm.wrapping_add(FOCUS_MAN_OBJECT_COUNT));
+    c.g[A2][0] = 0;
+    if (c.g[V0][0] as i64) > 0 {
+        c.cycles += 4;
+        c.g[A3][0] = 0xffff_ffff_ffff_feff;
+        c.g[A1][0] = sx(fm.wrapping_add(FOCUS_MAN_OBJECTS));
+        loop {
+            c.cycles += 9;
+            c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            let obj = c.g[V0][0] as u32;
+            c.g[V1][0] = c.lw(obj.wrapping_add(8));
+            c.g[V1][0] &= c.g[A3][0];
+            c.sw(obj.wrapping_add(8), c.g[V1][0]);
+            c.g[A0][0] = c.lw(fm.wrapping_add(FOCUS_MAN_OBJECT_COUNT));
+            c.g[A0][0] = ((c.g[A2][0] as i64) < (c.g[A0][0] as i64)) as u64;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(4));
+            if c.g[A0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0010_3378);
+            }
+        }
+    }
+    c.cycles += 4;
+    c.g[V0][0] = u64::MAX;
+    c.sw(fm.wrapping_add(FOCUS_MAN_OBJECT_COUNT), 0);
+    c.sw(fm.wrapping_add(FOCUS_MAN_CURRENT), c.g[V0][0]);
+    ret(c);
+}
+
+/// `void FocusMan_RemoveFocusBox(cFocusMan *fm, void *owner)` (0x1033f8):
+/// current focus = -1; remove the first focus box whose owner (+0x10 of its
+/// 0x20-byte entry) is `owner`, moving the later ones down, and decrement the
+/// count.
+pub fn focus_man_remove_focus_box(c: &mut Cpu) {
+    let fm = c.g[A0][0] as u32;
+    c.cycles += 5;
+    c.g[V0][0] = u64::MAX;
+    c.g[A3][0] = c.lw(fm);
+    c.sw(fm.wrapping_add(FOCUS_MAN_CURRENT), c.g[V0][0]);
+    c.g[A2][0] = 0;
+    if (c.g[A3][0] as i64) > 0 {
+        c.cycles += 1;
+        c.g[V1][0] = c.g[A0][0];
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+            if c.g[V0][0] == c.g[A1][0] {
+                // Found at index a2: shift the rest down.
+                c.cycles += 4;
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+                c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[A3][0] as i64)) as u64;
+                let last = c.g[V0][0] == 0;
+                c.g[V0][0] = sx((c.g[A2][0] as u32) << 5);
+                if !last {
+                    c.cycles += 1;
+                    c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(fm));
+                    loop {
+                        c.cycles += 9;
+                        let entry = c.g[A1][0] as u32;
+                        c.lq(V0, entry.wrapping_add(0x20));
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+                        c.lq(V1, entry.wrapping_add(0x10));
+                        c.sq(V0, entry);
+                        c.sq(V1, entry.wrapping_sub(0x10));
+                        c.g[V0][0] = c.lw(fm);
+                        c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        c.g[A1][0] = sx(entry.wrapping_add(0x20));
+                        if c.g[V0][0] == 0 {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0010_3430);
+                        }
+                    }
+                }
+                c.cycles += 4;
+                c.g[V0][0] = c.lw(fm);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                c.sw(fm, c.g[V0][0]);
+                ret(c);
+                return;
+            }
+            c.g[A3][0] = c.lw(fm);
+            c.cycles += 4;
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[A3][0] as i64)) as u64;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0010_3410);
+            }
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// One `cStream` virtual call of FocusMan_LoadState: the stream is in s2,
+/// `this` adjusted by the halfword at `vt + delta_off`, the method at
+/// `vt + delta_off + 4`; the vtable in `vt_reg`, the method in `fn_reg`.
+pub(crate) fn focus_man_load_vcall(
+    c: &mut Cpu,
+    vt_reg: usize,
+    fn_reg: usize,
+    delta_off: u32,
+    ret_to: u32,
+) -> crate::call::Flow {
+    let vt = c.g[vt_reg][0] as u32;
+    c.g[A0][0] = c.lh(vt.wrapping_add(delta_off));
+    c.g[fn_reg][0] = c.lw(vt.wrapping_add(delta_off + 4));
+    let method = c.g[fn_reg][0] as u32;
+    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, method, ret_to)
+}
+
+/// `void FocusMan_LoadState(cFocusMan *fm, cStream *s)` (0x103578): reads
+/// the current focus (+0xd0), the boxes (0x10 bytes each, stride 0x20; the
+/// count at +0 is already set), sets the loaded flag (+0xd4) to 1, reads the
+/// object count (+0xd8) and then each object (`s->ReadObject()`), whose
+/// flags (+0x8) get 0x100 set and 0x200 cleared.
+pub fn focus_man_load_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x60);
+        c.g[A2][0] = 4;
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = 0;
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S0, 0x50);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S4, 0x10);
+        c.g[A1][0] = sx((c.g[S3][0] as u32).wrapping_add(FOCUS_MAN_CURRENT));
+        frame.save_ra(c, 0);
+        // s->Read(&fm->current, 4)
+        c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+        focus_man_load_vcall(c, V0, V1, 0x10, 0x0010_35bc)?;
+        c.g[V0][0] = c.lw(c.g[S3][0] as u32);
+        let any = (c.g[V0][0] as i64) > 0;
+        c.g[V0][0] = 1;
+        if any {
+            c.cycles += 2;
+            c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x20));
+            c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+            loop {
+                // s->Read(&fm->boxes[i], 0x10)
+                c.cycles += 12;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A2][0] = 0x10;
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x20));
+                focus_man_load_vcall(c, V0, V1, 0x10, 0x0010_35f0)?;
+                c.g[V0][0] = c.lw(c.g[S3][0] as u32);
+                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    c.cycles += 1;
+                    c.g[V0][0] = 1;
+                    break;
+                }
+                c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0010_35d0);
+                }
+            }
+        }
+        // fm->loaded = 1; s->Read(&fm->object_count, 4)
+        c.cycles += 12;
+        c.g[A1][0] = sx((c.g[S3][0] as u32).wrapping_add(FOCUS_MAN_OBJECT_COUNT));
+        c.sw((c.g[S3][0] as u32).wrapping_add(0xd4), c.g[V0][0]);
+        c.g[A2][0] = 4;
+        c.g[S4][0] = 0;
+        c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+        focus_man_load_vcall(c, V0, V1, 0x10, 0x0010_3628)?;
+        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(FOCUS_MAN_OBJECT_COUNT));
+        let any = (c.g[V0][0] as i64) > 0;
+        c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_add(FOCUS_MAN_OBJECTS));
+        if any {
+            c.cycles += 3;
+            c.g[S1][0] = 0xffff_ffff_ffff_fdff;
+            loop {
+                // fm->objects[j] = s->ReadObject(), flags |= 0x100, &= ~0x200
+                c.cycles += 15;
+                c.g[V1][0] = c.lw(c.g[S2][0] as u32);
+                c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(1));
+                focus_man_load_vcall(c, V1, V0, 0x18, 0x0010_3658)?;
+                let obj = c.g[V0][0] as u32;
+                c.g[V1][0] = c.lw(obj.wrapping_add(8));
+                c.g[V1][0] |= 0x100;
+                c.g[V1][0] &= c.g[S1][0];
+                c.sw(obj.wrapping_add(8), c.g[V1][0]);
+                c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(FOCUS_MAN_OBJECT_COUNT));
+                c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(4));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0010_3640);
+                }
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1623,6 +1920,144 @@ pub(crate) mod tests {
             200,
             &|c, seed| {
                 focus_man_setup(c, seed, 10);
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    // ---------------------------------------------------- FocusMan
+
+    pub(crate) const OC341_FOCUS: u32 = DATA;
+
+    pub(crate) const OC341_FOCUS_OBJS: u32 = DATA + 0x1000;
+
+    /// A focus manager with 0, a negative or 1..6 objects of sections 0..2.
+    pub(crate) fn oc341_focus_objects(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        fill(c, r, OC341_FOCUS, 0x100 / 4);
+        let count = match seed % 6 {
+            0 => 0,
+            1 => 0xffff_fffe,
+            _ => 1 + r.next_u32() % 6,
+        };
+        c.bus.write32(OC341_FOCUS + FOCUS_MAN_OBJECT_COUNT, count);
+        for i in 0..6u32 {
+            let obj = OC341_FOCUS_OBJS + 0x100 * i;
+            c.bus.write32(OC341_FOCUS + FOCUS_MAN_OBJECTS + 4 * i, obj);
+            c.bus.write8(obj + 0x78, (r.next_u32() % 3) as u8);
+            c.bus.write32(obj + 8, r.next_u32());
+        }
+        c.g[A0][0] = sx(OC341_FOCUS);
+    }
+
+    #[test]
+    fn focus_man_remove_section_objects_matches() {
+        check(
+            ee::s00::f_00103308__generated,
+            focus_man_remove_section_objects,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0c34_1007 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0010_3308;
+                oc341_focus_objects(c, &mut r, seed);
+                c.g[A1][0] = if seed % 7 == 0 {
+                    (r.next_u32() as u64) << 32 | (r.next_u32() % 3) as u64
+                } else {
+                    (r.next_u32() % 3) as u64
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn focus_man_reset_matches() {
+        check(
+            ee::s00::f_00103358__generated,
+            focus_man_reset,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0c34_1008 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0010_3358;
+                oc341_focus_objects(c, &mut r, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn focus_man_remove_focus_box_matches() {
+        check(
+            ee::s00::f_001033f8__generated,
+            focus_man_remove_focus_box,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0c34_1009 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0010_33f8;
+                fill(c, &mut r, OC341_FOCUS, 0x100 / 4);
+                let count = match seed % 6 {
+                    0 => 0,
+                    1 => 0xffff_ffff,
+                    _ => 1 + r.next_u32() % 5,
+                };
+                c.bus.write32(OC341_FOCUS, count);
+                for i in 0..5u32 {
+                    c.bus.write32(OC341_FOCUS + 0x10 + 0x20 * i, 0x100 + i);
+                }
+                c.g[A0][0] = sx(OC341_FOCUS);
+                c.g[A1][0] = 0x100 + (r.next_u32() % 6) as u64;
+            },
+        );
+    }
+
+    // ------------------------------------------------- FocusMan_LoadState
+
+    pub(crate) const OC341_LOAD_FOCUS: u32 = DATA + 0x5_0000;
+
+    pub(crate) const OC341_LOAD_STREAM: u32 = DATA + 0x5_1000;
+
+    pub(crate) const OC341_LOAD_STREAM_VT: u32 = DATA + 0x5_2000;
+
+    /// `FocusMan_LoadState`: empty, negative and 1..4 counts for the boxes
+    /// and the objects; fakes return objects in the data area and unwind at
+    /// random calls.
+    #[test]
+    fn focus_man_load_state_matches() {
+        covered(
+            ee::s00::f_00103578__generated,
+            focus_man_load_state,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_3578, 10);
+                c.pc = 0x0010_3578;
+                let boxes = match seed % 5 {
+                    0 => 0,
+                    1 => 0xffff_fffe,
+                    _ => 1 + r.next_u32() % 4,
+                };
+                let objects = match seed % 7 {
+                    0 => 0,
+                    1 => 0x8000_0000,
+                    _ => 1 + r.next_u32() % 4,
+                };
+                fill(c, &mut r, OC341_LOAD_FOCUS, 0x100 / 4);
+                c.bus.write32(OC341_LOAD_FOCUS, boxes);
+                c.bus
+                    .write32(OC341_LOAD_FOCUS + FOCUS_MAN_OBJECT_COUNT, objects);
+                c.bus.write32(OC341_LOAD_STREAM, OC341_LOAD_STREAM_VT);
+                c.bus.write16(
+                    OC341_LOAD_STREAM_VT + 0x10,
+                    (r.next_u32() % 0x40) as u16 & !3,
+                );
+                c.bus.write32(OC341_LOAD_STREAM_VT + 0x14, FAKE);
+                c.bus.write16(
+                    OC341_LOAD_STREAM_VT + 0x18,
+                    (r.next_u32() % 0x40) as u16 & !3,
+                );
+                c.bus.write32(OC341_LOAD_STREAM_VT + 0x1c, FAKE + 0x10);
+                c.g[A0][0] = sx(OC341_LOAD_FOCUS);
+                c.g[A1][0] = sx(OC341_LOAD_STREAM);
             },
         );
     }

@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -127,6 +128,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "MultiSplineModifier_Save",
     ),
     (0x0035_9f30, spline_modifier_save, "SplineModifier_Save"),
+    (
+        0x0035_aad0,
+        multi_spline_modifier_add_ref,
+        "MultiSplineModifier_AddRef",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2739,6 +2745,22 @@ pub fn spline_modifier_save(c: &mut Cpu) {
     })
 }
 
+// ------------------------------------------------ MultiSplineModifier_AddRef
+
+/// The modifier's reference count (`+0x34`).
+pub(crate) const MULTI_SPLINE_MODIFIER_REFS: u32 = 0x34;
+
+/// `int MultiSplineModifier_AddRef(MultiSplineModifier* m)` (0x35aad0):
+/// one more reference; returns the new count.
+pub fn multi_spline_modifier_add_ref(c: &mut Cpu) {
+    c.cycles += 4;
+    let refs = Addr(abi::arg(c, 0)).off(MULTI_SPLINE_MODIFIER_REFS);
+    let n = abi::addu(refs.lw(c), 1);
+    c.g[V0][0] = n;
+    refs.sw(c, n);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3633,6 +3655,29 @@ pub(crate) mod tests {
                 c.bus.write32(vt + 0xc, FAKE);
                 c.g[A0][0] = sx(DATA + (r.next_u32() & 0xff0));
                 c.g[A1][0] = sx(stream);
+            },
+        );
+    }
+
+    /// `MultiSplineModifier_AddRef` with counts around 0, -1 and the wrap.
+    #[test]
+    fn multi_spline_modifier_add_ref_matches() {
+        check(
+            ee::s11::f_0035aad0__generated,
+            multi_spline_modifier_add_ref,
+            64,
+            &|c, seed| {
+                let mut r = Rng(0x0035_aad0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0035_aad0;
+                c.g[A0][0] = sx(DATA + 0x200);
+                let n = match seed % 4 {
+                    0 => 0,
+                    1 => u32::MAX,
+                    2 => 0x7fff_ffff,
+                    _ => r.next_u32(),
+                };
+                c.bus.write32(DATA + 0x200 + MULTI_SPLINE_MODIFIER_REFS, n);
             },
         );
     }

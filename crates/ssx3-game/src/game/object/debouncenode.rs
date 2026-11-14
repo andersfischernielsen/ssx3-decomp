@@ -3044,8 +3044,6 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ealib::seg_2b4578::tests::OC327_MAGIC;
     pub(crate) use crate::game::ealib::seg_2b4578::tests::OC327_RET;
     use std::sync::atomic::AtomicUsize;
-    use std::sync::atomic::Ordering;
-    use std::sync::Once;
 
     pub(crate) const RET_RUN_SCRIPT: u32 = 1;
 
@@ -3081,34 +3079,40 @@ pub(crate) mod tests {
 
     /// The allocator, shared by both create paths (installed once, chained).
     pub(crate) fn oc327_install_alloc() {
-        static ONCE: Once = Once::new();
-        ONCE.call_once(|| unsafe {
-            let cur = ee::s10::OVERRIDE_00317D70 as usize;
-            if cur != oc327_fake_alloc as fn(&mut Cpu) as usize {
-                OC327_PREV_ALLOC.store(cur, Ordering::Relaxed);
-                ee::s10::OVERRIDE_00317D70 = oc327_fake_alloc;
-            }
-        });
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc327_fake_alloc,
+            &OC327_PREV_ALLOC,
+        );
     }
 
     /// The kill-script chain of `Debounce_KillRestorable` (the script runner,
     /// the allocator and the dead-node ctor) is faked.
     pub(crate) fn oc327_install_debounce() {
-        static ONCE: Once = Once::new();
-        ONCE.call_once(|| unsafe {
-            OC327_PREV_RUN_SCRIPT.store(ee::s10::OVERRIDE_0030A598 as usize, Ordering::Relaxed);
-            ee::s10::OVERRIDE_0030A598 = oc327_fake_run_script;
-            // `RestoreNode_ctor` has no slot of its own: its base constructor
-            // (`WorldObj_ctor`) stops it from touching the world.
-            OC327_PREV_DEAD_CTOR.store(ee::s11::OVERRIDE_003506D8 as usize, Ordering::Relaxed);
-            ee::s11::OVERRIDE_003506D8 = oc327_fake_dead_ctor;
-            OC327_PREV_WORLD_OBJ_CTOR.store(ee::s11::OVERRIDE_0034FB00 as usize, Ordering::Relaxed);
-            ee::s11::OVERRIDE_0034FB00 = oc327_fake_world_obj_ctor;
-            // `WScriptMan_RunKillScript`'s script lookup, so a refusing kill
-            // script stops there.
-            OC327_PREV_WSCRIPT_CACHE.store(ee::s13::OVERRIDE_003A6B78 as usize, Ordering::Relaxed);
-            ee::s13::OVERRIDE_003A6B78 = oc327_fake_wscript_cache;
-        });
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_0030A598),
+            oc327_fake_run_script,
+            &OC327_PREV_RUN_SCRIPT,
+        );
+        // `RestoreNode_ctor` has no slot of its own: its base constructor
+        // (`WorldObj_ctor`) stops it from touching the world.
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_003506D8),
+            oc327_fake_dead_ctor,
+            &OC327_PREV_DEAD_CTOR,
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_0034FB00),
+            oc327_fake_world_obj_ctor,
+            &OC327_PREV_WORLD_OBJ_CTOR,
+        );
+        // `WScriptMan_RunKillScript`'s script lookup, so a refusing kill
+        // script stops there.
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s13::OVERRIDE_003A6B78),
+            oc327_fake_wscript_cache,
+            &OC327_PREV_WSCRIPT_CACHE,
+        );
         oc327_install_alloc();
     }
 

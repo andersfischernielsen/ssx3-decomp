@@ -539,6 +539,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         speech_system_on_spch_event,
         "SpeechSystem_OnSpchEvent",
     ),
+    (
+        0x002a_f8a8,
+        speech_system_spch_event_callback,
+        "SpeechSystem_SpchEventCallback",
+    ),
+    (
+        0x002b_1248,
+        speech_system_clear_prebuffer,
+        "SpeechSystem_ClearPrebuffer",
+    ),
 ];
 
 /// Same-shard direct callees used above.
@@ -8758,6 +8768,76 @@ pub fn speech_system_is_instance_ready(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// SpeechSystem_SpchEventCallback (0x2af8a8).
+
+/// `int SpeechSystem_OnSpchEvent(SpeechSystem*, SpchEvent*)` (0x2b0f48).
+pub(crate) const SPCH_EVENT_CB_ON_SPCH_EVENT: Callee = Callee {
+    addr: 0x002b_0f48,
+    f: ee::s08::SpeechSystem_OnSpchEvent,
+};
+
+/// gp-relative: the flag that makes the callback refuse events.
+pub(crate) const SPCH_EVENT_CB_BLOCKED: u32 = 0x6cc;
+
+/// gp-relative: the speech system the events go to.
+pub(crate) const SPCH_EVENT_CB_SYSTEM: u32 = 0x6c4;
+
+/// `int SpeechSystem_SpchEventCallback(SpchEvent* ev)` (0x2af8a8): the
+/// speech library's event callback. Refused (-1) while the flag at
+/// `gp+0x6cc` is set; otherwise the event goes to
+/// `SpeechSystem_OnSpchEvent(system at gp+0x6c4, ev)` and its result is
+/// returned.
+pub fn speech_system_spch_event_callback(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        let gp = r32(c, GP);
+        c.g[V0][0] = Addr(gp.wrapping_add(SPCH_EVENT_CB_BLOCKED)).lw(c);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A0][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            c.g[V0][0] = u64::MAX;
+            frame.restore_ra(c, 0);
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = Addr(gp.wrapping_add(SPCH_EVENT_CB_SYSTEM)).lw(c);
+            SPCH_EVENT_CB_ON_SPCH_EVENT.call(c, 0x002a_f8c4)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SpeechSystem_ClearPrebufferCallback (0x2ab1a0) / SpeechSystem_ClearPrebuffer (0x2b1248)
+
+/// The speech stream object's stream handle.
+pub(crate) const SPEECH_STREAM_HANDLE: u32 = 0x1c;
+
+pub(crate) const SPEECH_CLEAR_PREBUFFER_CALLBACK: Callee = Callee {
+    addr: 0x002a_b1a0,
+    f: ee::s08::SpeechSystem_ClearPrebufferCallback,
+};
+
+/// `void SpeechSystem_ClearPrebuffer(SpeechSystem* self)` (0x2b1248): run the
+/// clear-prebuffer callback with `a0 = *self` (`a1` passes through).
+pub fn speech_system_clear_prebuffer(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw(r32(c, A0));
+        SPEECH_CLEAR_PREBUFFER_CALLBACK.call(c, 0x002b_1258)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -12687,6 +12767,87 @@ pub(crate) mod tests {
                 c.pc = 0x002b_0e28;
                 c.g[A0][0] = (OC330_SYS + 0x5560) as u64;
                 c.g[A1][0] = (seed % 4) as u64;
+            },
+        );
+    }
+
+    use std::sync::atomic::AtomicUsize;
+
+    pub(crate) use crate::game::lib::snd::tests::oc337_arm;
+    pub(crate) use crate::game::lib::snd::tests::OC337_CTRL;
+
+    pub(crate) const OC337_MAGIC_SPEECH: u32 = 0x0c33_7a01;
+
+    // -- SpeechSystem_SpchEventCallback -------------------------------------
+
+    pub(crate) static OC337_PREV_ON_SPCH_EVENT: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc337_fake_on_spch_event(c: &mut Cpu) {
+        if c.bus.read32(OC337_CTRL) != OC337_MAGIC_SPEECH {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &OC337_PREV_ON_SPCH_EVENT,
+                ee::s08::f_002b0f48__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fake(c, 0x002b_0f48, ra);
+    }
+
+    /// Blocked (-1) or passed to a fake `SpeechSystem_OnSpchEvent`
+    /// (sometimes unwinding).
+    #[test]
+    fn speech_system_spch_event_callback_matches() {
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s08::OVERRIDE_002B0F48),
+            oc337_fake_on_spch_event,
+            &OC337_PREV_ON_SPCH_EVENT,
+        );
+        covered(
+            ee::s08::f_002af8a8__generated,
+            speech_system_spch_event_callback,
+            90,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_f8a8, 1);
+                c.pc = 0x002a_f8a8;
+                oc337_arm(c, OC337_MAGIC_SPEECH);
+                let blocked = if seed % 3 == 0 { r.next_u32() | 1 } else { 0 };
+                c.bus.write32(GAME_GP + SPCH_EVENT_CB_BLOCKED, blocked);
+                c.bus.write32(GAME_GP + SPCH_EVENT_CB_SYSTEM, DATA + 0x200);
+                c.g[A0][0] = sx(DATA + 0x400 + 0x10 * (seed % 16));
+            },
+        );
+    }
+
+    /// A speech stream at `DATA + 0x100` whose handle (0 or -1) has a
+    /// request or not in `snd_world` (fake lock/unlock hooks).
+    pub(crate) fn oc339_speech_stream(c: &mut Cpu, r: &mut Rng, seed: u32) -> u32 {
+        use crate::game::lib::snd::tests::snd_world;
+        let found = seed % 2 == 0;
+        snd_world(c, r, found);
+        let stream = DATA + 0x100;
+        c.bus.write32(
+            stream + SPEECH_STREAM_HANDLE,
+            if found { 0 } else { 0xffff_ffff },
+        );
+        stream
+    }
+
+    /// `SpeechSystem_ClearPrebuffer`: `*self` is random, `a1` the stream the
+    /// callback reads.
+    #[test]
+    fn speech_system_clear_prebuffer_matches() {
+        covered(
+            ee::s08::f_002b1248__generated,
+            speech_system_clear_prebuffer,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2b_1248, 2);
+                c.pc = 0x002b_1248;
+                let stream = oc339_speech_stream(c, &mut r, seed);
+                c.bus.write32(DATA + 0x200, r.next_u32());
+                c.g[A0][0] = (DATA + 0x200) as u64;
+                c.g[A1][0] = stream as u64;
             },
         );
     }

@@ -1762,7 +1762,11 @@ pub(crate) mod tests {
         ($name:ident, $addr:expr, $gen:path) => {
             fn $name(c: &mut Cpu) {
                 if c.bus.read32(PUA_CTRL) != PUA_MAGIC {
-                    return $gen(c);
+                    return crate::difftest::fakes::fall_back(
+                        c,
+                        crate::difftest::fakes::prev_cell($name),
+                        $gen,
+                    );
                 }
                 pua_fake(c, $addr);
             }
@@ -1831,22 +1835,64 @@ pub(crate) mod tests {
         ee::s01::f_00138960__generated
     );
 
-    /// Install the gated fakes in their callees' slots once per test process.
+    /// Hook the gated fakes in their callees' slots (once per test process;
+    /// with the gate off each runs what its slot held before).
     pub(crate) fn pua_install_fakes() {
-        static ONCE: std::sync::Once = std::sync::Once::new();
-        ONCE.call_once(|| unsafe {
-            ee::s11::OVERRIDE_0032F650 = pua_fake_hull_ctor;
-            ee::s11::OVERRIDE_003342D0 = pua_fake_closest;
-            ee::s11::OVERRIDE_0032F708 = pua_fake_hull_dtor;
-            ee::s00::OVERRIDE_00113998 = pua_fake_clear_air;
-            ee::s00::OVERRIDE_00106538 = pua_fake_translate;
-            ee::s00::OVERRIDE_0011E150 = pua_fake_bounds;
-            ee::s00::OVERRIDE_00105398 = pua_fake_wall;
-            ee::s00::OVERRIDE_00107888 = pua_fake_riders;
-            ee::s00::OVERRIDE_001135B8 = pua_fake_prime;
-            ee::s09::OVERRIDE_002E23E0 = pua_fake_spray;
-            ee::s01::OVERRIDE_00138960 = pua_fake_ground_ray;
-        });
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_0032F650),
+            pua_fake_hull_ctor,
+            crate::difftest::fakes::prev_cell(pua_fake_hull_ctor),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_003342D0),
+            pua_fake_closest,
+            crate::difftest::fakes::prev_cell(pua_fake_closest),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_0032F708),
+            pua_fake_hull_dtor,
+            crate::difftest::fakes::prev_cell(pua_fake_hull_dtor),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s00::OVERRIDE_00113998),
+            pua_fake_clear_air,
+            crate::difftest::fakes::prev_cell(pua_fake_clear_air),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s00::OVERRIDE_00106538),
+            pua_fake_translate,
+            crate::difftest::fakes::prev_cell(pua_fake_translate),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s00::OVERRIDE_0011E150),
+            pua_fake_bounds,
+            crate::difftest::fakes::prev_cell(pua_fake_bounds),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s00::OVERRIDE_00105398),
+            pua_fake_wall,
+            crate::difftest::fakes::prev_cell(pua_fake_wall),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s00::OVERRIDE_00107888),
+            pua_fake_riders,
+            crate::difftest::fakes::prev_cell(pua_fake_riders),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s00::OVERRIDE_001135B8),
+            pua_fake_prime,
+            crate::difftest::fakes::prev_cell(pua_fake_prime),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s09::OVERRIDE_002E23E0),
+            pua_fake_spray,
+            crate::difftest::fakes::prev_cell(pua_fake_spray),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s01::OVERRIDE_00138960),
+            pua_fake_ground_ray,
+            crate::difftest::fakes::prev_cell(pua_fake_ground_ray),
+        );
     }
 
     /// The sphere contact missed / hit; the ground ray short, behind, the

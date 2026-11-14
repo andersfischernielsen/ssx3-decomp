@@ -45,6 +45,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_4730, invalid_dcache, "_InvalidDCache"),
     (0x0042_47d8, invalid_dcache_2, "InvalidDCache"),
     (0x0042_4698, sync_dcache_2, "SyncDCache"),
+    (0x0010_01c8, crt_exit, "_exit"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -466,6 +467,20 @@ pub fn sync_dcache_2(c: &mut Cpu) {
     })
 }
 
+// --------------------------------------------------------------------- _exit
+
+/// `Exit` (0x42c6e8): kernel exit (`InitTLB`, then the `_Exit` syscall).
+pub(crate) const CRT_EXIT_KERNEL: u32 = 0x0042_c6e8;
+
+/// `void _exit(int)` (0x1001c8): the crt0 exit stub, `Exit(0)` (a tail
+/// call; the status argument is ignored).
+pub fn crt_exit(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[A0][0] = 0;
+    c.pc = CRT_EXIT_KERNEL;
+    ssx3_ee_rt::funcs::call_indirect(c, CRT_EXIT_KERNEL);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -729,5 +744,16 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(end);
             },
         );
+    }
+
+    /// `_exit` through the real `Exit` / `InitTLB` chain with fake syscalls:
+    /// `GetMemorySize` answers a hash (never 32 MB), so `_InitTLB` runs and
+    /// `_Exit` returns to the caller; some seeds unwind in a syscall.
+    #[test]
+    fn crt_exit_matches() {
+        check(ee::s00::f_001001c8__generated, crt_exit, 64, &|c, seed| {
+            machine(c, seed, 0x0010_01c8, 3);
+            c.pc = 0x0010_01c8;
+        });
     }
 }

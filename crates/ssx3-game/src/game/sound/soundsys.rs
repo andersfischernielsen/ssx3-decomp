@@ -812,6 +812,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_get_rider_rivalry,
         "SSXAudioSystem_GetRiderRivalry",
     ),
+    (
+        0x0028_4ba0,
+        ssx_audio_system_get_fade_mask,
+        "SSXAudioSystem_GetFadeMask",
+    ),
+    (
+        0x0029_f330,
+        ssx_audio_system_get_rider_speech_mask,
+        "SSXAudioSystem_GetRiderSpeechMask",
+    ),
+    (
+        0x002a_1d48,
+        ssx_audio_system_get_rider_voice_mask,
+        "SSXAudioSystem_GetRiderVoiceMask",
+    ),
+    (
+        0x002a_7408,
+        crowd_audio_start_anticipate,
+        "CrowdAudio_StartAnticipate",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -17086,7 +17106,7 @@ pub(crate) const CROWD_BEND_CURVE: u32 = 0x184;
 
 pub(crate) const CROWD_BEND_TIME: u32 = 0x188;
 
-/// gp_m2-relative pointer to the crowd sound table (`D_004A36F8`), 0x54-byte
+/// gp-relative pointer to the crowd sound table (`D_004A36F8`), 0x54-byte
 /// entries; the bend curve fields start 0x1c into an entry.
 pub(crate) const CROWD_TABLE_GP: u32 = 0x608;
 
@@ -18614,6 +18634,129 @@ pub(crate) fn stop_wipeout_loop(c: &mut Cpu, handle_off: u32, ret_get: u32, ret_
         frame.close(c);
         Ok(())
     })
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_GetRiderSpeechMask (0x29f330).
+
+/// `int SSXAudioSystem_CharacterToSpeechMask(int character, void* info)`
+/// (0x29f2b0).
+pub(crate) const RIDER_SPEECH_MASK_CHARACTER_TO_MASK: Callee = Callee {
+    addr: 0x0029_f2b0,
+    f: ee::s08::SSXAudioSystem_CharacterToSpeechMask,
+};
+
+/// `Rider_GetCharacter`, `Rider_GetPlayerCharacterInfo` (another shard:
+/// through the function table).
+pub(crate) const RIDER_SPEECH_MASK_GET_CHARACTER: u32 = 0x0012_3128;
+
+pub(crate) const RIDER_SPEECH_MASK_GET_INFO: u32 = 0x0012_3168;
+
+/// `int SSXAudioSystem_GetRiderSpeechMask(Rider* rider)` (0x29f330): the
+/// speech mask of the rider's character
+/// (`CharacterToSpeechMask(Rider_GetCharacter(r),
+/// Rider_GetPlayerCharacterInfo(r))`).
+pub fn ssx_audio_system_get_rider_speech_mask(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, RIDER_SPEECH_MASK_GET_CHARACTER, 0x0029_f348)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, RIDER_SPEECH_MASK_GET_INFO, 0x0029_f354)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[V0][0];
+        RIDER_SPEECH_MASK_CHARACTER_TO_MASK.call(c, 0x0029_f360)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Size of one crowd instance.
+pub(crate) const CROWD_AUDIO_INSTANCE_SIZE_2: u64 = 0x190;
+
+pub(crate) const CROWD_AUDIO_INSTANCE_START_ANTICIPATE: Callee = Callee {
+    addr: 0x002a_67f0,
+    f: ee::s08::CrowdAudio_InstanceStartAnticipate,
+};
+
+/// `void CrowdAudio_StartAnticipate(CrowdAudio* ca, int i)` (0x002a7408):
+/// start the anticipation sound of crowd instance `i`, if the instances
+/// exist.
+pub fn crowd_audio_start_anticipate(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, A0).wrapping_add(CROWD_AUDIO_INSTANCES)).lw(c);
+        frame.restore_ra(c, 0);
+        if c.g[V0][0] != 0 {
+            c.cycles += 5;
+            c.g[A0][0] = CROWD_AUDIO_INSTANCE_SIZE_2;
+            c.mult(0, V1, A1, A0);
+            c.g[A0][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+            CROWD_AUDIO_INSTANCE_START_ANTICIPATE.call(c, 0x002a_742c)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// --------------------------------------- SSXAudioSystem_GetRiderVoiceMask
+
+pub(crate) const SSX_AUDIO_CHARACTER_TO_VOICE_MASK: Callee = Callee {
+    addr: 0x002a_1da0,
+    f: ee::s08::SSXAudioSystem_CharacterToVoiceMask,
+};
+
+/// `u32 SSXAudioSystem_GetRiderVoiceMask(SSXAudioSystem* s, Rider* r)`
+/// (0x002a1d48): the voice mask for the rider's character, from the two
+/// rider queries 0x123128 and 0x123168.
+pub fn ssx_audio_system_get_rider_voice_mask(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S2, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x20);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0012_3128, 0x002a_1d6c)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0012_3168, 0x002a_1d78)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[V0][0];
+        SSX_AUDIO_CHARACTER_TO_VOICE_MASK.call(c, 0x002a_1d88)?;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ------------------------------------------------ SSXAudioSystem_GetFadeMask
+
+/// `int SSXAudioSystem_GetFadeMask(int quiet)` (0x284ba0): the mask of sound
+/// groups that fade (0x173), or none when `quiet` is set.
+pub fn ssx_audio_system_get_fade_mask(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = if c.g[A0][0] != 0 { 0 } else { 0x173 };
+    ret(c);
 }
 
 #[cfg(test)]
@@ -23727,10 +23870,10 @@ pub(crate) mod tests {
     use ssx3_ee_rt::Cpu;
 
     /// `CrowdAudio_UpdatePitchBend`: a voice with a negative handle (reset;
-    /// its fade-out already running so it returns at_m2 once) or a playing one;
+    /// its fade-out already running so it returns at once) or a playing one;
     /// bend time left <= 0 (idle) or running, with dt so that the time left
-    /// lands in the falling part, the rising part or at_m2/below zero. The
-    /// crowd table (gp_m2+0x608) has 4 entries of random curves. SND_Lock and
+    /// lands in the falling part, the rising part or at/below zero. The
+    /// crowd table (gp+0x608) has 4 entries of random curves. SND_Lock and
     /// SND_Unlock run for real and call their callbacks (fakes);
     /// SND_SetPitchBend runs for real with no channels (handle not found).
     #[test]
@@ -23777,7 +23920,7 @@ pub(crate) mod tests {
                     _ => (r.next_u32() % 400) as f32 / 50.0,
                 };
                 c.bus.write32(SELF + CROWD_BEND_TIME, time.to_bits());
-                // dt: the whole time (ends exactly at_m2 0), an edge value, or a frame-ish step.
+                // dt: the whole time (ends exactly at 0), an edge value, or a frame-ish step.
                 c.f[12] = match (seed / 5) % 4 {
                     0 => time.to_bits(),
                     1 => r.edge_f32(),
@@ -24567,6 +24710,194 @@ pub(crate) mod tests {
             &|c, seed| {
                 wipeout_loop_setup(c, seed, WIPEOUT_LOOP_HANDLE);
                 c.pc = 0x0029_6e20;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+    use std::sync::atomic::AtomicUsize;
+
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+    use std::ptr::addr_of_mut;
+
+    pub(crate) use crate::game::lib::snd::tests::oc337_arm;
+    pub(crate) use crate::game::lib::snd::tests::OC337_CTRL;
+    pub(crate) use crate::game::object::movenode::tests::oc338_fake;
+    pub(crate) use crate::game::object::movenode::tests::OC338_CTRL;
+    pub(crate) use crate::game::object::movenode::tests::OC338_MAGIC;
+
+    pub(crate) const OC337_MAGIC_RIDER: u32 = 0x0c33_7a03;
+
+    // -- SSXAudioSystem_GetRiderSpeechMask ----------------------------------
+
+    pub(crate) static OC337_PREV_GET_CHARACTER: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC337_PREV_GET_INFO: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc337_fake_get_character(c: &mut Cpu) {
+        if c.bus.read32(OC337_CTRL) != OC337_MAGIC_RIDER {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &OC337_PREV_GET_CHARACTER,
+                ee::s00::f_00123128__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fake(c, RIDER_SPEECH_MASK_GET_CHARACTER, ra);
+    }
+
+    pub(crate) fn oc337_fake_get_info(c: &mut Cpu) {
+        if c.bus.read32(OC337_CTRL) != OC337_MAGIC_RIDER {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &OC337_PREV_GET_INFO,
+                ee::s00::f_00123168__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fake(c, RIDER_SPEECH_MASK_GET_INFO, ra);
+    }
+
+    /// Fake rider lookups (either may unwind) answering a character 1..9 or
+    /// a pointer, and an info pointer; the real `CharacterToSpeechMask`.
+    #[test]
+    fn ssx_audio_system_get_rider_speech_mask_matches() {
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s00::OVERRIDE_00123128),
+            oc337_fake_get_character,
+            &OC337_PREV_GET_CHARACTER,
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s00::OVERRIDE_00123168),
+            oc337_fake_get_info,
+            &OC337_PREV_GET_INFO,
+        );
+        covered(
+            ee::s08::f_0029f330__generated,
+            ssx_audio_system_get_rider_speech_mask,
+            90,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x29_f330, 2);
+                c.pc = 0x0029_f330;
+                oc337_arm(c, OC337_MAGIC_RIDER);
+                c.bus.write32(LOG_RESULTS, seed % 10);
+                c.bus.write32(LOG_RESULTS + 4, 0);
+                c.g[A0][0] = sx(DATA + 0x100 + 0x10 * (r.next_u32() % 16));
+            },
+        );
+    }
+
+    oc338_fake!(
+        oc338_fake_crowd_anticipate,
+        OC338_PREV_CROWD_ANTICIPATE,
+        0x002a_67f0,
+        ee::s08::f_002a67f0__generated
+    );
+
+    oc338_fake!(
+        oc338_fake_rider_query_a,
+        OC338_PREV_RIDER_QUERY_A,
+        0x0012_3128,
+        ee::s00::f_00123128__generated
+    );
+
+    oc338_fake!(
+        oc338_fake_rider_query_b,
+        OC338_PREV_RIDER_QUERY_B,
+        0x0012_3168,
+        ee::s00::f_00123168__generated
+    );
+
+    oc338_fake!(
+        oc338_fake_voice_mask,
+        OC338_PREV_VOICE_MASK,
+        0x002a_1da0,
+        ee::s08::f_002a1da0__generated
+    );
+
+    /// `CrowdAudio_StartAnticipate`: no instances, or instance `i` passed
+    /// to a logging fake of `CrowdAudio_InstanceStartAnticipate`.
+    #[test]
+    fn crowd_audio_start_anticipate_matches() {
+        hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002A67F0),
+            oc338_fake_crowd_anticipate,
+            &OC338_PREV_CROWD_ANTICIPATE,
+        );
+        covered(
+            ee::s08::f_002a7408__generated,
+            crowd_audio_start_anticipate,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_7408, 1);
+                c.pc = 0x002a_7408;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                let this = DATA + 0x5_0000;
+                let instances = if seed % 4 == 0 { 0 } else { DATA + 0x6_0000 };
+                c.bus.write32(this + CROWD_AUDIO_INSTANCES, instances);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = if seed % 5 == 0 {
+                    r.next_u32() as u64 | 0xdead_0000_0000_0000
+                } else {
+                    (r.next_u32() % 16) as u64
+                };
+            },
+        );
+    }
+
+    /// `SSXAudioSystem_GetRiderVoiceMask`: the two rider queries and the
+    /// mask lookup are logging fakes (their results flow into the next
+    /// call's arguments).
+    #[test]
+    fn ssx_audio_system_get_rider_voice_mask_matches() {
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00123128),
+            oc338_fake_rider_query_a,
+            &OC338_PREV_RIDER_QUERY_A,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_00123168),
+            oc338_fake_rider_query_b,
+            &OC338_PREV_RIDER_QUERY_B,
+        );
+        hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002A1DA0),
+            oc338_fake_voice_mask,
+            &OC338_PREV_VOICE_MASK,
+        );
+        covered(
+            ee::s08::f_002a1d48__generated,
+            ssx_audio_system_get_rider_voice_mask,
+            200,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x002a_1d48, 3);
+                c.pc = 0x002a_1d48;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                c.g[A0][0] = sx(DATA + 0x5_0000);
+                c.g[A1][0] = sx(DATA + 0x5_1000);
+            },
+        );
+    }
+
+    /// `SSXAudioSystem_GetFadeMask` with `quiet` zero, small and with only
+    /// upper bits set (a 64-bit test).
+    #[test]
+    fn ssx_audio_system_get_fade_mask_matches() {
+        check(
+            ee::s07::f_00284ba0__generated,
+            ssx_audio_system_get_fade_mask,
+            64,
+            &|c, seed| {
+                let mut r = Rng(0x0028_4ba0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0028_4ba0;
+                c.g[A0][0] = match seed % 4 {
+                    0 => 0,
+                    1 => 1,
+                    2 => 1 << 40,
+                    _ => c.g[A0][0],
+                };
             },
         );
     }

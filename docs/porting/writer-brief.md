@@ -25,6 +25,9 @@ after each wave.
   `mod tests`) and leave theirs alone.
 - Keep your module compiling at every step: all staging modules build
   together, and one broken module blocks everyone's tests.
+- Other writers run at the same time and share the scratch directory: put
+  any scratch files in a subdirectory named after your module (`ocN/`),
+  never at its top level (a shared `body.rs` was overwritten mid-wave).
 - Skip the huge top-level drivers (a whole subsystem's per-frame `*_Update`, a
   bytecode interpreter, qsort-like dispatcher bodies with resume twins) and
   say so, instead of spending your context on them. A function the
@@ -141,6 +144,11 @@ pointer return (rider simulations then spin for minutes or forever), so:
   body back on `Drop`: two fakes on one slot then fall back to each other and
   a rider test loops forever (wave 213: `bow_fake_anim_current` and
   `oc318_fake_air_get_anim` on `0x311ae8`).
+- A fake made by a macro that cannot name a static of its own uses
+  `fakes::prev_cell(fake)` as its `PREV` (both in `hook` and `fall_back`).
+  Never fall back straight to `__generated`: that skips the fakes other
+  tests chained before yours, and their tests then run real callees on
+  fixture data (wave 215: the handplant test's allocator ran away).
 - The same rule goes for `c.pc` fakes and for helpers you put in another
   unit's `mod tests`: state whose absence hangs a rider test is worse than a
   failing test.
@@ -179,6 +187,15 @@ declare it by hand.
   passing it to `c.bus.write32`.
 - Constants only your tests read: mark them `#[cfg(test)]` (otherwise the
   game build warns that they are never used, and it must build warning-free).
+
+## Lesson: shared helpers for sibling functions (wave 215)
+
+Siblings that look alike (`Rider_ReportRiderHit1`/`Hit2`) can differ in one
+argument order: Hit1 passes `(a, b)` to its sound call, Hit2 `(b, a)`. A
+shared helper written from the first sibling then passes the second one's
+arguments swapped, which only `SSX3_DIFF_STRICT=args` catches. Diff the
+siblings' generated bodies line by line before sharing a helper, and make
+every difference a parameter.
 
 ## Names (the reorg merges your module into shared unit files)
 

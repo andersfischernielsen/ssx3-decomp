@@ -24,6 +24,7 @@ pub(crate) use crate::game::main::gamestate::p_2 as p_3;
 pub(crate) use crate::game::movie::movieplayer::at as at_2;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::replay::replaycache::destroy_if_flag;
+pub(crate) use crate::game::sound::bankmonitor::SPEECH_STREAM_HANDLE;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -197,6 +198,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002a_bcf8,
         sound_request_set_stream,
         "SoundRequest_SetStream",
+    ),
+    (
+        0x002a_b1a0,
+        speech_system_clear_prebuffer_callback,
+        "SpeechSystem_ClearPrebufferCallback",
     ),
 ];
 
@@ -2154,6 +2160,24 @@ pub fn sound_request_set_stream(c: &mut Cpu) {
     })
 }
 
+/// `int SpeechSystem_ClearPrebufferCallback(void* unused, SpeechStream* s)`
+/// (0x2ab1a0): set the stream's prebuffer to 0
+/// (`SNDSTRM_SetPrebuffer(s->handle, 0)`) and return 1.
+pub fn speech_system_clear_prebuffer_callback(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw(r32(c, A1).wrapping_add(SPEECH_STREAM_HANDLE));
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x003b_7d80, 0x002a_b1b4)?; // SNDSTRM_SetPrebuffer
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = 1;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3504,6 +3528,25 @@ pub(crate) mod tests {
                 c.g[A1][0] = r.next_u32() as u64;
                 c.g[A2][0] = sx(src);
                 c.g[A3][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc339_speech_stream;
+
+    /// `SpeechSystem_ClearPrebufferCallback`: the real
+    /// `SNDSTRM_SetPrebuffer` with a request found or not.
+    #[test]
+    fn speech_system_clear_prebuffer_callback_matches() {
+        covered(
+            ee::s08::f_002ab1a0__generated,
+            speech_system_clear_prebuffer_callback,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_b1a0, 2);
+                c.pc = 0x002a_b1a0;
+                let stream = oc339_speech_stream(c, &mut r, seed);
+                c.g[A1][0] = stream as u64;
             },
         );
     }

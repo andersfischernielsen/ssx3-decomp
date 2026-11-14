@@ -15,6 +15,10 @@ use crate::call::Frame;
 use crate::call::Target;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::computer::oc344_at;
+pub(crate) use crate::game::ai::computer::oc344_gp;
+pub(crate) use crate::game::ai::computer::oc344_lit;
+pub(crate) use crate::game::ai::computer::oc344_vu0_length_vf3;
 pub(crate) use crate::game::ai::control::handplantcontrol::gp_4;
 pub(crate) use crate::game::bx::bxstringctor::gp_lit as gp_lit_2;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_4;
@@ -261,6 +265,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0012_20d8, rider_build_light_set, "Rider_BuildLightSet"),
     (0x0012_8660, player_save_state, "Player_SaveState"),
+    (
+        0x0010_7578,
+        rider_try_start_handplant,
+        "Rider_TryStartHandplant",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -12466,9 +12475,9 @@ pub(crate) fn rider_ai_index(c: &mut Cpu, rider: u32, ret: u32) -> crate::call::
 }
 
 /// `void Rider_BuildLightSet(cRider* r)` (0x1220d8): rebuild the rider's
-/// irradiance at_m2 `+0x7c0`: clear it, copy the view's ambient set
+/// irradiance at `+0x7c0`: clear it, copy the view's ambient set
 /// (`WorldPainter_GetViewIrradiance(index)`, 0xa0 bytes), add the
-/// camera-relative light at_m2 the hips (`WorldPainter_GetLighting30`), each of
+/// camera-relative light at the hips (`WorldPainter_GetLighting30`), each of
 /// the eight dynamic lights, and, if the rider handler has them, its
 /// directional block: the offset vector, then one directional light per
 /// entry.
@@ -12510,7 +12519,7 @@ pub fn rider_build_light_set(c: &mut Cpu) {
                 deliver_event_here(c, 0x0012_212c);
             }
         }
-        // The camera-relative light at_m2 the hips.
+        // The camera-relative light at the hips.
         c.cycles += 20;
         c.g[A0][0] = c.g[SP][0];
         c.g[A1][0] = c.g[S2][0];
@@ -12637,6 +12646,285 @@ pub fn player_save_state(c: &mut Cpu) {
         Target::Direct(OC326_RIDER_BASE_SAVE_STATE),
         0x0012_8670,
     );
+}
+
+// ---------------------------------------------------------------------------
+// Rider_TryStartHandplant (0x107578; handplantcontrol)
+
+/// Rider fields read by the handplant start test.
+pub(crate) const HANDPLANT_POS: u32 = 0x110;
+
+pub(crate) const HANDPLANT_UP: u32 = 0x180;
+
+pub(crate) const HANDPLANT_FWD: u32 = 0x1b0;
+
+pub(crate) const HANDPLANT_VEL: u32 = 0x1e0;
+
+pub(crate) const HANDPLANT_HEIGHT: u32 = 0x1e8;
+
+pub(crate) const HANDPLANT_AI: u32 = 0x77c;
+
+pub(crate) const HANDPLANT_ANIM: u32 = 0x784;
+
+pub(crate) const HANDPLANT_OVERLAPS: u32 = 0x860;
+
+/// The rail search radius (300.0).
+pub(crate) const HANDPLANT_RADIUS: u32 = 0x4396_0000;
+
+pub(crate) const HANDPLANT_GET_MAIN_STATE: Callee = Callee {
+    addr: 0x0011_fe98,
+    f: ee::s00::f_0011fe98,
+};
+
+pub(crate) const HANDPLANT_SET_SUB_STATE: Callee = Callee {
+    addr: 0x0011_fec8,
+    f: ee::s00::f_0011fec8,
+};
+
+pub(crate) const HANDPLANT_SET_MAIN_STATE: Callee = Callee {
+    addr: 0x0011_fe78,
+    f: ee::s00::f_0011fe78,
+};
+
+/// `bool Rider_TryStartHandplant(Rider* r, int on)` (0x107578): record the
+/// handplant cheat input (`RiderBase_RecordCheatCodeInput(ai+0xd20, 2)`).
+/// In the air (main state 1) the rider must be high enough (`+0x1e8`),
+/// upright (`up.z >= 0`) and not in a handplant animation (layer-2 entries
+/// 0x12..0x14). Then look for the nearest rail 300 units ahead along the
+/// velocity (`OverlapList_FindNearestRail`): the rail must be flat enough,
+/// within 300 of the probe point and ahead of the rider. On success start
+/// the handplant control (`ai+0x110`, speed factor `clamp(0.5 / max(speed,
+/// k), 0.5, 1.5) * 300`, the rail direction flipped to face the velocity),
+/// arm its timer (`ai+0x370`), set sub states 0xd then 0xb and main state 5,
+/// and return 1; otherwise return 0.
+pub fn rider_try_start_handplant(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x110);
+        c.g[A1][0] = 0x2;
+        frame.save(c, S0, 0xf0);
+        frame.save(c, S1, 0xe0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0xd0);
+        frame.save_fpr(c, 21, 0x108);
+        frame.save_fpr(c, 20, 0x100);
+        c.g[A0][0] = c.lw(oc344_at(c, S0, HANDPLANT_AI));
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0xd20));
+        call_ptr(c, 0x002f_6ac8, 0x0010_75a4)?;
+        c.g[A0][0] = c.g[S0][0];
+        HANDPLANT_GET_MAIN_STATE.call(c, 0x0010_75ac)?;
+        c.g[V1][0] = 0x1;
+        'done: {
+            if c.g[V0][0] == c.g[V1][0] {
+                // In the air: high enough, upright, not already planting.
+                c.cycles += 6;
+                c.lwc1(1, oc344_gp(c, 0x7e94));
+                c.lwc1(0, oc344_at(c, S0, HANDPLANT_HEIGHT));
+                c.c_lt_s(0, 1);
+                c.g[V0][0] = 0;
+                if c.fcc() {
+                    break 'done;
+                }
+                c.cycles += 8;
+                c.lq(V0, oc344_at(c, S0, HANDPLANT_UP));
+                c.mtc1(0, 1);
+                c.sq(V0, sp(c));
+                c.lwc1(0, sp(c).wrapping_add(0x8));
+                c.c_lt_s(0, 1);
+                c.g[V0][0] = 0;
+                if c.fcc() {
+                    break 'done;
+                }
+                c.cycles += 7;
+                c.g[A0][0] = c.lw(oc344_at(c, S0, HANDPLANT_ANIM));
+                c.g[A1][0] = 0x2;
+                call_ptr(c, 0x0031_1ae8, 0x0010_75fc)?;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x12));
+                let planting = c.g[V0][0] < 0x3;
+                c.g[V0][0] = 0;
+                if planting {
+                    break 'done;
+                }
+            }
+            // 0x10760c: speed, and the probe direction (normalised velocity
+            // when moving, else the forward vector).
+            c.cycles += 16;
+            c.lqc2(3, oc344_at(c, S0, HANDPLANT_VEL));
+            oc344_vu0_length_vf3(c);
+            c.cfc2(V0, 22);
+            c.mtc1(V0, 21);
+            c.lwc1(0, oc344_gp(c, 0x7e90));
+            c.mov_s(2, 21);
+            c.c_lt_s(0, 2);
+            if !c.fcc() {
+                c.lq(V0, oc344_at(c, S0, HANDPLANT_FWD));
+            } else {
+                c.cycles += 8;
+                c.mfc1(V1, 2);
+                c.qmtc2(V1, 3);
+                c.vu0().div(0, 3, 3, 0);
+                c.lqc2(4, oc344_at(c, S0, HANDPLANT_VEL));
+                c.vu0().waitq();
+                c.vu0().mul(0b1111, 4, 4, Src::Q);
+                c.sqc2(4, sp(c).wrapping_add(0xa0));
+                c.lq(V0, sp(c).wrapping_add(0xa0));
+            }
+            // 0x10766c: probe = pos + dir * 300; nearest rail to the probe.
+            c.cycles += 26;
+            let s = sp(c);
+            c.sq(V0, s);
+            c.sq(V0, s.wrapping_add(0x90));
+            oc344_lit(c, 20, HANDPLANT_RADIUS);
+            c.g[S1][0] = sx(s.wrapping_add(0x10));
+            c.mfc1(V0, 20);
+            c.lqc2(4, s);
+            c.qmtc2(V0, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, s.wrapping_add(0xb0));
+            c.g[A1][0] = sx(s.wrapping_add(0x90));
+            c.lq(V0, s.wrapping_add(0xb0));
+            c.g[A2][0] = c.g[S1][0];
+            c.g[A3][0] = 0x2;
+            c.mov_s(12, 20);
+            c.sq(V0, s.wrapping_add(0xa0));
+            c.lqc2(3, oc344_at(c, S0, HANDPLANT_POS));
+            c.lqc2(4, s.wrapping_add(0xa0));
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, s.wrapping_add(0xb0));
+            c.lq(V0, s.wrapping_add(0xb0));
+            c.g[A0][0] = c.lw(oc344_at(c, S0, HANDPLANT_OVERLAPS));
+            c.sq(V0, s.wrapping_add(0x90));
+            call_ptr(c, 0x0033_4680, 0x0010_76cc)?;
+            let s = sp(c);
+            let found = c.g[V0][0] != 0;
+            c.lwc1(0, s.wrapping_add(0x28));
+            let mut ok = false;
+            if found {
+                // The rail must be flat enough (|dir.z| <= k).
+                c.cycles += 6;
+                c.lwc1(1, oc344_gp(c, 0x7e8c));
+                c.abs_s(0, 0);
+                c.c_lt_s(1, 0);
+                c.g[V0][0] = 0;
+                if c.fcc() {
+                    break 'done;
+                }
+                // Within 300 of the probe.
+                c.cycles += 20;
+                c.lqc2(3, s.wrapping_add(0x10));
+                c.lqc2(4, s.wrapping_add(0x90));
+                c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, s.wrapping_add(0xb0));
+                c.lq(V0, s.wrapping_add(0xb0));
+                c.sq(V0, s.wrapping_add(0xa0));
+                c.lqc2(3, s.wrapping_add(0xa0));
+                oc344_vu0_length_vf3(c);
+                c.cfc2(V1, 22);
+                c.mtc1(V1, 0);
+                c.c_lt_s(20, 0);
+                c.g[V0][0] = 0;
+                if c.fcc() {
+                    break 'done;
+                }
+                // Ahead of the rider: (rail - pos) . vel >= 0.
+                c.cycles += 20;
+                c.lqc2(3, s.wrapping_add(0x10));
+                c.lqc2(4, oc344_at(c, S0, HANDPLANT_POS));
+                c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, s.wrapping_add(0xc0));
+                c.mtc1(0, 3);
+                c.lq(V0, s.wrapping_add(0xc0));
+                c.sq(V0, s.wrapping_add(0xa0));
+                c.sq(V0, s.wrapping_add(0xb0));
+                c.lqc2(3, oc344_at(c, S0, HANDPLANT_VEL));
+                c.lqc2(5, s.wrapping_add(0xa0));
+                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                c.qmfc2(V1, 4);
+                c.mtc1(V1, 0);
+                c.c_lt_s(0, 3);
+                ok = !c.fcc();
+            }
+            if !ok {
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+                break 'done;
+            }
+            // 0x107794: speed factor clamp(0.5 / max(speed, k), 0.5, 1.5).
+            c.cycles += 12;
+            c.lwc1(0, oc344_gp(c, 0x7e88));
+            c.lwc1(1, oc344_gp(c, 0x7e84));
+            c.max_s(2, 21, 0);
+            oc344_lit(c, 12, 0x3f00_0000);
+            c.div_s(1, 1, 2);
+            oc344_lit(c, 0, 0x3fc0_0000);
+            c.c_le_s(12, 1);
+            let above = c.fcc();
+            c.mov_s(2, 12);
+            if above {
+                c.cycles += 1;
+                c.min_s(2, 1, 0);
+            }
+            // 0x1077c8: the rail direction, flipped to face the velocity.
+            c.cycles += 13;
+            let s = sp(c);
+            c.lqc2(3, s.wrapping_add(0x20));
+            c.lqc2(5, oc344_at(c, S0, HANDPLANT_VEL));
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.qmfc2(V0, 4);
+            c.mtc1(V0, 0);
+            c.c_lt_s(0, 3);
+            let behind = c.fcc();
+            c.mul_s(20, 2, 12);
+            if behind {
+                c.cycles += 7;
+                oc344_lit(c, 0, 0xbf80_0000);
+                c.mfc1(V0, 0);
+                c.lqc2(4, s.wrapping_add(0x20));
+                c.qmtc2(V0, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, s.wrapping_add(0x20));
+            }
+            // 0x107818: start the handplant.
+            c.cycles += 21;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0xd;
+            HANDPLANT_SET_SUB_STATE.call(c, 0x0010_7824)?;
+            c.g[A0][0] = c.lw(oc344_at(c, S0, HANDPLANT_AI));
+            c.mov_s(12, 20);
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x110));
+            call_ptr(c, 0x0013_8ba0, 0x0010_7838)?;
+            c.g[A0][0] = c.lw(oc344_at(c, S0, HANDPLANT_AI));
+            c.mov_s(12, 20);
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A2][0] = c.lw(oc344_at(c, A0, 0x1a4));
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x370));
+            call_ptr(c, 0x0013_29b0, 0x0010_7850)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0xb;
+            HANDPLANT_SET_SUB_STATE.call(c, 0x0010_785c)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0x5;
+            HANDPLANT_SET_MAIN_STATE.call(c, 0x0010_7868)?;
+            c.g[V0][0] = 0x1;
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0xf0);
+        frame.restore(c, S1, 0xe0);
+        frame.restore_ra(c, 0xd0);
+        frame.restore_fpr(c, 21, 0x108);
+        frame.restore_fpr(c, 20, 0x100);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -16071,7 +16359,7 @@ pub(crate) mod tests {
     /// irradiance copy, the camera-relative light (camera view matrix through
     /// a fake), 0-8 dynamic lights, and the handler's directional block
     /// (absent, empty, or 1-3 lights). The rider's AI-index getter and the
-    /// lighting/camera methods are fakes (some seeds unwind at_m2 them).
+    /// lighting/camera methods are fakes (some seeds unwind at them).
     #[test]
     fn rider_build_light_set_matches() {
         use rider_lights::*;
@@ -16120,7 +16408,7 @@ pub(crate) mod tests {
                 for k in 0..32 {
                     c.bus.write32(bones + 4 * k, r.f32(50.0));
                 }
-                // The camera (gp_m2+0x2a90) and its view matrix.
+                // The camera (gp+0x2a90) and its view matrix.
                 c.bus.write32(GAME_GP + 0x2a90, camera);
                 c.bus.write32(camera + 0x10d8, cam_vt);
                 c.bus.write16(cam_vt + 0x118, (r.next_u32() & 0x7c) as u16);
@@ -16236,6 +16524,95 @@ pub(crate) mod tests {
                     };
                     oc258_w32(c, rider + f, v);
                 }
+            },
+        );
+    }
+
+    use crate::difftest::SP as TEST_SP;
+
+    pub(crate) use crate::game::ai::computer::tests::OC344_RAIL_OUT;
+
+    pub(crate) use crate::game::ai::computer::tests::oc344_force;
+    pub(crate) use crate::game::ai::computer::tests::oc344_install;
+    pub(crate) use crate::game::ai::computer::tests::oc344_machine;
+    pub(crate) use crate::game::ai::computer::tests::oc344_vec;
+
+    /// `Rider_TryStartHandplant`: every exit (not in the air or too low,
+    /// upside down, already planting, no rail, steep rail, too far, behind)
+    /// and the start, with the real handplant-control setup (0x138ba0) and
+    /// timer (0x1329b0).
+    #[test]
+    fn rider_try_start_handplant_matches() {
+        oc344_install();
+        covered(
+            ee::s00::f_00107578__generated,
+            rider_try_start_handplant,
+            200,
+            &|c, seed| {
+                let mut r = oc344_machine(c, seed, 0x0010_7578, 6);
+                elf_image(c);
+                let rider = DATA + 0x1000;
+                let ai = DATA + 0x4000;
+                let anim = DATA + 0x8000;
+                let overlaps = DATA + 0x8100;
+                let model = DATA + 0x9000;
+                let bones = DATA + 0xa000;
+                for i in 0..0x240 {
+                    let v = r.f32(200.0);
+                    c.bus.write32(rider + 4 * i, v);
+                }
+                for i in 0..0x100 {
+                    let v = r.f32(10.0);
+                    c.bus.write32(ai + 4 * i, v);
+                }
+                for i in 0..0x40 {
+                    let v = r.f32(200.0);
+                    c.bus.write32(bones + 4 * i, v);
+                }
+                c.bus.write32(rider + HANDPLANT_AI, ai);
+                c.bus.write32(rider + HANDPLANT_ANIM, anim);
+                c.bus.write32(rider + HANDPLANT_OVERLAPS, overlaps);
+                c.bus.write32(rider + 0x780, model);
+                c.bus.write32(model + 0x2c, bones);
+                c.bus.write32(rider + 0x8a8, r.next_u32() % 2);
+                c.bus.write32(rider + 0x320, r.next_u32() % 8);
+                // The handplant control's and the timer's rider.
+                c.bus.write32(ai + 0x110 + 0xa0, rider);
+                c.bus.write32(ai + 0x370 + 0x14, rider);
+                c.bus.write32(ai + 0x1a4, r.next_u32() & 1);
+                // Velocity: sometimes nearly still.
+                let vel = if seed % 7 == 0 {
+                    oc344_vec(&mut r, 0.01)
+                } else {
+                    oc344_vec(&mut r, 60.0)
+                };
+                put_vec(c, rider + HANDPLANT_VEL, vel);
+                put_vec(c, rider + HANDPLANT_POS, oc344_vec(&mut r, 200.0));
+                // The rail record: near the probe, a direction with a small z.
+                let pos = rider + HANDPLANT_POS;
+                for k in 0..3 {
+                    let p = f32::from_bits(c.bus.read32(pos + 4 * k));
+                    let off = f32::from_bits(r.f32(500.0));
+                    c.bus.write32(OC344_RAIL_OUT + 4 * k, (p + off).to_bits());
+                }
+                c.bus.write32(OC344_RAIL_OUT + 0xc, 0);
+                put_vec(
+                    c,
+                    OC344_RAIL_OUT + 0x10,
+                    [r.f32(1.0), r.f32(1.0), r.f32(0.6), 0],
+                );
+                // The rail's (optional) owner the control reads (sp+0x68).
+                let owner = if seed % 2 == 0 { 0 } else { DATA + 0xb000 };
+                c.bus.write32(TEST_SP - 0x110 + 0x68, owner);
+                c.bus.write32(DATA + 0xb01c, r.next_u32());
+                let main_state = if seed % 3 == 0 { 2 } else { 1 };
+                oc344_force(c, 0x0011_fe98, Some(main_state), None);
+                oc344_force(c, 0x0031_1ae8, Some(0x12 + r.next_u32() % 6), None);
+                let rail = (seed % 5 != 0) as u32;
+                oc344_force(c, 0x0033_4680, Some(rail), None);
+                c.g[A0][0] = sx(rider);
+                c.g[A1][0] = r.next_u32() as u64 & 1;
+                c.pc = 0x0010_7578;
             },
         );
     }

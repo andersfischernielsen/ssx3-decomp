@@ -195,3 +195,28 @@ pub fn fall_back(c: &mut Cpu, prev: &std::sync::atomic::AtomicUsize, generated: 
     let f = unsafe { std::mem::transmute::<usize, fn(&mut Cpu)>(p) };
     f(c)
 }
+
+/// The `prev` cell of a fake that has no static of its own (fakes a macro
+/// stamps out without naming one): one leaked cell per fake, for [`hook`] to
+/// fill and [`fall_back`] to read. Fakes look it up on every gate-off call,
+/// so the common path is a shared read lock.
+pub fn prev_cell(fake: fn(&mut Cpu)) -> &'static std::sync::atomic::AtomicUsize {
+    use std::collections::HashMap;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::RwLock;
+    static CELLS: RwLock<Option<HashMap<usize, &'static AtomicUsize>>> = RwLock::new(None);
+    let key = fake as usize;
+    if let Some(cell) = CELLS
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .as_ref()
+        .and_then(|m| m.get(&key).copied())
+    {
+        return cell;
+    }
+    let mut cells = CELLS.write().unwrap_or_else(|p| p.into_inner());
+    *cells
+        .get_or_insert_with(HashMap::new)
+        .entry(key)
+        .or_insert_with(|| Box::leak(Box::new(AtomicUsize::new(0))))
+}

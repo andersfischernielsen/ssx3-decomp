@@ -270,6 +270,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_is_any_view_in_range,
         "SSXAudioSystem_IsAnyViewInRange",
     ),
+    (
+        0x0028_5f80,
+        ssx_audio_system_stop_by_callback,
+        "SSXAudioSystem_StopByCallback",
+    ),
 ];
 
 /// gp-relative `.lit4` constants.
@@ -3612,6 +3617,36 @@ pub fn ssx_audio_get_view_pos(c: &mut Cpu) {
     });
 }
 
+// ------------------------------------------ SSXAudioSystem_StopByCallback
+
+/// `SSXAudioSystem` +0x118: pointer to the bank-monitor holder pointer.
+pub(crate) const SSX_AUDIO_STOP_BY_CALLBACK_HOLDER: u32 = 0x118;
+
+/// Offset of the bank monitor inside the holder's object.
+pub(crate) const SSX_AUDIO_STOP_BY_CALLBACK_MONITOR: u32 = 0x1d8;
+
+/// `void SSXAudioSystem_StopByCallback(SSXAudioSystem* s, Pair p)`
+/// (0x00285f80): forward the (64-bit) callback pair to the bank monitor
+/// `(**(s+0x118)) + 0x1d8` (0x2ad410), stopping the sounds it matches.
+pub fn ssx_audio_system_stop_by_callback(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x20);
+        frame.save_ra(c, 0x10);
+        // The pair is passed through a stack slot (`sd a1; ld a1`).
+        let pair = frame.at(c, 0);
+        c.sd(pair, c.g[A1][0]);
+        c.g[A1][0] = c.ld(pair);
+        c.g[V0][0] = Addr(r32(c, A0).wrapping_add(SSX_AUDIO_STOP_BY_CALLBACK_HOLDER)).lw(c);
+        c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(SSX_AUDIO_STOP_BY_CALLBACK_MONITOR));
+        call_ptr(c, 0x002a_d410, 0x0028_5fa0)?;
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4997,6 +5032,51 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = sx(DATA + 0x800);
                 c.g[A1][0] = sx(seed % 3);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    pub(crate) use crate::game::object::movenode::tests::oc338_fake;
+    pub(crate) use crate::game::object::movenode::tests::OC338_CTRL;
+    pub(crate) use crate::game::object::movenode::tests::OC338_MAGIC;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    oc338_fake!(
+        oc338_fake_bank_monitor_stop,
+        OC338_PREV_BANK_MONITOR_STOP,
+        0x002a_d410,
+        ee::s08::f_002ad410__generated
+    );
+
+    /// `SSXAudioSystem_StopByCallback`: the bank monitor at
+    /// `**(s+0x118) + 0x1d8` gets the 64-bit pair (a logging fake).
+    #[test]
+    fn ssx_audio_system_stop_by_callback_matches() {
+        hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002AD410),
+            oc338_fake_bank_monitor_stop,
+            &OC338_PREV_BANK_MONITOR_STOP,
+        );
+        covered(
+            ee::s07::f_00285f80__generated,
+            ssx_audio_system_stop_by_callback,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0028_5f80, 1);
+                c.pc = 0x0028_5f80;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                let this = DATA + 0x5_0000;
+                let holder = DATA + 0x5_1000;
+                c.bus
+                    .write32(this + SSX_AUDIO_STOP_BY_CALLBACK_HOLDER, holder);
+                c.bus
+                    .write32(holder, DATA + 0x5_2000 + (r.next_u32() & 0xff0));
+                c.g[A0][0] = sx(this);
             },
         );
     }
