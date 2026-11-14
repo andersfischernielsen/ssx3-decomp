@@ -125,6 +125,45 @@ after each wave.
 - A 1-cycle difference is usually a missed block charge; a wrong `pc`/`ra` is
   a missing return restore.
 
+## Lesson: global callee fakes must be gated
+
+A test that installs a fake in a callee's `OVERRIDE_` slot changes that
+function for every test in the binary, and the suite runs its tests in
+parallel. A fake that always logs runs another unit's test into the fake's
+pointer return (rider simulations then spin for minutes or forever), so:
+
+- Gate the fake on a magic word in the *machine's* RAM: `if c.bus.read32(CTRL)
+  != MAGIC { return <the body it replaced>(c) }`. Write `MAGIC` at `CTRL` in
+  your own fixture (both sides of the diff get their own machine).
+- Chain to the body that was in the slot at install (`static AtomicUsize`,
+  skip it when it is the fake itself), or fall back to the generated body when
+  nothing was installed. Install once (`Once`) or restore on `Drop`, but never
+  leave a slot pointing at an ungated fake.
+- The same rule goes for `c.pc` fakes and for helpers you put in another
+  unit's `mod tests`: state whose absence hangs a rider test is worse than a
+  failing test.
+
+## Lesson: picked lists can name functions already ported
+
+The wave list comes from `edges.tsv` and a snapshot of `overrides.txt`, so it
+can contain functions an earlier wave installed. Check
+`grep '^0xADDR' crates/ssx3-game/overrides.txt` before writing; skip those,
+say so in the report, and never add a second `OVERRIDES` entry for the address.
+
+## Lesson: the generated body is authoritative, so read the delay slots
+
+Three ports in one wave dropped an unconditional store that sits in a branch
+delay slot (`c.g[A2][0] = c.g[S3][0]` after a `call_ptr`); the loop then read
+its entries from the wrong register (it looked like a callee-argument bug) and
+the diff showed `f0`, the output buffer and 3-5 cycles off. Transcribe every
+store after a call in the generated order, and take registers from the
+generated body, not from what the C++ suggests.
+
+Also: a `break` inside a labeled block (`'skip: { ... break; }`) must name the
+loop (`'scan: loop` ... `break 'scan;`), and a `macro_rules!` that emits
+`static $prev` puts the static at the *invocation* site's scope: do not also
+declare it by hand.
+
 ## Names (the reorg merges your module into shared unit files)
 
 - Give module-local helpers function-specific names, not `lt`, `at`, `gp`,
