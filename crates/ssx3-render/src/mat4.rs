@@ -784,6 +784,169 @@ struct GlitterSetup {
     d21: V,
 }
 
+/// The part of a glitter point that does not depend on the view: the hashed
+/// direction (before the facing test) and the cubic terms.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct GlitterHash {
+    dir: [u32; 3],
+    u: [u32; 3],
+    v: [u32; 3],
+}
+
+/// The glitter hash of one patch: it reads D0..D3 and nothing else, so a
+/// patch gets the same points every time it is drawn. [`GlitterChain::next`]
+/// gives them in order.
+struct GlitterChain {
+    h: [u32; 3],
+    half_unit: u32, // vf16.w
+    a: u32,         // vf19.x
+    b: u32,         // vf19.y
+    c: u32,         // vf22.z
+    dd: u32,        // vf20.x
+    e: u32,         // vf21.z
+}
+
+impl GlitterChain {
+    fn new(d: &[V; 4]) -> GlitterChain {
+        let [d0, d1, d2, d3] = *d;
+        let a0 = add(d0, d1);
+        let b0 = add(d1, d2);
+        let p16 = add(a0, bc(HASH_K)); // vf16.xyz
+        let p17 = add(b0, bc(HASH_K)); // vf17.xyz
+        let s19z = add1(p16[2], p16[1]);
+        let s17z = add1(p17[2], p17[1]);
+        let mut h = [add1(d1[0], d2[3]), add1(d2[1], d1[1]), add1(d3[2], d0[3])];
+        for x in h.iter_mut() {
+            *x = add1(*x, HASH_K);
+        }
+        GlitterChain {
+            h,
+            half_unit: mul1(ONE, F1_5),
+            a: 0,
+            b: 0,
+            c: add1(s17z, p17[0]),
+            dd: 0,
+            e: add1(s19z, p16[0]),
+        }
+    }
+
+    #[allow(clippy::should_implement_trait)]
+    fn next(&mut self) -> GlitterHash {
+        let h = &mut self.h;
+        h[2] = add1(h[2], self.a);
+        h[0] = add1(h[0], self.b);
+        h[1] = add1(h[1], self.c);
+        let s1 = add1(h[2], self.dd);
+        h[0] = add1(h[0], h[1]);
+        h[1] = add1(h[1], h[2]);
+        h[2] = Lfsr::after(s1);
+        h[0] = Lfsr::after(h[0]);
+        h[1] = Lfsr::after(h[1]);
+        let s2 = add1(self.e, self.c);
+        let s3 = add1(self.c, s2);
+        let r1 = Lfsr::after(s2);
+        let r2 = Lfsr::after(s3);
+        for x in h.iter_mut() {
+            *x = sub1(*x, self.half_unit);
+        }
+        let w1 = sub1(r1, ONE);
+        let w2 = sub1(r2, ONE);
+        let v1 = mul1(w1, w1);
+        let v2 = mul1(w2, w2);
+        let u2 = mul1(v2, w2);
+        let u1 = mul1(v1, w1);
+        // The chained terms.
+        self.a = u1;
+        self.b = v1;
+        self.c = w2;
+        self.dd = u2;
+        self.e = w1;
+        GlitterHash {
+            dir: *h,
+            u: [u1, v1, w1],
+            v: [u2, v2, w2],
+        }
+    }
+}
+
+/// The glitter hashes of the patches drawn lately: a patch in view is drawn
+/// again every frame, and only its facing test depends on the view. One for
+/// the process (the VU calls run on threads started per frame).
+static GLITTER_CACHE: std::sync::Mutex<GlitterCache> = std::sync::Mutex::new(GlitterCache::new());
+
+/// Patches kept, and points kept over all of them (one call has at most
+/// 65535 points, so any patch fits). The least recently used patches go
+/// first.
+const GLITTER_CACHE_PATCHES: usize = 64;
+const GLITTER_CACHE_POINTS: usize = 1 << 16;
+
+struct GlitterCache {
+    patches: Vec<CachedPatch>,
+    /// Points over all patches.
+    points: usize,
+    clock: u64,
+}
+
+/// A patch's D0..D3 (the key, compared in full), its chain after the points
+/// so far, and those points.
+struct CachedPatch {
+    key: [V; 4],
+    chain: GlitterChain,
+    points: Vec<GlitterHash>,
+    used: u64,
+}
+
+impl GlitterCache {
+    const fn new() -> GlitterCache {
+        GlitterCache {
+            patches: Vec::new(),
+            points: 0,
+            clock: 0,
+        }
+    }
+
+    /// The first `count` points of the patch with coefficients `key`. A
+    /// patch seen with fewer points continues its chain (the points do not
+    /// depend on the count).
+    fn points(&mut self, key: &[V; 4], count: usize) -> &[GlitterHash] {
+        self.clock += 1;
+        let mut p = match self.patches.iter().position(|p| p.key == *key) {
+            Some(i) if self.patches[i].points.len() >= count => {
+                let p = &mut self.patches[i];
+                p.used = self.clock;
+                return &p.points[..count];
+            }
+            Some(i) => {
+                let p = self.patches.swap_remove(i);
+                self.points -= p.points.len();
+                p
+            }
+            None => CachedPatch {
+                key: *key,
+                chain: GlitterChain::new(key),
+                points: Vec::new(),
+                used: 0,
+            },
+        };
+        while self.patches.len() >= GLITTER_CACHE_PATCHES
+            || self.points + count > GLITTER_CACHE_POINTS
+        {
+            let lru = (0..self.patches.len())
+                .min_by_key(|&j| self.patches[j].used)
+                .expect("a patch fits an empty cache");
+            self.points -= self.patches.swap_remove(lru).points.len();
+        }
+        p.points.reserve_exact(count - p.points.len());
+        while p.points.len() < count {
+            p.points.push(p.chain.next());
+        }
+        p.used = self.clock;
+        self.points += count;
+        self.patches.push(p);
+        &self.patches.last().unwrap().points
+    }
+}
+
 /// The facing points of a glitter call, in order (the hash runs over every
 /// point). `count` must not be 0.
 fn glitter_points(
@@ -794,8 +957,7 @@ fn glitter_points(
 ) {
     let d = |m: &Mem, i: u16| m.ld(top.wrapping_add(i));
     let count = d(m, 21)[3] as u16;
-    let coef: [V; 16] = std::array::from_fn(|i| d(m, i as u16));
-    let (d0, d1, d2, d3) = (coef[0], coef[1], coef[2], coef[3]);
+    let key: [V; 4] = std::array::from_fn(|i| d(m, i as u16));
 
     // The patch normal direction: (D16 D17 D18 D18) · (M · (0,0,1,0)).
     let mz = xform(&scr.m, [0, 0, ONE, 0]);
@@ -806,72 +968,22 @@ fn glitter_points(
         madd(acc, d(m, 18), bc(mz[3]))
     };
 
-    // Hash state.
-    let a0 = add(d0, d1);
-    let b0 = add(d1, d2);
-    let p16 = add(a0, bc(HASH_K)); // vf16.xyz
-    let p17 = add(b0, bc(HASH_K)); // vf17.xyz
-    let half_unit = mul1(ONE, F1_5); // vf16.w
-    let s19z = add1(p16[2], p16[1]);
-    let s17z = add1(p17[2], p17[1]);
-    let mut e = add1(s19z, p16[0]); // vf21.z
-    let mut c = add1(s17z, p17[0]); // vf22.z
-    let mut h = [add1(d1[0], d2[3]), add1(d2[1], d1[1]), add1(d3[2], d0[3])];
-    for x in h.iter_mut() {
-        *x = add1(*x, HASH_K);
-    }
-    let mut a = 0u32; // vf19.x
-    let mut b = 0u32; // vf19.y
-    let mut dd = 0u32; // vf20.x
-
-    let mut done = 0u16;
-    loop {
-        h[2] = add1(h[2], a);
-        h[0] = add1(h[0], b);
-        h[1] = add1(h[1], c);
-        let s1 = add1(h[2], dd);
-        h[0] = add1(h[0], h[1]);
-        h[1] = add1(h[1], h[2]);
-        h[2] = Lfsr::after(s1);
-        h[0] = Lfsr::after(h[0]);
-        h[1] = Lfsr::after(h[1]);
-        let s2 = add1(e, c);
-        let s3 = add1(c, s2);
-        let r1 = Lfsr::after(s2);
-        let r2 = Lfsr::after(s3);
-        for x in h.iter_mut() {
-            *x = sub1(*x, half_unit);
-        }
-        let w1 = sub1(r1, ONE);
-        let n = mul([h[0], h[1], h[2], 0], normal);
-        let w2 = sub1(r2, ONE);
-        let v1 = mul1(w1, w1);
-        let v2 = mul1(w2, w2);
-        let u2 = mul1(v2, w2);
+    let mut cache = GLITTER_CACHE.lock().unwrap();
+    let points = cache.points(&key, count as usize);
+    for (i, g) in points.iter().enumerate() {
+        let [x, y, z] = g.dir;
+        let n = mul([x, y, z, 0], normal);
         let dot = add1(add1(n[0], n[1]), n[2]);
-        let facing = !neg(sub1(dot, 0));
-        let u1 = mul1(v1, w1);
-        // The chained terms.
-        a = u1;
-        b = v1;
-        c = w2;
-        dd = u2;
-        e = w1;
-        done = done.wrapping_add(1);
-        let last = done == count;
-        if facing {
+        if !neg(sub1(dot, 0)) {
             each(
                 m,
                 &GlitterPoint {
-                    u: [u1, v1, w1],
-                    v: [u2, v2, w2],
+                    u: g.u,
+                    v: g.v,
                     dot,
-                    last,
+                    last: i + 1 == points.len(),
                 },
             );
-        }
-        if last {
-            break;
         }
     }
 }
@@ -1780,6 +1892,79 @@ pub(crate) mod tests {
                     want,
                 );
             }
+        }
+    }
+
+    /// Kept glitter hashes equal fresh chains: patches revisited after
+    /// others, with more or fewer points than before, slots refilled with
+    /// new coefficients, and enough patches and points to evict.
+    #[test]
+    fn glitter_cache_matches_chain() {
+        let mut r = Rng(0x0911_77e5_9abc_def1);
+        let patch = |r: &mut Rng| -> [V; 4] {
+            std::array::from_fn(|_| match r.u() % 3 {
+                0 => [r.u() as u32, r.u() as u32, r.u() as u32, r.u() as u32],
+                _ => r.v(-1.0, 1.0, 0.5),
+            })
+        };
+        let mut slots: Vec<[V; 4]> = (0..100).map(|_| patch(&mut r)).collect();
+        let mut cache = GlitterCache::new();
+        for _ in 0..3000 {
+            let k = (r.u() % slots.len() as u64) as usize;
+            if r.u() % 10 == 0 {
+                slots[k] = patch(&mut r);
+            }
+            let count = match r.u() % 20 {
+                0 => 65535,
+                n => (r.u() % (100 * n) + 1) as usize,
+            };
+            let mut chain = GlitterChain::new(&slots[k]);
+            let want: Vec<GlitterHash> = (0..count).map(|_| chain.next()).collect();
+            assert!(cache.points(&slots[k], count) == &want[..]);
+            let kept: usize = cache.patches.iter().map(|p| p.points.len()).sum();
+            assert_eq!(kept, cache.points);
+            assert!(cache.patches.len() <= GLITTER_CACHE_PATCHES);
+            assert!(cache.points <= GLITTER_CACHE_POINTS);
+        }
+    }
+
+    /// Glitter calls that revisit a few patches under new views and counts
+    /// (the kept hashes) against the translated program.
+    #[test]
+    fn glitter_revisits_match_translated() {
+        let mut r = Rng(0x0911_77e5_0bad_cafe);
+        let tops = [7u16, 0x9a];
+        let patches: Vec<Box<[u8; 16384]>> = (0..6)
+            .map(|i| {
+                let mut mem = Box::new([0u8; 16384]);
+                descriptor(&mut r, &mut mem, tops[i % 2], 0x1460);
+                mem
+            })
+            .collect();
+        for case in 0..60 {
+            let k = (r.u() % patches.len() as u64) as usize;
+            let top = tops[k % 2];
+            let mut mem = patches[k].clone();
+            header(&mut r, &mut mem);
+            let d21 = top + 21;
+            let mut q = Mem(&mut mem).ld(d21);
+            q[3] = (r.u() % 200 + 1) as u32;
+            put(&mut mem, d21, q);
+            let want = translated("f55ee63416fe5dcf", HASH, 0x1460, top as u32, &mem);
+            let mut kicks = Vec::new();
+            let ok = run(
+                0x1460,
+                top as u32,
+                0,
+                &mut mem,
+                &mut VuState::default(),
+                &mut |k| kicks.push(k.to_vec()),
+            );
+            compare(
+                &format!("revisit {case} patch {k}"),
+                (ok, kicks, mem.to_vec()),
+                want,
+            );
         }
     }
 
