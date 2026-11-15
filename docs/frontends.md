@@ -34,6 +34,7 @@ pub struct EngineConfig {
     pub data_root: Option<PathBuf>, // disc image, orig/, texture packs
     pub save_root: Option<PathBuf>, // memory card, settings, dumps
     pub cache_root: Option<PathBuf>, // rebuildable files (pipelines)
+    pub save_pipelines: bool,      // keep pipelines between runs (default on; the browser turns it off)
     pub find_pack: bool,            // standalone pack (tools/bundle.py)
     pub skip_movies: bool,          // default; SSX3_SKIP_MOVIES overrides
     pub short_memcard_screens: bool, // default true; SSX3_SHORT_MEMCARD_SCREENS overrides
