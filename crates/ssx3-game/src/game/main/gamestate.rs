@@ -7,9 +7,11 @@ use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::be::gp as gp_4;
@@ -204,6 +206,46 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0023_6728,
         game_state_event_select_save_state,
         "GameStateEventSelect_SaveState",
+    ),
+    (
+        0x0023_4de0,
+        game_state_countdown_save_state,
+        "GameStateCountdown_SaveState",
+    ),
+    (
+        0x0023_4eb8,
+        game_state_race_save_state,
+        "GameStateRace_SaveState",
+    ),
+    (
+        0x0023_61c8,
+        game_state_warp_to_event_save_state,
+        "GameStateWarpToEvent_SaveState",
+    ),
+    (
+        0x0023_6af8,
+        game_state_event_switch_load_save_state,
+        "GameStateEventSwitchLoad_SaveState",
+    ),
+    (
+        0x0023_6b70,
+        game_state_reset_ai_save_state,
+        "GameStateResetAI_SaveState",
+    ),
+    (
+        0x0023_6d60,
+        game_state_pre_race_menu_save_state,
+        "GameStatePreRaceMenu_SaveState",
+    ),
+    (
+        0x0023_6ec8,
+        game_state_results_save_state,
+        "GameStateResults_SaveState",
+    ),
+    (
+        0x0023_6fa8,
+        game_state_finish_cinematic_save_state,
+        "GameStateFinishCinematic_SaveState",
     ),
 ];
 
@@ -2953,6 +2995,106 @@ pub fn game_state_reset_save_state(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// GameState_*_SaveState wrappers (0x236fa8, 0x236ec8, 0x236d60, 0x236b70)
+
+/// `GameState_SaveState` (0x233af0, through its override slot).
+pub(crate) const OC325_GAME_STATE_SAVE_STATE: Callee = Callee {
+    addr: 0x0023_3af0,
+    f: ee::s06::GameState_SaveState,
+};
+
+/// A per-state `SaveState` wrapper: save the base game state, then return.
+pub(crate) fn oc325_gamestate_save_wrapper(c: &mut Cpu, ret_addr: u32) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(OC325_GAME_STATE_SAVE_STATE),
+        ret_addr,
+    );
+}
+
+/// `void GameStateFinishCinematic_SaveState(GameState* self,
+/// Serialiser* s)` (0x236fa8): the base game state's save.
+pub fn game_state_finish_cinematic_save_state(c: &mut Cpu) {
+    oc325_gamestate_save_wrapper(c, 0x0023_6fb8);
+}
+
+/// `void GameStateResults_SaveState(GameState* self, Serialiser* s)`
+/// (0x236ec8): the base game state's save.
+pub fn game_state_results_save_state(c: &mut Cpu) {
+    oc325_gamestate_save_wrapper(c, 0x0023_6ed8);
+}
+
+/// `void GameStatePreRaceMenu_SaveState(GameState* self, Serialiser* s)`
+/// (0x236d60): the base game state's save.
+pub fn game_state_pre_race_menu_save_state(c: &mut Cpu) {
+    oc325_gamestate_save_wrapper(c, 0x0023_6d70);
+}
+
+/// `void GameStateResetAI_SaveState(GameState* self, Serialiser* s)`
+/// (0x236b70): the base game state's save.
+pub fn game_state_reset_ai_save_state(c: &mut Cpu) {
+    oc325_gamestate_save_wrapper(c, 0x0023_6b80);
+}
+
+// ---------------------------------------------------------------------------
+// GameState*_SaveState (0x236af8, 0x2361c8, 0x234eb8, 0x234de0, 0x233bd0,
+// 0x233b90)
+//
+// Six identical gcc forwarding wrappers: a 0x10 frame holding `ra`, one call
+// to the base `GameState_SaveState(self, serialiser)` and a plain return.
+
+/// `GameState_SaveState` (0x233af0), reached through its override slot.
+pub(crate) const OC326_GAME_STATE_SAVE_STATE: Callee = Callee {
+    addr: 0x0023_3af0,
+    f: ee::s06::GameState_SaveState,
+};
+
+/// `void GameStateEventSwitchLoad_SaveState(GameState* self, Serialiser* s)`
+/// (0x236af8): save the base game state, forwarded unchanged.
+pub fn game_state_event_switch_load_save_state(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(OC326_GAME_STATE_SAVE_STATE),
+        0x0023_6b08,
+    );
+}
+
+/// `void GameStateWarpToEvent_SaveState(GameState* self, Serialiser* s)`
+/// (0x2361c8): save the base game state, forwarded unchanged.
+pub fn game_state_warp_to_event_save_state(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(OC326_GAME_STATE_SAVE_STATE),
+        0x0023_61d8,
+    );
+}
+
+/// `void GameStateRace_SaveState(GameState* self, Serialiser* s)` (0x234eb8):
+/// save the base game state, forwarded unchanged.
+pub fn game_state_race_save_state(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(OC326_GAME_STATE_SAVE_STATE),
+        0x0023_4ec8,
+    );
+}
+
+/// `void GameStateCountdown_SaveState(GameState* self, Serialiser* s)`
+/// (0x234de0): save the base game state, forwarded unchanged.
+pub fn game_state_countdown_save_state(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(OC326_GAME_STATE_SAVE_STATE),
+        0x0023_4df0,
+    );
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4184,6 +4326,141 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(state);
                 c.g[A1][0] = sx(stream);
                 c.pc = 0x0023_5990;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::ptr;
+    use crate::difftest::fakes::vtable;
+
+    use crate::difftest::RA as SENTINEL;
+
+    // -- GameState_*_SaveState wrappers --------------------------------------
+
+    /// A serialiser whose `Save(size)` slot (vtable +8) is a fake; the
+    /// wrapper's call to `GameState_SaveState` passes it through.
+    pub(crate) fn oc325_save_state_setup(c: &mut Cpu, seed: u32, entry: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 1);
+        c.pc = entry;
+        let serialiser = DATA + 0x20_0000 + (r.next_u32() & 0xfff0);
+        let vt = vtable(c, &mut r, &[0x8]);
+        c.bus.write32(serialiser, vt);
+        c.g[A0][0] = sx(ptr(&mut r));
+        c.g[A1][0] = sx(serialiser);
+        c.g[RA][0] = SENTINEL as u64;
+    }
+
+    #[test]
+    fn game_state_finish_cinematic_save_state_matches() {
+        covered(
+            ee::s06::f_00236fa8__generated,
+            game_state_finish_cinematic_save_state,
+            100,
+            &|c, seed| oc325_save_state_setup(c, seed, 0x0023_6fa8, 0x236f_a8),
+        );
+    }
+
+    #[test]
+    fn game_state_results_save_state_matches() {
+        covered(
+            ee::s06::f_00236ec8__generated,
+            game_state_results_save_state,
+            100,
+            &|c, seed| oc325_save_state_setup(c, seed, 0x0023_6ec8, 0x236e_c8),
+        );
+    }
+
+    #[test]
+    fn game_state_pre_race_menu_save_state_matches() {
+        covered(
+            ee::s06::f_00236d60__generated,
+            game_state_pre_race_menu_save_state,
+            100,
+            &|c, seed| oc325_save_state_setup(c, seed, 0x0023_6d60, 0x236d_60),
+        );
+    }
+
+    #[test]
+    fn game_state_reset_ai_save_state_matches() {
+        covered(
+            ee::s06::f_00236b70__generated,
+            game_state_reset_ai_save_state,
+            100,
+            &|c, seed| oc325_save_state_setup(c, seed, 0x0023_6b70, 0x236b_70),
+        );
+    }
+
+    // ------------------------------------------------- game state wrappers
+
+    /// A game state at `DATA` and a serialiser at `DATA + 0x100` whose write
+    /// method (vtable slot `+0x8`/`+0xc`) is a fake that may unwind; `a0` is
+    /// the state (sometimes with upper-half garbage), `a1` the serialiser.
+    pub(crate) fn oc326_state_fixture(c: &mut Cpu, seed: u32, salt: u64, entry: u32) -> Rng {
+        let mut r = machine(c, seed, salt, 1);
+        c.pc = entry;
+        const THIS: u32 = DATA;
+        const STREAM: u32 = DATA + 0x100;
+        let vt = vtable(c, &mut r, &[0x8]);
+        c.bus.write32(STREAM, vt);
+        c.bus.write32(THIS, r.next_u32());
+        c.g[A0][0] = if seed % 4 == 0 {
+            (r.next_u32() as u64) << 32 | THIS as u64
+        } else {
+            sx(THIS)
+        };
+        c.g[A1][0] = sx(STREAM);
+        r
+    }
+
+    /// GameStateEventSwitchLoad_SaveState: the base state's save, through a
+    /// serialiser whose write method is a fake (some of them unwind).
+    #[test]
+    fn game_state_event_switch_load_save_state_matches() {
+        covered(
+            ee::s06::f_00236af8__generated,
+            game_state_event_switch_load_save_state,
+            200,
+            &|c, seed| {
+                oc326_state_fixture(c, seed, 0x23_6af8, 0x0023_6af8);
+            },
+        );
+    }
+
+    /// GameStateWarpToEvent_SaveState: as above.
+    #[test]
+    fn game_state_warp_to_event_save_state_matches() {
+        covered(
+            ee::s06::f_002361c8__generated,
+            game_state_warp_to_event_save_state,
+            200,
+            &|c, seed| {
+                oc326_state_fixture(c, seed, 0x23_61c8, 0x0023_61c8);
+            },
+        );
+    }
+
+    /// GameStateRace_SaveState: as above.
+    #[test]
+    fn game_state_race_save_state_matches() {
+        covered(
+            ee::s06::f_00234eb8__generated,
+            game_state_race_save_state,
+            200,
+            &|c, seed| {
+                oc326_state_fixture(c, seed, 0x23_4eb8, 0x0023_4eb8);
+            },
+        );
+    }
+
+    /// GameStateCountdown_SaveState: as above.
+    #[test]
+    fn game_state_countdown_save_state_matches() {
+        covered(
+            ee::s06::f_00234de0__generated,
+            game_state_countdown_save_state,
+            200,
+            &|c, seed| {
+                oc326_state_fixture(c, seed, 0x23_4de0, 0x0023_4de0);
             },
         );
     }

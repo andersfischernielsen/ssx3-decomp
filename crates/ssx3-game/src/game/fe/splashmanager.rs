@@ -61,6 +61,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_splash_manager_emit_pending,
         "cSplashManager_EmitPending",
     ),
+    (
+        0x002f_4118,
+        c_splash_manager_add_splash_all_views,
+        "cSplashManager_AddSplashAllViews",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1780,6 +1785,81 @@ pub fn c_splash_manager_emit_pending(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// cSplashManager_AddSplashAllViews (0x2f4118)
+
+/// The world at `gp - 0x848`; its game module is at `+0x84`.
+pub(crate) const OC326_WORLD: u32 = 0x848;
+
+/// `GameModule_GetSplashManager` (0x2306a8), through the function table.
+pub(crate) const OC326_GET_SPLASH_MANAGER: u32 = 0x0023_06a8;
+
+/// `cSplashManager_AddSplashFromPoint` (0x2f4260), through its slot.
+pub(crate) const OC326_ADD_SPLASH_FROM_POINT: Callee = Callee {
+    addr: 0x002f_4260,
+    f: ee::s09::cSplashManager_AddSplashFromPoint,
+};
+
+/// `void cSplashManager_AddSplashAllViews(void* arg0, float speed)`
+/// (0x2f4118): throw a splash at `arg0` in every view's splash manager, with
+/// `speed` (`f12`, kept in `f20` across the calls). The view count comes from
+/// the game module's `+0x84` view-list object (`+0x10`), the managers from
+/// `GameModule_GetSplashManager(module, i)` (word at `module + 4*i + 0x68`).
+pub fn c_splash_manager_add_splash_all_views(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x40);
+        c.g[A1][0] = Addr(r32(c, GP).wrapping_sub(OC326_WORLD)).lw(c);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = 0; // i
+        frame.save_fpr(c, 20, 0x30);
+        c.g[S1][0] = c.g[A0][0]; // the point
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, A1)).off(0x84).lw(c);
+        c.g[V1][0] = Addr(r32(c, V0)).off(0x84).lw(c);
+        c.g[A0][0] = Addr(r32(c, V1)).off(0x10).lw(c); // count
+        let empty = c.g[A0][0] == 0;
+        c.mov_s(20, 12); // f20 = speed
+        if !empty {
+            c.cycles += 1;
+            c.g[V0][0] = Addr(r32(c, GP).wrapping_sub(OC326_WORLD)).lw(c);
+            loop {
+                c.cycles += 15;
+                c.g[A1][0] = c.g[S0][0]; // index
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                c.g[A0][0] = Addr(r32(c, V0)).off(0x84).lw(c); // game module
+                call_ptr(c, OC326_GET_SPLASH_MANAGER, 0x002f_4160)?;
+                c.g[A0][0] = c.g[V0][0]; // the view's splash manager
+                c.mov_s(12, 20); // speed
+                c.g[A1][0] = c.g[S1][0]; // the point
+                OC326_ADD_SPLASH_FROM_POINT.call(c, 0x002f_4170)?;
+                // Reload the world and count for the loop test.
+                c.g[V0][0] = Addr(r32(c, GP).wrapping_sub(OC326_WORLD)).lw(c);
+                c.g[V1][0] = Addr(r32(c, V0)).off(0x84).lw(c);
+                c.g[A0][0] = Addr(r32(c, V1)).off(0x84).lw(c);
+                c.g[V0][0] = Addr(r32(c, A0)).off(0x10).lw(c);
+                c.g[V0][0] = (c.g[S0][0] < c.g[V0][0]) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V0][0] = Addr(r32(c, GP).wrapping_sub(OC326_WORLD)).lw(c);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_4150);
+                }
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, 16, 0x20);
+        frame.restore(c, 17, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2660,6 +2740,63 @@ pub(crate) mod tests {
                 c.bus.write32(gp + oc230_splash::CRYSTALS_MAX, hi);
                 c.bus.write32(gp + oc230_splash::DROP_SIZE, r.f32(4.0));
                 c.g[A0][0] = sx(m);
+            },
+        );
+    }
+
+    use crate::difftest::put_vec;
+    use crate::difftest::put_words;
+
+    // ----------------------------------------- cSplashManager_AddSplashAllViews
+
+    /// cSplashManager_AddSplashAllViews: 0..3 views, each with its own splash
+    /// manager (0..3 for the count, so the loop runs zero or more times), a
+    /// point at the camera (the near path) or far away, snowing or not, and
+    /// speeds below/inside/above the ramp. Real `GameModule_GetSplashManager`
+    /// and `cSplashManager_AddSplashFromPoint` on the game image's literals.
+    #[test]
+    fn c_splash_manager_add_splash_all_views_matches() {
+        const WORLD: u32 = DATA + 0x1000;
+        const MODULE: u32 = DATA + 0x2000;
+        const VIEWS: u32 = DATA + 0x3000;
+        const POINT: u32 = DATA + 0x4000;
+        const SPLASH0: u32 = DATA + 0x8000;
+        const SPLASH_STRIDE: u32 = 0x2000;
+        check(
+            ee::s09::f_002f4118__generated,
+            c_splash_manager_add_splash_all_views,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x002f_4118 ^ (seed as u64) << 8);
+                crate::difftest::scramble(c, &mut r);
+                elf_image(c);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x002f_4118;
+                put_words(c, GAME_GP.wrapping_sub(OC326_WORLD), &[WORLD]);
+                put_words(c, WORLD + 0x84, &[MODULE]);
+                put_words(c, MODULE + 0x84, &[VIEWS]);
+                let views = seed % 4;
+                put_words(c, VIEWS + 0x10, &[views]);
+                // The point: at the camera for the near path, far otherwise.
+                let near = seed % 3 == 0;
+                let cam = [r.f32(100.0), r.f32(100.0), r.f32(100.0), 0];
+                put_vec(c, POINT, cam);
+                let thr = f32::from_bits(c.bus.read32(GAME_GP + 0x1188));
+                for i in 0..3u32 {
+                    let splash = SPLASH0 + SPLASH_STRIDE * i;
+                    put_words(c, MODULE + 0x68 + 4 * i, &[splash]);
+                    let camera = if near {
+                        cam
+                    } else {
+                        [r.f32(50_000.0), r.f32(50_000.0), r.f32(50_000.0), 0]
+                    };
+                    put_vec(c, splash + 0x1010, camera);
+                    put_words(c, splash + 0x1024, &[r.f32(3.0)]);
+                    let snow = if seed % 5 == 1 { thr - 1.0 } else { thr + 2.0 };
+                    put_words(c, splash + 0x1028, &[snow.to_bits()]);
+                }
+                c.g[A0][0] = sx(POINT);
+                c.f[12] = ((seed % 9) as f32 * 600.0).to_bits();
             },
         );
     }

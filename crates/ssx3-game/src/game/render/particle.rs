@@ -434,6 +434,33 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0037_c8c0, ps2_graphics_man_v46, "PS2GraphicsMan_v46"),
     (0x0037_0dc8, dynamic_emitter_setup, "DynamicEmitter_Setup"),
     (0x0037_12b8, dynamic_emitter_save, "DynamicEmitter_Save"),
+    (
+        0x0037_0c60,
+        dynamic_emitter_alloc_data,
+        "DynamicEmitter_AllocData",
+    ),
+    (
+        0x0037_0cf8,
+        dynamic_emitter_free_data,
+        "DynamicEmitter_FreeData",
+    ),
+    (
+        0x0037_0d60,
+        dynamic_emitter_reset_particles,
+        "DynamicEmitter_ResetParticles",
+    ),
+    (
+        0x0037_d090,
+        ps2_graphics_man_set_texture_filter,
+        "PS2GraphicsMan_SetTextureFilter",
+    ),
+    (0x0038_5260, grid_mesh_base_dtor, "GridMeshBase_dtor"),
+    (0x0038_5290, cps2_grid_mesh_dtor, "cPS2GridMesh_dtor"),
+    (
+        0x0037_47a0,
+        bezier_patch_cache_tessellate_patch,
+        "BezierPatchCache_TessellatePatch",
+    ),
 ];
 
 /// Same-shard direct callees used above.
@@ -11543,6 +11570,562 @@ pub fn dynamic_emitter_save(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// DynamicEmitter_AllocData (0x370c60)
+
+/// Emitter: element count (+0x178), particle array (+0x1a0), state array
+/// (+0x1a4).
+pub(crate) const EMITTER_COUNT: u32 = 0x178;
+
+pub(crate) const EMITTER_PARTICLES: u32 = 0x1a0;
+
+pub(crate) const EMITTER_STATES: u32 = 0x1a4;
+
+/// The `new (tag, 0, 0)` allocation tags of the two arrays.
+pub(crate) const EMITTER_PARTICLE_TAG: u64 = 0x0049_2650;
+
+pub(crate) const EMITTER_STATE_TAG: u64 = 0x0049_2670;
+
+/// `operator_new_named` (0x317e30, cross-shard).
+pub(crate) const EMITTER_NEW_NAMED: u32 = 0x0031_7e30;
+
+/// `void DynamicEmitter_AllocData(DynamicEmitter* self)` (0x370c60): allocate
+/// the emitter's particle array (`count * 16` bytes, tag 0x492650) and its
+/// state array (tag 0x492670) at `count` elements (`+0x178`), storing them at
+/// `+0x1a0`/`+0x1a4`. Frame 0x40 (s0 = self, s1 = array slot, s2 = count).
+pub fn dynamic_emitter_alloc_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        c.g[A1][0] = EMITTER_PARTICLE_TAG;
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0;
+        frame.save(c, S0, 0x30);
+        c.g[A3][0] = 0;
+        c.g[S0][0] = Addr(r32(c, S1).wrapping_add(EMITTER_COUNT)).lw(c);
+        c.g[S2][0] = sx(r32(c, S1).wrapping_add(EMITTER_PARTICLES));
+        c.g[A0][0] = sx(r32(c, S0) << 4);
+        call_ptr(c, EMITTER_NEW_NAMED, 0x0037_0c98)?;
+        // The compiler's array-new tail: `count - 1` (the `n - 1` of an
+        // inlined element loop), and a `-1` marker when the count is not 0.
+        c.g[V1][0] = sx(r32(c, S0).wrapping_sub(1));
+        if r32(c, S0) != 0 {
+            c.cycles += 2;
+            c.g[A0][0] = u64::MAX;
+        }
+        c.cycles += 11;
+        Addr(r32(c, S2)).sw(c, c.g[V0][0]);
+        c.g[A1][0] = EMITTER_STATE_TAG;
+        c.g[A2][0] = 0;
+        c.g[S0][0] = Addr(r32(c, S1).wrapping_add(EMITTER_COUNT)).lw(c);
+        c.g[A3][0] = 0;
+        c.g[S1][0] = sx(r32(c, S1).wrapping_add(EMITTER_STATES));
+        c.g[A0][0] = sx(r32(c, S0) << 4);
+        call_ptr(c, EMITTER_NEW_NAMED, 0x0037_0ccc)?;
+        c.g[V1][0] = sx(r32(c, S0).wrapping_sub(1));
+        if r32(c, S0) != 0 {
+            c.cycles += 1;
+            c.g[A0][0] = u64::MAX;
+        }
+        c.cycles += 7;
+        Addr(r32(c, S1)).sw(c, c.g[V0][0]);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// DynamicEmitter_FreeData (0x370cf8)
+
+/// Emitter fields: the element count (+0x170), the last index (+0x178), the
+/// particle array (+0x1a0) and the state array (+0x1a4).
+pub(crate) const EMITTER_FREE_COUNT: u32 = 0x170;
+
+pub(crate) const EMITTER_FREE_LAST: u32 = 0x178;
+
+pub(crate) const EMITTER_FREE_PARTICLES: u32 = 0x1a0;
+
+pub(crate) const EMITTER_FREE_STATES: u32 = 0x1a4;
+
+/// `void DynamicEmitter_FreeData(DynamicEmitter* self, int reset)` (0x370cf8):
+/// free the particle and state arrays (`EA_MemFree`, through the function
+/// table) and clear their slots; with `reset`, also clear the element count
+/// and set the last index to -1. Frame 0x30 (s0 = self, s1 = reset).
+pub fn dynamic_emitter_free_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(EMITTER_FREE_PARTICLES)).lw(c);
+        c.g[S1][0] = c.g[A1][0];
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            call_ptr(c, 0x0031_7e98, 0x0037_0d20)?;
+            Addr(r32(c, S0).wrapping_add(EMITTER_FREE_PARTICLES)).sw(c, 0);
+        }
+        c.cycles += 3;
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(EMITTER_FREE_STATES)).lw(c);
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            call_ptr(c, 0x0031_7e98, 0x0037_0d38)?;
+            Addr(r32(c, S0).wrapping_add(EMITTER_FREE_STATES)).sw(c, 0);
+        }
+        c.cycles += 2;
+        c.g[V0][0] = u64::MAX;
+        if c.g[S1][0] != 0 {
+            c.cycles += 2;
+            Addr(r32(c, S0).wrapping_add(EMITTER_FREE_COUNT)).sw(c, 0);
+            Addr(r32(c, S0).wrapping_add(EMITTER_FREE_LAST)).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// DynamicEmitter_ResetParticles (0x370d60)
+
+/// `void DynamicEmitter_ResetParticles(DynamicEmitter* e)` (0x370d60):
+/// clear the live counter `+0x17c` and the loop state `+0x1e0`, then write
+/// the zero vector (`0x4ff120`) into each of the `+0x178` position and
+/// velocity entries `vec4A` arrays at `+0x1a0` and `+0x1a4`.
+pub fn dynamic_emitter_reset_particles(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[A2][0] = c.g[A0][0];
+    c.g[A3][0] = 0;
+    c.g[V0][0] = Addr(r32(c, A2)).off(0x178).lw(c);
+    let empty = (c.g[V0][0] as i64) <= 0;
+    let at = r32(c, A2);
+    Addr(at).off(0x17c).sw(c, 0);
+    if !empty {
+        c.cycles += 3;
+        c.g[V0][0] = 0x0050_0000;
+        c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xee0)); // 0x4ff120
+        loop {
+            c.cycles += 15;
+            c.g[V1][0] = Addr(r32(c, A2)).off(0x1a0).lw(c);
+            c.g[A1][0] = sx((c.g[A3][0] as u32) << 4);
+            let zero = r32(c, T0);
+            c.lq(2, zero);
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+            c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            let pos = r32(c, V1);
+            c.sq(2, pos);
+            c.g[A0][0] = Addr(r32(c, A2)).off(0x1a4).lw(c);
+            let zero = r32(c, T0);
+            c.lq(2, zero);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            let vel = r32(c, A1);
+            c.sq(2, vel);
+            let at = r32(c, A2);
+            Addr(at).off(0x17c).sw(c, 0);
+            c.g[V0][0] = Addr(r32(c, A2)).off(0x178).lw(c);
+            c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            let at = r32(c, A2);
+            Addr(at).off(0x1e0).sw(c, 0);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0037_0d80);
+            }
+        }
+    }
+    c.cycles += 2;
+    let ra = c.g[RA][0] as u32;
+    c.pc = ra;
+}
+
+// ---------------------------------------------------------------------------
+// cPS2GridMesh_dtor (0x385290)
+
+/// `cMemMan_free` (0x317e98), cross-shard.
+pub(crate) const CMEM_FREE: u32 = 0x0031_7e98;
+
+/// `GridMeshBase_dtor` (0x385260), same shard.
+pub(crate) const GRID_MESH_BASE_DTOR: Callee = Callee {
+    addr: 0x0038_5260,
+    f: ee::s12::GridMeshBase_dtor,
+};
+
+/// `void cPS2GridMesh::~cPS2GridMesh(this, int flags)` (0x385290): free the
+/// DMA chain at +0x19c when present, then run the base destructor.
+pub fn cps2_grid_mesh_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x490000;
+        frame.save(c, 16, 0x20);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x3208));
+        frame.save(c, 17, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.sw(r32(c, S0).wrapping_add(0x4), c.g[V0][0]);
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0x19c)).lw(c);
+        let no_chain = c.g[A0][0] == 0;
+        c.g[S1][0] = c.g[A1][0];
+        if !no_chain {
+            c.cycles += 2;
+            call_ptr(c, CMEM_FREE, 0x0038_52c4)?;
+        }
+        c.cycles += 8;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        GRID_MESH_BASE_DTOR.call(c, 0x0038_52d0)?;
+        frame.restore(c, 16, 0x20);
+        frame.restore(c, 17, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// PS2GraphicsMan_SetTextureFilter (0x37d090)
+
+/// The graphics manager's texture slot 1 filter field.
+pub(crate) const PS2GM_FILTER: u32 = 0x18f4;
+
+/// `TexMan_SetTex1Filter(TexMan* man, int index, ...)` (0x369130).
+pub(crate) const PS2GM_SET_TEX1_FILTER: Callee = Callee {
+    addr: 0x0036_9130,
+    f: ee::s12::TexMan_SetTex1Filter,
+};
+
+/// `void PS2GraphicsMan_SetTextureFilter(GraphicsMan* gs)` (0x37d090): apply
+/// the filter of the texture-function descriptor kept at `gs + 0x18f4`: the
+/// 7-cycle forwarding wrapper for `TexMan_SetTex1Filter(gs->descriptor)`.
+pub fn ps2_graphics_man_set_texture_filter(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr(r32(c, A0).wrapping_add(PS2GM_FILTER)).lw(c);
+        PS2GM_SET_TEX1_FILTER.call(c, 0x0037_d0a0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `__builtin_delete`.
+pub(crate) const BUILTIN_DELETE: u32 = 0x0031_7e50;
+
+/// `void* GridMeshBase_dtor(GridMeshBase* self, int flags)` (0x385260):
+/// install the class vtable and, when `flags & 1`, delete the object.
+pub fn grid_mesh_base_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x49_0000;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(0x49_0000u32.wrapping_add(0x3938));
+        c.g[A1][0] &= 1;
+        Addr(r32(c, A0)).off(0x4).sw(c, c.g[V0][0]);
+        if c.g[A1][0] != 0 {
+            c.cycles += 2;
+            c.g[RA][0] = sx(0x0038_5284);
+            call_ptr(c, BUILTIN_DELETE, 0x0038_5284)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// BezierPatchCache_TessellatePatch (0x3747a0)
+
+/// Cache fields: per level (0-2) the free-slot stacks (+0x30) and counts
+/// (+0x3c), the position slabs (+0x48, slots of 0xc0/0x1b0/0x300 bytes),
+/// UV slabs (+0x54, 0x80/0x120/0x200), second-UV slabs (+0x60), the
+/// entries (+0x18, 12 bytes: patch, flags, normal slot), the normal stacks
+/// (+0x1cc), counts (+0x1d8) and slabs (+0x1b4).
+pub(crate) const TPP_FREE: u32 = 0x30;
+
+pub(crate) const TPP_FREE_COUNT: u32 = 0x3c;
+
+pub(crate) const TPP_POS: [u32; 3] = [0x48, 0x4c, 0x50];
+
+pub(crate) const TPP_UV: [u32; 3] = [0x54, 0x58, 0x5c];
+
+pub(crate) const TPP_UV2: [u32; 3] = [0x60, 0x64, 0x68];
+
+pub(crate) const TPP_ENTRIES: u32 = 0x18;
+
+pub(crate) const TPP_NRM_FREE: u32 = 0x1cc;
+
+pub(crate) const TPP_NRM_COUNT: u32 = 0x1d8;
+
+pub(crate) const TPP_NRM: [u32; 3] = [0x1b4, 0x1b8, 0x1bc];
+
+/// The patch's slot index per level (`patch + 0x1a6 + 2 * level`).
+pub(crate) const TPP_PATCH_SLOT: u32 = 0x1a6;
+
+pub(crate) const TPP_TESS_POSITIONS: Callee = Callee {
+    addr: 0x0037_4180,
+    f: ee::s12::BezierPatchCache_TessPositions,
+};
+
+pub(crate) const TPP_TESS_UVS: Callee = Callee {
+    addr: 0x0037_4298,
+    f: ee::s12::BezierPatchCache_TessUVs,
+};
+
+pub(crate) const TPP_TESS_UV2: Callee = Callee {
+    addr: 0x0037_4440,
+    f: ee::s12::BezierPatchCache_TessUV2,
+};
+
+pub(crate) const TPP_TESS_POSITIONS_ALT: Callee = Callee {
+    addr: 0x0037_4518,
+    f: ee::s12::BezierPatchCache_TessPositionsAlt,
+};
+
+/// `a2 = slab[level] + slot * {0xc0, 0x1b0, 0x300}[level]` (`mult` by
+/// `slot_reg`), or 0 for a level outside 0-2; then `end` (the original's
+/// delay-slot op). s0 = level, s1 = the cache; the caller charged the first
+/// test.
+pub(crate) fn tpp_select_positions(
+    c: &mut Cpu,
+    offs: [u32; 3],
+    slot_reg: usize,
+    end: fn(&mut Cpu),
+) {
+    let level = c.g[S0][0];
+    let cache = r32(c, S1);
+    let (size, off) = if level == 1 {
+        c.cycles += 3;
+        (0x1b0, offs[1])
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = ((level as i64) < 2) as u64;
+        c.g[V0][0] = 2;
+        c.cycles += 2;
+        c.g[A2][0] = 0;
+        if (level as i64) >= 2 {
+            if level != 2 {
+                c.cycles += 2;
+                return end(c);
+            }
+            c.cycles += 2;
+            (0x300, offs[2])
+        } else {
+            if level != 0 {
+                c.cycles += 2;
+                return end(c);
+            }
+            c.cycles += 3;
+            (0xc0, offs[0])
+        }
+    };
+    c.g[V0][0] = size;
+    c.g[V1][0] = Addr(cache).off(off).lw(c);
+    c.cycles += 3;
+    c.mult(0, V0, slot_reg, V0);
+    c.g[A2][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+    end(c);
+}
+
+/// `dest = slab[level] + slot * {0x80, 0x120, 0x200}[level]` (level 1 by
+/// `mult` with s6, the others by shifts of s4), or 0; then `end`.
+pub(crate) fn tpp_select_uvs(c: &mut Cpu, dest: usize, offs: [u32; 3], end: fn(&mut Cpu)) {
+    let level = c.g[S0][0];
+    let cache = r32(c, S1);
+    c.cycles += 2;
+    c.g[V0][0] = ((level as i64) < 2) as u64;
+    if level == 1 {
+        c.cycles += 5;
+        c.g[V0][0] = 0x120;
+        c.g[V1][0] = Addr(cache).off(offs[1]).lw(c);
+        c.mult(0, V0, S6, V0);
+    } else {
+        c.cycles += 2;
+        let high = c.g[V0][0] == 0;
+        c.g[V0][0] = 2;
+        c.cycles += 2;
+        c.g[dest][0] = 0;
+        let shift = if high {
+            if level != 2 {
+                c.cycles += 2;
+                return end(c);
+            }
+            c.cycles += 3;
+            9
+        } else {
+            if level != 0 {
+                c.cycles += 2;
+                return end(c);
+            }
+            c.cycles += 4;
+            7
+        };
+        let off = if shift == 9 { offs[2] } else { offs[0] };
+        c.g[V1][0] = Addr(cache).off(off).lw(c);
+        c.g[V0][0] = sx(r32(c, S4) << shift);
+    }
+    c.g[dest][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+    c.cycles += 1;
+    end(c);
+}
+
+pub(crate) fn tpp_end_v0_one(c: &mut Cpu) {
+    c.g[V0][0] = 1;
+}
+
+pub(crate) fn tpp_end_a0_cache(c: &mut Cpu) {
+    c.g[A0][0] = c.g[S1][0];
+}
+
+/// `int BezierPatchCache_TessellatePatch(BezierPatchCache* self, Patch*
+/// patch, int level, int bit, int normals)` (0x3747a0): take a free slot
+/// of `level` (-1 when none), tessellate the patch's positions, UVs and
+/// second UVs into that slot's slabs, record the patch in the slot's entry
+/// (flags |= 0xc | 1 << bit) and the slot in the patch; with `normals`,
+/// also take a normal slot and tessellate the alternative positions into
+/// it. Returns the slot.
+pub fn bezier_patch_cache_tessellate_patch(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0xa0);
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        c.g[S0][0] = c.g[A2][0];
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S5, 0x40);
+        frame.save(c, S7, 0x20);
+        let cache = r32(c, S1);
+        c.g[V0][0] = sx(cache.wrapping_add(TPP_FREE_COUNT));
+        frame.save(c, FP, 0x10);
+        c.g[A0][0] = sx(r32(c, S0) << 2);
+        frame.save(c, S2, 0x70);
+        c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+        frame.save(c, S3, 0x60);
+        c.g[S5][0] = c.g[A1][0];
+        frame.save(c, S4, 0x50);
+        c.g[S7][0] = c.g[A3][0];
+        frame.save(c, S6, 0x30);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+        c.g[FP][0] = c.g[T0][0];
+        // slot = free[level][--free_count[level]], or -1.
+        if (c.g[V0][0] as i64) <= 0 {
+            c.cycles += 1;
+            c.g[S4][0] = u64::MAX;
+        } else {
+            c.cycles += 8;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+            c.g[A0][0] = sx(cache.wrapping_add(r32(c, A0)));
+            let v = c.g[V0][0];
+            Addr(r32(c, V1)).sw(c, v);
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[V1][0] = Addr(r32(c, A0)).off(TPP_FREE).lw(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+            c.g[S4][0] = Addr(r32(c, V0)).lw(c);
+        }
+
+        // The slot's position (a2), UV (s3) and second-UV (s2) slabs.
+        c.cycles += 3;
+        c.g[V0][0] = 1;
+        c.g[S6][0] = c.g[S4][0];
+        tpp_select_positions(c, TPP_POS, S4, tpp_end_v0_one);
+        tpp_select_uvs(c, S3, TPP_UV, tpp_end_v0_one);
+        tpp_select_uvs(c, S2, TPP_UV2, tpp_end_a0_cache);
+
+        c.cycles += 30;
+        c.g[A1][0] = c.g[S5][0];
+        c.g[A3][0] = c.g[S0][0];
+        TPP_TESS_POSITIONS.call(c, 0x0037_4950)?;
+        c.g[A2][0] = c.g[S3][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S5][0];
+        c.g[A3][0] = c.g[S0][0];
+        TPP_TESS_UVS.call(c, 0x0037_4964)?;
+        c.g[A2][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S5][0];
+        c.g[A3][0] = c.g[S0][0];
+        TPP_TESS_UV2.call(c, 0x0037_4978)?;
+
+        // entry = &entries[level][slot]: patch, flags |= 0xc | 1 << bit.
+        let cache = r32(c, S1);
+        c.g[V0][0] = 0xc;
+        c.g[A2][0] = sx(r32(c, S0) << 2);
+        c.mult(0, V0, S6, V0);
+        c.g[A0][0] = sx(cache.wrapping_add(r32(c, A2)));
+        c.g[A1][0] = Addr(r32(c, A0)).off(TPP_ENTRIES).lw(c);
+        c.g[V1][0] = sx(r32(c, S0) << 1);
+        c.g[V1][0] = sx(r32(c, S5).wrapping_add(r32(c, V1)));
+        c.g[A3][0] = 1;
+        c.g[A0][0] = sx(1u32 << (r32(c, S7) & 31));
+        c.g[S3][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+        let entry = r32(c, S3);
+        let patch = c.g[S5][0];
+        Addr(entry).sw(c, patch);
+        let slot = c.g[S4][0];
+        Addr(r32(c, V1)).off(TPP_PATCH_SLOT).sh(c, slot);
+        c.g[V0][0] = Addr(entry).off(4).lw(c);
+        c.g[V0][0] |= 0xc;
+        c.g[V0][0] |= c.g[A0][0];
+        let flags = c.g[V0][0];
+        Addr(entry).off(4).sw(c, flags);
+        if c.g[FP][0] != 0 {
+            // nslot = nrm_free[level][--nrm_count[level]]
+            c.cycles += 11;
+            let a2 = r32(c, A2);
+            c.g[V1][0] = sx(cache.wrapping_add(TPP_NRM_COUNT));
+            c.g[A0][0] = sx(cache.wrapping_add(a2));
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(a2));
+            c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+            let v = c.g[V0][0];
+            Addr(r32(c, V1)).sw(c, v);
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[V1][0] = Addr(r32(c, A0)).off(TPP_NRM_FREE).lw(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+            c.g[S2][0] = Addr(r32(c, V0)).lw(c);
+            tpp_select_positions(c, TPP_NRM, S2, tpp_end_a0_cache);
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S5][0];
+            c.g[A3][0] = c.g[S0][0];
+            TPP_TESS_POSITIONS_ALT.call(c, 0x0037_4a4c)?;
+            let nslot = c.g[S2][0];
+            Addr(r32(c, S3)).off(8).sw(c, nslot);
+        }
+
+        c.cycles += 13;
+        c.g[V0][0] = c.g[S4][0];
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15137,6 +15720,302 @@ pub(crate) mod tests {
                 c.bus.write32(stream, vt);
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(stream);
+            },
+        );
+    }
+
+    #[test]
+    fn dynamic_emitter_alloc_data_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA};
+        use crate::game::be::beintreward::tests::world;
+        use crate::game::bx::bxstring::tests::heap_init_4;
+        use crate::game::bx::bxstringctor::tests::be_library;
+        check(
+            ssx3_ee::s12::f_00370c60__generated,
+            dynamic_emitter_alloc_data,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0037_0c60, 0);
+                be_library(c);
+                world(c);
+                heap_init_4(c);
+                // The emitter: a junk element count and junk array slots
+                // (some seeds empty, which allocates nothing).
+                let emitter = DATA + 0x100;
+                fill(c, &mut r, emitter + 0x170, 0x40);
+                let count = if seed % 4 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 8
+                };
+                c.bus.write32(emitter + EMITTER_COUNT, count);
+                c.g[A0][0] = emitter as u64;
+            },
+        );
+    }
+
+    /// `DynamicEmitter_FreeData`: arrays present or empty, and `reset` set or
+    /// clear; the heap is up (sizes over the pool range) so `EA_MemFree`
+    /// really returns the blocks.
+    #[test]
+    fn dynamic_emitter_free_data_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA};
+        use crate::game::be::beintreward::tests::world;
+        use crate::game::bx::bxstring::tests::{alloc, heap};
+        use crate::game::bx::bxstringctor::tests::be_library;
+        check(
+            ee::s12::f_00370cf8__generated,
+            dynamic_emitter_free_data,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x37_0cf8, 0);
+                be_library(c);
+                world(c);
+                heap(c);
+                let emitter = DATA + 0x100;
+                fill(c, &mut r, emitter + 0x160, 0x50);
+                let particles = if seed % 3 == 0 {
+                    0
+                } else {
+                    alloc(c, 0x200 + r.next_u32() % 0x100)
+                };
+                let states = if seed % 4 == 0 {
+                    0
+                } else {
+                    alloc(c, 0x200 + r.next_u32() % 0x100)
+                };
+                c.bus.write32(emitter + EMITTER_FREE_PARTICLES, particles);
+                c.bus.write32(emitter + EMITTER_FREE_STATES, states);
+                c.g[A0][0] = sx(emitter);
+                c.g[A1][0] = (seed % 2) as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::animation::rideranim::tests::CTRL;
+    pub(crate) use crate::game::animation::rideranim::tests::MAGIC;
+
+    pub(crate) use crate::game::animation::rideranim::tests::active;
+    pub(crate) use crate::game::animation::rideranim::tests::chain;
+    pub(crate) use crate::game::animation::rideranim::tests::fake_ret;
+    pub(crate) use crate::game::animation::rideranim::tests::install;
+
+    // -- DynamicEmitter_ResetParticles -----------------------------------
+
+    #[test]
+    fn dynamic_emitter_reset_particles_matches() {
+        check(
+            ee::s12::f_00370d60__generated,
+            dynamic_emitter_reset_particles,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x37_0d60, 0);
+                c.pc = 0x0037_0d60;
+                let e = DATA + 0x400;
+                c.bus.write32(e + 0x178, seed % 5);
+                c.bus.write32(e + 0x17c, 3);
+                c.bus.write32(e + 0x1a0, DATA + 0x2000);
+                c.bus.write32(e + 0x1a4, DATA + 0x3000);
+                // The zero vector the loop copies from 0x4ff120.
+                for i in 0..4u32 {
+                    c.bus.write32(0x004f_f120 + 4 * i, r.next_u32());
+                }
+                for i in 0..0x40u32 {
+                    c.bus.write32(DATA + 0x2000 + 4 * i, r.next_u32());
+                    c.bus.write32(DATA + 0x3000 + 4 * i, r.next_u32());
+                }
+                c.g[A0][0] = sx(e);
+            },
+        );
+    }
+
+    // -- slot 3: cMemMan_free (0x317e98) -------------------------------------
+
+    pub(crate) fn fake_mem_free(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 3, fake_mem_free);
+        }
+        fake_ret(c, 4);
+    }
+
+    #[test]
+    fn cps2_grid_mesh_dtor_matches() {
+        install(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317E98),
+            fake_mem_free,
+            3,
+        );
+        check(
+            ee::s12::f_00385290__generated,
+            cps2_grid_mesh_dtor,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0038_5290, 1);
+                let mesh = DATA + 0x1000;
+                c.g[A0][0] = mesh as u64;
+                // Flags 0 keep the base destructor on its no-delete path.
+                c.g[A1][0] = 0;
+                c.bus.write32(
+                    mesh + 0x19c,
+                    if seed % 2 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 0x1000
+                    },
+                );
+                c.bus.write32(CTRL, MAGIC);
+                c.pc = 0x0038_5290;
+            },
+        );
+    }
+
+    // ---------------------------------------------- PS2GraphicsMan_SetTextureFilter
+
+    /// The manager and the texture-function table are fixture data; the real
+    /// `TexMan_SetTex1Filter` rewrites the descriptor's word at `+0x40`.
+    #[test]
+    fn ps2_graphics_man_set_texture_filter_matches() {
+        check(
+            ee::s12::f_0037d090__generated,
+            ps2_graphics_man_set_texture_filter,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0037_d090 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0037_d090;
+                let man = DATA + 0x40;
+                let table = DATA + 0x200;
+                let descriptor = DATA + 0x1000;
+                c.g[A0][0] = sx(man);
+                c.bus.write32(man + PS2GM_FILTER, table);
+                let index = (seed % 4) as u32;
+                c.bus.write32(table + index * 4 + 8, descriptor);
+                c.g[A1][0] = sx(index);
+                c.g[A2][0] = sx(r.next_u32());
+                c.g[A3][0] = sx(r.next_u32());
+                c.g[T0][0] = sx(r.next_u32());
+                c.g[T1][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    // ----------------------------------------------------- GridMeshBase_dtor
+
+    #[test]
+    fn grid_mesh_base_dtor_matches() {
+        covered(
+            ee::s12::f_00385260__generated,
+            grid_mesh_base_dtor,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3852, 8);
+                c.pc = 0x0038_5260;
+                // A small address counts as a pool block in the test machine
+                // (every pool base is 0), so the delete takes the pool-free
+                // path instead of walking an empty heap.
+                let obj = 0x100 + 8 * (r.next_u32() % 0x80);
+                let flags = if seed % 3 == 0 {
+                    r.next_u32() & !1
+                } else {
+                    r.next_u32() | 1
+                };
+                c.g[A0][0] = sx(obj);
+                c.g[A1][0] = flags as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_CTRL;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_MAGIC;
+    use std::sync::atomic::AtomicUsize;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_fake;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_gated;
+
+    // ------------------------------------------- BezierPatchCache_TessellatePatch
+
+    macro_rules! oc360_fake_set12 {
+        ($install:ident; $($name:ident $prev:ident $addr:literal $slot:ident $gen:ident;)*) => {
+            $(oc360_gated!($name, $prev, $addr, ee::s12::$gen);)*
+            fn $install() {
+                use std::ptr::addr_of_mut;
+                {
+                    $(fakes::hook(addr_of_mut!(ee::s12::$slot), $name, &$prev);)*
+                }
+            }
+        };
+    }
+
+    oc360_fake_set12! {
+        oc360_install_tess_fakes;
+        oc360_fake_tess_pos OC360_PREV_TESS_POS 0x0037_4180 OVERRIDE_00374180 f_00374180__generated;
+        oc360_fake_tess_uv OC360_PREV_TESS_UV 0x0037_4298 OVERRIDE_00374298 f_00374298__generated;
+        oc360_fake_tess_uv2 OC360_PREV_TESS_UV2 0x0037_4440 OVERRIDE_00374440 f_00374440__generated;
+        oc360_fake_tess_alt OC360_PREV_TESS_ALT 0x0037_4518 OVERRIDE_00374518 f_00374518__generated;
+    }
+
+    /// Levels -1..3 (outside 0-2 every slab is 0), free stacks empty or
+    /// not, normals on or off; the tessellators are logged fakes.
+    #[test]
+    fn bezier_patch_cache_tessellate_patch_matches() {
+        oc360_install_tess_fakes();
+        covered(
+            ee::s12::f_003747a0__generated,
+            bezier_patch_cache_tessellate_patch,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0037_47a0, 4);
+                c.pc = 0x0037_47a0;
+                let cache = DATA + 0x8_0000;
+                let patch = DATA + 0x8_1000;
+                let stacks = DATA + 0x8_2000;
+                let entries = DATA + 0x8_3000;
+                c.bus.write32(OC360_CTRL, OC360_MAGIC);
+                fill(c, &mut r, cache, 0x80);
+                fill(c, &mut r, patch, 0x70);
+                let level = (seed % 5) as i32 - 1;
+                for l in 0..3 {
+                    let free = stacks + 0x100 * l;
+                    let nfree = stacks + 0x400 + 0x100 * l;
+                    c.bus.write32(cache + TPP_FREE + 4 * l, free);
+                    c.bus.write32(cache + TPP_NRM_FREE + 4 * l, nfree);
+                    let n = if r.next_u32() % 4 == 0 {
+                        0
+                    } else {
+                        1 + r.next_u32() % 4
+                    };
+                    c.bus.write32(cache + TPP_FREE_COUNT + 4 * l, n);
+                    c.bus
+                        .write32(cache + TPP_NRM_COUNT + 4 * l, 1 + r.next_u32() % 4);
+                    for k in 0..8 {
+                        c.bus.write32(free + 4 * k, r.next_u32() % 6);
+                        c.bus.write32(nfree + 4 * k, r.next_u32() % 6);
+                    }
+                    c.bus
+                        .write32(cache + TPP_ENTRIES + 4 * l, entries + 0x100 * l);
+                }
+                fill(c, &mut r, entries, 0xc0);
+                let level_word = level as u32;
+                // A missing level reads entries[level] from the cache's
+                // random words: point them somewhere harmless.
+                // Levels -1 and 3 read their words next to the real ones.
+                if !(0..3).contains(&level) {
+                    let word = |off: u32| cache.wrapping_add(off).wrapping_add(4 * level_word);
+                    c.bus.write32(word(TPP_ENTRIES), entries + 0x400);
+                    c.bus.write32(word(TPP_NRM_COUNT), 2);
+                    if level < 0 {
+                        c.bus.write32(word(TPP_FREE_COUNT), 2);
+                        c.bus.write32(word(TPP_FREE), stacks + 0x800);
+                        c.bus.write32(word(TPP_NRM_FREE), stacks + 0x900);
+                    }
+                }
+                c.g[A0][0] = sx(cache);
+                c.g[A1][0] = sx(patch);
+                c.g[A2][0] = sx(level_word);
+                c.g[A3][0] = (r.next_u32() % 32) as u64;
+                c.g[T0][0] = (r.next_u32() % 2) as u64;
             },
         );
     }

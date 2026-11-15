@@ -10,6 +10,7 @@ use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::back_edge_unwinds;
@@ -53,6 +54,7 @@ pub(crate) use crate::game::visualfx::boardtrailfx::gp;
 pub(crate) use crate::game::visualfx::worldlightman::deleting_dtor;
 pub(crate) use crate::game::wscript::wscriptman::sw;
 use crate::guest::Addr;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::call_indirect;
@@ -385,6 +387,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x002d_1cb0, world_get_flag_manager, "World_GetFlagManager"),
     (0x002d_1ba0, world_get_peak_number, "World_GetPeakNumber"),
+    (
+        0x002d_19e8,
+        wscript_man_try_run_kill_script,
+        "WScriptMan_TryRunKillScript",
+    ),
+    (0x002d_1bf0, world_add_focus_object, "World_AddFocusObject"),
 ];
 
 /// Same-shard direct callees used above.
@@ -4126,6 +4134,76 @@ pub fn world_get_peak_number(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// WScriptMan_TryRunKillScript (0x2d19e8)
+
+/// The script manager pointer global (`D_004A3DD8`), at `gp + 0xce8`.
+pub(crate) const WSCRIPT_MANAGER_GP: u32 = 0xce8;
+
+/// `WScriptMan_HasKillScript` (0x30a598, cross-shard).
+pub(crate) const WSCRIPT_HAS_KILL_SCRIPT: u32 = 0x0030_a598;
+
+/// `WScriptMan_RunKillScript` (0x30a5c0, cross-shard).
+pub(crate) const WSCRIPT_RUN_KILL_SCRIPT: u32 = 0x0030_a5c0;
+
+/// `int WScriptMan_TryRunKillScript(int id)` (0x2d19e8): when the script
+/// manager (`*(gp + 0xce8)`) has a kill script for `id`, run it and return 1,
+/// else return 0. Frame 0x20 (s0 = id).
+pub fn wscript_man_try_run_kill_script(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_add(WSCRIPT_MANAGER_GP)).lw(c);
+        c.g[A1][0] = c.g[S0][0];
+        call_ptr(c, WSCRIPT_HAS_KILL_SCRIPT, 0x002d_1a04)?;
+        let has_script = c.g[V0][0] != 0;
+        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_add(WSCRIPT_MANAGER_GP)).lw(c);
+        if has_script {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S0][0];
+            call_ptr(c, WSCRIPT_RUN_KILL_SCRIPT, 0x002d_1a1c)?;
+            c.g[V0][0] = 1;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x002d1bf0 World_AddFocusObject
+
+/// `void World_AddFocusObject(FocusObject *obj)` (0x2d1bf0): add `obj` to the
+/// focus manager hanging off the world (`world->+0x84 -> +0xc -> +0xa4`).
+pub fn world_add_focus_object(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        c.g[A2][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A0][0];
+        c.g[V0][0] = Addr(c.g[A2][0] as u32).off(0x84).lw(c);
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0xa4).lw(c);
+        Callee {
+            addr: 0x0010_32c0,
+            f: ee::s00::FocusMan_AddObject,
+        }
+        .call(c, 0x002d_1c10)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6155,6 +6233,64 @@ pub(crate) mod tests {
                 c.bus
                     .write32(0x0043_d950 + track * 0x64 + 0x54, r.next_u32() % 5);
                 c.pc = 0x002d_1ba0;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::lib::snd::tests::{WscriptFakeSlots, FAKE_CTRL, FAKE_MAGIC};
+
+    #[test]
+    fn wscript_man_try_run_kill_script_matches() {
+        use crate::difftest::fakes::{machine, LOG_RESULTS};
+        use crate::difftest::{check, fill, DATA, GAME_GP};
+        let _slots = WscriptFakeSlots::install();
+        check(
+            ssx3_ee::s09::f_002d19e8__generated,
+            wscript_man_try_run_kill_script,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002d_19e8, 1);
+                // This machine's call to the faked callees (see snd.rs).
+                c.bus.write32(FAKE_CTRL, FAKE_MAGIC);
+                // The script manager, with junk around the two fields the
+                // callee touches.
+                let manager = DATA + 0x100;
+                fill(c, &mut r, manager + 0x280, 8);
+                c.bus.write32(GAME_GP + WSCRIPT_MANAGER_GP, manager);
+                c.bus.write32(manager + 0x28c, DATA + 0x200);
+                // Half the seeds have no kill script for the id.
+                c.bus.write32(LOG_RESULTS, (seed % 2) as u32);
+                c.g[A0][0] = (r.next_u32() % 64) as u64;
+            },
+        );
+    }
+
+    /// A world whose systems block holds the focus manager, with a focus
+    /// count of 0..4 and the added object's flags.
+    #[test]
+    fn world_add_focus_object_matches() {
+        use crate::difftest::fakes::machine;
+        const WORLD: u32 = DATA + 0x1000;
+        const SYSTEMS: u32 = DATA + 0x2000;
+        const FOCUS: u32 = DATA + 0x3000;
+        const OBJ: u32 = DATA + 0x4000;
+        check(
+            ee::s09::f_002d1bf0__generated,
+            world_add_focus_object,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2d_1bf0, 0);
+                c.pc = 0x002d_1bf0;
+                let gp = GAME_GP;
+                c.bus.write32(gp.wrapping_sub(0x848), WORLD);
+                c.bus.write32(WORLD + 0x84, SYSTEMS);
+                c.bus.write32(SYSTEMS + 0xc, DATA + 0x2500);
+                c.bus.write32(DATA + 0x2500 + 0xa4, FOCUS);
+                c.bus
+                    .write32(FOCUS + 0xd4, if seed % 3 == 0 { 0 } else { 1 });
+                c.bus.write32(FOCUS + 0xd8, (seed % 5) as u32);
+                c.bus.write32(OBJ + 8, r.next_u32());
+                c.g[A0][0] = sx(OBJ);
             },
         );
     }

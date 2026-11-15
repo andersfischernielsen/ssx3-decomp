@@ -234,6 +234,56 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         trick_lookup_bonus_trick,
         "Trick_LookupBonusTrick",
     ),
+    (
+        0x0011_75f8,
+        rider_metrix_reset_combo,
+        "RiderMetrix_ResetCombo",
+    ),
+    (
+        0x0011_7990,
+        rider_metrix_get_trick_score,
+        "RiderMetrix_GetTrickScore",
+    ),
+    (
+        0x0011_7ae8,
+        rider_metrix_show_hud_text,
+        "RiderMetrix_ShowHUDText",
+    ),
+    (
+        0x0011_8ff8,
+        rider_metrix_show_trick_name,
+        "RiderMetrix_ShowTrickName",
+    ),
+    (
+        0x0011_a7a8,
+        ridermetrix_bank_pending_score,
+        "RiderMetrix_BankPendingScore",
+    ),
+    (
+        0x0011_9b08,
+        rider_metrix_on_wipeout,
+        "RiderMetrix_OnWipeout",
+    ),
+    (
+        0x0011_9bb0,
+        rider_metrix_get_recovery_boost,
+        "RiderMetrix_GetRecoveryBoost",
+    ),
+    (
+        0x0011_a0c0,
+        rider_metrix_return_zero_a0c0,
+        "RiderMetrix_ReturnZero_a0c0",
+    ),
+    (
+        0x0011_a168,
+        rider_metrix_announce_trick,
+        "RiderMetrix_AnnounceTrick",
+    ),
+    (
+        0x0011_a8c8,
+        rider_metrix_build_trick_desc,
+        "RiderMetrix_BuildTrickDesc",
+    ),
 ];
 
 /// Direct calls (same shard; these go through the shard's override slots, so
@@ -328,6 +378,13 @@ pub(crate) mod callee {
         addr: 0x0012_98c8,
         f: ee::s00::AI_GetFrameCounter,
     };
+
+    pub(crate) use crate::game::lib::snd::callee::RIDER_METRIX_REMOVE_HUD_MESSAGE;
+    pub(crate) use crate::game::lib::snd::callee::RIDER_METRIX_ROUNDED_TRICK_POINTS;
+    pub(crate) use crate::game::lib::snd::callee::RIDER_METRIX_SHOW_HUD_NUMBER as RIDER_METRIX_SHOW_HUD_NUMBER_3;
+    pub(crate) use crate::game::lib::snd::callee::RIDER_METRIX_TRICK_BONUS;
+
+    pub(crate) use crate::game::lib::snd::callee::RIDER_METRIX_SHOW_HUD_NUMBER as RIDER_METRIX_SHOW_HUD_NUMBER_4;
 }
 
 /// `RiderBase` (and its owner/board sub-objects) fields the HUD reads.
@@ -5710,6 +5767,1391 @@ pub(crate) fn count_trick_repeats_scan(c: &mut Cpu) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// RiderMetrix_ShowHUDText (0x117ae8).
+
+/// `RiderMetrix` field: the HUD message slot table (0: no messages).
+pub(crate) const RIDER_METRIX_HUD_TABLE: u32 = 0x1b0;
+
+/// A HUD message slot is 0x9c bytes.
+pub(crate) const RIDER_METRIX_HUD_SLOT_SIZE: u32 = 0x9c;
+
+/// `RiderMetrix_FindHUDSlot(RiderMetrix*, int type)`.
+pub(crate) const RIDER_METRIX_FIND_HUD_SLOT: Callee = Callee {
+    addr: 0x0011_7a58,
+    f: ee::s00::f_00117a58,
+};
+
+/// `cHUDFX_Show(fx, int type, const char *text, int style, float time)`.
+pub(crate) const C_HUDFX_SHOW: Callee = Callee {
+    addr: 0x0011_7048,
+    f: ee::s00::f_00117048,
+};
+
+/// `int RiderMetrix_ShowHUDText(RiderMetrix* self, int type, const char*
+/// text, int style, float time)` (0x117ae8): show a HUD message in the slot
+/// `RiderMetrix_FindHUDSlot` picks, and return that slot index (-1 when the
+/// rider has no message table).
+pub fn rider_metrix_show_hud_text(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S4, 0x10);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save_fpr(c, 20, 0x60);
+        c.g[S4][0] = c.g[A3][0];
+        frame.save(c, S0, 0x50);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, S1).wrapping_add(RIDER_METRIX_HUD_TABLE)).lw(c);
+        let has_table = c.g[V0][0] != 0;
+        c.f[20] = c.f[12]; // the decay time
+        if !has_table {
+            c.cycles += 1;
+            c.g[V0][0] = u64::MAX;
+        } else {
+            c.cycles += 14;
+            RIDER_METRIX_FIND_HUD_SLOT.call(c, 0x0011_7b2c)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = RIDER_METRIX_HUD_SLOT_SIZE as u64;
+            c.mult(0, A0, S0, A0); // slot index * slot size
+            c.g[V0][0] = Addr(r32(c, S1).wrapping_add(RIDER_METRIX_HUD_TABLE)).lw(c);
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A2][0] = c.g[S3][0];
+            c.f[12] = c.f[20];
+            c.g[A3][0] = c.g[S4][0];
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            C_HUDFX_SHOW.call(c, 0x0011_7b54)?;
+            c.g[V0][0] = c.g[S0][0];
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `RiderMetrix_RemoveHUDMessage` (0x1179e0).
+pub(crate) const RIDER_METRIX_REMOVE_HUD: u32 = 0x0011_79e0;
+
+/// `void cRiderMetrix::resetComboChain(cRiderMetrix* this)` (0x1175f8):
+/// removes the combo HUD message (id 3), then clears the combo chain count
+/// (+0x9c), the combo points (+0xa0) and the combo timer (+0xa4 = -1.0).
+pub fn rider_metrix_reset_combo(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0x3;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, RIDER_METRIX_REMOVE_HUD, 0x0011_7610)?;
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(1, 0);
+        let this = r32(c, S0);
+        Addr(this).off(0x9c).sw(c, 0);
+        c.swc1(0, this.wrapping_add(0xa4));
+        Addr(this).off(0xa0).sw(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RiderMetrix_ShowTrickName (0x118ff8)
+
+/// `Trick_BuildName(out, id)` (0x116950).
+pub(crate) const OC320_TRICK_BUILD_NAME: Callee = Callee {
+    addr: 0x0011_6950,
+    f: ee::s00::Trick_BuildName,
+};
+
+/// `RiderMetrix_ShowHUDText(self, 0, text, 3.0f, repeat)` (0x117ae8).
+pub(crate) const OC320_SHOW_HUD_TEXT: Callee = Callee {
+    addr: 0x0011_7ae8,
+    f: ee::s00::RiderMetrix_ShowHUDText,
+};
+
+/// `void RiderMetrix_ShowTrickName(RiderMetrix* self, TrickId* id, int
+/// repeat)` (0x118ff8): build the trick's display name into a 0x100-byte
+/// stack buffer and show it as a HUD effect at scale 3, then post the trick
+/// to the script manager.
+pub fn rider_metrix_show_trick_name(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 27;
+        let frame = Frame::open(c, 0x140);
+        frame.save(c, S0, 0x130);
+        frame.save(c, S1, 0x120);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S2, 0x110);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0x100);
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A2][0] = 0xff;
+        OC320_TRICK_BUILD_NAME.call(c, 0x0011_9024)?;
+        c.g[AT][0] = 0x40400000;
+        c.mtc1(1, 12);
+        c.g[A3][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = c.g[SP][0];
+        OC320_SHOW_HUD_TEXT.call(c, 0x0011_9040)?;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xce8));
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0030_9918, 0x0011_904c)?;
+        frame.restore(c, S0, 0x130);
+        frame.restore(c, S1, 0x120);
+        frame.restore(c, S2, 0x110);
+        frame.restore_ra(c, 0x100);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RiderMetrix_BankPendingScore (0x11a7a8)
+// ---------------------------------------------------------------------------
+
+/// The per-slot HUD numbers `RiderMetrix_BankPendingScore` refreshes, and the
+/// "1.5x" size it shows them at.
+pub(crate) const RIDER_METRIX_BANK_SCALE: u32 = 0x3fc0_0000;
+
+// 1.5f
+
+/// `int RiderMetrix_BankPendingScore(cRiderMetrix* self)` (0x11a7a8): refresh
+/// the HUD numbers for the tricks landed this jump (slot 0x25), the pending
+/// base score (0x27) and the banked total (0x28), each only when its value is
+/// positive, and always drop the "wiped out" message (slot 4). Returns the
+/// rounded trick points.
+pub fn ridermetrix_bank_pending_score(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        callee::RIDER_METRIX_ROUNDED_TRICK_POINTS.call(c, 0x0011_a7c4)?;
+        c.g[S1][0] = c.g[V0][0];
+        let no_tricks = (c.g[S1][0] as i64) <= 0;
+        c.g[A0][0] = c.g[S0][0];
+        if !no_tricks {
+            c.cycles += 9;
+            c.g[A1][0] = 1;
+            callee::RIDER_METRIX_REMOVE_HUD_MESSAGE.call(c, 0x0011_a7d8)?;
+            c.g[AT][0] = RIDER_METRIX_BANK_SCALE as u64;
+            c.mtc1(1, 12);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0x25;
+            c.g[A2][0] = c.g[S1][0];
+            c.g[A3][0] = 0;
+            callee::RIDER_METRIX_SHOW_HUD_NUMBER_3.call(c, 0x0011_a7f4)?;
+        }
+
+        c.cycles += 3;
+        c.g[V0][0] = Addr(r32(c, S0)).off(0xa0).lw(c);
+        let no_pending = (c.g[V0][0] as i64) <= 0;
+        c.g[A0][0] = c.g[S0][0];
+        if !no_pending {
+            c.cycles += 9;
+            c.g[A1][0] = 3;
+            callee::RIDER_METRIX_REMOVE_HUD_MESSAGE.call(c, 0x0011_a808)?;
+            c.g[A2][0] = Addr(r32(c, S0)).off(0xa0).lw(c);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[AT][0] = RIDER_METRIX_BANK_SCALE as u64;
+            c.mtc1(1, 12);
+            c.g[A1][0] = 0x27;
+            c.g[A3][0] = 0;
+            callee::RIDER_METRIX_SHOW_HUD_NUMBER_3.call(c, 0x0011_a824)?;
+        }
+
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S0][0];
+        callee::RIDER_METRIX_TRICK_BONUS.call(c, 0x0011_a82c)?;
+        c.g[V1][0] = Addr(r32(c, S0)).off(0x84).lw(c);
+        c.g[S2][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        let no_total = (c.g[S2][0] as i64) <= 0;
+        c.g[A0][0] = c.g[S0][0];
+        if !no_total {
+            c.cycles += 24;
+            // The combo messages this total replaces.
+            for (slot, ret) in [
+                (0x2u64, 0x0011_a844u32),
+                (0x1d, 0x0011_a850),
+                (0x1c, 0x0011_a85c),
+                (0x1e, 0x0011_a868),
+                (0x1f, 0x0011_a874),
+                (0x20, 0x0011_a880),
+            ] {
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = slot;
+                callee::RIDER_METRIX_REMOVE_HUD_MESSAGE.call(c, ret)?;
+            }
+            c.g[AT][0] = RIDER_METRIX_BANK_SCALE as u64;
+            c.mtc1(1, 12);
+            c.g[A2][0] = c.g[S2][0];
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0x28;
+            c.g[A3][0] = 0;
+            callee::RIDER_METRIX_SHOW_HUD_NUMBER_3.call(c, 0x0011_a89c)?;
+        }
+
+        c.cycles += 10;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 4;
+        callee::RIDER_METRIX_REMOVE_HUD_MESSAGE.call(c, 0x0011_a8a8)?;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        c.g[RA][0] = c.ld(frame.at(c, 0));
+        let ra = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x40));
+        c.pc = ra;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x00117990 RiderMetrix_GetTrickScore
+
+/// `int RiderMetrix_GetTrickScore(RiderMetrix *self)` (0x117990): the
+/// accumulated score at 0.01 points a unit, rounded to whole tens:
+/// `(int)(v * 10000 + 5)` floored to a multiple of 10.
+pub fn rider_metrix_get_trick_score(c: &mut Cpu) {
+    c.cycles += 5;
+    c.lwc1(1, (c.g[A0][0] as u32).wrapping_add(0x18));
+    c.g[A1][0] = 0xa;
+    c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x1c4));
+    // (A branch on the multiplier that goes both ways in the original.)
+    c.cycles += 14;
+    c.lwc1(2, (c.g[A0][0] as u32).wrapping_add(0x14));
+    c.mul_s(0, 0, 1);
+    c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x7b04));
+    c.g[AT][0] = 0x40a0_0000;
+    c.mtc1(AT, 3);
+    c.mul_s(0, 0, 2);
+    c.mul_s(0, 0, 4);
+    c.add_s(0, 0, 3);
+    c.cvt_w_s(1, 0);
+    c.mfc1(V0, 1);
+    c.div(0, V0, A1);
+    c.g[V1][0] = c.hi[0];
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// RiderMetrix_OnWipeout (0x119b08)
+
+pub(crate) const WIPEOUT_SHOW_HUD_NUMBER: Callee = Callee {
+    addr: 0x0011_7b88,
+    f: ee::s00::f_00117b88,
+};
+
+pub(crate) const WIPEOUT_BANK_PENDING_SCORE: Callee = Callee {
+    addr: 0x0011_a7a8,
+    f: ee::s00::f_0011a7a8,
+};
+
+pub(crate) const WIPEOUT_ROUNDED_TRICKS: Callee = Callee {
+    addr: 0x0011_7948,
+    f: ee::s00::f_00117948,
+};
+
+pub(crate) const WIPEOUT_RESET_TRICK: Callee = Callee {
+    addr: 0x0011_7838,
+    f: ee::s00::f_00117838,
+};
+
+pub(crate) const WIPEOUT_RESET_COMBO: Callee = Callee {
+    addr: 0x0011_75f8,
+    f: ee::s00::f_001175f8,
+};
+
+/// `float RiderMetrix_OnWipeout(cRiderMetrix* m, int hudEffect)` (0x119b08):
+/// count the wipeout — in the HUD effect counter `+0x12c` (and flash HUD
+/// number 0x2d at 1.5x) when `hudEffect` is set, else in the per-jump
+/// counter `+0x124`; add the pending trick points to `+0x1a0`; return
+/// -0.25 (the wipeout penalty) when the rounded trick points are positive,
+/// else 0; then reset the trick and the combo chain.
+pub fn rider_metrix_on_wipeout(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let hud_effect = c.g[A1][0] != 0;
+        frame.save_fpr(c, 20, 0x20);
+        if hud_effect {
+            c.cycles += 11;
+            let count = Addr(r32(c, S0)).off(0x12c).lw(c);
+            c.g[V0][0] = count;
+            c.g[AT][0] = 0x3fc0_0000; // 1.5
+            c.mtc1(1, 12);
+            c.g[A1][0] = 0x2d;
+            c.g[V0][0] = sx((count as u32).wrapping_add(1));
+            c.g[A2][0] = 0;
+            let at = r32(c, S0);
+            Addr(at).off(0x12c).sw(c, c.g[V0][0]);
+            c.g[A3][0] = 0;
+            WIPEOUT_SHOW_HUD_NUMBER.call(c, 0x0011_9b44)?;
+        } else {
+            c.cycles += 3;
+            let count = Addr(r32(c, S0)).off(0x124).lw(c);
+            c.g[V0][0] = count;
+            c.g[V0][0] = sx((count as u32).wrapping_add(1));
+            let at = r32(c, S0);
+            Addr(at).off(0x124).sw(c, c.g[V0][0]);
+        }
+        // The wipeout penalty: f20 stays 0 unless the trick points are
+        // positive.
+        c.cycles += 10;
+        c.mtc1(0, 20);
+        c.g[A0][0] = c.g[S0][0];
+        WIPEOUT_BANK_PENDING_SCORE.call(c, 0x0011_9b64)?;
+        c.g[V1][0] = Addr(r32(c, S0)).off(0x1a0).lw(c);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        let at = r32(c, S0);
+        Addr(at).off(0x1a0).sw(c, c.g[V1][0]);
+        WIPEOUT_ROUNDED_TRICKS.call(c, 0x0011_9b78)?;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 2;
+            c.g[AT][0] = 0xffff_ffff_be80_0000; // -0.25
+            c.mtc1(1, 20);
+        }
+        c.cycles += 10;
+        c.g[A0][0] = c.g[S0][0];
+        WIPEOUT_RESET_TRICK.call(c, 0x0011_9b90)?;
+        c.g[A0][0] = c.g[S0][0];
+        WIPEOUT_RESET_COMBO.call(c, 0x0011_9b98)?;
+        c.mov_s(0, 20);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `float RiderMetrix_GetRecoveryBoost(RiderMetrix* self, int show)`
+/// (0x119bb0): when `show`, flash HUD number 0x21 at 1.5 and return the boost
+/// constant at `gp-0x7a08`; 0.0 otherwise.
+pub fn rider_metrix_get_recovery_boost(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 3;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        if c.g[A1][0] != 0 {
+            c.cycles += 9;
+            c.g[AT][0] = 0x3fc0_0000;
+            c.mtc1(AT, 12);
+            c.g[A1][0] = 0x21;
+            c.g[A2][0] = 0;
+            c.g[A3][0] = 0;
+            callee::RIDER_METRIX_SHOW_HUD_NUMBER_4.call(c, 0x0011_9bd4)?;
+            let boost = (c.g[GP][0] as u32).wrapping_sub(0x7a08);
+            c.f[0] = Addr(boost).read_u32(c);
+            frame.restore_ra(c, 0);
+        } else {
+            c.cycles += 2;
+            c.mtc1(ZERO, 0);
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `RiderMetrix_BuildTrickDesc(self, id, stance, alternate, style, flag)`
+/// (0x0011a8c8).
+pub(crate) const RIDER_METRIX_BUILD_TRICK_DESC: Callee = Callee {
+    addr: 0x0011_a8c8,
+    f: ee::s00::RiderMetrix_BuildTrickDesc,
+};
+
+/// `int Trick_LookupBonusTrick(RiderMetrix* self, sTrickId* id)` (0x0011b1a8).
+pub(crate) const TRICK_LOOKUP_BONUS_TRICK: Callee = Callee {
+    addr: 0x0011_b1a8,
+    f: ee::s00::Trick_LookupBonusTrick,
+};
+
+/// `RiderMetrix_ShowHUDNumber(self, kind, value, arg, duration)` (0x00117b88).
+pub(crate) const RIDER_METRIX_SHOW_HUD_NUMBER: Callee = Callee {
+    addr: 0x0011_7b88,
+    f: ee::s00::RiderMetrix_ShowHUDNumber,
+};
+
+/// `int RiderMetrix_CountTrickRepeats(RiderMetrix* self, sTrickId* id)`
+/// (0x001190f0).
+pub(crate) const RIDER_METRIX_COUNT_TRICK_REPEATS: Callee = Callee {
+    addr: 0x0011_90f0,
+    f: ee::s00::RiderMetrix_CountTrickRepeats,
+};
+
+/// `void RiderMetrix_ShowTrickName(RiderMetrix* self, sTrickId* id, int
+/// repeat)` (0x00118ff8).
+pub(crate) const RIDER_METRIX_SHOW_TRICK_NAME: Callee = Callee {
+    addr: 0x0011_8ff8,
+    f: ee::s00::RiderMetrix_ShowTrickName,
+};
+
+/// Rider metrics: the score float at +0x14.
+pub(crate) const RIDER_METRIX_SCORE: u32 = 0x14;
+
+/// Rider metrics: the rider object pointer at +0x1ac.
+pub(crate) const RIDER_METRIX_RIDER: u32 = 0x1ac;
+
+#[cfg(test)]
+/// Rider metrics: the trick-class word at +0x70 (set while a special trick is
+/// in progress; `BuildTrickDesc` then short-circuits).
+pub(crate) const RIDER_METRIX_TRICK_STATE: u32 = 0x70;
+
+/// `void RiderMetrix_AnnounceTrick(RiderMetrix* self, int stance, int
+/// alternate, int style, int flag)` (0x0011a168): build the 8-byte trick id,
+/// look up its bonus points; if it has any, award `points * 1e-4` to the
+/// score and show the HUD number (plus the bonus-trick sound), then show the
+/// trick name with its repeat count.
+pub fn rider_metrix_announce_trick(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = c.g[A2][0];
+        c.sq(S0, sp(c).wrapping_add(0x20));
+        c.g[V1][0] = c.g[A3][0];
+        c.g[T1][0] = c.g[T0][0];
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A2][0] = c.g[A1][0];
+        c.sd(sp(c).wrapping_add(0x10), c.g[RA][0]);
+        c.g[A3][0] = c.g[V0][0];
+        c.g[T0][0] = c.g[V1][0];
+        c.g[A1][0] = c.g[SP][0];
+        RIDER_METRIX_BUILD_TRICK_DESC.call(c, 0x0011_a198)?;
+        let no_trick = c.g[V0][0] == 0;
+        c.g[A0][0] = c.g[S0][0];
+        if !no_trick {
+            c.cycles += 4;
+            c.g[A1][0] = c.g[SP][0];
+            TRICK_LOOKUP_BONUS_TRICK.call(c, 0x0011_a1a8)?;
+            let points = c.g[V0][0];
+            let no_points = (points as i64) <= 0;
+            c.g[A0][0] = c.g[S0][0];
+            if !no_points {
+                c.cycles += 18;
+                // score += points * 1e-4f
+                c.mtc1(V0, 0);
+                c.cvt_s_w(0, 0);
+                c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x79f8));
+                c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(RIDER_METRIX_SCORE));
+                c.g[AT][0] = 0x3fc0_0000; // 1.5f
+                c.mtc1(1, 12);
+                c.g[A1][0] = 0x32;
+                c.mul_s(0, 0, 2);
+                c.g[A2][0] = c.g[V0][0];
+                c.g[A3][0] = 0;
+                c.add_s(1, 1, 0);
+                c.swc1(1, (c.g[S0][0] as u32).wrapping_add(RIDER_METRIX_SCORE));
+                RIDER_METRIX_SHOW_HUD_NUMBER.call(c, 0x0011_a1e4)?;
+                call_ptr(c, 0x0028_b180, 0x0011_a1ec)?;
+                c.g[A1][0] = Addr(c.g[S0][0] as u32).off(RIDER_METRIX_RIDER).lw(c);
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x0029_b7e0, 0x0011_a1f8)?;
+            }
+            c.cycles += 7;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[SP][0];
+            RIDER_METRIX_COUNT_TRICK_REPEATS.call(c, 0x0011_a204)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = ((0u64 as i64) < (c.g[V0][0] as i64)) as u64;
+            c.g[A1][0] = c.g[SP][0];
+            RIDER_METRIX_SHOW_TRICK_NAME.call(c, 0x0011_a214)?;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `float RiderMetrix_ReturnZero_a0c0(void)` (0x0011a0c0): return 0.0f (the
+/// FPU result is the only one the caller reads; v0 is left alone).
+pub fn rider_metrix_return_zero_a0c0(c: &mut Cpu) {
+    c.cycles += 3;
+    c.mtc1(0, 0);
+    abi::ret(c);
+}
+
+/// `RiderMetrix` trick-state fields `RiderMetrix_BuildTrickDesc` reads:
+/// riding switch +0x00, use the alternate table +0x04, +0x08/+0x0c/+0x10
+/// (board-state flags behind the descriptor's 3-bit "k2" field), the trick
+/// kind +0x20, its speed +0x24, the rail/air class +0x28 with its amount
+/// +0x2c, spin and flip angles in radians +0x34/+0x38, up to three grabs
+/// +0x60.., an override trick +0x70 (its low 3 bits), extra bits +0x7c, the
+/// rider +0x1ac (whose +0x324 swaps the two kind codes).
+pub(crate) const BTD_SWITCH: u32 = 0x00;
+
+pub(crate) const BTD_ALT_TABLE: u32 = 0x04;
+
+pub(crate) const BTD_FLAG_8: u32 = 0x08;
+
+pub(crate) const BTD_FLAG_C: u32 = 0x0c;
+
+pub(crate) const BTD_FLAG_10: u32 = 0x10;
+
+pub(crate) const BTD_KIND: u32 = 0x20;
+
+pub(crate) const BTD_SPEED: u32 = 0x24;
+
+pub(crate) const BTD_CLASS: u32 = 0x28;
+
+pub(crate) const BTD_AMOUNT: u32 = 0x2c;
+
+pub(crate) const BTD_SPIN: u32 = 0x34;
+
+pub(crate) const BTD_FLIP: u32 = 0x38;
+
+pub(crate) const BTD_GRABS: u32 = 0x60;
+
+pub(crate) const BTD_OVERRIDE: u32 = 0x70;
+
+pub(crate) const BTD_EXTRA: u32 = 0x7c;
+
+pub(crate) const BTD_RIDER: u32 = 0x1ac;
+
+/// The rider's "mirrored kinds" flag.
+pub(crate) const BTD_RIDER_SWAP: u32 = 0x324;
+
+/// `.lit4` radians -> degrees for the spin and the flip angle.
+pub(crate) const BTD_SPIN_DEG_LIT: u32 = 0x79e4;
+
+pub(crate) const BTD_FLIP_DEG_LIT: u32 = 0x79e0;
+
+/// The two 29 x 11 byte trick tables (by spin and flip index): the normal
+/// one and the alternate one.
+pub(crate) const BTD_TABLE: u32 = 0x0043_d388;
+
+pub(crate) const BTD_TABLE_ALT: u32 = 0x0043_d4c8;
+
+/// `MEM_fill(dst, byte, n)` (0x3e6448), through the function table.
+pub(crate) const BTD_MEM_FILL: u32 = 0x003e_6448;
+
+#[inline]
+pub(crate) fn btd_lw(c: &mut Cpu, base: u32, off: u32) -> u64 {
+    Addr(base.wrapping_add(off)).lw(c)
+}
+
+#[inline]
+pub(crate) fn btd_sw(c: &mut Cpu, base: u32, off: u32, reg: usize) {
+    let v = c.g[reg][0];
+    Addr(base.wrapping_add(off)).sw(c, v);
+}
+
+/// The inlined `func_roundDegrees((int)(angle * 57.29578f))`: the angle at
+/// `field` in whole degrees, rounded to the nearest multiple of 180, into
+/// `out`. `raw` receives the truncated degrees, `rem` the remainder mod 180
+/// (the registers the original uses for this angle).
+pub(crate) fn btd_round_degrees(
+    c: &mut Cpu,
+    field: u32,
+    lit: u32,
+    raw: usize,
+    rem: usize,
+    out: usize,
+) {
+    c.cycles += 5;
+    let scale = Addr(r32(c, GP).wrapping_sub(lit)).read_fpu(c);
+    c.g[V1][0] = 0xb4;
+    let angle = Addr(r32(c, S1).wrapping_add(field)).read_fpu(c);
+    c.cycles += 8;
+    let degrees = angle * scale;
+    abi::set_fpr(c, 0, degrees);
+    let whole = degrees.to_i32() as u32;
+    c.f[1] = whole;
+    c.g[raw][0] = sx(whole);
+    let (_, r) = abi::div(c, whole, 0xb4);
+    c.g[rem][0] = sx(r);
+    let base = sx(whole.wrapping_sub(r));
+    let r = r as i32;
+    if r < -90 {
+        c.cycles += 2;
+        c.g[V0][0] = base;
+        c.g[out][0] = sx((base as u32).wrapping_sub(0xb4));
+    } else {
+        c.cycles += 3;
+        c.g[out][0] = base;
+        if r < 91 {
+            c.g[V0][0] = 1;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = base;
+            c.g[out][0] = sx((base as u32).wrapping_add(0xb4));
+        }
+    }
+}
+
+/// The air-trick grade from the amount at +0x2c (>= 3): thresholds 12, 9
+/// and 6 give `top`, `mid`, `low` or `base` (the C++'s 11/9/7/5 for the
+/// class that matches the single spin, 12/10/8/6 otherwise).
+pub(crate) fn btd_amount_grade(c: &mut Cpu, grades: [u64; 4], last_cycles: u64) {
+    let amount = crate::ps2f::FpuF32(c.f[1]);
+    for (limit, grade) in [(0x4140_0000u32, grades[0]), (0x4110_0000, grades[1])] {
+        c.cycles += 6;
+        c.g[AT][0] = limit as u64;
+        c.f[0] = limit;
+        let below = amount.lt(crate::ps2f::FpuF32(limit));
+        abi::set_fcc(c, below);
+        c.g[A0][0] = grade;
+        if !below {
+            return;
+        }
+    }
+    c.cycles += 6;
+    c.g[AT][0] = 0x40c0_0000;
+    c.f[0] = 0x40c0_0000;
+    let at_least = crate::ps2f::FpuF32(0x40c0_0000).le(amount);
+    abi::set_fcc(c, at_least);
+    c.g[A0][0] = grades[2];
+    if !at_least {
+        return;
+    }
+    c.cycles += last_cycles;
+    c.g[A0][0] = grades[3];
+}
+
+/// `int RiderMetrix_BuildTrickDesc(TrickState *self, sTrickId *id, int
+/// stance, int alternate, int style, int flag)` (0x11a8c8): clear the 8-byte
+/// trick descriptor and pack the trick the rider just did into it. An
+/// override trick (+0x70) is copied as is; rail/air classes (+0x28) and
+/// special kinds (+0x20) get a grade from the spin count or the amount;
+/// otherwise the spin and flip angles, rounded to half and whole turns,
+/// pick an entry of the 29 x 11 trick table (out of range: the "unknown
+/// trick" descriptor), and the spin direction, flip count and direction,
+/// grabs, style/flag quality and extra bits are filled in. Returns whether
+/// anything was done (1 on the early paths).
+pub fn rider_metrix_build_trick_desc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S1, 0x50);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S5, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x40);
+        c.g[S5][0] = c.g[A2][0];
+        frame.save(c, S3, 0x30);
+        c.g[S2][0] = c.g[A3][0];
+        frame.save(c, S4, 0x20);
+        c.g[S3][0] = c.g[T1][0];
+        frame.save_ra(c, 0);
+        c.g[S4][0] = c.g[T0][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0x8;
+        call_ptr(c, BTD_MEM_FILL, 0x0011_a910)?;
+        let me = r32(c, S1);
+        let id = r32(c, S0);
+        c.g[V0][0] = btd_lw(c, me, BTD_OVERRIDE);
+        c.g[A1][0] = 0xffff_ffff_ffff_fff8;
+        'done: {
+            if c.g[V0][0] != 0 {
+                // Override trick: kind and trick from +0x0c / +0x70.
+                c.cycles += 13;
+                c.g[V0][0] = btd_lw(c, me, BTD_FLAG_C);
+                c.g[V1][0] = btd_lw(c, id, 0);
+                c.g[V0][0] &= 0x7;
+                c.g[A0][0] = btd_lw(c, id, 4);
+                c.g[V1][0] = (c.g[V1][0] & c.g[A1][0]) | c.g[V0][0];
+                c.g[A0][0] &= c.g[A1][0];
+                btd_sw(c, id, 0, V1);
+                c.g[V0][0] = btd_lw(c, me, BTD_OVERRIDE) & 0x7;
+                c.g[A0][0] |= c.g[V0][0];
+                btd_sw(c, id, 4, A0);
+                if c.g[S4][0] != 0 {
+                    c.cycles += 7;
+                    c.g[V1][0] = 0x300_0000;
+                    c.g[V0][0] = (c.g[A0][0] & 0xffff_ffff_f8ff_ffff) | 0x300_0000;
+                    btd_sw(c, id, 4, V0);
+                }
+                c.cycles += 2;
+                c.g[V0][0] = 1;
+                break 'done;
+            }
+
+            // Riding switch mirrors the spin, kind 4 the flip.
+            c.cycles += 3;
+            c.g[V0][0] = btd_lw(c, me, BTD_SWITCH);
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                let a = Addr(me.wrapping_add(BTD_SPIN));
+                let v = -a.read_fpu(c);
+                abi::set_fpr(c, 0, v);
+                a.write_fpu(c, v);
+            }
+            c.g[V1][0] = btd_lw(c, me, BTD_KIND);
+            c.cycles += 3;
+            c.g[V0][0] = 0x4;
+            if c.g[V1][0] == 0x4 {
+                c.cycles += 3;
+                let a = Addr(me.wrapping_add(BTD_FLIP));
+                let v = -a.read_fpu(c);
+                abi::set_fpr(c, 0, v);
+                a.write_fpu(c, v);
+            }
+            // Spin to half turns (t2), flip to whole turns (t0).
+            btd_round_degrees(c, BTD_SPIN, BTD_SPIN_DEG_LIT, A0, A1, T2);
+            btd_round_degrees(c, BTD_FLIP, BTD_FLIP_DEG_LIT, A1, A0, T0);
+            c.cycles += 5;
+            c.g[V0][0] = 0x168;
+            c.g[V1][0] = 0xb4;
+            let flip_deg = r32(c, T0);
+            let (flip_turns, _) = abi::div(c, flip_deg, 0x168);
+            c.cycles += 5;
+            c.g[A2][0] = btd_lw(c, me, BTD_CLASS);
+            c.g[A0][0] = sx(flip_turns);
+            let spin_deg = r32(c, T2);
+            let (spin_halves, _) = abi::div(c, spin_deg, 0xb4);
+            // flips (t1) and spins (a3): absolute counts.
+            c.g[T1][0] = c.g[A0][0];
+            if (flip_turns as i32) < 0 {
+                c.cycles += 1;
+                c.g[T1][0] = sx(flip_turns.wrapping_neg());
+            }
+            c.cycles += 3;
+            c.g[A1][0] = sx(spin_halves);
+            c.g[A3][0] = c.g[A1][0];
+            if (spin_halves as i32) < 0 {
+                c.cycles += 1;
+                c.g[A3][0] = sx(spin_halves.wrapping_neg());
+            }
+            c.cycles += 2;
+            let spins = c.g[A3][0] as i64;
+            c.g[V0][0] = (spins < 2) as u64;
+
+            if c.g[A2][0] != 0 {
+                // Rail/air class: a grade from the spin count or the amount.
+                c.cycles += 2;
+                c.g[V0][0] = 0x1;
+                let graded = if spins >= 2 {
+                    c.cycles += 3;
+                    c.g[V0][0] = (spins < 12) as u64;
+                    c.g[V1][0] = (spins < 6) as u64;
+                    if spins < 12 {
+                        c.cycles += 4;
+                        c.g[A0][0] = 0xd;
+                        c.g[V0][0] = 0xe;
+                        if c.g[V1][0] == 0 {
+                            c.g[A0][0] = 0xe;
+                        }
+                    } else {
+                        c.cycles += 2;
+                        c.g[A0][0] = 0xf;
+                    }
+                    true
+                } else {
+                    c.cycles += 2;
+                    let mut big = false;
+                    if spins == 1 {
+                        c.cycles += 7;
+                        let amount = Addr(me.wrapping_add(BTD_AMOUNT)).read_fpu(c);
+                        abi::set_fpr(c, 1, amount);
+                        c.g[AT][0] = 0x4040_0000;
+                        c.f[0] = 0x4040_0000;
+                        big = crate::ps2f::FpuF32(0x4040_0000).le(amount);
+                        abi::set_fcc(c, big);
+                    }
+                    if big {
+                        c.cycles += 2;
+                        if c.g[A2][0] != c.g[A3][0] {
+                            btd_amount_grade(c, [0xc, 0xa, 0x6, 0x8], 1);
+                        } else {
+                            btd_amount_grade(c, [0xb, 0x9, 0x5, 0x7], 2);
+                        }
+                    }
+                    big
+                };
+                if graded {
+                    c.cycles += 8;
+                    c.g[V0][0] = btd_lw(c, id, 4);
+                    c.g[V1][0] = 0xffff_ffff_ff0f_ffff;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32) << 20);
+                    c.g[V0][0] = (c.g[V0][0] & c.g[V1][0]) | c.g[A0][0];
+                    btd_sw(c, id, 4, V0);
+                } else {
+                    // Small spin: kind by class and +0x20, spin count.
+                    c.cycles += 2;
+                    if c.g[A2][0] != 1 {
+                        c.g[A2][0] = btd_lw(c, me, BTD_KIND);
+                        c.cycles += 8;
+                        c.g[A1][0] = 0x4;
+                        c.g[A0][0] = btd_lw(c, id, 4);
+                        c.g[V1][0] = 0xffff_ffff_ff0f_ffff;
+                        c.g[V0][0] = if c.g[A2][0] != 0 { 4 } else { 2 };
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 20);
+                        c.g[A0][0] &= c.g[V1][0];
+                    } else {
+                        c.cycles += 10;
+                        c.g[A1][0] = btd_lw(c, me, BTD_KIND);
+                        c.g[A0][0] = btd_lw(c, id, 4);
+                        c.g[V1][0] = 0xffff_ffff_ff0f_ffff;
+                        c.g[V0][0] = if c.g[A1][0] == 0 { c.g[A2][0] } else { 3 };
+                        c.g[V0][0] &= 0xf;
+                        c.g[A0][0] &= c.g[V1][0];
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 20);
+                    }
+                    c.cycles += 13;
+                    c.g[A0][0] |= c.g[V0][0];
+                    btd_sw(c, id, 4, A0);
+                    c.g[A0][0] = (spins < 11) as u64;
+                    c.g[V0][0] = if c.g[A0][0] != 0 { c.g[A3][0] } else { 0xa };
+                    c.g[V1][0] = btd_lw(c, id, 0);
+                    c.g[V0][0] &= 0xf;
+                    c.g[A0][0] = 0xffff_ffff_ffff_ff87;
+                    c.g[V1][0] &= c.g[A0][0];
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+                    c.g[V1][0] |= c.g[V0][0];
+                    btd_sw(c, id, 0, V1);
+                }
+                c.cycles += 2;
+                c.g[V0][0] = 1;
+                break 'done;
+            }
+
+            c.cycles += 3;
+            c.g[A1][0] = btd_lw(c, me, BTD_KIND);
+            c.g[A2][0] = c.g[A3][0];
+            if c.g[A1][0] != 0 {
+                // Special kind: slow ones are kind 5, else the kind (swapped
+                // 1 <-> 2 for a mirrored rider) and the spin count.
+                c.cycles += 7;
+                let speed = Addr(me.wrapping_add(BTD_SPEED)).read_fpu(c);
+                abi::set_fpr(c, 1, speed);
+                c.g[AT][0] = 0x4248_0000;
+                c.f[0] = 0x4248_0000;
+                let slow = speed.le(crate::ps2f::FpuF32(0x4248_0000));
+                abi::set_fcc(c, slow);
+                c.g[V1][0] = 0xffff_ffff_ffff_fff8;
+                if slow {
+                    c.cycles += 4;
+                    c.g[V0][0] = (btd_lw(c, id, 0) & c.g[V1][0]) | 0x5;
+                } else {
+                    c.cycles += 18;
+                    c.g[A0][0] = btd_lw(c, id, 0);
+                    c.g[V1][0] = (spins < 11) as u64;
+                    c.g[A2][0] = 0xffff_ffff_ffff_fff8;
+                    c.g[V0][0] = if c.g[V1][0] != 0 { c.g[A3][0] } else { 0xa };
+                    c.g[A1][0] &= 0x7;
+                    c.g[A0][0] &= c.g[A2][0];
+                    c.g[V1][0] = 0xffff_ffff_ffff_ff87;
+                    c.g[V0][0] &= 0xf;
+                    c.g[A0][0] |= c.g[A1][0];
+                    c.g[A0][0] &= c.g[V1][0];
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+                    c.g[A0][0] |= c.g[V0][0];
+                    btd_sw(c, id, 0, A0);
+                    let rider = btd_lw(c, me, BTD_RIDER) as u32;
+                    c.g[V0][0] = sx(rider);
+                    c.g[V1][0] = btd_lw(c, rider, BTD_RIDER_SWAP);
+                    c.g[V0][0] = 1;
+                    if c.g[V1][0] == 0 {
+                        c.cycles += 2;
+                        c.g[V0][0] = 1;
+                        break 'done;
+                    }
+                    c.cycles += 3;
+                    c.g[V1][0] = btd_lw(c, me, BTD_KIND);
+                    if c.g[V1][0] == 1 {
+                        c.cycles += 3;
+                        c.g[V0][0] = (c.g[A0][0] & c.g[A2][0]) | 0x2;
+                    } else {
+                        c.g[V0][0] = 0x2;
+                        c.cycles += 2;
+                        if c.g[V1][0] != 2 {
+                            c.g[V0][0] = 1;
+                            break 'done;
+                        }
+                        c.cycles += 2;
+                        c.g[V0][0] = (c.g[A0][0] & c.g[A2][0]) | 0x1;
+                    }
+                }
+                c.cycles += 1;
+                btd_sw(c, id, 0, V0);
+                c.cycles += 2;
+                c.g[V0][0] = 1;
+                break 'done;
+            }
+
+            // A plain trick. cnt (t3): how many flips came with three
+            // half spins each.
+            c.cycles += 5;
+            c.g[A0][0] = c.g[T1][0];
+            c.g[T3][0] = 0;
+            c.g[V1][0] = btd_lw(c, me, BTD_GRABS);
+            c.g[A1][0] = btd_lw(c, me, BTD_FLAG_10);
+            loop {
+                c.cycles += 2;
+                c.g[V0][0] = ((c.g[A3][0] as i64) < 3) as u64;
+                if (c.g[T1][0] as i64) <= 0 {
+                    break;
+                }
+                c.cycles += 2;
+                let few_spins = c.g[V0][0] != 0;
+                c.g[T1][0] = sx(r32(c, T1).wrapping_sub(1));
+                if few_spins {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0011_ace8);
+                }
+                c.cycles += 2;
+                c.g[A3][0] = sx(r32(c, A3).wrapping_sub(3));
+                c.g[T3][0] = sx(r32(c, T3).wrapping_add(1));
+            }
+            // Table indices: spin idx (a2), flip idx (a0); restore the
+            // counts.
+            c.cycles += 3;
+            c.g[T1][0] = c.g[A0][0];
+            c.g[A3][0] = c.g[A2][0];
+            let spin_right = (c.g[T2][0] as i64) > 0;
+            if !spin_right {
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A3][0] as i64) < 15) as u64;
+            }
+            if spin_right || c.g[V0][0] == 0 {
+                c.cycles += 1;
+                c.g[A2][0] = sx(r32(c, A3).wrapping_add(0xe));
+            }
+            c.cycles += 2;
+            c.g[V0][0] = ((c.g[A0][0] as i64) < 6) as u64;
+            let flip_back = (c.g[T0][0] as i64) < 0;
+            if !flip_back {
+                c.cycles += 2;
+                c.g[T0][0] = 0;
+            }
+            if flip_back || c.g[V0][0] == 0 {
+                c.cycles += 2;
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x5));
+                c.g[T0][0] = 0;
+            }
+            // Grab count (t0).
+            c.cycles += 2;
+            c.g[T4][0] = ((c.g[A2][0] as i64) < 29) as u64;
+            if c.g[V1][0] != 0 {
+                c.cycles += 3;
+                c.g[V1][0] = sx(me.wrapping_add(BTD_GRABS));
+                c.g[T0][0] = sx(r32(c, T0).wrapping_add(1));
+                loop {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[T0][0] as i64) < 3) as u64;
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+                    if c.g[V0][0] == 0 {
+                        break;
+                    }
+                    c.cycles += 3;
+                    let grab = r32(c, V1);
+                    c.g[V0][0] = btd_lw(c, grab, 0);
+                    if c.g[V0][0] == 0 {
+                        break;
+                    }
+                    c.g[T0][0] = sx(r32(c, T0).wrapping_add(1));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0011_ad48);
+                    }
+                }
+            }
+            // k2 (bits 7..9) from the board-state flags.
+            c.cycles += 3;
+            c.g[V0][0] = 0x1;
+            let k2_bits = if c.g[A1][0] == 1 {
+                c.cycles += 5;
+                Some(0x280)
+            } else {
+                c.g[V0][0] = 0x2;
+                c.cycles += 2;
+                if c.g[A1][0] == 2 {
+                    c.cycles += 5;
+                    Some(0x300)
+                } else {
+                    c.g[V0][0] = btd_lw(c, me, BTD_FLAG_C);
+                    c.cycles += 2;
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 3;
+                        c.g[V0][0] = btd_lw(c, me, BTD_SWITCH);
+                        c.g[V1][0] = 0xffff_ffff_ffff_fc7f;
+                        c.cycles += 4;
+                        Some(if c.g[V0][0] != 0 { 0x180 } else { 0x100 })
+                    } else {
+                        c.g[V0][0] = btd_lw(c, me, BTD_FLAG_8);
+                        c.cycles += 2;
+                        c.g[V1][0] = 0xffff_ffff_ffff_fc7f;
+                        if c.g[V0][0] != 0 {
+                            c.cycles += 4;
+                            Some(0x200)
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = btd_lw(c, me, BTD_SWITCH);
+                            if c.g[V0][0] != 0 {
+                                c.cycles += 3;
+                                Some(0x80)
+                            } else {
+                                None
+                            }
+                        }
+                    }
+                }
+            };
+            if let Some(bits) = k2_bits {
+                c.g[V1][0] = 0xffff_ffff_ffff_fc7f;
+                c.g[V0][0] = (btd_lw(c, id, 0) & c.g[V1][0]) | bits;
+                c.cycles += 1;
+                btd_sw(c, id, 0, V0);
+            }
+
+            // The table entry (bits 22..27), or the "unknown trick".
+            c.cycles += 2;
+            c.g[V0][0] = ((c.g[A0][0] as i64) < 11) as u64;
+            let in_range = c.g[T4][0] != 0 && {
+                c.cycles += 2;
+                c.g[V0][0] != 0
+            };
+            if !in_range {
+                if c.g[T4][0] == 0 {
+                    c.cycles += 1;
+                }
+                c.g[A0][0] = c.g[S0][0];
+                c.cycles += 12;
+                c.g[A1][0] = 0;
+                c.g[A2][0] = 0x8;
+                call_ptr(c, BTD_MEM_FILL, 0x0011_ae80)?;
+                let id = r32(c, S0);
+                c.g[V1][0] = btd_lw(c, id, 0);
+                c.g[V0][0] = 0xffff_ffff_f03f_ffff;
+                c.g[A0][0] = 0x40_0000;
+                c.g[V1][0] = (c.g[V1][0] & c.g[V0][0]) | c.g[A0][0];
+                c.g[V0][0] = 0x1;
+                btd_sw(c, id, 0, V1);
+                break 'done;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = btd_lw(c, me, BTD_ALT_TABLE);
+            c.g[V1][0] = 0xb;
+            let mut table = BTD_TABLE;
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                c.g[A1][0] = 0x44_0000;
+                if c.g[S2][0] != 0 {
+                    table = BTD_TABLE_ALT;
+                }
+            }
+            c.cycles += 3;
+            c.g[A1][0] = sx(table);
+            let spin_idx = r32(c, A2);
+            c.g[V0][0] = sx(abi::mult(c, spin_idx, 0xb));
+            c.cycles += 12;
+            c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+            c.g[A0][0] = btd_lw(c, id, 0);
+            c.g[V0][0] = 0xffff_ffff_f03f_ffff;
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(table));
+            c.g[A0][0] &= c.g[V0][0];
+            c.g[V0][0] = Addr(r32(c, V1)).lbu(c) & 0x3f;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 22);
+            c.g[A0][0] |= c.g[V0][0];
+            btd_sw(c, id, 0, A0);
+
+            // No table entry: spin direction (bits 10..11), spin count
+            // (12..15) when no flips, flip count (16..18) and direction
+            // (19..21).
+            c.cycles += 5;
+            c.g[V1][0] = btd_lw(c, id, 0);
+            c.g[V0][0] = c.g[V1][0] & 0xfc0_0000;
+            let mut extra_spins = true;
+            if c.g[V0][0] == 0 {
+                c.cycles += 2;
+                if (c.g[A3][0] as i64) > 0 {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0xffff_ffff_ffff_f3ff;
+                    let dir = if (c.g[T2][0] as i64) > 0 {
+                        c.cycles += 3;
+                        0x800
+                    } else {
+                        c.cycles += 2;
+                        0x400
+                    };
+                    c.g[V0][0] = (c.g[V1][0] & c.g[V0][0]) | dir;
+                    c.cycles += 1;
+                    btd_sw(c, id, 0, V0);
+                }
+                c.cycles += 2;
+                c.g[V0][0] = btd_lw(c, id, 0);
+                if c.g[T1][0] == 0 {
+                    c.cycles += 8;
+                    c.g[V1][0] = 0xffff_ffff_ffff_0fff;
+                    c.g[A0][0] = c.g[A3][0] & 0xf;
+                    c.g[V0][0] &= c.g[V1][0];
+                    c.g[A0][0] = sx((c.g[A0][0] as u32) << 12);
+                    c.g[V0][0] |= c.g[A0][0];
+                    btd_sw(c, id, 0, V0);
+                    c.g[V0][0] = btd_lw(c, id, 0);
+                }
+                c.cycles += 8;
+                c.g[V1][0] = 0xffff_ffff_fff8_ffff;
+                c.g[A0][0] = c.g[T1][0] & 0x7;
+                c.g[A1][0] = c.g[V0][0] & c.g[V1][0];
+                c.g[A0][0] = sx((c.g[A0][0] as u32) << 16);
+                c.g[A1][0] |= c.g[A0][0];
+                btd_sw(c, id, 0, A1);
+                if (c.g[T1][0] as i64) <= 0 {
+                    extra_spins = false;
+                } else {
+                    c.cycles += 2;
+                    let flip = Addr(me.wrapping_add(BTD_FLIP)).read_fpu(c);
+                    abi::set_fpr(c, 1, flip);
+                    let all_combined = (c.g[T3][0] as i64) > 0 && {
+                        c.cycles += 2;
+                        c.g[T3][0] == c.g[T1][0]
+                    };
+                    c.cycles += 5;
+                    c.f[0] = 0;
+                    let forward = crate::ps2f::FpuF32::ZERO.lt(flip);
+                    abi::set_fcc(c, forward);
+                    if all_combined {
+                        c.g[V1][0] = 0x20_0000;
+                        if forward {
+                            c.cycles += 5;
+                        } else {
+                            c.cycles += 6;
+                            c.g[V1][0] = 0x18_0000;
+                        }
+                        c.g[V0][0] = (c.g[A1][0] & 0xffff_ffff_ffc7_ffff) | c.g[V1][0];
+                    } else {
+                        c.g[A0][0] = 0x8_0000;
+                        c.cycles += 4;
+                        c.g[V0][0] = btd_lw(c, id, 0);
+                        c.g[V1][0] = 0xffff_ffff_ffc7_ffff;
+                        if !forward {
+                            c.g[A0][0] = 0x10_0000;
+                        }
+                        c.cycles += 2;
+                        c.g[V0][0] = (c.g[V0][0] & c.g[V1][0]) | c.g[A0][0];
+                    }
+                    c.cycles += 1;
+                    btd_sw(c, id, 0, V0);
+                }
+            }
+            // Leftover half spins (bits 28..31) next to the flips.
+            if extra_spins {
+                c.cycles += 2;
+                c.g[V0][0] = sx(r32(c, T1) << 1);
+                if (c.g[T1][0] as i64) > 0 {
+                    c.cycles += 3;
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, T1)));
+                    let three_each = c.g[A3][0] == c.g[V0][0];
+                    c.g[V0][0] = ((c.g[A3][0] as i64) < 15) as u64;
+                    if !three_each {
+                        c.cycles += 2;
+                        c.g[V1][0] = 0xfff_0000;
+                        if c.g[V0][0] != 0 {
+                            c.cycles += 6;
+                            c.g[V0][0] = btd_lw(c, id, 0);
+                            c.g[V1][0] = 0xfff_ffff;
+                            c.g[A0][0] = sx(r32(c, A3) << 28);
+                            c.g[V0][0] = (c.g[V0][0] & c.g[V1][0]) | c.g[A0][0];
+                            btd_sw(c, id, 0, V0);
+                        }
+                    }
+                }
+            }
+
+            // Quality (bits 24..26 of the second word).
+            c.cycles += 3;
+            c.g[V0][0] = 0x2;
+            let grabs = c.g[T0][0] as i64;
+            let mut skip_grab_check = false;
+            'quality: {
+                if c.g[S3][0] == 1 {
+                    c.cycles += 5;
+                    c.g[V0][0] = btd_lw(c, id, 4);
+                    c.g[V1][0] = 0xffff_ffff_f8ff_ffff;
+                    c.g[A0][0] = 0x400_0000;
+                } else {
+                    c.cycles += 2;
+                    c.g[A0][0] = 0x500_0000;
+                    if c.g[S3][0] == 2 {
+                        c.cycles += 4;
+                        c.g[V0][0] = btd_lw(c, id, 4);
+                        c.g[V1][0] = 0xffff_ffff_f8ff_ffff;
+                    } else {
+                        c.cycles += 2;
+                        c.g[A0][0] = 0x300_0000;
+                        if c.g[S4][0] != 0 {
+                            c.cycles += 4;
+                            c.g[V0][0] = btd_lw(c, id, 4);
+                            c.g[V1][0] = 0xffff_ffff_f8ff_ffff;
+                        } else {
+                            c.cycles += 5;
+                            c.g[V1][0] = btd_lw(c, id, 0);
+                            c.g[V0][0] = c.g[V1][0] & 0xfc0_0000;
+                            if c.g[V0][0] != 0 {
+                                break 'quality;
+                            }
+                            c.cycles += 2;
+                            if c.g[T3][0] != 0 {
+                                c.cycles += 4;
+                                c.g[V0][0] = c.g[V1][0] & 0xffff_ffff_f000_0000;
+                                if c.g[V0][0] == 0 {
+                                    break 'quality;
+                                }
+                            }
+                            c.cycles += 2;
+                            let mut stance_q = false;
+                            if c.g[S5][0] != 0 {
+                                c.cycles += 3;
+                                c.g[V0][0] = btd_lw(c, me, BTD_SWITCH);
+                                c.g[A0][0] = 0x200_0000;
+                                if c.g[V0][0] == 0 {
+                                    c.cycles += 4;
+                                    c.g[V0][0] = btd_lw(c, id, 4);
+                                    c.g[V1][0] = 0xffff_ffff_f8ff_ffff;
+                                    stance_q = true;
+                                }
+                            }
+                            if !stance_q {
+                                c.cycles += 2;
+                                if c.g[A3][0] != 0 {
+                                    break 'quality;
+                                }
+                                c.cycles += 2;
+                                if c.g[T1][0] != 0 {
+                                    break 'quality;
+                                }
+                                c.cycles += 2;
+                                c.g[A0][0] = 0x100_0000;
+                                if grabs <= 0 {
+                                    skip_grab_check = true;
+                                    break 'quality;
+                                }
+                                c.cycles += 3;
+                                c.g[V0][0] = btd_lw(c, id, 4);
+                                c.g[V1][0] = 0xffff_ffff_f8ff_ffff;
+                            }
+                        }
+                    }
+                }
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[V0][0] & c.g[V1][0]) | c.g[A0][0];
+                btd_sw(c, id, 4, V0);
+            }
+
+            // Grabs: the first (bits 3..9), a second one (bit 10, and its
+            // id in bits 11..17, or bit 11 for three).
+            if !skip_grab_check {
+                c.cycles += 2;
+                c.g[A0][0] = 0xffff_ffff_ffff_fc07;
+                if grabs > 0 {
+                    c.cycles += 9;
+                    c.g[V0][0] = btd_lw(c, me, BTD_GRABS);
+                    c.g[V1][0] = btd_lw(c, id, 4);
+                    c.g[A1][0] = (grabs < 2) as u64;
+                    c.g[V0][0] &= 0x7f;
+                    c.g[V1][0] &= c.g[A0][0];
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+                    c.g[V1][0] |= c.g[V0][0];
+                    btd_sw(c, id, 4, V1);
+                    if c.g[A1][0] == 0 {
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[V1][0] | 0x400;
+                        c.g[V0][0] = 0x2;
+                        btd_sw(c, id, 4, A0);
+                        if grabs == 2 {
+                            c.cycles += 8;
+                            c.g[V1][0] = btd_lw(c, me, BTD_GRABS + 4) & 0x7f;
+                            c.g[V0][0] = c.g[A0][0] & 0xffff_ffff_fffc_07ff;
+                            c.g[V1][0] = sx((c.g[V1][0] as u32) << 11);
+                            c.g[V0][0] |= c.g[V1][0];
+                        } else {
+                            c.cycles += 4;
+                            c.g[V0][0] = (c.g[A0][0] & 0xffff_ffff_fffc_07ff) | 0x800;
+                        }
+                        c.cycles += 1;
+                        btd_sw(c, id, 4, V0);
+                    }
+                }
+            }
+
+            // Extra bits (18..19 of the second word).
+            c.cycles += 3;
+            let extra = btd_lw(c, me, BTD_EXTRA);
+            c.g[A0][0] = extra & 0x3;
+            if extra != 0 {
+                c.cycles += 7;
+                c.g[V0][0] = btd_lw(c, id, 4);
+                c.g[V1][0] = 0xffff_ffff_fff3_ffff;
+                c.g[V0][0] &= c.g[V1][0];
+                c.g[A0][0] = sx((c.g[A0][0] as u32) << 18);
+                c.g[V0][0] |= c.g[A0][0];
+                btd_sw(c, id, 4, V0);
+            }
+
+            // Anything at all?
+            c.cycles += 2;
+            c.g[V1][0] = 0;
+            if (c.g[T1][0] as i64) > 0 {
+                c.cycles += 1;
+                c.g[V1][0] = 1;
+            } else {
+                c.cycles += 2;
+                if (c.g[A3][0] as i64) > 0 {
+                    c.g[V1][0] = 1;
+                } else {
+                    c.cycles += 2;
+                    if grabs > 0 {
+                        c.g[V1][0] = 1;
+                    } else {
+                        c.cycles += 3;
+                        let extra = btd_lw(c, me, BTD_EXTRA);
+                        c.g[V0][0] = c.g[V1][0];
+                        if extra == 0 {
+                            break 'done;
+                        }
+                        c.cycles += 1;
+                        c.g[V1][0] = 1;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[V1][0];
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7459,6 +8901,568 @@ pub(crate) mod tests {
             rider_metrix_count_trick_repeats,
             150,
             &setup,
+        );
+    }
+
+    use crate::difftest::RA as SENTINEL;
+
+    // -- 0x00117ae8 RiderMetrix_ShowHUDText -----------------------------------
+
+    /// `RiderMetrix_ShowHUDText`: no message table (-1), a fixed type below
+    /// 34 and a searched one (a free slot, or the smallest ratio), the real
+    /// `RiderMetrix_FindHUDSlot` and `cHUDFX_Show` with a text or a null
+    /// one.
+    #[test]
+    fn rider_metrix_show_hud_text_matches() {
+        use crate::difftest::{check_lohi, scramble, Rng, DATA};
+        const SELF: u32 = DATA;
+        const TABLE: u32 = DATA + 0x2000;
+        const TEXT: u32 = DATA + 0x4000;
+        check_lohi(
+            ee::s00::f_00117ae8__generated,
+            rider_metrix_show_hud_text,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x117a_e800 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0011_7ae8;
+                if seed % 5 == 0 {
+                    c.bus.write32(SELF + RIDER_METRIX_HUD_TABLE, 0);
+                } else {
+                    c.bus.write32(SELF + RIDER_METRIX_HUD_TABLE, TABLE);
+                    let count = 0x23 + r.next_u32() % 4;
+                    c.bus.write32(SELF + 0x1b4, count);
+                    // A free slot among the searched ones (35..count), if any.
+                    let free = if seed % 3 == 2 && count > 0x23 {
+                        0x23 + r.next_u32() % (count - 0x23)
+                    } else {
+                        u32::MAX
+                    };
+                    for i in 0..count {
+                        let slot = TABLE + RIDER_METRIX_HUD_SLOT_SIZE * i;
+                        c.bus.write32(slot, if i == free { 0x34 } else { 0x35 });
+                        c.bus.write32(slot + 4, r.edge_f32());
+                        c.bus.write32(slot + 8, r.edge_f32());
+                        c.bus.write32(slot + 0xc, r.next_u32());
+                        c.bus.write32(slot + 0x18, r.next_u32());
+                    }
+                }
+                let n = r.next_u32() % 30;
+                for i in 0..n {
+                    c.bus.write8(TEXT + i, (r.next_u32() % 255 + 1) as u8);
+                }
+                c.bus.write8(TEXT + n, 0);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = if seed % 3 == 0 {
+                    (34 + r.next_u32() % 4) as u64
+                } else {
+                    (r.next_u32() % 34) as u64
+                };
+                c.g[A2][0] = if r.next_u32() % 8 == 0 { 0 } else { sx(TEXT) };
+                c.g[A3][0] = r.next_u32() as u64;
+                c.f[12] = r.edge_f32();
+            },
+        );
+    }
+
+    #[test]
+    fn rider_metrix_reset_combo_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA};
+        check(
+            ee::s00::f_001175f8__generated,
+            rider_metrix_reset_combo,
+            80,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0011_75f8, 0);
+                let this = DATA + 0x200;
+                fill(c, &mut r, this + 0x90, 0x10);
+                // The HUD table: absent in half the seeds, else an offset
+                // into valid RAM so the fixed-slot write lands on RAM.
+                let table = if seed % 2 == 0 { 0 } else { 0x4000 };
+                c.bus.write32(this + 0x1b0, table);
+                c.bus.write32(this + 0x1b4, (seed % 0x28) as u32);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(r.next_u32());
+                c.pc = 0x0011_75f8;
+            },
+        );
+    }
+
+    // -- 0x00118ff8 RiderMetrix_ShowTrickName --------------------------------
+
+    /// A trick id (random bit fields) and name-part tables whose slots point
+    /// at empty or short strings, so the real `Trick_BuildName` copies both
+    /// shapes; the real `RiderMetrix_ShowHUDText` stops at its null slot
+    /// (self+0x1b0), and the real script-manager post runs.
+    #[test]
+    fn rider_metrix_show_trick_name_matches() {
+        check(
+            ee::s00::f_00118ff8__generated,
+            rider_metrix_show_trick_name,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0011_8ff8, 0);
+                let this = DATA + 0x1000;
+                let id = DATA + 0x2000;
+                let strings = DATA + 0x3000;
+                c.bus.write32(this + 0x1b0, 0);
+                c.bus.write32(id, r.next_u32());
+                c.bus.write32(id + 4, r.next_u32());
+                for k in 0..4u32 {
+                    let s = strings + 0x10 * k;
+                    let len = if k == 0 { 0 } else { k + r.next_u32() % 6 };
+                    for i in 0..len {
+                        c.bus.write8(s + i, b'a' + (r.next_u32() % 26) as u8);
+                    }
+                    c.bus.write8(s + len, 0);
+                }
+                for t in [
+                    0x0043_d118u32,
+                    0x0043_d130,
+                    0x0043_cf40,
+                    0x0043_cf60,
+                    0x0043_cf70,
+                    0x0043_cfb0,
+                    0x0043_cfc8,
+                    0x0043_cfe0,
+                    0x0043_d0c0,
+                    0x0043_d160,
+                    0x0043_d2b8,
+                    0x0043_d2d0,
+                    0x0043_d2e0,
+                    0x0043_d100,
+                    0x0043_d320,
+                    GAME_GP - 0x2100,
+                ] {
+                    for slot in 0..0x80u32 {
+                        c.bus
+                            .write32(t + 4 * slot, strings + 0x10 * (r.next_u32() % 4));
+                    }
+                }
+                c.bus.write32(GAME_GP + 0xce8, DATA + 0x4000);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(id);
+                c.g[A2][0] = sx(r.next_u32() % 4);
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0011_8ff8;
+            },
+        );
+    }
+
+    /// RiderMetrix_BankPendingScore: the trick points, the pending score and
+    /// the banked total each negative, zero or positive (the real HUD
+    /// functions return at once on an empty message list).
+    #[test]
+    fn ridermetrix_bank_pending_score_matches() {
+        check(
+            ee::s00::f_0011a7a8__generated,
+            ridermetrix_bank_pending_score,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x11_a7a8, 0);
+                let this = DATA;
+                c.g[A0][0] = sx(this);
+                // No HUD message list: Remove/Show return immediately.
+                c.bus.write32(this + 0x1b0, 0);
+                c.bus.write32(this + 0x1b4, 0);
+                // Trick points = count (+0x14) * factor (+0x1c4) * gp const.
+                c.bus.write32(
+                    this + 0x14,
+                    if seed % 3 == 0 {
+                        0
+                    } else {
+                        (r.next_u32() % 0x1000) as f32 as u32
+                    },
+                );
+                c.bus.write32(this + 0x1c4, 1.0f32.to_bits());
+                c.bus
+                    .write32(this + 0x18, (r.next_u32() % 0x1000) as f32 as u32);
+                c.bus.write32(GAME_GP - 0x7b08, 1.0f32.to_bits());
+                c.bus
+                    .write32(this + 0xa0, [0, 1, 0xffff_ffff, 77][(seed % 4) as usize]);
+                c.bus.write32(this + 0x84, (seed % 3) as u32);
+            },
+        );
+    }
+
+    /// Random score factors (edge-case floats included) and the 10000 /
+    /// 10 constants the function loads from the game image.
+    #[test]
+    fn rider_metrix_get_trick_score_matches() {
+        use crate::difftest::elf_image;
+        use crate::difftest::fakes::machine;
+        const SELF: u32 = DATA + 0x100;
+        check(
+            ee::s00::f_00117990__generated,
+            rider_metrix_get_trick_score,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x11_7990, 0);
+                elf_image(c);
+                c.pc = 0x0011_7990;
+                c.bus.write32(GAME_GP - 0x7b04, 10_000.0f32.to_bits());
+                c.bus.write32(SELF + 0x18, r.edge_f32());
+                c.bus.write32(SELF + 0x14, r.edge_f32());
+                c.bus.write32(SELF + 0x1c4, r.f32(2.0));
+                c.g[A0][0] = sx(SELF);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+
+    pub(crate) use crate::game::object::movenode::tests::oc336_fake;
+    pub(crate) use crate::game::object::movenode::tests::oc336_fall_through;
+    pub(crate) use crate::game::object::movenode::tests::oc336_install;
+    pub(crate) use crate::game::object::movenode::tests::OC336_CTRL;
+    pub(crate) use crate::game::object::movenode::tests::OC336_MAGIC;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+    use std::sync::Once;
+
+    // -- RiderMetrix_OnWipeout -------------------------------------------
+
+    #[test]
+    fn rider_metrix_on_wipeout_matches() {
+        check(
+            ee::s00::f_00119b08__generated,
+            rider_metrix_on_wipeout,
+            200,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x11_9b08, 0);
+                c.pc = 0x0011_9b08;
+                let m = DATA + 0x100;
+                // No HUD message table: the HUD helpers take their null
+                // path, whatever the score fields hold.
+                c.bus.write32(m + 0x1b0, 0);
+                c.bus.write32(m + 0x124, seed % 5);
+                c.bus.write32(m + 0x12c, seed % 7);
+                c.bus
+                    .write32(m + 0x1a0, if seed % 4 == 0 { 0 } else { 1000 });
+                c.bus.write32(m + 0x84, if seed % 3 == 0 { 0 } else { 250 });
+                c.bus.write32(m + 0xa0, if seed % 3 == 1 { 0 } else { 40 });
+                // Trick scale 1.0, points 0 or 10: the rounded trick points
+                // straddle zero, so the -0.25 penalty branch happens.
+                c.bus.write32(m + 0x14, 0x3f80_0000);
+                c.bus
+                    .write32(m + 0x1c4, if seed % 2 == 0 { 0 } else { 10.0f32.to_bits() });
+                c.bus.write32(m + 0x1c, 0);
+                c.bus.write32(GAME_GP - 0x7b08, 0x3f80_0000); // 1.0
+                c.bus.write32(GAME_GP - 0x7b0c, 0x3f80_0000);
+                c.g[A0][0] = sx(m);
+                c.g[A1][0] = (seed & 1) as u64;
+            },
+        );
+    }
+
+    // -------------------------------------- RiderMetrix_GetRecoveryBoost
+
+    #[test]
+    fn rider_metrix_get_recovery_boost_matches() {
+        check(
+            ee::s00::f_00119bb0__generated,
+            rider_metrix_get_recovery_boost,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0011_9bb0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0011_9bb0;
+                let this = DATA;
+                // No HUD table: ShowHUDNumber returns -1 without calling.
+                c.bus.write32(this + 0x1b0, 0);
+                c.bus.write32(
+                    GAME_GP - 0x7a08,
+                    if seed % 5 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.next_u32()
+                    },
+                );
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+            },
+        );
+    }
+
+    pub(crate) static ANNOUNCE_PREV_LOOKUP: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static ANNOUNCE_PREV_REPEATS: AtomicUsize = AtomicUsize::new(0);
+
+    /// `Trick_LookupBonusTrick`: log the call, then return the setup's points
+    /// (0, -1 or a positive count) so both branches of the caller are
+    /// reached.
+    pub(crate) fn announce_fake_lookup_bonus(c: &mut Cpu) {
+        if c.bus.read32(OC336_CTRL) != OC336_MAGIC {
+            return oc336_fall_through(c, &ANNOUNCE_PREV_LOOKUP, ee::s00::f_0011b1a8__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        let points = c.bus.read32(OC336_CTRL + 4) as i32;
+        fake(c, 0x0011_b1a8, ra);
+        if c.pc == ra {
+            c.g[V0][0] = sx(points as u32);
+        }
+    }
+
+    /// `RiderMetrix_CountTrickRepeats`: log the call, then return the setup's
+    /// repeat count (zero or non-zero).
+    pub(crate) fn announce_fake_count_repeats(c: &mut Cpu) {
+        if c.bus.read32(OC336_CTRL) != OC336_MAGIC {
+            return oc336_fall_through(c, &ANNOUNCE_PREV_REPEATS, ee::s00::f_001190f0__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        let repeats = c.bus.read32(OC336_CTRL + 8);
+        fake(c, 0x0011_90f0, ra);
+        if c.pc == ra {
+            c.g[V0][0] = sx(repeats);
+        }
+    }
+
+    oc336_fake!(
+        announce_fake_show_hud,
+        ANNOUNCE_PREV_HUD,
+        0x0011_7b88,
+        ee::s00::f_00117b88__generated
+    );
+
+    oc336_fake!(
+        announce_fake_bonus_trick,
+        ANNOUNCE_PREV_BONUS_TRICK,
+        0x0029_b7e0,
+        ee::s08::f_0029b7e0__generated
+    );
+
+    oc336_fake!(
+        announce_fake_show_name,
+        ANNOUNCE_PREV_NAME,
+        0x0011_8ff8,
+        ee::s00::f_00118ff8__generated
+    );
+
+    pub(crate) fn rider_metrix_announce_trick_install() {
+        oc336_install!(
+            ee::s00::OVERRIDE_0011B1A8 => announce_fake_lookup_bonus => ANNOUNCE_PREV_LOOKUP,
+            ee::s00::OVERRIDE_001190F0 => announce_fake_count_repeats => ANNOUNCE_PREV_REPEATS,
+            ee::s00::OVERRIDE_00117B88 => announce_fake_show_hud => ANNOUNCE_PREV_HUD,
+            ee::s08::OVERRIDE_0029B7E0 => announce_fake_bonus_trick => ANNOUNCE_PREV_BONUS_TRICK,
+            ee::s00::OVERRIDE_00118FF8 => announce_fake_show_name => ANNOUNCE_PREV_NAME,
+        );
+    }
+
+    /// `RiderMetrix_AnnounceTrick`: no trick (the descriptor builder returns
+    /// 0), a trick with no bonus points, and one with points (the score, the
+    /// HUD number and the bonus-trick sound); the repeat count feeds the
+    /// trick-name display. The descriptor builder is real (`self+0x70` makes
+    /// it short-circuit), the other callees are logging fakes.
+    #[test]
+    fn rider_metrix_announce_trick_matches() {
+        rider_metrix_announce_trick_install();
+        const SELF: u32 = DATA + 0x100;
+        const AUDIO: u32 = DATA + 0x1000;
+        covered(
+            ee::s00::f_0011a168__generated,
+            rider_metrix_announce_trick,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0011_a168, 5);
+                c.pc = 0x0011_a168;
+                c.bus.write32(OC336_CTRL, OC336_MAGIC);
+                c.bus.write32(
+                    OC336_CTRL + 4,
+                    match seed % 3 {
+                        0 => 0,
+                        1 => 0xffff_ffff,
+                        _ => 1 + r.next_u32() % 0x1000,
+                    },
+                );
+                c.bus.write32(OC336_CTRL + 8, (seed % 2) as u32);
+                c.bus.write32(GAME_GP.wrapping_add(0x410), AUDIO);
+                // The real .lit4 constants the descriptor builder and the
+                // score use: degrees -> radians, and 1e-4f.
+                c.bus.write32(GAME_GP.wrapping_sub(0x79e4), 0x4265_2ee0);
+                c.bus.write32(GAME_GP.wrapping_sub(0x79f8), 0x38d1_b717);
+                c.bus.write32(SELF + 0x14, r.edge_f32());
+                c.bus.write32(SELF + 0x1ac, AUDIO + 0x100);
+                // The descriptor builder short-circuits on +0x70; with 0 it
+                // walks the trick bits: no rotation at all (no trick), or a
+                // small angle (a spin, so the trick path runs).
+                let state = if seed % 4 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 0x10
+                };
+                c.bus.write32(SELF + RIDER_METRIX_TRICK_STATE, state);
+                c.bus.write32(SELF + 0xc, r.next_u32() % 8);
+                let no_rotation = state == 0 && seed % 8 == 0;
+                c.bus
+                    .write32(SELF + 0x34, if no_rotation { 0 } else { r.f32(700.0) });
+                c.bus
+                    .write32(SELF + 0x38, if no_rotation { 0 } else { r.f32(1400.0) });
+                // Fields that would take the descriptor builder's other
+                // (state-machine) paths stay clear.
+                for off in [
+                    0x0u32, 0x4, 0x8, 0x10, 0x20, 0x24, 0x28, 0x2c, 0x60, 0x64, 0x68, 0x7c,
+                ] {
+                    c.bus.write32(SELF + off, 0);
+                }
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = (seed % 2) as u64; // stance
+                c.g[A2][0] = ((seed / 2) % 2) as u64; // alternate
+                c.g[A3][0] = ((seed / 4) % 2) as u64; // style
+                c.g[T0][0] = (seed % 3) as u64; // flag
+            },
+        );
+    }
+
+    /// `RiderMetrix_ReturnZero_a0c0`: the FPU result is 0.0f.
+    #[test]
+    fn rider_metrix_return_zero_a0c0_matches() {
+        check(
+            ee::s00::f_0011a0c0__generated,
+            rider_metrix_return_zero_a0c0,
+            50,
+            &|c, seed| {
+                let mut r = Rng(0x0011_a0c0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+            },
+        );
+    }
+
+    /// `RiderMetrix_BuildTrickDesc` over its four shapes: an override trick
+    /// (+0x70), a rail/air class (+0x28: spin grades, amount grades, small
+    /// spins by kind), a special kind (+0x20: slow, mirrored rider) and the
+    /// plain trick (table lookup in and out of range, spin/flip fields,
+    /// leftover spins, quality, grabs, extra bits, the "nothing done"
+    /// return). Angles are built from whole half/full turns plus up to 100
+    /// degrees, so all three rounding cases occur.
+    #[test]
+    fn rider_metrix_build_trick_desc_matches() {
+        const ME: u32 = DATA + 0x100;
+        const ID: u32 = DATA + 0x800;
+        const RIDER: u32 = DATA + 0x1000;
+        check_lohi(
+            ee::s00::f_0011a8c8__generated,
+            rider_metrix_build_trick_desc,
+            800,
+            &|c, seed| {
+                let mut r = Rng(0x11a8_c800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0011_a8c8;
+                c.g[GP][0] = sx(GAME_GP);
+                fill(c, &mut r, crate::difftest::SP - 0x80, 0x20);
+                fill(c, &mut r, ID, 2);
+                fill(c, &mut r, ME, 0x80);
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(BTD_SPIN_DEG_LIT), 0x4265_2ee0);
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(BTD_FLIP_DEG_LIT), 0x4265_2ee0);
+                // Both trick tables; half the entries 0 (no named trick).
+                for i in 0..0x280u32 {
+                    let b = if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        r.next_u32() as u8
+                    };
+                    c.bus.write8(BTD_TABLE + i, b);
+                }
+                let mode = seed % 8;
+                let some = |r: &mut Rng| {
+                    if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 1
+                    }
+                };
+                let pick = |r: &mut Rng, xs: &[u32]| xs[(r.next_u32() as usize) % xs.len()];
+
+                let switch = some(&mut r);
+                c.bus.write32(ME + BTD_SWITCH, switch);
+                let alt = some(&mut r);
+                c.bus.write32(ME + BTD_ALT_TABLE, alt);
+                let f8 = some(&mut r);
+                c.bus.write32(ME + BTD_FLAG_8, f8);
+                let fc = some(&mut r);
+                c.bus.write32(ME + BTD_FLAG_C, fc);
+                let f10 = pick(&mut r, &[0, 1, 2, 3]);
+                c.bus.write32(ME + BTD_FLAG_10, f10);
+                let kind = match mode {
+                    0 => r.next_u32(),
+                    1 | 2 => pick(&mut r, &[0, 1, 4, 7]),
+                    3 => pick(&mut r, &[1, 2, 3, 4]),
+                    _ => 0,
+                };
+                c.bus.write32(ME + BTD_KIND, kind);
+                let speed = r.f32(100.0);
+                c.bus.write32(ME + BTD_SPEED, speed);
+                let class = if mode == 1 || mode == 2 {
+                    pick(&mut r, &[1, 1, 2, 3])
+                } else {
+                    0
+                };
+                c.bus.write32(ME + BTD_CLASS, class);
+                let amount = ((r.next_u32() % 32) as f32 * 0.5).to_bits();
+                c.bus.write32(ME + BTD_AMOUNT, amount);
+
+                // Spin in half turns, flip in whole turns.
+                let halves = if mode == 1 || mode == 2 {
+                    pick(&mut r, &[0, 1, 1, 1, 2, 3, 5, 6, 8, 11, 12, 14])
+                } else if r.next_u32() % 4 == 0 {
+                    0
+                } else {
+                    r.next_u32() % 34
+                };
+                let turns = if r.next_u32() % 3 == 0 {
+                    0
+                } else {
+                    r.next_u32() % 13
+                };
+                let jitter = |r: &mut Rng| (r.next_u32() % 201) as f32 - 100.0;
+                let sign = |r: &mut Rng| if r.next_u32() % 2 == 0 { 1.0 } else { -1.0f32 };
+                let spin_deg = sign(&mut r) * (halves as f32 * 180.0 + jitter(&mut r));
+                let flip_deg = sign(&mut r) * (turns as f32 * 360.0 + jitter(&mut r));
+                c.bus
+                    .write32(ME + BTD_SPIN, (spin_deg / 57.295_78).to_bits());
+                c.bus
+                    .write32(ME + BTD_FLIP, (flip_deg / 57.295_78).to_bits());
+
+                // Grabs: the first `n` non-zero, then a 0.
+                let n = r.next_u32() % 4;
+                for k in 0..3u32 {
+                    let v = if k < n {
+                        r.next_u32() | 1
+                    } else if k == n {
+                        0
+                    } else {
+                        r.next_u32()
+                    };
+                    c.bus.write32(ME + BTD_GRABS + 4 * k, v);
+                }
+                let over = if mode == 0 { r.next_u32() | 1 } else { 0 };
+                c.bus.write32(ME + BTD_OVERRIDE, over);
+                let extra = some(&mut r);
+                c.bus.write32(ME + BTD_EXTRA, extra);
+                c.bus.write32(ME + BTD_RIDER, RIDER);
+                let swap = some(&mut r);
+                c.bus.write32(RIDER + BTD_RIDER_SWAP, swap);
+
+                c.g[A0][0] = sx(ME);
+                c.g[A1][0] = sx(ID);
+                c.g[A2][0] = some(&mut r) as u64;
+                c.g[A3][0] = some(&mut r) as u64;
+                c.g[T0][0] = if r.next_u32() % 4 == 0 {
+                    r.next_u32() as u64 | 1
+                } else {
+                    0
+                };
+                c.g[T1][0] = pick(&mut r, &[0, 0, 0, 1, 2, 3]) as u64;
+            },
         );
     }
 }

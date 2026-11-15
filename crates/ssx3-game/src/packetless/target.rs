@@ -5,7 +5,6 @@
 //! (`TexMan_BuildUploadPacket` / `BuildSpritePacket`, ported in
 //! `crate::render`) write it.
 
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;
 use ssx3_render::direct::{Cmd, Step};
 

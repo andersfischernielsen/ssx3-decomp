@@ -4,7 +4,6 @@
 //! recorded draw (`Step::Gif`, as `crate::capture` reads the packet). The
 //! SprStream (`gp+0x1384`) is left alone.
 
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;
 use ssx3_render::direct::{Cmd, Step};
 

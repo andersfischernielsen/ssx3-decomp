@@ -140,6 +140,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0041_1f18, adddf3, "__adddf3"),
     (0x0041_2280, divdf3, "__divdf3"),
     (0x0041_2608, fixdfsi, "__fixdfsi"),
+    (0x0040_db58, ieee754_log, "__ieee754_log"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4936,6 +4937,435 @@ pub fn divdf3(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// __ieee754_log (0x40db58, fdlibm e_log.c on the soft-float double ABI)
+
+pub(crate) const IEEE_LOG_ADDDF3: Callee = Callee {
+    addr: 0x0041_1f18,
+    f: ee::s15::__adddf3,
+};
+
+pub(crate) const IEEE_LOG_SUBDF3: Callee = Callee {
+    addr: 0x0041_1f70,
+    f: ee::s15::__subdf3,
+};
+
+pub(crate) const IEEE_LOG_MULDF3: Callee = Callee {
+    addr: 0x0041_1fd8,
+    f: ee::s15::__muldf3,
+};
+
+pub(crate) const IEEE_LOG_DIVDF3: Callee = Callee {
+    addr: 0x0041_2280,
+    f: ee::s15::__divdf3,
+};
+
+pub(crate) const IEEE_LOG_CMPDF2: Callee = Callee {
+    addr: 0x0041_2500,
+    f: ee::s15::__cmpdf2,
+};
+
+pub(crate) const IEEE_LOG_FLOATSIDF: Callee = Callee {
+    addr: 0x0041_2550,
+    f: ee::s15::__floatsidf,
+};
+
+/// The constant pool of e_log.c (doubles at `0x4a0000 - off`): -two54/zero,
+/// ln2_hi, ln2_lo, 1/3, ln2_hi, ln2_lo, Lg7, Lg5, Lg3, Lg1, Lg6, Lg4, Lg2,
+/// then ln2_hi/ln2_lo for the two `k != 0` tails.
+pub(crate) const IEEE_LOG_POOL: u32 = 0x004a_0000;
+
+/// `a1 = pool constant` (`lui at, 0x4a; ld a1, -off(at)`).
+pub(crate) fn ieee_log_k(c: &mut Cpu, off: u32) {
+    c.g[AT][0] = IEEE_LOG_POOL as u64;
+    c.g[A1][0] = c.ld(IEEE_LOG_POOL - off);
+}
+
+/// Where a path of `__ieee754_log` joins the shared tail.
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
+pub(crate) enum IeeeLogTail {
+    /// `a1 = v0`, then `a0 - a1`.
+    SubResult,
+    /// `v0 = a0 - a1`.
+    Sub,
+    /// Return v0 (reload ra).
+    Ret,
+    /// Return v0 (ra already reloaded).
+    Epilogue,
+}
+
+/// `double __ieee754_log(double x)` (0x40db58; x and the result as 64-bit
+/// integers in a0 / v0): fdlibm's natural logarithm on the soft-float
+/// helpers. x = 2^k * (1 + f) with sqrt(2)/2 < 1 + f < sqrt(2); small f
+/// take the short series, the rest `s = f / (2 + f)` with the Lg1..Lg7
+/// polynomial. log(+-0) = -inf, log(x < 0) = NaN, log(inf/NaN) = x + x.
+pub fn ieee754_log(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0xa0);
+        c.g[A2][0] = c.g[A0][0];
+        let stk = sp(c);
+        c.sd(stk.wrapping_add(0x90), c.g[RA][0]);
+        c.sd(stk.wrapping_add(0x80), c.g[FP][0]);
+        c.sd(stk.wrapping_add(0x70), c.g[S7][0]);
+        c.sd(stk.wrapping_add(0x60), c.g[S6][0]);
+        c.sd(stk.wrapping_add(0x50), c.g[S5][0]);
+        c.sd(stk.wrapping_add(0x40), c.g[S4][0]);
+        c.sd(stk.wrapping_add(0x30), c.g[S3][0]);
+        c.sd(stk.wrapping_add(0x20), c.g[S2][0]);
+        c.sd(stk.wrapping_add(0x10), c.g[S1][0]);
+        c.sd(stk, c.g[S0][0]);
+        c.g[V0][0] = c.g[A2][0];
+        c.g[S3][0] = ((c.g[V0][0] as i64) >> 32) as u64; // hx
+        c.g[V1][0] = ((c.g[V0][0] << 32) as i64 >> 32) as u64; // lx
+        c.g[V0][0] = 0xfffff;
+        let normal = (c.g[V0][0] as i64) < (c.g[S3][0] as i64);
+        c.g[V0][0] = normal as u64;
+        c.g[FP][0] = 0; // k
+
+        let tail = 'body: {
+            if !normal {
+                // hx < 0x00100000: zero, negative or subnormal.
+                c.cycles += 6;
+                c.g[V0][0] = 0x7fff_ffff;
+                c.g[V0][0] &= c.g[S3][0];
+                c.g[V0][0] |= c.g[V1][0];
+                let zero = c.g[V0][0] == 0;
+                c.g[V1][0] = 0x4a0000;
+                if zero {
+                    // -two54 / zero = -inf
+                    c.cycles += 2;
+                    c.g[V0][0] = c.ld(IEEE_LOG_POOL - 0x6ef0);
+                    break 'body IeeeLogTail::Ret;
+                }
+                c.cycles += 2;
+                let negative = (c.g[S3][0] as i64) < 0;
+                c.g[A0][0] = c.g[A2][0];
+                if negative {
+                    // (x - x) / zero = NaN
+                    c.cycles += 7;
+                    c.g[A1][0] = c.g[A0][0];
+                    IEEE_LOG_SUBDF3.call(c, 0x0040_dbe0)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A1][0] = 0;
+                    IEEE_LOG_DIVDF3.call(c, 0x0040_dbec)?;
+                    frame.restore_ra(c, 0x90);
+                    break 'body IeeeLogTail::Epilogue;
+                }
+                // Subnormal: scale up by two54.
+                c.cycles += 7;
+                c.g[A1][0] = 0x4350_0000_0000_0000;
+                c.g[FP][0] = (-54i64) as u64;
+                IEEE_LOG_MULDF3.call(c, 0x0040_dc04)?;
+                c.g[A2][0] = c.g[V0][0];
+                c.g[S3][0] = ((c.g[V0][0] as i64) >> 32) as u64;
+            }
+
+            c.cycles += 5;
+            c.g[V0][0] = 0x7fef_ffff;
+            let inf_nan = (c.g[V0][0] as i64) < (c.g[S3][0] as i64);
+            c.g[V0][0] = inf_nan as u64;
+            c.g[S0][0] = 0xf0000;
+            if inf_nan {
+                // x + x
+                c.cycles += 5;
+                c.g[A0][0] = c.g[A2][0];
+                c.g[A1][0] = c.g[A0][0];
+                IEEE_LOG_ADDDF3.call(c, 0x0040_dc30)?;
+                frame.restore_ra(c, 0x90);
+                break 'body IeeeLogTail::Epilogue;
+            }
+
+            // k += (hx >> 20) - 1023; normalise x (or x/2) into [sqrt(2)/2, sqrt(2)).
+            c.cycles += 31;
+            c.g[A0][0] = sx((r32(c, S3) as i32 >> 20) as u32);
+            c.g[S0][0] |= 0xffff;
+            c.g[V0][0] = 0x95f64;
+            c.g[S3][0] &= c.g[S0][0];
+            c.g[V0][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
+            c.g[V1][0] = sx(r32(c, FP).wrapping_sub(0x3ff));
+            c.g[A1][0] = 0x100000;
+            c.g[FP][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+            c.g[S4][0] = c.g[V0][0] & c.g[A1][0]; // i
+            c.g[A0][0] = c.g[A2][0];
+            c.g[V0][0] = 0x3ff00000;
+            c.g[V1][0] = 0xffff_ffff;
+            c.g[V0][0] = c.g[S4][0] ^ c.g[V0][0];
+            c.g[A0][0] &= c.g[V1][0];
+            c.g[V0][0] |= c.g[S3][0];
+            c.g[V0][0] <<= 32;
+            c.g[A2][0] = c.g[A0][0] | c.g[V0][0];
+            c.g[V1][0] = sx((r32(c, S4) as i32 >> 20) as u32);
+            c.g[A1][0] = 0x3ff0_0000_0000_0000; // 1.0
+            c.g[FP][0] = sx(r32(c, FP).wrapping_add(r32(c, V1)));
+            c.g[A0][0] = c.g[A2][0];
+            IEEE_LOG_SUBDF3.call(c, 0x0040_dc9c)?;
+            c.g[S5][0] = c.g[V0][0]; // f = x - 1
+            c.g[V0][0] = sx(r32(c, S3).wrapping_add(2));
+            c.g[V0][0] &= c.g[S0][0];
+            let tiny = (c.g[V0][0] as i64) < 3;
+            c.g[V0][0] = tiny as u64;
+            c.g[S0][0] = 0;
+
+            if tiny {
+                // |f| < 2^-20
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S5][0];
+                c.g[A1][0] = c.g[S0][0];
+                IEEE_LOG_CMPDF2.call(c, 0x0040_dcc0)?;
+                let f_nonzero = c.g[V0][0] != 0;
+                c.g[A0][0] = c.g[S5][0];
+                if !f_nonzero {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[S0][0];
+                    if c.g[FP][0] == 0 {
+                        break 'body IeeeLogTail::Ret; // log(1) = 0
+                    }
+                    // dk * ln2_hi + dk * ln2_lo
+                    c.cycles += 17;
+                    c.g[A0][0] = c.g[FP][0];
+                    IEEE_LOG_FLOATSIDF.call(c, 0x0040_dcd8)?;
+                    c.g[S6][0] = c.g[V0][0];
+                    ieee_log_k(c, 0x6ee8);
+                    c.g[A0][0] = c.g[S6][0];
+                    IEEE_LOG_MULDF3.call(c, 0x0040_dcec)?;
+                    ieee_log_k(c, 0x6ee0);
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A0][0] = c.g[S6][0];
+                    IEEE_LOG_MULDF3.call(c, 0x0040_dd00)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[V0][0];
+                    IEEE_LOG_ADDDF3.call(c, 0x0040_dd0c)?;
+                    frame.restore_ra(c, 0x90);
+                    break 'body IeeeLogTail::Epilogue;
+                }
+                // R = f*f*(0.5 - 1/3*f)
+                c.cycles += 16;
+                c.g[A1][0] = c.g[S5][0];
+                IEEE_LOG_MULDF3.call(c, 0x0040_dd20)?;
+                ieee_log_k(c, 0x6ed8);
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S5][0];
+                IEEE_LOG_MULDF3.call(c, 0x0040_dd34)?;
+                c.g[A0][0] = 0x3fe0_0000_0000_0000; // 0.5
+                c.g[A1][0] = c.g[V0][0];
+                IEEE_LOG_SUBDF3.call(c, 0x0040_dd44)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[V0][0];
+                IEEE_LOG_MULDF3.call(c, 0x0040_dd50)?;
+                c.g[S2][0] = c.g[V0][0];
+                if c.g[FP][0] == 0 {
+                    // f - R
+                    c.cycles += 3;
+                    c.g[A0][0] = c.g[S5][0];
+                    c.g[A1][0] = c.g[S2][0];
+                    break 'body IeeeLogTail::Sub;
+                }
+                // dk*ln2_hi - ((R - dk*ln2_lo) - f)
+                c.cycles += 20;
+                c.g[A0][0] = c.g[FP][0];
+                IEEE_LOG_FLOATSIDF.call(c, 0x0040_dd6c)?;
+                c.g[S6][0] = c.g[V0][0];
+                ieee_log_k(c, 0x6ed0);
+                c.g[A0][0] = c.g[S6][0];
+                IEEE_LOG_MULDF3.call(c, 0x0040_dd80)?;
+                ieee_log_k(c, 0x6ec8);
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S6][0];
+                IEEE_LOG_MULDF3.call(c, 0x0040_dd94)?;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = c.g[V0][0];
+                IEEE_LOG_SUBDF3.call(c, 0x0040_dda0)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S5][0];
+                IEEE_LOG_SUBDF3.call(c, 0x0040_ddac)?;
+                c.g[A0][0] = c.g[S0][0];
+                break 'body IeeeLogTail::SubResult;
+            }
+
+            // s = f / (2 + f); z = s*s; w = z*z; R = t2 + t1 (Lg polynomial)
+            c.cycles += 75;
+            c.g[A1][0] = 0x4000_0000_0000_0000; // 2.0
+            c.g[A0][0] = c.g[S5][0];
+            IEEE_LOG_ADDDF3.call(c, 0x0040_ddc4)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S5][0];
+            IEEE_LOG_DIVDF3.call(c, 0x0040_ddd0)?;
+            c.g[S7][0] = c.g[V0][0]; // s
+            c.g[A0][0] = c.g[FP][0];
+            IEEE_LOG_FLOATSIDF.call(c, 0x0040_dddc)?;
+            c.g[S6][0] = c.g[V0][0]; // dk
+            c.g[A0][0] = c.g[S7][0];
+            c.g[A1][0] = c.g[S7][0];
+            IEEE_LOG_MULDF3.call(c, 0x0040_ddec)?;
+            c.g[V1][0] = 0xffff_ffff_fff9_eb86;
+            c.g[S2][0] = c.g[V0][0]; // z
+            c.g[A0][0] = c.g[S2][0];
+            c.g[S4][0] = sx(r32(c, S3).wrapping_add(r32(c, V1))); // i = hx - 0x6147a
+            c.g[A1][0] = c.g[S2][0];
+            IEEE_LOG_MULDF3.call(c, 0x0040_de08)?;
+            c.g[S0][0] = 0x6b851;
+            c.g[S1][0] = c.g[V0][0]; // w
+            ieee_log_k(c, 0x6ec0);
+            c.g[S0][0] = sx(r32(c, S0).wrapping_sub(r32(c, S3))); // j
+            c.g[A0][0] = c.g[S1][0];
+            IEEE_LOG_MULDF3.call(c, 0x0040_de28)?;
+            c.g[S4][0] |= c.g[S0][0];
+            ieee_log_k(c, 0x6eb8);
+            c.g[A0][0] = c.g[V0][0];
+            IEEE_LOG_ADDDF3.call(c, 0x0040_de3c)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S1][0];
+            IEEE_LOG_MULDF3.call(c, 0x0040_de48)?;
+            ieee_log_k(c, 0x6eb0);
+            c.g[A0][0] = c.g[V0][0];
+            IEEE_LOG_ADDDF3.call(c, 0x0040_de58)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S1][0];
+            IEEE_LOG_MULDF3.call(c, 0x0040_de64)?;
+            ieee_log_k(c, 0x6ea8);
+            c.g[S0][0] = c.g[V0][0]; // t1
+            c.g[A0][0] = c.g[S1][0];
+            IEEE_LOG_MULDF3.call(c, 0x0040_de78)?;
+            ieee_log_k(c, 0x6ea0);
+            c.g[A0][0] = c.g[V0][0];
+            IEEE_LOG_ADDDF3.call(c, 0x0040_de88)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S1][0];
+            IEEE_LOG_MULDF3.call(c, 0x0040_de94)?;
+            ieee_log_k(c, 0x6e98);
+            c.g[A0][0] = c.g[V0][0];
+            IEEE_LOG_ADDDF3.call(c, 0x0040_dea4)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[V0][0];
+            IEEE_LOG_MULDF3.call(c, 0x0040_deb0)?;
+            ieee_log_k(c, 0x6e90);
+            c.g[A0][0] = c.g[V0][0];
+            IEEE_LOG_ADDDF3.call(c, 0x0040_dec0)?;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = c.g[V0][0];
+            IEEE_LOG_MULDF3.call(c, 0x0040_decc)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S0][0];
+            IEEE_LOG_ADDDF3.call(c, 0x0040_ded8)?;
+            let far = (c.g[S4][0] as i64) > 0;
+            c.g[S2][0] = c.g[V0][0]; // R
+
+            if far {
+                // hfsq = 0.5*f*f
+                c.cycles += 9;
+                c.g[A1][0] = 0x3fe0_0000_0000_0000;
+                c.g[A0][0] = c.g[S5][0];
+                IEEE_LOG_MULDF3.call(c, 0x0040_def0)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S5][0];
+                IEEE_LOG_MULDF3.call(c, 0x0040_defc)?;
+                c.g[S3][0] = c.g[V0][0];
+                if c.g[FP][0] == 0 {
+                    // f - (hfsq - s*(hfsq + R))
+                    c.cycles += 11;
+                    c.g[A1][0] = c.g[S2][0];
+                    c.g[A0][0] = c.g[S3][0];
+                    IEEE_LOG_ADDDF3.call(c, 0x0040_df10)?;
+                    c.g[A0][0] = c.g[S7][0];
+                    c.g[A1][0] = c.g[V0][0];
+                    IEEE_LOG_MULDF3.call(c, 0x0040_df1c)?;
+                    c.g[A0][0] = c.g[S3][0];
+                    c.g[A1][0] = c.g[V0][0];
+                    IEEE_LOG_SUBDF3.call(c, 0x0040_df28)?;
+                    c.g[A0][0] = c.g[S5][0];
+                    break 'body IeeeLogTail::SubResult;
+                }
+                // dk*ln2_hi - ((hfsq - (s*(hfsq + R) + dk*ln2_lo)) - f)
+                c.cycles += 21;
+                ieee_log_k(c, 0x6e88);
+                c.g[A0][0] = c.g[S6][0];
+                IEEE_LOG_MULDF3.call(c, 0x0040_df40)?;
+                c.g[S1][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[A0][0] = c.g[S3][0];
+                IEEE_LOG_ADDDF3.call(c, 0x0040_df50)?;
+                c.g[A0][0] = c.g[S7][0];
+                c.g[A1][0] = c.g[V0][0];
+                IEEE_LOG_MULDF3.call(c, 0x0040_df5c)?;
+                ieee_log_k(c, 0x6e80);
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S6][0];
+                IEEE_LOG_MULDF3.call(c, 0x0040_df70)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[V0][0];
+                IEEE_LOG_ADDDF3.call(c, 0x0040_df7c)?;
+                c.g[A0][0] = c.g[S3][0];
+            } else {
+                c.cycles += 2;
+                if c.g[FP][0] == 0 {
+                    // f - s*(f - R)
+                    c.cycles += 8;
+                    c.g[A1][0] = c.g[S2][0];
+                    c.g[A0][0] = c.g[S5][0];
+                    IEEE_LOG_SUBDF3.call(c, 0x0040_df98)?;
+                    c.g[A0][0] = c.g[S7][0];
+                    c.g[A1][0] = c.g[V0][0];
+                    IEEE_LOG_MULDF3.call(c, 0x0040_dfa4)?;
+                    c.g[A0][0] = c.g[S5][0];
+                    break 'body IeeeLogTail::SubResult;
+                }
+                // dk*ln2_hi - ((s*(f - R) - dk*ln2_lo) - f)
+                c.cycles += 17;
+                ieee_log_k(c, 0x6e78);
+                c.g[A0][0] = c.g[S6][0];
+                IEEE_LOG_MULDF3.call(c, 0x0040_dfbc)?;
+                c.g[S1][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[A0][0] = c.g[S5][0];
+                IEEE_LOG_SUBDF3.call(c, 0x0040_dfcc)?;
+                c.g[A0][0] = c.g[S7][0];
+                c.g[A1][0] = c.g[V0][0];
+                IEEE_LOG_MULDF3.call(c, 0x0040_dfd8)?;
+                ieee_log_k(c, 0x6e70);
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S6][0];
+                IEEE_LOG_MULDF3.call(c, 0x0040_dfec)?;
+                c.g[A0][0] = c.g[S0][0];
+            }
+            c.cycles += 6;
+            c.g[A1][0] = c.g[V0][0];
+            IEEE_LOG_SUBDF3.call(c, 0x0040_dff8)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S5][0];
+            IEEE_LOG_SUBDF3.call(c, 0x0040_e004)?;
+            c.g[A0][0] = c.g[S1][0];
+            IeeeLogTail::SubResult
+        };
+
+        if tail <= IeeeLogTail::SubResult {
+            c.cycles += 1;
+            c.g[A1][0] = c.g[V0][0];
+        }
+        if tail <= IeeeLogTail::Sub {
+            c.cycles += 2;
+            IEEE_LOG_SUBDF3.call(c, 0x0040_e014)?;
+        }
+        if tail <= IeeeLogTail::Ret {
+            c.cycles += 1;
+            frame.restore_ra(c, 0x90);
+        }
+        c.cycles += 11;
+        let stk = sp(c);
+        c.g[FP][0] = c.ld(stk.wrapping_add(0x80));
+        c.g[S7][0] = c.ld(stk.wrapping_add(0x70));
+        c.g[S6][0] = c.ld(stk.wrapping_add(0x60));
+        c.g[S5][0] = c.ld(stk.wrapping_add(0x50));
+        c.g[S4][0] = c.ld(stk.wrapping_add(0x40));
+        c.g[S3][0] = c.ld(stk.wrapping_add(0x30));
+        c.g[S2][0] = c.ld(stk.wrapping_add(0x20));
+        c.g[S1][0] = c.ld(stk.wrapping_add(0x10));
+        c.g[S0][0] = c.ld(stk);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     crate::difftest::events::driven!(oc238_gen_fixunssfsi, ee::s15::f_004139f8__generated);
@@ -6700,6 +7130,49 @@ pub(crate) mod tests {
                 let mode = schedule(c, &mut r, seed, 0x0034_41a8);
                 c.next_event = c.cycles + 20 + (r.next_u32() % 60) as u64;
                 mode
+            },
+        );
+    }
+
+    /// __ieee754_log: +-0, negative, subnormal, inf/NaN, exact powers of
+    /// two (k = 0 and not), |f| < 2^-20 (k = 0 and not) and general
+    /// normal inputs on both sides of the `i > 0` split; real soft-float
+    /// helpers, the constant pool from the ELF image.
+    #[test]
+    fn ieee754_log_matches() {
+        check(
+            ee::s15::f_0040db58__generated,
+            ieee754_log,
+            400,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x40_db58, 0);
+                crate::difftest::elf_image(c);
+                c.pc = 0x0040_db58;
+                let lo = r.next_u32() as u64;
+                let sign = ((r.next_u32() & 1) as u64) << 63;
+                let exp =
+                    |r: &mut Rng, span: u32| (0x3ff + r.next_u32() % (2 * span + 1) - span) as u64;
+                let x: u64 = match seed % 10 {
+                    0 => sign,
+                    1 => 1 << 63 | (r.next_u32() as u64) << 32 | lo,
+                    2 => ((r.next_u32() % 0x10_0000) as u64) << 32 | lo,
+                    3 => {
+                        let m = if r.next_u32() % 2 == 0 { 0 } else { lo };
+                        sign | 0x7ff0_0000_0000_0000 | m
+                    }
+                    4 => exp(&mut r, 3) << 52,
+                    5 => {
+                        let hm = [0xf_fffeu64, 0xf_ffff, 0][(r.next_u32() % 3) as usize];
+                        let low = if r.next_u32() % 3 == 0 { 0 } else { lo };
+                        exp(&mut r, 3) << 52 | hm << 32 | low
+                    }
+                    6 | 7 => exp(&mut r, 2) << 52 | ((r.next_u32() % 0x10_0000) as u64) << 32 | lo,
+                    _ => {
+                        let e = 1 + (r.next_u32() % 0x7fe) as u64;
+                        e << 52 | ((r.next_u32() % 0x10_0000) as u64) << 32 | lo
+                    }
+                };
+                c.g[A0][0] = x;
             },
         );
     }

@@ -28,6 +28,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003d_e7b0, ea_file_free_request, "EAFile_FreeRequest"),
     (0x003e_2768, ea_file_big_find_entry, "EAFile_BigFindEntry"),
     (0x0041_6404, strchr, "strchr"),
+    (0x003e_0118, stream_file_on_close, "StreamFile_OnClose"),
+    (0x003e_03d0, streamfile_issue_read, "StreamFile_IssueRead"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -776,6 +778,480 @@ pub fn strchr(c: &mut Cpu) {
     ret(c);
 }
 
+// ---------------------------------------------------------------------------
+// StreamFile_OnClose (0x3e0118)
+
+/// Stream file fields OnClose touches: the pending request (`+0x174`), the
+/// refill priority (`+0x40`) and its name buffer (`+0x6c`).
+pub(crate) const SFOC_REQUEST: u32 = 0x174;
+
+pub(crate) const SFOC_PRIORITY: u32 = 0x40;
+
+pub(crate) const SFOC_NAME: u32 = 0x6c;
+
+/// The callback an opened stream sets on its request (`func_003E00D8`).
+pub(crate) const SFOC_READ_CALLBACK: u32 = 0x003e_00d8;
+
+pub(crate) const SFOC_RELEASE_REQUEST: Callee = Callee {
+    addr: 0x003d_d310,
+    f: ee::s14::EAFile_ReleaseRequest,
+};
+
+pub(crate) const SFOC_QUEUE_OPEN: Callee = Callee {
+    addr: 0x003d_d4e8,
+    f: ee::s14::EAFile_QueueOpen,
+};
+
+pub(crate) const SFOC_SET_REQUEST_CALLBACK: Callee = Callee {
+    addr: 0x003d_cf70,
+    f: ee::s14::EAFile_SetRequestCallback,
+};
+
+/// `void StreamFile_OnClose(int, int, StreamFile* st)` (0x3e0118): release
+/// the current file request, then queue a fresh open of the stream's name
+/// (`EAFile_QueueOpen(st + 0x6c, 1, st->priority, st)`) and, when that
+/// produced a request, set the stream's read callback on it. The request
+/// handle lives at `st + 0x174`.
+pub fn stream_file_on_close(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A2][0];
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(SFOC_REQUEST)).lw(c);
+        SFOC_RELEASE_REQUEST.call(c, 0x003e_0130)?;
+        c.g[A2][0] = Addr(r32(c, S0).wrapping_add(SFOC_PRIORITY)).lw(c);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(SFOC_NAME));
+        c.g[A1][0] = 1;
+        c.g[A3][0] = c.g[S0][0];
+        SFOC_QUEUE_OPEN.call(c, 0x003e_0144)?;
+        let failed = c.g[V0][0] == 0;
+        Addr(r32(c, S0)).off(SFOC_REQUEST).sw(c, c.g[V0][0]);
+        if !failed {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = sx(SFOC_READ_CALLBACK);
+            SFOC_SET_REQUEST_CALLBACK.call(c, 0x003e_015c)?;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const EAFS_MUTEX_LOCK: Callee = Callee {
+    addr: 0x003e_5700,
+    f: ee::s14::f_003e5700,
+};
+
+pub(crate) const EAFS_MUTEX_UNLOCK: Callee = Callee {
+    addr: 0x003e_5760,
+    f: ee::s14::f_003e5760,
+};
+
+// ---------------------------------------------------------------------------
+// StreamFile_IssueRead
+// ---------------------------------------------------------------------------
+
+pub(crate) const SFIR_RING_IN_RANGE: Callee = Callee {
+    addr: 0x003d_fc08,
+    f: ee::s14::f_003dfc08,
+};
+
+pub(crate) const SFIR_FREE_REQUEST: Callee = Callee {
+    addr: 0x003d_fe18,
+    f: ee::s14::f_003dfe18,
+};
+
+pub(crate) const SFIR_MEM_COPY: Callee = Callee {
+    addr: 0x003e_6574,
+    f: ee::s14::f_003e6574,
+};
+
+pub(crate) const SFIR_ON_READ: Callee = Callee {
+    addr: 0x003e_0170,
+    f: ee::s14::f_003e0170,
+};
+
+pub(crate) const SFIR_QUEUE_READ: Callee = Callee {
+    addr: 0x003d_d648,
+    f: ee::s14::f_003dd648,
+};
+
+pub(crate) const SFIR_SET_REQUEST_CALLBACK: Callee = Callee {
+    addr: 0x003d_cf70,
+    f: ee::s14::f_003dcf70,
+};
+
+/// Ring markers: `-1` wrap to the start, `-2` skip `[1]` bytes.
+pub(crate) const SFIR_WRAP: u64 = u64::MAX;
+
+pub(crate) const SFIR_ENTRY: u32 = 0x003e_03d0;
+
+pub(crate) const SFIR_SKIP: u32 = 0x003e_0400;
+
+pub(crate) const SFIR_FREE: u32 = 0x003e_0450;
+
+pub(crate) const SFIR_SCAN: u32 = 0x003e_0458;
+
+/// `void StreamFile_IssueRead(StreamFile* sf, int priority)` (0x3e03d0):
+/// moves the ring's read pointer (`+0x50`) past wrap / skip markers, frees
+/// the finished requests that no longer overlap the free space (under the
+/// file's mutex `+4`), then finds room for the next read at the write
+/// pointer (`+0x58`): before the read pointer, at the end of the buffer
+/// (`+0x34`), or by moving the pending data (`+0x54..+0x58`) back to the
+/// start (`+0x2c`, 64-byte aligned unless memory-backed). Too little room
+/// (`< +0x17c`): state 2 (`+0x38`). Otherwise copies from memory (source
+/// `+0x60` kind 1) and completes, or queues a file read with this as its
+/// callback. Dispatcher-shaped (both loops can unwind).
+pub fn streamfile_issue_read(c: &mut Cpu) {
+    guest(c, |c| {
+        let s1 = |c: &Cpu| Addr(c.g[S1][0] as u32);
+        let frame = Frame { size: 0x50 };
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                SFIR_ENTRY => {
+                    c.cycles += 12;
+                    let frame = Frame::open(c, 0x50);
+                    c.g[A2][0] = SFIR_WRAP;
+                    frame.save(c, S1, 0x30);
+                    frame.save(c, S3, 0x10);
+                    c.g[S1][0] = c.g[A0][0];
+                    frame.save(c, S0, 0x40);
+                    c.g[S3][0] = c.g[A1][0];
+                    frame.save(c, S2, 0x20);
+                    c.g[A1][0] = sx(-2i32 as u32);
+                    frame.save_ra(c, 0);
+                    c.g[V1][0] = s1(c).off(0x54).lw(c);
+                    pc = SFIR_SKIP;
+                }
+                SFIR_SKIP => {
+                    // Skip the markers at the read pointer.
+                    c.cycles += 3;
+                    let rd = s1(c).off(0x50).lw(c);
+                    c.g[V0][0] = rd;
+                    c.g[A0][0] = rd;
+                    if rd == c.g[V1][0] {
+                        c.cycles += 1;
+                        c.g[S0][0] = sx(s1(c).0.wrapping_add(4));
+                        pc = 0x003e_0440;
+                        continue;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(rd as u32).lw(c);
+                    if c.g[V0][0] == c.g[A2][0] {
+                        c.cycles += 3;
+                        c.g[V0][0] = s1(c).off(0x30).lw(c);
+                        let v0 = c.g[V0][0];
+                        s1(c).off(0x50).sw(c, v0);
+                    } else {
+                        c.cycles += 2;
+                        let skip = c.g[V0][0] == c.g[A1][0];
+                        c.g[S0][0] = sx(s1(c).0.wrapping_add(4));
+                        if !skip {
+                            pc = 0x003e_0440;
+                            continue;
+                        }
+                        c.cycles += 4;
+                        let len = Addr(rd as u32).off(4).lw(c);
+                        c.g[V0][0] = sx((rd as u32).wrapping_add(len as u32));
+                        let v0 = c.g[V0][0];
+                        s1(c).off(0x50).sw(c, v0);
+                    }
+                    if crate::events::back_edge_unwinds(c, SFIR_SKIP) {
+                        return Ok(());
+                    }
+                }
+                0x003e_0440 => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    EAFS_MUTEX_LOCK.call(c, 0x003e_0448)?;
+                    c.g[S2][0] = c.g[S0][0];
+                    pc = SFIR_SCAN;
+                }
+                SFIR_FREE => {
+                    c.cycles += 2;
+                    c.g[A0][0] = c.g[S1][0];
+                    SFIR_FREE_REQUEST.call(c, 0x003e_0458)?;
+                    pc = SFIR_SCAN;
+                }
+                SFIR_SCAN => {
+                    // Free the oldest request while it is done and outside
+                    // the data still to be read.
+                    c.cycles += 4;
+                    c.g[S0][0] = s1(c).off(0x5c).lw(c);
+                    let req = Addr(c.g[S0][0] as u32).off(0xc).lw(c);
+                    c.g[A0][0] = req;
+                    c.g[V0][0] = 1;
+                    let mut free = false;
+                    if req != 0 {
+                        c.cycles += 3;
+                        c.g[V1][0] = Addr(req as u32).off(4).lw(c);
+                        if c.g[V1][0] != 1 {
+                            c.cycles += 7;
+                            c.g[A2][0] = Addr(req as u32).off(0x120).lw(c);
+                            c.g[A0][0] = s1(c).off(0x50).lw(c);
+                            c.g[A1][0] = s1(c).off(0x58).lw(c);
+                            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(1));
+                            SFIR_RING_IN_RANGE.call(c, 0x003e_0488)?;
+                            free = c.g[V0][0] == 0;
+                            c.g[A1][0] = c.g[S0][0];
+                        }
+                    }
+                    if free {
+                        if crate::events::back_edge_unwinds(c, SFIR_FREE) {
+                            return Ok(());
+                        }
+                        pc = SFIR_FREE;
+                        continue;
+                    }
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S2][0];
+                    EAFS_MUTEX_UNLOCK.call(c, 0x003e_0498)?;
+                    streamfile_issue_read_room(c)?;
+                    pc = 0x003e_0698;
+                }
+                0x003e_0698 => {
+                    c.cycles += 6;
+                    frame.restore(c, S1, 0x30);
+                    frame.restore(c, S2, 0x20);
+                    frame.restore(c, S3, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, SFIR_ENTRY, 0x003e_06b0);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// [`streamfile_issue_read`] after the unlock: find the room, then fill it
+/// (or state 2). Ends with `s0` restored.
+pub(crate) fn streamfile_issue_read_room(c: &mut Cpu) -> crate::call::Flow {
+    let sf = Addr(c.g[S1][0] as u32);
+    let frame = Frame { size: 0x50 };
+    let lt = |c: &Cpu, a: usize, b: usize| ((c.g[a][0] as i64) < (c.g[b][0] as i64)) as u64;
+    c.g[T0][0] = sf.off(0x50).lw(c);
+    c.g[A3][0] = sf.off(0x58).lw(c);
+    let wrapped = c.g[A3][0] < c.g[T0][0];
+    c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_sub(c.g[A3][0] as u32));
+    'room: {
+        'fill: {
+            if wrapped {
+                // Room up to the read pointer.
+                c.cycles += 2;
+                c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x41));
+                break 'room;
+            }
+            // Room up to the end of the buffer.
+            c.cycles += 8;
+            c.g[V0][0] = sf.off(0x34).lw(c);
+            c.g[V1][0] = sf.off(0x17c).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A3][0] as u32));
+            c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x40));
+            c.g[T2][0] = c.g[V1][0];
+            c.g[V1][0] = lt(c, A2, V1);
+            c.g[A1][0] = 1;
+            if c.g[V1][0] == 0 {
+                break 'fill;
+            }
+            // Not enough: move the pending data to the start, if it fits
+            // before the read pointer.
+            c.cycles += 6;
+            c.g[V1][0] = sf.off(0x60).lw(c);
+            c.g[A0][0] = sf.off(0x54).lw(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x10).lw(c);
+            c.g[A2][0] = c.g[V1][0];
+            let memory = c.g[V0][0] == c.g[A1][0];
+            c.g[S0][0] = sx((c.g[A3][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+            c.g[V0][0] = sf.off(0x30).lw(c);
+            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+            c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+            if memory {
+                c.cycles += 6;
+                c.g[V0][0] = lt(c, V0, V1);
+                let full = c.g[V0][0] != 0;
+                c.g[V0][0] = 2;
+                if full {
+                    c.cycles += 2;
+                    return streamfile_issue_read_full(c, frame);
+                }
+            } else {
+                c.cycles += 7;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x40));
+                c.g[V0][0] = lt(c, V0, V1);
+                let full = c.g[V0][0] != 0;
+                c.g[V0][0] = 2;
+                if full {
+                    return streamfile_issue_read_full(c, frame);
+                }
+            }
+            c.cycles += 3;
+            c.g[V0][0] = c.g[S0][0] & 0x3f;
+            let aligned = c.g[V0][0] == 0;
+            c.g[V0][0] = 1;
+            let mut plain = aligned;
+            if !aligned {
+                c.cycles += 3;
+                c.g[V1][0] = Addr(c.g[A2][0] as u32).off(0x10).lw(c);
+                plain = c.g[V1][0] == c.g[V0][0];
+                c.g[V0][0] = u64::MAX;
+            }
+            if plain {
+                c.cycles += 3;
+                c.g[V0][0] = sf.off(0x2c).lw(c);
+                let v0 = c.g[V0][0];
+                sf.off(0x30).sw(c, v0);
+            } else {
+                // Keep the 64-byte phase: start - (used % 64 - 64).
+                c.cycles += 10;
+                c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x3f));
+                c.g[V0][0] = lt(c, V0, S0);
+                c.g[A0][0] = sf.off(0x2c).lw(c);
+                if c.g[V0][0] != 0 {
+                    c.g[V1][0] = c.g[S0][0];
+                }
+                c.g[V1][0] = sx((((c.g[V1][0] as u32) as i32 >> 6) as u32) << 6);
+                c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x40));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                let a0 = c.g[A0][0];
+                sf.off(0x30).sw(c, a0);
+            }
+            c.cycles += 17;
+            c.g[A0][0] = sf.off(0x30).lw(c);
+            c.g[A2][0] = c.g[S0][0];
+            c.g[A1][0] = sf.off(0x54).lw(c);
+            SFIR_MEM_COPY.call(c, 0x003e_0584)?;
+            // A wrap marker where the data was.
+            let old = Addr(sf.off(0x54).lw(c) as u32);
+            c.g[A0][0] = old.0 as i32 as u64;
+            c.g[V1][0] = 8;
+            c.g[V0][0] = SFIR_WRAP;
+            old.off(4).sw(c, 8);
+            old.sw(c, SFIR_WRAP);
+            c.g[A0][0] = sf.off(0x30).lw(c);
+            c.g[A1][0] = sf.off(0x50).lw(c);
+            c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+            let (a0, a2) = (c.g[A0][0], c.g[A2][0]);
+            sf.off(0x54).sw(c, a0);
+            sf.off(0x58).sw(c, a2);
+            c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+            let at_wrap = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_sub(a2 as u32));
+            if at_wrap {
+                c.cycles += 5;
+                c.g[V0][0] = sf.off(0x34).lw(c);
+                sf.off(0x50).sw(c, a0);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(a2 as u32));
+                c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x40));
+            } else {
+                c.cycles += 1;
+                c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+            }
+            break 'room;
+        }
+        // Enough room at the end of the buffer.
+        return streamfile_issue_read_fill(c, frame);
+    }
+    c.cycles += 5;
+    c.g[V0][0] = sf.off(0x17c).lw(c);
+    c.g[T2][0] = c.g[V0][0];
+    c.g[V0][0] = lt(c, A2, V0);
+    let full = c.g[V0][0] != 0;
+    c.g[V0][0] = 2;
+    if full {
+        return streamfile_issue_read_full(c, frame);
+    }
+    streamfile_issue_read_fill(c, frame)
+}
+
+/// [`streamfile_issue_read`]: no room, state 2 (`v0`).
+pub(crate) fn streamfile_issue_read_full(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 3;
+    let v0 = c.g[V0][0];
+    Addr(c.g[S1][0] as u32).off(0x38).sw(c, v0);
+    frame.restore(c, S0, 0x40);
+    Ok(())
+}
+
+/// [`streamfile_issue_read`]: `a2` bytes of room at the write pointer:
+/// copy from memory and complete, or queue the file read.
+pub(crate) fn streamfile_issue_read_fill(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    let sf = Addr(c.g[S1][0] as u32);
+    c.cycles += 5;
+    c.g[S0][0] = sf.off(0x60).lw(c);
+    let src = Addr(c.g[S0][0] as u32);
+    c.g[V1][0] = 1;
+    c.g[V0][0] = src.off(0x10).lw(c);
+    if c.g[V0][0] == 1 {
+        // From memory: up to the end of the source.
+        c.cycles += 6;
+        c.g[A0][0] = sf.off(0x170).lw(c);
+        c.g[V1][0] = src.off(0x118).lw(c);
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+        let past = (c.g[V1][0] as i64) < (c.g[V0][0] as i64);
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+        if past {
+            c.cycles += 2;
+            let v0 = c.g[V0][0];
+            sf.off(0x178).sw(c, v0);
+        } else {
+            c.cycles += 1;
+            let a2 = c.g[A2][0];
+            sf.off(0x178).sw(c, a2);
+        }
+        c.cycles += 14;
+        c.g[A0][0] = sf.off(0x58).lw(c);
+        c.g[A1][0] = src.off(0x114).lw(c);
+        c.g[A2][0] = sf.off(0x178).lw(c);
+        SFIR_MEM_COPY.call(c, 0x003e_0638)?;
+        let src = Addr(c.g[S0][0] as u32);
+        let sf = Addr(c.g[S1][0] as u32);
+        c.g[V0][0] = src.off(0x114).lw(c);
+        c.g[A2][0] = c.g[S1][0];
+        c.g[V1][0] = sf.off(0x178).lw(c);
+        c.g[A0][0] = 0;
+        c.g[A1][0] = 0;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        let v0 = c.g[V0][0];
+        src.off(0x114).sw(c, v0);
+        SFIR_ON_READ.call(c, 0x003e_0658)?;
+        frame.restore(c, S0, 0x40);
+        return Ok(());
+    }
+    // From the file: queue the read, `StreamFile_OnRead` its callback.
+    c.g[A0][0] = sf.off(0x16c).lw(c);
+    c.cycles += 9;
+    c.g[A3][0] = c.g[T2][0];
+    c.g[A1][0] = sf.off(0x170).lw(c);
+    c.g[T0][0] = c.g[S3][0];
+    c.g[A2][0] = sf.off(0x58).lw(c);
+    c.g[T1][0] = c.g[S1][0];
+    let t2 = c.g[T2][0];
+    sf.off(0x178).sw(c, t2);
+    SFIR_QUEUE_READ.call(c, 0x003e_067c)?;
+    let req = c.g[V0][0];
+    Addr(c.g[S1][0] as u32).off(0x174).sw(c, req);
+    if req != 0 {
+        c.cycles += 4;
+        c.g[A0][0] = req;
+        c.g[A1][0] = sx(0x003e_0170);
+        SFIR_SET_REQUEST_CALLBACK.call(c, 0x003e_0694)?;
+    }
+    c.cycles += 1;
+    frame.restore(c, S0, 0x40);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -976,6 +1452,213 @@ pub(crate) mod tests {
                     c.bus.write32(req - 4 + 4 * i, r.next_u32());
                 }
                 c.g[A0][0] = sx(req);
+            },
+        );
+    }
+
+    // ------------------------------------------------------- StreamFile_OnClose
+
+    /// A real EAFile request pool, handle pool, mutex and service queue on
+    /// their short paths, a stream whose old request releases cleanly
+    /// (state 0 in the request table) and a NUL-terminated name.
+    #[test]
+    fn stream_file_on_close_matches() {
+        const POOL: u32 = 0x0051_9ab0;
+        const MUTEX: u32 = POOL + 0x14;
+        const SLOTS: u32 = DATA + 0x1000;
+        const HANDLES: u32 = DATA + 0x4000;
+        const QUEUED: u32 = DATA + 0x8000;
+        const FILE: u32 = DATA + 0x1_0000;
+        const NAME: u32 = FILE + SFOC_NAME;
+        // The request hash table (0x519ad8): zeroed entries mean "no state",
+        // so the released request has nothing to free first.
+        const TABLE: u32 = DATA + 0x2_0000;
+        const OLD_REQUEST: u32 = DATA + 0x3_0000;
+        const HANDLE_COUNT: u32 = POOL + 0x4;
+        const HANDLE_SLOTS: u32 = POOL + 0x2c;
+        check(
+            ee::s14::f_003e0118__generated,
+            stream_file_on_close,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e_0118, 0);
+                c.pc = 0x003e_0118;
+                // The request pool: 1..6 slots, the first free one anywhere.
+                let count = 1 + r.next_u32() % 6;
+                c.bus.write32(POOL, count);
+                c.bus.write32(POOL + 0x28, SLOTS);
+                // The handle pool: 1..6 slots, all free.
+                let handles = 1 + r.next_u32() % 6;
+                c.bus.write32(HANDLE_COUNT, handles);
+                c.bus.write32(HANDLE_SLOTS, HANDLES);
+                for i in 0..6u32 {
+                    c.bus.write32(HANDLES + 0x110 * i, 0);
+                }
+                // Mutex: owner never a fake thread id, depth, semaphore.
+                c.bus
+                    .write32(MUTEX + 0x4, 0x7700_0000 | r.next_u32() & 0xffff);
+                c.bus.write32(MUTEX + 0x8, r.next_u32() & 3);
+                c.bus.write32(MUTEX + 0xc, r.next_u32() & 0xff);
+                c.bus.write32(0x0045_0de4, r.next_u32() & 1);
+                let free = r.next_u32() % count;
+                for i in 0..8u32 {
+                    let mut w = r.next_u32();
+                    if i == free {
+                        w &= !0x00f0_0000;
+                    } else if i < free && w & 0x00f0_0000 == 0 {
+                        w |= 0x0010_0000;
+                    }
+                    c.bus.write32(SLOTS + 0x30 * i, w);
+                }
+                c.bus.write32(0x0045_0c0c, r.next_u32() & 0xf_ffff);
+                // The service queue: a request active; 0..2 queued.
+                c.bus.write32(POOL + 0x24, QUEUED + 0x100);
+                let queued = seed % 3;
+                c.bus
+                    .write32(POOL + 0x30, if queued == 0 { 0 } else { QUEUED });
+                for k in 0..queued {
+                    let q = QUEUED + 0x40 * k;
+                    c.bus.write32(q + 0x10, r.next_u32() % 8);
+                    c.bus
+                        .write32(q + 0x2c, if k + 1 < queued { q + 0x40 } else { 0 });
+                }
+                c.bus.write32(POOL + 0xc, r.next_u32() & 0xff);
+                // The stream file: its old request, priority and name.
+                // 0x519ad8 is the request table the EAFile release path
+                // indexes by the request pointer's top byte (0 here).
+                c.bus.write32(0x0051_9ad8, TABLE);
+                for i in 0..0x10u32 {
+                    c.bus.write32(OLD_REQUEST + 4 * i, 0);
+                }
+                c.bus.write32(FILE + SFOC_REQUEST, OLD_REQUEST);
+                c.bus.write32(FILE + SFOC_PRIORITY, r.next_u32() & 0x7f);
+                let len = r.next_u32() % 0x40;
+                for i in 0..len {
+                    c.bus.write8(NAME + i, b'a' + (r.next_u32() % 26) as u8);
+                }
+                c.bus.write8(NAME + len, 0);
+                c.g[A2][0] = sx(FILE);
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    pub(crate) use crate::game::sound::soundsys::tests::OC371_SEQ;
+
+    pub(crate) use crate::game::sound::soundsys::tests::oc371_machine;
+    pub(crate) use crate::game::sound::soundsys::tests::oc371_script;
+
+    pub(crate) use crate::game::sound::soundsys::tests::oc371_install_fakes;
+
+    /// Script a sequence of `v0` for calls to `target` (the last value
+    /// repeats; at most 8; two sequences).
+    pub(crate) fn oc371_sequence(c: &mut Cpu, target: u32, values: &[u32]) {
+        let mut seq = OC371_SEQ;
+        if c.bus.read32(seq) != 0 && c.bus.read32(seq) != target {
+            seq += 0x40;
+        }
+        c.bus.write32(seq, target);
+        c.bus.write32(seq + 4, 0);
+        c.bus.write32(seq + 8, values.len().min(8) as u32);
+        for (i, v) in values.iter().take(8).enumerate() {
+            c.bus.write32(seq + 0x10 + 4 * i as u32, *v);
+        }
+    }
+
+    /// Markers at the read pointer (wrap, skip, none, empty ring); 0-2
+    /// finished requests freed (none, in use, overlapping); room before
+    /// the read pointer, at the end, or after moving the pending data
+    /// (aligned or not, memory source or not, fitting or not); filling from
+    /// memory (clipped at the source's end or not) or queueing a file read
+    /// (queued or refused). The real `EA_MemCopy` runs; the other callees
+    /// are logged fakes (one may unwind).
+    #[test]
+    fn streamfile_issue_read_matches() {
+        oc371_install_fakes();
+        covered(
+            ee::s14::f_003e03d0__generated,
+            streamfile_issue_read,
+            500,
+            &|c, seed| {
+                let mut r = oc371_machine(c, seed, 0x003e_03d0, 6);
+                c.pc = 0x003e_03d0;
+                let sf = DATA;
+                let ring = DATA + 0x1_0000;
+                let end = ring + 0x1000;
+                c.g[A0][0] = sx(sf);
+                c.g[A1][0] = r.next_u32() as u64 & 0xff;
+                fill(c, &mut r, sf, 0x60);
+                let start = ring + (r.next_u32() % 4) * 0x10;
+                c.bus.write32(sf + 0x2c, ring);
+                c.bus.write32(sf + 0x30, start);
+                c.bus.write32(sf + 0x34, end);
+                // Write pointer, pending data before it, read pointer anywhere.
+                let wr = ring + 0x100 + (r.next_u32() % 0xe00 & !0xf);
+                let used = if r.next_u32() % 4 == 0 {
+                    0
+                } else {
+                    r.next_u32() % 0x100
+                };
+                let pend = wr - used;
+                let rd = match r.next_u32() % 4 {
+                    0 => pend,
+                    1 => wr + 0x10 + (r.next_u32() % 0x200 & !0xf),
+                    _ => start + 0x10 + (r.next_u32() % 0xc0 & !0xf),
+                };
+                c.bus.write32(sf + 0x50, rd);
+                c.bus.write32(sf + 0x54, pend);
+                c.bus.write32(sf + 0x58, wr);
+                c.bus.write32(start, 0x1234);
+                if rd != pend {
+                    match r.next_u32() % 3 {
+                        0 => c.bus.write32(rd, u32::MAX),
+                        1 => {
+                            c.bus.write32(rd, -2i32 as u32);
+                            c.bus.write32(rd + 4, 0x20);
+                            c.bus.write32(
+                                rd + 0x20,
+                                if r.next_u32() % 2 == 0 { u32::MAX } else { 7 },
+                            );
+                        }
+                        _ => c.bus.write32(rd, 5),
+                    }
+                }
+                c.bus
+                    .write32(pend, if r.next_u32() % 2 == 0 { u32::MAX } else { 9 });
+                // The request list.
+                c.bus.write32(sf + 0x5c, DATA + 0x200);
+                let req = if r.next_u32() % 4 == 0 {
+                    0
+                } else {
+                    DATA + 0x300
+                };
+                c.bus.write32(DATA + 0x200 + 0xc, req);
+                c.bus
+                    .write32(DATA + 0x300 + 4, (r.next_u32() % 3 == 0) as u32);
+                c.bus.write32(DATA + 0x300 + 0x120, r.next_u32());
+                let frees = r.next_u32() % 3;
+                let seq: Vec<u32> = (0..frees).map(|_| 0).chain([1]).collect();
+                oc371_sequence(c, 0x003d_fc08, &seq);
+                // The source.
+                let src = DATA + 0x400;
+                c.bus.write32(sf + 0x60, src);
+                c.bus
+                    .write32(src + 0x10, if r.next_u32() % 2 == 0 { 1 } else { 2 });
+                c.bus.write32(src + 0x114, DATA + 0x2_0000);
+                let pos = r.next_u32() % 0x800;
+                c.bus.write32(sf + 0x170, pos);
+                c.bus.write32(src + 0x118, pos + r.next_u32() % 0x1000);
+                c.bus.write32(sf + 0x17c, r.next_u32() % 0x900);
+                oc371_script(
+                    c,
+                    0x003d_d648,
+                    if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        DATA + 0x500
+                    },
+                );
             },
         );
     }

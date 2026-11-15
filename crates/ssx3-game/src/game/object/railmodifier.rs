@@ -39,6 +39,7 @@ pub(crate) use crate::game::fe::splashmanager::oc230_gp;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_sll;
 pub(crate) use crate::game::intersect::worldsphtree::forward_to_arg_vtable;
+pub(crate) use crate::game::object::instanceman::OC339_OBJ_VTABLE;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 pub(crate) use crate::game::render::lightman::addu as addu_2;
 pub(crate) use crate::game::render::lightman::off;
@@ -358,6 +359,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RailModifier_BuildRailNodes",
     ),
     (0x0036_1038, object_v01, "Object_v01"),
+    (0x0036_1290, intersect_info_dtor_2, "IntersectInfo_dtor_2"),
+    (
+        0x0036_12c0,
+        intersect_info_reset_matrix,
+        "IntersectInfo_ResetMatrix",
+    ),
+    (0x0036_1d50, particle_v01, "Particle_v01"),
+    (0x0036_0ab8, restore_node_dtor, "RestoreNode_dtor"),
+    (0x0036_14d0, debounce_v01, "Debounce_v01"),
+    (0x0036_1b18, spline_modifier_v01, "SplineModifier_v01"),
 ];
 
 /// The matrix record table of `DeferMan_InternMatrixRecord`.
@@ -6121,6 +6132,172 @@ pub fn object_v01(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// IntersectInfo_dtor_2 (0x361290)
+
+/// The `cMeshAnimFrame` vtable-instance pointer written at `+0x84`
+/// (`D_00490AF0`).
+pub(crate) const OC320_MESH_ANIM_FRAME_VT: u32 = 0x0049_0af0;
+
+/// `void cMeshAnimFrame::~cMeshAnimFrame(this, int flags)` (0x361290): the
+/// deleting destructor variant: install the base vtable pointer at `+0x84`,
+/// and when `flags & 1` is set, `operator delete(this)`.
+pub fn intersect_info_dtor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x490000;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(OC320_MESH_ANIM_FRAME_VT);
+        c.g[A1][0] = c.g[A1][0] & 0x1;
+        let plain = c.g[A1][0] == 0;
+        c.sw((c.g[A0][0] as u32).wrapping_add(0x84), c.g[V0][0]);
+        if !plain {
+            c.cycles += 2;
+            call_ptr(c, 0x0031_7e50, 0x0036_12b4)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// IntersectInfo_ResetMatrix (0x3612c0)
+
+#[cfg(test)]
+/// The identity matrix copied into every `IntersectInfo` (`D_004FF1A0`).
+pub(crate) const IIRM_IDENTITY: u32 = 0x004f_f1a0;
+
+#[cfg(test)]
+/// `IntersectInfo` matrix offset.
+pub(crate) const IIRM_MATRIX: u32 = 0x90;
+
+/// `void IntersectInfo_ResetMatrix(IntersectInfo* self)` (0x3612c0): copy the
+/// identity quadwords at `D_004FF1A0` into `self->matrix` (VU0 macro-mode
+/// `lqc2`/`sqc2`, vf1..vf4).
+pub fn intersect_info_reset_matrix(c: &mut Cpu) {
+    c.cycles += 13;
+    c.g[V0][0] = 0x50_0000;
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x90));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xe60));
+    let src = c.g[V0][0] as u32;
+    let dst = c.g[A0][0] as u32;
+    c.lqc2(1, src);
+    c.lqc2(2, src.wrapping_add(0x10));
+    c.lqc2(3, src.wrapping_add(0x20));
+    c.lqc2(4, src.wrapping_add(0x30));
+    c.sqc2(1, dst);
+    c.sqc2(2, dst.wrapping_add(0x10));
+    c.sqc2(3, dst.wrapping_add(0x20));
+    c.sqc2(4, dst.wrapping_add(0x30));
+    abi::ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// Particle_v01 (0x361d50)
+
+/// The particle node's base destructor (0x3553c0), cross-shard.
+pub(crate) const PARTICLE_BASE_DTOR: u32 = 0x0035_53c0;
+
+/// `cParticleNode::~cParticleNode(this)` (0x361d50): install the
+/// `cParticleNode` vtable and run the base destructor.
+pub fn particle_v01(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x490000;
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x11a0));
+        c.sw(r32(c, V1).wrapping_add(0xc), c.g[V0][0]);
+        call_ptr(c, PARTICLE_BASE_DTOR, 0x0036_1d6c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `operator delete` (0x317e50, another shard).
+pub(crate) const OC338_OPERATOR_DELETE: u32 = 0x0031_7e50;
+
+// ---------------------------------------------------- SplineModifier_v01
+
+/// `cSplineModifier`'s base vtable (`D_004913F8`).
+pub(crate) const SPLINE_MODIFIER_V01_VTABLE: u32 = 0x0049_13f8;
+
+/// `void SplineModifier_v01(cSplineModifier* m, int flags)` (0x00361b18,
+/// `cSplineModifier::~cSplineModifier`): reset the vtable to the base one
+/// and free the object when bit 0 of `flags` asks for it.
+pub fn spline_modifier_v01(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        c.g[V0][0] = sx(SPLINE_MODIFIER_V01_VTABLE);
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] &= 1;
+        Addr(r32(c, A0)).sw(c, c.g[V0][0]);
+        if c.g[A1][0] != 0 {
+            c.cycles += 2;
+            call_ptr(c, OC338_OPERATOR_DELETE, 0x0036_1b3c)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Debounce_v01 (0x3614d0)
+
+/// The `Debounce` vtable (`D_004906f0`).
+pub(crate) const DEBOUNCE_VTABLE_ADDR: u32 = 0x0049_06f0;
+
+/// `Debounce::~Debounce(Debounce* self, int flags)` (0x3614d0): restore the
+/// `Debounce` vtable, then run the `ModObj` destructor (which takes the
+/// caller's flags in `a1`).
+pub fn debounce_v01(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x0049_0000;
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx(DEBOUNCE_VTABLE_ADDR);
+        c.sw(r32(c, V1).wrapping_add(OC339_OBJ_VTABLE), c.g[V0][0]);
+        call_ptr(c, 0x0035_53c0, 0x0036_14ec)?; // ModObj_dtor
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RestoreNode_dtor (0x360ab8)
+
+/// The `RestoreNode` vtable (`D_00491680`).
+pub(crate) const RESTORE_NODE_VTABLE_ADDR: u32 = 0x0049_1680;
+
+/// `RestoreNode::~RestoreNode(RestoreNode* self, int flags)` (0x360ab8):
+/// restore the `RestoreNode` vtable, then run the `WorldObj` destructor.
+pub fn restore_node_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x0049_0000;
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx(RESTORE_NODE_VTABLE_ADDR);
+        c.sw(r32(c, V1).wrapping_add(OC339_OBJ_VTABLE), c.g[V0][0]);
+        call_ptr(c, 0x0034_fbf0, 0x0036_0ad4)?; // WorldObj_dtor
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8689,6 +8866,187 @@ pub(crate) mod tests {
                 c.pc = 0x0036_1038;
                 c.g[A0][0] = sx(obj);
                 c.g[A1][0] = (r.next_u32() & !1) as u64;
+            },
+        );
+    }
+
+    use crate::difftest::RA as SENTINEL;
+
+    // -- 0x00361290 IntersectInfo_dtor_2 -------------------------------------
+
+    /// A `cMeshAnimFrame` at DATA; the deleting destructor variant (`flags
+    /// & 1`) calls `operator delete`, the plain one does not. Other flag bits
+    /// are masked away (and stay masked in `a1`).
+    #[test]
+    fn intersect_info_dtor_2_matches() {
+        use crate::game::ai::aianimeventmap::tests::alloc_setup;
+        check(
+            ee::s12::f_00361290__generated,
+            intersect_info_dtor_2,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x36_1290, 0);
+                alloc_setup(c, &mut r);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = match seed % 4 {
+                    0 => 0u64,
+                    1 => 1,
+                    2 => 0xfffe | 1,
+                    _ => (r.next_u32() & !1) as u64,
+                };
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0036_1290;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::animation::rideranim::tests::CTRL;
+    pub(crate) use crate::game::animation::rideranim::tests::MAGIC;
+
+    pub(crate) use crate::game::animation::rideranim::tests::active;
+    pub(crate) use crate::game::animation::rideranim::tests::chain;
+    pub(crate) use crate::game::animation::rideranim::tests::fake_ret;
+    pub(crate) use crate::game::animation::rideranim::tests::install;
+
+    // -- 0x3612c0 IntersectInfo_ResetMatrix --------------------------------
+
+    /// The identity quadwords at `D_004FF1A0` copied over a random matrix.
+    #[test]
+    fn intersect_info_reset_matrix_matches() {
+        check(
+            ee::s12::f_003612c0__generated,
+            intersect_info_reset_matrix,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x3612_c0 ^ (seed as u64) << 9);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                elf_image(c);
+                for k in 0..4u32 {
+                    put_vec(
+                        c,
+                        IIRM_IDENTITY + 0x10 * k,
+                        [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+                    );
+                }
+                let this = DATA + 0x1000;
+                for k in 0..4u32 {
+                    put_vec(
+                        c,
+                        this + IIRM_MATRIX + 0x10 * k,
+                        [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+                    );
+                }
+                c.g[A0][0] = this as u64;
+            },
+        );
+    }
+
+    // -- Particle_v01 --------------------------------------------------------
+
+    pub(crate) fn fake_particle_base_dtor(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 6, fake_particle_base_dtor);
+        }
+        fake_ret(c, 8);
+    }
+
+    #[test]
+    fn particle_v01_matches() {
+        install(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_003553C0),
+            fake_particle_base_dtor,
+            6,
+        );
+        check(
+            ee::s12::f_00361d50__generated,
+            particle_v01,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x0036_1d50, 1);
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.bus.write32(CTRL, MAGIC);
+                c.pc = 0x0036_1d50;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    pub(crate) use crate::game::object::instanceman::tests::oc339_world_obj;
+    pub(crate) use crate::game::object::movenode::tests::oc338_fake;
+    pub(crate) use crate::game::object::movenode::tests::OC338_CTRL;
+    pub(crate) use crate::game::object::movenode::tests::OC338_MAGIC;
+
+    oc338_fake!(
+        oc338_fake_delete,
+        OC338_PREV_DELETE,
+        0x0031_7e50,
+        ee::s10::f_00317e50__generated
+    );
+
+    /// `SplineModifier_v01`: the vtable reset, with and without the delete
+    /// flag (a logging fake of `operator delete`).
+    #[test]
+    fn spline_modifier_v01_matches() {
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc338_fake_delete,
+            &OC338_PREV_DELETE,
+        );
+        covered(
+            ee::s12::f_00361b18__generated,
+            spline_modifier_v01,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0036_1b18, 1);
+                c.pc = 0x0036_1b18;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                let this = DATA + 0x5_0000 + (r.next_u32() & 0xff0);
+                fill(c, &mut r, this, 4);
+                c.g[A0][0] = sx(this);
+                // Random flags (bit 0 set or clear, junk above).
+            },
+        );
+    }
+
+    /// `Debounce_v01`: a `ModObj` without a modifier block (the fixture of
+    /// `mod_obj_dtor_matches`); the real `ModObj`/`WorldObj` destructors run.
+    #[test]
+    fn debounce_v01_matches() {
+        check(
+            ee::s12::f_003614d0__generated,
+            debounce_v01,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x36_14d0, 0);
+                c.pc = 0x0036_14d0;
+                let obj = DATA + 0x1000;
+                oc339_world_obj(c, &mut r, seed, obj);
+                c.bus.write32(obj + 0x1c, 0); // no modifier block
+            },
+        );
+    }
+
+    /// `RestoreNode_dtor`: the `world_obj_dtor_matches` fixture; the real
+    /// `WorldObj` destructor runs.
+    #[test]
+    fn restore_node_dtor_matches() {
+        check(
+            ee::s12::f_00360ab8__generated,
+            restore_node_dtor,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x36_0ab8 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0036_0ab8;
+                c.g[GP][0] = GAME_GP as u64;
+                oc339_world_obj(c, &mut r, seed, DATA);
             },
         );
     }

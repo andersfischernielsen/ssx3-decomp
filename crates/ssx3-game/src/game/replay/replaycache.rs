@@ -349,6 +349,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         in_seq_instance_get_listener,
         "InSeq_InstanceGetListener",
     ),
+    (
+        0x0027_08f0,
+        replay_on_rider_wipeout,
+        "Replay_OnRiderWipeout",
+    ),
+    (0x0027_0b88, replay_begin_highlight, "Replay_BeginHighlight"),
 ];
 
 /// `void WorldStateStream_Reset(WorldStateStream *stream)` (0x26d628):
@@ -5164,6 +5170,153 @@ pub fn replay_end_highlight(c: &mut Cpu) {
     })
 }
 
+/// Speech sentence entries base: `0x450000 + 0x6c`.
+pub const SPCH_SENTENCE_BASE: u32 = 0x0045_006c;
+
+// ---------------------------------------------------------------------------
+// Replay_OnRiderWipeout (0x2708f0)
+
+/// `Replay` flags that block the wipeout bookkeeping: `+0x61c` (playing
+/// back), `+0x620` (instant replay), then the replay state at `+0`.
+pub const OC331_REPLAY_WIPEOUT_BUSY: [u32; 3] = [0x61c, 0x620, 0x0];
+
+/// `Replay_FindRiderIndex` (0x270730).
+pub const OC331_REPLAY_FIND_RIDER_INDEX: Callee = Callee {
+    addr: 0x0027_0730,
+    f: ee::s07::Replay_FindRiderIndex,
+};
+
+/// `Replay_EndHighlight` (0x270ce8).
+pub const OC331_REPLAY_END_HIGHLIGHT: Callee = Callee {
+    addr: 0x0027_0ce8,
+    f: ee::s07::Replay_EndHighlight,
+};
+
+/// `Replay_CheckInstantReplay` (0x2705b0).
+pub const OC331_REPLAY_CHECK_INSTANT_REPLAY: Callee = Callee {
+    addr: 0x0027_05b0,
+    f: ee::s07::Replay_CheckInstantReplay,
+};
+
+/// `void Replay_OnRiderWipeout(Replay* self, int key, void* data)`
+/// (0x2708f0): when the replay is idle (none of `+0x61c`, `+0x620`, `+0`
+/// set), find the rider's index and, when found, close its highlight
+/// (`Replay_EndHighlight(self, index, data, 0)`) and run the wipeout
+/// instant-replay check (`Replay_CheckInstantReplay(self, data, 0)`).
+pub fn replay_on_rider_wipeout(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        let selfp = c.g[A0][0];
+        c.g[S0][0] = selfp;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        let this = r32(c, S0);
+        c.g[V0][0] = Addr(this).off(OC331_REPLAY_WIPEOUT_BUSY[0]).lw(c);
+        c.g[S1][0] = c.g[A2][0];
+        // The first flag set, or the full path: one more cycle at the tail.
+        let mut tail = c.g[V0][0] != 0;
+        if !tail {
+            let mut busy = false;
+            for off in OC331_REPLAY_WIPEOUT_BUSY[1..].iter().copied() {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(this).off(off).lw(c);
+                if c.g[V0][0] != 0 {
+                    busy = true;
+                    break;
+                }
+            }
+            if !busy {
+                tail = true;
+                c.cycles += 4;
+                OC331_REPLAY_FIND_RIDER_INDEX.call(c, 0x0027_0934)?;
+                let found = (c.g[V0][0] as i64) >= 0;
+                c.g[A1][0] = c.g[V0][0];
+                if found {
+                    c.cycles += 8;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A2][0] = c.g[S1][0];
+                    c.g[A3][0] = 0;
+                    OC331_REPLAY_END_HIGHLIGHT.call(c, 0x0027_094c)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[A2][0] = 0;
+                    OC331_REPLAY_CHECK_INSTANT_REPLAY.call(c, 0x0027_095c)?;
+                }
+            }
+        }
+        if tail {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The bound box written by `WorldObj_GetBoundBox` (8 floats: box, then the
+/// radius at `+0x20`).
+pub const MODOBJ_V48_BOX: u32 = 0x0;
+
+// ---------------------------------------------------------------------------
+// Replay_BeginHighlight (0x270b88)
+
+/// One replay highlight slot: 0xb4 bytes, `state` at +0xb0.
+pub(crate) const REPLAY_SLOT_STRIDE: u64 = 0xb4;
+
+/// The slot array base relative to the cache (+0x494); the busy word is at
+/// `slot + 0xb0` and the rider at +0x3b4.
+pub(crate) const REPLAY_SLOTS: u64 = 0x494;
+
+/// The rider handle the highlight copies from.
+pub(crate) const REPLAY_RIDER: u64 = 0x3b4;
+
+/// `Replay_HighlightSlotBegin` (0x26e6e0), same shard.
+pub(crate) const HIGHLIGHT_SLOT_BEGIN: Callee = Callee {
+    addr: 0x0026_e6e0,
+    f: ee::s07::Replay_HighlightSlotBegin,
+};
+
+/// `void Replay_BeginHighlight(ReplayCache* self, int slot, int id)`
+/// (0x270b88): start the replay highlight in `slot` unless the cache is
+/// already recording (`+0`) or the slot is still busy (+0xb0).
+pub fn replay_begin_highlight(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, A3)).lw(c);
+        let recording = c.g[V0][0] != 0;
+        frame.restore_ra(c, 0);
+        if !recording {
+            c.cycles += 6;
+            c.g[A0][0] = REPLAY_SLOT_STRIDE;
+            c.mult(0, V1, A1, A0);
+            c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, A3)));
+            c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x544)).lw(c);
+            let busy = c.g[V1][0] != 0;
+            if !busy {
+                c.cycles += 6;
+                c.mult(0, A0, A1, A0);
+                c.g[A1][0] = Addr(r32(c, A3).wrapping_add(REPLAY_RIDER as u32)).lw(c);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(REPLAY_SLOTS as u32));
+                c.g[A0][0] = sx(r32(c, A3).wrapping_add(r32(c, A0)));
+                HIGHLIGHT_SLOT_BEGIN.call(c, 0x0027_0bcc)?;
+                frame.restore_ra(c, 0);
+            }
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7545,6 +7698,93 @@ pub(crate) mod tests {
                 c.g[A1][0] = slot_n as u64;
                 c.g[A2][0] = sx(player);
                 c.g[A3][0] = mode;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::animation::rideranim::tests::CTRL;
+    pub(crate) use crate::game::animation::rideranim::tests::MAGIC;
+
+    pub(crate) use crate::game::animation::rideranim::tests::active;
+    pub(crate) use crate::game::animation::rideranim::tests::chain;
+    pub(crate) use crate::game::animation::rideranim::tests::fake_ret;
+    pub(crate) use crate::game::animation::rideranim::tests::install;
+
+    /// `Replay_OnRiderWipeout`: the find-rider world of
+    /// `Replay_FindRiderIndex`'s test, each busy flag set or all clear, the
+    /// rider's highlight slot free (the real `Replay_EndHighlight` returns
+    /// early), and the real `Replay_CheckInstantReplay` with instant replays
+    /// armed or not, the wipeout time close to or past the last one.
+    #[test]
+    fn replay_on_rider_wipeout_matches() {
+        use crate::game::replay::replaycache::tests::replay_find_rider_fixture;
+        check(
+            ee::s07::f_002708f0__generated,
+            replay_on_rider_wipeout,
+            300,
+            &|c, seed| {
+                replay_find_rider_fixture(c, seed);
+                let key = c.g[A0][0];
+                let mut r = Rng(0x2708_f000 ^ seed as u64);
+                let this = DATA + 0x3_0000;
+                let data = DATA + 0x3_9000;
+                let busy = seed / 2 % 5;
+                for (i, off) in OC331_REPLAY_WIPEOUT_BUSY.into_iter().enumerate() {
+                    let set = busy as usize == i + 1;
+                    c.bus
+                        .write32(this + off, if set { 1 + r.next_u32() % 4 } else { 0 });
+                }
+                for k in 0..5u32 {
+                    c.bus.write32(this + 0x494 + 0xb4 * k + 0xb0, 0);
+                }
+                c.bus.write32(this + 0x3d4, (seed % 3 != 0) as u32);
+                let last = r.next_u32() % 5000;
+                c.bus.write32(this + 0x47c, last);
+                let now = last.wrapping_add(if seed % 4 < 2 { 500 } else { 1500 });
+                c.bus.write32(data + 0xa4, now);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = key;
+                c.g[A2][0] = sx(data);
+                c.pc = 0x0027_08f0;
+            },
+        );
+    }
+
+    // -- Replay_BeginHighlight ----------------------------------------------
+
+    pub(crate) fn fake_highlight_slot_begin(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 7, fake_highlight_slot_begin);
+        }
+        fake_ret(c, 10);
+    }
+
+    #[test]
+    fn replay_begin_highlight_matches() {
+        install(
+            std::ptr::addr_of_mut!(ee::s07::OVERRIDE_0026E6E0),
+            fake_highlight_slot_begin,
+            7,
+        );
+        check(
+            ee::s07::f_00270b88__generated,
+            replay_begin_highlight,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0027_0b88, 2);
+                let cache = DATA + 0x1000;
+                let slot = (seed % 4) as u64;
+                c.g[A0][0] = cache as u64;
+                c.g[A1][0] = slot;
+                c.g[A2][0] = (DATA + 0x3000) as u64;
+                c.bus
+                    .write32(cache, if seed % 3 == 0 { r.next_u32() } else { 0 });
+                let slot_addr = cache + (slot * REPLAY_SLOT_STRIDE) as u32;
+                c.bus
+                    .write32(slot_addr + 0x544, if seed % 2 == 0 { 0 } else { 1 });
+                c.bus.write32(cache + REPLAY_RIDER as u32, DATA + 0x2000);
+                c.bus.write32(CTRL, MAGIC);
+                c.pc = 0x0027_0b88;
             },
         );
     }

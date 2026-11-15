@@ -25,6 +25,9 @@ after each wave.
   `mod tests`) and leave theirs alone.
 - Keep your module compiling at every step: all staging modules build
   together, and one broken module blocks everyone's tests.
+- Other writers run at the same time and share the scratch directory: put
+  any scratch files in a subdirectory named after your module (`ocN/`),
+  never at its top level (a shared `body.rs` was overwritten mid-wave).
 - Skip the huge top-level drivers (a whole subsystem's per-frame `*_Update`, a
   bytecode interpreter, qsort-like dispatcher bodies with resume twins) and
   say so, instead of spending your context on them. A function the
@@ -124,6 +127,86 @@ after each wave.
   such calls (see `psh_setup`).
 - A 1-cycle difference is usually a missed block charge; a wrong `pc`/`ra` is
   a missing return restore.
+
+## Lesson: global callee fakes must be gated
+
+A test that installs a fake in a callee's `OVERRIDE_` slot changes that
+function for every test in the binary, and the suite runs its tests in
+parallel. A fake that always logs runs another unit's test into the fake's
+pointer return (rider simulations then spin for minutes or forever), so:
+
+- Gate the fake on a magic word in the *machine's* RAM: `if c.bus.read32(CTRL)
+  != MAGIC { return <the body it replaced>(c) }`. Write `MAGIC` at `CTRL` in
+  your own fixture (both sides of the diff get their own machine).
+- Install with `crate::difftest::fakes::hook(addr_of_mut!(slot), fake,
+  &PREV)` and, with the gate off, run the body in `PREV`. `hook` installs each
+  fake once per process. Never re-record `PREV` per test and never put the old
+  body back on `Drop`: two fakes on one slot then fall back to each other and
+  a rider test loops forever (wave 213: `bow_fake_anim_current` and
+  `oc318_fake_air_get_anim` on `0x311ae8`).
+- A fake made by a macro that cannot name a static of its own uses
+  `fakes::prev_cell(fake)` as its `PREV` (both in `hook` and `fall_back`).
+  Never fall back straight to `__generated`: that skips the fakes other
+  tests chained before yours, and their tests then run real callees on
+  fixture data (wave 215: the handplant test's allocator ran away).
+- The same rule goes for `c.pc` fakes and for helpers you put in another
+  unit's `mod tests`: state whose absence hangs a rider test is worse than a
+  failing test.
+
+## Lesson: picked lists can name functions already ported
+
+The wave list comes from `edges.tsv` and a snapshot of `overrides.txt`, so it
+can contain functions an earlier wave installed. Check
+`grep '^0xADDR' crates/ssx3-game/overrides.txt` before writing; skip those,
+say so in the report, and never add a second `OVERRIDES` entry for the address.
+
+## Lesson: the generated body is authoritative, so read the delay slots
+
+Three ports in one wave dropped an unconditional store that sits in a branch
+delay slot (`c.g[A2][0] = c.g[S3][0]` after a `call_ptr`); the loop then read
+its entries from the wrong register (it looked like a callee-argument bug) and
+the diff showed `f0`, the output buffer and 3-5 cycles off. Transcribe every
+store after a call in the generated order, and take registers from the
+generated body, not from what the C++ suggests.
+
+Also: a `break` inside a labeled block (`'skip: { ... break; }`) must name the
+loop (`'scan: loop` ... `break 'scan;`), and a `macro_rules!` that emits
+`static $prev` puts the static at the *invocation* site's scope: do not also
+declare it by hand.
+
+## Lesson: keep the generated block structure (wave 214)
+
+- An exit block that wraps a loop in the generated body (`'b_X: { 'l_Y: loop
+  { ... break 'b_X; } }`) must wrap it in the port too. Put inside the loop,
+  every exit restarts the loop and the function never returns (the test hits
+  the cycle budget).
+- A branch that jumps straight to the epilogue skips everything between: the
+  `c.cycles += 1; v0 = s2` of the normal path must not run on the early exit.
+- API shapes writers got wrong: `Frame::open(c, size)`,
+  `frame.restore(c, reg, off)`; bind `vtable(c, ...)` to a `let` before
+  passing it to `c.bus.write32`.
+- Constants only your tests read: mark them `#[cfg(test)]` (otherwise the
+  game build warns that they are never used, and it must build warning-free).
+
+## Lesson: shared helpers for sibling functions (wave 215)
+
+Siblings that look alike (`Rider_ReportRiderHit1`/`Hit2`) can differ in one
+argument order: Hit1 passes `(a, b)` to its sound call, Hit2 `(b, a)`. A
+shared helper written from the first sibling then passes the second one's
+arguments swapped, which only `SSX3_DIFF_STRICT=args` catches. Diff the
+siblings' generated bodies line by line before sharing a helper, and make
+every difference a parameter.
+
+## Lesson: wave 216
+
+- `addr_of_mut!(ee::sNN::OVERRIDE_X)` and `fakes::hook(...)` are safe: no
+  `unsafe { }` around them (the build warns, and it must be warning-free).
+- Take every return address from the generated `c.g[RA][0] = sx(0x...)`
+  line of that call. A formula (`head + 0x3c + 0x14*i`) was off by 0x3c for
+  one call kind, and only the callee's saved `ra` on the stack showed it.
+- A test whose target has no override slot calls `f_XXXXXXXX` (with `c.pc`
+  set), never `f_XXXXXXXX__generated`: that name only exists once the
+  function is installed.
 
 ## Names (the reorg merges your module into shared unit files)
 

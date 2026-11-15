@@ -6,9 +6,11 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::beintplayer::lh;
@@ -27,6 +29,7 @@ pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
 pub(crate) use crate::game::main::gamestate::gw;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at_m2;
 pub(crate) use crate::game::main::gamestate::p_2 as p_m2;
+pub(crate) use crate::game::main::gamestate::OC326_GAME_STATE_SAVE_STATE;
 pub(crate) use crate::game::main::ssxappdtor::p;
 pub(crate) use crate::game::movie::movieplayer::lw_at;
 pub(crate) use crate::game::scripter::ssxscriptengine::low;
@@ -90,6 +93,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0023_4910,
         gamestatepreraceeload_check_intro_script,
         "GameStatePreRaceLoad_CheckIntroScript",
+    ),
+    (
+        0x0023_3b90,
+        game_state_quit_save_state,
+        "GameStateQuit_SaveState",
+    ),
+    (
+        0x0023_3bd0,
+        game_state_idle_save_state,
+        "GameStateIdle_SaveState",
     ),
 ];
 
@@ -884,6 +897,28 @@ pub fn gamestatepreraceeload_check_intro_script(c: &mut Cpu) {
     })
 }
 
+/// `void GameStateIdle_SaveState(GameState* self, Serialiser* s)` (0x233bd0):
+/// save the base game state, forwarded unchanged.
+pub fn game_state_idle_save_state(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(OC326_GAME_STATE_SAVE_STATE),
+        0x0023_3be0,
+    );
+}
+
+/// `void GameStateQuit_SaveState(GameState* self, Serialiser* s)` (0x233b90):
+/// save the base game state, forwarded unchanged.
+pub fn game_state_quit_save_state(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(OC326_GAME_STATE_SAVE_STATE),
+        0x0023_3ba0,
+    );
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1344,6 +1379,36 @@ pub(crate) mod tests {
                 c.bus.write32(GAME_GP - 0x84c, engine);
                 c.bus.write32(engine + 0x550, (seed % 3) as u32);
                 c.g[A0][0] = sx(DATA + 0x100);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::main::gamestate::tests::oc326_state_fixture;
+
+    /// GameStateIdle_SaveState: as above.
+    #[test]
+    fn game_state_idle_save_state_matches() {
+        covered(
+            ee::s06::f_00233bd0__generated,
+            game_state_idle_save_state,
+            200,
+            &|c, seed| {
+                oc326_state_fixture(c, seed, 0x23_3bd0, 0x0023_3bd0);
+            },
+        );
+    }
+
+    /// GameStateQuit_SaveState: as above.
+    #[test]
+    fn game_state_quit_save_state_matches() {
+        covered(
+            ee::s06::f_00233b90__generated,
+            game_state_quit_save_state,
+            200,
+            &|c, seed| {
+                oc326_state_fixture(c, seed, 0x23_3b90, 0x0023_3b90);
             },
         );
     }

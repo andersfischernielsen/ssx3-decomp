@@ -18,6 +18,9 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::aianimeventmap::BUILTIN_DELETE;
 pub(crate) use crate::game::animation::animmodel::EA_MEM_FREE_ADDR;
+pub(crate) use crate::game::animation::rideranim::ANIM_NODE_FADE_TARGET;
+pub(crate) use crate::game::animation::rideranim::ANIM_NODE_FADE_WEIGHT;
+pub(crate) use crate::game::animation::rideranim::ANIM_NODE_WEIGHT;
 pub(crate) use crate::game::visualfx::boardwakefx::lh;
 pub(crate) use crate::game::visualfx::boardwakefx::lw;
 pub(crate) use crate::game::visualfx::boardwakefx::p;
@@ -98,6 +101,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0031_2bd0,
         rider_anim_clear_flags_and_play_anim,
         "RiderAnim_ClearFlagsAndPlayAnim",
+    ),
+    (
+        0x0031_2660,
+        anim_controller_sample_anim_pose,
+        "AnimController_SampleAnimPose",
+    ),
+    (
+        0x0031_2b18,
+        anim_controller_replace_sequence,
+        "AnimController_ReplaceSequence",
+    ),
+    (
+        0x0031_1f00,
+        anim_controller_play_anim_impl,
+        "AnimController_PlayAnimImpl",
     ),
 ];
 
@@ -2217,6 +2235,819 @@ pub fn rider_anim_clear_flags_and_play_anim(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// AnimController_SampleAnimPose (0x312660)
+
+/// `AnimSeqList_Init(list)` (0x3142e8).
+pub(crate) const OC320_SEQLIST_INIT: Callee = Callee {
+    addr: 0x0031_42e8,
+    f: ee::s10::AnimSeqList_Init,
+};
+
+/// `AnimController_PlayAnimImpl(ctrl, seq, anim, key, 1, 0, 0.0f)` (0x311f00).
+pub(crate) const OC320_PLAY_ANIM_IMPL: Callee = Callee {
+    addr: 0x0031_1f00,
+    f: ee::s10::AnimController_PlayAnimImpl,
+};
+
+/// `AnimSeqList_GetAt(list, i)` (0x314760).
+pub(crate) const OC320_SEQLIST_GET_AT: Callee = Callee {
+    addr: 0x0031_4760,
+    f: ee::s10::AnimSeqList_GetAt,
+};
+
+/// `AnimSequence_SetTrackTime(seq, track, time)` (0x313cf0).
+pub(crate) const OC320_SEQ_SET_TRACK_TIME: Callee = Callee {
+    addr: 0x0031_3cf0,
+    f: ee::s10::AnimSequence_SetTrackTime,
+};
+
+/// `AnimSeqList_CollectTracks(list, out, max)` (0x314418).
+pub(crate) const OC320_SEQ_COLLECT_TRACKS: Callee = Callee {
+    addr: 0x0031_4418,
+    f: ee::s10::AnimSeqList_CollectTracks,
+};
+
+/// `AnimSeqList_Clear(list)` (0x314668).
+pub(crate) const OC320_SEQ_CLEAR: Callee = Callee {
+    addr: 0x0031_4668,
+    f: ee::s10::AnimSeqList_Clear,
+};
+
+/// `AnimBlendFrame AnimController_SampleAnimPose(void* out,
+/// AnimController* ctrl, int anim, int key, float time)` (0x312660): play the
+/// animation on a scratch sequencer, set its track time, sample the tracks
+/// and copy the 0x50-byte blend frame to `out`; the sequencer is emptied
+/// again.
+pub fn anim_controller_sample_anim_pose(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x1490);
+        c.g[V0][0] = 0x3f;
+        frame.save(c, S0, 0x1470);
+        c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+        frame.save(c, S1, 0x1460);
+        c.g[S0][0] = c.g[A3][0];
+        frame.save(c, S2, 0x1450);
+        c.g[S1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x1400));
+        frame.save(c, S3, 0x1440);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S4, 0x1430);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, S5, 0x1420);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save_fpr(c, 20, 0x1480);
+        c.g[S5][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        frame.save_ra(c, 0x1410);
+        c.mov_s(20, 12);
+        c.g[A0][0] = c.g[S1][0];
+        OC320_SEQLIST_INIT.call(c, 0x0031_26b0)?;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2860));
+        let direct = c.g[S0][0] != c.g[V0][0];
+        c.g[A1][0] = c.g[S3][0];
+        if !direct {
+            // The AI anim id: a virtual call on the controller's interface.
+            c.cycles += 9;
+            c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x58));
+            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x20));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
+            let target = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0031_26d0)?;
+            c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xd8c));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1030));
+        }
+        c.cycles += 23;
+        c.mtc1(0, 12);
+        c.g[A3][0] = c.g[S0][0];
+        c.g[T0][0] = 0x1;
+        c.g[T1][0] = 0;
+        c.g[A2][0] = c.g[S3][0];
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[S1][0];
+        OC320_PLAY_ANIM_IMPL.call(c, 0x0031_2700)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = 0;
+        OC320_SEQLIST_GET_AT.call(c, 0x0031_270c)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.mov_s(12, 20);
+        c.g[A1][0] = 0;
+        OC320_SEQ_SET_TRACK_TIME.call(c, 0x0031_271c)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0x40;
+        OC320_SEQ_COLLECT_TRACKS.call(c, 0x0031_272c)?;
+        c.g[A0][0] = c.g[S1][0];
+        OC320_SEQ_CLEAR.call(c, 0x0031_2734)?;
+        // Two 0x20-byte samples and a final 0x10-byte block to `out`.
+        c.g[A0][0] = c.g[S4][0];
+        c.g[V1][0] = c.g[SP][0];
+        loop {
+            c.cycles += 7;
+            c.lq(2, c.g[V1][0] as u32);
+            c.lq(5, (c.g[V1][0] as u32).wrapping_add(0x10));
+            c.sq(2, c.g[A0][0] as u32);
+            c.sq(5, (c.g[A0][0] as u32).wrapping_add(0x10));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+            let more = c.g[V1][0] != c.g[S5][0];
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x20));
+            if !more {
+                c.cycles += 13;
+                c.g[V0][0] = c.g[S4][0];
+                c.lq(8, c.g[V1][0] as u32);
+                c.sq(8, c.g[A0][0] as u32);
+                frame.restore(c, S0, 0x1470);
+                frame.restore(c, S1, 0x1460);
+                frame.restore(c, S2, 0x1450);
+                frame.restore(c, S3, 0x1440);
+                frame.restore(c, S4, 0x1430);
+                frame.restore(c, S5, 0x1420);
+                frame.restore_ra(c, 0x1410);
+                frame.restore_fpr(c, 20, 0x1480);
+                frame.close(c);
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0031_273c);
+            }
+        }
+        Ok(())
+    })
+}
+
+/// `void* AnimSeqList_Remove` (0x3145f8).
+pub(crate) const ANIM_SEQ_LIST_REMOVE: Callee = Callee {
+    addr: 0x0031_45f8,
+    f: ee::s10::AnimSeqList_Remove,
+};
+
+/// `AnimSeqList_GetAt` (0x314760).
+pub(crate) const ANIM_SEQ_LIST_GET_AT_2: Callee = Callee {
+    addr: 0x0031_4760,
+    f: ee::s10::AnimSeqList_GetAt,
+};
+
+/// `AnimSequence_SetWeightFade` (0x313a10).
+pub(crate) const ANIM_SEQUENCE_SET_WEIGHT_FADE: Callee = Callee {
+    addr: 0x0031_3a10,
+    f: ee::s10::AnimSequence_SetWeightFade,
+};
+
+/// `int AnimController_ReplaceSequence(RiderAnimBase* self,
+/// cAnimSequencer* seq, AnimNode* node, int anim)` (0x312b18): take the
+/// node's current weight, fade weight and fade target, drop `node` from the
+/// sequencer's list, start `anim` at weight -1 (keep the current weight),
+/// then give the new sequence (index 0) the node's weight and, if the node's
+/// target is not 0, fade it from the node's fade weight to that target.
+/// Frame 0x60 (s0 = seq, s1 = self, s2 = anim, f20..f22 saved).
+pub fn anim_controller_replace_sequence(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 32;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A3][0];
+        frame.save_fpr(c, 22, 0x50);
+        c.g[A1][0] = c.g[A2][0];
+        frame.save_fpr(c, 21, 0x48);
+        c.g[A0][0] = c.g[S0][0];
+        frame.save_fpr(c, 20, 0x40);
+        c.lwc1(20, r32(c, A2).wrapping_add(ANIM_NODE_WEIGHT));
+        c.lwc1(21, r32(c, A2).wrapping_add(ANIM_NODE_FADE_TARGET));
+        c.lwc1(22, r32(c, A2).wrapping_add(ANIM_NODE_FADE_WEIGHT));
+        ANIM_SEQ_LIST_REMOVE.call(c, 0x0031_2b5c)?;
+        // `cRiderAnimBase_play(self, anim, 0, -1.0f)`.
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(AT, 12);
+        c.g[A2][0] = 0;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S2][0];
+        ANIM_CONTROLLER_PLAY_ANIM.call(c, 0x0031_2b74)?;
+        // The new sequence (index 0) takes the node's weight.
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        ANIM_SEQ_LIST_GET_AT_2.call(c, 0x0031_2b80)?;
+        c.mtc1(0, 0);
+        c.swc1(20, r32(c, V0).wrapping_add(ANIM_NODE_WEIGHT));
+        c.c_eq_s(21, 0);
+        let no_target = c.fcc();
+        c.swc1(20, r32(c, V0).wrapping_add(ANIM_NODE_FADE_WEIGHT));
+        if !no_target {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[V0][0];
+            c.mov_s(12, 22);
+            c.mov_s(13, 21);
+            ANIM_SEQUENCE_SET_WEIGHT_FADE.call(c, 0x0031_2ba8)?;
+        }
+        c.cycles += 10;
+        c.g[V0][0] = c.g[S2][0];
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 22, 0x50);
+        frame.restore_fpr(c, 21, 0x48);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// AnimController_PlayAnimImpl (0x311f00)
+
+/// Controller fields copied into the new sequence: the bank word, the
+/// time, the 32-byte transform, the 8-byte track key.
+pub(crate) const PAI_CTRL_BANK: u32 = 0x18;
+
+pub(crate) const PAI_CTRL_TIME: u32 = 0x1c;
+
+pub(crate) const PAI_CTRL_KEY: u32 = 0x20;
+
+pub(crate) const PAI_CTRL_XFORM: u32 = 0x30;
+
+/// Sequence fields: first track's anim (+0) and id (+4), the transform
+/// (+0x60), bank (+0x80), user word (+0x84), key (+0x88), time (+0x90),
+/// weight (+0x94), target weight (+0x98), blend-in (+0xa4); three tracks
+/// of 0x1c bytes from +0x4 (anim at +0x4, active at +0x18, time at +0x8,
+/// speed at +0x14 of each).
+pub(crate) const PAI_SEQ_XFORM: u32 = 0x60;
+
+pub(crate) const PAI_SEQ_BANK: u32 = 0x80;
+
+pub(crate) const PAI_SEQ_USER: u32 = 0x84;
+
+pub(crate) const PAI_SEQ_KEY: u32 = 0x88;
+
+pub(crate) const PAI_SEQ_TIME: u32 = 0x90;
+
+pub(crate) const PAI_SEQ_WEIGHT: u32 = 0x94;
+
+pub(crate) const PAI_SEQ_TARGET: u32 = 0x98;
+
+pub(crate) const PAI_SEQ_BLEND_IN: u32 = 0xa4;
+
+/// The animation banks (`gp+0xd08`): per bank (`anim & 0xff`) a header
+/// with clips (0x14 bytes, `anim >> 8`) at +0x8 and event keys at +0x10.
+pub(crate) const PAI_BANKS: u32 = 0xd08;
+
+pub(crate) const PAI_CLEAR: Callee = Callee {
+    addr: 0x0031_4668,
+    f: ee::s10::AnimSeqList_Clear,
+};
+
+pub(crate) const PAI_GET_ENTRY: Callee = Callee {
+    addr: 0x0031_15c8,
+    f: ee::s10::AnimTable_GetEntry,
+};
+
+pub(crate) const PAI_PUSH_LOOPING: Callee = Callee {
+    addr: 0x0031_4588,
+    f: ee::s10::AnimSeqList_PushLoopingAnim,
+};
+
+pub(crate) const PAI_PUSH: Callee = Callee {
+    addr: 0x0031_4518,
+    f: ee::s10::AnimSeqList_PushAnim,
+};
+
+pub(crate) const PAI_ADD_EVENT_TRIGGER: Callee = Callee {
+    addr: 0x0031_3ad8,
+    f: ee::s10::AnimSequence_AddEventTrigger,
+};
+
+pub(crate) const PAI_ADD_TRIGGER: Callee = Callee {
+    addr: 0x0031_3a70,
+    f: ee::s10::AnimSequence_AddTrigger,
+};
+
+pub(crate) const PAI_SET_WEIGHT_FADE: Callee = Callee {
+    addr: 0x0031_3a10,
+    f: ee::s10::AnimSequence_SetWeightFade,
+};
+
+pub(crate) const PAI_GET_AT: Callee = Callee {
+    addr: 0x0031_4760,
+    f: ee::s10::AnimSeqList_GetAt,
+};
+
+pub(crate) const PAI_REMOVE_EVENT_TRIGGER: Callee = Callee {
+    addr: 0x0031_3ba8,
+    f: ee::s10::AnimSequence_RemoveEventTrigger,
+};
+
+pub(crate) const PAI_FADE_OUT: Callee = Callee {
+    addr: 0x0031_3a20,
+    f: ee::s10::AnimSequence_FadeOut,
+};
+
+pub(crate) const PAI_SET_TRACK_ANIM: Callee = Callee {
+    addr: 0x0031_3c50,
+    f: ee::s10::AnimSequence_SetTrackAnim,
+};
+
+pub(crate) const PAI_SET_TRACK_TIME: Callee = Callee {
+    addr: 0x0031_3cf0,
+    f: ee::s10::AnimSequence_SetTrackTime,
+};
+
+pub(crate) const PAI_SET_TRACK_WEIGHT: Callee = Callee {
+    addr: 0x0031_3d28,
+    f: ee::s10::AnimSequence_SetTrackWeight,
+};
+
+pub(crate) const PAI_REMOVE: Callee = Callee {
+    addr: 0x0031_45f8,
+    f: ee::s10::AnimSeqList_Remove,
+};
+
+/// `f1 = *(s0 + off)`, `f0 = *(s1 + off)` (or the v1/v0 bases), `c.eq.s`.
+pub(crate) fn pai_eq(c: &mut Cpu, a: u32, b: u32) -> bool {
+    c.lwc1(1, a);
+    c.lwc1(0, b);
+    c.c_eq_s(1, 0);
+    c.fcc()
+}
+
+/// `int AnimController_PlayAnimImpl(AnimController* self, AnimSeqList*
+/// list, int anim, int clip, int keep, int user, float blend)` (0x311f00):
+/// start `anim` (clip `a3`) on the controller's sequence list. A zero
+/// blend clears the list first. The new sequence (looping when the anim's
+/// table entry type is 2; otherwise with the 0x3f event trigger unless
+/// the type is non-zero and the entry's +8 word is 0) takes the
+/// controller's bank, transform, key and time, weight 1, the entry's
+/// blend-in, `user`, and one trigger per clip event key (frames / 30).
+/// Alone on the list it fades in over the entry's fade time, if any.
+/// Otherwise, with a blend, every older sequence loses its trigger and
+/// fades out over `blend`; one with the same anim/id, key, bank and
+/// transform (or of a type other than 0/1/2) is a match: unless `keep`,
+/// the new sequence inherits its active tracks and weight (fading the
+/// rest in) and the match is removed; else the new one fades in from 0.
+/// Returns `anim`.
+pub fn anim_controller_play_anim_impl(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0xa0);
+        frame.save_fpr(c, 20, 0x90);
+        frame.save_fpr(c, 21, 0x98);
+        c.mtc1(0, 20);
+        c.mov_s(21, 12);
+        frame.save(c, S2, 0x60);
+        c.c_eq_s(21, 20);
+        frame.save(c, S3, 0x50);
+        frame.save(c, S4, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S5, 0x30);
+        c.g[S3][0] = c.g[A3][0];
+        frame.save(c, S6, 0x20);
+        c.g[S5][0] = c.g[A2][0];
+        frame.save(c, S7, 0x10);
+        c.g[S6][0] = c.g[A1][0];
+        frame.save(c, S0, 0x80);
+        c.g[S7][0] = c.g[T0][0];
+        frame.save(c, S1, 0x70);
+        c.g[S4][0] = c.g[T1][0];
+        let no_blend = c.fcc();
+        frame.save_ra(c, 0);
+        if no_blend {
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S6][0];
+            PAI_CLEAR.call(c, 0x0031_1f60)?;
+        }
+
+        // Push the new sequence (s1).
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S5][0];
+        PAI_GET_ENTRY.call(c, 0x0031_1f68)?;
+        c.g[V1][0] = Addr(r32(c, V0)).off(4).lw(c);
+        c.g[V0][0] = 2;
+        let looping = c.g[V1][0] == c.g[V0][0];
+        c.mov_s(12, 20);
+        if looping {
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S6][0];
+            c.g[A1][0] = c.g[S5][0];
+            c.g[A2][0] = c.g[S3][0];
+            PAI_PUSH_LOOPING.call(c, 0x0031_1f88)?;
+            c.g[S1][0] = c.g[V0][0];
+        } else {
+            c.cycles += 10;
+            c.g[A0][0] = c.g[S6][0];
+            c.g[A1][0] = c.g[S5][0];
+            c.g[A2][0] = c.g[S3][0];
+            PAI_PUSH.call(c, 0x0031_1fa0)?;
+            c.g[S1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S5][0];
+            PAI_GET_ENTRY.call(c, 0x0031_1fac)?;
+            c.g[V1][0] = Addr(r32(c, V0)).off(4).lw(c);
+            c.g[A0][0] = c.g[S1][0];
+            let mut trigger = c.g[V1][0] == 0;
+            if !trigger {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S5][0];
+                PAI_GET_ENTRY.call(c, 0x0031_1fc0)?;
+                c.g[V1][0] = Addr(r32(c, V0)).off(8).lw(c);
+                c.g[A0][0] = c.g[S1][0];
+                trigger = c.g[V1][0] != 0;
+            }
+            if trigger {
+                c.cycles += 2;
+                c.g[A1][0] = 0x3f;
+                PAI_ADD_EVENT_TRIGGER.call(c, 0x0031_1fd4)?;
+            }
+        }
+
+        // Copy the controller's state; weight = target = 1.
+        c.cycles += 33;
+        let (ctrl, seq) = (r32(c, S2), r32(c, S1));
+        c.g[V1][0] = Addr(ctrl).off(PAI_CTRL_BANK).lw(c);
+        c.g[A0][0] = c.g[S5][0];
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 1);
+        c.g[S0][0] = 0;
+        let v = c.g[V1][0];
+        Addr(seq).off(PAI_SEQ_BANK).sw(c, v);
+        c.lq(V0, ctrl.wrapping_add(PAI_CTRL_XFORM));
+        c.sq(V0, seq.wrapping_add(PAI_SEQ_XFORM));
+        c.lq(V1, ctrl.wrapping_add(PAI_CTRL_XFORM + 0x10));
+        c.sq(V1, seq.wrapping_add(PAI_SEQ_XFORM + 0x10));
+        c.g[V0][0] = c.ld(ctrl.wrapping_add(PAI_CTRL_KEY));
+        c.sd(seq.wrapping_add(PAI_SEQ_KEY), c.g[V0][0]);
+        c.lwc1(0, ctrl.wrapping_add(PAI_CTRL_TIME));
+        c.swc1(1, seq.wrapping_add(PAI_SEQ_WEIGHT));
+        c.swc1(0, seq.wrapping_add(PAI_SEQ_TIME));
+        c.swc1(1, seq.wrapping_add(PAI_SEQ_TARGET));
+        PAI_GET_ENTRY.call(c, 0x0031_2018)?;
+        let seq = r32(c, S1);
+        c.lwc1(0, r32(c, V0).wrapping_add(0x18));
+        c.g[A1][0] = sx(r32(c, S3) >> 8);
+        c.g[A0][0] = Addr(r32(c, GP)).off(PAI_BANKS).lw(c);
+        c.g[V0][0] = c.g[S3][0] & 0xff;
+        c.swc1(0, seq.wrapping_add(PAI_SEQ_BLEND_IN));
+        c.g[A2][0] = sx(r32(c, V0) << 2);
+        let v = c.g[S4][0];
+        Addr(seq).off(PAI_SEQ_USER).sw(c, v);
+        c.g[V0][0] = 0x14;
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A2)));
+        c.mult(0, A1, A1, V0);
+        c.g[V1][0] = Addr(r32(c, A0)).lw(c);
+        c.g[V0][0] = Addr(r32(c, V1)).off(8).lw(c);
+        c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+        c.g[S2][0] = Addr(r32(c, V0)).off(0x12).lhu(c);
+        if c.g[S2][0] != 0 {
+            // One trigger per event key of the clip (s2 keys).
+            c.cycles += 4;
+            c.lwc1(20, r32(c, GP).wrapping_sub(0x3234));
+            c.g[S4][0] = c.g[A2][0];
+            c.g[S3][0] = c.g[A1][0];
+            c.g[V0][0] = Addr(r32(c, GP)).off(PAI_BANKS).lw(c);
+            loop {
+                c.cycles += 20;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A0][0] = c.g[S1][0];
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S4)));
+                c.g[A2][0] = Addr(r32(c, V0)).lw(c);
+                c.g[V1][0] = Addr(r32(c, A2)).off(8).lw(c);
+                c.g[A3][0] = Addr(r32(c, A2)).off(0x10).lw(c);
+                c.g[V1][0] = sx(r32(c, S3).wrapping_add(r32(c, V1)));
+                c.g[V0][0] = Addr(r32(c, V1)).off(0x10).lhu(c);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S0)));
+                c.g[V0][0] = sx(r32(c, V0) << 2);
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A3)));
+                c.g[V1][0] = Addr(r32(c, V0)).lhu(c);
+                c.mtc1(V1, 12);
+                c.cvt_s_w(12, 12);
+                c.mul_s(12, 12, 20);
+                PAI_ADD_TRIGGER.call(c, 0x0031_20ac)?;
+                let more = (c.g[S0][0] as i64) < (c.g[S2][0] as i64);
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S2][0] as i64)) as u64;
+                c.g[V0][0] = Addr(r32(c, GP)).off(PAI_BANKS).lw(c);
+                if !more {
+                    c.cycles += 1;
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_2068);
+                }
+            }
+        }
+        c.g[V1][0] = Addr(r32(c, S6)).lw(c);
+
+        c.cycles += 3;
+        c.g[V0][0] = 1;
+        if c.g[V1][0] == c.g[V0][0] {
+            // Alone: fade in over the entry's fade time.
+            c.cycles += 8;
+            c.g[A0][0] = c.g[S5][0];
+            PAI_GET_ENTRY.call(c, 0x0031_20d0)?;
+            c.lwc1(13, r32(c, V0).wrapping_add(0x14));
+            c.mtc1(0, 0);
+            c.c_eq_s(13, 0);
+            let none = c.fcc();
+            c.g[V0][0] = c.g[S5][0];
+            if !none {
+                c.cycles += 8;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(AT, 12);
+                c.g[A0][0] = c.g[S1][0];
+                let seq = r32(c, S1);
+                c.swc1(0, seq.wrapping_add(PAI_SEQ_WEIGHT));
+                c.swc1(0, seq.wrapping_add(PAI_SEQ_TARGET));
+                PAI_SET_WEIGHT_FADE.call(c, 0x0031_2100)?;
+                c.g[V0][0] = c.g[S5][0];
+            }
+        } else {
+            c.cycles += 5;
+            c.mtc1(0, 0);
+            c.c_eq_s(21, 0);
+            let no_blend = c.fcc();
+            c.g[V0][0] = c.g[S5][0];
+            if !no_blend {
+                pai_blend_out(c)?;
+            }
+        }
+
+        c.cycles += 13;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore(c, S6, 0x20);
+        frame.restore(c, S7, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x98);
+        frame.restore_fpr(c, 20, 0x90);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The blend part of `AnimController_PlayAnimImpl` (v1 = the list's
+/// count, not 1; f21 = blend != 0): fade out the older sequences, find a
+/// match (s4), and inherit from it or fade the new one in.
+pub(crate) fn pai_blend_out(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 4;
+    c.g[S2][0] = 1;
+    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V1][0] as i64)) as u64;
+    let any = c.g[V0][0] != 0;
+    c.g[S4][0] = 0;
+    if any {
+        c.cycles += 3;
+        c.g[S3][0] = 1;
+        c.g[A0][0] = c.g[S6][0];
+        loop {
+            // other = list[s2]: drop its trigger, fade it out.
+            c.cycles += 16;
+            c.g[A1][0] = c.g[S2][0];
+            PAI_GET_AT.call(c, 0x0031_2140)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A1][0] = 0x3f;
+            c.g[A0][0] = c.g[S0][0];
+            PAI_REMOVE_EVENT_TRIGGER.call(c, 0x0031_2150)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.mov_s(12, 21);
+            PAI_FADE_OUT.call(c, 0x0031_215c)?;
+            c.g[A0][0] = c.g[S5][0];
+            PAI_GET_ENTRY.call(c, 0x0031_2164)?;
+            let (other, seq) = (r32(c, S0), r32(c, S1));
+            c.g[A0][0] = Addr(r32(c, V0)).off(4).lw(c);
+            c.g[V1][0] = Addr(other).off(4).lw(c);
+            c.g[V0][0] = Addr(seq).off(4).lw(c);
+            // Same first-track id, or a type other than 0, 2 and 1.
+            let mut ok = c.g[V1][0] == c.g[V0][0];
+            c.g[A1][0] = 0;
+            if !ok {
+                c.cycles += 2;
+                c.g[V0][0] = 2;
+                ok = c.g[A0][0] != 0;
+                if ok {
+                    c.cycles += 2;
+                    ok = c.g[A0][0] != c.g[V0][0];
+                    if ok {
+                        c.cycles += 2;
+                        ok = c.g[A0][0] != c.g[S3][0];
+                    }
+                }
+            }
+            if ok {
+                c.cycles += 1;
+                c.g[A1][0] = 1;
+            }
+            c.cycles += 2;
+            if c.g[A1][0] != 0 {
+                pai_match(c);
+            } else {
+                c.g[V0][0] = Addr(r32(c, S6)).lw(c);
+            }
+
+            c.cycles += 4;
+            c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+            c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A0][0] = c.g[S6][0];
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0031_2138);
+            }
+        }
+    }
+
+    c.cycles += 2;
+    let inherit = c.g[S4][0] != 0 && {
+        c.cycles += 2;
+        c.g[S7][0] == 0
+    };
+    if !inherit {
+        // Fade the new sequence in from 0 over the blend.
+        Addr(r32(c, S1)).off(PAI_SEQ_TARGET).sw(c, 0);
+        c.cycles += 7;
+        c.g[A0][0] = c.g[S1][0];
+        Addr(r32(c, S1)).off(PAI_SEQ_WEIGHT).sw(c, 0);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 12);
+        c.mov_s(13, 21);
+        PAI_SET_WEIGHT_FADE.call(c, 0x0031_2384)?;
+        c.g[V0][0] = c.g[S5][0];
+        return Ok(());
+    }
+
+    // Inherit the match's active tracks (anim, time, speed).
+    c.cycles += 4;
+    c.g[S2][0] = 0;
+    c.g[S0][0] = sx(r32(c, S4).wrapping_add(0x14));
+    c.g[S3][0] = sx(r32(c, S4).wrapping_add(0x18));
+    loop {
+        c.cycles += 3;
+        c.g[V0][0] = Addr(r32(c, S3)).lw(c);
+        c.g[A0][0] = c.g[S1][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 11;
+            c.g[A2][0] = Addr(r32(c, S0).wrapping_sub(0x10)).lw(c);
+            c.g[A1][0] = c.g[S2][0];
+            PAI_SET_TRACK_ANIM.call(c, 0x0031_22f0)?;
+            c.lwc1(12, r32(c, S0).wrapping_sub(0xc));
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S2][0];
+            PAI_SET_TRACK_TIME.call(c, 0x0031_2300)?;
+            c.lwc1(12, r32(c, S0));
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S2][0];
+            PAI_SET_TRACK_WEIGHT.call(c, 0x0031_2310)?;
+        }
+        c.cycles += 5;
+        c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+        c.g[S0][0] = sx(r32(c, S0).wrapping_add(0x1c));
+        c.g[V0][0] = ((c.g[S2][0] as i64) < 3) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[S3][0] = sx(r32(c, S3).wrapping_add(0x1c));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0031_22d8);
+        }
+    }
+    // weight = target = match weight; fade the rest in.
+    c.cycles += 10;
+    let (matched, seq) = (r32(c, S4), r32(c, S1));
+    c.lwc1(0, matched.wrapping_add(PAI_SEQ_WEIGHT));
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 12);
+    c.swc1(0, seq.wrapping_add(PAI_SEQ_WEIGHT));
+    c.swc1(0, seq.wrapping_add(PAI_SEQ_TARGET));
+    c.lwc1(0, matched.wrapping_add(PAI_SEQ_WEIGHT));
+    c.c_lt_s(0, 12);
+    let partial = c.fcc();
+    c.g[A0][0] = c.g[S1][0];
+    if partial {
+        c.cycles += 3;
+        c.sub_s(13, 12, 0);
+        c.mul_s(13, 21, 13);
+        PAI_SET_WEIGHT_FADE.call(c, 0x0031_2358)?;
+    }
+    c.cycles += 5;
+    c.g[A0][0] = c.g[S6][0];
+    c.g[A1][0] = c.g[S4][0];
+    PAI_REMOVE.call(c, 0x0031_2364)?;
+    c.g[V0][0] = c.g[S5][0];
+    Ok(())
+}
+
+/// The match test of one older sequence (s0) against the new one (s1)
+/// after the type test passed: same anim word, key and bank, then the
+/// transform (+0x70 row first, then +0x60): s4 = s0 when all equal. Ends
+/// with v0 = the list's count.
+pub(crate) fn pai_match(c: &mut Cpu) {
+    let (other, seq) = (r32(c, S0), r32(c, S1));
+    let fail = |c: &mut Cpu| c.g[V0][0] = Addr(r32(c, S6)).lw(c);
+    c.cycles += 4;
+    c.g[V1][0] = Addr(other).lw(c);
+    c.g[V0][0] = Addr(seq).lw(c);
+    if c.g[V1][0] != c.g[V0][0] {
+        return fail(c);
+    }
+    c.cycles += 4;
+    c.g[V1][0] = c.ld(other.wrapping_add(PAI_SEQ_KEY));
+    c.g[V0][0] = c.ld(seq.wrapping_add(PAI_SEQ_KEY));
+    if c.g[V1][0] != c.g[V0][0] {
+        return fail(c);
+    }
+    c.cycles += 4;
+    c.g[V1][0] = Addr(other).off(PAI_SEQ_BANK).lw(c);
+    c.g[V0][0] = Addr(seq).off(PAI_SEQ_BANK).lw(c);
+    if c.g[V1][0] != c.g[V0][0] {
+        return fail(c);
+    }
+
+    // Second row of the transform (+0x70..+0x7c).
+    c.cycles += 9;
+    c.lwc1(1, other.wrapping_add(0x70));
+    c.g[V1][0] = sx(other.wrapping_add(PAI_SEQ_XFORM));
+    c.lwc1(0, seq.wrapping_add(0x70));
+    c.g[V0][0] = sx(seq.wrapping_add(PAI_SEQ_XFORM));
+    c.g[A0][0] = 0;
+    c.c_eq_s(1, 0);
+    let mut eq = c.fcc();
+    c.g[A1][0] = 0;
+    if eq {
+        c.cycles += 5;
+        eq = pai_eq(c, other.wrapping_add(0x74), seq.wrapping_add(0x74));
+        if eq {
+            c.cycles += 5;
+            eq = pai_eq(c, other.wrapping_add(0x78), seq.wrapping_add(0x78));
+            if eq {
+                c.cycles += 6;
+                if pai_eq(c, other.wrapping_add(0x7c), seq.wrapping_add(0x7c)) {
+                    c.g[A1][0] = 1;
+                }
+            }
+        }
+    }
+
+    c.cycles += 2;
+    if c.g[A1][0] != 0 {
+        // First row (+0x60..+0x6c): a0 = 1 when all equal.
+        let (a, b) = (r32(c, V1), r32(c, V0));
+        c.cycles += 6;
+        let e0 = pai_eq(c, a, b);
+        c.g[A1][0] = 0;
+        // 0: to the "a0 = 1" step, 1: to the "a1 ? a0 : 0" step, 2: past it.
+        let stage = if !e0 {
+            0
+        } else {
+            c.cycles += 6;
+            let e1 = pai_eq(c, a.wrapping_add(4), b.wrapping_add(4));
+            c.g[A0][0] = c.g[S3][0];
+            if !e1 {
+                1
+            } else {
+                c.cycles += 6;
+                if !pai_eq(c, a.wrapping_add(8), b.wrapping_add(8)) {
+                    if c.g[A1][0] == 0 {
+                        c.g[A0][0] = 0;
+                    }
+                    2
+                } else {
+                    c.cycles += 6;
+                    if pai_eq(c, a.wrapping_add(0xc), b.wrapping_add(0xc)) {
+                        c.g[A1][0] = 1;
+                        1
+                    } else {
+                        0
+                    }
+                }
+            }
+        };
+        if stage == 0 {
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S3][0];
+        }
+        if stage <= 1 {
+            c.cycles += 1;
+            if c.g[A1][0] == 0 {
+                c.g[A0][0] = 0;
+            }
+        }
+        c.cycles += 1;
+    }
+    if c.g[A0][0] != 0 {
+        c.g[S4][0] = c.g[S0][0];
+    }
+    c.cycles += 1;
+    c.g[V0][0] = Addr(r32(c, S6)).lw(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2820,6 +3651,257 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(rider);
                 c.g[A3][0] = anim as u64;
                 c.pc = 0x0031_2bd0;
+            },
+        );
+    }
+
+    use crate::difftest::RA as SENTINEL;
+    pub(crate) use crate::game::animation::rideranim::tests::replace_sequence_setup;
+
+    // -- 0x00312660 AnimController_SampleAnimPose ----------------------------
+
+    pub(crate) const OC320_SAMPLE_BUF: u32 = DATA + 0x1_0000;
+
+    pub(crate) const OC320_SAMPLE_SELF: u32 = DATA + 0x2_0000;
+
+    pub(crate) const OC320_SAMPLE_CHANTBL: u32 = DATA + 0x3_0000;
+
+    pub(crate) const OC320_SAMPLE_CHANSET: u32 = DATA + 0x3_1000;
+
+    pub(crate) const OC320_SAMPLE_CHANBASE: u32 = DATA + 0x3_2000;
+
+    /// `AnimTable_GetEntry`: `0x446990 + anim`.
+    pub(crate) const OC320_SAMPLE_ANIM_TABLE: u32 = 0x0044_6990;
+
+    /// The game image (anim name tables and the size-class pools), an
+    /// animation-table entry with one plain sequence and no triggers or
+    /// weight fade, a channel set with no animation triggers, and controller
+    /// data for the callee to copy. The AI-anim-id path (a virtual call) is
+    /// not taken: the key is not the sentinel.
+    #[test]
+    fn anim_controller_sample_anim_pose_matches() {
+        use crate::difftest::elf_image;
+        use crate::game::bx::bxstring::tests::pool;
+        check(
+            ee::s10::f_00312660__generated,
+            anim_controller_sample_anim_pose,
+            80,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_2660, 0);
+                elf_image(c);
+                pool(c);
+                let anim = 0x100 + 4 * (r.next_u32() % 8);
+                let e = OC320_SAMPLE_ANIM_TABLE + anim;
+                c.bus.write32(e + 0x4, 1);
+                c.bus.write32(e + 0x8, 0);
+                c.bus.write32(e + 0x14, 0);
+                c.bus.write32(e + 0x18, r.next_u32());
+                c.bus.write32(GAME_GP + 0xd08, OC320_SAMPLE_CHANTBL);
+                c.bus.write32(OC320_SAMPLE_CHANTBL, OC320_SAMPLE_CHANSET);
+                c.bus
+                    .write32(OC320_SAMPLE_CHANSET + 0x8, OC320_SAMPLE_CHANBASE);
+                c.bus.write16(OC320_SAMPLE_CHANBASE + 0x12, 0);
+                c.bus.write32(GAME_GP + 0x2860, 0xdead_beef);
+                fill(c, &mut r, OC320_SAMPLE_SELF, 0x40);
+                c.f[12] = if seed % 3 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(10.0)
+                };
+                c.g[A0][0] = sx(OC320_SAMPLE_BUF);
+                c.g[A1][0] = sx(OC320_SAMPLE_SELF);
+                c.g[A2][0] = sx(anim);
+                c.g[A3][0] = 0;
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0031_2660;
+            },
+        );
+    }
+
+    #[test]
+    fn anim_controller_replace_sequence_matches() {
+        use crate::difftest::check;
+        check(
+            ssx3_ee::s10::f_00312b18__generated,
+            anim_controller_replace_sequence,
+            200,
+            &|c, seed| replace_sequence_setup(c, seed, 0x0031_2b18),
+        );
+    }
+
+    use crate::difftest::elf_image;
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_CTRL;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_MAGIC;
+    use std::sync::atomic::AtomicUsize;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_NEW_SEQ;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_SEQS;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_fake;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_gated;
+
+    // ------------------------------------------- AnimController_PlayAnimImpl
+
+    macro_rules! oc360_fake_set {
+        ($install:ident; $($name:ident $prev:ident $addr:literal $slot:ident $gen:ident;)*) => {
+            $(oc360_gated!($name, $prev, $addr, ee::s10::$gen);)*
+            fn $install() {
+                use std::ptr::addr_of_mut;
+                {
+                    $(fakes::hook(addr_of_mut!(ee::s10::$slot), $name, &$prev);)*
+                }
+            }
+        };
+    }
+
+    oc360_fake_set! {
+        oc360_install_anim_fakes;
+        oc360_fake_seq_clear OC360_PREV_SEQ_CLEAR 0x0031_4668 OVERRIDE_00314668 f_00314668__generated;
+        oc360_fake_push_looping OC360_PREV_PUSH_LOOPING 0x0031_4588 OVERRIDE_00314588 f_00314588__generated;
+        oc360_fake_push OC360_PREV_PUSH 0x0031_4518 OVERRIDE_00314518 f_00314518__generated;
+        oc360_fake_add_event_trigger OC360_PREV_ADD_EVENT_TRIGGER 0x0031_3ad8 OVERRIDE_00313AD8 f_00313ad8__generated;
+        oc360_fake_add_trigger OC360_PREV_ADD_TRIGGER 0x0031_3a70 OVERRIDE_00313A70 f_00313a70__generated;
+        oc360_fake_weight_fade OC360_PREV_WEIGHT_FADE 0x0031_3a10 OVERRIDE_00313A10 f_00313a10__generated;
+        oc360_fake_get_at OC360_PREV_GET_AT 0x0031_4760 OVERRIDE_00314760 f_00314760__generated;
+        oc360_fake_remove_event_trigger OC360_PREV_REMOVE_EVENT_TRIGGER 0x0031_3ba8 OVERRIDE_00313BA8 f_00313ba8__generated;
+        oc360_fake_fade_out OC360_PREV_FADE_OUT 0x0031_3a20 OVERRIDE_00313A20 f_00313a20__generated;
+        oc360_fake_track_anim OC360_PREV_TRACK_ANIM 0x0031_3c50 OVERRIDE_00313C50 f_00313c50__generated;
+        oc360_fake_track_time OC360_PREV_TRACK_TIME 0x0031_3cf0 OVERRIDE_00313CF0 f_00313cf0__generated;
+        oc360_fake_track_weight OC360_PREV_TRACK_WEIGHT 0x0031_3d28 OVERRIDE_00313D28 f_00313d28__generated;
+        oc360_fake_seq_remove OC360_PREV_SEQ_REMOVE 0x0031_45f8 OVERRIDE_003145F8 f_003145f8__generated;
+    }
+
+    /// The anim table `AnimTable_GetEntry` (a real leaf) indexes:
+    /// `0x446990 + anim * 0x1c`.
+    pub(crate) const PAI_TABLE: u32 = 0x0044_6990;
+
+    /// Anims 0-5 with entry types 0/1/2/3 (+8 word zero or not, fade time
+    /// zero or not), a zero or non-zero blend, `keep` 0 or 1, a list of
+    /// 1-4 sequences whose older ones match the new one fully or differ in
+    /// one field (anim, id, key, bank or one transform float), clips with
+    /// 0-3 event keys. The list and sequence callees are logged fakes.
+    pub(crate) fn pai_setup(c: &mut Cpu, seed: u32, calls: u32) -> Rng {
+        elf_image(c);
+        let mut r = machine(c, seed, 0x0031_1f00, calls);
+        c.pc = 0x0031_1f00;
+        let base = DATA + 0x7_8000;
+        let ctrl = base;
+        let list = base + 0x100;
+        let new_seq = base + 0x200;
+        let seqs = base + 0x400;
+        let banks = base + 0x1000;
+        let bank = base + 0x1100;
+        let clips = base + 0x1200;
+        let keys = base + 0x1400;
+        c.bus.write32(OC360_CTRL, OC360_MAGIC);
+        c.bus.write32(OC360_NEW_SEQ, new_seq);
+        c.bus.write32(OC360_SEQS, seqs);
+        let pick = |r: &mut Rng, v: &[f32]| v[r.next_u32() as usize % v.len()].to_bits();
+        // Entries of anims 0-5.
+        for a in 0..6 {
+            let e = PAI_TABLE + 0x1c * a;
+            fill(c, &mut r, e, 7);
+            c.bus.write32(e + 4, r.next_u32() % 4);
+            c.bus.write32(e + 8, r.next_u32() % 2);
+            c.bus.write32(e + 0x14, pick(&mut r, &[0.0, 0.5]));
+        }
+        let anim = r.next_u32() % 6;
+        // Controller.
+        fill(c, &mut r, ctrl, 0x14);
+        c.bus.write32(ctrl + PAI_CTRL_BANK, r.next_u32() % 2);
+        c.bus
+            .write32(ctrl + PAI_CTRL_TIME, pick(&mut r, &[0.0, 0.25]));
+        for i in 0..8 {
+            c.bus.write32(
+                ctrl + PAI_CTRL_XFORM + 4 * i,
+                pick(&mut r, &[0.0, 1.0, -2.0]),
+            );
+        }
+        // Clip a3 = (clip << 8) | bank.
+        let clip = r.next_u32() % 3;
+        let clip_word = (clip << 8) | (r.next_u32() % 2);
+        c.bus.write32(GAME_GP + PAI_BANKS, banks);
+        c.bus.write32(banks, bank);
+        c.bus.write32(banks + 4, bank);
+        c.bus.write32(bank + 8, clips);
+        c.bus.write32(bank + 0x10, keys);
+        for k in 0..3 {
+            c.bus
+                .write16(clips + 0x14 * k + 0x10, (r.next_u32() % 4) as u16);
+            c.bus
+                .write16(clips + 0x14 * k + 0x12, (r.next_u32() % 4) as u16);
+        }
+        fill(c, &mut r, keys, 0x10);
+        // The new sequence and the list.
+        fill(c, &mut r, new_seq, 0x30);
+        c.bus.write32(new_seq, r.next_u32() % 2);
+        c.bus.write32(new_seq + 4, r.next_u32() % 2);
+        let count = 1 + r.next_u32() % 4;
+        c.bus.write32(list, count);
+        for i in 0..4 {
+            let o = seqs + 0x100 * i;
+            fill(c, &mut r, o, 0x30);
+            // A full match, then maybe one field off.
+            let (w0, w1) = (c.bus.read32(new_seq), c.bus.read32(new_seq + 4));
+            c.bus.write32(o, w0);
+            c.bus.write32(o + 4, w1);
+            let key = c.bus.read64(ctrl + PAI_CTRL_KEY);
+            c.bus.write64(o + PAI_SEQ_KEY, key);
+            let bank_word = c.bus.read32(ctrl + PAI_CTRL_BANK);
+            c.bus.write32(o + PAI_SEQ_BANK, bank_word);
+            for w in 0..8 {
+                let v = c.bus.read32(ctrl + PAI_CTRL_XFORM + 4 * w);
+                c.bus.write32(o + PAI_SEQ_XFORM + 4 * w, v);
+            }
+            match r.next_u32() % 16 {
+                0 => c.bus.write32(o, 7),
+                1 => c.bus.write32(o + 4, 7),
+                2 => c.bus.write32(o + PAI_SEQ_KEY + 4 * (r.next_u32() % 2), 7),
+                3 => c.bus.write32(o + PAI_SEQ_BANK, 7),
+                4..=11 => {
+                    let w = r.next_u32() % 8;
+                    c.bus.write32(o + PAI_SEQ_XFORM + 4 * w, 0x4040_0000);
+                }
+                _ => {}
+            }
+            for k in 0..3 {
+                c.bus.write32(o + 0x18 + 0x1c * k, r.next_u32() % 2);
+            }
+            c.bus
+                .write32(o + PAI_SEQ_WEIGHT, pick(&mut r, &[0.5, 1.0, 2.0]));
+        }
+        c.g[A0][0] = sx(ctrl);
+        c.g[A1][0] = sx(list);
+        c.g[A2][0] = anim as u64;
+        c.g[A3][0] = clip_word as u64;
+        c.g[T0][0] = (r.next_u32() % 3 == 0) as u64;
+        c.g[T1][0] = r.next_u32() as u64;
+        c.f[12] = pick(&mut r, &[0.0, 0.0, 0.5, 0.25]);
+        r
+    }
+
+    #[test]
+    fn anim_controller_play_anim_impl_matches() {
+        use crate::difftest::events::{check_events, schedule};
+        oc360_install_anim_fakes();
+        covered(
+            ee::s10::f_00311f00__generated,
+            anim_controller_play_anim_impl,
+            300,
+            &|c, seed| {
+                pai_setup(c, seed, 16);
+            },
+        );
+        check_events(
+            ee::s10::f_00311f00__generated,
+            anim_controller_play_anim_impl,
+            300,
+            &|c, seed| {
+                let mut r = pai_setup(c, seed, 0);
+                schedule(c, &mut r, seed, 0x0031_1f00)
             },
         );
     }
