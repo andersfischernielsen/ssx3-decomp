@@ -103,6 +103,17 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0034_40c8, crowd_man3d_update, "CrowdMan3d_Update"),
     (0x0034_4138, crowd_man3d_render, "CrowdMan3d_Render"),
     (0x0034_41a8, crowd_man3d_save_state, "CrowdMan3d_SaveState"),
+    (
+        0x0034_2e98,
+        debounce_kill_restorable,
+        "Debounce_KillRestorable",
+    ),
+    (0x0034_2fa8, debounce_save, "Debounce_Save"),
+    (
+        0x0034_51c0,
+        spline_modifier_init_path,
+        "SplineModifier_InitPath",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -205,6 +216,8 @@ pub(crate) mod callee {
         addr: 0x0034_42e0,
         f: ee::s11::f_003442e0,
     };
+
+    pub(crate) use crate::game::lib::snd::callee::MOD_OBJ_SAVE;
 }
 
 /// `GetHashValue32` (0x317670) and the UI object lookups, which the generator
@@ -1937,6 +1950,288 @@ pub fn crowd_man3d_save_state(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Callees.
+
+/// `WorldObj_RunKillScript` (0x34fcc0).
+pub(crate) const OC327_WORLD_OBJ_RUN_KILL_SCRIPT: Callee = Callee {
+    addr: 0x0034_fcc0,
+    f: ee::s11::WorldObj_RunKillScript,
+};
+
+/// `DeadNode_ctor` (0x3506d8).
+pub(crate) const OC327_DEAD_NODE_CTOR: Callee = Callee {
+    addr: 0x0035_06d8,
+    f: ee::s11::DeadNode_ctor,
+};
+
+/// `RestoreNode_ctor` (0x350f60).
+pub(crate) const OC327_RESTORE_NODE_CTOR: Callee = Callee {
+    addr: 0x0035_0f60,
+    f: ee::s11::RestoreNode_ctor,
+};
+
+/// `EA_MemAllocNamed` (0x317d70; the generator emitted `call_indirect`).
+pub(crate) const OC327_EA_MEM_ALLOC_NAMED: u32 = 0x0031_7d70;
+
+// ---------------------------------------------------------------------------
+// Debounce nodes.
+
+/// The vtable-driven `OnKilled(this, 3)` call: `this+0xc` holds the vtable,
+/// its slot +8 is `{ short delta; short; void (*fn)(); }` and the method is
+/// called with `this + delta`. Charges `pre` cycles first (the caller charges
+/// them inside its own branch).
+pub(crate) fn debounce_kill_restorable_vt(c: &mut Cpu, ret_: u32, pre: u32) -> crate::call::Flow {
+    c.cycles += pre as u64;
+    let vt = Addr((c.g[S0][0] as u32).wrapping_add(0xc)).lw(c);
+    c.g[V0][0] = vt;
+    c.g[A1][0] = 3;
+    c.g[A0][0] = Addr((vt as u32).wrapping_add(8)).lh(c);
+    c.g[V1][0] = Addr((vt as u32).wrapping_add(0xc)).lw(c);
+    let target = c.g[V1][0] as u32;
+    c.g[RA][0] = sx(ret_);
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, ret_)
+}
+
+/// `void Debounce_KillRestorable(Debounce* self, const void* check)`
+/// (0x342e98): if the kill script lets it through and the debounce counter is
+/// non-negative, mark the node killed (`OnKilled(this, 3)`) and replace it by
+/// a dead node (mode 0) or a restore node (mode 3).
+pub fn debounce_kill_restorable(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        let no_check = c.g[A1][0] == 0;
+        frame.save_ra(c, 0);
+        debounce_kill_restorable_body(c, frame, no_check)?;
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// The body of `Debounce_KillRestorable`: each early exit restores `s0` (the
+/// original restores it there and not in the epilogue) and returns.
+pub(crate) fn debounce_kill_restorable_body(
+    c: &mut Cpu,
+    frame: Frame,
+    no_check: bool,
+) -> crate::call::Flow {
+    if !no_check {
+        c.cycles += 4;
+        OC327_WORLD_OBJ_RUN_KILL_SCRIPT.call(c, 0x0034_2eb8)?;
+        if c.g[V0][0] != 0 {
+            frame.restore(c, S0, 0x20);
+            return Ok(());
+        }
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x2c)).lw(c);
+    if (c.g[V0][0] as i64) < 0 {
+        frame.restore(c, S0, 0x20);
+        return Ok(());
+    }
+    c.cycles += 3;
+    c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x30)).lw(c);
+    let mode = c.g[V1][0] != 0;
+    c.g[V0][0] = 3;
+    if !mode {
+        // Mode 0: notify, then a dead node in place of this one.
+        c.cycles += 2;
+        let null_self = c.g[S0][0] == 0;
+        c.g[S1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x18)).lw(c);
+        if !null_self {
+            debounce_kill_restorable_vt(c, 0x0034_2ef8, 6)?;
+        }
+        c.cycles += 11;
+        c.g[A1][0] = 0x49_0000;
+        c.g[A0][0] = 0x1c;
+        c.g[A1][0] = sx(0x0048_e738);
+        c.g[A2][0] = 0x2000_0000;
+        c.g[RA][0] = sx(0x0034_2f10);
+        c.g[A3][0] = 0;
+        call_ptr(c, OC327_EA_MEM_ALLOC_NAMED, 0x0034_2f10)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[RA][0] = sx(0x0034_2f1c);
+        c.g[A1][0] = c.g[S1][0];
+        OC327_DEAD_NODE_CTOR.call(c, 0x0034_2f1c)?;
+        frame.restore(c, S0, 0x20);
+        return Ok(());
+    }
+    c.cycles += 2;
+    if c.g[V1][0] != c.g[V0][0] {
+        // Any other mode: only the notification.
+        c.cycles += 2;
+        c.g[A1][0] = 3;
+        let null_self = c.g[S0][0] == 0;
+        if !null_self {
+            debounce_kill_restorable_vt(c, 0x0034_2f94, 5)?;
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0x20);
+        return Ok(());
+    }
+    // Mode 3: notify, then a restore node in place of this one.
+    c.cycles += 2;
+    let null_self = c.g[S0][0] == 0;
+    c.g[S1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x18)).lw(c);
+    if !null_self {
+        debounce_kill_restorable_vt(c, 0x0034_2f4c, 6)?;
+    }
+    c.cycles += 11;
+    c.g[A1][0] = 0x49_0000;
+    c.g[A0][0] = 0x1c;
+    c.g[A1][0] = sx(0x0048_e748);
+    c.g[A2][0] = 0x2000_0000;
+    c.g[RA][0] = sx(0x0034_2f64);
+    c.g[A3][0] = 0;
+    call_ptr(c, OC327_EA_MEM_ALLOC_NAMED, 0x0034_2f64)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[RA][0] = sx(0x0034_2f70);
+    c.g[A1][0] = c.g[S1][0];
+    OC327_RESTORE_NODE_CTOR.call(c, 0x0034_2f70)?;
+    frame.restore(c, S0, 0x20);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// SplineModifier_InitPath (0x3451c0).
+
+/// `World_GetInstance()` (`gp + 0x16c8`, the instance cell); the test's
+/// fixture sets it.
+#[allow(dead_code)]
+pub(crate) const SPLINE_INIT_GP_INSTANCE: u32 = 0x16c8;
+
+/// The instance's array of model sets.
+pub(crate) const SPLINE_INIT_SETS: u32 = 0x8;
+
+/// A model set's reference array.
+pub(crate) const SPLINE_INIT_REFS: u32 = 0x44;
+
+/// A track node's value word.
+pub(crate) const SPLINE_INIT_NODE_VALUE: u32 = 0x24;
+
+/// A track reference's id (`self + 0`), index (`+4`), node (`+8`) and the
+/// cached path length (`+0xc`).
+pub(crate) const SPLINE_INIT_INDEX: u32 = 0x4;
+
+pub(crate) const SPLINE_INIT_NODE: u32 = 0x8;
+
+pub(crate) const SPLINE_INIT_LENGTH: u32 = 0xc;
+
+/// `cSpline_calcLength` for a `cTrack`: the spline object is at node + 0x68,
+/// its key count at +0x20 and its current key at +0x24 (the test's fixture
+/// builds that node).
+#[allow(dead_code)]
+pub(crate) const SPLINE_INIT_SPLINE: u32 = 0x68;
+
+/// `void SplineModifier_InitPath(SplineFollow *self, u32 id)` (0x3451c0):
+/// store the track id, look the track node up in the instance's model sets
+/// (`sets[id & 0xff]`, then `refs[id >> 8]`, then `ref << 2`), cache the
+/// node's value at +8, clear the key index and store the path length.
+pub fn spline_modifier_init_path(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x0034_51d8);
+        c.sw(r32(c, S0), c.g[A1][0]);
+        call_ptr(c, 0x002d_1bd8, 0x0034_51d8)?;
+        c.g[V1][0] = Addr(r32(c, V0)).lw(c); // the world
+        c.g[A1][0] = Addr(r32(c, S0)).lw(c); // the id
+        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(SPLINE_INIT_SETS)).lw(c);
+        c.g[V0][0] = c.g[A1][0] & 0xff;
+        c.g[V0][0] = sx(r32(c, V0) << 2);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+        c.g[V1][0] = Addr(r32(c, V0)).lw(c); // the model set
+        let no_set = c.g[V1][0] == 0;
+        c.g[V0][0] = sx(r32(c, A1) >> 8);
+        if no_set {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 7;
+            c.g[A0][0] = Addr(r32(c, V1).wrapping_add(SPLINE_INIT_REFS)).lw(c);
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+            c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+            c.g[V0][0] = sx(r32(c, V1) >> 8);
+            let no_ref = c.g[V0][0] == 0;
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            if no_ref {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+        }
+        c.cycles += 10;
+        c.g[V0][0] = Addr(r32(c, V0).wrapping_add(SPLINE_INIT_NODE_VALUE)).lw(c);
+        c.g[A0][0] = c.g[S0][0];
+        c.sw(r32(c, S0).wrapping_add(SPLINE_INIT_INDEX), 0);
+        c.g[RA][0] = sx(0x0034_5230);
+        c.sw(r32(c, S0).wrapping_add(SPLINE_INIT_NODE), c.g[V0][0]);
+        SPLINE_GET_PATH_LENGTH.call(c, 0x0034_5230)?;
+        c.swc1(0, r32(c, S0).wrapping_add(SPLINE_INIT_LENGTH));
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `SplineModifier_GetPathLength(cSpline *self)` 0x3454e8.
+pub(crate) const SPLINE_GET_PATH_LENGTH: Callee = Callee {
+    addr: 0x0034_54e8,
+    f: ee::s11::SplineModifier_GetPathLength,
+};
+
+/// `void Debounce_Save(void* self, void* stream)` (0x342fa8): write the base
+/// object, then the 0x2c and 0x30 fields through the stream's 4-byte writer.
+pub fn debounce_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        callee::MOD_OBJ_SAVE.call(c, 0x0034_2fc4)?;
+        c.g[V1][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A1][0] = sx(r32(c, S1).wrapping_add(0x2c));
+        c.g[A2][0] = 4;
+        c.g[A0][0] = Addr(r32(c, V1)).off(0x8).lh(c);
+        c.g[V0][0] = Addr(r32(c, V1)).off(0xc).lw(c);
+        let target = r32(c, V0);
+        c.g[RA][0] = sx(0x0034_2fe0);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+        if call_ptr(c, target, 0x0034_2fe0).is_err() {
+            return Ok(());
+        }
+        c.g[V1][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A1][0] = sx(r32(c, S1).wrapping_add(0x30));
+        c.g[A2][0] = 4;
+        c.g[A0][0] = Addr(r32(c, V1)).off(0x8).lh(c);
+        c.g[V0][0] = Addr(r32(c, V1)).off(0xc).lw(c);
+        let target = r32(c, V0);
+        c.g[RA][0] = sx(0x0034_2ffc);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+        call_ptr(c, target, 0x0034_2ffc)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2739,6 +3034,236 @@ pub(crate) mod tests {
             200,
             &|c, seed| {
                 crowd_man3d_save_setup(c, seed, 10);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ealib::seg_2b4578::tests::oc327_fake_gated;
+    pub(crate) use crate::game::ealib::seg_2b4578::tests::oc327_hook;
+    pub(crate) use crate::game::ealib::seg_2b4578::tests::OC327_CTRL;
+    pub(crate) use crate::game::ealib::seg_2b4578::tests::OC327_MAGIC;
+    pub(crate) use crate::game::ealib::seg_2b4578::tests::OC327_RET;
+    use std::sync::atomic::AtomicUsize;
+
+    pub(crate) const RET_RUN_SCRIPT: u32 = 1;
+
+    pub(crate) const RET_ALLOC: u32 = 2;
+
+    pub(crate) const RET_BASE_CTOR: u32 = 4;
+
+    pub(crate) const RET_WSCRIPT_CACHE: u32 = 5;
+
+    oc327_hook!(
+        oc327_fake_run_script,
+        OC327_PREV_RUN_SCRIPT,
+        0x0030_a598,
+        RET_RUN_SCRIPT,
+        ee::s10::f_0030a598__generated
+    );
+
+    oc327_hook!(
+        oc327_fake_alloc,
+        OC327_PREV_ALLOC,
+        0x0031_7d70,
+        RET_ALLOC,
+        ee::s10::f_00317d70__generated
+    );
+
+    oc327_hook!(
+        oc327_fake_wscript_cache,
+        OC327_PREV_WSCRIPT_CACHE,
+        0x003a_6b78,
+        RET_WSCRIPT_CACHE,
+        ee::s13::f_003a6b78__generated
+    );
+
+    /// The allocator, shared by both create paths (installed once, chained).
+    pub(crate) fn oc327_install_alloc() {
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc327_fake_alloc,
+            &OC327_PREV_ALLOC,
+        );
+    }
+
+    /// The kill-script chain of `Debounce_KillRestorable` (the script runner,
+    /// the allocator and the dead-node ctor) is faked.
+    pub(crate) fn oc327_install_debounce() {
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_0030A598),
+            oc327_fake_run_script,
+            &OC327_PREV_RUN_SCRIPT,
+        );
+        // `RestoreNode_ctor` has no slot of its own: its base constructor
+        // (`WorldObj_ctor`) stops it from touching the world.
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_003506D8),
+            oc327_fake_dead_ctor,
+            &OC327_PREV_DEAD_CTOR,
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_0034FB00),
+            oc327_fake_world_obj_ctor,
+            &OC327_PREV_WORLD_OBJ_CTOR,
+        );
+        // `WScriptMan_RunKillScript`'s script lookup, so a refusing kill
+        // script stops there.
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s13::OVERRIDE_003A6B78),
+            oc327_fake_wscript_cache,
+            &OC327_PREV_WSCRIPT_CACHE,
+        );
+        oc327_install_alloc();
+    }
+
+    oc327_hook!(
+        oc327_fake_dead_ctor,
+        OC327_PREV_DEAD_CTOR,
+        0x0035_06d8,
+        RET_BASE_CTOR,
+        ee::s11::f_003506d8__generated
+    );
+
+    oc327_hook!(
+        oc327_fake_world_obj_ctor,
+        OC327_PREV_WORLD_OBJ_CTOR,
+        0x0034_fb00,
+        RET_BASE_CTOR,
+        ee::s11::f_0034fb00__generated
+    );
+
+    /// `Debounce_KillRestorable`: kill-script refusals, a negative counter, the
+    /// three modes (0, 3, other), a null self and a missing parent; the
+    /// script runner, allocator and ctors are fakes.
+    #[test]
+    fn debounce_kill_restorable_matches() {
+        oc327_install_debounce();
+        covered(
+            ee::s11::f_00342e98__generated,
+            debounce_kill_restorable,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0034_2e98, 4);
+                c.pc = 0x0034_2e98;
+                c.bus.write32(OC327_CTRL, OC327_MAGIC);
+                c.bus.write32(
+                    OC327_RET + 4 * RET_RUN_SCRIPT,
+                    if seed % 4 == 0 { 1 } else { 0 },
+                );
+                // The script lookup answers `-1` (no script): the runner then
+                // skips its call.
+                c.bus
+                    .write32(OC327_RET + 4 * RET_WSCRIPT_CACHE, 0xffff_ffff);
+                let block = DATA + 0x8_0000;
+                c.bus.write32(OC327_RET + 4 * RET_ALLOC, block);
+                c.bus.write32(OC327_RET + 4 * RET_BASE_CTOR, 0);
+                let this = DATA + 0x100;
+                let parent = DATA + 0x600;
+                c.g[A0][0] = if seed % 11 == 0 { 0 } else { sx(this) };
+                c.g[A1][0] = if seed % 3 == 0 { 0 } else { sx(DATA + 0x500) };
+                c.bus.write32(
+                    this + 0x2c,
+                    if seed % 5 == 0 { 0x8000_0000 } else { seed % 4 },
+                );
+                c.bus.write32(
+                    this + 0x30,
+                    match seed % 3 {
+                        0 => 0,
+                        1 => 3,
+                        _ => 1 + (seed % 4) * 4,
+                    },
+                );
+                let vt = vtable(c, &mut r, &[0x8]);
+                c.bus.write32(this + 0xc, vt);
+                c.bus.write32(this + 0x18, parent);
+                c.bus.write32(parent + 8, r.next_u32());
+                // The block the allocator hands out; a restore node reads its
+                // parent link.
+                c.bus
+                    .write32(block + 0x18, if seed % 7 == 0 { 0 } else { parent });
+                c.bus.write32(block + 0xc, r.next_u32());
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    /// `SplineModifier_InitPath`: a self with a track id (its low byte
+    /// indexing the world's model sets, its high byte the set's refs) whose
+    /// lookup finds a node, no set, or a ref with no pointer; `SND`-style
+    /// spline data behind the node keeps `GetPathLength` short.
+    #[test]
+    fn spline_modifier_init_path_matches() {
+        use crate::difftest::fakes::machine;
+        const SELF: u32 = DATA;
+        const INSTANCE: u32 = DATA + 0x100;
+        const WORLD: u32 = DATA + 0x200;
+        const SETS: u32 = DATA + 0x300;
+        const SET: u32 = DATA + 0x400;
+        const REFS: u32 = DATA + 0x500;
+        const NODE: u32 = DATA + 0x800;
+        const SPLINE: u32 = DATA + 0x1000;
+        const LIST: u32 = DATA + 0x1100;
+        check(
+            ee::s11::f_003451c0__generated,
+            spline_modifier_init_path,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3451c0, 0);
+                c.pc = 0x0034_51c0;
+                // World_GetInstance() -> a cell holding the world pointer.
+                c.bus.write32(GAME_GP + SPLINE_INIT_GP_INSTANCE, INSTANCE);
+                c.bus.write32(INSTANCE, WORLD);
+                c.bus.write32(WORLD + SPLINE_INIT_SETS, SETS);
+                let id = ((r.next_u32() % 3) << 8) | (r.next_u32() % 3);
+                let no_set = seed % 5 == 0;
+                c.bus
+                    .write32(SETS + 4 * (id & 0xff), if no_set { 0 } else { SET });
+                c.bus.write32(SET + SPLINE_INIT_REFS, REFS);
+                // refToPtr: (refs[idx] >> 8) << 2 = the node address.
+                let refs = match seed % 3 {
+                    0 => 0,
+                    _ => (NODE >> 2) << 8,
+                };
+                c.bus.write32(REFS + 4 * (id >> 8), refs);
+                c.bus.write32(NODE + SPLINE_INIT_NODE_VALUE, r.next_u32());
+                c.bus.write32(NODE + SPLINE_INIT_SPLINE, SPLINE);
+                c.bus.write32(SPLINE + 0x20, r.next_u32() % 2);
+                c.bus.write32(SPLINE + 0x24, LIST);
+                for k in 0..0x40 {
+                    c.bus.write32(LIST + 4 * k, r.f32(4.0));
+                }
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(id);
+            },
+        );
+    }
+
+    // --------------------------------------------------------- Debounce_Save
+
+    #[test]
+    fn debounce_save_matches() {
+        covered(
+            ee::s11::f_00342fa8__generated,
+            debounce_save,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x342f, 8);
+                c.pc = 0x0034_2fa8;
+                let obj = DATA;
+                let stream = DATA + 0x1000;
+                let table = DATA + 0x2000;
+                // The stream's first word points at the writer table; entry 1
+                // is the writer the whole Save chain calls.
+                c.bus.write32(stream, table);
+                c.bus
+                    .write16(table + 8, ((r.next_u32() as i16) & !3) as u16);
+                c.bus.write32(table + 0xc, FAKE);
+                // No modifier block: skip ModifierBlock_Save.
+                c.bus.write32(obj + 0x1c, 0);
+                fill(c, &mut r, obj + 0x20, 4);
+                c.g[A0][0] = sx(obj);
+                c.g[A1][0] = sx(stream);
             },
         );
     }

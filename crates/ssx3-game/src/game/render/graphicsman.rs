@@ -162,6 +162,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0037_05e0, emitter_setup, "Emitter_Setup"),
     (0x0036_a3b0, morton_spread8, "Morton_Spread8"),
+    (0x0037_0018, emitter_ctor, "Emitter_ctor"),
+    (0x0037_0b60, dynamic_emitter_ctor, "DynamicEmitter_ctor"),
+    (
+        0x0036_a190,
+        graphics_man_destroy_grid_mesh,
+        "GraphicsMan_DestroyGridMesh",
+    ),
 ];
 
 /// The game's render-context singleton (`gp+0x2a90`, `D_004A5B80`): its
@@ -6472,6 +6479,129 @@ pub fn morton_spread8(c: &mut Cpu) {
     abi::ret(c);
 }
 
+// ---------------------------------------------------------------------------
+// DynamicEmitter_ctor (0x370b60)
+// ---------------------------------------------------------------------------
+
+/// The dynamic-emitter view's vtable.
+pub(crate) const DYNAMIC_EMITTER_CTOR_VTABLE: u32 = 0x49_3118;
+
+/// The 0x10-byte block `memset` clears.
+pub(crate) const DYNAMIC_EMITTER_CTOR_BLOCK: u32 = 0x1e4;
+
+/// The two 16-bit id slots (both marked free).
+pub(crate) const DYNAMIC_EMITTER_CTOR_IDS: u32 = 0x1f4;
+
+/// `sGmView* DynamicEmitter_ctor(sGmView* self)` (0x370b60): clear the view
+/// header, install the vtable, construct the emitter base at `+0x20`, set the
+/// default state words, mark both id slots free (`-1`) and zero the 0x10-byte
+/// block.
+pub fn dynamic_emitter_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, 16, 0x10);
+        c.g[V0][0] = sx(DYNAMIC_EMITTER_CTOR_VTABLE);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x0c), 0);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x20));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x14), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x1f8), c.g[V0][0]);
+        call_ptr(c, 0x002f_7a68, 0x0037_0b90)?;
+        c.g[V1][0] = u64::MAX; // -1: both id slots are free
+        c.g[V0][0] = 1;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x178), c.g[V1][0]);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(DYNAMIC_EMITTER_CTOR_BLOCK));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x174), c.g[V0][0]);
+        c.g[A2][0] = u64::MAX;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x170), 0);
+        c.g[A1][0] = 0;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x17c), 0);
+        c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(DYNAMIC_EMITTER_CTOR_IDS));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x1a0), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x1a4), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x1e0), 0);
+        loop {
+            c.cycles += 7;
+            c.sh(c.g[V1][0] as u32, c.g[A2][0]);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+            c.g[V0][0] = (c.g[A1][0] < 2) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(2));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0037_0bc8);
+                }
+                continue;
+            }
+            c.cycles += 8;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0x10;
+            // `memset(self->block, 0, 0x10)`
+            call_ptr(c, 0x0041_6210, 0x0037_0bf0)?;
+            c.g[V0][0] = c.g[S0][0];
+            frame.restore_ra(c, 0);
+            frame.restore(c, 16, 0x10);
+            frame.close(c);
+            return Ok(());
+        }
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Emitter_ctor (0x370018)
+// ---------------------------------------------------------------------------
+
+/// The emitter's vtable.
+pub(crate) const EMITTER_CTOR_VTABLE: u32 = 0x49_3160;
+
+/// `Emitter* Emitter_ctor(Emitter* self)` (0x370018): install the vtable,
+/// construct the emitter base at `+0x10` and clear the two state words.
+pub fn emitter_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = sx(EMITTER_CTOR_VTABLE);
+        frame.save(c, 16, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x18c), c.g[V0][0]);
+        call_ptr(c, 0x002f_7a68, 0x0037_003c)?;
+        c.g[V0][0] = c.g[S0][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x0c), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x184), 0);
+        frame.restore(c, 16, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// -------------------------------------------- GraphicsMan_DestroyGridMesh
+
+pub(crate) const GRAPHICS_MAN_DEFERRED_DELETE_PUSH: Callee = Callee {
+    addr: 0x0036_a1c0,
+    f: ee::s12::DeferredDelete_Push,
+};
+
+/// `void GraphicsMan_DestroyGridMesh(GraphicsMan* gm, GridMesh* mesh)`
+/// (0x0036a190): hand the mesh to the deferred-delete queue.
+pub fn graphics_man_destroy_grid_mesh(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        GRAPHICS_MAN_DEFERRED_DELETE_PUSH.call(c, 0x0036_a1a0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7424,5 +7554,79 @@ pub(crate) mod tests {
             scramble(c, &mut r);
             c.g[A0][0] = (r.next_u32() as u64) | (r.next_u32() as u64) << 32;
         });
+    }
+
+    /// `DynamicEmitter_ctor`: the view is constructed over fresh memory; the
+    /// real emitter base constructor and `memset` run.
+    #[test]
+    fn dynamic_emitter_ctor_matches() {
+        check(
+            ee::s12::f_00370b60__generated,
+            dynamic_emitter_ctor,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x370b_6000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                fill(c, &mut r, DATA, 0x84);
+            },
+        );
+    }
+
+    /// `Emitter_ctor`: the emitter is constructed over fresh memory; the real
+    /// base constructor runs.
+    #[test]
+    fn emitter_ctor_matches() {
+        check(
+            ee::s12::f_00370018__generated,
+            emitter_ctor,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3700_1800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                fill(c, &mut r, DATA, 0x80);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    pub(crate) use crate::game::object::movenode::tests::oc338_fake;
+    pub(crate) use crate::game::object::movenode::tests::OC338_CTRL;
+    pub(crate) use crate::game::object::movenode::tests::OC338_MAGIC;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    oc338_fake!(
+        oc338_fake_deferred_push,
+        OC338_PREV_DEFERRED_PUSH,
+        0x0036_a1c0,
+        ee::s12::f_0036a1c0__generated
+    );
+
+    /// `GraphicsMan_DestroyGridMesh`: the mesh goes to a logging fake of
+    /// `DeferredDelete_Push`.
+    #[test]
+    fn graphics_man_destroy_grid_mesh_matches() {
+        hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0036A1C0),
+            oc338_fake_deferred_push,
+            &OC338_PREV_DEFERRED_PUSH,
+        );
+        covered(
+            ee::s12::f_0036a190__generated,
+            graphics_man_destroy_grid_mesh,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0036_a190, 1);
+                c.pc = 0x0036_a190;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                c.g[A0][0] = sx(DATA + 0x5_0000);
+                c.g[A1][0] = sx(DATA + 0x5_1000 + (r.next_u32() & 0xff0));
+            },
+        );
     }
 }

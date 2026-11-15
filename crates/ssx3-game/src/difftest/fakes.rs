@@ -155,3 +155,68 @@ pub fn vtable(c: &mut Cpu, r: &mut Rng, slots: &[u32]) -> u32 {
     }
     vt
 }
+
+/// Puts the gated test fake `fake` in an override slot, remembering in `prev`
+/// what the slot held (the body the fake runs when its gate is off).
+///
+/// Each fake is hooked once per process: later calls do nothing. A fake that
+/// re-records `prev` after another fake was chained on top of it would make
+/// the two fall back to each other, and a test reaching the slot with neither
+/// gate set would loop forever. Hooked once, every chain follows install
+/// order and ends at the generated body. Never put the old body back on drop
+/// either (a fake chained on top meanwhile would be lost or loop).
+pub fn hook(slot: *mut fn(&mut Cpu), fake: fn(&mut Cpu), prev: &std::sync::atomic::AtomicUsize) {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    static HOOKED: Mutex<Option<HashSet<usize>>> = Mutex::new(None);
+    let mut hooked = HOOKED.lock().unwrap_or_else(|p| p.into_inner());
+    if !hooked
+        .get_or_insert_with(HashSet::new)
+        .insert(fake as usize)
+    {
+        return;
+    }
+    // SAFETY: override slots are plain `fn` pointers; every test hooks them
+    // under this lock.
+    unsafe {
+        prev.store(*slot as usize, std::sync::atomic::Ordering::Relaxed);
+        *slot = fake;
+    }
+}
+
+/// What a gated fake runs with its gate off: the body [`hook`] found in the
+/// slot (`prev`), or `generated` if the fake was never hooked.
+pub fn fall_back(c: &mut Cpu, prev: &std::sync::atomic::AtomicUsize, generated: fn(&mut Cpu)) {
+    let p = prev.load(std::sync::atomic::Ordering::Relaxed);
+    if p == 0 {
+        return generated(c);
+    }
+    // SAFETY: `hook` stored a `fn(&mut Cpu)` read from an override slot.
+    let f = unsafe { std::mem::transmute::<usize, fn(&mut Cpu)>(p) };
+    f(c)
+}
+
+/// The `prev` cell of a fake that has no static of its own (fakes a macro
+/// stamps out without naming one): one leaked cell per fake, for [`hook`] to
+/// fill and [`fall_back`] to read. Fakes look it up on every gate-off call,
+/// so the common path is a shared read lock.
+pub fn prev_cell(fake: fn(&mut Cpu)) -> &'static std::sync::atomic::AtomicUsize {
+    use std::collections::HashMap;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::RwLock;
+    static CELLS: RwLock<Option<HashMap<usize, &'static AtomicUsize>>> = RwLock::new(None);
+    let key = fake as usize;
+    if let Some(cell) = CELLS
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .as_ref()
+        .and_then(|m| m.get(&key).copied())
+    {
+        return cell;
+    }
+    let mut cells = CELLS.write().unwrap_or_else(|p| p.into_inner());
+    *cells
+        .get_or_insert_with(HashMap::new)
+        .entry(key)
+        .or_insert_with(|| Box::leak(Box::new(AtomicUsize::new(0))))
+}

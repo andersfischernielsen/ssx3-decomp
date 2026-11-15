@@ -4,6 +4,7 @@
 use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -55,6 +56,11 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use Gt2Flag::Reg as Gt2R;
+use Gt2Flag::StackX1 as Gt2X1;
+use Gt2Flag::V0 as Gt2V0;
+use Gt2Miss::End as Gt2End;
+use Gt2Miss::Skip as Gt2Skip;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -204,6 +210,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0034_1aa0, anim_object_ctor, "AnimObject_ctor"),
     (0x0034_1cf0, anim_object_dtor, "AnimObject_dtor"),
     (0x0034_2718, anim_teeter_save, "AnimTeeter_Save"),
+    (0x0034_2c08, debounce_ctor_2, "Debounce_ctor_2"),
+    (0x0034_21a0, anim_teeter_ctor_3, "AnimTeeter_ctor"),
+    (
+        0x0033_9598,
+        cell_gather_type2_recursive,
+        "Cell_GatherType2Recursive",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -15289,6 +15302,984 @@ pub fn anim_object_dtor(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Debounce_ctor_2 (0x342c08)
+
+/// The object's debounce time, stored as the raw bits of an `int` (+0x2c).
+pub(crate) const DEBOUNCE_TIME_WORD: u32 = 0x2c;
+
+/// The object's mode word (+0x30).
+pub(crate) const DEBOUNCE_MODE_WORD: u32 = 0x30;
+
+/// The object's linked move node (`self->node`, +0x18).
+pub(crate) const DEBOUNCE_NODE: u32 = 0x18;
+
+/// A node's flags word (+8).
+pub(crate) const DEBOUNCE_NODE_FLAGS: u32 = 0x8;
+
+/// The definition passed to the constructor: `time` (`float`, +4), `f08` (+8)
+/// and `mode` (+0xc).
+pub(crate) const DEBOUNCE_DEF_TIME: u32 = 0x4;
+
+pub(crate) const DEBOUNCE_DEF_F08: u32 = 0x8;
+
+pub(crate) const DEBOUNCE_DEF_MODE: u32 = 0xc;
+
+/// `D_004A5B64` (gp+0x2a74), whose `+0x10` word is the tick-rate scale.
+#[cfg(test)]
+pub(crate) const DEBOUNCE_RATE_SCALE: u32 = 0x004a_5b64;
+
+/// `void* Debounce_ctor_2(self, list, node, def, src)` (0x342c08): the
+/// `ModObj` constructor with this object's vtable (`0x4906f0`), its debounce
+/// time (`def->time * *(int*)(D_004A5B64 + 0x10)`, truncated) at +0x2c and
+/// `def->f08` at +0x30, then takes over `src`. Finally the node flags follow
+/// `def->mode`: 0 clears bits 0-3, 1 sets bit 0 and bit 2 (clearing 1), and
+/// any other mode sets bit 2 (clearing 1) only when bits 0 and 1 are both set.
+/// Returns `self`. Frame 0x40 (s0 = def, s1 = src, s2 = self).
+pub fn debounce_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 29;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        c.g[S0][0] = c.g[A3][0]; // def
+        frame.save(c, S2, 0x10);
+        c.g[S2][0] = c.g[A0][0]; // self
+        frame.save(c, S1, 0x20);
+        c.g[A3][0] = c.g[A2][0]; // ctor node = our a2
+        c.g[S1][0] = c.g[T0][0]; // our a4 (the source node) = ctor list
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0; // ctor type
+        Callee {
+            addr: 0x0035_5280,
+            f: ee::s11::ModObj_ctor,
+        }
+        .call(c, 0x0034_2c34)?;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_add(0x2a74)).lw(c);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x6f0));
+        c.g[A1][0] = c.g[S1][0];
+        Addr(r32(c, S2).wrapping_add(0xc)).sw(c, c.g[V1][0]); // self->vt
+        c.g[A0][0] = c.g[S2][0];
+        // self->+0x2c = (int)(def->time * (float)*(int*)(D_004A5B64 + 0x10)).
+        c.lwc1(1, r32(c, V0).wrapping_add(0x10));
+        c.cvt_s_w(1, 1);
+        c.lwc1(0, r32(c, S0).wrapping_add(DEBOUNCE_DEF_TIME));
+        c.mul_s(0, 0, 1);
+        c.cvt_w_s(1, 0);
+        c.swc1(1, r32(c, S2).wrapping_add(DEBOUNCE_TIME_WORD));
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(DEBOUNCE_DEF_F08)).lw(c);
+        Addr(r32(c, S2).wrapping_add(DEBOUNCE_MODE_WORD)).sw(c, c.g[V0][0]);
+        Callee {
+            addr: 0x0035_5f10,
+            f: ee::s11::ModObj_TakeOverObject,
+        }
+        .call(c, 0x0034_2c70)?;
+
+        c.g[V1][0] = Addr(r32(c, S0).wrapping_add(DEBOUNCE_DEF_MODE)).lw(c);
+        c.g[V0][0] = 1;
+        // The `+1` tail block runs for every path but the plain `mode >= 2`
+        // one (which leaves the loop directly).
+        let mut tail = true;
+        if c.g[V1][0] != 0 {
+            // mode != 0
+            c.cycles += 2;
+            c.g[A1][0] = Addr(r32(c, S2).wrapping_add(DEBOUNCE_NODE)).lw(c);
+            if c.g[V1][0] != c.g[V0][0] {
+                // mode != 1: touch the flags only when both low bits are set.
+                c.cycles += 5;
+                c.g[V1][0] = 3;
+                c.g[A0][0] = Addr(r32(c, A1).wrapping_add(DEBOUNCE_NODE_FLAGS)).lw(c);
+                c.g[V0][0] = c.g[A0][0] & 3;
+                if c.g[V0][0] != c.g[V1][0] {
+                    c.g[V0][0] = c.g[S2][0];
+                    tail = false;
+                } else {
+                    c.cycles += 5;
+                    c.g[V0][0] = 0xffff_ffff_ffff_fffd; // clear bit 1
+                    c.g[V0][0] &= c.g[A0][0];
+                    c.g[V0][0] |= 0x4;
+                    Addr(r32(c, A1).wrapping_add(DEBOUNCE_NODE_FLAGS)).sw(c, c.g[V0][0]);
+                }
+            } else {
+                // mode == 1: flags |= 1, then flags = (flags & ~2) | 4.
+                c.cycles += 11;
+                c.g[V1][0] = 0xffff_ffff_ffff_fffd;
+                c.g[V0][0] = Addr(r32(c, A1).wrapping_add(DEBOUNCE_NODE_FLAGS)).lw(c);
+                c.g[V0][0] |= 0x1;
+                Addr(r32(c, A1).wrapping_add(DEBOUNCE_NODE_FLAGS)).sw(c, c.g[V0][0]);
+                c.g[A0][0] = Addr(r32(c, S2).wrapping_add(DEBOUNCE_NODE)).lw(c);
+                c.g[V0][0] = Addr(r32(c, A0).wrapping_add(DEBOUNCE_NODE_FLAGS)).lw(c);
+                c.g[V0][0] &= c.g[V1][0];
+                c.g[V0][0] |= 0x4;
+                Addr(r32(c, A0).wrapping_add(DEBOUNCE_NODE_FLAGS)).sw(c, c.g[V0][0]);
+            }
+        } else {
+            // mode == 0: clear bits 0-3.
+            c.cycles += 7;
+            c.g[A0][0] = Addr(r32(c, S2).wrapping_add(DEBOUNCE_NODE)).lw(c);
+            c.g[V1][0] = 0xffff_ffff_ffff_fff0;
+            c.g[V0][0] = Addr(r32(c, A0).wrapping_add(DEBOUNCE_NODE_FLAGS)).lw(c);
+            c.g[V0][0] &= c.g[V1][0];
+            Addr(r32(c, A0).wrapping_add(DEBOUNCE_NODE_FLAGS)).sw(c, c.g[V0][0]);
+        }
+        if tail {
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S2][0];
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// AnimTeeter_ctor (0x3421a0)
+
+/// `AnimObject_BaseCtor` (0x34d9b0), same shard.
+pub(crate) const ANIM_OBJECT_BASE_CTOR: Callee = Callee {
+    addr: 0x0034_d9b0,
+    f: ee::s11::AnimObject_BaseCtor,
+};
+
+/// `IntersectInfo_GetDuration` (0x351508), same shard.
+pub(crate) const INTERSECT_INFO_GET_DURATION: Callee = Callee {
+    addr: 0x0035_1508,
+    f: ee::s11::IntersectInfo_GetDuration,
+};
+
+/// The pool constants the teeter's rates scale by (gp-relative): two 30 Hz
+/// steps, the per-byte duration scale, and one more 30 Hz step.
+pub(crate) const POOL_RATE: u32 = 0x2b6c;
+
+pub(crate) const POOL_RATE_MAX: u32 = 0x2b68;
+
+pub(crate) const POOL_PER_BYTE: u32 = 0x2b64;
+
+pub(crate) const POOL_FRAME: u32 = 0x2b60;
+
+/// `void* AnimTeeter_ctor(AnimTeeter* self, int a1, char* obj, char* def)`
+/// (0x3421a0): set up the base animation object and copy the teeter's rate,
+/// speed and fade parameters out of its definition record.
+pub fn anim_teeter_ctor_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x40);
+        c.g[T0][0] = 0;
+        frame.save(c, 16, 0x30);
+        frame.save(c, 17, 0x20);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, 18, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S2][0] = c.g[A3][0];
+        c.g[A0][0] = sx(r32(c, S1).wrapping_add(0x30));
+        c.g[A3][0] = c.g[S0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0x4;
+        ANIM_OBJECT_BASE_CTOR.call(c, 0x0034_21d4)?;
+        c.g[V0][0] = 0x490000;
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x78)).lw(c);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x8f8));
+        c.mtc1(0, 2); // f2 = 0.0f (the "no instance" default)
+        c.sw(r32(c, S1).wrapping_add(0x50), c.g[V0][0]);
+        let no_instance = c.g[A0][0] == 0;
+        c.g[S0][0] = Addr(r32(c, S0).wrapping_add(0x80)).lw(c);
+        if !no_instance {
+            c.cycles += 3;
+            INTERSECT_INFO_GET_DURATION.call(c, 0x0034_21f8)?;
+            c.mov_s(2, 0); // f2 = duration
+        }
+        // setRate(self->f10, def->f20, duration): negative rates keep the
+        // duration, others are per-frame steps.
+        c.cycles += 6;
+        c.lwc1(1, r32(c, S2).wrapping_add(0x20));
+        c.mtc1(0, 0);
+        c.c_le_s(0, 1);
+        c.g[V0][0] = sx(r32(c, S1).wrapping_add(0x10));
+        if c.fcc() {
+            c.cycles += 3;
+            c.lwc1(0, r32(c, GP).wrapping_sub(POOL_RATE));
+            c.mul_s(0, 1, 0);
+        } else {
+            c.cycles += 1;
+            c.mov_s(0, 2);
+        }
+        // setRateMax(self->f14, def->f24, info): a negative rate takes the
+        // info record's +0x14 instead.
+        c.cycles += 7;
+        c.swc1(0, r32(c, V0));
+        c.mtc1(0, 0);
+        c.lwc1(1, r32(c, S2).wrapping_add(0x24));
+        c.c_lt_s(1, 0);
+        c.g[V0][0] = sx(r32(c, S1).wrapping_add(0x14));
+        if !c.fcc() {
+            c.cycles += 2;
+            c.lwc1(0, r32(c, GP).wrapping_sub(POOL_RATE_MAX));
+            c.mul_s(0, 1, 0);
+        } else {
+            c.cycles += 2;
+            c.lwc1(0, r32(c, S0).wrapping_add(0x14));
+        }
+        // The copied parameters.
+        c.cycles += 37;
+        c.swc1(0, r32(c, V0));
+        c.g[V1][0] = Addr(r32(c, GP).wrapping_add(0x2a74)).lw(c);
+        c.g[V0][0] = c.g[S1][0];
+        c.lwc1(0, r32(c, S2).wrapping_add(0x8));
+        c.lwc1(2, r32(c, GP).wrapping_sub(POOL_PER_BYTE));
+        c.swc1(0, r32(c, S1).wrapping_add(0xc));
+        c.lwc1(3, r32(c, GP).wrapping_sub(POOL_FRAME));
+        c.lwc1(1, r32(c, S2).wrapping_add(0x4));
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0x56)).lhu(c);
+        c.mul_s(1, 1, 2);
+        frame.restore(c, 16, 0x30);
+        c.g[A0][0] |= 0x1;
+        frame.restore_ra(c, 0);
+        c.swc1(1, r32(c, S1).wrapping_add(0x8));
+        c.lwc1(0, r32(c, S2).wrapping_add(0xc));
+        c.lwc1(1, r32(c, V1).wrapping_add(0x10));
+        c.cvt_s_w(1, 1);
+        c.mul_s(0, 0, 3);
+        c.div_s(0, 0, 1);
+        c.swc1(0, r32(c, S1).wrapping_add(0x18));
+        c.g[V1][0] = Addr(r32(c, S2).wrapping_add(0x1c)).lw(c);
+        c.sw(r32(c, S1).wrapping_add(0x2c), c.g[V1][0]);
+        c.lwc1(0, r32(c, S2).wrapping_add(0x14));
+        c.mul_s(0, 0, 3);
+        c.swc1(0, r32(c, S1).wrapping_add(0x24));
+        c.lwc1(1, r32(c, S2).wrapping_add(0x18));
+        c.swc1(1, r32(c, S1).wrapping_add(0x1c));
+        c.lwc1(0, r32(c, S2).wrapping_add(0x10));
+        c.sh(r32(c, S1).wrapping_add(0x56), c.g[A0][0]);
+        c.swc1(0, r32(c, S1).wrapping_add(0x20));
+        c.sw(r32(c, S1), 0);
+        c.sw(r32(c, S1).wrapping_add(0x4), 0);
+        c.sw(r32(c, S1).wrapping_add(0x28), 0);
+        frame.restore(c, 17, 0x20);
+        frame.restore(c, 18, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `Cell_GatherType2Subtree(node, ctx)` (0x00340b18): append a whole
+/// subtree's type-2 objects to `ctx`.
+pub(crate) const GT2_SUBTREE: Callee = Callee {
+    addr: 0x0034_0b18,
+    f: ee::s11::Cell_GatherType2Subtree,
+};
+
+/// `Cell_GatherType2Recursive` itself (through its generated alias, so the
+/// recursion goes through the override table once installed).
+pub(crate) const GT2_RECURSIVE: Callee = Callee {
+    addr: 0x0033_9598,
+    f: ee::s11::Cell_GatherType2Recursive,
+};
+
+/// Octree node: `child[8]` at +0, the type-2 object list at +0x28.
+pub(crate) const GT2_NODE_OBJS: u32 = 0x28;
+
+/// Where a flag a child test reads lives.
+#[derive(Clone, Copy)]
+pub(crate) enum Gt2Flag {
+    /// A callee-saved register holding the flag (`s7` = x0 overlaps, `fp` =
+    /// y1 overlaps, `s6` = x0 contained).
+    Reg(usize),
+    /// `v0`, loaded from the stack by the previous test's delay slot.
+    V0,
+    /// The x1-overlap word at `sp+0x10`, loaded first (one more cycle).
+    StackX1,
+}
+
+/// Where a failed overlap test goes.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Gt2Miss {
+    /// One cycle, then the next coordinate load (`Gt2Child::next`).
+    Skip,
+    /// Straight to the next child (the delay slot already loaded `next`).
+    End,
+}
+
+/// What the block leaves for the next child: `v0` = a sub-cell coordinate
+/// word (`sp+off`), or, for the last child, the restored `s0`.
+#[derive(Clone, Copy)]
+pub(crate) enum Gt2Next {
+    Coord(u32),
+    RestoreS0,
+}
+
+/// The register move in the delay slot of the last "contained" test.
+#[derive(Clone, Copy)]
+pub(crate) enum Gt2LastDelay {
+    /// `t0 = s0` on both paths.
+    T0,
+    /// `t0 = s0` only when the branch is taken (branch-likely).
+    T0IfTaken,
+    /// `a0 = s5` on both paths.
+    A0,
+}
+
+/// One child octant's visit, as the compiler laid it out (the eight blocks
+/// share their shape but not their register allocation or delay slots).
+pub(crate) struct Gt2Child {
+    /// Byte offset of the child pointer in the node.
+    slot: u32,
+    /// The sub-cell coordinate word to step (`sp+off += delta`) first; none
+    /// for the first child.
+    step: Option<(u32, i32)>,
+    /// The three overlap tests: flag, stack word loaded in the delay slot,
+    /// where a miss goes.
+    overlap: [(Gt2Flag, u32, Gt2Miss); 3],
+    /// The first two "contained" tests (flag, stack word loaded).
+    contain: [(Gt2Flag, u32); 2],
+    last_delay: Gt2LastDelay,
+    /// Cycles before the object-list loop.
+    list_cycles: u64,
+    next: Gt2Next,
+    /// The object-list loop head (event check); the subtree calls return
+    /// to `head + 0x3c + 0x14 * i`, the recursion to `head + 0xec`.
+    head: u32,
+}
+
+/// The eight children in visiting order (child 0, 1, 3, 2, 6, 7, 5, 4: the
+/// sub-cell coordinates on the stack walk z, y, z, x, z, y, z).
+/// Stack flags: +0x10 x1 overlap, +0x14 y0, +0x18 z0, +0x1c z1 overlap,
+/// +0x20 x1 contained, +0x24 y0, +0x28 y1, +0x2c z0, +0x30 z1 contained.
+pub(crate) const GT2_CHILDREN: [Gt2Child; 8] = [
+    Gt2Child {
+        slot: 0x0,
+        step: None,
+        overlap: [
+            (Gt2R(S7), 0x14, Gt2Skip),
+            (Gt2V0, 0x18, Gt2Skip),
+            (Gt2V0, 0xc, Gt2End),
+        ],
+        contain: [(Gt2R(S6), 0x24), (Gt2V0, 0x2c)],
+        last_delay: Gt2LastDelay::T0IfTaken,
+        list_cycles: 2,
+        next: Gt2Next::Coord(0xc),
+        head: 0x0033_99d8,
+    },
+    Gt2Child {
+        slot: 0x4,
+        step: Some((0xc, 1)),
+        overlap: [
+            (Gt2R(S7), 0x14, Gt2Skip),
+            (Gt2V0, 0x1c, Gt2Skip),
+            (Gt2V0, 0x8, Gt2End),
+        ],
+        contain: [(Gt2R(S6), 0x24), (Gt2V0, 0x30)],
+        last_delay: Gt2LastDelay::T0,
+        list_cycles: 1,
+        next: Gt2Next::Coord(0x8),
+        head: 0x0033_9b18,
+    },
+    Gt2Child {
+        slot: 0xc,
+        step: Some((0x8, 1)),
+        overlap: [
+            (Gt2R(S7), 0xc, Gt2End),
+            (Gt2R(FP), 0x1c, Gt2Skip),
+            (Gt2V0, 0xc, Gt2End),
+        ],
+        contain: [(Gt2R(S6), 0x28), (Gt2V0, 0x30)],
+        last_delay: Gt2LastDelay::T0,
+        list_cycles: 1,
+        next: Gt2Next::Coord(0xc),
+        head: 0x0033_9c58,
+    },
+    Gt2Child {
+        slot: 0x8,
+        step: Some((0xc, -1)),
+        overlap: [
+            (Gt2R(S7), 0x4, Gt2End),
+            (Gt2R(FP), 0x18, Gt2Skip),
+            (Gt2V0, 0x4, Gt2End),
+        ],
+        contain: [(Gt2R(S6), 0x28), (Gt2V0, 0x2c)],
+        last_delay: Gt2LastDelay::T0,
+        list_cycles: 1,
+        next: Gt2Next::Coord(0x4),
+        head: 0x0033_9d98,
+    },
+    Gt2Child {
+        slot: 0x18,
+        step: Some((0x4, 1)),
+        overlap: [
+            (Gt2X1, 0xc, Gt2End),
+            (Gt2R(FP), 0x18, Gt2Skip),
+            (Gt2V0, 0x20, Gt2Skip),
+        ],
+        contain: [(Gt2V0, 0x28), (Gt2V0, 0x2c)],
+        last_delay: Gt2LastDelay::T0,
+        list_cycles: 2,
+        next: Gt2Next::Coord(0xc),
+        head: 0x0033_9ee0,
+    },
+    Gt2Child {
+        slot: 0x1c,
+        step: Some((0xc, 1)),
+        overlap: [
+            (Gt2X1, 0x8, Gt2End),
+            (Gt2R(FP), 0x1c, Gt2Skip),
+            (Gt2V0, 0x20, Gt2Skip),
+        ],
+        contain: [(Gt2V0, 0x28), (Gt2V0, 0x30)],
+        last_delay: Gt2LastDelay::T0,
+        list_cycles: 2,
+        next: Gt2Next::Coord(0x8),
+        head: 0x0033_a028,
+    },
+    Gt2Child {
+        slot: 0x14,
+        step: Some((0x8, -1)),
+        overlap: [
+            (Gt2X1, 0x14, Gt2Skip),
+            (Gt2V0, 0x1c, Gt2Skip),
+            (Gt2V0, 0x20, Gt2Skip),
+        ],
+        contain: [(Gt2V0, 0x24), (Gt2V0, 0x30)],
+        last_delay: Gt2LastDelay::T0,
+        list_cycles: 2,
+        next: Gt2Next::Coord(0xc),
+        head: 0x0033_a170,
+    },
+    Gt2Child {
+        slot: 0x10,
+        step: Some((0xc, -1)),
+        overlap: [
+            (Gt2X1, 0x14, Gt2Skip),
+            (Gt2V0, 0x18, Gt2Skip),
+            (Gt2V0, 0x20, Gt2Skip),
+        ],
+        contain: [(Gt2V0, 0x24), (Gt2V0, 0x2c)],
+        last_delay: Gt2LastDelay::A0,
+        list_cycles: 2,
+        next: Gt2Next::RestoreS0,
+        head: 0x0033_a2b8,
+    },
+];
+
+/// `v0 = sp[off]` (a word load, sign-extended).
+pub(crate) fn gt2_stack_word(c: &mut Cpu, off: u32) {
+    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(off));
+}
+
+/// The load a child block ends with (see [`Gt2Next`]).
+pub(crate) fn gt2_next(c: &mut Cpu, next: Gt2Next) {
+    match next {
+        Gt2Next::Coord(off) => gt2_stack_word(c, off),
+        Gt2Next::RestoreS0 => c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xd0)),
+    }
+}
+
+/// A flag test's cycles and value.
+pub(crate) fn gt2_flag(c: &mut Cpu, flag: Gt2Flag) -> u64 {
+    match flag {
+        Gt2Flag::Reg(r) => {
+            c.cycles += 2;
+            c.g[r][0]
+        }
+        Gt2Flag::V0 => {
+            c.cycles += 2;
+            c.g[V0][0]
+        }
+        Gt2Flag::StackX1 => {
+            c.cycles += 3;
+            gt2_stack_word(c, 0x10);
+            c.g[V0][0]
+        }
+    }
+}
+
+/// Append the list of objects starting at `a2` to the gather context in
+/// `s1` (`list[(*count)++] = obj`), loop head `head`.
+pub(crate) fn gt2_append_list(c: &mut Cpu, head: u32) {
+    c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+    loop {
+        c.cycles += 10;
+        c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+        c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+        c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+        c.sw(c.g[V0][0] as u32, c.g[A2][0]);
+        c.sw(c.g[A1][0] as u32, c.g[V1][0]);
+        c.g[A2][0] = c.lw(c.g[A2][0] as u32);
+        if c.g[A2][0] == 0 {
+            return;
+        }
+        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// A child wholly inside the box (node in `s0`): append its objects and
+/// its children's whole subtrees to the collect context (`s1`).
+pub(crate) fn gt2_collect(c: &mut Cpu, ch: &Gt2Child) -> Flow {
+    c.cycles += 3;
+    c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(GT2_NODE_OBJS));
+    if c.g[A2][0] != 0 {
+        c.cycles += ch.list_cycles;
+        gt2_append_list(c, ch.head);
+        c.cycles += 1;
+    }
+    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+    let first_ret = ch.head + 0x3c;
+    for i in 0..7u32 {
+        c.cycles += 2;
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S1][0];
+            GT2_SUBTREE.call(c, first_ret + 0x14 * i)?;
+        }
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(4 * (i + 1)));
+    }
+    c.cycles += 2;
+    let last = c.g[A0][0];
+    gt2_next(c, ch.next);
+    if last != 0 {
+        c.cycles += 4;
+        c.g[A1][0] = c.g[S1][0];
+        GT2_SUBTREE.call(c, first_ret + 0x8c)?;
+        gt2_next(c, ch.next);
+    }
+    Ok(())
+}
+
+/// Visit one child octant: skip it when it is absent or misses the box,
+/// collect it whole when the box contains it, else recurse into it with the
+/// sub-cell on the stack.
+pub(crate) fn gt2_visit_child(c: &mut Cpu, ch: &Gt2Child) -> Flow {
+    let skip = 'visit: {
+        let sp = c.g[SP][0] as u32;
+        match ch.step {
+            None => {
+                c.cycles += 3;
+                c.g[S0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(ch.slot));
+                let absent = c.g[S0][0] == 0;
+                gt2_next(c, ch.next);
+                if absent {
+                    break 'visit false;
+                }
+            }
+            Some((off, delta)) => {
+                c.cycles += 4;
+                c.g[S0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(ch.slot));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(delta as u32));
+                let absent = c.g[S0][0] == 0;
+                c.sw(sp.wrapping_add(off), c.g[V0][0]);
+                if absent {
+                    break 'visit true;
+                }
+            }
+        }
+        for (flag, load, miss) in ch.overlap {
+            let v = gt2_flag(c, flag);
+            gt2_stack_word(c, load);
+            if v == 0 {
+                break 'visit miss == Gt2Miss::Skip;
+            }
+        }
+        let recurse_after_cycle = 'contained: {
+            for (flag, load) in ch.contain {
+                let v = gt2_flag(c, flag);
+                gt2_stack_word(c, load);
+                if v == 0 {
+                    break 'contained true;
+                }
+            }
+            c.cycles += 2;
+            let partial = c.g[V0][0] == 0;
+            match ch.last_delay {
+                Gt2LastDelay::T0 => c.g[T0][0] = c.g[S0][0],
+                Gt2LastDelay::T0IfTaken if partial => c.g[T0][0] = c.g[S0][0],
+                Gt2LastDelay::T0IfTaken => {}
+                Gt2LastDelay::A0 => c.g[A0][0] = c.g[S5][0],
+            }
+            if partial {
+                break 'contained false;
+            }
+            gt2_collect(c, ch)?;
+            break 'visit false;
+        };
+        if recurse_after_cycle {
+            c.cycles += 1;
+        }
+        // Recurse: (flag, ctx, ctx2, box, child, &sub).
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S5][0];
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A3][0] = c.g[S2][0];
+        c.g[T0][0] = c.g[S0][0];
+        c.g[T1][0] = c.g[SP][0];
+        GT2_RECURSIVE.call(c, ch.head + 0xec)?;
+        true
+    };
+    if skip {
+        c.cycles += 1;
+        gt2_next(c, ch.next);
+    }
+    Ok(())
+}
+
+/// The 0.2-cell margins (`.lit4`, one load per test).
+pub(crate) const GT2_MARGIN_X0: u32 = 0x2d40;
+
+pub(crate) const GT2_MARGIN_X1: u32 = 0x2d3c;
+
+pub(crate) const GT2_MARGIN_Y0: u32 = 0x2d38;
+
+pub(crate) const GT2_MARGIN_Y1: u32 = 0x2d34;
+
+pub(crate) const GT2_MARGIN_Z0: u32 = 0x2d30;
+
+pub(crate) const GT2_MARGIN_Z1: u32 = 0x2d2c;
+
+/// `f[margin] = *(gp - off)`.
+pub(crate) fn gt2_margin(c: &mut Cpu, f: usize, off: u32) {
+    c.lwc1(f, (c.g[GP][0] as u32).wrapping_sub(off));
+}
+
+/// Second half of a range test after `min < hi` held: `lo < box.max[axis]`
+/// (max at `box + max_off`) sets the stack flag `sp+flag_off` (v0 = 1).
+pub(crate) fn gt2_upper_word(c: &mut Cpu, lo: usize, max_off: u32, flag_off: u32) {
+    c.cycles += 5;
+    c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(max_off));
+    c.c_lt_s(lo, 0);
+    c.g[V0][0] = 0x1;
+    if c.fcc() {
+        c.cycles += 1;
+        c.sw((c.g[SP][0] as u32).wrapping_add(flag_off), c.g[V0][0]);
+    }
+}
+
+/// [`gt2_upper_word`] for a flag kept in a register.
+pub(crate) fn gt2_upper_reg(c: &mut Cpu, lo: usize, max_off: u32, reg: usize) {
+    c.cycles += 5;
+    c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(max_off));
+    c.c_lt_s(lo, 0);
+    if c.fcc() {
+        c.g[reg][0] = 0x1;
+    }
+}
+
+/// Sub-cell setup and the x tests: stores the sub-cell `{level - 1, 2x,
+/// 2y, 2z}` at `sp+0`, the scale `2^(level-1)` in f4, x0 overlap in s7
+/// (range f15..f16) and x1 overlap at `sp+0x10` (range f12..f14), box
+/// min x in f13. Entered with a1 = level, v0 = level + 0x7e.
+pub(crate) fn gt2_classify_x(c: &mut Cpu) {
+    let sp = c.g[SP][0] as u32;
+    c.cycles += 28;
+    c.g[A0][0] = c.lw((c.g[T1][0] as u32).wrapping_add(0x4));
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 23);
+    gt2_margin(c, 2, GT2_MARGIN_X0);
+    c.mtc1(V0, 4);
+    c.g[A0][0] = sx((c.g[A0][0] as u32) << 1);
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+    c.mtc1(A0, 0);
+    c.cvt_s_w(0, 0);
+    c.mtc1(V0, 1);
+    c.cvt_s_w(1, 1);
+    c.lwc1(3, c.g[S2][0] as u32);
+    c.g[V1][0] = c.lw((c.g[T1][0] as u32).wrapping_add(0xc));
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
+    c.g[V0][0] = c.lw((c.g[T1][0] as u32).wrapping_add(0x8));
+    c.sub_s(0, 0, 2);
+    c.add_s(1, 1, 2);
+    c.g[V1][0] = sx((c.g[V1][0] as u32) << 1);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+    c.sw(sp, c.g[A1][0]);
+    c.g[S7][0] = 0;
+    c.mul_s(15, 0, 4);
+    c.mul_s(16, 1, 4);
+    c.sw(sp + 0x8, c.g[V0][0]);
+    c.sw(sp + 0xc, c.g[V1][0]);
+    c.c_lt_s(3, 16);
+    let hit = c.fcc();
+    c.sw(sp + 0x4, c.g[A0][0]);
+    if hit {
+        gt2_upper_reg(c, 15, 0x10, S7);
+    }
+
+    c.cycles += 18;
+    gt2_stack_word(c, 0x4);
+    gt2_margin(c, 3, GT2_MARGIN_X1);
+    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2));
+    c.sw(sp + 0x10, 0);
+    c.mtc1(V1, 1);
+    c.cvt_s_w(1, 1);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+    c.mtc1(V0, 0);
+    c.cvt_s_w(0, 0);
+    c.lwc1(2, c.g[S2][0] as u32);
+    c.add_s(1, 1, 3);
+    c.mov_s(13, 2);
+    c.sub_s(0, 0, 3);
+    c.mul_s(14, 1, 4);
+    c.c_lt_s(2, 14);
+    let hit = c.fcc();
+    c.mul_s(12, 0, 4);
+    if hit {
+        gt2_upper_word(c, 12, 0x10, 0x10);
+    }
+}
+
+/// The y tests (entered with v1 = 2y): y0 overlap at `sp+0x14` (range
+/// f10..f11), y1 overlap in fp (f8..f9), box min y in f6.
+pub(crate) fn gt2_classify_y(c: &mut Cpu) {
+    let sp = c.g[SP][0] as u32;
+    c.cycles += 17;
+    gt2_margin(c, 3, GT2_MARGIN_Y0);
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+    c.sw(sp + 0x14, 0);
+    c.mtc1(V0, 1);
+    c.cvt_s_w(1, 1);
+    c.g[A0][0] = c.g[V1][0];
+    c.mtc1(V1, 0);
+    c.cvt_s_w(0, 0);
+    c.lwc1(2, (c.g[S2][0] as u32).wrapping_add(0x4));
+    c.add_s(1, 1, 3);
+    c.mov_s(6, 2);
+    c.sub_s(0, 0, 3);
+    c.mul_s(11, 1, 4);
+    c.c_lt_s(2, 11);
+    let hit = c.fcc();
+    c.mul_s(10, 0, 4);
+    if hit {
+        gt2_upper_word(c, 10, 0x14, 0x14);
+    }
+
+    c.cycles += 15;
+    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2));
+    gt2_margin(c, 2, GT2_MARGIN_Y1);
+    c.mtc1(V1, 1);
+    c.cvt_s_w(1, 1);
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+    c.mtc1(V0, 0);
+    c.cvt_s_w(0, 0);
+    c.g[FP][0] = 0;
+    c.add_s(1, 1, 2);
+    c.sub_s(0, 0, 2);
+    c.mul_s(9, 1, 4);
+    c.c_lt_s(6, 9);
+    let hit = c.fcc();
+    c.mul_s(8, 0, 4);
+    if hit {
+        gt2_upper_reg(c, 8, 0x14, FP);
+    }
+}
+
+/// The z tests (entered with v1 = 2z): z0 overlap at `sp+0x18` (range
+/// f3..f7), z1 overlap at `sp+0x1c` (f2..f1), box min z in f5.
+pub(crate) fn gt2_classify_z(c: &mut Cpu) {
+    let sp = c.g[SP][0] as u32;
+    c.cycles += 17;
+    gt2_margin(c, 3, GT2_MARGIN_Z0);
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+    c.sw(sp + 0x18, 0);
+    c.mtc1(V0, 1);
+    c.cvt_s_w(1, 1);
+    c.g[A0][0] = c.g[V1][0];
+    c.mtc1(V1, 0);
+    c.cvt_s_w(0, 0);
+    c.lwc1(2, (c.g[S2][0] as u32).wrapping_add(0x8));
+    c.add_s(1, 1, 3);
+    c.mov_s(5, 2);
+    c.sub_s(0, 0, 3);
+    c.mul_s(7, 1, 4);
+    c.c_lt_s(2, 7);
+    let hit = c.fcc();
+    c.mul_s(3, 0, 4);
+    if hit {
+        gt2_upper_word(c, 3, 0x18, 0x18);
+    }
+
+    c.cycles += 15;
+    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2));
+    gt2_margin(c, 2, GT2_MARGIN_Z1);
+    c.mtc1(V1, 1);
+    c.cvt_s_w(1, 1);
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+    c.mtc1(V0, 0);
+    c.cvt_s_w(0, 0);
+    c.sw(sp + 0x1c, 0);
+    c.add_s(1, 1, 2);
+    c.sub_s(0, 0, 2);
+    c.mul_s(1, 1, 4);
+    c.c_lt_s(5, 1);
+    let hit = c.fcc();
+    c.mul_s(2, 0, 4);
+    if hit {
+        gt2_upper_word(c, 2, 0x18, 0x1c);
+    }
+}
+
+/// The "wholly inside" tests (`min < lo && hi < max`, no margin change):
+/// x0 in s6, the rest at `sp+0x20..0x30` (x1, y0, y1, z0, z1).
+pub(crate) fn gt2_classify_contained(c: &mut Cpu) {
+    let sp = c.g[SP][0] as u32;
+    c.cycles += 4;
+    c.c_lt_s(13, 15);
+    c.g[S6][0] = 0;
+    if c.fcc() {
+        gt2_upper_reg(c, 16, 0x10, S6);
+    }
+    // (box min, lo, hi, box max offset, flag offset)
+    for (min, lo, hi, max_off, flag_off) in [
+        (13, 12, 14, 0x10, 0x20),
+        (6, 10, 11, 0x14, 0x24),
+        (6, 8, 9, 0x14, 0x28),
+        (5, 3, 7, 0x18, 0x2c),
+        (5, 2, 1, 0x18, 0x30),
+    ] {
+        c.cycles += 4;
+        c.c_lt_s(min, lo);
+        c.sw(sp + flag_off, 0);
+        if c.fcc() {
+            gt2_upper_word(c, hi, max_off, flag_off);
+        }
+    }
+}
+
+/// `void Cell_GatherType2Recursive(char* flag, GatherCtx* ctx, GatherCtx*
+/// collect, const float* box, OctNode* node, const Cell* cell)` (0x00339598):
+/// append the node's type-2 objects (list at +0x28) to `ctx`, then, unless
+/// the cell is at level 11, split it into its eight sub-cells (level - 1,
+/// coordinates doubled, edge `2^(level-1)`, widened by 0.2 cell on each
+/// side) and test each against the box (`min` at +0, `max` at +0x10): a
+/// child wholly inside is gathered whole into `collect`
+/// (`Cell_GatherType2Subtree` on its children, its own list inlined), a
+/// child overlapping it is recursed into, others are skipped. A gather
+/// context is `{ void** list; int* count; }`.
+pub fn cell_gather_type2_recursive(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xe0));
+        let sp = c.g[SP][0] as u32;
+        c.sq(17, sp + 0xc0);
+        c.sq(18, sp + 0xb0);
+        c.g[S1][0] = c.g[A2][0];
+        c.sq(19, sp + 0xa0);
+        c.g[S2][0] = c.g[A3][0];
+        c.sq(20, sp + 0x90);
+        c.g[S3][0] = c.g[A1][0];
+        c.sq(21, sp + 0x80);
+        c.g[S4][0] = c.g[T0][0];
+        c.sq(16, sp + 0xd0);
+        c.sq(22, sp + 0x70);
+        c.sq(23, sp + 0x60);
+        c.sq(30, sp + 0x50);
+        c.sd(sp + 0x40, c.g[RA][0]);
+        // The node's own objects go to `ctx` (s3).
+        c.g[T0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(GT2_NODE_OBJS));
+        c.g[S5][0] = c.g[A0][0];
+        if c.g[T0][0] != 0 {
+            c.cycles += 2;
+            c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+            loop {
+                c.cycles += 10;
+                c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+                c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                c.sw(c.g[V0][0] as u32, c.g[T0][0]);
+                c.sw(c.g[A1][0] as u32, c.g[V1][0]);
+                c.g[T0][0] = c.lw(c.g[T0][0] as u32);
+                if c.g[T0][0] == 0 {
+                    break;
+                }
+                c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+                if event_due(c) {
+                    deliver_event_here(c, 0x0033_95e8);
+                }
+            }
+        }
+        'epilogue: {
+            'leaf: {
+                // Level 11 is the deepest: no children to visit.
+                c.cycles += 4;
+                c.g[A1][0] = c.lw(c.g[T1][0] as u32);
+                c.g[V0][0] = 0xb;
+                let leaf = c.g[A1][0] == c.g[V0][0];
+                c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7e));
+                if leaf {
+                    break 'leaf;
+                }
+                gt2_classify_x(c);
+                // Any axis on which neither half overlaps the box: done
+                // (each test restores s0 in its delay slot).
+                c.cycles += 2;
+                let ox0 = c.g[S7][0] != 0;
+                c.g[V1][0] = c.lw(sp + 0x8);
+                if !ox0 {
+                    c.cycles += 3;
+                    gt2_stack_word(c, 0x10);
+                    let ox1 = c.g[V0][0] != 0;
+                    c.lq(16, sp + 0xd0);
+                    if !ox1 {
+                        break 'epilogue;
+                    }
+                }
+                gt2_classify_y(c);
+                c.cycles += 3;
+                gt2_stack_word(c, 0x14);
+                let oy0 = c.g[V0][0] != 0;
+                c.g[V1][0] = c.lw(sp + 0xc);
+                if !oy0 {
+                    c.cycles += 2;
+                    let oy1 = c.g[FP][0] != 0;
+                    c.lq(16, sp + 0xd0);
+                    if !oy1 {
+                        break 'epilogue;
+                    }
+                }
+                gt2_classify_z(c);
+                c.cycles += 3;
+                gt2_stack_word(c, 0x18);
+                let oz0 = c.g[V0][0] != 0;
+                gt2_stack_word(c, 0x1c);
+                if !oz0 {
+                    c.cycles += 2;
+                    let oz1 = c.g[V0][0] != 0;
+                    c.lq(16, sp + 0xd0);
+                    if !oz1 {
+                        break 'epilogue;
+                    }
+                }
+                gt2_classify_contained(c);
+                // (The last child restores s0 itself, skipped or not.)
+                for ch in &GT2_CHILDREN {
+                    gt2_visit_child(c, ch)?;
+                }
+                break 'epilogue;
+            }
+            c.cycles += 1;
+            c.lq(16, sp + 0xd0);
+        }
+        c.cycles += 11;
+        c.lq(17, sp + 0xc0);
+        c.lq(18, sp + 0xb0);
+        c.lq(19, sp + 0xa0);
+        c.lq(20, sp + 0x90);
+        c.lq(21, sp + 0x80);
+        c.lq(22, sp + 0x70);
+        c.lq(23, sp + 0x60);
+        c.lq(30, sp + 0x50);
+        c.g[RA][0] = c.ld(sp + 0x40);
+        c.g[SP][0] = sx(sp.wrapping_add(0xe0));
+        ret(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -17492,6 +18483,275 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(me);
                 c.g[A1][0] = (r.next_u32() & 0xff) as u64;
                 c.pc = 0x0034_1cf0;
+            },
+        );
+    }
+
+    /// `Debounce_ctor_2` runs the real `ModObj` constructor chain (its
+    /// `WorldObj` and sync-process fixtures mirror `mod_obj_ctor_matches`):
+    /// definitions with mode 0, 1 and >=2, node flags with the focus bit and
+    /// with or without both low bits set, and an empty `a4` source for the
+    /// take-over.
+    #[test]
+    fn debounce_ctor_2_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA, GAME_GP};
+        const SELF: u32 = DATA + 0x100;
+        const NODE: u32 = DATA + 0x200;
+        const DEF: u32 = DATA + 0x300;
+        const PROCS: u32 = DATA + 0x1000;
+        const TAILS: u32 = DATA + 0x1400;
+        const WORLD: u32 = DATA + 0x2000;
+        const FOCUS: u32 = DATA + 0x3000;
+        const SCALE: u32 = DATA + 0x4000;
+        check(
+            ee::s11::f_00342c08__generated,
+            debounce_ctor_2,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_2c08, 0);
+                c.pc = 0x0034_2c08;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                fill(c, &mut r, SELF, 0x10);
+                fill(c, &mut r, NODE, 0x10);
+                let flags = (r.next_u32() & !0xf)
+                    | if seed % 4 == 0 { 0x100 } else { 0 }
+                    | if seed % 2 == 0 { 3 } else { (seed / 8) % 3 };
+                w(c, NODE + DEBOUNCE_NODE_FLAGS, flags);
+                w(c, GAME_GP + 0x2898 + 4, PROCS);
+                for i in 0..4 {
+                    w(c, PROCS + 0x44 * i, r.next_u32());
+                    w(c, PROCS + 0x44 * i + 8, TAILS + 0x40 * i);
+                    w(c, PROCS + 0x44 * i + 0x28, TAILS + 0x40 * i + 0x20);
+                }
+                fill(c, &mut r, 0x0044_aff0, 0x20);
+                // World -> game -> race -> focus manager.
+                w(c, GAME_GP - 0x848, WORLD);
+                w(c, WORLD + 0x84, WORLD + 0x100);
+                w(c, WORLD + 0x100 + 0xc, WORLD + 0x200);
+                w(c, WORLD + 0x200 + 0xa4, FOCUS);
+                w(
+                    c,
+                    FOCUS + 0xd4,
+                    if seed % 3 == 0 { 0 } else { r.next_u32() },
+                );
+                w(c, FOCUS + 0xd8, r.next_u32() % 8);
+                // The definition: a time, the +8 word and the mode.
+                w(c, DEF + DEBOUNCE_DEF_TIME, r.f32(8.0));
+                w(c, DEF + DEBOUNCE_DEF_F08, r.next_u32());
+                w(c, DEF + DEBOUNCE_DEF_MODE, ((seed / 4) % 3) as u32);
+                // The tick-rate scale pointer and its value.
+                w(c, DEBOUNCE_RATE_SCALE, SCALE);
+                w(
+                    c,
+                    SCALE + 0x10,
+                    [0, 1, 2, 60, u32::MAX][(seed % 5) as usize],
+                );
+                // The process-list index, as in `mod_obj_ctor_matches`: it
+                // reaches `ProcessList_Add` as a byte offset into PROCS.
+                let list = (seed % 4) as u64;
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = list;
+                c.g[A2][0] = sx(NODE);
+                c.g[A3][0] = sx(DEF);
+                c.g[T0][0] = 0; // no source node: the take-over takes its empty path
+            },
+        );
+    }
+
+    pub(crate) use crate::game::animation::rideranim::tests::CTRL;
+    pub(crate) use crate::game::animation::rideranim::tests::MAGIC;
+
+    pub(crate) use crate::game::animation::rideranim::tests::active;
+    pub(crate) use crate::game::animation::rideranim::tests::chain;
+    pub(crate) use crate::game::animation::rideranim::tests::fake_ret;
+    pub(crate) use crate::game::animation::rideranim::tests::install;
+
+    // -- AnimTeeter_ctor -----------------------------------------------------
+
+    pub(crate) fn fake_anim_object_base_ctor(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 4, fake_anim_object_base_ctor);
+        }
+        fake_ret(c, 9);
+    }
+
+    pub(crate) fn fake_intersect_info_get_duration(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 5, fake_intersect_info_get_duration);
+        }
+        c.f[0] = c.bus.read32(CTRL + 8);
+        c.g[V0][0] = c.bus.read32(CTRL + 0xc) as u64;
+        c.cycles += 7;
+        let ra = c.g[RA][0] as u32;
+        c.pc = ra;
+    }
+
+    #[test]
+    fn anim_teeter_ctor_matches() {
+        install(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_0034D9B0),
+            fake_anim_object_base_ctor,
+            4,
+        );
+        install(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_00351508),
+            fake_intersect_info_get_duration,
+            5,
+        );
+        check(
+            ee::s11::f_003421a0__generated,
+            anim_teeter_ctor_3,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0034_21a0, 2);
+                let (self_, obj, def, info, inst, dur) = (
+                    DATA + 0x1000,
+                    DATA + 0x2000,
+                    DATA + 0x3000,
+                    DATA + 0x4000,
+                    DATA + 0x5000,
+                    DATA + 0x6000,
+                );
+                c.g[A0][0] = self_ as u64;
+                c.g[A1][0] = (DATA + 0x900) as u64;
+                c.g[A2][0] = obj as u64;
+                c.g[A3][0] = def as u64;
+                c.bus
+                    .write32(self_ + 0x78, if seed % 3 == 0 { 0 } else { inst });
+                c.bus.write16(self_ + 0x56, r.next_u32() as u16);
+                c.bus.write32(obj + 0x80, info);
+                for off in [0x4u32, 0x8, 0xc, 0x10, 0x14, 0x18, 0x1c, 0x20, 0x24] {
+                    c.bus.write32(def + off, r.edge_f32());
+                }
+                c.bus.write32(info + 0x14, r.edge_f32());
+                // The 30 Hz and 1e-6 pools and the pool-info global.
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x2b6c), 0.033_333_335f32.to_bits());
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x2b68), 0.033_333_335f32.to_bits());
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x2b60), 0.033_333_335f32.to_bits());
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x2b64), 1.0e-6f32.to_bits());
+                c.bus.write32(GAME_GP.wrapping_add(0x2a74), dur);
+                c.bus.write32(dur + 0x10, 1 + r.next_u32() % 30);
+                c.bus.write32(CTRL, MAGIC);
+                c.bus.write32(CTRL + 8, r.edge_f32());
+                c.bus.write32(CTRL + 0xc, r.next_u32());
+                c.pc = 0x0034_21a0;
+            },
+        );
+    }
+
+    /// Fixture octree: a bump allocator for nodes and object lists.
+    pub(crate) struct Gt2Arena {
+        nodes: u32,
+        objs: u32,
+    }
+
+    /// A list of 0..3 objects (`next` at +0), or 0.
+    pub(crate) fn gt2_obj_list(c: &mut Cpu, r: &mut Rng, a: &mut Gt2Arena) -> u32 {
+        let mut head = 0;
+        for _ in 0..r.next_u32() % 4 {
+            let obj = a.objs;
+            a.objs += 0x10;
+            c.bus.write32(obj, head);
+            c.bus.write32(obj + 4, r.next_u32());
+            head = obj;
+        }
+        head
+    }
+
+    /// A node with random children down to `depth` more levels.
+    pub(crate) fn gt2_node(c: &mut Cpu, r: &mut Rng, a: &mut Gt2Arena, depth: u32) -> u32 {
+        let node = a.nodes;
+        a.nodes += 0x40;
+        for i in 0..8 {
+            let child = if depth > 0 && r.next_u32() % 3 != 0 {
+                gt2_node(c, r, a, depth - 1)
+            } else {
+                0
+            };
+            c.bus.write32(node + 4 * i, child);
+        }
+        c.bus.write32(node + 0x20, r.next_u32());
+        c.bus.write32(node + 0x24, r.next_u32());
+        let list = gt2_obj_list(c, r, a);
+        c.bus.write32(node + GT2_NODE_OBJS, list);
+        node
+    }
+
+    /// Gathers type-2 objects from a random two-level octree against a box
+    /// chosen per axis (whole, either half, a margin edge, the middle, or
+    /// disjoint), so every child is skipped, collected or recursed into on
+    /// some seed; level 11 stops at the node's own list.
+    #[test]
+    fn cell_gather_type2_recursive_matches() {
+        check(
+            ee::s11::f_00339598__generated,
+            cell_gather_type2_recursive,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x9e37_79b9_7f4a_7c15 ^ (seed as u64) << 8 ^ 0x9598);
+                scramble(c, &mut r);
+                c.pc = 0x0033_9598;
+                c.g[GP][0] = GAME_GP as u64;
+                for off in [
+                    GT2_MARGIN_X0,
+                    GT2_MARGIN_X1,
+                    GT2_MARGIN_Y0,
+                    GT2_MARGIN_Y1,
+                    GT2_MARGIN_Z0,
+                    GT2_MARGIN_Z1,
+                ] {
+                    c.bus.write32(GAME_GP - off, 0.2f32.to_bits());
+                }
+                // Gather contexts `{ list, count* }`; the caller often passes the
+                // same one twice.
+                let (ctx, ctx2) = (DATA + 0x100, DATA + 0x200);
+                c.bus.write32(ctx, DATA + 0x4000);
+                c.bus.write32(ctx + 4, DATA + 0x110);
+                c.bus.write32(DATA + 0x110, r.next_u32() % 4);
+                c.bus.write32(ctx2, DATA + 0x6000);
+                c.bus.write32(ctx2 + 4, DATA + 0x210);
+                c.bus.write32(DATA + 0x210, r.next_u32() % 4);
+                let mut arena = Gt2Arena {
+                    nodes: DATA + 0x1_0000,
+                    objs: DATA + 0x2_0000,
+                };
+                let root = gt2_node(c, &mut r, &mut arena, 2);
+                // The cell and the box.
+                let (cell, bx) = (DATA + 0x300, DATA + 0x400);
+                let level = seed % 12;
+                let coords = [r.next_u32() % 4, r.next_u32() % 4, r.next_u32() % 4];
+                c.bus.write32(cell, level);
+                for k in 0..3u32 {
+                    c.bus.write32(cell + 4 + 4 * k, coords[k as usize]);
+                }
+                let s = f32::from_bits((level + 0x7e) << 23);
+                for k in 0..3u32 {
+                    let at = |u: f32| (2.0 * coords[k as usize] as f32 + u) * s;
+                    let (min, max) = match r.next_u32() % 9 {
+                        0 => (-1.0e6, 1.0e6),
+                        1 => (at(0.5), 1.0e6),
+                        2 => (-1.0e6, at(0.5)),
+                        3 => (at(1.5), 1.0e6),
+                        4 => (1.0e6, 1.0e6 + 1.0),
+                        5 => (-1.0e6, at(1.0)),
+                        6 => (at(1.0), 1.0e6),
+                        7 => (-1.0e6, at(-0.5)),
+                        _ => (at(0.3), at(1.7)),
+                    };
+                    c.bus.write32(bx + 4 * k, f32::to_bits(min));
+                    c.bus.write32(bx + 0x10 + 4 * k, f32::to_bits(max));
+                }
+                c.g[A0][0] = sx(DATA + 0x800);
+                c.g[A1][0] = sx(ctx);
+                c.g[A2][0] = sx(if seed % 2 == 0 { ctx } else { ctx2 });
+                c.g[A3][0] = sx(bx);
+                c.g[T0][0] = sx(root);
+                c.g[T1][0] = sx(cell);
             },
         );
     }

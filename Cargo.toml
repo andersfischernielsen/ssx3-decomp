@@ -32,7 +32,6 @@ repository = "https://github.com/andersfischernielsen/ssx3-decomp"
 
 [workspace.dependencies]
 ssx3-core = { path = "crates/ssx3-core" }
-ssx3-gs = { path = "crates/ssx3-gs" }
 
 [profile.release]
 opt-level = 3

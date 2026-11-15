@@ -9,7 +9,6 @@
 //! is the recorded `Cmd::Post` (as `crate::capture::capture_post` reads
 //! it), and neither cursor moves.
 
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;
 use ssx3_render::direct::{Cmd, PostKind, Recorded};
 

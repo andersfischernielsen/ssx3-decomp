@@ -6,8 +6,10 @@ use crate::abi::r32;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::camera::script::scriptcontroller::vslot;
@@ -129,6 +131,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         wscript_man_process_pending_request,
         "WScriptMan_ProcessPendingRequest",
     ),
+    (0x0030_9270, wscript_man_update, "WScriptMan_Update"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1897,6 +1900,367 @@ pub fn wscript_man_process_pending_request(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// WScriptMan_Update (0x309270)
+
+/// Script manager fields: the five per-frame counters cleared on entry, the
+/// pending-command list (`count` then 12-byte commands, copied whole: 0x184
+/// bytes), the world reference, the current lookup result and process, the
+/// process lists.
+pub(crate) const WSU_COUNTERS: [u32; 5] = [0x4, 0x10, 0x1c, 0x28, 0x34];
+
+pub(crate) const WSU_COMMANDS: u32 = 0x40;
+
+pub(crate) const WSU_COMMANDS_END: u32 = 0x1c0;
+
+pub(crate) const WSU_WORLD_REF: u32 = 0x28c;
+
+pub(crate) const WSU_LOOKUP: u32 = 0x290;
+
+pub(crate) const WSU_CURRENT: u32 = 0x2a4;
+
+pub(crate) const WSU_RUNNING: u32 = 0x2b4;
+
+pub(crate) const WSU_FIRST_RUNNING: u32 = 0x2b8;
+
+pub(crate) const WSU_STARTING: u32 = 0x2bc;
+
+/// A process's next link.
+pub(crate) const WSU_PROC_NEXT: u32 = 0x18;
+
+/// Command flags: dispatch to the process, forward to its task.
+pub(crate) const WSU_DISPATCH: u64 = 0x20000;
+
+pub(crate) const WSU_FORWARD: u64 = 0x10000;
+
+pub(crate) const WSU_PROCESS_PENDING: Callee = Callee {
+    addr: 0x0030_9118,
+    f: ee::s10::WScriptMan_ProcessPendingRequest,
+};
+
+pub(crate) const WSU_POP_FRONT: Callee = Callee {
+    addr: 0x0030_b208,
+    f: ee::s10::WScriptProcessList_PopFront,
+};
+
+pub(crate) const WSU_PUSH_FRONT: Callee = Callee {
+    addr: 0x0030_b260,
+    f: ee::s10::WScriptProcessList_PushFront,
+};
+
+pub(crate) const WSU_START_PROCESS: Callee = Callee {
+    addr: 0x0030_9750,
+    f: ee::s10::WScriptMan_StartProcess,
+};
+
+pub(crate) const WSU_DISPATCH_EVENT: Callee = Callee {
+    addr: 0x0030_78c0,
+    f: ee::s10::WScriptProcess_DispatchEvent,
+};
+
+pub(crate) const WSU_FORWARD_EVENT: Callee = Callee {
+    addr: 0x0030_7a10,
+    f: ee::s10::WScriptProcess_ForwardEventToTask,
+};
+
+pub(crate) const WSU_PROCESS_UPDATE: Callee = Callee {
+    addr: 0x0030_77f8,
+    f: ee::s10::WScriptProcess_Update,
+};
+
+/// `void WScriptMan_Update(WScriptMan* self)` (0x309270): the script
+/// manager's frame. Handle the pending request, clear the five counters,
+/// move every starting process to the running list and start it, then take
+/// the frame's command list (copied to the stack, the original cleared):
+/// for each command, look up its world object when the command's type is 0
+/// (`self+0x290`), and hand it to every running process (dispatch and/or
+/// forward to its task, by the command's flags, with `self+0x2a4` = the
+/// process). Finally update every running process.
+///
+/// Dispatcher-shaped: an event at a loop back edge can unwind, and the
+/// function is re-entered at that loop head (0x3092b8, 0x3092f4, 0x30934c,
+/// 0x309398, 0x309418, 0x309480) with its state in the registers.
+pub fn wscript_man_update(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame { size: 0x220 };
+        let s2 = |c: &Cpu| r32(c, S2);
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                0x0030_9270 => {
+                    c.cycles += 18;
+                    let _ = Frame::open(c, 0x220);
+                    frame.save(c, S2, 0x1f0);
+                    frame.save(c, S0, 0x210);
+                    frame.save(c, S1, 0x200);
+                    frame.save(c, S3, 0x1e0);
+                    frame.save(c, S4, 0x1d0);
+                    frame.save(c, S5, 0x1c0);
+                    frame.save(c, S6, 0x1b0);
+                    frame.save(c, S7, 0x1a0);
+                    frame.save_ra(c, 0x190);
+                    c.g[S2][0] = c.g[A0][0];
+                    WSU_PROCESS_PENDING.call(c, 0x0030_92a0)?;
+                    for off in WSU_COUNTERS {
+                        Addr(s2(c)).off(off).sw(c, 0);
+                    }
+                    pc = 0x0030_92cc;
+                }
+                // Start the next process taken off the starting list.
+                0x0030_92b8 => {
+                    c.cycles += 5;
+                    c.g[A1][0] = c.g[S0][0];
+                    WSU_PUSH_FRONT.call(c, 0x0030_92c0)?;
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = c.g[S2][0];
+                    WSU_START_PROCESS.call(c, 0x0030_92cc)?;
+                    pc = 0x0030_92cc;
+                }
+                0x0030_92cc => {
+                    c.cycles += 5;
+                    c.g[A0][0] = sx(s2(c).wrapping_add(WSU_STARTING));
+                    WSU_POP_FRONT.call(c, 0x0030_92d4)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    if c.g[S0][0] != 0 {
+                        c.g[A0][0] = sx(s2(c).wrapping_add(WSU_RUNNING));
+                        if back_edge_unwinds(c, 0x0030_92b8) {
+                            return Ok(());
+                        }
+                        pc = 0x0030_92b8;
+                        continue;
+                    }
+                    // Copy the command list to the stack (unaligned or
+                    // doubleword copies, 0x20 bytes a step).
+                    c.cycles += 4;
+                    c.g[V1][0] = sx(s2(c).wrapping_add(WSU_COMMANDS));
+                    c.g[V0][0] = c.g[V1][0] & 7;
+                    let aligned = c.g[V0][0] == 0;
+                    c.g[A0][0] = c.g[SP][0];
+                    c.cycles += 1;
+                    c.g[V0][0] = sx(s2(c).wrapping_add(WSU_COMMANDS_END));
+                    pc = if aligned { 0x0030_934c } else { 0x0030_92f4 };
+                }
+                0x0030_92f4 => {
+                    c.cycles += 19;
+                    let (src, dst) = (r32(c, V1), r32(c, A0));
+                    for (i, reg) in [A1, A2, A3, T0].into_iter().enumerate() {
+                        let o = 8 * i as u32;
+                        c.ldl(reg, src.wrapping_add(o + 7));
+                        c.ldr(reg, src.wrapping_add(o));
+                    }
+                    for (i, reg) in [A1, A2, A3, T0].into_iter().enumerate() {
+                        let o = 8 * i as u32;
+                        c.sdl(reg, dst.wrapping_add(o + 7));
+                        c.sdr(reg, dst.wrapping_add(o));
+                    }
+                    c.g[V1][0] = sx(src.wrapping_add(0x20));
+                    c.g[A0][0] = sx(dst.wrapping_add(0x20));
+                    if c.g[V1][0] != c.g[V0][0] {
+                        if back_edge_unwinds(c, 0x0030_92f4) {
+                            return Ok(());
+                        }
+                        continue;
+                    }
+                    c.cycles += 2;
+                    pc = 0x0030_9378;
+                }
+                0x0030_934c => {
+                    c.cycles += 11;
+                    let (src, dst) = (r32(c, V1), r32(c, A0));
+                    for (i, reg) in [A1, A2, A3, T0].into_iter().enumerate() {
+                        c.g[reg][0] = c.ld(src.wrapping_add(8 * i as u32));
+                    }
+                    for (i, reg) in [A1, A2, A3, T0].into_iter().enumerate() {
+                        c.sd(dst.wrapping_add(8 * i as u32), c.g[reg][0]);
+                    }
+                    c.g[V1][0] = sx(src.wrapping_add(0x20));
+                    c.g[A0][0] = sx(dst.wrapping_add(0x20));
+                    if c.g[V1][0] != c.g[V0][0] {
+                        if back_edge_unwinds(c, 0x0030_934c) {
+                            return Ok(());
+                        }
+                        continue;
+                    }
+                    pc = 0x0030_9378;
+                }
+                0x0030_9378 => {
+                    // The last word, clear the list, and walk the commands.
+                    c.cycles += 6;
+                    c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+                    let v = c.g[V0][0];
+                    Addr(r32(c, A0)).sw(c, v);
+                    Addr(s2(c)).off(WSU_COMMANDS).sw(c, 0);
+                    c.g[V0][0] = Addr(sp(c)).lw(c);
+                    c.g[A2][0] = 0;
+                    if (c.g[V0][0] as i64) <= 0 {
+                        pc = 0x0030_9470;
+                        continue;
+                    }
+                    c.cycles += 2;
+                    c.g[S7][0] = 0xc;
+                    pc = 0x0030_9398;
+                }
+                // Command a2 (s3 = &commands[a2]).
+                0x0030_9398 => {
+                    c.cycles += 6;
+                    c.mult(0, V0, A2, S7);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(4));
+                    c.g[S3][0] = sx(sp(c).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = Addr(r32(c, S3)).lhu(c);
+                    if c.g[V1][0] == 0 {
+                        wsu_lookup(c);
+                    }
+                    c.g[S0][0] = Addr(s2(c)).off(WSU_FIRST_RUNNING).lw(c);
+                    c.cycles += 2;
+                    c.g[S4][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+                    if c.g[S0][0] == 0 {
+                        pc = 0x0030_9458;
+                        continue;
+                    }
+                    c.cycles += 4;
+                    c.g[S6][0] = WSU_DISPATCH;
+                    c.g[S5][0] = WSU_FORWARD;
+                    c.g[S1][0] = c.g[S0][0];
+                    pc = 0x0030_9418;
+                }
+                // Hand the command to process s1 (s0 = the next one).
+                0x0030_9418 => {
+                    c.cycles += 5;
+                    c.g[V0][0] = Addr(r32(c, S3)).lw(c);
+                    c.g[S0][0] = Addr(r32(c, S0)).off(WSU_PROC_NEXT).lw(c);
+                    c.g[V0][0] &= c.g[S6][0];
+                    let v = c.g[S1][0];
+                    Addr(s2(c)).off(WSU_CURRENT).sw(c, v);
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[S1][0];
+                        c.g[A1][0] = c.g[S3][0];
+                        WSU_DISPATCH_EVENT.call(c, 0x0030_9438)?;
+                    }
+                    c.cycles += 4;
+                    c.g[V0][0] = Addr(r32(c, S3)).lw(c);
+                    c.g[V0][0] &= c.g[S5][0];
+                    c.g[A0][0] = c.g[S1][0];
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 2;
+                        c.g[A1][0] = c.g[S3][0];
+                        WSU_FORWARD_EVENT.call(c, 0x0030_9450)?;
+                    }
+                    c.cycles += 2;
+                    if c.g[S0][0] != 0 {
+                        c.g[S1][0] = c.g[S0][0];
+                        if back_edge_unwinds(c, 0x0030_9418) {
+                            return Ok(());
+                        }
+                        continue;
+                    }
+                    pc = 0x0030_9458;
+                }
+                0x0030_9458 => {
+                    c.cycles += 6;
+                    c.g[V0][0] = Addr(sp(c)).lw(c);
+                    c.g[A2][0] = c.g[S4][0];
+                    Addr(s2(c)).off(WSU_LOOKUP).sw(c, 0);
+                    c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    Addr(s2(c)).off(WSU_CURRENT).sw(c, 0);
+                    if c.g[V0][0] != 0 {
+                        if back_edge_unwinds(c, 0x0030_9398) {
+                            return Ok(());
+                        }
+                        pc = 0x0030_9398;
+                        continue;
+                    }
+                    pc = 0x0030_9470;
+                }
+                0x0030_9470 => {
+                    c.cycles += 3;
+                    c.g[S0][0] = Addr(s2(c)).off(WSU_FIRST_RUNNING).lw(c);
+                    if c.g[S0][0] == 0 {
+                        Addr(s2(c)).off(WSU_CURRENT).sw(c, 0);
+                        pc = 0x0030_949c;
+                        continue;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[S0][0];
+                    pc = 0x0030_9480;
+                }
+                // Update process v0 (s0 = the next one).
+                0x0030_9480 => {
+                    c.cycles += 6;
+                    c.g[S0][0] = Addr(r32(c, S0)).off(WSU_PROC_NEXT).lw(c);
+                    c.g[A0][0] = c.g[V0][0];
+                    let v = c.g[V0][0];
+                    Addr(s2(c)).off(WSU_CURRENT).sw(c, v);
+                    WSU_PROCESS_UPDATE.call(c, 0x0030_9490)?;
+                    c.g[V0][0] = c.g[S0][0];
+                    if c.g[S0][0] != 0 {
+                        if back_edge_unwinds(c, 0x0030_9480) {
+                            return Ok(());
+                        }
+                        continue;
+                    }
+                    c.cycles += 1;
+                    Addr(s2(c)).off(WSU_CURRENT).sw(c, 0);
+                    pc = 0x0030_949c;
+                }
+                0x0030_949c => {
+                    c.cycles += 11;
+                    frame.restore(c, S0, 0x210);
+                    frame.restore(c, S1, 0x200);
+                    frame.restore(c, S2, 0x1f0);
+                    frame.restore(c, S3, 0x1e0);
+                    frame.restore(c, S4, 0x1d0);
+                    frame.restore(c, S5, 0x1c0);
+                    frame.restore(c, S6, 0x1b0);
+                    frame.restore(c, S7, 0x1a0);
+                    frame.restore_ra(c, 0x190);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0030_9270, 0x0030_94c8);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// The world object a type-0 command names (`id & 0xff` selects a table
+/// entry, `id >> 8` a word in it; `self+0x290` = that word's top 24 bits
+/// times 4, or 0), as `WScriptMan_Update` inlines it. s3 = the command.
+pub(crate) fn wsu_lookup(c: &mut Cpu) {
+    c.cycles += 10;
+    let s2 = r32(c, S2);
+    c.g[V1][0] = Addr(s2).off(WSU_WORLD_REF).lw(c);
+    c.g[A1][0] = Addr(r32(c, S3)).off(4).lw(c);
+    c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+    c.g[V0][0] = c.g[A1][0] & 0xff;
+    c.g[V1][0] = Addr(r32(c, A0)).off(8).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+    c.g[V0][0] = sx((c.g[A1][0] as u32) >> 8);
+    let mut found = false;
+    if c.g[V1][0] != 0 {
+        c.cycles += 7;
+        c.g[A0][0] = Addr(r32(c, V1)).off(0x1c).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+        c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+        found = c.g[V0][0] != 0;
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+    }
+    if !found {
+        c.cycles += 1;
+        c.g[V0][0] = 0;
+    }
+    c.cycles += 2;
+    let v = c.g[V0][0];
+    Addr(s2).off(WSU_LOOKUP).sw(c, v);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2666,6 +3030,205 @@ pub(crate) mod tests {
                 c.bus.write32(game + 0x34, playback);
                 c.bus.write32(playback + 0x70, 1);
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    use crate::difftest::elf_image;
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_CTRL;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_MAGIC;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_POP_NEXT;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::OC360_POP_QUEUE;
+    use std::sync::atomic::AtomicUsize;
+
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_fake;
+    pub(crate) use crate::game::ai::motion::wipeoutmotion::tests::oc360_gated;
+
+    oc360_gated!(
+        oc360_fake_wsm_pending,
+        OC360_PREV_WSM_PENDING,
+        0x0030_9118,
+        ee::s10::f_00309118__generated
+    );
+
+    oc360_gated!(
+        oc360_fake_wsm_pop,
+        OC360_PREV_WSM_POP,
+        0x0030_b208,
+        ee::s10::f_0030b208__generated
+    );
+
+    oc360_gated!(
+        oc360_fake_wsm_push,
+        OC360_PREV_WSM_PUSH,
+        0x0030_b260,
+        ee::s10::f_0030b260__generated
+    );
+
+    oc360_gated!(
+        oc360_fake_wsm_start,
+        OC360_PREV_WSM_START,
+        0x0030_9750,
+        ee::s10::f_00309750__generated
+    );
+
+    oc360_gated!(
+        oc360_fake_wsp_forward,
+        OC360_PREV_WSP_FORWARD,
+        0x0030_7a10,
+        ee::s10::f_00307a10__generated
+    );
+
+    oc360_gated!(
+        oc360_fake_wsp_update,
+        OC360_PREV_WSP_UPDATE,
+        0x0030_77f8,
+        ee::s10::f_003077f8__generated
+    );
+
+    pub(crate) fn oc360_install_wsm_fakes() {
+        use std::ptr::addr_of_mut;
+        {
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00309118),
+                oc360_fake_wsm_pending,
+                &OC360_PREV_WSM_PENDING,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_0030B208),
+                oc360_fake_wsm_pop,
+                &OC360_PREV_WSM_POP,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_0030B260),
+                oc360_fake_wsm_push,
+                &OC360_PREV_WSM_PUSH,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00309750),
+                oc360_fake_wsm_start,
+                &OC360_PREV_WSM_START,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00307A10),
+                oc360_fake_wsp_forward,
+                &OC360_PREV_WSP_FORWARD,
+            );
+            fakes::hook(
+                addr_of_mut!(ee::s10::OVERRIDE_003077F8),
+                oc360_fake_wsp_update,
+                &OC360_PREV_WSP_UPDATE,
+            );
+        }
+    }
+
+    // ------------------------------------------- WScriptMan_Update
+
+    /// The manager (8-aligned or not: the two copy loops), 0-3 starting
+    /// processes, 0-3 running ones, up to 5 commands (type 0 with a world
+    /// lookup that finds nothing, an empty word or a word; other types with
+    /// the real `WScriptProcess_DispatchEvent` on fake methods; dispatch /
+    /// forward flags). The other callees are logged fakes.
+    pub(crate) fn wsu_setup(c: &mut Cpu, seed: u32, calls: u32) -> Rng {
+        elf_image(c);
+        let mut r = machine(c, seed, 0x0030_9270, calls);
+        c.pc = 0x0030_9270;
+        let base = DATA + 0x7_1000;
+        let man = base + 4 * (seed % 2);
+        let procs = base + 0x1000;
+        let p10 = base + 0x2000;
+        let wref = base + 0x3000;
+        let table = base + 0x3100;
+        let entries = base + 0x3200;
+        c.bus.write32(OC360_CTRL, OC360_MAGIC);
+        c.bus.write32(OC360_POP_NEXT, 0);
+        let starting = r.next_u32() % 4;
+        for i in 0..8 {
+            let v = if i < starting { r.next_u32() | 0x10 } else { 0 };
+            c.bus.write32(OC360_POP_QUEUE + 4 * i, v);
+        }
+        c.g[A0][0] = sx(man);
+        fill(c, &mut r, man, 0xc0);
+        // Commands.
+        let count = match r.next_u32() % 6 {
+            0 => 0,
+            1 => 0u32.wrapping_sub(1 + r.next_u32() % 3),
+            n => n + (r.next_u32() % 2),
+        };
+        c.bus.write32(man + WSU_COMMANDS, count);
+        for i in 0..32 {
+            let cmd = man + WSU_COMMANDS + 4 + 12 * i;
+            let ty = match r.next_u32() % 3 {
+                0 => 0,
+                _ => r.next_u32() % 12,
+            };
+            let flags = (r.next_u32() % 4) << 16;
+            c.bus.write32(cmd, flags | ty);
+            c.bus
+                .write32(cmd + 4, (r.next_u32() % 4) << 8 | r.next_u32() % 4);
+            c.bus.write32(cmd + 8, r.next_u32());
+        }
+        // World lookup tables.
+        c.bus.write32(man + WSU_WORLD_REF, wref);
+        c.bus.write32(wref, wref + 0x10);
+        c.bus.write32(wref + 0x10 + 8, table);
+        for i in 0..4 {
+            let e = entries + 0x40 * i;
+            c.bus
+                .write32(table + 4 * i, if r.next_u32() % 3 == 0 { 0 } else { e });
+            c.bus.write32(e + 0x1c, e + 0x20);
+            for j in 0..4 {
+                let w = if r.next_u32() % 3 == 0 {
+                    r.next_u32() & 0xff
+                } else {
+                    r.next_u32()
+                };
+                c.bus.write32(e + 0x20 + 4 * j, w);
+            }
+        }
+        // Running processes.
+        let running = r.next_u32() % 4;
+        c.bus.write32(
+            man + WSU_FIRST_RUNNING,
+            if running == 0 { 0 } else { procs },
+        );
+        for i in 0..running {
+            let p = procs + 0x100 * i;
+            let next = if i + 1 < running { p + 0x100 } else { 0 };
+            c.bus.write32(p + WSU_PROC_NEXT, next);
+            c.bus.write32(p + 0x10, p10);
+            let vt = fakes::vtable(
+                c,
+                &mut r,
+                &[0x38, 0x40, 0x48, 0x50, 0x58, 0x60, 0x68, 0x70, 0x78, 0x80],
+            );
+            c.bus.write32(p + 0x5c, vt);
+        }
+        r
+    }
+
+    #[test]
+    fn wscript_man_update_matches() {
+        use crate::difftest::events::{check_events, schedule};
+        oc360_install_wsm_fakes();
+        covered(
+            ee::s10::f_00309270__generated,
+            wscript_man_update,
+            300,
+            &|c, seed| {
+                wsu_setup(c, seed, 12);
+            },
+        );
+        check_events(
+            ee::s10::f_00309270__generated,
+            wscript_man_update,
+            300,
+            &|c, seed| {
+                let mut r = wsu_setup(c, seed, 0);
+                schedule(c, &mut r, seed, 0x0030_9270)
             },
         );
     }

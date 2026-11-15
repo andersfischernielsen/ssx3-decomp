@@ -111,6 +111,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0034_c848, c_flag_manager_save, "cFlagManager_Save"),
     (0x0034_d9b0, anim_object_base_ctor, "AnimObject_BaseCtor"),
+    (
+        0x0034_b7b8,
+        c_flag_manager_group_free_mesh,
+        "cFlagManager_GroupFreeMesh",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3232,6 +3237,61 @@ pub fn anim_object_base_ctor(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// cFlagManager_GroupFreeMesh (0x34b7b8)
+
+/// The flag manager pointer (`gp+0x2a90`).
+pub const FLAG_MANAGER_GLOBAL: u32 = 0x2a90;
+
+/// The group's mesh handle (`self+0x60`).
+pub const FLAG_MANAGER_GROUP_MESH: u32 = 0x60;
+
+/// The group's memory block (`self+0x74`).
+pub const FLAG_MANAGER_GROUP_MEM: u32 = 0x74;
+
+/// `EA_MemFree` (0x317e98).
+pub const FLAG_MANAGER_MEM_FREE: u32 = 0x0031_7e98;
+
+/// `void cFlagManager_GroupFreeMesh(void* self)` (0x34b7b8): release the
+/// group's mesh through the flag manager's mesh-manager vtable (slot at
+/// `+0x268`) and free its memory block; both pointers are cleared.
+pub fn c_flag_manager_group_free_mesh(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A1][0] = Addr(r32(c, S0).wrapping_add(FLAG_MANAGER_GROUP_MESH)).lw(c);
+        let no_mesh = c.g[A1][0] == 0;
+        c.g[A2][0] = Addr((c.g[GP][0] as u32).wrapping_add(FLAG_MANAGER_GLOBAL)).lw(c);
+        if !no_mesh {
+            c.cycles += 6;
+            c.g[V0][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x10d8)).lw(c);
+            c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x268)).lh(c);
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x26c)).lw(c);
+            let target = c.g[V1][0] as u32;
+            c.g[RA][0] = sx(0x0034_b7e8);
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0034_b7e8)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(FLAG_MANAGER_GROUP_MESH), 0);
+        }
+        c.cycles += 3;
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(FLAG_MANAGER_GROUP_MEM)).lw(c);
+        if c.g[A0][0] != 0 {
+            c.cycles += 4;
+            c.g[RA][0] = sx(0x0034_b800);
+            call_ptr(c, FLAG_MANAGER_MEM_FREE, 0x0034_b800)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(FLAG_MANAGER_GROUP_MEM), 0);
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4548,6 +4608,45 @@ pub(crate) mod tests {
                 } else {
                     0
                 };
+            },
+        );
+    }
+
+    /// `cFlagManager_GroupFreeMesh`: the mesh handle present or absent
+    /// (vtable slot through a fake), the memory block present (the real
+    /// `EA_MemFree` with no pool/heap state) or absent.
+    #[test]
+    fn c_flag_manager_group_free_mesh_matches() {
+        check(
+            ee::s11::f_0034b7b8__generated,
+            c_flag_manager_group_free_mesh,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34b7b8, 0);
+                let this = DATA;
+                let mgr = DATA + 0x3000;
+                let mesh = DATA + 0x2000;
+                let mem = DATA + 0x6000;
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(GAME_GP + FLAG_MANAGER_GLOBAL, mgr);
+                let vt = DATA + 0x8_0000;
+                let delta = (r.next_u32() as i16 as i32 & !3) as u16;
+                c.bus.write16(vt + 0x268, delta);
+                c.bus.write32(vt + 0x26c, FAKE);
+                c.bus.write32(mgr + 0x10d8, vt);
+                // A "free block" header that makes `DLHeap_Free` bail out
+                // before it writes anything.
+                c.bus.write32(mem - 4, 0xffff_fffe);
+                let has_mesh = seed % 2 == 0;
+                c.bus.write32(
+                    this + FLAG_MANAGER_GROUP_MESH,
+                    if has_mesh { mesh } else { 0 },
+                );
+                let has_mem = seed % 4 >= 2;
+                c.bus
+                    .write32(this + FLAG_MANAGER_GROUP_MEM, if has_mem { mem } else { 0 });
+                c.g[A0][0] = sx(this);
+                c.pc = 0x0034_b7b8;
             },
         );
     }

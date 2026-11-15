@@ -30,6 +30,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0035_0fd8, restore_node_ctor_2, "RestoreNode_ctor_2"),
     (0x0035_0f40, hide_save, "Hide_Save"),
     (0x0035_1010, restore_node_save, "RestoreNode_Save"),
+    (0x0035_0f60, restore_node_ctor, "RestoreNode_ctor"),
 ];
 
 /// Cross-shard calls the generator emitted as `call_indirect(c, addr)`: they
@@ -290,6 +291,56 @@ pub fn restore_node_save(c: &mut Cpu) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// RestoreNode_ctor (0x350f60)
+
+pub(crate) const RESTORENODE_WORLD_OBJ_CTOR: Callee = Callee {
+    addr: 0x0034_fb00,
+    f: ee::s11::f_0034fb00,
+};
+
+/// `RestoreNode* RestoreNode_ctor(RestoreNode* self, void* node)` (0x350f60):
+/// construct the world object as kind 0x13 with `node`, install the
+/// `RestoreNode` vtable (`0x491680`), then clear bits 5/6 of the node's
+/// flags (+8) and set bit 2 (restore/dormant behaviour).
+pub fn restore_node_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 29;
+        let frame = Frame::open(c, 0x20);
+        c.g[A3][0] = c.g[A1][0];
+        frame.save(c, S0, 0x10);
+        c.g[A1][0] = 1;
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0x13;
+        RESTORENODE_WORLD_OBJ_CTOR.call(c, 0x0035_0f80)?;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[A2][0] = Addr(r32(c, S0)).off(0x18).lw(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1680));
+        c.g[A0][0] = 0xffff_ffff_ffff_0000;
+        let at = r32(c, S0);
+        Addr(at).off(0xc).sw(c, c.g[V1][0]);
+        c.g[A0][0] |= 0xff9f; // ~0x60
+        c.g[A1][0] = 0xffff_ffff_ffff_0000;
+        c.g[V0][0] = c.g[S0][0];
+        c.g[V1][0] = Addr(r32(c, A2)).off(0x8).lw(c);
+        c.g[A1][0] |= 0xfffd; // ~2
+        frame.restore_ra(c, 0);
+        c.g[V1][0] &= c.g[A0][0];
+        let node = r32(c, A2);
+        Addr(node).off(0x8).sw(c, c.g[V1][0]);
+        c.g[A0][0] = Addr(r32(c, S0)).off(0x18).lw(c);
+        frame.restore(c, S0, 0x10);
+        c.g[V1][0] = Addr(r32(c, A0)).off(0x8).lw(c);
+        c.g[V1][0] &= c.g[A1][0];
+        c.g[V1][0] |= 0x4;
+        let node = r32(c, A0);
+        Addr(node).off(0x8).sw(c, c.g[V1][0]);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -501,6 +552,52 @@ pub(crate) mod tests {
                 c.g[A1][0] = stream as u64;
                 let vt = vtable(c, &mut r, &[8, 0x30]);
                 c.bus.write32(stream, vt);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC329_CTRL;
+    pub(crate) use crate::game::sound::bankmonitor::tests::OC329_MAGIC;
+
+    // -- RestoreNode_ctor -------------------------------------------------
+
+    static OC329_PREV_WORLD_OBJ_CTOR: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    pub(crate) fn oc329_fake_world_obj_ctor(c: &mut Cpu) {
+        if c.bus.read32(OC329_CTRL) != OC329_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &OC329_PREV_WORLD_OBJ_CTOR,
+                ee::s11::f_0034fb00__generated,
+            );
+        }
+        fake(c, 0x0034_fb00, c.g[RA][0] as u32);
+    }
+
+    #[test]
+    fn restore_node_ctor_matches() {
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s11::OVERRIDE_0034FB00),
+            oc329_fake_world_obj_ctor,
+            &OC329_PREV_WORLD_OBJ_CTOR,
+        );
+        check(
+            ee::s11::f_00350f60__generated,
+            restore_node_ctor,
+            80,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_0f60, 0);
+                c.pc = 0x0035_0f60;
+                c.bus.write32(OC329_CTRL, OC329_MAGIC);
+                let node = DATA + 0x200;
+                let selfp = DATA + 0x100;
+                c.bus.write32(node + 8, r.next_u32());
+                c.bus.write32(selfp + 0x18, node);
+                c.g[A0][0] = sx(selfp);
+                c.g[A1][0] = sx(node);
             },
         );
     }

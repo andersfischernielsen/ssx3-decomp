@@ -84,6 +84,8 @@ def regen():
         "--", "--unwind", "--out", "generated/ee-unwind",
         "--package-prefix", "ssx3-ee-unwind",
     ])
+    # The names CI builds the hand-written crates against (commit it).
+    run([sys.executable, "tools/ee_skeleton.py", "dump"])
 
 
 def repoint(mods):

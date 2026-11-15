@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
@@ -97,6 +98,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_0198,
         bebagt_int_get_trick_anim,
         "BEBAGTInt_GetTrickAnim",
+    ),
+    (
+        0x0015_0528,
+        beb_agt_int_get_trick_points,
+        "BEBAGTInt_GetTrickPoints",
+    ),
+    (
+        0x0015_0540,
+        beb_agt_int_get_trick_points_2,
+        "BEBAGTInt_GetTrickPoints2",
     ),
 ];
 
@@ -673,6 +684,38 @@ pub fn bebagt_int_get_trick_anim(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// BEBAGTInt_GetTrickPoints / GetTrickPoints2 (0x150528 / 0x150540)
+
+/// The trick-bag point table (`0x530600`, 8 bytes per entry: points and an
+/// extra word).
+#[cfg(test)]
+pub(crate) const TRICK_POINTS_TABLE: u32 = 0x0053_0600;
+
+/// `int BEBAGTInt_GetTrickPoints(BEBAGTInt* self, int trick)` (0x150528): the
+/// trick's point value from the global table (`0x530600 + trick * 8`).
+pub fn beb_agt_int_get_trick_points(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V0][0] = 0x0053_0000;
+    c.g[A1][0] = sx(r32(c, A1) << 3);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x600));
+    c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+    c.g[V0][0] = Addr(r32(c, A1)).lw(c);
+    ret(c);
+}
+
+/// `int BEBAGTInt_GetTrickPoints2(BEBAGTInt* self, int trick)` (0x150540):
+/// the word after the trick's point value in the global table.
+pub fn beb_agt_int_get_trick_points_2(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V1][0] = 0x0053_0000;
+    c.g[A1][0] = sx(r32(c, A1) << 3);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x600));
+    c.g[V1][0] = sx(r32(c, A1).wrapping_add(r32(c, V1)));
+    c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x4)).lw(c);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1032,5 +1075,42 @@ pub(crate) mod tests {
         fn mix_small(seed: u32, i: u32) -> u32 {
             (seed.wrapping_mul(0x9e37_79b9) ^ i.wrapping_mul(0x85eb_ca6b)).rotate_left(13)
         }
+    }
+
+    /// The trick-bag point getters read the global table at
+    /// `0x530600 + trick * 8`; tricks 0..0x40 cover the low entries.
+    pub(crate) fn trick_points_case(gen: GuestFn, hand: GuestFn, entry: u32, salt: u64) {
+        use crate::difftest::{check, put_words, scramble, Rng};
+        check(gen, hand, 200, &|c, seed| {
+            let mut r = Rng(0x1234_5678 ^ (seed as u64) << 8 ^ salt);
+            scramble(c, &mut r);
+            let mut words = [0u32; 0x80];
+            for w in words.iter_mut() {
+                *w = r.next_u32();
+            }
+            put_words(c, TRICK_POINTS_TABLE, &words);
+            c.g[A1][0] = (r.next_u32() % 0x40) as u64;
+            c.pc = entry;
+        });
+    }
+
+    #[test]
+    fn beb_agt_int_get_trick_points_matches() {
+        trick_points_case(
+            ee::s01::f_00150528__generated,
+            beb_agt_int_get_trick_points,
+            0x0015_0528,
+            0x15_0528,
+        );
+    }
+
+    #[test]
+    fn beb_agt_int_get_trick_points_2_matches() {
+        trick_points_case(
+            ee::s01::f_00150540__generated,
+            beb_agt_int_get_trick_points_2,
+            0x0015_0540,
+            0x15_0540,
+        );
     }
 }

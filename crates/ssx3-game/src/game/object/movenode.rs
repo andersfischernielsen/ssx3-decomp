@@ -262,6 +262,53 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0035_7000, position_modifier_save, "PositionModifier_Save"),
     (0x0035_78a8, particle_ctor_2, "Particle_ctor_2"),
+    (
+        0x0035_54b0,
+        mod_obj_set_transform_modifier,
+        "ModObj_SetTransformModifier",
+    ),
+    (
+        0x0035_5cb0,
+        mod_obj_add_particle_modifier,
+        "ModObj_AddParticleModifier",
+    ),
+    (
+        0x0035_5d10,
+        modobj_add_dynamic_particle_modifier,
+        "ModObj_AddDynamicParticleModifier",
+    ),
+    (0x0035_6cc8, mod_obj_v22, "ModObj_v22"),
+    (
+        0x0035_5918,
+        mod_obj_add_position_modifier_from_matrix,
+        "ModObj_AddPositionModifierFromMatrix",
+    ),
+    (
+        0x0035_5ad0,
+        mod_obj_add_spline_modifier,
+        "ModObj_AddSplineModifier",
+    ),
+    (
+        0x0035_6020,
+        mod_obj_take_particle_modifiers,
+        "ModObj_TakeParticleModifiers",
+    ),
+    (0x0035_6780, mod_obj_v48, "ModObj_v48"),
+    (
+        0x0035_6f10,
+        position_modifier_ctor_2,
+        "PositionModifier_ctor_2",
+    ),
+    (
+        0x0035_5e38,
+        mod_obj_add_rail_modifier_2,
+        "ModObj_AddRailModifier",
+    ),
+    (
+        0x0035_5eb0,
+        mod_obj_add_halo_modifier,
+        "ModObj_AddHaloModifier",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -353,6 +400,10 @@ pub(crate) mod callee {
         addr: 0x0035_2dd0,
         f: ee::s11::ModifierBlock_Render,
     };
+
+    pub(crate) use crate::game::lib::snd::callee::DYNAMIC_PARTICLE_MODIFIER_CTOR;
+
+    pub(crate) use crate::game::lib::snd::callee::MODOBJ_LINK_PARTICLE_MODIFIER;
 }
 
 /// `gp`-relative globals used here.
@@ -4240,6 +4291,615 @@ pub fn particle_ctor_2(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// ModObj_AddParticleModifier (0x355cb0)
+
+/// `EA_MemAllocNamed(size, name, flags, align)` (0x317d70).
+pub(crate) const MOD_OBJ_ADD_PARTICLE_ALLOC: u32 = 0x0031_7d70;
+
+/// `ParticleModifier_ctor(self, desc, link)` (0x3458c0).
+pub(crate) const MOD_OBJ_ADD_PARTICLE_CTOR: Callee = Callee {
+    addr: 0x0034_58c0,
+    f: ee::s11::ParticleModifier_ctor,
+};
+
+/// `ModObj_LinkParticleModifier(self, mod)` (0x355658).
+pub(crate) const MOD_OBJ_ADD_PARTICLE_LINK: Callee = Callee {
+    addr: 0x0035_5658,
+    f: ee::s11::ModObj_LinkParticleModifier,
+};
+
+/// `void ModObj_AddParticleModifier(cMoveNode* self, void* desc)` (0x355cb0):
+/// allocate a 0x1f0-byte particle modifier (named `D_0048e978`), construct it
+/// with `desc` and `self->field_18`, and link it into the node's modifier
+/// list. Frame 0x30 (ra +0, s0 +0x20, s1 +0x10).
+pub fn mod_obj_add_particle_modifier(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x30);
+        c.g[A3][0] = 0;
+        frame.save(c, S1, 0x10);
+        c.g[A2][0] = 0x2000_0000;
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A1][0]; // desc
+        c.g[S0][0] = c.g[A0][0]; // self
+        c.g[A1][0] = 0x0049_0000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x1f0;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1688)); // D_0048e978
+        call_ptr(c, MOD_OBJ_ADD_PARTICLE_ALLOC, 0x0035_5ce0)?;
+        // ParticleModifier_ctor(mod, desc, self->field_18)
+        c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[V0][0];
+        MOD_OBJ_ADD_PARTICLE_CTOR.call(c, 0x0035_5cf0)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        MOD_OBJ_ADD_PARTICLE_LINK.call(c, 0x0035_5cfc)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `MultiSplineModifier_Release` (0x35aae0).
+pub(crate) const MODOBJ_RELEASE: u32 = 0x0035_aae0;
+
+/// `int cMoveNode::decFocusCount(tInstanceRecord* pInst)` (0x356cc8): if the
+/// move node's block at +0x1c holds a node whose virtual query (slot 26)
+/// returns 2, release that node and return its result; otherwise 0.
+pub fn mod_obj_v22(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V1][0] = Addr(r32(c, S0)).off(0x1c).lw(c);
+        let has_block = c.g[V1][0] != 0;
+        c.g[S1][0] = c.g[A1][0];
+        if !has_block {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+            c.cycles += 1;
+            frame.restore(c, S0, 0x20);
+        } else {
+            c.cycles += 3;
+            c.g[A1][0] = Addr(r32(c, V1)).lw(c);
+            let has_node = c.g[A1][0] != 0;
+            c.g[V0][0] = 0;
+            let mut restored = false;
+            if has_node {
+                // node->vt[26].fn(node + delta) == 2?
+                c.cycles += 8;
+                c.g[V1][0] = Addr(r32(c, A1)).lw(c);
+                c.g[A0][0] = Addr(r32(c, V1)).off(0xd0).lh(c);
+                c.g[V0][0] = Addr(r32(c, V1)).off(0xd4).lw(c);
+                let query = r32(c, V0);
+                c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+                call_ptr(c, query, 0x0035_6d08)?;
+                c.g[V1][0] = 0x2;
+                let not_two = c.g[V0][0] != c.g[V1][0];
+                c.g[V0][0] = 0;
+                if !not_two {
+                    c.cycles += 6;
+                    c.g[V0][0] = Addr(r32(c, S0)).off(0x1c).lw(c);
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+                    call_ptr(c, MODOBJ_RELEASE, 0x0035_6d24)?;
+                    frame.restore(c, S0, 0x20);
+                    restored = true;
+                }
+            }
+            if !restored {
+                c.cycles += 1;
+                frame.restore(c, S0, 0x20);
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ModObj_AddDynamicParticleModifier (0x355d10)
+// ---------------------------------------------------------------------------
+
+/// The pool descriptor `D_0048E990` (`0x490000 - 0x1670`) a dynamic-particle
+/// modifier is allocated from.
+pub(crate) const MODOBJ_PARTICLE_MODIFIER_POOL: u32 = 0x0048_e990;
+
+/// `void cMoveNode_addDynamicParticle(cMoveNode* self, void* desc, int index,
+/// void* a4)` (0x355d10): when `index` names one of the node's dynamic
+/// particles, allocate a 0x270-byte modifier, construct it from `desc`, the
+/// node and `a4`, and link it into the node's modifier list; an out-of-range
+/// index deletes `desc` instead.
+pub fn modobj_add_dynamic_particle_modifier(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A2][0]; // index
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A0][0]; // self
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A1][0]; // desc
+        frame.save_ra(c, 0);
+        let negative = (c.g[S0][0] as i64) < 0;
+        c.g[S3][0] = c.g[A3][0]; // a4
+        let mut in_range = false;
+        if !negative {
+            c.cycles += 6;
+            c.g[V0][0] = Addr(r32(c, S1)).off(0x18).lw(c);
+            c.g[A0][0] = Addr(r32(c, V0)).off(0x80).lw(c);
+            c.g[V1][0] = Addr(r32(c, A0)).off(4).lw(c);
+            c.g[V1][0] = ((c.g[S0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+            in_range = c.g[V1][0] != 0;
+            c.g[A1][0] = 0x490000;
+        }
+        if in_range {
+            c.cycles += 15;
+            c.g[A0][0] = 0x270;
+            c.g[A1][0] = sx(MODOBJ_PARTICLE_MODIFIER_POOL);
+            c.g[A2][0] = 0x2000_0000;
+            c.g[A3][0] = 0;
+            call_ptr(c, 0x0031_7d70, 0x0035_5d78)?; // cMemMan_alloc
+            c.g[A2][0] = Addr(r32(c, S1)).off(0x18).lw(c);
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.g[T0][0] = c.g[S3][0];
+            c.g[A3][0] = c.g[S0][0];
+            callee::DYNAMIC_PARTICLE_MODIFIER_CTOR.call(c, 0x0035_5d90)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[V0][0];
+            callee::MODOBJ_LINK_PARTICLE_MODIFIER.call(c, 0x0035_5d9c)?;
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, 0x0031_7e50, 0x0035_5d5c)?; // operator delete(desc)
+        }
+        frame.restore(c, S0, 0x40);
+        c.cycles += 6;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        c.g[RA][0] = c.ld(frame.at(c, 0));
+        let ra = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x50));
+        c.pc = ra;
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x003554b0 ModObj_SetTransformModifier
+
+/// `void cMoveNode::addTransformModifier(cMoveNode *self, cTransformModifier *mod)`
+/// (0x3554b0): notify the vtable's slot 49 (prepare), create or reset the
+/// node's modifier block, store `mod` at its head, notify slot 48 (refresh)
+/// and flag the node's object as transformed (clear 0x20, set 0x40).
+pub fn mod_obj_set_transform_modifier(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        // vtable[49](self)
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0xc).lw(c);
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x188).lh(c);
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x18c).lw(c);
+        let target = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0035_54dc)?;
+        c.g[A0][0] = Addr(c.g[S0][0] as u32).off(0x1c).lw(c);
+        let has_block = c.g[A0][0] != 0;
+        if has_block {
+            c.cycles += 3;
+            Callee {
+                addr: 0x0035_30d0,
+                f: ee::s11::ModifierBlock_FreeTransform,
+            }
+            .call(c, 0x0035_5500)?;
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x0035_5468,
+                f: ee::s11::ModObj_CreateModifierBlock,
+            }
+            .call(c, 0x0035_54f0)?;
+        }
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x1c).lw(c);
+        // Store the modifier at the block's head and refresh the node.
+        c.cycles += 18;
+        c.sw(c.g[V0][0] as u32, c.g[S1][0]);
+        c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0xc).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x180).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x184).lw(c);
+        let refresh = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, refresh, 0x0035_551c)?;
+        c.g[A0][0] = Addr(c.g[S0][0] as u32).off(0x18).lw(c);
+        c.g[V1][0] = 0xffff_ffff_ffff_0000u64;
+        c.g[V1][0] |= 0xffdf;
+        frame.restore(c, S0, 0x20);
+        c.g[V0][0] = Addr(c.g[A0][0] as u32).off(8).lw(c);
+        frame.restore(c, S1, 0x10);
+        c.g[V0][0] &= c.g[V1][0];
+        frame.restore_ra(c, 0);
+        c.g[V0][0] |= 0x40;
+        c.sw((c.g[A0][0] as u32).wrapping_add(8), c.g[V0][0]);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ModObj_v48 (0x356780)
+
+/// The move node's modifier block pointer (`self+0x1c`).
+pub const MODOBJ_V48_BLOCK: u32 = 0x1c;
+
+/// The move node's instance node (bound box source, `self+0x18`).
+pub const MODOBJ_V48_INSTANCE: u32 = 0x18;
+
+/// `WorldObj_GetBoundBox` (0x350570).
+pub const WORLD_OBJ_GET_BOUND_BOX: Callee = Callee {
+    addr: 0x0035_0570,
+    f: ee::s11::WorldObj_GetBoundBox,
+};
+
+/// `ModifierBlock_SetTransformBounds` (0x352bc0).
+pub const MODIFIER_BLOCK_SET_TRANSFORM_BOUNDS: Callee = Callee {
+    addr: 0x0035_2bc0,
+    f: ee::s11::ModifierBlock_SetTransformBounds,
+};
+
+/// `ModifierBlock_SetTransformRadius` (0x352c38).
+pub const MODIFIER_BLOCK_SET_TRANSFORM_RADIUS: Callee = Callee {
+    addr: 0x0035_2c38,
+    f: ee::s11::ModifierBlock_SetTransformRadius,
+};
+
+/// `void cMoveNode_setupOverlapSystem(void* self)` (0x356780): when the
+/// move node has an active modifier block (`*(self+0x1c)` non-null and its
+/// first word non-zero), take the node's bound box and hand it, and its
+/// radius, to the modifier block.
+pub fn mod_obj_v48(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save_ra(c, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(MODOBJ_V48_BLOCK)).lw(c);
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 1;
+            c.g[V0][0] = Addr(c.g[V0][0] as u32).lw(c);
+        }
+        c.cycles += 2;
+        let no_block = c.g[V0][0] == 0;
+        c.g[A1][0] = c.g[SP][0];
+        if !no_block {
+            c.cycles += 9;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+            WORLD_OBJ_GET_BOUND_BOX.call(c, 0x0035_67b4)?;
+            c.g[A0][0] = Addr(r32(c, S0).wrapping_add(MODOBJ_V48_BLOCK)).lw(c);
+            c.g[A1][0] = c.g[SP][0];
+            MODIFIER_BLOCK_SET_TRANSFORM_BOUNDS.call(c, 0x0035_67c0)?;
+            c.g[A0][0] = Addr(r32(c, S0).wrapping_add(MODOBJ_V48_BLOCK)).lw(c);
+            c.lwc1(12, (c.g[SP][0] as u32).wrapping_add(0x20));
+            MODIFIER_BLOCK_SET_TRANSFORM_RADIUS.call(c, 0x0035_67cc)?;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ModObj_SetTransformModifier(ModObj* o, Modifier* m)` (0x003554b0).
+pub(crate) const MOD_OBJ_SET_TRANSFORM_MODIFIER: Callee = Callee {
+    addr: 0x0035_54b0,
+    f: ee::s11::ModObj_SetTransformModifier,
+};
+
+/// `SplineModifier` constructor (0x00359460).
+pub(crate) const SPLINE_MODIFIER_CTOR: Callee = Callee {
+    addr: 0x0035_9460,
+    f: ee::s11::SplineModifier_ctor,
+};
+
+/// `cMemMan_alloc(size, name, flags, arg)` (0x00317d70), a pool allocator
+/// reached through the function table.
+pub(crate) const MEM_MAN_ALLOC: u32 = 0x0031_7d70;
+
+/// `void ModObj_AddSplineModifier(ModObj* o, const tAddSplineData* desc)`
+/// (0x00355ad0): allocate a 0xf0-byte spline modifier, construct it from the
+/// descriptor and install it as the object's transform modifier.
+pub fn mod_obj_add_spline_modifier(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x30);
+        c.g[A2][0] = 0x2000_0000;
+        frame.save(c, S0, 0x20);
+        c.g[A3][0] = 0;
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A1][0] = 0x49_0000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0xf0;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1730)); // D_0048E8D0
+        call_ptr(c, MEM_MAN_ALLOC, 0x0035_5b00)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0];
+        SPLINE_MODIFIER_CTOR.call(c, 0x0035_5b0c)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[V0][0];
+        MOD_OBJ_SET_TRANSFORM_MODIFIER.call(c, 0x0035_5b18)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void ModObj_AddPositionModifierFromMatrix(ModObj* o, const Matrix* m)`
+/// (0x00355918): allocate a 0x90-byte position modifier, construct it from
+/// the matrix descriptor and install it as the object's transform modifier.
+pub fn mod_obj_add_position_modifier_from_matrix(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x30);
+        c.g[A2][0] = 0x2000_0000;
+        frame.save(c, S0, 0x20);
+        c.g[A3][0] = 0;
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A1][0] = 0x49_0000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x90;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1710)); // D_0048E8F0
+        call_ptr(c, MEM_MAN_ALLOC, 0x0035_5948)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0];
+        POSITION_MODIFIER_CTOR_2.call(c, 0x0035_5954)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[V0][0];
+        MOD_OBJ_SET_TRANSFORM_MODIFIER.call(c, 0x0035_5960)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `PositionModifier* PositionModifier_ctor_2(self, const Matrix* m)`
+/// (0x00356f10); no override slot, so this is its generated entry.
+pub(crate) const POSITION_MODIFIER_CTOR_2: Callee = Callee {
+    addr: 0x0035_6f10,
+    f: ee::s11::f_00356f10,
+};
+
+/// `void ModObj_TakeParticleModifiers(ModObj* o, ModObj* from)` (0x00356020):
+/// take the particle list of `from`'s modifier block into `o`'s (creating
+/// `o`'s block when it has none).
+pub fn mod_obj_take_particle_modifiers(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x1c)).lw(c);
+        let none = c.g[V0][0] == 0;
+        c.g[S0][0] = c.g[A0][0];
+        if !none {
+            c.cycles += 3;
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x1c)).lw(c);
+            if c.g[V0][0] != 0 {
+                c.g[A1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x1c)).lw(c);
+            } else {
+                c.cycles += 3;
+                MOD_OBJ_CREATE_MODIFIER_BLOCK.call(c, 0x0035_6054)?;
+                c.g[A1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x1c)).lw(c);
+            }
+            c.cycles += 3;
+            c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x1c)).lw(c);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+            MODIFIER_BLOCK_TAKE_PARTICLE_LIST.call(c, 0x0035_6064)?;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ModObj_CreateModifierBlock(ModObj* o)` (0x00355468).
+pub(crate) const MOD_OBJ_CREATE_MODIFIER_BLOCK: Callee = Callee {
+    addr: 0x0035_5468,
+    f: ee::s11::ModObj_CreateModifierBlock,
+};
+
+/// `ModifierBlock_TakeParticleList(block, list)` (0x00353398); no override
+/// slot, so this is its generated entry.
+pub(crate) const MODIFIER_BLOCK_TAKE_PARTICLE_LIST: Callee = Callee {
+    addr: 0x0035_3398,
+    f: ee::s11::f_00353398,
+};
+
+/// `PositionModifier* PositionModifier_ctor_2(PositionModifier* self,
+/// const Matrix* m)` (0x00356f10): install the position-modifier vtable, copy
+/// the 4x4 matrix at `m` into the modifier's fields at +0x50 (VU0) and its
+/// first row to the stack slot, and set the "position set" flag at +0x44.
+pub fn position_modifier_ctor_2(c: &mut Cpu) {
+    c.cycles += 21;
+    c.g[V0][0] = 0x490000;
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x10));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xa10));
+    c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(0x50));
+    c.sw(c.g[A0][0] as u32, c.g[V0][0]);
+    c.lq(2, (c.g[A1][0] as u32).wrapping_add(0x30));
+    c.sq(2, (c.g[A0][0] as u32).wrapping_add(0x30));
+    c.sq(2, sp(c));
+    c.lqc2(1, c.g[A1][0] as u32);
+    c.lqc2(2, (c.g[A1][0] as u32).wrapping_add(0x10));
+    c.lqc2(3, (c.g[A1][0] as u32).wrapping_add(0x20));
+    c.lqc2(4, (c.g[A1][0] as u32).wrapping_add(0x30));
+    c.sqc2(1, c.g[A2][0] as u32);
+    c.sqc2(2, (c.g[A2][0] as u32).wrapping_add(0x10));
+    c.sqc2(3, (c.g[A2][0] as u32).wrapping_add(0x20));
+    c.sqc2(4, (c.g[A2][0] as u32).wrapping_add(0x30));
+    c.g[V1][0] = 0x1;
+    c.g[V0][0] = c.g[A0][0];
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x44), c.g[V1][0]);
+    let ra = c.g[RA][0] as u32;
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x10));
+    c.pc = ra;
+}
+
+// ------------------------------------------------- ModObj_AddRailModifier
+
+/// `cMemMan_alloc` (0x317d70, another shard: through the function table).
+pub(crate) const OC338_MEM_MAN_ALLOC: u32 = 0x0031_7d70;
+
+/// `ModObj::modifierBlock` (+0x1c): the object's modifier block (may be null).
+pub(crate) const MOD_OBJ_ADD_RAIL_BLOCK: u32 = 0x1c;
+
+/// `ModObj` +0x18: the owner passed to the modifier constructors.
+pub(crate) const MOD_OBJ_ADD_RAIL_OWNER: u32 = 0x18;
+
+/// `tAddRailData` +4: the rail id looked up in the block.
+pub(crate) const MOD_OBJ_ADD_RAIL_ID: u32 = 0x4;
+
+pub(crate) const MOD_OBJ_HAS_RAIL_MODIFIER: Callee = Callee {
+    addr: 0x0035_3418,
+    f: ee::s11::ModifierBlock_HasRailModifier,
+};
+
+pub(crate) const MOD_OBJ_RAIL_MODIFIER_CTOR: Callee = Callee {
+    addr: 0x0035_b708,
+    f: ee::s11::RailModifier_ctor,
+};
+
+pub(crate) const MOD_OBJ_SET_RAIL_MODIFIER: Callee = Callee {
+    addr: 0x0035_56a8,
+    f: ee::s11::ModObj_SetRailModifier,
+};
+
+/// `void ModObj_AddRailModifier(ModObj* o, const tAddRailData* desc)`
+/// (0x00355e38, `cMoveNode::addRail`): unless the object's modifier block
+/// already has a rail modifier for `desc->id`, allocate a 0x90-byte rail
+/// modifier (`D_0048E9B8` tag), construct it from the descriptor and install
+/// it on the object.
+pub fn mod_obj_add_rail_modifier_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(MOD_OBJ_ADD_RAIL_BLOCK)).lw(c);
+        c.g[S1][0] = c.g[A1][0];
+        let mut present = false;
+        if c.g[A0][0] != 0 {
+            c.cycles += 4;
+            c.g[A1][0] = Addr(r32(c, S1).wrapping_add(MOD_OBJ_ADD_RAIL_ID)).lw(c);
+            MOD_OBJ_HAS_RAIL_MODIFIER.call(c, 0x0035_5e60)?;
+            present = c.g[V0][0] != 0;
+        }
+        if !present {
+            c.cycles += 14;
+            c.g[A0][0] = 0x90;
+            c.g[A1][0] = sx(0x0048_e9b8); // D_0048E9B8
+            c.g[A2][0] = 0x2000_0000;
+            c.g[A3][0] = 0;
+            call_ptr(c, OC338_MEM_MAN_ALLOC, 0x0035_5e80)?;
+            c.g[A2][0] = Addr(r32(c, S0).wrapping_add(MOD_OBJ_ADD_RAIL_OWNER)).lw(c);
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S1][0];
+            MOD_OBJ_RAIL_MODIFIER_CTOR.call(c, 0x0035_5e90)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[V0][0];
+            MOD_OBJ_SET_RAIL_MODIFIER.call(c, 0x0035_5e9c)?;
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ------------------------------------------------- ModObj_AddHaloModifier
+
+pub(crate) const MOD_OBJ_HALO_MODIFIER_CTOR: Callee = Callee {
+    addr: 0x0034_6120,
+    f: ee::s11::HaloModifier_ctor,
+};
+
+pub(crate) const MOD_OBJ_LINK_PARTICLE_MODIFIER: Callee = Callee {
+    addr: 0x0035_5658,
+    f: ee::s11::ModObj_LinkParticleModifier,
+};
+
+/// `void ModObj_AddHaloModifier(ModObj* o, const tAddHaloData* desc)`
+/// (0x00355eb0, `cMoveNode::addHalo`): allocate a 0x40-byte halo modifier
+/// (`D_0048E9A8` tag), construct it from the descriptor (owner `o+0x18`)
+/// and link it into the object's particle (effect) modifiers.
+pub fn mod_obj_add_halo_modifier(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x30);
+        c.g[A3][0] = 0;
+        frame.save(c, S1, 0x10);
+        c.g[A2][0] = 0x2000_0000;
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x40;
+        c.g[A1][0] = sx(0x0048_e9a8); // D_0048E9A8
+        call_ptr(c, OC338_MEM_MAN_ALLOC, 0x0035_5ee0)?;
+        c.g[A2][0] = Addr(r32(c, S0).wrapping_add(MOD_OBJ_ADD_RAIL_OWNER)).lw(c);
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[V0][0];
+        MOD_OBJ_HALO_MODIFIER_CTOR.call(c, 0x0035_5ef0)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        MOD_OBJ_LINK_PARTICLE_MODIFIER.call(c, 0x0035_5efc)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6491,6 +7151,746 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(OBJECT);
                 c.g[A3][0] = sx(BUF);
                 c.g[T0][0] = if seed % 5 == 0 { 0 } else { sx(NODE) };
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+    pub(crate) use crate::game::ai::ai::tests::oc318_fall_through;
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::oc318_gated;
+    use crate::game::dirtysock::tagsunk::tests::put_arena;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+    use std::sync::Once;
+
+    pub(crate) const CTRL_PARTICLE: u32 = DATA + 0x6_0010;
+
+    pub(crate) const MAGIC_PARTICLE: u32 = 0x355c_b001;
+
+    pub(crate) static OC318_PREV_PARTICLE_ALLOC: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC318_PREV_PARTICLE_CTOR: AtomicUsize = AtomicUsize::new(0);
+
+    oc318_gated!(
+        oc318_fake_particle_link,
+        OC318_PREV_PARTICLE_LINK,
+        CTRL_PARTICLE,
+        MAGIC_PARTICLE,
+        0x0035_5658,
+        ee::s11::f_00355658__generated
+    );
+
+    /// `EA_MemAllocNamed`: logs the request, returns the fixture's block.
+    pub(crate) fn oc318_fake_particle_alloc(c: &mut Cpu) {
+        if c.bus.read32(CTRL_PARTICLE) != MAGIC_PARTICLE {
+            return oc318_fall_through(
+                c,
+                &OC318_PREV_PARTICLE_ALLOC,
+                ee::s10::f_00317d70__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        let block = c.bus.read32(CTRL_PARTICLE + 4);
+        fake(c, 0x0031_7d70, ra);
+        if c.pc == ra {
+            c.g[V0][0] = block as u64;
+        }
+    }
+
+    /// `ParticleModifier_ctor`: logs its arguments and returns the modifier.
+    pub(crate) fn oc318_fake_particle_ctor(c: &mut Cpu) {
+        if c.bus.read32(CTRL_PARTICLE) != MAGIC_PARTICLE {
+            return oc318_fall_through(
+                c,
+                &OC318_PREV_PARTICLE_CTOR,
+                ee::s11::f_003458c0__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        let this = c.g[A0][0];
+        fake(c, 0x0034_58c0, ra);
+        if c.pc == ra {
+            c.g[V0][0] = this;
+        }
+    }
+
+    pub(crate) fn mod_obj_add_particle_install() {
+        // Put the engine-allocator fake in first, then chain on top of it.
+        crate::game::animation::animsequencer::tests::asl_install_fakes();
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| unsafe {
+            let hook = |slot: *mut fn(&mut Cpu), f: fn(&mut Cpu), prev: &AtomicUsize| {
+                let cur = *slot;
+                if cur as usize != f as usize {
+                    prev.store(cur as usize, Ordering::Relaxed);
+                    *slot = f;
+                }
+            };
+            hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+                oc318_fake_particle_alloc,
+                &OC318_PREV_PARTICLE_ALLOC,
+            );
+            hook(
+                addr_of_mut!(ee::s11::OVERRIDE_003458C0),
+                oc318_fake_particle_ctor,
+                &OC318_PREV_PARTICLE_CTOR,
+            );
+            hook(
+                addr_of_mut!(ee::s11::OVERRIDE_00355658),
+                oc318_fake_particle_link,
+                &OC318_PREV_PARTICLE_LINK,
+            );
+        });
+    }
+
+    /// `ModObj_AddParticleModifier`: allocator, constructor and linker are
+    /// logging fakes (some calls unwind).
+    #[test]
+    fn mod_obj_add_particle_modifier_matches() {
+        mod_obj_add_particle_install();
+        covered(
+            ee::s11::f_00355cb0__generated,
+            mod_obj_add_particle_modifier,
+            200,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0035_5cb0, 3);
+                c.pc = 0x0035_5cb0;
+                let ctrl = CTRL_PARTICLE;
+                c.bus.write32(ctrl, MAGIC_PARTICLE);
+                c.bus.write32(ctrl + 4, DATA + 0x8000);
+                let this = DATA + 0x100;
+                c.bus.write32(this + 0x18, 0x0035_5000 + seed);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (DATA + 0x200) as u64;
+            },
+        );
+    }
+
+    /// `ModObj_v22` (`cMoveNode::decFocusCount`): no block, a block with no
+    /// node, and a node whose virtual query is a fake forced to 2 (release)
+    /// or left to return a pointer (not 2).
+    #[test]
+    fn mod_obj_v22_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE, LOG_RESULTS};
+        use crate::difftest::DATA;
+        covered(
+            ee::s11::f_00356cc8__generated,
+            mod_obj_v22,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_6cc8, 1);
+                let this = DATA;
+                let block = DATA + 0x200;
+                let node = DATA + 0x300;
+                let vt = DATA + 0x400;
+                c.bus.write32(this + 0x1c, 0);
+                match seed % 4 {
+                    0 => {}
+                    1 => c.bus.write32(block, 0),
+                    n => {
+                        c.bus.write32(block, node);
+                        c.bus.write32(node, vt);
+                        c.bus.write16(vt + 0xd0, ((r.next_u32() & 0x3c) as u16) | 4);
+                        c.bus.write32(vt + 0xd4, FAKE);
+                        c.bus.write32(node + 0x34, r.next_u32());
+                        if n == 2 {
+                            c.bus.write32(LOG_RESULTS, 2);
+                        }
+                    }
+                }
+                if seed % 4 >= 1 {
+                    c.bus.write32(this + 0x1c, block);
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(DATA + 0x600);
+                c.pc = 0x0035_6cc8;
+            },
+        );
+    }
+
+    /// ModObj_AddDynamicParticleModifier: a negative index and an index past
+    /// the particle table delete the descriptor (a null one, so the free
+    /// path stays short), a valid index allocates from the main heap and
+    /// links the modifier.
+    #[test]
+    fn modobj_add_dynamic_particle_modifier_matches() {
+        check(
+            ee::s11::f_00355d10__generated,
+            modobj_add_dynamic_particle_modifier,
+            90,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_5d10, 8);
+                put_arena(c);
+                let node = DATA + 0x1000;
+                let group = DATA + 0x2000;
+                let table = DATA + 0x3000;
+                let count = seed % 4;
+                c.bus.write32(node + 0x18, group);
+                c.bus.write32(group + 0x80, table);
+                c.bus.write32(table + 4, count);
+                // The node array the modifier's `TransformPoints` walks
+                // (`Instance_GetNodeMatrix` reads `lw(table + 8)` as its base):
+                // a 16-byte entry per index, the next index at +0 and the
+                // node's matrix at +0xc. -1 ends the chain, so the walk's back
+                // edge runs once and then stops (zeroed entries never end).
+                let nodes = DATA + 0x8000;
+                c.bus.write32(table + 8, nodes);
+                for (i, next) in [1u32, u32::MAX].into_iter().enumerate() {
+                    let e = nodes + 0x10 * i as u32;
+                    c.bus.write32(e, next);
+                    c.bus.write32(e + 0xc, DATA + 0x9000 + 0x40 * i as u32);
+                }
+                // A modifier block already exists, so nothing is created.
+                c.bus.write32(node + 0x1c, table + 0x100);
+                let index = match seed % 3 {
+                    0 => -1i32,
+                    1 => count as i32 + 1,
+                    _ => 0,
+                };
+                let valid = index >= 0 && (index as u32) < count;
+                c.bus.write32(DATA + 0x4000 + 0x48, r.next_u32());
+                c.bus.write32(DATA + 0x4000 + 0x50, r.next_u32());
+                c.g[A0][0] = sx(node);
+                // Only a valid index keeps the descriptor: the delete path
+                // must not free a random pointer.
+                c.g[A1][0] = sx(if valid && seed % 5 != 0 {
+                    DATA + 0x4000
+                } else {
+                    0
+                });
+                c.g[A2][0] = sx(index as u32);
+                c.g[A3][0] = sx(table + 0x200);
+            },
+        );
+    }
+
+    /// A node with a vtable whose slots 48 and 49 are fakes (unwinding for
+    /// some seeds) and a modifier block that is either present (freed first)
+    /// or created by the real constructor on a test heap.
+    #[test]
+    fn mod_obj_set_transform_modifier_matches() {
+        use crate::difftest::fakes::FAKE;
+        use crate::game::worldpainter::quadtree::tests::alloc_machine;
+        const NODE: u32 = DATA + 0x100;
+        const VT: u32 = DATA + 0x800;
+        const OBJ: u32 = DATA + 0xc00;
+        const BLOCK: u32 = DATA + 0xd00;
+        const MOD: u32 = DATA + 0xe00;
+        check(
+            ee::s11::f_003554b0__generated,
+            mod_obj_set_transform_modifier,
+            150,
+            &|c, seed| {
+                let mut r = alloc_machine(c, seed, 0x35_54b0);
+                c.pc = 0x0035_54b0;
+                for i in 0..0x20u32 {
+                    c.bus.write32(NODE + 4 * i, 0);
+                    c.bus.write32(OBJ + 4 * i, 0);
+                    c.bus.write32(BLOCK + 4 * i, 0);
+                    c.bus.write32(MOD + 4 * i, 0);
+                }
+                for i in 0..0x70u32 {
+                    c.bus.write32(VT + 4 * i, 0);
+                }
+                c.bus.write32(NODE + 0xc, VT);
+                c.bus.write16(VT + 0x188, (4 * (r.next_u32() % 4)) as u16);
+                c.bus.write32(VT + 0x18c, FAKE);
+                c.bus.write16(VT + 0x180, (4 * (r.next_u32() % 4)) as u16);
+                c.bus.write32(VT + 0x184, FAKE + 0x10);
+                c.bus.write32(NODE + 0x18, OBJ);
+                c.bus.write32(OBJ + 8, r.next_u32());
+                c.bus
+                    .write32(NODE + 0x1c, if seed % 2 == 0 { 0 } else { BLOCK });
+                c.g[A0][0] = sx(NODE);
+                c.g[A1][0] = sx(MOD);
+            },
+        );
+    }
+
+    /// `ModObj_v48`: no modifier block, a block whose first word is null
+    /// (no-op), and a live block whose vtable calls (fakes) run, against a
+    /// node with a valid bound-box source.
+    #[test]
+    fn mod_obj_v48_matches() {
+        check(
+            ee::s11::f_00356780__generated,
+            mod_obj_v48,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x356780, 0);
+                let this = DATA;
+                let block = DATA + 0x3000;
+                let impl_ = DATA + 0x5000;
+                let bounds = DATA + 0x4000;
+                let vt = DATA + 0x8_0000;
+                let d_box = (r.next_u32() as i16 as i32 & !3) as u16;
+                let d_radius = (r.next_u32() as i16 as i32 & !3) as u16;
+                c.bus.write16(vt + 0x68, d_box);
+                c.bus.write32(vt + 0x6c, FAKE);
+                c.bus.write16(vt + 0x78, d_radius);
+                c.bus.write32(vt + 0x7c, FAKE + 0x10);
+                match seed % 3 {
+                    0 => c.bus.write32(this + MODOBJ_V48_BLOCK, 0),
+                    1 => {
+                        c.bus.write32(this + MODOBJ_V48_BLOCK, block);
+                        c.bus.write32(block, 0);
+                    }
+                    _ => {
+                        c.bus.write32(this + MODOBJ_V48_BLOCK, block);
+                        c.bus.write32(block, impl_);
+                        c.bus.write32(impl_, vt);
+                    }
+                }
+                c.bus.write32(this + MODOBJ_V48_INSTANCE, bounds);
+                fill(c, &mut r, bounds, 0x80);
+                c.g[A0][0] = sx(this);
+                c.pc = 0x0035_6780;
+            },
+        );
+    }
+
+    /// Where this module's tests keep the forced callee results: +0 the
+    /// magic, then per-test words.
+    pub(crate) const OC336_CTRL: u32 = DATA + 0x7_0000;
+
+    pub(crate) const OC336_MAGIC: u32 = 0x11a1_68f0;
+
+    pub(crate) fn oc336_fall_through(c: &mut Cpu, prev: &AtomicUsize, gen: fn(&mut Cpu)) {
+        let p = prev.load(Ordering::Relaxed);
+        if p == 0 {
+            return gen(c);
+        }
+        // SAFETY: `p` was read from the same slot (a `fn(&mut Cpu)`).
+        let f = unsafe { std::mem::transmute::<usize, fn(&mut Cpu)>(p) };
+        f(c)
+    }
+
+    /// A gated logging fake: `fake` logs every register the caller set up and
+    /// returns to `ra` (or unwinds at the setup's call index). When the
+    /// machine's magic word is absent, it falls through to whatever the slot
+    /// held (or the generated body), so other tests are not affected.
+    macro_rules! oc336_fake {
+        ($name:ident, $prev:ident, $addr:expr, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(OC336_CTRL) != OC336_MAGIC {
+                    return oc336_fall_through(c, &$prev, $gen);
+                }
+                let ra = c.g[RA][0] as u32;
+                fake(c, $addr, ra);
+            }
+        };
+    }
+    pub(crate) use oc336_fake;
+
+    /// Install gated fakes in the given override slots, once per test.
+    macro_rules! oc336_install {
+        ($($slot:expr => $f:path => $prev:ident),* $(,)?) => {{
+            static ONCE: Once = Once::new();
+            ONCE.call_once(|| unsafe {
+                let hook = |slot: *mut fn(&mut Cpu), f: fn(&mut Cpu), prev: &AtomicUsize| {
+                    let cur = *slot;
+                    if cur as usize != f as usize {
+                        prev.store(cur as usize, Ordering::Relaxed);
+                        *slot = f;
+                    }
+                };
+                $(hook(addr_of_mut!($slot), $f, &$prev);)*
+            });
+        }};
+    }
+    pub(crate) use oc336_install;
+
+    /// `PositionModifier_ctor_2`: vtable, the matrix copy through VU0 and the
+    /// flag at +0x44.
+    #[test]
+    fn position_modifier_ctor_2_matches() {
+        check(
+            ee::s11::f_00356f10__generated,
+            position_modifier_ctor_2,
+            50,
+            &|c, seed| {
+                let mut r = Rng(0x0035_6f10 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let this = DATA + 0x100;
+                let m = DATA + 0x1000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(m);
+                fill(c, &mut r, this, 0x30);
+                for i in 0..4 {
+                    put_vec(
+                        c,
+                        m + 0x10 * i,
+                        [r.f32(1e4), r.f32(1e4), r.f32(1e4), r.f32(2.0)],
+                    );
+                }
+            },
+        );
+    }
+
+    // ------------------------------------------------------- ModObj modifiers
+
+    oc336_fake!(
+        modifier_fake_alloc,
+        MODIFIER_PREV_ALLOC,
+        0x0031_7d70,
+        ee::s10::f_00317d70__generated
+    );
+
+    oc336_fake!(
+        modifier_fake_spline_ctor,
+        MODIFIER_PREV_SPLINE_CTOR,
+        0x0035_9460,
+        ee::s11::f_00359460__generated
+    );
+
+    oc336_fake!(
+        modifier_fake_set_transform,
+        MODIFIER_PREV_SET_TRANSFORM,
+        0x0035_54b0,
+        ee::s11::f_003554b0__generated
+    );
+
+    oc336_fake!(
+        modifier_fake_create_block,
+        MODIFIER_PREV_CREATE_BLOCK,
+        0x0035_5468,
+        ee::s11::f_00355468__generated
+    );
+
+    pub(crate) fn mod_obj_add_spline_modifier_install() {
+        oc336_install!(
+            ee::s10::OVERRIDE_00317D70 => modifier_fake_alloc => MODIFIER_PREV_ALLOC,
+            ee::s11::OVERRIDE_00359460 => modifier_fake_spline_ctor => MODIFIER_PREV_SPLINE_CTOR,
+            ee::s11::OVERRIDE_003554B0 => modifier_fake_set_transform => MODIFIER_PREV_SET_TRANSFORM,
+        );
+    }
+
+    /// `ModObj_AddSplineModifier`: the allocator, the spline-modifier
+    /// constructor and `ModObj_SetTransformModifier` are logging fakes, so
+    /// every argument the original passes is compared.
+    #[test]
+    fn mod_obj_add_spline_modifier_matches() {
+        mod_obj_add_spline_modifier_install();
+        const THIS: u32 = DATA + 0x100;
+        const DESC: u32 = DATA + 0x200;
+        covered(
+            ee::s11::f_00355ad0__generated,
+            mod_obj_add_spline_modifier,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_5ad0, 3);
+                c.bus.write32(OC336_CTRL, OC336_MAGIC);
+                fill(c, &mut r, THIS, 0x40);
+                fill(c, &mut r, DESC, 0x40);
+                c.g[A0][0] = sx(THIS);
+                c.g[A1][0] = sx(DESC);
+            },
+        );
+    }
+
+    // `ModObj_AddPositionModifierFromMatrix`: same three calls, but the
+    // position-modifier constructor has no override slot (it is generated or
+    // the port itself), so only the allocator and the transform setter are
+    // faked.
+    pub(crate) fn mod_obj_add_position_modifier_from_matrix_install() {
+        oc336_install!(
+            ee::s10::OVERRIDE_00317D70 => modifier_fake_alloc => MODIFIER_PREV_ALLOC,
+            ee::s11::OVERRIDE_003554B0 => modifier_fake_set_transform => MODIFIER_PREV_SET_TRANSFORM,
+        );
+    }
+
+    /// `ModObj_AddPositionModifierFromMatrix`: the allocator and
+    /// `ModObj_SetTransformModifier` are logging fakes; the real position
+    /// constructor copies the matrix from the descriptor.
+    #[test]
+    fn mod_obj_add_position_modifier_from_matrix_matches() {
+        mod_obj_add_position_modifier_from_matrix_install();
+        const THIS: u32 = DATA + 0x100;
+        const MATRIX: u32 = DATA + 0x400;
+        covered(
+            ee::s11::f_00355918__generated,
+            mod_obj_add_position_modifier_from_matrix,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_5918, 2);
+                c.bus.write32(OC336_CTRL, OC336_MAGIC);
+                fill(c, &mut r, THIS, 0x40);
+                for i in 0..4 {
+                    put_vec(
+                        c,
+                        MATRIX + 0x10 * i,
+                        [r.f32(1e3), r.f32(1e3), r.f32(1e3), r.f32(1.0)],
+                    );
+                }
+                c.g[A0][0] = sx(THIS);
+                c.g[A1][0] = sx(MATRIX);
+            },
+        );
+    }
+
+    /// `ModObj_TakeParticleModifiers`: no block on the source (no call), no
+    /// block on the target (created, a fake) and a block with an empty
+    /// particle list (the real `ModifierBlock_TakeParticleList`).
+    #[test]
+    fn mod_obj_take_particle_modifiers_matches() {
+        oc336_install!(
+            ee::s11::OVERRIDE_00355468 => modifier_fake_create_block => MODIFIER_PREV_CREATE_BLOCK,
+        );
+        const TARGET: u32 = DATA + 0x100;
+        const SOURCE: u32 = DATA + 0x200;
+        const SRC_BLOCK: u32 = DATA + 0x1000;
+        const DST_BLOCK: u32 = DATA + 0x2000;
+        covered(
+            ee::s11::f_00356020__generated,
+            mod_obj_take_particle_modifiers,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_6020, 1);
+                c.bus.write32(OC336_CTRL, OC336_MAGIC);
+                let has_source = seed % 4 != 0;
+                let has_target = seed % 2 == 0;
+                c.bus
+                    .write32(SOURCE + 0x1c, if has_source { SRC_BLOCK } else { 0 });
+                c.bus
+                    .write32(TARGET + 0x1c, if has_target { DST_BLOCK } else { 0 });
+                // Empty particle lists on both blocks.
+                c.bus.write32(SRC_BLOCK + 0x10, 0);
+                c.bus.write32(DST_BLOCK + 0x10, 0);
+                fill(c, &mut r, SRC_BLOCK + 0x20, 0x10);
+                fill(c, &mut r, DST_BLOCK + 0x20, 0x10);
+                c.g[A0][0] = sx(TARGET);
+                c.g[A1][0] = sx(SOURCE);
+            },
+        );
+    }
+
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+    pub(crate) use crate::game::lib::snd::snd_channel_find_max_voice;
+
+    /// Magic word that turns this module's gated fakes on, in each test
+    /// machine's own RAM (other tests reach the bodies the slots held).
+    pub(crate) const OC338_CTRL: u32 = DATA + 0x0e_3380;
+
+    pub(crate) const OC338_MAGIC: u32 = 0x4f43_3338;
+
+    /// A gated logging fake for an override slot: logs the caller's
+    /// registers and returns a pointer (or unwinds at the setup's index).
+    macro_rules! oc338_fake {
+        ($name:ident, $prev:ident, $addr:expr, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(OC338_CTRL) != OC338_MAGIC {
+                    return fall_back(c, &$prev, $gen);
+                }
+                let ra = c.g[RA][0] as u32;
+                fake(c, $addr, ra);
+            }
+        };
+    }
+    pub(crate) use oc338_fake;
+
+    oc338_fake!(
+        oc338_fake_alloc,
+        OC338_PREV_ALLOC,
+        0x0031_7d70,
+        ee::s10::f_00317d70__generated
+    );
+
+    oc338_fake!(
+        oc338_fake_set_rail,
+        OC338_PREV_SET_RAIL,
+        0x0035_56a8,
+        ee::s11::f_003556a8__generated
+    );
+
+    oc338_fake!(
+        oc338_fake_particle_base_ctor,
+        OC338_PREV_PARTICLE_BASE_CTOR,
+        0x0034_5798,
+        ee::s11::f_00345798__generated
+    );
+
+    oc338_fake!(
+        oc338_fake_link_particle,
+        OC338_PREV_LINK_PARTICLE,
+        0x0035_5658,
+        ee::s11::f_00355658__generated
+    );
+
+    pub(crate) static OC338_PREV_HAS_RAIL: AtomicUsize = AtomicUsize::new(0);
+
+    /// `ModifierBlock_HasRailModifier`: logs, then answers the word at
+    /// `OC338_CTRL + 4` (0 = no rail modifier yet).
+    pub(crate) fn oc338_fake_has_rail(c: &mut Cpu) {
+        if c.bus.read32(OC338_CTRL) != OC338_MAGIC {
+            return fall_back(c, &OC338_PREV_HAS_RAIL, ee::s11::f_00353418__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fake(c, 0x0035_3418, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(OC338_CTRL + 4) as u64;
+        }
+    }
+
+    /// Where the fake allocator's block goes (away from the fakes' hashed
+    /// pointers, which stay below `DATA + 0x40000`).
+    pub(crate) const OC338_BLOCK: u32 = DATA + 0x4_8000;
+
+    /// `ModObj_AddRailModifier`: no block, a block that already has the
+    /// rail (early exit), and one without it. The real rail constructor
+    /// runs up to its first virtual call (a logging fake through a fake
+    /// vtable), where the seed always unwinds (past it the constructor
+    /// builds rail nodes); so `ModObj_SetRailModifier` is not reached.
+    #[test]
+    fn mod_obj_add_rail_modifier_matches() {
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00353418),
+            oc338_fake_has_rail,
+            &OC338_PREV_HAS_RAIL,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc338_fake_alloc,
+            &OC338_PREV_ALLOC,
+        );
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_003556A8),
+            oc338_fake_set_rail,
+            &OC338_PREV_SET_RAIL,
+        );
+        const OBJ: u32 = DATA + 0x5_0000;
+        const DESC: u32 = DATA + 0x5_1000;
+        const OWNER: u32 = DATA + 0x5_2000;
+        const OWNER_INNER: u32 = DATA + 0x5_3000;
+        const OWNER_VT: u32 = DATA + 0x5_4000;
+        covered(
+            ee::s11::f_00355e38__generated,
+            mod_obj_add_rail_modifier_2,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_5e38, 3);
+                c.pc = 0x0035_5e38;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                let has_block = seed % 3 != 0;
+                let present = has_block && seed % 3 == 1 && r.next_u32() % 2 == 0;
+                c.bus.write32(
+                    OC338_CTRL + 4,
+                    if present { 1 + r.next_u32() % 7 } else { 0 },
+                );
+                fill(c, &mut r, OBJ, 0x10);
+                fill(c, &mut r, DESC, 0x10);
+                c.bus.write32(
+                    OBJ + MOD_OBJ_ADD_RAIL_BLOCK,
+                    if has_block { DATA + 0x5_8000 } else { 0 },
+                );
+                // Owner chain read by the rail constructor before its
+                // first virtual call: owner+0xc -> +0xc -> vtable+0x160.
+                c.bus.write32(OBJ + MOD_OBJ_ADD_RAIL_OWNER, OWNER);
+                c.bus.write32(OWNER + 0xc, OWNER_INNER);
+                c.bus.write32(OWNER_INNER + 0xc, OWNER_VT);
+                c.bus
+                    .write16(OWNER_VT + 0x160, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(OWNER_VT + 0x164, FAKE);
+                let alloc_index = has_block as u32;
+                c.bus.write32(LOG_RESULTS + 4 * alloc_index, OC338_BLOCK);
+                if !present {
+                    // Always unwind by the constructor's virtual call.
+                    let ctor_call = alloc_index + 1;
+                    c.bus.write32(LOG_UNWIND_AT, r.next_u32() % (ctor_call + 1));
+                }
+                c.g[A0][0] = sx(OBJ);
+                c.g[A1][0] = sx(DESC);
+            },
+        );
+    }
+
+    driven!(oc338_gen_find_max_voice, ee::s13::f_003c6580__generated);
+
+    driven!(oc338_hand_find_max_voice, snd_channel_find_max_voice);
+
+    /// `SND_ChannelFindMaxVoice`: counts <= 0 (no loop) and 1..40 voices of
+    /// random priorities (ties, negatives), with events delivered and
+    /// unwinding at the loop's back edge.
+    #[test]
+    fn snd_channel_find_max_voice_matches() {
+        check_events(
+            oc338_gen_find_max_voice,
+            oc338_hand_find_max_voice,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x003c_6580 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                let table = DATA + 0x5_0000;
+                c.bus.write32(
+                    crate::game::lib::snd::SND_CHANNEL_FIND_MAX_VOICE_TABLE,
+                    table,
+                );
+                let channel = r.next_u32() % 4;
+                for i in 0..48 {
+                    let p = match r.next_u32() % 4 {
+                        0 => 0xffff,
+                        1 => 7,
+                        _ => r.next_u32() & 0xffff,
+                    };
+                    c.bus.write16(table + 4 + channel * 0x8c + 2 * i, p as u16);
+                }
+                c.g[A0][0] = channel as u64;
+                c.g[A1][0] = match seed % 7 {
+                    0 => 0,
+                    1 => sx(0x8000_0000 | r.next_u32()),
+                    _ => (1 + r.next_u32() % 40) as u64,
+                };
+                schedule(c, &mut r, seed, 0x003c_6580)
+            },
+        );
+    }
+
+    /// `ModObj_AddHaloModifier`: the allocator, the particle base
+    /// constructor and the particle-modifier link are logging fakes; the
+    /// real halo constructor copies the descriptor and bumps the counter
+    /// at `gp+0xf10`.
+    #[test]
+    fn mod_obj_add_halo_modifier_matches() {
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc338_fake_alloc,
+            &OC338_PREV_ALLOC,
+        );
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00345798),
+            oc338_fake_particle_base_ctor,
+            &OC338_PREV_PARTICLE_BASE_CTOR,
+        );
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00355658),
+            oc338_fake_link_particle,
+            &OC338_PREV_LINK_PARTICLE,
+        );
+        const OBJ: u32 = DATA + 0x5_0000;
+        const DESC: u32 = DATA + 0x5_1000;
+        covered(
+            ee::s11::f_00355eb0__generated,
+            mod_obj_add_halo_modifier,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_5eb0, 3);
+                c.pc = 0x0035_5eb0;
+                c.bus.write32(OC338_CTRL, OC338_MAGIC);
+                c.bus.write32(LOG_RESULTS, OC338_BLOCK);
+                fill(c, &mut r, OBJ, 0x10);
+                fill(c, &mut r, DESC, 0x10);
+                c.bus.write32(GAME_GP + 0xf10, r.next_u32());
+                c.g[A0][0] = sx(OBJ);
+                c.g[A1][0] = sx(DESC);
             },
         );
     }

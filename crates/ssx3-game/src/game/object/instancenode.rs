@@ -51,6 +51,17 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0034_fbf0, world_obj_dtor, "WorldObj_dtor"),
     (0x0034_fd90, world_obj_kill, "WorldObj_Kill"),
+    (0x0035_0570, world_obj_get_bound_box, "WorldObj_GetBoundBox"),
+    (
+        0x0034_fcc0,
+        world_obj_run_kill_script,
+        "WorldObj_RunKillScript",
+    ),
+    (
+        0x0034_fd00,
+        world_obj_kill_restorable,
+        "WorldObj_KillRestorable",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -759,6 +770,216 @@ pub fn world_obj_kill(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// WorldObj_GetBoundBox (0x350570).
+
+/// `cInstanceNode` fields: the node's matrix data (+0x18) with the centre
+/// (world translation) at +0x40, the first box corner at +0x60..+0x68 and
+/// the second at +0x6c..+0x74.
+pub(crate) const WORLDOBJ_NODE: u32 = 0x18;
+
+pub(crate) const WORLDOBJ_CENTRE: u32 = 0x40;
+
+pub(crate) const WORLDOBJ_CORNER_0: u32 = 0x60;
+
+pub(crate) const WORLDOBJ_CORNER_1: u32 = 0x6c;
+
+/// `void cInstanceNode_getBoundBoxInfo(cInstanceNode* self, sIbVec4 box[2],
+/// float* radius)` (0x350570): fill the two box corners (w = 1) and return
+/// the largest distance from the node's centre to a corner of the box they
+/// span. Frame 0x40 (the probe vector at +0x10, the centre at +0).
+pub fn world_obj_get_bound_box(c: &mut Cpu) {
+    c.cycles += 32;
+    c.g[V0][0] = Addr(r32(c, A0).wrapping_add(WORLDOBJ_NODE)).lw(c);
+    let frame = Frame::open(c, 0x40);
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(1, 2); // f2 = 1.0 (w)
+    c.g[T0][0] = sx(r32(c, A1).wrapping_add(0x10)); // mx = box[1]
+    c.lwc1(0, r32(c, V0).wrapping_add(WORLDOBJ_CORNER_0));
+    c.g[T1][0] = c.g[SP][0]; // &centre
+    c.mtc1(0, 3); // f3 = best = 0.0 (through the zero register)
+    c.mov_s(4, 2); // f4 = 1.0
+    c.swc1(0, frame.at(c, 0));
+    c.g[A3][0] = 0;
+    c.lwc1(0, r32(c, V0).wrapping_add(WORLDOBJ_CORNER_0 + 4));
+    c.swc1(0, frame.at(c, 4));
+    c.lwc1(1, r32(c, V0).wrapping_add(WORLDOBJ_CORNER_0 + 8));
+    c.swc1(2, frame.at(c, 0xc));
+    c.swc1(1, frame.at(c, 8));
+    c.lq(2, frame.at(c, 0));
+    c.sq(2, r32(c, A1));
+    c.g[V1][0] = Addr(r32(c, A0).wrapping_add(WORLDOBJ_NODE)).lw(c);
+    c.lwc1(0, r32(c, V1).wrapping_add(WORLDOBJ_CORNER_1));
+    c.swc1(0, frame.at(c, 0));
+    c.lwc1(1, r32(c, V1).wrapping_add(WORLDOBJ_CORNER_1 + 4));
+    c.swc1(1, frame.at(c, 4));
+    c.lwc1(0, r32(c, V1).wrapping_add(WORLDOBJ_CORNER_1 + 8));
+    c.swc1(0, frame.at(c, 8));
+    c.lq(2, frame.at(c, 0));
+    c.sq(2, r32(c, A1).wrapping_add(0x10));
+    c.g[V1][0] = Addr(r32(c, A0).wrapping_add(WORLDOBJ_NODE)).lw(c);
+    c.lq(2, r32(c, V1).wrapping_add(WORLDOBJ_CENTRE));
+    c.sq(2, frame.at(c, 0));
+    c.g[V0][0] = c.g[A3][0] & 1;
+    loop {
+        // x/y/z of corner (A3 & 1/2/4 ? box[0] : box[1]).
+        c.cycles += 2;
+        if c.g[V0][0] == 0 {
+            c.lwc1(2, r32(c, T0));
+        } else {
+            c.cycles += 1;
+            c.lwc1(2, r32(c, A1));
+        }
+        c.cycles += 3;
+        c.g[V0][0] = c.g[A3][0] & 2;
+        if c.g[V0][0] == 0 {
+            c.lwc1(1, r32(c, T0).wrapping_add(4));
+        } else {
+            c.cycles += 1;
+            c.lwc1(1, r32(c, A1).wrapping_add(4));
+        }
+        c.cycles += 3;
+        c.g[V0][0] = c.g[A3][0] & 4;
+        if c.g[V0][0] == 0 {
+            c.lwc1(0, r32(c, T0).wrapping_add(8));
+        } else {
+            c.cycles += 1;
+            c.lwc1(0, r32(c, A1).wrapping_add(8));
+        }
+        c.cycles += 23;
+        c.swc1(2, frame.at(c, 0x10));
+        c.swc1(1, frame.at(c, 0x14));
+        c.swc1(0, frame.at(c, 0x18));
+        c.swc1(4, frame.at(c, 0x1c));
+        c.lqc2(3, frame.at(c, 0x10));
+        c.lqc2(4, c.g[T1][0] as u32);
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4)); // c - centre
+        c.sqc2(5, frame.at(c, 0x30));
+        c.lq(2, frame.at(c, 0x30));
+        c.sq(2, frame.at(c, 0x20));
+        c.lqc2(3, frame.at(c, 0x20));
+        c.lqc2(5, frame.at(c, 0x20));
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W)); // dot(c - centre)
+        c.qmfc2(3, 4);
+        c.mtc1(3, 0);
+        c.c_lt_s(3, 0);
+        if c.fcc() {
+            c.mov_s(3, 0); // best = l
+        }
+        c.cycles += 4;
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+        c.g[V0][0] = ((c.g[A3][0] as i64) < 8) as u64;
+        if c.g[V0][0] == 0 {
+            c.cycles += 4;
+            c.sqrt_s(0, 3);
+            c.swc1(0, r32(c, A2));
+            frame.close(c);
+            return;
+        }
+        c.g[V0][0] = c.g[A3][0] & 1;
+        if event_due(c) {
+            deliver_event_here(c, 0x0035_05f0);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// WorldObj_RunKillScript (0x34fcc0).
+
+/// `void *WorldObj_RunKillScript(WorldObj *self)` (0x34fcc0): run the kill
+/// script for the object's instance node (`*(self + 0x18)`), returning
+/// whether one ran.
+pub fn world_obj_run_kill_script(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        Some(0x18),
+        crate::call::Target::Table(0x002d_19e8),
+        0x0034_fcd0,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// WorldObj_KillRestorable (0x34fd00).
+
+/// The object's instance node.
+pub(crate) const WORLDOBJ_KR_NODE: u32 = 0x18;
+
+/// The instance node's flags word.
+pub(crate) const WORLDOBJ_KR_FLAGS: u32 = 0x8;
+
+/// The object's vtable.
+pub(crate) const WORLDOBJ_KR_VTABLE: u32 = 0xc;
+
+/// `void WorldObj_KillRestorable(WorldObj *self, bool runscript)`
+/// (0x34fd00): optionally run the kill script (and keep the object when one
+/// ran); otherwise in the instance node's flags word keep only bits 8-9
+/// (`&= 0xffff0300`), fold the high half into the low one, set the dead bit
+/// and ask the vtable slot +8 (state 3) to expire the object.
+pub fn world_obj_kill_restorable(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        let run_script = c.g[A1][0] != 0;
+        c.g[S0][0] = c.g[A0][0];
+        if run_script {
+            c.cycles += 4;
+            WORLD_OBJ_RUN_KILL_SCRIPT.call(c, 0x0034_fd1c)?;
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x10);
+                c.cycles += 3;
+                frame.restore_ra(c, 0);
+                frame.close(c);
+                return Ok(());
+            }
+        }
+        c.cycles += 16;
+        let me = r32(c, S0);
+        c.g[A1][0] = Addr(me.wrapping_add(WORLDOBJ_KR_NODE)).lw(c);
+        let mask = 0xffff_ffff_ffff_0300u64;
+        c.g[V1][0] = mask;
+        c.g[V0][0] = Addr(r32(c, A1).wrapping_add(WORLDOBJ_KR_FLAGS)).lw(c);
+        c.g[V0][0] &= c.g[V1][0];
+        c.sw(r32(c, A1).wrapping_add(WORLDOBJ_KR_FLAGS), c.g[V0][0]);
+        c.g[A0][0] = Addr(me.wrapping_add(WORLDOBJ_KR_NODE)).lw(c);
+        c.g[V0][0] = Addr(r32(c, A0).wrapping_add(WORLDOBJ_KR_FLAGS)).lw(c);
+        c.g[V1][0] = sx(((r32(c, V0) as i32) >> 16) as u32);
+        c.g[V0][0] |= c.g[V1][0];
+        c.sw(r32(c, A0).wrapping_add(WORLDOBJ_KR_FLAGS), c.g[V0][0]);
+        c.g[V1][0] = Addr(me.wrapping_add(WORLDOBJ_KR_NODE)).lw(c);
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(WORLDOBJ_KR_FLAGS)).lw(c);
+        c.g[V0][0] |= 0x2;
+        let null = c.g[S0][0] == 0;
+        c.sw(r32(c, V1).wrapping_add(WORLDOBJ_KR_FLAGS), c.g[V0][0]);
+        if !null {
+            c.cycles += 6;
+            c.g[V0][0] = Addr(me.wrapping_add(WORLDOBJ_KR_VTABLE)).lw(c);
+            c.g[A1][0] = 0x3;
+            let slot = crate::call::VSlot::read(c, c.g[V0][0], 0x8);
+            c.g[A0][0] = sx(me.wrapping_add(slot.delta as u32));
+            c.g[V1][0] = slot.func;
+            call_ptr(c, slot.func as u32, 0x0034_fd7c)?;
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `WorldObj_RunKillScript(WorldObj *self)` 0x34fcc0.
+pub(crate) const WORLD_OBJ_RUN_KILL_SCRIPT: Callee = Callee {
+    addr: 0x0034_fcc0,
+    f: ee::s11::WorldObj_RunKillScript,
+};
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -995,6 +1216,124 @@ pub(crate) mod tests {
                 c.bus
                     .write32(0x18, if seed % 2 == 0 { 0 } else { NODE + 0x40 });
                 c.g[A0][0] = if seed % 8 == 0 { 0 } else { sx(ME) };
+            },
+        );
+    }
+
+    // -- 0x00350570 WorldObj_GetBoundBox --------------------------------------
+
+    /// `WorldObj_GetBoundBox`: random corners and centre (edge-case floats,
+    /// zeroes, wide ranges) on the node's matrix data; the eight probe
+    /// corners are the combinations of the two box corners.
+    #[test]
+    fn world_obj_get_bound_box_matches() {
+        use crate::difftest::{check, scramble, Rng, DATA};
+        const SELF: u32 = DATA;
+        const NODE: u32 = DATA + 0x100;
+        const BOX: u32 = DATA + 0x400;
+        const RADIUS: u32 = DATA + 0x500;
+        check(
+            ee::s11::f_00350570__generated,
+            world_obj_get_bound_box,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x3505_7000 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(BOX);
+                c.g[A2][0] = sx(RADIUS);
+                c.bus.write32(SELF + WORLDOBJ_NODE, NODE);
+                for k in 0..0x80u32 {
+                    let v = match (seed as u32 + k) % 7 {
+                        0 => r.edge_f32(),
+                        1 => 0,
+                        _ => r.f32(1e5),
+                    };
+                    c.bus.write32(NODE + 4 * k, v);
+                }
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    use crate::difftest::GAME_GP;
+
+    /// The `WScriptMan` fakes are process-global slots, so this module's two
+    /// tests that install them run one at a time (a concurrent `Drop` would
+    /// put the generated body back under the other's feet).
+    pub(crate) static WSCRIPT_SLOT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    pub(crate) fn lock_wscript_slots() -> std::sync::MutexGuard<'static, ()> {
+        WSCRIPT_SLOT_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// `WorldObj_RunKillScript`: the instance node's kill script (the faked
+    /// `WScriptMan` looks up the id it is handed).
+    #[test]
+    fn world_obj_run_kill_script_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::fakes::LOG_RESULTS;
+        use crate::game::lib::snd::tests::{WscriptFakeSlots, FAKE_CTRL, FAKE_MAGIC};
+        use crate::game::util::menu::WSCRIPT_MANAGER_GP;
+        let _guard = lock_wscript_slots();
+        let _slots = WscriptFakeSlots::install();
+        check(
+            ee::s11::f_0034fcc0__generated,
+            world_obj_run_kill_script,
+            160,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34fcc0, 1);
+                c.pc = 0x0034_fcc0;
+                c.bus.write32(FAKE_CTRL, FAKE_MAGIC);
+                let manager = DATA + 0x100;
+                fill(c, &mut r, manager + 0x280, 8);
+                c.bus.write32(GAME_GP + WSCRIPT_MANAGER_GP, manager);
+                c.bus.write32(manager + 0x28c, DATA + 0x200);
+                c.bus.write32(LOG_RESULTS, (seed % 2) as u32);
+                c.bus.write32(DATA + 0x400 + 0x18, DATA + 0x500);
+                c.g[A0][0] = sx(DATA + 0x400);
+            },
+        );
+    }
+
+    /// `WorldObj_KillRestorable`: an object with an instance (random flags
+    /// word) and a vtable whose slot +8 is a fake; `a1` asks for the kill
+    /// script (which is faked to find one or not), and on 1 in 8 seeds the
+    /// object is null.
+    #[test]
+    fn world_obj_kill_restorable_matches() {
+        use crate::difftest::fakes::covered;
+        use crate::difftest::fakes::machine;
+        use crate::difftest::fakes::vtable;
+        use crate::difftest::fakes::LOG_RESULTS;
+        use crate::game::lib::snd::tests::{WscriptFakeSlots, FAKE_CTRL, FAKE_MAGIC};
+        use crate::game::util::menu::WSCRIPT_MANAGER_GP;
+        const ME: u32 = DATA + 0x400;
+        const NODE: u32 = DATA + 0x800;
+        let _guard = lock_wscript_slots();
+        let _slots = WscriptFakeSlots::install();
+        covered(
+            ee::s11::f_0034fd00__generated,
+            world_obj_kill_restorable,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34fd00, 2);
+                c.pc = 0x0034_fd00;
+                c.bus.write32(FAKE_CTRL, FAKE_MAGIC);
+                let manager = DATA + 0x100;
+                fill(c, &mut r, manager + 0x280, 8);
+                c.bus.write32(GAME_GP + WSCRIPT_MANAGER_GP, manager);
+                c.bus.write32(manager + 0x28c, DATA + 0x200);
+                c.bus.write32(LOG_RESULTS, (seed % 2) as u32);
+                c.bus.write32(ME + 0x18, NODE);
+                c.bus.write32(NODE + 8, r.next_u32());
+                let vt = vtable(c, &mut r, &[8]);
+                c.bus.write32(ME + 0xc, vt);
+                c.g[A0][0] = if seed % 8 == 0 { 0u64 } else { sx(ME) };
+                c.g[A1][0] = ((seed / 2) % 2) as u64;
             },
         );
     }

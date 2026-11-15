@@ -207,6 +207,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_base_save_cheat_code,
         "RiderBase_SaveCheatCode",
     ),
+    (
+        0x002f_5a70,
+        world_light_man_get_overlap_region,
+        "WorldLightMan_GetOverlapRegion",
+    ),
+    (
+        0x002f_5af0,
+        world_light_man_add_point_lights,
+        "WorldLightMan_AddPointLights",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3619,6 +3629,149 @@ pub fn rider_base_save_cheat_code(c: &mut Cpu) {
     stream_write_member(c, 0x4, 0x4, 0x002f_6a80);
 }
 
+// ---------------------------------------------------------------------------
+// WorldLightMan_GetOverlapRegion (0x2f5a70)
+
+/// The overlap region table in the world light manager (`self+0x10`).
+pub const WORLD_LIGHT_OVERLAP_REGIONS: u32 = 0x10;
+
+/// Per-region stride of the overlap region table.
+pub const WORLD_LIGHT_REGION_STRIDE: u32 = 0x40;
+
+/// `sBox_5400* WorldLightMan_GetOverlapRegion(sMan_5400* self, int priority)`
+/// (0x2f5a70): the 8-entry table at `self+0x10`; each entry has a state word
+/// (`-1` = free) and a priority. Returns the entry with the least priority
+/// strictly above `priority`, or the first free entry (state `-1`), or null
+/// when all 8 are used.
+pub fn world_light_man_get_overlap_region(c: &mut Cpu) {
+    c.cycles += 11;
+    let selfp = c.g[A0][0] as u32;
+    c.g[V0][0] = Addr(selfp.wrapping_add(WORLD_LIGHT_OVERLAP_REGIONS)).lw(c);
+    c.g[A3][0] = 0xffff_ffff_ffff_0000;
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+    c.g[T3][0] = 0;
+    c.g[T2][0] = 0;
+    c.g[V0][0] = !(0u64 | c.g[V0][0]);
+    c.g[A3][0] |= 0xffff;
+    c.g[T0][0] = WORLD_LIGHT_OVERLAP_REGIONS as u64;
+    c.g[T1][0] = WORLD_LIGHT_OVERLAP_REGIONS as u64;
+    let t = c.g[V0][0] != 0;
+    c.g[A2][0] = sx(selfp.wrapping_add(WORLD_LIGHT_OVERLAP_REGIONS));
+    if !t {
+        // A free first entry.
+        c.cycles += 2;
+        c.g[T3][0] = c.g[A2][0];
+    } else {
+        c.cycles += 1;
+        c.g[V1][0] = Addr((c.g[A2][0] as u32).wrapping_add(4)).lw(c);
+        'scan: loop {
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A1][0] as i64)) as u64;
+            let skip = c.g[V0][0] == 0;
+            c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(1));
+            if !skip {
+                c.cycles += 2;
+                c.g[A1][0] = c.g[V1][0];
+                c.g[T3][0] = sx(selfp.wrapping_add(c.g[T0][0] as u32));
+            }
+            c.cycles += 5;
+            c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(WORLD_LIGHT_REGION_STRIDE));
+            c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(WORLD_LIGHT_REGION_STRIDE));
+            c.g[V0][0] = (c.g[T2][0] < 8) as u64;
+            let done = c.g[V0][0] == 0;
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(WORLD_LIGHT_REGION_STRIDE));
+            if done {
+                break;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+            if c.g[V0][0] != c.g[A3][0] {
+                c.g[V1][0] = Addr((c.g[A2][0] as u32).wrapping_add(4)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_5aac);
+                }
+                continue 'scan;
+            }
+            c.cycles += 1;
+            c.g[T3][0] = sx(selfp.wrapping_add(c.g[T1][0] as u32));
+            break;
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[T3][0];
+    abi::ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// WorldLightMan_AddPointLights (0x2f5af0)
+
+/// `WorldLightMan_FindStrongestLights` (0x2f5b68), same shard.
+pub(crate) const FIND_STRONGEST_LIGHTS: Callee = Callee {
+    addr: 0x002f_5b68,
+    f: ee::s09::WorldLightMan_FindStrongestLights,
+};
+
+/// The per-light apply step, cross-shard (`call_indirect` in the generated
+/// body).
+pub(crate) const LIGHT_APPLY: u32 = 0x0038_a6a8;
+
+/// `void WorldLightMan_AddPointLights(WorldLightMan* self, void* a1, void* a2,
+/// void* a3, int count)` (0x2f5af0): collect the `count` strongest point
+/// lights into a stack buffer, then add each non-null one through
+/// `func_0038A6A8(a3, a1, light)`.
+pub fn world_light_man_add_point_lights(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0xd0);
+        frame.save(c, S0, 0xc0);
+        frame.save(c, S2, 0xa0);
+        c.g[S0][0] = c.g[T0][0];
+        frame.save(c, S3, 0x90);
+        c.g[S2][0] = c.g[A1][0];
+        c.g[S3][0] = c.g[A3][0];
+        frame.save(c, S1, 0xb0);
+        frame.save_ra(c, 0x80);
+        // The light buffer is the 32-word scratch area at the frame base.
+        c.g[A3][0] = c.g[SP][0];
+        FIND_STRONGEST_LIGHTS.call(c, 0x002f_5b1c)?;
+        let mut remaining = c.g[S0][0] as i64;
+        c.g[S1][0] = c.g[S0][0];
+        if remaining > 0 {
+            c.cycles += 1;
+            c.g[S0][0] = c.g[SP][0];
+            loop {
+                c.cycles += 3;
+                c.g[A2][0] = Addr(r32(c, S0)).lw(c);
+                let empty = c.g[A2][0] == 0;
+                c.g[A0][0] = c.g[S3][0];
+                if !empty {
+                    c.cycles += 2;
+                    c.g[A1][0] = c.g[S2][0];
+                    call_ptr(c, LIGHT_APPLY, 0x002f_5b3c)?;
+                }
+                c.cycles += 3;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_sub(1));
+                remaining = c.g[S1][0] as i64;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+                if remaining == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_5b28);
+                }
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0xc0);
+        frame.restore(c, S1, 0xb0);
+        frame.restore(c, S2, 0xa0);
+        frame.restore(c, S3, 0x90);
+        frame.restore_ra(c, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4818,6 +4971,114 @@ pub(crate) mod tests {
             rider_base_save_cheat_code,
             200,
             &|c, seed| stream_save_setup(c, seed, 0x002f_6a58),
+        );
+    }
+
+    use crate::difftest::SP as STACK;
+
+    pub(crate) use crate::game::animation::rideranim::tests::CTRL;
+    pub(crate) use crate::game::animation::rideranim::tests::MAGIC;
+
+    pub(crate) use crate::game::animation::rideranim::tests::active;
+    pub(crate) use crate::game::animation::rideranim::tests::chain;
+    pub(crate) use crate::game::animation::rideranim::tests::fake_ret;
+    pub(crate) use crate::game::animation::rideranim::tests::install;
+
+    /// `WorldLightMan_GetOverlapRegion`: all 8 table entries random, with
+    /// the state words set so the scan, the free-entry hit, the
+    /// priority hit and the "all used" exit are all reached; events off,
+    /// delivered or unwinding at the loop head.
+    #[test]
+    fn world_light_man_get_overlap_region_matches() {
+        use crate::difftest::events::{check_events, schedule};
+        check_events(
+            ee::s09::f_002f5a70__generated,
+            world_light_man_get_overlap_region,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x2f5a_7000 ^ seed as u64);
+                scramble(c, &mut r);
+                let this = DATA;
+                let prio = (r.next_u32() % 0x10) as u64;
+                let free_at = (seed / 3) % 10; // 0..7: that entry; 8-9: none
+                for i in 0..8u32 {
+                    let e = this + WORLD_LIGHT_OVERLAP_REGIONS + WORLD_LIGHT_REGION_STRIDE * i;
+                    let state = if i == free_at {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % 4
+                    };
+                    c.bus.write32(e, state);
+                    c.bus.write32(e + 4, r.next_u32() % 0x18);
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = prio;
+                schedule(c, &mut r, seed, 0x002f_5a70)
+            },
+        );
+    }
+
+    // -- slot 1/2: WorldLightMan_FindStrongestLights (0x2f5b68) --------------
+
+    pub(crate) fn fake_find_strongest_lights(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 1, fake_find_strongest_lights);
+        }
+        c.g[V0][0] = 1;
+        c.cycles += 6;
+        let ra = c.g[RA][0] as u32;
+        c.pc = ra;
+    }
+
+    pub(crate) fn fake_light_apply(c: &mut Cpu) {
+        if !active(c) {
+            return chain(c, 2, fake_light_apply);
+        }
+        fake_ret(c, 3);
+    }
+
+    #[test]
+    fn world_light_man_add_point_lights_matches() {
+        install(
+            std::ptr::addr_of_mut!(ee::s09::OVERRIDE_002F5B68),
+            fake_find_strongest_lights,
+            1,
+        );
+        install(
+            std::ptr::addr_of_mut!(ee::s12::OVERRIDE_0038A6A8),
+            fake_light_apply,
+            2,
+        );
+        check(
+            ee::s09::f_002f5af0__generated,
+            world_light_man_add_point_lights,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x002f_5af0, 2);
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.g[A1][0] = (DATA + 0x2000) as u64;
+                c.g[A2][0] = (DATA + 0x3000) as u64;
+                c.g[A3][0] = (DATA + 0x4000) as u64;
+                let count: i32 = match seed % 4 {
+                    0 => 0,
+                    1 => -1,
+                    2 => 2,
+                    _ => 4,
+                };
+                c.g[T0][0] = sx(count as u32);
+                // The light buffer is the 32-word area at the frame base.
+                let buf = STACK - 0xd0;
+                for i in 0..32u32 {
+                    let v = if (seed + i) % 3 == 0 {
+                        0
+                    } else {
+                        (DATA + 0x5000 + (i << 4)) | 0x1000
+                    };
+                    c.bus.write32(buf + 4 * i, v);
+                }
+                c.bus.write32(CTRL, MAGIC);
+                c.pc = 0x002f_5af0;
+            },
         );
     }
 }

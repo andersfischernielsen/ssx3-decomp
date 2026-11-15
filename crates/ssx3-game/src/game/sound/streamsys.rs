@@ -15,11 +15,16 @@ pub(crate) use crate::game::fe::feasyncfile::gp_8 as gp;
 pub(crate) use crate::game::fe::feasyncfile::lw_3 as lw_2;
 pub(crate) use crate::game::fe::feasyncfile::p as p_2;
 pub(crate) use crate::game::fe::feasyncfile::p_5 as p;
+#[cfg(test)]
+pub(crate) use crate::game::lib::snd::SND_GETSTREAM_COUNT;
+#[cfg(test)]
+pub(crate) use crate::game::lib::snd::SND_GETSTREAM_TABLE;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
 pub(crate) use crate::game::main::gamestate::p_2 as p_3;
 pub(crate) use crate::game::movie::movieplayer::at as at_2;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::replay::replaycache::destroy_if_flag;
+pub(crate) use crate::game::sound::bankmonitor::SPEECH_STREAM_HANDLE;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -171,6 +176,34 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         bank_monitor_instance_fade_volume,
         "BankMonitorInstance_FadeVolume",
     ),
+    (0x002a_9ed8, stream_buffer_set_pan, "StreamBuffer_SetPan"),
+    (
+        0x002a_a210,
+        stream_buffer_get_current_request,
+        "StreamBuffer_GetCurrentRequest",
+    ),
+    (
+        0x002a_b150,
+        stream_array_get_current_request,
+        "StreamArray_GetCurrentRequest",
+    ),
+    (
+        0x002a_9f38,
+        stream_buffer_set_pitch,
+        "StreamBuffer_SetPitch",
+    ),
+    (0x002a_a320, stream_buffer_queue, "StreamBuffer_Queue"),
+    (0x002a_ad78, stream_array_queue, "StreamArray_Queue"),
+    (
+        0x002a_bcf8,
+        sound_request_set_stream,
+        "SoundRequest_SetStream",
+    ),
+    (
+        0x002a_b1a0,
+        speech_system_clear_prebuffer_callback,
+        "SpeechSystem_ClearPrebufferCallback",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -199,6 +232,9 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_POLL_FREE;
     pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_SET_PITCH;
+
+    pub(crate) use crate::game::lib::snd::callee::STRCPY;
+    pub(crate) use crate::game::lib::snd::callee::STREAM_BUFFER_QUEUE;
 }
 
 /// Cross-shard calls the generator emitted as `call_indirect(c, addr)`: they
@@ -1873,6 +1909,275 @@ pub(crate) fn fade_volume_driver(
     call_ptr(c, 0x003b_58d8, 0x002a_ccc8) // SND_Unlock
 }
 
+// ---------------------------------------------------------------------------
+// StreamArray_GetCurrentRequest (0x2ab150)
+// ---------------------------------------------------------------------------
+
+/// The array of stream buffers, at `self + 8`.
+pub(crate) const STREAM_ARRAY_GET_CURRENT_REQUEST_BUFFERS: u32 = 0x8;
+
+/// `int StreamArray_GetCurrentRequest(self, int i)` (0x2ab150): the current
+/// request of stream `i`, or `-1` when that slot is empty.
+pub fn stream_array_get_current_request(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+        frame.save_ra(c, 0);
+        c.g[V0][0] =
+            c.lw((c.g[A0][0] as u32).wrapping_add(STREAM_ARRAY_GET_CURRENT_REQUEST_BUFFERS));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lw(c.g[A1][0] as u32);
+        let empty = c.g[A0][0] == 0;
+        c.g[V0][0] = u64::MAX; // -1
+        if !empty {
+            c.cycles += 2;
+            Callee {
+                addr: 0x002a_a210,
+                f: ee::s08::StreamBuffer_GetCurrentRequest,
+            }
+            .call(c, 0x002a_b178)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// StreamBuffer_SetPan (0x2a9ed8)
+// ---------------------------------------------------------------------------
+
+/// The stream handle a `StreamBuffer` forwards to, at `+8`.
+pub(crate) const STREAM_BUFFER_SET_PAN_HANDLE: u32 = 0x8;
+
+/// The sound lock/unlock routine pointers (`D_0044FFxx`).
+#[cfg(test)]
+pub(crate) const STREAM_BUFFER_SET_PAN_LOCK_SLOT: u32 = 0x0044_c46c;
+
+#[cfg(test)]
+pub(crate) const STREAM_BUFFER_SET_PAN_UNLOCK_SLOT: u32 = 0x0044_c470;
+
+/// `void StreamBuffer_SetPan(self, int left, int right)` (0x2a9ed8): set the
+/// pan of the buffer's stream under the sound lock.
+pub fn stream_buffer_set_pan(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, 16, 0x30);
+        frame.save(c, 17, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, 18, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A2][0];
+        call_ptr(c, 0x003b_58a0, 0x002a_9efc)?;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(STREAM_BUFFER_SET_PAN_HANDLE));
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[S2][0];
+        call_ptr(c, 0x003b_7f60, 0x002a_9f0c)?;
+        call_ptr(c, 0x003b_58d8, 0x002a_9f14)?;
+        frame.restore(c, 16, 0x30);
+        frame.restore(c, 17, 0x20);
+        frame.restore(c, 18, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x002aa210 StreamBuffer_GetCurrentRequest
+
+/// `int StreamBuffer_GetCurrentRequest(StreamBuffer *self)` (0x2aa210): ask
+/// the SND layer for the buffer's status; -1 when it has no request, else
+/// the request's index (the second status word).
+pub fn stream_buffer_get_current_request(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[A1][0] = c.g[SP][0];
+        Callee {
+            addr: 0x002a_a020,
+            f: ee::s08::StreamBuffer_GetStatus,
+        }
+        .call(c, 0x002a_a220)?;
+        c.g[V1][0] = Addr(c.g[SP][0] as u32).lw(c);
+        let no_request = c.g[V1][0] == 0;
+        c.g[V0][0] = 0xffff_ffff_ffff_ffffu64;
+        if !no_request {
+            c.cycles += 1;
+            c.g[V0][0] = Addr(c.g[SP][0] as u32).off(4).lw(c);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// StreamBuffer_Queue (0x2aa320)
+
+/// The stream's big-file handle (`self+0x74`).
+pub const STREAM_BUFFER_BIG: u32 = 0x74;
+
+/// The stream handle (`self+8`).
+pub const STREAM_BUFFER_HANDLE: u32 = 0x8;
+
+/// The stream's inline request buffer (`self+0x14`).
+pub const STREAM_BUFFER_INLINE: u32 = 0x14;
+
+/// `BigFile_FindEntry` (0x3e2ce0).
+pub const BIG_FILE_FIND_ENTRY: u32 = 0x003e_2ce0;
+
+/// `SNDSTRM_Queue` (0x3b78d8).
+pub const OC331_SNDSTRM_QUEUE: u32 = 0x003b_78d8;
+
+/// `int StreamBuffer_Queue(void* self, int handle, void* src, int off)`
+/// (0x2aa320): queue a stream request. When the stream has a big-file
+/// handle, look the entry up first (its size at `sp`) and add it to the
+/// offset; then `SNDSTRM_Queue(stream, handle, buffer, off)`, where the
+/// buffer is `src` for the big-file case and the caller's `src` otherwise.
+pub fn stream_buffer_queue(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(STREAM_BUFFER_BIG)).lw(c);
+        let has_big = c.g[A0][0] != 0;
+        c.g[S2][0] = c.g[A3][0];
+        if has_big {
+            c.cycles += 10;
+            c.g[A1][0] = c.g[A2][0];
+            c.g[A3][0] = c.g[SP][0];
+            c.g[A2][0] = 0;
+            c.g[T0][0] = 0;
+            call_ptr(c, BIG_FILE_FIND_ENTRY, 0x002a_a364)?;
+            c.g[A3][0] = Addr(c.g[SP][0] as u32).lw(c);
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A0][0] = Addr(r32(c, S0).wrapping_add(STREAM_BUFFER_HANDLE)).lw(c);
+            c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(STREAM_BUFFER_INLINE));
+            c.g[A3][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A3][0] as u32));
+        } else {
+            c.cycles += 2;
+            c.g[A0][0] = Addr(r32(c, S0).wrapping_add(STREAM_BUFFER_HANDLE)).lw(c);
+        }
+        c.cycles += 8;
+        call_ptr(c, OC331_SNDSTRM_QUEUE, 0x002a_a380)?;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int StreamArray_Queue(void* self, int i, int a, int b, int c)` (0x2aad78):
+/// queue the `i`-th entry of the array at `self+8`; -1 when it is null.
+pub fn stream_array_queue(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A3][0];
+        c.g[V0][0] = Addr(r32(c, A0)).off(0x8).lw(c);
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+        c.g[A0][0] = Addr(r32(c, A1)).lw(c);
+        let entry = c.g[A0][0];
+        c.g[A3][0] = c.g[T0][0];
+        if entry != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[A2][0];
+            c.g[A2][0] = c.g[V1][0];
+            callee::STREAM_BUFFER_QUEUE.call(c, 0x002a_adb0)?;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int StreamBuffer_SetPitch(void* self, int pitch)` (0x2a9f38): set the
+/// stream's pitch under the sound lock.
+pub fn stream_buffer_set_pitch(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        call_ptr(c, 0x003b_58a0, 0x002a_9f54)?;
+        c.g[A0][0] = Addr(r32(c, S0)).off(0x8).lw(c);
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x003b_7fb8, 0x002a_9f60)?;
+        call_ptr(c, 0x003b_58d8, 0x002a_9f68)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SoundRequest_SetStream(SoundRequest* self, int a1, char* name,
+/// int a3)` (0x2abcf8): store the id, copy the stream name to `+0x10` and the
+/// last argument to `+0x50`.
+pub fn sound_request_set_stream(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A3][0];
+        Addr(r32(c, S0)).off(0xc).sw(c, c.g[A1][0]);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(0x10));
+        c.g[A1][0] = c.g[A2][0];
+        callee::STRCPY.call(c, 0x002a_bd20)?;
+        Addr(r32(c, S0)).off(0x50).sw(c, c.g[S1][0]);
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int SpeechSystem_ClearPrebufferCallback(void* unused, SpeechStream* s)`
+/// (0x2ab1a0): set the stream's prebuffer to 0
+/// (`SNDSTRM_SetPrebuffer(s->handle, 0)`) and return 1.
+pub fn speech_system_clear_prebuffer_callback(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw(r32(c, A1).wrapping_add(SPEECH_STREAM_HANDLE));
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x003b_7d80, 0x002a_b1b4)?; // SNDSTRM_SetPrebuffer
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = 1;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3002,6 +3307,246 @@ pub(crate) mod tests {
                     _ => r.f32(5.0),
                 };
                 c.g[A0][0] = sx(INST);
+            },
+        );
+    }
+
+    /// `StreamArray_GetCurrentRequest`: an empty slot (`-1`) or a real stream
+    /// buffer whose status is read.
+    #[test]
+    fn stream_array_get_current_request_matches() {
+        check(
+            ee::s08::f_002ab150__generated,
+            stream_array_get_current_request,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x2ab1_5000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let i = seed % 4;
+                c.g[A1][0] = i as u64;
+                let buffers = DATA + 0x100;
+                c.bus.write32(DATA + 8, buffers);
+                for k in 0..4u32 {
+                    let empty = (seed + k) % 3 == 0;
+                    c.bus.write32(
+                        buffers + 4 * k,
+                        if empty { 0 } else { DATA + 0x200 + 0x40 * k },
+                    );
+                    c.bus.write32(DATA + 0x208 + 0x40 * k, k);
+                }
+                // The sound lock routines the status path calls, and an empty
+                // stream table (the status call returns at once).
+                c.bus.write32(STREAM_BUFFER_SET_PAN_LOCK_SLOT, 0x0022_6610);
+                c.bus
+                    .write32(STREAM_BUFFER_SET_PAN_UNLOCK_SLOT, 0x0022_6610);
+                c.bus.write8(SND_GETSTREAM_COUNT, 0);
+            },
+        );
+    }
+
+    /// `StreamBuffer_SetPan`: the sound lock is taken, the buffer's stream
+    /// gets the pan and the lock is released.
+    #[test]
+    fn stream_buffer_set_pan_matches() {
+        check(
+            ee::s08::f_002a9ed8__generated,
+            stream_buffer_set_pan,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x2a9e_d800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+                let handle = seed % 4;
+                c.bus.write32(DATA + STREAM_BUFFER_SET_PAN_HANDLE, handle);
+                // The lock routines SND_Lock / SND_Unlock call, and the stream
+                // table the pan call looks the handle up in.
+                c.bus.write32(STREAM_BUFFER_SET_PAN_LOCK_SLOT, 0x0022_6610);
+                c.bus
+                    .write32(STREAM_BUFFER_SET_PAN_UNLOCK_SLOT, 0x0022_6610);
+                c.bus.write8(SND_GETSTREAM_COUNT, ((seed % 4) + 1) as u8);
+                for h in 0..4u32 {
+                    c.bus
+                        .write32(SND_GETSTREAM_TABLE + 4 * h, DATA + 0x2000 + 0x100 * h);
+                    c.bus.write32(DATA + 0x2004 + 0x100 * h, h);
+                }
+            },
+        );
+    }
+
+    /// A StreamBuffer with a known, unknown or empty SND stream, with and
+    /// without a request; the SND lock / unlock hooks are fakes.
+    #[test]
+    fn stream_buffer_get_current_request_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        const SELF: u32 = DATA + 0x20_0000;
+        const STREAM: u32 = DATA + 0x22_0000;
+        const REQ: u32 = DATA + 0x24_0000;
+        check(
+            ee::s08::f_002aa210__generated,
+            stream_buffer_get_current_request,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_a210, 2);
+                c.pc = 0x002a_a210;
+                c.bus.write32(0x0045_0000 - 0x3b94, FAKE);
+                c.bus.write32(0x0045_0000 - 0x3b90, FAKE + 0x10);
+                c.bus.write8(0x0051_0000 - 0x56d2, 1);
+                c.bus.write32(0x0051_0000 - 0x5f60, STREAM);
+                let id = if seed % 3 == 0 {
+                    1 + r.next_u32() % 4
+                } else {
+                    0
+                };
+                c.bus.write32(SELF + 0x8, id);
+                c.bus.write32(
+                    STREAM + 0x124,
+                    if seed % 3 == 1 { 0 } else { r.next_u32() | 1 },
+                );
+                c.bus.write32(STREAM + 0x11c, REQ);
+                c.bus.write32(REQ + 0xc, r.next_u32());
+                c.bus.write16(STREAM + 0x14, 0);
+                c.bus
+                    .write8(0x0051_0000 - 0x5718 + 0x176, r.next_u32() as u8);
+                c.g[A0][0] = sx(SELF);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::lib::snd::tests::snd_world;
+
+    /// `StreamBuffer_Queue`: the real `SNDSTRM_Queue` takes its "no such
+    /// stream" short path (no stream table); handles positive and negative.
+    #[test]
+    fn stream_buffer_queue_matches() {
+        check(
+            ee::s08::f_002aa320__generated,
+            stream_buffer_queue,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2aa320, 0);
+                let this = DATA;
+                // (The big-file branch is not exercised: it runs the
+                // `BigFile_FindEntry` dispatcher, whose zeroed-data path
+                // could not be bounded.)
+                c.bus.write32(this + STREAM_BUFFER_BIG, 0);
+                let handle = if seed % 3 == 0 {
+                    0xffff_ffff
+                } else {
+                    r.next_u32() % 0x100
+                };
+                c.bus.write32(this + STREAM_BUFFER_HANDLE, handle);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(DATA + 0x1_8000);
+                c.g[A2][0] = sx(DATA + 0x1_9000);
+                c.g[A3][0] = (r.next_u32() % 0x4000) as u64;
+                c.pc = 0x002a_a320;
+            },
+        );
+    }
+
+    // ------------------------------------------------------ StreamArray_Queue
+
+    #[test]
+    fn stream_array_queue_matches() {
+        check(
+            ee::s08::f_002aad78__generated,
+            stream_array_queue,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x002a_ad78 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x002a_ad78;
+                let this = DATA;
+                let array = DATA + 0x1000;
+                let entry = DATA + 0x2000;
+                let i = seed % 4;
+                c.bus.write32(this + 8, array);
+                c.bus
+                    .write32(array + 4 * i, if seed % 2 == 0 { 0 } else { entry });
+                // Keep the queued buffer on StreamBuffer_Queue's short path.
+                c.bus.write32(entry + 0x74, 0);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = i as u64;
+                c.g[A2][0] = sx(DATA + 0x3000);
+                c.g[A3][0] = sx(DATA + 0x4000);
+                c.g[T0][0] = sx(DATA + 0x5000);
+            },
+        );
+    }
+
+    // ------------------------------------------------ StreamBuffer_SetPitch
+
+    #[test]
+    fn stream_buffer_set_pitch_matches() {
+        covered(
+            ee::s08::f_002a9f38__generated,
+            stream_buffer_set_pitch,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a9f, 1);
+                c.pc = 0x002a_9f38;
+                // No streams: the handle resolves to no stream and the pitch
+                // setter takes its early return.
+                snd_world(c, &mut r, false);
+                let this = DATA;
+                c.bus.write32(this + 8, 0xffff_ffff);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = if seed % 5 == 0 {
+                    r.edge_f32() as u64
+                } else {
+                    r.next_u32() as u64
+                };
+            },
+        );
+    }
+
+    // ------------------------------------------------ SoundRequest_SetStream
+
+    #[test]
+    fn sound_request_set_stream_matches() {
+        check(
+            ee::s08::f_002abcf8__generated,
+            sound_request_set_stream,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x002a_bcf8 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x002a_bcf8;
+                let req = DATA;
+                let src = DATA + 0x1000;
+                let n = 1 + r.next_u32() % 24;
+                for k in 0..n {
+                    c.bus.write8(src + k, 1 + (r.next_u32() % 0x7e) as u8);
+                }
+                for k in n..n + 48 {
+                    c.bus.write8(src + k, 0);
+                }
+                c.g[A0][0] = sx(req);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = sx(src);
+                c.g[A3][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::sound::bankmonitor::tests::oc339_speech_stream;
+
+    /// `SpeechSystem_ClearPrebufferCallback`: the real
+    /// `SNDSTRM_SetPrebuffer` with a request found or not.
+    #[test]
+    fn speech_system_clear_prebuffer_callback_matches() {
+        covered(
+            ee::s08::f_002ab1a0__generated,
+            speech_system_clear_prebuffer_callback,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_b1a0, 2);
+                c.pc = 0x002a_b1a0;
+                let stream = oc339_speech_stream(c, &mut r, seed);
+                c.g[A1][0] = stream as u64;
             },
         );
     }

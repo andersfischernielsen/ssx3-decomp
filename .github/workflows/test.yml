@@ -43,3 +43,28 @@ jobs:
           cargo test
           -p ssx3-ee-rt -p ssx3-recomp -p ssx3-vu -p ssx3-ps2 -p ssx3-iop -p ssx3-core
           -p ssx3-mc -p ssx3-mpeg -p ssx3-snd -p ssx3-gfx
+
+  hand-written:
+    name: Hand-written crates (skeleton build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: System libraries (ALSA, udev)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libasound2-dev libudev-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # The generated EE code is the game's code translated, so it is not in
+      # the repository: build against its names only (generated/ee-symbols.tsv).
+      - name: Skeleton of the generated code
+        run: python3 tools/ee_skeleton.py write && python3 tools/setup.py --stubs-only
+
+      - name: Build ssx3-game and its tests
+        run: cargo test -p ssx3-game --lib --no-run
+
+      - name: Build the binaries
+        run: cargo build -p ssx3 --bins
