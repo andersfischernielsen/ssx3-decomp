@@ -10859,21 +10859,6 @@ pub(crate) const FENET_HOOK_VTABLE: u32 = 0x0048_10c8;
 /// `FENetHook2` vtable published at `this+0x14` by the constructor.
 pub(crate) const FENET_HOOK2_VTABLE: u32 = 0x0048_10b0;
 
-/// `gp - 0xc8`: the lobby manager singleton slot.
-pub(crate) const LOBBY_MANAGER_SLOT: u32 = 0x004a_3028;
-
-/// `gp + 0x2e8`: the shared login manager singleton slot.
-pub(crate) const SHARED_LOGIN_MANAGER_SLOT: u32 = 0x004a_33d8;
-
-/// `gp + 0x2e0`: the shared login manager slot written by create.
-pub(crate) const SHARED_LOGIN_MANAGER_CREATED_SLOT: u32 = 0x004a_33d0;
-
-/// `gp + 0x300`: the USB keyboard singleton slot.
-pub(crate) const USB_KEYBOARD_SLOT: u32 = 0x004a_33f0;
-
-/// `gp + 0x2e4`: the card state word written by the seek helper.
-pub(crate) const LOGIN_CARD_STATE_SLOT: u32 = 0x004a_33d4;
-
 /// `void LobbyMan_OnMesgReply(void)` (0x25fc20): a lobby message reply stub
 /// that returns at once, leaving every register as it found it.
 pub fn lobby_man_on_mesg_reply(c: &mut Cpu) {
@@ -10960,8 +10945,8 @@ pub fn fe_net_hook2_ctor(c: &mut Cpu) {
     ret(c);
 }
 
-/// `void LobbyMan_OnRecvDebug(LobbyMan *self)` (0x2598a8): hand the debug
-/// packet at `self+0x54` to `LobbyApi_DebugPacket`.
+/// `void LobbyMan_OnRecvDebug(LobbyMan *self)` (0x2598a8): call
+/// `LobbyApi_DebugPacket(self->api, packet)` on the lobby API at `self+0x54`.
 pub fn lobby_man_on_recv_debug(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 7;
@@ -10975,7 +10960,7 @@ pub fn lobby_man_on_recv_debug(c: &mut Cpu) {
     })
 }
 
-/// `void *cVoipMan_GetSharedStatus(cVoipMan *self)` (0x266f38): return the
+/// `int cVoipMan_GetSharedStatus(cVoipMan *self)` (0x266f38): return the
 /// shared voice status word behind the voice global (`gp+0x2a28`).
 pub fn c_voip_man_get_shared_status(c: &mut Cpu) {
     guest(c, |c| {
@@ -11035,9 +11020,9 @@ pub fn lobby_man_compare_room_names(c: &mut Cpu) {
     })
 }
 
-/// `void LobbyMan_SendDecline(LobbyMan *self, char *to)` (0x25fc28): send
-/// the decline line for `to` through `LobbyMan_SendPrivateMessage` with the
-/// canned text at `0x4a3270`.
+/// `void LobbyMan_SendDecline(LobbyMan *self, int to)` (0x25fc28): send
+/// the decline line for `to` through `LobbyMan_SendPrivateMessage` with
+/// the text at `gp+0x180`.
 pub fn lobby_man_send_decline(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 8;
@@ -11142,14 +11127,14 @@ pub fn c_usb_keyboard_destroy(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 4;
         let frame = Frame::open(c, 0x10);
-        c.g[A0][0] = Addr(USB_KEYBOARD_SLOT).lw(c);
+        c.g[A0][0] = Addr(r32(c, GP).wrapping_add(0x300)).lw(c);
         let absent = c.g[A0][0] == 0;
         frame.save_ra(c, 0);
         if !absent {
             c.cycles += 3;
             c.g[A1][0] = 0x3;
             call_ptr(c, 0x0026_6850, 0x0026_67d8)?;
-            Addr(USB_KEYBOARD_SLOT).sw(c, 0);
+            Addr(r32(c, GP).wrapping_add(0x300)).sw(c, 0);
         }
         c.cycles += 3;
         frame.restore_ra(c, 0);
@@ -11158,7 +11143,7 @@ pub fn c_usb_keyboard_destroy(c: &mut Cpu) {
     })
 }
 
-/// `void *cVoipMan_QueryState(cVoipMan *self)` (0x266f08): the voice
+/// `int cVoipMan_QueryState(cVoipMan *self)` (0x266f08): the voice
 /// active flag from `VoipRpc_IsActive`, or 0 when the manager word is clear.
 pub fn c_voip_man_query_state(c: &mut Cpu) {
     guest(c, |c| {
@@ -11191,9 +11176,9 @@ pub fn lobby_man_cancel_login(c: &mut Cpu) {
         c.g[V1][0] = 0x8;
         frame.save_ra(c, 0);
         c.g[V0][0] = Addr(r32(c, A0)).lw(c);
-        let pending = c.g[V0][0] != c.g[V1][0];
+        let in_login = c.g[V0][0] == c.g[V1][0];
         frame.restore_ra(c, 0);
-        if !pending {
+        if in_login {
             c.cycles += 4;
             c.g[A1][0] = Addr(r32(c, A0)).off(0x40).lw(c);
             c.g[A0][0] = Addr(r32(c, A0)).off(0x54).lw(c);
@@ -11221,7 +11206,7 @@ pub fn lobby_man_create(c: &mut Cpu) {
         call_ptr(c, 0x0031_7d70, 0x0025_b670)?;
         c.g[A0][0] = c.g[V0][0];
         call_ptr(c, 0x0025_94d0, 0x0025_b678)?;
-        Addr(LOBBY_MANAGER_SLOT).sw(c, c.g[V0][0]);
+        Addr(gp_8(c, LOBBY_INSTANCE_GP)).sw(c, c.g[V0][0]);
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -11239,6 +11224,7 @@ pub fn buddy_man_get_buddy_at(c: &mut Cpu) {
         call_ptr(c, 0x0026_25c8, 0x0026_2630)?;
         if c.g[V0][0] == 0 {
             c.g[V0][0] = 0;
+            // +1 here and +2 below: the generated +1s share one tail block.
             c.cycles += 1;
         } else {
             c.cycles += 4;
@@ -11268,6 +11254,7 @@ pub fn buddy_man_get_blocked_at(c: &mut Cpu) {
         call_ptr(c, 0x0026_25c8, 0x0026_2668)?;
         if c.g[V0][0] == 0 {
             c.g[V0][0] = 0;
+            // +1 here and +2 below: the generated +1s share one tail block.
             c.cycles += 1;
         } else {
             c.cycles += 4;
@@ -11301,16 +11288,16 @@ pub fn c_shared_login_man_create(c: &mut Cpu) {
         call_ptr(c, 0x0031_7d70, 0x0026_58a0)?;
         c.g[A0][0] = c.g[V0][0];
         call_ptr(c, 0x0026_58e0, 0x0026_58a8)?;
-        Addr(SHARED_LOGIN_MANAGER_CREATED_SLOT).sw(c, c.g[V0][0]);
+        Addr(gp_2(c, 0x2e0)).sw(c, c.g[V0][0]);
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
     })
 }
 
-/// `void cSharedLoginMan_McSeek(int a1, int a2)` (0x2662e8): pass the seek
-/// request (`a1`, with `a2` reduced to 0/1) to the card manager at
-/// `gp+0x2e8`, then post card state 5 at `gp+0x2e4`.
+/// `void cSharedLoginMan_McSeek(void *unused, int a1, int a2)` (0x2662e8):
+/// pass the seek request (`a1`, with `a2` reduced to 0/1) to the card
+/// manager at `gp+0x2e8`, then post card state 5 at `gp+0x2e4`.
 pub fn c_shared_login_man_mc_seek(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 4;
@@ -11324,12 +11311,12 @@ pub fn c_shared_login_man_mc_seek(c: &mut Cpu) {
             c.g[V0][0] = (c.g[V0][0] < 0x1) as u64;
         }
         c.cycles += 8;
-        c.g[A0][0] = Addr(SHARED_LOGIN_MANAGER_SLOT).lw(c);
+        c.g[A0][0] = Addr(gp_2(c, 0x2e8)).lw(c);
         c.g[A2][0] = c.g[V0][0];
         call_ptr(c, 0x002c_6a60, 0x0026_630c)?;
         c.g[V0][0] = 0x5;
         frame.restore_ra(c, 0);
-        Addr(LOGIN_CARD_STATE_SLOT).sw(c, c.g[V0][0]);
+        Addr(gp_2(c, 0x2e4)).sw(c, c.g[V0][0]);
         frame.close(c);
         Ok(())
     })
@@ -11350,7 +11337,7 @@ pub fn c_usb_keyboard_create(c: &mut Cpu) {
         call_ptr(c, 0x0031_7d70, 0x0026_67a8)?;
         c.g[A0][0] = c.g[V0][0];
         call_ptr(c, 0x0026_67e8, 0x0026_67b0)?;
-        Addr(USB_KEYBOARD_SLOT).sw(c, c.g[V0][0]);
+        Addr(gp_2(c, 0x300)).sw(c, c.g[V0][0]);
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -15642,10 +15629,7 @@ pub(crate) mod tests {
             c_dsock_channel_base_disconnect,
             32,
             &|c, seed| {
-                let mut r = Rng(0x267d_a800 ^ seed as u64);
-                machine(c, seed, 0x267d_a800, 0);
-                scramble(c, &mut r);
-                c.g[GP][0] = GAME_GP as u64;
+                let mut r = machine(c, seed, 0x267d_a800, 0);
                 c.g[A0][0] = DATA as u64;
                 c.bus
                     .write32(DATA, if seed % 2 == 0 { 0 } else { r.next_u32() });
@@ -15664,10 +15648,11 @@ pub(crate) mod tests {
                 let mut r = Rng(0x2593_9800 ^ seed as u64);
                 scramble(c, &mut r);
                 let put = crate::game::dirtysock::tags::tests::put_str;
-                let (a, b) = match seed % 4 {
+                let (a, b) = match seed % 5 {
                     0 => (&b"alice"[..], &b"alice"[..]),
                     1 => (&b"alice"[..], &b"bob"[..]),
                     2 => (&b""[..], &b"x"[..]),
+                    3 => (&b"Alice"[..], &b"alice"[..]),
                     _ => (&b"bob"[..], &b"bobby"[..]),
                 };
                 put(c, DATA + 0x100, a);
@@ -15688,10 +15673,11 @@ pub(crate) mod tests {
                 let mut r = Rng(0x2593_b800 ^ seed as u64);
                 scramble(c, &mut r);
                 let put = crate::game::dirtysock::tags::tests::put_str;
-                let (a, b) = match seed % 4 {
+                let (a, b) = match seed % 5 {
                     0 => (&b"room1"[..], &b"room1"[..]),
                     1 => (&b"room1"[..], &b"room2"[..]),
                     2 => (&b""[..], &b"z"[..]),
+                    3 => (&b"Room1"[..], &b"room1"[..]),
                     _ => (&b"lobby"[..], &b"lobb"[..]),
                 };
                 put(c, DATA + 0x100, a);
@@ -15943,7 +15929,6 @@ pub(crate) mod tests {
             &|c, seed| {
                 let _r = machine(c, seed, 0x25b6_5000, 0);
                 crate::game::dirtysock::tagsunk::tests::heap_init(c);
-                c.g[A0][0] = seed as u64;
             },
         );
     }
@@ -15957,7 +15942,6 @@ pub(crate) mod tests {
             &|c, seed| {
                 let _r = machine(c, seed, 0x2658_8000, 0);
                 crate::game::dirtysock::tagsunk::tests::heap_init(c);
-                c.g[A0][0] = seed as u64;
             },
         );
     }
@@ -15988,7 +15972,6 @@ pub(crate) mod tests {
             &|c, seed| {
                 let _r = machine(c, seed, 0x2667_8800, 0);
                 crate::game::dirtysock::tagsunk::tests::heap_init(c);
-                c.g[A0][0] = seed as u64;
             },
         );
     }
