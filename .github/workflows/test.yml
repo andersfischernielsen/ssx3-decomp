@@ -72,4 +72,4 @@ jobs:
       # Unit tests of the frontend that run no game code (the skeleton's
       # bodies panic).
       - name: Frontend tests
-        run: cargo test -p ssx3 --bin ssx3 screenshot::
+        run: cargo test -p ssx3 --bin ssx3 screenshot::tests
