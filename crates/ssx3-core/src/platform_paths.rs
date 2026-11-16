@@ -180,6 +180,53 @@ fn user_data_dir() -> Option<PathBuf> {
     })
 }
 
+static CACHE: OnceLock<PathBuf> = OnceLock::new();
+
+/// Set the cache root once, before any consumer; a second call returns the
+/// rejected root.
+pub fn set_cache(root: PathBuf) -> Result<(), PathBuf> {
+    CACHE.set(root)
+}
+
+/// The cache folder, if there is one: the front end's root, else the
+/// platform's. None keeps nothing.
+pub fn cache_dir() -> Option<PathBuf> {
+    cache_dir_from(CACHE.get().map(PathBuf::as_path), platform_cache_dir)
+}
+
+fn cache_dir_from(
+    cache: Option<&Path>,
+    platform: impl FnOnce() -> Option<PathBuf>,
+) -> Option<PathBuf> {
+    cache.map(Path::to_path_buf).or_else(platform)
+}
+
+/// The platform's cache folder on `platform` (`Library/Caches/SSX3` on Apple
+/// phones and tablets too); an empty or relative variable counts as unset.
+/// None on Android, where only the front end knows it ([`set_cache`]).
+fn platform_cache_dir_for(
+    platform: Platform,
+    env: impl Fn(&str) -> Option<PathBuf>,
+) -> Option<PathBuf> {
+    let usable = |key: &str| env(key).filter(|p| p.has_root());
+    match platform {
+        Platform::Windows => usable("LOCALAPPDATA").map(|dir| dir.join("SSX3")),
+        Platform::Mac | Platform::AppleMobile => {
+            usable("HOME").map(|home| home.join("Library/Caches/SSX3"))
+        }
+        Platform::Android => None,
+        Platform::Unix => usable("XDG_CACHE_HOME")
+            .or_else(|| usable("HOME").map(|home| home.join(".cache")))
+            .map(|dir| dir.join("ssx3")),
+    }
+}
+
+fn platform_cache_dir() -> Option<PathBuf> {
+    platform_cache_dir_for(Platform::current(), |key| {
+        std::env::var_os(key).map(PathBuf::from)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,6 +345,66 @@ mod tests {
                 "{platform:?}"
             );
         }
+    }
+
+    #[test]
+    fn platform_cache_folders() {
+        use Platform::*;
+        let p = PathBuf::from;
+        let all = |k: &str| match k {
+            "LOCALAPPDATA" => Some(p("/local")),
+            "HOME" => Some(p("/home")),
+            "XDG_CACHE_HOME" => Some(p("/xdg")),
+            _ => None,
+        };
+        let home_only = |k: &str| (k == "HOME").then(|| p("/home"));
+        assert_eq!(
+            platform_cache_dir_for(Windows, &all),
+            Some(p("/local/SSX3"))
+        );
+        assert_eq!(
+            platform_cache_dir_for(Mac, &all),
+            Some(p("/home/Library/Caches/SSX3"))
+        );
+        assert_eq!(
+            platform_cache_dir_for(AppleMobile, &all),
+            Some(p("/home/Library/Caches/SSX3"))
+        );
+        assert_eq!(platform_cache_dir_for(Unix, &all), Some(p("/xdg/ssx3")));
+        assert_eq!(
+            platform_cache_dir_for(Unix, &home_only),
+            Some(p("/home/.cache/ssx3"))
+        );
+        assert_eq!(platform_cache_dir_for(Android, &all), None);
+        // A relative cache variable counts as unset (the home fallback wins).
+        let odd = |k: &str| match k {
+            "XDG_CACHE_HOME" => Some(p("relative")),
+            "HOME" => Some(p("/home")),
+            _ => None,
+        };
+        assert_eq!(
+            platform_cache_dir_for(Unix, &odd),
+            Some(p("/home/.cache/ssx3"))
+        );
+    }
+
+    #[test]
+    fn cache_dir_precedence() {
+        use Platform::*;
+        let p = PathBuf::from;
+        let env = |k: &str| match k {
+            "LOCALAPPDATA" => Some(p("/local")),
+            "HOME" => Some(p("/home")),
+            "XDG_CACHE_HOME" => Some(p("/xdg")),
+            _ => None,
+        };
+        let from = |cache: Option<&Path>, platform: Platform| {
+            cache_dir_from(cache, || platform_cache_dir_for(platform, &env))
+        };
+        // The front end's root first; else the platform's (Android: none).
+        assert_eq!(from(Some(Path::new("c")), Unix), Some(p("c")));
+        assert_eq!(from(None, Unix), Some(p("/xdg/ssx3")));
+        assert_eq!(from(None, Android), None);
     }
 
     #[test]
@@ -447,6 +554,38 @@ mod tests {
     }
 
     #[test]
+    fn cache_through_the_globals() {
+        const CHILD: &str = "SSX3_PATHS_TEST_CACHE_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            // The flag and the roots are process-wide.
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "platform_paths::tests::cache_through_the_globals",
+                    "--test-threads=1",
+                ])
+                .env(CHILD, "1")
+                .env("HOME", "/standalone-home")
+                .env("XDG_CACHE_HOME", "/standalone-xdg")
+                .env("LOCALAPPDATA", "/standalone-local")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout).contains("ok. 1 passed;"),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        // The platform's folder, else the front end's.
+        assert_eq!(cache_dir(), platform_cache_dir());
+        set_cache(PathBuf::from("/front-end-cache")).unwrap();
+        assert_eq!(cache_dir(), Some(PathBuf::from("/front-end-cache")));
+    }
+
+    #[test]
     fn frontend_roots_and_environment_overrides() {
         const CHILD: &str = "SSX3_PATHS_TEST_CHILD";
         if std::env::var_os(CHILD).is_none() {
@@ -503,6 +642,12 @@ mod tests {
         assert_eq!(data_file(key, "file", default.clone()), data.join("file"));
         assert_eq!(save_file(key, "file", default.clone()), saves.join("file"));
         assert_eq!(save_dir(), Some(saves.clone()));
+        let cache = base.join("app-cache");
+        // Saves are not a cache fallback; a cache root set later wins.
+        assert_eq!(cache_dir(), platform_cache_dir());
+        set_cache(cache.clone()).unwrap();
+        assert_eq!(set_cache(default.clone()).unwrap_err(), default);
+        assert_eq!(cache_dir(), Some(cache.clone()));
         assert_eq!(texture_dump(), saves.join("textures/dump"));
         assert_eq!(texture_replacements(), data.join("textures/replace"));
         assert_eq!(memory_card(), saves.join("ssx3-mc0.ps2"));

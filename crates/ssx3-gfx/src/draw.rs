@@ -11,6 +11,9 @@
 
 use std::collections::HashMap;
 
+mod driver_cache;
+mod persist;
+
 use crate::gs::DrawState;
 
 pub const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -352,6 +355,9 @@ const GPUVU_SOURCES: &[&str] = &[
 
 /// The GPU-vertex module's shadow hook when it draws for the screen
 /// (shadow.wgsl replaces it in the shadow pass).
+/// Every lighting path at once (what a debug view compiles in).
+pub(super) const ALL_LIT_PATHS: u32 = 63;
+
 /// The renderer's lighting paths a GPU draw with batch flags `flags` can
 /// take (`LIT` in gpuvu.wgsl): those of its flags; all of them with a debug
 /// view on (`show`, `SSX3_SHADOW_SHOW`); none with the lighting off.
@@ -360,7 +366,7 @@ pub fn lit_paths(lighting: bool, show: f32, flags: u32) -> u32 {
         return 0;
     }
     if show != 0.0 {
-        return 63;
+        return ALL_LIT_PATHS;
     }
     [(16384, 1), (4096, 2), (65536, 4), (131072, 8), (32768, 16)]
         .iter()
@@ -411,6 +417,11 @@ pub struct Pipelines {
     gpu_pl: wgpu::PipelineLayout,
     /// (Keyed also by the lighting paths compiled in: [`lit_paths`].)
     gpu_cache: HashMap<(PipeKey, ssx3_render::gpu::Program, u32), wgpu::RenderPipeline>,
+    prewarm_rx: Option<std::sync::mpsc::Receiver<(Prewarm, wgpu::RenderPipeline)>>,
+    key_store: Option<persist::KeyStore>,
+    /// Setup with the saved files in progress: until prewarm ends.
+    start: Option<persist::StartMark>,
+    driver_cache: Option<driver_cache::DriverCache>,
     /// The shadow pass (shadow.wgsl; bind group 1 with a placeholder map).
     shadow_module: wgpu::ShaderModule,
     shadow_pl: wgpu::PipelineLayout,
@@ -423,7 +434,30 @@ pub struct Pipelines {
 }
 
 impl Pipelines {
+    /// Pipelines created on demand, nothing kept between runs.
     pub fn new(dev: &wgpu::Device) -> Pipelines {
+        Self::build(dev, None)
+    }
+
+    /// Also records the pipelines this run needs and keeps them for the next.
+    pub fn with_saved(dev: &wgpu::Device, adapter: &wgpu::AdapterInfo) -> Pipelines {
+        let writer = persist::Writer::start().map(std::sync::Arc::new);
+        Self::build(dev, writer.map(|w| (w, adapter)))
+    }
+
+    fn build(
+        dev: &wgpu::Device,
+        saved: Option<(std::sync::Arc<persist::Writer>, &wgpu::AdapterInfo)>,
+    ) -> Pipelines {
+        let (writer, adapter) = saved.unzip();
+        // Before anything is made from the saved files: a start that died
+        // during setup leaves its marker, and the next begins without them.
+        let start = writer.as_ref().and_then(|_| persist::start());
+        let fresh = start.as_ref().is_some_and(|&(_, unfinished)| unfinished);
+        let driver_cache = writer
+            .clone()
+            .zip(adapter)
+            .and_then(|(w, a)| driver_cache::DriverCache::open(dev, a, w, fresh));
         let module = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ssx3-gfx draw.wgsl"),
             source: wgpu::ShaderSource::Wgsl(include_str!("draw.wgsl").into()),
@@ -603,7 +637,7 @@ impl Pipelines {
             multisample: Default::default(),
             fragment: None,
             multiview_mask: None,
-            cache: None,
+            cache: driver_cache.as_ref().map(|d| &d.cache),
         });
         let cut_layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ssx3-gfx cut-out"),
@@ -669,7 +703,7 @@ impl Pipelines {
                 targets: &[],
             }),
             multiview_mask: None,
-            cache: None,
+            cache: driver_cache.as_ref().map(|d| &d.cache),
         });
         Pipelines {
             caster,
@@ -684,9 +718,112 @@ impl Pipelines {
             gpu_layout,
             gpu_pl,
             gpu_cache: HashMap::new(),
+            prewarm_rx: None,
+            key_store: writer.and_then(|w| persist::KeyStore::open(w, fresh)),
+            driver_cache,
+            start: start.map(|(mark, _)| mark),
             shadow_module,
             shadow_pl,
             shadow_cache: HashMap::new(),
+        }
+    }
+
+    /// Compile descriptors recorded on earlier runs while boot proceeds.
+    /// Draws still create a pipeline on demand if the worker has not finished it.
+    pub fn prewarm_recorded(&mut self, dev: &wgpu::Device) {
+        // Setup ends here with nothing to prewarm, else when the worker does.
+        let mark = self.start.take();
+        let keys = self
+            .key_store
+            .as_ref()
+            .map_or_else(Vec::new, persist::KeyStore::keys);
+        if keys.is_empty() {
+            return;
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.prewarm_rx = Some(rx);
+        let (dev, clip_depth) = (dev.clone(), self.clip_depth);
+        let (gpu_module, gpu_pl) = (self.gpu_module.clone(), self.gpu_pl.clone());
+        let (module, pl) = (self.module.clone(), self.pl.clone());
+        let (shadow_module, shadow_pl) = (self.shadow_module.clone(), self.shadow_pl.clone());
+        let driver_cache = self.driver_cache.as_ref().map(|d| d.cache.clone());
+        // If the thread cannot start, draws create their pipelines on demand.
+        let spawned = std::thread::Builder::new()
+            .name("pipeline-prewarm".into())
+            .spawn(move || {
+                let _mark = mark;
+                for key in keys {
+                    let made = (
+                        key,
+                        match key {
+                            Prewarm::Gpu(k, p, lit) => gpu_pipeline(
+                                &dev,
+                                &gpu_module,
+                                &gpu_pl,
+                                clip_depth,
+                                k,
+                                p,
+                                lit,
+                                driver_cache.as_ref(),
+                            ),
+                            Prewarm::Cpu(k) => {
+                                cpu_pipeline(&dev, &module, &pl, k, driver_cache.as_ref())
+                            }
+                            Prewarm::Shadow(p) => shadow_pipeline(
+                                &dev,
+                                &shadow_module,
+                                &shadow_pl,
+                                p,
+                                driver_cache.as_ref(),
+                            ),
+                        },
+                    );
+                    if tx.send(made).is_err() {
+                        return;
+                    }
+                }
+            });
+        if spawned.is_err() {
+            self.prewarm_rx = None;
+        }
+    }
+
+    /// A pipeline the worker had not finished: record it for the next start,
+    /// and note that the driver may have compiled something worth keeping.
+    fn note_new(&mut self, key: Prewarm) {
+        if let Some(store) = &mut self.key_store {
+            store.record(key);
+        }
+        if let Some(store) = &mut self.driver_cache {
+            store.mark_dirty();
+        }
+    }
+
+    fn drain_prewarm(&mut self) {
+        let Some(rx) = &self.prewarm_rx else { return };
+        loop {
+            match rx.try_recv() {
+                // (A draw that raced the worker made its own: keep that one.)
+                Ok((Prewarm::Gpu(k, p, lit), pipe)) => {
+                    self.gpu_cache.entry((k, p, lit)).or_insert(pipe);
+                }
+                Ok((Prewarm::Cpu(k), pipe)) => {
+                    self.cache.entry(k).or_insert(pipe);
+                }
+                Ok((Prewarm::Shadow(p), pipe)) => {
+                    self.shadow_cache.entry(p).or_insert(pipe);
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => return,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.prewarm_rx = None;
+                    // A driver update empties the loaded cache: the writer
+                    // compares what prewarm built with what is on disk.
+                    if let Some(store) = &mut self.driver_cache {
+                        store.mark_dirty();
+                    }
+                    return;
+                }
+            }
         }
     }
 
@@ -702,43 +839,17 @@ impl Pipelines {
         dev: &wgpu::Device,
         p: ssx3_render::gpu::Program,
     ) -> &wgpu::RenderPipeline {
+        if !self.shadow_cache.contains_key(&p) {
+            self.drain_prewarm();
+        }
+        if !self.shadow_cache.contains_key(&p) {
+            self.note_new(Prewarm::Shadow(p));
+        }
         let (module, pl) = (&self.shadow_module, &self.shadow_pl);
-        self.shadow_cache.entry(p).or_insert_with(|| {
-            dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("ssx3-gfx shadow"),
-                layout: Some(pl),
-                vertex: wgpu::VertexState {
-                    module,
-                    entry_point: Some(p.vs_entry()),
-                    compilation_options: Default::default(),
-                    buffers: &[],
-                },
-                primitive: wgpu::PrimitiveState {
-                    cull_mode: None,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: SHADOW_FORMAT,
-                    depth_write_enabled: Some(true),
-                    depth_compare: Some(wgpu::CompareFunction::Less),
-                    stencil: Default::default(),
-                    bias: wgpu::DepthBiasState {
-                        constant: 2,
-                        slope_scale: 1.5,
-                        clamp: SHADOW_BIAS_CLAMP,
-                    },
-                }),
-                multisample: Default::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module,
-                    entry_point: Some("fs_shadow"),
-                    compilation_options: Default::default(),
-                    targets: &[],
-                }),
-                multiview_mask: None,
-                cache: None,
-            })
-        })
+        let driver = self.driver_cache.as_ref().map(|d| &d.cache);
+        self.shadow_cache
+            .entry(p)
+            .or_insert_with(|| shadow_pipeline(dev, module, pl, p, driver))
     }
 
     /// A GPU-vertex pipeline made earlier with [`Pipelines::get_gpu`].
@@ -760,58 +871,17 @@ impl Pipelines {
         p: ssx3_render::gpu::Program,
         lit: u32,
     ) -> &wgpu::RenderPipeline {
+        if !self.gpu_cache.contains_key(&(k, p, lit)) {
+            self.drain_prewarm();
+        }
+        if !self.gpu_cache.contains_key(&(k, p, lit)) {
+            self.note_new(Prewarm::Gpu(k, p, lit));
+        }
         let (module, pl, clip_depth) = (&self.gpu_module, &self.gpu_pl, self.clip_depth);
-        self.gpu_cache.entry((k, p, lit)).or_insert_with(|| {
-            let entry = p.vs_entry();
-            let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
-                color: wgpu::BlendComponent {
-                    src_factor: s,
-                    dst_factor: d,
-                    operation: op,
-                },
-                alpha: wgpu::BlendComponent::REPLACE,
-            });
-            dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("ssx3-gfx gpuvu draw"),
-                layout: Some(pl),
-                vertex: wgpu::VertexState {
-                    module,
-                    entry_point: Some(entry),
-                    compilation_options: Default::default(),
-                    buffers: &[],
-                },
-                primitive: wgpu::PrimitiveState {
-                    cull_mode: None,
-                    unclipped_depth: clip_depth,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DEPTH_FORMAT,
-                    depth_write_enabled: Some(k.depth_write),
-                    depth_compare: Some(k.depth),
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                multisample: Default::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module,
-                    entry_point: Some(if clip_depth { "fs_gpu_nd" } else { "fs_gpu" }),
-                    // The lighting paths the draw can take; the others are
-                    // compiled out (`LIT`, gpuvu.wgsl).
-                    compilation_options: wgpu::PipelineCompilationOptions {
-                        constants: &[("LIT", lit as f64)],
-                        ..Default::default()
-                    },
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: COLOR_FORMAT,
-                        blend,
-                        write_mask: wgpu::ColorWrites::from_bits_truncate(k.write as u32),
-                    })],
-                }),
-                multiview_mask: None,
-                cache: None,
-            })
-        })
+        let driver = self.driver_cache.as_ref().map(|d| &d.cache);
+        self.gpu_cache
+            .entry((k, p, lit))
+            .or_insert_with(|| gpu_pipeline(dev, module, pl, clip_depth, k, p, lit, driver))
     }
 
     /// A pipeline made earlier with [`Pipelines::get`].
@@ -820,50 +890,202 @@ impl Pipelines {
     }
 
     pub fn get(&mut self, dev: &wgpu::Device, k: PipeKey) -> &wgpu::RenderPipeline {
+        if !self.cache.contains_key(&k) {
+            self.drain_prewarm();
+        }
+        if !self.cache.contains_key(&k) {
+            self.note_new(Prewarm::Cpu(k));
+        }
         let (module, pl) = (&self.module, &self.pl);
-        self.cache.entry(k).or_insert_with(|| {
-            let attrs = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32, 2 => Float32x4, 3 => Float32x4];
-            let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
-                color: wgpu::BlendComponent { src_factor: s, dst_factor: d, operation: op },
-                alpha: wgpu::BlendComponent::REPLACE,
-            });
-            dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("ssx3-gfx draw"),
-                layout: Some(pl),
-                vertex: wgpu::VertexState {
-                    module,
-                    entry_point: Some("vs"),
-                    compilation_options: Default::default(),
-                    buffers: &[Some(wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<crate::gs::Vtx>() as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &attrs,
-                    })],
-                },
-                primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DEPTH_FORMAT,
-                    depth_write_enabled: Some(k.depth_write),
-                    depth_compare: Some(k.depth),
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                multisample: Default::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module,
-                    entry_point: Some("fs"),
-                    compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: COLOR_FORMAT,
-                        blend,
-                        write_mask: wgpu::ColorWrites::from_bits_truncate(k.write as u32),
-                    })],
-                }),
-                multiview_mask: None,
-                cache: None,
-            })
-        })
+        let driver = self.driver_cache.as_ref().map(|d| &d.cache);
+        self.cache
+            .entry(k)
+            .or_insert_with(|| cpu_pipeline(dev, module, pl, k, driver))
     }
+
+    /// Once a frame: takes in what prewarm has finished and has the writer
+    /// thread save what was recorded, when due.
+    pub fn flush_due(&mut self) {
+        self.drain_prewarm();
+        if let Some(store) = &mut self.key_store {
+            store.flush_due();
+        }
+        if let Some(store) = &mut self.driver_cache {
+            store.flush_due();
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Prewarm {
+    Gpu(PipeKey, ssx3_render::gpu::Program, u32),
+    Cpu(PipeKey),
+    Shadow(ssx3_render::gpu::Program),
+}
+
+/// The shadow-map pipeline ([`Pipelines::shadow`]).
+fn shadow_pipeline(
+    dev: &wgpu::Device,
+    module: &wgpu::ShaderModule,
+    pl: &wgpu::PipelineLayout,
+    p: ssx3_render::gpu::Program,
+    cache: Option<&wgpu::PipelineCache>,
+) -> wgpu::RenderPipeline {
+    dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("ssx3-gfx shadow"),
+        layout: Some(pl),
+        vertex: wgpu::VertexState {
+            module,
+            entry_point: Some(p.vs_entry()),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        primitive: wgpu::PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: SHADOW_FORMAT,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Less),
+            stencil: Default::default(),
+            bias: wgpu::DepthBiasState {
+                constant: 2,
+                slope_scale: 1.5,
+                clamp: SHADOW_BIAS_CLAMP,
+            },
+        }),
+        multisample: Default::default(),
+        fragment: Some(wgpu::FragmentState {
+            module,
+            entry_point: Some("fs_shadow"),
+            compilation_options: Default::default(),
+            targets: &[],
+        }),
+        multiview_mask: None,
+        cache,
+    })
+}
+
+/// The GPU-vertex draw pipeline ([`Pipelines::get_gpu`]).
+#[allow(clippy::too_many_arguments)]
+fn gpu_pipeline(
+    dev: &wgpu::Device,
+    module: &wgpu::ShaderModule,
+    pl: &wgpu::PipelineLayout,
+    clip_depth: bool,
+    k: PipeKey,
+    p: ssx3_render::gpu::Program,
+    lit: u32,
+    cache: Option<&wgpu::PipelineCache>,
+) -> wgpu::RenderPipeline {
+    let entry = p.vs_entry();
+    let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
+        color: wgpu::BlendComponent {
+            src_factor: s,
+            dst_factor: d,
+            operation: op,
+        },
+        alpha: wgpu::BlendComponent::REPLACE,
+    });
+    dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("ssx3-gfx gpuvu draw"),
+        layout: Some(pl),
+        vertex: wgpu::VertexState {
+            module,
+            entry_point: Some(entry),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        primitive: wgpu::PrimitiveState {
+            cull_mode: None,
+            unclipped_depth: clip_depth,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(k.depth_write),
+            depth_compare: Some(k.depth),
+            stencil: Default::default(),
+            bias: Default::default(),
+        }),
+        multisample: Default::default(),
+        fragment: Some(wgpu::FragmentState {
+            module,
+            entry_point: Some(if clip_depth { "fs_gpu_nd" } else { "fs_gpu" }),
+            // The lighting paths the draw can take; the others are
+            // compiled out (`LIT`, gpuvu.wgsl).
+            compilation_options: wgpu::PipelineCompilationOptions {
+                constants: &[("LIT", lit as f64)],
+                ..Default::default()
+            },
+            targets: &[Some(wgpu::ColorTargetState {
+                format: COLOR_FORMAT,
+                blend,
+                write_mask: wgpu::ColorWrites::from_bits_truncate(k.write as u32),
+            })],
+        }),
+        multiview_mask: None,
+        cache,
+    })
+}
+
+/// The CPU-vertex draw pipeline ([`Pipelines::get`]).
+fn cpu_pipeline(
+    dev: &wgpu::Device,
+    module: &wgpu::ShaderModule,
+    pl: &wgpu::PipelineLayout,
+    k: PipeKey,
+    cache: Option<&wgpu::PipelineCache>,
+) -> wgpu::RenderPipeline {
+    let attrs =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32, 2 => Float32x4, 3 => Float32x4];
+    let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
+        color: wgpu::BlendComponent {
+            src_factor: s,
+            dst_factor: d,
+            operation: op,
+        },
+        alpha: wgpu::BlendComponent::REPLACE,
+    });
+    dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("ssx3-gfx draw"),
+        layout: Some(pl),
+        vertex: wgpu::VertexState {
+            module,
+            entry_point: Some("vs"),
+            compilation_options: Default::default(),
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<crate::gs::Vtx>() as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &attrs,
+            })],
+        },
+        primitive: wgpu::PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(k.depth_write),
+            depth_compare: Some(k.depth),
+            stencil: Default::default(),
+            bias: Default::default(),
+        }),
+        multisample: Default::default(),
+        fragment: Some(wgpu::FragmentState {
+            module,
+            entry_point: Some("fs"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: COLOR_FORMAT,
+                blend,
+                write_mask: wgpu::ColorWrites::from_bits_truncate(k.write as u32),
+            })],
+        }),
+        multiview_mask: None,
+        cache,
+    })
 }
 
 /// Sampler description from CLAMP and TEX1.

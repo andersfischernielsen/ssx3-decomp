@@ -285,6 +285,23 @@ fn in_buffers(tbp: u32, d: &frame::DisplayState) -> bool {
 impl Renderer {
     pub fn new(dev: wgpu::Device, queue: wgpu::Queue) -> Renderer {
         let pipes = draw::Pipelines::new(&dev);
+        Self::with_pipelines(dev, queue, pipes)
+    }
+
+    /// Like [`Renderer::new`], but starts from the last run's pipelines:
+    /// recorded ones are prepared in the background, new ones recorded;
+    /// `adapter` names the Vulkan cache file.
+    pub fn with_saved_pipelines(
+        dev: wgpu::Device,
+        queue: wgpu::Queue,
+        adapter: &wgpu::AdapterInfo,
+    ) -> Renderer {
+        let mut pipes = draw::Pipelines::with_saved(&dev, adapter);
+        pipes.prewarm_recorded(&dev);
+        Self::with_pipelines(dev, queue, pipes)
+    }
+
+    fn with_pipelines(dev: wgpu::Device, queue: wgpu::Queue, pipes: draw::Pipelines) -> Renderer {
         let white = dev
             .create_texture(&wgpu::TextureDescriptor {
                 label: Some("ssx3-gfx white"),
@@ -962,6 +979,7 @@ impl Inner {
     /// Render a frame.
     pub fn render(&mut self, built: &Built, mem: &(dyn Mem + Sync)) {
         self.render_one(built, mem);
+        self.pipes.flush_due();
         if !self.present.is_empty() {
             *self.shared.present.lock().unwrap() =
                 Some((self.present.clone(), web_time::Instant::now()));
