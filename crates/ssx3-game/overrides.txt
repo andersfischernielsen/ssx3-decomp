@@ -6563,6 +6563,37 @@
 0x003edb08    TagFieldGetDate
 0x003edd70    TagFieldGetDateYMDHMS
 0x003ede80    TagFieldGetDatePacked
+# Phase 2 wave: oc378
+0x00259398    LobbyMan_CompareUserNames
+0x002593b8    LobbyMan_CompareRoomNames
+0x002598a8    LobbyMan_OnRecvDebug
+0x0025b650    LobbyMan_Create
+0x0025c878    LobbyMan_CancelLogin
+0x0025cd28    LobbyMan_SelectPersonaIndex
+0x0025fc20    LobbyMan_OnMesgReply
+0x0025fc28    LobbyMan_SendDecline
+0x0025fc48    LobbyMan_SendAbortChal
+0x00261a20    BuddyMan_OnSendMessageReply
+0x00262390    BuddyMan_IsBuddyAt
+0x002623e0    BuddyMan_IsBlockedAt
+0x00262620    BuddyMan_GetBuddyAt
+0x00262658    BuddyMan_GetBlockedAt
+0x00263660    FENetHook_ctor
+0x00263998    FENetHook2_ctor
+0x00265880    cSharedLoginMan_Create
+0x002658e0    cSharedLoginMan_ctor
+0x00265df0    cSharedLoginMan_RequestLoad
+0x00265e00    cSharedLoginMan_RequestUpdate
+0x00265e10    cSharedLoginMan_RequestCreate
+0x00265e20    cSharedLoginMan_RequestDelete
+0x00265e30    cSharedLoginMan_RequestFinish
+0x002662e8    cSharedLoginMan_McSeek
+0x002667c0    cUsbKeyboard_Destroy
+0x00266788    cUsbKeyboard_Create
+0x00266ed0    cVoipMan_ToggleActive
+0x00266f08    cVoipMan_QueryState
+0x00266f38    cVoipMan_GetSharedStatus
+0x00267da8    cDSockChannel_BaseDisconnect
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
