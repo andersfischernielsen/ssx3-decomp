@@ -4839,104 +4839,6 @@ pub fn mc_manager_state0a_format(c: &mut Cpu) {
 // ---------------------------------------------------------------------------
 // Memory card manager.
 
-/// `void MCManager_State09(MCManager* m)` (0x2409c8): the memory-card
-/// manager's "check" state. The first sub-object query sets the next state
-/// directly; otherwise the idle/defer query runs, then the two condition
-/// callbacks, and a non-zero result selects state `1` or `0xd`.
-pub fn mcmanager_state09(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 12;
-        let frame = Frame::open(c, 0x20);
-        frame.save(c, S0, 0x10);
-        frame.save_ra(c, 0);
-        c.g[S0][0] = c.g[A0][0];
-
-        // if (m->sub434->v11()) return;
-        c.g[A1][0] = Addr(r(c, S0)).off(0x434).lw(c);
-        c.g[V1][0] = Addr(r(c, A1)).lw(c);
-        c.g[A0][0] = Addr(r(c, V1)).off(0x58).lh(c);
-        c.g[V0][0] = Addr(r(c, V1)).off(0x5c).lw(c);
-        let target = r(c, V0);
-        c.g[A0][0] = sx(p(r(c, A1), r(c, A0)));
-        call_ptr(c, target, 0x0024_09f0)?;
-        if r(c, V0) != 0 {
-            return mcmanager_return(c, frame);
-        }
-
-        c.cycles += 8;
-        c.g[A1][0] = Addr(r(c, S0)).off(0x434).lw(c);
-        c.g[V1][0] = Addr(r(c, A1)).lw(c);
-        c.g[A0][0] = Addr(r(c, V1)).off(0x1a8).lh(c);
-        c.g[V0][0] = Addr(r(c, V1)).off(0x1ac).lw(c);
-        let target = r(c, V0);
-        c.g[A0][0] = sx(p(r(c, A1), r(c, A0)));
-        call_ptr(c, target, 0x0024_0a10)?;
-        if r(c, V0) != 0 {
-            // v53() non-zero: the sub-object's v73() decides whether to wait.
-            c.g[A1][0] = Addr(r(c, S0)).off(0x434).lw(c);
-            c.cycles += 7;
-            c.g[V1][0] = Addr(r(c, A1)).lw(c);
-            c.g[A0][0] = Addr(r(c, V1)).off(0x248).lh(c);
-            c.g[V0][0] = Addr(r(c, V1)).off(0x24c).lw(c);
-            let target = r(c, V0);
-            c.g[A0][0] = sx(p(r(c, A1), r(c, A0)));
-            call_ptr(c, target, 0x0024_0a38)?;
-            let idle = r(c, V0) == 0;
-            c.g[A1][0] = 0x14;
-            if !idle {
-                c.cycles += 2;
-                c.g[V0][0] = Addr(r(c, S0)).off(0x748).lw(c);
-            }
-        } else {
-            c.cycles += 3;
-            c.g[V0][0] = Addr(r(c, S0)).off(0x748).lw(c);
-            c.g[A1][0] = 4;
-        }
-
-        // if (m->v70() == 0) { if (m->v6c() != 0) m->v01(1); return; }
-        c.cycles += 5;
-        c.g[V0][0] = Addr(r(c, S0)).off(0x70).lw(c);
-        let target = r(c, V0);
-        call_ptr(c, target, 0x0024_0a54)?;
-        let zero = r(c, V0) == 0;
-        c.g[A1][0] = 0xd;
-        if zero {
-            c.cycles += 5;
-            c.g[V0][0] = Addr(r(c, S0)).off(0x6c).lw(c);
-            let target = r(c, V0);
-            call_ptr(c, target, 0x0024_0a84)?;
-            let zero = r(c, V0) == 0;
-            c.g[A1][0] = 1;
-            if !zero {
-                c.cycles += 5;
-                c.g[V0][0] = Addr(r(c, S0)).off(0x748).lw(c);
-                c.g[A0][0] = sx(p(r(c, S0), Addr(r(c, V0)).off(0x8).lh(c) as u32));
-                let target = Addr(r(c, V0)).off(0xc).lw(c) as u32;
-                call_ptr(c, target, 0x0024_0aa0)?;
-            }
-        } else {
-            c.cycles += 1;
-            c.g[V0][0] = Addr(r(c, S0)).off(0x748).lw(c);
-            c.cycles += 6;
-            c.g[A0][0] = sx(p(r(c, S0), Addr(r(c, V0)).off(0x8).lh(c) as u32));
-            let target = Addr(r(c, V0)).off(0xc).lw(c) as u32;
-            call_ptr(c, target, 0x0024_0a70)?;
-        }
-
-        c.cycles += 1;
-        mcmanager_return(c, frame)
-    })
-}
-
-/// The `MCManager_State09` tail: `lq s0; ld ra; addiu sp; jr ra`.
-pub(crate) fn mcmanager_return(c: &mut Cpu, frame: Frame) -> Flow {
-    c.cycles += 3;
-    frame.restore(c, 16, 0x10);
-    frame.restore_ra(c, 0);
-    frame.close(c);
-    Ok(())
-}
-
 /// `MCManager_State1A_Delete(self)` (0x240860): delete the selected item of
 /// state 1A: ask the screen (or, when the delete countdown is done, the
 /// focused list) whether its confirm handler wants to run, otherwise step
@@ -7718,8 +7620,8 @@ pub fn mc_manager_update_mode1(c: &mut Cpu) {
 
 /// `void MCManager_BuildSaveTitle(MCManager *self, ...)` (0x23cdb0): format
 /// the save title into the 0x200-byte scratch buffers. The switch is the
-/// word at `self+0xb4`: mode 0 and every value above 1 name the world
-/// device through its hash path (the higher values copy the name with
+/// word at `self+0xb4`: mode 0 and every other value name the world
+/// device through its hash path (the other values copy the name with
 /// `UStr_Copy`), mode 1 takes the "new player" path; `GetSaveTypeTag` is
 /// only called inside `FormatSaveDesc`, which runs first.
 pub fn mc_manager_build_save_title(c: &mut Cpu) {
@@ -11125,17 +11027,23 @@ pub(crate) mod tests {
                 let vt = DATA + 0x1100;
                 ret_slot(c, vt, 0x1a8, if seed % 4 < 2 { RET_ZERO } else { FAKE });
                 ret_slot(c, vt, 0x248, if seed % 8 == 2 { RET_ZERO } else { FAKE });
-                // seed%16==2 keeps the +0x70 hook at 0 (the tail); seed%16==10
-                // leaves it non-zero with the same poll, reaching report 0xd.
+                // Different moduli for the two tail hooks: seed%32==2 keeps
+                // both at 0 (quiet tail), seed%32==18 leaves +0x6c non-zero
+                // (report 1), seed%16==10 leaves +0x70 non-zero with the
+                // same poll (report 0xd).
                 w32(
                     c,
                     DATA + 0x400 + 0x70,
-                    if seed % 16 == 2 { RET_ZERO } else { FAKE },
+                    if seed % 32 == 2 || seed % 32 == 18 {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
                 );
                 w32(
                     c,
                     DATA + 0x400 + 0x6c,
-                    if seed % 16 == 2 { RET_ZERO } else { FAKE },
+                    if seed % 32 == 2 { RET_ZERO } else { FAKE },
                 );
             },
         );
