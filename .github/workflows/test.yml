@@ -68,3 +68,8 @@ jobs:
 
       - name: Build the binaries
         run: cargo build -p ssx3 --bins
+
+      # Unit tests of the frontend that run no game code (the skeleton's
+      # bodies panic).
+      - name: Frontend tests
+        run: cargo test -p ssx3 --bin ssx3 screenshot::tests

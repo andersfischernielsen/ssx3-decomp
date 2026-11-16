@@ -23,6 +23,7 @@ use winit::window::{Fullscreen, Window, WindowId};
 mod icon;
 mod png;
 mod present;
+mod screenshot;
 mod settings;
 
 use present::Presenter;
@@ -302,7 +303,7 @@ impl ApplicationHandler for App {
                             });
                         }
                     }
-                    if code == KeyCode::F12 && event.state == ElementState::Pressed {
+                    if code == KeyCode::F12 && pressed && !event.repeat {
                         // The image on screen: the native renderer's while it is active.
                         let (w, h) = match self.engine.read_image() {
                             Some((w, h, px)) => {
@@ -318,10 +319,11 @@ impl ApplicationHandler for App {
                             #[cfg(not(feature = "emu-gs"))]
                             None => (0, 0),
                         };
-                        let path = format!("/tmp/ssx3-shot-{}.png", self.shots);
-                        self.shots += 1;
-                        let _ = std::fs::write(&path, png::encode(w, h, &self.frame));
-                        eprintln!("screenshot: {path}");
+                        let dir = std::env::temp_dir();
+                        match screenshot::save(&dir, &mut self.shots, w, h, &self.frame) {
+                            Ok(path) => eprintln!("screenshot: {}", path.display()),
+                            Err(e) => eprintln!("screenshot failed in {}: {e}", dir.display()),
+                        }
                     }
                     if let Some(bit) = pad_bit(code) {
                         if event.state == ElementState::Pressed {
