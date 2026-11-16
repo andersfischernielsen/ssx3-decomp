@@ -392,6 +392,8 @@ pub async fn start(
     let engine = Engine::boot(EngineConfig {
         // The page plays the sound (`Game::audio`).
         audio: ssx3_engine::Audio::Pull,
+        // No files in the browser: don't keep pipelines between runs.
+        save_pipelines: false,
         ..EngineConfig::new(Box::new(self::settings(page)))
     });
     let gfx = engine.renderer().cloned().ok_or("renderer: no GPU")?;

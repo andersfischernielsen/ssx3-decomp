@@ -65,7 +65,9 @@ async fn create_context() -> Result<GpuContext, String> {
             } else {
                 wgpu::Features::empty()
             } | adapter.features()
-                & (wgpu::Features::DEPTH_CLIP_CONTROL | wgpu::Features::CLIP_DISTANCES),
+                & (wgpu::Features::DEPTH_CLIP_CONTROL
+                    | wgpu::Features::CLIP_DISTANCES
+                    | wgpu::Features::PIPELINE_CACHE),
             ..Default::default()
         })
         .await

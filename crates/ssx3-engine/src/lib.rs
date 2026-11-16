@@ -93,6 +93,11 @@ pub struct EngineConfig {
     pub data_root: Option<PathBuf>,
     /// Save root (memory card, settings, dumps); see [`init_paths`].
     pub save_root: Option<PathBuf>,
+    /// Cache root for rebuildable files; may be set after `init_paths`.
+    pub cache_root: Option<PathBuf>,
+    /// Keep compiled pipelines between runs in the cache root (default on);
+    /// a front end without files, like the browser, turns it off.
+    pub save_pipelines: bool,
     /// Look for a standalone pack (`tools/bundle.py`); see [`init_paths`].
     pub find_pack: bool,
     /// Skip the boot movies unless the `SSX3_SKIP_MOVIES` setting says
@@ -117,6 +122,8 @@ impl EngineConfig {
         Self {
             data_root: None,
             save_root: None,
+            cache_root: None,
+            save_pipelines: true,
             find_pack: false,
             skip_movies: false,
             short_memcard_screens: true,
@@ -190,6 +197,10 @@ impl Engine {
         if ssx3_core::config::set_provider(Box::new(move |k| provider.get(k))).is_err() {
             eprintln!("[ssx3-engine] settings provider already installed; keeping the first");
         }
+        if let Some(cache) = config.cache_root {
+            // The front end sets its cache root once: keep the first.
+            let _ = ssx3_core::platform_paths::set_cache(cache);
+        }
         init_paths(config.data_root, config.save_root, config.find_pack);
         ssx3_core::config::set_default(
             "SSX3_SHORT_MEMCARD_SCREENS",
@@ -207,7 +218,7 @@ impl Engine {
             .map(|v| v != "0")
             .unwrap_or(config.skip_movies);
         let mut cpu = boot::boot(skip);
-        let gfx = render::install_renderer(&mut cpu, &*settings);
+        let gfx = render::install_renderer(&mut cpu, &*settings, config.save_pipelines);
         Engine {
             cpu,
             gfx,

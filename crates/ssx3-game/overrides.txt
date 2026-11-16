@@ -6539,6 +6539,30 @@
 0x001d9bd0    cFEPopupConfirm_v26
 0x001d9d48    cFEStateNetHelpPopup_ctor
 0x001d9470    MemCardStateBase_SetMode
+# Phase 2 wave: oc377
+0x003eb198    TagFieldCopyTag
+0x003eb1e0    TagFieldSetRaw
+0x003eb6d8    TagFieldFind
+0x003eb840    TagFieldFind2
+0x003eb8b8    TagFieldFindSkipWs
+0x003eb918    TagFieldDelete
+0x003eb9e8    TagFieldRename
+0x003ebfc8    TagFieldSetAddress
+0x003ec180    TagFieldSetString
+0x003ec3c0    TagFieldSetStructure
+0x003ec6d0    TagFieldSetEncoded
+0x003ec7e0    TagFieldSetDate
+0x003ec8b8    TagFieldSetDateYMDHMS
+0x003ec9a0    TagFieldSetDatePacked
+0x003eca88    TagFieldCopyField
+0x003ecbd8    TagFieldPrintf
+0x003ed0f8    TagFieldGetDelim
+0x003ed378    TagFieldGetString
+0x003ed678    TagFieldGetBinary
+0x003ed970    TagFieldGetEncoded
+0x003edb08    TagFieldGetDate
+0x003edd70    TagFieldGetDateYMDHMS
+0x003ede80    TagFieldGetDatePacked
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks

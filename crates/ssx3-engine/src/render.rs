@@ -11,7 +11,11 @@ use crate::Settings;
 ///   frames are published (movies and loading screens still draw there);
 /// - `shadow`: it draws next to the emulated GS, which stays what is shown;
 /// - `emu`: not installed (the emulated GS only).
-pub(crate) fn install_renderer(c: &mut Cpu, s: &dyn Settings) -> Option<ssx3_gfx::Renderer> {
+pub(crate) fn install_renderer(
+    c: &mut Cpu,
+    s: &dyn Settings,
+    save_pipelines: bool,
+) -> Option<ssx3_gfx::Renderer> {
     let mode = s.get("SSX3_RENDER").unwrap_or_else(|| "native".into());
     let mode = if mode != "native" && !ssx3_ps2::vu::VU1_MICROCODE {
         eprintln!("SSX3_RENDER={mode}: the emulated GS needs the VU1 microcode (build with --features vu1-microcode); using native");
@@ -32,7 +36,16 @@ pub(crate) fn install_renderer(c: &mut Cpu, s: &dyn Settings) -> Option<ssx3_gfx
         eprintln!("[gfx] no GPU: using the emulated GS");
         return None;
     };
-    let r = ssx3_gfx::Renderer::new(ctx.device.clone(), ctx.queue.clone());
+    // A front end without files (like the browser) turns saving off.
+    let r = if save_pipelines {
+        ssx3_gfx::Renderer::with_saved_pipelines(
+            ctx.device.clone(),
+            ctx.queue.clone(),
+            &ctx.adapter.get_info(),
+        )
+    } else {
+        ssx3_gfx::Renderer::new(ctx.device.clone(), ctx.queue.clone())
+    };
     r.set_want_depth(native);
     r.set_anisotropy(anisotropy(s));
     r.set_options(gfx_options(s));
