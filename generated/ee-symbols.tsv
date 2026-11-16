@@ -3143,7 +3143,7 @@ s04	001d8530	001d866c	o	MemCardStateBase_ShowMessage
 s04	001d8670	001d869c	o	MemCardStateBase_v46
 s04	001d86a0	001d86ac	-	MemCardStateBase_Finish
 s04	001d86b0	001d86fc	o	MemCardStateBase_v45
-s04	001d8700	001d8be0	e	MemCardStateBase_OnChildEvent
+s04	001d8700	001d8be0	oe	MemCardStateBase_OnChildEvent
 s04	001d8be0	001d8c34	o	MemCardStateBase_ResetState
 s04	001d8c38	001d8c4c	o	MemCardStateBase_ResetAfterSave
 s04	001d8c50	001d8d64	o	MemCardStateBase_HandleInput
