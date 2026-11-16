@@ -6110,6 +6110,7 @@ pub fn mc_manager_get_instance(c: &mut Cpu) {
         frame.save_ra(c, 0);
         if !missing {
             c.cycles += 4;
+            c.g[V0][0] = slot.lw(c);
             frame.restore_ra(c, 0);
             frame.close(c);
             return Ok(());
@@ -6120,12 +6121,13 @@ pub fn mc_manager_get_instance(c: &mut Cpu) {
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x3ed8));
         c.g[A2][0] = 0;
         c.g[A3][0] = 0;
-        // EA_MemAllocNamed(size 0x74c, "memcard"-adjacent pool name).
+        // EA_MemAllocNamed(size 0x74c); the name pointer is in a1.
         callee::MEM_ALLOC_NAMED.call(c, 0x0023_c830)?;
         c.g[A0][0] = c.g[V0][0];
         callee::MC_MANAGER_CTOR.call(c, 0x0023_c838)?;
         slot.sw(c, c.g[V0][0]);
         c.cycles += 4;
+        c.g[V0][0] = slot.lw(c);
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -6411,8 +6413,9 @@ pub fn mc_manager_write_save_by_slot(c: &mut Cpu) {
     })
 }
 
-/// `void MCManager_State31(MCManager *self)` (0x23e268): when the movie is
-/// not finished, tell the 3D crowd manager to stop (message 0x32).
+/// `void MCManager_State31(MCManager *self)` (0x23e268): when the backend
+/// at `+0x434` does not report the operation done, send message 0x32 to the
+/// message sink at `+0x748` (slot `+8/+0xc`).
 pub fn mc_manager_state31(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 12;
@@ -6445,9 +6448,10 @@ pub fn mc_manager_state31(c: &mut Cpu) {
     })
 }
 
-/// `int MCManager_ClampFileIndex(MCManager *self)` (0x2410d0): the file
-/// count at `+0xec`, or the backend's count when that is larger (vtable at
-/// `self+0x434`, method `+0x220/0x224`).
+/// `int MCManager_ClampFileIndex(MCManager *self)` (0x2410d0): the smaller
+/// of the file count at `+0xec` and the backend's count (vtable at
+/// `self+0x434`, method `+0x220/0x224`); the backend is asked again when
+/// its first count is the smaller one.
 pub fn mc_manager_clamp_file_index(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 14;
@@ -6464,9 +6468,10 @@ pub fn mc_manager_clamp_file_index(c: &mut Cpu) {
         call_ptr(c, target, 0x0024_10f8)?;
         c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0xec).lw(c);
         c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
-        let clamped = c.g[V0][0] != 0;
+        // True when the +0xec count is the smaller one (nothing clamped).
+        let fits = c.g[V0][0] != 0;
         c.g[V0][0] = c.g[V1][0];
-        if clamped {
+        if fits {
             c.cycles += 1;
         } else {
             c.cycles += 8;
@@ -6486,9 +6491,10 @@ pub fn mc_manager_clamp_file_index(c: &mut Cpu) {
     })
 }
 
-/// `void MCManager_State0D(MCManager *self)` (0x23f308): poll the device at
-/// the file index (vtable methods `+0x218/0x21c` then `+0x208/0x20c`); report
-/// message 0xe when the first poll is done, 0xf when the second is.
+/// `void MCManager_State0D(MCManager *self)` (0x23f308): poll the backend
+/// at the file index (vtable methods `+0x218/0x21c`, then `+0x208/0x20c`
+/// only when the first poll returns 0); report message 0xf only when the
+/// second poll also returns 0, and 0xe otherwise.
 pub fn mc_manager_state0d(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 13;
@@ -6573,7 +6579,6 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
             c.cycles += 3;
             c.g[V1][0] = Addr(dev).off(0x344).lw(c);
             let missing = c.g[V1][0] == 0;
-            frame.restore(c, S0, 0x440);
             if missing {
                 tail = 6;
                 break 'checks;
@@ -6581,7 +6586,6 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
             c.cycles += 3;
             c.g[V1][0] = Addr(dev).off(0x348).lw(c);
             if c.g[V1][0] == 0 {
-                frame.restore(c, S1, 0x430);
                 tail = 5;
                 break 'checks;
             }
@@ -6621,10 +6625,10 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
     })
 }
 
-/// `void MCManager_State1E(MCManager *self)` (0x23fff0): when the movie is
-/// finished, run the state's completion hook; otherwise poll the overlay
-/// (vtable `+0x1a8/0x1ac`) and either run the pending hook at `+0x78` or
-/// report through the crowd manager.
+/// `void MCManager_State1E(MCManager *self)` (0x23fff0): when the backend
+/// at `+0x434` says the operation is done, return at once; otherwise poll
+/// the backend (vtable `+0x1a8/0x1ac`) and either run the pending hook at
+/// `+0x78` or report to the message sink at `+0x748` (slot `+8/+0xc`).
 pub fn mc_manager_state1e(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 12;
@@ -6704,10 +6708,10 @@ pub fn mc_manager_state1e(c: &mut Cpu) {
     })
 }
 
-/// `void MCManager_State2B(MCManager *self)` (0x240cc0): when the movie is
-/// finished, run the state's completion hook; otherwise poll the overlay
-/// (vtable `+0x1a8/0x1ac`) and either run the pending hook at `+0x68` or
-/// report through the crowd manager.
+/// `void MCManager_State2B(MCManager *self)` (0x240cc0): when the backend
+/// at `+0x434` says the operation is done, return at once; otherwise poll
+/// the backend (vtable `+0x1a8/0x1ac`) and either run the pending hook at
+/// `+0x68` or report to the message sink at `+0x748` (slot `+8/+0xc`).
 pub fn mc_manager_state2b(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 12;
@@ -6796,10 +6800,10 @@ pub fn mc_manager_state2b(c: &mut Cpu) {
     })
 }
 
-/// `void MCManager_State09(MCManager *self)` (0x2409c8): when the movie is
-/// finished, run the state's completion hook; otherwise poll the overlay
-/// (vtable `+0x1a8/0x1ac`) and either run the pending hook at `+0x70` or
-/// report through the crowd manager.
+/// `void MCManager_State09(MCManager *self)` (0x2409c8): when the backend
+/// at `+0x434` says the operation is done, return at once; otherwise poll
+/// the backend (vtable `+0x1a8/0x1ac`) and either run the pending hook at
+/// `+0x70` or report to the message sink at `+0x748` (slot `+8/+0xc`).
 pub fn mc_manager_state09(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 12;
@@ -6899,9 +6903,10 @@ pub fn mc_manager_state09(c: &mut Cpu) {
     })
 }
 
-/// `void MCManager_State11_Save(MCManager *self)` (0x23f578): count the save
-/// down, update the progress fraction and either wait for the decoder
-/// (vtable `+0x248/0x24c`) or finish the progress bar and kick the save.
+/// `void MCManager_State11_Save(MCManager *self)` (0x23f578): count the
+/// save down, update the progress fraction and either wait on the backend
+/// at `+0x434` (vtable `+0x248/0x24c`) or finish the progress bar and
+/// start the save.
 pub fn mc_manager_state11_save(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 21;
@@ -6976,7 +6981,7 @@ pub fn mc_manager_state11_save(c: &mut Cpu) {
                     c.g[A1][0] = 0x12;
                     c.g[A0][0] = Addr(c.g[V1][0] as u32).off(8).lh(c);
                     c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0xc).lw(c);
-                    let target = r32(c, V1);
+                    let target = r32(c, V0);
                     c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, target, 0x0023_f658)?;
                     frame.restore(c, S0, 0x10);
@@ -7007,8 +7012,9 @@ pub fn mc_manager_state11_save(c: &mut Cpu) {
 }
 
 /// `void MCManager_State2C_Delete(MCManager *self)` (0x240d90): count the
-/// delete down and either wait for the decoder (vtable `+0x248/0x24c`) or
-/// advance the delete slot and report through the crowd manager.
+/// delete down and either wait on the backend at `+0x434` (vtable
+/// `+0x248/0x24c`) or advance the delete slot and report to the message
+/// sink at `+0x748` (slot `+8/+0xc`).
 pub fn mc_manager_state2c_delete(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 15;
@@ -7110,9 +7116,10 @@ pub fn mc_manager_state2c_delete(c: &mut Cpu) {
     })
 }
 
-/// `void MCManager_State16(MCManager *self)` (0x23fd40): when the movie is
-/// finished, run the state's completion hook; otherwise, when no load is
-/// pending and the overlay is ready, end the operation (or report it done).
+/// `void MCManager_State16(MCManager *self)` (0x23fd40): when the backend
+/// at `+0x434` says the operation is done, return at once; otherwise,
+/// when no load is pending and the backend poll (vtable `+0x1a8/0x1ac`)
+/// is ready, end the operation (or report it done).
 pub fn mc_manager_state16(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 12;
@@ -7451,9 +7458,11 @@ pub fn mc_manager_begin_load(c: &mut Cpu) {
 }
 
 /// `void MCManager_FormatSaveDesc(MCManager *self, int mode, char *dst)`
-/// (0x23cc78): describe the save for `mode` into the 0x200-byte buffers: mode
-/// 1 formats the "card" name from the world device, higher modes the "new
-/// player" path, mode 0 the plain save-type tag.
+/// (0x23cc78): switch on the word at `self+0xb4` (the `mode` argument is
+/// only passed on): values 0 and 1 run the same
+/// `UStr_FromAscii`/`GetSaveTypeTag`/`UStr_Sprintf` sequence, 2 takes the
+/// world-device hash path ending in `UStr_Copy`, and values of 3 or more
+/// (and negative values) write nothing.
 pub fn mc_manager_format_save_desc(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 12;
@@ -7701,6 +7710,11 @@ pub fn mc_manager_update_mode1(c: &mut Cpu) {
         Ok(())
     })
 }
+
+/// `void MCManager_BuildSaveTitle(MCManager *self, ...)` (0x23cdb0): format
+/// the save title into the 0x200-byte scratch buffers: mode 0 names the world
+/// device, mode 1 the "new player" path, higher modes the plain save-type
+/// tag.
 pub fn mc_manager_build_save_title(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 21;
@@ -7821,6 +7835,10 @@ pub fn mc_manager_build_save_title(c: &mut Cpu) {
     })
 }
 
+/// `int MCManager_ClassifyCardState(MCManager *self, int arg)` (0x23e8a0):
+/// walk the card-state vtable cascade and return the first matching state
+/// word (`+0xbc` when a hook is done, `+0x130` when idle), reporting 6, 7,
+/// 4, 5, 0x1d or 0xd through the message sink at `+0x748` along the way.
 pub fn mc_manager_classify_card_state(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 14;
@@ -7839,7 +7857,7 @@ pub fn mc_manager_classify_card_state(c: &mut Cpu) {
         call_ptr(c, target, 0x0023_e8d0)?;
         let busy = c.g[V0][0] != 0;
         c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
-        // 0 = report through the crowd manager, 1 = report 0x1d, 2 = finish quietly.
+        // 0 = report to the sink at +0x748, 1 = report 0x1d, 2 = finish quietly.
         let mut seg = 0u8;
         if busy {
             c.cycles += 7;
@@ -7983,7 +8001,6 @@ pub fn mc_manager_classify_card_state(c: &mut Cpu) {
             c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
             call_ptr(c, target, 0x0023_e9fc)?;
             frame.restore(c, S0, 0x20);
-            frame.restore(c, S1, 0x10);
         } else if seg == 1 {
             c.cycles += 6;
             c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
@@ -7995,11 +8012,9 @@ pub fn mc_manager_classify_card_state(c: &mut Cpu) {
             call_ptr(c, target, 0x0023_ea1c)?;
             c.cycles += 1;
             frame.restore(c, S0, 0x20);
-            frame.restore(c, S1, 0x10);
         } else {
             c.cycles += 1;
             frame.restore(c, S0, 0x20);
-            frame.restore(c, S1, 0x10);
         }
         c.cycles += 4;
         frame.restore(c, S1, 0x10);
@@ -8009,7 +8024,12 @@ pub fn mc_manager_classify_card_state(c: &mut Cpu) {
     })
 }
 
+/// `void MCManager_NextSlot(MCManager *self)` (0x241400): step the chapter
+/// at `+0x428` forward to the next chapter that has content (wrapping past
+/// the end back to the current one), then record it and refresh the slot.
+/// The back edge re-enters at 0x241430, so that address is an entry too.
 pub fn mc_manager_next_slot(c: &mut Cpu) {
+    // The frame size must equal the size `Frame::open` uses on the entry arm.
     let frame = Frame { size: 0x30 };
     // Entry, or re-entry at the loop head after a back-edge unwind (the
     // loop state is in the registers and the saved frame).
@@ -8190,7 +8210,13 @@ pub fn mc_manager_next_slot(c: &mut Cpu) {
     frame.close(c);
 }
 
+/// `void MCManager_PrevSlot(MCManager *self)` (0x241540): step the chapter
+/// at `+0x428` back to the previous chapter that has content (wrapping
+/// past the start back to the current one), then record it and refresh
+/// the slot. The back edge re-enters at 0x241570, so that address is an
+/// entry too.
 pub fn mc_manager_prev_slot(c: &mut Cpu) {
+    // The frame size must equal the size `Frame::open` uses on the entry arm.
     let frame = Frame { size: 0x40 };
     // Entry, or re-entry at the loop head after a back-edge unwind (the
     // loop state is in the registers and the saved frame).
@@ -10659,6 +10685,7 @@ pub(crate) mod tests {
         );
     }
     use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
     use crate::difftest::events::schedule;
 
     /// Zeroed manager at `DATA+0x400` with a backend holder/vtable and a
@@ -10864,7 +10891,17 @@ pub(crate) mod tests {
                 w32(c, this + 0xec, (seed % 4) as u32);
                 w32(c, this + 0x434, DATA + 0x1000);
                 w32(c, DATA + 0x1000, DATA + 0x1100);
-                ret_slot(c, DATA + 0x1100, 0x220, FAKE);
+                // A small clamped top reaches the at-top wrap to 0.
+                ret_slot(
+                    c,
+                    DATA + 0x1100,
+                    0x220,
+                    match seed % 3 {
+                        0 => RET_ZERO,
+                        1 => RET_ONE,
+                        _ => FAKE,
+                    },
+                );
             },
         );
     }
@@ -10937,7 +10974,17 @@ pub(crate) mod tests {
                 w32(c, this + 0xec, (seed % 5) as u32);
                 w32(c, this + 0x434, DATA + 0x1000);
                 w32(c, DATA + 0x1000, DATA + 0x1100);
-                ret_slot(c, DATA + 0x1100, 0x220, FAKE);
+                // A count at or below +0xec reaches the second backend call.
+                ret_slot(
+                    c,
+                    DATA + 0x1100,
+                    0x220,
+                    match seed % 3 {
+                        0 => RET_ZERO,
+                        1 => RET_ONE,
+                        _ => FAKE,
+                    },
+                );
             },
         );
     }
@@ -11005,8 +11052,18 @@ pub(crate) mod tests {
                 );
                 let vt = DATA + 0x1100;
                 ret_slot(c, vt, 0x1a8, if seed % 4 < 2 { RET_ZERO } else { FAKE });
-                w32(c, DATA + 0x400 + 0x78, FAKE);
-                w32(c, DATA + 0x400 + 0x6c, FAKE);
+                // RET_ZERO hooks make the "done" branches run (a FAKE hook
+                // can never return 0).
+                w32(
+                    c,
+                    DATA + 0x400 + 0x78,
+                    if seed % 8 == 2 { RET_ZERO } else { FAKE },
+                );
+                w32(
+                    c,
+                    DATA + 0x400 + 0x6c,
+                    if seed % 16 == 2 { RET_ZERO } else { FAKE },
+                );
                 c.pc = 0x0023_fff0;
             },
         );
@@ -11027,8 +11084,17 @@ pub(crate) mod tests {
                 );
                 let vt = DATA + 0x1100;
                 ret_slot(c, vt, 0x1a8, if seed % 4 < 2 { RET_ZERO } else { FAKE });
-                w32(c, DATA + 0x400 + 0x68, FAKE);
-                w32(c, DATA + 0x400 + 0x6c, FAKE);
+                ret_slot(c, vt, 0x28, FAKE);
+                w32(
+                    c,
+                    DATA + 0x400 + 0x68,
+                    if seed % 8 == 2 { RET_ZERO } else { FAKE },
+                );
+                w32(
+                    c,
+                    DATA + 0x400 + 0x6c,
+                    if seed % 16 == 2 { RET_ZERO } else { FAKE },
+                );
                 w32(c, DATA + 0x400 + 0x428, (seed % 3) as u32);
             },
         );
@@ -11049,9 +11115,17 @@ pub(crate) mod tests {
                 );
                 let vt = DATA + 0x1100;
                 ret_slot(c, vt, 0x1a8, if seed % 4 < 2 { RET_ZERO } else { FAKE });
-                ret_slot(c, vt, 0x248, FAKE);
-                w32(c, DATA + 0x400 + 0x70, FAKE);
-                w32(c, DATA + 0x400 + 0x6c, FAKE);
+                ret_slot(c, vt, 0x248, if seed % 8 == 2 { RET_ZERO } else { FAKE });
+                w32(
+                    c,
+                    DATA + 0x400 + 0x70,
+                    if seed % 8 == 2 { RET_ZERO } else { FAKE },
+                );
+                w32(
+                    c,
+                    DATA + 0x400 + 0x6c,
+                    if seed % 16 == 2 { RET_ZERO } else { FAKE },
+                );
             },
         );
     }
@@ -11067,11 +11141,31 @@ pub(crate) mod tests {
                 let this = DATA + 0x400;
                 let vt = DATA + 0x1100;
                 ret_slot(c, vt, 0x248, if seed % 4 < 2 { RET_ZERO } else { FAKE });
-                ret_slot(c, vt, 0x150, if seed % 4 == 0 { RET_ZERO } else { FAKE });
+                // RET_ONE at +0x150 reaches the == 1 branch (CardSetState18,
+                // the +4 hook and both report calls below it).
+                ret_slot(
+                    c,
+                    vt,
+                    0x150,
+                    match seed % 4 {
+                        0 => RET_ZERO,
+                        1 => RET_ONE,
+                        _ => FAKE,
+                    },
+                );
                 w32(c, this + 0x108, (seed % 3) as u32);
-                c.bus.write32(this + 0xe4, r.next_u32());
-                c.bus.write32(this + 0xf0, r.next_u32());
-                w32(c, this + 0x4, FAKE);
+                // seed%8==1: e4 >= f0 (the CardSetState18 path);
+                // seed%8==5: e4 < f0 (the +4 hook path, hook returns 0).
+                let (e4, f0) = if seed % 8 == 1 {
+                    (5, 3)
+                } else if seed % 8 == 5 {
+                    (3, 5)
+                } else {
+                    (r.next_u32(), r.next_u32())
+                };
+                c.bus.write32(this + 0xe4, e4);
+                c.bus.write32(this + 0xf0, f0);
+                w32(c, this + 0x4, if seed % 8 == 5 { RET_ZERO } else { FAKE });
             },
         );
     }
@@ -11092,8 +11186,9 @@ pub(crate) mod tests {
                 let this = DATA + 0x400;
                 let vt = DATA + 0x1100;
                 ret_slot(c, vt, 0x248, if seed % 4 < 2 { RET_ZERO } else { FAKE });
-                ret_slot(c, vt, 0x208, FAKE);
-                ret_slot(c, vt, 0x68, FAKE);
+                ret_slot(c, vt, 0x208, if seed % 8 == 4 { RET_ZERO } else { FAKE });
+                // RET_ZERO count makes +0x438 >= count (report 0x2e).
+                ret_slot(c, vt, 0x68, if seed % 8 == 0 { RET_ZERO } else { FAKE });
                 ret_slot(c, vt, 0x50, FAKE);
                 w32(c, this + 0x108, (seed % 3) as u32);
                 w32(c, this + 0x438, (seed % 3) as u32);
@@ -11118,9 +11213,35 @@ pub(crate) mod tests {
                 let vt = DATA + 0x1100;
                 ret_slot(c, vt, 0x1a8, if seed % 4 < 2 { RET_ZERO } else { FAKE });
                 w32(c, this + 0x338, if seed % 3 == 0 { 0 } else { 1 });
-                w32(c, this + 0x6c, FAKE);
-                w32(c, this + 0x84, FAKE);
-                w32(c, this + 0x68, FAKE);
+                // RET_ZERO hooks make the "done" chain under `done` run.
+                w32(
+                    c,
+                    this + 0x6c,
+                    if seed % 8 == 2 || seed % 8 == 6 {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
+                );
+                w32(
+                    c,
+                    this + 0x84,
+                    if seed % 8 == 2 || seed % 8 == 6 {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
+                );
+                w32(
+                    c,
+                    this + 0x68,
+                    if seed % 8 == 2 || seed % 8 == 6 {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
+                );
+                w32(c, this + 0x70, if seed % 8 == 2 { FAKE } else { RET_ZERO });
             },
         );
     }
@@ -11147,48 +11268,46 @@ pub(crate) mod tests {
         );
     }
 
+    driven!(gen_prev_slot, ee::s06::f_00241540__generated);
+    driven!(hand_prev_slot, mc_manager_prev_slot);
+
     #[test]
     fn mc_manager_prev_slot_matches() {
-        check_events(
-            ee::s06::f_00241540__generated,
-            mc_manager_prev_slot,
-            60,
-            &|c, seed| {
-                let mut r = machine(c, seed, 0x41540, 0);
-                globals(c);
-                let this = DATA + 0x400;
-                zero(c, this, 0x800);
-                let holder = DATA + 0x1000;
-                let vt = DATA + 0x1100;
-                w32(c, this + 0x434, holder);
-                w32(c, holder, vt);
-                // (idx, count, list) restricted to combos that terminate under an
-                // always-zero hasChapter (verified with a stage-level simulator;
-                // other combos spin forever even in the generated body).
-                // hasChapter returns 0 on even seeds (loop + events) and FAKE on
-                // odd seeds (immediate exit).
-                let (idx, count, list) = match seed % 8 {
-                    0 => (0, -1, 0),
-                    1 => (0, 2, 1),
-                    2 => (1, 2, 0),
-                    3 => (0, 3, 1),
-                    4 => (1, 4, 0),
-                    5 => (2, 4, 0),
-                    6 => (3, 4, 0),
-                    _ => (1, 3, 1),
-                };
-                ret_slot(c, vt, 0x1a0, if seed % 2 == 0 { RET_ZERO } else { FAKE });
-                w32(c, this + 0x428, idx as u32);
-                w32(
-                    c,
-                    this + 0x424,
-                    if count < 0 { 0xffff_ffff } else { count as u32 },
-                );
-                w32(c, this + 0x100, list as u32);
-                c.g[A0][0] = sx(this);
-                schedule(c, &mut r, seed, 0x0024_1540)
-            },
-        );
+        check_events(gen_prev_slot, hand_prev_slot, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x41540, 0);
+            globals(c);
+            let this = DATA + 0x400;
+            zero(c, this, 0x800);
+            let holder = DATA + 0x1000;
+            let vt = DATA + 0x1100;
+            w32(c, this + 0x434, holder);
+            w32(c, holder, vt);
+            // (idx, count, list) restricted to combos that terminate under an
+            // always-zero hasChapter (verified with a stage-level simulator;
+            // other combos spin forever even in the generated body).
+            // hasChapter returns 0 on even seeds (loop + events) and FAKE on
+            // odd seeds (immediate exit).
+            let (idx, count, list) = match seed % 8 {
+                0 => (0, -1, 0),
+                1 => (0, 2, 1),
+                2 => (1, 2, 0),
+                3 => (0, 3, 1),
+                4 => (1, 4, 0),
+                5 => (2, 4, 0),
+                6 => (3, 4, 0),
+                _ => (1, 3, 1),
+            };
+            ret_slot(c, vt, 0x1a0, if seed % 2 == 0 { RET_ZERO } else { FAKE });
+            w32(c, this + 0x428, idx as u32);
+            w32(
+                c,
+                this + 0x424,
+                if count < 0 { 0xffff_ffff } else { count as u32 },
+            );
+            w32(c, this + 0x100, list as u32);
+            c.g[A0][0] = sx(this);
+            schedule(c, &mut r, seed, 0x0024_1540)
+        });
     }
 
     #[test]
@@ -11216,6 +11335,8 @@ pub(crate) mod tests {
             64,
             &|c, seed| {
                 let _ = mgr(c, seed, 0x23cc78, FAKE);
+                // The body switches on self+0xb4, not on the mode argument.
+                w32(c, DATA + 0x400 + 0xb4, seed % 4);
                 c.g[A1][0] = (seed % 4) as u64;
                 c.g[A2][0] = sx(DATA + 0x5000);
                 zero(c, DATA + 0x5000, 0x200);
@@ -11223,48 +11344,46 @@ pub(crate) mod tests {
         );
     }
 
+    driven!(gen_next_slot, ee::s06::f_00241400__generated);
+    driven!(hand_next_slot, mc_manager_next_slot);
+
     #[test]
     fn mc_manager_next_slot_matches() {
-        check_events(
-            ee::s06::f_00241400__generated,
-            mc_manager_next_slot,
-            60,
-            &|c, seed| {
-                let mut r = machine(c, seed, 0x41400, 0);
-                globals(c);
-                let this = DATA + 0x400;
-                zero(c, this, 0x800);
-                let holder = DATA + 0x1000;
-                let vt = DATA + 0x1100;
-                w32(c, this + 0x434, holder);
-                w32(c, holder, vt);
-                // (idx, count, list) restricted to combos that terminate under an
-                // always-zero hasChapter (verified with a stage-level simulator;
-                // other combos spin forever even in the generated body).
-                // hasChapter returns 0 on even seeds (loop + events) and FAKE on
-                // odd seeds (immediate exit).
-                let (idx, count, list) = match seed % 8 {
-                    0 => (0, -1, 0),
-                    1 => (0, 2, 1),
-                    2 => (1, 2, 0),
-                    3 => (0, 3, 1),
-                    4 => (1, 4, 0),
-                    5 => (2, 4, 0),
-                    6 => (3, 4, 0),
-                    _ => (1, 3, 1),
-                };
-                ret_slot(c, vt, 0x1a0, if seed % 2 == 0 { RET_ZERO } else { FAKE });
-                w32(c, this + 0x428, idx as u32);
-                w32(
-                    c,
-                    this + 0x424,
-                    if count < 0 { 0xffff_ffff } else { count as u32 },
-                );
-                w32(c, this + 0x100, list as u32);
-                c.g[A0][0] = sx(this);
-                schedule(c, &mut r, seed, 0x0024_1400)
-            },
-        );
+        check_events(gen_next_slot, hand_next_slot, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x41400, 0);
+            globals(c);
+            let this = DATA + 0x400;
+            zero(c, this, 0x800);
+            let holder = DATA + 0x1000;
+            let vt = DATA + 0x1100;
+            w32(c, this + 0x434, holder);
+            w32(c, holder, vt);
+            // (idx, count, list) restricted to combos that terminate under an
+            // always-zero hasChapter (verified with a stage-level simulator;
+            // other combos spin forever even in the generated body).
+            // hasChapter returns 0 on even seeds (loop + events) and FAKE on
+            // odd seeds (immediate exit).
+            let (idx, count, list) = match seed % 8 {
+                0 => (0, -1, 0),
+                1 => (0, 2, 1),
+                2 => (1, 2, 0),
+                3 => (0, 3, 1),
+                4 => (1, 4, 0),
+                5 => (2, 4, 0),
+                6 => (3, 4, 0),
+                _ => (1, 3, 1),
+            };
+            ret_slot(c, vt, 0x1a0, if seed % 2 == 0 { RET_ZERO } else { FAKE });
+            w32(c, this + 0x428, idx as u32);
+            w32(
+                c,
+                this + 0x424,
+                if count < 0 { 0xffff_ffff } else { count as u32 },
+            );
+            w32(c, this + 0x100, list as u32);
+            c.g[A0][0] = sx(this);
+            schedule(c, &mut r, seed, 0x0024_1400)
+        });
     }
 
     #[test]
@@ -11285,7 +11404,16 @@ pub(crate) mod tests {
                 ret_slot(c, vt, 0x58, if seed % 4 < 2 { RET_ZERO } else { FAKE });
                 ret_slot(c, vt, 0x18, FAKE);
                 w32(c, this + 0x338, if seed % 3 == 0 { 0 } else { 1 });
-                w32(c, this + 0x424, (seed % 4) as u32);
+                // -1 at +0x424 reaches the GetNumSlots branch.
+                w32(
+                    c,
+                    this + 0x424,
+                    if seed % 5 == 4 {
+                        0xffff_ffff
+                    } else {
+                        (seed % 4) as u32
+                    },
+                );
                 w32(
                     c,
                     this + 0x130,
@@ -11309,6 +11437,8 @@ pub(crate) mod tests {
             64,
             &|c, seed| {
                 let _ = mgr(c, seed, 0x23cdb0, FAKE);
+                // The body switches on self+0xb4 (modes 0, 1 and >= 2).
+                w32(c, DATA + 0x400 + 0xb4, seed % 3);
                 c.g[A1][0] = (seed % 3) as u64;
             },
         );
@@ -11328,14 +11458,62 @@ pub(crate) mod tests {
                     if seed % 2 == 0 { RET_ZERO } else { FAKE },
                 );
                 let vt = DATA + 0x1100;
-                // Steer the cascade: each level done or not.
-                let v = seed / 2 % 8;
-                ret_slot(c, vt, 0x188, if v & 1 == 0 { RET_ZERO } else { FAKE });
-                ret_slot(c, vt, 0x198, if v & 2 == 0 { RET_ZERO } else { FAKE });
-                ret_slot(c, vt, 0x1d8, if v & 4 == 0 { RET_ZERO } else { FAKE });
-                ret_slot(c, vt, 0x1b8, if seed % 3 == 0 { RET_ZERO } else { FAKE });
-                ret_slot(c, vt, 0x1d0, if seed % 3 == 1 { RET_ZERO } else { FAKE });
-                c.g[A1][0] = (seed % 2) as u64;
+                let this = DATA + 0x400;
+                // Steer the cascade per seed%8 so every exit runs: the two
+                // seg==2 finishes (busy with arg 0, idle with +0x130 == 4),
+                // the report-0x1d leaf (+0xbc == 0) and the report-5 leaves.
+                let combo = seed % 8;
+                let busy = matches!(combo, 0 | 1 | 2 | 6 | 7);
+                ret_slot(c, vt, 0x1a8, if busy { FAKE } else { RET_ZERO });
+                ret_slot(
+                    c,
+                    vt,
+                    0x1b8,
+                    if combo == 1 || combo == 2 {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
+                );
+                ret_slot(c, vt, 0x1d0, FAKE);
+                ret_slot(
+                    c,
+                    vt,
+                    0x198,
+                    if matches!(combo, 0 | 3 | 4 | 7) {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
+                );
+                ret_slot(
+                    c,
+                    vt,
+                    0x1d8,
+                    if matches!(combo, 0 | 3 | 4 | 7) {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
+                );
+                ret_slot(c, vt, 0x188, if combo == 5 { FAKE } else { RET_ZERO });
+                w32(c, this + 0xbc, if combo == 2 { 3 } else { 0 });
+                w32(
+                    c,
+                    this + 0x130,
+                    match combo {
+                        3 => 4,
+                        4 => 2,
+                        _ => (seed % 3) as u32,
+                    },
+                );
+                c.g[A1][0] = if combo == 0 {
+                    0
+                } else if combo == 7 {
+                    1
+                } else {
+                    (seed % 2) as u64
+                };
             },
         );
     }
