@@ -7,7 +7,7 @@ again after the reorg (AGENTS.md, porting loop).
 
 `stage` reads `WAVE.txt` (`0xADDR<TAB>name` lines from `pick_wave.py`) and
 groups the functions for writers: one function of `SSX3_BIG_BYTES` bytes or
-more (default 1300) per writer, the rest `SSX3_PER_WRITER` (default 10) per
+more (default 1300) per writer, the rest `SSX3_PER_WRITER` (default 20) per
 writer, in wave order. For each group `ocN` (from `FIRST_OC` up) it writes
 `WAVEDIR/list-ocN.txt` (the functions with their dossier paths in
 `WAVEDIR/ref/`), creates `crates/ssx3-game/src/ocN.rs` with an empty
@@ -66,7 +66,7 @@ def sizes():
 
 def stage(wave_txt, wave_dir, first):
     big = int(os.environ.get("SSX3_BIG_BYTES", 1300))
-    per = int(os.environ.get("SSX3_PER_WRITER", 10))
+    per = int(os.environ.get("SSX3_PER_WRITER", 20))
     size = sizes()
     funcs = []
     for l in open(wave_txt):
