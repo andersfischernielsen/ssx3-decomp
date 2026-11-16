@@ -185,7 +185,9 @@ const HEX_ENCODE_HI: u32 = 0x0049_5fc0;
 const HEX_ENCODE_LO: u32 = 0x0049_60c0;
 /// `%xx` decode table for the first hex digit (`D_004961C0`).
 const HEX_DECODE_HI: u32 = 0x0049_61c0;
-/// `%xx` decode table for the second hex digit (`D_004962C0`).
+/// `%xx` decode table for the second hex digit (`D_004962C0`); also the
+/// table `TagFieldGetBinary` uses for every hex digit of its `b`/`w`/`l`
+/// values.
 const HEX_DECODE_LO: u32 = 0x0049_62c0;
 
 // `sDsTmK2` broken-down time fields (reference field order).
@@ -1311,7 +1313,7 @@ pub fn tag_field_copy_tag(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event_here(c, 0x003eb1b0);
+                deliver_event_here(c, 0x003e_b1b0);
             }
         }
     }
@@ -1325,8 +1327,9 @@ pub fn tag_field_copy_tag(c: &mut Cpu) {
 }
 
 /// `int TagFieldSetRaw(char* record, int len, const char* temp)` (0x3eb1e0):
-/// add or replace the `name=value` term `temp` in the record, returning the
-/// term's name length or -1. Names compare through the class table at
+/// add or replace the `name=value` term `temp` in the record, returning
+/// `S3 - 1` (the whole term's length), 0 for an identical term, or -1.
+/// Names compare through the class table at
 /// `0x4964c0`; fields are separated by the byte at `gp+0x1980`, and `~…`
 /// terms are appended at the end.
 pub fn tag_field_set_raw(c: &mut Cpu) {
@@ -1358,6 +1361,7 @@ pub fn tag_field_set_raw(c: &mut Cpu) {
             frame.save_ra(c, 0);
         } else {
             // Resume at a loop head: frame already open on the stack.
+            // The frame size must equal the size `Frame::open` uses on the entry arm.
             frame = Frame { size: 0x70 };
             record_null = false;
         }
@@ -1494,9 +1498,7 @@ pub fn tag_field_set_raw(c: &mut Cpu) {
                             }
                         }
                         // Fall through to the common 0x3eb36c tail below:
-                        // this arm is inside the scan loop by construction
-                        // (see the `pending == 0x003e_b338` fall-through
-                        // marker after the normal iteration body).
+                        // this arm is inside the scan loop by construction.
                     } else {
                         if pending == 0x003e_b2e0 {
                             // Resume at 0x3eb2e0: V0 already holds the
@@ -1818,8 +1820,7 @@ pub fn tag_field_set_raw(c: &mut Cpu) {
             }
             // Shared tail: 0x3eb434 measures the new term against the old.
             // Resume at 0x003e_b450/0x003e_b488 enters its loop directly
-            // (loop-top charge is the head charge); the skipped setup
-            // charges/effects are listed in the header table.
+            // (loop-top charge is the head charge).
             let mut run_450 = false;
             let mut run_488 = false;
             if resume == 0x003e_b450 {
@@ -1996,7 +1997,8 @@ pub fn tag_field_set_raw(c: &mut Cpu) {
 
 /// `char* TagFieldFind(char* record, const char* name)` (0x3eb6d8): find the
 /// `name=` field in the record and return the pointer to its value (after the
-/// `=` or `:`), or 0 when the record or the name is missing or not found.
+/// `=` or `:`, with one space after the delimiter also skipped), or 0 when
+/// the record or the name is missing or not found.
 pub fn tag_field_find(c: &mut Cpu) {
     const ENTRY: u32 = 0x003e_b6d8;
     const HEAD_NAME: u32 = 0x003e_b718;
@@ -2004,6 +2006,7 @@ pub fn tag_field_find(c: &mut Cpu) {
     const HEAD_BACK: u32 = 0x003e_b798;
     const HEAD_SCAN: u32 = 0x003e_b7ec;
     const END: u32 = 0x003e_b83c;
+    // The frame size must equal the size `Frame::open` uses on the entry arm.
     let frame = Frame { size: 0x10 };
     let mut resume = match c.pc {
         ENTRY => ENTRY,
@@ -2290,11 +2293,13 @@ pub fn tag_field_find_2(c: &mut Cpu) {
 }
 
 /// `char* TagFieldFindSkipWs(char* record)` (0x3eb8b8): find the `tag` field
-/// and skip the leading whitespace of its value; 0 when the value is empty.
+/// and skip the leading whitespace of its value; 0 when the value is empty
+/// or the field is not found.
 pub fn tag_field_find_skip_ws(c: &mut Cpu) {
     const ENTRY: u32 = 0x003e_b8b8;
     const HEAD: u32 = 0x003e_b8e0;
     const END: u32 = 0x003e_b914;
+    // The frame size must equal the size `Frame::open` uses on the entry arm.
     let frame = Frame { size: 0x10 };
     let resume = match c.pc {
         ENTRY => ENTRY,
@@ -2306,9 +2311,10 @@ pub fn tag_field_find_skip_ws(c: &mut Cpu) {
     };
     guest(c, |c| {
         // Initialize, then common code: ENTRY opens the frame and calls
-        // Find; HEAD already has the frame and the saved RA, and V1 points
-        // at the next value byte. Both load V0 (ENTRY via 0x3eb8d8, HEAD
-        // via the 0x3eb8e0 reload) and set enter_loop.
+        // Find, and loads V0 and sets enter_loop only when Find returns
+        // non-null; HEAD already has the frame and the saved RA, and V1
+        // points at the next value byte, and it reloads V0 (0x3eb8e0)
+        // and always sets enter_loop.
         let mut enter_loop = false;
         if resume == ENTRY {
             c.cycles += 8;
@@ -2369,6 +2375,7 @@ pub fn tag_field_delete(c: &mut Cpu) {
     const HEAD_SEP: u32 = 0x003e_b988;
     const HEAD_COPY: u32 = 0x003e_b9b0;
     const END: u32 = 0x003e_b9e4;
+    // The frame size must equal the size `Frame::open` uses on the entry arm.
     let frame = Frame { size: 0x20 };
     let resume = match c.pc {
         ENTRY => ENTRY,
@@ -2399,7 +2406,7 @@ pub fn tag_field_delete(c: &mut Cpu) {
             c.g[A0][0] = c.g[V1][0];
             if !found {
                 c.cycles += 2; // 0x3eb938
-                c.g[V0][0] = 0xffffffffffffffff;
+                c.g[V0][0] = 0xffff_ffff_ffff_ffff;
                 c.cycles += 4; // 0x3eb9d4
                 frame.restore(c, S0, 0x10);
                 frame.restore_ra(c, 0);
@@ -2540,7 +2547,7 @@ pub fn tag_field_rename(c: &mut Cpu) {
         callee::TAG_FIELD_FIND.call(c, 0x003e_ba18)?;
         c.g[S0][0] = c.g[V0][0];
         let missing = c.g[S0][0] == 0;
-        c.g[V0][0] = 0xffffffffffffffff;
+        c.g[V0][0] = 0xffff_ffff_ffff_ffff;
         if !missing {
             c.cycles += 7; // 0x003e_ba24: back over a preceding space.
             c.g[V0][0] = c.lbu((c.g[S0][0] as u32).wrapping_sub(1));
@@ -2638,7 +2645,7 @@ pub fn tag_field_rename(c: &mut Cpu) {
                 c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[S3][0] as u32));
                 c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A0][0] as i64)) as u64;
                 let no_room = c.g[V0][0] != 0;
-                c.g[V0][0] = 0xffffffffffffffff;
+                c.g[V0][0] = 0xffff_ffff_ffff_ffff;
                 if no_room {
                     room_fail = true; // -> epilogue with V0 = -1
                 } else if c.g[A2][0] == c.g[S0][0] {
@@ -3047,7 +3054,7 @@ pub fn tag_field_set_structure(c: &mut Cpu) {
             c.cycles += 7;
             c.g[A1][0] = c.g[SP][0];
             c.g[A0][0] = c.g[S4][0];
-            callee::TAG_FIELD_COPY_TAG.call(c, 0x003ec414)?;
+            callee::TAG_FIELD_COPY_TAG.call(c, 0x003e_c414)?;
             c.g[A1][0] = c.g[V0][0];
             c.g[V1][0] = c.lb(c.g[S0][0] as u32);
             let template_empty = c.g[V1][0] == 0;
@@ -3079,7 +3086,7 @@ pub fn tag_field_set_structure(c: &mut Cpu) {
                             c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
                             if more {
                                 if event_due(c) {
-                                    deliver_event_here(c, 0x003ec450);
+                                    deliver_event_here(c, 0x003e_c450);
                                 }
                                 continue;
                             }
@@ -3111,7 +3118,7 @@ pub fn tag_field_set_structure(c: &mut Cpu) {
                             c.g[T0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                             if more {
                                 if event_due(c) {
-                                    deliver_event_here(c, 0x003ec480);
+                                    deliver_event_here(c, 0x003e_c480);
                                 }
                                 continue;
                             }
@@ -3218,7 +3225,7 @@ pub fn tag_field_set_structure(c: &mut Cpu) {
                                 c.sb(c.g[A0][0] as u32, c.g[V0][0]);
                                 if more {
                                     if event_due(c) {
-                                        deliver_event_here(c, 0x003ec560);
+                                        deliver_event_here(c, 0x003e_c560);
                                     }
                                     continue;
                                 }
@@ -3243,7 +3250,7 @@ pub fn tag_field_set_structure(c: &mut Cpu) {
                                     c.g[V1][0] = c.lbu(c.g[A0][0] as u32);
                                     if more {
                                         if event_due(c) {
-                                            deliver_event_here(c, 0x003ec598);
+                                            deliver_event_here(c, 0x003e_c598);
                                         }
                                         continue;
                                     }
@@ -3306,7 +3313,7 @@ pub fn tag_field_set_structure(c: &mut Cpu) {
                                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
                                 if more {
                                     if event_due(c) {
-                                        deliver_event_here(c, 0x003ec5e8);
+                                        deliver_event_here(c, 0x003e_c5e8);
                                     }
                                     continue;
                                 }
@@ -3331,7 +3338,7 @@ pub fn tag_field_set_structure(c: &mut Cpu) {
                     c.g[V0][0] = c.lbu(c.g[S0][0] as u32);
                     if more {
                         if event_due(c) {
-                            deliver_event_here(c, 0x003ec430);
+                            deliver_event_here(c, 0x003e_c430);
                         }
                         continue 'tmpl;
                     }
@@ -3358,7 +3365,7 @@ pub fn tag_field_set_structure(c: &mut Cpu) {
                 if c.g[V0][0] == c.g[V1][0] {
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
                     if event_due(c) {
-                        deliver_event_here(c, 0x003ec678);
+                        deliver_event_here(c, 0x003e_c678);
                     }
                     continue;
                 }
@@ -3371,7 +3378,7 @@ pub fn tag_field_set_structure(c: &mut Cpu) {
         c.g[A0][0] = c.g[S4][0];
         c.g[A1][0] = c.g[S5][0];
         c.g[A2][0] = c.g[SP][0];
-        callee::TAG_FIELD_SET_RAW.call(c, 0x003ec6a8)?;
+        callee::TAG_FIELD_SET_RAW.call(c, 0x003e_c6a8)?;
         frame.restore(c, S0, 0xa60);
         frame.restore(c, S1, 0xa50);
         frame.restore(c, S2, 0xa40);
@@ -3426,7 +3433,7 @@ pub fn tag_field_set_encoded(c: &mut Cpu) {
         }
         c.cycles += 10;
         c.g[A1][0] = c.g[SP][0];
-        callee::TAG_FIELD_COPY_TAG.call(c, 0x003ec724)?;
+        callee::TAG_FIELD_COPY_TAG.call(c, 0x003e_c724)?;
         c.g[A2][0] = c.g[V0][0];
         c.g[T1][0] = 0u64;
         c.g[V0][0] = b'$' as u64;
@@ -3468,7 +3475,7 @@ pub fn tag_field_set_encoded(c: &mut Cpu) {
                 c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
                 if more {
                     if event_due(c) {
-                        deliver_event_here(c, 0x003ec758);
+                        deliver_event_here(c, 0x003e_c758);
                     }
                     continue;
                 }
@@ -3480,7 +3487,7 @@ pub fn tag_field_set_encoded(c: &mut Cpu) {
         c.g[A0][0] = c.g[S3][0];
         c.g[A1][0] = c.g[S4][0];
         c.g[A2][0] = c.g[SP][0];
-        callee::TAG_FIELD_SET_RAW.call(c, 0x003ec7c0)?;
+        callee::TAG_FIELD_SET_RAW.call(c, 0x003e_c7c0)?;
         frame.restore(c, S0, 0x1150);
         frame.restore(c, S1, 0x1140);
         frame.restore(c, S2, 0x1130);
@@ -3512,13 +3519,13 @@ pub fn tag_field_set_date(c: &mut Cpu) {
         frame.save_ra(c, 0x150);
         if !epoch_given {
             c.cycles += 4;
-            callee::DS_TIMEINSECS.call(c, 0x003ec81c)?;
+            callee::DS_TIMEINSECS.call(c, 0x003e_c81c)?;
             c.g[V0][0] = c.g[V0][0] << 32;
             c.g[A1][0] = c.g[V0][0] >> 32;
         }
         c.cycles += 5;
         c.g[A0][0] = c.g[SP][0];
-        callee::DS_SECSTOTIME.call(c, 0x003ec82c)?;
+        callee::DS_SECSTOTIME.call(c, 0x003e_c82c)?;
         c.g[S1][0] = c.g[V0][0];
         let tm_missing = c.g[S1][0] == 0u64;
         c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
@@ -3531,7 +3538,7 @@ pub fn tag_field_set_date(c: &mut Cpu) {
             c.g[A2][0] = c.g[S2][0];
             c.g[A1][0] = c.g[S0][0];
             c.g[A0][0] = c.g[S3][0];
-            callee::TAG_FIELD_COPY_TAG.call(c, 0x003ec848)?;
+            callee::TAG_FIELD_COPY_TAG.call(c, 0x003e_c848)?;
             c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(TM_YEAR));
             c.g[A1][0] = 0x0049_0000;
             c.g[A3][0] = c.lw((c.g[S1][0] as u32).wrapping_add(TM_MON));
@@ -3543,11 +3550,11 @@ pub fn tag_field_set_date(c: &mut Cpu) {
             c.g[T1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(TM_HOUR));
             c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
             c.g[T2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(TM_MIN));
-            callee::SPRINTF.call(c, 0x003ec878)?;
+            callee::SPRINTF.call(c, 0x003e_c878)?;
             c.g[A0][0] = c.g[S3][0];
             c.g[A1][0] = c.g[S4][0];
             c.g[A2][0] = c.g[S0][0];
-            callee::TAG_FIELD_SET_RAW.call(c, 0x003ec888)?;
+            callee::TAG_FIELD_SET_RAW.call(c, 0x003e_c888)?;
             frame.restore(c, S0, 0x1a0);
         }
         c.cycles += 7;
@@ -3591,7 +3598,7 @@ pub fn tag_field_set_date_ymdhms(c: &mut Cpu) {
         c.g[S2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xd8));
         c.g[A1][0] = 0u64;
         c.g[A2][0] = TM_SIZE as u64;
-        callee::MEMSET.call(c, 0x003ec918)?;
+        callee::MEMSET.call(c, 0x003e_c918)?;
         c.g[V0][0] = 0xffff_ffff_ffff_ffff;
         c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(YEAR_BASE));
         c.sw((c.g[SP][0] as u32).wrapping_add(TM_ISDST), c.g[V0][0]);
@@ -3604,7 +3611,7 @@ pub fn tag_field_set_date_ymdhms(c: &mut Cpu) {
         c.sw((c.g[SP][0] as u32).wrapping_add(TM_HOUR), c.g[S4][0]);
         c.sw((c.g[SP][0] as u32).wrapping_add(TM_MIN), c.g[S5][0]);
         c.sw((c.g[SP][0] as u32).wrapping_add(TM_SEC), c.g[V0][0]);
-        callee::DS_TIMETOSECS.call(c, 0x003ec94c)?;
+        callee::DS_TIMETOSECS.call(c, 0x003e_c94c)?;
         c.g[V0][0] = c.g[V0][0] << 32;
         c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
         c.g[A3][0] = 0u64;
@@ -3615,7 +3622,7 @@ pub fn tag_field_set_date_ymdhms(c: &mut Cpu) {
             c.g[A3][0] = c.g[S2][0];
         }
         c.g[A2][0] = c.g[S6][0];
-        callee::TAG_FIELD_SET_DATE.call(c, 0x003ec970)?;
+        callee::TAG_FIELD_SET_DATE.call(c, 0x003e_c970)?;
         frame.restore(c, S0, 0xc0);
         frame.restore(c, S1, 0xb0);
         frame.restore(c, S2, 0xa0);
@@ -3655,7 +3662,7 @@ pub fn tag_field_set_date_packed(c: &mut Cpu) {
         c.g[A0][0] = c.g[SP][0];
         c.g[A1][0] = 0u64;
         c.g[A2][0] = TM_SIZE as u64;
-        callee::MEMSET.call(c, 0x003ec9e8)?;
+        callee::MEMSET.call(c, 0x003e_c9e8)?;
         c.g[V1][0] = sx(((c.g[S0][0] as u32) as i32 >> 8) as u32);
         c.g[A1][0] = sx((c.g[S0][0] as u32) >> 16);
         c.g[V1][0] = c.g[V1][0] & 0xff;
@@ -3676,7 +3683,7 @@ pub fn tag_field_set_date_packed(c: &mut Cpu) {
         c.sw((c.g[SP][0] as u32).wrapping_add(TM_SEC), c.g[S1][0]);
         c.sw((c.g[SP][0] as u32).wrapping_add(TM_ISDST), c.g[V0][0]);
         c.sw((c.g[SP][0] as u32).wrapping_add(TM_MON), c.g[V1][0]);
-        callee::DS_TIMETOSECS.call(c, 0x003eca3c)?;
+        callee::DS_TIMETOSECS.call(c, 0x003e_ca3c)?;
         c.g[V0][0] = c.g[V0][0] << 32;
         c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
         c.g[A3][0] = 0u64;
@@ -3687,7 +3694,7 @@ pub fn tag_field_set_date_packed(c: &mut Cpu) {
             c.g[A3][0] = c.g[S2][0];
         }
         c.g[A2][0] = c.g[S5][0];
-        callee::TAG_FIELD_SET_DATE.call(c, 0x003eca60)?;
+        callee::TAG_FIELD_SET_DATE.call(c, 0x003e_ca60)?;
         frame.restore(c, S0, 0x90);
         frame.restore(c, S1, 0x80);
         frame.restore(c, S2, 0x70);
@@ -3756,7 +3763,8 @@ pub fn tag_field_copy_field(c: &mut Cpu) {
 
 /// `int TagFieldPrintf(char* buf, int len, const char* fmt, ...)` (0x3ecbd8):
 /// a printf-style formatter that turns whitespace runs into the field
-/// separator and `%s/%d/%a/%f/%e/%r` into tag fields from the arguments.
+/// separator and `%s/%d/%a/%f/%e` into tag fields from the arguments;
+/// `%r` copies its argument string raw.
 pub fn tag_field_printf(c: &mut Cpu) {
     guest(c, |c| {
         const ENTRY: u32 = 0x003e_cbd8;
@@ -3764,6 +3772,7 @@ pub fn tag_field_printf(c: &mut Cpu) {
         const HEAD_WS: u32 = 0x003e_cc80;
         const HEAD_RAW: u32 = 0x003e_cdc0;
         const END: u32 = 0x003e_ce38;
+        // The frame size must equal the size `Frame::open` uses on the entry arm.
         let frame = Frame { size: 0xe0 };
         let mut fmt_empty = false;
         let mut resume = match c.pc {
@@ -4137,6 +4146,7 @@ pub fn tag_field_get_delim(c: &mut Cpu) {
         const HEAD_MEASURE: u32 = 0x003e_d210;
         const HEAD_COPY: u32 = 0x003e_d2c0;
         const END: u32 = 0x003e_d378;
+        // The frame size must equal the size `Frame::open` uses on the entry arm.
         let frame = Frame { size: 0x10 };
         let mut data_is_null = false;
         let mut resume = match c.pc {
@@ -4323,7 +4333,7 @@ pub fn tag_field_get_delim(c: &mut Cpu) {
                         c.g[T0][0] = 0x1;
                         if !len_positive {
                             c.cycles += 2;
-                            c.g[V0][0] = 0xffffffffffffffff;
+                            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
                             break 'body;
                         }
                         c.cycles += 3;
@@ -4379,7 +4389,7 @@ pub fn tag_field_get_delim(c: &mut Cpu) {
                     // Default path (0x3ed184).
                     c.cycles += 2;
                     let default_is_null = c.g[A3][0] == 0u64;
-                    c.g[V0][0] = 0xffffffffffffffff;
+                    c.g[V0][0] = 0xffff_ffff_ffff_ffff;
                     if default_is_null {
                         break 'body;
                     }
@@ -4607,6 +4617,7 @@ pub fn tag_field_get_string(c: &mut Cpu) {
         const END: u32 = 0x003e_d578;
         let resume = c.pc;
         let mut data_present = false;
+        // The frame size must equal the size `Frame::open` uses on the entry arm.
         let frame = match resume {
             ENTRY => {
                 c.cycles += 6;
@@ -4637,7 +4648,7 @@ pub fn tag_field_get_string(c: &mut Cpu) {
                 } else {
                     c.cycles += 2;
                     let default_is_null = c.g[A0][0] == 0u64;
-                    c.g[V0][0] = 0xffffffffffffffff;
+                    c.g[V0][0] = 0xffff_ffff_ffff_ffff;
                     if default_is_null {
                         break 'body;
                     }
@@ -4777,14 +4788,14 @@ pub fn tag_field_get_string(c: &mut Cpu) {
                 break 'body;
             }
             // Decode-copy the value (0x3ed478..0x3ed564). Resume at 0x003e_d4c8
-            // enters the loop directly: state is in A3/T0/T1/T2/T3/T4/T5/V1.
+            // enters the loop directly: state is in A2/A3/T0/T1/T2/T3/T4/T5/V1.
             if resume != HEAD_COPY {
                 c.cycles += 2;
                 let len_positive = (c.g[A2][0] as i64) > 0;
                 c.g[T1][0] = 0x1;
                 if !len_positive {
                     c.cycles += 2;
-                    c.g[V0][0] = 0xffffffffffffffff;
+                    c.g[V0][0] = 0xffff_ffff_ffff_ffff;
                     break 'body;
                 }
                 c.cycles += 3;
@@ -4941,6 +4952,7 @@ pub fn tag_field_get_binary(c: &mut Cpu) {
     const END: u32 = 0x003e_d96c;
     let resume = c.pc;
     let mut fmt_done = false;
+    // The frame size must equal the size `Frame::open` uses on the entry arm.
     let frame = match resume {
         ENTRY => {
             c.cycles += 9;
@@ -5221,7 +5233,7 @@ pub fn tag_field_get_binary(c: &mut Cpu) {
                     }
                 }
             }
-            let mut not_s = stage >= 4;
+            let mut not_s = false;
             if stage < 4 {
                 c.cycles += 3;
                 c.g[V0][0] = b's' as u64;
@@ -5268,57 +5280,62 @@ pub fn tag_field_get_binary(c: &mut Cpu) {
                         c.cycles += 1;
                         c.g[A2][0] = c.g[T2][0];
                     }
-                    loop {
-                        c.cycles += 4;
-                        c.g[V1][0] = c.lb(c.g[T0][0] as u32);
-                        c.g[V0][0] = ((c.g[V1][0] as i64) < b'0' as i64) as u64;
-                        let below_digit = c.g[V0][0] != 0u64;
-                        c.g[A0][0] = c.lbu(c.g[T0][0] as u32);
-                        let is_data = if below_digit {
-                            c.cycles += 2;
-                            let not_pct = c.g[V1][0] != c.g[T3][0];
+                    if stage < 5 {
+                        loop {
+                            c.cycles += 4;
+                            c.g[V1][0] = c.lb(c.g[T0][0] as u32);
+                            c.g[V0][0] = ((c.g[V1][0] as i64) < b'0' as i64) as u64;
+                            let below_digit = c.g[V0][0] != 0u64;
+                            c.g[A0][0] = c.lbu(c.g[T0][0] as u32);
+                            let is_data = if below_digit {
+                                c.cycles += 2;
+                                let not_pct = c.g[V1][0] != c.g[T3][0];
+                                c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[T4][0] as i64)) as u64;
+                                !not_pct
+                            } else {
+                                true
+                            };
+                            if !is_data {
+                                break;
+                            }
+                            c.cycles += 5;
+                            c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                            c.g[T2][0] = c.g[V0][0];
+                            c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[T4][0] as i64)) as u64;
+                            let has_room = c.g[V0][0] != 0u64;
                             c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[T4][0] as i64)) as u64;
-                            !not_pct
-                        } else {
-                            true
-                        };
-                        if !is_data {
-                            break;
-                        }
-                        c.cycles += 5;
-                        c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
-                        c.g[T2][0] = c.g[V0][0];
-                        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[T4][0] as i64)) as u64;
-                        let has_room = c.g[V0][0] != 0u64;
-                        c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[T4][0] as i64)) as u64;
-                        if !has_room {
-                            break;
-                        }
-                        if back_edge_unwinds(c, HEAD_S) {
-                            return;
-                        }
-                        c.cycles += 2;
-                        let plain = c.g[V1][0] != c.g[T3][0];
-                        c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[A2][0] as u32));
-                        if plain {
+                            if !has_room {
+                                break;
+                            }
+                            if back_edge_unwinds(c, HEAD_S) {
+                                return;
+                            }
                             c.cycles += 2;
-                            c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
-                            c.sb(c.g[V0][0] as u32, c.g[A0][0]);
-                        } else {
-                            c.cycles += 11;
-                            c.g[A1][0] = c.lb((c.g[T0][0] as u32).wrapping_add(0x1));
-                            c.g[A2][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[A2][0] as u32));
-                            c.g[A0][0] = c.lb((c.g[T0][0] as u32).wrapping_add(0x2));
-                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[T6][0] as u32));
-                            c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x3));
-                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T5][0] as u32));
-                            c.g[V0][0] = c.lbu(c.g[A1][0] as u32);
-                            c.g[V1][0] = c.lbu(c.g[A0][0] as u32);
-                            c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
-                            c.sb(c.g[A2][0] as u32, c.g[V0][0]);
+                            let plain = c.g[V1][0] != c.g[T3][0];
+                            c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                            if plain {
+                                c.cycles += 2;
+                                c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+                                c.sb(c.g[V0][0] as u32, c.g[A0][0]);
+                            } else {
+                                c.cycles += 11;
+                                c.g[A1][0] = c.lb((c.g[T0][0] as u32).wrapping_add(0x1));
+                                c.g[A2][0] =
+                                    sx((c.g[T1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                                c.g[A0][0] = c.lb((c.g[T0][0] as u32).wrapping_add(0x2));
+                                c.g[A1][0] =
+                                    sx((c.g[A1][0] as u32).wrapping_add(c.g[T6][0] as u32));
+                                c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x3));
+                                c.g[A0][0] =
+                                    sx((c.g[A0][0] as u32).wrapping_add(c.g[T5][0] as u32));
+                                c.g[V0][0] = c.lbu(c.g[A1][0] as u32);
+                                c.g[V1][0] = c.lbu(c.g[A0][0] as u32);
+                                c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
+                                c.sb(c.g[A2][0] as u32, c.g[V0][0]);
+                            }
+                            c.cycles += 1;
+                            c.g[A2][0] = c.g[T2][0];
                         }
-                        c.cycles += 1;
-                        c.g[A2][0] = c.g[T2][0];
                     }
                     let mut filled = false;
                     if stage < 5 {
@@ -5404,6 +5421,7 @@ pub fn tag_field_get_encoded(c: &mut Cpu) {
         let mut data_null = false;
         let mut enter_count = resume == HEAD_COUNT;
         let mut enter_decode = resume == HEAD_DECODE;
+        // The frame size must equal the size `Frame::open` uses on the entry arm.
         let frame = match resume {
             ENTRY => {
                 c.cycles += 6;
@@ -5424,7 +5442,7 @@ pub fn tag_field_get_encoded(c: &mut Cpu) {
         if resume == ENTRY {
             if data_null {
                 c.cycles += 2;
-                c.g[V0][0] = 0xffffffffffffffff;
+                c.g[V0][0] = 0xffff_ffff_ffff_ffff;
             } else {
                 c.cycles += 4;
                 c.g[V1][0] = c.lb(c.g[A0][0] as u32);
@@ -5465,7 +5483,7 @@ pub fn tag_field_get_encoded(c: &mut Cpu) {
         }
         if enter_count {
             // Null-buffer pair count. Resume at 0x003e_d9d8: pending count step,
-            // charged once; state is in T0/T3/V0.
+            // charged once; state is in T0/T3.
             if resume == HEAD_COUNT {
                 c.cycles += 2;
                 c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
@@ -5508,10 +5526,10 @@ pub fn tag_field_get_encoded(c: &mut Cpu) {
             }
             if !len_pos {
                 c.cycles += 2;
-                c.g[V0][0] = 0xffffffffffffffff;
+                c.g[V0][0] = 0xffff_ffff_ffff_ffff;
             } else {
                 // Resume at 0x003e_da60 enters the decode loop below directly:
-                // state is in T0/T1/T2/T3/T5/T6/T7/T8/A1.
+                // state is in T0/T1/T2/T3/T4/T5/T6/T7/T8/A1.
                 let at_limit = if resume == HEAD_DECODE {
                     false
                 } else {
@@ -5717,7 +5735,7 @@ pub fn tag_field_get_date(c: &mut Cpu) {
                             c.g[A1][0] = 0u64;
                             c.g[S0][0] = 0x1;
                             callee::MEMSET.call(c, 0x003e_dbe4)?;
-                            c.g[V1][0] = 0xffffffffffffffff;
+                            c.g[V1][0] = 0xffff_ffff_ffff_ffff;
                             c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(TM_YEAR));
                             c.sw((c.g[SP][0] as u32).wrapping_add(TM_ISDST), c.g[V1][0]);
                             c.g[A0][0] = c.g[S1][0];
@@ -5923,7 +5941,7 @@ pub fn tag_field_get_date_ymdhms(c: &mut Cpu) {
         c.g[A1][0] = c.g[V0][0];
         c.g[V0][0] = (c.g[A1][0] < 0x2u64) as u64;
         let secs_too_small = c.g[V0][0] != 0u64;
-        c.g[V0][0] = 0xffffffffffffffff;
+        c.g[V0][0] = 0xffff_ffff_ffff_ffff;
         if !secs_too_small {
             c.cycles += 8;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[S0][0] as u32));
@@ -5933,7 +5951,7 @@ pub fn tag_field_get_date_ymdhms(c: &mut Cpu) {
             callee::DS_SECSTOTIME.call(c, 0x003e_dddc)?;
             c.g[V1][0] = c.g[V0][0];
             let tm_missing = c.g[V1][0] == 0u64;
-            c.g[V0][0] = 0xffffffffffffffff;
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
             if !tm_missing {
                 c.cycles += 2;
                 if c.g[S1][0] != 0u64 {
@@ -6010,7 +6028,7 @@ pub fn tag_field_get_date_packed(c: &mut Cpu) {
         c.g[A1][0] = c.g[V0][0];
         c.g[V0][0] = (c.g[A1][0] < 0x2u64) as u64;
         let secs_too_small = c.g[V0][0] != 0u64;
-        c.g[V0][0] = 0xffffffffffffffff;
+        c.g[V0][0] = 0xffff_ffff_ffff_ffff;
         if !secs_too_small {
             c.cycles += 8;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[S0][0] as u32));
@@ -6020,7 +6038,7 @@ pub fn tag_field_get_date_packed(c: &mut Cpu) {
             callee::DS_SECSTOTIME.call(c, 0x003e_decc)?;
             c.g[A1][0] = c.g[V0][0];
             let tm_missing = c.g[A1][0] == 0u64;
-            c.g[V0][0] = 0xffffffffffffffff;
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
             if !tm_missing {
                 c.cycles += 2;
                 let have_date_ptr = c.g[S1][0] != 0u64;
@@ -6068,6 +6086,7 @@ pub fn tag_field_get_date_packed(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use crate::difftest::events::{check_events, driven, schedule};
 
     use crate::difftest::fakes::machine;
 
@@ -6536,6 +6555,27 @@ pub(crate) mod tests {
         );
     }
 
+    driven!(gen_set_raw, ssx3_ee::s14::f_003eb1e0__generated);
+    driven!(hand_set_raw, tag_field_set_raw);
+
+    #[test]
+    fn tag_field_set_raw_events_matches() {
+        check_events(gen_set_raw, hand_set_raw, 36, &|c, seed| {
+            let mut r = machine(c, seed, 0x3eb1e0, 0);
+            tables(c);
+            let rec = DATA;
+            let tmp = DATA + 0x400;
+            put_str(c, rec, b"abcdef=1\nxy=2\n");
+            put_str(c, tmp, b"abcdef=9");
+            c.g[A0][0] = sx(rec);
+            c.g[A1][0] = 0x200;
+            c.g[A2][0] = sx(tmp);
+            let mode = schedule(c, &mut r, seed, 0x003e_b1e0);
+            c.next_event = c.cycles + 4;
+            mode
+        });
+    }
+
     // 0x3eb6d8 TagFieldFind.
     #[test]
     fn tag_field_find_matches() {
@@ -6564,6 +6604,26 @@ pub(crate) mod tests {
                 );
             },
         );
+    }
+
+    driven!(gen_find, ssx3_ee::s14::f_003eb6d8__generated);
+    driven!(hand_find, tag_field_find);
+
+    #[test]
+    fn tag_field_find_events_matches() {
+        check_events(gen_find, hand_find, 36, &|c, seed| {
+            let mut r = machine(c, seed, 0x3eb6d8, 0);
+            tables(c);
+            let rec = DATA;
+            let name = DATA + 0x200;
+            put_str(c, rec, b"alpha=1\nbeta=2\n");
+            put_str(c, name, b"beta");
+            c.g[A0][0] = sx(rec);
+            c.g[A1][0] = sx(name);
+            let mode = schedule(c, &mut r, seed, 0x003e_b6d8);
+            c.next_event = c.cycles + 4;
+            mode
+        });
     }
 
     // 0x3eb840 TagFieldFind2.
@@ -6616,6 +6676,25 @@ pub(crate) mod tests {
         );
     }
 
+    driven!(gen_find_skip_ws, ssx3_ee::s14::f_003eb8b8__generated);
+    driven!(hand_find_skip_ws, tag_field_find_skip_ws);
+
+    #[test]
+    fn tag_field_find_skip_ws_events_matches() {
+        check_events(gen_find_skip_ws, hand_find_skip_ws, 36, &|c, seed| {
+            let mut r = machine(c, seed, 0x3eb8b8, 0);
+            tables(c);
+            let rec = DATA;
+            put_str(c, rec, b"tag=      value\n");
+            put_str(c, 0x004a_4a78, b"tag");
+            c.g[A0][0] = sx(rec);
+            let mode = schedule(c, &mut r, seed, 0x003e_b8b8);
+            // Due after the Find call returns, inside the whitespace loop.
+            c.next_event = c.cycles + 140;
+            mode
+        });
+    }
+
     // 0x3eb918 TagFieldDelete.
     #[test]
     fn tag_field_delete_matches() {
@@ -6643,6 +6722,27 @@ pub(crate) mod tests {
                 );
             },
         );
+    }
+
+    driven!(gen_delete, ssx3_ee::s14::f_003eb918__generated);
+    driven!(hand_delete, tag_field_delete);
+
+    #[test]
+    fn tag_field_delete_events_matches() {
+        check_events(gen_delete, hand_delete, 36, &|c, seed| {
+            let mut r = machine(c, seed, 0x3eb918, 0);
+            tables(c);
+            let rec = DATA;
+            let name = DATA + 0x200;
+            put_str(c, rec, b"aa=1\nbb=2\ncc=3\n");
+            put_str(c, name, b"bb");
+            c.g[A0][0] = sx(rec);
+            c.g[A1][0] = sx(name);
+            let mode = schedule(c, &mut r, seed, 0x003e_b918);
+            // Due after the Find call returns, inside Delete's own loops.
+            c.next_event = c.cycles + 170;
+            mode
+        });
     }
 
     // 0x3eb9e8 TagFieldRename.
@@ -6903,6 +7003,27 @@ pub(crate) mod tests {
         );
     }
 
+    driven!(gen_printf, ssx3_ee::s14::f_003ecbd8__generated);
+    driven!(hand_printf, tag_field_printf);
+
+    #[test]
+    fn tag_field_printf_events_matches() {
+        check_events(gen_printf, hand_printf, 36, &|c, seed| {
+            let mut r = machine(c, seed, 0x3ecbd8, 0);
+            tables(c);
+            put_str(c, DATA + 0x200, b"a   b   c   d");
+            put_str(c, DATA + 0x400, b"v");
+            put_str(c, DATA, b"");
+            c.g[A0][0] = sx(DATA);
+            c.g[A1][0] = 0x400;
+            c.g[A2][0] = sx(DATA + 0x200);
+            c.g[A3][0] = sx(DATA + 0x400);
+            let mode = schedule(c, &mut r, seed, 0x003e_cbd8);
+            c.next_event = c.cycles + 4;
+            mode
+        });
+    }
+
     // 0x3ed0f8 TagFieldGetDelim.
     #[test]
     fn tag_field_get_delim_matches() {
@@ -6924,6 +7045,28 @@ pub(crate) mod tests {
                 put_str(c, DATA + 0x400, b"default");
             },
         );
+    }
+
+    driven!(gen_get_delim, ssx3_ee::s14::f_003ed0f8__generated);
+    driven!(hand_get_delim, tag_field_get_delim);
+
+    #[test]
+    fn tag_field_get_delim_events_matches() {
+        check_events(gen_get_delim, hand_get_delim, 36, &|c, seed| {
+            let mut r = machine(c, seed, 0x3ed0f8, 0);
+            tables(c);
+            put_str(c, DATA, b"a,b,c,d,e,f");
+            put_str(c, DATA + 0x400, b"default");
+            c.g[A0][0] = sx(DATA);
+            c.g[A1][0] = sx(DATA + 0x200);
+            c.g[A2][0] = 0x40;
+            c.g[A3][0] = sx(DATA + 0x400);
+            c.g[T0][0] = 2;
+            c.g[T1][0] = b',' as u64;
+            let mode = schedule(c, &mut r, seed, 0x003e_d0f8);
+            c.next_event = c.cycles + 4;
+            mode
+        });
     }
 
     // 0x3ed378 TagFieldGetString.
@@ -6956,6 +7099,26 @@ pub(crate) mod tests {
         );
     }
 
+    driven!(gen_get_string, ssx3_ee::s14::f_003ed378__generated);
+    driven!(hand_get_string, tag_field_get_string);
+
+    #[test]
+    fn tag_field_get_string_events_matches() {
+        check_events(gen_get_string, hand_get_string, 36, &|c, seed| {
+            let mut r = machine(c, seed, 0x3ed378, 0);
+            tables(c);
+            put_str(c, DATA, b"abcdefghijklmnop");
+            put_str(c, DATA + 0x400, b"default");
+            c.g[A0][0] = sx(DATA);
+            c.g[A1][0] = sx(DATA + 0x200);
+            c.g[A2][0] = 0x40;
+            c.g[A3][0] = sx(DATA + 0x400);
+            let mode = schedule(c, &mut r, seed, 0x003e_d378);
+            c.next_event = c.cycles + 4;
+            mode
+        });
+    }
+
     // 0x3ed678 TagFieldGetBinary.
     #[test]
     fn tag_field_get_binary_matches() {
@@ -6983,6 +7146,42 @@ pub(crate) mod tests {
                 put_str(c, DATA, b"$4142");
             },
         );
+    }
+
+    driven!(gen_get_binary, ssx3_ee::s14::f_003ed678__generated);
+    driven!(hand_get_binary, tag_field_get_binary);
+
+    // Re-enter `tag_field_get_binary` at every loop head: the seed class
+    // (seed % 18) / 3 picks a format whose first back edge is that head
+    // (skip, digit, hex, `s` copy, zero fill, next format letter), with an
+    // `s` letter and a `%`-escaped value in the copy classes. The event is
+    // due a few cycles in (later for the fill class, whose copy loop must
+    // finish first), so an unwind seed re-enters at the target head.
+    #[test]
+    fn tag_field_get_binary_events_matches() {
+        check_events(gen_get_binary, hand_get_binary, 72, &|c, seed| {
+            let mut r = machine(c, seed, 0x3ed678, 0);
+            tables(c);
+            let data = DATA;
+            let fmt = DATA + 0x200;
+            let (fmt_text, data_text, delay): (&[u8], &[u8], u64) = match (seed % 18) / 3 {
+                0 => (b"#fieldname=6s", b"%42ABCDE", 4),
+                1 => (b"123b", b"41424344", 4),
+                2 => (b"l", b"41424344", 4),
+                3 => (b"6s", b"%42ABCDE", 4),
+                4 => (b"8s", b"AB", 100),
+                _ => (b"1a1a1a", b"1234", 4),
+            };
+            put_str(c, fmt, fmt_text);
+            put_str(c, data, data_text);
+            c.g[A0][0] = sx(data);
+            c.g[A1][0] = sx(DATA + 0x400);
+            c.g[A2][0] = 0x40;
+            c.g[A3][0] = sx(fmt);
+            let mode = schedule(c, &mut r, seed, 0x003e_d678);
+            c.next_event = c.cycles + delay;
+            mode
+        });
     }
 
     // 0x3ed970 TagFieldGetEncoded.
@@ -7014,6 +7213,28 @@ pub(crate) mod tests {
                 put_str(c, DATA + 0x600, b"default");
             },
         );
+    }
+
+    driven!(gen_get_encoded, ssx3_ee::s14::f_003ed970__generated);
+    driven!(hand_get_encoded, tag_field_get_encoded);
+
+    #[test]
+    fn tag_field_get_encoded_events_matches() {
+        check_events(gen_get_encoded, hand_get_encoded, 36, &|c, seed| {
+            let mut r = machine(c, seed, 0x3ed970, 0);
+            tables(c);
+            put_str(c, DATA, b"$4142434445464748");
+            put_str(c, DATA + 0x400, b"key");
+            put_str(c, DATA + 0x600, b"default");
+            c.g[A0][0] = sx(DATA);
+            c.g[A1][0] = sx(DATA + 0x200);
+            c.g[A2][0] = 0x40;
+            c.g[A3][0] = sx(DATA + 0x400);
+            c.g[T0][0] = sx(DATA + 0x600);
+            let mode = schedule(c, &mut r, seed, 0x003e_d970);
+            c.next_event = c.cycles + 4;
+            mode
+        });
     }
 
     // 0x3edb08 TagFieldGetDate.
