@@ -20,6 +20,8 @@ pub(crate) use crate::game::fe::feasyncfile::r;
 pub(crate) use crate::game::fe::festateloadhint::gp as gp_2;
 pub(crate) use crate::game::fe::festateloadhint::lqsp;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
+pub(crate) use crate::game::object::instancenode::ui_vector_lw;
+pub(crate) use crate::game::object::movenode::AVALANCHE_GRMAN_GP;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 use crate::guest::Addr;
 use ssx3_ee as ee;
@@ -92,6 +94,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x002d_8948, vfx_avalanche_update, "VfxAvalanche_Update"),
     (0x002d_9cb0, avalanche_save_state, "Avalanche_SaveState"),
+    (
+        0x002d_8ea8,
+        avalanche_render_active,
+        "Avalanche_RenderActive",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2265,6 +2272,306 @@ pub fn avalanche_save_state(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Avalanche_RenderActive (0x2d8ea8)
+
+/// `tActiveAvalanche` (the slot): group, list of active nodes, limit.
+pub(crate) const AVALANCHE_SLOT_ACTIVE: u32 = 0x4;
+
+pub(crate) const AVALANCHE_SLOT_LIMIT: u32 = 0x18;
+
+/// Active node: data pointer, next node, emitter at +0xd0.
+pub(crate) const AVALANCHE_NODE_DATA: u32 = 0x2e0;
+
+pub(crate) const AVALANCHE_NODE_NEXT: u32 = 0x2e4;
+
+/// Debug globals: draw lines for the first N nodes (`gp + 0x968`), draw the
+/// node effects (`gp + 0x964`).
+pub(crate) const AVALANCHE_DEBUG_LINES_GP: u32 = 0x968;
+
+pub(crate) const AVALANCHE_DEBUG_FX_GP: u32 = 0x964;
+
+/// The debug line vertices (`D_vtx`, 0x30 bytes each, two per pair).
+pub(crate) const AVALANCHE_LINE_VERTS: u32 = 0x004e_db70;
+
+pub(crate) const AVALANCHE_DEBUG_DRAW_INSTANCE: Callee = Callee {
+    addr: 0x002d_8a00,
+    f: ee::s09::Avalanche_DebugDrawInstance,
+};
+
+/// `void tActiveAvalanche::render(tActiveAvalanche* this)` (0x2d8ea8): the
+/// avalanche debug view. For each active node with data: its lines (first
+/// `gp+0x968` nodes) and its emitter (`gp+0x964`, data `+0xf2`); then, with
+/// lines on, one line per group pair from the pair's node to the rider
+/// (red below the slot's limit, green at or above) drawn through GrMan
+/// (vtable `+0x248`) with the draw state's bits 23-24 forced to 2.
+pub fn avalanche_render_active(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S6, 0x40);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S1, 0x90);
+        frame.save(c, S2, 0x80);
+        frame.save(c, S4, 0x60);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S7, 0x30);
+        frame.save(c, FP, 0x20);
+        frame.save_ra(c, 0x10);
+        let this = c.g[S3][0];
+        let gp = c.g[GP][0] as u32;
+        let group = ui_vector_lw(c, this, 0);
+        c.g[V0][0] = group;
+        let grman = Addr(gp.wrapping_add(AVALANCHE_GRMAN_GP)).lw(c);
+        c.g[S6][0] = grman;
+        if group == 0 {
+            c.cycles += 1;
+            frame.restore(c, S0, 0xa0);
+            avalanche_render_active_epilogue(c, frame);
+            return Ok(());
+        }
+        // The active nodes.
+        c.cycles += 3;
+        c.g[S0][0] = ui_vector_lw(c, this, AVALANCHE_SLOT_ACTIVE);
+        c.g[S1][0] = 0;
+        while c.g[S0][0] != 0 {
+            let node = c.g[S0][0];
+            c.cycles += 3;
+            let data = ui_vector_lw(c, node, AVALANCHE_NODE_DATA);
+            c.g[V0][0] = Addr(gp.wrapping_add(AVALANCHE_DEBUG_LINES_GP)).lw(c);
+            'next: {
+                if data != 0 {
+                    c.cycles += 3;
+                    let draw_lines = (c.g[S1][0] as i64) < (c.g[V0][0] as i64);
+                    c.g[V0][0] = draw_lines as u64;
+                    c.g[V0][0] = Addr(gp.wrapping_add(AVALANCHE_DEBUG_FX_GP)).lw(c);
+                    if draw_lines {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[S0][0];
+                        AVALANCHE_DEBUG_DRAW_INSTANCE.call(c, 0x002d_8f10)?;
+                        c.g[V0][0] = Addr(gp.wrapping_add(AVALANCHE_DEBUG_FX_GP)).lw(c);
+                    }
+                    c.cycles += 2;
+                    if c.g[V0][0] == 0 {
+                        let node = c.g[S0][0];
+                        c.g[S0][0] = ui_vector_lw(c, node, AVALANCHE_NODE_NEXT);
+                        break 'next;
+                    }
+                    c.cycles += 4;
+                    let node = c.g[S0][0];
+                    let data = ui_vector_lw(c, node, AVALANCHE_NODE_DATA);
+                    c.g[V0][0] = data;
+                    let fx = Addr((data as u32).wrapping_add(0xf2)).lbu(c);
+                    c.g[V1][0] = fx;
+                    c.g[A0][0] = sx((node as u32).wrapping_add(0xd0));
+                    if fx != 0 {
+                        c.cycles += 2;
+                        c.g[A1][0] = 7;
+                        call_ptr(c, 0x0037_1688, 0x002d_8f34)?;
+                    }
+                }
+                c.cycles += 1;
+                let node = c.g[S0][0];
+                c.g[S0][0] = ui_vector_lw(c, node, AVALANCHE_NODE_NEXT);
+            }
+            c.cycles += 2;
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+            if c.g[S0][0] != 0 && event_due(c) {
+                deliver_event_here(c, 0x002d_8ef0);
+            }
+        }
+        c.cycles += 3;
+        let lines = Addr(gp.wrapping_add(AVALANCHE_DEBUG_LINES_GP)).lw(c);
+        c.g[V0][0] = lines;
+        frame.restore(c, S0, 0xa0);
+        if lines == 0 {
+            avalanche_render_active_epilogue(c, frame);
+            return Ok(());
+        }
+        // One line per pair: pair node's position (+0x40) to the rider.
+        c.cycles += 4;
+        let group = ui_vector_lw(c, this, 0);
+        c.g[V1][0] = group;
+        c.g[V0][0] = Addr((group as u32).wrapping_add(0xc)).lhu(c);
+        c.g[S2][0] = 0;
+        if c.g[V0][0] != 0 {
+            c.cycles += 5;
+            c.g[V0][0] = 0x4f_0000;
+            c.g[S4][0] = 1;
+            c.g[S7][0] = sx(AVALANCHE_LINE_VERTS + 0x20);
+            c.g[S5][0] = sx(AVALANCHE_LINE_VERTS);
+            c.g[FP][0] = sx(AVALANCHE_LINE_VERTS + 0x50);
+            loop {
+                c.cycles += 18;
+                let j = c.g[S2][0] as u32;
+                let pair_off = j << 3;
+                c.g[S0][0] = sx(pair_off);
+                c.g[V0][0] = 0x60;
+                c.mult(0, S1, S2, V0);
+                let s1 = c.g[S1][0] as u32;
+                let pair = (c.g[V1][0] as u32).wrapping_add(pair_off);
+                c.g[V1][0] = sx(pair);
+                let pnode = Addr(pair).off(0x14).lw(c);
+                c.g[V0][0] = pnode;
+                c.g[A1][0] = 0;
+                c.lq(V1, (pnode as u32).wrapping_add(0x40));
+                let v = s1.wrapping_add(c.g[S7][0] as u32);
+                c.g[V0][0] = sx(v);
+                c.sq(V1, v);
+                let sp = frame.at(c, 0);
+                c.sq(V1, sp);
+                let below = avalanche_pair_below_limit(c, this, pair_off);
+                c.g[A0][0] = sx(s1.wrapping_add(c.g[S5][0] as u32));
+                if below {
+                    c.cycles += 1;
+                    c.g[A1][0] = 0xff;
+                }
+                c.cycles += 9;
+                let a0 = c.g[A0][0] as u32;
+                Addr(a0).off(0x10).sw(c, c.g[A1][0]);
+                let above = avalanche_pair_at_limit(c, this, pair_off);
+                c.g[V1][0] = 0;
+                if above {
+                    c.cycles += 1;
+                    c.g[V1][0] = 0xff;
+                }
+                c.cycles += 25;
+                Addr(a0).off(0x14).sw(c, c.g[V1][0]);
+                // The rider's position: (SSXApp->Game->AI->rider + 0x6c0)->getPos().
+                let app = Addr(gp.wrapping_sub(0x848)).lw(c);
+                c.g[V0][0] = app;
+                let game = ui_vector_lw(c, app, 0x84);
+                let ai = ui_vector_lw(c, game, 0xc);
+                c.g[A1][0] = ai;
+                let rider = ui_vector_lw(c, ai, 0x28);
+                let vt = ui_vector_lw(c, rider, 0x6c0);
+                c.g[V1][0] = vt;
+                let delta = Addr((vt as u32).wrapping_add(0x28)).lh(c);
+                c.g[A1][0] = delta;
+                let func = ui_vector_lw(c, vt, 0x2c);
+                c.g[V0][0] = func;
+                c.g[A0][0] = sx((rider as u32)
+                    .wrapping_add(0x6c0)
+                    .wrapping_add(delta as u32));
+                call_ptr(c, func as u32, 0x002d_9010)?;
+                c.lq(V1, c.g[V0][0] as u32);
+                c.g[A0][0] = 0x30;
+                let s1 = c.g[S1][0] as u32;
+                let v = s1.wrapping_add(c.g[FP][0] as u32);
+                c.g[V0][0] = sx(v);
+                c.sq(V1, v);
+                c.mult(0, V0, S4, A0);
+                let vert = (c.g[V0][0] as u32).wrapping_add(c.g[S5][0] as u32);
+                c.g[V1][0] = sx(vert);
+                let pair_off = c.g[S0][0] as u32;
+                let below = avalanche_pair_below_limit(c, this, pair_off);
+                c.g[A1][0] = 0;
+                if below {
+                    c.cycles += 1;
+                    c.g[A1][0] = 0xff;
+                }
+                c.cycles += 9;
+                Addr(vert).off(0x10).sw(c, c.g[A1][0]);
+                let above = avalanche_pair_at_limit(c, this, pair_off);
+                c.g[A0][0] = 0;
+                if above {
+                    c.cycles += 1;
+                    c.g[A0][0] = 0xff;
+                }
+                c.cycles += 7;
+                Addr(vert).off(0x14).sw(c, c.g[A0][0]);
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                let group = ui_vector_lw(c, this, 0);
+                c.g[V1][0] = group;
+                let n = Addr((group as u32).wrapping_add(0xc)).lhu(c);
+                let more = (c.g[S2][0] as i64) < (n as i64);
+                c.g[V0][0] = more as u64;
+                c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(2));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002d_8f70);
+                }
+            }
+        }
+        // Draw state word +4: bits 23-24 = 2 for the draw, then put back.
+        c.cycles += 28;
+        let grman = c.g[S6][0];
+        let ds = ui_vector_lw(c, grman, 0xe84);
+        c.g[A0][0] = ds;
+        c.g[S1][0] = 0xffff_ffff_fe7f_ffff;
+        c.g[V1][0] = 0x0100_0000;
+        let w = ui_vector_lw(c, ds, 4);
+        c.g[S2][0] = 0x0180_0000;
+        c.g[A3][0] = 0;
+        c.g[A2][0] = sx(AVALANCHE_LINE_VERTS);
+        c.g[V0][0] = (w & 0xffff_ffff_fe7f_ffff) | 0x0100_0000;
+        Addr((ds as u32).wrapping_add(4)).sw(c, c.g[V0][0]);
+        c.g[S0][0] = sx(((w & 0x0180_0000) as u32) >> 23);
+        let vt = ui_vector_lw(c, grman, 0x10d8);
+        c.g[V1][0] = vt;
+        let group = ui_vector_lw(c, this, 0);
+        c.g[V0][0] = group;
+        let delta = Addr((vt as u32).wrapping_add(0x248)).lh(c);
+        let func = ui_vector_lw(c, vt, 0x24c);
+        c.g[T0][0] = func;
+        c.g[A1][0] = Addr((group as u32).wrapping_add(0xc)).lhu(c);
+        c.g[A0][0] = sx((grman as u32).wrapping_add(delta as u32));
+        call_ptr(c, func as u32, 0x002d_90e4)?;
+        let grman = c.g[S6][0];
+        let ds = ui_vector_lw(c, grman, 0xe84);
+        c.g[V1][0] = ds;
+        c.g[S0][0] = sx((c.g[S0][0] as u32) << 23) & c.g[S2][0];
+        let w = ui_vector_lw(c, ds, 4);
+        c.g[V0][0] = (w & c.g[S1][0]) | c.g[S0][0];
+        Addr((ds as u32).wrapping_add(4)).sw(c, c.g[V0][0]);
+        c.cycles += 1;
+        frame.restore(c, S0, 0xa0);
+        avalanche_render_active_epilogue(c, frame);
+        Ok(())
+    })
+}
+
+/// `group->pairs[j].v < this->limit` (`c.lt.s`; f0, f1, v0 as the original
+/// leaves them).
+pub(crate) fn avalanche_pair_below_limit(c: &mut Cpu, this: u64, pair_off: u32) -> bool {
+    let group = ui_vector_lw(c, this, 0);
+    c.lwc1(1, (this as u32).wrapping_add(AVALANCHE_SLOT_LIMIT));
+    let pair = (group as u32).wrapping_add(pair_off);
+    c.g[V0][0] = sx(pair);
+    c.lwc1(0, pair.wrapping_add(0x10));
+    c.c_lt_s(0, 1);
+    c.fcc()
+}
+
+/// `this->limit <= group->pairs[j].v` (`c.le.s`).
+pub(crate) fn avalanche_pair_at_limit(c: &mut Cpu, this: u64, pair_off: u32) -> bool {
+    let group = ui_vector_lw(c, this, 0);
+    c.lwc1(1, (this as u32).wrapping_add(AVALANCHE_SLOT_LIMIT));
+    let pair = (group as u32).wrapping_add(pair_off);
+    c.g[V0][0] = sx(pair);
+    c.lwc1(0, pair.wrapping_add(0x10));
+    c.c_le_s(1, 0);
+    c.fcc()
+}
+
+pub(crate) fn avalanche_render_active_epilogue(c: &mut Cpu, frame: Frame) {
+    c.cycles += 11;
+    frame.restore(c, S1, 0x90);
+    frame.restore(c, S2, 0x80);
+    frame.restore(c, S3, 0x70);
+    frame.restore(c, S4, 0x60);
+    frame.restore(c, S5, 0x50);
+    frame.restore(c, S6, 0x40);
+    frame.restore(c, S7, 0x30);
+    frame.restore(c, FP, 0x20);
+    frame.restore_ra(c, 0x10);
+    frame.close(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3011,6 +3318,87 @@ pub(crate) mod tests {
                     .write16(STREAM_VT + 8, (r.next_u32() % 0x20) as u16 & !3);
                 c.bus.write32(STREAM_VT + 0xc, FAKE);
                 c.g[A0][0] = sx(STREAM);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::object::movenode::tests::oc383_vtable;
+
+    #[test]
+    fn avalanche_render_active_matches() {
+        use crate::difftest::fakes::machine;
+        check(
+            ee::s09::f_002d8ea8__generated,
+            avalanche_render_active,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x8ea8, 8);
+                c.pc = 0x002d_8ea8;
+                let this = DATA;
+                let group = DATA + 0x1000;
+                fill(c, &mut r, this, 0x10);
+                c.bus.write32(this, if seed % 13 == 7 { 0 } else { group });
+                c.bus.write32(this + AVALANCHE_SLOT_LIMIT, r.f32(10.0));
+                // Group pairs: v at +0x10 + 8j, node at +0x14 + 8j.
+                let pairs = (seed / 3) % 4;
+                c.bus.write16(group + 0xc, pairs as u16);
+                for j in 0..pairs {
+                    let v = if seed % 5 == 0 {
+                        c.bus.read32(this + AVALANCHE_SLOT_LIMIT)
+                    } else {
+                        r.f32(10.0)
+                    };
+                    c.bus.write32(group + 0x10 + 8 * j, v);
+                    let node = DATA + 0x7000 + 0x100 * j;
+                    c.bus.write32(group + 0x14 + 8 * j, node);
+                    fill(c, &mut r, node + 0x40, 4);
+                }
+                // Active nodes: data (or none), next; emitter `+0xd0` without texture.
+                let nodes = seed % 4;
+                c.bus.write32(
+                    this + AVALANCHE_SLOT_ACTIVE,
+                    if nodes == 0 { 0 } else { DATA + 0x2000 },
+                );
+                for k in 0..nodes {
+                    let node = DATA + 0x2000 + 0x400 * k;
+                    let data = DATA + 0x8000 + 0x200 * k;
+                    let has = r.next_u32() % 4 != 0;
+                    c.bus
+                        .write32(node + AVALANCHE_NODE_DATA, if has { data } else { 0 });
+                    let next = if k + 1 < nodes { node + 0x400 } else { 0 };
+                    c.bus.write32(node + AVALANCHE_NODE_NEXT, next);
+                    c.bus.write32(node + 0xd0 + 0x174, 0);
+                    c.bus.write8(data + 0xf2, (r.next_u32() & 1) as u8);
+                    fill(c, &mut r, data + 0xe0, 4);
+                    // No line segments in Avalanche_DebugDrawInstance.
+                    c.bus.write32(
+                        data + 0x100,
+                        if r.next_u32() & 1 == 0 {
+                            0
+                        } else {
+                            0xbf80_0000
+                        },
+                    );
+                }
+                c.bus
+                    .write32(GAME_GP + AVALANCHE_DEBUG_LINES_GP, (seed / 2) % 3);
+                c.bus
+                    .write32(GAME_GP + AVALANCHE_DEBUG_FX_GP, (seed / 7) % 2);
+                // GrMan (both globals), its draw state and vtable.
+                let grman = DATA + 0x5000;
+                c.bus.write32(GAME_GP + AVALANCHE_GRMAN_GP, grman);
+                c.bus.write32(GAME_GP - 0x854, grman);
+                c.bus.write32(grman + 0xe84, DATA + 0x6000);
+                fill(c, &mut r, DATA + 0x6000, 0x10);
+                c.bus.write32(grman + 0x10d8, DATA + 0x5800);
+                oc383_vtable(c, &mut r, DATA + 0x5800, &[0x248]);
+                // SSXApp->Game->AI->rider + 0x6c0 with its getPos slot.
+                c.bus.write32(GAME_GP - 0x848, DATA + 0x9000);
+                c.bus.write32(DATA + 0x9000 + 0x84, DATA + 0x9100);
+                c.bus.write32(DATA + 0x9100 + 0xc, DATA + 0x9200);
+                c.bus.write32(DATA + 0x9200 + 0x28, DATA + 0x9300);
+                c.bus.write32(DATA + 0x9300 + 0x6c0, DATA + 0x9c00);
+                oc383_vtable(c, &mut r, DATA + 0x9c00, &[0x28]);
             },
         );
     }

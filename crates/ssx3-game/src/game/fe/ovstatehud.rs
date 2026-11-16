@@ -41,6 +41,7 @@ pub(crate) use crate::game::render::particle::p;
 pub(crate) use crate::game::render::particle::setf;
 pub(crate) use crate::game::render::particle::shl32;
 pub(crate) use crate::game::render::particle::sra32;
+pub(crate) use crate::game::ui::uiengine::oc391_at;
 pub(crate) use crate::game::ui::uistate::oc224_at;
 pub(crate) use crate::game::wscript::wscriptman::sw as sw_2;
 use crate::guest::Addr;
@@ -96,6 +97,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         hud_draw_rider_indicator,
         "HUD_DrawRiderIndicator",
     ),
+    (0x001f_1e28, hud_draw_text_lerp, "HUD_DrawTextLerp"),
+    (0x001f_2aa0, hud_draw_wrapped_text, "HUD_DrawWrappedText"),
+    (0x0021_d9a0, hud_draw_control_hint, "HUD_DrawControlHint"),
+    (0x0021_f338, hud_draw_pip_meter, "HUD_DrawPipMeter"),
+    (0x0022_04a0, hud_draw_fading_text, "HUD_DrawFadingText"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -15786,6 +15792,2049 @@ pub fn hud_draw_rider_indicator(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod fading_text {
+
+    /// The text box's element in the element table (a1 + 0x870, 0x24 bytes;
+    /// +0x20 horizontal alignment, +0x21 vertical, +0x22 draw row).
+    pub const ELEM: u32 = 0x870;
+
+    /// Fade-in progress (0..1; 1 = fully in).
+    pub const FADE: u32 = 0x194;
+
+    /// Text alpha (scales the colour's first component).
+    pub const ALPHA: u32 = 0x198;
+
+    /// The lines: a string each, 0x68 apart, with width (+0x60) and height
+    /// (+0x64).
+    pub const LINES: u32 = 0x19c;
+
+    pub const LINE_WIDTH: u32 = 0x1fc;
+
+    pub const LINE_HEIGHT: u32 = 0x200;
+
+    pub const LINE_STRIDE: u32 = 0x68;
+
+    pub const LINE_COUNT: u32 = 0x3a4;
+
+    /// Lines past this index are drawn dimmed.
+    pub const LIT_LINES: u32 = 0x3a8;
+
+    /// The box size (w, h).
+    pub const BOX_SIZE: u32 = 0x3ac;
+
+    /// The text objects: B for the later lines, A for the first.
+    pub const TEXT_B: u32 = 0x428;
+
+    pub const TEXT_A: u32 = 0x42c;
+
+    /// The sprite table; the three box pieces are at +0x50.
+    pub const SPRITES: u32 = 0x494;
+
+    /// Line colours (16 bytes each, static data).
+    pub const COLOUR_FIRST: u32 = 0x004c_86a8;
+
+    pub const COLOUR_LIT: u32 = 0x004c_86c8;
+
+    pub const COLOUR_DIM: u32 = 0x004c_86e8;
+}
+
+/// `ldl/ldr reg, a` (an unaligned doubleword load).
+#[inline(always)]
+pub(crate) fn fading_text_ld(c: &mut Cpu, reg: usize, a: u32) {
+    c.ldl(reg, a.wrapping_add(7));
+    c.ldr(reg, a);
+}
+
+/// `sdl/sdr reg, a` (an unaligned doubleword store).
+#[inline(always)]
+pub(crate) fn fading_text_sd(c: &mut Cpu, reg: usize, a: u32) {
+    c.sdl(reg, a.wrapping_add(7));
+    c.sdr(reg, a);
+}
+
+/// Copy a line colour (16 bytes at `src`) to sp+0x10 through `ra`/`rb`,
+/// then `f0` = its first component.
+#[inline(always)]
+pub(crate) fn fading_text_colour(c: &mut Cpu, src: u32, ra: usize, rb: usize) {
+    let sp_ = sp(c);
+    fading_text_ld(c, ra, src);
+    fading_text_ld(c, rb, src.wrapping_add(8));
+    fading_text_sd(c, ra, p(sp_, 0x10));
+    fading_text_sd(c, rb, p(sp_, 0x18));
+    ldf(c, 0, p(sp_, 0x10));
+}
+
+/// `void HUD_DrawFadingText(HUD* hud, HUDElem* elems, int fromSide)`
+/// (0x2204a0): a text box that slides in while `hud->fade` (+0x194) rises
+/// to 1 (from the bottom of the screen, or from the left when `fromSide`).
+/// Lays the box out from its element (+0x870 in the element table), draws
+/// the three box pieces (sprites at +0x4e4) as 4-vertex strips through the
+/// renderer's vtable (+0x238), then each line (+0x19c, 0x68 apart) with
+/// `Font_DrawText`, left/centre/right aligned: the first line in its own
+/// colour with text object A, lit lines (up to +0x3a8) and dimmed lines in
+/// theirs with text object B. Leaves both text objects' offsets at (2, 2).
+pub fn hud_draw_fading_text(c: &mut Cpu) {
+    guest(c, |c| {
+        use fading_text::*;
+        c.cycles += 63;
+        let frame = Frame::open(c, 0x200);
+        c.g[A3][0] = c.lw(gp(c, -0x854));
+        frame.save(c, S0, 0x1d0);
+        frame.save(c, S1, 0x1c0);
+        frame.save(c, S2, 0x1b0);
+        frame.save(c, S3, 0x1a0);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S4, 0x190);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save(c, S7, 0x160);
+        c.g[S4][0] = c.g[A2][0];
+        frame.save_fpr(c, 23, 0x1f8);
+        c.g[S1][0] = add32(c.g[S3][0], ELEM as u64);
+        frame.save_fpr(c, 20, 0x1e0);
+        frame.save(c, S5, 0x180);
+        frame.save(c, S6, 0x170);
+        frame.save_ra(c, 0x150);
+        frame.save_fpr(c, 22, 0x1f0);
+        frame.save_fpr(c, 21, 0x1e8);
+        fconst(c, 20, 0x3f80_0000);
+        // The screen: (G->vtable[0x150])(G + delta), its height at +8.
+        c.g[V1][0] = c.lw(at(c, A3, 0x10d8));
+        c.g[A0][0] = c.lh(at(c, V1, 0x150));
+        c.g[V0][0] = c.lw(at(c, V1, 0x154));
+        let target = r32(c, V0);
+        c.g[A0][0] = add32(c.g[A3][0], c.g[A0][0]);
+        call_ptr(c, target, 0x0022_0508)?;
+        let sp_ = sp(c);
+        let screen = ldf(c, 0, at(c, V0, 8));
+        c.g[S0][0] = sx(p(sp_, 0x20));
+        c.swc1(20, sp_);
+        c.g[A1][0] = c.g[S0][0];
+        // f23 = 1 / screen scale
+        let inv = fr(c, 20).div(screen);
+        setf(c, 23, inv);
+        c.swc1(20, p(sp_, 4));
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, 0x001e_91f8, 0x0022_0528)?; // HUD_GetElemPos(elem, sp+0x20)
+        c.g[A1][0] = sx(p(sp_, 0x30));
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, 0x001e_9290, 0x0022_0534)?; // HUD_GetElemScale(elem, sp+0x30)
+        let sy = ldf(c, 0, p(sp_, 0x34));
+        c.g[A2][0] = c.g[S0][0];
+        c.g[S7][0] = c.lb(at(c, S3, ELEM + 0x20));
+        c.g[A0][0] = c.g[S2][0];
+        let sy = sy * fr(c, 23);
+        setf(c, 0, sy);
+        c.g[S0][0] = c.lb(at(c, S3, ELEM + 0x22));
+        c.g[T2][0] = c.lb(at(c, S3, ELEM + 0x21));
+        c.g[A1][0] = sx(p(sp_, 0x50));
+        c.g[A3][0] = sx(p(sp_, 0x40));
+        c.g[T0][0] = c.g[SP][0];
+        c.swc1(0, p(sp_, 0x34));
+        c.g[T1][0] = c.g[S7][0];
+        // Box size to sp+0x40, its height scaled.
+        let size_at = at(c, S2, BOX_SIZE);
+        fading_text_ld(c, V0, size_at);
+        fading_text_sd(c, V0, p(sp_, 0x40));
+        c.g[T3][0] = 0;
+        let h = ldf(c, 0, p(sp_, 0x44));
+        let h = h * fr(c, 23);
+        setf(c, 0, h);
+        c.swc1(0, p(sp_, 0x44));
+        // HUD_AlignElemPos(hud, sp+0x50, pos, size, (1,1), alignX, alignY, 0)
+        call_ptr(c, 0x001f_10f8, 0x0022_0588)?;
+        // Slide in: (1 - fade)^2 of the way from the screen bottom (510) or
+        // from left of the screen edge.
+        let fade = ldf(c, 0, at(c, S2, FADE));
+        let one = fr(c, 20);
+        let fading = lt(c, fade, one);
+        c.g[A0][0] = add32(c.g[S3][0], ELEM as u64);
+        if fading {
+            c.cycles += 3;
+            let k = one - fade;
+            setf(c, 3, k);
+            let k = k * k;
+            setf(c, 3, k);
+            if c.g[S4][0] == 0 {
+                c.cycles += 8;
+                let y = ldf(c, 1, p(sp_, 0x54));
+                let bottom = fconst(c, 0, 0x43ff_0000);
+                let d = bottom - y;
+                setf(c, 0, d);
+                let d = k * d;
+                setf(c, 0, d);
+                setf(c, 1, y + d);
+                c.swc1(1, p(sp_, 0x54));
+                c.g[A0][0] = add32(c.g[S3][0], ELEM as u64);
+            } else {
+                c.cycles += 10;
+                let x = ldf(c, 0, p(sp_, 0x50));
+                let margin = fconst(c, 1, 0x41f0_0000);
+                let w = ldf(c, 2, p(sp_, 0x40));
+                let d = x + margin;
+                setf(c, 1, d);
+                let d = d + w;
+                setf(c, 1, d);
+                let d = k * d;
+                setf(c, 1, d);
+                setf(c, 0, x - d);
+                c.swc1(0, p(sp_, 0x50));
+            }
+        }
+        c.cycles += 10;
+        c.g[A1][0] = sx(p(sp_, 0x10));
+        call_ptr(c, 0x001e_91a8, 0x0022_05f8)?; // HUD_GetElemColor(elem, sp+0x10)
+        c.g[S5][0] = add32(c.g[S0][0], 2);
+        c.g[S4][0] = sx(p(sp_, 0x60));
+        c.g[A1][0] = shl32(c.g[S0][0], 5);
+        c.g[T0][0] = sx(p(sp_, 0x120));
+        c.g[A0][0] = add32(c.g[S2][0], SPRITES as u64);
+        c.g[V1][0] = u64::MAX;
+        c.g[V0][0] = 3;
+        // (an emptied loop: 3 down to -1)
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+            c.g[A2][0] = 0x80;
+            if c.g[V0][0] == c.g[V1][0] {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0022_0618);
+            }
+        }
+        // Four vertices at sp+0x60 (0x30 apart): colour (0x80, 0x80, 0x80,
+        // 0x80), q = 1.
+        c.cycles += 5;
+        fconst(c, 0, 0x3f80_0000);
+        c.g[V1][0] = c.g[S4][0];
+        c.g[A3][0] = add32(c.g[S4][0], 0xc0);
+        let a2 = c.g[A2][0];
+        c.sw(at(c, V1, 0x1c), a2);
+        loop {
+            c.cycles += 8;
+            let v = r32(c, V1);
+            c.sw(p(v, 0x10), a2);
+            c.sw(p(v, 0x14), a2);
+            c.sw(p(v, 0x18), a2);
+            c.swc1(0, p(v, 8));
+            c.g[V1][0] = add32(c.g[V1][0], 0x30);
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A3][0] as i64)) as u64;
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            c.sw(at(c, V1, 0x1c), a2);
+            if event_due(c) {
+                deliver_event_here(c, 0x0022_0648);
+            }
+        }
+        // Piece widths (42, w - 56, 14) at sp+0x120; the box position at
+        // sp+0x130; f22 = its bottom, f21 = 1.
+        c.cycles += 38;
+        let w = ldf(c, 0, p(sp_, 0x40));
+        c.g[S0][0] = add32(c.g[A0][0], 0x50);
+        let edges = fconst(c, 3, 0x4260_0000);
+        c.g[S1][0] = c.g[T0][0];
+        fconst(c, 1, 0x4160_0000);
+        c.g[A2][0] = 0xffff_ffff_ffff_fc1f;
+        setf(c, 0, w - edges);
+        fconst(c, 2, 0x4228_0000);
+        c.swc1(1, p(sp_, 0x138));
+        c.g[A1][0] &= 0x3e0;
+        c.swc1(2, p(sp_, 0x130));
+        c.g[S3][0] = 2;
+        c.swc1(0, p(sp_, 0x134));
+        fading_text_ld(c, V0, p(sp_, 0x130));
+        c.g[V1][0] = c.lw(p(sp_, 0x138));
+        fading_text_sd(c, V0, p(sp_, 0x120));
+        let v = c.g[V1][0];
+        c.sw(p(sp_, 0x128), v);
+        c.g[A0][0] = c.lw(gp(c, -0x854));
+        let y = ldf(c, 1, p(sp_, 0x54));
+        let h = ldf(c, 0, p(sp_, 0x44));
+        fading_text_ld(c, T0, p(sp_, 0x50));
+        fading_text_sd(c, T0, p(sp_, 0x130));
+        setf(c, 22, y + h);
+        fconst(c, 21, 0x3f80_0000);
+        // Draw row: bits 5..9 of the draw state's flags = elem row.
+        c.g[V1][0] = c.lw(at(c, A0, 0xe84));
+        c.g[V0][0] = c.lw(at(c, V1, 8));
+        c.g[V0][0] &= c.g[A2][0];
+        c.g[V0][0] |= c.g[A1][0];
+        let v = c.g[V0][0];
+        c.sw(at(c, V1, 8), v);
+        // The three box pieces, left to right.
+        loop {
+            c.cycles += 58;
+            let off = ldf(c, 20, r32(c, S1));
+            c.g[A1][0] = 4;
+            let x = ldf(c, 0, p(sp_, 0x130));
+            c.g[A2][0] = c.g[S4][0];
+            ldf(c, 1, p(sp_, 0x134));
+            c.g[A3][0] = 0;
+            c.swc1(0, p(sp_, 0x140));
+            setf(c, 20, x + off);
+            c.sw(p(sp_, 0x148), 0);
+            c.g[S1][0] = add32(c.g[S1][0], 4);
+            c.swc1(1, p(sp_, 0x144));
+            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_sub(1));
+            c.swc1(21, p(sp_, 0x14c));
+            c.g[A0][0] = c.lw(r32(c, S0));
+            // Vertex positions: (x, y), (x2, y), (x, bottom), (x2, bottom).
+            c.lq(V1, p(sp_, 0x140));
+            c.g[S0][0] = add32(c.g[S0][0], 4);
+            c.swc1(20, p(sp_, 0x140));
+            c.sw(p(sp_, 0x148), 0);
+            c.sq(V1, p(sp_, 0x80));
+            c.lq(V0, p(sp_, 0x140));
+            c.swc1(0, p(sp_, 0x140));
+            c.sw(p(sp_, 0x148), 0);
+            c.swc1(22, p(sp_, 0x144));
+            c.sq(V0, p(sp_, 0xb0));
+            c.lq(V1, p(sp_, 0x140));
+            c.swc1(20, p(sp_, 0x140));
+            c.sw(p(sp_, 0x148), 0);
+            c.sq(V1, p(sp_, 0xe0));
+            c.lq(V0, p(sp_, 0x140));
+            c.sq(V0, p(sp_, 0x110));
+            // Texture coordinates from the sprite (u0 +0x10, v0 +0xc, u1
+            // +0x14, v1 +0x18).
+            let s = r32(c, A0);
+            c.lwc1(0, p(s, 0x10));
+            c.swc1(0, p(sp_, 0x60));
+            c.lwc1(1, p(s, 0xc));
+            c.swc1(1, p(sp_, 0x64));
+            c.lwc1(0, p(s, 0x14));
+            c.swc1(0, p(sp_, 0x90));
+            c.lwc1(1, p(s, 0xc));
+            c.g[T0][0] = c.lw(gp(c, -0x854));
+            c.swc1(1, p(sp_, 0x94));
+            c.lwc1(0, p(s, 0x10));
+            c.swc1(0, p(sp_, 0xc0));
+            c.lwc1(1, p(s, 0x18));
+            c.swc1(1, p(sp_, 0xc4));
+            c.lwc1(0, p(s, 0x14));
+            c.swc1(0, p(sp_, 0xf0));
+            c.lwc1(1, p(s, 0x18));
+            c.swc1(1, p(sp_, 0xf4));
+            // The texture into the draw state, then
+            // (G->vtable[0x238])(G + delta, 4, verts, 0).
+            c.g[V1][0] = c.lw(s);
+            c.g[V0][0] = c.lw(at(c, T0, 0xe84));
+            let v = c.g[V1][0];
+            c.sh(at(c, V0, 0x10), v);
+            c.g[T0][0] = c.lw(gp(c, -0x854));
+            c.g[V0][0] = c.lw(at(c, T0, 0x10d8));
+            c.g[A0][0] = c.lh(at(c, V0, 0x238));
+            c.g[V1][0] = c.lw(at(c, V0, 0x23c));
+            let target = r32(c, V1);
+            c.g[A0][0] = add32(c.g[T0][0], c.g[A0][0]);
+            call_ptr(c, target, 0x0022_07e0)?;
+            let more = (c.g[S3][0] as i64) >= 0;
+            c.swc1(20, p(sp_, 0x130));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0022_0700);
+            }
+        }
+        // Text scales: A = size * elem scale, B = size * elem scale * k;
+        // both offsets (0, 0); draw row + 2; y += gap.
+        c.cycles += 52;
+        c.sw(p(sp_, 0x60), 0);
+        c.g[A1][0] = shl32(c.g[S5][0], 5);
+        c.sw(p(sp_, 0x64), 0);
+        c.g[A2][0] = 0xffff_ffff_ffff_fc1f;
+        let scale_x = ldf(c, 0, p(sp_, 0x30));
+        c.g[A1][0] &= 0x3e0;
+        c.g[V0][0] = c.lw(at(c, S2, TEXT_A));
+        c.g[S4][0] = 0;
+        let k = ldf(c, 4, gp(c, -0x530c));
+        let tw = ldf(c, 1, at(c, V0, 0x30));
+        let th = ldf(c, 2, at(c, V0, 0x34));
+        setf(c, 1, tw * scale_x);
+        let gap = ldf(c, 5, gp(c, -0x5308));
+        c.swc1(1, at(c, V0, 0x38));
+        let scale_y = ldf(c, 0, p(sp_, 0x34));
+        setf(c, 2, th * scale_y);
+        c.swc1(2, at(c, V0, 0x3c));
+        let scale_x = ldf(c, 3, p(sp_, 0x30));
+        let scale_y = ldf(c, 1, p(sp_, 0x34));
+        let kx = scale_x * k;
+        setf(c, 3, kx);
+        c.g[V1][0] = c.lw(at(c, S2, TEXT_B));
+        setf(c, 1, scale_y * k);
+        c.swc1(3, p(sp_, 0x70));
+        c.swc1(1, p(sp_, 0x74));
+        let tw = ldf(c, 0, at(c, V1, 0x30));
+        let th = ldf(c, 2, at(c, V1, 0x34));
+        setf(c, 0, tw * kx);
+        c.swc1(0, at(c, V1, 0x38));
+        let ky = ldf(c, 1, p(sp_, 0x74));
+        setf(c, 2, th * ky);
+        c.swc1(2, at(c, V1, 0x3c));
+        c.g[V0][0] = c.lw(at(c, S2, TEXT_A));
+        fading_text_ld(c, V1, p(sp_, 0x60));
+        let dst = at(c, V0, 0x28);
+        fading_text_sd(c, V1, dst);
+        c.g[V1][0] = c.lw(at(c, S2, TEXT_B));
+        fading_text_ld(c, T4, p(sp_, 0x60));
+        let dst = at(c, V1, 0x28);
+        fading_text_sd(c, T4, dst);
+        c.g[A0][0] = c.lw(gp(c, -0x854));
+        c.g[V1][0] = c.lw(at(c, A0, 0xe84));
+        c.g[V0][0] = c.lw(at(c, V1, 8));
+        c.g[V0][0] &= c.g[A2][0];
+        c.g[V0][0] |= c.g[A1][0];
+        let v = c.g[V0][0];
+        c.sw(at(c, V1, 8), v);
+        let y = ldf(c, 0, p(sp_, 0x54));
+        c.g[V0][0] = c.lw(at(c, S2, LINE_COUNT));
+        setf(c, 0, y + gap);
+        let no_lines = (c.g[V0][0] as i64) <= 0;
+        c.swc1(0, p(sp_, 0x54));
+        if !no_lines {
+            c.cycles += 8;
+            c.g[S3][0] = add32(c.g[S2][0], LINES as u64);
+            fconst(c, 20, 0x41a0_0000);
+            c.g[S1][0] = c.g[S3][0];
+            c.g[S0][0] = add32(c.g[S2][0], LINE_WIDTH as u64);
+            c.g[S6][0] = 0;
+            c.g[S5][0] = c.g[S1][0];
+            loop {
+                // The line's colour and text object.
+                c.cycles += 4;
+                c.g[V0][0] = c.lw(at(c, S2, LIT_LINES));
+                c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[S4][0] as i64)) as u64;
+                c.g[A0][0] = c.lw(at(c, S2, TEXT_B));
+                if c.g[V0][0] != 0 {
+                    c.cycles += 12;
+                    c.g[V0][0] = 0x004d_0000;
+                    c.g[T0][0] = sx(COLOUR_DIM);
+                    fading_text_colour(c, COLOUR_DIM, A1, A2);
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x004d_0000;
+                    if c.g[S4][0] == 0 {
+                        c.cycles += 13;
+                        c.g[V0][0] = 0x004d_0000;
+                        c.g[A0][0] = c.lw(at(c, S2, TEXT_A));
+                        c.g[A1][0] = sx(COLOUR_FIRST);
+                        fading_text_colour(c, COLOUR_FIRST, T4, T5);
+                    } else {
+                        c.cycles += 10;
+                        c.g[T4][0] = sx(COLOUR_LIT);
+                        fading_text_colour(c, COLOUR_LIT, A2, A3);
+                    }
+                }
+                // colour.r *= alpha; text->colour = colour
+                c.cycles += 13;
+                let alpha = ldf(c, 1, at(c, S2, ALPHA));
+                let r = fr(c, 0) * alpha;
+                setf(c, 0, r);
+                c.swc1(0, p(sp_, 0x10));
+                fading_text_ld(c, T5, p(sp_, 0x10));
+                fading_text_ld(c, V0, p(sp_, 0x18));
+                let dst = at(c, A0, 0x40);
+                fading_text_sd(c, T5, dst);
+                fading_text_sd(c, V0, p(dst, 8));
+                let align = c.g[S7][0] as i64;
+                let x = ldf(c, 12, p(sp_, 0x50));
+                if align < 0 {
+                    // Left: x + 20.
+                    c.cycles += 6;
+                    c.g[A1][0] = c.g[S1][0];
+                    ldf(c, 13, p(sp_, 0x54));
+                    let m = fr(c, 20);
+                    setf(c, 12, x + m);
+                    call_ptr(c, 0x0039_1cb0, 0x0022_09c0)?; // Font_DrawText
+                } else {
+                    c.cycles += 2;
+                    c.g[A1][0] = c.g[S5][0];
+                    if align > 0 {
+                        // Right: x - 20 - width.
+                        c.cycles += 8;
+                        let x = ldf(c, 12, p(sp_, 0x50));
+                        let width = ldf(c, 0, r32(c, S0));
+                        let m = fr(c, 20);
+                        let x = x - m;
+                        setf(c, 12, x);
+                        ldf(c, 13, p(sp_, 0x54));
+                        setf(c, 12, x - width);
+                        call_ptr(c, 0x0039_1cb0, 0x0022_09e8)?;
+                    } else {
+                        // Centred: x + (box w - width) * 0.5.
+                        c.cycles += 12;
+                        let bw = ldf(c, 12, p(sp_, 0x40));
+                        c.g[A1][0] = c.g[S3][0];
+                        let width = ldf(c, 0, r32(c, S0));
+                        let half = fconst(c, 2, 0x3f00_0000);
+                        let d = bw - width;
+                        setf(c, 12, d);
+                        let x = ldf(c, 1, p(sp_, 0x50));
+                        ldf(c, 13, p(sp_, 0x54));
+                        let d = d * half;
+                        setf(c, 12, d);
+                        setf(c, 12, x + d);
+                        call_ptr(c, 0x0039_1cb0, 0x0022_0a1c)?;
+                    }
+                }
+                c.g[V0][0] = add32(c.g[S2][0], c.g[S6][0]);
+                // Next line: y += height / screen scale.
+                c.cycles += 14;
+                let y = ldf(c, 1, p(sp_, 0x54));
+                let lh = ldf(c, 0, at(c, V0, LINE_HEIGHT));
+                c.g[S4][0] = add32(c.g[S4][0], 1);
+                c.g[V0][0] = c.lw(at(c, S2, LINE_COUNT));
+                c.g[S3][0] = add32(c.g[S3][0], LINE_STRIDE as u64);
+                let lh = lh * fr(c, 23);
+                setf(c, 0, lh);
+                c.g[S0][0] = add32(c.g[S0][0], LINE_STRIDE as u64);
+                c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[S6][0] = add32(c.g[S6][0], LINE_STRIDE as u64);
+                c.g[S5][0] = add32(c.g[S5][0], LINE_STRIDE as u64);
+                c.g[S1][0] = add32(c.g[S1][0], LINE_STRIDE as u64);
+                setf(c, 1, y + lh);
+                let more = c.g[V0][0] != 0;
+                c.swc1(1, p(sp_, 0x54));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0022_08d8);
+                }
+            }
+        }
+        // Both text objects' offsets back to (2, 2).
+        c.cycles += 29;
+        fconst(c, 0, 0x4000_0000);
+        c.g[V1][0] = c.lw(at(c, S2, TEXT_A));
+        c.swc1(0, p(sp_, 0x74));
+        c.swc1(0, p(sp_, 0x70));
+        fading_text_ld(c, A2, p(sp_, 0x70));
+        let dst = at(c, V1, 0x28);
+        fading_text_sd(c, A2, dst);
+        frame.restore(c, S0, 0x1d0);
+        c.g[V0][0] = c.lw(at(c, S2, TEXT_B));
+        frame.restore(c, S1, 0x1c0);
+        fading_text_ld(c, T5, p(sp_, 0x70));
+        let dst = at(c, V0, 0x28);
+        fading_text_sd(c, T5, dst);
+        frame.restore(c, S2, 0x1b0);
+        frame.restore(c, S3, 0x1a0);
+        frame.restore(c, S4, 0x190);
+        frame.restore(c, S5, 0x180);
+        frame.restore(c, S6, 0x170);
+        frame.restore(c, S7, 0x160);
+        frame.restore_ra(c, 0x150);
+        frame.restore_fpr(c, 23, 0x1f8);
+        frame.restore_fpr(c, 22, 0x1f0);
+        frame.restore_fpr(c, 21, 0x1e8);
+        frame.restore_fpr(c, 20, 0x1e0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// HUD_DrawPipMeter (0x21f338)
+
+/// The five pip colours (`D_004C8568`..`D_004C85E8`, 0x20 apart): the colour
+/// of a meter with n pips is entry n-1.
+pub(crate) const HUD_PIP_COLOURS: u32 = 0x004c_8568;
+
+/// `ldl/ldr` 16 bytes at `src` into GPRs `ra`, `rb` and `sdl/sdr` them to
+/// `dst` (the original's struct copies, with its register choice).
+pub(crate) fn hud_pip_copy16(c: &mut Cpu, ra: usize, rb: usize, src: u32, dst: u32) {
+    c.ldl(ra, src.wrapping_add(7));
+    c.ldr(ra, src);
+    c.ldl(rb, src.wrapping_add(0xf));
+    c.ldr(rb, src.wrapping_add(8));
+    c.sdl(ra, dst.wrapping_add(7));
+    c.sdr(ra, dst);
+    c.sdl(rb, dst.wrapping_add(0xf));
+    c.sdr(rb, dst.wrapping_add(8));
+}
+
+/// `void HUD_DrawPipMeter(HUD* self, HUDObj* obj, int n, int x, V2* pos,
+/// V2* scale, float alpha)` (0x21f338): draw `n` pips of the element at
+/// `obj+0x240` in a row 2 units apart, coloured by `n` (alpha-scaled), either
+/// aligned by the element's alignment bytes (`pos == 0`) or centred on `pos`.
+pub fn hud_draw_pip_meter(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x160);
+        frame.save(c, S1, 0x130);
+        frame.save(c, S2, 0x120);
+        c.g[S1][0] = c.g[A2][0]; // n
+        frame.save(c, S3, 0x110);
+        c.g[S2][0] = c.g[T1][0]; // scale
+        frame.save(c, S4, 0x100);
+        c.g[S3][0] = c.g[A0][0]; // self
+        frame.save(c, S6, 0xe0);
+        c.g[S4][0] = c.g[A1][0]; // obj
+        frame.save(c, FP, 0xc0);
+        c.g[S6][0] = c.g[T0][0]; // pos
+        frame.save_fpr(c, 21, 0x158);
+        c.g[FP][0] = c.g[A3][0]; // x
+        frame.save(c, S0, 0x140);
+        c.mov_s(21, 12); // alpha
+        frame.save(c, S5, 0xf0);
+        frame.save(c, S7, 0xd0);
+        frame.save_ra(c, 0xb0);
+        frame.save_fpr(c, 20, 0x150);
+        if (c.g[S1][0] as i64) > 0 {
+            hud_draw_pip_meter_body(c)?;
+        }
+        c.cycles += 14;
+        frame.restore(c, S0, 0x140);
+        frame.restore(c, S1, 0x130);
+        frame.restore(c, S2, 0x120);
+        frame.restore(c, S3, 0x110);
+        frame.restore(c, S4, 0x100);
+        frame.restore(c, S5, 0xf0);
+        frame.restore(c, S6, 0xe0);
+        frame.restore(c, S7, 0xd0);
+        frame.restore(c, FP, 0xc0);
+        frame.restore_ra(c, 0xb0);
+        frame.restore_fpr(c, 21, 0x158);
+        frame.restore_fpr(c, 20, 0x150);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// [`hud_draw_pip_meter`] for `n > 0`.
+pub(crate) fn hud_draw_pip_meter_body(c: &mut Cpu) -> crate::call::Flow {
+    let sp0 = sp(c);
+    // The colour table onto the stack (sp+0..0x50).
+    c.cycles += 65;
+    c.g[V0][0] = 0x004d_0000;
+    c.g[V1][0] = 0x004d_0000;
+    c.g[A3][0] = sx(HUD_PIP_COLOURS);
+    hud_pip_copy16(c, A0, A1, HUD_PIP_COLOURS, sp0);
+    c.g[S5][0] = sx(sp0 + 0x50);
+    c.g[A2][0] = sx(HUD_PIP_COLOURS + 0x20);
+    hud_pip_copy16(c, T0, V0, HUD_PIP_COLOURS + 0x20, sp0 + 0x10);
+    c.g[A0][0] = 0x004d_0000;
+    c.g[V1][0] = sx(HUD_PIP_COLOURS + 0x40);
+    hud_pip_copy16(c, A3, T0, HUD_PIP_COLOURS + 0x40, sp0 + 0x20);
+    c.g[A1][0] = 0x004d_0000;
+    c.g[T0][0] = sx(HUD_PIP_COLOURS + 0x60);
+    hud_pip_copy16(c, A0, A2, HUD_PIP_COLOURS + 0x60, sp0 + 0x30);
+    c.g[S0][0] = sx(r32(c, S4).wrapping_add(0x240)); // the element
+    c.g[V0][0] = 0x004d_0000;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[T0][0] = sx(HUD_PIP_COLOURS + 0x80);
+    hud_pip_copy16(c, V1, A2, HUD_PIP_COLOURS + 0x80, sp0 + 0x40);
+    c.g[A1][0] = c.g[S5][0];
+    call_ptr(c, 0x001e_91f8, 0x0021_f468)?; // HUD_GetElemPos(elem, &a)
+    c.g[A2][0] = Addr(oc391_at(c, S3, 0x4a0)).lw(c);
+    c.g[A1][0] = sx(sp0 + 0x70);
+    c.g[A0][0] = c.g[S0][0];
+    call_ptr(c, 0x001e_9220, 0x0021_f478)?; // HUD_GetElemSize(elem, &size, tex)
+    c.g[A1][0] = sx(sp0 + 0x80);
+    c.g[A0][0] = c.g[S0][0];
+    c.g[S7][0] = c.g[A1][0];
+    call_ptr(c, 0x001e_9290, 0x0021_f488)?; // HUD_GetElemScale(elem, &sc)
+    c.lwc1(1, sp0 + 0x80);
+    if c.g[S2][0] != 0 {
+        c.cycles += 7;
+        c.lwc1(3, oc391_at(c, S2, 4));
+        c.lwc1(2, r32(c, S2));
+        c.lwc1(0, sp0 + 0x84);
+        c.mul_s(1, 1, 2);
+        c.mul_s(0, 0, 3);
+        c.swc1(1, sp0 + 0x80);
+        c.swc1(0, sp0 + 0x84);
+    }
+    c.cycles += 2;
+    c.g[V0][0] = sx(r32(c, S1).wrapping_sub(1));
+    if c.g[S6][0] == 0 {
+        // dim = (size.x*n + (n-1)*2, size.y), aligned by the element.
+        c.cycles += 22;
+        c.mtc1(S1, 2);
+        c.cvt_s_w(2, 2);
+        c.mtc1(V0, 1);
+        c.cvt_s_w(1, 1);
+        c.lwc1(0, sp0 + 0x70);
+        c.lwc1(3, sp0 + 0x74);
+        c.g[A2][0] = c.g[S5][0];
+        c.mul_s(0, 0, 2);
+        c.g[T1][0] = Addr(oc391_at(c, S4, 0x260)).lb(c);
+        c.add_s(1, 1, 1);
+        c.g[T2][0] = Addr(oc391_at(c, S4, 0x261)).lb(c);
+        c.swc1(3, sp0 + 0x94);
+        c.g[T3][0] = c.g[FP][0];
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = sx(sp0 + 0x60);
+        c.add_s(0, 0, 1);
+        c.g[A3][0] = sx(sp0 + 0x90);
+        c.g[T0][0] = c.g[S7][0];
+        c.swc1(0, sp0 + 0x90);
+        call_ptr(c, 0x001f_10f8, 0x0021_f504)?; // HUD_AlignElemPos
+    } else {
+        // p = *pos - (dim * sc) / 2.
+        c.cycles += 28;
+        c.ldl(3, oc391_at(c, S6, 7));
+        c.ldr(3, r32(c, S6));
+        c.sdl(3, sp0 + 0x67);
+        c.sdr(3, sp0 + 0x60);
+        c.mtc1(S1, 2);
+        c.cvt_s_w(2, 2);
+        c.g[AT][0] = 0x3f00_0000; // 0.5f
+        c.mtc1(AT, 6);
+        c.mtc1(V0, 4);
+        c.cvt_s_w(4, 4);
+        c.lwc1(0, sp0 + 0x70);
+        c.lwc1(7, sp0 + 0x80);
+        c.mul_s(0, 0, 2);
+        c.lwc1(1, sp0 + 0x74);
+        c.add_s(4, 4, 4);
+        c.lwc1(3, sp0 + 0x84);
+        c.lwc1(5, sp0 + 0x60);
+        c.mul_s(1, 1, 3);
+        c.lwc1(2, sp0 + 0x64);
+        c.add_s(0, 0, 4);
+        c.mul_s(1, 1, 6);
+        c.mul_s(0, 0, 7);
+        c.sub_s(2, 2, 1);
+        c.mul_s(0, 0, 6);
+        c.swc1(2, sp0 + 0x64);
+        c.sub_s(5, 5, 0);
+        c.swc1(5, sp0 + 0x60);
+    }
+    c.g[V0][0] = Addr(oc391_at(c, GP, 0u32.wrapping_sub(0x854))).lw(c);
+    // The draw state's layer (obj+0x262), step, colour.
+    c.cycles += 29;
+    c.g[A2][0] = 0xffff_ffff_ffff_fc1f;
+    c.g[V1][0] = Addr(oc391_at(c, S4, 0x262)).lb(c);
+    c.g[A0][0] = sx(r32(c, S1) << 4);
+    c.g[A1][0] = Addr(oc391_at(c, V0, 0xe84)).lw(c);
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(sp0));
+    c.g[V1][0] = sx(r32(c, V1) << 5);
+    c.g[AT][0] = 0x4000_0000; // 2.0f
+    c.mtc1(AT, 3);
+    c.g[V0][0] = Addr(oc391_at(c, A1, 8)).lw(c);
+    c.g[V1][0] &= 0x3e0;
+    c.g[V0][0] &= c.g[A2][0];
+    c.g[V0][0] |= c.g[V1][0];
+    Addr(oc391_at(c, A1, 8)).sw(c, c.g[V0][0]);
+    c.lwc1(1, sp0 + 0x70);
+    c.lwc1(2, sp0 + 0x80);
+    let colour = r32(c, A0).wrapping_sub(0x10);
+    hud_pip_copy16(c, A3, T0, colour, sp0 + 0xa0);
+    c.add_s(1, 1, 3);
+    c.lwc1(0, sp0 + 0xa0);
+    c.mul_s(20, 1, 2); // step = (size.x + 2) * sc.x
+    c.mul_s(0, 0, 21);
+    let none = (c.g[S1][0] as i64) <= 0;
+    c.swc1(0, sp0 + 0xa0);
+    if none {
+        return Ok(());
+    }
+    c.cycles += 2;
+    c.g[S0][0] = c.g[S1][0];
+    loop {
+        c.cycles += 12;
+        c.g[A1][0] = Addr(oc391_at(c, S3, 0x4a0)).lw(c);
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A2][0] = sx(sp0 + 0x60);
+        c.g[A3][0] = sx(sp0 + 0x70);
+        c.g[T0][0] = c.g[S7][0];
+        c.g[T1][0] = sx(sp0 + 0xa0);
+        call_ptr(c, 0x001f_1190, 0x0021_f614)?; // HUD_DrawSprite
+        c.g[S0][0] = sx(r32(c, S0).wrapping_sub(1));
+        c.lwc1(0, sp0 + 0x60);
+        c.add_s(0, 0, 20);
+        let more = c.g[S0][0] != 0;
+        c.swc1(0, sp0 + 0x60);
+        if !more {
+            return Ok(());
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0021_f5f8);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HUD_DrawTextLerp (0x1f1e28)
+
+pub(crate) const HUD_LERP_GET_ELEM_POS: Callee = Callee {
+    addr: 0x001e_91f8,
+    f: ee::s04::HUD_GetElemPos,
+};
+
+pub(crate) const HUD_LERP_GET_ELEM_SCALE: Callee = Callee {
+    addr: 0x001e_9290,
+    f: ee::s04::HUD_GetElemScale,
+};
+
+pub(crate) const HUD_LERP_ALIGN_ELEM_POS: Callee = Callee {
+    addr: 0x001f_10f8,
+    f: ee::s04::HUD_AlignElemPos,
+};
+
+pub(crate) const HUD_LERP_GET_ELEM_COLOR: Callee = Callee {
+    addr: 0x001e_91d0,
+    f: ee::s04::HUD_GetElemColorRotated,
+};
+
+/// A HUD element definition is 0x24 bytes; `+0x20`/`+0x21` its horizontal
+/// and vertical alignment; 0x7f in the arguments means "the element's".
+pub(crate) const HUD_ELEM_SIZE: u64 = 0x24;
+
+pub(crate) const HUD_ALIGN_DEFAULT: u64 = 0x7f;
+
+/// `void HUD_DrawTextLerp(HUD* ctx, Font* font, HUDElem* defs, int idx1,
+/// int idx2, const char* str, int a5, V2* scale_mul, float t, V2* pos_off,
+/// Colour* colour, float* rect, int align, int valign)` (0x1f1e28): draw
+/// `str` between the layouts of elements `idx1` and `idx2` at `t`: both
+/// positions (aligned for the text's size) and scales are interpolated, the
+/// colour too (or `colour` faded by `1 - t`); optionally offset, and the
+/// resulting rectangle stored in `rect`.
+pub fn hud_draw_text_lerp(c: &mut Cpu) {
+    use crate::game::ai::control::handplantcontrol::{vu_scale, vu_spill, vu_sub};
+    use ssx3_ee_rt::vu0::Src;
+    guest(c, |c| {
+        c.cycles += 49;
+        let frame = Frame::open(c, 0x210);
+        let sp0 = sp(c);
+        c.g[AT][0] = 0x3f80_0000; // 1.0f
+        c.mtc1(1, 0);
+        frame.save(c, S0, 0x1f0);
+        frame.save(c, S1, 0x1e0);
+        c.g[S0][0] = HUD_ELEM_SIZE;
+        frame.save(c, S2, 0x1d0);
+        c.g[S1][0] = c.g[T3][0]; // scale_mul
+        frame.save(c, S3, 0x1c0);
+        c.g[S2][0] = c.g[A1][0]; // font
+        frame.save(c, S4, 0x1b0);
+        frame.save(c, S5, 0x1a0);
+        c.g[S4][0] = c.g[A2][0]; // defs
+        frame.save(c, S6, 0x190);
+        c.g[A2][0] = sx(sp0 + 0x10);
+        frame.save(c, S7, 0x180);
+        frame.save(c, FP, 0x170);
+        c.g[S7][0] = c.g[T0][0]; // idx2
+        frame.save_fpr(c, 20, 0x200);
+        c.g[FP][0] = c.g[A3][0]; // idx1
+        frame.save_ra(c, 0x160);
+        c.mov_s(20, 12); // t
+        c.g[S5][0] = Addr(sp0 + 0x228).lw(c); // align
+        c.g[A3][0] = 0;
+        c.lwc1(2, oc391_at(c, S2, 0x30));
+        Addr(sp0 + 0x154).sw(c, c.g[T1][0]); // str
+        c.g[S6][0] = Addr(sp0 + 0x230).lw(c); // valign
+        c.mov_s(12, 2);
+        c.lwc1(1, oc391_at(c, S2, 0x34));
+        c.g[A1][0] = c.g[T1][0];
+        Addr(sp0 + 0x150).sw(c, c.g[A0][0]); // ctx
+        Addr(sp0 + 0x158).sw(c, c.g[T2][0]); // a5
+        c.mov_s(13, 1);
+        c.swc1(0, sp0 + 4); // scale = (1, 1)
+        c.g[A0][0] = c.g[S2][0];
+        c.swc1(0, sp0);
+        c.swc1(2, oc391_at(c, S2, 0x38));
+        c.swc1(1, oc391_at(c, S2, 0x3c));
+        call_ptr(c, 0x0039_1fb0, 0x001f_1ec4)?; // Font_MeasureText(font, str, &r, 0)
+                                                // Element 1: position and scale.
+        c.mult(0, V0, FP, S0);
+        c.g[A1][0] = sx(sp0 + 0x20);
+        c.g[S3][0] = sx(r32(c, S4).wrapping_add(r32(c, V0)));
+        c.g[A0][0] = c.g[S3][0];
+        HUD_LERP_GET_ELEM_POS.call(c, 0x001f_1ed8)?;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = sx(sp0 + 0x30);
+        HUD_LERP_GET_ELEM_SCALE.call(c, 0x001f_1ee4)?;
+        c.lwc1(0, sp0 + 0x30);
+        if c.g[S1][0] != 0 {
+            c.cycles += 7;
+            c.lwc1(2, r32(c, S1));
+            c.lwc1(3, oc391_at(c, S1, 4));
+            c.lwc1(1, sp0 + 0x34);
+            c.mul_s(0, 0, 2);
+            c.mul_s(1, 1, 3);
+            c.swc1(0, sp0 + 0x30);
+            c.swc1(1, sp0 + 0x34);
+        }
+        // Element 2.
+        c.cycles += 10;
+        c.mult(0, V0, S7, S0);
+        c.g[A1][0] = sx(sp0 + 0x40);
+        c.g[S0][0] = sx(r32(c, V0).wrapping_add(r32(c, S4)));
+        c.g[A0][0] = c.g[S0][0];
+        HUD_LERP_GET_ELEM_POS.call(c, 0x001f_1f1c)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = sx(sp0 + 0x50);
+        HUD_LERP_GET_ELEM_SCALE.call(c, 0x001f_1f28)?;
+        c.lwc1(1, sp0 + 0x50);
+        if c.g[S1][0] != 0 {
+            c.cycles += 7;
+            c.lwc1(3, oc391_at(c, S1, 4));
+            c.lwc1(2, r32(c, S1));
+            c.lwc1(0, sp0 + 0x54);
+            c.mul_s(1, 1, 2);
+            c.mul_s(0, 0, 3);
+            c.swc1(1, sp0 + 0x50);
+            c.swc1(0, sp0 + 0x54);
+        }
+        // The text's size at both scales.
+        c.cycles += 16;
+        c.lwc1(3, sp0 + 0x18);
+        c.g[V0][0] = HUD_ALIGN_DEFAULT;
+        c.lwc1(2, sp0 + 0x1c);
+        c.lwc1(0, sp0 + 0x30);
+        c.lwc1(1, sp0 + 0x34);
+        c.lwc1(5, sp0 + 0x50);
+        c.mul_s(0, 3, 0);
+        c.lwc1(4, sp0 + 0x54);
+        c.mul_s(1, 2, 1);
+        c.mul_s(3, 3, 5);
+        c.mul_s(2, 2, 4);
+        c.swc1(0, sp0 + 0x80);
+        c.swc1(1, sp0 + 0x84);
+        c.swc1(3, sp0 + 0x90);
+        c.swc1(2, sp0 + 0x94);
+        // The alignments: the argument, or the element's when 0x7f.
+        if c.g[S5][0] == c.g[V0][0] {
+            c.cycles += 2;
+            c.g[T1][0] = Addr(oc391_at(c, S3, 0x20)).lb(c);
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = sx(r32(c, S5) << 24);
+            c.g[T1][0] = sx(((r32(c, V0) as i32) >> 24) as u32);
+            c.g[V0][0] = HUD_ALIGN_DEFAULT;
+        }
+        hud_lerp_align(c, S6, FP, 0x21, T2, 2);
+        hud_lerp_align(c, S5, S7, 0x20, S1, 3);
+        hud_lerp_align(c, S6, S7, 0x21, S0, 3);
+        // Align both layouts for the text's size.
+        c.cycles += 48;
+        c.g[A0][0] = Addr(sp0 + 0x150).lw(c);
+        c.g[A2][0] = sx(sp0 + 0x20);
+        c.g[T3][0] = Addr(sp0 + 0x158).lw(c);
+        c.g[A1][0] = sx(sp0 + 0x60);
+        c.g[A3][0] = sx(sp0 + 0x80);
+        c.g[T0][0] = c.g[SP][0];
+        HUD_LERP_ALIGN_ELEM_POS.call(c, 0x001f_2024)?;
+        c.g[A0][0] = Addr(sp0 + 0x150).lw(c);
+        c.g[A2][0] = sx(sp0 + 0x40);
+        c.g[T3][0] = Addr(sp0 + 0x158).lw(c);
+        c.g[T1][0] = c.g[S1][0];
+        c.g[T2][0] = c.g[S0][0];
+        c.g[A1][0] = sx(sp0 + 0x70);
+        c.g[A3][0] = sx(sp0 + 0x90);
+        c.g[T0][0] = c.g[SP][0];
+        HUD_LERP_ALIGN_ELEM_POS.call(c, 0x001f_2048)?;
+        // Interpolate: pos = out1 + (out2 - out1) t, esc = esc1 + (esc2 - esc1) t.
+        c.lwc1(8, sp0 + 0x30);
+        c.lwc1(9, sp0 + 0x34);
+        c.lwc1(0, sp0 + 0x50);
+        c.lwc1(1, sp0 + 0x54);
+        c.lwc1(6, sp0 + 0x60);
+        c.sub_s(0, 0, 8);
+        c.lwc1(7, sp0 + 0x64);
+        c.sub_s(1, 1, 9);
+        c.lwc1(2, sp0 + 0x70);
+        c.lwc1(3, sp0 + 0x74);
+        c.sub_s(2, 2, 6);
+        c.swc1(0, sp0 + 0xc0);
+        c.sub_s(3, 3, 7);
+        c.swc1(1, sp0 + 0xc4);
+        c.mul_s(0, 0, 20);
+        c.g[A0][0] = Addr(sp0 + 0x210).lw(c); // pos_off
+        c.mul_s(4, 2, 20);
+        c.swc1(2, sp0 + 0xe0);
+        c.mul_s(5, 3, 20);
+        c.swc1(3, sp0 + 0xe4);
+        c.mul_s(1, 1, 20);
+        c.add_s(3, 4, 6);
+        c.swc1(4, sp0 + 0xd0);
+        c.add_s(2, 5, 7);
+        c.swc1(5, sp0 + 0xd4);
+        c.add_s(0, 0, 8);
+        c.add_s(1, 1, 9);
+        c.swc1(3, sp0 + 0xb0);
+        c.swc1(2, sp0 + 0xb4);
+        c.swc1(0, sp0 + 0xa0);
+        c.swc1(1, sp0 + 0xa4);
+        if c.g[A0][0] != 0 {
+            c.cycles += 6;
+            c.lwc1(0, oc391_at(c, A0, 4));
+            c.lwc1(1, r32(c, A0));
+            c.add_s(0, 2, 0);
+            c.add_s(1, 3, 1);
+            c.swc1(0, sp0 + 0xb4);
+            c.swc1(1, sp0 + 0xb0);
+        }
+        // The rectangle.
+        c.cycles += 3;
+        c.g[A1][0] = Addr(sp0 + 0x220).lw(c);
+        c.lwc1(1, sp0 + 0xa0);
+        if c.g[A1][0] != 0 {
+            c.cycles += 11;
+            let rect = r32(c, A1);
+            c.lwc1(2, sp0 + 0x18);
+            c.lwc1(0, sp0 + 0x1c);
+            c.lwc1(3, sp0 + 0xa4);
+            c.mul_s(2, 2, 1);
+            c.lwc1(4, sp0 + 0xb0);
+            c.mul_s(0, 0, 3);
+            c.lwc1(1, sp0 + 0xb4);
+            c.swc1(4, rect);
+            c.swc1(1, rect + 4);
+            c.swc1(0, rect + 0xc);
+            c.swc1(2, rect + 8);
+        }
+        // The colour.
+        c.cycles += 3;
+        c.g[A2][0] = Addr(sp0 + 0x218).lw(c);
+        c.g[A3][0] = c.g[A2][0];
+        if c.g[A2][0] == 0 {
+            // Interpolate the elements' colours (alpha of the second 0).
+            c.cycles += 47;
+            c.g[S0][0] = HUD_ELEM_SIZE;
+            c.g[A1][0] = sx(sp0 + 0xf0);
+            c.mult(0, V0, FP, S0);
+            c.g[A0][0] = sx(r32(c, V0).wrapping_add(r32(c, S4)));
+            HUD_LERP_GET_ELEM_COLOR.call(c, 0x001f_2138)?;
+            c.mult(0, V0, S7, S0);
+            c.g[A1][0] = sx(sp0 + 0x100);
+            c.g[A0][0] = sx(r32(c, V0).wrapping_add(r32(c, S4)));
+            HUD_LERP_GET_ELEM_COLOR.call(c, 0x001f_2148)?;
+            Addr(sp0 + 0x10c).sw(c, 0);
+            vu_sub(c, sp0 + 0x100, sp0 + 0xf0);
+            vu_spill(c, frame, 0x140, &[0x130]);
+            c.mfc1(3, 20);
+            vu_scale(c, 3, sp0 + 0x130);
+            vu_spill(c, frame, 0x140, &[0x120]);
+            c.lqc2(3, sp0 + 0x120);
+            c.lqc2(4, sp0 + 0xf0);
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            vu_spill(c, frame, 0x140, &[0x110]);
+            // (x, y, z, w) -> (w, x, y, z)
+            c.lwc1(0, sp0 + 0x11c);
+            c.lwc1(1, sp0 + 0x110);
+            c.lwc1(2, sp0 + 0x114);
+            c.lwc1(3, sp0 + 0x118);
+            c.swc1(0, sp0 + 0x120);
+            c.swc1(1, sp0 + 0x124);
+            c.swc1(2, sp0 + 0x128);
+            c.swc1(3, sp0 + 0x12c);
+            hud_pip_copy16(c, V1, A0, sp0 + 0x120, sp0 + 0xd0);
+        } else {
+            // The given colour, its first component faded by 1 - t.
+            c.cycles += 15;
+            c.g[AT][0] = 0x3f80_0000; // 1.0f
+            c.mtc1(1, 1);
+            hud_pip_copy16(c, V0, V1, r32(c, A3), sp0 + 0xd0);
+            c.sub_s(1, 1, 20);
+            c.lwc1(0, sp0 + 0xd0);
+            c.mul_s(0, 0, 1);
+            c.swc1(0, sp0 + 0xd0);
+        }
+        c.g[V0][0] = Addr(oc391_at(c, GP, 0u32.wrapping_sub(0x854))).lw(c);
+        // Layer, colour and scale onto the font, draw, restore the scale.
+        c.cycles += 51;
+        c.g[A3][0] = 0xffff_ffff_ffff_fc1f;
+        c.g[V1][0] = Addr(oc391_at(c, S4, 0x3ca)).lb(c);
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A2][0] = Addr(oc391_at(c, V0, 0xe84)).lw(c);
+        c.g[V1][0] = sx(r32(c, V1) << 5);
+        c.g[A1][0] = Addr(sp0 + 0x154).lw(c);
+        c.g[V0][0] = Addr(oc391_at(c, A2, 8)).lw(c);
+        c.g[V1][0] &= 0x3e0;
+        c.g[V0][0] &= c.g[A3][0];
+        c.g[V0][0] |= c.g[V1][0];
+        Addr(oc391_at(c, A2, 8)).sw(c, c.g[V0][0]);
+        hud_pip_copy16(c, A2, A3, sp0 + 0xd0, oc391_at(c, S2, 0x40));
+        c.lwc1(2, sp0 + 0xa0);
+        c.lwc1(3, sp0 + 0xa4);
+        c.lwc1(1, oc391_at(c, S2, 0x30));
+        c.lwc1(0, oc391_at(c, S2, 0x34));
+        c.mul_s(1, 1, 2);
+        c.lwc1(12, sp0 + 0xb0);
+        c.mul_s(0, 0, 3);
+        c.lwc1(13, sp0 + 0xb4);
+        c.swc1(1, oc391_at(c, S2, 0x38));
+        c.swc1(0, oc391_at(c, S2, 0x3c));
+        call_ptr(c, 0x0039_1cb0, 0x001f_2294)?; // Font_DrawText
+        c.lwc1(3, sp0);
+        c.lwc1(2, sp0 + 4);
+        c.lwc1(1, oc391_at(c, S2, 0x30));
+        c.lwc1(0, oc391_at(c, S2, 0x34));
+        c.mul_s(1, 1, 3);
+        c.mul_s(0, 0, 2);
+        c.swc1(1, oc391_at(c, S2, 0x38));
+        c.swc1(0, oc391_at(c, S2, 0x3c));
+        frame.restore(c, S0, 0x1f0);
+        frame.restore(c, S1, 0x1e0);
+        frame.restore(c, S3, 0x1c0);
+        frame.restore(c, S2, 0x1d0);
+        frame.restore(c, S4, 0x1b0);
+        frame.restore(c, S5, 0x1a0);
+        frame.restore(c, S6, 0x190);
+        frame.restore(c, S7, 0x180);
+        frame.restore(c, FP, 0x170);
+        frame.restore_ra(c, 0x160);
+        frame.restore_fpr(c, 20, 0x200);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// One alignment of [`hud_draw_text_lerp`] (v0 = 0x7f on entry): `out` =
+/// the argument in `arg` (sign-extended byte), or, when it is 0x7f, the byte
+/// at `+field` of element `idx`; `head` is the original's entry cost (2 for
+/// the first such block, 3 for the later ones, which reload v0).
+pub(crate) fn hud_lerp_align(
+    c: &mut Cpu,
+    arg: usize,
+    idx: usize,
+    field: u32,
+    out: usize,
+    head: u64,
+) {
+    c.cycles += head;
+    c.g[V0][0] = HUD_ALIGN_DEFAULT;
+    let default = c.g[arg][0] == c.g[V0][0];
+    c.g[V0][0] = sx(r32(c, arg) << 24);
+    if default {
+        c.cycles += 5;
+        c.g[V0][0] = HUD_ELEM_SIZE;
+        c.mult(0, V1, idx, V0);
+        c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, S4)));
+        c.g[out][0] = Addr(oc391_at(c, V0, field)).lb(c);
+    } else {
+        c.cycles += 1;
+        c.g[out][0] = sx(((r32(c, V0) as i32) >> 24) as u32);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HUD_DrawControlHint (0x21d9a0)
+
+/// The HUD root's per-player block (`players[idx]`, stride 0x8c): the rider
+/// index at +0x48.
+pub(crate) const HUD_CONTROL_HINT_PLAYER_STRIDE: u32 = 0x8c;
+
+pub(crate) const HUD_CONTROL_HINT_PLAYER_RIDER: u32 = 0x48;
+
+/// The icon text slots of the two control maps.
+pub(crate) const HUD_CONTROL_HINT_ICON_TEXT: u32 = 0x6ac;
+
+pub(crate) const HUD_CONTROL_HINT_ICON_TEXT_ALT: u32 = 0x7f8;
+
+/// The HUD's sprite table (`sprites[0x20]`): 0x10 the gauge end piece,
+/// 0x11 the middle, 0x12/0x13 the button cap (control map 0 / other).
+pub(crate) const HUD_CONTROL_HINT_SPRITES: u32 = 0x494;
+
+pub(crate) const HUD_CONTROL_HINT_END_SPRITE: u32 = 0x4d4;
+
+pub(crate) const HUD_CONTROL_HINT_MID_SPRITE: u32 = 0x4d8;
+
+/// The layout elements: the icon (+0x7bc) and the gauge (+0x798).
+pub(crate) const HUD_CONTROL_HINT_ICON_ELEM: u32 = 0x7bc;
+
+pub(crate) const HUD_CONTROL_HINT_GAUGE_ELEM: u32 = 0x798;
+
+/// The fill colour (`D_004C8668`, an `sColour` of 4 floats).
+pub(crate) const HUD_CONTROL_HINT_FILL_COLOUR: u32 = 0x004c_8668;
+
+/// gp-relative: the fill margins' "initialised" flag and the margins.
+pub(crate) const HUD_CONTROL_HINT_MARGIN_INIT: i32 = 0x1da8;
+
+pub(crate) const HUD_CONTROL_HINT_MARGIN_X: i32 = 0x2a38;
+
+pub(crate) const HUD_CONTROL_HINT_MARGIN_Y: i32 = 0x2a3c;
+
+#[inline(always)]
+pub(crate) fn hint_mul(c: &mut Cpu, d: usize, a: usize, b: usize) {
+    let v = fr(c, a) * fr(c, b);
+    setf(c, d, v);
+}
+
+#[inline(always)]
+pub(crate) fn hint_add(c: &mut Cpu, d: usize, a: usize, b: usize) {
+    let v = fr(c, a) + fr(c, b);
+    setf(c, d, v);
+}
+
+#[inline(always)]
+pub(crate) fn hint_sub(c: &mut Cpu, d: usize, a: usize, b: usize) {
+    let v = fr(c, a) - fr(c, b);
+    setf(c, d, v);
+}
+
+/// The renderer's slot-71 draw (`renderer->vt[0x238]`, 4 vertices at a2):
+/// `t0 = renderer`, `v1 = vtable`, `a0 = renderer + delta`, `v0 = method`.
+#[inline(always)]
+pub(crate) fn hint_draw_quad(c: &mut Cpu, ret_to: u32) -> Flow {
+    c.g[T0][0] = c.lw(gp(c, -0x854));
+    c.g[V1][0] = c.lw(at(c, T0, 0x10d8));
+    c.g[A0][0] = c.lh(at(c, V1, 0x238));
+    c.g[V0][0] = c.lw(at(c, V1, 0x23c));
+    let target = c.g[V0][0] as u32;
+    c.g[A0][0] = add32(c.g[T0][0], c.g[A0][0]);
+    call_ptr(c, target, ret_to)
+}
+
+/// `HUD_DrawControlHint(float fill (f12), float alpha (f13), HudRoot* hud,
+/// char* elems, sGaugeBar* bar, int idx, int icon, float scale[2])`
+/// (0x21d9a0): a horizontal gauge with a control hint. With `icon`, the
+/// button icon's text (`HUD_DrawIconText`, the control map of rider `idx`
+/// picks the slot); then the button cap (sprite 0x12 or 0x13, by control
+/// map), the end piece, `bar->count > 0` a middle piece, the mirrored end
+/// piece, and when `fill > 0` the fill rectangle (`HUD_DrawRect`) inside
+/// lazily initialised 3-pixel margins.
+///
+/// Stack: a (pos) +0, sc +0x10, t (size) +0x20, pos copy +0x30, p +0x40,
+/// v +0x50, four vertices +0x60 (stride 0x30: uv q, colour g b a r,
+/// position at +0x20), position temp +0x120/+0x130, fill size +0x140,
+/// colour +0x150, unit scale +0x160. Frame 0x240.
+pub fn hud_draw_control_hint(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 39;
+        let frame = Frame::open(c, 0x240);
+        let s = sp(c);
+        frame.save(c, S0, 0x200);
+        frame.save(c, S3, 0x1d0);
+        c.g[S0][0] = c.g[T0][0];
+        frame.save(c, S4, 0x1c0);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save(c, S5, 0x1b0);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, S6, 0x1a0);
+        c.g[S5][0] = c.g[T1][0];
+        frame.save(c, FP, 0x180);
+        c.g[S6][0] = c.g[A3][0];
+        frame.save_fpr(c, 25, 0x238);
+        c.g[FP][0] = c.g[A2][0];
+        frame.save_fpr(c, 24, 0x230);
+        c.f[25] = c.f[13];
+        frame.save(c, S1, 0x1f0);
+        c.f[24] = c.f[12];
+        frame.save(c, S2, 0x1e0);
+        frame.save(c, S7, 0x190);
+        frame.save_ra(c, 0x170);
+        frame.save_fpr(c, 23, 0x228);
+        frame.save_fpr(c, 22, 0x220);
+        frame.save_fpr(c, 21, 0x218);
+        frame.save_fpr(c, 20, 0x210);
+        // alt = control map of players[idx].rider (BE interface 1).
+        call_ptr(c, 0x0014_dc80, 0x0021_da08)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 1;
+        call_ptr(c, 0x0014_dd58, 0x0021_da14)?;
+        c.g[V1][0] = HUD_CONTROL_HINT_PLAYER_STRIDE as u64;
+        c.g[A0][0] = c.g[V0][0];
+        c.mult(0, V1, S6, V1);
+        c.g[V1][0] = add32(c.g[S4][0], c.g[V1][0]);
+        c.g[A1][0] = c.lw(at(c, V1, HUD_CONTROL_HINT_PLAYER_RIDER));
+        call_ptr(c, 0x0014_7618, 0x0021_da2c)?;
+        c.g[S7][0] = c.g[V0][0];
+        c.g[S2][0] = sx(p(s, 0x10));
+        c.g[S1][0] = sx(p(s, 0x20));
+        if c.g[S0][0] == 0 {
+            c.cycles += 1;
+        } else {
+            // The icon: position, scale, colour; its text in the slot of
+            // the rider's control map.
+            c.cycles += 12;
+            c.g[S0][0] = add32(c.g[S3][0], HUD_CONTROL_HINT_ICON_ELEM as u64);
+            c.g[A1][0] = c.g[SP][0];
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x001e_91f8, 0x0021_da4c)?;
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x001e_9290, 0x0021_da58)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S1][0];
+            call_ptr(c, 0x001e_91a8, 0x0021_da64)?;
+            c.g[T0][0] = c.lb(at(c, S3, 0x7dc));
+            let (slot, copy_reg, cycles, ret_to) = if c.g[S7][0] == 0 {
+                (HUD_CONTROL_HINT_ICON_TEXT, V0, 12, 0x0021_da94)
+            } else {
+                (HUD_CONTROL_HINT_ICON_TEXT_ALT, T4, 10, 0x0021_dac4)
+            };
+            c.cycles += cycles;
+            c.g[A0][0] = add32(c.g[S4][0], slot as u64);
+            c.g[T1][0] = c.lb(at(c, S3, 0x7dd));
+            c.g[A1][0] = sx(p(s, 0x30));
+            c.g[A2][0] = c.g[S2][0];
+            c.g[copy_reg][0] = c.ld(s);
+            let v = c.g[copy_reg][0];
+            c.sd(p(s, 0x30), v);
+            c.g[A3][0] = c.g[S1][0];
+            call_ptr(c, 0x001e_95a0, ret_to)?;
+            if c.g[S7][0] != 0 {
+                c.cycles += 1;
+            }
+        }
+        c.g[S0][0] = add32(c.g[S3][0], HUD_CONTROL_HINT_GAUGE_ELEM as u64);
+
+        // The gauge element: a (pos), t (size), sc (scale * scale[]).
+        c.cycles += 52;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x001e_91f8, 0x0021_dad4)?;
+        c.g[A2][0] = 0;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x001e_9220, 0x0021_dae4)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S2][0];
+        call_ptr(c, 0x001e_9290, 0x0021_daf0)?;
+        c.lwc1(0, at(c, S5, 4));
+        c.g[T0][0] = sx(p(s, 0x50));
+        c.lwc1(2, at(c, S5, 0));
+        c.g[S2][0] = c.g[T0][0];
+        c.lwc1(4, p(s, 0x10));
+        c.g[A3][0] = c.g[S1][0];
+        c.lwc1(3, p(s, 0x14));
+        c.g[A0][0] = c.g[S4][0];
+        hint_mul(c, 4, 4, 2);
+        c.lwc1(1, p(s, 0x20));
+        hint_mul(c, 3, 3, 0);
+        fconst(c, 2, 0x3f80_0000);
+        c.lwc1(0, p(s, 0x24));
+        c.g[A1][0] = sx(p(s, 0x40));
+        hint_mul(c, 1, 1, 4);
+        c.g[T1][0] = c.lb(at(c, S3, 0x7b8));
+        hint_mul(c, 0, 0, 3);
+        c.g[T2][0] = c.lb(at(c, S3, 0x7b9));
+        c.g[A2][0] = c.g[SP][0];
+        c.g[T3][0] = c.g[S6][0];
+        c.swc1(2, p(s, 0x54));
+        c.swc1(0, p(s, 0x24));
+        c.swc1(1, p(s, 0x20));
+        c.swc1(4, p(s, 0x10));
+        c.swc1(3, p(s, 0x14));
+        c.swc1(2, p(s, 0x50));
+        // p (+0x40) = the aligned position of size t, unit scale v.
+        call_ptr(c, 0x001f_10f8, 0x0021_db60)?;
+        // Draw row of the gauge (draw state flags bits 5..9).
+        c.g[V0][0] = c.lw(gp(c, -0x854));
+        c.g[A1][0] = 0xffff_ffff_ffff_fc1f;
+        c.g[V1][0] = c.lb(at(c, S3, 0x7ba));
+        c.g[S0][0] = sx(p(s, 0x60));
+        c.g[A0][0] = c.lw(at(c, V0, 0xe84));
+        c.g[T0][0] = add32(c.g[S4][0], HUD_CONTROL_HINT_SPRITES as u64);
+        c.g[V1][0] = shl32(c.g[V1][0], 5);
+        c.g[A3][0] = u64::MAX;
+        c.g[V0][0] = c.lw(at(c, A0, 8));
+        c.g[V1][0] &= 0x3e0;
+        c.g[A2][0] = 3;
+        c.g[V0][0] &= c.g[A1][0];
+        c.g[V0][0] |= c.g[V1][0];
+        let v = c.g[V0][0];
+        c.sw(at(c, A0, 8), v);
+        // The vertex array's (empty) constructor loop.
+        loop {
+            c.cycles += 7;
+            c.g[A2][0] = add32(c.g[A2][0], u32::MAX as u64);
+            c.g[A0][0] = 0x80;
+            if c.g[A2][0] == c.g[A3][0] {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0021_db98);
+            }
+        }
+        // Vertex colours (r = alpha * 128, g b a = 0x80) and q = 1.
+        c.cycles += 11;
+        fconst(c, 0, 0x4300_0000);
+        fconst(c, 1, 0x3f80_0000);
+        c.g[V1][0] = c.g[S0][0];
+        hint_mul(c, 0, 25, 0);
+        c.g[A2][0] = add32(c.g[S0][0], 0xc0);
+        let red = fr(c, 0).to_i32() as u32;
+        c.f[2] = red;
+        c.g[A1][0] = sx(red);
+        let v = c.g[A1][0];
+        c.sw(at(c, V1, 0x1c), v);
+        loop {
+            c.cycles += 8;
+            let grey = c.g[A0][0];
+            c.sw(at(c, V1, 0x10), grey);
+            c.sw(at(c, V1, 0x14), grey);
+            c.sw(at(c, V1, 0x18), grey);
+            c.swc1(1, at(c, V1, 8));
+            c.g[V1][0] = add32(c.g[V1][0], 0x30);
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A2][0] as i64)) as u64;
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            let v = c.g[A1][0];
+            c.sw(at(c, V1, 0x1c), v);
+            if event_due(c) {
+                deliver_event_here(c, 0x0021_dbe0);
+            }
+        }
+
+        // The button cap: 20 * sc square, vertically centred on t.
+        c.cycles += 160;
+        c.lwc1(3, p(s, 0x14));
+        c.g[V0][0] = 0x48;
+        fconst(c, 5, 0x41a0_0000);
+        c.g[V1][0] = 0x4c;
+        c.lwc1(2, p(s, 0x24));
+        if c.g[S7][0] == 0 {
+            c.g[V1][0] = c.g[V0][0];
+        }
+        hint_mul(c, 3, 3, 5);
+        fconst(c, 6, 0x3f00_0000);
+        c.lwc1(0, p(s, 0x10));
+        c.g[V1][0] = add32(c.g[T0][0], c.g[V1][0]);
+        c.lwc1(4, p(s, 0x44));
+        c.g[A1][0] = 4;
+        hint_sub(c, 2, 2, 3);
+        c.lwc1(1, p(s, 0x40));
+        hint_mul(c, 0, 0, 5);
+        c.g[A0][0] = c.lw(r32(c, V1));
+        c.swc1(1, p(s, 0x120));
+        c.g[A2][0] = c.g[S0][0];
+        hint_mul(c, 2, 2, 6);
+        c.swc1(3, p(s, 0x54));
+        c.swc1(0, p(s, 0x50));
+        c.g[A3][0] = 0;
+        c.g[T0][0] = c.lw(gp(c, -0x854));
+        hint_add(c, 4, 4, 2);
+        fconst(c, 21, 0x3f80_0000);
+        fconst(c, 23, 0x4040_0000);
+        c.swc1(4, p(s, 0x124));
+        c.g[V1][0] = c.lw(at(c, T0, 0xe84));
+        c.g[V0][0] = c.lw(r32(c, A0));
+        let v = c.g[V0][0];
+        c.sh(at(c, V1, 0x10), v);
+        // setUV(cap).
+        c.lwc1(0, at(c, A0, 0x10));
+        c.lwc1(3, p(s, 0x120));
+        c.swc1(0, p(s, 0x60));
+        c.lwc1(2, p(s, 0x124));
+        c.lwc1(0, at(c, A0, 0xc));
+        c.swc1(0, p(s, 0x64));
+        c.lwc1(1, at(c, A0, 0x14));
+        c.swc1(1, p(s, 0x90));
+        c.lwc1(0, at(c, A0, 0xc));
+        c.swc1(0, p(s, 0x94));
+        c.lwc1(1, at(c, A0, 0x10));
+        c.swc1(1, p(s, 0xc0));
+        c.lwc1(0, at(c, A0, 0x18));
+        c.swc1(0, p(s, 0xc4));
+        c.lwc1(1, at(c, A0, 0x14));
+        c.swc1(1, p(s, 0xf0));
+        c.lwc1(0, at(c, A0, 0x18));
+        // Positions through the temp at +0x130.
+        c.swc1(3, p(s, 0x130));
+        c.swc1(0, p(s, 0xf4));
+        c.swc1(2, p(s, 0x134));
+        c.lwc1(1, p(s, 0x50));
+        c.sw(p(s, 0x138), 0);
+        c.swc1(21, p(s, 0x13c));
+        hint_add(c, 1, 3, 1);
+        c.lwc1(0, p(s, 0x54));
+        c.lq(V1, p(s, 0x130));
+        c.swc1(1, p(s, 0x130));
+        hint_add(c, 0, 2, 0);
+        c.sw(p(s, 0x138), 0);
+        c.sq(V1, p(s, 0x80));
+        c.lq(V0, p(s, 0x130));
+        c.swc1(3, p(s, 0x130));
+        c.swc1(0, p(s, 0x134));
+        c.sw(p(s, 0x138), 0);
+        c.sq(V0, p(s, 0xb0));
+        c.lq(V1, p(s, 0x130));
+        c.swc1(1, p(s, 0x130));
+        c.sw(p(s, 0x138), 0);
+        c.sq(V1, p(s, 0xe0));
+        c.lq(V0, p(s, 0x130));
+        c.sq(V0, p(s, 0x110));
+        hint_draw_quad(c, 0x0021_dd44)?;
+
+        // The end piece: p.x += v.x + 3 sc.x, t.x -= the same; v = p;
+        // segW (f22) = sc.x * bar->scale * 9.
+        c.lwc1(0, p(s, 0x10));
+        c.g[A1][0] = 4;
+        c.lwc1(1, p(s, 0x50));
+        c.g[A2][0] = c.g[S0][0];
+        hint_mul(c, 0, 0, 23);
+        c.lwc1(3, p(s, 0x40));
+        c.lwc1(2, p(s, 0x20));
+        c.g[A3][0] = 0;
+        c.g[V1][0] = c.lw(at(c, S4, HUD_CONTROL_HINT_END_SPRITE));
+        hint_add(c, 1, 1, 0);
+        c.lwc1(4, r32(c, FP));
+        c.g[T0][0] = c.lw(gp(c, -0x854));
+        fconst(c, 0, 0x4110_0000);
+        hint_sub(c, 2, 2, 1);
+        hint_add(c, 3, 3, 1);
+        hint_mul(c, 4, 4, 0);
+        c.swc1(2, p(s, 0x20));
+        c.swc1(3, p(s, 0x40));
+        c.g[V0][0] = c.ld(p(s, 0x40));
+        let v = c.g[V0][0];
+        c.sd(p(s, 0x50), v);
+        c.g[A0][0] = c.lw(at(c, T0, 0xe84));
+        c.g[V0][0] = c.lw(r32(c, V1));
+        c.lwc1(0, p(s, 0x10));
+        let v = c.g[V0][0];
+        c.sh(at(c, A0, 0x10), v);
+        hint_mul(c, 22, 0, 4);
+        c.lwc1(1, at(c, V1, 0x10));
+        c.lwc1(3, p(s, 0x40));
+        c.swc1(1, p(s, 0x60));
+        c.lwc1(2, p(s, 0x44));
+        hint_add(c, 4, 3, 22);
+        c.lwc1(0, at(c, V1, 0xc));
+        c.swc1(0, p(s, 0x64));
+        c.lwc1(1, at(c, V1, 0x14));
+        c.swc1(1, p(s, 0x90));
+        c.lwc1(0, at(c, V1, 0xc));
+        c.swc1(0, p(s, 0x94));
+        c.lwc1(1, at(c, V1, 0x10));
+        c.swc1(1, p(s, 0xc0));
+        c.lwc1(0, at(c, V1, 0x18));
+        c.swc1(0, p(s, 0xc4));
+        c.lwc1(1, at(c, V1, 0x14));
+        c.swc1(1, p(s, 0xf0));
+        c.lwc1(0, at(c, V1, 0x18));
+        c.swc1(0, p(s, 0xf4));
+        c.swc1(3, p(s, 0x120));
+        c.sw(p(s, 0x128), 0);
+        c.swc1(2, p(s, 0x124));
+        c.swc1(21, p(s, 0x12c));
+        c.lwc1(0, p(s, 0x24));
+        c.lq(V1, p(s, 0x120));
+        c.swc1(4, p(s, 0x120));
+        hint_add(c, 0, 2, 0);
+        c.sw(p(s, 0x128), 0);
+        c.sq(V1, p(s, 0x80));
+        c.lq(V0, p(s, 0x120));
+        c.swc1(3, p(s, 0x120));
+        c.swc1(0, p(s, 0x124));
+        c.sw(p(s, 0x128), 0);
+        c.sq(V0, p(s, 0xb0));
+        c.lq(V1, p(s, 0x120));
+        c.swc1(4, p(s, 0x120));
+        c.sw(p(s, 0x128), 0);
+        c.sq(V1, p(s, 0xe0));
+        c.lq(V0, p(s, 0x120));
+        c.sq(V0, p(s, 0x110));
+        hint_draw_quad(c, 0x0021_de6c)?;
+        c.lwc1(0, p(s, 0x40));
+        c.g[V0][0] = c.lw(at(c, FP, 4));
+        hint_add(c, 0, 0, 22);
+        c.swc1(0, p(s, 0x40));
+
+        if (c.g[V0][0] as i64) > 0 {
+            // The middle piece: width (f20) t.x - 2 segW.
+            c.cycles += 60;
+            c.g[V0][0] = c.lw(at(c, S4, HUD_CONTROL_HINT_MID_SPRITE));
+            hint_add(c, 1, 22, 22);
+            c.g[A0][0] = c.lw(gp(c, -0x854));
+            c.g[A1][0] = 4;
+            c.g[T0][0] = c.lw(r32(c, V0));
+            c.g[A2][0] = c.g[S0][0];
+            c.g[V1][0] = c.lw(at(c, A0, 0xe84));
+            c.g[A3][0] = 0;
+            let v = c.g[T0][0];
+            c.sh(at(c, V1, 0x10), v);
+            c.lwc1(0, at(c, V0, 0x10));
+            c.lwc1(20, p(s, 0x20));
+            c.swc1(0, p(s, 0x60));
+            hint_sub(c, 20, 20, 1);
+            c.lwc1(3, p(s, 0x40));
+            c.lwc1(0, at(c, V0, 0xc));
+            c.lwc1(2, p(s, 0x44));
+            c.swc1(0, p(s, 0x64));
+            hint_add(c, 4, 3, 20);
+            c.lwc1(0, at(c, V0, 0x14));
+            c.swc1(0, p(s, 0x90));
+            c.lwc1(1, at(c, V0, 0xc));
+            c.swc1(1, p(s, 0x94));
+            c.lwc1(0, at(c, V0, 0x10));
+            c.swc1(0, p(s, 0xc0));
+            c.lwc1(1, at(c, V0, 0x18));
+            c.swc1(1, p(s, 0xc4));
+            c.lwc1(0, at(c, V0, 0x14));
+            c.swc1(0, p(s, 0xf0));
+            c.lwc1(0, p(s, 0x24));
+            c.lwc1(1, at(c, V0, 0x18));
+            c.swc1(3, p(s, 0x120));
+            c.swc1(2, p(s, 0x124));
+            c.sw(p(s, 0x128), 0);
+            hint_add(c, 2, 2, 0);
+            c.swc1(21, p(s, 0x12c));
+            c.swc1(1, p(s, 0xf4));
+            c.lq(V0, p(s, 0x120));
+            c.swc1(4, p(s, 0x120));
+            c.sw(p(s, 0x128), 0);
+            c.sq(V0, p(s, 0x80));
+            c.lq(V0, p(s, 0x120));
+            c.swc1(3, p(s, 0x120));
+            c.sw(p(s, 0x128), 0);
+            c.swc1(2, p(s, 0x124));
+            c.sq(V0, p(s, 0xb0));
+            c.lq(V1, p(s, 0x120));
+            c.swc1(4, p(s, 0x120));
+            c.sw(p(s, 0x128), 0);
+            c.sq(V1, p(s, 0xe0));
+            c.lq(V0, p(s, 0x120));
+            c.sq(V0, p(s, 0x110));
+            hint_draw_quad(c, 0x0021_df64)?;
+            c.lwc1(0, p(s, 0x40));
+            hint_add(c, 0, 0, 20);
+            c.swc1(0, p(s, 0x40));
+        }
+
+        // The mirrored end piece (setUVFlip).
+        c.cycles += 61;
+        c.g[V1][0] = c.lw(at(c, S4, HUD_CONTROL_HINT_END_SPRITE));
+        c.g[A2][0] = c.g[S0][0];
+        c.g[T0][0] = c.lw(gp(c, -0x854));
+        c.g[A1][0] = 4;
+        c.g[A0][0] = c.lw(r32(c, V1));
+        c.g[A3][0] = 0;
+        c.g[V0][0] = c.lw(at(c, T0, 0xe84));
+        let v = c.g[A0][0];
+        c.sh(at(c, V0, 0x10), v);
+        c.lwc1(0, at(c, V1, 0x14));
+        c.lwc1(3, p(s, 0x40));
+        c.swc1(0, p(s, 0x60));
+        c.lwc1(2, p(s, 0x44));
+        hint_add(c, 4, 3, 22);
+        c.lwc1(0, at(c, V1, 0xc));
+        c.swc1(0, p(s, 0x64));
+        c.lwc1(1, at(c, V1, 0x10));
+        c.swc1(1, p(s, 0x90));
+        c.lwc1(0, at(c, V1, 0xc));
+        c.swc1(0, p(s, 0x94));
+        c.lwc1(1, at(c, V1, 0x14));
+        c.swc1(1, p(s, 0xc0));
+        c.lwc1(0, at(c, V1, 0x18));
+        c.swc1(0, p(s, 0xc4));
+        c.lwc1(1, at(c, V1, 0x10));
+        c.swc1(1, p(s, 0xf0));
+        c.lwc1(0, at(c, V1, 0x18));
+        c.swc1(3, p(s, 0x120));
+        c.swc1(2, p(s, 0x124));
+        c.sw(p(s, 0x128), 0);
+        c.swc1(21, p(s, 0x12c));
+        c.swc1(0, p(s, 0xf4));
+        c.lq(V1, p(s, 0x120));
+        c.swc1(4, p(s, 0x120));
+        c.sw(p(s, 0x128), 0);
+        c.sq(V1, p(s, 0x80));
+        c.lq(V0, p(s, 0x120));
+        c.sq(V0, p(s, 0xb0));
+        c.lwc1(0, p(s, 0x24));
+        c.swc1(3, p(s, 0x120));
+        hint_add(c, 2, 2, 0);
+        c.sw(p(s, 0x128), 0);
+        c.swc1(2, p(s, 0x124));
+        c.lq(V1, p(s, 0x120));
+        c.swc1(4, p(s, 0x120));
+        c.sw(p(s, 0x128), 0);
+        c.sq(V1, p(s, 0xe0));
+        c.lq(V0, p(s, 0x120));
+        c.sq(V0, p(s, 0x110));
+        hint_draw_quad(c, 0x0021_e048)?;
+        c.lwc1(0, p(s, 0x40));
+        setf(c, 1, FpuF32::ZERO);
+        hint_add(c, 0, 0, 22);
+        let fill = fr(c, 24);
+        let empty = le(c, fill, FpuF32::ZERO);
+        c.swc1(0, p(s, 0x40));
+
+        if !empty {
+            // The fill: margins (3, 3) set once, scaled by sc.
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(gp(c, HUD_CONTROL_HINT_MARGIN_INIT));
+            c.lwc1(2, p(s, 0x10));
+            if c.g[V0][0] == 0 {
+                c.cycles += 5;
+                c.g[V0][0] = 1;
+                c.swc1(23, gp(c, HUD_CONTROL_HINT_MARGIN_Y));
+                let v = c.g[V0][0];
+                c.sw(gp(c, HUD_CONTROL_HINT_MARGIN_INIT), v);
+                c.swc1(23, gp(c, HUD_CONTROL_HINT_MARGIN_X));
+                c.lwc1(2, p(s, 0x10));
+            }
+            c.cycles += 56;
+            c.g[V0][0] = 0x004d_0000;
+            c.lwc1(1, gp(c, HUD_CONTROL_HINT_MARGIN_X));
+            c.g[T3][0] = 0xffff_ffff_ffff_fc1f;
+            c.lwc1(4, p(s, 0x14));
+            c.g[A0][0] = c.g[S4][0];
+            hint_mul(c, 1, 1, 2);
+            c.lwc1(0, gp(c, HUD_CONTROL_HINT_MARGIN_Y));
+            c.lwc1(2, p(s, 0x20));
+            c.g[A1][0] = c.g[S2][0];
+            hint_mul(c, 0, 0, 4);
+            c.lwc1(3, p(s, 0x24));
+            hint_add(c, 4, 1, 1);
+            c.swc1(1, p(s, 0x120));
+            c.g[T2][0] = c.lw(gp(c, -0x854));
+            c.g[A2][0] = sx(p(s, 0x140));
+            hint_add(c, 1, 0, 0);
+            c.swc1(0, p(s, 0x124));
+            hint_sub(c, 2, 2, 4);
+            c.g[A3][0] = sx(p(s, 0x160));
+            c.g[V1][0] = c.lb(at(c, S3, 0x7ba));
+            c.g[T0][0] = sx(p(s, 0x150));
+            hint_sub(c, 3, 3, 1);
+            hint_mul(c, 2, 2, 24);
+            c.g[V1][0] = add32(c.g[V1][0], 1);
+            c.g[V1][0] = shl32(c.g[V1][0], 5);
+            c.swc1(3, p(s, 0x144));
+            c.g[V1][0] &= 0x3e0;
+            c.swc1(2, p(s, 0x140));
+            c.g[T1][0] = sx(HUD_CONTROL_HINT_FILL_COLOUR);
+            c.g[T4][0] = c.ld(HUD_CONTROL_HINT_FILL_COLOUR);
+            c.g[T5][0] = c.ld(HUD_CONTROL_HINT_FILL_COLOUR + 8);
+            let (lo, hi) = (c.g[T4][0], c.g[T5][0]);
+            c.sd(p(s, 0x150), lo);
+            c.sd(p(s, 0x158), hi);
+            // colour.r *= alpha; v += margins.
+            c.lwc1(0, p(s, 0x150));
+            c.lwc1(1, p(s, 0x50));
+            c.lwc1(2, p(s, 0x54));
+            hint_mul(c, 0, 0, 25);
+            c.lwc1(3, p(s, 0x120));
+            c.lwc1(4, p(s, 0x124));
+            hint_add(c, 1, 1, 3);
+            c.swc1(0, p(s, 0x150));
+            hint_add(c, 2, 2, 4);
+            c.swc1(1, p(s, 0x50));
+            c.swc1(2, p(s, 0x54));
+            // Draw row + 1.
+            c.g[T1][0] = c.lw(at(c, T2, 0xe84));
+            c.g[V0][0] = c.lw(at(c, T1, 8));
+            c.g[V0][0] &= c.g[T3][0];
+            c.g[V0][0] |= c.g[V1][0];
+            let v = c.g[V0][0];
+            c.sw(at(c, T1, 8), v);
+            c.swc1(21, p(s, 0x164));
+            c.swc1(21, p(s, 0x160));
+            call_ptr(c, 0x001f_1338, 0x0021_e164)?;
+        }
+
+        c.cycles += 18;
+        frame.restore(c, S0, 0x200);
+        frame.restore(c, S1, 0x1f0);
+        frame.restore(c, S2, 0x1e0);
+        frame.restore(c, S3, 0x1d0);
+        frame.restore(c, S4, 0x1c0);
+        frame.restore(c, S5, 0x1b0);
+        frame.restore(c, S6, 0x1a0);
+        frame.restore(c, S7, 0x190);
+        frame.restore(c, FP, 0x180);
+        frame.restore_ra(c, 0x170);
+        frame.restore_fpr(c, 25, 0x238);
+        frame.restore_fpr(c, 24, 0x230);
+        frame.restore_fpr(c, 23, 0x228);
+        frame.restore_fpr(c, 22, 0x220);
+        frame.restore_fpr(c, 21, 0x218);
+        frame.restore_fpr(c, 20, 0x210);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// HUD_DrawWrappedText (0x1f2aa0)
+
+pub(crate) const WRAPPED_TEXT_ELEM_SIZE: Callee = Callee {
+    addr: 0x001e_9220,
+    f: ee::s04::HUD_GetElemSize,
+};
+
+pub(crate) const WRAPPED_TEXT_ELEM_POS: Callee = Callee {
+    addr: 0x001e_91f8,
+    f: ee::s04::HUD_GetElemPos,
+};
+
+pub(crate) const WRAPPED_TEXT_ELEM_SCALE: Callee = Callee {
+    addr: 0x001e_9290,
+    f: ee::s04::HUD_GetElemScale,
+};
+
+pub(crate) const WRAPPED_TEXT_ELEM_COLOR: Callee = Callee {
+    addr: 0x001e_91a8,
+    f: ee::s04::HUD_GetElemColor,
+};
+
+/// `void HUD_DrawWrappedText(cOvStateHud* self, cFont* font, HudElemDef*
+/// defs, int idx, const char* str, int flags, float* rect)` (0x1f2aa0): split
+/// `str` into lines (at most 50 chars) that fit the element's width at its
+/// scale, set the font colour and the draw state's 5-bit field from the
+/// element, align the block vertically (+0x21: 0 centre, >0 bottom), and draw
+/// each line aligned by +0x20 (mirrored around x = 640 with `flags & 1`; the
+/// alignment flips too unless `flags & 2`). `rect` (if any) receives the
+/// block's {min x, top, max width, height}. Resets the font scale to 1.
+pub fn hud_draw_wrapped_text(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 50;
+        let frame = Frame::open(c, 0x230);
+        frame.save(c, S0, 0x1f0);
+        frame.save(c, S7, 0x180);
+        c.g[S0][0] = 0x24;
+        c.g[S7][0] = c.g[A3][0];
+        frame.save(c, S6, 0x190);
+        c.mult(0, V0, S7, S0);
+        frame.save(c, S3, 0x1c0);
+        frame.save(c, S4, 0x1b0);
+        c.g[S6][0] = c.g[A2][0];
+        frame.save(c, S1, 0x1e0);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, S2, 0x1d0);
+        c.g[S3][0] = c.g[A1][0];
+        c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S6][0] as u32));
+        frame.save(c, S5, 0x1a0);
+        frame.save(c, FP, 0x170);
+        c.g[S1][0] = c.g[T0][0];
+        c.g[A1][0] = c.g[SP][0];
+        frame.save_ra(c, 0x160);
+        for (k, f) in [25usize, 24, 23, 22, 21, 20].into_iter().enumerate() {
+            if k == 1 {
+                c.g[S2][0] = c.g[T2][0];
+            }
+            if k == 2 {
+                c.g[A2][0] = 0;
+            }
+            if k == 3 {
+                c.g[A0][0] = c.g[S0][0];
+            }
+            if k == 4 {
+                c.g[S5][0] = 0;
+            }
+            frame.save_fpr(c, f, 0x228 - 8 * k as u32);
+        }
+        let a = frame.at(c, 0x150);
+        c.sw(a, c.g[T1][0]); // flags
+        WRAPPED_TEXT_ELEM_SIZE.call(c, 0x001f_2b20)?; // wrap[2] at sp+0
+        c.g[A1][0] = sx(frame.at(c, 0x10));
+        c.g[A0][0] = c.g[S0][0];
+        WRAPPED_TEXT_ELEM_POS.call(c, 0x001f_2b2c)?; // pos[2] at sp+0x10
+        c.g[A1][0] = sx(frame.at(c, 0x20));
+        c.g[A0][0] = c.g[S0][0];
+        WRAPPED_TEXT_ELEM_SCALE.call(c, 0x001f_2b38)?; // scale[2] at sp+0x20
+                                                       // The wrap font's scale: f38/f3c = f30/f34 * scale.
+        let sp_ = sp(c);
+        c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x428));
+        let wf = c.g[V0][0] as u32;
+        c.g[FP][0] = sx(sp_.wrapping_add(0x130));
+        c.lwc1(1, sp_.wrapping_add(0x20));
+        c.g[A1][0] = c.g[S1][0];
+        c.lwc1(0, wf.wrapping_add(0x30));
+        c.lwc1(2, wf.wrapping_add(0x34));
+        c.mul_s(0, 0, 1);
+        c.swc1(0, wf.wrapping_add(0x38));
+        c.lwc1(1, sp_.wrapping_add(0x24));
+        c.mul_s(2, 2, 1);
+        c.swc1(2, wf.wrapping_add(0x3c));
+        // Split into lines (50 bytes each at sp+0x30).
+        if c.g[A1][0] != 0 {
+            c.cycles += 2;
+            c.g[S0][0] = sx(sp_.wrapping_add(0x30));
+            c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x428));
+            loop {
+                c.cycles += 10;
+                c.g[A2][0] = c.g[S0][0];
+                c.lwc1(13, sp_);
+                c.g[A3][0] = 0x32;
+                c.lwc1(12, (c.g[A0][0] as u32).wrapping_add(0x38));
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x32));
+                c.g[S5][0] = sx((c.g[S5][0] as u32).wrapping_add(0x1));
+                call_ptr(c, 0x0039_2430, 0x001f_2b8c)?; // Font_WrapLine
+                c.g[A1][0] = c.g[V0][0];
+                if c.g[A1][0] == 0 {
+                    break;
+                }
+                c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x428));
+                if event_due(c) {
+                    deliver_event_here(c, 0x001f_2b70);
+                }
+            }
+        }
+        // Colour, the draw state's field, the block height and its top.
+        c.cycles += 36;
+        c.g[S0][0] = 0x24;
+        c.g[A1][0] = c.g[FP][0];
+        c.mult(0, V0, S7, S0);
+        c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S6][0] as u32));
+        c.g[A0][0] = c.g[S0][0];
+        WRAPPED_TEXT_ELEM_COLOR.call(c, 0x001f_2bb0)?; // colour at sp+0x130
+        let font = c.g[S3][0] as u32;
+        c.ldl(V1, sp_.wrapping_add(0x137));
+        c.ldr(V1, sp_.wrapping_add(0x130));
+        c.ldl(A0, sp_.wrapping_add(0x13f));
+        c.ldr(A0, sp_.wrapping_add(0x138));
+        c.sdl(V1, font.wrapping_add(0x47));
+        c.sdr(V1, font.wrapping_add(0x40));
+        c.sdl(A0, font.wrapping_add(0x4f));
+        c.sdr(A0, font.wrapping_add(0x48));
+        c.mtc1(S5, 3);
+        c.cvt_s_w(3, 3);
+        c.g[A1][0] = 0xffff_ffff_ffff_fc1f;
+        let gp = c.g[GP][0] as u32;
+        c.g[V0][0] = c.lw(gp.wrapping_sub(0x854));
+        c.g[V1][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x22));
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xe84));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 5);
+        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+        c.g[V1][0] &= 0x3e0;
+        c.g[V0][0] &= c.g[A1][0];
+        c.g[V0][0] |= c.g[V1][0];
+        c.sw((c.g[A0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        c.lwc1(0, font.wrapping_add(0x14));
+        c.cvt_s_w(0, 0);
+        c.lwc1(1, font.wrapping_add(0x34));
+        c.lwc1(2, sp_.wrapping_add(0x24));
+        c.g[V0][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x21));
+        c.mul_s(0, 0, 1);
+        c.lwc1(13, sp_.wrapping_add(0x14));
+        c.mul_s(23, 0, 2); // line height
+        c.mul_s(1, 23, 3); // block height
+        if c.g[V0][0] == 0 {
+            c.cycles += 5;
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(1, 0);
+            c.mul_s(0, 1, 0);
+            c.sub_s(13, 13, 0);
+        } else {
+            c.cycles += 2;
+            if (c.g[V0][0] as i64) > 0 {
+                c.sub_s(13, 13, 1);
+            }
+        }
+        c.cycles += 2;
+        c.mov_s(22, 13); // y
+        if c.g[S2][0] != 0 {
+            c.cycles += 6;
+            let rect = c.g[S2][0] as u32;
+            c.g[AT][0] = 0x4780_0000;
+            c.mtc1(1, 0);
+            c.swc1(1, rect.wrapping_add(0xc));
+            c.swc1(0, rect);
+            c.swc1(22, rect.wrapping_add(0x4));
+            c.sw(rect.wrapping_add(0x8), 0);
+        }
+        // Draw the lines.
+        c.cycles += 2;
+        let any = (c.g[S5][0] as i64) > 0;
+        c.g[S1][0] = 0;
+        if any {
+            c.cycles += 11;
+            c.g[V0][0] = 0x24;
+            c.g[A0][0] = c.lw(sp_.wrapping_add(0x150));
+            c.mult(0, V1, S7, V0);
+            c.g[AT][0] = 0x4420_0000;
+            c.mtc1(1, 25);
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(1, 24);
+            c.g[S4][0] = c.g[A0][0] & 0x2;
+            c.g[S0][0] = sx(sp_.wrapping_add(0x30));
+            c.g[S7][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S6][0] as u32));
+            c.g[S6][0] = c.g[A0][0] & 0x1;
+            loop {
+                c.cycles += 11;
+                c.lwc1(12, font.wrapping_add(0x38));
+                c.g[A0][0] = c.g[S3][0];
+                c.lwc1(13, font.wrapping_add(0x3c));
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A2][0] = 0;
+                c.g[A3][0] = 0;
+                call_ptr(c, 0x0039_1fb0, 0x001f_2cb4)?; // Font_MeasureText
+                c.mov_s(21, 0); // w
+                c.lwc1(20, sp_.wrapping_add(0x10)); // x
+                let mirrored = c.g[S6][0] != 0;
+                c.g[V1][0] = c.lb((c.g[S7][0] as u32).wrapping_add(0x20));
+                if mirrored {
+                    c.cycles += 3;
+                    c.sub_s(20, 25, 20);
+                    c.g[V0][0] = sx(0u32.wrapping_sub(c.g[V1][0] as u32));
+                    if c.g[S4][0] == 0 {
+                        c.g[V1][0] = c.g[V0][0];
+                    }
+                }
+                c.cycles += 2;
+                if c.g[V1][0] == 0 {
+                    c.cycles += 3;
+                    c.mul_s(0, 21, 24);
+                    c.sub_s(20, 20, 0);
+                } else {
+                    c.cycles += 2;
+                    if (c.g[V1][0] as i64) > 0 {
+                        c.sub_s(20, 20, 21);
+                    }
+                }
+                c.cycles += 7;
+                c.g[A0][0] = c.g[S3][0];
+                c.mov_s(12, 20);
+                c.mov_s(13, 22);
+                c.g[A1][0] = c.g[S0][0];
+                call_ptr(c, 0x0039_1cb0, 0x001f_2d00)?; // Font_DrawText
+                if c.g[S2][0] != 0 {
+                    let rect = c.g[S2][0] as u32;
+                    c.cycles += 5;
+                    c.lwc1(0, rect);
+                    c.c_lt_s(20, 0);
+                    if c.fcc() {
+                        c.swc1(20, rect);
+                    }
+                    c.cycles += 5;
+                    c.lwc1(0, rect.wrapping_add(0x8));
+                    c.c_lt_s(0, 21);
+                    if c.fcc() {
+                        c.swc1(21, rect.wrapping_add(0x8));
+                    }
+                    c.cycles += 1;
+                }
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                c.cycles += 4;
+                c.add_s(22, 22, 23);
+                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[S5][0] as i64)) as u64;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x32));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x001f_2c98);
+                }
+            }
+        }
+        // Scale back to 1.
+        c.cycles += 26;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 0);
+        c.lwc1(2, font.wrapping_add(0x30));
+        c.lwc1(1, font.wrapping_add(0x34));
+        c.swc1(0, sp_.wrapping_add(0x144));
+        c.swc1(1, font.wrapping_add(0x3c));
+        c.swc1(2, font.wrapping_add(0x38));
+        frame.restore(c, S0, 0x1f0);
+        frame.restore(c, S1, 0x1e0);
+        frame.restore(c, S2, 0x1d0);
+        frame.restore(c, S3, 0x1c0);
+        frame.restore(c, S4, 0x1b0);
+        frame.restore(c, S5, 0x1a0);
+        frame.restore(c, S6, 0x190);
+        frame.restore(c, S7, 0x180);
+        frame.restore(c, FP, 0x170);
+        frame.restore_ra(c, 0x160);
+        for (k, f) in [25usize, 24, 23, 22, 21, 20].into_iter().enumerate() {
+            frame.restore_fpr(c, f, 0x228 - 8 * k as u32);
+        }
+        c.swc1(0, sp_.wrapping_add(0x140));
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -17312,6 +19361,530 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(rider);
                 c.g[A3][0] = (r.next_u32() % 4) as u64;
                 c.pc = 0x0021_e1b0;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::LOG_RESULTS;
+
+    use crate::difftest::fakes::vtable;
+
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    pub(crate) use crate::game::ai::rider::tests::oc396_fake;
+    pub(crate) use crate::game::ai::rider::tests::oc396_fake_call;
+    pub(crate) use crate::game::ai::rider::tests::OC396_CTRL;
+    pub(crate) use crate::game::ai::rider::tests::OC396_MAGIC;
+    pub(crate) use crate::game::ai::rider::tests::OC396_RET;
+    pub(crate) use crate::game::fe::feridermanager::tests::put_str_oc396;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    /// The fading text box against the generated body: the slide-in from
+    /// the bottom and from the side, all three alignments, 0-4 lines with
+    /// the first, lit and dimmed colours, the renderer and `Font_DrawText`'s
+    /// vtable calls faked (some unwinding).
+    #[test]
+    fn hud_draw_fading_text_matches() {
+        use fading_text::*;
+        check(
+            ee::s05::f_002204a0__generated,
+            hud_draw_fading_text,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2204a0, 8);
+                c.pc = 0x0022_04a0;
+                let hud = DATA;
+                let elems = DATA + 0x1000;
+                let text_a = DATA + 0x2000;
+                let text_b = DATA + 0x2100;
+                let screen = DATA + 0x2200;
+                let draw = DATA + 0x2300;
+                let sprites = DATA + 0x2400;
+                let g = DATA + 0x3000;
+                let vt = DATA + 0x4000;
+                // The game object G (gp-0x854, also Font_DrawText's gp+0x2a90):
+                // the renderer vtable (+0x10d8) and the draw state (+0xe84).
+                c.bus.write32(GAME_GP.wrapping_sub(0x854), g);
+                c.bus.write32(GAME_GP.wrapping_add(0x2a90), g);
+                c.bus.write32(g + 0x10d8, vt);
+                c.bus.write32(g + 0xe84, draw);
+                c.bus.write32(draw + 8, r.next_u32());
+                for (i, off) in [0x150u32, 0x238, 0x280].into_iter().enumerate() {
+                    let delta = (r.next_u32() as i16 as i32 & !3 & 0xff) as u16;
+                    c.bus.write16(vt + off, delta);
+                    c.bus.write32(vt + off + 4, FAKE + 0x10 * i as u32);
+                }
+                // The first call returns the screen (scale at +8).
+                c.bus.write32(LOG_RESULTS, screen);
+                c.bus.write32(screen + 8, f(uf(&mut r, 0.5, 2.0)));
+                // Static colours and scale constants.
+                for base in [COLOUR_FIRST, COLOUR_LIT, COLOUR_DIM] {
+                    for k in 0..4 {
+                        c.bus.write32(base + 4 * k, f(uf(&mut r, 0.0, 1.0)));
+                    }
+                }
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x530c), f(uf(&mut r, 0.5, 1.5)));
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x5308), f(uf(&mut r, 0.0, 10.0)));
+                // The element: position, size, scale, colour, alignment, row.
+                let e = elems + ELEM;
+                c.bus.write16(e, (r.next_u32() % 640) as u16);
+                c.bus.write16(e + 2, (r.next_u32() % 448) as u16);
+                c.bus.write16(e + 4, (r.next_u32() % 300) as u16);
+                c.bus.write16(e + 6, (r.next_u32() % 200) as u16);
+                c.bus.write32(e + 8, f(uf(&mut r, 0.5, 2.0)));
+                c.bus.write32(e + 0xc, f(uf(&mut r, 0.5, 2.0)));
+                for k in 0..4 {
+                    c.bus.write32(e + 0x10 + 4 * k, f(uf(&mut r, 0.0, 1.0)));
+                }
+                c.bus.write8(e + 0x20, ((seed / 2 % 3) as i8 - 1) as u8);
+                c.bus.write8(e + 0x21, ((r.next_u32() % 3) as i8 - 1) as u8);
+                c.bus.write8(e + 0x22, (r.next_u32() % 8) as u8);
+                // The HUD.
+                let fade = if seed % 3 == 0 {
+                    uf(&mut r, 1.0, 2.0)
+                } else {
+                    uf(&mut r, 0.0, 1.0)
+                };
+                c.bus.write32(hud + FADE, f(fade));
+                c.bus.write32(hud + ALPHA, f(uf(&mut r, 0.0, 1.0)));
+                let lines = if seed % 7 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 4
+                };
+                c.bus.write32(hud + LINE_COUNT, lines);
+                c.bus
+                    .write32(hud + LIT_LINES, (r.next_u32() % 5).wrapping_sub(1));
+                c.bus.write32(hud + BOX_SIZE, f(uf(&mut r, 60.0, 300.0)));
+                c.bus
+                    .write32(hud + BOX_SIZE + 4, f(uf(&mut r, 20.0, 200.0)));
+                for i in 0..4 {
+                    let l = hud + LINES + LINE_STRIDE * i;
+                    c.bus.write8(l, b'A' + i as u8);
+                    c.bus.write8(l + 1, 0);
+                    c.bus.write32(
+                        hud + LINE_WIDTH + LINE_STRIDE * i,
+                        f(uf(&mut r, 0.0, 200.0)),
+                    );
+                    c.bus.write32(
+                        hud + LINE_HEIGHT + LINE_STRIDE * i,
+                        f(uf(&mut r, 5.0, 30.0)),
+                    );
+                }
+                c.bus.write32(hud + TEXT_B, text_b);
+                c.bus.write32(hud + TEXT_A, text_a);
+                for t in [text_a, text_b] {
+                    for k in 0..10 {
+                        c.bus.write32(t + 0x18 + 4 * k, f(uf(&mut r, 0.0, 2.0)));
+                    }
+                    c.bus.write32(t + 0x60, r.next_u32());
+                }
+                for i in 0..3 {
+                    let s = sprites + 0x40 * i;
+                    c.bus.write32(hud + SPRITES + 0x50 + 4 * i, s);
+                    c.bus.write32(s, r.next_u32());
+                    for k in 0..4 {
+                        c.bus.write32(s + 0xc + 4 * k, f(uf(&mut r, 0.0, 1.0)));
+                    }
+                }
+                c.g[A0][0] = sx(hud);
+                c.g[A1][0] = sx(elems);
+                c.g[A2][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64 | 1
+                };
+            },
+        );
+    }
+
+    /// HUD_DrawPipMeter: 0..5 pips, aligned (the real HUD_AlignElemPos) or
+    /// centred on a position, with or without a scale, with or without a
+    /// texture (the real HUD_DrawSprite returns early); the sprite draw is a
+    /// fake renderer method.
+    #[test]
+    fn hud_draw_pip_meter_matches() {
+        check(
+            ee::s05::f_0021f338__generated,
+            hud_draw_pip_meter,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x21f338, 6);
+                c.pc = 0x0021_f338;
+                let (hud, obj) = (DATA, DATA + 0x1000);
+                let (pos, scale) = (DATA + 0x2000, DATA + 0x2100);
+                let tex = DATA + 0x4000;
+                c.g[A0][0] = sx(hud);
+                c.g[A1][0] = sx(obj);
+                c.g[A2][0] = sx(seed % 6);
+                c.g[A3][0] = sx(r.next_u32() % 3);
+                c.g[T0][0] = if seed % 3 == 0 { 0 } else { sx(pos) };
+                c.g[T1][0] = if seed % 4 == 0 { 0 } else { sx(scale) };
+                c.f[12] = r.f32(1.0);
+                for k in 0..0x28u32 {
+                    c.bus.write32(HUD_PIP_COLOURS + 4 * k, r.f32(1.0));
+                }
+                crate::game::fe::ovstatehud::tests::rider_ind_elem(c, &mut r, obj + 0x240);
+                c.bus.write32(pos, r.f32(300.0));
+                c.bus.write32(pos + 4, r.f32(300.0));
+                c.bus.write32(scale, r.f32(2.0));
+                c.bus.write32(scale + 4, r.f32(2.0));
+                c.bus
+                    .write32(hud + 0x4a0, if seed % 5 == 0 { 0 } else { tex });
+                c.bus.write32(tex, r.next_u32() % 64);
+                for j in 1..8 {
+                    c.bus.write32(tex + 4 * j, r.f32(64.0));
+                }
+                // The renderer (gp-0x854): draw state and a fake sprite method.
+                let renderer = DATA + 0x6000;
+                c.bus.write32(GAME_GP.wrapping_sub(0x854), renderer);
+                c.bus.write32(renderer + 0xe84, DATA + 0x7800);
+                c.bus.write32(DATA + 0x7800 + 8, r.next_u32());
+                let vt = vtable(c, &mut r, &[0x238]);
+                c.bus.write32(renderer + 0x10d8, vt);
+            },
+        );
+    }
+
+    /// HUD_DrawTextLerp: two random elements, an empty string (the real
+    /// MeasureText), with or without a scale multiplier, position offset,
+    /// rectangle and colour, alignments given or 0x7f (the elements'), t in
+    /// [0, 1]; the real HUD element getters, AlignElemPos and DrawText (its
+    /// renderer method a fake).
+    #[test]
+    fn hud_draw_text_lerp_matches() {
+        check(
+            ee::s04::f_001f1e28__generated,
+            hud_draw_text_lerp,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1f1e28, 2);
+                c.pc = 0x001f_1e28;
+                let ctx = DATA;
+                let font = DATA + 0x1000;
+                let defs = DATA + 0x2000;
+                let text = DATA + 0x3000;
+                let mul = DATA + 0x3100;
+                let off = DATA + 0x3200;
+                let colour = DATA + 0x3300;
+                let rect = DATA + 0x3400;
+                let caller = crate::difftest::SP;
+                for k in 0..0x40u32 {
+                    c.bus.write32(ctx + 4 * k, r.f32(100.0));
+                }
+                for k in 0..0x20u32 {
+                    c.bus.write32(font + 4 * k, r.f32(4.0));
+                }
+                for i in 0..27u32 {
+                    crate::game::fe::ovstatehud::tests::rider_ind_elem(c, &mut r, defs + 0x24 * i);
+                }
+                let (i1, i2) = (r.next_u32() % 6, r.next_u32() % 6);
+                c.g[A0][0] = sx(ctx);
+                c.g[A1][0] = sx(font);
+                c.g[A2][0] = sx(defs);
+                c.g[A3][0] = sx(i1);
+                c.g[T0][0] = sx(i2);
+                c.g[T1][0] = sx(text);
+                c.g[T2][0] = sx(r.next_u32() % 3);
+                c.g[T3][0] = if seed % 3 == 0 { 0 } else { sx(mul) };
+                c.f[12] = (((r.next_u32() % 1001) as f32) / 1000.0).to_bits();
+                c.bus.write32(mul, r.f32(2.0));
+                c.bus.write32(mul + 4, r.f32(2.0));
+                c.bus.write32(off, r.f32(50.0));
+                c.bus.write32(off + 4, r.f32(50.0));
+                for k in 0..4 {
+                    c.bus.write32(colour + 4 * k, r.f32(1.0));
+                }
+                // The stack arguments.
+                c.bus.write32(caller, if seed % 4 == 0 { 0 } else { off });
+                c.bus
+                    .write32(caller + 8, if seed % 2 == 0 { 0 } else { colour });
+                c.bus
+                    .write32(caller + 0x10, if seed % 5 == 0 { 0 } else { rect });
+                let align = |r: &mut Rng, s: u32| if s % 3 == 0 { 0x7f } else { r.next_u32() % 3 };
+                let a = align(&mut r, seed / 2);
+                let v = align(&mut r, seed / 3);
+                c.bus.write32(caller + 0x18, a);
+                c.bus.write32(caller + 0x20, v);
+                // Renderers: the draw state (gp-0x854) and the font's (gp+0x2a90).
+                let renderer = DATA + 0x6000;
+                c.bus.write32(GAME_GP.wrapping_sub(0x854), renderer);
+                c.bus.write32(GAME_GP + 0x2a90, renderer);
+                c.bus.write32(renderer + 0xe84, DATA + 0x7800);
+                c.bus.write32(DATA + 0x7800 + 8, r.next_u32());
+                let vt = vtable(c, &mut r, &[0x288]);
+                c.bus.write32(renderer + 0x10d8, vt);
+            },
+        );
+    }
+
+    /// `HUD_DrawControlHint`: with and without the icon (control map 0 or
+    /// another: both text slots, empty), both caps, middle piece on and off
+    /// (`bar->count` <= 0 / > 0), fill <= 0 (no fill) or positive, the
+    /// fill margins set or still to initialise. The BE interface method and
+    /// the renderer's draw slot are fakes (some calls unwind).
+    #[test]
+    fn hud_draw_control_hint_matches() {
+        covered(
+            ee::s05::f_0021d9a0__generated,
+            hud_draw_control_hint,
+            250,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0021_d9a0, 6);
+                let (hud, elems, bar, scale) = (DATA, DATA + 0x2000, DATA + 0x3000, DATA + 0x3010);
+                // The HUD's sprites 0x10..0x13: texture id and UV rectangle.
+                for k in 0x10..0x14u32 {
+                    let sprite = DATA + 0x4000 + 0x40 * k;
+                    c.bus
+                        .write32(hud + HUD_CONTROL_HINT_SPRITES + 4 * k, sprite);
+                    c.bus.write32(sprite, r.next_u32() % 64);
+                    for j in 1..8 {
+                        c.bus
+                            .write32(sprite + 4 * j, rider_ind_f(rider_ind_uf(&mut r, 0.0, 64.0)));
+                    }
+                }
+                // Icon text slots without text: HUD_DrawIconText returns at once.
+                c.bus.write32(hud + HUD_CONTROL_HINT_ICON_TEXT + 0x18, 0);
+                c.bus
+                    .write32(hud + HUD_CONTROL_HINT_ICON_TEXT_ALT + 0x18, 0);
+                // players[idx].rider -> player slot -> control map byte.
+                let idx = seed % 2;
+                let rider = r.next_u32() % 4;
+                c.bus.write32(
+                    hud + HUD_CONTROL_HINT_PLAYER_STRIDE * idx + HUD_CONTROL_HINT_PLAYER_RIDER,
+                    rider,
+                );
+                let slot = r.next_u32() % 4;
+                c.bus.write32(0x0053_05b0 + 4 * rider, slot);
+                let map = if seed % 3 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 3
+                };
+                c.bus.write8(0x0053_4fe0 + 0x1c * slot + 0x13, map as u8);
+                // The gauge and icon elements (with their align/row bytes).
+                rider_ind_elem(c, &mut r, elems + HUD_CONTROL_HINT_GAUGE_ELEM);
+                rider_ind_elem(c, &mut r, elems + HUD_CONTROL_HINT_ICON_ELEM);
+                // The bar: segment scale and middle count.
+                c.bus
+                    .write32(bar, rider_ind_f(rider_ind_uf(&mut r, 0.2, 2.0)));
+                let count = match seed % 4 {
+                    0 => 0,
+                    1 => (r.next_u32() % 5) as i32 - 5,
+                    _ => 1 + (r.next_u32() % 8) as i32,
+                };
+                c.bus.write32(bar + 4, count as u32);
+                for i in 0..2 {
+                    c.bus
+                        .write32(scale + 4 * i, rider_ind_f(rider_ind_uf(&mut r, 0.5, 2.0)));
+                }
+                // Fill colour and the margins (set, or still to initialise).
+                for i in 0..4 {
+                    c.bus.write32(
+                        HUD_CONTROL_HINT_FILL_COLOUR + 4 * i,
+                        rider_ind_f(rider_ind_uf(&mut r, 0.0, 1.0)),
+                    );
+                }
+                let init = if seed % 5 == 0 { 0 } else { 1 };
+                c.bus.write32(
+                    GAME_GP.wrapping_add(HUD_CONTROL_HINT_MARGIN_INIT as u32),
+                    init,
+                );
+                for off in [HUD_CONTROL_HINT_MARGIN_X, HUD_CONTROL_HINT_MARGIN_Y] {
+                    c.bus.write32(
+                        GAME_GP.wrapping_add(off as u32),
+                        rider_ind_f(rider_ind_uf(&mut r, 0.0, 6.0)),
+                    );
+                }
+                // Renderer (gp-0x854): draw state (+0xe84) and the vtable
+                // (+0x10d8) whose slot 0x238 is a fake.
+                let (renderer, state, vt) = (DATA + 0x6000, DATA + 0x7800, DATA + 0x7000);
+                c.bus.write32(GAME_GP.wrapping_sub(0x854), renderer);
+                c.bus.write32(renderer + 0xe84, state);
+                c.bus.write32(state + 8, r.next_u32());
+                c.bus.write32(renderer + 0x10d8, vt);
+                let delta = (r.next_u32() as i16 as i32 % 64) & !3;
+                c.bus.write16(vt + 0x238, delta as u16);
+                c.bus.write32(vt + 0x23c, FAKE);
+                // BELibrary and its interface (a fake method).
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x30_0000);
+                c.bus.write32(GAME_GP.wrapping_sub(0x1efc), 0);
+                c.bus.write32(0x0053_08a8, DATA + 0x5000);
+                c.bus.write32(DATA + 0x5004, DATA + 0x5100);
+                c.bus.write16(DATA + 0x5100 + 8, 0);
+                c.bus.write32(DATA + 0x5100 + 0xc, FAKE);
+                // Arguments.
+                c.g[A0][0] = sx(hud);
+                c.g[A1][0] = sx(elems);
+                c.g[A2][0] = sx(bar);
+                c.g[A3][0] = idx as u64;
+                c.g[T0][0] = if seed % 3 == 1 {
+                    0
+                } else {
+                    1 + (r.next_u32() % 4) as u64
+                };
+                c.g[T1][0] = sx(scale);
+                let fill = match seed % 6 {
+                    0 => 0.0,
+                    1 => -rider_ind_uf(&mut r, 0.01, 1.0),
+                    _ => rider_ind_uf(&mut r, 0.01, 1.0),
+                };
+                c.f[12] = rider_ind_f(fill);
+                c.f[13] = rider_ind_f(rider_ind_uf(&mut r, 0.0, 1.0));
+                c.pc = 0x0021_d9a0;
+            },
+        );
+    }
+
+    oc396_fake!(
+        oc396_fake_elem_size,
+        OC396_PREV_ELEM_SIZE,
+        0x001e_9220,
+        ee::s04::f_001e9220__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_elem_pos,
+        OC396_PREV_ELEM_POS,
+        0x001e_91f8,
+        ee::s04::f_001e91f8__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_elem_scale,
+        OC396_PREV_ELEM_SCALE,
+        0x001e_9290,
+        ee::s04::f_001e9290__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_elem_color,
+        OC396_PREV_ELEM_COLOR,
+        0x001e_91a8,
+        ee::s04::f_001e91a8__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_measure_text,
+        OC396_PREV_MEASURE_TEXT,
+        0x0039_1fb0,
+        ee::s12::f_00391fb0__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_draw_text,
+        OC396_PREV_DRAW_TEXT,
+        0x0039_1cb0,
+        ee::s12::f_00391cb0__generated
+    );
+
+    /// Wrapped HUD text with the element queries and the font's measure and
+    /// draw faked, the real line splitter on a simple fixed-width font: a few
+    /// strings (one to three lines, none), every alignment, mirrored or not,
+    /// with or without the rectangle.
+    #[test]
+    fn hud_draw_wrapped_text_matches() {
+        hook(
+            addr_of_mut!(ee::s04::OVERRIDE_001E9220),
+            oc396_fake_elem_size,
+            &OC396_PREV_ELEM_SIZE,
+        );
+        hook(
+            addr_of_mut!(ee::s04::OVERRIDE_001E91F8),
+            oc396_fake_elem_pos,
+            &OC396_PREV_ELEM_POS,
+        );
+        hook(
+            addr_of_mut!(ee::s04::OVERRIDE_001E9290),
+            oc396_fake_elem_scale,
+            &OC396_PREV_ELEM_SCALE,
+        );
+        hook(
+            addr_of_mut!(ee::s04::OVERRIDE_001E91A8),
+            oc396_fake_elem_color,
+            &OC396_PREV_ELEM_COLOR,
+        );
+        hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00391FB0),
+            oc396_fake_measure_text,
+            &OC396_PREV_MEASURE_TEXT,
+        );
+        hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00391CB0),
+            oc396_fake_draw_text,
+            &OC396_PREV_DRAW_TEXT,
+        );
+        const TEXTS: &[&[u8]] = &[
+            b"HELLO WORLD",
+            b"THE QUICK BROWN FOX JUMPS",
+            b"A",
+            b"",
+            b"VERYLONGWORDWITHOUTSPACES",
+            b"  LEADING SPACES",
+            b"ONE TWO THREE FOUR FIVE",
+        ];
+        covered(
+            ee::s04::f_001f2aa0__generated,
+            hud_draw_wrapped_text,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x001f_2aa0, 10);
+                c.pc = 0x001f_2aa0;
+                c.bus.write32(OC396_CTRL, OC396_MAGIC);
+                for k in 0..8 {
+                    let w = (r.next_u32() % 150) as f32;
+                    c.bus.write32(OC396_RET + 4 * k, w.to_bits());
+                }
+                // The element's wrap size, position, scale and colour (the fakes
+                // leave the caller's frame as it is).
+                let fb = crate::difftest::SP - 0x230;
+                put_words(c, fb, &[100.0f32.to_bits(), 20.0f32.to_bits()]);
+                put_words(c, fb + 0x10, &[r.f32(300.0), r.f32(200.0)]);
+                let sc = [1.0f32, 0.5, 2.0][(r.next_u32() % 3) as usize];
+                put_words(c, fb + 0x20, &[sc.to_bits(), 1.0f32.to_bits()]);
+                fill(c, &mut r, fb + 0x130, 4);
+                // The font: chars 0x20..0x7e, 6 wide, advance 8.
+                let this = DATA + 0x100;
+                let font = DATA + 0x1000;
+                let glyphs = DATA + 0x2000;
+                c.bus.write32(this + 0x428, font);
+                put_words(c, font, &[0x5f, glyphs, 0, 0x20, 0x7e, 12]);
+                c.bus.write32(font + 0x28, 0);
+                c.bus.write32(font + 0x30, 1.0f32.to_bits());
+                c.bus.write32(font + 0x34, 1.5f32.to_bits());
+                for ch in 0..0x5f {
+                    let g = glyphs + 12 * ch;
+                    c.bus.write8(g + 2, 6);
+                    c.bus.write8(g + 8, 8);
+                    c.bus.write8(g + 9, 0);
+                }
+                let defs = DATA + 0x3000;
+                let idx = r.next_u32() % 3;
+                let d = defs + 0x24 * idx;
+                c.bus.write8(d + 0x20, [0xffu8, 0, 1][(seed % 3) as usize]);
+                c.bus
+                    .write8(d + 0x21, [0u8, 1, 0xff][(seed / 3 % 3) as usize]);
+                c.bus.write8(d + 0x22, r.next_u32() as u8);
+                let gr = DATA + 0x6000;
+                c.bus.write32(GAME_GP - 0x854, gr);
+                c.bus.write32(gr + 0xe84, DATA + 0x6100);
+                c.bus.write32(DATA + 0x6108, r.next_u32());
+                let text = DATA + 0x4000;
+                put_str_oc396(c, text, TEXTS[(seed / 9) as usize % TEXTS.len()]);
+                let rect = DATA + 0x5000;
+                fill(c, &mut r, rect, 4);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(font);
+                c.g[A2][0] = sx(defs);
+                c.g[A3][0] = idx as u64;
+                c.g[T0][0] = if seed % 13 == 0 { 0 } else { sx(text) };
+                c.g[T1][0] = (seed % 4) as u64;
+                c.g[T2][0] = if seed % 5 == 0 { 0 } else { sx(rect) };
             },
         );
     }

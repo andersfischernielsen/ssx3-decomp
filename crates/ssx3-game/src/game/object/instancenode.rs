@@ -62,6 +62,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_obj_kill_restorable,
         "WorldObj_KillRestorable",
     ),
+    (
+        0x0035_0288,
+        world_obj_build_matrices_2,
+        "WorldObj_BuildMatrices",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -980,6 +985,150 @@ pub(crate) const WORLD_OBJ_RUN_KILL_SCRIPT: Callee = Callee {
     f: ee::s11::WorldObj_RunKillScript,
 };
 
+/// `this + off` read as a word (`lw`), for `cUIVector` code.
+#[inline]
+pub(crate) fn ui_vector_lw(c: &mut Cpu, this: u64, off: u32) -> u64 {
+    Addr((this as u32).wrapping_add(off)).lw(c)
+}
+
+// ---------------------------------------------------------------------------
+// WorldObj_BuildMatrices (0x350288)
+
+/// One bone of `cInstanceNode::makeAnimMats`: the bone's local matrix (at
+/// `a0`) with its translation row scaled by `scale` (on the stack at `sp`),
+/// times `parent` (VU0, into `sp + 0xb0`), copied through `sp + 0x10` to
+/// `out`. `swap_xy`: the root case loads the x/y scale into f6/f7 instead of
+/// f7/f6.
+pub(crate) fn world_obj_build_bone(c: &mut Cpu, parent: u32, out: u32, swap_xy: bool) {
+    use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
+    let sp = sp(c);
+    let bone = Addr((c.g[A3][0] as u32).wrapping_add(0xc)).lw(c);
+    c.g[A0][0] = bone;
+    let bone = bone as u32;
+    let (fx, fy) = if swap_xy { (6, 7) } else { (7, 6) };
+    c.lwc1(fx, sp);
+    c.lq(V0, bone);
+    c.lwc1(fy, sp + 4);
+    c.sq(V0, sp + 0x90);
+    c.sq(V0, sp + 0x50);
+    c.lwc1(5, sp + 8);
+    c.lq(V0, bone + 0x10);
+    c.lwc1(4, sp + 0xc);
+    c.sq(V0, sp + 0x90);
+    c.sq(V0, sp + 0x60);
+    c.lq(V1, bone + 0x20);
+    c.sq(V1, sp + 0x90);
+    c.sq(V1, sp + 0x70);
+    c.lq(V0, bone + 0x30);
+    c.sq(V0, sp + 0xa0);
+    // Translation row * (s, s, s, 1).
+    c.lwc1(1, sp + 0xa0);
+    c.lwc1(2, sp + 0xa4);
+    c.lwc1(3, sp + 0xa8);
+    c.mul_s(1, 1, fx);
+    c.lwc1(0, sp + 0xac);
+    c.mul_s(2, 2, fy);
+    c.mul_s(3, 3, 5);
+    c.mul_s(0, 0, 4);
+    c.swc1(1, sp + 0x90);
+    c.swc1(2, sp + 0x94);
+    c.swc1(3, sp + 0x98);
+    c.swc1(0, sp + 0x9c);
+    c.lq(V0, sp + 0x90);
+    c.sq(V0, sp + 0x80);
+    // (sp+0xb0) = local (sp+0x50) * parent.
+    let local = c.g[T5][0] as u32;
+    for i in 0..4u32 {
+        c.lqc2(4 + i as usize, parent.wrapping_add(0x10 * i));
+    }
+    for i in 0..4u32 {
+        c.lqc2(8 + i as usize, local.wrapping_add(0x10 * i));
+    }
+    for i in 0..4u8 {
+        c.vu0().mula(0b1111, 4, Src::Bc(8 + i, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8 + i, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8 + i, Z));
+        c.vu0().madd(0b1111, 12 + i, 7, Src::Bc(8 + i, W));
+    }
+    let product = c.g[T0][0] as u32;
+    let copy = c.g[T1][0] as u32;
+    for i in 0..4u32 {
+        c.sqc2(12 + i as usize, product + 0x10 * i);
+    }
+    crate::game::object::instancenode::vu0_copy_matrix(c, product, copy);
+    crate::game::object::instancenode::vu0_copy_matrix(c, copy, out);
+}
+
+/// `void cInstanceNode::makeAnimMats(cInstanceNode* this, const t4Matrix*
+/// root, t4Matrix* out)` (0x350288): for each skeleton bone (16-byte
+/// entries: parent index, ..., local matrix pointer at +0xc), its animation
+/// matrix = local matrix (translation scaled by the instance scale) times
+/// its parent's (or `root` for parentless bones).
+pub fn world_obj_build_matrices_2(c: &mut Cpu) {
+    c.cycles += 15;
+    let inst = Addr((c.g[A0][0] as u32).wrapping_add(0x18)).lw(c);
+    c.g[V0][0] = inst;
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0xf0));
+    c.g[AT][0] = 0x3f80_0000;
+    c.f[1] = 0x3f80_0000;
+    c.g[T7][0] = c.g[A1][0];
+    let skel = ui_vector_lw(c, inst, 0x80);
+    c.g[T6][0] = skel;
+    c.lwc1(0, (inst as u32).wrapping_add(0x84));
+    c.g[A3][0] = ui_vector_lw(c, skel, 8);
+    let sp = sp(c);
+    c.swc1(0, sp + 8);
+    c.swc1(1, sp + 0xc);
+    c.swc1(0, sp);
+    c.swc1(0, sp + 4);
+    c.g[V0][0] = ui_vector_lw(c, skel, 4);
+    c.g[T4][0] = 0;
+    if (c.g[V0][0] as i64) > 0 {
+        c.cycles += 7;
+        c.g[T2][0] = c.g[A2][0];
+        c.g[T8][0] = u64::MAX;
+        c.g[T1][0] = sx(sp + 0x10);
+        c.g[T0][0] = sx(sp + 0xb0);
+        c.g[T5][0] = sx(sp + 0x50);
+        c.g[T3][0] = c.g[T2][0];
+        loop {
+            c.cycles += 3;
+            let parent = Addr(c.g[A3][0] as u32).lw(c);
+            c.g[A1][0] = sx((parent as u32) << 6);
+            if parent != c.g[T8][0] {
+                c.cycles += 77;
+                let pm = (c.g[A1][0] as u32).wrapping_add(c.g[A2][0] as u32);
+                c.g[A1][0] = sx(pm);
+                let out = c.g[T2][0] as u32;
+                world_obj_build_bone(c, pm, out, false);
+            } else {
+                c.cycles += 75;
+                let root = c.g[T7][0] as u32;
+                let out = c.g[T3][0] as u32;
+                world_obj_build_bone(c, root, out, true);
+            }
+            let skel = c.g[T6][0];
+            c.g[V0][0] = ui_vector_lw(c, skel, 4);
+            c.cycles += 6;
+            c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_add(1));
+            c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(0x40));
+            c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x40));
+            let more = (c.g[T4][0] as i64) < (c.g[V0][0] as i64);
+            c.g[V0][0] = more as u64;
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x10));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0035_02e0);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[SP][0] = sx(sp.wrapping_add(0xf0));
+    abi::ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1334,6 +1483,62 @@ pub(crate) mod tests {
                 c.bus.write32(ME + 0xc, vt);
                 c.g[A0][0] = if seed % 8 == 0 { 0u64 } else { sx(ME) };
                 c.g[A1][0] = ((seed / 2) % 2) as u64;
+            },
+        );
+    }
+
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+
+    /// Fill `words` floats at `addr` within +-`range`.
+    pub(crate) fn oc383_floats(c: &mut Cpu, r: &mut Rng, addr: u32, words: u32, range: f32) {
+        for i in 0..words {
+            let v = r.f32(range);
+            c.bus.write32(addr + 4 * i, v);
+        }
+    }
+
+    #[test]
+    fn world_obj_build_matrices_matches() {
+        check(
+            ee::s11::f_00350288__generated,
+            world_obj_build_matrices_2,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0288 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.pc = 0x0035_0288;
+                let this = DATA;
+                let inst = DATA + 0x100;
+                let skel = DATA + 0x200;
+                let bones = DATA + 0x300;
+                let root = DATA + 0x800;
+                let out = DATA + 0x1000;
+                c.bus.write32(this + 0x18, inst);
+                c.bus.write32(inst + 0x80, skel);
+                c.bus.write32(inst + 0x84, r.f32(3.0));
+                let n = seed % 6;
+                c.bus
+                    .write32(skel + 4, if seed % 11 == 10 { 0xffff_fffe } else { n });
+                c.bus.write32(skel + 8, bones);
+                for i in 0..n {
+                    let b = bones + 0x10 * i;
+                    // Parent: -1 (root) or an earlier bone.
+                    let parent = if i == 0 || r.next_u32() % 3 == 0 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % i
+                    };
+                    c.bus.write32(b, parent);
+                    let local = DATA + 0x2000 + 0x40 * i;
+                    c.bus.write32(b + 0xc, local);
+                    oc383_floats(c, &mut r, local, 16, 2.0);
+                }
+                oc383_floats(c, &mut r, root, 16, 2.0);
+                fill(c, &mut r, out, 0x60);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(root);
+                c.g[A2][0] = sx(out);
             },
         );
     }

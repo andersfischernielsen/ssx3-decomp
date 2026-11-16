@@ -10,6 +10,7 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::object::debouncenode::OC327_EA_MEM_ALLOC_NAMED;
+pub(crate) use crate::game::ui::uiengine::oc391_at;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -79,6 +80,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002f_d420,
         world_obj_factory_particle_node,
         "WorldObjFactory_ParticleNode",
+    ),
+    (
+        0x0030_1680,
+        wscript_fn_get_object_slot30,
+        "WScriptFn_GetObjectSlot30",
     ),
 ];
 
@@ -2931,6 +2937,195 @@ pub fn world_obj_factory_particle_node(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// WScriptFn_GetObjectSlot30 (0x301680)
+
+/// `gp+0x25e0`: the shared 8-byte id buffer (`D_1680`).
+pub(crate) const WSCRIPT_GOS30_IDS: u32 = 0x25e0;
+
+/// `gp+0x25e4`: its tag byte (copied to the stack on the first call).
+pub(crate) const WSCRIPT_GOS30_TAG: u32 = 0x25e4;
+
+/// `gp+0x25e8`: the one-time initialisation flag.
+pub(crate) const WSCRIPT_GOS30_INIT: u32 = 0x25e8;
+
+/// `gp+0xb98`: the script value type of each slot.
+pub(crate) const WSCRIPT_GOS30_TYPES: u32 = 0xb98;
+
+/// `gp+0x16c8`: the id table head; `gp+0xce8`: the world (`+0x290` is the
+/// object of id -1).
+pub(crate) const WSCRIPT_GOS30_TABLE: u32 = 0x16c8;
+
+pub(crate) const WSCRIPT_GOS30_WORLD: u32 = 0xce8;
+
+/// `cLunoVar* WScriptFn_GetObjectSlot30(cLunoVar* ret, int n, Ent* e)`
+/// (0x301680): the script bridge's float query: copy the shared id buffer,
+/// overlay the `n` argument entries (as `WScriptFn_ObjectExists`), look the
+/// first id up and return (type 2, a float) the object's `+0xc` component's
+/// vtable slot 0xf0 result, or -1 when there is no object or component.
+pub fn wscript_fn_get_object_slot30(c: &mut Cpu) {
+    guest(c, |c| {
+        let gp = c.g[GP][0] as u32;
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x80);
+        c.g[V0][0] = Addr(gp.wrapping_add(WSCRIPT_GOS30_INIT)).lw(c);
+        frame.save(c, S1, 0x50);
+        frame.save(c, S2, 0x40);
+        c.g[S1][0] = c.g[A1][0]; // n
+        frame.save(c, S3, 0x30);
+        c.g[S2][0] = c.g[A0][0]; // ret
+        frame.save(c, S0, 0x60);
+        c.g[S3][0] = c.g[A2][0]; // entries
+        frame.save_ra(c, 0x20);
+        frame.save_fpr(c, 20, 0x70);
+        if c.g[V0][0] == 0 {
+            c.cycles += 7;
+            c.g[V0][0] = Addr(gp.wrapping_add(WSCRIPT_GOS30_TAG)).lbu(c);
+            c.g[V1][0] = u64::MAX;
+            c.g[A0][0] = 1;
+            Addr(gp.wrapping_add(WSCRIPT_GOS30_IDS)).sw(c, c.g[V1][0]);
+            Addr(gp.wrapping_add(WSCRIPT_GOS30_INIT)).sw(c, 1);
+            Addr(sp(c)).sb(c, c.g[V0][0]);
+        }
+        // `buf[0] = -1; memcpy(buf, D_1680, 8)` and the entry overlay.
+        'overlay: {
+            c.cycles += 10;
+            c.g[V0][0] = u64::MAX;
+            c.g[S0][0] = sx(sp(c).wrapping_add(0x10));
+            c.g[A2][0] = 8;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = sx(gp.wrapping_add(WSCRIPT_GOS30_IDS));
+            Addr(sp(c).wrapping_add(0x10)).sw(c, c.g[V0][0]);
+            call_ptr(c, 0x003e_6574, 0x0030_16ec)?;
+            let no_entries = (c.g[S1][0] as i64) <= 0;
+            c.g[A2][0] = c.g[S3][0];
+            if no_entries {
+                break 'overlay;
+            }
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S1][0];
+            c.g[T0][0] = sx(gp.wrapping_add(WSCRIPT_GOS30_TYPES));
+            c.g[A3][0] = 2; // the script type of a float slot
+            loop {
+                'store: {
+                    'value: {
+                        c.cycles += 8;
+                        c.g[V0][0] = Addr(r32(c, A2)).lw(c); // the slot
+                        c.g[V1][0] = Addr(oc391_at(c, A2, 0xc)).lw(c); // type
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                        c.g[V0][0] = Addr(r32(c, V0)).lw(c); // the slot's type
+                        let raw = c.g[V1][0] == c.g[V0][0] || {
+                            c.cycles += 2;
+                            c.g[V0][0] != c.g[A3][0]
+                        };
+                        if raw {
+                            c.g[V0][0] = Addr(oc391_at(c, A2, 4)).lw(c);
+                            break 'value;
+                        }
+                        // A float value: `*(float*)d = (float)x->val`.
+                        c.cycles += 4;
+                        c.lwc1(0, oc391_at(c, A2, 4));
+                        c.cvt_s_w(0, 0);
+                        c.swc1(0, r32(c, A0));
+                        break 'store;
+                    }
+                    c.cycles += 1;
+                    Addr(r32(c, A0)).sw(c, c.g[V0][0]);
+                }
+                c.cycles += 3;
+                c.g[A1][0] = sx(r32(c, A1).wrapping_sub(1));
+                let more = c.g[A1][0] != 0;
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x10));
+                if !more {
+                    break 'overlay;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0030_1700);
+                }
+            }
+        }
+        // Look the first id up: -1 is the world's object, else the low byte
+        // picks a descriptor and the next bits its entry.
+        c.cycles += 4;
+        c.g[A2][0] = Addr(r32(c, S0)).lw(c);
+        c.g[V0][0] = !c.g[A2][0];
+        c.g[A1][0] = Addr(gp.wrapping_add(WSCRIPT_GOS30_TABLE)).lw(c);
+        if c.g[V0][0] == 0 {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(gp.wrapping_add(WSCRIPT_GOS30_WORLD)).lw(c);
+            c.g[V0][0] = Addr(oc391_at(c, V0, 0x290)).lw(c);
+        } else {
+            c.cycles += 8;
+            c.g[V0][0] = sx(((c.g[A2][0] & 0xff) as u32) << 2);
+            c.g[V1][0] = Addr(r32(c, A1)).lw(c);
+            c.g[A0][0] = Addr(oc391_at(c, V1, 8)).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+            c.g[V0][0] = sx(r32(c, A2) >> 8);
+            let mut found = false;
+            if c.g[V1][0] != 0 {
+                c.cycles += 7;
+                c.g[A0][0] = Addr(oc391_at(c, V1, 0x1c)).lw(c);
+                c.g[V0][0] = sx(r32(c, V0) << 2);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+                c.g[V0][0] = sx(r32(c, V1) >> 8);
+                found = c.g[V0][0] != 0;
+                c.g[V0][0] = sx(r32(c, V0) << 2);
+            }
+            if !found {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+        }
+        // The value: the component's slot 0xf0, or -1.
+        c.cycles += 2;
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = 2;
+            c.cycles += 4;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000; // -1.0f
+            c.mtc1(1, 20);
+            Addr(oc391_at(c, S2, 8)).sw(c, c.g[V0][0]);
+            c.g[A0][0] = c.g[S2][0];
+        } else {
+            c.cycles += 3;
+            c.g[A1][0] = Addr(oc391_at(c, V0, 0xc)).lw(c);
+            if c.g[A1][0] == 0 {
+                c.cycles += 2;
+                c.g[AT][0] = 0xffff_ffff_bf80_0000; // -1.0f
+                c.mtc1(1, 20);
+            } else {
+                c.cycles += 7;
+                c.g[V0][0] = Addr(oc391_at(c, A1, 0xc)).lw(c);
+                c.g[A0][0] = Addr(oc391_at(c, V0, 0xf0)).lh(c);
+                c.g[V1][0] = Addr(oc391_at(c, V0, 0xf4)).lw(c);
+                let func = r32(c, V1);
+                c.g[A0][0] = sx(r32(c, A1).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, func, 0x0030_17cc)?;
+                c.mov_s(20, 0);
+            }
+            c.cycles += 4;
+            c.g[V0][0] = 2;
+            c.g[A0][0] = c.g[S2][0];
+            Addr(oc391_at(c, S2, 8)).sw(c, 2);
+        }
+        c.cycles += 12;
+        call_ptr(c, 0x0022_6618, 0x0030_1804)?; // LunoVMRegister_AsFloat
+        c.swc1(20, r32(c, V0));
+        c.g[V0][0] = c.g[S2][0];
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.restore_fpr(c, 20, 0x70);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4078,6 +4273,79 @@ pub(crate) mod tests {
                 c.bus.write32(OBJ + 0xc, modifier);
                 let attach = [0u32, 0, 1, 0xffff_ffff][(seed / 3 % 4) as usize];
                 c.bus.write32(ATTACH_RESULT, attach);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::vtable;
+
+    /// WScriptFn_GetObjectSlot30: initialised or not, -1..3 argument entries
+    /// (raw and float stores), the world object (id -1), a found object with
+    /// or without a component (fake slot 0xf0), an unknown descriptor or
+    /// entry.
+    #[test]
+    fn wscript_fn_get_object_slot30_matches() {
+        check(
+            ee::s10::f_00301680__generated,
+            wscript_fn_get_object_slot30,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x301680, 1);
+                c.pc = 0x0030_1680;
+                let gp = GAME_GP;
+                let ret = DATA + 0x100;
+                let entries = DATA + 0x200;
+                let x = DATA + 0x2300;
+                let base = DATA + 0x2400;
+                let high = DATA + 0x2800;
+                let desc = DATA + 0x2c00;
+                let world = DATA + 0x2e00;
+                let target = DATA + 0x3000;
+                let comp = DATA + 0x3100;
+                c.g[A0][0] = sx(ret);
+                let n = [-1i64, 0, 1, 2, 3][(seed % 5) as usize];
+                c.g[A1][0] = n as u64;
+                c.g[A2][0] = sx(entries);
+                for i in 0..4u32 {
+                    c.bus.write32(gp + WSCRIPT_GOS30_TYPES + 4 * i, i % 3);
+                }
+                c.bus.write32(gp + WSCRIPT_GOS30_INIT, (seed / 5) % 2);
+                c.bus.write8(gp + WSCRIPT_GOS30_TAG, r.next_u32() as u8);
+                let id = match (seed / 2) % 5 {
+                    0 => 0xffff_ffffu32, // the world object
+                    1 => 0x0000_0101,    // lo=1, hi=1: found
+                    2 => 0x0000_0103,    // lo=3: no such descriptor
+                    3 => 0x0000_0201,    // hi=2: an empty entry
+                    _ => 0x0000_0101,
+                };
+                c.bus.write32(gp + WSCRIPT_GOS30_IDS, id);
+                c.bus.write32(gp + WSCRIPT_GOS30_IDS + 4, r.next_u32());
+                for i in 0..4u32 {
+                    let e = entries + 16 * i;
+                    c.bus.write32(e, (seed >> (2 * i)) % 2);
+                    c.bus.write32(e + 4, r.next_u32());
+                    c.bus.write32(e + 8, r.next_u32());
+                    c.bus.write32(e + 0xc, (seed >> (3 + i)) % 4);
+                }
+                c.bus.write32(gp + WSCRIPT_GOS30_TABLE, x);
+                c.bus.write32(x, x + 0x40);
+                c.bus.write32(x + 0x48, base);
+                c.bus.write32(gp + WSCRIPT_GOS30_WORLD, world);
+                c.bus
+                    .write32(world + 0x290, if seed % 7 == 0 { 0 } else { target });
+                for lo in 0..4u32 {
+                    c.bus
+                        .write32(base + 4 * lo, if lo == 1 || lo == 2 { desc } else { 0 });
+                }
+                c.bus.write32(desc + 0x1c, high);
+                for hi in 0..4u32 {
+                    c.bus
+                        .write32(high + 4 * hi, if hi == 1 { (target >> 2) << 8 } else { 0 });
+                }
+                c.bus
+                    .write32(target + 0xc, if seed % 3 == 0 { 0 } else { comp });
+                let vt = vtable(c, &mut r, &[0xf0]);
+                c.bus.write32(comp + 0xc, vt);
             },
         );
     }

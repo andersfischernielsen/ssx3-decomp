@@ -83,50 +83,6 @@ pub mod audio_system;
 pub mod graphics;
 #[cfg(feature = "streaming")]
 pub mod native_files;
-#[cfg(feature = "oc376")]
-pub mod oc376;
-#[cfg(feature = "oc377")]
-pub mod oc377;
-#[cfg(feature = "oc378")]
-pub mod oc378;
-#[cfg(feature = "oc379")]
-pub mod oc379;
-#[cfg(feature = "oc380")]
-pub mod oc380;
-#[cfg(feature = "oc381")]
-pub mod oc381;
-#[cfg(feature = "oc382")]
-pub mod oc382;
-#[cfg(feature = "oc383")]
-pub mod oc383;
-#[cfg(feature = "oc384")]
-pub mod oc384;
-#[cfg(feature = "oc385")]
-pub mod oc385;
-#[cfg(feature = "oc386")]
-pub mod oc386;
-#[cfg(feature = "oc387")]
-pub mod oc387;
-#[cfg(feature = "oc388")]
-pub mod oc388;
-#[cfg(feature = "oc389")]
-pub mod oc389;
-#[cfg(feature = "oc390")]
-pub mod oc390;
-#[cfg(feature = "oc391")]
-pub mod oc391;
-#[cfg(feature = "oc392")]
-pub mod oc392;
-#[cfg(feature = "oc393")]
-pub mod oc393;
-#[cfg(feature = "oc394")]
-pub mod oc394;
-#[cfg(feature = "oc395")]
-pub mod oc395;
-#[cfg(feature = "oc396")]
-pub mod oc396;
-#[cfg(feature = "oc397")]
-pub mod oc397;
 #[cfg(feature = "rider_logic")]
 pub mod rider_logic;
 #[cfg(feature = "snd_lib")]
@@ -152,50 +108,6 @@ const CORE: &[(u32, GuestFn, &str)] = &[(
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v: Vec<(u32, GuestFn, &'static str)> = CORE.to_vec();
     v.extend(game::overrides());
-    #[cfg(feature = "oc376")]
-    v.extend_from_slice(oc376::OVERRIDES);
-    #[cfg(feature = "oc377")]
-    v.extend_from_slice(oc377::OVERRIDES);
-    #[cfg(feature = "oc378")]
-    v.extend_from_slice(oc378::OVERRIDES);
-    #[cfg(feature = "oc379")]
-    v.extend_from_slice(oc379::OVERRIDES);
-    #[cfg(feature = "oc380")]
-    v.extend_from_slice(oc380::OVERRIDES);
-    #[cfg(feature = "oc381")]
-    v.extend_from_slice(oc381::OVERRIDES);
-    #[cfg(feature = "oc382")]
-    v.extend_from_slice(oc382::OVERRIDES);
-    #[cfg(feature = "oc383")]
-    v.extend_from_slice(oc383::OVERRIDES);
-    #[cfg(feature = "oc384")]
-    v.extend_from_slice(oc384::OVERRIDES);
-    #[cfg(feature = "oc385")]
-    v.extend_from_slice(oc385::OVERRIDES);
-    #[cfg(feature = "oc386")]
-    v.extend_from_slice(oc386::OVERRIDES);
-    #[cfg(feature = "oc387")]
-    v.extend_from_slice(oc387::OVERRIDES);
-    #[cfg(feature = "oc388")]
-    v.extend_from_slice(oc388::OVERRIDES);
-    #[cfg(feature = "oc389")]
-    v.extend_from_slice(oc389::OVERRIDES);
-    #[cfg(feature = "oc390")]
-    v.extend_from_slice(oc390::OVERRIDES);
-    #[cfg(feature = "oc391")]
-    v.extend_from_slice(oc391::OVERRIDES);
-    #[cfg(feature = "oc392")]
-    v.extend_from_slice(oc392::OVERRIDES);
-    #[cfg(feature = "oc393")]
-    v.extend_from_slice(oc393::OVERRIDES);
-    #[cfg(feature = "oc394")]
-    v.extend_from_slice(oc394::OVERRIDES);
-    #[cfg(feature = "oc395")]
-    v.extend_from_slice(oc395::OVERRIDES);
-    #[cfg(feature = "oc396")]
-    v.extend_from_slice(oc396::OVERRIDES);
-    #[cfg(feature = "oc397")]
-    v.extend_from_slice(oc397::OVERRIDES);
     v.extend_from_slice(movie::overrides());
     #[cfg(feature = "math")]
     v.extend_from_slice(math::OVERRIDES);

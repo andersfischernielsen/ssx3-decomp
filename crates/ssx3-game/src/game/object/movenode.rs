@@ -55,6 +55,7 @@ pub(crate) use crate::game::movie::movieplayer::add32;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::object::deadfadenode::ctor_with_vtable;
 pub(crate) use crate::game::object::debouncenode::lw32;
+pub(crate) use crate::game::object::instancenode::ui_vector_lw;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 pub(crate) use crate::game::render::particle::at;
 pub(crate) use crate::game::render::particle::p as p_2;
@@ -308,6 +309,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0035_5eb0,
         mod_obj_add_halo_modifier,
         "ModObj_AddHaloModifier",
+    ),
+    (0x0035_6608, mod_obj_v05, "ModObj_v05"),
+    (
+        0x0035_7108,
+        parent_modifier_update_transform,
+        "ParentModifier_UpdateTransform",
     ),
 ];
 
@@ -4900,6 +4907,284 @@ pub fn mod_obj_add_halo_modifier(c: &mut Cpu) {
     })
 }
 
+/// `cGraphicsMan_TheGraphicsMan` (`gp + 0x2a90`).
+pub(crate) const AVALANCHE_GRMAN_GP: u32 = 0x2a90;
+
+// ---------------------------------------------------------------------------
+// ParentModifier_UpdateTransform (0x357108)
+
+/// `cParentModifier`: local position (+0x30), dirty flag (+0x44), parent
+/// node matrix (+0x50), transform translation row (+0x80), mesh/node index
+/// (+0x90), parent instance (+0xa0).
+pub(crate) const PARENT_MOD_LOCAL_POS: u32 = 0x30;
+
+pub(crate) const PARENT_MOD_DIRTY: u32 = 0x44;
+
+pub(crate) const PARENT_MOD_MATRIX: u32 = 0x50;
+
+pub(crate) const PARENT_MOD_TRANSLATION: u32 = 0x80;
+
+pub(crate) const PARENT_MOD_NODE: u32 = 0x90;
+
+pub(crate) const PARENT_MOD_INSTANCE: u32 = 0xa0;
+
+/// `void ParentModifier_UpdateTransform(cParentModifier* this)` (0x357108):
+/// with a parent object (instance `+0xc`), fetch the parent node's matrix
+/// (the object's own node matrix, vtable `+0xe8`, when it has one, vtable
+/// `+0xd0`; else `Instance_GetNodeMatrix`), then translation += matrix *
+/// local position (VU0). Clears the dirty flag either way.
+pub fn parent_modifier_update_transform(c: &mut Cpu) {
+    use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S1, 0x50);
+        frame.save(c, S0, 0x60);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0x40);
+        let this = c.g[S1][0] as u32;
+        let inst = Addr(this + PARENT_MOD_INSTANCE).lw(c);
+        c.g[V0][0] = inst;
+        let obj = ui_vector_lw(c, inst, 0xc);
+        c.g[S0][0] = obj;
+        if obj != 0 {
+            c.cycles += 7;
+            let vt = ui_vector_lw(c, obj, 0xc);
+            c.g[V1][0] = vt;
+            let delta = Addr((vt as u32).wrapping_add(0xd0)).lh(c);
+            let func = ui_vector_lw(c, vt, 0xd4);
+            c.g[V0][0] = func;
+            c.g[A0][0] = sx((obj as u32).wrapping_add(delta as u32));
+            call_ptr(c, func as u32, 0x0035_7140)?;
+            let this = c.g[S1][0] as u32;
+            if c.g[V0][0] != 0 {
+                // The object's own node matrix, copied to +0x50.
+                c.cycles += 17;
+                let obj = c.g[S0][0];
+                let vt = ui_vector_lw(c, obj, 0xc);
+                c.g[V1][0] = vt;
+                c.g[A1][0] = Addr(this + PARENT_MOD_NODE).lw(c);
+                let delta = Addr((vt as u32).wrapping_add(0xe8)).lh(c);
+                let func = ui_vector_lw(c, vt, 0xec);
+                c.g[V0][0] = func;
+                c.g[A0][0] = sx((obj as u32).wrapping_add(delta as u32));
+                call_ptr(c, func as u32, 0x0035_7160)?;
+                let this = c.g[S1][0] as u32;
+                let m = this + PARENT_MOD_MATRIX;
+                c.g[V1][0] = sx(m);
+                crate::game::object::instancenode::vu0_copy_matrix(c, c.g[V0][0] as u32, m);
+            } else {
+                c.g[S0][0] = sx(this + PARENT_MOD_MATRIX);
+                c.cycles += 6;
+                c.g[A0][0] = Addr(this + PARENT_MOD_INSTANCE).lw(c);
+                c.g[A1][0] = Addr(this + PARENT_MOD_NODE).lw(c);
+                c.g[A2][0] = c.g[S0][0];
+                Callee {
+                    addr: 0x0034_fed8,
+                    f: ee::s11::Instance_GetNodeMatrix,
+                }
+                .call(c, 0x0035_719c)?;
+                c.g[V1][0] = c.g[S0][0];
+            }
+            // translation += M * (local position).
+            let this = c.g[S1][0] as u32;
+            let m = c.g[V1][0] as u32;
+            c.lq(V0, this + PARENT_MOD_TRANSLATION);
+            c.cycles += 21;
+            let tmp = frame.at(c, 0);
+            c.sq(V0, tmp + 0x10);
+            c.lqc2(8, this + PARENT_MOD_LOCAL_POS);
+            for i in 0..4u32 {
+                c.lqc2(4 + i as usize, m.wrapping_add(0x10 * i));
+            }
+            c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+            c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+            c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+            c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+            c.sqc2(12, tmp + 0x30);
+            c.lq(V0, tmp + 0x30);
+            c.sq(V0, tmp + 0x20);
+            c.lqc2(3, tmp + 0x10);
+            c.lqc2(4, tmp + 0x20);
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, tmp + 0x30);
+            c.lq(V0, tmp + 0x30);
+            c.sq(V0, this + PARENT_MOD_TRANSLATION);
+            c.sq(V0, tmp);
+        }
+        let this = c.g[S1][0] as u32;
+        Addr(this + PARENT_MOD_DIRTY).sw(c, 0);
+        c.cycles += 5;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ModObj_v05 (0x356608)
+
+/// `cMoveNode`: object (+0x18), modifiers (+0x1c: rotation at +4, light at
+/// +8), fade (+0x24). Object: light (+0x94), visibility group (+0x7d, 0xff:
+/// always), visibility slot (+0x7e).
+pub(crate) const MOVE_NODE_OBJECT: u32 = 0x18;
+
+pub(crate) const MOVE_NODE_MODIFIERS: u32 = 0x1c;
+
+pub(crate) const MOVE_NODE_FADE: u32 = 0x24;
+
+/// `cWorld::m_pTheWorld` (`gp + 0x16c8`).
+pub(crate) const MOVE_NODE_WORLD_GP: u32 = 0x16c8;
+
+/// `mods && mods->field != 0` (v0 as the original computes it).
+pub(crate) fn move_node_has(c: &mut Cpu, mods: u64, field: u32) -> bool {
+    c.cycles += 2;
+    c.g[V0][0] = 0;
+    if mods != 0 {
+        c.cycles += 2;
+        let v = ui_vector_lw(c, mods, field);
+        c.g[V0][0] = (v != 0) as u64;
+    }
+    c.g[V0][0] != 0
+}
+
+/// `void cMoveNode::renderModel(cMoveNode* this, const t4Matrix* animMats,
+/// int flags)` (0x356608): if the object's visibility group is on (group
+/// 0xff, or cache group type 6 with slot state 3), draw the model through
+/// GrMan (vtable `+0x2f8`) with the rotation modifier's UV matrix (flags |=
+/// 2) and the light modifier's light (else the object's own).
+pub fn mod_obj_v05(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x90);
+        let gp = c.g[GP][0] as u32;
+        let world = Addr(gp.wrapping_add(MOVE_NODE_WORLD_GP)).lw(c);
+        c.g[V0][0] = world;
+        frame.save(c, S0, 0x80);
+        frame.save(c, S1, 0x70);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S3, 0x50);
+        frame.save(c, S2, 0x60);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save_ra(c, 0x40);
+        let this = c.g[S0][0];
+        let obj = ui_vector_lw(c, this, MOVE_NODE_OBJECT);
+        c.g[A0][0] = obj;
+        let cache = ui_vector_lw(c, world, 0);
+        c.g[A1][0] = cache;
+        let group = Addr((obj as u32).wrapping_add(0x7d)).lbu(c);
+        c.g[V1][0] = group;
+        c.g[V0][0] = 0xff;
+        c.g[S1][0] = c.g[A2][0];
+        if group == 0xff {
+            c.cycles += 2;
+            c.g[V0][0] = 1;
+        } else {
+            c.cycles += 7;
+            let g = (cache as u32).wrapping_add(group as u32 * 8);
+            c.g[V0][0] = sx(g);
+            c.g[V1][0] = Addr(g + 0x24).lw(c) ^ 6;
+            if c.g[V1][0] != 0 {
+                c.g[V0][0] = 0;
+            } else {
+                c.cycles += 7;
+                c.g[V0][0] = Addr((obj as u32).wrapping_add(0x7e)).lh(c);
+                c.g[A0][0] = 0x18;
+                c.mult(0, V1, V0, A0);
+                let slot = (c.g[V1][0] as u32).wrapping_add(cache as u32);
+                c.g[V0][0] = sx(slot);
+                c.g[V1][0] = Addr(slot + 0x3f0).lw(c) ^ 3;
+                c.g[V0][0] = (c.g[V1][0] < 1) as u64;
+            }
+        }
+        c.cycles += 2;
+        c.g[T1][0] = 0;
+        if c.g[V0][0] != 0 {
+            c.cycles += 4;
+            let mods = ui_vector_lw(c, c.g[S0][0], MOVE_NODE_MODIFIERS);
+            c.g[A0][0] = mods;
+            c.g[S2][0] = Addr(gp.wrapping_add(AVALANCHE_GRMAN_GP)).lw(c);
+            c.g[V0][0] = 0;
+            if mods != 0 {
+                c.cycles += 2;
+                let v = ui_vector_lw(c, mods, 4);
+                c.g[V0][0] = (v != 0) as u64;
+            }
+            // Rotation modifier: its UV matrix on the stack.
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                if !move_node_has(c, c.g[A0][0], 4) {
+                    c.cycles += 2;
+                    c.g[S1][0] |= 2;
+                } else {
+                    c.cycles += 2 + 3;
+                    let rot = ui_vector_lw(c, c.g[A0][0], 4);
+                    c.g[A0][0] = rot;
+                    if rot == 0 {
+                        c.g[V0][0] = 0;
+                        c.cycles += 1;
+                    } else {
+                        c.cycles += 4;
+                        c.g[A1][0] = c.g[SP][0];
+                        call_ptr(c, 0x0035_fc20, 0x0035_66d8)?;
+                    }
+                    c.g[A0][0] = ui_vector_lw(c, c.g[S0][0], MOVE_NODE_MODIFIERS);
+                    c.cycles += 2;
+                    c.g[T1][0] = c.g[V0][0];
+                    c.g[S1][0] |= 2;
+                }
+            }
+            // Light: the light modifier's (+0x24 of it) or the object's.
+            let has_light = move_node_has(c, c.g[A0][0], 8);
+            c.cycles += 2;
+            let mut own_light = true;
+            if has_light && move_node_has(c, c.g[A0][0], 8) {
+                c.cycles += 2 + 3;
+                let light = ui_vector_lw(c, c.g[A0][0], 8);
+                c.g[A0][0] = light;
+                c.g[A2][0] = 0;
+                if light != 0 {
+                    c.cycles += 2;
+                    c.g[A2][0] = sx((light as u32).wrapping_add(0x24));
+                }
+                own_light = false;
+            } else if has_light {
+                c.cycles += 2;
+            }
+            if own_light {
+                let obj = ui_vector_lw(c, c.g[S0][0], MOVE_NODE_OBJECT);
+                c.g[V0][0] = obj;
+                c.cycles += 1;
+                c.g[A2][0] = ui_vector_lw(c, obj, 0x94);
+            }
+            c.cycles += 11;
+            let grman = c.g[S2][0];
+            let vt = ui_vector_lw(c, grman, 0x10d8);
+            c.g[V0][0] = vt;
+            c.g[A3][0] = sx(0x0050_0000 - 0xe60); // t4mat_Identity
+            c.lwc1(12, (c.g[S0][0] as u32).wrapping_add(MOVE_NODE_FADE));
+            let delta = Addr((vt as u32).wrapping_add(0x2f8)).lh(c);
+            c.g[T0][0] = c.g[S3][0];
+            let func = ui_vector_lw(c, vt, 0x2fc);
+            c.g[V1][0] = func;
+            c.g[T2][0] = c.g[S1][0];
+            c.g[A1][0] = ui_vector_lw(c, c.g[S0][0], MOVE_NODE_OBJECT);
+            c.g[A0][0] = sx((grman as u32).wrapping_add(delta as u32));
+            call_ptr(c, func as u32, 0x0035_6760)?;
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7891,6 +8176,121 @@ pub(crate) mod tests {
                 c.bus.write32(GAME_GP + 0xf10, r.next_u32());
                 c.g[A0][0] = sx(OBJ);
                 c.g[A1][0] = sx(DESC);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::object::instancenode::tests::oc383_floats;
+
+    /// A vtable at `at` whose slots `off` are `{small delta, fake i}`.
+    pub(crate) fn oc383_vtable(c: &mut Cpu, r: &mut Rng, at: u32, slots: &[u32]) {
+        use crate::difftest::fakes::FAKE;
+        for (i, &off) in slots.iter().enumerate() {
+            c.bus.write16(at + off, (r.next_u32() & 0x7c) as u16);
+            c.bus.write32(at + off + 4, FAKE + 0x10 * i as u32);
+        }
+    }
+
+    #[test]
+    fn parent_modifier_update_transform_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        check(
+            ee::s11::f_00357108__generated,
+            parent_modifier_update_transform,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x7108, 2);
+                c.pc = 0x0035_7108;
+                let this = DATA;
+                let inst = DATA + 0x400;
+                let obj = DATA + 0x800;
+                let vt = DATA + 0xc00;
+                fill(c, &mut r, this, 0x30);
+                oc383_floats(c, &mut r, this + PARENT_MOD_LOCAL_POS, 4, 10.0);
+                oc383_floats(c, &mut r, this + PARENT_MOD_TRANSLATION, 4, 100.0);
+                c.bus.write32(this + PARENT_MOD_INSTANCE, inst);
+                // Node -1: Instance_GetNodeMatrix takes the owner's world matrix.
+                c.bus.write32(this + PARENT_MOD_NODE, 0xffff_ffff);
+                fill(c, &mut r, inst, 0x30);
+                c.bus
+                    .write32(inst + 0xc, if seed % 7 == 3 { 0 } else { obj });
+                c.bus.write32(inst + 0x80, DATA + 0x1000);
+                c.bus.write32(obj + 0xc, vt);
+                oc383_vtable(c, &mut r, vt, &[0xd0, 0xe8, 0xc0]);
+                if seed % 2 == 0 {
+                    // "Has a node": a real leaf returning 0.
+                    c.bus.write32(vt + 0xd4, 0x0014_06c0);
+                } else {
+                    c.bus.write32(vt + 0xd4, FAKE);
+                }
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    #[test]
+    fn mod_obj_v05_matches() {
+        use crate::difftest::fakes::machine;
+        check(
+            ee::s11::f_00356608__generated,
+            mod_obj_v05,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x6608, 1);
+                c.pc = 0x0035_6608;
+                let this = DATA;
+                let (world, obj, mods, rot, light) = (
+                    DATA + 0x100,
+                    DATA + 0x200,
+                    DATA + 0x300,
+                    DATA + 0x400,
+                    DATA + 0x500,
+                );
+                let cache = DATA + 0x1000;
+                fill(c, &mut r, this, 0x10);
+                c.bus.write32(GAME_GP + MOVE_NODE_WORLD_GP, world);
+                c.bus.write32(world, cache);
+                c.bus.write32(this + MOVE_NODE_OBJECT, obj);
+                fill(c, &mut r, obj, 0x28);
+                // Visibility: group 0xff, or group g (type 6?) with slot s (state 3?).
+                let g = if seed % 3 == 0 {
+                    0xff
+                } else {
+                    r.next_u32() % 4
+                };
+                let slot = r.next_u32() % 4;
+                c.bus.write8(obj + 0x7d, g as u8);
+                c.bus.write16(obj + 0x7e, slot as u16);
+                for i in 0..4 {
+                    c.bus.write32(
+                        cache + 8 * i + 0x24,
+                        if r.next_u32() % 4 != 0 { 6 } else { 5 },
+                    );
+                    c.bus.write32(
+                        cache + 0x18 * i + 0x3f0,
+                        if r.next_u32() % 4 != 0 { 3 } else { 1 },
+                    );
+                }
+                let bits = r.next_u32();
+                c.bus.write32(
+                    this + MOVE_NODE_MODIFIERS,
+                    if bits & 1 == 0 { 0 } else { mods },
+                );
+                c.bus.write32(mods + 4, if bits & 2 == 0 { 0 } else { rot });
+                c.bus
+                    .write32(mods + 8, if bits & 4 == 0 { 0 } else { light });
+                fill(c, &mut r, rot, 0x10);
+                // UV scroll speed 0 (the modifier's short path) mostly.
+                c.bus
+                    .write32(rot + 0x10, if bits & 8 == 0 { 0 } else { r.f32(2.0) });
+                oc383_floats(c, &mut r, rot + 0x20, 4, 2.0);
+                let grman = DATA + 0x5000;
+                c.bus.write32(GAME_GP + AVALANCHE_GRMAN_GP, grman);
+                c.bus.write32(grman + 0x10d8, DATA + 0x5800);
+                oc383_vtable(c, &mut r, DATA + 0x5800, &[0x2f8]);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(DATA + 0x2000);
+                c.g[A2][0] = (r.next_u32() & 0xff) as u64;
             },
         );
     }

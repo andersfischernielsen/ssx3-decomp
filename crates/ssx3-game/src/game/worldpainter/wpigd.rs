@@ -11,6 +11,7 @@ use crate::call::Callee;
 use crate::call::Frame;
 use crate::call::VSlot;
 pub(crate) use crate::game::fe::splashmanager::at;
+pub(crate) use crate::game::ui::uiengine::oc391_at;
 pub(crate) use crate::game::visualfx::boardwakefx::lh_2 as lh;
 pub(crate) use crate::game::visualfx::boardwakefx::lw_2 as lw;
 pub(crate) use crate::game::visualfx::boardwakefx::p;
@@ -71,6 +72,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "tWPIGD_MusicTrigger_Blend",
     ),
     (0x002b_ccc8, twpigd_mix_blend, "tWPIGD_Mix_Blend"),
+    (
+        0x002b_d068,
+        t_wpigd_light_glow_blend,
+        "tWPIGD_LightGlow_Blend",
+    ),
+    (0x002b_d2e8, twpigd_sky_box_blend, "tWPIGD_SkyBox_Blend"),
+    (0x002b_d518, twpigd_surface_blend, "tWPIGD_Surface_Blend"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1184,6 +1192,165 @@ pub fn twpigd_mix_blend(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// tWPIGD_LightGlow_Blend (0x2bd068)
+
+/// The light glow block: 7 (current, target) float pairs from `+0x8`.
+pub(crate) const LIGHT_GLOW_PAIRS: u32 = 0x8;
+
+/// Call the virtual at vtable `+0x218` (`this` at `+4`'s vtable), returning to `ret`.
+pub(crate) fn light_glow_notify(
+    c: &mut Cpu,
+    ret: u32,
+    vt_reg: usize,
+    fn_reg: usize,
+) -> crate::call::Flow {
+    let this = c.g[S0][0] as u32;
+    let vt = Addr(this + 4).lw(c);
+    c.g[vt_reg][0] = vt;
+    let delta = Addr((vt as u32).wrapping_add(0x218)).lh(c);
+    let func = Addr((vt as u32).wrapping_add(0x21c)).lw(c);
+    c.g[fn_reg][0] = func;
+    c.g[A0][0] = sx(this.wrapping_add(delta as u32));
+    call_ptr(c, func as u32, ret)
+}
+
+/// `void tWPIGD::LightGlow_Blend(tWPIGD* this, const float src[8], float t)`
+/// (0x2bd068): notify (vtable `+0x218`), then for the 7 light glow values
+/// `cur = t² * src + (1 - t²) * cur`, `target = src` (src from `+4`), and
+/// notify again.
+pub fn t_wpigd_light_glow_blend(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 84;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_fpr(c, 20, 0x30);
+        c.mov_s(20, 12);
+        c.mul_s(20, 20, 20); // w = t * t
+        light_glow_notify(c, 0x002b_d0a0, V1, V0)?;
+        let this = c.g[S0][0] as u32;
+        let src = c.g[S1][0] as u32;
+        let cur = |k: u32| this + LIGHT_GLOW_PAIRS + 8 * k;
+        let val = |k: u32| src + 4 + 4 * k;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 2);
+        c.lwc1(1, val(0));
+        c.sub_s(2, 2, 20); // 1 - w
+                           // (1 - w) * cur for all seven first (f0, f3, f5, f6, f7, f8, f2).
+        c.lwc1(0, cur(0));
+        c.mul_s(1, 20, 1);
+        c.lwc1(3, cur(1));
+        c.lwc1(5, cur(2));
+        c.mul_s(0, 2, 0);
+        c.lwc1(6, cur(3));
+        c.mul_s(3, 2, 3);
+        c.lwc1(7, cur(4));
+        c.mul_s(5, 2, 5);
+        c.lwc1(8, cur(5));
+        c.add_s(1, 1, 0);
+        c.lwc1(4, cur(6));
+        c.mul_s(6, 2, 6);
+        c.mul_s(7, 2, 7);
+        c.swc1(1, cur(0));
+        c.mul_s(8, 2, 8);
+        c.mul_s(2, 2, 4);
+        c.lwc1(1, val(0));
+        c.swc1(1, cur(0) + 4);
+        // Pairs 1..5: cur = w * src + (1 - w) * cur; target = src.
+        for (k, kept) in [(1u32, 3usize), (2, 5), (3, 6), (4, 7), (5, 8)] {
+            c.lwc1(0, val(k));
+            c.mul_s(0, 20, 0);
+            c.add_s(0, 0, kept);
+            c.swc1(0, cur(k));
+            c.lwc1(1, val(k));
+            c.swc1(1, cur(k) + 4);
+        }
+        c.lwc1(0, val(6));
+        c.mul_s(20, 20, 0);
+        c.add_s(20, 20, 2);
+        c.swc1(20, cur(6));
+        c.lwc1(0, val(6));
+        c.swc1(0, cur(6) + 4);
+        light_glow_notify(c, 0x002b_d1a0, V0, V1)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// tWPIGD_*_Blend (0x2bd2e8, 0x2bd518)
+
+/// The shared body of the world-painter "game data" blends (`SkyBox`,
+/// `Surface`): `void Blend(tWPIGD* self, tWPIGD* other, float t)`. Calls the
+/// object's vtable slot 0x218 (an update hook), then blends the value at
+/// `+8` toward `other+4` by `t*t` (`v = t²·other + (1-t²)·v`), keeps
+/// `other+4` at `+0xc`, and calls the hook again. The two siblings differ
+/// only in their return addresses.
+pub(crate) fn twpigd_blend(c: &mut Cpu, ret1: u32, ret2: u32) {
+    guest(c, |c| {
+        c.cycles += 36;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_fpr(c, 20, 0x30);
+        c.mov_s(20, 12);
+        c.g[V1][0] = Addr(oc391_at(c, S0, 4)).lw(c); // vtable
+        c.mul_s(20, 20, 20); // t*t
+        twpigd_blend_hook(c, ret1)?;
+        c.g[AT][0] = 0x3f80_0000; // 1.0f
+        c.mtc1(1, 0);
+        c.lwc1(1, oc391_at(c, S1, 4));
+        c.sub_s(0, 0, 20);
+        c.lwc1(2, oc391_at(c, S0, 8));
+        c.mul_s(20, 20, 1);
+        c.g[V1][0] = Addr(oc391_at(c, S0, 4)).lw(c);
+        c.mul_s(0, 0, 2);
+        c.add_s(20, 20, 0);
+        c.swc1(20, oc391_at(c, S0, 8));
+        c.lwc1(0, oc391_at(c, S1, 4));
+        c.swc1(0, oc391_at(c, S0, 0xc));
+        twpigd_blend_hook(c, ret2)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Call vtable slot 0x218 of `s0` (vtable in `v1`), returning to `ret`.
+pub(crate) fn twpigd_blend_hook(c: &mut Cpu, ret: u32) -> crate::call::Flow {
+    c.g[A0][0] = Addr(oc391_at(c, V1, 0x218)).lh(c);
+    c.g[V0][0] = Addr(oc391_at(c, V1, 0x21c)).lw(c);
+    let func = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, func, ret)
+}
+
+/// `void tWPIGD_Surface_Blend(tWPIGD_Surface* self, tWPIGD_Surface* other,
+/// float t)` (0x2bd518): blend the snow sparkle density, see [`twpigd_blend`].
+pub fn twpigd_surface_blend(c: &mut Cpu) {
+    twpigd_blend(c, 0x002b_d550, 0x002b_d590)
+}
+
+/// `void tWPIGD_SkyBox_Blend(tWPIGD_SkyBox* self, tWPIGD_SkyBox* other,
+/// float t)` (0x2bd2e8): blend the sky box value, see [`twpigd_blend`].
+pub fn twpigd_sky_box_blend(c: &mut Cpu) {
+    twpigd_blend(c, 0x002b_d320, 0x002b_d360)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1755,6 +1922,79 @@ pub(crate) mod tests {
                 c.bus.write32(SELF + WPIGD_VALUE, a);
                 c.bus.write32(TARGET + 4, b);
             },
+        );
+    }
+
+    pub(crate) use crate::game::object::instancenode::tests::oc383_floats;
+    pub(crate) use crate::game::object::movenode::tests::oc383_vtable;
+
+    #[test]
+    fn t_wpigd_light_glow_blend_matches() {
+        use crate::difftest::fakes::machine;
+        check(
+            ee::s08::f_002bd068__generated,
+            t_wpigd_light_glow_blend,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xd068, 2);
+                c.pc = 0x002b_d068;
+                let this = DATA;
+                let src = DATA + 0x100;
+                c.bus.write32(this + 4, DATA + 0x800);
+                oc383_vtable(c, &mut r, DATA + 0x800, &[0x218]);
+                oc383_floats(c, &mut r, this + LIGHT_GLOW_PAIRS, 14, 50.0);
+                oc383_floats(c, &mut r, src, 8, 50.0);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(src);
+                c.f[12] = if seed % 4 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(1.5)
+                };
+            },
+        );
+    }
+
+    /// The blend fixture: self at DATA (fake vtable slot 0x218), other at
+    /// DATA+0x100, random floats and t.
+    pub(crate) fn twpigd_blend_setup(c: &mut Cpu, seed: u32, entry: u32) {
+        let mut r = machine(c, seed, entry as u64, 2);
+        c.pc = entry;
+        let this = DATA;
+        let other = DATA + 0x100;
+        let vt = vtable(c, &mut r, &[0x218]);
+        c.bus.write32(this + 4, vt);
+        c.bus.write32(this + 8, r.f32(10.0));
+        c.bus.write32(this + 0xc, r.f32(10.0));
+        c.bus.write32(other + 4, r.f32(10.0));
+        c.g[A0][0] = sx(this);
+        c.g[A1][0] = sx(other);
+        c.f[12] = if seed % 4 == 0 {
+            r.edge_f32()
+        } else {
+            r.f32(1.5)
+        };
+    }
+
+    /// tWPIGD_Surface_Blend: both hook calls, the density blend.
+    #[test]
+    fn twpigd_surface_blend_matches() {
+        check(
+            ee::s08::f_002bd518__generated,
+            twpigd_surface_blend,
+            200,
+            &|c, seed| twpigd_blend_setup(c, seed, 0x002b_d518),
+        );
+    }
+
+    /// tWPIGD_SkyBox_Blend: both hook calls, the blend.
+    #[test]
+    fn twpigd_sky_box_blend_matches() {
+        check(
+            ee::s08::f_002bd2e8__generated,
+            twpigd_sky_box_blend,
+            200,
+            &|c, seed| twpigd_blend_setup(c, seed, 0x002b_d2e8),
         );
     }
 }

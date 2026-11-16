@@ -1,17 +1,24 @@
 //! `src/hashvalue.cpp`: hand-written replacements.
 
+use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::sp;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
+#[cfg(test)]
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(0x0031_7670, str_hash_guest, "StrHash")];
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (0x0031_7670, str_hash_guest, "StrHash"),
+    (0x0031_7618, str_hash_elf, "StrHashElf"),
+];
 
 /// One step of the game's string hash: an ELF hash over *signed* chars that
 /// folds the top nibble back in at bit 5 (`>> 23`, where the textbook ELF
@@ -92,6 +99,50 @@ pub fn str_hash_guest(c: &mut Cpu) {
 
     frame.restore_ra(c, 0x10);
     frame.close(c);
+}
+
+/// `u32 StrHashElf(u32* out, const char* s)` (0x317618): the classic ELF
+/// string hash (`h = (h << 4) + c`, fold the top nibble back in), with the
+/// characters sign-extended; stores it at `*out` and returns it.
+pub fn str_hash_elf(c: &mut Cpu) {
+    c.cycles += 4;
+    let mut s = c.g[A1][0];
+    c.g[V0][0] = Addr(s as u32).lb(c);
+    c.g[V1][0] = 0;
+    c.g[A2][0] = Addr(s as u32).lbu(c);
+    if c.g[V0][0] != 0 {
+        c.cycles += 2;
+        c.g[A3][0] = 0xffff_ffff_f000_0000;
+        loop {
+            c.cycles += 7;
+            let ch = sx((((c.g[A2][0] as u32) << 24) as i32 >> 24) as u32);
+            let h = sx((c.g[V1][0] as u32) << 4);
+            let h = sx((h as u32).wrapping_add(ch as u32));
+            c.g[V0][0] = ch;
+            c.g[V1][0] = h;
+            c.g[A2][0] = h & c.g[A3][0];
+            s = sx((s as u32).wrapping_add(1));
+            c.g[A1][0] = s;
+            if c.g[A2][0] != 0 {
+                c.cycles += 3;
+                c.g[V0][0] = h ^ sx((c.g[A2][0] as u32) >> 23);
+                c.g[V1][0] = c.g[V0][0] ^ c.g[A2][0];
+            }
+            c.cycles += 3;
+            c.g[V0][0] = Addr(s as u32).lb(c);
+            c.g[A2][0] = Addr(s as u32).lbu(c);
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0031_7630);
+            }
+        }
+    }
+    c.cycles += 3;
+    Addr(r32(c, A0)).sw(c, c.g[V1][0]);
+    c.g[V0][0] = c.g[V1][0];
+    ret(c);
 }
 
 #[cfg(test)]
@@ -198,5 +249,33 @@ pub(crate) mod tests {
             assert_eq!(c.g[V0][0] as u32, str_hash(&s), "{s:x?}");
             assert_eq!(c.g[V0][0], sx(str_hash(&s)));
         }
+    }
+
+    use crate::difftest::fakes::machine;
+
+    /// StrHashElf: random strings of 0..40 bytes with high-bit characters
+    /// (sign extension) and lengths that fold the top nibble.
+    #[test]
+    fn str_hash_elf_matches() {
+        check(
+            ee::s10::f_00317618__generated,
+            str_hash_elf,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x317618, 0);
+                c.pc = 0x0031_7618;
+                let len = seed % 41;
+                for i in 0..len {
+                    let mut b = r.next_u32() as u8;
+                    if b == 0 {
+                        b = 0x41;
+                    }
+                    c.bus.write8(DATA + 0x100 + i, b);
+                }
+                c.bus.write8(DATA + 0x100 + len, 0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x100);
+            },
+        );
     }
 }

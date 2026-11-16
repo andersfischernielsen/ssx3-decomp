@@ -3,6 +3,8 @@
 
 use crate::abi;
 use crate::abi::r32;
+#[cfg(test)]
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -35,6 +37,7 @@ pub(crate) use crate::game::scripter::ssxscriptengine::gp as gp_m2;
 pub(crate) use crate::game::scripter::ssxscriptengine::low;
 pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at;
 pub(crate) use crate::game::sound::bankmonitor::p;
+pub(crate) use crate::game::ui::uiengine::oc391_at;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use callee::*;
@@ -257,6 +260,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         femodule_rider_preview_set_visible,
         "FEModule_RiderPreviewSetVisible",
     ),
+    (
+        0x0019_c938,
+        bolt_file_index_manager_find_node,
+        "BoltFileIndexManager_FindNode",
+    ),
+    (0x0019_d250, bolt_file_cache_update, "BoltFile_CacheUpdate"),
+    (0x0019_d4b8, bolt_file_free_slot, "BoltFile_FreeSlot"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3976,6 +3986,441 @@ pub fn boltfile_release(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// BoltFileIndexManager_FindNode (0x19c938)
+
+/// `BoltFileIndexManager`: 400 nodes of 16 bytes (key +0, prev index +0xc,
+/// next index +0xe), 400 bucket heads at +0x1900, the free list at +0x1f40.
+pub(crate) const BOLT_INDEX_BUCKETS: u32 = 0x1900;
+
+pub(crate) const BOLT_INDEX_FREE: u32 = 0x1f40;
+
+pub(crate) const BOLT_INDEX_ALLOC_NODE: Callee = Callee {
+    addr: 0x0019_c880,
+    f: ee::s03::BoltFileIndexManager_AllocNode,
+};
+
+pub(crate) const BOLT_INDEX_NODE_INDEX: Callee = Callee {
+    addr: 0x0019_c920,
+    f: ee::s03::BoltFileIndexManager_NodeIndex,
+};
+
+pub(crate) const BOLT_INDEX_GET_NEXT_NODE: Callee = Callee {
+    addr: 0x0019_c8f8,
+    f: ee::s03::BoltFileIndexManager_GetNextNode,
+};
+
+/// `Node* BoltFileIndexManager_FindNode(BoltFileIndexManager* m, int hi,
+/// int lo, bool create)` (0x19c938): the node of key `hi << 16 | lo` in
+/// bucket `key % 400`; if absent and `create` (and a free node exists), a
+/// new node appended to the bucket's chain. The found or new node's key is
+/// (re)written; returns it or null.
+pub fn bolt_file_index_manager_find_node(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x70);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 16);
+        frame.save(c, S4, 0x20);
+        c.g[V0][0] = 400;
+        c.g[S4][0] = c.g[A1][0] | c.g[A2][0];
+        frame.save(c, S0, 0x60);
+        c.div(0, S4, V0);
+        frame.save(c, S1, 0x50);
+        frame.save(c, S2, 0x40);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x30);
+        c.g[S2][0] = 0;
+        frame.save(c, S5, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S5][0] = c.g[A3][0];
+        // The bucket's head.
+        c.cycles += 6;
+        let m = c.g[S1][0] as u32;
+        let free = Addr(m + BOLT_INDEX_FREE).lw(c);
+        c.g[V1][0] = free;
+        c.g[S3][0] = c.hi[0];
+        let bucket = m.wrapping_add((c.g[S3][0] as u32) << 2);
+        c.g[V0][0] = sx(bucket);
+        c.g[S0][0] = Addr(bucket.wrapping_add(BOLT_INDEX_BUCKETS)).lw(c);
+        let mut searching = true;
+        if free == 0 {
+            c.cycles += 2;
+            if c.g[S0][0] == 0 {
+                c.g[V0][0] = 0;
+                searching = false;
+            } else {
+                c.cycles += 1;
+            }
+        }
+        if searching {
+            'walk: loop {
+                // At a node (or past the chain's end).
+                c.cycles += 2;
+                if c.g[S0][0] == 0 {
+                    c.cycles += 2;
+                    if c.g[S5][0] != 0 {
+                        bolt_index_append_node(c)?;
+                    }
+                    break 'walk;
+                }
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                loop {
+                    c.cycles += 2;
+                    let found = c.g[V0][0] == c.g[S4][0];
+                    c.g[S2][0] = c.g[S0][0];
+                    if found {
+                        break 'walk;
+                    }
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A1][0] = c.g[S2][0];
+                    BOLT_INDEX_GET_NEXT_NODE.call(c, 0x0019_ca28)?;
+                    c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_add(BOLT_INDEX_FREE)).lw(c);
+                    c.g[S0][0] = c.g[V0][0];
+                    if c.g[V1][0] != 0 {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0019_c9a0);
+                        }
+                        continue 'walk;
+                    }
+                    c.cycles += 2;
+                    if c.g[S0][0] == 0 {
+                        break 'walk;
+                    }
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0019_ca14);
+                    }
+                }
+            }
+            c.cycles += 2;
+            if c.g[S0][0] != 0 {
+                Addr(c.g[S0][0] as u32).sw(c, c.g[S4][0]);
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S0][0];
+        }
+        c.cycles += 9;
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Take a free node and link it after s2 (the chain's last node), or as
+/// the bucket's head (bucket s3) when the chain is empty; s0 = the node.
+pub(crate) fn bolt_index_append_node(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 8;
+    c.g[A0][0] = c.g[S1][0];
+    BOLT_INDEX_ALLOC_NODE.call(c, 0x0019_c9b8)?;
+    c.g[S0][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[S2][0];
+    BOLT_INDEX_NODE_INDEX.call(c, 0x0019_c9c8)?;
+    Addr((c.g[S0][0] as u32).wrapping_add(0xc)).sh(c, c.g[V0][0]);
+    if c.g[S2][0] != 0 {
+        c.cycles += 9;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S2][0];
+        BOLT_INDEX_NODE_INDEX.call(c, 0x0019_c9dc)?;
+        Addr((c.g[S0][0] as u32).wrapping_add(0xc)).sh(c, c.g[V0][0]);
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S0][0];
+        BOLT_INDEX_NODE_INDEX.call(c, 0x0019_c9ec)?;
+        Addr((c.g[S2][0] as u32).wrapping_add(0xe)).sh(c, c.g[V0][0]);
+    } else {
+        c.cycles += 5;
+        let bucket = (c.g[S1][0] as u32).wrapping_add((c.g[S3][0] as u32) << 2);
+        c.g[V0][0] = sx(bucket);
+        c.g[V1][0] = u64::MAX;
+        Addr((c.g[S0][0] as u32).wrapping_add(0xc)).sh(c, u64::MAX);
+        Addr(bucket.wrapping_add(BOLT_INDEX_BUCKETS)).sw(c, c.g[S0][0]);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = u64::MAX;
+    Addr((c.g[S0][0] as u32).wrapping_add(0xe)).sh(c, u64::MAX);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// BoltFile_CacheUpdate (0x19d250)
+
+/// The bolt file cache: 10 tables of 256 slots (0x120 bytes each, a table
+/// every 0x12000 bytes); `+0xb4004` the number of pending loads.
+pub(crate) const BOLT_CACHE_TABLES: u32 = 10;
+
+#[cfg(test)]
+pub(crate) const BOLT_CACHE_TABLE_SIZE: u32 = 0x12000;
+
+pub(crate) const BOLT_CACHE_SLOT_SIZE: u32 = 0x120;
+
+#[cfg(test)]
+pub(crate) const BOLT_CACHE_PENDING: u32 = 0xb_4004;
+
+/// Slot fields: state (2 = loading, 3 = queued), the async file handle,
+/// the pending flag and the keep timer.
+pub(crate) const BOLT_SLOT_STATE: u32 = 0x0;
+
+pub(crate) const BOLT_SLOT_HANDLE: u32 = 0x108;
+
+pub(crate) const BOLT_SLOT_PENDING: u32 = 0x10c;
+
+pub(crate) const BOLT_SLOT_TIMER: u32 = 0x114;
+
+pub(crate) const BOLT_UNPACK_SLOT: Callee = Callee {
+    addr: 0x0019_d000,
+    f: ee::s03::BoltFile_UnpackSlot,
+};
+
+pub(crate) const BOLT_START_NEXT_QUEUED: Callee = Callee {
+    addr: 0x0019_d140,
+    f: ee::s03::BoltFile_StartNextQueued,
+};
+
+pub(crate) const BOLT_LOAD_SLOT: Callee = Callee {
+    addr: 0x0019_d8b8,
+    f: ee::s03::BoltFile_LoadSlot,
+};
+
+/// `void BoltFile_CacheUpdate(BoltFileCache* self)` (0x19d250): poll every
+/// slot of every table: a pending load whose async read finished
+/// (`AsyncFile_IsDone == 1`) is released and unpacked, its state becomes 1
+/// (or 0 without a keep timer) and, when it was the last pending load, the
+/// next queued one starts; with no load pending, a queued slot (state 3)
+/// starts loading.
+pub fn bolt_file_cache_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xb0);
+        c.g[V0][0] = 0xb_0000;
+        frame.save(c, S2, 0x80);
+        frame.save(c, S7, 0x30);
+        c.g[S2][0] = c.g[A0][0]; // self
+        frame.save(c, S3, 0x70);
+        c.g[S7][0] = 0x1_0000;
+        frame.save(c, S4, 0x60);
+        c.g[S3][0] = 0; // table
+        frame.save(c, FP, 0x20);
+        c.g[S4][0] = sx(r32(c, S2).wrapping_add(r32(c, V0)));
+        frame.save(c, S0, 0xa0);
+        c.g[S7][0] |= 0x2000; // BOLT_CACHE_TABLE_SIZE
+        frame.save(c, S1, 0x90);
+        c.g[FP][0] = 3; // queued
+        frame.save(c, S5, 0x50);
+        frame.save(c, S6, 0x40);
+        frame.save_ra(c, 0x10);
+        c.mult(0, V0, S3, S7);
+        loop {
+            c.cycles += 4;
+            c.g[S5][0] = 0; // slot
+            c.g[S6][0] = sx(r32(c, S3).wrapping_add(1));
+            c.g[S0][0] = sx(r32(c, V0).wrapping_add(r32(c, S2)));
+            loop {
+                bolt_file_cache_update_slot(c)?;
+                // Next slot.
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[S5][0] as i64) < 256) as u64;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(BOLT_CACHE_SLOT_SIZE));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0019_d2b0);
+                }
+            }
+            // Next table.
+            c.cycles += 4;
+            c.g[S3][0] = c.g[S6][0];
+            c.g[V0][0] = ((c.g[S3][0] as i64) < BOLT_CACHE_TABLES as i64) as u64;
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            c.mult(0, V0, S3, S7);
+            if event_due(c) {
+                deliver_event_here(c, 0x0019_d2a0);
+            }
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// One slot of [`bolt_file_cache_update`] (s0 = the slot, s5 = its index,
+/// incremented here).
+pub(crate) fn bolt_file_cache_update_slot(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 3;
+    c.g[V0][0] = Addr(oc391_at(c, S0, BOLT_SLOT_PENDING)).lw(c);
+    c.g[V1][0] = 2;
+    if c.g[V0][0] != 0 {
+        c.cycles += 3;
+        c.g[V0][0] = Addr(oc391_at(c, S0, BOLT_SLOT_STATE)).lw(c);
+        if c.g[V0][0] == c.g[V1][0] {
+            // Loading: has the read finished?
+            c.cycles += 6;
+            c.g[A0][0] = Addr(oc391_at(c, S0, BOLT_SLOT_HANDLE)).lw(c);
+            call_ptr(c, 0x003d_f980, 0x0019_d2d0)?; // AsyncFile_IsDone
+            c.g[S1][0] = c.g[V0][0];
+            c.g[V0][0] = 1;
+            if c.g[S1][0] != c.g[V0][0] {
+                c.g[S5][0] = sx(r32(c, S5).wrapping_add(1));
+                return Ok(());
+            }
+            c.cycles += 11;
+            c.g[A0][0] = Addr(oc391_at(c, S0, BOLT_SLOT_HANDLE)).lw(c);
+            c.g[A2][0] = c.g[SP][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x003d_f9d8, 0x0019_d2f0)?; // AsyncFile release
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S0][0];
+            BOLT_UNPACK_SLOT.call(c, 0x0019_d300)?;
+            c.g[V0][0] = Addr(oc391_at(c, S0, BOLT_SLOT_TIMER)).lw(c);
+            if c.g[V0][0] != 0 {
+                Addr(r32(c, S0)).sw(c, c.g[S1][0]);
+            } else {
+                c.cycles += 1;
+                Addr(r32(c, S0)).sw(c, 0);
+            }
+            c.cycles += 5;
+            Addr(oc391_at(c, S0, BOLT_SLOT_PENDING)).sw(c, 0);
+            c.g[V0][0] = Addr(oc391_at(c, S4, 0x4004)).lw(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+            let more = (c.g[V0][0] as i64) > 0;
+            Addr(oc391_at(c, S4, 0x4004)).sw(c, c.g[V0][0]);
+            if more {
+                c.cycles += 1;
+            } else {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = c.g[S3][0];
+                BOLT_START_NEXT_QUEUED.call(c, 0x0019_d330)?;
+            }
+            c.g[S5][0] = sx(r32(c, S5).wrapping_add(1));
+            return Ok(());
+        }
+        c.g[V0][0] = Addr(oc391_at(c, S4, 0x4004)).lw(c);
+    } else {
+        c.cycles += 1;
+        c.g[V0][0] = Addr(oc391_at(c, S4, 0x4004)).lw(c);
+    }
+    // Nothing pending anywhere: start a queued slot.
+    c.cycles += 2;
+    if (c.g[V0][0] as i64) <= 0 {
+        c.cycles += 3;
+        c.g[V0][0] = Addr(oc391_at(c, S0, BOLT_SLOT_STATE)).lw(c);
+        if c.g[V0][0] == c.g[FP][0] {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S5][0];
+            BOLT_LOAD_SLOT.call(c, 0x0019_d360)?;
+            c.cycles += 1;
+        }
+    }
+    c.g[S5][0] = sx(r32(c, S5).wrapping_add(1));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// BoltFile_FreeSlot (0x19d4b8)
+
+/// Slot fields freed by [`bolt_file_free_slot`]: the data block, the name's
+/// first byte, the cache index (-1 = none) and the data size.
+pub(crate) const BOLT_SLOT_DATA: u32 = 0x104;
+
+pub(crate) const BOLT_SLOT_NAME: u32 = 0x4;
+
+pub(crate) const BOLT_SLOT_INDEX: u32 = 0x110;
+
+pub(crate) const BOLT_SLOT_SIZE: u32 = 0x118;
+
+/// `BoltFileCache+0xb4000`: the bytes in use.
+#[cfg(test)]
+pub(crate) const BOLT_CACHE_BYTES: u32 = 0xb_4000;
+
+/// `void BoltFile_FreeSlot(BoltFileCache* self, int table, int slot)`
+/// (0x19d4b8): cancel a slot's pending read (state 2), take its size off
+/// the cache's byte count, free its data and clear it.
+pub fn bolt_file_free_slot(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        c.g[V0][0] = BOLT_CACHE_SLOT_SIZE as u64;
+        c.g[V1][0] = 0x1_0000;
+        c.mult(0, A2, A2, V0); // slot * 0x120
+        c.g[V1][0] |= 0x2000;
+        c.mult(0, V0, A1, V1); // table * 0x12000
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x30);
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = 2;
+        c.g[A1][0] = sx(r32(c, V0).wrapping_add(r32(c, S1)));
+        c.g[S0][0] = sx(r32(c, A1).wrapping_add(r32(c, A2)));
+        c.g[V0][0] = Addr(oc391_at(c, S0, BOLT_SLOT_STATE)).lw(c);
+        let loading = c.g[V0][0] == c.g[A0][0];
+        c.g[V0][0] = 0xb_0000;
+        if loading {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(oc391_at(c, S0, BOLT_SLOT_PENDING)).lw(c);
+            c.g[A1][0] = 0;
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                c.g[A0][0] = Addr(oc391_at(c, S0, BOLT_SLOT_HANDLE)).lw(c);
+                c.g[A2][0] = c.g[SP][0];
+                call_ptr(c, 0x003d_f9d8, 0x0019_d510)?; // AsyncFile release
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0xb_0000;
+        }
+        c.cycles += 8;
+        c.g[A0][0] = Addr(oc391_at(c, S0, BOLT_SLOT_SIZE)).lw(c);
+        c.g[V0][0] = sx(r32(c, S1).wrapping_add(r32(c, V0)));
+        c.g[V1][0] = Addr(oc391_at(c, V0, 0x4000)).lw(c);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_sub(r32(c, A0)));
+        Addr(oc391_at(c, V0, 0x4000)).sw(c, c.g[V1][0]);
+        c.g[A0][0] = Addr(oc391_at(c, S0, BOLT_SLOT_DATA)).lw(c);
+        c.g[V0][0] = u64::MAX;
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            call_ptr(c, 0x0031_7e98, 0x0019_d53c)?; // EA_MemFree
+            c.g[V0][0] = u64::MAX;
+        }
+        c.cycles += 13;
+        let slot = r32(c, S0);
+        Addr(slot + BOLT_SLOT_DATA).sw(c, 0);
+        Addr(slot + BOLT_SLOT_INDEX).sw(c, c.g[V0][0]);
+        Addr(slot + BOLT_SLOT_SIZE).sw(c, 0);
+        Addr(slot + BOLT_SLOT_STATE).sw(c, 0);
+        Addr(slot + BOLT_SLOT_NAME).sb(c, 0);
+        Addr(slot + BOLT_SLOT_HANDLE).sw(c, 0);
+        Addr(slot + BOLT_SLOT_PENDING).sw(c, 0);
+        Addr(slot + BOLT_SLOT_TIMER).sw(c, 0);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5395,6 +5840,216 @@ pub(crate) mod tests {
                     if seed % 2 == 0 { DATA + 0x2_0000 } else { 0 },
                 );
                 clear_m2(c, DATA + 0x2_0000, 0x3000);
+            },
+        );
+    }
+
+    #[test]
+    fn bolt_file_index_manager_find_node_matches() {
+        check(
+            ee::s03::f_0019c938__generated,
+            bolt_file_index_manager_find_node,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0xc938 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.pc = 0x0019_c938;
+                let m = DATA;
+                let node = |i: u32| m + 0x10 * i;
+                let hi = r.next_u32() % 0x80;
+                let lo = r.next_u32() % 0x10000;
+                let key = hi << 16 | lo;
+                let b = key % 400;
+                for i in 0..400 {
+                    c.bus.write32(BOLT_INDEX_BUCKETS + m + 4 * i, 0);
+                }
+                // The bucket's chain: nodes 10, 20, 30.. (one may hold the key).
+                let len = seed % 4;
+                let hit = r.next_u32() % 4;
+                for k in 0..len {
+                    let n = node(10 * (k + 1));
+                    c.bus.write32(
+                        n,
+                        if k == hit {
+                            key
+                        } else {
+                            key ^ (1 + r.next_u32() % 0xffff)
+                        },
+                    );
+                    c.bus
+                        .write16(n + 0xc, if k == 0 { 0xffff } else { (10 * k) as u16 });
+                    c.bus.write16(
+                        n + 0xe,
+                        if k + 1 < len {
+                            (10 * (k + 2)) as u16
+                        } else {
+                            0xffff
+                        },
+                    );
+                }
+                c.bus.write32(
+                    m + BOLT_INDEX_BUCKETS + 4 * b,
+                    if len == 0 { 0 } else { node(10) },
+                );
+                // The free list: nodes 300, 301 (or none).
+                let free = (seed / 4) % 3;
+                for k in 0..free {
+                    let n = node(300 + k);
+                    fill(c, &mut r, n, 3);
+                    c.bus.write16(
+                        n + 0xe,
+                        if k + 1 < free {
+                            (301 + k) as u16
+                        } else {
+                            0xffff
+                        },
+                    );
+                }
+                c.bus
+                    .write32(m + BOLT_INDEX_FREE, if free == 0 { 0 } else { node(300) });
+                c.g[A0][0] = sx(m);
+                c.g[A1][0] = (r.next_u32() as u64) << 32 | hi as u64;
+                c.g[A2][0] = lo as u64;
+                c.g[A3][0] = ((seed / 12) % 2) as u64;
+            },
+        );
+    }
+
+    /// Gate of [`bolt_cu_fake_is_done`] and its answer/log area.
+    pub(crate) const BOLT_CU_CTRL: u32 = DATA + 0xc_0000;
+
+    pub(crate) const BOLT_CU_MAGIC: u32 = 0xb017_d250;
+
+    /// `AsyncFile_IsDone` (0x3df980) for the cache update test: logs the
+    /// handle and `ra`, answers 0 or 2 from the handle's low bit (never 1:
+    /// the finished-read path runs the real release and unpack chain).
+    pub(crate) fn bolt_cu_fake_is_done(c: &mut Cpu) {
+        use crate::difftest::fakes::{fall_back, prev_cell};
+        if c.bus.read32(BOLT_CU_CTRL) != BOLT_CU_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(bolt_cu_fake_is_done),
+                ee::s14::f_003df980__generated,
+            );
+        }
+        let n = c.bus.read32(BOLT_CU_CTRL + 4);
+        c.bus.write32(BOLT_CU_CTRL + 4, n + 1);
+        let at = BOLT_CU_CTRL + 0x10 + 8 * (n & 0x3ff);
+        c.bus.write32(at, c.g[A0][0] as u32);
+        c.bus.write32(at + 4, c.g[RA][0] as u32);
+        c.g[V0][0] = (c.g[A0][0] & 1) * 2;
+        c.cycles += 9;
+        ret(c);
+    }
+
+    /// BoltFile_CacheUpdate: all 10 tables; pending slots (loading or not)
+    /// whose read is not done (a fake IsDone), loads pending or not, and
+    /// queued slots only while loads are pending. Not reached: a finished
+    /// read (the real release/unpack chain) and starting a queued slot (the
+    /// real BoltFile_LoadSlot): both need the whole streaming setup.
+    #[test]
+    fn bolt_file_cache_update_matches() {
+        use crate::difftest::fakes::{hook, prev_cell};
+        hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003DF980),
+            bolt_cu_fake_is_done,
+            prev_cell(bolt_cu_fake_is_done),
+        );
+        check(
+            ee::s03::f_0019d250__generated,
+            bolt_file_cache_update,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x19d250, 0);
+                c.pc = 0x0019_d250;
+                let this = DATA;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(BOLT_CU_CTRL, BOLT_CU_MAGIC);
+                let loads = if seed % 2 == 0 {
+                    1 + r.next_u32() % 3
+                } else {
+                    0
+                };
+                c.bus.write32(this + BOLT_CACHE_PENDING, loads);
+                for k in 0..64 {
+                    let i = r.next_u32() % BOLT_CACHE_TABLES;
+                    let j = r.next_u32() % 256;
+                    let slot = this + i * BOLT_CACHE_TABLE_SIZE + j * BOLT_CACHE_SLOT_SIZE;
+                    let mut state = r.next_u32() % 5;
+                    if state == 3 && loads == 0 {
+                        state = 4;
+                    }
+                    c.bus.write32(slot + BOLT_SLOT_STATE, state);
+                    c.bus.write32(slot + BOLT_SLOT_PENDING, (k % 3 != 0) as u32);
+                    c.bus.write32(slot + BOLT_SLOT_HANDLE, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// Gate of [`bolt_fs_fake_mem_free`] and its log.
+    pub(crate) const BOLT_FS_CTRL: u32 = DATA + 0xc_8000;
+
+    pub(crate) const BOLT_FS_MAGIC: u32 = 0xb017_d4b8;
+
+    /// `EA_MemFree` (0x317e98) for the free-slot test: logs the block and
+    /// `ra`.
+    pub(crate) fn bolt_fs_fake_mem_free(c: &mut Cpu) {
+        use crate::difftest::fakes::{fall_back, prev_cell};
+        if c.bus.read32(BOLT_FS_CTRL) != BOLT_FS_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(bolt_fs_fake_mem_free),
+                ee::s10::f_00317e98__generated,
+            );
+        }
+        c.bus.write32(BOLT_FS_CTRL + 4, c.g[A0][0] as u32);
+        c.bus.write32(BOLT_FS_CTRL + 8, c.g[RA][0] as u32);
+        c.g[V0][0] = 0x1234;
+        c.cycles += 13;
+        ret(c);
+    }
+
+    /// BoltFile_FreeSlot: loading with or without a pending read (the real
+    /// release chain on an unknown handle: mutex syscalls are fakes), other
+    /// states, with or without data (a fake EA_MemFree).
+    #[test]
+    fn bolt_file_free_slot_matches() {
+        use crate::difftest::fakes::{hook, prev_cell};
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317E98),
+            bolt_fs_fake_mem_free,
+            prev_cell(bolt_fs_fake_mem_free),
+        );
+        check(
+            ee::s03::f_0019d4b8__generated,
+            bolt_file_free_slot,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x19d4b8, 0);
+                c.pc = 0x0019_d4b8;
+                c.bus.write32(BOLT_FS_CTRL, BOLT_FS_MAGIC);
+                let this = DATA;
+                let table = r.next_u32() % BOLT_CACHE_TABLES;
+                let index = r.next_u32() % 256;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(table);
+                c.g[A2][0] = sx(index);
+                let slot = this + table * BOLT_CACHE_TABLE_SIZE + index * BOLT_CACHE_SLOT_SIZE;
+                for off in (0..BOLT_CACHE_SLOT_SIZE).step_by(4) {
+                    c.bus.write32(slot + off, r.next_u32());
+                }
+                c.bus.write32(
+                    slot + BOLT_SLOT_STATE,
+                    if seed % 2 == 0 { 2 } else { seed % 5 },
+                );
+                c.bus
+                    .write32(slot + BOLT_SLOT_PENDING, (seed % 3 != 0) as u32);
+                c.bus.write32(
+                    slot + BOLT_SLOT_DATA,
+                    if seed % 4 == 0 { 0 } else { DATA + 0xd_0000 },
+                );
+                c.bus.write32(this + BOLT_CACHE_BYTES, r.next_u32());
             },
         );
     }

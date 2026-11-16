@@ -230,6 +230,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_trigger_instance_update,
         "WorldTriggerInstance_Update",
     ),
+    (
+        0x002b_7318,
+        c_world_sound_insert_emitter,
+        "cWorldSound_InsertEmitter",
+    ),
 ];
 
 /// Direct-call targets (dossier callees, found by address in `generated/ee`).
@@ -4582,6 +4587,106 @@ pub(crate) fn wti_upd_voice_tail(c: &mut Cpu, base: u32, tail_cycles: u64) -> Fl
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// cWorldSound_InsertEmitter (0x2b7318)
+
+pub(crate) const INSERT_EMITTER_BOUNDS: Callee = Callee {
+    addr: 0x002b_6cf8,
+    f: ee::s08::cWorldSound_ComputeRegionBounds,
+};
+
+/// `void cWorldSound_InsertEmitter(cWorldSound* self, Trigger* trig)`
+/// (0x2b7318): put a trigger with a shape region into the game module's
+/// spatial hash (+0x20): compute its region bounds, mark it state 5, build
+/// the `{min, 1} {max, 1}` box, take its spatial key and insert it at the
+/// hash level the key selects (cell 0x50 / 0x28 / 0x14 offsets).
+pub fn c_world_sound_insert_emitter(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S1, 0x60);
+        frame.save(c, S0, 0x70);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x50);
+        'restored: {
+            if c.g[S1][0] != 0 {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                frame.restore(c, S0, 0x70);
+                if c.g[V0][0] == 0 {
+                    break 'restored;
+                }
+                c.cycles += 4;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                c.g[A2][0] = c.g[SP][0];
+                if c.g[V1][0] == 0 {
+                    break 'restored;
+                }
+                c.cycles += 43;
+                c.g[A3][0] = sx(frame.at(c, 0x10));
+                INSERT_EMITTER_BOUNDS.call(c, 0x002b_7354)?; // (self, trig, &min, &max)
+                call_ptr(c, 0x0028_b1c8, 0x002b_735c)?; // SSXAudioSystem_GetGameModule
+                c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x20));
+                c.g[V1][0] = 0x5;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(1, 6);
+                let sp_ = sp(c);
+                c.g[A0][0] = sx(sp_.wrapping_add(0x40));
+                c.lwc1(5, sp_);
+                c.g[A1][0] = sx(sp_.wrapping_add(0x20));
+                c.lwc1(4, sp_.wrapping_add(0x4));
+                c.lwc1(0, sp_.wrapping_add(0x8));
+                c.lwc1(1, sp_.wrapping_add(0x10));
+                c.lwc1(2, sp_.wrapping_add(0x14));
+                c.lwc1(3, sp_.wrapping_add(0x18));
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                // box = {min, 1}, {max, 1} at sp+0x20
+                c.swc1(5, sp_.wrapping_add(0x20));
+                c.swc1(4, sp_.wrapping_add(0x24));
+                c.swc1(0, sp_.wrapping_add(0x28));
+                c.swc1(1, sp_.wrapping_add(0x30));
+                c.swc1(2, sp_.wrapping_add(0x34));
+                c.swc1(3, sp_.wrapping_add(0x38));
+                c.swc1(6, sp_.wrapping_add(0x3c));
+                c.swc1(6, sp_.wrapping_add(0x2c));
+                call_ptr(c, 0x0032_8f28, 0x002b_73b4)?; // SpatialKey_FromAABB(&key, &box)
+                                                        // The level: key fields (+4, +8, +0xc) > -1 pick 0, 0x28, 0x14 steps.
+                c.g[V0][0] = c.lw(sp_.wrapping_add(0x44));
+                c.g[A3][0] = 0xffff_ffff_ffff_ffff;
+                c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x50));
+                c.g[A1][0] = c.lw(sp_.wrapping_add(0x48));
+                c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[A2][0] = c.lw(sp_.wrapping_add(0x4c));
+                if c.g[V0][0] != 0 {
+                    c.g[V1][0] = c.g[S0][0];
+                }
+                c.g[A1][0] = ((c.g[A3][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x28));
+                c.g[A3][0] = ((c.g[A3][0] as i64) < (c.g[A2][0] as i64)) as u64;
+                if c.g[A1][0] != 0 {
+                    c.g[A0][0] = c.g[V1][0];
+                }
+                c.g[A2][0] = c.g[S1][0];
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x14));
+                c.g[A1][0] = 0x2;
+                if c.g[A3][0] == 0 {
+                    c.g[A0][0] = c.g[V0][0];
+                }
+                c.g[A3][0] = sx(sp_.wrapping_add(0x40));
+                call_ptr(c, 0x0032_8c20, 0x002b_73f8)?; // SpatialHash_Insert(level, 2, trig, &key)
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x70);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6479,6 +6584,88 @@ pub(crate) mod tests {
             world_trigger_instance_update,
             240,
             &oc359_update_setup,
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::ai::rider::tests::OC396_CTRL;
+    pub(crate) use crate::game::ai::rider::tests::OC396_MAGIC;
+    use std::ptr::addr_of_mut;
+
+    pub(crate) use crate::game::ai::rider::tests::oc396_fake;
+    pub(crate) use crate::game::ai::rider::tests::oc396_fake_call;
+
+    oc396_fake!(
+        oc396_fake_spatial_key,
+        OC396_PREV_SPATIAL_KEY,
+        0x0032_8f28,
+        ee::s10::f_00328f28__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_spatial_insert,
+        OC396_PREV_SPATIAL_INSERT,
+        0x0032_8c20,
+        ee::s10::f_00328c20__generated
+    );
+
+    /// A trigger with one or two sphere shapes (real bounds), the spatial
+    /// key and insert faked; the key words on the stack decide the level.
+    #[test]
+    fn c_world_sound_insert_emitter_matches() {
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00328F28),
+            oc396_fake_spatial_key,
+            &OC396_PREV_SPATIAL_KEY,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00328C20),
+            oc396_fake_spatial_insert,
+            &OC396_PREV_SPATIAL_INSERT,
+        );
+        covered(
+            ee::s08::f_002b7318__generated,
+            c_world_sound_insert_emitter,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002b_7318, 2);
+                c.pc = 0x002b_7318;
+                c.bus.write32(OC396_CTRL, OC396_MAGIC);
+                // The game module's spatial hash.
+                let world = DATA + 0x1000;
+                let module = DATA + 0x1100;
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, module);
+                c.bus.write32(module + 0x20, DATA + 0x1200);
+                let trig = DATA + 0x2000;
+                let region = DATA + 0x2100;
+                let origin = DATA + 0x2200;
+                c.bus
+                    .write32(trig + 0xc, if seed % 7 == 0 { 0 } else { origin });
+                c.bus.write32(trig + 0x10, region);
+                for i in 0..3 {
+                    c.bus.write32(origin + 0x40 + 4 * i, r.f32(100.0));
+                }
+                let n = if seed % 5 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 2
+                };
+                c.bus.write32(region, 1);
+                c.bus.write32(region + 4, n);
+                for k in 0..n {
+                    let shape = region + 0xc + 0x1c * k;
+                    c.bus.write32(shape, 0);
+                    for i in 1..7 {
+                        c.bus.write32(shape + 4 * i, r.f32(50.0));
+                    }
+                }
+                c.bus.write32(GAME_GP - 0x4544, 1.0e30f32.to_bits());
+                c.bus.write32(GAME_GP - 0x4540, (-1.0e30f32).to_bits());
+                c.g[A0][0] = sx(DATA + 0x3000);
+                c.g[A1][0] = if seed % 11 == 0 { 0 } else { sx(trig) };
+            },
         );
     }
 }

@@ -19,7 +19,6 @@ pub(crate) use crate::game::fe::feasyncfile::at_5 as at;
 pub(crate) use crate::game::fe::feasyncfile::r;
 pub(crate) use crate::game::sound::bankmonitor::p;
 use crate::guest::Addr;
-#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -91,6 +90,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_1c48,
         be_set_char_profile_bolt_owned,
         "BE_SetCharProfileBoltOwned",
+    ),
+    (
+        0x0015_1c90,
+        be_set_char_profile_bolt_equipped,
+        "BE_SetCharProfileBoltEquipped",
     ),
 ];
 
@@ -665,6 +669,330 @@ pub fn be_reset_char_rivalries(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// BE_SetCharProfileBoltEquipped (0x151c90)
+
+pub(crate) const BOLT_EQUIP_GET_DB: Callee = Callee {
+    addr: 0x0014_bdb8,
+    f: ee::s01::Bolts_GetDB,
+};
+
+pub(crate) const BOLT_EQUIP_FIND_INDEX: Callee = Callee {
+    addr: 0x0014_d448,
+    f: ee::s01::Bolts_FindBoltIndex,
+};
+
+pub(crate) const BOLT_EQUIP_FIRST_CHILD: Callee = Callee {
+    addr: 0x0014_d558,
+    f: ee::s01::Bolts_FindFirstChild,
+};
+
+pub(crate) const BOLT_EQUIP_COUNT_CHILDREN: Callee = Callee {
+    addr: 0x0014_d4c8,
+    f: ee::s01::Bolts_CountChildren,
+};
+
+pub(crate) const BOLT_EQUIP_APPLY_DEPS: Callee = Callee {
+    addr: 0x0015_1ef0,
+    f: ee::s01::BE_ApplyBoltDependencies,
+};
+
+/// The recursion goes through the generated alias (the override slot once
+/// installed).
+pub(crate) const BOLT_EQUIP_SELF: Callee = Callee {
+    addr: 0x0015_1c90,
+    f: ee::s01::BE_SetCharProfileBoltEquipped,
+};
+
+/// Profile fields: the id -> item index table (`short*`), the items (4 bytes
+/// each, flags at +2: 0x10 = equipped), the bolt kind (byte).
+pub(crate) const BOLT_EQUIP_LOOKUP: u32 = 0x288;
+
+pub(crate) const BOLT_EQUIP_ITEMS: u32 = 0x290;
+
+pub(crate) const BOLT_EQUIP_KIND: u32 = 0xbc0;
+
+/// `int BE_SetCharProfileBoltEquipped(CharProfile* prof, int id, int on)`
+/// (0x151c90): set or clear bolt `id`'s equipped flag. Equipping an exclusive
+/// bolt (def flag 1) first unequips the other members of its group (owned
+/// ones, or forced by their flag 8); unequipping a bolt (or one with flag 8)
+/// unequips its children. A real change then applies the bolt's dependency
+/// links. Returns 0 when a nested change failed, else 1.
+pub fn be_set_char_profile_bolt_equipped(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S2, 0x60);
+        frame.save(c, S5, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S7, 0x10);
+        c.g[S5][0] = c.g[A1][0];
+        frame.save(c, S4, 0x40);
+        frame.save(c, S0, 0x80);
+        frame.save(c, S1, 0x70);
+        frame.save(c, S3, 0x50);
+        frame.save(c, S6, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S7][0] = c.g[A2][0];
+        BOLT_EQUIP_GET_DB.call(c, 0x0015_1cc8)?;
+        c.g[S4][0] = c.g[V0][0];
+        c.g[A1][0] = c.lb((c.g[S2][0] as u32).wrapping_add(BOLT_EQUIP_KIND));
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A2][0] = c.g[S5][0];
+        BOLT_EQUIP_FIND_INDEX.call(c, 0x0015_1cdc)?;
+        // t0 = the bolt's definition (0x38 bytes each), or null.
+        c.g[A0][0] = c.g[V0][0];
+        if (c.g[V0][0] as i64) >= 0 {
+            c.cycles += 4;
+            c.g[V0][0] = 0x38;
+            c.g[V1][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x4));
+            c.mult(0, V0, A0, V0);
+            c.g[T0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        } else {
+            c.cycles += 2;
+            c.g[T0][0] = 0;
+        }
+        // a1 = the profile's item for the bolt, or null.
+        c.cycles += 6;
+        c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(BOLT_EQUIP_LOOKUP));
+        c.g[V0][0] = sx((c.g[S5][0] as u32) << 1);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[V0][0] = c.lh(c.g[V0][0] as u32);
+        let missing = (c.g[V0][0] as i64) < 0;
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        if !missing {
+            c.cycles += 3;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(BOLT_EQUIP_ITEMS));
+            c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        } else {
+            c.cycles += 1;
+            c.g[A1][0] = 0;
+        }
+        // a3 = exclusive (def flag 1), a2 = forced (flag 8), s6 = was equipped.
+        c.cycles += 8;
+        c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x34));
+        c.g[A0][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0x2));
+        c.g[A3][0] = c.g[V0][0] & 0x1;
+        c.g[V0][0] = c.g[V0][0] & 0x8;
+        c.g[V1][0] = c.g[A0][0] & 0x10;
+        c.g[A2][0] = (c.g[V0][0] != 0) as u64;
+        c.g[S6][0] = (c.g[V1][0] != 0) as u64;
+        if c.g[S7][0] != 0 {
+            c.cycles += 2;
+            c.g[V0][0] = c.g[A0][0] | 0x10;
+        } else {
+            c.cycles += 1;
+            c.g[V0][0] = c.g[A0][0] & 0xffef;
+        }
+        c.cycles += 2;
+        c.sh((c.g[A1][0] as u32).wrapping_add(0x2), c.g[V0][0]);
+        'exit: {
+            'e84: {
+                if c.g[S7][0] != 0 {
+                    // Equip.
+                    c.cycles += 2;
+                    if c.g[S6][0] != 0 {
+                        c.g[V0][0] = 0x1;
+                        break 'exit;
+                    }
+                    c.cycles += 2;
+                    c.g[A0][0] = c.g[S4][0];
+                    if c.g[A3][0] == 0 {
+                        // e8c: (s6 is 0 here) apply the dependencies.
+                        c.cycles += 2;
+                        c.g[A0][0] = c.g[S2][0];
+                        bolt_equip_apply_deps(c)?;
+                        break 'exit;
+                    }
+                    // Unequip the rest of the exclusive group.
+                    c.cycles += 14;
+                    c.g[S0][0] = c.lh((c.g[T0][0] as u32).wrapping_add(0x6));
+                    c.g[A1][0] = c.lb((c.g[S2][0] as u32).wrapping_add(BOLT_EQUIP_KIND));
+                    c.g[S3][0] = 0;
+                    c.g[A2][0] = c.g[S0][0];
+                    BOLT_EQUIP_FIRST_CHILD.call(c, 0x0015_1d7c)?;
+                    c.g[A1][0] = c.lb((c.g[S2][0] as u32).wrapping_add(BOLT_EQUIP_KIND));
+                    c.g[A2][0] = c.g[S0][0];
+                    c.g[S1][0] = c.g[V0][0];
+                    c.g[A0][0] = c.g[S4][0];
+                    BOLT_EQUIP_COUNT_CHILDREN.call(c, 0x0015_1d90)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[V0][0] = ((c.g[S6][0] as i64) < (c.g[S0][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        break 'e84;
+                    }
+                    loop {
+                        c.cycles += 3;
+                        c.g[A1][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x4));
+                        let is_self = c.g[A1][0] == c.g[S5][0];
+                        c.g[V0][0] = sx((c.g[A1][0] as u32) << 1);
+                        'counted: {
+                            'skip: {
+                                if is_self {
+                                    break 'skip;
+                                }
+                                c.cycles += 5;
+                                c.g[V1][0] =
+                                    c.lw((c.g[S2][0] as u32).wrapping_add(BOLT_EQUIP_LOOKUP));
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                c.g[V0][0] = c.lh(c.g[V0][0] as u32);
+                                let missing = (c.g[V0][0] as i64) < 0;
+                                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                                if missing {
+                                    break 'skip;
+                                }
+                                c.cycles += 5;
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                                c.g[V1][0] =
+                                    c.lhu((c.g[V0][0] as u32).wrapping_add(BOLT_EQUIP_ITEMS + 2));
+                                c.g[V1][0] = c.g[V1][0] & 0x10;
+                                let equipped = c.g[V1][0] != 0;
+                                c.g[A0][0] = c.g[S2][0];
+                                if !equipped {
+                                    c.cycles += 4;
+                                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x34));
+                                    c.g[V0][0] = c.g[V0][0] & 0x8;
+                                    if c.g[V0][0] == 0 {
+                                        c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+                                        break 'counted;
+                                    }
+                                }
+                                c.cycles += 4;
+                                c.g[A2][0] = 0;
+                                BOLT_EQUIP_SELF.call(c, 0x0015_1dec)?;
+                                let failed = c.g[V0][0] == 0;
+                                c.g[V0][0] = 0;
+                                if failed {
+                                    break 'exit;
+                                }
+                            }
+                            c.cycles += 1;
+                            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[S0][0] as i64)) as u64;
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x38));
+                        if c.g[V0][0] == 0 {
+                            c.cycles += 2;
+                            break 'e84;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0015_1da0);
+                        }
+                    }
+                } else {
+                    // Unequip: also unequip the children (if it was
+                    // equipped, or is forced).
+                    c.cycles += 2;
+                    if c.g[S6][0] != 0 {
+                        c.g[A1][0] = c.lb((c.g[S2][0] as u32).wrapping_add(BOLT_EQUIP_KIND));
+                    } else {
+                        c.cycles += 2;
+                        if c.g[A2][0] == 0 {
+                            break 'e84;
+                        }
+                        c.cycles += 1;
+                        c.g[A1][0] = c.lb((c.g[S2][0] as u32).wrapping_add(BOLT_EQUIP_KIND));
+                    }
+                    c.cycles += 13;
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[A2][0] = c.g[S5][0];
+                    c.g[S3][0] = 0;
+                    BOLT_EQUIP_FIRST_CHILD.call(c, 0x0015_1e38)?;
+                    c.g[A1][0] = c.lb((c.g[S2][0] as u32).wrapping_add(BOLT_EQUIP_KIND));
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[A2][0] = c.g[S5][0];
+                    BOLT_EQUIP_COUNT_CHILDREN.call(c, 0x0015_1e4c)?;
+                    c.g[S1][0] = c.g[V0][0];
+                    c.g[V0][0] = ((c.g[S7][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        break 'e84;
+                    }
+                    c.cycles += 1;
+                    loop {
+                        c.cycles += 6;
+                        c.g[A1][0] = c.lh((c.g[S0][0] as u32).wrapping_add(0x4));
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[A2][0] = 0;
+                        BOLT_EQUIP_SELF.call(c, 0x0015_1e70)?;
+                        let failed = c.g[V0][0] == 0;
+                        c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+                        if failed {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0015_1e0c);
+                            }
+                            c.cycles += 2;
+                            c.g[V0][0] = 0;
+                            break 'exit;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x38));
+                        if c.g[V0][0] == 0 {
+                            break 'e84;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0015_1e60);
+                        }
+                    }
+                }
+            }
+            // e84: apply the dependency links if the state really changed.
+            c.cycles += 2;
+            if c.g[S7][0] != 0 {
+                c.cycles += 2;
+                c.g[A0][0] = c.g[S2][0];
+                if c.g[S6][0] == 0 {
+                    bolt_equip_apply_deps(c)?;
+                    break 'exit;
+                }
+                // (s7 is still set: e94 returns 1.)
+                c.cycles += 2;
+                c.g[V0][0] = 0x1;
+                break 'exit;
+            }
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S2][0];
+            if c.g[S6][0] == 0 {
+                c.cycles += 1;
+                c.g[V0][0] = 0x1;
+                break 'exit;
+            }
+            bolt_equip_apply_deps(c)?;
+        }
+        c.cycles += 11;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore(c, S6, 0x20);
+        frame.restore(c, S7, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// 0x151ea4: `v0 = BE_ApplyBoltDependencies(prof, id, on) ? 1 : 0` (a0 is set).
+pub(crate) fn bolt_equip_apply_deps(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 6;
+    c.g[A1][0] = c.g[S5][0];
+    c.g[A2][0] = c.g[S7][0];
+    BOLT_EQUIP_APPLY_DEPS.call(c, 0x0015_1eb0)?;
+    c.g[V1][0] = c.g[V0][0];
+    c.g[V0][0] = 0;
+    if c.g[V1][0] != 0 {
+        c.cycles += 1;
+        c.g[V0][0] = 0x1;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -985,6 +1313,70 @@ pub(crate) mod tests {
                 wb(c, 0x004a_1218, 0);
                 wb(c, 0x004a_1219, 1);
                 wb(c, 0x004a_121a, 2);
+            },
+        );
+    }
+
+    /// A small bolt database (eight bolts, child lists that only point at
+    /// higher ids, so the unequip recursion ends; no dependency links) and a
+    /// profile with some bolts equipped or missing.
+    #[test]
+    fn be_set_char_profile_bolt_equipped_matches() {
+        check(
+            ee::s01::f_00151c90__generated,
+            be_set_char_profile_bolt_equipped,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0396_0004 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0015_1c90;
+                let db = 0x004a_6750;
+                let kind = seed % 2;
+                let (defs, idx, first, cnt) = (
+                    DATA + 0x1_0000,
+                    DATA + 0x1_1000,
+                    DATA + 0x1_1100,
+                    DATA + 0x1_1200,
+                );
+                c.bus.write32(db + 4, defs);
+                c.bus.write32(db + 0x4dc + 4 * kind, idx);
+                c.bus.write32(db + 0x194 + 4 * kind, first);
+                c.bus.write32(db + 0x11c + 4 * kind, cnt);
+                for id in 0..8u32 {
+                    let def = if id == 7 && r.next_u32() % 4 == 0 {
+                        0xffff
+                    } else {
+                        id
+                    };
+                    c.bus.write16(idx + 2 * id, def as u16);
+                    let d = defs + 0x38 * id;
+                    c.bus.write16(d + 6, (r.next_u32() % 8) as u16);
+                    c.bus.write32(d + 0x34, r.next_u32() & 0x9);
+                    // Children of list `id`: entries 8 + 2*id, others > id.
+                    let n = if id == 7 { 0 } else { r.next_u32() % 3 };
+                    c.bus.write16(first + 2 * id, (8 + 2 * id) as u16);
+                    c.bus.write16(cnt + 2 * id, n as u16);
+                    for k in 0..2 {
+                        let e = defs + 0x38 * (8 + 2 * id + k);
+                        let other = id + 1 + r.next_u32() % (7 - id).max(1);
+                        c.bus.write16(e + 4, other.min(7) as u16);
+                        c.bus.write32(e + 0x34, r.next_u32() & 0x8);
+                    }
+                }
+                let prof = DATA + 0x1_2000;
+                let lookup = DATA + 0x1_3000;
+                c.bus.write8(prof + BOLT_EQUIP_KIND, kind as u8);
+                c.bus.write32(prof + BOLT_EQUIP_LOOKUP, lookup);
+                for id in 0..8u32 {
+                    let j = if r.next_u32() % 6 == 0 { 0xffff } else { id };
+                    c.bus.write16(lookup + 2 * id, j as u16);
+                    let flags = (r.next_u32() & 0xffff) as u16 & !0x10
+                        | if r.next_u32() % 2 == 0 { 0x10 } else { 0 };
+                    c.bus.write16(prof + BOLT_EQUIP_ITEMS + 4 * id + 2, flags);
+                }
+                c.g[A0][0] = sx(prof);
+                c.g[A1][0] = (r.next_u32() % 8) as u64;
+                c.g[A2][0] = (seed / 2 % 2) as u64;
             },
         );
     }

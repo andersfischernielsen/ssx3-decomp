@@ -16,12 +16,14 @@ pub(crate) use crate::game::fe::feasyncfile::p_5 as p_2;
 pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::sp_2;
 pub(crate) use crate::game::main::gamemode::sw_r;
+pub(crate) use crate::game::object::instancenode::ui_vector_lw;
 pub(crate) use crate::game::object::railmodifier::reset_vtable_and_delete;
 pub(crate) use crate::game::sound::bankmonitor::add32;
 pub(crate) use crate::game::sound::bankmonitor::leave;
 pub(crate) use crate::game::ui::uithing::ui_anim_update;
 pub(crate) use crate::game::wscript::wscriptman::p;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use callee::*;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -68,6 +70,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003a_62a0, c_ui_text_scroll_dtor, "cUITextScroll_dtor"),
     (0x003a_6378, c_ui_text_scroll_v23, "cUITextScroll_v23"),
     (0x003a_6398, c_ui_text_scroll_v24, "cUITextScroll_v24"),
+    (
+        0x003a_36d0,
+        ui_vector_set_anim_param,
+        "UIVector_SetAnimParam",
+    ),
+    (0x003a_39f8, ui_vector_render, "UIVector_Render"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -868,6 +876,414 @@ pub fn c_ui_text_scroll_dtor(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// UIVector_Render (0x3a39f8)
+
+/// `cUIVector` fields.
+pub(crate) const UI_VECTOR_POSITION_X: u32 = 0x44;
+
+pub(crate) const UI_VECTOR_SCALE_X: u32 = 0x50;
+
+/// `count << 17 | mode << 2 | indexed` (bits 17.. vertex count, bit 0: draw indexed triangles).
+pub(crate) const UI_VECTOR_COUNTS: u32 = 0x74;
+
+pub(crate) const UI_VECTOR_TRIANGLES: u32 = 0x78;
+
+pub(crate) const UI_VECTOR_COLOURS: u32 = 0x7c;
+
+pub(crate) const UI_VECTOR_POSITIONS: u32 = 0x80;
+
+pub(crate) const UI_VECTOR_RENDER_POSITIONS: u32 = 0x84;
+
+pub(crate) const UI_VECTOR_VERTICES: u32 = 0x8c;
+
+/// `GrMan` (the graphics manager) at `gp - 0x854`; its current draw state
+/// at `+0xe84`, its vtable at `+0x10d8`.
+pub(crate) const UI_VECTOR_GRMAN_GP: u32 = 0x854;
+
+/// `__fixunssfsi` (float to unsigned int).
+pub(crate) const UI_VECTOR_FIXUNSSFSI: u32 = 0x0041_39f8;
+
+/// `void cUIVector::render2D(cUIVector* this, float x, float y)` (0x3a39f8):
+/// scale the vertex positions into the render copy, set the draw layer, then
+/// either draw indexed triangles through GrMan (vtable `+0x240`) or build
+/// screen vertices (position + offset, colour * 0.5 as integers) and draw
+/// them as a strip (vtable `+0x248`).
+pub fn ui_vector_render(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0xa0);
+        frame.save(c, S3, 0x40);
+        frame.save_fpr(c, 23, 0x98);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_fpr(c, 22, 0x90);
+        c.mov_s(23, 13);
+        frame.save(c, S0, 0x70);
+        frame.save(c, S1, 0x60);
+        frame.save(c, S2, 0x50);
+        frame.save(c, S4, 0x30);
+        frame.save_ra(c, 0x20);
+        frame.save_fpr(c, 21, 0x88);
+        frame.save_fpr(c, 20, 0x80);
+        let this = c.g[S3][0];
+        c.g[V0][0] = ui_vector_lw(c, this, UI_VECTOR_POSITIONS);
+        c.mov_s(22, 12);
+        if c.g[V0][0] != 0 {
+            if ui_vector_render_body(c, this, frame)? {
+                // Indexed draw: s0 already reloaded in the call's delay slot.
+                ui_vector_render_epilogue(c, frame);
+                return Ok(());
+            }
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0x70);
+        ui_vector_render_epilogue(c, frame);
+        Ok(())
+    })
+}
+
+pub(crate) fn ui_vector_render_epilogue(c: &mut Cpu, frame: Frame) {
+    c.cycles += 11;
+    frame.restore(c, S1, 0x60);
+    frame.restore(c, S2, 0x50);
+    frame.restore(c, S3, 0x40);
+    frame.restore(c, S4, 0x30);
+    frame.restore_ra(c, 0x20);
+    frame.restore_fpr(c, 23, 0x98);
+    frame.restore_fpr(c, 22, 0x90);
+    frame.restore_fpr(c, 21, 0x88);
+    frame.restore_fpr(c, 20, 0x80);
+    frame.close(c);
+}
+
+/// The body after the `mpVertexPosition != 0` test; `Ok(true)` when it took
+/// the indexed draw (which reloads s0 itself).
+pub(crate) fn ui_vector_render_body(
+    c: &mut Cpu,
+    this: u64,
+    frame: Frame,
+) -> Result<bool, crate::call::Unwound> {
+    // Render positions = positions scaled by mScale.
+    c.cycles += 4;
+    c.g[V0][0] = sx((ui_vector_lw(c, this, UI_VECTOR_COUNTS) as u32) >> 17);
+    c.g[A2][0] = 0;
+    if c.g[V0][0] != 0 {
+        c.cycles += 2;
+        c.g[A1][0] = 0;
+        loop {
+            c.cycles += 28;
+            let off = c.g[A1][0] as u32;
+            let dst = (ui_vector_lw(c, this, UI_VECTOR_RENDER_POSITIONS) as u32).wrapping_add(off);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            let src = (ui_vector_lw(c, this, UI_VECTOR_POSITIONS) as u32).wrapping_add(off);
+            c.g[A0][0] = sx(dst);
+            c.g[V0][0] = sx(src);
+            let xy = Addr(src).read_u64_unaligned(c);
+            c.g[V1][0] = xy;
+            let z = Addr(src).off(8).lw(c);
+            c.g[A3][0] = z;
+            Addr(dst).write_u64_unaligned(c, xy);
+            Addr(dst).off(8).sw(c, z);
+            for (k, scale) in [(0u32, UI_VECTOR_SCALE_X), (4, UI_VECTOR_SCALE_X + 4)] {
+                let p =
+                    (ui_vector_lw(c, this, UI_VECTOR_RENDER_POSITIONS) as u32).wrapping_add(off);
+                if k == 0 {
+                    c.g[V1][0] = sx(p);
+                } else {
+                    c.g[A0][0] = sx(p);
+                }
+                let s = Addr((this as u32).wrapping_add(scale)).read_fpu(c);
+                c.f[1] = s.0;
+                let v = Addr(p).off(k).read_fpu(c) * s;
+                c.f[0] = v.0;
+                Addr(p).off(k).write_fpu(c, v);
+            }
+            let n = sx((ui_vector_lw(c, this, UI_VECTOR_COUNTS) as u32) >> 17);
+            let more = c.g[A2][0] < n;
+            c.g[V0][0] = more as u64;
+            c.g[A1][0] = sx(off.wrapping_add(0xc));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003a_3a50);
+            }
+        }
+    }
+
+    // Draw state: layer (flags +0x15 & 0x1f) + 9 into bits 5..9, word +0x10 = -1.
+    c.cycles += 19;
+    let gp = c.g[GP][0] as u32;
+    let grman = Addr(gp.wrapping_sub(UI_VECTOR_GRMAN_GP)).lw(c);
+    c.g[A2][0] = grman;
+    c.g[A1][0] = 0xffff_ffff_ffff_fc1f;
+    c.g[A3][0] = u64::MAX;
+    let layer = Addr((this as u32).wrapping_add(0x15)).lbu(c) & 0x1f;
+    let ds = ui_vector_lw(c, grman, 0xe84);
+    c.g[A0][0] = ds;
+    let bits = sx(((layer as u32).wrapping_add(9)) << 5) & 0x3e0;
+    c.g[V0][0] = bits;
+    let w = (ui_vector_lw(c, ds, 8) & 0xffff_ffff_ffff_fc1f) | bits;
+    c.g[V1][0] = w;
+    Addr((ds as u32).wrapping_add(8)).sw(c, w);
+    let ds2 = ui_vector_lw(c, grman, 0xe84);
+    c.g[V0][0] = ds2;
+    Addr((ds2 as u32).wrapping_add(0x10)).sh(c, u64::MAX);
+    let counts = ui_vector_lw(c, this, UI_VECTOR_COUNTS);
+    c.g[A2][0] = counts;
+    c.g[V0][0] = counts & 1;
+    c.g[A1][0] = sx((counts as u32) >> 2);
+    if counts & 1 != 0 {
+        // Indexed triangles: GrMan->vt[0x240](mode, count, tris, render positions, 0, colours, pos).
+        c.cycles += 22;
+        let x = Addr((this as u32).wrapping_add(UI_VECTOR_POSITION_X)).read_fpu(c);
+        let y = Addr((this as u32).wrapping_add(UI_VECTOR_POSITION_X + 4)).read_fpu(c);
+        c.g[A1][0] &= 0x7fff;
+        let sp = frame.at(c, 0);
+        Addr(sp).off(8).sw(c, 0);
+        let px = x + FpuF32(c.f[22]);
+        let py = y + FpuF32(c.f[23]);
+        c.f[0] = px.0;
+        c.f[1] = py.0;
+        let t4 = Addr(gp.wrapping_sub(UI_VECTOR_GRMAN_GP)).lw(c);
+        c.g[T4][0] = t4;
+        c.g[T2][0] = ui_vector_lw(c, this, UI_VECTOR_COLOURS);
+        c.g[A2][0] = sx((counts as u32) >> 17);
+        Addr(sp).write_fpu(c, px);
+        c.g[T1][0] = 0;
+        Addr(sp).off(4).write_fpu(c, py);
+        c.g[T3][0] = c.g[SP][0];
+        let vt = ui_vector_lw(c, t4, 0x10d8);
+        c.g[V0][0] = vt;
+        c.g[A3][0] = ui_vector_lw(c, this, UI_VECTOR_TRIANGLES);
+        let delta = Addr((vt as u32).wrapping_add(0x240)).lh(c);
+        c.g[T0][0] = ui_vector_lw(c, this, UI_VECTOR_RENDER_POSITIONS);
+        let func = ui_vector_lw(c, vt, 0x244);
+        c.g[V1][0] = func;
+        c.g[A0][0] = sx((t4 as u32).wrapping_add(delta as u32));
+        call_ptr(c, func as u32, 0x003a_3b5c)?;
+        frame.restore(c, S0, 0x70);
+        return Ok(true);
+    }
+
+    c.cycles += 3;
+    let verts = ui_vector_lw(c, this, UI_VECTOR_VERTICES);
+    let count = sx((counts as u32) >> 17);
+    c.g[V0][0] = count;
+    if verts == 0 {
+        return Ok(false);
+    }
+    c.cycles += 2;
+    c.g[S4][0] = 0;
+    if count != 0 {
+        c.cycles += 6;
+        c.g[AT][0] = 0x3f80_0000;
+        c.f[21] = 0x3f80_0000; // 1.0f
+        c.g[AT][0] = 0x3f00_0000;
+        c.f[20] = 0x3f00_0000; // 0.5f
+        c.g[V0][0] = 0xc;
+        loop {
+            // Vertex i (0x30 bytes): pos (x, y, z, 1) + offset at +0x20, q = 1, s = t = 0,
+            // colour (A, R, G, B) * 0.5 as integers at +0x1c, +0x10, +0x14, +0x18.
+            c.cycles += 80;
+            let i = c.g[S4][0];
+            let rp = ui_vector_lw(c, this, UI_VECTOR_RENDER_POSITIONS);
+            c.g[V1][0] = rp;
+            c.mult(0, V0, S4, V0);
+            let v = ui_vector_lw(c, this, UI_VECTOR_VERTICES);
+            c.g[A0][0] = v;
+            c.g[S1][0] = 0x30;
+            c.g[S2][0] = sx((i as u32) << 4);
+            c.mult(0, S1, S4, S1);
+            c.g[S4][0] = sx((i as u32).wrapping_add(1));
+            let s1 = c.g[S1][0] as u32;
+            let p = (c.g[V0][0] as u32).wrapping_add(rp as u32);
+            c.g[V0][0] = sx(p);
+            let tmp = frame.at(c, 0x10);
+            c.lwc1(1, p);
+            c.g[A0][0] = sx(s1.wrapping_add(v as u32));
+            c.swc1(1, tmp);
+            c.lwc1(0, p.wrapping_add(4));
+            c.swc1(0, tmp + 4);
+            c.lwc1(1, p.wrapping_add(8));
+            c.swc1(21, tmp + 0xc);
+            c.swc1(1, tmp + 8);
+            c.lq(V0, tmp);
+            c.sq(V0, (c.g[A0][0] as u32).wrapping_add(0x20));
+            // pos.x += mPosition.x + x; pos.y += mPosition.y + y.
+            for k in [0u32, 4] {
+                let vtx = (ui_vector_lw(c, this, UI_VECTOR_VERTICES) as u32).wrapping_add(s1);
+                let at = vtx.wrapping_add(0x20);
+                let reg = if k == 0 { V1 } else { A0 };
+                c.g[reg][0] = sx(at);
+                let base = Addr((this as u32).wrapping_add(UI_VECTOR_POSITION_X + k)).read_fpu(c);
+                let off = base + FpuF32(c.f[if k == 0 { 22 } else { 23 }]);
+                c.f[1] = off.0;
+                let r = Addr(at).off(k).read_fpu(c) + off;
+                c.f[0] = r.0;
+                Addr(at).off(k).write_fpu(c, r);
+            }
+            let vtx = (ui_vector_lw(c, this, UI_VECTOR_VERTICES) as u32).wrapping_add(s1);
+            c.g[V0][0] = sx(vtx);
+            c.swc1(21, vtx.wrapping_add(8));
+            let vtx = (ui_vector_lw(c, this, UI_VECTOR_VERTICES) as u32).wrapping_add(s1);
+            c.g[V1][0] = sx(vtx);
+            Addr(vtx).sw(c, 0);
+            let vtx = (ui_vector_lw(c, this, UI_VECTOR_VERTICES) as u32).wrapping_add(s1);
+            c.g[V0][0] = sx(vtx);
+            Addr(vtx).off(4).sw(c, 0);
+            // Colours: (channel offset in the colour, field in the vertex, return address).
+            let s2 = c.g[S2][0] as u32;
+            for (k, field, ret) in [
+                (0u32, 0x1cu32, 0x003a_3c58u32),
+                (4, 0x10, 0x003a_3c78),
+                (8, 0x14, 0x003a_3c98),
+                (0xc, 0x18, 0x003a_3cb8),
+            ] {
+                let colours = ui_vector_lw(c, this, UI_VECTOR_COLOURS);
+                let vtx = ui_vector_lw(c, this, UI_VECTOR_VERTICES);
+                let col = s2.wrapping_add(colours as u32);
+                let dst = s1.wrapping_add(vtx as u32);
+                if k == 0xc {
+                    c.g[V0][0] = colours;
+                    c.g[V1][0] = vtx;
+                    c.g[S2][0] = sx(col);
+                    c.g[S1][0] = sx(dst);
+                } else {
+                    c.g[if k == 0 { V1 } else { V0 }][0] = sx(col);
+                    c.g[S0][0] = sx(dst);
+                }
+                c.lwc1(12, col.wrapping_add(k));
+                c.mul_s(12, 12, 20);
+                call_ptr(c, UI_VECTOR_FIXUNSSFSI, ret)?;
+                let reg = if k == 0xc { S1 } else { S0 };
+                Addr((c.g[reg][0] as u32).wrapping_add(field)).sw(c, c.g[V0][0]);
+            }
+            let n = sx((ui_vector_lw(c, this, UI_VECTOR_COUNTS) as u32) >> 17);
+            let more = c.g[S4][0] < n;
+            c.g[V0][0] = 0xc;
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003a_3b90);
+            }
+        }
+    }
+    // Strip: GrMan->vt[0x248](count, vertices, 0).
+    c.cycles += 10;
+    let t0 = Addr(gp.wrapping_sub(UI_VECTOR_GRMAN_GP)).lw(c);
+    c.g[T0][0] = t0;
+    c.g[A3][0] = 0;
+    let counts = ui_vector_lw(c, this, UI_VECTOR_COUNTS);
+    let vt = ui_vector_lw(c, t0, 0x10d8);
+    c.g[V1][0] = vt;
+    c.g[A2][0] = ui_vector_lw(c, this, UI_VECTOR_VERTICES);
+    c.g[A1][0] = sx((counts as u32) >> 17);
+    let delta = Addr((vt as u32).wrapping_add(0x248)).lh(c);
+    let func = ui_vector_lw(c, vt, 0x24c);
+    c.g[V0][0] = func;
+    c.g[A0][0] = sx((t0 as u32).wrapping_add(delta as u32));
+    call_ptr(c, func as u32, 0x003a_3cf8)?;
+    Ok(false)
+}
+
+// ---------------------------------------------------------------------------
+// UIVector_SetAnimParam (0x3a36d0)
+
+/// `cUIVector` per-vertex channels: (base field, element shift or `None`
+/// for the 12-byte position stride, offset in the element, cycles of the
+/// case block before the common store).
+pub(crate) fn ui_vector_anim_channel(sub: u64) -> (u32, Option<u32>, u32, u64) {
+    match sub {
+        0 => (UI_VECTOR_POSITIONS, None, 0, 4),    // vertex x
+        1 => (UI_VECTOR_POSITIONS, None, 4, 4),    // vertex y
+        2 => (UI_VECTOR_POSITIONS, None, 8, 4),    // vertex z
+        3 => (0x88, Some(3), 0, 3),                // uv u
+        4 => (0x88, Some(3), 4, 3),                // uv v
+        5 => (UI_VECTOR_COLOURS, Some(4), 0, 2),   // colour r
+        6 => (UI_VECTOR_COLOURS, Some(4), 4, 2),   // colour g
+        7 => (UI_VECTOR_COLOURS, Some(4), 8, 2),   // colour b
+        _ => (UI_VECTOR_COLOURS, Some(4), 0xc, 2), // colour a
+    }
+}
+
+/// `void cUIVector::setChannelData(cUIVector* this, u16 channel, float v)`
+/// (0x3a36d0): channels below 0x15 go to `cUIThing::setChannelData`; the
+/// rest address vertex `(ch - 0x15) / 9`, field `(ch - 0x15) % 9` (position
+/// xyz, uv, colour rgba). Nothing without vertices or past the count.
+pub fn ui_vector_set_anim_param(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x10);
+        let this = c.g[A0][0];
+        c.g[A2][0] = this;
+        frame.save_ra(c, 0);
+        let verts = ui_vector_lw(c, this, UI_VECTOR_POSITIONS);
+        c.g[V0][0] = verts;
+        let key = c.g[A1][0] & 0xffff;
+        c.g[A1][0] = key;
+        if verts != 0 {
+            c.cycles += 3;
+            c.g[V0][0] = sx((key as u32).wrapping_sub(0x15));
+            if key < 0x15 {
+                c.cycles += 2;
+                c.g[A0][0] = this;
+                Callee {
+                    addr: 0x003a_0048,
+                    f: ee::s13::UIObject_SetAnimParam,
+                }
+                .call(c, 0x003a_37f8)?;
+            } else {
+                c.cycles += 4 + 9;
+                c.g[V1][0] = 9;
+                let ch = c.g[V0][0] & 0xffff;
+                c.g[A1][0] = ch;
+                c.divu(0, A1, V1);
+                let count = sx((ui_vector_lw(c, this, UI_VECTOR_COUNTS) as u32) >> 17);
+                c.g[V1][0] = c.lo[0];
+                c.g[A0][0] = c.hi[0];
+                let idx = c.lo[0] & 0xffff;
+                c.g[A1][0] = idx;
+                c.g[V0][0] = 9;
+                if idx < count {
+                    c.cycles += 3 + 3;
+                    let sub = c.hi[0] & 0xffff;
+                    c.g[A0][0] = sub;
+                    c.g[V1][0] = (sub < 9) as u64;
+                    c.g[V0][0] = 0x49_0000;
+                    if sub < 9 {
+                        c.cycles += 6;
+                        let entry = 0x0049_4110 + 4 * sub as u32;
+                        c.g[V0][0] = 0x0049_4110;
+                        c.g[V1][0] = sx(entry);
+                        c.g[A0][0] = Addr(entry).lw(c);
+                        let (field, shift, elem_off, pre) = ui_vector_anim_channel(sub);
+                        c.cycles += pre;
+                        let base = ui_vector_lw(c, this, field);
+                        c.g[V1][0] = base;
+                        match shift {
+                            None => {
+                                c.g[V0][0] = 0xc;
+                                c.mult(0, V0, A1, V0);
+                            }
+                            Some(sh) => c.g[V0][0] = sx((idx as u32) << sh),
+                        }
+                        c.cycles += 3;
+                        let at = (c.g[V0][0] as u32).wrapping_add(base as u32);
+                        c.g[V0][0] = sx(at);
+                        c.swc1(12, at.wrapping_add(elem_off));
+                    }
+                }
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1508,6 +1924,91 @@ pub(crate) mod tests {
                 w32(c, this + 0x98 + 4, sentinel);
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = (seed % 2) as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::object::instancenode::tests::oc383_floats;
+    pub(crate) use crate::game::seg::seg_2fe810::tests::oc383_machine;
+
+    #[test]
+    fn ui_vector_render_matches() {
+        use crate::difftest::fakes::{machine, vtable};
+        check(
+            ee::s13::f_003a39f8__generated,
+            ui_vector_render,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x39f8, 1);
+                c.pc = 0x003a_39f8;
+                let this = DATA;
+                fill(c, &mut r, this, 0x28);
+                oc383_floats(c, &mut r, this + 0x44, 2, 300.0);
+                oc383_floats(c, &mut r, this + 0x50, 2, 3.0);
+                let count = seed % 5;
+                let indexed = (seed / 5) % 2;
+                let counts =
+                    count << 17 | (r.next_u32() & 0x7fff) << 2 | (r.next_u32() & 2) | indexed;
+                c.bus.write32(this + UI_VECTOR_COUNTS, counts);
+                let positions = if seed % 11 == 3 {
+                    0
+                } else {
+                    DATA + 0x1000 + (seed % 3) * 4
+                };
+                let render = DATA + 0x2000 + ((seed / 3) % 3) * 4;
+                let vertices = if seed % 13 == 5 { 0 } else { DATA + 0x3000 };
+                c.bus.write32(this + UI_VECTOR_POSITIONS, positions);
+                c.bus.write32(this + UI_VECTOR_RENDER_POSITIONS, render);
+                c.bus.write32(this + UI_VECTOR_VERTICES, vertices);
+                c.bus.write32(this + UI_VECTOR_COLOURS, DATA + 0x4000);
+                c.bus.write32(this + UI_VECTOR_TRIANGLES, r.next_u32());
+                oc383_floats(c, &mut r, DATA + 0x1000, 24, 200.0);
+                fill(c, &mut r, DATA + 0x2000, 24);
+                fill(c, &mut r, DATA + 0x3000, 0x40);
+                for i in 0..24 {
+                    let v = (r.next_u32() % 2560) as f32 / 10.0;
+                    c.bus.write32(DATA + 0x4000 + 4 * i, v.to_bits());
+                }
+                // GrMan with its draw state and vtable.
+                let grman = DATA + 0x5000;
+                c.bus.write32(GAME_GP - UI_VECTOR_GRMAN_GP, grman);
+                c.bus.write32(grman + 0xe84, DATA + 0x6000);
+                fill(c, &mut r, DATA + 0x6000, 8);
+                let vt = vtable(c, &mut r, &[0x240, 0x248]);
+                c.bus.write32(grman + 0x10d8, vt);
+                c.f[12] = r.f32(100.0);
+                c.f[13] = r.f32(100.0);
+            },
+        );
+    }
+
+    #[test]
+    fn ui_vector_set_anim_param_matches() {
+        check(
+            ee::s13::f_003a36d0__generated,
+            ui_vector_set_anim_param,
+            300,
+            &|c, seed| {
+                let mut r = oc383_machine(c, seed, 0x36d0, 0x003a_36d0);
+                let this = DATA;
+                fill(c, &mut r, this, 0x28);
+                let count = 1 + seed % 4;
+                c.bus.write32(
+                    this + UI_VECTOR_COUNTS,
+                    count << 17 | (r.next_u32() & 0x1ffff),
+                );
+                let verts = if seed % 17 == 4 { 0 } else { DATA + 0x1000 };
+                c.bus.write32(this + UI_VECTOR_POSITIONS, verts);
+                c.bus.write32(this + 0x88, DATA + 0x2000);
+                c.bus.write32(this + UI_VECTOR_COLOURS, DATA + 0x3000);
+                let key = match seed % 6 {
+                    0 => seed % 0x15,
+                    // Vertex index up to `count` (one past the end too).
+                    _ => 0x15 + (seed / 6) % (9 * (count + 1)),
+                };
+                c.g[A1][0] =
+                    (r.next_u32() as u64) << 32 | (r.next_u32() & 0xffff_0000) as u64 | key as u64;
+                c.f[12] = r.f32(100.0);
             },
         );
     }
