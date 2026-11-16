@@ -1328,7 +1328,7 @@ pub fn tag_field_copy_tag(c: &mut Cpu) {
 
 /// `int TagFieldSetRaw(char* record, int len, const char* temp)` (0x3eb1e0):
 /// add or replace the `name=value` term `temp` in the record, returning
-/// `S3 - 1` (the whole term's length), 0 for an identical term, or -1.
+/// the whole term's length, 0 for an identical term, or -1.
 /// Names compare through the class table at
 /// `0x4964c0`; fields are separated by the byte at `gp+0x1980`, and `~…`
 /// terms are appended at the end.
@@ -6086,7 +6086,7 @@ pub fn tag_field_get_date_packed(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::events::{check_events, driven, schedule};
+    use crate::difftest::events::{check_events, driven, schedule, Events};
 
     use crate::difftest::fakes::machine;
 
@@ -6449,9 +6449,9 @@ pub(crate) mod tests {
     }
 
     /// The tag helpers read these tables at fixed addresses: the field
-    /// separator (gp+0x1980), the name-class table (0x4964c0) and the two
-    /// hex tables (0x4961c0/0x4962c0 decode, 0x495fc0/0x4960c0 encode).
-    /// Stand-in values, not game strings.
+    /// separator (gp+0x1980), the name-class table (0x4964c0), Find's
+    /// byte-fold table (0x4963c0) and the two hex tables (0x4961c0/0x4962c0
+    /// decode, 0x495fc0/0x4960c0 encode). Stand-in values, not game strings.
     /// `ds_secstotime` walks a month-length table at 0x4969e0, subtracting
     /// entries from the day count (plain row first, leap row at word 12);
     /// without game rodata the scan reads zeros and never terminates, so
@@ -6482,6 +6482,12 @@ pub(crate) mod tests {
                 0
             };
             c.bus.write8(0x0049_64c0 + i, cls);
+            // Find compares folded bytes for equality only, so folding
+            // a-z up to A-Z (the fold at 0x4963c0) makes its name compare
+            // case-insensitive; without this the zeroed table would match
+            // every name against the first field.
+            c.bus
+                .write8(TAG_CHAR_CLASS + i, (i as u8).to_ascii_uppercase());
             let v = (i as u8 as char).to_digit(16).unwrap_or(0) as u8;
             c.bus.write8(0x0049_61c0 + i, v << 4);
             c.bus.write8(0x0049_62c0 + i, v);
@@ -6558,20 +6564,95 @@ pub(crate) mod tests {
     driven!(gen_set_raw, ssx3_ee::s14::f_003eb1e0__generated);
     driven!(hand_set_raw, tag_field_set_raw);
 
+    // Re-enter `tag_field_set_raw` at every loop head: the seed class
+    // (seed % 21) / 3 picks the input whose first back edge is that head,
+    // with the delay skipping the earlier edges on paths that have them.
+    // The common-prefix compare (3eb338), end scan (3eb390), skip (3eb3c0),
+    // term-length (3eb450) and record-end (3eb488) classes run long inputs
+    // so the target loop is still running when the event fires.
     #[test]
     fn tag_field_set_raw_events_matches() {
-        check_events(gen_set_raw, hand_set_raw, 36, &|c, seed| {
+        check_events(gen_set_raw, hand_set_raw, 63, &|c, seed| {
             let mut r = machine(c, seed, 0x3eb1e0, 0);
             tables(c);
             let rec = DATA;
             let tmp = DATA + 0x400;
-            put_str(c, rec, b"abcdef=1\nxy=2\n");
-            put_str(c, tmp, b"abcdef=9");
+            let delay: u64 = match (seed % 21) / 3 {
+                // Scan head: first back edge on the plain scan path.
+                0 => {
+                    put_str(c, rec, b"abcdef=1\nxy=2\n");
+                    put_str(c, tmp, b"abcdef=9");
+                    4
+                }
+                // Tilde walk head: `~` terms append at the end of the record.
+                1 => {
+                    put_str(c, rec, b"abcdef=1\nxy=2\n");
+                    put_str(c, tmp, b"~new=1");
+                    4
+                }
+                // Compare head: a 7-char common prefix keeps the compare
+                // loop running past the scan head's check.
+                2 => {
+                    put_str(c, rec, b"aaaaaaa=1\n");
+                    put_str(c, tmp, b"aaaaaaa=9");
+                    40
+                }
+                // End-scan head: the old value is 100 chars, so the end
+                // scan is still running when the event fires past the
+                // six compare-loop edges (the `=` then matches and ends
+                // the compare with no edge of its own).
+                3 => {
+                    put_str(c, rec, b"abcdef=");
+                    for i in 0..100u32 {
+                        wb(c, rec + 7 + i, b'1');
+                    }
+                    put_str(c, rec + 107, b"\n");
+                    put_str(c, tmp, b"abcdef=9");
+                    150
+                }
+                // Skip head: the first bytes mismatch in class only, so the
+                // compare loop exits with no edge and the skip runs over a
+                // 100-char non-matching field.
+                4 => {
+                    wb(c, rec, b'z');
+                    for i in 0..100u32 {
+                        wb(c, rec + 1 + i, b'1');
+                    }
+                    put_str(c, rec + 101, b"\n");
+                    put_str(c, tmp, b"a=9");
+                    60
+                }
+                // Term-length head: the tilde path skips the scan loops;
+                // the walk over the short record ends well before the event
+                // fires inside the 100-char term-length loop.
+                5 => {
+                    put_str(c, rec, b"a=1\n");
+                    wb(c, tmp, b'~');
+                    for i in 0..100u32 {
+                        wb(c, tmp + 1 + i, b'9');
+                    }
+                    wb(c, tmp + 101, 0);
+                    120
+                }
+                // Record-end head: the field is replaced in place and the
+                // record tail is ~150 bytes, so the end loop is still
+                // running when the event fires past the short prefix loops.
+                _ => {
+                    put_str(c, rec, b"a=1\n");
+                    for k in 0..25u32 {
+                        put_str(c, rec + 4 + 5 * k, b"zz=2\n");
+                    }
+                    put_str(c, tmp, b"a=9");
+                    260
+                }
+            };
             c.g[A0][0] = sx(rec);
             c.g[A1][0] = 0x200;
             c.g[A2][0] = sx(tmp);
             let mode = schedule(c, &mut r, seed, 0x003e_b1e0);
-            c.next_event = c.cycles + 4;
+            if mode != Events::Off {
+                c.next_event = c.cycles + delay;
+            }
             mode
         });
     }
@@ -6609,6 +6690,11 @@ pub(crate) mod tests {
     driven!(gen_find, ssx3_ee::s14::f_003eb6d8__generated);
     driven!(hand_find, tag_field_find);
 
+    // Re-enter `tag_field_find` at every loop head: the seed class
+    // (seed % 12) / 3 picks the input whose first back edge is that head.
+    // The back-match class (3eb798) walks back over a 50-char match, so the
+    // back loop is still running when the event fires past the name-walk,
+    // scan and match-attempt edges.
     #[test]
     fn tag_field_find_events_matches() {
         check_events(gen_find, hand_find, 36, &|c, seed| {
@@ -6616,12 +6702,54 @@ pub(crate) mod tests {
             tables(c);
             let rec = DATA;
             let name = DATA + 0x200;
-            put_str(c, rec, b"alpha=1\nbeta=2\n");
-            put_str(c, name, b"beta");
+            let delay: u64 = match (seed % 12) / 3 {
+                // Name-walk head: first back edge on the plain lookup path.
+                0 => {
+                    put_str(c, rec, b"alpha=1\nbeta=2\n");
+                    put_str(c, name, b"beta");
+                    4
+                }
+                // Match-attempt head: a 1-char name walks no loop, and `=`
+                // is the record's first byte, so the match attempt is the
+                // first back edge (it misses: the `=` is before the record).
+                1 => {
+                    put_str(c, rec, b"=1\n");
+                    put_str(c, name, b"b");
+                    4
+                }
+                // Back-match head: the 50-char name matches the 50-char
+                // field-name suffix, so the back-match loop is still
+                // running when the event fires past the name-walk, scan
+                // and match-attempt edges.
+                2 => {
+                    wb(c, rec, b'a');
+                    for i in 0..50u32 {
+                        wb(c, rec + 1 + i, b'b');
+                    }
+                    put_str(c, rec + 51, b"=1\n");
+                    for i in 0..50u32 {
+                        wb(c, name + i, b'b');
+                    }
+                    wb(c, name + 50, 0);
+                    1200
+                }
+                // Scan head: a 1-char name walks no loop, so the record
+                // scan is the first back edge.
+                _ => {
+                    for i in 0..50u32 {
+                        wb(c, rec + i, b'a');
+                    }
+                    put_str(c, rec + 50, b"=1\n");
+                    put_str(c, name, b"z");
+                    4
+                }
+            };
             c.g[A0][0] = sx(rec);
             c.g[A1][0] = sx(name);
             let mode = schedule(c, &mut r, seed, 0x003e_b6d8);
-            c.next_event = c.cycles + 4;
+            if mode != Events::Off {
+                c.next_event = c.cycles + delay;
+            }
             mode
         });
     }
@@ -6651,6 +6779,11 @@ pub(crate) mod tests {
     }
 
     // 0x3eb8b8 TagFieldFindSkipWs.
+    //
+    // The tag name lives at TAG_NAME_ADDR: without it TagFieldFind returns
+    // 0 on every seed and the skip loop is never compared. The byte after
+    // `=` is steered across the 0x20/0x21 boundary: `!` (0x21) stops the
+    // loop under `<` but not under `<=` (mutation tags.rs:2344 `<` -> `<=`).
     #[test]
     fn tag_field_find_skip_ws_matches() {
         check(
@@ -6663,12 +6796,14 @@ pub(crate) mod tests {
                 c.pc = 0x003eb8b8;
                 let rec = DATA;
                 c.g[A0][0] = sx(rec);
+                put_str(c, TAG_NAME_ADDR, b"tag");
                 put_str(
                     c,
                     rec,
-                    match seed % 3 {
+                    match seed % 4 {
                         0 => b"tag=  value\n",
-                        1 => b"tag=value\n",
+                        1 => b"tag=!value\n",
+                        2 => b"tag=value\n",
                         _ => b"nope\n",
                     },
                 );
@@ -6689,8 +6824,11 @@ pub(crate) mod tests {
             put_str(c, 0x004a_4a78, b"tag");
             c.g[A0][0] = sx(rec);
             let mode = schedule(c, &mut r, seed, 0x003e_b8b8);
-            // Due after the Find call returns, inside the whitespace loop.
-            c.next_event = c.cycles + 140;
+            // Due after the Find call returns, inside the whitespace loop
+            // (window 126..168).
+            if mode != Events::Off {
+                c.next_event = c.cycles + 150;
+            }
             mode
         });
     }
@@ -6727,6 +6865,12 @@ pub(crate) mod tests {
     driven!(gen_delete, ssx3_ee::s14::f_003eb918__generated);
     driven!(hand_delete, tag_field_delete);
 
+    // Re-enter `tag_field_delete` at every loop head: every delay is past
+    // the Find call's return (an event due inside Find would unwind at one
+    // of Find's own heads), and the seed class (seed % 12) / 3 picks the
+    // input and delay landing the first unwind in each of Delete's loops.
+    // The walk (3eb940), value (3eb960) and separator (3eb988) classes run
+    // long loops so the target loop is still running when the event fires.
     #[test]
     fn tag_field_delete_events_matches() {
         check_events(gen_delete, hand_delete, 36, &|c, seed| {
@@ -6734,13 +6878,56 @@ pub(crate) mod tests {
             tables(c);
             let rec = DATA;
             let name = DATA + 0x200;
-            put_str(c, rec, b"aa=1\nbb=2\ncc=3\n");
-            put_str(c, name, b"bb");
+            let delay: u64 = match (seed % 12) / 3 {
+                // Walk head: a 60-char field name walks back 60 positions.
+                0 => {
+                    for i in 0..60u32 {
+                        wb(c, rec + i, b'n');
+                    }
+                    put_str(c, rec + 60, b"=1\neb=2\n");
+                    for i in 0..60u32 {
+                        wb(c, name + i, b'n');
+                    }
+                    wb(c, name + 60, 0);
+                    1800
+                }
+                // Value-scan head: the 100-char value keeps the scan
+                // running past the short walk.
+                1 => {
+                    put_str(c, rec, b"bb=");
+                    for i in 0..100u32 {
+                        wb(c, rec + 3 + i, b'2');
+                    }
+                    put_str(c, rec + 103, b"\ncc=3\n");
+                    put_str(c, name, b"bb");
+                    300
+                }
+                // Separator-scan head: 21 newlines keep the separator scan
+                // running past the short walk and value scans.
+                2 => {
+                    put_str(c, rec, b"bb=2\n");
+                    for i in 0..20u32 {
+                        wb(c, rec + 5 + i, b'\n');
+                    }
+                    put_str(c, rec + 25, b"cc=3\n");
+                    put_str(c, name, b"bb");
+                    260
+                }
+                // Copy head: the previous shape (due after the Find call
+                // returns, inside Delete's own loops: the 0x3eb9b0 window
+                // is 206..222 with Find's fold table filled).
+                _ => {
+                    put_str(c, rec, b"aa=1\nbb=2\ncc=3\n");
+                    put_str(c, name, b"bb");
+                    214
+                }
+            };
             c.g[A0][0] = sx(rec);
             c.g[A1][0] = sx(name);
             let mode = schedule(c, &mut r, seed, 0x003e_b918);
-            // Due after the Find call returns, inside Delete's own loops.
-            c.next_event = c.cycles + 170;
+            if mode != Events::Off {
+                c.next_event = c.cycles + delay;
+            }
             mode
         });
     }
@@ -7006,20 +7193,59 @@ pub(crate) mod tests {
     driven!(gen_printf, ssx3_ee::s14::f_003ecbd8__generated);
     driven!(hand_printf, tag_field_printf);
 
+    // Re-enter `tag_field_printf` at every loop head: the seed class
+    // (seed % 9) / 3 picks the format whose first back edge is that head.
+    // All formats stay within plain characters, whitespace runs and `%r`
+    // (whose raw-copy loop is printf's own): no conversion in any class
+    // calls another port before the first unwind lands.
     #[test]
     fn tag_field_printf_events_matches() {
         check_events(gen_printf, hand_printf, 36, &|c, seed| {
             let mut r = machine(c, seed, 0x3ecbd8, 0);
             tables(c);
-            put_str(c, DATA + 0x200, b"a   b   c   d");
-            put_str(c, DATA + 0x400, b"v");
+            let fmt = DATA + 0x200;
+            let delay: u64 = match (seed % 9) / 3 {
+                // Format head: first back edge on the plain format path.
+                0 => {
+                    put_str(c, fmt, b"a   b   c   d");
+                    put_str(c, DATA + 0x400, b"v");
+                    c.g[A3][0] = sx(DATA + 0x400);
+                    4
+                }
+                // Whitespace head: a plain `a` first (its format-loop edge
+                // is skipped by the delay), then a 30-space run keeps the
+                // whitespace skip running when the event fires.
+                1 => {
+                    wb(c, fmt, b'a');
+                    for i in 0..30u32 {
+                        wb(c, fmt + 1 + i, b' ');
+                    }
+                    put_str(c, fmt + 31, b"b");
+                    put_str(c, DATA + 0x400, b"v");
+                    c.g[A3][0] = sx(DATA + 0x400);
+                    48
+                }
+                // Raw-copy head: `%r` copies a 200-char raw string in
+                // printf's own loop, still running when the event fires
+                // past the format-loop edge and the conversion dispatch.
+                _ => {
+                    put_str(c, fmt, b"a%r");
+                    for i in 0..200u32 {
+                        wb(c, DATA + 0x500 + i, b'R');
+                    }
+                    wb(c, DATA + 0x500 + 200, 0);
+                    c.g[A3][0] = sx(DATA + 0x500);
+                    100
+                }
+            };
             put_str(c, DATA, b"");
             c.g[A0][0] = sx(DATA);
             c.g[A1][0] = 0x400;
-            c.g[A2][0] = sx(DATA + 0x200);
-            c.g[A3][0] = sx(DATA + 0x400);
+            c.g[A2][0] = sx(fmt);
             let mode = schedule(c, &mut r, seed, 0x003e_cbd8);
-            c.next_event = c.cycles + 4;
+            if mode != Events::Off {
+                c.next_event = c.cycles + delay;
+            }
             mode
         });
     }
@@ -7050,21 +7276,63 @@ pub(crate) mod tests {
     driven!(gen_get_delim, ssx3_ee::s14::f_003ed0f8__generated);
     driven!(hand_get_delim, tag_field_get_delim);
 
+    // Re-enter `tag_field_get_delim` at every loop head: the seed class
+    // (seed % 18) / 3 picks the input whose first back edge is that head,
+    // each with the event due 4 cycles in. Buffers stay non-null on every
+    // path that reaches the default copy (the null-buffer default path
+    // would call STRLEN, whose own back edges would unwind mid-call).
     #[test]
     fn tag_field_get_delim_events_matches() {
-        check_events(gen_get_delim, hand_get_delim, 36, &|c, seed| {
+        check_events(gen_get_delim, hand_get_delim, 54, &|c, seed| {
             let mut r = machine(c, seed, 0x3ed0f8, 0);
             tables(c);
-            put_str(c, DATA, b"a,b,c,d,e,f");
+            let buf = DATA + 0x200;
             put_str(c, DATA + 0x400, b"default");
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x200);
+            let data_null = (seed % 18) / 3 == 3;
+            if !data_null {
+                match (seed % 18) / 3 {
+                    // Skip-fail head: a control byte first character ends
+                    // the field scan with no delimiter in sight.
+                    0 => put_str(c, DATA, b"\nabc"),
+                    // Skip-next head: first back edge on the plain skip path.
+                    1 => put_str(c, DATA, b"a,b,c,d,e,f"),
+                    // Scan head: the empty first field reaches the
+                    // field-boundary edge with no advance edge before it.
+                    2 => put_str(c, DATA, b",b,c"),
+                    // Measure head: index 0 skips no fields, and the null
+                    // buffer takes the measure-only path (a pure loop).
+                    4 => {
+                        for i in 0..100u32 {
+                            wb(c, DATA + i, b'a');
+                        }
+                        wb(c, DATA + 100, 0);
+                    }
+                    // Copy head: the value copies 100 bytes before the
+                    // delimiter stops it.
+                    _ => {
+                        for i in 0..100u32 {
+                            wb(c, DATA + i, b'a');
+                        }
+                        put_str(c, DATA + 100, b",tail");
+                    }
+                }
+            }
+            c.g[A0][0] = if data_null { 0 } else { sx(DATA) };
+            c.g[A1][0] = if (seed % 18) / 3 == 4 { 0 } else { sx(buf) };
             c.g[A2][0] = 0x40;
             c.g[A3][0] = sx(DATA + 0x400);
-            c.g[T0][0] = 2;
+            c.g[T0][0] = match (seed % 18) / 3 {
+                0 => 1,
+                1 => 2,
+                2 => 2,
+                4 => 0,
+                _ => 0,
+            };
             c.g[T1][0] = b',' as u64;
             let mode = schedule(c, &mut r, seed, 0x003e_d0f8);
-            c.next_event = c.cycles + 4;
+            if mode != Events::Off {
+                c.next_event = c.cycles + 4;
+            }
             mode
         });
     }
@@ -7102,19 +7370,40 @@ pub(crate) mod tests {
     driven!(gen_get_string, ssx3_ee::s14::f_003ed378__generated);
     driven!(hand_get_string, tag_field_get_string);
 
+    // Re-enter `tag_field_get_string` at every loop head: the seed class
+    // (seed % 9) / 3 picks the input whose first back edge is that head,
+    // each with the event due 4 cycles in. The buffer stays non-null on
+    // the default path (the null-buffer default path would call STRLEN,
+    // whose own back edges would unwind mid-call).
     #[test]
     fn tag_field_get_string_events_matches() {
         check_events(gen_get_string, hand_get_string, 36, &|c, seed| {
             let mut r = machine(c, seed, 0x3ed378, 0);
             tables(c);
-            put_str(c, DATA, b"abcdefghijklmnop");
             put_str(c, DATA + 0x400, b"default");
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x200);
+            let class = (seed % 9) / 3;
+            // Default head: null data copies the 40-char default.
+            // Measure head: the null buffer takes the measure-only path.
+            // Copy head: the 100-char value copies before the NUL stops it.
+            if class == 0 {
+                for i in 0..40u32 {
+                    wb(c, DATA + 0x400 + i, b'd');
+                }
+                wb(c, DATA + 0x400 + 40, 0);
+            } else {
+                for i in 0..100u32 {
+                    wb(c, DATA + i, b'a');
+                }
+                wb(c, DATA + 100, 0);
+            }
+            c.g[A0][0] = if class == 0 { 0 } else { sx(DATA) };
+            c.g[A1][0] = if class == 1 { 0 } else { sx(DATA + 0x200) };
             c.g[A2][0] = 0x40;
             c.g[A3][0] = sx(DATA + 0x400);
             let mode = schedule(c, &mut r, seed, 0x003e_d378);
-            c.next_event = c.cycles + 4;
+            if mode != Events::Off {
+                c.next_event = c.cycles + 4;
+            }
             mode
         });
     }
@@ -7179,7 +7468,9 @@ pub(crate) mod tests {
             c.g[A2][0] = 0x40;
             c.g[A3][0] = sx(fmt);
             let mode = schedule(c, &mut r, seed, 0x003e_d678);
-            c.next_event = c.cycles + delay;
+            if mode != Events::Off {
+                c.next_event = c.cycles + delay;
+            }
             mode
         });
     }
@@ -7218,21 +7509,37 @@ pub(crate) mod tests {
     driven!(gen_get_encoded, ssx3_ee::s14::f_003ed970__generated);
     driven!(hand_get_encoded, tag_field_get_encoded);
 
+    // Re-enter `tag_field_get_encoded` at both loop heads: the seed class
+    // (seed % 6) / 3 picks the null-buffer pair count (3ed9d8, a pure loop
+    // over 50 hex pairs) or the decode loop (3eda60, the previous shape),
+    // each with the event due 4 cycles in.
     #[test]
     fn tag_field_get_encoded_events_matches() {
         check_events(gen_get_encoded, hand_get_encoded, 36, &|c, seed| {
             let mut r = machine(c, seed, 0x3ed970, 0);
             tables(c);
-            put_str(c, DATA, b"$4142434445464748");
+            let class = (seed % 6) / 3;
+            if class == 0 {
+                wb(c, DATA, b'$');
+                for i in 0..50u32 {
+                    wb(c, DATA + 1 + 2 * i, b'4');
+                    wb(c, DATA + 2 + 2 * i, b'1');
+                }
+                wb(c, DATA + 101, 0);
+            } else {
+                put_str(c, DATA, b"$4142434445464748");
+            }
             put_str(c, DATA + 0x400, b"key");
             put_str(c, DATA + 0x600, b"default");
             c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x200);
+            c.g[A1][0] = if class == 0 { 0 } else { sx(DATA + 0x200) };
             c.g[A2][0] = 0x40;
             c.g[A3][0] = sx(DATA + 0x400);
             c.g[T0][0] = sx(DATA + 0x600);
             let mode = schedule(c, &mut r, seed, 0x003e_d970);
-            c.next_event = c.cycles + 4;
+            if mode != Events::Off {
+                c.next_event = c.cycles + 4;
+            }
             mode
         });
     }
