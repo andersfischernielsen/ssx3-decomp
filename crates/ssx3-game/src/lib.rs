@@ -83,8 +83,6 @@ pub mod audio_system;
 pub mod graphics;
 #[cfg(feature = "streaming")]
 pub mod native_files;
-#[cfg(feature = "oc380")]
-pub mod oc380;
 #[cfg(feature = "rider_logic")]
 pub mod rider_logic;
 #[cfg(feature = "snd_lib")]
@@ -110,8 +108,6 @@ const CORE: &[(u32, GuestFn, &str)] = &[(
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v: Vec<(u32, GuestFn, &'static str)> = CORE.to_vec();
     v.extend(game::overrides());
-    #[cfg(feature = "oc380")]
-    v.extend_from_slice(oc380::OVERRIDES);
     v.extend_from_slice(movie::overrides());
     #[cfg(feature = "math")]
     v.extend_from_slice(math::OVERRIDES);
