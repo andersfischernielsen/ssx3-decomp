@@ -959,7 +959,7 @@ fn glitter_points(
 ) {
     // Exact under fast math too: one different last bit in the hash
     // reseeds every later point, so the glints would land elsewhere.
-    use exact::{add, add1, madd, mul, mul1, sub1};
+    use exact::{add1, madd, mul, sub1};
     let d = |m: &Mem, i: u16| m.ld(top.wrapping_add(i));
     let count = d(m, 21)[3] as u16;
     let key: [V; 4] = std::array::from_fn(|i| d(m, i as u16));
@@ -1657,9 +1657,6 @@ mod exact {
     }
     pub(super) fn sub1(a: u32, b: u32) -> u32 {
         fast::sub4::<0b1111, true, true>(&bc(a), &bc(b)).0[0]
-    }
-    pub(super) fn mul1(a: u32, b: u32) -> u32 {
-        mul(bc(a), bc(b))[0]
     }
 }
 
