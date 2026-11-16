@@ -6451,7 +6451,7 @@ pub fn mc_manager_state31(c: &mut Cpu) {
 /// `int MCManager_ClampFileIndex(MCManager *self)` (0x2410d0): the smaller
 /// of the file count at `+0xec` and the backend's count (vtable at
 /// `self+0x434`, method `+0x220/0x224`); the backend is asked again when
-/// its first count is the smaller one.
+/// its first count is not larger.
 pub fn mc_manager_clamp_file_index(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 14;
@@ -6572,6 +6572,9 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
         // 7 cycles for the two skipped block tails, 6 for the middle one, 5
         // for the outer one (see the generated nesting).
         let mut tail = 7u64;
+        // The generated body also restores s0 just after the +0x344 load
+        // and s1 inside the +0x348 arm; the tail restores stay (the loads
+        // are idempotent, and s0 is reused as scratch on the full path).
         'checks: {
             if missing {
                 break 'checks;
@@ -6579,6 +6582,7 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
             c.cycles += 3;
             c.g[V1][0] = Addr(dev).off(0x344).lw(c);
             let missing = c.g[V1][0] == 0;
+            frame.restore(c, S0, 0x440);
             if missing {
                 tail = 6;
                 break 'checks;
@@ -6586,6 +6590,7 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
             c.cycles += 3;
             c.g[V1][0] = Addr(dev).off(0x348).lw(c);
             if c.g[V1][0] == 0 {
+                frame.restore(c, S1, 0x430);
                 tail = 5;
                 break 'checks;
             }
@@ -7712,9 +7717,11 @@ pub fn mc_manager_update_mode1(c: &mut Cpu) {
 }
 
 /// `void MCManager_BuildSaveTitle(MCManager *self, ...)` (0x23cdb0): format
-/// the save title into the 0x200-byte scratch buffers: mode 0 names the world
-/// device, mode 1 the "new player" path, higher modes the plain save-type
-/// tag.
+/// the save title into the 0x200-byte scratch buffers. The switch is the
+/// word at `self+0xb4`: mode 0 and every value above 1 name the world
+/// device through its hash path (the higher values copy the name with
+/// `UStr_Copy`), mode 1 takes the "new player" path; `GetSaveTypeTag` is
+/// only called inside `FormatSaveDesc`, which runs first.
 pub fn mc_manager_build_save_title(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 21;
@@ -7836,9 +7843,11 @@ pub fn mc_manager_build_save_title(c: &mut Cpu) {
 }
 
 /// `int MCManager_ClassifyCardState(MCManager *self, int arg)` (0x23e8a0):
-/// walk the card-state vtable cascade and return the first matching state
-/// word (`+0xbc` when a hook is done, `+0x130` when idle), reporting 6, 7,
-/// 4, 5, 0x1d or 0xd through the message sink at `+0x748` along the way.
+/// walk the card-state vtable cascade (busy chain, then idle chain),
+/// reporting 6, 7, 5, 4 or 0x1d through the message sink at `+0x748` along
+/// the way, or finishing quietly. The state words at `+0xbc` and `+0x130`
+/// are only compared (against 0 and 4), never returned; the result is the
+/// last probe or sink call's return value.
 pub fn mc_manager_classify_card_state(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 14;
@@ -11116,10 +11125,12 @@ pub(crate) mod tests {
                 let vt = DATA + 0x1100;
                 ret_slot(c, vt, 0x1a8, if seed % 4 < 2 { RET_ZERO } else { FAKE });
                 ret_slot(c, vt, 0x248, if seed % 8 == 2 { RET_ZERO } else { FAKE });
+                // seed%16==2 keeps the +0x70 hook at 0 (the tail); seed%16==10
+                // leaves it non-zero with the same poll, reaching report 0xd.
                 w32(
                     c,
                     DATA + 0x400 + 0x70,
-                    if seed % 8 == 2 { RET_ZERO } else { FAKE },
+                    if seed % 16 == 2 { RET_ZERO } else { FAKE },
                 );
                 w32(
                     c,
@@ -11154,18 +11165,19 @@ pub(crate) mod tests {
                     },
                 );
                 w32(c, this + 0x108, (seed % 3) as u32);
-                // seed%8==1: e4 >= f0 (the CardSetState18 path);
-                // seed%8==5: e4 < f0 (the +4 hook path, hook returns 0).
-                let (e4, f0) = if seed % 8 == 1 {
+                // seed%16==1: e4 >= f0 (the CardSetState18 path);
+                // seed%16==5: e4 < f0 (the +4 hook path, hook returns 0);
+                // seed%16==13: e4 < f0 with the hook non-zero (early return).
+                let (e4, f0) = if seed % 16 == 1 {
                     (5, 3)
-                } else if seed % 8 == 5 {
+                } else if seed % 16 == 5 || seed % 16 == 13 {
                     (3, 5)
                 } else {
                     (r.next_u32(), r.next_u32())
                 };
                 c.bus.write32(this + 0xe4, e4);
                 c.bus.write32(this + 0xf0, f0);
-                w32(c, this + 0x4, if seed % 8 == 5 { RET_ZERO } else { FAKE });
+                w32(c, this + 0x4, if seed % 16 == 5 { RET_ZERO } else { FAKE });
             },
         );
     }
@@ -11185,13 +11197,31 @@ pub(crate) mod tests {
                 );
                 let this = DATA + 0x400;
                 let vt = DATA + 0x1100;
-                ret_slot(c, vt, 0x248, if seed % 4 < 2 { RET_ZERO } else { FAKE });
-                ret_slot(c, vt, 0x208, if seed % 8 == 4 { RET_ZERO } else { FAKE });
-                // RET_ZERO count makes +0x438 >= count (report 0x2e).
-                ret_slot(c, vt, 0x68, if seed % 8 == 0 { RET_ZERO } else { FAKE });
+                // Per seed%16 (even seeds pass the first poll): 0 countdown
+                // still running, 2 report 0x2d, 4 report 0x2e (RET_ZERO
+                // count), 6 the 0x208 == 0 skip, 8/10 the 0x208 != 0 arm
+                // with the slot-0x50 call.
+                let (s248, s68, s208, n108, n438) = match seed % 16 {
+                    0 => (FAKE, FAKE, FAKE, 2, 0),
+                    2 => (FAKE, FAKE, FAKE, 0, 0),
+                    4 => (RET_ZERO, RET_ZERO, FAKE, 0, 0),
+                    6 => (RET_ZERO, FAKE, RET_ZERO, 1, 1),
+                    8 => (RET_ZERO, FAKE, FAKE, 0, 2),
+                    10 => (RET_ZERO, FAKE, FAKE, 1, 0),
+                    _ => (
+                        if seed % 4 < 2 { RET_ZERO } else { FAKE },
+                        FAKE,
+                        FAKE,
+                        (seed % 3) as u32,
+                        (seed % 3) as u32,
+                    ),
+                };
+                ret_slot(c, vt, 0x248, s248);
+                ret_slot(c, vt, 0x208, s208);
+                ret_slot(c, vt, 0x68, s68);
                 ret_slot(c, vt, 0x50, FAKE);
-                w32(c, this + 0x108, (seed % 3) as u32);
-                w32(c, this + 0x438, (seed % 3) as u32);
+                w32(c, this + 0x108, n108);
+                w32(c, this + 0x438, n438);
             },
         );
     }
@@ -11212,12 +11242,15 @@ pub(crate) mod tests {
                 let this = DATA + 0x400;
                 let vt = DATA + 0x1100;
                 ret_slot(c, vt, 0x1a8, if seed % 4 < 2 { RET_ZERO } else { FAKE });
+                ret_slot(c, vt, 0x70, FAKE);
                 w32(c, this + 0x338, if seed % 3 == 0 { 0 } else { 1 });
                 // RET_ZERO hooks make the "done" chain under `done` run.
+                // seed%16==10 stops at +0x84 (OnOperationDone); seed%16==14
+                // leaves +0x68 non-zero (the +0x70 call, report 0x19).
                 w32(
                     c,
                     this + 0x6c,
-                    if seed % 8 == 2 || seed % 8 == 6 {
+                    if matches!(seed % 16, 2 | 6 | 10 | 14) {
                         RET_ZERO
                     } else {
                         FAKE
@@ -11226,7 +11259,7 @@ pub(crate) mod tests {
                 w32(
                     c,
                     this + 0x84,
-                    if seed % 8 == 2 || seed % 8 == 6 {
+                    if matches!(seed % 16, 2 | 6 | 14) {
                         RET_ZERO
                     } else {
                         FAKE
@@ -11235,7 +11268,7 @@ pub(crate) mod tests {
                 w32(
                     c,
                     this + 0x68,
-                    if seed % 8 == 2 || seed % 8 == 6 {
+                    if matches!(seed % 16, 2 | 6) {
                         RET_ZERO
                     } else {
                         FAKE
@@ -11437,6 +11470,7 @@ pub(crate) mod tests {
             64,
             &|c, seed| {
                 let _ = mgr(c, seed, 0x23cdb0, FAKE);
+                ret_slot(c, DATA + 0x1100, 0x168, FAKE);
                 // The body switches on self+0xb4 (modes 0, 1 and >= 2).
                 w32(c, DATA + 0x400 + 0xb4, seed % 3);
                 c.g[A1][0] = (seed % 3) as u64;
@@ -11459,28 +11493,39 @@ pub(crate) mod tests {
                 );
                 let vt = DATA + 0x1100;
                 let this = DATA + 0x400;
-                // Steer the cascade per seed%8 so every exit runs: the two
-                // seg==2 finishes (busy with arg 0, idle with +0x130 == 4),
-                // the report-0x1d leaf (+0xbc == 0) and the report-5 leaves.
-                let combo = seed % 8;
-                let busy = matches!(combo, 0 | 1 | 2 | 6 | 7);
+                // Steer the cascade per seed%16 so every leaf runs in both
+                // chains: busy 0x1b8/0x1d0/0x198/0x1d8 finishing at +0xbc
+                // (== 0: report 0x1d, != 0: report 7), busy fall-through
+                // (arg 0: quiet, arg != 0: report 6), idle 0x188/0x198/0x1d8
+                // (report 5) and idle +0x130 (== 4: quiet, != 4: report 4).
+                let combo = seed % 16;
+                let busy = combo <= 9 || combo == 15;
                 ret_slot(c, vt, 0x1a8, if busy { FAKE } else { RET_ZERO });
                 ret_slot(
                     c,
                     vt,
                     0x1b8,
-                    if combo == 1 || combo == 2 {
+                    if matches!(combo, 2 | 3) {
                         RET_ZERO
                     } else {
                         FAKE
                     },
                 );
-                ret_slot(c, vt, 0x1d0, FAKE);
+                ret_slot(
+                    c,
+                    vt,
+                    0x1d0,
+                    if matches!(combo, 4 | 5) {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
+                );
                 ret_slot(
                     c,
                     vt,
                     0x198,
-                    if matches!(combo, 0 | 3 | 4 | 7) {
+                    if matches!(combo, 0 | 1 | 8 | 9 | 12 | 13 | 14 | 15) {
                         RET_ZERO
                     } else {
                         FAKE
@@ -11490,26 +11535,30 @@ pub(crate) mod tests {
                     c,
                     vt,
                     0x1d8,
-                    if matches!(combo, 0 | 3 | 4 | 7) {
+                    if matches!(combo, 0 | 1 | 13 | 14 | 15) {
                         RET_ZERO
                     } else {
                         FAKE
                     },
                 );
-                ret_slot(c, vt, 0x188, if combo == 5 { FAKE } else { RET_ZERO });
-                w32(c, this + 0xbc, if combo == 2 { 3 } else { 0 });
+                ret_slot(c, vt, 0x188, if combo == 10 { FAKE } else { RET_ZERO });
+                w32(
+                    c,
+                    this + 0xbc,
+                    if matches!(combo, 3 | 5 | 7 | 9) { 3 } else { 0 },
+                );
                 w32(
                     c,
                     this + 0x130,
                     match combo {
-                        3 => 4,
-                        4 => 2,
+                        13 => 4,
+                        14 => 2,
                         _ => (seed % 3) as u32,
                     },
                 );
-                c.g[A1][0] = if combo == 0 {
+                c.g[A1][0] = if combo == 0 || combo == 15 {
                     0
-                } else if combo == 7 {
+                } else if combo == 1 {
                     1
                 } else {
                     (seed % 2) as u64
