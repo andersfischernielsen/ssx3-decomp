@@ -132,6 +132,12 @@ pub const ITEMS: &[Item] = &[
         live: true,
     },
     Item {
+        key: "SSX3_FAST_MATH",
+        label: "Fast math",
+        choices: &[("", "Off"), ("1", "On")],
+        live: false,
+    },
+    Item {
         key: "SSX3_RENDER",
         label: "Renderer",
         choices: &[("", "Native (wgpu)"), ("emu", "Emulated GS")],

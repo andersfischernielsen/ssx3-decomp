@@ -127,7 +127,7 @@ pub fn run(
     let mut out = Packets::new(PACKET_A, PACKET_B);
     flakes(seeds, offset, box_min, box_max, count, &mut |p, e, last| {
         let c = xform(&mat, [p[0], p[1], p[2], ONE]);
-        let visible = fade || ssx3_vu::vu::fast::clip(c, c[3]) & 0x3f == 0;
+        let visible = fade || crate::render_math::fast::clip(c, c[3]) & 0x3f == 0;
         if visible {
             let rgba = if fade {
                 let alpha = depth_fade(

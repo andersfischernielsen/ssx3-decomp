@@ -11,7 +11,9 @@
 //! Exactness rules followed throughout:
 //! - every float op goes through the PS2 float helpers the translated code
 //!   uses (`ssx3_vu::vu::fast`, `float`): no IEEE inf/NaN, denormals flushed,
-//!   truncating rounding;
+//!   truncating rounding — except with `SSX3_FAST_MATH=1`, when the
+//!   per-vertex ops go through host `f32` instead (see
+//!   [`crate::render_math`]; matrix composition stays exact there);
 //! - the original evaluation order is kept (e.g. the strip loop transforms
 //!   `w, z, y, x` while its prologue and the clipper go `x, y, z, w`; the
 //!   results differ in the last bit), including the accumulator round trips
@@ -51,7 +53,7 @@
 //!   a GPU version will be close but not bit-exact; this module is the
 //!   bit-exact CPU reference.
 
-use ssx3_vu::vu::{fast, float};
+use crate::render_math::{fast, float};
 
 /// A VU vector register: four PS2 floats (or integers) as raw bits, x..w.
 pub type V = [u32; 4];
@@ -860,7 +862,7 @@ fn mesh_pass1(
         let model: [V; 4] = std::array::from_fn(|i| m.ld(top.wrapping_add(i as u16)));
         let tex: [V; 4] = std::array::from_fn(|i| m.ld(top.wrapping_add(5 + i as u16)));
         for i in 0..4 {
-            m.st(MESH_MATRIX + i as u16, xform_xyzw(&mat, model[i]));
+            m.st(MESH_MATRIX + i as u16, fast::exact_xform(&mat, &model[i]));
             m.st(TEXGEN_MATRIX + i as u16, tex[i]);
         }
     }
@@ -1081,7 +1083,7 @@ fn light(m: &mut Mem, normals: u16, dst: u16, n: u16) {
 /// space (`M' = gS ⊙ M + gO ⊗ M.w`), positions taken with w = 1.
 /// Per vertex {STQ, RGBA, XYZ2}; the first two of each strip get ADC.
 fn mesh_strips(m: &mut Mem, mesh: &Mesh, out: u16, mat: &[V; 4], gs: V, go: V, with_rgba: bool) {
-    let screen: [V; 4] = std::array::from_fn(|i| madd(mul(gs, mat[i]), go, bc(mat[i][3])));
+    let screen: [V; 4] = std::array::from_fn(|i| fast::exact_screen_col(gs, mat[i], go));
     let (mut xyz, mut uv, mut col) = (mesh.xyz(), mesh.uv(), mesh.colour());
     let mut o = out;
     for s in 0..mesh.strips {
@@ -1331,7 +1333,7 @@ pub fn plan_gpu(
             let model: [V; 4] = std::array::from_fn(|i| m.ld(top.wrapping_add(i as u16)));
             let tex: [V; 4] = std::array::from_fn(|i| m.ld(top.wrapping_add(5 + i as u16)));
             for i in 0..4 {
-                m.st(MESH_MATRIX + i as u16, xform_xyzw(&mat, model[i]));
+                m.st(MESH_MATRIX + i as u16, fast::exact_xform(&mat, &model[i]));
                 m.st(TEXGEN_MATRIX + i as u16, tex[i]);
             }
         }
@@ -1362,7 +1364,7 @@ pub fn plan_gpu(
     let (gs, mut go) = guard(m);
     go[3] = ONE;
     for i in 0..4 {
-        u[gpu_mesh::SCREEN + i] = madd(mul(gs, mat[i]), go, bc(mat[i][3]));
+        u[gpu_mesh::SCREEN + i] = fast::exact_screen_col(gs, mat[i], go);
     }
     u[gpu_mesh::INFO] = [
         lit as u32,
