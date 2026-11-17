@@ -66,6 +66,7 @@ pub(crate) use crate::game::sound::bankmonitor::leave;
 pub(crate) use crate::game::sound::bankmonitor::load_gp;
 pub(crate) use crate::game::sound::bankmonitor::p as p_m2;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
+pub(crate) use crate::game::ui::uiengine::oc391_at;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -711,6 +712,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_dsock_channel_base_disconnect,
         "cDSockChannel_BaseDisconnect",
     ),
+    (0x0026_3828, net_update_connect, "Net_UpdateConnect"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -11368,6 +11370,186 @@ pub fn c_voip_man_toggle_active(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Net_UpdateConnect (0x263828)
+
+pub(crate) const NET_DISCONNECT_ALL: Callee = Callee {
+    addr: 0x0026_36f0,
+    f: ee::s07::Net_DisconnectAll,
+};
+
+/// `gp-0x238`: the comm system (`+0x20` its state: 5 connected, 6 failed;
+/// `+0x28` the connection error); `gp-0xc8`: the lobby manager (`+0xf0` its
+/// message list head); `gp-0x848`: the app (`+0x14` the frame time).
+pub(crate) const NET_COMM_SYSTEM_GP: u32 = 0x238;
+
+pub(crate) const NET_LOBBY_MAN_GP: u32 = 0xc8;
+
+/// The connect timer: `+0` state (1 connecting, 2 connected), `+4` the time
+/// left.
+pub(crate) const NET_CONNECT_STATE: u32 = 0x0;
+
+pub(crate) const NET_CONNECT_TIMER: u32 = 0x4;
+
+/// How [`net_update_connect`] leaves: through which of the original's three
+/// epilogue entries (each restores fewer registers and costs less).
+#[derive(Clone, Copy)]
+pub(crate) enum NetConnectExit {
+    /// `lq s0; lq s1; ld ra` (5 cycles).
+    Full,
+    /// `lq s1; ld ra` (4).
+    S1,
+    /// `ld ra` (3).
+    Ra,
+}
+
+/// `void Net_UpdateConnect(DsTimer* self)` (0x263828): the connect step.
+/// Connecting (state 1): on the comm system reaching state 5 become
+/// connected and post message 0x105 to the lobby manager; on its failure
+/// (state 6) or when the timer runs out disconnect (with the comm error or
+/// 0x2d3f3f3f); else count the timer down by the frame time. Connected
+/// (state 2): disconnect when the comm system failed.
+pub fn net_update_connect(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = 1;
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save_ra(c, 0x20);
+        let gp = c.g[GP][0] as u32;
+        c.g[V1][0] = Addr(oc391_at(c, A0, NET_CONNECT_STATE)).lw(c);
+        let connecting = c.g[V1][0] == c.g[V0][0];
+        c.g[V0][0] = ((c.g[V1][0] as i64) < 2) as u64;
+        let exit = if connecting {
+            net_update_connect_connecting(c, gp)?
+        } else {
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                NetConnectExit::S1
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 2;
+                let connected = c.g[V1][0] == c.g[V0][0];
+                c.g[V1][0] = Addr(gp.wrapping_sub(NET_COMM_SYSTEM_GP)).lw(c);
+                if connected {
+                    c.cycles += 4;
+                    c.g[V0][0] = Addr(oc391_at(c, V1, 0x20)).lw(c) ^ 6;
+                    if c.g[V0][0] != 0 {
+                        NetConnectExit::S1
+                    } else {
+                        c.cycles += 2;
+                        c.g[A1][0] = Addr(oc391_at(c, V1, 0x28)).lw(c);
+                        NET_DISCONNECT_ALL.call(c, 0x0026_3980)?;
+                        NetConnectExit::Full
+                    }
+                } else {
+                    c.cycles += 2;
+                    NetConnectExit::Ra
+                }
+            }
+        };
+        c.cycles += match exit {
+            NetConnectExit::Full => 5,
+            NetConnectExit::S1 => 4,
+            NetConnectExit::Ra => 3,
+        };
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// State 1 of [`net_update_connect`] (a0 = self).
+pub(crate) fn net_update_connect_connecting(
+    c: &mut Cpu,
+    gp: u32,
+) -> Result<NetConnectExit, crate::call::Unwound> {
+    c.cycles += 5;
+    c.g[A1][0] = Addr(gp.wrapping_sub(NET_COMM_SYSTEM_GP)).lw(c);
+    c.g[V1][0] = Addr(oc391_at(c, A1, 0x20)).lw(c);
+    let up = c.g[V1][0] == 5;
+    c.g[V0][0] = c.g[V1][0] ^ 6;
+    if up {
+        // Connected: state 2 and message 0x105 to the lobby manager.
+        c.cycles += 27;
+        c.g[V0][0] = 2;
+        Addr(oc391_at(c, A0, NET_CONNECT_STATE)).sw(c, 2);
+        c.g[A1][0] = 0x0048_0488; // the allocation tag
+        c.g[S0][0] = Addr(gp.wrapping_sub(NET_LOBBY_MAN_GP)).lw(c);
+        c.g[A0][0] = 8;
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        call_ptr(c, 0x0031_7d70, 0x0026_389c)?; // EA_MemAllocNamed
+        c.g[S1][0] = c.g[V0][0];
+        c.g[V1][0] = 0x105;
+        let msg = r32(c, S1);
+        Addr(msg).sw(c, 0x105);
+        c.g[V0][0] = 0x0048_12b0; // the message vtable
+        Addr(msg + 4).sw(c, c.g[V0][0]);
+        c.g[A1][0] = 0x0048_04a8;
+        c.g[A0][0] = 0xc;
+        c.g[A2][0] = 0x2000_0000;
+        c.g[V0][0] = Addr(oc391_at(c, S0, 0xf0)).lw(c); // the list head
+        c.g[A3][0] = 0;
+        Addr(sp(c) + 0x10).sw(c, c.g[V0][0]);
+        call_ptr(c, 0x0031_7d70, 0x0026_38d4)?;
+        // Link the node {next, prev, msg} in before the head.
+        c.g[A1][0] = c.g[V0][0];
+        let node = r32(c, A1);
+        c.g[V0][0] = sx(node.wrapping_add(8));
+        if c.g[V0][0] != 0 {
+            Addr(node + 8).sw(c, c.g[S1][0]);
+        }
+        c.cycles += 10;
+        let sp0 = sp(c);
+        c.g[V0][0] = Addr(sp0 + 0x10).lw(c);
+        Addr(node).sw(c, c.g[V0][0]);
+        c.g[V1][0] = Addr(oc391_at(c, V0, 4)).lw(c);
+        Addr(node + 4).sw(c, c.g[V1][0]);
+        c.g[A0][0] = Addr(oc391_at(c, V0, 4)).lw(c);
+        Addr(r32(c, A0)).sw(c, c.g[A1][0]);
+        c.g[V0][0] = Addr(sp0 + 0x10).lw(c);
+        Addr(oc391_at(c, V0, 4)).sw(c, c.g[A1][0]);
+        Addr(sp0).sw(c, c.g[A1][0]);
+        return Ok(NetConnectExit::Full);
+    }
+    c.cycles += 2;
+    if c.g[V0][0] == 0 {
+        // The comm system failed.
+        c.cycles += 4;
+        c.g[A1][0] = Addr(oc391_at(c, A1, 0x28)).lw(c);
+        NET_DISCONNECT_ALL.call(c, 0x0026_391c)?;
+        return Ok(NetConnectExit::S1);
+    }
+    c.lwc1(1, oc391_at(c, A0, NET_CONNECT_TIMER));
+    c.cycles += 5;
+    c.mtc1(0, 0);
+    c.c_lt_s(1, 0);
+    c.g[V0][0] = 1;
+    if !c.fcc() {
+        c.cycles += 1;
+        c.g[V0][0] = 0;
+    }
+    c.cycles += 2;
+    c.g[A1][0] = 0x2d3f_0000;
+    if c.g[V0][0] != 0 {
+        // Timed out.
+        c.cycles += 4;
+        c.g[A1][0] |= 0x3f3f;
+        NET_DISCONNECT_ALL.call(c, 0x0026_394c)?;
+        return Ok(NetConnectExit::S1);
+    }
+    c.cycles += 5;
+    c.g[V0][0] = Addr(gp.wrapping_sub(0x848)).lw(c);
+    c.lwc1(0, oc391_at(c, V0, 0x14));
+    c.sub_s(0, 1, 0);
+    c.swc1(0, oc391_at(c, A0, NET_CONNECT_TIMER));
+    Ok(NetConnectExit::Full)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15988,6 +16170,88 @@ pub(crate) mod tests {
                 c.bus.write32(v, 0);
                 c.bus.write32(v + 4, (seed % 2) as u32);
                 c.g[A0][0] = v as u64;
+            },
+        );
+    }
+
+    /// Gate and answers of [`net_fake_mem_alloc`].
+    pub(crate) const NET_CTRL: u32 = DATA + 0xd_8000;
+
+    pub(crate) const NET_MAGIC: u32 = 0x0026_3828;
+
+    /// `EA_MemAllocNamed` (0x317d70) for the net tests: logs the size, tag
+    /// and `ra`, returns the n-th block from `NET_CTRL + 0x10`.
+    pub(crate) fn net_fake_mem_alloc(c: &mut Cpu) {
+        use crate::difftest::fakes::{fall_back, prev_cell};
+        if c.bus.read32(NET_CTRL) != NET_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(net_fake_mem_alloc),
+                ee::s10::f_00317d70__generated,
+            );
+        }
+        let n = c.bus.read32(NET_CTRL + 4) & 3;
+        c.bus.write32(NET_CTRL + 4, n + 1);
+        let log = NET_CTRL + 0x40 + 0x10 * n;
+        c.bus.write32(log, c.g[A0][0] as u32);
+        c.bus.write32(log + 4, c.g[A1][0] as u32);
+        c.bus.write32(log + 8, c.g[A2][0] as u32);
+        c.bus.write32(log + 0xc, c.g[RA][0] as u32);
+        c.g[V0][0] = c.bus.read32(NET_CTRL + 0x10 + 4 * n) as u64;
+        c.cycles += 11;
+        ret(c);
+    }
+
+    /// Net_UpdateConnect: idle, connecting (the comm system up: the message
+    /// post through a fake allocator; or still waiting: the timer counts
+    /// down), connected (no failure) and unknown states. Not reached: the
+    /// three disconnect paths (comm failure, timeout): the real
+    /// Net_DisconnectAll runs the whole lobby shutdown.
+    #[test]
+    fn net_update_connect_matches() {
+        use crate::difftest::fakes::{hook, prev_cell};
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            net_fake_mem_alloc,
+            prev_cell(net_fake_mem_alloc),
+        );
+        check(
+            ee::s07::f_00263828__generated,
+            net_update_connect,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x263828, 0);
+                c.pc = 0x0026_3828;
+                let this = DATA;
+                let comm = DATA + 0x100;
+                let lobby = DATA + 0x200;
+                let head = DATA + 0x300;
+                let prev = DATA + 0x400;
+                let app = DATA + 0x700;
+                c.bus.write32(NET_CTRL, NET_MAGIC);
+                c.bus.write32(NET_CTRL + 0x10, DATA + 0x500);
+                c.bus.write32(NET_CTRL + 0x14, DATA + 0x600);
+                c.g[A0][0] = sx(this);
+                let state = [0u32, 1, 1, 2, 3, 0xffff_ffff][(seed % 6) as usize];
+                c.bus.write32(this + NET_CONNECT_STATE, state);
+                c.bus.write32(
+                    this + NET_CONNECT_TIMER,
+                    (0.01 + (r.next_u32() % 100) as f32).to_bits(),
+                );
+                c.bus.write32(GAME_GP - NET_COMM_SYSTEM_GP, comm);
+                let comm_state = if seed % 3 == 0 {
+                    5
+                } else {
+                    [0u32, 2, 4, 7][(seed / 3 % 4) as usize]
+                };
+                c.bus.write32(comm + 0x20, comm_state);
+                c.bus.write32(comm + 0x28, r.next_u32());
+                c.bus.write32(GAME_GP - NET_LOBBY_MAN_GP, lobby);
+                c.bus.write32(lobby + 0xf0, head);
+                c.bus.write32(head, r.next_u32());
+                c.bus.write32(head + 4, prev);
+                c.bus.write32(GAME_GP - 0x848, app);
+                c.bus.write32(app + 0x14, r.f32(0.1));
             },
         );
     }

@@ -30,6 +30,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0041_6404, strchr, "strchr"),
     (0x003e_0118, stream_file_on_close, "StreamFile_OnClose"),
     (0x003e_03d0, streamfile_issue_read, "StreamFile_IssueRead"),
+    (0x003e_5398, ea_thread_yield, "EAThread_Yield"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1252,6 +1253,81 @@ pub(crate) fn streamfile_issue_read_fill(c: &mut Cpu, frame: Frame) -> crate::ca
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// EAThread_Yield (0x3e5398)
+
+/// The EA thread tick rate (ticks per second, `0x450dc8`) and the "in
+/// interrupt context" flag (`0x450de4`).
+pub(crate) const EATHREAD_TICK_RATE: u32 = 0x0045_0dc8;
+
+pub(crate) const EATHREAD_IN_INTERRUPT: u32 = 0x0045_0de4;
+
+/// `void EAThread_Yield(int ms)` (0x3e5398): sleep `ms * rate / 1000` ticks
+/// (at least one) with `THREAD_yieldticks`; with `ms == 0`, rotate this
+/// thread's priority ready queue instead (the `i` syscalls in interrupt
+/// context).
+pub fn ea_thread_yield(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x40);
+        c.g[A2][0] = c.g[A0][0];
+        frame.save_ra(c, 0x30);
+        if c.g[A2][0] != 0 {
+            c.cycles += 6 + 9;
+            c.g[A1][0] = 0x45_0000;
+            c.g[V1][0] = 1000;
+            c.g[A0][0] = Addr(EATHREAD_TICK_RATE).lw(c);
+            c.g[V0][0] = 0;
+            c.g[A1][0] = 1;
+            c.mult(0, A0, A2, A0);
+            c.div(0, A0, V1);
+            c.g[A0][0] = c.lo[0];
+            let positive = 0 < (c.g[A0][0] as i64);
+            c.g[V0][0] = positive as u64;
+            if !positive {
+                c.g[A0][0] = 1;
+            }
+            Callee {
+                addr: 0x003e_52b0,
+                f: ee::s14::THREAD_yieldticks,
+            }
+            .call(c, 0x003e_53dc)?;
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = 0x45_0000;
+            let in_interrupt = Addr(EATHREAD_IN_INTERRUPT).lw(c);
+            c.g[V1][0] = in_interrupt;
+            // (status call, rotate call, return addresses)
+            let (refer, rotate, rets) = if in_interrupt != 0 {
+                c.cycles += 9;
+                (
+                    0x0042_3cb0,
+                    0x0042_4ce8,
+                    [0x003e_53fc, 0x003e_5408, 0x003e_5410],
+                )
+            } else {
+                c.cycles += 8;
+                (
+                    0x0042_3ca0,
+                    0x0042_3c50,
+                    [0x003e_5420, 0x003e_542c, 0x003e_5434],
+                )
+            };
+            call_ptr(c, 0x0042_3c90, rets[0])?; // GetThreadId
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[SP][0];
+            call_ptr(c, refer, rets[1])?; // (i)ReferThreadStatus(id, &info)
+            let priority = frame.at(c, 0x18);
+            c.g[A0][0] = Addr(priority).lw(c);
+            call_ptr(c, rotate, rets[2])?; // (i)RotateThreadReadyQueue(info.currentPriority)
+        }
+        frame.restore_ra(c, 0x30);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1659,6 +1735,33 @@ pub(crate) mod tests {
                         DATA + 0x500
                     },
                 );
+            },
+        );
+    }
+
+    #[test]
+    fn ea_thread_yield_matches() {
+        use crate::difftest::fakes::machine;
+        check(
+            ee::s14::f_003e5398__generated,
+            ea_thread_yield,
+            300,
+            &|c, seed| {
+                // Syscalls (thread status, alarms, sleep) are fakes.
+                let mut r = machine(c, seed, 0x5398, 3);
+                c.pc = 0x003e_5398;
+                c.g[A0][0] = match seed % 4 {
+                    0 => 0,
+                    1 => (r.next_u32() % 100) as u64,
+                    2 => sx(r.next_u32() % 4 + 0xffff_fffc),
+                    _ => r.next_u32() as u64,
+                };
+                c.bus.write32(
+                    EATHREAD_TICK_RATE,
+                    [60, 1000, 0, 7][(seed / 4 % 4) as usize],
+                );
+                c.bus.write32(EATHREAD_IN_INTERRUPT, (seed / 16) % 2);
+                c.bus.write32(0x0045_0da0, r.next_u32() % 2000);
             },
         );
     }

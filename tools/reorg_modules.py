@@ -887,6 +887,9 @@ def build(parsed, allov, target, seed=None):
                         cur = imp.get(n_)
                         defined = n_ in names_ and names_[n_][0] != '<import>'
                         if cur == p_ and not defined:
+                            # Already imported; the unit's copy may be test-only.
+                            if not attr and not test_scope:
+                                U.setdefault('need_ungated', set()).add(n_)
                             continue
                         if cur is None and not defined:
                             imp[n_] = p_
@@ -1249,6 +1252,14 @@ def merge_unit(text, U):
         edits.append((len(text), '\n#[cfg(test)]\npub(crate) mod tests {\n' + ''.join('    ' + u + '\n' for u in dedupe_uses(U['tuses'], local_names(U['titems']))) + ''.join(t_.rstrip() + '\n' for t_ in U['titems']) + '}\n'))
     for at, add in sorted(edits, key=lambda e: e[0], reverse=True):
         out = out[:at] + add + out[at:]
+    # A test-only import that a moved port now needs outside the tests.
+    need = U.get('need_ungated', set())
+    for pre, body, _, _ in spans:
+        if need and 'cfg(test)' in pre and ITEM_RE.match(body.lstrip()) and ITEM_RE.match(body.lstrip()).group(1) == 'use':
+            leaves = []
+            parse_use_tree(re.sub(r'^(pub(\([^)]*\))?\s+)?use\s+', '', body.strip()).rstrip(';'), [], leaves)
+            if any(n in need for _, _, n in leaves):
+                out = out.replace('#[cfg(test)]\n' + body, body, 1)
     return out
 
 

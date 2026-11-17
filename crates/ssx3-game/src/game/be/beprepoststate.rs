@@ -14,7 +14,6 @@ pub(crate) use crate::game::be::beintmission::RIDER_STRIDE;
 pub(crate) use crate::game::be::beintreward::alloc_named;
 pub(crate) use crate::game::be::belibrary::EA_MEM_COPY;
 use crate::guest::Addr;
-#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -49,6 +48,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0015_6950, be_backup_character, "BE_BackupCharacter"),
     (0x0015_6988, be_restore_character, "BE_RestoreCharacter"),
+    (
+        0x0015_65c8,
+        be_pre_race_get_interface,
+        "BEPreRace_GetInterface",
+    ),
 ];
 
 /// `BEPostRace_GetInstance(int id)` (0x156338): as above with `gp - 0x1e9c`
@@ -123,6 +127,145 @@ pub(crate) fn get_instance(
         c.g[V0][0] = Addr(global).lw(c);
         frame.restore(c, S0, 0x10);
         frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// BEPreRace_GetInterface (0x1565c8)
+
+/// The jump table of `BEPreRace_GetInterface`.
+pub(crate) const BE_PRE_RACE_INTERFACE_TABLE: u32 = 0x0045_a900;
+
+/// The interface singletons by kind: (getter, its case block address).
+pub(crate) const BE_PRE_RACE_INTERFACES: [(Callee, u32); 14] = [
+    (
+        Callee {
+            addr: 0x0014_48d8,
+            f: ee::s01::BENewRaceInt_GetInstance,
+        },
+        0x0015_65f4,
+    ),
+    (
+        Callee {
+            addr: 0x0014_5970,
+            f: ee::s01::BENewPlayerInt_GetInstance,
+        },
+        0x0015_6604,
+    ),
+    (
+        Callee {
+            addr: 0x0014_edd8,
+            f: ee::s01::BE_GetCharDBInterface,
+        },
+        0x0015_6614,
+    ),
+    (
+        Callee {
+            addr: 0x0014_7f78,
+            f: ee::s01::BECharInt_GetInstance,
+        },
+        0x0015_6624,
+    ),
+    (
+        Callee {
+            addr: 0x0014_f250,
+            f: ee::s01::BEOptionInt_GetInstance,
+        },
+        0x0015_6634,
+    ),
+    (
+        Callee {
+            addr: 0x0015_2638,
+            f: ee::s01::BESaveInt_GetInstance,
+        },
+        0x0015_6644,
+    ),
+    (
+        Callee {
+            addr: 0x0014_f900,
+            f: ee::s01::BEBAGTInt_GetInstance,
+        },
+        0x0015_6684,
+    ),
+    (
+        Callee {
+            addr: 0x0014_e0e0,
+            f: ee::s01::BENetworkInt_GetInstance,
+        },
+        0x0015_6654,
+    ),
+    (
+        Callee {
+            addr: 0x0015_4948,
+            f: ee::s01::BEScoreInt_GetInstance,
+        },
+        0x0015_6664,
+    ),
+    (
+        Callee {
+            addr: 0x0014_abe0,
+            f: ee::s01::BEBoltInt_GetInstance,
+        },
+        0x0015_6674,
+    ),
+    (
+        Callee {
+            addr: 0x0015_32a0,
+            f: ee::s01::BEMissionInt_GetInstance,
+        },
+        0x0015_66a4,
+    ),
+    (
+        Callee {
+            addr: 0x0015_08d8,
+            f: ee::s01::BEEconInt_GetInstance,
+        },
+        0x0015_6694,
+    ),
+    (
+        Callee {
+            addr: 0x0015_5a50,
+            f: ee::s01::BEAggressionInt_GetInstance,
+        },
+        0x0015_66b4,
+    ),
+    (
+        Callee {
+            addr: 0x0015_69c0,
+            f: ee::s01::BERewardInt_GetInstance,
+        },
+        0x0015_66c4,
+    ),
+];
+
+/// `void* BEPreRace_GetInterface(void* this, int kind)` (0x1565c8): the
+/// back-end interface singleton of `kind` (new race, new player, character
+/// DB, characters, options, save, BAGT, network, score, bolt, mission,
+/// economy, aggression, reward), or null for other kinds.
+pub fn be_pre_race_get_interface(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        let kind = c.g[A1][0];
+        c.g[V0][0] = (kind < 0xe) as u64;
+        frame.save_ra(c, 0);
+        if kind < 0xe {
+            c.cycles += 7;
+            let entry = BE_PRE_RACE_INTERFACE_TABLE.wrapping_add((kind as u32) << 2);
+            c.g[V0][0] = sx(BE_PRE_RACE_INTERFACE_TABLE);
+            c.g[V1][0] = sx(entry);
+            c.g[A0][0] = Addr(entry).lw(c);
+            let (getter, block) = BE_PRE_RACE_INTERFACES[kind as usize];
+            c.cycles += 4;
+            getter.call(c, block + 8)?;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        }
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
         frame.close(c);
         Ok(())
     })
@@ -264,6 +407,33 @@ pub(crate) mod tests {
                 machine(c, seed, 0x0015_6750, 0);
                 belib(c);
                 race_singletons(c);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::seg::seg_2fe810::tests::oc383_machine;
+
+    #[test]
+    fn be_pre_race_get_interface_matches() {
+        check(
+            ee::s01::f_001565c8__generated,
+            be_pre_race_get_interface,
+            300,
+            &|c, seed| {
+                let mut r = oc383_machine(c, seed, 0x65c8, 0x0015_65c8);
+                // Every singleton already made (the getters' short path).
+                for off in [
+                    0x1f3c, 0x1f30, 0x1ee8, 0x1f2c, 0x1ee4, 0x1ed4, 0x1eec, 0x1ea8, 0x1f28, 0x1ee0,
+                    0x1edc, 0x1eb8, 0x1ea4, 0x1e8c,
+                ] {
+                    c.bus.write32(GAME_GP - off, DATA + (r.next_u32() & 0xfff0));
+                }
+                c.g[A0][0] = r.next_u32() as u64;
+                c.g[A1][0] = match seed % 16 {
+                    14 => r.next_u32() as u64,
+                    15 => u64::MAX,
+                    k => k as u64,
+                };
             },
         );
     }

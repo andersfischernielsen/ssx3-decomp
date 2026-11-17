@@ -3,6 +3,8 @@
 
 use crate::abi;
 use crate::abi::r32;
+#[cfg(test)]
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -31,6 +33,8 @@ pub(crate) use crate::game::ai::rider::copy_contact;
 pub(crate) use crate::game::ai::rider::epilogue;
 pub(crate) use crate::game::ai::rider::gp_2 as gp;
 pub(crate) use crate::game::ai::rider::p;
+pub(crate) use crate::game::ai::rider::probe_ground_dot;
+pub(crate) use crate::game::ai::rider::probe_ground_spill;
 pub(crate) use crate::game::ai::rider::prologue;
 pub(crate) use crate::game::ai::rider::r;
 pub(crate) use crate::game::ai::rider::rate_step_60;
@@ -53,6 +57,7 @@ pub(crate) use crate::game::intersect::worldsphtree::sp_2 as sp_3;
 pub(crate) use crate::game::misc::OVERLAP_LIST_FIND_NEAREST_RAIL;
 pub(crate) use crate::game::misc::RIDER_PROBE_RAIL;
 pub(crate) use crate::game::movie::movieplayer::gp as gp_5;
+pub(crate) use crate::game::ui::uiengine::oc391_at;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -208,6 +213,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0013_aa48,
         rider_air_state_collide_walls_2,
         "RiderAirState_CollideWalls",
+    ),
+    (
+        0x0013_bd80,
+        rider_railslide_state_compute_rail_frame,
+        "RiderRailslideState_ComputeRailFrame",
+    ),
+    (
+        0x0013_c140,
+        rider_railslide_state_collide_walls,
+        "RiderRailslideState_CollideWalls",
     ),
 ];
 
@@ -10214,6 +10229,492 @@ pub fn rider_air_state_collide_walls_2(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// RiderRailslideState_CollideWalls (0x13c140)
+
+/// The rail-slide state: `+0x30` the rail position the rider is held at,
+/// `+0x40` the time the rider has been pushed away from it, `+0x50` the
+/// rider.
+pub(crate) const RRS_RAIL_POS: u32 = 0x30;
+
+pub(crate) const RRS_OFF_RAIL_TIME: u32 = 0x40;
+
+pub(crate) const RRS_RIDER: u32 = 0x50;
+
+/// Rider fields: position, rail direction (`+0x1b0`), velocity, forward.
+pub(crate) const RRS_R_POS: u32 = 0x110;
+
+pub(crate) const RRS_R_RAIL_DIR: u32 = 0x1b0;
+
+pub(crate) const RRS_R_VEL: u32 = 0x1e0;
+
+pub(crate) const RRS_R_FORWARD: u32 = 0x370;
+
+/// `.lit4` constants (gp-relative, subtracted): the head-on threshold, the
+/// push-out factor, the off-rail time step, the along-rail threshold, the
+/// along-rail factor and the minimal bounce.
+pub(crate) const RRS_GP_HEAD_ON: u32 = 0x7110;
+
+pub(crate) const RRS_GP_PUSH_OUT: u32 = 0x710c;
+
+pub(crate) const RRS_GP_TIME_STEP: u32 = 0x7108;
+
+pub(crate) const RRS_GP_ALONG_MIN: u32 = 0x7104;
+
+pub(crate) const RRS_GP_ALONG_SCALE: u32 = 0x7100;
+
+pub(crate) const RRS_GP_MIN_BOUNCE: u32 = 0x70fc;
+
+/// `void RiderRailslideState_CollideWalls(RiderRailslideState* self)`
+/// (0x13c140): the rail slide's wall collision. Skipped in sub-state 9.
+/// The rider's hull is swept against its overlap list; on a hit (depth >=
+/// 0) that is not head-on, the normal is flattened against the forward
+/// direction when the rider faces the wall, the rider is pushed out by
+/// `k * depth` along it and its matrix rebuilt, and it is pulled back to
+/// the rail position: within 2 units of it the off-rail timer resets, else
+/// the timer grows and after 0.5 s the velocity is turned along the rail
+/// (kept when it already runs along it, else rebuilt from its length).
+/// Then a rider still moving into the wall is bounced off (by half its
+/// into-wall speed, at least the minimum) and the impact handled. The hull
+/// is destroyed on every path after its construction.
+pub fn rider_railslide_state_collide_walls(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x470);
+        frame.save(c, S2, 0x430);
+        frame.save(c, S0, 0x450);
+        c.g[S2][0] = c.g[A0][0]; // self
+        frame.save(c, S1, 0x440);
+        frame.save(c, S3, 0x420);
+        frame.save_ra(c, 0x410);
+        frame.save_fpr(c, 20, 0x460);
+        c.g[A0][0] = Addr(oc391_at(c, S2, RRS_RIDER)).lw(c);
+        call_ptr(c, 0x0011_fee8, 0x0013_c168)?; // Rider_GetSubState
+        c.g[V1][0] = 9;
+        let skip = c.g[V0][0] == c.g[V1][0];
+        c.g[S1][0] = sx(frame.at(c, 0x80)); // the hull
+        if skip {
+            c.cycles += 1;
+        } else {
+            let bounced = rrs_collide(c, frame)?;
+            if bounced {
+                c.cycles += 1;
+            }
+        }
+        frame.restore(c, S0, 0x450);
+        c.cycles += 7;
+        frame.restore(c, S1, 0x440);
+        frame.restore(c, S2, 0x430);
+        frame.restore(c, S3, 0x420);
+        frame.restore_ra(c, 0x410);
+        frame.restore_fpr(c, 20, 0x460);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The hull sweep and response of [`rider_railslide_state_collide_walls`];
+/// true when it went through the bounce (its exit costs one more cycle).
+pub(crate) fn rrs_collide(c: &mut Cpu, frame: Frame) -> Result<bool, crate::call::Unwound> {
+    use crate::game::ai::control::handplantcontrol::{
+        vu_dot3, vu_normalize3, vu_scale, vu_spill, vu_sub,
+    };
+    use ssx3_ee_rt::vu0::Src;
+    let gp = c.g[GP][0] as u32;
+    // CollHull_ctor(&hull, rider->hull, !rider->controller->vt[0x40]())
+    c.cycles += 24;
+    c.g[S0][0] = Addr(oc391_at(c, S2, RRS_RIDER)).lw(c);
+    c.mtc1(0, 20); // f20 = 0
+    c.g[S3][0] = c.g[S1][0];
+    c.g[V1][0] = Addr(oc391_at(c, S0, 0x6c0)).lw(c);
+    c.g[A1][0] = sx(oc391_at(c, S0, 0x6c0));
+    c.g[A0][0] = Addr(oc391_at(c, V1, 0x40)).lh(c);
+    c.g[V0][0] = Addr(oc391_at(c, V1, 0x44)).lw(c);
+    let method = r32(c, V0);
+    c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+    call_ptr(c, method, 0x0013_c198)?;
+    c.g[A1][0] = Addr(oc391_at(c, S0, 0xaa0)).lw(c);
+    c.g[A2][0] = c.g[V0][0] ^ 1;
+    c.g[A0][0] = c.g[S1][0];
+    call_ptr(c, 0x0032_f650, 0x0013_c1a8)?; // CollHull_ctor
+                                            // depth = OverlapList_FindClosestContact(rider->list, &hull, &hit, hint)
+    c.g[V1][0] = Addr(oc391_at(c, S2, RRS_RIDER)).lw(c);
+    c.g[A1][0] = c.g[S1][0];
+    c.g[A2][0] = c.g[SP][0];
+    c.g[A3][0] = Addr(oc391_at(c, V1, 0x868)).lw(c);
+    c.g[A0][0] = Addr(oc391_at(c, V1, 0x860)).lw(c);
+    call_ptr(c, 0x0033_42d0, 0x0013_c1c0)?;
+    c.mov_s(2, 0); // depth
+    c.c_lt_s(2, 20);
+    if c.fcc() {
+        c.g[A0][0] = c.g[S3][0];
+        return rrs_destroy_hull(c).map(|_| false);
+    }
+    // dot = forward . normal; head-on: give up.
+    c.cycles += 15;
+    c.g[V1][0] = Addr(oc391_at(c, S2, RRS_RIDER)).lw(c);
+    let rider = r32(c, V1);
+    c.lwc1(0, gp.wrapping_sub(RRS_GP_HEAD_ON));
+    c.lqc2(3, rider.wrapping_add(RRS_R_FORWARD));
+    c.lqc2(5, frame.at(c, 0x10));
+    vu_dot3(c, 5);
+    c.qmfc2(2, 4);
+    c.mtc1(2, 1);
+    c.c_lt_s(1, 0);
+    if c.fcc() {
+        c.g[A0][0] = c.g[S3][0];
+        return rrs_destroy_hull(c).map(|_| false);
+    }
+    c.cycles += 3;
+    c.c_lt_s(1, 20);
+    if c.fcc() {
+        // Facing the wall: normal = normalize(normal - forward * dot).
+        c.cycles += 26;
+        c.mfc1(2, 1);
+        vu_scale(c, 2, rider.wrapping_add(RRS_R_FORWARD));
+        vu_spill(c, frame, 0x3d0, &[0x3c0]);
+        vu_sub(c, frame.at(c, 0x10), frame.at(c, 0x3c0));
+        vu_spill(c, frame, 0x3d0, &[0x3b0]);
+        c.lqc2(3, frame.at(c, 0x3b0));
+        vu_normalize3(c);
+        vu_spill(c, frame, 0x3d0, &[0x10, 0x3a0]);
+    }
+    // Rider_Translate(rider, normal * k * depth); Rider_BuildWorldMatrix.
+    c.cycles += 45;
+    c.lwc1(0, gp.wrapping_sub(RRS_GP_PUSH_OUT));
+    c.g[A1][0] = sx(frame.at(c, 0x3a0));
+    c.mfc1(3, 0);
+    vu_scale(c, 3, frame.at(c, 0x10));
+    vu_spill(c, frame, 0x3c0, &[0x3b0]);
+    c.mfc1(3, 2);
+    vu_scale(c, 3, frame.at(c, 0x3b0));
+    let t = frame.at(c, 0x3c0);
+    c.sqc2(5, t);
+    c.lq(2, t);
+    c.g[A0][0] = Addr(oc391_at(c, S2, RRS_RIDER)).lw(c);
+    let a = frame.at(c, 0x3a0);
+    c.sq(2, a);
+    call_ptr(c, 0x0010_6538, 0x0013_c2cc)?; // Rider_Translate
+    c.g[A0][0] = Addr(oc391_at(c, S2, RRS_RIDER)).lw(c);
+    call_ptr(c, 0x0011_e098, 0x0013_c2d4)?; // Rider_BuildWorldMatrix
+                                            // Back to the rail: how far did the push move the rider?
+    c.g[V0][0] = Addr(oc391_at(c, S2, RRS_RIDER)).lw(c);
+    vu_sub(c, oc391_at(c, S2, RRS_RAIL_POS), oc391_at(c, V0, RRS_R_POS));
+    let t = frame.at(c, 0x3c0);
+    c.sqc2(5, t);
+    c.g[AT][0] = 0x4000_0000; // 2.0f
+    c.mtc1(1, 1);
+    c.lq(2, t);
+    c.g[A0][0] = Addr(oc391_at(c, S2, RRS_RIDER)).lw(c);
+    let a = frame.at(c, 0x3b0);
+    c.sq(2, a);
+    c.lqc2(3, frame.at(c, 0x3b0));
+    vu_dot3(c, 3);
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(3, 22);
+    c.mtc1(3, 0); // distance
+    c.lq(2, oc391_at(c, A0, RRS_R_POS));
+    c.c_lt_s(1, 0);
+    let far = c.fcc();
+    c.sq(2, oc391_at(c, S2, RRS_RAIL_POS));
+    if far {
+        c.cycles += 2;
+        c.swc1(20, oc391_at(c, S2, RRS_OFF_RAIL_TIME)); // timer = 0
+    } else {
+        c.cycles += 9;
+        c.lwc1(0, oc391_at(c, S2, RRS_OFF_RAIL_TIME));
+        c.lwc1(1, gp.wrapping_sub(RRS_GP_TIME_STEP));
+        c.g[AT][0] = 0x3f00_0000; // 0.5f
+        c.mtc1(1, 2);
+        c.add_s(0, 0, 1);
+        c.c_lt_s(2, 0);
+        let expired = c.fcc();
+        c.swc1(0, oc391_at(c, S2, RRS_OFF_RAIL_TIME));
+        if expired {
+            // Turn the velocity along the rail direction.
+            c.cycles += 16;
+            let rider = r32(c, A0);
+            c.lq(2, rider.wrapping_add(RRS_R_RAIL_DIR));
+            c.lwc1(0, gp.wrapping_sub(RRS_GP_ALONG_MIN));
+            let a = frame.at(c, 0x3c0);
+            c.sq(2, a);
+            c.lqc2(3, frame.at(c, 0x3c0));
+            c.lqc2(5, frame.at(c, 0x10));
+            vu_dot3(c, 5);
+            c.qmfc2(3, 4);
+            c.mtc1(3, 1);
+            c.lwc1(2, gp.wrapping_sub(RRS_GP_ALONG_SCALE));
+            c.c_lt_s(1, 0);
+            if c.fcc() {
+                c.cycles += 9;
+                c.mfc1(3, 2);
+                vu_scale(c, 3, frame.at(c, 0x3c0));
+                vu_spill(c, frame, 0x3e0, &[0x3d0]);
+                c.sq(2, rider.wrapping_add(RRS_R_VEL));
+            } else {
+                c.cycles += 34;
+                c.mfc1(3, 1);
+                vu_scale(c, 3, frame.at(c, 0x10));
+                vu_spill(c, frame, 0x3f0, &[0x3e0]);
+                vu_sub(c, frame.at(c, 0x3c0), frame.at(c, 0x3e0));
+                let t = frame.at(c, 0x3f0);
+                c.sqc2(5, t);
+                c.lq(2, t);
+                c.g[V1][0] = Addr(oc391_at(c, S2, RRS_RIDER)).lw(c);
+                let a = frame.at(c, 0x3d0);
+                c.sq(2, a);
+                c.lqc2(3, frame.at(c, 0x3d0));
+                vu_normalize3(c);
+                vu_spill(c, frame, 0x400, &[0x3f0]);
+                c.mfc1(4, 2);
+                vu_scale(c, 4, frame.at(c, 0x3f0));
+                vu_spill(c, frame, 0x400, &[0x3e0]);
+                c.sq(2, oc391_at(c, V1, RRS_R_VEL));
+            }
+        }
+    }
+    // Still moving into the wall? (vel . -normal >= 0)
+    c.cycles += 23;
+    c.g[AT][0] = 0xffff_ffff_bf80_0000; // -1.0f
+    c.mtc1(1, 0);
+    c.mfc1(2, 0);
+    vu_scale(c, 2, frame.at(c, 0x10));
+    let t = frame.at(c, 0x3d0);
+    c.sqc2(5, t);
+    c.mtc1(0, 1); // f1 = 0
+    c.lq(2, t);
+    c.g[A0][0] = Addr(oc391_at(c, S2, RRS_RIDER)).lw(c);
+    let a = frame.at(c, 0x3c0);
+    c.sq(2, a);
+    c.lqc2(3, frame.at(c, 0x3c0));
+    c.lqc2(5, oc391_at(c, A0, RRS_R_VEL));
+    vu_dot3(c, 5);
+    c.qmfc2(3, 4);
+    c.mtc1(3, 2); // into
+    c.c_lt_s(2, 1);
+    if c.fcc() {
+        c.cycles += 1;
+        c.g[A0][0] = c.g[S3][0];
+        return rrs_destroy_hull(c).map(|_| false);
+    }
+    // Bounce: push = max(into * 0.5, min); vel += normal * (into + push).
+    c.cycles += 20;
+    c.g[AT][0] = 0x3f00_0000; // 0.5f
+    c.mtc1(1, 0);
+    c.lqc2(3, oc391_at(c, A0, RRS_R_VEL));
+    vu_normalize3(c);
+    let t = frame.at(c, 0x3d0);
+    c.sqc2(5, t);
+    c.lwc1(3, gp.wrapping_sub(RRS_GP_MIN_BOUNCE));
+    c.mul_s(0, 2, 0);
+    c.lq(2, t);
+    let a = frame.at(c, 0x3c0);
+    c.sq(2, a);
+    c.c_lt_s(0, 3);
+    let small = c.fcc();
+    c.mov_s(1, 0);
+    if small {
+        c.cycles += 1;
+        c.mov_s(1, 3);
+    }
+    c.cycles += 27;
+    c.add_s(0, 2, 1);
+    c.g[A1][0] = sx(frame.at(c, 0x3d0));
+    c.mfc1(3, 0);
+    vu_scale(c, 3, frame.at(c, 0x10));
+    let t = frame.at(c, 0x3e0);
+    c.sqc2(5, t);
+    c.lq(2, t);
+    c.g[V1][0] = Addr(oc391_at(c, S2, RRS_RIDER)).lw(c);
+    let a = frame.at(c, 0x3d0);
+    c.sq(2, a);
+    let vel = oc391_at(c, V1, RRS_R_VEL);
+    c.lqc2(3, vel);
+    c.lqc2(4, frame.at(c, 0x3d0));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, vel);
+    // Rider_HandleImpact(rider, &{ hit.pos, dir, hit.normal, push },
+    // hit.material)
+    let sp0 = sp(c);
+    c.lq(2, sp0);
+    c.lq(3, sp0 + 0x3c0);
+    c.lq(7, sp0 + 0x10);
+    c.g[A0][0] = Addr(oc391_at(c, S2, RRS_RIDER)).lw(c);
+    c.g[A2][0] = Addr(sp0 + 0x4c).lw(c);
+    c.sq(2, sp0 + 0x3d0);
+    c.sq(3, sp0 + 0x3e0);
+    c.sq(7, sp0 + 0x3f0);
+    c.swc1(1, sp0 + 0x400);
+    call_ptr(c, 0x0010_5d98, 0x0013_c574)?; // Rider_HandleImpact
+    c.g[A0][0] = c.g[S3][0];
+    c.g[A1][0] = 2;
+    call_ptr(c, 0x0032_f708, 0x0013_c580)?; // CollHull_dtor
+    Ok(true)
+}
+
+/// `CollHull_dtor(&hull, 2)` (a0 already holds the hull).
+pub(crate) fn rrs_destroy_hull(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 4;
+    c.g[A1][0] = 2;
+    call_ptr(c, 0x0032_f708, 0x0013_c4b8)
+}
+
+// ---------------------------------------------------------------------------
+// RiderRailslideState_ComputeRailFrame (0x13bd80)
+
+/// VU0 `vf6 = vf4 x vf5` (the outer-product macro), spilled to `sp+tmp`
+/// and copied to `sp+dst`.
+pub(crate) fn rail_frame_cross(c: &mut Cpu, tmp: u32, dst: u32) {
+    c.vu0().opmula(4, 5);
+    c.vu0().opmsub(6, 5, 4);
+    c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+    probe_ground_spill(c, 6, tmp, dst);
+}
+
+/// VU0 normalise of `vf3` into `vf5` (`rsqrt` of the dot product).
+pub(crate) fn rail_frame_normalize(c: &mut Cpu) {
+    probe_ground_dot(c, 3);
+    c.vu0().rsqrt(0, 3, 4, 0);
+    c.vu0().waitq();
+    c.vu0().mul(0b1111, 5, 3, Src::Q);
+}
+
+/// `vf5 = *(sp+src) * x` with `x` from GPR `xreg` (`qmtc2`), to `sp+tmp`,
+/// copied to `sp+dst`.
+pub(crate) fn rail_frame_scale(c: &mut Cpu, src: u32, xreg: usize, tmp: u32, dst: u32) {
+    let sp_ = sp(c);
+    c.lqc2(4, sp_.wrapping_add(src));
+    c.qmtc2(xreg, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    probe_ground_spill(c, 5, tmp, dst);
+}
+
+/// `Vec4 RiderRailslideState_ComputeRailFrame(Rail* rail, const Vec4* n)`
+/// (0x13bd80, returned through `a0`): the rider's forward direction on a
+/// rail with normal `n`. For a shallow normal (|n.z| <= 0.92): the up vector
+/// (0x4ff160) minus `n * n.z`, normalised and flipped to agree with the
+/// rider's up (+0x50 -> +0x1c0); for a steep one: `b * cos - a * sin` of the
+/// rail angle (+0x10), with `a = normalize(up x n)` and `b = n x a`.
+pub fn rider_railslide_state_compute_rail_frame(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xc0);
+        frame.save(c, S0, 0xb0);
+        frame.save(c, S1, 0xa0);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S2, 0x90);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x80);
+        c.g[S2][0] = c.g[A0][0];
+        c.g[A0][0] = sx(frame.at(c, 0x70));
+        c.g[A1][0] = sx(frame.at(c, 0x74));
+        c.lwc1(12, (c.g[S1][0] as u32).wrapping_add(0x10));
+        call_ptr(c, 0x0031_be50, 0x0013_bdb0)?; // Math_SinCos(&s, &c, angle)
+        let sp_ = sp(c);
+        let n = c.g[S0][0] as u32;
+        let gp = c.g[GP][0] as u32;
+        c.lwc1(2, n.wrapping_add(0x8));
+        c.g[V0][0] = 0x1;
+        c.lwc1(1, gp.wrapping_sub(0x7118));
+        c.abs_s(0, 2);
+        c.c_lt_s(1, 0);
+        if !c.fcc() {
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 2;
+        if c.g[V0][0] == 0 {
+            // Shallow: normalize(up - n * n.z), facing the rider's up.
+            c.cycles += 45;
+            c.mfc1(2, 2);
+            c.lqc2(4, n);
+            c.qmtc2(2, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, sp_.wrapping_add(0x40));
+            c.mtc1(0, 1);
+            c.lq(2, sp_.wrapping_add(0x40));
+            c.sq(2, sp_.wrapping_add(0x30));
+            c.g[V0][0] = 0x50_0000;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xea0));
+            c.lqc2(3, c.g[V0][0] as u32);
+            c.lqc2(4, sp_.wrapping_add(0x30));
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            probe_ground_spill(c, 5, 0x40, 0x20);
+            c.lqc2(3, sp_.wrapping_add(0x20));
+            rail_frame_normalize(c);
+            c.sqc2(5, sp_.wrapping_add(0x40));
+            c.lq(3, sp_.wrapping_add(0x40));
+            c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x50));
+            c.sq(3, sp_.wrapping_add(0x10));
+            c.sq(3, sp_);
+            c.lq(2, (c.g[A0][0] as u32).wrapping_add(0x1c0));
+            c.sq(2, sp_.wrapping_add(0x10));
+            c.lqc2(3, sp_);
+            c.lqc2(5, sp_.wrapping_add(0x10));
+            probe_ground_dot(c, 5);
+            c.qmfc2(3, 4);
+            c.mtc1(3, 0);
+            c.c_lt_s(0, 1);
+            let behind = c.fcc();
+            c.lq(3, sp_);
+            if behind {
+                c.cycles += 9;
+                c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                c.mtc1(1, 0);
+                c.mfc1(2, 0);
+                c.lqc2(4, sp_);
+                c.qmtc2(2, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, sp_);
+                c.lq(3, sp_);
+            }
+        } else {
+            // Steep: b * cos - a * sin.
+            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x50));
+            c.cycles += 54;
+            c.lq(2, (c.g[V1][0] as u32).wrapping_add(0x1c0));
+            c.sq(2, sp_.wrapping_add(0x30));
+            c.lqc2(4, sp_.wrapping_add(0x30));
+            c.lqc2(5, n);
+            rail_frame_cross(c, 0x40, 0x20); // up x n
+            c.lqc2(3, sp_.wrapping_add(0x20));
+            rail_frame_normalize(c);
+            probe_ground_spill(c, 5, 0x40, 0x10); // a
+            c.lqc2(4, n);
+            c.lqc2(5, sp_.wrapping_add(0x10));
+            c.vu0().opmula(4, 5);
+            c.vu0().opmsub(6, 5, 4);
+            c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+            c.sqc2(6, sp_.wrapping_add(0x30));
+            c.lq(2, sp_.wrapping_add(0x30));
+            c.lwc1(0, sp_.wrapping_add(0x74));
+            c.sq(2, sp_.wrapping_add(0x20)); // b
+            c.mfc1(3, 0);
+            rail_frame_scale(c, 0x20, 3, 0x50, 0x40); // b * cos
+            c.lwc1(0, sp_.wrapping_add(0x70));
+            c.mfc1(3, 0);
+            rail_frame_scale(c, 0x10, 3, 0x60, 0x50); // a * sin
+            c.lqc2(3, sp_.wrapping_add(0x40));
+            c.lqc2(4, sp_.wrapping_add(0x50));
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, sp_.wrapping_add(0x60));
+            c.lq(2, sp_.wrapping_add(0x60));
+            c.sq(2, sp_);
+            c.sq(2, sp_.wrapping_add(0x30));
+            c.lq(3, sp_);
+        }
+        c.cycles += 8;
+        c.g[V0][0] = c.g[S2][0];
+        frame.restore(c, S0, 0xb0);
+        c.sq(3, c.g[S2][0] as u32);
+        frame.restore(c, S1, 0xa0);
+        frame.restore(c, S2, 0x90);
+        frame.restore_ra(c, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     #[test]
@@ -13095,6 +13596,301 @@ pub(crate) mod tests {
                     .write32(PUA_CTRL + 4, pick(&mut r, &[-1.0, 0.0, 0.25, 2.0, 2.0]));
                 fill(c, &mut r, PUA_HIT_A_TEMPLATE, 0x18);
                 vec(c, &mut r, PUA_HIT_A_TEMPLATE + 0x10);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::vtable;
+
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+    use crate::difftest::put_words;
+
+    pub(crate) use crate::game::ai::rider::tests::OC396_CTRL;
+    pub(crate) use crate::game::ai::rider::tests::OC396_MAGIC;
+    use std::ptr::addr_of_mut;
+
+    pub(crate) use crate::game::ai::rider::tests::oc396_fake;
+    pub(crate) use crate::game::ai::rider::tests::oc396_fake_call;
+
+    /// Gate, answers and call log of the `rrs_fake_*` callees.
+    pub(crate) const RRS_CTRL: u32 = DATA + 0xd_0000;
+
+    pub(crate) const RRS_MAGIC: u32 = 0x013c_1400;
+
+    /// The contact record the fake closest-contact query copies to its a2.
+    pub(crate) const RRS_RECORD: u32 = RRS_CTRL + 0x100;
+
+    /// Log a fake call's arguments, `ra`, `sp`, cycles, f12 and the 0x40
+    /// bytes at a1 at `RRS_CTRL + 0x200 + slot * 0x80`.
+    pub(crate) fn rrs_record(c: &mut Cpu, slot: u32) {
+        let at = RRS_CTRL + 0x200 + slot * 0x80;
+        for (i, r) in [A0, A1, A2, A3, RA, ssx3_ee_rt::cpu::reg::SP]
+            .into_iter()
+            .enumerate()
+        {
+            c.bus.write64(at + 8 * i as u32, c.g[r][0]);
+        }
+        c.bus.write64(at + 0x30, c.cycles);
+        c.bus.write32(at + 0x38, c.f[12]);
+        let a1 = c.g[A1][0] as u32;
+        if (0x0010_0000..0x0200_0000).contains(&a1) {
+            for k in 0..0x10 {
+                let w = c.bus.read32(a1 + 4 * k);
+                c.bus.write32(at + 0x40 + 4 * k, w);
+            }
+        }
+    }
+
+    macro_rules! rrs_fake {
+        ($name:ident, $gen:path, $slot:expr, $body:expr) => {
+            fn $name(c: &mut Cpu) {
+                use crate::difftest::fakes::{fall_back, prev_cell};
+                if c.bus.read32(RRS_CTRL) != RRS_MAGIC {
+                    return fall_back(c, prev_cell($name), $gen);
+                }
+                rrs_record(c, $slot);
+                let body: fn(&mut Cpu) = $body;
+                body(c);
+                c.cycles += 5 + $slot as u64;
+                ret(c);
+            }
+        };
+    }
+
+    rrs_fake!(rrs_fake_hull_ctor, ee::s11::f_0032f650__generated, 0, |c| {
+        c.g[V0][0] = c.g[A0][0];
+    });
+
+    rrs_fake!(
+        rrs_fake_find_contact,
+        ee::s11::f_003342d0__generated,
+        1,
+        |c| {
+            let rec = c.g[A2][0] as u32;
+            for k in 0..0x18 {
+                let w = c.bus.read32(RRS_RECORD + 4 * k);
+                c.bus.write32(rec + 4 * k, w);
+            }
+            c.f[0] = c.bus.read32(RRS_CTRL + 8);
+        }
+    );
+
+    rrs_fake!(
+        rrs_fake_hull_dtor,
+        ee::s11::f_0032f708__generated,
+        2,
+        |_c| {}
+    );
+
+    rrs_fake!(
+        rrs_fake_translate,
+        ee::s00::f_00106538__generated,
+        3,
+        |_c| {}
+    );
+
+    rrs_fake!(
+        rrs_fake_world_matrix,
+        ee::s00::f_0011e098__generated,
+        4,
+        |_c| {}
+    );
+
+    rrs_fake!(
+        rrs_fake_handle_impact,
+        ee::s00::f_00105d98__generated,
+        5,
+        |_c| {}
+    );
+
+    pub(crate) fn rrs_install_fakes() {
+        use crate::difftest::fakes::{hook, prev_cell};
+        use std::ptr::addr_of_mut;
+        let slots: [(*mut fn(&mut Cpu), fn(&mut Cpu)); 6] = [
+            (addr_of_mut!(ee::s11::OVERRIDE_0032F650), rrs_fake_hull_ctor),
+            (
+                addr_of_mut!(ee::s11::OVERRIDE_003342D0),
+                rrs_fake_find_contact,
+            ),
+            (addr_of_mut!(ee::s11::OVERRIDE_0032F708), rrs_fake_hull_dtor),
+            (addr_of_mut!(ee::s00::OVERRIDE_00106538), rrs_fake_translate),
+            (
+                addr_of_mut!(ee::s00::OVERRIDE_0011E098),
+                rrs_fake_world_matrix,
+            ),
+            (
+                addr_of_mut!(ee::s00::OVERRIDE_00105D98),
+                rrs_fake_handle_impact,
+            ),
+        ];
+        for (slot, fake) in slots {
+            hook(slot, fake, prev_cell(fake));
+        }
+    }
+
+    /// RiderRailslideState_CollideWalls: sub-state 9; a miss (negative
+    /// depth); head-on; facing the wall or not; near the rail (timer reset)
+    /// or not (timer below or past 0.5 s; velocity along the rail or
+    /// rebuilt); receding from or moving into the wall (small or large
+    /// bounce). The hull, contact query, translate, matrix and impact
+    /// callees are gated fakes; the controller method is a fake that may
+    /// unwind.
+    #[test]
+    fn rider_railslide_state_collide_walls_matches() {
+        use crate::difftest::put_vec;
+        rrs_install_fakes();
+        let f = |x: f32| x.to_bits();
+        check(
+            ee::s01::f_0013c140__generated,
+            rider_railslide_state_collide_walls,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x13c140, 1);
+                c.pc = 0x0013_c140;
+                let this = DATA;
+                let rider = DATA + 0x1000;
+                let sub = DATA + 0x3000;
+                c.bus.write32(RRS_CTRL, RRS_MAGIC);
+                for (off, v) in [
+                    (RRS_GP_HEAD_ON, -0.9999f32),
+                    (RRS_GP_PUSH_OUT, 1.1),
+                    (RRS_GP_TIME_STEP, 1.0 / 60.0),
+                    (RRS_GP_ALONG_MIN, 0.3),
+                    (RRS_GP_ALONG_SCALE, 20.0),
+                    (RRS_GP_MIN_BOUNCE, 5.0),
+                ] {
+                    c.bus.write32(GAME_GP - off, f(v));
+                }
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + RRS_RIDER, rider);
+                c.bus.write32(rider + 0x77c, sub);
+                c.bus.write32(
+                    sub + 0xde4,
+                    if seed % 11 == 0 { 9 } else { r.next_u32() % 8 },
+                );
+                let vt = vtable(c, &mut r, &[0x40]);
+                c.bus.write32(rider + 0x6c0, vt);
+                c.bus.write32(rider + 0xaa0, r.next_u32());
+                c.bus.write32(rider + 0x860, r.next_u32());
+                c.bus.write32(rider + 0x868, r.next_u32());
+                let unit = |r: &mut Rng| {
+                    let v = [
+                        (r.next_u32() % 200) as f32 - 100.0,
+                        (r.next_u32() % 200) as f32 - 100.0,
+                        (r.next_u32() % 200) as f32 - 99.5,
+                    ];
+                    let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+                    [v[0] / n, v[1] / n, v[2] / n]
+                };
+                let fwd = unit(&mut r);
+                let normal = if seed % 7 == 3 {
+                    [-fwd[0], -fwd[1], -fwd[2]]
+                } else {
+                    unit(&mut r)
+                };
+                put_vec(
+                    c,
+                    rider + RRS_R_FORWARD,
+                    [f(fwd[0]), f(fwd[1]), f(fwd[2]), 0],
+                );
+                put_vec(
+                    c,
+                    RRS_RECORD + 0x10,
+                    [f(normal[0]), f(normal[1]), f(normal[2]), 0],
+                );
+                put_vec(
+                    c,
+                    RRS_RECORD,
+                    [r.f32(50.0), r.f32(50.0), r.f32(50.0), f(1.0)],
+                );
+                for k in 0x20..0x60 {
+                    c.bus.write8(RRS_RECORD + k, r.next_u32() as u8);
+                }
+                let depth = if seed % 6 == 2 {
+                    -0.5 - (r.next_u32() % 4) as f32
+                } else {
+                    (r.next_u32() % 10) as f32 * 0.25
+                };
+                c.bus.write32(RRS_CTRL + 8, f(depth));
+                // Rail and rider positions: within 2 units or not.
+                let pos = [r.f32(50.0), r.f32(50.0), r.f32(50.0), f(1.0)];
+                put_vec(c, rider + RRS_R_POS, pos);
+                let off = if seed % 3 == 0 { 0.5f32 } else { 5.0 };
+                let rail: Vec<u32> = (0..3)
+                    .map(|i| f(f32::from_bits(pos[i]) + off * normal[i]))
+                    .chain([f(1.0)])
+                    .collect();
+                put_vec(c, this + RRS_RAIL_POS, [rail[0], rail[1], rail[2], rail[3]]);
+                c.bus.write32(
+                    this + RRS_OFF_RAIL_TIME,
+                    f(if seed % 4 < 2 { 0.1 } else { 0.6 }),
+                );
+                let along = if seed % 5 < 2 { normal } else { unit(&mut r) };
+                put_vec(
+                    c,
+                    rider + RRS_R_RAIL_DIR,
+                    [f(along[0]), f(along[1]), f(along[2]), 0],
+                );
+                // Velocity into the wall (bounce) or away from it.
+                let k = (1 + r.next_u32() % 40) as f32 * if seed % 2 == 0 { -1.0 } else { 1.0 };
+                put_vec(
+                    c,
+                    rider + RRS_R_VEL,
+                    [
+                        f(normal[0] * k + 1.0),
+                        f(normal[1] * k),
+                        f(normal[2] * k),
+                        0,
+                    ],
+                );
+            },
+        );
+    }
+
+    oc396_fake!(
+        oc396_fake_sincos,
+        OC396_PREV_SINCOS,
+        0x0031_be50,
+        ee::s10::f_0031be50__generated
+    );
+
+    /// Shallow and steep rail normals, facing the rider's up or not; the
+    /// sine/cosine faked (they come from the caller's frame).
+    #[test]
+    fn rider_railslide_state_compute_rail_frame_matches() {
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0031BE50),
+            oc396_fake_sincos,
+            &OC396_PREV_SINCOS,
+        );
+        covered(
+            ee::s01::f_0013bd80__generated,
+            rider_railslide_state_compute_rail_frame,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0013_bd80, 1);
+                c.pc = 0x0013_bd80;
+                c.bus.write32(OC396_CTRL, OC396_MAGIC);
+                let fb = crate::difftest::SP - 0xc0;
+                put_words(c, fb + 0x70, &[r.f32(1.0), r.f32(1.0)]);
+                c.bus.write32(GAME_GP - 0x7118, 0.92f32.to_bits());
+                put_words(c, 0x004f_f160, &[0, 0, 0x3f80_0000, 0]);
+                let rail = DATA + 0x100;
+                let rider = DATA + 0x400;
+                let n = DATA + 0x200;
+                c.bus.write32(rail + 0x10, r.f32(3.0));
+                c.bus.write32(rail + 0x50, rider);
+                put_words(c, rider + 0x1c0, &[r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+                let nz = if seed % 2 == 0 {
+                    r.f32(0.9)
+                } else {
+                    (0.95f32 + (r.next_u32() % 5) as f32 * 0.01).to_bits() ^ ((seed / 2 % 2) << 31)
+                };
+                put_words(c, n, &[r.f32(0.5), r.f32(0.5), nz, 0]);
+                c.g[A0][0] = sx(DATA + 0x600);
+                c.g[A1][0] = sx(rail);
+                c.g[A2][0] = sx(n);
             },
         );
     }

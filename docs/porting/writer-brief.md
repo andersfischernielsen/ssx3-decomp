@@ -204,6 +204,8 @@ every difference a parameter.
 - Take every return address from the generated `c.g[RA][0] = sx(0x...)`
   line of that call. A formula (`head + 0x3c + 0x14*i`) was off by 0x3c for
   one call kind, and only the callee's saved `ra` on the stack showed it.
+- Bus reads take `&mut Cpu` (`c.bus.read32`): a closure or helper that
+  reads guest memory takes `c: &mut Cpu`, not `&Cpu` (wave 217).
 - A test whose target has no override slot calls `f_XXXXXXXX` (with `c.pc`
   set), never `f_XXXXXXXX__generated`: that name only exists once the
   function is installed.

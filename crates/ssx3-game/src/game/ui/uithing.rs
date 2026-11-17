@@ -17,6 +17,7 @@ pub(crate) use crate::game::fe::ovstates::at as at_2;
 pub(crate) use crate::game::fe::ovstates::close;
 pub(crate) use crate::game::fe::ovstates::open;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -38,6 +39,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003a_03f0, uitext_load, "UIText_Load"),
     (0x003a_04f0, uitext_get_font, "UIText_GetFont"),
     (0x003a_0528, ui_text_refresh_text, "UIText_RefreshText"),
+    (
+        0x003a_0048,
+        ui_object_set_anim_param,
+        "UIObject_SetAnimParam",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -447,6 +453,100 @@ pub fn uitext_load(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// UIObject_SetAnimParam (0x3a0048)
+
+/// The jump table of `UIObject_SetAnimParam` (17 entries, `.rodata`).
+pub(crate) const UI_OBJECT_SET_ANIM_PARAM_TABLE: u32 = 0x0049_3fe0;
+
+/// What one animation channel of `cUIThing::setChannelData` writes.
+#[derive(Clone, Copy)]
+pub(crate) enum UiAnimChannel {
+    /// `this+off = data`.
+    Plain(u32),
+    /// `this+off = data * *(gp - lit)`.
+    Scaled(u32, u32),
+    /// Channel 12: the frame (6 bits at bit 13 of the flags word +0x14).
+    FrameIndex,
+}
+
+/// The cases of the jump table at [`UI_OBJECT_SET_ANIM_PARAM_TABLE`].
+pub(crate) fn ui_object_anim_channel(key: u32) -> Option<UiAnimChannel> {
+    use UiAnimChannel::*;
+    Some(match key {
+        0 => Plain(0x44),           // position x
+        1 => Plain(0x48),           // position y
+        9 => Scaled(0x50, 0x2540),  // scale x (* 0.01)
+        10 => Scaled(0x54, 0x253c), // scale y (* 0.01)
+        3 => Scaled(0x2c, 0x2538),  // angle x (degrees to radians)
+        4 => Scaled(0x30, 0x2534),  // angle y
+        5 => Scaled(0x34, 0x2530),  // angle z
+        12 => FrameIndex,
+        13 => Scaled(0x1c, 0x252c), // colour A (/ 255)
+        14 => Scaled(0x20, 0x2528), // colour R
+        15 => Scaled(0x24, 0x2524), // colour G
+        16 => Scaled(0x28, 0x2520), // colour B
+        6 => Plain(0x60),           // size x
+        7 => Plain(0x64),           // size y
+        _ => return None,           // 2, 8, 11: nothing
+    })
+}
+
+/// `void cUIThing::setChannelData(cUIThing* this, u16 channel, float data)`
+/// (0x3a0048): store one animation channel's value into the UI object
+/// (position, scale, angle, colour, size, frame), converting units.
+pub fn ui_object_set_anim_param(c: &mut Cpu) {
+    c.cycles += 4;
+    let key = c.g[A1][0] & 0xffff;
+    let this = c.g[A0][0];
+    c.g[V1][0] = key;
+    c.g[V0][0] = (key < 0x11) as u64;
+    c.g[A2][0] = this;
+    if key >= 0x11 {
+        c.cycles += 2;
+        abi::ret(c);
+        return;
+    }
+    c.cycles += 7;
+    c.g[V0][0] = sx(UI_OBJECT_SET_ANIM_PARAM_TABLE);
+    let entry = UI_OBJECT_SET_ANIM_PARAM_TABLE + 4 * key as u32;
+    c.g[V1][0] = sx(entry);
+    c.g[A0][0] = Addr(entry).lw(c);
+    let obj = Addr(this as u32);
+    let data = FpuF32(c.f[12]);
+    let gp = c.g[GP][0] as u32;
+    match ui_object_anim_channel(key as u32) {
+        Some(UiAnimChannel::Plain(off)) => {
+            // Size y (+0x64) falls through to the common return.
+            c.cycles += if off == 0x64 { 1 + 2 } else { 2 };
+            obj.off(off).write_fpu(c, data);
+        }
+        Some(UiAnimChannel::Scaled(off, lit)) => {
+            c.cycles += 4;
+            let k = Addr(gp.wrapping_sub(lit)).read_fpu(c);
+            let v = data * k;
+            c.f[0] = v.0;
+            obj.off(off).write_fpu(c, v);
+        }
+        Some(UiAnimChannel::FrameIndex) => {
+            c.cycles += 11;
+            let frame = data.to_i32() as u32;
+            c.f[0] = frame;
+            let flags = obj.off(0x14).lw(c);
+            let mask = 0xffff_ffff_fff8_1fffu64;
+            c.g[V1][0] = mask;
+            c.g[V0][0] = sx((frame & 0x3f) << 13);
+            let v = (flags & mask) | c.g[V0][0];
+            c.g[A0][0] = v;
+            obj.off(0x14).sw(c, v);
+        }
+        None => {
+            c.cycles += 2;
+        }
+    }
+    abi::ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -650,6 +750,35 @@ pub(crate) mod tests {
                     ui_fixture(c, seed, 0x03f0, &[0x28, 0x2c, 0x48, 0x4c, 0xb8, 0xbc]);
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(data);
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    pub(crate) use crate::game::seg::seg_2fe810::tests::oc383_machine;
+
+    #[test]
+    fn ui_object_set_anim_param_matches() {
+        check(
+            ee::s13::f_003a0048__generated,
+            ui_object_set_anim_param,
+            300,
+            &|c, seed| {
+                let mut r = oc383_machine(c, seed, 1, 0x003a_0048);
+                fill(c, &mut r, DATA, 0x20);
+                c.g[A0][0] = sx(DATA);
+                let key = if seed % 8 == 0 {
+                    r.next_u32()
+                } else {
+                    seed % 19
+                };
+                c.g[A1][0] = (r.next_u32() as u64) << 32 | key as u64;
+                c.f[12] = if seed % 3 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(300.0)
+                };
             },
         );
     }

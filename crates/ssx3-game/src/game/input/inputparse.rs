@@ -126,6 +126,37 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0032_6b88, pad_queue_poll, "PadQueue_Poll"),
     (0x003f_fa58, sce_pad_read, "scePadRead"),
     (0x003f_fbc0, sce_pad_get_state, "scePadGetState"),
+    (
+        0x0032_1880,
+        input_parser_lookup_builtin_name,
+        "InputParser_LookupBuiltinName",
+    ),
+    (
+        0x0032_1af0,
+        input_parser_next_token,
+        "InputParser_NextToken",
+    ),
+    (
+        0x0032_36d8,
+        input_parser_parse_comparison,
+        "InputParser_ParseComparison",
+    ),
+    (
+        0x0032_3900,
+        input_parser_parse_additive,
+        "InputParser_ParseAdditive",
+    ),
+    (
+        0x0032_3a68,
+        input_parser_parse_multiplicative,
+        "InputParser_ParseMultiplicative",
+    ),
+    (
+        0x0032_3bd8,
+        input_parser_parse_unary,
+        "InputParser_ParseUnary",
+    ),
+    (0x0032_4678, input_parser_emit_node, "InputParser_EmitNode"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3271,6 +3302,3347 @@ pub fn sce_pad_get_state(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// InputParser_NextToken (`cInputMapParser_readToken`)
+
+/// The tokenizer's fields (`sTok` in the reference): the source text
+/// (`base`, `len`), the read position, the `#line` file name, the line
+/// counter, "at the start of a line", the error flag, the token kind, its
+/// text and its numeric value.
+pub(crate) const NEXT_TOKEN_BASE: u32 = 0x0;
+
+pub(crate) const NEXT_TOKEN_LEN: u32 = 0x4;
+
+pub(crate) const NEXT_TOKEN_POS: u32 = 0x8;
+
+pub(crate) const NEXT_TOKEN_FNAME: u32 = 0xc;
+
+pub(crate) const NEXT_TOKEN_LINE: u32 = 0x8c;
+
+pub(crate) const NEXT_TOKEN_LINE_START: u32 = 0x90;
+
+#[cfg(test)]
+pub(crate) const NEXT_TOKEN_ERROR: u32 = 0x94;
+
+pub(crate) const NEXT_TOKEN_KIND: u32 = 0x98;
+
+pub(crate) const NEXT_TOKEN_TEXT: u32 = 0x9c;
+
+pub(crate) const NEXT_TOKEN_VALUE: u32 = 0xdc;
+
+/// `InputParser_Error(parser, fmt, ...)`.
+pub(crate) const NEXT_TOKEN_ERROR_FN: Callee = Callee {
+    addr: 0x0032_1500,
+    f: ee::s10::InputParser_Error,
+};
+
+/// `strcasecmp` and `sscanf` (called through the function table).
+pub(crate) const NEXT_TOKEN_STRCASECMP: u32 = 0x0041_aa88;
+
+pub(crate) const NEXT_TOKEN_SSCANF: u32 = 0x0041_78b0;
+
+#[inline(always)]
+pub(crate) fn nt_r(c: &Cpu, r: usize) -> u32 {
+    c.g[r][0] as u32
+}
+
+/// Address of a tokenizer field (`s0` holds the tokenizer).
+#[inline(always)]
+pub(crate) fn nt_f(c: &Cpu, off: u32) -> u32 {
+    nt_r(c, S0).wrapping_add(off)
+}
+
+/// `(int8)(x << 24) >> 24` of a register value.
+#[inline(always)]
+pub(crate) fn nt_sext8(v: u64) -> u64 {
+    sx((((v as u32) << 24) as i32 >> 24) as u32)
+}
+
+/// `v1 = len; a0 = pos; v0 = (pos < v0 + len)` with `v0` = base already
+/// loaded: is there input left?
+pub(crate) fn nt_more_v0(c: &mut Cpu) -> bool {
+    c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+    c.g[A0][0] = c.lw(nt_f(c, NEXT_TOKEN_POS));
+    c.g[V0][0] = sx(nt_r(c, V0).wrapping_add(nt_r(c, V1)));
+    c.g[V0][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
+    c.g[V0][0] != 0
+}
+
+/// `nt_more_v0` loading the base first.
+pub(crate) fn nt_more(c: &mut Cpu) -> bool {
+    c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+    nt_more_v0(c)
+}
+
+/// Step past the current character (the 7-cycle inline form).
+pub(crate) fn nt_adv7(c: &mut Cpu) {
+    c.cycles += 7;
+    let more = nt_more(c);
+    c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+    if more {
+        c.cycles += 1;
+        c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+    }
+}
+
+/// `s2` = the current character (unsigned byte) or -1 at the end.
+pub(crate) fn nt_peek_s2(c: &mut Cpu) {
+    c.cycles += 7;
+    let more = nt_more(c);
+    c.g[S2][0] = u64::MAX;
+    if more {
+        c.cycles += 1;
+        c.g[S2][0] = c.lbu(nt_r(c, A0));
+    }
+}
+
+/// Append register `src`'s byte to the token text (`s1`) and step past it.
+pub(crate) fn nt_push_adv(c: &mut Cpu, src: usize) {
+    c.cycles += 8;
+    c.sb(nt_r(c, S1), c.g[src][0]);
+    let more = nt_more(c);
+    c.g[S1][0] = sx(nt_r(c, S1).wrapping_add(1));
+    if more {
+        c.cycles += 2;
+        c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+        c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+    }
+}
+
+/// `(unsigned)(ch - '0') < 10` into `v0`.
+#[inline(always)]
+pub(crate) fn nt_digit(c: &mut Cpu, ch: u64) -> bool {
+    c.g[V0][0] = sx((ch as u32).wrapping_sub(0x30));
+    c.g[V0][0] = (c.g[V0][0] < 10) as u64;
+    c.g[V0][0] != 0
+}
+
+/// Whitespace test, the shape that loads 9 and 13 into `v0` (the first
+/// compare, against ' ', and `flag = 0` are the caller's).
+pub(crate) fn nt_space_v0(c: &mut Cpu, ch: u64, flag: usize) {
+    if ch == 0x20 {
+        c.cycles += 1;
+        c.g[flag][0] = 1;
+        return;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = 9;
+    if ch == 9 {
+        c.g[flag][0] = 1;
+        return;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 0xd;
+    if ch == 0xa {
+        c.cycles += 1;
+        c.g[flag][0] = 1;
+        return;
+    }
+    c.cycles += 2;
+    if ch == 0xd {
+        c.cycles += 1;
+        c.g[flag][0] = 1;
+    }
+}
+
+/// Whitespace test with the constants held in registers.
+pub(crate) fn nt_space_t(c: &mut Cpu, ch: u64, flag: usize) {
+    if ch == 0x20 {
+        c.cycles += 1;
+        c.g[flag][0] = 1;
+        return;
+    }
+    c.cycles += 2;
+    if ch == 9 {
+        c.g[flag][0] = 1;
+        return;
+    }
+    c.cycles += 2;
+    if ch == 0xa {
+        c.g[flag][0] = 1;
+        return;
+    }
+    c.cycles += 2;
+    if ch == 0xd {
+        c.cycles += 1;
+        c.g[flag][0] = 1;
+    }
+}
+
+/// `v0` on leaving `nt_blank_run`: base (`late`) or `a3 + a2` (the end).
+pub(crate) fn nt_blank_exit(c: &mut Cpu, late: bool) {
+    c.g[V0][0] = if late {
+        c.lw(nt_f(c, NEXT_TOKEN_BASE))
+    } else {
+        sx(nt_r(c, A3).wrapping_add(nt_r(c, A2)))
+    };
+}
+
+/// `while (isWh(pk) && pk != -1 && pk != '\n') adv` with `a1` = end of
+/// input; `end_reg` holds the end too. On exit `v0` = end (`late` = false)
+/// or base (`late`), `a0` = position.
+pub(crate) fn nt_blank_run(c: &mut Cpu, ev_head: u32, end_reg: usize, late: bool) {
+    let exit = nt_blank_exit;
+    loop {
+        c.cycles += 5;
+        c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_POS));
+        c.g[A0][0] = c.g[V0][0];
+        c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
+        c.g[V1][0] = u64::MAX;
+        if c.g[V0][0] != 0 {
+            c.cycles += 1;
+            c.g[V1][0] = c.lbu(nt_r(c, A0));
+        }
+        c.cycles += 4;
+        c.g[V0][0] = nt_sext8(c.g[V1][0]);
+        c.g[V1][0] = 0;
+        let ch = c.g[V0][0];
+        nt_space_t(c, ch, V1);
+        c.cycles += 2;
+        c.g[V0][0] = (c.g[A0][0] < c.g[end_reg][0]) as u64;
+        if c.g[V1][0] == 0 {
+            c.cycles += 1;
+            exit(c, late);
+            return;
+        }
+        if late {
+            c.cycles += 2;
+        }
+        if event_due(c) {
+            deliver_event_here(c, ev_head);
+        }
+        c.cycles += 2;
+        c.g[V1][0] = u64::MAX;
+        if c.g[V0][0] != 0 {
+            c.cycles += 1;
+            c.g[V1][0] = c.lbu(nt_r(c, A0));
+        }
+        c.cycles += 2;
+        if c.g[V1][0] == u64::MAX {
+            exit(c, late);
+            return;
+        }
+        c.cycles += 2;
+        c.g[V1][0] = u64::MAX;
+        if c.g[V0][0] != 0 {
+            c.cycles += 1;
+            c.g[V1][0] = c.lbu(nt_r(c, A0));
+        }
+        c.cycles += 2;
+        let newline = c.g[V1][0] == 0xa;
+        exit(c, late);
+        if newline {
+            return;
+        }
+        let more = if late {
+            c.cycles += 6;
+            nt_more_v0(c)
+        } else {
+            c.cycles += 7;
+            nt_more(c)
+        };
+        c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+        if more {
+            c.cycles += 1;
+            c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+        }
+    }
+}
+
+/// `InputParser_NextToken` (0x321af0, `cInputMapParser_readToken(parser)`):
+/// read the next token of an input-map script. Skips whitespace, `//`
+/// comments and `# line "file"` directives (which set the line counter and
+/// file name for error messages), then reads an operator, an identifier
+/// (keywords `max`..`sqrt` and `minradian` get their own kinds), a number
+/// (parsed into `+0xdc` with `sscanf("%f")`) or reports an unexpected
+/// character. The kind goes to `+0x98`, the text to `+0x9c`.
+pub fn input_parser_next_token(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S0, 0x80);
+        frame.save(c, S3, 0x50);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S5, 0x30);
+        c.g[S3][0] = 0xa;
+        frame.save(c, S1, 0x70);
+        c.g[S5][0] = 0x0049_0000;
+        frame.save(c, S2, 0x60);
+        frame.save(c, S4, 0x40);
+        frame.save(c, S6, 0x20);
+        frame.save(c, S7, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw(nt_r(c, S0));
+
+        nt_skip_blank(c)?;
+        let store = nt_token(c)?;
+        if store {
+            c.cycles += 1;
+            c.sw(nt_f(c, NEXT_TOKEN_KIND), c.g[V0][0]);
+        }
+
+        c.cycles += 11;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore(c, S6, 0x20);
+        frame.restore(c, S7, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The whitespace loop: skip blanks, newlines (counting lines), comments and
+/// line directives while the current character is whitespace. Leaves
+/// `v0` = base, `s2` = the last character looked at, `s4` = token text.
+pub(crate) fn nt_skip_blank(c: &mut Cpu) -> Result<(), Unwound> {
+    loop {
+        // 0x321b28: peek (v0 = base).
+        c.cycles += 8;
+        c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+        c.g[A0][0] = c.lw(nt_f(c, NEXT_TOKEN_POS));
+        c.g[A3][0] = c.g[V0][0];
+        c.g[V0][0] = sx(nt_r(c, V0).wrapping_add(nt_r(c, V1)));
+        c.g[A2][0] = c.g[V1][0];
+        c.g[V1][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
+        c.g[S2][0] = u64::MAX;
+        if c.g[V1][0] != 0 {
+            c.cycles += 1;
+            c.g[S2][0] = c.lbu(nt_r(c, A0));
+        }
+        let ready = nt_skip_one(c)?;
+        if !ready {
+            c.cycles += 1;
+            c.g[V1][0] = sx(nt_r(c, S2) << 24);
+        }
+        // 0x3222fc: loop while the character is whitespace.
+        c.cycles += 4;
+        c.g[V1][0] = sx(((nt_r(c, V1)) as i32 >> 24) as u32);
+        c.g[V0][0] = 0x20;
+        c.g[A0][0] = 0;
+        let ch = c.g[V1][0];
+        nt_space_v0(c, ch, A0);
+        c.cycles += 2;
+        c.g[V0][0] = c.lw(nt_r(c, S0));
+        if c.g[A0][0] == 0 {
+            return Ok(());
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0032_1b28);
+        }
+    }
+}
+
+/// One step of the whitespace loop for the character in `s2`. True when `v1`
+/// already holds `s2 << 24`.
+pub(crate) fn nt_skip_one(c: &mut Cpu) -> Result<bool, Unwound> {
+    c.cycles += 2;
+    c.g[V0][0] = 0x23;
+    if c.g[S2][0] == c.g[S3][0] {
+        // Newline: step, line start, count the line.
+        c.cycles += 2;
+        let more = c.g[V1][0] != 0;
+        c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+        if more {
+            c.cycles += 1;
+            c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+        }
+        c.cycles += 7;
+        c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_LINE));
+        c.g[V0][0] = 1;
+        c.sw(nt_f(c, NEXT_TOKEN_LINE_START), c.g[V0][0]);
+        c.g[S4][0] = sx(nt_f(c, NEXT_TOKEN_TEXT));
+        c.g[V1][0] = sx(nt_r(c, V1).wrapping_add(1));
+        c.sw(nt_f(c, NEXT_TOKEN_LINE), c.g[V1][0]);
+        return Ok(false);
+    }
+    c.cycles += 2;
+    let hash = c.g[S2][0] == c.g[V0][0];
+    c.g[V0][0] = 0x2f;
+    if hash {
+        c.cycles += 3;
+        c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_LINE_START));
+        let line_start = c.g[V0][0] != 0;
+        c.g[V0][0] = 0x2f;
+        if line_start {
+            return nt_directive(c);
+        }
+    }
+    // 0x3221ec: `//` comment?
+    c.cycles += 2;
+    let slash = c.g[S2][0] == c.g[V0][0];
+    c.g[V1][0] = sx(nt_r(c, S2) << 24);
+    if slash {
+        c.cycles += 5;
+        c.g[V0][0] = sx(nt_r(c, A3).wrapping_add(nt_r(c, A2)));
+        c.g[V1][0] = sx(nt_r(c, A0).wrapping_add(1));
+        c.g[V1][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+        c.g[V0][0] = u64::MAX;
+        if c.g[V1][0] != 0 {
+            c.cycles += 1;
+            c.g[V0][0] = c.lbu(nt_r(c, A0).wrapping_add(1));
+        }
+        c.cycles += 2;
+        let second = c.g[V0][0] == c.g[S2][0];
+        c.g[V1][0] = sx(nt_r(c, S2) << 24);
+        if second {
+            nt_line_comment(c);
+            return Ok(false);
+        }
+    }
+    // 0x3222ac: other whitespace is stepped over.
+    c.cycles += 4;
+    c.g[V1][0] = sx((nt_r(c, V1) as i32 >> 24) as u32);
+    c.g[V0][0] = 0x20;
+    c.g[A1][0] = 0;
+    let ch = c.g[V1][0];
+    nt_space_v0(c, ch, A1);
+    c.cycles += 2;
+    c.g[S4][0] = sx(nt_f(c, NEXT_TOKEN_TEXT));
+    if c.g[A1][0] != 0 {
+        c.cycles += 4;
+        c.g[V0][0] = sx(nt_r(c, A3).wrapping_add(nt_r(c, A2)));
+        c.g[V0][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+        if more {
+            c.cycles += 1;
+            c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+        }
+    }
+    Ok(false)
+}
+
+/// `//`: step over both slashes and the rest of the line (up to the
+/// newline); the character becomes ' '.
+pub(crate) fn nt_line_comment(c: &mut Cpu) {
+    c.cycles += 7;
+    c.g[A0][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+    c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+    c.g[A1][0] = c.lw(nt_f(c, NEXT_TOKEN_POS));
+    c.g[A0][0] = sx(nt_r(c, A0).wrapping_add(nt_r(c, V1)));
+    c.g[V0][0] = (c.g[A1][0] < c.g[A0][0]) as u64;
+    let more = c.g[V0][0] != 0;
+    c.g[V0][0] = sx(nt_r(c, A1).wrapping_add(1));
+    if more {
+        c.cycles += 3;
+        c.g[V1][0] = (c.g[V0][0] < c.g[A0][0]) as u64;
+        c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+        if c.g[V1][0] != 0 {
+            c.cycles += 2;
+            c.g[V0][0] = sx(nt_r(c, A1).wrapping_add(2));
+            c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+        }
+    }
+    c.cycles += 2;
+    c.g[S4][0] = sx(nt_f(c, NEXT_TOKEN_TEXT));
+    loop {
+        c.cycles += 8;
+        c.g[A0][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+        c.g[A2][0] = u64::MAX;
+        c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+        c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_POS));
+        c.g[V0][0] = sx(nt_r(c, V0).wrapping_add(nt_r(c, A0)));
+        c.g[A1][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+        c.g[A0][0] = c.g[V1][0];
+        if c.g[A1][0] != 0 {
+            c.cycles += 1;
+            c.g[A2][0] = c.lbu(nt_r(c, A0));
+        }
+        c.cycles += 2;
+        if c.g[A2][0] == c.g[S3][0] {
+            c.cycles += 1;
+            c.sw(nt_f(c, NEXT_TOKEN_LINE_START), 0);
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0032_2250);
+        }
+        c.cycles += 2;
+        c.g[V1][0] = u64::MAX;
+        if c.g[A1][0] != 0 {
+            c.cycles += 1;
+            c.g[V1][0] = c.lbu(nt_r(c, A0));
+        }
+        c.cycles += 3;
+        c.g[V0][0] = u64::MAX;
+        if c.g[V1][0] == c.g[V0][0] {
+            c.sw(nt_f(c, NEXT_TOKEN_LINE_START), 0);
+            break;
+        }
+        c.cycles += 2;
+        c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+        if c.g[A1][0] != 0 {
+            c.cycles += 1;
+            c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+        }
+    }
+    c.cycles += 2;
+    c.g[S2][0] = 0x20;
+}
+
+/// `#` at the start of a line: `# <line> "<file>"`. Sets the line counter
+/// and the file name, reporting "malformed pre-processor line" (and skipping
+/// to the end of the line) when the shape is wrong. True when `v1` already
+/// holds `s2 << 24`.
+pub(crate) fn nt_directive(c: &mut Cpu) -> Result<bool, Unwound> {
+    c.cycles += 2;
+    let more = c.g[V1][0] != 0;
+    c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+    if more {
+        c.cycles += 1;
+        c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+    }
+    c.cycles += 2;
+    c.g[S4][0] = sx(nt_f(c, NEXT_TOKEN_TEXT));
+    // Blanks before the line number.
+    loop {
+        c.cycles += 9;
+        c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+        c.g[A1][0] = u64::MAX;
+        c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+        c.g[A0][0] = c.lw(nt_f(c, NEXT_TOKEN_POS));
+        c.g[A3][0] = c.g[V0][0];
+        c.g[V0][0] = sx(nt_r(c, V0).wrapping_add(nt_r(c, V1)));
+        c.g[V0][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
+        c.g[A2][0] = c.g[V1][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 1;
+            c.g[A1][0] = c.lbu(nt_r(c, A0));
+        }
+        c.cycles += 5;
+        c.g[V1][0] = sx(nt_r(c, A1) << 24);
+        c.g[V0][0] = 0x20;
+        c.g[V1][0] = sx((nt_r(c, V1) as i32 >> 24) as u32);
+        c.g[A1][0] = 0;
+        let ch = c.g[V1][0];
+        nt_space_v0(c, ch, A1);
+        c.cycles += 2;
+        c.g[V0][0] = sx(nt_r(c, A3).wrapping_add(nt_r(c, A2)));
+        if c.g[A1][0] == 0 {
+            c.cycles += 1;
+            c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0032_1ba8);
+        }
+        c.cycles += 3;
+        c.g[V1][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
+        c.g[A1][0] = u64::MAX;
+        if c.g[V1][0] != 0 {
+            c.cycles += 1;
+            c.g[A1][0] = c.lbu(nt_r(c, A0));
+        }
+        c.cycles += 3;
+        c.g[V0][0] = u64::MAX;
+        if c.g[A1][0] == c.g[V0][0] {
+            c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+            break;
+        }
+        c.cycles += 2;
+        if c.g[V1][0] != 0 {
+            c.g[V0][0] = c.lbu(nt_r(c, A0));
+        }
+        c.cycles += 2;
+        let newline = c.g[V0][0] == c.g[S3][0];
+        c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+        if newline {
+            break;
+        }
+        c.cycles += 6;
+        let more = nt_more_v0(c);
+        c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+        if more {
+            c.cycles += 1;
+            c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+        }
+    }
+    // 0x321c58: a digit?
+    c.cycles += 6;
+    let more = nt_more_v0(c);
+    c.g[A1][0] = u64::MAX;
+    if more {
+        c.cycles += 1;
+        c.g[A1][0] = c.lbu(nt_r(c, A0));
+    }
+    c.cycles += 6;
+    let ch = nt_sext8(c.g[A1][0]);
+    if nt_digit(c, ch) {
+        c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+        return nt_directive_line(c);
+    }
+    // Malformed: skip to the end of the line.
+    c.cycles += 10;
+    c.g[A1][0] = sx(nt_r(c, S5).wrapping_sub(0x2218));
+    c.g[A0][0] = c.g[S0][0];
+    NEXT_TOKEN_ERROR_FN.call(c, 0x0032_1c98)?;
+    c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+    c.g[T0][0] = 0xa;
+    c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+    c.g[A3][0] = u64::MAX;
+    c.g[A1][0] = sx(nt_r(c, V1).wrapping_add(nt_r(c, V0)));
+    c.g[A2][0] = c.g[A1][0];
+    loop {
+        c.cycles += 5;
+        c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_POS));
+        c.g[A0][0] = c.g[V0][0];
+        c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
+        c.g[V1][0] = u64::MAX;
+        if c.g[V0][0] != 0 {
+            c.cycles += 1;
+            c.g[V1][0] = c.lbu(nt_r(c, A0));
+        }
+        c.cycles += 2;
+        let newline = c.g[V1][0] == c.g[T0][0];
+        c.g[V0][0] = (c.g[A0][0] < c.g[A2][0]) as u64;
+        if newline {
+            return Ok(false);
+        }
+        c.cycles += 2;
+        if event_due(c) {
+            deliver_event_here(c, 0x0032_1cb8);
+        }
+        c.cycles += 2;
+        c.g[V1][0] = u64::MAX;
+        if c.g[V0][0] != 0 {
+            c.cycles += 1;
+            c.g[V1][0] = c.lbu(nt_r(c, A0));
+        }
+        c.cycles += 2;
+        let end = c.g[V1][0] == c.g[A3][0];
+        c.g[V1][0] = sx(nt_r(c, S2) << 24);
+        if end {
+            return Ok(true);
+        }
+        c.cycles += 7;
+        let more = nt_more(c);
+        c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+        if more {
+            c.cycles += 1;
+            c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+        }
+    }
+}
+
+/// The directive's line number and quoted file name (`v1` = base, `a0` =
+/// position).
+pub(crate) fn nt_directive_line(c: &mut Cpu) -> Result<bool, Unwound> {
+    c.cycles += 5;
+    c.g[A3][0] = 0xa;
+    c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+    c.sw(nt_f(c, NEXT_TOKEN_LINE), 0);
+    c.g[A2][0] = sx(nt_r(c, V1).wrapping_add(nt_r(c, V0)));
+    // line = line * 10 + digit
+    loop {
+        c.cycles += 4;
+        c.g[A0][0] = c.lw(nt_f(c, NEXT_TOKEN_POS));
+        c.g[V0][0] = (c.g[A0][0] < c.g[A2][0]) as u64;
+        c.g[V1][0] = u64::MAX;
+        if c.g[V0][0] != 0 {
+            c.cycles += 1;
+            c.g[V1][0] = c.lbu(nt_r(c, A0));
+        }
+        c.cycles += 6;
+        let ch = nt_sext8(c.g[V1][0]);
+        let digit = nt_digit(c, ch);
+        c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+        if !digit {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0032_1d28);
+        }
+        c.cycles += 5;
+        c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+        c.g[V1][0] = sx(nt_r(c, V1).wrapping_add(nt_r(c, V0)));
+        c.g[V1][0] = (c.g[A0][0] < c.g[V1][0]) as u64;
+        c.g[A1][0] = u64::MAX;
+        if c.g[V1][0] != 0 {
+            c.cycles += 1;
+            c.g[A1][0] = c.lbu(nt_r(c, A0));
+        }
+        c.cycles += 6;
+        c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_LINE));
+        c.mult(0, V0, V0, A3);
+        c.g[V0][0] = sx(nt_r(c, V0).wrapping_sub(0x30));
+        c.g[V0][0] = sx(nt_r(c, V0).wrapping_add(nt_r(c, A1)));
+        let more = c.g[V1][0] != 0;
+        c.sw(nt_f(c, NEXT_TOKEN_LINE), c.g[V0][0]);
+        if more {
+            c.cycles += 2;
+            c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+            c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+        }
+    }
+    // Blanks, then the opening quote.
+    c.cycles += 11;
+    c.g[T5][0] = 0x20;
+    c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+    c.g[T4][0] = 9;
+    c.g[A3][0] = c.g[V1][0];
+    c.g[T0][0] = 0xa;
+    c.g[A1][0] = sx(nt_r(c, V1).wrapping_add(nt_r(c, V0)));
+    c.g[A2][0] = c.g[V0][0];
+    c.g[T1][0] = c.g[A1][0];
+    c.g[T3][0] = 0xd;
+    c.g[T2][0] = u64::MAX;
+    nt_blank_run(c, 0x0032_1db8, T1, false);
+    c.cycles += 3;
+    c.g[V0][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
+    c.g[V1][0] = u64::MAX;
+    if c.g[V0][0] != 0 {
+        c.cycles += 1;
+        c.g[V1][0] = c.lbu(nt_r(c, A0));
+    }
+    c.cycles += 3;
+    c.g[V0][0] = 0x22;
+    let quote = c.g[V1][0] == c.g[V0][0];
+    c.g[A1][0] = sx(nt_r(c, S5).wrapping_sub(0x2218));
+    if !quote {
+        // Malformed: skip to the end of the line; the character becomes ' '.
+        c.cycles += 9;
+        c.g[A0][0] = c.g[S0][0];
+        NEXT_TOKEN_ERROR_FN.call(c, 0x0032_1e74)?;
+        c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+        c.g[T0][0] = 0xa;
+        c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+        c.g[A3][0] = u64::MAX;
+        c.g[A1][0] = sx(nt_r(c, V1).wrapping_add(nt_r(c, V0)));
+        c.g[A2][0] = c.g[A1][0];
+        loop {
+            c.cycles += 5;
+            c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_POS));
+            c.g[A0][0] = c.g[V0][0];
+            c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
+            c.g[V1][0] = u64::MAX;
+            if c.g[V0][0] != 0 {
+                c.cycles += 1;
+                c.g[V1][0] = c.lbu(nt_r(c, A0));
+            }
+            c.cycles += 2;
+            let newline = c.g[V1][0] == c.g[T0][0];
+            c.g[V0][0] = (c.g[A0][0] < c.g[A2][0]) as u64;
+            if newline {
+                c.cycles += 2;
+                c.g[S2][0] = 0x20;
+                return Ok(false);
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0032_1e90);
+            }
+            c.cycles += 2;
+            c.g[V1][0] = u64::MAX;
+            if c.g[V0][0] != 0 {
+                c.cycles += 1;
+                c.g[V1][0] = c.lbu(nt_r(c, A0));
+            }
+            c.cycles += 2;
+            let end = c.g[V1][0] == c.g[A3][0];
+            c.g[S2][0] = 0x20;
+            if end {
+                return Ok(false);
+            }
+            c.cycles += 6;
+            c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+            c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+            c.g[V0][0] = sx(nt_r(c, V0).wrapping_add(nt_r(c, V1)));
+            c.g[V0][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+            if more {
+                c.cycles += 1;
+                c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+            }
+        }
+    }
+    nt_adv7(c);
+    nt_directive_file(c)
+}
+
+/// The quoted file name (at most 127 characters kept) and the end of the
+/// directive line.
+pub(crate) fn nt_directive_file(c: &mut Cpu) -> Result<bool, Unwound> {
+    c.cycles += 4;
+    c.g[S1][0] = sx(nt_f(c, NEXT_TOKEN_FNAME));
+    c.g[T0][0] = 0;
+    c.g[A1][0] = 0x0049_0000;
+    'name: loop {
+        c.cycles += 1;
+        c.g[A0][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+        loop {
+            c.cycles += 7;
+            c.g[A3][0] = u64::MAX;
+            c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+            c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_POS));
+            c.g[V0][0] = sx(nt_r(c, V0).wrapping_add(nt_r(c, A0)));
+            c.g[A2][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+            c.g[A0][0] = c.g[V1][0];
+            if c.g[A2][0] != 0 {
+                c.cycles += 1;
+                c.g[A3][0] = c.lbu(nt_r(c, A0));
+            }
+            c.cycles += 2;
+            let unterminated = if c.g[A3][0] == c.g[S3][0] {
+                c.g[A0][0] = c.g[S0][0];
+                true
+            } else {
+                c.cycles += 2;
+                c.g[V1][0] = u64::MAX;
+                if c.g[A2][0] != 0 {
+                    c.cycles += 1;
+                    c.g[V1][0] = c.lbu(nt_r(c, A0));
+                }
+                c.cycles += 3;
+                c.g[V0][0] = u64::MAX;
+                if c.g[V1][0] == c.g[V0][0] {
+                    c.cycles += 1;
+                    c.g[A0][0] = c.g[S0][0];
+                    true
+                } else {
+                    false
+                }
+            };
+            if unterminated {
+                c.cycles += 9;
+                c.g[A1][0] = sx(nt_r(c, A1).wrapping_sub(0x2218));
+                NEXT_TOKEN_ERROR_FN.call(c, 0x0032_1f68)?;
+                let more = nt_more(c);
+                c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+                if more {
+                    c.cycles += 2;
+                    c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+                }
+                break 'name;
+            }
+            c.cycles += 2;
+            c.g[V1][0] = u64::MAX;
+            if c.g[A2][0] != 0 {
+                c.cycles += 1;
+                c.g[V1][0] = c.lbu(nt_r(c, A0));
+            }
+            c.cycles += 3;
+            c.g[V0][0] = 0x22;
+            let close = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = ((c.g[T0][0] as i64) < 127) as u64;
+            if close {
+                c.cycles += 2;
+                let more = c.g[A2][0] != 0;
+                c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+                if more {
+                    c.cycles += 2;
+                    c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+                }
+                break 'name;
+            }
+            c.cycles += 2;
+            if c.g[V0][0] == 0 {
+                c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = u64::MAX;
+                if c.g[A2][0] != 0 {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lbu(nt_r(c, A0));
+                }
+                c.cycles += 4;
+                c.sb(nt_r(c, S1), c.g[V0][0]);
+                c.g[T0][0] = sx(nt_r(c, T0).wrapping_add(1));
+                c.g[S1][0] = sx(nt_r(c, S1).wrapping_add(1));
+                c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+            }
+            c.cycles += 6;
+            if !nt_more_v0(c) {
+                c.g[A0][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_1f1c);
+                }
+                continue;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+            c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+            if event_due(c) {
+                deliver_event_here(c, 0x0032_1f18);
+            }
+            continue 'name;
+        }
+    }
+    // 0x321ffc: terminate the name; blanks; then the newline.
+    c.cycles += 13;
+    c.sb(nt_r(c, S1), 0);
+    c.g[T5][0] = 0x20;
+    c.g[T4][0] = 9;
+    c.g[T1][0] = 0xa;
+    c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+    c.g[T3][0] = 0xd;
+    c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+    c.g[T2][0] = u64::MAX;
+    c.g[A3][0] = c.g[V1][0];
+    c.g[A1][0] = sx(nt_r(c, V1).wrapping_add(nt_r(c, V0)));
+    c.g[A2][0] = c.g[V0][0];
+    c.g[T0][0] = c.g[A1][0];
+    nt_blank_run(c, 0x0032_2030, T0, false);
+    c.cycles += 3;
+    c.g[V0][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
+    c.g[V1][0] = u64::MAX;
+    if c.g[V0][0] != 0 {
+        c.cycles += 1;
+        c.g[V1][0] = c.lbu(nt_r(c, A0));
+    }
+    c.cycles += 2;
+    let newline = c.g[V1][0] == c.g[S3][0];
+    c.g[A1][0] = sx(nt_r(c, S5).wrapping_sub(0x2218));
+    if newline {
+        nt_adv7(c);
+        c.cycles += 1;
+        c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+    } else {
+        // Junk after the name: report it and skip blanks.
+        c.cycles += 12;
+        c.g[A0][0] = c.g[S0][0];
+        NEXT_TOKEN_ERROR_FN.call(c, 0x0032_20e8)?;
+        c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+        c.g[T3][0] = 0x20;
+        c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+        c.g[T2][0] = 9;
+        c.g[A2][0] = 0xa;
+        c.g[T1][0] = 0xd;
+        c.g[A1][0] = sx(nt_r(c, V1).wrapping_add(nt_r(c, V0)));
+        c.g[T0][0] = u64::MAX;
+        c.g[A3][0] = c.g[A1][0];
+        nt_blank_run(c, 0x0032_2110, A3, true);
+    }
+    // 0x3221cc: the current character.
+    c.cycles += 6;
+    let more = nt_more_v0(c);
+    c.g[S2][0] = u64::MAX;
+    if more {
+        c.cycles += 2;
+        c.g[S2][0] = c.lbu(nt_r(c, A0));
+    }
+    Ok(false)
+}
+
+/// `cmp`: the dispatch compare `s2 == ch` (2 cycles) with the delay slot's
+/// register load.
+#[inline(always)]
+pub(crate) fn nt_is(c: &mut Cpu, ch: u64, delay: usize, value: u64) -> bool {
+    c.cycles += 2;
+    let hit = c.g[S2][0] == ch;
+    c.g[delay][0] = value;
+    hit
+}
+
+/// A one-character token: step, terminate the text, kind `kind`.
+pub(crate) fn nt_single(c: &mut Cpu, kind: u64) -> Result<bool, Unwound> {
+    nt_adv7(c);
+    c.cycles += 3;
+    c.sb(nt_r(c, S1), 0);
+    c.g[V0][0] = kind;
+    Ok(true)
+}
+
+/// `X` or `X=` (`!`, `=`, `<`, `>`; `a1` = '='), after stepping past `X`.
+pub(crate) fn nt_pair_eq(c: &mut Cpu, first: u64, single: u64, pair: u64) -> Result<bool, Unwound> {
+    nt_adv7(c);
+    nt_peek_s2(c);
+    c.cycles += first;
+    if first == 3 {
+        c.g[V0][0] = 0x3d;
+    }
+    let eq_reg = if first == 3 { V0 } else { A1 };
+    if c.g[S2][0] != c.g[eq_reg][0] {
+        c.sb(nt_r(c, S1), 0);
+        c.cycles += 2;
+        c.g[V0][0] = single;
+        return Ok(true);
+    }
+    nt_push_adv(c, S2);
+    c.cycles += 3;
+    c.sb(nt_r(c, S1), 0);
+    c.g[V0][0] = pair;
+    Ok(true)
+}
+
+/// `++` / `-+`: "Operator '++' not defined.", kind 1.
+pub(crate) fn nt_plus_plus(c: &mut Cpu) -> Result<bool, Unwound> {
+    nt_push_adv(c, S2);
+    c.cycles += 7;
+    c.sb(nt_r(c, S1), 0);
+    c.g[A1][0] = 0x0049_0000;
+    c.g[A1][0] = sx(nt_r(c, A1).wrapping_sub(0x21f8));
+    c.g[A0][0] = c.g[S0][0];
+    NEXT_TOKEN_ERROR_FN.call(c, 0x0032_24b4)?;
+    c.g[V0][0] = 1;
+    Ok(true)
+}
+
+/// `&&` / `||`: `None` (with `v0` = `fail_v0`) when the next character is
+/// not the same, and the dispatch goes on.
+pub(crate) fn nt_double(c: &mut Cpu, fail_v0: u64, kind: u64) -> Option<()> {
+    c.cycles += 8;
+    c.g[A1][0] = c.lw(nt_f(c, NEXT_TOKEN_POS));
+    c.g[V0][0] = c.lw(nt_f(c, NEXT_TOKEN_BASE));
+    c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+    c.g[A2][0] = sx(nt_r(c, A1).wrapping_add(1));
+    c.g[V0][0] = sx(nt_r(c, V0).wrapping_add(nt_r(c, V1)));
+    c.g[A0][0] = (c.g[A2][0] < c.g[V0][0]) as u64;
+    c.g[A3][0] = u64::MAX;
+    if c.g[A0][0] != 0 {
+        c.cycles += 1;
+        c.g[A3][0] = c.lbu(nt_r(c, A1).wrapping_add(1));
+    }
+    c.cycles += 2;
+    if c.g[A3][0] != c.g[S2][0] {
+        c.g[V0][0] = fail_v0;
+        return None;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = (c.g[A1][0] < c.g[V0][0]) as u64;
+    if c.g[V0][0] != 0 {
+        c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[A2][0]);
+    }
+    c.cycles += 7;
+    let more = nt_more(c);
+    c.g[A1][0] = u64::MAX;
+    if more {
+        c.cycles += 1;
+        c.g[A1][0] = c.lbu(nt_r(c, A0));
+    }
+    nt_push_adv(c, A1);
+    c.cycles += 3;
+    c.sb(nt_r(c, S1), 0);
+    c.g[V0][0] = kind;
+    Some(())
+}
+
+/// Store `s2` in the token text, or (63 characters reached) report
+/// `msg = s6 - msg_off`, set the kind to 1 (`s5`) and store it anyway.
+pub(crate) fn nt_push_checked(c: &mut Cpu, msg_off: u32, ret_addr: u32) -> Result<(), Unwound> {
+    c.cycles += 2;
+    if c.g[V0][0] != 0 {
+        c.sb(nt_r(c, S1), c.g[S2][0]);
+        return Ok(());
+    }
+    c.cycles += 6;
+    c.sb(nt_r(c, S1), 0);
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = sx(nt_r(c, S6).wrapping_sub(msg_off));
+    NEXT_TOKEN_ERROR_FN.call(c, ret_addr)?;
+    c.sw(nt_f(c, NEXT_TOKEN_KIND), c.g[S5][0]);
+    c.sb(nt_r(c, S1), c.g[S2][0]);
+    Ok(())
+}
+
+/// The exponent's checked store (the length computed from `s1`).
+pub(crate) fn nt_push_checked_exp(c: &mut Cpu, ret_addr: u32) -> Result<(), Unwound> {
+    c.cycles += 5;
+    c.g[V0][0] = sx(nt_r(c, S1).wrapping_sub(0x9c));
+    c.g[V0][0] = sx(nt_r(c, V0).wrapping_sub(nt_r(c, S0)));
+    c.g[V0][0] = ((c.g[V0][0] as i64) < 63) as u64;
+    if c.g[V0][0] != 0 {
+        c.sb(nt_r(c, S1), c.g[S2][0]);
+        return Ok(());
+    }
+    c.cycles += 8;
+    c.sb(nt_r(c, S1), 0);
+    c.g[A1][0] = 0x0049_0000;
+    c.g[A1][0] = sx(nt_r(c, A1).wrapping_sub(0x21a0));
+    c.g[A0][0] = c.g[S0][0];
+    NEXT_TOKEN_ERROR_FN.call(c, ret_addr)?;
+    c.g[V0][0] = 1;
+    c.sw(nt_f(c, NEXT_TOKEN_KIND), c.g[V0][0]);
+    c.sb(nt_r(c, S1), c.g[S2][0]);
+    Ok(())
+}
+
+/// Step after a stored character, `s1` moving on (the 7-cycle form).
+pub(crate) fn nt_step_s1(c: &mut Cpu) {
+    c.cycles += 7;
+    let more = nt_more(c);
+    c.g[S1][0] = sx(nt_r(c, S1).wrapping_add(1));
+    if more {
+        c.cycles += 2;
+        c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+        c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+    }
+}
+
+/// Count, step and move `s1` after a stored character (8 cycles); the
+/// position store costs `store_cycles` (3 on a loop back edge, else 2).
+pub(crate) fn nt_count_step(c: &mut Cpu, store_cycles: u64) {
+    c.cycles += 8;
+    c.g[S3][0] = sx(nt_r(c, S3).wrapping_add(1));
+    let more = nt_more(c);
+    c.g[S1][0] = sx(nt_r(c, S1).wrapping_add(1));
+    if more {
+        c.cycles += store_cycles;
+        c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+        c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+    }
+}
+
+/// Peek into `s2`, then: is it a digit? (`v0` = `s3 < 63` after.)
+pub(crate) fn nt_peek_digit(c: &mut Cpu) -> bool {
+    nt_peek_s2(c);
+    c.cycles += 6;
+    let ch = nt_sext8(c.g[S2][0]);
+    let digit = nt_digit(c, ch);
+    c.g[V0][0] = ((c.g[S3][0] as i64) < 63) as u64;
+    digit
+}
+
+/// `isalpha` of `a0` (sign-extended): `a1` = result. The first compare is
+/// the caller's.
+pub(crate) fn nt_alpha_tail(c: &mut Cpu) {
+    if c.g[V0][0] != 0 {
+        c.cycles += 1;
+        c.g[A1][0] = 1;
+        return;
+    }
+    c.cycles += 4;
+    c.g[V0][0] = sx(nt_r(c, A0).wrapping_sub(0x41));
+    c.g[V0][0] = (c.g[V0][0] < 26) as u64;
+    if c.g[V0][0] != 0 {
+        c.cycles += 1;
+        c.g[A1][0] = 1;
+    }
+}
+
+/// The token itself, from the first non-blank character. True when the
+/// kind in `v0` is still to be stored.
+pub(crate) fn nt_token(c: &mut Cpu) -> Result<bool, Unwound> {
+    c.cycles += 8;
+    c.g[S1][0] = c.g[S4][0];
+    c.g[V1][0] = c.lw(nt_f(c, NEXT_TOKEN_LEN));
+    c.g[S2][0] = u64::MAX;
+    c.g[A0][0] = c.lw(nt_f(c, NEXT_TOKEN_POS));
+    c.g[V0][0] = sx(nt_r(c, V0).wrapping_add(nt_r(c, V1)));
+    c.g[V0][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
+    let more = c.g[V0][0] != 0;
+    c.sw(nt_f(c, NEXT_TOKEN_LINE_START), 0);
+    if more {
+        c.cycles += 1;
+        c.g[S2][0] = c.lbu(nt_r(c, A0));
+    }
+    c.cycles += 4;
+    c.sb(nt_r(c, S1), c.g[S2][0]);
+    c.g[V0][0] = u64::MAX;
+    let end = c.g[S2][0] == c.g[V0][0];
+    c.g[S1][0] = sx(nt_r(c, S1).wrapping_add(1));
+    if end {
+        nt_adv7(c);
+        c.cycles += 3;
+        c.sb(nt_r(c, S1), 0);
+        c.sw(nt_f(c, NEXT_TOKEN_KIND), 0);
+        return Ok(false);
+    }
+
+    // Operators.
+    c.cycles += 1;
+    if nt_is(c, 0x21, V0, 0x21) {
+        c.g[A1][0] = 0x2b;
+        return nt_pair_eq(c, 3, 0x18, 0x13);
+    }
+    c.g[A1][0] = 0x2b;
+    if nt_is(c, 0x2b, V0, 0x2d) {
+        nt_adv7(c);
+        nt_peek_s2(c);
+        c.cycles += 2;
+        if c.g[S2][0] != c.g[A1][0] {
+            c.sb(nt_r(c, S1), 0);
+            c.cycles += 2;
+            c.g[V0][0] = 0x14;
+            return Ok(true);
+        }
+        return nt_plus_plus(c);
+    }
+    if nt_is(c, 0x2d, V0, 0x2e) {
+        nt_adv7(c);
+        nt_peek_s2(c);
+        c.cycles += 2;
+        let plus = c.g[S2][0] == c.g[A1][0];
+        c.g[V0][0] = 0x15;
+        if plus {
+            if event_due(c) {
+                deliver_event_here(c, 0x0032_2478);
+            }
+            return nt_plus_plus(c);
+        }
+        c.cycles += 2;
+        c.sb(nt_r(c, S1), 0);
+        return Ok(true);
+    }
+    if nt_is(c, 0x2e, V0, 0x2a) {
+        return nt_single(c, 4);
+    }
+    if nt_is(c, 0x2a, V0, 0x2f) {
+        return nt_single(c, 0x16);
+    }
+    if nt_is(c, 0x2f, A1, 0x3d) {
+        return nt_single(c, 0x17);
+    }
+    if nt_is(c, 0x3d, V0, 0x3c) {
+        return nt_pair_eq(c, 2, 3, 0x12);
+    }
+    if nt_is(c, 0x3c, V0, 0x3e) {
+        return nt_pair_eq(c, 2, 0x10, 0x11);
+    }
+    if nt_is(c, 0x3e, V0, 0x26) {
+        return nt_pair_eq(c, 2, 0xe, 0xf);
+    }
+    if nt_is(c, 0x26, V0, 0x7c) && nt_double(c, 0x7c, 0xd).is_some() {
+        return Ok(true);
+    }
+    if nt_is(c, 0x7c, V0, 0x28) && nt_double(c, 0x28, 0xc).is_some() {
+        return Ok(true);
+    }
+    if nt_is(c, 0x28, V0, 0x29) {
+        return nt_single(c, 9);
+    }
+    if nt_is(c, 0x29, V0, 0x2c) {
+        return nt_single(c, 0xa);
+    }
+    if nt_is(c, 0x2c, V0, 0x3f) {
+        return nt_single(c, 8);
+    }
+    if nt_is(c, 0x3f, V0, 0x3b) {
+        return nt_single(c, 6);
+    }
+    if nt_is(c, 0x3b, V0, 0x3a) {
+        return nt_single(c, 5);
+    }
+    let shifted = sx(nt_r(c, S2) << 24);
+    if nt_is(c, 0x3a, V1, shifted) {
+        return nt_single(c, 7);
+    }
+
+    // Identifier or keyword?
+    c.cycles += 5;
+    c.g[A0][0] = sx((nt_r(c, V1) as i32 >> 24) as u32);
+    c.g[V0][0] = sx(nt_r(c, A0).wrapping_sub(0x61));
+    c.g[V0][0] = (c.g[V0][0] < 26) as u64;
+    c.g[A1][0] = 0;
+    nt_alpha_tail(c);
+    c.cycles += 2;
+    c.g[V0][0] = 0x2b;
+    if c.g[A1][0] != 0 {
+        return nt_identifier(c);
+    }
+
+    // Number?
+    c.cycles += 2;
+    let number = if c.g[S2][0] == c.g[V0][0] {
+        c.g[V0][0] = 0x2d;
+        true
+    } else {
+        c.g[V0][0] = 0x2d;
+        c.cycles += 2;
+        let minus = c.g[S2][0] == c.g[V0][0];
+        c.g[V0][0] = sx((nt_r(c, V1) as i32 >> 24) as u32);
+        if minus {
+            true
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = sx(nt_r(c, V0).wrapping_sub(0x30));
+            c.g[V0][0] = (c.g[V0][0] < 10) as u64;
+            c.g[A1][0] = 0x0049_0000;
+            c.g[V0][0] != 0
+        }
+    };
+    if number {
+        return nt_number(c);
+    }
+
+    // "Unexpected character in input '%c'", kind 1.
+    c.cycles += 12;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A2][0] = c.g[S2][0];
+    c.g[A1][0] = sx(nt_r(c, A1).wrapping_sub(0x2158));
+    NEXT_TOKEN_ERROR_FN.call(c, 0x0032_3040)?;
+    c.sb(nt_r(c, S1), 0);
+    let more = nt_more(c);
+    c.g[V0][0] = sx(nt_r(c, A0).wrapping_add(1));
+    if more {
+        c.cycles += 1;
+        c.sw(nt_f(c, NEXT_TOKEN_POS), c.g[V0][0]);
+    }
+    c.cycles += 1;
+    c.g[V0][0] = 1;
+    Ok(true)
+}
+
+/// Letters, digits and `_` (63 kept, "Identifer exceeds 64 characters."
+/// beyond), then the keyword lookup (`strcasecmp`).
+pub(crate) fn nt_identifier(c: &mut Cpu) -> Result<bool, Unwound> {
+    nt_adv7(c);
+    c.cycles += 5;
+    c.g[V0][0] = sx(nt_r(c, S1).wrapping_sub(0x9c));
+    c.g[S7][0] = 0x5f;
+    c.g[S3][0] = sx(nt_r(c, V0).wrapping_sub(nt_r(c, S0)));
+    c.g[S6][0] = 0x0049_0000;
+    c.g[S5][0] = 1;
+    loop {
+        nt_peek_s2(c);
+        c.cycles += 6;
+        c.g[V1][0] = sx(nt_r(c, S2) << 24);
+        c.g[A0][0] = sx((nt_r(c, V1) as i32 >> 24) as u32);
+        c.g[V0][0] = sx(nt_r(c, A0).wrapping_sub(0x61));
+        c.g[V0][0] = (c.g[V0][0] < 26) as u64;
+        c.g[A1][0] = 0;
+        nt_alpha_tail(c);
+        c.cycles += 2;
+        c.g[V0][0] = ((c.g[S3][0] as i64) < 63) as u64;
+        let take = if c.g[A1][0] != 0 {
+            true
+        } else {
+            c.cycles += 5;
+            let ch = sx((nt_r(c, V1) as i32 >> 24) as u32);
+            let digit = nt_digit(c, ch);
+            c.g[V0][0] = ((c.g[S3][0] as i64) < 63) as u64;
+            if digit {
+                true
+            } else {
+                c.cycles += 2;
+                c.g[A1][0] = 0x004a_0000;
+                c.g[S2][0] == c.g[S7][0]
+            }
+        };
+        if !take {
+            break;
+        }
+        nt_push_checked(c, 0x21d8, 0x0032_2aa8)?;
+        nt_count_step(c, 3);
+        if event_due(c) {
+            deliver_event_here(c, 0x0032_2a20);
+        }
+    }
+    // Keywords: max min pow atan2 atan sin cos exp log floor ceil abs sqrt
+    // (0x4a3f30 + 8 * i, kinds 0x19..0x25), then "minradian" (0x26).
+    c.cycles += 6;
+    c.sb(nt_r(c, S1), 0);
+    c.g[A1][0] = sx(nt_r(c, A1).wrapping_add(0x3f30));
+    c.g[A0][0] = c.g[S4][0];
+    call_ptr(c, NEXT_TOKEN_STRCASECMP, 0x0032_2aec)?;
+    let differs = c.g[V0][0] != 0;
+    c.g[A1][0] = 0x004a_0000;
+    if !differs {
+        c.cycles += 2;
+        c.g[V0][0] = 0x19;
+        return Ok(true);
+    }
+    for i in 1..13u32 {
+        c.cycles += 5;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = sx(nt_r(c, A1).wrapping_add(0x3f30 + 8 * i));
+        call_ptr(c, NEXT_TOKEN_STRCASECMP, 0x0032_2aec + 0x1c * i)?;
+        if c.g[V0][0] == 0 {
+            c.cycles += 2;
+            c.g[V0][0] = 0x19 + i as u64;
+            return Ok(true);
+        }
+        c.g[A1][0] = if i == 12 { 0x0049_0000 } else { 0x004a_0000 };
+    }
+    c.cycles += 5;
+    c.g[A0][0] = c.g[S4][0];
+    c.g[A1][0] = sx(nt_r(c, A1).wrapping_sub(0x21b0));
+    call_ptr(c, NEXT_TOKEN_STRCASECMP, 0x0032_2c58)?;
+    let differs = c.g[V0][0] != 0;
+    c.g[V0][0] = 2;
+    if !differs {
+        c.cycles += 2;
+        c.g[V0][0] = 0x26;
+    }
+    Ok(true)
+}
+
+/// `[sign] digits [. digits] [(E|e) [sign] digits] [f]` (63 characters kept,
+/// "Constant exceeds 64 characters." beyond), parsed with `sscanf("%f")`
+/// into the value; kind 0xb.
+pub(crate) fn nt_number(c: &mut Cpu) -> Result<bool, Unwound> {
+    nt_adv7(c);
+    c.cycles += 6;
+    c.g[V0][0] = sx(nt_r(c, S1).wrapping_sub(0x9c));
+    c.g[S7][0] = sx(nt_f(c, NEXT_TOKEN_VALUE));
+    c.g[S3][0] = sx(nt_r(c, V0).wrapping_sub(nt_r(c, S0)));
+    c.g[S6][0] = 0x0049_0000;
+    c.g[S5][0] = 1;
+    while nt_peek_digit(c) {
+        nt_push_checked(c, 0x21a0, 0x0032_2d10)?;
+        nt_count_step(c, 3);
+        if event_due(c) {
+            deliver_event_here(c, 0x0032_2cc0);
+        }
+    }
+    // '.', 'E' or 'e'?
+    c.cycles += 3;
+    c.g[V0][0] = 0x2e;
+    let dot = c.g[S2][0] == c.g[V0][0];
+    c.g[V0][0] = 0x45;
+    let mut check_e = false;
+    let mut exponent = false;
+    if dot {
+        // Fraction.
+        c.cycles += 6;
+        c.g[V0][0] = sx(nt_r(c, S1).wrapping_sub(0x9c));
+        c.g[S6][0] = 0x0049_0000;
+        c.g[S3][0] = sx(nt_r(c, V0).wrapping_sub(nt_r(c, S0)));
+        c.g[S5][0] = 1;
+        c.g[V0][0] = ((c.g[S3][0] as i64) < 63) as u64;
+        loop {
+            nt_push_checked(c, 0x21a0, 0x0032_2d98)?;
+            nt_count_step(c, 2);
+            if !nt_peek_digit(c) {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0032_2d80);
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = 0x45;
+        check_e = true;
+    } else {
+        c.cycles += 2;
+        let upper = c.g[S2][0] == c.g[V0][0];
+        c.g[V0][0] = 0x65;
+        if upper {
+            exponent = true;
+        } else {
+            c.cycles += 2;
+            let lower = c.g[S2][0] == c.g[V0][0];
+            c.g[V0][0] = 0x66;
+            if lower {
+                c.cycles += 2;
+                c.g[V0][0] = 0x45;
+                check_e = true;
+            }
+        }
+    }
+    if check_e {
+        c.cycles += 2;
+        let upper = c.g[S2][0] == c.g[V0][0];
+        c.g[V0][0] = 0x65;
+        if upper {
+            exponent = true;
+        } else {
+            c.cycles += 2;
+            exponent = c.g[S2][0] == c.g[V0][0];
+            c.g[V0][0] = 0x66;
+        }
+    }
+    if exponent {
+        nt_push_checked_exp(c, 0x0032_2e3c)?;
+        nt_step_s1(c);
+        nt_peek_s2(c);
+        c.cycles += 3;
+        c.g[V0][0] = 0x2d;
+        let minus = c.g[S2][0] == c.g[V0][0];
+        c.g[V0][0] = 0x2b;
+        let sign = if minus {
+            true
+        } else {
+            c.cycles += 2;
+            let plus = c.g[S2][0] == c.g[V0][0];
+            c.g[V0][0] = sx(nt_r(c, S2) << 24);
+            plus
+        };
+        if sign {
+            nt_push_checked_exp(c, 0x0032_2ec8)?;
+            nt_step_s1(c);
+            nt_peek_s2(c);
+            c.cycles += 1;
+            c.g[V0][0] = sx(nt_r(c, S2) << 24);
+        }
+        c.cycles += 5;
+        let ch = sx((nt_r(c, V0) as i32 >> 24) as u32);
+        let digit = nt_digit(c, ch);
+        c.g[V0][0] = sx(nt_r(c, S1).wrapping_sub(0x9c));
+        if !digit {
+            // "Malformed floating point constant.", kind 1.
+            c.cycles += 8;
+            c.sb(nt_r(c, S1), 0);
+            c.g[A1][0] = 0x0049_0000;
+            c.g[A1][0] = sx(nt_r(c, A1).wrapping_sub(0x2180));
+            c.g[A0][0] = c.g[S0][0];
+            NEXT_TOKEN_ERROR_FN.call(c, 0x0032_2f44)?;
+            c.g[V0][0] = 1;
+            c.sw(nt_f(c, NEXT_TOKEN_KIND), c.g[V0][0]);
+            c.g[V0][0] = sx(nt_r(c, S1).wrapping_sub(0x9c));
+        }
+        c.cycles += 4;
+        c.g[S6][0] = 0x0049_0000;
+        c.g[S3][0] = sx(nt_r(c, V0).wrapping_sub(nt_r(c, S0)));
+        c.g[S5][0] = 1;
+        c.g[V0][0] = ((c.g[S3][0] as i64) < 63) as u64;
+        loop {
+            nt_push_checked(c, 0x21a0, 0x0032_2f78)?;
+            nt_count_step(c, 2);
+            if !nt_peek_digit(c) {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0032_2f60);
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = 0x66;
+    }
+    // Optional 'f' suffix, then sscanf(text, "%f", &value).
+    c.cycles += 2;
+    if c.g[S2][0] != c.g[V0][0] {
+        c.sb(nt_r(c, S1), 0);
+    } else {
+        nt_adv7(c);
+        c.cycles += 1;
+        c.sb(nt_r(c, S1), 0);
+    }
+    c.cycles += 8;
+    c.g[A1][0] = 0x004a_0000;
+    c.g[A0][0] = c.g[S4][0];
+    c.g[A1][0] = sx(nt_r(c, A1).wrapping_add(0x3f98));
+    c.g[A2][0] = c.g[S7][0];
+    call_ptr(c, NEXT_TOKEN_SSCANF, 0x0032_3024)?;
+    c.g[V1][0] = 0xb;
+    c.sw(nt_f(c, NEXT_TOKEN_KIND), c.g[V1][0]);
+    Ok(false)
+}
+
+// ---------------------------------------------------------------------------
+// `InputParser_EmitNode` (cInputMapParser::compileParseNode).
+
+/// "opcode buffer overflow".
+pub(crate) const EMIT_NODE_MSG_OVERFLOW: u32 = 0x0048_e228;
+
+/// "failed to allocate temporary register".
+pub(crate) const EMIT_NODE_MSG_NO_REGISTER: u32 = 0x0048_e240;
+
+/// "branch offset overflow".
+pub(crate) const EMIT_NODE_MSG_BRANCH: u32 = 0x0048_e268;
+
+/// The node-type jump table in `.rodata` (entry `type - 1`).
+pub(crate) const EMIT_NODE_JUMP_TABLE: u32 = 0x0048_e280;
+
+/// The jump table's targets, by node type 1..=33 (the original leaves the
+/// chosen one in `a0`).
+pub(crate) const EMIT_NODE_CASES: [u32; 33] = [
+    0x0032_478c,
+    0x0032_47a4,
+    0x0032_4838,
+    0x0032_46e8,
+    0x0032_48d4,
+    0x0032_4a34,
+    0x0032_4a5c,
+    0x0032_4a84,
+    0x0032_4aac,
+    0x0032_4ad4,
+    0x0032_4afc,
+    0x0032_4b24,
+    0x0032_4b4c,
+    0x0032_4b74,
+    0x0032_4b9c,
+    0x0032_4bc4,
+    0x0032_4bec,
+    0x0032_4e44,
+    0x0032_4e6c,
+    0x0032_4c14,
+    0x0032_4c3c,
+    0x0032_4c64,
+    0x0032_4c8c,
+    0x0032_4cb4,
+    0x0032_4cdc,
+    0x0032_4d04,
+    0x0032_4d2c,
+    0x0032_4d54,
+    0x0032_4d7c,
+    0x0032_4da4,
+    0x0032_4dcc,
+    0x0032_4df4,
+    0x0032_4e1c,
+];
+
+/// The temporary-register pool lives at `self + 0x10000`: the free list
+/// (`int FreeRegisters[]`) and its count.
+pub(crate) const EMIT_NODE_REGS_BASE: u32 = 0x1_0000;
+
+pub(crate) const EMIT_NODE_FREE_REGS: u32 = 0x8ec;
+
+pub(crate) const EMIT_NODE_NUM_FREE: u32 = 0x9e8;
+
+/// Parse node fields: type, first operand / value, second operand /
+/// modifier, third operand (the `else` branch).
+pub(crate) const EMIT_NODE_TYPE: u32 = 0x0;
+
+pub(crate) const EMIT_NODE_A: u32 = 0x4;
+
+pub(crate) const EMIT_NODE_B: u32 = 0x8;
+
+pub(crate) const EMIT_NODE_C: u32 = 0xc;
+
+/// A variable's expression node.
+pub(crate) const EMIT_NODE_VAR_EXPR: u32 = 0x40;
+
+/// "Use the default modifier" (node field `b`).
+pub(crate) const EMIT_NODE_DEFAULT_MODIFIER: u64 = 5;
+
+/// Low 6 bits of an instruction word: the opcode.
+pub(crate) const EMIT_NODE_OP_MASK: u64 = 0xffff_ffff_ffff_ffc0;
+
+pub(crate) const EMIT_NODE_ERROR: Callee = Callee {
+    addr: 0x0032_1500,
+    f: ee::s10::InputParser_Error,
+};
+
+pub(crate) const EMIT_NODE_RECURSE: Callee = Callee {
+    addr: 0x0032_4678,
+    f: ee::s10::InputParser_EmitNode,
+};
+
+pub(crate) const EMIT_NODE_PAD_OPERAND: Callee = Callee {
+    addr: 0x0032_1ad8,
+    f: ee::s10::InputParser_PadChannelOperand,
+};
+
+pub(crate) const EMIT_NODE_BUILTIN_OPERAND: Callee = Callee {
+    addr: 0x0032_1ad0,
+    f: ee::s10::InputParser_BuiltinOperand,
+};
+
+pub(crate) const EMIT_NODE_BINARY: Callee = Callee {
+    addr: 0x0032_4ec8,
+    f: ee::s10::InputParser_EmitBinaryOp,
+};
+
+pub(crate) const EMIT_NODE_UNARY: Callee = Callee {
+    addr: 0x0032_50d8,
+    f: ee::s10::InputParser_EmitUnaryOp,
+};
+
+/// How a node case leaves: through `v0 = -1` (0x324e94), straight to the
+/// epilogue (0x324e98), or with `s0` already restored (0x324e9c).
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum EmitNodeExit {
+    Fail,
+    Done,
+    S0Restored,
+}
+
+/// `int InputParser_EmitNode(InputParser* self, ParseNode* node, int* dst,
+/// InputOp* code, int cap, int defaultModifier)` (0x324678,
+/// `cInputMapParser::compileParseNode`): compile one expression node of an
+/// input map into input-VM opcodes at `code` (at most `cap` words), the
+/// result in register `*dst` (allocated from the parser's temporary pool when
+/// negative; `-1` lets operand nodes return their operand id instead).
+/// Returns the number of words written, or -1 after reporting an error.
+/// Variables (type 1) loop on their expression, conditionals (5) emit
+/// `cond; jz; then; jmp; else`, types 6..33 go to the binary/unary emitters.
+pub fn input_parser_emit_node(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S1, 0x90);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x80);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x70);
+        c.g[S2][0] = c.g[A3][0];
+        frame.save(c, S4, 0x60);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, S5, 0x50);
+        c.g[S4][0] = c.g[T0][0];
+        frame.save(c, S6, 0x40);
+        c.g[S5][0] = c.g[T1][0];
+        frame.save(c, S7, 0x30);
+        frame.save(c, FP, 0x20);
+        frame.save_ra(c, 0x10);
+        let exit = emit_node_cases(c)?;
+        if exit == EmitNodeExit::Fail {
+            c.cycles += 1;
+            c.g[V0][0] = u64::MAX;
+        }
+        if exit != EmitNodeExit::S0Restored {
+            c.cycles += 1;
+            frame.restore(c, S0, 0xa0);
+        }
+        c.cycles += 11;
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `InputParser_Error(self, msg)` returning to `ret`, then `v0 = -1`.
+pub(crate) fn emit_node_report(c: &mut Cpu, msg: u32, ret: u32) -> Result<EmitNodeExit, Unwound> {
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = sx(msg);
+    EMIT_NODE_ERROR.call(c, ret)?;
+    c.g[V0][0] = u64::MAX;
+    Ok(EmitNodeExit::Done)
+}
+
+/// The "opcode buffer overflow" block (0x324748) reached from a later
+/// block: a back edge with an event check.
+pub(crate) fn emit_node_overflow_back(c: &mut Cpu) -> Result<EmitNodeExit, Unwound> {
+    if event_due(c) {
+        deliver_event_here(c, 0x0032_4748);
+    }
+    c.cycles += 6;
+    emit_node_report(c, EMIT_NODE_MSG_OVERFLOW, 0x0032_4758)
+}
+
+/// `(cap as i64) <= 0` on the 64-bit `s4`.
+pub(crate) fn emit_node_full(c: &Cpu) -> bool {
+    (c.g[S4][0] as i64) <= 0
+}
+
+/// The node-type switch (0x3246bc), looping on variable nodes.
+pub(crate) fn emit_node_cases(c: &mut Cpu) -> Result<EmitNodeExit, Unwound> {
+    loop {
+        c.cycles += 5;
+        let node = r32(c, S1);
+        let ty = Addr(node.wrapping_add(EMIT_NODE_TYPE)).lw(c);
+        let index = sx((ty as u32).wrapping_sub(1));
+        c.g[A0][0] = index;
+        c.g[V1][0] = (index < 0x21) as u64;
+        c.g[V0][0] = 0x49_0000;
+        if index >= 0x21 {
+            return Ok(EmitNodeExit::Fail);
+        }
+        c.cycles += 6;
+        let entry = EMIT_NODE_JUMP_TABLE.wrapping_add((index as u32) << 2);
+        c.g[V0][0] = sx(EMIT_NODE_JUMP_TABLE);
+        c.g[V1][0] = sx(entry);
+        let case = EMIT_NODE_CASES[index as usize];
+        c.g[A0][0] = sx(case);
+        let ty = ty as u32;
+        match ty {
+            1 => {
+                // Variable: compile its expression with the variable's
+                // modifier unless that says "default".
+                c.cycles += 6;
+                let modifier = Addr(node.wrapping_add(EMIT_NODE_B)).lw(c);
+                c.g[V0][0] = modifier;
+                let var = Addr(node.wrapping_add(EMIT_NODE_A)).lw(c);
+                c.g[A0][0] = var;
+                c.g[V1][0] = modifier ^ EMIT_NODE_DEFAULT_MODIFIER;
+                if modifier != EMIT_NODE_DEFAULT_MODIFIER {
+                    c.g[S5][0] = modifier;
+                }
+                c.g[S1][0] = Addr((var as u32).wrapping_add(EMIT_NODE_VAR_EXPR)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_46bc);
+                }
+                continue;
+            }
+            2 => return emit_node_pad_channel(c),
+            3 => return emit_node_builtin(c),
+            4 => return emit_node_constant(c),
+            5 => return emit_node_conditional(c),
+            6..=17 => return emit_node_operator(c, EMIT_NODE_BINARY, ty - 2, case),
+            20..=23 => return emit_node_operator(c, EMIT_NODE_BINARY, ty - 4, case),
+            24..=33 => return emit_node_operator(c, EMIT_NODE_UNARY, ty - 4, case),
+            _ => return emit_node_operator(c, EMIT_NODE_UNARY, ty + 12, case),
+        }
+    }
+}
+
+/// Types 6..33: `EmitBinaryOp`/`EmitUnaryOp(self, node, dst, code, cap,
+/// op, defaultModifier)` and return its result.
+pub(crate) fn emit_node_operator(
+    c: &mut Cpu,
+    emitter: Callee,
+    op: u32,
+    case: u32,
+) -> Result<EmitNodeExit, Unwound> {
+    c.cycles += 10;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = c.g[S1][0];
+    c.g[A2][0] = c.g[S3][0];
+    c.g[A3][0] = c.g[S2][0];
+    c.g[T0][0] = c.g[S4][0];
+    c.g[T2][0] = c.g[S5][0];
+    c.g[T1][0] = op as u64;
+    emitter.call(c, case + 0x20)?;
+    let frame = Frame { size: 0xb0 };
+    frame.restore(c, S0, 0xa0);
+    Ok(EmitNodeExit::S0Restored)
+}
+
+/// Type 4, a constant: allocate `*dst` from the free list when negative,
+/// then emit `load dst` and the float value (2 words).
+pub(crate) fn emit_node_constant(c: &mut Cpu) -> Result<EmitNodeExit, Unwound> {
+    c.cycles += 3;
+    let dst_ptr = r32(c, S3);
+    let dst = Addr(dst_ptr).lw(c);
+    c.g[V0][0] = ((c.g[S4][0] as i64) < 2) as u64;
+    if (dst as i64) < 0 {
+        c.cycles += 5;
+        let pool = r32(c, S0).wrapping_add(EMIT_NODE_REGS_BASE);
+        c.g[V0][0] = 0x1_0000;
+        c.g[A0][0] = sx(pool);
+        let count = Addr(pool.wrapping_add(EMIT_NODE_NUM_FREE)).lw(c);
+        let left = sx((count as u32).wrapping_sub(1));
+        c.g[V0][0] = left;
+        if (count as i64) > 0 {
+            c.cycles += 5;
+            Addr(pool.wrapping_add(EMIT_NODE_NUM_FREE)).sw(c, left);
+            let slot = pool.wrapping_add((left as u32) << 2);
+            c.g[V1][0] = sx(slot);
+            let reg = Addr(slot.wrapping_add(EMIT_NODE_FREE_REGS)).lw(c);
+            c.g[V0][0] = reg;
+            Addr(dst_ptr).sw(c, reg);
+        }
+        c.cycles += 3;
+        let dst = Addr(dst_ptr).lw(c);
+        c.g[V0][0] = ((c.g[S4][0] as i64) < 2) as u64;
+        if (dst as i64) < 0 {
+            c.cycles += 6;
+            return emit_node_report(c, EMIT_NODE_MSG_NO_REGISTER, 0x0032_4738);
+        }
+    }
+    c.cycles += 2;
+    if c.g[V0][0] != 0 {
+        c.cycles += 6;
+        return emit_node_report(c, EMIT_NODE_MSG_OVERFLOW, 0x0032_4758);
+    }
+    let code = r32(c, S2);
+    let word = Addr(code).lw(c);
+    c.cycles += 11;
+    let word = word & EMIT_NODE_OP_MASK;
+    c.g[A0][0] = word;
+    Addr(code).sw(c, word);
+    c.g[V0][0] = 2;
+    let dst_field = sx(((Addr(r32(c, S3)).lw(c) & 0x3f) as u32) << 6);
+    c.g[V1][0] = dst_field;
+    Addr(code).sw(c, dst_field);
+    let value = r32(c, S1).wrapping_add(EMIT_NODE_A);
+    c.lwc1(0, value);
+    c.swc1(0, code.wrapping_add(4));
+    Ok(EmitNodeExit::Done)
+}
+
+/// Type 2, a pad channel: its operand id; with `*dst == -1` that id
+/// becomes the result, else emit `move dst, id` (1 word).
+pub(crate) fn emit_node_pad_channel(c: &mut Cpu) -> Result<EmitNodeExit, Unwound> {
+    c.cycles += 11;
+    let node = r32(c, S1);
+    let modifier = Addr(node.wrapping_add(EMIT_NODE_B)).lw(c);
+    c.g[A2][0] = modifier;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = Addr(node.wrapping_add(EMIT_NODE_A)).lw(c);
+    c.g[V0][0] = modifier ^ EMIT_NODE_DEFAULT_MODIFIER;
+    if modifier == EMIT_NODE_DEFAULT_MODIFIER {
+        c.g[A2][0] = c.g[S5][0];
+    }
+    EMIT_NODE_PAD_OPERAND.call(c, 0x0032_47bc)?;
+    c.g[A2][0] = c.g[V0][0];
+    let dst = Addr(r32(c, S3)).lw(c);
+    c.g[V1][0] = dst;
+    c.g[V0][0] = 0;
+    if dst == u64::MAX {
+        c.cycles += 2;
+        let operand = c.g[A2][0];
+        Addr(r32(c, S3)).sw(c, operand);
+        return Ok(EmitNodeExit::Done);
+    }
+    c.cycles += 2;
+    c.g[V0][0] = EMIT_NODE_OP_MASK;
+    if emit_node_full(c) {
+        return emit_node_overflow_back(c);
+    }
+    c.cycles += 22;
+    let code = r32(c, S2);
+    let word = Addr(code).lw(c);
+    c.g[A0][0] = 0xffff_ffff_ffff_f03f;
+    let word = (word & EMIT_NODE_OP_MASK) | 1;
+    c.g[A3][0] = 0xffff_ffff_ffc0_0fff;
+    Addr(code).sw(c, word);
+    let src_field = sx(((c.g[A2][0] & 0x3ff) as u32) << 12);
+    c.g[A2][0] = src_field;
+    let word = word & 0xffff_ffff_ffff_f03f;
+    c.g[A1][0] = 0x3f_ffff;
+    let dst_field = sx(((Addr(r32(c, S3)).lw(c) & 0x3f) as u32) << 6);
+    c.g[A0][0] = dst_field;
+    c.g[V0][0] = 1;
+    let word = (((word | dst_field) & 0xffff_ffff_ffc0_0fff) | src_field) & 0x3f_ffff;
+    c.g[V1][0] = word;
+    Addr(code).sw(c, word);
+    Ok(EmitNodeExit::Done)
+}
+
+/// Type 3, a built-in value: like the pad channel, with the operand id from
+/// `InputParser_BuiltinOperand(self, index)`.
+pub(crate) fn emit_node_builtin(c: &mut Cpu) -> Result<EmitNodeExit, Unwound> {
+    c.cycles += 4;
+    let dst = Addr(r32(c, S3)).lw(c);
+    c.g[V1][0] = dst;
+    c.g[V0][0] = u64::MAX;
+    if dst == u64::MAX {
+        c.cycles += 6;
+        c.g[A1][0] = Addr(r32(c, S1).wrapping_add(EMIT_NODE_A)).lw(c);
+        c.g[A0][0] = c.g[S0][0];
+        EMIT_NODE_BUILTIN_OPERAND.call(c, 0x0032_4854)?;
+        let operand = c.g[V0][0];
+        Addr(r32(c, S3)).sw(c, operand);
+        c.g[V0][0] = 0;
+        return Ok(EmitNodeExit::Done);
+    }
+    c.cycles += 2;
+    c.g[V0][0] = EMIT_NODE_OP_MASK;
+    if emit_node_full(c) {
+        return emit_node_overflow_back(c);
+    }
+    c.cycles += 27;
+    let code = r32(c, S2);
+    let word = Addr(code).lw(c);
+    c.g[A1][0] = 0xffff_ffff_ffff_f03f;
+    c.g[A0][0] = c.g[S0][0];
+    let word = (word & EMIT_NODE_OP_MASK) | 1;
+    Addr(code).sw(c, word);
+    let word = word & 0xffff_ffff_ffff_f03f;
+    let dst_field = sx(((Addr(r32(c, S3)).lw(c) & 0x3f) as u32) << 6);
+    c.g[V0][0] = dst_field;
+    let word = word | dst_field;
+    c.g[V1][0] = word;
+    Addr(code).sw(c, word);
+    c.g[A1][0] = Addr(r32(c, S1).wrapping_add(EMIT_NODE_A)).lw(c);
+    EMIT_NODE_BUILTIN_OPERAND.call(c, 0x0032_48a0)?;
+    let code = r32(c, S2);
+    let word = Addr(code).lw(c);
+    let src_field = sx(((c.g[V0][0] & 0x3ff) as u32) << 12);
+    let word = ((word & 0xffff_ffff_ffc0_0fff) | src_field) & 0x3f_ffff;
+    c.g[V1][0] = 0x3f_ffff;
+    c.g[V0][0] = 1;
+    c.g[A0][0] = word;
+    Addr(code).sw(c, word);
+    Ok(EmitNodeExit::Done)
+}
+
+/// Type 5, a conditional: compile the condition into a temporary (`cond` at
+/// `0(sp)`), emit `jz cond, +n` (op 2) and free `cond`, the `then` branch,
+/// `jmp +m` (op 3), the `else` branch; patch both offsets (16 bits, at +2).
+pub(crate) fn emit_node_conditional(c: &mut Cpu) -> Result<EmitNodeExit, Unwound> {
+    c.cycles += 12;
+    c.g[V0][0] = u64::MAX;
+    c.g[A1][0] = Addr(r32(c, S1).wrapping_add(EMIT_NODE_A)).lw(c);
+    let cond_slot = sp(c);
+    Addr(cond_slot).sw(c, u64::MAX);
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A2][0] = c.g[SP][0];
+    c.g[A3][0] = c.g[S2][0];
+    c.g[T0][0] = c.g[S4][0];
+    c.g[T1][0] = c.g[S5][0];
+    EMIT_NODE_RECURSE.call(c, 0x0032_48f8)?;
+    c.g[FP][0] = c.g[V0][0];
+    c.g[V0][0] = u64::MAX;
+    if (c.g[FP][0] as i64) < 0 {
+        return Ok(EmitNodeExit::Done);
+    }
+    // code += n1; cap -= n1.
+    c.cycles += 4;
+    let n1 = c.g[FP][0] as u32;
+    c.g[V0][0] = sx(n1 << 2);
+    c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_sub(n1));
+    c.g[S2][0] = sx(r32(c, S2).wrapping_add(n1 << 2));
+    if emit_node_full(c) {
+        return emit_node_overflow_back(c);
+    }
+    // jz cond.
+    c.cycles += 14;
+    let code = r32(c, S2);
+    let word = Addr(code).lw(c);
+    c.g[V1][0] = EMIT_NODE_OP_MASK;
+    let cond = Addr(sp(c)).lw(c);
+    c.g[A1][0] = cond;
+    c.g[S7][0] = 0xffff_ffff_ffff_003f;
+    let reg_field = sx(((cond & 0x3ff) as u32) << 6);
+    c.g[V1][0] = reg_field;
+    let word = (((word & EMIT_NODE_OP_MASK) | 2) & c.g[S7][0]) | reg_field;
+    c.g[V0][0] = word;
+    let temporary = cond < 0x40;
+    c.g[A0][0] = temporary as u64;
+    Addr(code).sw(c, word);
+    if temporary {
+        // Give the condition's temporary back to the pool.
+        c.cycles += 8;
+        let pool = r32(c, S0).wrapping_add(EMIT_NODE_REGS_BASE);
+        c.g[A0][0] = sx(pool);
+        let count = Addr(pool.wrapping_add(EMIT_NODE_NUM_FREE)).lw(c);
+        let slot = pool.wrapping_add((count as u32) << 2);
+        c.g[V0][0] = sx(slot);
+        c.g[V1][0] = sx((count as u32).wrapping_add(1));
+        Addr(slot.wrapping_add(EMIT_NODE_FREE_REGS)).sw(c, cond);
+        let count = c.g[V1][0];
+        Addr(pool.wrapping_add(EMIT_NODE_NUM_FREE)).sw(c, count);
+    }
+    // The `then` branch after the jz.
+    c.cycles += 11;
+    c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_sub(1));
+    c.g[A1][0] = Addr(r32(c, S1).wrapping_add(EMIT_NODE_B)).lw(c);
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A2][0] = c.g[S3][0];
+    c.g[A3][0] = sx(r32(c, S2).wrapping_add(4));
+    c.g[T0][0] = c.g[S4][0];
+    c.g[T1][0] = c.g[S5][0];
+    EMIT_NODE_RECURSE.call(c, 0x0032_498c)?;
+    c.g[S6][0] = c.g[V0][0];
+    let n2 = c.g[S6][0];
+    c.g[V1][0] = sx((n2 as u32).wrapping_add(1));
+    if (n2 as i64) < 0 {
+        return Ok(EmitNodeExit::Fail);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = 0xffff;
+    let too_far = 0xffff < (c.g[V1][0] as i64);
+    c.g[V0][0] = sx((n2 as u32) << 2);
+    if too_far {
+        c.cycles += 1 + 5;
+        return emit_node_report(c, EMIT_NODE_MSG_BRANCH, 0x0032_49b8);
+    }
+    // Patch the jz offset; code += n2 + 1; cap -= n2.
+    c.cycles += 5;
+    let code = r32(c, S2);
+    let offset = c.g[V1][0];
+    Addr(code.wrapping_add(2)).sh(c, offset);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(4));
+    c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[S6][0] as u32));
+    c.g[S2][0] = sx(code.wrapping_add(c.g[V0][0] as u32));
+    if emit_node_full(c) {
+        return emit_node_overflow_back(c);
+    }
+    // jmp, then the `else` branch.
+    c.cycles += 16;
+    let code = r32(c, S2);
+    let word = Addr(code).lw(c);
+    c.g[V1][0] = EMIT_NODE_OP_MASK;
+    c.g[A2][0] = c.g[S3][0];
+    c.g[T0][0] = sx((c.g[S4][0] as u32).wrapping_sub(1));
+    c.g[T1][0] = c.g[S5][0];
+    let word = ((word & EMIT_NODE_OP_MASK) | 3) & c.g[S7][0];
+    c.g[V0][0] = word;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A3][0] = sx(code.wrapping_add(4));
+    Addr(code).sw(c, word);
+    c.g[A1][0] = Addr(r32(c, S1).wrapping_add(EMIT_NODE_C)).lw(c);
+    EMIT_NODE_RECURSE.call(c, 0x0032_4a08)?;
+    let n3 = c.g[V0][0];
+    c.g[V1][0] = n3;
+    c.g[A0][0] = 0xffff;
+    if (n3 as i64) < 0 {
+        return Ok(EmitNodeExit::Fail);
+    }
+    c.cycles += 3;
+    let too_far = 0xffff < (n3 as i64);
+    c.g[V0][0] = too_far as u64;
+    c.g[A1][0] = 0x49_0000;
+    if too_far {
+        if event_due(c) {
+            deliver_event_here(c, 0x0032_49ac);
+        }
+        c.cycles += 5;
+        return emit_node_report(c, EMIT_NODE_MSG_BRANCH, 0x0032_49b8);
+    }
+    // Patch the jmp offset; n1 + n2 + n3 + 2.
+    c.cycles += 5;
+    let total = (c.g[FP][0] as u32).wrapping_add(c.g[S6][0] as u32);
+    Addr(r32(c, S2).wrapping_add(2)).sh(c, n3);
+    c.g[V0][0] = sx(total.wrapping_add(n3 as u32).wrapping_add(2));
+    Ok(EmitNodeExit::Done)
+}
+
+// ---------------------------------------------------------------------------
+// InputParser_ParseUnary (`cInputMapParser_parseTerm`)
+
+/// Parser fields the term parser reads: the current token kind, its text
+/// and numeric value, the expression nodes' free list, and the identifier
+/// being defined (a reference to it is recursive).
+pub(crate) const PARSE_UNARY_TOKEN: u32 = 0x98;
+
+pub(crate) const PARSE_UNARY_TEXT: u32 = 0x9c;
+
+pub(crate) const PARSE_UNARY_VALUE: u32 = 0xdc;
+
+#[cfg(test)]
+pub(crate) const PARSE_UNARY_FREE_NODES: u32 = 0xe0;
+
+#[cfg(test)]
+pub(crate) const PARSE_UNARY_IDENT_COUNT: u32 = 0x80e4;
+
+#[cfg(test)]
+pub(crate) const PARSE_UNARY_IDENTS: u32 = 0x80e8;
+
+/// `self + 0x10000 + 0x8e8`: the identifier whose definition is parsed.
+pub(crate) const PARSE_UNARY_CURRENT_IDENT: u32 = 0x8e8;
+
+/// An identifier entry's expression pointer (entries are 0x44 bytes, the
+/// name first).
+pub(crate) const PARSE_UNARY_IDENT_EXPR: u32 = 0x40;
+
+/// Expression node kinds the term parser builds (`node[0]`; `node[1]` is
+/// the operand or value, `node[2]` the modifier).
+pub(crate) const PU_NODE_IDENT: u64 = 1;
+
+pub(crate) const PU_NODE_BUTTON: u64 = 2;
+
+pub(crate) const PU_NODE_CONFIG: u64 = 3;
+
+pub(crate) const PU_NODE_CONST: u64 = 4;
+
+pub(crate) const PU_NODE_NEG: u64 = 0x12;
+
+pub(crate) const PU_NODE_NOT: u64 = 0x13;
+
+/// Token kinds: an identifier, `.`, `)`.
+pub(crate) const PU_TOK_NAME: u64 = 2;
+
+pub(crate) const PU_TOK_DOT: u64 = 4;
+
+pub(crate) const PU_TOK_RPAREN: u64 = 0xa;
+
+/// "No modifier" and "unknown modifier" from LookupModifier.
+pub(crate) const PU_MOD_NONE: u64 = 5;
+
+pub(crate) const PU_MOD_BAD: u64 = 6;
+
+/// The token switch's jump table (`0x490000 - 0x1f00`) and its targets.
+pub(crate) const PU_JUMP_TABLE: u32 = 0x0048_e100;
+
+pub(crate) const PU_CASE_NAME: u32 = 0x0032_3c24;
+
+pub(crate) const PU_CASE_NAME_DOT: u32 = 0x0032_3d64;
+
+pub(crate) const PU_CASE_NUMBER: u32 = 0x0032_3e28;
+
+pub(crate) const PU_CASE_PLUS: u32 = 0x0032_3e4c;
+
+pub(crate) const PU_CASE_MINUS: u32 = 0x0032_3e5c;
+
+pub(crate) const PU_CASE_NOT: u32 = 0x0032_3eac;
+
+pub(crate) const PU_CASE_PAREN: u32 = 0x0032_3f20;
+
+/// `max min pow atan2` (ParseFunction2) then the ten one-argument
+/// functions (ParseFunction1), 0x1c bytes apart, node kinds 0x14..0x21.
+pub(crate) const PU_CASE_FUNC_FIRST: u32 = 0x0032_3f78;
+
+pub(crate) const PU_CASE_FUNC_LAST: u32 = 0x0032_40e4;
+
+pub(crate) const PU_CASE_DEFAULT: u32 = 0x0032_4100;
+
+/// Error messages.
+pub(crate) const PU_MSG_EXPECTED_MODIFIER: u64 = 0x0048_e008;
+
+pub(crate) const PU_MSG_BAD_BUTTON_MODIFIER: u64 = 0x0048_e028;
+
+pub(crate) const PU_MSG_RECURSIVE: u64 = 0x0048_e048;
+
+pub(crate) const PU_MSG_BAD_REF_MODIFIER: u64 = 0x0048_e070;
+
+pub(crate) const PU_MSG_UNEXPECTED_IDENT: u64 = 0x0048_e098;
+
+pub(crate) const PU_MSG_EXPECTED_RPAREN: u64 = 0x0048_e0b8;
+
+pub(crate) const PU_MSG_EXPECTED_TERM: u64 = 0x0048_e0d8;
+
+pub(crate) const PU_NEXT_TOKEN: Callee = Callee {
+    addr: 0x0032_1af0,
+    f: ee::s10::InputParser_NextToken,
+};
+
+pub(crate) const PU_ALLOC_NODE: Callee = Callee {
+    addr: 0x0032_15f8,
+    f: ee::s10::InputParser_AllocNode,
+};
+
+pub(crate) const PU_ERROR: Callee = Callee {
+    addr: 0x0032_1500,
+    f: ee::s10::InputParser_Error,
+};
+
+pub(crate) const PU_LOOKUP_BUTTON: Callee = Callee {
+    addr: 0x0032_16e8,
+    f: ee::s10::InputParser_LookupButton,
+};
+
+pub(crate) const PU_LOOKUP_MODIFIER: Callee = Callee {
+    addr: 0x0032_17d0,
+    f: ee::s10::InputParser_LookupModifier,
+};
+
+pub(crate) const PU_LOOKUP_BUILTIN: Callee = Callee {
+    addr: 0x0032_1880,
+    f: ee::s10::InputParser_LookupBuiltinName,
+};
+
+pub(crate) const PU_FIND_IDENTIFIER: Callee = Callee {
+    addr: 0x0032_1a40,
+    f: ee::s10::InputParser_FindIdentifier,
+};
+
+/// Recursion goes through the generated alias (and so the override slot).
+pub(crate) const PU_PARSE_UNARY: Callee = Callee {
+    addr: 0x0032_3bd8,
+    f: ee::s10::InputParser_ParseUnary,
+};
+
+pub(crate) const PU_PARSE_CONDITIONAL: Callee = Callee {
+    addr: 0x0032_3268,
+    f: ee::s10::InputParser_ParseConditional,
+};
+
+pub(crate) const PU_FREE_NODE: Callee = Callee {
+    addr: 0x0032_1638,
+    f: ee::s10::InputParser_FreeNode,
+};
+
+pub(crate) const PU_PARSE_FUNCTION2: Callee = Callee {
+    addr: 0x0032_4138,
+    f: ee::s10::InputParser_ParseFunction2,
+};
+
+pub(crate) const PU_PARSE_FUNCTION1: Callee = Callee {
+    addr: 0x0032_4398,
+    f: ee::s10::InputParser_ParseFunction1,
+};
+
+/// How a term ends: the shared tails of the original.
+pub(crate) enum PuExit {
+    /// `a0`/`a1` (and `a2`) hold an error call's arguments (0x32410c):
+    /// report it, return 0.
+    Error,
+    /// Return 0 (0x324114).
+    Zero,
+    /// `v0` holds the result; restore `s0` (0x324118).
+    Done,
+    /// `v0` holds the result and `s0` is restored (0x32411c).
+    Restored,
+}
+
+#[inline(always)]
+pub(crate) fn pu_r(c: &Cpu, r: usize) -> u32 {
+    c.g[r][0] as u32
+}
+
+/// The current token kind (`s1` is the parser).
+#[inline(always)]
+pub(crate) fn pu_token(c: &mut Cpu) -> u64 {
+    let a = pu_r(c, S1).wrapping_add(PARSE_UNARY_TOKEN);
+    c.lw(a)
+}
+
+/// `a0 = self; NextToken()` returning to `ret`.
+#[inline(always)]
+pub(crate) fn pu_next_token(c: &mut Cpu, ret: u32) -> Result<(), Unwound> {
+    c.g[A0][0] = c.g[S1][0];
+    PU_NEXT_TOKEN.call(c, ret)
+}
+
+/// `a0 = self; AllocNode()` returning to `ret`; the node is left in `s0`.
+#[inline(always)]
+pub(crate) fn pu_alloc_node(c: &mut Cpu, ret: u32) -> Result<(), Unwound> {
+    c.g[A0][0] = c.g[S1][0];
+    PU_ALLOC_NODE.call(c, ret)?;
+    c.g[S0][0] = c.g[V0][0];
+    Ok(())
+}
+
+/// Error arguments `a0 = self, a1 = msg` (0x32410c follows).
+#[inline(always)]
+pub(crate) fn pu_error_args(c: &mut Cpu, msg: u64) -> PuExit {
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = msg;
+    PuExit::Error
+}
+
+/// The node tail at 0x323f10: `s0[1] = s2; s0[0] = v0; return s0`.
+pub(crate) fn pu_store_node(c: &mut Cpu) -> PuExit {
+    c.cycles += 4;
+    let node = pu_r(c, S0);
+    c.sw(node.wrapping_add(4), c.g[S2][0]);
+    c.sw(node, c.g[V0][0]);
+    c.g[V0][0] = c.g[S0][0];
+    PuExit::Done
+}
+
+/// `name` is a button (index in `s3`, name text in `s0`): an optional
+/// `.modifier`, then a button node `{2, index, modifier}`.
+pub(crate) fn pu_button(c: &mut Cpu) -> Result<PuExit, Unwound> {
+    c.cycles += 6;
+    c.g[S2][0] = PU_MOD_NONE;
+    pu_next_token(c, 0x0032_3c48)?;
+    c.g[V1][0] = pu_token(c);
+    c.g[V0][0] = PU_TOK_DOT;
+    if c.g[V1][0] == c.g[V0][0] {
+        c.cycles += 6;
+        pu_next_token(c, 0x0032_3c60)?;
+        c.g[V1][0] = pu_token(c);
+        c.g[V0][0] = PU_TOK_NAME;
+        c.g[A1][0] = 0x0049_0000;
+        if c.g[V1][0] != c.g[V0][0] {
+            c.cycles += 3;
+            return Ok(pu_error_args(c, PU_MSG_EXPECTED_MODIFIER));
+        }
+        c.cycles += 7;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S0][0];
+        PU_LOOKUP_MODIFIER.call(c, 0x0032_3c88)?;
+        c.g[S2][0] = c.g[V0][0];
+        c.g[V0][0] = PU_MOD_BAD;
+        c.g[A1][0] = 0x0049_0000;
+        if c.g[S2][0] == c.g[V0][0] {
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = PU_MSG_BAD_BUTTON_MODIFIER;
+            c.g[A2][0] = c.g[S0][0];
+            PU_ERROR.call(c, 0x0032_3ca8)?;
+            c.g[V0][0] = 0;
+            return Ok(PuExit::Done);
+        }
+        c.cycles += 2;
+        pu_next_token(c, 0x0032_3cb8)?;
+    }
+    c.cycles += 9;
+    pu_alloc_node(c, 0x0032_3cc0)?;
+    let node = pu_r(c, S0);
+    c.g[V0][0] = PU_NODE_BUTTON;
+    c.sw(node.wrapping_add(4), c.g[S3][0]);
+    c.sw(node, c.g[V0][0]);
+    c.g[V0][0] = c.g[S0][0];
+    c.sw(node.wrapping_add(8), c.g[S2][0]);
+    Ok(PuExit::Done)
+}
+
+/// After an identifier reference's `.` (0x323d64; `v1` = the next token):
+/// expect a modifier name, then build the reference.
+pub(crate) fn pu_ident_dot(c: &mut Cpu) -> Result<PuExit, Unwound> {
+    c.cycles += 3;
+    c.g[V0][0] = PU_TOK_NAME;
+    c.g[A1][0] = 0x0049_0000;
+    if c.g[V1][0] != c.g[V0][0] {
+        c.cycles += 3;
+        return Ok(pu_error_args(c, PU_MSG_EXPECTED_MODIFIER));
+    }
+    c.cycles += 7;
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[S0][0];
+    PU_LOOKUP_MODIFIER.call(c, 0x0032_3d88)?;
+    c.g[S4][0] = c.g[V0][0];
+    c.g[V0][0] = PU_MOD_BAD;
+    c.g[A1][0] = 0x0049_0000;
+    if c.g[S4][0] == c.g[V0][0] {
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = PU_MSG_BAD_REF_MODIFIER;
+        c.g[A2][0] = c.g[S0][0];
+        PU_ERROR.call(c, 0x0032_3da8)?;
+        c.g[V0][0] = 0;
+        return Ok(PuExit::Done);
+    }
+    c.cycles += 2;
+    pu_next_token(c, 0x0032_3db8)?;
+    pu_ident_node(c)
+}
+
+/// The reference node (0x323db8; identifier entry in `s3`, modifier in
+/// `s4`): a constant definition is copied (`{4, value}`), anything else
+/// becomes `{1, entry, modifier}`.
+pub(crate) fn pu_ident_node(c: &mut Cpu) -> Result<PuExit, Unwound> {
+    c.cycles += 5;
+    let expr_at = pu_r(c, S3).wrapping_add(PARSE_UNARY_IDENT_EXPR);
+    c.g[V0][0] = c.lw(expr_at);
+    c.g[V1][0] = PU_NODE_CONST;
+    c.g[S2][0] = c.lw(pu_r(c, V0));
+    if c.g[S2][0] == c.g[V1][0] {
+        c.cycles += 8;
+        pu_alloc_node(c, 0x0032_3dd4)?;
+        let node = pu_r(c, S0);
+        c.sw(node, c.g[S2][0]);
+        let expr_at = pu_r(c, S3).wrapping_add(PARSE_UNARY_IDENT_EXPR);
+        c.g[V1][0] = c.lw(expr_at);
+        c.lwc1(0, pu_r(c, V1).wrapping_add(4));
+        c.swc1(0, node.wrapping_add(4));
+        return Ok(PuExit::Done);
+    }
+    c.cycles += 9;
+    pu_alloc_node(c, 0x0032_3df4)?;
+    let node = pu_r(c, S0);
+    c.g[V0][0] = PU_NODE_IDENT;
+    c.sw(node.wrapping_add(4), c.g[S3][0]);
+    c.sw(node, c.g[V0][0]);
+    c.g[V0][0] = c.g[S0][0];
+    c.sw(node.wrapping_add(8), c.g[S4][0]);
+    Ok(PuExit::Done)
+}
+
+/// An identifier token (0x323c24): a button, a built-in config value, or a
+/// defined identifier; anything else is an error.
+pub(crate) fn pu_name(c: &mut Cpu) -> Result<PuExit, Unwound> {
+    c.cycles += 7;
+    c.g[S0][0] = sx(pu_r(c, S1).wrapping_add(PARSE_UNARY_TEXT));
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[S0][0];
+    PU_LOOKUP_BUTTON.call(c, 0x0032_3c34)?;
+    c.g[S3][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S1][0];
+    if (c.g[S3][0] as i64) >= 0 {
+        return pu_button(c);
+    }
+    c.cycles += 5;
+    c.g[A1][0] = c.g[S0][0];
+    PU_LOOKUP_BUILTIN.call(c, 0x0032_3ce4)?;
+    c.g[S2][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S1][0];
+    if (c.g[S2][0] as i64) >= 0 {
+        c.cycles += 7;
+        pu_next_token(c, 0x0032_3cf8)?;
+        pu_alloc_node(c, 0x0032_3d00)?;
+        c.g[V0][0] = PU_NODE_CONFIG;
+        return Ok(pu_store_node(c));
+    }
+    c.cycles += 5;
+    c.g[A1][0] = c.g[S0][0];
+    PU_FIND_IDENTIFIER.call(c, 0x0032_3d14)?;
+    c.g[S3][0] = c.g[V0][0];
+    c.g[A1][0] = 0x0049_0000;
+    if c.g[S3][0] == 0 {
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = PU_MSG_UNEXPECTED_IDENT;
+        c.g[A2][0] = c.g[S0][0];
+        PU_ERROR.call(c, 0x0032_3e20)?;
+        c.g[V0][0] = 0;
+        return Ok(PuExit::Done);
+    }
+    c.cycles += 7;
+    pu_next_token(c, 0x0032_3d28)?;
+    c.g[V0][0] = sx(pu_r(c, S1).wrapping_add(0x10000));
+    let current = pu_r(c, V0).wrapping_add(PARSE_UNARY_CURRENT_IDENT);
+    c.g[V1][0] = c.lw(current);
+    if c.g[S3][0] == c.g[V1][0] {
+        c.cycles += 4;
+        return Ok(pu_error_args(c, PU_MSG_RECURSIVE));
+    }
+    c.g[V1][0] = pu_token(c);
+    c.cycles += 3;
+    c.g[V0][0] = PU_TOK_DOT;
+    c.g[S4][0] = PU_MOD_NONE;
+    if c.g[V1][0] != c.g[V0][0] {
+        return pu_ident_node(c);
+    }
+    c.cycles += 3;
+    pu_next_token(c, 0x0032_3d60)?;
+    c.g[V1][0] = pu_token(c);
+    pu_ident_dot(c)
+}
+
+/// `-term` / `!term` (0x323e5c / 0x323eac): parse the operand; a constant
+/// is folded (negated, or `x == 0 ? 1 : 0`), anything else wrapped in a
+/// `{kind, operand}` node.
+pub(crate) fn pu_prefix(c: &mut Cpu, not: bool) -> Result<PuExit, Unwound> {
+    let (next_ret, term_ret) = if not {
+        (0x0032_3eb4, 0x0032_3ebc)
+    } else {
+        (0x0032_3e64, 0x0032_3e6c)
+    };
+    c.cycles += 7;
+    pu_next_token(c, next_ret)?;
+    c.g[A0][0] = c.g[S1][0];
+    PU_PARSE_UNARY.call(c, term_ret)?;
+    c.g[S2][0] = c.g[V0][0];
+    c.g[V0][0] = PU_NODE_CONST;
+    if c.g[S2][0] == 0 {
+        return Ok(PuExit::Zero);
+    }
+    c.cycles += 3;
+    let term = pu_r(c, S2);
+    c.g[V1][0] = c.lw(term);
+    if c.g[V1][0] == c.g[V0][0] {
+        if not {
+            c.cycles += 6;
+            c.mtc1(0, 0);
+            c.lwc1(1, term.wrapping_add(4));
+            c.c_eq_s(1, 0);
+            let zero = c.fcc();
+            c.mov_s(2, 0);
+            if zero {
+                c.cycles += 2;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(1, 2);
+            }
+            c.cycles += 3;
+            c.swc1(2, term.wrapping_add(4));
+        } else {
+            c.cycles += 5;
+            c.lwc1(0, term.wrapping_add(4));
+            c.neg_s(0, 0);
+            c.swc1(0, term.wrapping_add(4));
+        }
+        c.g[V0][0] = c.g[S2][0];
+        return Ok(PuExit::Done);
+    }
+    if not {
+        c.cycles += 4;
+        pu_alloc_node(c, 0x0032_3f08)?;
+        c.g[V0][0] = PU_NODE_NOT;
+    } else {
+        c.cycles += 5;
+        pu_alloc_node(c, 0x0032_3ea0)?;
+        c.g[V0][0] = PU_NODE_NEG;
+    }
+    Ok(pu_store_node(c))
+}
+
+/// One switch case (the jump-table target `case`); `None` loops back to the
+/// switch (a unary `+`), `Err` is an unwind.
+pub(crate) fn pu_case(c: &mut Cpu, case: u32) -> Result<Option<PuExit>, Unwound> {
+    let exit = match case {
+        PU_CASE_NAME => pu_name(c)?,
+        PU_CASE_NAME_DOT => pu_ident_dot(c)?,
+        PU_CASE_NUMBER => {
+            // A number: `{4, value}`, then the next token.
+            c.cycles += 9;
+            pu_alloc_node(c, 0x0032_3e30)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[V0][0] = PU_NODE_CONST;
+            let node = pu_r(c, S0);
+            c.sw(node, c.g[V0][0]);
+            c.lwc1(0, pu_r(c, S1).wrapping_add(PARSE_UNARY_VALUE));
+            c.swc1(0, node.wrapping_add(4));
+            pu_token_and_return_s0(c, 0x0032_3f70)?
+        }
+        PU_CASE_PLUS => {
+            c.cycles += 4;
+            pu_next_token(c, 0x0032_3e54)?;
+            c.g[V0][0] = pu_token(c);
+            return Ok(None);
+        }
+        PU_CASE_MINUS => pu_prefix(c, false)?,
+        PU_CASE_NOT => pu_prefix(c, true)?,
+        PU_CASE_PAREN => {
+            // `( expression )`.
+            c.cycles += 9;
+            pu_next_token(c, 0x0032_3f28)?;
+            c.g[A0][0] = c.g[S1][0];
+            PU_PARSE_CONDITIONAL.call(c, 0x0032_3f30)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[V1][0] = pu_token(c);
+            c.g[V0][0] = PU_TOK_RPAREN;
+            c.g[A1][0] = 0x0049_0000;
+            if c.g[V1][0] == c.g[V0][0] {
+                c.cycles += 1;
+                c.g[A0][0] = c.g[S1][0];
+                pu_token_and_return_s0(c, 0x0032_3f70)?
+            } else {
+                c.cycles += 8;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = PU_MSG_EXPECTED_RPAREN;
+                PU_ERROR.call(c, 0x0032_3f50)?;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = c.g[S0][0];
+                PU_FREE_NODE.call(c, 0x0032_3f5c)?;
+                c.g[V0][0] = 0;
+                PuExit::Done
+            }
+        }
+        PU_CASE_FUNC_FIRST..=PU_CASE_FUNC_LAST if (case - PU_CASE_FUNC_FIRST) % 0x1c == 0 => {
+            // A function call: the node kind follows the keyword.
+            let index = (case - PU_CASE_FUNC_FIRST) / 0x1c;
+            let parse = if index < 4 {
+                PU_PARSE_FUNCTION2
+            } else {
+                PU_PARSE_FUNCTION1
+            };
+            c.cycles += 7;
+            pu_next_token(c, case + 8)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 0x14 + index as u64;
+            parse.call(c, case + 0x14)?;
+            c.lq(16, sp(c).wrapping_add(0x50));
+            PuExit::Restored
+        }
+        PU_CASE_DEFAULT => pu_default(c),
+        _ => unreachable!(),
+    };
+    Ok(Some(exit))
+}
+
+/// `a0 = self` already: next token, return `s0` (0x323f68).
+pub(crate) fn pu_token_and_return_s0(c: &mut Cpu, ret: u32) -> Result<PuExit, Unwound> {
+    c.cycles += 4;
+    PU_NEXT_TOKEN.call(c, ret)?;
+    c.g[V0][0] = c.g[S0][0];
+    Ok(PuExit::Done)
+}
+
+/// "Expected term in expression" (0x324100).
+pub(crate) fn pu_default(c: &mut Cpu) -> PuExit {
+    c.cycles += 3;
+    pu_error_args(c, PU_MSG_EXPECTED_TERM)
+}
+
+/// Is `t` one of the switch's targets?
+pub(crate) fn pu_is_case(t: u32) -> bool {
+    matches!(
+        t,
+        PU_CASE_NAME
+            | PU_CASE_NAME_DOT
+            | PU_CASE_NUMBER
+            | PU_CASE_PLUS
+            | PU_CASE_MINUS
+            | PU_CASE_NOT
+            | PU_CASE_PAREN
+            | PU_CASE_DEFAULT
+    ) || ((PU_CASE_FUNC_FIRST..=PU_CASE_FUNC_LAST).contains(&t)
+        && (t - PU_CASE_FUNC_FIRST) % 0x1c == 0)
+}
+
+/// `ParseNode* InputParser_ParseUnary(InputParser* self)` (0x323bd8,
+/// `cInputMapParser_parseTerm`): parse one term of an input-map expression
+/// at the current token: a button (`button12.pressed`), a config value
+/// (`padtype`, `arg3`, `config7`), a defined identifier (constants are
+/// copied), a number, unary `+`/`-`/`!` (constants folded), a parenthesised
+/// expression or a built-in function call (`max(a, b)`, `sin(x)`). Returns
+/// the node, or 0 after reporting a syntax error.
+pub fn input_parser_parse_unary(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S0, 0x50);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = pu_token(c);
+        let exit = loop {
+            // switch (token - 2), 0x25 cases.
+            c.cycles += 4;
+            c.g[A0][0] = sx(pu_r(c, V0).wrapping_sub(2));
+            c.g[V1][0] = (c.g[A0][0] < 0x25) as u64;
+            c.g[V0][0] = 0x0049_0000;
+            if c.g[V1][0] == 0 {
+                break pu_default(c);
+            }
+            c.cycles += 6;
+            c.g[V1][0] = sx(pu_r(c, A0) << 2);
+            c.g[V0][0] = sx(PU_JUMP_TABLE);
+            c.g[V1][0] = sx(pu_r(c, V1).wrapping_add(PU_JUMP_TABLE));
+            c.g[A0][0] = c.lw(pu_r(c, V1));
+            let case = pu_r(c, A0);
+            if !pu_is_case(case) {
+                c.jump_out(case, 0x0032_3bd8, 0x0032_4138);
+                return Ok(());
+            }
+            match pu_case(c, case)? {
+                Some(exit) => break exit,
+                None => {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0032_3bfc);
+                    }
+                }
+            }
+        };
+        let mut exit = exit;
+        if let PuExit::Error = exit {
+            c.cycles += 2;
+            PU_ERROR.call(c, 0x0032_4114)?;
+            exit = PuExit::Zero;
+        }
+        if let PuExit::Zero = exit {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+            exit = PuExit::Done;
+        }
+        if let PuExit::Done = exit {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x50);
+        }
+        c.cycles += 7;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// InputParser_LookupBuiltinName (0x321880)
+
+/// How a `<prefix><number>` name parse ended.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum BuiltinNameParse {
+    /// No digit after the prefix.
+    NoDigit,
+    /// The number runs into a letter.
+    Alpha,
+    /// Followed by `_`, or the number is too large.
+    Rejected,
+    /// `v0` = number + base.
+    Accepted,
+}
+
+/// Parse the decimal number at `name + off` (s0 = name): `n` in register
+/// `n_reg`, the multiplier 10 / the letter flag in `ten_reg`, the next char
+/// (unsigned) in `ch_reg`. Accepted when the number is followed by neither a
+/// letter nor `_` and is below `limit`; `v0` = n + `base`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn builtin_name_parse(
+    c: &mut Cpu,
+    off: u32,
+    n_reg: usize,
+    ten_reg: usize,
+    ch_reg: usize,
+    limit: i64,
+    base: u32,
+    head: u32,
+    second: bool,
+) -> BuiltinNameParse {
+    let name = c.g[S0][0] as u32;
+    c.cycles += 6;
+    c.g[V1][0] = c.lb(name.wrapping_add(off));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x30));
+    c.g[V0][0] = c.g[V1][0] & 0xff;
+    c.g[V0][0] = (c.g[V0][0] < 0xa) as u64;
+    c.g[n_reg][0] = c.g[V1][0];
+    if c.g[V0][0] == 0 {
+        return BuiltinNameParse::NoDigit;
+    }
+    c.cycles += 5;
+    c.g[V0][0] = c.lb(name.wrapping_add(off + 1));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x30));
+    c.g[V0][0] = (c.g[V0][0] < 0xa) as u64;
+    c.g[A1][0] = sx(name.wrapping_add(off + 1));
+    if c.g[V0][0] != 0 {
+        c.cycles += 1;
+        c.g[ten_reg][0] = 0xa;
+        loop {
+            // n = n * 10 + (*p++ - '0')
+            c.cycles += 9;
+            c.mult(0, V1, n_reg, ten_reg);
+            c.g[A0][0] = c.lb(c.g[A1][0] as u32);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = c.lb(c.g[A1][0] as u32);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x30));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x30));
+            c.g[V0][0] = (c.g[V0][0] < 0xa) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[n_reg][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, head);
+            }
+        }
+    }
+    // A letter after the number?
+    c.cycles += 6;
+    c.g[V1][0] = c.lb(c.g[A1][0] as u32);
+    c.g[ten_reg][0] = 0;
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x61));
+    c.g[V0][0] = (c.g[V0][0] < 0x1a) as u64;
+    c.g[ch_reg][0] = c.lbu(c.g[A1][0] as u32);
+    if c.g[V0][0] == 0 {
+        c.cycles += 4;
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x41));
+        c.g[V0][0] = (c.g[V0][0] < 0x1a) as u64;
+    }
+    if c.g[V0][0] != 0 {
+        c.cycles += 1;
+        c.g[ten_reg][0] = 0x1;
+    }
+    c.cycles += 2;
+    if second {
+        c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+    }
+    if c.g[ten_reg][0] != 0 {
+        return BuiltinNameParse::Alpha;
+    }
+    c.cycles += 5;
+    c.g[V0][0] = sx((c.g[ch_reg][0] as u32) << 24);
+    c.g[V1][0] = 0x5f;
+    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
+    let underscore = c.g[V0][0] == c.g[V1][0];
+    c.g[V0][0] = ((c.g[n_reg][0] as i64) < limit) as u64;
+    if underscore {
+        return BuiltinNameParse::Rejected;
+    }
+    c.cycles += 2;
+    let small = c.g[V0][0] != 0;
+    c.g[V0][0] = sx((c.g[n_reg][0] as u32).wrapping_add(base));
+    if small {
+        BuiltinNameParse::Accepted
+    } else {
+        BuiltinNameParse::Rejected
+    }
+}
+
+/// `int InputParser_LookupBuiltinName(cInputMapParser* self, const char*
+/// name)` (0x321880): the built-in config names of an input map: `padtype`
+/// -> 0, `arg<N>` (N < 8) -> N + 1, `config<N>` (N < 23) -> N + 9, else -1
+/// (case-insensitive prefixes; the number may not run into a letter or `_`).
+pub fn input_parser_lookup_builtin_name(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0x4a_0000;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3f18)); // "padtype"
+        call_ptr(c, 0x0041_aa88, 0x0032_18a0)?; // strcasecmp
+        let differs = c.g[V0][0] != 0;
+        c.g[A1][0] = 0x4a_0000;
+        'exit: {
+            if !differs {
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+                break 'exit;
+            }
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3f20)); // "arg"
+            c.g[A2][0] = 0x3;
+            call_ptr(c, 0x0041_ab78, 0x0032_18c0)?; // strncasecmp
+            let differs = c.g[V0][0] != 0;
+            c.g[A1][0] = 0x4a_0000;
+            if !differs {
+                match builtin_name_parse(c, 3, A0, A2, A1, 8, 1, 0x0032_18f8, false) {
+                    BuiltinNameParse::NoDigit => {}
+                    BuiltinNameParse::Alpha => c.g[A1][0] = 0x4a_0000,
+                    BuiltinNameParse::Rejected => {
+                        c.cycles += 1;
+                        c.g[A1][0] = 0x4a_0000;
+                    }
+                    BuiltinNameParse::Accepted => break 'exit,
+                }
+            }
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3f28)); // "config"
+            c.g[A2][0] = 0x6;
+            call_ptr(c, 0x0041_ab78, 0x0032_1980)?; // strncasecmp
+            let differs = c.g[V0][0] != 0;
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+            if differs {
+                break 'exit;
+            }
+            match builtin_name_parse(c, 6, A2, A3, A0, 23, 9, 0x0032_19b8, true) {
+                BuiltinNameParse::Alpha | BuiltinNameParse::Accepted => {}
+                BuiltinNameParse::NoDigit | BuiltinNameParse::Rejected => {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+                }
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// The input map's expression parser: comparison, additive and
+// multiplicative levels (0x3236d8, 0x323900, 0x323a68).
+
+/// Parser fields: the current token kind and the free node list.
+pub(crate) const INPUT_PARSER_TOKEN: u32 = 0x98;
+
+/// Parse node type of a constant (float value at +4).
+pub(crate) const INPUT_PARSER_CONST: u64 = 0x4;
+
+pub(crate) const INPUT_PARSER_NEXT_TOKEN: Callee = Callee {
+    addr: 0x0032_1af0,
+    f: ee::s10::InputParser_NextToken,
+};
+
+pub(crate) const INPUT_PARSER_FREE_NODE: Callee = Callee {
+    addr: 0x0032_1638,
+    f: ee::s10::InputParser_FreeNode,
+};
+
+pub(crate) const INPUT_PARSER_ALLOC_NODE: Callee = Callee {
+    addr: 0x0032_15f8,
+    f: ee::s10::InputParser_AllocNode,
+};
+
+pub(crate) const INPUT_PARSER_ADDITIVE: Callee = Callee {
+    addr: 0x0032_3900,
+    f: ee::s10::InputParser_ParseAdditive,
+};
+
+pub(crate) const INPUT_PARSER_MULTIPLICATIVE: Callee = Callee {
+    addr: 0x0032_3a68,
+    f: ee::s10::InputParser_ParseMultiplicative,
+};
+
+pub(crate) const INPUT_PARSER_UNARY: Callee = Callee {
+    addr: 0x0032_3bd8,
+    f: ee::s10::InputParser_ParseUnary,
+};
+
+/// One left-associative binary level (`+ -` or `* /`): its operand parser,
+/// tokens, node types and the return addresses of its calls.
+pub(crate) struct InputParserLevel {
+    operand: Callee,
+    /// Tokens of the two operators, and their node types.
+    tok: [u64; 2],
+    op: [u64; 2],
+    /// Multiplicative (`* /`, the inverse is 1/x) or additive (`+ -`, -x).
+    mul: bool,
+    /// Return addresses: first operand, NextToken, operand, free (failure),
+    /// free (folded), alloc (constant chain), alloc (node).
+    ret: [u32; 7],
+    /// Loop heads: outer (reload the token), inner (token already in v1).
+    head: [u32; 2],
+}
+
+pub(crate) const INPUT_PARSER_ADDITIVE_LEVEL: InputParserLevel = InputParserLevel {
+    operand: INPUT_PARSER_MULTIPLICATIVE,
+    tok: [0x14, 0x15],
+    op: [0xe, 0xf],
+    mul: false,
+    ret: [
+        0x0032_3924,
+        0x0032_3974,
+        0x0032_397c,
+        0x0032_3994,
+        0x0032_39f4,
+        0x0032_3a1c,
+        0x0032_3a34,
+    ],
+    head: [0x0032_3940, 0x0032_3944],
+};
+
+pub(crate) const INPUT_PARSER_MULTIPLICATIVE_LEVEL: InputParserLevel = InputParserLevel {
+    operand: INPUT_PARSER_UNARY,
+    tok: [0x16, 0x17],
+    op: [0x10, 0x11],
+    mul: true,
+    ret: [
+        0x0032_3a8c,
+        0x0032_3adc,
+        0x0032_3ae4,
+        0x0032_3afc,
+        0x0032_3b5c,
+        0x0032_3b8c,
+        0x0032_3ba4,
+    ],
+    head: [0x0032_3aa8, 0x0032_3aac],
+};
+
+/// The shared body of [`input_parser_parse_additive`] and
+/// [`input_parser_parse_multiplicative`]: `left (op right)*`. Constants are
+/// folded into the first constant operand (s4); the inverse operator turns a
+/// constant right operand into `-x` / `1/x` and chains it with the first
+/// operator; anything else becomes a binary node. Returns the tree, or 0 (an
+/// operand failed; the left tree is freed).
+pub(crate) fn input_parser_binary_level(c: &mut Cpu, lv: &InputParserLevel) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S3, 0x20);
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A0][0];
+        lv.operand.call(c, lv.ret[0])?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[V0][0] = 0;
+        'failed: {
+            if c.g[S1][0] == 0 {
+                break 'failed;
+            }
+            c.cycles += 4;
+            c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+            c.g[S4][0] = 0;
+            c.g[V0][0] ^= INPUT_PARSER_CONST;
+            if c.g[V0][0] == 0 {
+                c.g[S4][0] = c.g[S1][0];
+            }
+            loop {
+                c.cycles += 1;
+                c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(INPUT_PARSER_TOKEN));
+                loop {
+                    // The operator, or done.
+                    c.cycles += 3;
+                    c.g[V0][0] = lv.tok[0];
+                    let first = c.g[V1][0] == c.g[V0][0];
+                    c.g[V0][0] = lv.tok[1];
+                    if first {
+                        c.cycles += 2;
+                        c.g[S3][0] = lv.op[0];
+                    } else {
+                        c.cycles += 2;
+                        let second = c.g[V1][0] == c.g[V0][0];
+                        c.g[V0][0] = c.g[S1][0];
+                        if !second {
+                            c.cycles += 2;
+                            frame.restore(c, S0, 0x50);
+                            c.cycles += 7;
+                            input_parser_binary_level_epilogue(c, frame);
+                            return Ok(());
+                        }
+                        c.cycles += 1;
+                        c.g[S3][0] = lv.op[1];
+                    }
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S2][0];
+                    INPUT_PARSER_NEXT_TOKEN.call(c, lv.ret[1])?;
+                    c.g[A0][0] = c.g[S2][0];
+                    lv.operand.call(c, lv.ret[2])?;
+                    c.g[S0][0] = c.g[V0][0];
+                    if c.g[S0][0] == 0 {
+                        c.cycles += 5;
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[A1][0] = c.g[S1][0];
+                        INPUT_PARSER_FREE_NODE.call(c, lv.ret[3])?;
+                        c.g[V0][0] = 0;
+                        break 'failed;
+                    }
+                    c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                    c.cycles += 3;
+                    c.g[V0][0] = INPUT_PARSER_CONST;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        // A binary node (op, left, right).
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[S2][0];
+                        INPUT_PARSER_ALLOC_NODE.call(c, lv.ret[6])?;
+                        c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[S1][0]);
+                        c.sw(c.g[V0][0] as u32, c.g[S3][0]);
+                        break;
+                    }
+                    c.cycles += 2;
+                    let no_const = c.g[S4][0] == 0;
+                    c.g[V0][0] = lv.op[0];
+                    if no_const {
+                        // Start a constant chain: invert the right operand
+                        // for the second operator, then node(op0, left, right).
+                        c.cycles += 3;
+                        c.g[V0][0] = lv.op[1];
+                        let inverse = c.g[S3][0] == c.g[V0][0];
+                        c.g[S4][0] = c.g[S0][0];
+                        if inverse {
+                            let rv = (c.g[S0][0] as u32).wrapping_add(0x4);
+                            if lv.mul {
+                                c.cycles += 5;
+                                c.lwc1(1, rv);
+                                c.g[AT][0] = 0x3f80_0000;
+                                c.mtc1(1, 0);
+                                c.div_s(0, 0, 1);
+                            } else {
+                                c.cycles += 3;
+                                c.lwc1(0, rv);
+                                c.neg_s(0, 0);
+                            }
+                            c.swc1(0, rv);
+                        }
+                        c.cycles += 6;
+                        c.g[A0][0] = c.g[S2][0];
+                        INPUT_PARSER_ALLOC_NODE.call(c, lv.ret[5])?;
+                        c.g[V1][0] = lv.op[0];
+                        c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[S1][0]);
+                        c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+                        break;
+                    }
+                    // Fold the right constant into s4 and free it.
+                    c.cycles += 2;
+                    let is_first = c.g[S3][0] == c.g[V0][0];
+                    c.g[V0][0] = lv.op[1];
+                    let mut folded = true;
+                    let (s4, s0) = (c.g[S4][0] as u32, c.g[S0][0] as u32);
+                    if is_first {
+                        c.cycles += 4;
+                        c.lwc1(0, s4.wrapping_add(0x4));
+                        c.lwc1(1, s0.wrapping_add(0x4));
+                        if lv.mul {
+                            c.mul_s(0, 0, 1);
+                        } else {
+                            c.add_s(0, 0, 1);
+                        }
+                    } else {
+                        c.cycles += 2;
+                        let is_second = c.g[S3][0] == c.g[V0][0];
+                        c.g[A1][0] = c.g[S0][0];
+                        if is_second {
+                            c.cycles += 3;
+                            c.lwc1(0, s4.wrapping_add(0x4));
+                            c.lwc1(1, s0.wrapping_add(0x4));
+                            if lv.mul {
+                                c.div_s(0, 0, 1);
+                            } else {
+                                c.sub_s(0, 0, 1);
+                            }
+                        } else {
+                            c.cycles += 2;
+                            folded = false;
+                        }
+                    }
+                    if folded {
+                        c.cycles += 2;
+                        c.swc1(0, s4.wrapping_add(0x4));
+                        c.g[A1][0] = c.g[S0][0];
+                    }
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S2][0];
+                    INPUT_PARSER_FREE_NODE.call(c, lv.ret[4])?;
+                    c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(INPUT_PARSER_TOKEN));
+                    if event_due(c) {
+                        deliver_event_here(c, lv.head[1]);
+                    }
+                }
+                // left = node; node.right = right.
+                c.cycles += 3;
+                c.g[S1][0] = c.g[V0][0];
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x8), c.g[S0][0]);
+                if event_due(c) {
+                    deliver_event_here(c, lv.head[0]);
+                }
+            }
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0x50);
+        c.cycles += 7;
+        input_parser_binary_level_epilogue(c, frame);
+        Ok(())
+    })
+}
+
+pub(crate) fn input_parser_binary_level_epilogue(c: &mut Cpu, frame: Frame) {
+    frame.restore(c, S1, 0x40);
+    frame.restore(c, S2, 0x30);
+    frame.restore(c, S3, 0x20);
+    frame.restore(c, S4, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+}
+
+/// `ParseNode* InputParser_ParseAdditive(cInputMapParser* self)` (0x323900):
+/// `term ((+|-) term)*` over [`input_parser_parse_multiplicative`], folding
+/// constants (node types 0xe add, 0xf subtract).
+pub fn input_parser_parse_additive(c: &mut Cpu) {
+    input_parser_binary_level(c, &INPUT_PARSER_ADDITIVE_LEVEL)
+}
+
+/// `ParseNode* InputParser_ParseMultiplicative(cInputMapParser* self)`
+/// (0x323a68): `unary ((*|/) unary)*`, folding constants (node types 0x10
+/// multiply, 0x11 divide).
+pub fn input_parser_parse_multiplicative(c: &mut Cpu) {
+    input_parser_binary_level(c, &INPUT_PARSER_MULTIPLICATIVE_LEVEL)
+}
+
+/// `ParseNode* InputParser_ParseComparison(cInputMapParser* self)`
+/// (0x3236d8): `sum (cmp sum)*` with `> >= < <= == !=` (tokens 0xe..0x13,
+/// node types 8, 9, 0xa, 0xb, 0xc, 0xd through the jump table at 0x48dfd0).
+/// Two constants compare to a constant 1.0 / 0.0 (the left node is reused,
+/// the right one freed); otherwise a binary node. 0 when an operand fails.
+pub fn input_parser_parse_comparison(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S3, 0x10);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S3][0] = c.g[A0][0];
+        INPUT_PARSER_ADDITIVE.call(c, 0x0032_36f8)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[V0][0] = 0;
+        'exit: {
+            if c.g[S0][0] == 0 {
+                break 'exit;
+            }
+            c.cycles += 1;
+            // 0x323708: reload the token; 0x32370c: dispatch on it.
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(INPUT_PARSER_TOKEN));
+            loop {
+                c.cycles += 4;
+                c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xe));
+                c.g[V1][0] = (c.g[A0][0] < 0x6) as u64;
+                let is_cmp = c.g[V1][0] != 0;
+                c.g[V0][0] = 0x49_0000;
+                if !is_cmp {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[S0][0];
+                    break 'exit;
+                }
+                c.cycles += 6;
+                c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2030));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                let op = match c.g[A0][0] as u32 {
+                    0x0032_3734 => 0xa,
+                    0x0032_373c => 0xb,
+                    0x0032_3744 => 0x9,
+                    0x0032_374c => 0x8,
+                    0x0032_3754 => 0xc,
+                    0x0032_375c => 0xd,
+                    t => {
+                        c.jump_out(t, 0x0032_36d8, 0x0032_3900);
+                        return Ok(());
+                    }
+                };
+                c.cycles += 2;
+                c.g[S2][0] = op;
+                c.cycles += 7;
+                c.g[A0][0] = c.g[S3][0];
+                INPUT_PARSER_NEXT_TOKEN.call(c, 0x0032_3774)?;
+                c.g[A0][0] = c.g[S3][0];
+                INPUT_PARSER_ADDITIVE.call(c, 0x0032_377c)?;
+                c.g[S1][0] = c.g[V0][0];
+                if c.g[S1][0] == 0 {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S3][0];
+                    c.g[A1][0] = c.g[S0][0];
+                    INPUT_PARSER_FREE_NODE.call(c, 0x0032_3794)?;
+                    c.g[V0][0] = 0;
+                    break 'exit;
+                }
+                c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                let mut fold = false;
+                c.cycles += 3;
+                c.g[V0][0] = INPUT_PARSER_CONST;
+                if c.g[V1][0] == c.g[V0][0] {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                    fold = c.g[V0][0] == c.g[V1][0];
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x8));
+                }
+                if !fold {
+                    // node(op, left, right)
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S3][0];
+                    INPUT_PARSER_ALLOC_NODE.call(c, 0x0032_38d0)?;
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[S0][0]);
+                    c.sw(c.g[V0][0] as u32, c.g[S2][0]);
+                    c.g[S0][0] = c.g[V0][0];
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x8), c.g[S1][0]);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0032_3708);
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(INPUT_PARSER_TOKEN));
+                    continue;
+                }
+                // Both constant: left.value = (left op right) ? 1 : 0.
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[V1][0] < 0x6) as u64;
+                let in_table = c.g[V0][0] != 0;
+                c.g[V0][0] = 0x49_0000;
+                if in_table {
+                    c.cycles += 6;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2010));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                    let target = c.g[A0][0] as u32;
+                    if !matches!(
+                        target,
+                        0x0032_37d8
+                            | 0x0032_37fc
+                            | 0x0032_3820
+                            | 0x0032_3844
+                            | 0x0032_3868
+                            | 0x0032_388c
+                    ) {
+                        c.jump_out(target, 0x0032_36d8, 0x0032_3900);
+                        return Ok(());
+                    }
+                    c.cycles += 7;
+                    let (l, r) = (
+                        (c.g[S0][0] as u32).wrapping_add(4),
+                        (c.g[S1][0] as u32).wrapping_add(4),
+                    );
+                    c.lwc1(1, l);
+                    c.lwc1(0, r);
+                    c.mtc1(0, 2);
+                    // fcc = the condition for 1.0 (f1 = left, f0 = right).
+                    let truth = match target {
+                        0x0032_37d8 => {
+                            c.c_lt_s(1, 0);
+                            c.fcc()
+                        }
+                        0x0032_37fc => {
+                            c.c_le_s(1, 0);
+                            c.fcc()
+                        }
+                        0x0032_3820 => {
+                            c.c_le_s(0, 1);
+                            c.fcc()
+                        }
+                        0x0032_3844 => {
+                            c.c_lt_s(0, 1);
+                            c.fcc()
+                        }
+                        0x0032_3868 => {
+                            c.c_eq_s(1, 0);
+                            c.fcc()
+                        }
+                        _ => {
+                            c.c_eq_s(1, 0);
+                            !c.fcc()
+                        }
+                    };
+                    if !truth {
+                        c.swc1(2, l);
+                    } else {
+                        if target != 0x0032_388c {
+                            c.cycles += 2;
+                        }
+                        c.cycles += 3;
+                        c.g[AT][0] = 0x3f80_0000;
+                        c.mtc1(1, 2);
+                        c.swc1(2, l);
+                    }
+                }
+                // Free the right constant.
+                c.cycles += 5;
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A0][0] = c.g[S3][0];
+                INPUT_PARSER_FREE_NODE.call(c, 0x0032_38c0)?;
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(INPUT_PARSER_TOKEN));
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_370c);
+                }
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4283,6 +7655,676 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = port as u64;
                 c.g[A1][0] = slot as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::feridermanager::tests::put_str_oc396;
+
+    /// Script snippets reaching every branch of the tokenizer.
+    pub(crate) fn next_token_cases() -> Vec<Vec<u8>> {
+        let lits: &[&[u8]] = &[
+            b"",
+            b"   \t\r  ",
+            b"\n\n  foo",
+            b"\t\r\n  max",
+            // Line directives.
+            b"# 12 \"file.map\"\nmax",
+            b"#12\"a\"  \nx",
+            b"# x\nfoo",
+            b"# 12 x\n=",
+            b"# 7 \"unterminated\nabc",
+            b"# 7 \"unterminated",
+            b"# 3 \"f\" junk\n<",
+            b"# 3 \"f\"  ",
+            b"#",
+            b"# 5",
+            b"#\t9\"f\"\r\n:",
+            b"# 1 \"f\"\t \n;",
+            b"# 123456789 \"f\"\n(",
+            b"#5 \"x\"\n",
+            b"\n#1 \"g\"\n\n  foo",
+            b" \n// c\n# 4 \"h\"\n 7.5",
+            // Comments and operators.
+            b"// comment here\n  sin(x)",
+            b"//",
+            b"// x",
+            b"/ 3",
+            b"/",
+            b"/\n",
+            b"!=",
+            b"!x",
+            b"!",
+            b"++",
+            b"+",
+            b"+=",
+            b"-+",
+            b"-",
+            b"-1",
+            b".",
+            b"*",
+            b"==",
+            b"= 1",
+            b"=",
+            b"<=",
+            b"<",
+            b">=",
+            b">",
+            b"&&",
+            b"&x",
+            b"&",
+            b"||",
+            b"|",
+            b"|y",
+            b"(",
+            b")",
+            b",",
+            b"?",
+            b";",
+            b":",
+            // Identifiers and keywords.
+            b"max",
+            b"MIN(",
+            b"pow",
+            b"atan2",
+            b"atan",
+            b"sin",
+            b"cos",
+            b"exp",
+            b"log",
+            b"floor",
+            b"ceil",
+            b"abs",
+            b"sqrt",
+            b"minradian",
+            b"foo_bar9 ",
+            b"x",
+            b"Zebra_",
+            // Numbers.
+            b"123",
+            b"42;",
+            b"1.5",
+            b"0.25f",
+            b"3f",
+            b"2E3",
+            b"2e-3",
+            b"1.5e+2f",
+            b"7e",
+            b"7e+",
+            b"7E-x",
+            b"1.e5",
+            b"1.",
+            b"5x",
+            b"9",
+            b"0.5e",
+            // Unexpected characters.
+            b"@",
+            b"\x80",
+            b"\xff",
+            b"~a",
+            b"\xe9t",
+            b"_x",
+            b"$",
+        ];
+        let mut v: Vec<Vec<u8>> = lits.iter().map(|s| s.to_vec()).collect();
+        let mut long_name = b"# 3 \"".to_vec();
+        long_name.extend(std::iter::repeat(b'n').take(140));
+        long_name.extend_from_slice(b"\"\n1");
+        v.push(long_name);
+        let mut long_ident = vec![b'a'; 60];
+        long_ident.extend_from_slice(b"b_12345678");
+        v.push(long_ident);
+        let mut long_int = vec![b'0'; 70];
+        long_int.push(b'1');
+        v.push(long_int);
+        let mut long_frac = b"0.".to_vec();
+        long_frac.extend(std::iter::repeat(b'0').take(70));
+        long_frac.push(b'5');
+        v.push(long_frac);
+        let mut long_exp = b"1e".to_vec();
+        long_exp.extend(std::iter::repeat(b'0').take(70));
+        long_exp.push(b'2');
+        v.push(long_exp);
+        let mut long_exp_sign = b"1".to_vec();
+        long_exp_sign.extend(std::iter::repeat(b'0').take(66));
+        long_exp_sign.extend_from_slice(b"e-1f");
+        v.push(long_exp_sign);
+        v
+    }
+
+    #[test]
+    fn input_parser_next_token_matches() {
+        let cases = next_token_cases();
+        let n = cases.len() as u32;
+        check(
+            ee::s10::f_00321af0__generated,
+            input_parser_next_token,
+            2 * n,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0032_1af0, 0);
+                elf_image(c);
+                env(c);
+                c.pc = 0x0032_1af0;
+                let text = &cases[(seed % n) as usize];
+                let this = DATA + 0x400;
+                let buf = DATA + 0x1000;
+                // Junk after the end: the bounds checks must stop there.
+                for i in 0..0x40 {
+                    c.bus
+                        .write8(buf + text.len() as u32 + i, (r.next_u32() | 0x20) as u8);
+                }
+                for (i, b) in text.iter().enumerate() {
+                    c.bus.write8(buf + i as u32, *b);
+                }
+                for off in (0..0x100).step_by(4) {
+                    c.bus.write32(this + off, r.next_u32());
+                }
+                c.bus.write32(this + NEXT_TOKEN_BASE, buf);
+                c.bus.write32(this + NEXT_TOKEN_LEN, text.len() as u32);
+                c.bus.write32(this + NEXT_TOKEN_POS, buf);
+                for (i, b) in b"pad.map\0".iter().enumerate() {
+                    c.bus.write8(this + NEXT_TOKEN_FNAME + i as u32, *b);
+                }
+                c.bus.write32(this + NEXT_TOKEN_LINE, r.next_u32() % 1000);
+                // Second round: not at the start of a line.
+                let line_start = if seed < n { r.next_u32() | 1 } else { 0 };
+                c.bus.write32(this + NEXT_TOKEN_LINE_START, line_start);
+                c.bus.write32(this + NEXT_TOKEN_ERROR, r.next_u32() & 1);
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    /// The parser (`self`), the result register `*dst`, the opcode buffer
+    /// and the parse-node pool (0x80 bytes per node, room for a variable's
+    /// expression at +0x40).
+    pub(crate) const IPEN_SELF: u32 = DATA;
+
+    pub(crate) const IPEN_DST: u32 = DATA + 0x200;
+
+    pub(crate) const IPEN_CODE: u32 = DATA + 0x400;
+
+    pub(crate) const IPEN_NODES: u32 = DATA + 0x1000;
+
+    pub(crate) const IPEN_MAX_NODES: u32 = 0x100;
+
+    /// Build a random parse tree of at most `depth` levels; returns the root.
+    pub(crate) fn ipen_node(
+        c: &mut Cpu,
+        r: &mut Rng,
+        next: &mut u32,
+        depth: u32,
+        ty: Option<u32>,
+    ) -> u32 {
+        let at = IPEN_NODES + 0x80 * *next;
+        *next += 1;
+        let ty = ty.unwrap_or_else(|| {
+            if depth == 0 || *next + 8 > IPEN_MAX_NODES {
+                [2, 3, 4, 4, 2, 3, 4, 0][(r.next_u32() % 8) as usize]
+            } else {
+                match r.next_u32() % 8 {
+                    0 => 1,
+                    1 => 5,
+                    2 => 6 + r.next_u32() % 28,
+                    _ => 2 + r.next_u32() % 3,
+                }
+            }
+        });
+        c.bus.write32(at + EMIT_NODE_TYPE, ty);
+        let modifier = if r.next_u32() % 2 == 0 {
+            5
+        } else {
+            r.next_u32() % 5
+        };
+        match ty {
+            1 => {
+                let var = IPEN_NODES + 0x80 * *next;
+                *next += 1;
+                let sub = depth.saturating_sub(1);
+                let expr = ipen_node(c, r, next, sub, None);
+                c.bus.write32(var + EMIT_NODE_VAR_EXPR, expr);
+                c.bus.write32(at + EMIT_NODE_A, var);
+                c.bus.write32(at + EMIT_NODE_B, modifier);
+            }
+            2 => {
+                c.bus.write32(at + EMIT_NODE_A, r.next_u32() % 8);
+                c.bus.write32(at + EMIT_NODE_B, modifier);
+            }
+            3 => {
+                // Mostly real built-ins; sometimes an index giving an id
+                // below 0x40 (a "temporary" the conditional frees).
+                let index = if r.next_u32() % 4 == 0 {
+                    (r.next_u32() % 0x40).wrapping_sub(0x40)
+                } else {
+                    r.next_u32() % 0x20
+                };
+                c.bus.write32(at + EMIT_NODE_A, index);
+            }
+            4 => {
+                let value = r.f32(100.0);
+                c.bus.write32(at + EMIT_NODE_A, value);
+            }
+            5..=33 => {
+                let sub = depth.saturating_sub(1);
+                for off in [EMIT_NODE_A, EMIT_NODE_B, EMIT_NODE_C] {
+                    let child = ipen_node(c, r, next, sub, None);
+                    c.bus.write32(at + off, child);
+                }
+            }
+            _ => {}
+        }
+        at
+    }
+
+    /// Every node type (1..=33 and the out-of-range ones) at the root, on
+    /// random trees: variables (chained, default and own modifiers), pad
+    /// channels and built-ins with `*dst == -1` or a register, constants with
+    /// the register pool full, empty or holding no register, conditionals
+    /// freeing a temporary or not, every "opcode buffer overflow" with small
+    /// `cap`, failures in each branch; the binary/unary emitters and the
+    /// recursion run the generated bodies. Not reached: "branch offset
+    /// overflow" (needs a branch of 0xffff words).
+    #[test]
+    fn input_parser_emit_node_matches() {
+        check(
+            ee::s10::f_00324678__generated,
+            input_parser_emit_node,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0032_4678 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+                elf_image(c);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                c.pc = 0x0032_4678;
+                // The parser: file name and line for the error message, the
+                // temporary register pool.
+                for (i, b) in b"map.txt\0".iter().enumerate() {
+                    c.bus.write8(IPEN_SELF + 0xc + i as u32, *b);
+                }
+                c.bus.write32(IPEN_SELF + 0x8c, r.next_u32() % 500);
+                let pool = IPEN_SELF + EMIT_NODE_REGS_BASE;
+                let free = r.next_u32() % 5;
+                for i in 0..free {
+                    let reg = if r.next_u32() % 6 == 0 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % 0x40
+                    };
+                    c.bus.write32(pool + EMIT_NODE_FREE_REGS + 4 * i, reg);
+                }
+                c.bus.write32(pool + EMIT_NODE_NUM_FREE, free);
+                // The opcode buffer: junk the emitter masks.
+                for i in 0..0x40 {
+                    c.bus.write32(IPEN_CODE + 4 * i, r.next_u32());
+                }
+                let dst = match r.next_u32() % 5 {
+                    0 | 1 => u32::MAX,
+                    2 => 0xffff_fffe,
+                    3 => r.next_u32() % 0x40,
+                    _ => 0x50,
+                };
+                c.bus.write32(IPEN_DST, dst);
+                let root_type = match seed % 37 {
+                    n @ 0..=32 => n + 1,
+                    33 => 0,
+                    34 => 34,
+                    _ => 1 + r.next_u32() % 5,
+                };
+                let mut next = 0;
+                let root = ipen_node(c, &mut r, &mut next, 2, Some(root_type));
+                let cap = [0u32, 1, 2, 3, 4, 6, 10, 40, 40][(r.next_u32() % 9) as usize];
+                let default_modifier = r.next_u32() % 6;
+                c.g[A0][0] = sx(IPEN_SELF);
+                c.g[A1][0] = sx(root);
+                c.g[A2][0] = sx(IPEN_DST);
+                c.g[A3][0] = sx(IPEN_CODE);
+                c.g[T0][0] = sx(cap);
+                c.g[T1][0] = sx(default_modifier);
+            },
+        );
+    }
+
+    // ------------------------------------------------- InputParser_ParseUnary
+
+    /// The parser for the ParseUnary test, its source text, node pool and
+    /// identifier expressions.
+    pub(crate) const PU_PARSER: u32 = crate::difftest::DATA;
+
+    pub(crate) const PU_SRC: u32 = crate::difftest::DATA + 0x4_0000;
+
+    pub(crate) const PU_NODES: u32 = crate::difftest::DATA + 0x2_0000;
+
+    pub(crate) const PU_EXPRS: u32 = crate::difftest::DATA + 0x3_0000;
+
+    /// Defined identifiers: name, expression kind (4 = a constant).
+    pub(crate) const PU_IDENTS: [(&[u8], u32); 4] =
+        [(b"speed", 4), (b"gate", 7), (b"self", 1), (b"tilt", 4)];
+
+    /// Scenarios: the current token (kind, text) and the source after it.
+    pub(crate) const PU_SCENARIOS: &[(u32, &[u8], &[u8])] = &[
+        // Buttons, plain and with modifiers (good, unknown, missing).
+        (2, b"button5", b" + 1"),
+        (2, b"button12", b".held;"),
+        (2, b"button7", b" . pressed"),
+        (2, b"button0", b".released"),
+        (2, b"button3", b".bogus"),
+        (2, b"button3", b".(1)"),
+        // Config values.
+        (2, b"padtype", b")"),
+        (2, b"config4", b""),
+        (2, b"arg2", b"*2"),
+        // Identifiers: constant, expression, recursive, modifiers.
+        (2, b"speed", b""),
+        (2, b"gate", b";"),
+        (2, b"self", b""),
+        (2, b"gate", b".released"),
+        (2, b"tilt", b".repeat"),
+        (2, b"gate", b".nope"),
+        (2, b"gate", b".7"),
+        (2, b"button999", b""),
+        (2, b"mystery", b""),
+        // Numbers and unary operators.
+        (11, b"2.5", b" ;"),
+        (20, b"+", b"4"),
+        (20, b"+", b"+ + button2"),
+        (21, b"-", b"3.25"),
+        (21, b"-", b"button4.value"),
+        (21, b"-", b"-gate"),
+        (21, b"-", b";"),
+        (24, b"!", b"0"),
+        (24, b"!", b"2"),
+        (24, b"!", b"speed"),
+        (24, b"!", b"(button1)"),
+        (24, b"!", b")"),
+        // Parentheses.
+        (9, b"(", b"1 + 2)"),
+        (9, b"(", b"button3 * 2;"),
+        (9, b"(", b"1;"),
+        // Not a term.
+        (0, b"", b""),
+        (1, b"#", b""),
+        (3, b"=", b"1"),
+        (10, b")", b""),
+        (22, b"*", b"2"),
+        (39, b"?", b""),
+        (0xffff_ffff, b"", b""),
+    ];
+
+    pub(crate) fn pu_test_str(c: &mut Cpu, at: u32, s: &[u8]) {
+        for (i, &b) in s.iter().enumerate() {
+            c.bus.write8(at + i as u32, b);
+        }
+        c.bus.write8(at + s.len() as u32, 0);
+    }
+
+    /// `InputParser_ParseUnary` against the generated body with every
+    /// callee real (the tokenizer reads a source text after the current
+    /// token): each kind of term, each modifier and syntax error, nested
+    /// unary operators (the generated recursion), parenthesised expressions
+    /// and every built-in function keyword, and tokens that are no term.
+    #[test]
+    fn input_parser_parse_unary_matches() {
+        use crate::difftest::{check, elf_image, scramble, Rng, GAME_GP};
+        let funcs = 14u32;
+        let n = PU_SCENARIOS.len() as u32 + funcs + 2;
+        check(
+            ee::s10::f_00323bd8__generated,
+            input_parser_parse_unary,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0032_3bd8 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                elf_image(c);
+                c.pc = 0x0032_3bd8;
+                c.g[A0][0] = sx(PU_PARSER);
+                let k = seed % n;
+                let (tok, text, rest): (u32, &[u8], &[u8]) = if (k as usize) < PU_SCENARIOS.len() {
+                    PU_SCENARIOS[k as usize]
+                } else if k - (PU_SCENARIOS.len() as u32) < funcs {
+                    // max min pow atan2 take two arguments, the rest one.
+                    let f = k - PU_SCENARIOS.len() as u32;
+                    let rest: &[u8] = if f < 4 {
+                        &b"(1, button2)"[..]
+                    } else {
+                        &b"(speed)"[..]
+                    };
+                    (25 + f, &b"f"[..], rest)
+                } else if k % 2 == 0 {
+                    (25, &b"max"[..], &b"1)"[..])
+                } else {
+                    (30, &b"sin"[..], &b""[..])
+                };
+                let p = PU_PARSER;
+                // Tokenizer: source, position, file name, line.
+                pu_test_str(c, PU_SRC, rest);
+                c.bus.write32(p, PU_SRC);
+                c.bus.write32(p + 4, rest.len() as u32);
+                c.bus.write32(p + 8, PU_SRC);
+                pu_test_str(c, p + 0xc, b"keys.map");
+                c.bus.write32(p + 0x8c, r.next_u32() % 200);
+                c.bus.write32(p + 0x90, 0);
+                c.bus.write32(p + 0x94, 0);
+                // The current token.
+                c.bus.write32(p + PARSE_UNARY_TOKEN, tok);
+                pu_test_str(c, p + PARSE_UNARY_TEXT, text);
+                let value = if seed % 5 == 0 { 0 } else { r.f32(100.0) };
+                c.bus.write32(p + PARSE_UNARY_VALUE, value);
+                // Free expression nodes.
+                for i in 0..48u32 {
+                    let node = PU_NODES + 0x10 * i;
+                    c.bus.write32(node, r.next_u32());
+                    c.bus
+                        .write32(node + 4, if i == 47 { 0 } else { node + 0x10 });
+                }
+                c.bus.write32(p + PARSE_UNARY_FREE_NODES, PU_NODES);
+                // Identifiers and the one being defined ("self").
+                c.bus
+                    .write32(p + PARSE_UNARY_IDENT_COUNT, PU_IDENTS.len() as u32);
+                for (i, (name, kind)) in PU_IDENTS.iter().enumerate() {
+                    let e = p + PARSE_UNARY_IDENTS + 0x44 * i as u32;
+                    let expr = PU_EXPRS + 0x10 * i as u32;
+                    pu_test_str(c, e, name);
+                    c.bus.write32(e + PARSE_UNARY_IDENT_EXPR, expr);
+                    c.bus.write32(expr, *kind);
+                    let v = if seed % 7 == 0 { 0 } else { r.f32(10.0) };
+                    c.bus.write32(expr + 4, v);
+                    c.bus.write32(expr + 8, r.next_u32());
+                }
+                let current = p + PARSE_UNARY_IDENTS + 0x44 * 2;
+                c.bus
+                    .write32(p + 0x1_0000 + PARSE_UNARY_CURRENT_IDENT, current);
+            },
+        );
+    }
+
+    /// The libc character-class table `tolower` reads (bit 0: uppercase).
+    pub(crate) fn oc396_ctype_upper(c: &mut Cpu) {
+        for ch in b'A'..=b'Z' {
+            c.bus.write8(0x0049_9c81 + ch as u32, 1);
+        }
+    }
+
+    /// The input map's built-in names, from a pool of near misses.
+    #[test]
+    fn input_parser_lookup_builtin_name_matches() {
+        const NAMES: &[&[u8]] = &[
+            b"padtype",
+            b"PadType",
+            b"padtyp",
+            b"arg0",
+            b"ARG7",
+            b"arg8",
+            b"arg12",
+            b"arg3x",
+            b"arg3_",
+            b"arg",
+            b"argx",
+            b"config0",
+            b"Config22",
+            b"config23",
+            b"config5Z",
+            b"config9_",
+            b"config",
+            b"configs",
+            b"conf1",
+            b"x",
+            b"",
+            b"arg05",
+            b"config017",
+        ];
+        check(
+            ee::s10::f_00321880__generated,
+            input_parser_lookup_builtin_name,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0396_0006 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0032_1880;
+                oc396_ctype_upper(c);
+                put_str_oc396(c, 0x004a_3f18, b"padtype");
+                put_str_oc396(c, 0x004a_3f20, b"arg");
+                put_str_oc396(c, 0x004a_3f28, b"config");
+                let name = DATA + 0x100;
+                put_str_oc396(c, name, NAMES[(seed as usize) % NAMES.len()]);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(name);
+            },
+        );
+    }
+
+    // ------------------------------------------------- expression parser
+
+    /// Run guest function `f` at `addr` with `a0` from a setup, back to `RA`.
+    pub(crate) fn oc396_run(c: &mut Cpu, addr: u32, f: GuestFn, a0: u32) {
+        c.g[A0][0] = sx(a0);
+        c.g[RA][0] = sx(0x0000_4f00);
+        c.pc = addr;
+        f(c);
+        assert_eq!(c.pc, 0x0000_4f00, "setup call {addr:#x} did not return");
+        c.g[RA][0] = crate::difftest::RA as u64;
+    }
+
+    /// A parser over `text` with its first token read (the real tokenizer),
+    /// a free list of 24 nodes, entered at `entry`.
+    pub(crate) fn oc396_parser(c: &mut Cpu, seed: u32, text: &[u8], entry: u32) {
+        machine(c, seed, entry as u64, 0);
+        crate::difftest::elf_image(c);
+        crate::game::fe::feasyncfile::tests::env(c);
+        let this = DATA + 0x400;
+        let buf = DATA + 0x1000;
+        for off in (0..0x100).step_by(4) {
+            c.bus.write32(this + off, 0);
+        }
+        put_str_oc396(c, buf, text);
+        c.bus.write32(this, buf); // text
+        c.bus.write32(this + 4, text.len() as u32); // length
+        c.bus.write32(this + 8, buf); // position
+        put_str_oc396(c, this + 0xc, b"pad.map");
+        c.bus.write32(this + 0x8c, 1); // line
+        let nodes = DATA + 0x2000;
+        for i in 0..24 {
+            let next = if i == 23 { 0 } else { nodes + 0x10 * (i + 1) };
+            put_words(c, nodes + 0x10 * i, &[0, next, 0, 0]);
+        }
+        c.bus.write32(this + 0xe0, nodes);
+        oc396_run(c, 0x0032_1af0, ee::s10::f_00321af0, this);
+        c.pc = entry;
+        c.g[A0][0] = sx(this);
+    }
+
+    #[test]
+    fn input_parser_parse_comparison_matches() {
+        const EXPRS: &[&[u8]] = &[
+            b"1<2",
+            b"2>=2",
+            b"3>4",
+            b"1<=0",
+            b"2==2",
+            b"2!=3",
+            b"5==4",
+            b"3!=3",
+            b"1<2<3",
+            b"1+2>2",
+            b"arg1<2",
+            b"2>arg3",
+            b"arg1==arg2",
+            b"1<",
+            b"",
+            b"7",
+            b"padtype!=1",
+            b"1>=2>=0",
+            b"4<=4",
+            b"2>1",
+            b"0.5<=0.25",
+            b"1==1!=0",
+        ];
+        check(
+            ee::s10::f_003236d8__generated,
+            input_parser_parse_comparison,
+            2 * EXPRS.len() as u32,
+            &|c, seed| {
+                oc396_parser(c, seed, EXPRS[seed as usize % EXPRS.len()], 0x0032_36d8);
+            },
+        );
+    }
+
+    #[test]
+    fn input_parser_parse_additive_matches() {
+        const EXPRS: &[&[u8]] = &[
+            b"1+2",
+            b"5-3",
+            b"1+2-4+8",
+            b"arg1+2",
+            b"2+arg1",
+            b"arg1-1+3",
+            b"-1+2",
+            b"1-",
+            b"3",
+            b"2*3+1",
+            b"1+2*3",
+            b"arg2+arg3-1",
+            b"1+2<3",
+            b"+",
+            b"1-arg1",
+            b"arg1-arg2",
+            b"4-2-1",
+        ];
+        check(
+            ee::s10::f_00323900__generated,
+            input_parser_parse_additive,
+            2 * EXPRS.len() as u32,
+            &|c, seed| {
+                oc396_parser(c, seed, EXPRS[seed as usize % EXPRS.len()], 0x0032_3900);
+            },
+        );
+    }
+
+    #[test]
+    fn input_parser_parse_multiplicative_matches() {
+        const EXPRS: &[&[u8]] = &[
+            b"2*3",
+            b"8/2",
+            b"2*3/4*5",
+            b"arg1*2",
+            b"2*arg1",
+            b"arg1/4*2",
+            b"3*",
+            b"6",
+            b"2/0",
+            b"1*2+3",
+            b"arg1*arg2",
+            b"4/arg1",
+            b"*",
+            b"2/4/8",
+            b"arg2/arg3",
+        ];
+        check(
+            ee::s10::f_00323a68__generated,
+            input_parser_parse_multiplicative,
+            2 * EXPRS.len() as u32,
+            &|c, seed| {
+                oc396_parser(c, seed, EXPRS[seed as usize % EXPRS.len()], 0x0032_3a68);
             },
         );
     }

@@ -110,6 +110,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         irradiance_add_camera_relative_light,
         "Irradiance_AddCameraRelativeLight",
     ),
+    (
+        0x0019_ee88,
+        fe_module_rider_preview_render,
+        "FEModule_RiderPreviewRender",
+    ),
+    (
+        0x0019_f2d0,
+        fe_module_rider_preview_apply_transform,
+        "FEModule_RiderPreviewApplyTransform",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1410,6 +1420,347 @@ pub fn irradiance_add_camera_relative_light(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// FEModule_RiderPreviewApplyTransform (0x19f2d0)
+
+/// Preview fields: the rider model, the two pose halves (0x20 bytes each),
+/// the two bones reset to the identity, the "single pose" flag, dirty flag.
+pub(crate) const RIDER_PREVIEW_MODEL: u32 = 0x8;
+
+pub(crate) const RIDER_PREVIEW_DIRTY: u32 = 0x14;
+
+pub(crate) const RIDER_PREVIEW_POSE: u32 = 0xc30;
+
+pub(crate) const RIDER_PREVIEW_BONES: [u32; 2] = [0xcac, 0xcb0];
+
+pub(crate) const RIDER_PREVIEW_SINGLE_POSE: u32 = 0xccc;
+
+/// `model->table[self->bone] = *(Quad*)src` (table at model + `table`).
+pub(crate) fn rider_preview_reset_bone(
+    c: &mut Cpu,
+    bone: u32,
+    table: u32,
+    src_reg: usize,
+    model_reg: usize,
+    last: bool,
+) {
+    let s0 = c.g[S0][0] as u32;
+    c.g[model_reg][0] = c.lw(s0.wrapping_add(RIDER_PREVIEW_MODEL));
+    c.g[V0][0] = c.lw(s0.wrapping_add(bone));
+    let tbl_reg = if model_reg == V1 { A0 } else { A2 };
+    c.g[tbl_reg][0] = c.lw((c.g[model_reg][0] as u32).wrapping_add(table));
+    if !last {
+        c.lq(V1, c.g[src_reg][0] as u32);
+    }
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
+    if last {
+        c.lq(V1, c.g[src_reg][0] as u32);
+    }
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[tbl_reg][0] as u32));
+    c.sq(V1, c.g[V0][0] as u32);
+}
+
+/// `void FEModule_RiderPreviewApplyTransform(FERiderPreview* self)`
+/// (0x19f2d0): pose the preview rider. With the single-pose flag both halves
+/// of the pose get the first one; otherwise the two halves are the preview's
+/// two poses and its two marked bones are reset to the identity quads at
+/// 0x4ff130 / 0x4ff220 first. Then `RiderModel_ApplyPose` and
+/// `RiderModel_BuildBoneMatrices`; marks the preview dirty.
+pub fn fe_module_rider_preview_apply_transform(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save_ra(c, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        let s0 = c.g[S0][0] as u32;
+        c.g[V0][0] = c.lw(s0.wrapping_add(RIDER_PREVIEW_SINGLE_POSE));
+        c.g[A1][0] = c.g[SP][0];
+        let sp_ = sp(c);
+        if c.g[V0][0] != 0 {
+            c.cycles += 12;
+            c.lq(V1, s0.wrapping_add(RIDER_PREVIEW_POSE));
+            c.lq(V0, s0.wrapping_add(RIDER_PREVIEW_POSE + 0x10));
+            c.g[A0][0] = c.lw(s0.wrapping_add(RIDER_PREVIEW_MODEL));
+            c.sq(V1, sp_.wrapping_add(0x20));
+            c.sq(V0, sp_.wrapping_add(0x30));
+            c.sq(V1, sp_);
+            c.sq(V0, sp_.wrapping_add(0x10));
+            call_ptr(c, 0x0031_0200, 0x0019_f30c)?; // RiderModel_ApplyPose(model, pose)
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_PREVIEW_MODEL));
+            call_ptr(c, 0x0031_03f0, 0x0019_f314)?; // RiderModel_BuildBoneMatrices
+        } else {
+            c.cycles += 45;
+            c.lq(A0, s0.wrapping_add(RIDER_PREVIEW_POSE));
+            c.g[A3][0] = 0x50_0000;
+            c.lq(A2, s0.wrapping_add(RIDER_PREVIEW_POSE + 0x10));
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0xed0));
+            c.lq(V0, s0.wrapping_add(RIDER_PREVIEW_POSE + 0x30));
+            c.g[T0][0] = 0x50_0000;
+            c.lq(V1, s0.wrapping_add(RIDER_PREVIEW_POSE + 0x20));
+            c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0xde0));
+            c.sq(A0, sp_);
+            c.sq(A2, sp_.wrapping_add(0x10));
+            c.sq(V0, sp_.wrapping_add(0x30));
+            c.sq(V1, sp_.wrapping_add(0x20));
+            for (k, bone) in RIDER_PREVIEW_BONES.into_iter().enumerate() {
+                rider_preview_reset_bone(c, bone, 0x24, A3, if k == 0 { V1 } else { A0 }, false);
+                rider_preview_reset_bone(c, bone, 0x28, T0, A0, k == 1);
+            }
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_PREVIEW_MODEL));
+            call_ptr(c, 0x0031_0200, 0x0019_f3c4)?; // RiderModel_ApplyPose(model, pose)
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_PREVIEW_MODEL));
+            call_ptr(c, 0x0031_03f0, 0x0019_f3cc)?; // RiderModel_BuildBoneMatrices
+        }
+        c.g[V0][0] = 0x1;
+        c.cycles += 5;
+        frame.restore_ra(c, 0x40);
+        c.sw(
+            (c.g[S0][0] as u32).wrapping_add(RIDER_PREVIEW_DIRTY),
+            c.g[V0][0],
+        );
+        frame.restore(c, S0, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// FEModule_RiderPreviewRender (0x19ee88)
+
+/// Preview fields read by the render: the rider type, a pending load, the
+/// "outfit" override, the draw layer and the attached effects.
+pub(crate) const RIDER_PREVIEW_TYPE: u32 = 0x0;
+
+pub(crate) const RIDER_PREVIEW_LAYER: u32 = 0xc2c;
+
+pub(crate) const RIDER_PREVIEW_FX: u32 = 0xc70;
+
+pub(crate) const RIDER_PREVIEW_OUTFIT: u32 = 0xcd0;
+
+pub(crate) const RIDER_PREVIEW_PENDING: u32 = 0xcd4;
+
+/// `void FEModule_RiderPreviewRender(FERiderPreview* self)` (0x19ee88): draw
+/// the front-end rider preview once it is loaded and posed: build its light
+/// set (the irradiance entry for its type, types 7/8 and outfit-overridden
+/// 0/7/8 using type 6's, plus a light relative to the root bone), set it on
+/// the graphics manager, draw the model (at the preview's layer, if any) and
+/// its attached effects, then restore the draw state's layer field.
+pub fn fe_module_rider_preview_render(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0xe0);
+        frame.save(c, S0, 0xd0);
+        frame.save(c, S1, 0xc0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0xb0);
+        'exit: {
+            let s0 = c.g[S0][0] as u32;
+            c.g[V0][0] = c.lw(s0.wrapping_add(RIDER_PREVIEW_PENDING));
+            if (c.g[V0][0] as i64) >= 0 {
+                break 'exit;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(s0.wrapping_add(RIDER_PREVIEW_MODEL));
+            if c.g[V0][0] == 0 {
+                break 'exit;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(s0.wrapping_add(RIDER_PREVIEW_DIRTY));
+            if c.g[V0][0] == 0 {
+                break 'exit;
+            }
+            c.cycles += 5;
+            c.g[A0][0] = c.g[SP][0];
+            call_ptr(c, 0x0038_9260, 0x0019_eec8)?; // Irradiance_Clear(&lights)
+                                                    // The light type (a0).
+            let s0 = c.g[S0][0] as u32;
+            c.g[V0][0] = c.lw(s0.wrapping_add(RIDER_PREVIEW_OUTFIT));
+            let outfit = c.g[V0][0] != 0;
+            c.g[A0][0] = c.lw(s0.wrapping_add(RIDER_PREVIEW_TYPE));
+            let lt = |c: &mut Cpu, n: i64| ((c.g[A0][0] as i64) < n) as u64;
+            // 0: from 0x19eef8 (v0 = type < 9), 1: 0x19eefc (v0 set), 2: 0x19ef0c.
+            let mut stage = 0;
+            if outfit {
+                c.cycles += 2;
+                if c.g[A0][0] == 0 {
+                    c.g[A0][0] = 0x6;
+                } else {
+                    c.cycles += 2;
+                    let negative = (c.g[A0][0] as i64) < 0;
+                    c.g[V0][0] = lt(c, 9);
+                    if !negative {
+                        c.cycles += 2;
+                        let big = c.g[V0][0] == 0;
+                        c.g[V0][0] = lt(c, 7);
+                        if big {
+                            stage = 2;
+                        } else {
+                            c.cycles += 2;
+                            let small = c.g[V0][0] != 0;
+                            c.g[V0][0] = lt(c, 9);
+                            if small {
+                                stage = 1;
+                            } else {
+                                c.cycles += 1;
+                                c.g[A0][0] = 0x6;
+                            }
+                        }
+                    }
+                }
+            }
+            if stage == 0 {
+                c.cycles += 1;
+                c.g[V0][0] = lt(c, 9);
+                stage = 1;
+            }
+            if stage == 1 {
+                c.cycles += 2;
+                let big = c.g[V0][0] == 0;
+                c.g[V1][0] = lt(c, 7);
+                if !big {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x6;
+                    if c.g[V1][0] == 0 {
+                        c.g[A0][0] = c.g[V0][0];
+                    }
+                }
+            }
+            // The type's irradiance entry (jump table at 0x460b40).
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[A0][0] < 0xa) as u64;
+            let in_table = c.g[V0][0] != 0;
+            c.g[V0][0] = 0x46_0000;
+            if in_table {
+                c.cycles += 6;
+                c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xb40));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                let (cycles, name) = match c.g[A0][0] as u32 {
+                    0x0019_ef30 => (5, 0x1620),
+                    0x0019_ef44 => (5, 0x1628),
+                    0x0019_ef58 => (5, 0x1980),
+                    0x0019_ef6c => (5, 0x1638),
+                    0x0019_ef80 => (5, 0x1640),
+                    0x0019_ef94 => (5, 0x1988),
+                    0x0019_efa8 => (5, 0x1650),
+                    0x0019_efbc => (5, 0x1990),
+                    0x0019_efd0 => (5, 0x1660),
+                    0x0019_efe4 => (4, 0x1998),
+                    t => {
+                        c.jump_out(t, 0x0019_ee88, 0x0019_f134);
+                        return Ok(());
+                    }
+                };
+                c.cycles += cycles;
+                c.g[A0][0] = 0x50_0000;
+                c.g[A1][0] = 0x4a_0000;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x47f8));
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(name));
+                c.cycles += 11;
+                rider_preview_add_light(c, 0x0019_effc, 0x0019_f018)?;
+            } else {
+                c.cycles += 13;
+                c.g[A0][0] = 0x50_0000;
+                c.g[A1][0] = 0x4a_0000;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x47f8));
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x19a0));
+                rider_preview_add_light(c, 0x0019_f034, 0x0019_f050)?;
+            }
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_PREVIEW_MODEL));
+            // A light at the root bone.
+            c.cycles += 30;
+            c.g[A2][0] = 0x4a_0000;
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1978));
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x0031_0c48, 0x0019_f064)?; // RiderModel_GetBoneSkelIndex(model, 0, name)
+            let sp_ = sp(c);
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_PREVIEW_MODEL));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 5);
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 12);
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
+            c.g[A1][0] = sx(sp_.wrapping_add(0xa0));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+            c.lq(V1, c.g[V0][0] as u32);
+            c.sq(V1, sp_.wrapping_add(0xa0));
+            call_ptr(c, 0x0038_9cb8, 0x0019_f090)?; // Irradiance_AddCameraRelativeLight
+                                                    // GrMan->SetLights(&lights, 1) (vtable slot 0x228).
+            let gp = c.g[GP][0] as u32;
+            c.g[A3][0] = c.lw(gp.wrapping_sub(0x854));
+            c.g[A1][0] = c.g[SP][0];
+            c.g[A2][0] = 0x1;
+            c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x10d8));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x228));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x22c));
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0019_f0b0)?;
+            // The draw state's layer field (bits 5..9): keep the old one in s1.
+            let gp = c.g[GP][0] as u32;
+            c.g[V0][0] = c.lw(gp.wrapping_sub(0x854));
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_PREVIEW_LAYER));
+            c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xe84));
+            c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] = c.g[A0][0] & 0x3e0;
+            let no_layer = (c.g[V1][0] as i64) < 0;
+            c.g[S1][0] = sx((c.g[V0][0] as u32) >> 5);
+            if !no_layer {
+                c.cycles += 6;
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 5);
+                c.g[V0][0] = 0xffff_ffff_ffff_fc1f;
+                c.g[V0][0] &= c.g[A0][0];
+                c.g[V1][0] &= 0x3e0;
+                c.g[V0][0] |= c.g[V1][0];
+                c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+            }
+            c.cycles += 16;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_PREVIEW_MODEL));
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            c.g[A3][0] = 0;
+            call_ptr(c, 0x0031_0640, 0x0019_f0f8)?; // RiderModel_Render(model, 0, 0, 0)
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RIDER_PREVIEW_FX));
+            call_ptr(c, 0x002f_2088, 0x0019_f100)?; // AttachedEmitterFX_Render
+            let gp = c.g[GP][0] as u32;
+            c.g[A0][0] = c.lw(gp.wrapping_sub(0x854));
+            c.g[A1][0] = 0xffff_ffff_ffff_fc1f;
+            c.g[A2][0] = sx((c.g[S1][0] as u32) << 5);
+            c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xe84));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] &= c.g[A1][0];
+            c.g[V0][0] |= c.g[A2][0];
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        }
+        frame.restore(c, S0, 0xd0);
+        c.cycles += 4;
+        frame.restore(c, S1, 0xc0);
+        frame.restore_ra(c, 0xb0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `Irradiance_AddScaled(&lights, Irradiance_GetEntryByName(set, name),
+/// 0x504810, 1.0)` (a0/a1 = set, name are set).
+pub(crate) fn rider_preview_add_light(
+    c: &mut Cpu,
+    ret_get: u32,
+    ret_add: u32,
+) -> crate::call::Flow {
+    call_ptr(c, 0x0038_ac20, ret_get)?; // Irradiance_GetEntryByName
+    c.g[A2][0] = 0x50_0000;
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(1, 12);
+    c.g[A1][0] = c.g[V0][0];
+    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4810));
+    c.g[A0][0] = c.g[SP][0];
+    call_ptr(c, 0x0038_9590, ret_add)?; // Irradiance_AddScaled
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1804,6 +2155,240 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(IRR);
                 c.g[A1][0] = sx(SUN);
                 c.f[12] = r.f32(4.0);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+    use crate::difftest::put_words;
+
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    pub(crate) use crate::game::ai::rider::tests::oc396_fake;
+    pub(crate) use crate::game::ai::rider::tests::oc396_fake_call;
+    pub(crate) use crate::game::ai::rider::tests::OC396_CTRL;
+    pub(crate) use crate::game::ai::rider::tests::OC396_MAGIC;
+    pub(crate) use crate::game::ai::rider::tests::OC396_RET;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    /// A NUL-terminated string at `at`.
+    pub(crate) fn put_str_oc396(c: &mut Cpu, at: u32, s: &[u8]) {
+        for (i, b) in s.iter().enumerate() {
+            c.bus.write8(at + i as u32, *b);
+        }
+        c.bus.write8(at + s.len() as u32, 0);
+    }
+
+    oc396_fake!(
+        oc396_fake_apply_pose,
+        OC396_PREV_APPLY_POSE,
+        0x0031_0200,
+        ee::s10::f_00310200__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_bone_matrices,
+        OC396_PREV_BONE_MATRICES,
+        0x0031_03f0,
+        ee::s10::f_003103f0__generated
+    );
+
+    pub(crate) fn oc396_install_model_fakes() {
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00310200),
+            oc396_fake_apply_pose,
+            &OC396_PREV_APPLY_POSE,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003103F0),
+            oc396_fake_bone_matrices,
+            &OC396_PREV_BONE_MATRICES,
+        );
+    }
+
+    /// Both pose modes, the model calls faked.
+    #[test]
+    fn fe_module_rider_preview_apply_transform_matches() {
+        oc396_install_model_fakes();
+        covered(
+            ee::s03::f_0019f2d0__generated,
+            fe_module_rider_preview_apply_transform,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0019_f2d0, 2);
+                c.pc = 0x0019_f2d0;
+                c.bus.write32(OC396_CTRL, OC396_MAGIC);
+                let this = DATA + 0x100;
+                let model = DATA + 0x1000;
+                c.bus.write32(this + RIDER_PREVIEW_MODEL, model);
+                c.bus.write32(model + 0x24, DATA + 0x2000);
+                c.bus.write32(model + 0x28, DATA + 0x3000);
+                c.bus
+                    .write32(this + RIDER_PREVIEW_SINGLE_POSE, (seed % 2) * r.next_u32());
+                for b in RIDER_PREVIEW_BONES {
+                    c.bus.write32(this + b, r.next_u32() % 16);
+                }
+                fill(c, &mut r, this + RIDER_PREVIEW_POSE, 16);
+                fill(c, &mut r, 0x004f_f130, 4);
+                fill(c, &mut r, 0x004f_f220, 4);
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    oc396_fake!(
+        oc396_fake_irr_clear,
+        OC396_PREV_IRR_CLEAR,
+        0x0038_9260,
+        ee::s12::f_00389260__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_irr_entry,
+        OC396_PREV_IRR_ENTRY,
+        0x0038_ac20,
+        ee::s12::f_0038ac20__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_irr_add,
+        OC396_PREV_IRR_ADD,
+        0x0038_9590,
+        ee::s12::f_00389590__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_irr_cam,
+        OC396_PREV_IRR_CAM,
+        0x0038_9cb8,
+        ee::s12::f_00389cb8__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_model_render,
+        OC396_PREV_MODEL_RENDER,
+        0x0031_0640,
+        ee::s10::f_00310640__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_fx_render,
+        OC396_PREV_FX_RENDER,
+        0x002f_2088,
+        ee::s09::f_002f2088__generated
+    );
+
+    /// The preview render: not ready (pending, no model, not posed) or every
+    /// rider type with and without the outfit override; the root bone found
+    /// or not (real lookup, `strcmp`); with and without a layer.
+    #[test]
+    fn fe_module_rider_preview_render_matches() {
+        hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00389260),
+            oc396_fake_irr_clear,
+            &OC396_PREV_IRR_CLEAR,
+        );
+        hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0038AC20),
+            oc396_fake_irr_entry,
+            &OC396_PREV_IRR_ENTRY,
+        );
+        hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00389590),
+            oc396_fake_irr_add,
+            &OC396_PREV_IRR_ADD,
+        );
+        hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00389CB8),
+            oc396_fake_irr_cam,
+            &OC396_PREV_IRR_CAM,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00310640),
+            oc396_fake_model_render,
+            &OC396_PREV_MODEL_RENDER,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002F2088),
+            oc396_fake_fx_render,
+            &OC396_PREV_FX_RENDER,
+        );
+        covered(
+            ee::s03::f_0019ee88__generated,
+            fe_module_rider_preview_render,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0019_ee88, 7);
+                c.pc = 0x0019_ee88;
+                c.bus.write32(OC396_CTRL, OC396_MAGIC);
+                fill(c, &mut r, OC396_RET, 8);
+                put_words(
+                    c,
+                    0x0046_0b40,
+                    &[
+                        0x19ef30, 0x19ef44, 0x19ef58, 0x19ef6c, 0x19ef80, 0x19ef94, 0x19efa8,
+                        0x19efbc, 0x19efd0, 0x19efe4,
+                    ],
+                );
+                let this = DATA + 0x100;
+                let model = DATA + 0x1000;
+                let ready = seed % 8 != 0;
+                c.bus.write32(
+                    this + RIDER_PREVIEW_PENDING,
+                    if ready { u32::MAX } else { seed % 3 },
+                );
+                c.bus.write32(
+                    this + RIDER_PREVIEW_MODEL,
+                    if seed % 16 == 1 { 0 } else { model },
+                );
+                c.bus.write32(
+                    this + RIDER_PREVIEW_DIRTY,
+                    if seed % 16 == 2 { 0 } else { 1 },
+                );
+                c.bus
+                    .write32(this + RIDER_PREVIEW_TYPE, (seed / 2 % 13).wrapping_sub(1));
+                c.bus.write32(this + RIDER_PREVIEW_OUTFIT, seed % 2);
+                c.bus.write32(
+                    this + RIDER_PREVIEW_LAYER,
+                    if r.next_u32() % 3 == 0 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % 32
+                    },
+                );
+                c.bus.write32(this + RIDER_PREVIEW_FX, r.next_u32());
+                // The model's skeleton: the root bone's name list.
+                put_str_oc396(c, 0x004a_1978, b"root");
+                c.bus.write32(model + 0x1c, DATA + 0x1100);
+                c.bus.write32(DATA + 0x1100, 0);
+                c.bus.write32(model + 0xc, DATA + 0x1200);
+                let skel = DATA + 0x1200;
+                let n = r.next_u32() % 3;
+                c.bus.write32(skel + 0x44, n);
+                c.bus.write32(skel + 0x38, DATA + 0x1400);
+                c.bus.write32(skel + 4, r.next_u32() % 4);
+                for k in 0..2 {
+                    let name: &[u8] = if r.next_u32() % 2 == 0 {
+                        b"root"
+                    } else {
+                        b"spine"
+                    };
+                    put_str_oc396(c, DATA + 0x1400 + 0x50 * k, name);
+                }
+                c.bus.write32(model + 0x2c, DATA + 0x1800);
+                fill(c, &mut r, DATA + 0x17e0, 0x30);
+                // The graphics manager: vtable slot 0x228, draw state.
+                let gr = DATA + 0x2000;
+                c.bus.write32(GAME_GP - 0x854, gr);
+                c.bus.write32(gr + 0x10d8, DATA + 0x2100);
+                c.bus.write16(DATA + 0x2100 + 0x228, 0);
+                c.bus
+                    .write32(DATA + 0x2100 + 0x22c, crate::difftest::fakes::FAKE);
+                c.bus.write32(gr + 0xe84, DATA + 0x2200);
+                c.bus.write32(DATA + 0x2208, r.next_u32());
+                c.g[A0][0] = sx(this);
             },
         );
     }

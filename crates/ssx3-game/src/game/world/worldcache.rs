@@ -11,6 +11,7 @@ use crate::call::Callee;
 use crate::call::Frame;
 use crate::call::Unwound;
 use crate::call::VSlot;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::animation::animsequencer::dtor;
@@ -178,6 +179,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x003a_8e20,
         cworld_cache_release_resource,
         "cWorldCache_ReleaseResource",
+    ),
+    (
+        0x003a_7878,
+        section_allocator_alloc,
+        "SectionAllocator_Alloc",
     ),
 ];
 
@@ -2979,6 +2985,228 @@ pub fn world_cache_resolve_resource(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// SectionAllocator_Alloc (0x3a7878)
+
+/// `SectionAllocator`: block pool (+0), block count (+8), block list head
+/// (+0xc), current block (+0x10). Block: data (+0), size (+4), used (+8),
+/// padding total (+0xc), next (+0x14).
+pub(crate) const SECTION_ALLOC_COUNT: u32 = 0x8;
+
+pub(crate) const SECTION_ALLOC_HEAD: u32 = 0xc;
+
+pub(crate) const SECTION_ALLOC_CUR: u32 = 0x10;
+
+pub(crate) const SECTION_ALLOC_ENTRY: u32 = 0x003a_7878;
+
+/// Resume points (loop back edges that may unwind): take the found block,
+/// and the block scan's head.
+pub(crate) const SECTION_ALLOC_TAKE: u32 = 0x003a_792c;
+
+pub(crate) const SECTION_ALLOC_SCAN: u32 = 0x003a_7978;
+
+pub(crate) const SECTION_ALLOC_END: u32 = 0x003a_7a20;
+
+/// The new-block fallback (not a resume point).
+pub(crate) const SECTION_ALLOC_NEW: u32 = 0x003a_79c8;
+
+pub(crate) const WORLD_BLOCK_POOL_ALLOC_BLOCK: Callee = Callee {
+    addr: 0x003a_7768,
+    f: ee::s13::WorldBlockPool_AllocBlock,
+};
+
+/// Allocate a fresh block from the pool and make it the list head and the
+/// current block (count + 1). `last` is the register the count goes through.
+pub(crate) fn section_alloc_new_block(c: &mut Cpu, ret: u32, last: usize) -> crate::call::Flow {
+    let this = c.g[S0][0] as u32;
+    c.g[A0][0] = Addr(this).lw(c);
+    WORLD_BLOCK_POOL_ALLOC_BLOCK.call(c, ret)?;
+    let this = c.g[S0][0] as u32;
+    let block = c.g[V0][0] as u32;
+    Addr(block + 8).sw(c, 0);
+    Addr(block + 0xc).sw(c, 0);
+    c.g[V1][0] = Addr(this + SECTION_ALLOC_HEAD).lw(c);
+    Addr(block + 0x14).sw(c, c.g[V1][0]);
+    Addr(this + SECTION_ALLOC_CUR).sw(c, c.g[V0][0]);
+    c.g[last][0] = Addr(this + SECTION_ALLOC_COUNT).lw(c);
+    Addr(this + SECTION_ALLOC_HEAD).sw(c, c.g[V0][0]);
+    c.g[last][0] = sx((c.g[last][0] as u32).wrapping_add(1));
+    Addr(this + SECTION_ALLOC_COUNT).sw(c, c.g[last][0]);
+    Ok(())
+}
+
+/// Does `size` (s1) fit in the block whose used count is in `pos_reg`, at
+/// alignment a2? Leaves t1 = padding, v1 = padding + size, a0 = remainder,
+/// a1 = the block size (from `block`), LO/HI of the division.
+pub(crate) fn section_alloc_fits(c: &mut Cpu, block: u32, pos_reg: usize) -> bool {
+    c.cycles += 10;
+    c.div(0, pos_reg, A2);
+    c.g[A1][0] = Addr(block + 4).lw(c);
+    c.g[A0][0] = c.hi[0];
+    c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+    if c.g[A0][0] != 0 {
+        c.g[T1][0] = c.g[V1][0];
+    }
+    let end = (c.g[pos_reg][0] as u32)
+        .wrapping_add(c.g[T1][0] as u32)
+        .wrapping_add(c.g[S1][0] as u32);
+    let fits = (sx(end) as i64) < (c.g[A1][0] as i64);
+    c.g[V0][0] = fits as u64;
+    c.g[V1][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[S1][0] as u32));
+    fits
+}
+
+/// The allocation's tail: v0 = data + used + padding; the current block's
+/// padding total += padding.
+pub(crate) fn section_alloc_finish(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T1][0] as u32));
+    let cur = Addr((c.g[S0][0] as u32) + SECTION_ALLOC_CUR).lw(c);
+    c.g[A0][0] = cur;
+    let pad = Addr((cur as u32) + 0xc).lw(c);
+    c.g[V1][0] = sx((pad as u32).wrapping_add(c.g[T1][0] as u32));
+    Addr((cur as u32) + 0xc).sw(c, c.g[V1][0]);
+}
+
+/// `void* SectionAllocator_Alloc(SectionAllocator* this, int size, u32
+/// flags)` (0x3a7878): `size` bytes aligned to `4 << (flags >> 24 & 15)`,
+/// from the current block, else the first other block with room, else a new
+/// block (unaligned at its start). Resumable at its two loop back edges.
+pub fn section_allocator_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame { size: 0x40 };
+        let mut at = match c.pc {
+            SECTION_ALLOC_ENTRY => {
+                c.cycles += 10;
+                Frame::open(c, 0x40);
+                frame.save(c, S0, 0x30);
+                frame.save(c, S1, 0x20);
+                c.g[S0][0] = c.g[A0][0];
+                frame.save(c, S2, 0x10);
+                c.g[S1][0] = c.g[A1][0];
+                frame.save_ra(c, 0);
+                let this = c.g[S0][0] as u32;
+                c.g[V0][0] = Addr(this + SECTION_ALLOC_COUNT).lw(c);
+                c.g[S2][0] = c.g[A2][0];
+                if c.g[V0][0] == 0 {
+                    c.cycles += 11;
+                    section_alloc_new_block(c, 0x003a_78a8, V1)?;
+                }
+                // The current block.
+                c.cycles += 9;
+                let this = c.g[S0][0] as u32;
+                let cur = Addr(this + SECTION_ALLOC_CUR).lw(c);
+                c.g[T3][0] = cur;
+                c.g[V0][0] = sx((c.g[S2][0] as u32) >> 24) & 0xf;
+                c.g[V1][0] = 4;
+                c.g[A3][0] = Addr(cur as u32 + 8).lw(c);
+                c.g[A2][0] = sx(4u32 << (c.g[V0][0] as u32 & 31));
+                c.g[T1][0] = 0;
+                if section_alloc_fits(c, cur as u32, A3) {
+                    c.cycles += 5;
+                    let data = Addr(cur as u32).lw(c);
+                    c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    Addr(cur as u32 + 8).sw(c, c.g[V1][0]);
+                    c.g[V0][0] = sx((data as u32).wrapping_add(c.g[A3][0] as u32));
+                    section_alloc_finish(c);
+                    0
+                } else {
+                    // Other blocks, from the head (with at least two).
+                    c.cycles += 4;
+                    let count = Addr(this + SECTION_ALLOC_COUNT).lw(c);
+                    c.g[V0][0] = (count < 2) as u64;
+                    if count < 2 {
+                        SECTION_ALLOC_NEW
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = Addr(this + SECTION_ALLOC_HEAD).lw(c);
+                        Addr(this + SECTION_ALLOC_CUR).sw(c, c.g[V0][0]);
+                        if c.g[V0][0] == 0 {
+                            SECTION_ALLOC_NEW
+                        } else {
+                            c.cycles += 2;
+                            c.g[T4][0] = 0;
+                            SECTION_ALLOC_SCAN
+                        }
+                    }
+                }
+            }
+            SECTION_ALLOC_TAKE => SECTION_ALLOC_TAKE,
+            SECTION_ALLOC_SCAN => SECTION_ALLOC_SCAN,
+            pc => {
+                c.jump_out(pc, SECTION_ALLOC_ENTRY, SECTION_ALLOC_END);
+                return Ok(());
+            }
+        };
+        // `at`: 0 done, SCAN the block scan, TAKE a found block, NEW the
+        // new-block fallback.
+        loop {
+            match at {
+                SECTION_ALLOC_SCAN => {
+                    c.cycles += 3;
+                    let this = c.g[S0][0] as u32;
+                    let block = Addr(this + SECTION_ALLOC_CUR).lw(c);
+                    c.g[A3][0] = block;
+                    c.g[T2][0] = block;
+                    if block != c.g[T3][0] {
+                        c.cycles += 4;
+                        c.g[T0][0] = Addr(block as u32 + 8).lw(c);
+                        c.g[T1][0] = 0;
+                        if section_alloc_fits(c, block as u32, T0) {
+                            if back_edge_unwinds(c, SECTION_ALLOC_TAKE) {
+                                return Ok(());
+                            }
+                            at = SECTION_ALLOC_TAKE;
+                            continue;
+                        }
+                    }
+                    c.cycles += 3;
+                    let next = Addr((c.g[T2][0] as u32) + 0x14).lw(c);
+                    c.g[V0][0] = next;
+                    Addr(this + SECTION_ALLOC_CUR).sw(c, next);
+                    if next != 0 {
+                        if back_edge_unwinds(c, SECTION_ALLOC_SCAN) {
+                            return Ok(());
+                        }
+                        continue;
+                    }
+                    at = SECTION_ALLOC_NEW;
+                }
+                SECTION_ALLOC_TAKE => {
+                    c.cycles += 4;
+                    let block = c.g[A3][0] as u32;
+                    let data = Addr(block).lw(c);
+                    c.g[V1][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    Addr(block + 8).sw(c, c.g[V1][0]);
+                    c.g[V0][0] = sx((data as u32).wrapping_add(c.g[T0][0] as u32));
+                    section_alloc_finish(c);
+                    at = 0;
+                }
+                SECTION_ALLOC_NEW => {
+                    c.cycles += 16;
+                    section_alloc_new_block(c, 0x003a_79d0, A0)?;
+                    let block = c.g[V0][0] as u32;
+                    let used = Addr(block + 8).lw(c);
+                    c.g[V1][0] = sx((used as u32).wrapping_add(c.g[S1][0] as u32));
+                    Addr(block + 8).sw(c, c.g[V1][0]);
+                    let cur = Addr((c.g[S0][0] as u32) + SECTION_ALLOC_CUR).lw(c);
+                    c.g[A0][0] = cur;
+                    c.g[V0][0] = Addr(cur as u32).lw(c);
+                    at = 0;
+                }
+                _ => break,
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4333,6 +4561,83 @@ pub(crate) mod tests {
                 } else {
                     sx(r.next_u32())
                 };
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    #[test]
+    fn section_allocator_alloc_matches() {
+        check(
+            ee::s13::f_003a7878__generated,
+            section_allocator_alloc,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x7878 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.pc = SECTION_ALLOC_ENTRY;
+                let this = DATA;
+                let pool = DATA + 0x100;
+                // The section's blocks (0..3, listed from the head).
+                let n = seed % 4;
+                let block = |i: u32| DATA + 0x400 + 0x40 * i;
+                for i in 0..n {
+                    let b = block(i);
+                    c.bus.write32(b, DATA + 0x10000 * (i + 1));
+                    let size = 0x40 + r.next_u32() % 0x100;
+                    c.bus.write32(b + 4, size);
+                    c.bus.write32(b + 8, r.next_u32() % (size + 0x20));
+                    c.bus.write32(b + 0xc, r.next_u32() % 0x40);
+                    c.bus
+                        .write32(b + 0x14, if i + 1 < n { block(i + 1) } else { 0 });
+                }
+                c.bus.write32(this, pool);
+                c.bus.write32(
+                    this + SECTION_ALLOC_COUNT,
+                    if seed % 9 == 8 && n > 0 { 1 } else { n },
+                );
+                c.bus
+                    .write32(this + SECTION_ALLOC_HEAD, if n == 0 { 0 } else { block(0) });
+                let cur = if n == 0 { 0 } else { block(r.next_u32() % n) };
+                c.bus.write32(this + SECTION_ALLOC_CUR, cur);
+                // The pool's free blocks.
+                for i in 0..2 {
+                    let b = DATA + 0x800 + 0x40 * i;
+                    fill(c, &mut r, b, 0x10);
+                    c.bus.write32(b + 8, r.next_u32() % 0x40);
+                    c.bus.write32(b + 0x14, if i == 0 { b + 0x40 } else { 0 });
+                }
+                c.bus.write32(pool + 8, 2);
+                c.bus.write32(pool + 0x10, DATA + 0x800);
+                let size = r.next_u32() % 0x80;
+                let flags = (r.next_u32() % 4) << 24 | r.next_u32() & 0xf0ff_ffff;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = size as u64;
+                c.g[A2][0] = flags as u64;
+                if n > 0 && seed % 7 >= 5 {
+                    // Resume inside the frame at a back edge.
+                    let sp = crate::difftest::SP - 0x40;
+                    fill(c, &mut r, sp, 0x10);
+                    c.bus.write64(sp, crate::difftest::RA as u64);
+                    c.g[SP][0] = sx(sp);
+                    c.g[S0][0] = sx(this);
+                    c.g[S1][0] = size as u64;
+                    c.g[S2][0] = flags as u64;
+                    c.g[A2][0] = 4 << (r.next_u32() % 4);
+                    c.g[T3][0] = sx(DATA + 0x2000);
+                    c.g[T4][0] = 0;
+                    if seed % 7 == 5 {
+                        c.pc = SECTION_ALLOC_SCAN;
+                    } else {
+                        let b = block(r.next_u32() % n);
+                        c.pc = SECTION_ALLOC_TAKE;
+                        c.g[A3][0] = sx(b);
+                        c.g[T0][0] = sx(c.bus.read32(b + 8));
+                        c.g[T1][0] = (r.next_u32() % 16) as u64;
+                        c.g[V1][0] = c.g[T1][0] + size as u64;
+                    }
+                }
             },
         );
     }

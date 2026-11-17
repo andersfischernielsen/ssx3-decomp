@@ -19,6 +19,8 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::lh_2 as lh;
 pub(crate) use crate::game::ai::computer::sd;
+pub(crate) use crate::game::ai::rider::rider_update_script_sounds_put;
+pub(crate) use crate::game::ai::rider::rider_update_script_sounds_put70;
 pub(crate) use crate::game::animation::animsequencer::dtor;
 pub(crate) use crate::game::be::beintnetwork::ldl;
 pub(crate) use crate::game::be::beprepoststate::ea;
@@ -50,6 +52,7 @@ pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2;
 pub(crate) use crate::game::scripter::ssxscriptengine::sw_at;
 pub(crate) use crate::game::sound::bankmanager::race_type_in_range;
 pub(crate) use crate::game::sound::bankmonitor::leave;
+pub(crate) use crate::game::ui::uiengine::oc391_at;
 pub(crate) use crate::game::visualfx::boardtrailfx::p;
 pub(crate) use crate::game::worldpainter::quadtree::create_with;
 pub(crate) use crate::game::wscript::wscriptman::sw;
@@ -877,6 +880,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002a_0a30,
         ssx_audio_system_speech_rider_collision,
         "SSXAudioSystem_SpeechRiderCollision",
+    ),
+    (
+        0x0029_3948,
+        ssx_audio_system_calc_surface_loop_group2,
+        "SSXAudioSystem_CalcSurfaceLoopGroup2",
+    ),
+    (
+        0x0029_a7d8,
+        ssx_audio_system_play_trick_points_tick,
+        "SSXAudioSystem_PlayTrickPointsTick",
+    ),
+    (
+        0x002a_78f8,
+        ini_parser_skip_whitespace,
+        "IniParser_SkipWhitespace",
     ),
 ];
 
@@ -22926,6 +22944,457 @@ pub fn ssx_audio_system_speech_rider_collision(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// IniParser_SkipWhitespace (0x2a78f8)
+
+pub(crate) const INI_PARSER_SKIP_COMMENT: Callee = Callee {
+    addr: 0x002a_79c8,
+    f: ee::s08::IniParser_SkipComment,
+};
+
+pub(crate) const INI_PARSER_GET_CHAR: Callee = Callee {
+    addr: 0x002a_78e0,
+    f: ee::s08::IniParser_GetChar,
+};
+
+/// `IniParser+8`: the read cursor (a `const char*`).
+pub(crate) const INI_PARSER_CURSOR: u32 = 0x8;
+
+/// `int IniParser_SkipWhitespace(IniParser* self)` (0x2a78f8): skip
+/// comments, spaces, tabs, newlines and carriage returns. Returns 1 at the
+/// end of the text, when a comment ran to the end (`SkipComment == 1`) or at
+/// a section header (`[`), else 0 (another character).
+pub fn ini_parser_skip_whitespace(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S1, 0x50);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x40);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S4, 0x20);
+        frame.save(c, S5, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(oc391_at(c, S0, INI_PARSER_CURSOR)).lw(c);
+        c.g[V1][0] = Addr(r32(c, V0)).lb(c);
+        c.g[S1][0] = 1;
+        'done: {
+            if c.g[V1][0] != 0 {
+                c.cycles += 5;
+                c.g[S5][0] = b' ' as u64;
+                c.g[S4][0] = b'\t' as u64;
+                c.g[S3][0] = b'\n' as u64;
+                c.g[S2][0] = b'\r' as u64;
+                loop {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    INI_PARSER_SKIP_COMMENT.call(c, 0x002a_7948)?;
+                    let at_end = c.g[V0][0] == c.g[S1][0];
+                    c.g[V0][0] = 1;
+                    if at_end {
+                        break 'done;
+                    }
+                    c.cycles += 4;
+                    c.g[V0][0] = Addr(oc391_at(c, S0, INI_PARSER_CURSOR)).lw(c);
+                    c.g[V1][0] = Addr(r32(c, V0)).lb(c);
+                    let ch = c.g[V1][0];
+                    let space = ch == c.g[S5][0]
+                        || {
+                            c.cycles += 2;
+                            ch == c.g[S4][0]
+                        }
+                        || {
+                            c.cycles += 2;
+                            ch == c.g[S3][0]
+                        }
+                        || {
+                            c.cycles += 2;
+                            c.g[V1][0] = ch ^ 0x5b;
+                            ch == c.g[S2][0]
+                        };
+                    if !space {
+                        // `[` starts a section: 1; anything else: 0.
+                        c.cycles += 3;
+                        c.g[V0][0] = if c.g[V1][0] == 0 { c.g[S1][0] } else { 0 };
+                        break 'done;
+                    }
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S0][0];
+                    INI_PARSER_GET_CHAR.call(c, 0x002a_798c)?;
+                    c.g[V1][0] = Addr(oc391_at(c, S0, INI_PARSER_CURSOR)).lw(c);
+                    c.g[V0][0] = Addr(r32(c, V1)).lb(c);
+                    if c.g[V0][0] == 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002a_7940);
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 1;
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_PlayTrickPointsTick (0x29a7d8)
+
+/// Audio system fields: the trick-points counter's last value and its
+/// sound handle.
+pub(crate) const AUDIO_POINTS_LAST: u32 = 0x5fa8;
+
+pub(crate) const AUDIO_POINTS_HANDLE: u32 = 0x5fac;
+
+/// `void SSXAudioSystem_PlayTrickPointsTick(SSXAudioSystem* self, Rider*
+/// rider, int points)` (0x29a7d8): the score counter's tick. Outside replays,
+/// for a rider whose score display is on (+0x874 and +0x87c), when
+/// `points % 100` wraps below the last value: stop the old tick if it is still
+/// playing, push a sound slot (bank sound 0x4d, defaults like the other
+/// pushed sounds) and play it; remember the value.
+pub fn ssx_audio_system_play_trick_points_tick(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S0, 0x60);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S1, 0x50);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S2, 0x40);
+        frame.save(c, S4, 0x20);
+        frame.save(c, S5, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        call_ptr(c, 0x0028_8ae0, 0x0029_a808)?; // SSXAudioSystem_IsReplayPlaying
+        'exit: {
+            if c.g[V0][0] != 0 {
+                break 'exit;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x874));
+            c.g[A1][0] = 0;
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x87c));
+                c.g[A1][0] = (c.g[V0][0] != 0) as u64;
+            }
+            c.cycles += 2;
+            let shown = c.g[A1][0] != 0;
+            c.g[S4][0] = 0x64;
+            if shown {
+                c.cycles += 3;
+                c.div(0, S1, S4);
+                c.cycles += 5;
+                let s3 = c.g[S3][0] as u32;
+                c.g[V0][0] = c.lw(s3.wrapping_add(AUDIO_POINTS_LAST));
+                c.g[S5][0] = c.hi[0];
+                c.g[V0][0] = ((c.g[S5][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    c.sw(s3.wrapping_add(AUDIO_POINTS_LAST), c.g[S5][0]);
+                } else {
+                    c.cycles += 8;
+                    call_ptr(c, 0x003b_58a0, 0x0029_a854)?; // SND_Lock
+                    c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(AUDIO_POINTS_HANDLE));
+                    call_ptr(c, 0x003b_8ab8, 0x0029_a85c)?; // SND_IsHandleDone
+                    c.g[S0][0] = (c.g[V0][0] != 0) as u64;
+                    call_ptr(c, 0x003b_58d8, 0x0029_a864)?; // SND_Unlock
+                    if c.g[S0][0] == 0 {
+                        c.cycles += 8;
+                        let s3 = c.g[S3][0] as u32;
+                        c.g[V0][0] = c.lw(s3.wrapping_add(0x118));
+                        c.g[A2][0] = 0x1;
+                        c.g[A1][0] = c.lw(s3.wrapping_add(AUDIO_POINTS_HANDLE));
+                        c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                        c.mtc1(0, 12);
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1d8));
+                        call_ptr(c, 0x002a_d5f0, 0x0029_a888)?; // BankMonitor_StopHandle
+                    }
+                    // Push a slot on the current track (T = *self, S = T + 0x1d8).
+                    c.g[S0][0] = c.lw(c.g[S3][0] as u32);
+                    c.cycles += 149;
+                    let t = c.g[S0][0] as u32;
+                    c.g[T1][0] = 0x18;
+                    c.g[A1][0] = 0;
+                    c.g[A2][0] = 0x8;
+                    c.g[V0][0] = c.lw(t.wrapping_add(0x1f4));
+                    c.g[S1][0] = sx(t.wrapping_add(0x1d8));
+                    c.g[S2][0] = 0x4d;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    c.sw(t.wrapping_add(0x1f4), c.g[V0][0]);
+                    c.g[V1][0] = c.lw(t.wrapping_add(0x1f4));
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
+                    c.mult(0, V1, V1, T1);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.ldl(V0, t.wrapping_add(0x1e3));
+                    c.ldr(V0, t.wrapping_add(0x1dc));
+                    c.ldl(A0, t.wrapping_add(0x1eb));
+                    c.ldr(A0, t.wrapping_add(0x1e4));
+                    c.ldl(A3, t.wrapping_add(0x1f3));
+                    c.ldr(A3, t.wrapping_add(0x1ec));
+                    let e = c.g[V1][0] as u32;
+                    c.sdl(V0, e.wrapping_add(0x7));
+                    c.sdr(V0, e);
+                    c.sdl(A0, e.wrapping_add(0xf));
+                    c.sdr(A0, e.wrapping_add(0x8));
+                    c.sdl(A3, e.wrapping_add(0x17));
+                    c.sdr(A3, e.wrapping_add(0x10));
+                    c.g[V0][0] = c.lw(t.wrapping_add(0x1f4));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V0][0] = sx(t.wrapping_add(c.g[V0][0] as u32));
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x1fc), 0);
+                    rider_update_script_sounds_put(c, 0x34, 0, false);
+                    c.g[A3][0] = c.lw(t.wrapping_add(0x1f4));
+                    c.g[A0][0] = c.lw(t.wrapping_add(0x1f4));
+                    c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
+                    c.g[A3][0] = sx((c.g[A3][0] as u32) << 2);
+                    c.mult(0, A0, A0, T1);
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x38));
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                    c.g[V1][0] = c.lb(c.g[A0][0] as u32);
+                    c.sw(c.g[A3][0] as u32, c.g[V1][0]);
+                    rider_update_script_sounds_put(c, 0x3c, 0, true);
+                    c.g[A0][0] = c.lw(t.wrapping_add(0x1f4));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32) << 3);
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
+                    call_ptr(c, 0x0041_6210, 0x0029_a960)?; // memset
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+                    c.g[A3][0] = 0x5a;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x60));
+                    c.g[T0][0] = 0x32;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[T1][0] = 0x7f;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[T2][0] = 0x1;
+                    c.sw(c.g[V1][0] as u32, 0);
+                    c.g[A1][0] = 0x9;
+                    c.g[A2][0] = 0;
+                    c.g[A0][0] = c.g[S3][0];
+                    rider_update_script_sounds_put(c, 0x64, 0, true);
+                    rider_update_script_sounds_put(c, 0x68, 0, false);
+                    rider_update_script_sounds_put(c, 0x6c, 0, true);
+                    rider_update_script_sounds_put70(c, 0x4, 0, false);
+                    let (s4, a3, t0) = (c.g[S4][0], c.g[A3][0], c.g[T0][0]);
+                    rider_update_script_sounds_put70(c, 0x0, s4, true);
+                    rider_update_script_sounds_put70(c, 0x8, a3, false);
+                    rider_update_script_sounds_put70(c, 0xc, t0, true);
+                    rider_update_script_sounds_put(c, 0x74, 0, false);
+                    rider_update_script_sounds_put(c, 0x80, 0, true);
+                    rider_update_script_sounds_put(c, 0x84, 0, false);
+                    let (t1, t2) = (c.g[T1][0], c.g[T2][0]);
+                    rider_update_script_sounds_put(c, 0x78, t1, true);
+                    rider_update_script_sounds_put(c, 0x7c, t2, false);
+                    // types[cur] = 0, args[cur] = 0x4d.
+                    let s3 = c.g[S3][0] as u32;
+                    c.g[A3][0] = c.lw(s3);
+                    c.g[V1][0] = c.lw(s3.wrapping_add(0x4));
+                    c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x1f4));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw(c.g[V0][0] as u32, 0);
+                    c.g[V1][0] = c.lw(s3);
+                    c.g[A3][0] = c.lw(s3.wrapping_add(0x8));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1f4));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.sw(c.g[V0][0] as u32, c.g[S2][0]);
+                    c.g[S0][0] = c.lw(s3.wrapping_add(0x118));
+                    call_ptr(c, 0x0028_7968, 0x0029_aab8)?; // SSXAudioSystem_GetChannelGainPtr(self, 9, 0)
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[A0][0] = c.g[S3][0];
+                    c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x1f4));
+                    c.g[A2][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x214));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                    call_ptr(c, 0x0029_06b8, 0x0029_aad8)?; // Audio_PlayPushedSound
+                    let s3 = c.g[S3][0] as u32;
+                    c.sw(s3.wrapping_add(AUDIO_POINTS_HANDLE), c.g[V0][0]);
+                    c.sw(s3.wrapping_add(AUDIO_POINTS_LAST), c.g[S5][0]);
+                }
+            }
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x60);
+        c.cycles += 8;
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_CalcSurfaceLoopGroup2 (0x293948)
+
+pub(crate) const SURFACE_LOOP_EVAL_CURVE: Callee = Callee {
+    addr: 0x0029_0b58,
+    f: ee::s07::Audio_EvalCurve5,
+};
+
+/// Copy a 0x28-byte curve (five x, five y) from `src` to `dst` with the
+/// compiled code's unaligned doubleword moves through registers `r`.
+pub(crate) fn surface_loop_copy_curve(c: &mut Cpu, src: u32, dst: u32, r: [usize; 3]) {
+    c.ldl(r[0], src.wrapping_add(0x7));
+    c.ldr(r[0], src);
+    c.ldl(r[1], src.wrapping_add(0xf));
+    c.ldr(r[1], src.wrapping_add(0x8));
+    c.ldl(r[2], src.wrapping_add(0x17));
+    c.ldr(r[2], src.wrapping_add(0x10));
+    c.sdl(r[0], dst.wrapping_add(0x7));
+    c.sdr(r[0], dst);
+    c.sdl(r[1], dst.wrapping_add(0xf));
+    c.sdr(r[1], dst.wrapping_add(0x8));
+    c.sdl(r[2], dst.wrapping_add(0x17));
+    c.sdr(r[2], dst.wrapping_add(0x10));
+    c.ldl(r[0], src.wrapping_add(0x1f));
+    c.ldr(r[0], src.wrapping_add(0x18));
+    c.ldl(r[1], src.wrapping_add(0x27));
+    c.ldr(r[1], src.wrapping_add(0x20));
+    c.sdl(r[0], dst.wrapping_add(0x1f));
+    c.sdr(r[0], dst.wrapping_add(0x18));
+    c.sdl(r[1], dst.wrapping_add(0x27));
+    c.sdr(r[1], dst.wrapping_add(0x20));
+}
+
+/// `void SSXAudioSystem_CalcSurfaceLoopGroup2(SSXAudioSystem* self, Rider*
+/// rider, int* volume, int* pitch)` (0x293948): the board's surface loop
+/// level: speed level (+0x758) * (1 - pressure - braking), faded in below a
+/// speed of 0.1 (`* speed * 10`), eased by a quarter of the step towards the
+/// rider's previous level (+0x59b8 per listener slot from the rider's vtable
+/// slot 0x38) when it moved by more than 0.1; stored, then mapped through
+/// the volume curve (0x482c18) and the pitch curve (0x482c40, * 4096).
+pub fn ssx_audio_system_calc_surface_loop_group2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0xb0);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 0);
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x70);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save_fpr(c, 21, 0xa8);
+        c.g[S2][0] = c.g[A3][0];
+        frame.save_ra(c, 0x60);
+        frame.save_fpr(c, 20, 0xa0);
+        let gp = c.g[GP][0] as u32;
+        let rider = c.g[A1][0] as u32;
+        c.lwc1(21, gp.wrapping_sub(0x45bc)); // 0.1
+        c.lwc1(1, rider.wrapping_add(0x754));
+        c.lwc1(2, rider.wrapping_add(0x750));
+        c.lwc1(12, rider.wrapping_add(0x75c));
+        c.add_s(1, 1, 2);
+        c.lwc1(20, rider.wrapping_add(0x758));
+        c.c_lt_s(12, 21);
+        c.sub_s(0, 0, 1);
+        let slow = c.fcc();
+        c.mul_s(20, 20, 0);
+        if slow {
+            c.cycles += 4;
+            c.mul_s(1, 20, 12);
+            c.g[AT][0] = 0x4120_0000;
+            c.mtc1(1, 0);
+            c.mul_s(20, 1, 0);
+        }
+        c.cycles += 18;
+        c.g[V1][0] = c.lw(rider.wrapping_add(0x6c0));
+        c.g[A1][0] = sx(rider.wrapping_add(0x6c0));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x38));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x3c));
+        let target = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0029_39c8)?; // the rider's listener slot
+        c.g[A0][0] = c.g[V0][0];
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x59b8));
+        c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
+        c.g[A1][0] = c.g[V0][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.lwc1(2, c.g[V0][0] as u32);
+        c.sub_s(1, 2, 20);
+        c.abs_s(0, 1);
+        c.c_lt_s(21, 0);
+        let moved = c.fcc();
+        c.g[V1][0] = 0x48_0000;
+        if moved {
+            c.cycles += 3;
+            c.c_lt_s(20, 2);
+            if c.fcc() {
+                c.cycles += 5;
+                c.g[AT][0] = 0x3e80_0000;
+                c.mtc1(1, 0);
+                c.mul_s(0, 1, 0);
+                c.sub_s(20, 2, 0);
+            } else {
+                c.cycles += 4;
+                c.c_lt_s(2, 20);
+                let up = c.fcc();
+                c.g[V1][0] = 0x48_0000;
+                if up {
+                    c.cycles += 5;
+                    c.sub_s(0, 20, 2);
+                    c.g[AT][0] = 0x3e80_0000;
+                    c.mtc1(1, 1);
+                    c.mul_s(0, 0, 1);
+                    c.add_s(20, 2, 0);
+                }
+            }
+        }
+        c.cycles += 68;
+        let sp_ = sp(c);
+        c.g[V0][0] = sx((c.g[A0][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[T0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2c18));
+        let src = c.g[T0][0] as u32;
+        surface_loop_copy_curve(c, src, sp_, [A0, A2, A3]);
+        c.swc1(20, c.g[V0][0] as u32);
+        c.g[A1][0] = 0x48_0000;
+        c.g[S0][0] = sx(sp_.wrapping_add(0x30));
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A3][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c40));
+        let src = c.g[A3][0] as u32;
+        surface_loop_copy_curve(c, src, sp_.wrapping_add(0x30), [V0, V1, A2]);
+        c.mov_s(12, 20);
+        SURFACE_LOOP_EVAL_CURVE.call(c, 0x0029_3b04)?; // volume
+        c.cvt_w_s(1, 0);
+        c.swc1(1, c.g[S1][0] as u32);
+        c.g[A0][0] = c.g[S0][0];
+        c.mov_s(12, 20);
+        SURFACE_LOOP_EVAL_CURVE.call(c, 0x0029_3b18)?; // pitch
+        c.g[AT][0] = 0x4580_0000;
+        c.mtc1(1, 1);
+        frame.restore(c, S0, 0x90);
+        c.mul_s(0, 0, 1);
+        frame.restore(c, S1, 0x80);
+        frame.restore_ra(c, 0x60);
+        frame.restore_fpr(c, 21, 0xa8);
+        c.cvt_w_s(1, 0);
+        c.swc1(1, c.g[S2][0] as u32);
+        frame.restore_fpr(c, 20, 0xa0);
+        frame.restore(c, S2, 0x70);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -31357,6 +31826,197 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(RIDER_B);
                 c.g[A3][0] = (early == 9) as u64; // p8
                 c.g[T0][0] = (early == 10) as u64; // p7
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::rider::tests::oc396_fake;
+    pub(crate) use crate::game::ai::rider::tests::oc396_fake_call;
+    pub(crate) use crate::game::ai::rider::tests::oc396_install_audio_fakes;
+    pub(crate) use crate::game::ai::rider::tests::OC396_CTRL;
+    pub(crate) use crate::game::ai::rider::tests::OC396_MAGIC;
+    pub(crate) use crate::game::ai::rider::tests::OC396_RET;
+
+    /// IniParser_SkipWhitespace: texts of whitespace, comments (the real
+    /// SkipComment), `[`, other characters, and the end of the text.
+    #[test]
+    fn ini_parser_skip_whitespace_matches() {
+        check(
+            ee::s08::f_002a78f8__generated,
+            ini_parser_skip_whitespace,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a78f8, 0);
+                c.pc = 0x002a_78f8;
+                let text = DATA + 0x100;
+                c.bus.write32(DATA + INI_PARSER_CURSOR, text);
+                let len = seed % 24;
+                let set = b" \t\n\r\t ;/#[a=";
+                for i in 0..len {
+                    let k = r.next_u32() as usize % if seed % 3 == 0 { 6 } else { set.len() };
+                    c.bus.write8(text + i, set[k]);
+                }
+                c.bus.write8(text + len, 0);
+                c.g[A0][0] = sx(DATA);
+            },
+        );
+    }
+
+    oc396_fake!(
+        oc396_fake_replay_playing,
+        OC396_PREV_REPLAY_PLAYING,
+        0x0028_8ae0,
+        ee::s07::f_00288ae0__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_snd_lock,
+        OC396_PREV_SND_LOCK,
+        0x003b_58a0,
+        ee::s13::f_003b58a0__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_snd_done,
+        OC396_PREV_SND_DONE,
+        0x003b_8ab8,
+        ee::s13::f_003b8ab8__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_snd_unlock,
+        OC396_PREV_SND_UNLOCK,
+        0x003b_58d8,
+        ee::s13::f_003b58d8__generated
+    );
+
+    /// The score tick: replay or not, display off, no wrap, or a wrap with
+    /// the old tick still playing or done; the slot push on a track whose
+    /// index starts at -1..1.
+    #[test]
+    fn ssx_audio_system_play_trick_points_tick_matches() {
+        oc396_install_audio_fakes();
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00288AE0),
+            oc396_fake_replay_playing,
+            &OC396_PREV_REPLAY_PLAYING,
+        );
+        hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B58A0),
+            oc396_fake_snd_lock,
+            &OC396_PREV_SND_LOCK,
+        );
+        hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B8AB8),
+            oc396_fake_snd_done,
+            &OC396_PREV_SND_DONE,
+        );
+        hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B58D8),
+            oc396_fake_snd_unlock,
+            &OC396_PREV_SND_UNLOCK,
+        );
+        covered(
+            ee::s08::f_0029a7d8__generated,
+            ssx_audio_system_play_trick_points_tick,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0029_a7d8, 6);
+                c.pc = 0x0029_a7d8;
+                c.bus.write32(OC396_CTRL, OC396_MAGIC);
+                // Calls: replay?, lock, done?, unlock, [stop], play.
+                let ret = [
+                    (seed % 7 == 0) as u32,
+                    0,
+                    (seed / 2 % 2) as u32,
+                    0,
+                    r.next_u32(),
+                    r.next_u32(),
+                    0,
+                    0,
+                ];
+                put_words(c, OC396_RET, &ret);
+                let snd = DATA + 0x10_000;
+                let track = DATA + 0x4000;
+                let sub = track + 0x1d8;
+                c.bus.write32(snd, track);
+                c.bus.write32(snd + 4, DATA + 0x5000);
+                c.bus.write32(snd + 8, DATA + 0x5100);
+                c.bus.write32(snd + 0x118, snd);
+                c.bus.write32(snd + AUDIO_POINTS_LAST, r.next_u32() % 100);
+                c.bus.write32(snd + AUDIO_POINTS_HANDLE, r.next_u32());
+                c.bus
+                    .write32(track + 0x1f4, (r.next_u32() % 3).wrapping_sub(1));
+                fill(c, &mut r, track + 0x1dc, 6);
+                c.bus.write32(sub + 0x20, DATA + 0x6000);
+                for (k, f) in [
+                    0x34u32, 0x38, 0x3c, 0x60, 0x64, 0x68, 0x6c, 0x70, 0x74, 0x78, 0x7c, 0x80, 0x84,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    c.bus.write32(sub + f, DATA + 0x7000 + 0x100 * k as u32);
+                }
+                let rider = DATA + 0x2000;
+                c.bus.write32(rider + 0x874, (seed % 5 != 1) as u32);
+                c.bus
+                    .write32(rider + 0x87c, (seed % 5 != 2) as u32 * r.next_u32());
+                c.g[A0][0] = sx(snd);
+                c.g[A1][0] = sx(rider);
+                c.g[A2][0] = sx(r.next_u32() % 1000);
+            },
+        );
+    }
+
+    /// The surface loop level: slow or not, eased up, down or not at all;
+    /// the listener slot from a faked vtable call, the real curve lookup.
+    #[test]
+    fn ssx_audio_system_calc_surface_loop_group2_matches() {
+        covered(
+            ee::s07::f_00293948__generated,
+            ssx_audio_system_calc_surface_loop_group2,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0029_3948, 1);
+                c.pc = 0x0029_3948;
+                let slot = 1 + r.next_u32() % 3;
+                c.bus.write32(crate::difftest::fakes::LOG_RESULTS, slot);
+                c.bus.write32(GAME_GP - 0x45bc, 0.1f32.to_bits());
+                let curves: [f32; 20] = [
+                    0.0185, 0.1, 0.5, 0.6, 0.95, 2.0, 15.0, 30.0, 50.0, 80.0, 0.05, 0.2, 0.5, 0.8,
+                    0.95, 1.0, 0.9, 0.75, 0.65, 0.5,
+                ];
+                for (k, v) in curves.into_iter().enumerate() {
+                    c.bus.write32(0x0048_2c18 + 4 * k as u32, v.to_bits());
+                }
+                let snd = DATA + 0x100;
+                let rider = DATA + 0x8000;
+                let lv = |r: &mut Rng| ((r.next_u32() % 100) as f32 * 0.01).to_bits();
+                c.bus.write32(rider + 0x750, lv(&mut r));
+                c.bus.write32(
+                    rider + 0x754,
+                    (((r.next_u32() % 50) as f32) * 0.01).to_bits(),
+                );
+                c.bus.write32(rider + 0x758, lv(&mut r));
+                c.bus.write32(
+                    rider + 0x75c,
+                    if seed % 3 == 0 {
+                        0.05f32.to_bits()
+                    } else {
+                        lv(&mut r)
+                    },
+                );
+                let vt = DATA + 0x3000;
+                c.bus.write16(vt + 0x38, 0);
+                c.bus.write32(vt + 0x3c, crate::difftest::fakes::FAKE);
+                c.bus.write32(rider + 0x6c0, vt);
+                for k in 0..4 {
+                    c.bus.write32(snd + 0x59b8 + 4 * k, lv(&mut r));
+                }
+                c.g[A0][0] = sx(snd);
+                c.g[A1][0] = sx(rider);
+                c.g[A2][0] = sx(DATA + 0x40);
+                c.g[A3][0] = sx(DATA + 0x44);
             },
         );
     }

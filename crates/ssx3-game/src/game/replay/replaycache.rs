@@ -355,6 +355,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Replay_OnRiderWipeout",
     ),
     (0x0027_0b88, replay_begin_highlight, "Replay_BeginHighlight"),
+    (
+        0x0027_3698,
+        in_seq_ramp_track_update,
+        "InSeq_RampTrackUpdate",
+    ),
 ];
 
 /// `void WorldStateStream_Reset(WorldStateStream *stream)` (0x26d628):
@@ -5317,6 +5322,164 @@ pub fn replay_begin_highlight(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// InSeq_RampTrackUpdate (0x273698)
+
+pub(crate) const RAMP_TRACK_ACTIVATE_KEY: Callee = Callee {
+    addr: 0x0027_3860,
+    f: ee::s07::InSeq_RampTrackActivateKey,
+};
+
+pub(crate) const RAMP_TRACK_NEXT_KEY: Callee = Callee {
+    addr: 0x0027_38f8,
+    f: ee::s07::InSeq_RampTrackNextKey,
+};
+
+/// Ramp track fields: the next key record, the active ramps (a list linked
+/// at +0x20: end time int at +8, value at +0x10, speed at +0x14) and their
+/// count.
+pub(crate) const RAMP_TRACK_KEY: u32 = 0x14;
+
+pub(crate) const RAMP_TRACK_ACTIVE: u32 = 0x20;
+
+pub(crate) const RAMP_TRACK_COUNT: u32 = 0x24;
+
+/// `bool InSeq_RampTrackUpdate(RampTrack* self, uint* flags, float t, float
+/// dt)` (0x273698): advance the track to time `t`. Ramps that ended by `t`
+/// are unlinked (flags |= 2); the others move by `speed * dt`. Then every key
+/// due by `t` starts its ramp (flags |= 1), advanced by the time since the
+/// key. Returns whether anything is left (active ramps or keys).
+pub fn in_seq_ramp_track_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 21, 0x38);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.mov_s(21, 12);
+        frame.save_fpr(c, 22, 0x40);
+        frame.save_fpr(c, 20, 0x30);
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = c.lw(this.wrapping_add(RAMP_TRACK_ACTIVE));
+        c.g[A0][0] = 0; // the previous ramp
+        if c.g[V1][0] != 0 {
+            c.cycles += 1;
+            loop {
+                let e = c.g[V1][0] as u32;
+                c.cycles += 6;
+                c.lwc1(0, e.wrapping_add(0x8));
+                c.cvt_s_w(0, 0);
+                c.c_le_s(0, 21);
+                if !c.fcc() {
+                    // Still running: value += speed * dt.
+                    c.lwc1(1, e.wrapping_add(0x14));
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[V1][0];
+                    c.lwc1(0, e.wrapping_add(0x10));
+                    c.mul_s(1, 1, 13);
+                    c.add_s(0, 0, 1);
+                    c.swc1(0, e.wrapping_add(0x10));
+                    c.g[V1][0] = c.lw(e.wrapping_add(0x20));
+                } else {
+                    // Ended: unlink it.
+                    c.cycles += 4;
+                    let s1 = c.g[S1][0] as u32;
+                    c.g[V0][0] = c.lw(s1) | 0x2;
+                    let has_prev = c.g[A0][0] != 0;
+                    c.sw(s1, c.g[V0][0]);
+                    if has_prev {
+                        c.cycles += 2;
+                        c.g[V1][0] = c.lw(e.wrapping_add(0x20));
+                        c.sw((c.g[A0][0] as u32).wrapping_add(0x20), c.g[V1][0]);
+                    } else {
+                        c.cycles += 4;
+                        c.g[V0][0] = c.lw(e.wrapping_add(0x20));
+                        c.g[V1][0] = c.g[V0][0];
+                        c.sw(this.wrapping_add(RAMP_TRACK_ACTIVE), c.g[V0][0]);
+                    }
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw(this.wrapping_add(RAMP_TRACK_COUNT));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    c.sw(this.wrapping_add(RAMP_TRACK_COUNT), c.g[V0][0]);
+                }
+                c.cycles += 2;
+                if c.g[V1][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_36d0);
+                }
+            }
+        }
+        // Start the keys that are due.
+        c.cycles += 2;
+        c.mtc1(0, 22);
+        c.g[V1][0] = c.lw(this.wrapping_add(RAMP_TRACK_KEY));
+        loop {
+            c.cycles += 2;
+            if c.g[V1][0] == 0 {
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RAMP_TRACK_ACTIVE));
+                break;
+            }
+            c.cycles += 8;
+            c.g[V0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x4));
+            c.mtc1(2, 0);
+            c.cvt_s_w(0, 0);
+            c.sub_s(20, 21, 0);
+            c.c_le_s(22, 20);
+            let due = c.fcc();
+            c.g[A0][0] = c.g[S0][0];
+            if !due {
+                c.cycles += 1;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RAMP_TRACK_ACTIVE));
+                break;
+            }
+            c.cycles += 14;
+            let s1 = c.g[S1][0] as u32;
+            c.g[V0][0] = c.lw(s1) | 0x1;
+            c.sw(s1, c.g[V0][0]);
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RAMP_TRACK_KEY));
+            RAMP_TRACK_ACTIVATE_KEY.call(c, 0x0027_3784)?;
+            let ramp = c.g[V0][0] as u32;
+            c.lwc1(0, ramp.wrapping_add(0x14));
+            c.g[A0][0] = c.g[S0][0];
+            c.lwc1(1, ramp.wrapping_add(0x10));
+            c.mul_s(0, 20, 0);
+            c.add_s(1, 1, 0);
+            c.swc1(1, ramp.wrapping_add(0x10));
+            RAMP_TRACK_NEXT_KEY.call(c, 0x0027_37a0)?;
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RAMP_TRACK_KEY));
+            if event_due(c) {
+                deliver_event_here(c, 0x0027_3748);
+            }
+        }
+        c.cycles += 2;
+        let active = c.g[V0][0] != 0;
+        c.g[V0][0] = 0x1;
+        if !active {
+            c.cycles += 2;
+            let no_key = c.g[V1][0] == 0;
+            c.g[V0][0] = 0;
+            if !no_key {
+                c.cycles += 1;
+                c.g[V0][0] = 0x1;
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 22, 0x40);
+        frame.restore_fpr(c, 21, 0x38);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7785,6 +7948,85 @@ pub(crate) mod tests {
                 c.bus.write32(cache + REPLAY_RIDER as u32, DATA + 0x2000);
                 c.bus.write32(CTRL, MAGIC);
                 c.pc = 0x0027_0b88;
+            },
+        );
+    }
+
+    /// A ramp track with up to three running ramps (some ended by `t`) and
+    /// up to four keys (some due), with the real key activation.
+    #[test]
+    fn in_seq_ramp_track_update_matches() {
+        check(
+            ee::s07::f_00273698__generated,
+            in_seq_ramp_track_update,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0027_3698, 0);
+                c.pc = 0x0027_3698;
+                let this = DATA + 0x100;
+                let header = DATA + 0x200;
+                let keys = DATA + 0x400;
+                let pool = DATA + 0x1000;
+                let flags = DATA + 0x80;
+                c.bus.write32(flags, r.next_u32() & 0xfc);
+                let t = (r.next_u32() % 20) as f32;
+                c.f[12] = t.to_bits();
+                c.f[13] = r.f32(2.0);
+                // Running ramps.
+                let n = r.next_u32() % 4;
+                let mut head = 0;
+                for k in (0..n).rev() {
+                    let e = DATA + 0x1800 + 0x40 * k;
+                    put_words(
+                        c,
+                        e,
+                        &[
+                            0,
+                            0,
+                            r.next_u32() % 30,
+                            0,
+                            r.f32(10.0),
+                            r.f32(3.0),
+                            0,
+                            0,
+                            head,
+                        ],
+                    );
+                    head = e;
+                }
+                c.bus.write32(this + RAMP_TRACK_ACTIVE, head);
+                c.bus.write32(this + RAMP_TRACK_COUNT, n);
+                // Keys (size 0x18 or 0x20), sorted by time.
+                let nk = r.next_u32() % 5;
+                c.bus.write16(header, nk.max(1) as u16);
+                let mut at = keys;
+                let mut time = 0;
+                for k in 0..nk {
+                    let size = if r.next_u32() % 2 == 0 { 0x18 } else { 0x20 };
+                    time += r.next_u32() % 8;
+                    c.bus.write16(at, size as u16);
+                    c.bus.write16(at + 2, k as u16);
+                    c.bus.write16(at + 4, time as u16);
+                    c.bus.write16(at + 6, r.next_u32() as u16);
+                    put_words(
+                        c,
+                        at + 8,
+                        &[
+                            r.next_u32() % 40,
+                            r.next_u32() % 100,
+                            r.f32(3.0),
+                            r.next_u32(),
+                        ],
+                    );
+                    at += size;
+                }
+                c.bus.write32(this + 0x10, header);
+                c.bus
+                    .write32(this + RAMP_TRACK_KEY, if nk == 0 { 0 } else { keys });
+                c.bus.write32(this + 0x18, 0);
+                c.bus.write32(this + 0x1c, pool);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(flags);
             },
         );
     }

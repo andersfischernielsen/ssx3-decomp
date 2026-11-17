@@ -139,6 +139,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cps2_chunk_resolve_release,
         "cPS2ChunkResolve_Release",
     ),
+    (
+        0x003a_c048,
+        cps2_chunk_resolve_patch_dma_chain,
+        "cPS2ChunkResolve_PatchDmaChain",
+    ),
+    (
+        0x003a_c508,
+        c_ps2_chunk_resolve_patch_instance_dma_chain,
+        "cPS2ChunkResolve_PatchInstanceDmaChain",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3311,6 +3321,419 @@ pub(crate) fn crr_track_paths(c: &mut Cpu) -> Result<CrrExit, Unwound> {
     Ok(CrrExit::Done)
 }
 
+// ---------------------------------------------------------------------------
+// cPS2ChunkResolve_PatchInstanceDmaChain (0x3ac508)
+
+#[cfg(test)]
+pub(crate) const CHUNK_DMA_ENTRY: u32 = 0x003a_c508;
+
+/// The DMA tag id (bits 28..30) of the doubleword `tag`.
+#[inline]
+pub(crate) fn chunk_dma_tag_id(tag: u64) -> u64 {
+    (((tag << 4) as i64) >> 32) as u64 & 7
+}
+
+/// Relocate the REF tag at a3 by the word at `base` (`addr += *base`),
+/// step a3 past it and point t0 at the last quadword it references
+/// (t1 = its qword count; a0, v0, v1 as the original leaves them).
+pub(crate) fn chunk_dma_ref_patch(c: &mut Cpu, base: u32) {
+    let tag_at = c.g[A3][0] as u32;
+    c.g[A0][0] = sx(tag_at.wrapping_add(4));
+    c.g[V1][0] = Addr(tag_at.wrapping_add(4)).lw(c);
+    let b = Addr(base).lw(c);
+    let tag = Addr(tag_at).ld(c);
+    c.g[V0][0] = sx((b as u32).wrapping_add(c.g[V1][0] as u32));
+    Addr(tag_at.wrapping_add(4)).sw(c, c.g[V0][0]);
+    c.g[V1][0] = sx(tag as u32);
+    c.g[T1][0] = c.g[V1][0] & 0xffff;
+    c.g[A3][0] = sx(tag_at.wrapping_add(0x10));
+    let addr = Addr(tag_at.wrapping_add(4)).lw(c);
+    c.g[V0][0] = sx(((c.g[T1][0] as u32).wrapping_sub(1)) << 4);
+    c.g[T0][0] = sx((addr as u32).wrapping_add(c.g[V0][0] as u32));
+}
+
+/// Store the VIF "return" code (first block: t7, others: t6) in the last
+/// quadword of the referenced packet (`t0 + 8`).
+pub(crate) fn chunk_dma_store_ret(c: &mut Cpu) {
+    let t0 = c.g[T0][0] as u32;
+    if c.g[T4][0] != 0 {
+        c.cycles += 2;
+        Addr(t0.wrapping_add(8)).sw(c, c.g[T7][0]);
+    } else {
+        c.cycles += 1;
+        Addr(t0.wrapping_add(8)).sw(c, c.g[T6][0]);
+    }
+}
+
+/// `void* cPS2ChunkResolve::PatchInstanceDmaChain(void* this, Instance* a1,
+/// Chunk* chunk, u64* tag)` (0x3ac508): walk a DMA chain up to its END tag
+/// (id 6), relocating each CALL/REF pair (id 3): the first address by the
+/// chunk base (`chunk + 0x24`), the second by the instance's (`a1 + 0x98`),
+/// marking the last quadword of each referenced packet with a VIF return
+/// (`0x14000000 | addr >> 3`, different for the first block). Tags flagged
+/// in bit 31 bring a second pair, or, before an END, are rewritten into a
+/// short CNT/REF/END sequence. Returns the tag after the END.
+pub fn c_ps2_chunk_resolve_patch_instance_dma_chain(c: &mut Cpu) {
+    c.cycles += 28;
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x40));
+    let sp = sp(c);
+    c.sq(S0, sp + 0x30);
+    c.sq(S1, sp + 0x20);
+    c.sq(S2, sp + 0x10);
+    c.sq(S3, sp);
+    c.g[T9][0] = 0x2270 >> 3;
+    c.g[T8][0] = 0x22c8 >> 3;
+    c.g[A0][0] = 0x0050_9400u64 << 32;
+    c.g[V1][0] = 0x1400_0000;
+    c.g[T5][0] = 0x7fff_ffff;
+    c.g[V0][0] = 0x3000_0001;
+    c.g[T6][0] = c.g[T8][0] | 0x1400_0000;
+    c.g[T7][0] = c.g[T9][0] | 0x1400_0000;
+    c.g[S3][0] = c.g[A0][0] | 0x3000_0001;
+    c.g[S2][0] = 0;
+    c.g[T4][0] = 1;
+    c.g[S1][0] = 6;
+    c.g[S0][0] = 0xffff_ffff_8000_0000;
+    c.g[T0][0] = Addr(c.g[A3][0] as u32).ld(c);
+    let chunk_base = (c.g[A2][0] as u32).wrapping_add(0x24);
+    let inst_base = (c.g[A1][0] as u32).wrapping_add(0x98);
+    loop {
+        c.cycles += 6;
+        c.g[V1][0] = 3;
+        let id = chunk_dma_tag_id(c.g[T0][0]);
+        c.g[V0][0] = id;
+        if id == 3 {
+            let a3 = c.g[A3][0] as u32;
+            c.g[V1][0] = Addr(a3 + 4).lw(c);
+            // Flag bit 31 of the address: a second pair follows.
+            c.cycles += 3;
+            c.g[V0][0] = c.g[V1][0] & c.g[S0][0];
+            c.g[T2][0] = 0;
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                c.g[V0][0] = c.g[V1][0] & c.g[T5][0];
+                c.g[T2][0] = 1;
+                Addr(a3 + 4).sw(c, c.g[V0][0]);
+            }
+            c.cycles += 20;
+            c.g[V1][0] = Addr(a3 + 4).lw(c);
+            let b = Addr(chunk_base).lw(c);
+            c.g[V0][0] = sx((b as u32).wrapping_add(c.g[V1][0] as u32));
+            Addr(a3 + 4).sw(c, c.g[V0][0]);
+            c.g[A3][0] = sx(a3 + 0x10);
+            chunk_dma_ref_patch(c, inst_base);
+            chunk_dma_store_ret(c);
+            c.cycles += 2;
+            if c.g[T2][0] != 0 {
+                chunk_dma_patch_flagged(c, chunk_base, inst_base);
+            }
+            c.g[T4][0] = 0;
+        } else {
+            c.cycles += 2;
+            if id == c.g[S1][0] {
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x10));
+                c.cycles += 1;
+                c.g[S2][0] = 1;
+            } else {
+                c.cycles += 2;
+            }
+        }
+        c.cycles += 2;
+        if c.g[S2][0] != 0 {
+            break;
+        }
+        c.g[T0][0] = Addr(c.g[A3][0] as u32).ld(c);
+        if event_due(c) {
+            deliver_event_here(c, 0x003a_c578);
+        }
+    }
+    c.cycles += 7;
+    c.lq(S0, sp + 0x30);
+    c.g[V0][0] = c.g[A3][0];
+    c.lq(S1, sp + 0x20);
+    c.lq(S2, sp + 0x10);
+    c.lq(S3, sp);
+    c.g[SP][0] = sx(sp.wrapping_add(0x40));
+    abi::ret(c);
+}
+
+/// The second part of a flagged CALL/REF pair (a3 at the tag after it).
+pub(crate) fn chunk_dma_patch_flagged(c: &mut Cpu, chunk_base: u32, inst_base: u32) {
+    c.cycles += 6;
+    let a3 = c.g[A3][0] as u32;
+    let next = Addr(a3 + 0x10).ld(c);
+    c.g[V0][0] = chunk_dma_tag_id(next);
+    c.g[A0][0] = sx(a3 + 0x10);
+    if c.g[V0][0] == c.g[S1][0] {
+        // Before an END: rewrite as CNT(1) -> s3, REF(qwc, addr), END.
+        c.cycles += 11;
+        let tag = Addr(a3).ld(c);
+        c.g[T0][0] = tag;
+        let b = Addr(chunk_base).lw(c);
+        c.g[V0][0] = sx(tag as u32);
+        c.g[V1][0] = Addr(a3 + 4).lw(c);
+        c.g[T1][0] = c.g[V0][0] & 0xffff;
+        c.g[V0][0] = sx(((c.g[T1][0] as u32).wrapping_sub(1)) << 4);
+        c.g[A0][0] = sx((b as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[T0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        chunk_dma_store_ret(c);
+        c.cycles += 13;
+        c.g[A0][0] <<= 32;
+        c.g[V1][0] = 0x6000_0000;
+        c.g[V0][0] = 0x3000_0000 | c.g[T1][0] | c.g[A0][0];
+        Addr(a3 + 0x20).sd(c, c.g[V1][0]);
+        Addr(a3 + 0x10).sd(c, c.g[V0][0]);
+        Addr(a3).sd(c, c.g[S3][0]);
+        Addr(a3 + 8).sd(c, 0);
+        Addr(a3 + 0x18).sd(c, 0);
+        Addr(a3 + 0x28).sd(c, 0);
+        c.g[A3][0] = sx(a3 + 0x20);
+    } else {
+        // Three more references: chunk, instance, chunk.
+        c.cycles += 4;
+        c.g[V1][0] = Addr(a3 + 4).lw(c);
+        c.g[V0][0] = c.g[V1][0] & c.g[S0][0];
+        let flagged = c.g[V0][0] != 0;
+        c.g[V0][0] = c.g[V1][0] & c.g[T5][0];
+        if flagged {
+            c.cycles += 2;
+            Addr(a3 + 4).sw(c, c.g[V0][0]);
+            c.g[V1][0] = Addr(a3 + 4).lw(c);
+        }
+        c.cycles += 36;
+        c.g[T3][0] = 0x1400_0000;
+        let b = Addr(chunk_base).lw(c);
+        c.g[T2][0] = c.g[T8][0] | 0x1400_0000;
+        c.g[V0][0] = sx((b as u32).wrapping_add(c.g[V1][0] as u32));
+        Addr(a3 + 4).sw(c, c.g[V0][0]);
+        c.g[A3][0] = c.g[A0][0];
+        chunk_dma_ref_patch(c, inst_base);
+        c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(4));
+        Addr((c.g[T0][0] as u32).wrapping_add(8)).sw(c, c.g[T2][0]);
+        chunk_dma_ref_patch(c, chunk_base);
+        if c.g[T4][0] != 0 {
+            c.cycles += 3;
+            c.g[V0][0] = c.g[T9][0] | c.g[T3][0];
+            Addr((c.g[T0][0] as u32).wrapping_add(8)).sw(c, c.g[V0][0]);
+        } else {
+            c.cycles += 1;
+            Addr((c.g[T0][0] as u32).wrapping_add(8)).sw(c, c.g[T2][0]);
+        }
+        c.cycles += 15;
+        chunk_dma_ref_patch(c, chunk_base);
+        Addr((c.g[T0][0] as u32).wrapping_add(8)).sw(c, c.g[T6][0]);
+    }
+    c.cycles += 2;
+}
+
+// ---------------------------------------------------------------------------
+// cPS2ChunkResolve_PatchDmaChain (0x3ac048)
+
+/// DMA tag id (`(tag << 4) >> 32 & 7`, bits 28..30) of the chain entry in `a1`.
+#[inline]
+pub(crate) fn patch_dma_chain_tag_id(tag: u64) -> u64 {
+    (((tag << 4) as i64) >> 32) as u64 & 0x7
+}
+
+/// The relocation shared by both "ref + data" steps, with `t0` at the data
+/// tag: relocate its address (`+4 += ctx->base`), read its qwc and leave in
+/// `a1` the address of the last quadword it points at (`addr + (qwc-1)*16`);
+/// `t0` moves past it.
+pub(crate) fn patch_dma_chain_relocate_data(c: &mut Cpu) {
+    c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+    c.g[A3][0] = sx((c.g[T0][0] as u32).wrapping_add(0x4));
+    c.g[V0][0] = c.lw((c.g[T2][0] as u32).wrapping_add(0x24));
+    c.g[A1][0] = c.ld(c.g[T0][0] as u32);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.sw((c.g[T0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+    c.g[V1][0] = (((c.g[A1][0] << 32) as i64) >> 32) as u64;
+    c.g[V0][0] = c.g[V1][0] & 0xffff;
+    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x10));
+    c.g[A1][0] = c.lw(c.g[A3][0] as u32);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+}
+
+/// `int cPS2ChunkResolve_PatchDmaChain(ctx, obj, list, index)` (0x3ac048):
+/// walk a loaded model's DMA chain (`ctx->base (+0x24) + obj->chainOffset
+/// (+4)`), relocating each ref/data tag pair by `ctx->base`, chaining the
+/// last data quadword to the first or the shared microprogram call, and, once
+/// the chain is "split" (object flags `0x60000` or a ref address with bit 31),
+/// inserting the extra call/end tags. Stops at an end tag (id 6); returns 1.
+pub fn cps2_chunk_resolve_patch_dma_chain(c: &mut Cpu) {
+    c.cycles += 46;
+    let frame = Frame::open(c, 0x50);
+    c.g[V0][0] = 0x510000;
+    frame.save(c, S0, 0x40);
+    c.g[V1][0] = 0x510000;
+    frame.save(c, S1, 0x30);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x6bf0));
+    frame.save(c, S2, 0x20);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6be0));
+    frame.save(c, S3, 0x10);
+    c.g[T2][0] = c.g[A2][0];
+    frame.save(c, S4, 0);
+    // t7/t6/s2: the call tags' addresses (0x509410, 0x509420, 0x509400) in
+    // the upper word.
+    c.g[T7][0] = c.g[V0][0] << 32;
+    c.g[T6][0] = c.g[V1][0] << 32;
+    c.g[A2][0] = 0x0;
+    c.g[A3][0] = c.lw(c.g[A1][0] as u32);
+    c.g[V1][0] = 0x60000;
+    c.g[V0][0] = 0x510000;
+    c.g[T0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+    c.g[A3][0] = c.g[A3][0] & c.g[V1][0];
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x6c00));
+    c.g[A0][0] = 0x0;
+    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2270));
+    c.g[T3][0] = 0x1;
+    c.g[A2][0] = sx((c.g[A2][0] as u32) >> 3);
+    c.g[V1][0] = 0x1400_0000;
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x22c8));
+    c.g[A1][0] = c.lw((c.g[T2][0] as u32).wrapping_add(0x24));
+    c.g[S2][0] = c.g[V0][0] << 32;
+    c.g[V0][0] = 0x3000_0001;
+    c.g[A0][0] = sx((c.g[A0][0] as u32) >> 3);
+    // s1/a0: the MSCAL words for the first / the later batches.
+    c.g[S1][0] = c.g[A2][0] | c.g[V1][0];
+    c.g[T1][0] = c.g[T3][0];
+    c.g[T4][0] = 0x7fff_0000;
+    c.g[A0][0] = c.g[A0][0] | c.g[V1][0];
+    c.g[T5][0] = c.g[T6][0] | c.g[V0][0];
+    c.g[S0][0] = c.g[T7][0] | c.g[V0][0];
+    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    // t1: split, t3: first batch, t9: done.
+    if c.g[A3][0] == 0 {
+        c.g[T1][0] = 0;
+    }
+    c.g[T9][0] = 0;
+    c.g[A2][0] = 0x6;
+    c.g[T8][0] = 0xffff_ffff_8000_0000;
+    c.g[T4][0] = c.g[T4][0] | 0xffff;
+    c.g[S4][0] = 0x3;
+    c.g[S3][0] = 0x6000_0000;
+    c.g[A1][0] = c.ld(c.g[T0][0] as u32);
+    loop {
+        c.cycles += 5;
+        c.g[V0][0] = patch_dma_chain_tag_id(c.g[A1][0]);
+        if c.g[V0][0] == c.g[S4][0] {
+            // A ref tag: its address may carry the split marker (bit 31).
+            c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+            c.cycles += 3;
+            let marked = c.g[V1][0] & c.g[T8][0] != 0;
+            c.g[V0][0] = c.g[V1][0] & c.g[T4][0];
+            if marked {
+                c.cycles += 2;
+                c.g[T1][0] = 0x1;
+                c.sw((c.g[T0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+            }
+            c.cycles += 20;
+            c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = c.lw((c.g[T2][0] as u32).wrapping_add(0x24));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.sw((c.g[T0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+            c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x10));
+            patch_dma_chain_relocate_data(c);
+            if c.g[T3][0] == 0 {
+                c.cycles += 1;
+                c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A0][0]);
+            } else {
+                c.cycles += 2;
+                c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[S1][0]);
+            }
+            c.cycles += 2;
+            if c.g[T1][0] == 0 {
+                c.g[T3][0] = 0;
+            } else {
+                c.cycles += 6;
+                c.g[V0][0] = c.ld((c.g[T0][0] as u32).wrapping_add(0x10));
+                c.g[V0][0] = patch_dma_chain_tag_id(c.g[V0][0]);
+                c.g[A1][0] = sx((c.g[T0][0] as u32).wrapping_add(0x10));
+                if c.g[V0][0] == c.g[A2][0] {
+                    // The chain ends after this batch: call, call, end.
+                    c.cycles += 6;
+                    c.g[V1][0] = 0x3000_0001;
+                    c.sd((c.g[T0][0] as u32).wrapping_add(0x8), 0);
+                    c.g[V0][0] = c.g[S2][0] | c.g[V1][0];
+                    c.sd(c.g[T0][0] as u32, c.g[V0][0]);
+                    if c.g[T3][0] == 0 {
+                        c.cycles += 1;
+                        c.g[V0][0] = c.g[T6][0] | c.g[V1][0];
+                    } else {
+                        c.cycles += 2;
+                        c.g[V0][0] = c.g[T7][0] | c.g[V1][0];
+                    }
+                    c.cycles += 5;
+                    c.sd((c.g[T0][0] as u32).wrapping_add(0x18), 0);
+                    c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+                    c.sd((c.g[T0][0] as u32).wrapping_add(0x20), c.g[S3][0]);
+                    c.sd((c.g[T0][0] as u32).wrapping_add(0x28), 0);
+                } else {
+                    // A second ref/data pair, then the two call tags.
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+                    let marked = c.g[V1][0] & c.g[T8][0] != 0;
+                    c.g[V0][0] = c.g[V1][0] & c.g[T4][0];
+                    if marked {
+                        c.cycles += 3;
+                        c.g[T1][0] = 0x1;
+                        c.sw((c.g[T0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                        c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
+                    }
+                    c.cycles += 20;
+                    c.g[V0][0] = c.lw((c.g[T2][0] as u32).wrapping_add(0x24));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw((c.g[T0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    c.g[T0][0] = c.g[A1][0];
+                    patch_dma_chain_relocate_data(c);
+                    c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A0][0]);
+                    if c.g[T3][0] == 0 {
+                        c.cycles += 1;
+                        c.sd(c.g[T0][0] as u32, c.g[T5][0]);
+                    } else {
+                        c.cycles += 2;
+                        c.sd(c.g[T0][0] as u32, c.g[S0][0]);
+                    }
+                    c.cycles += 3;
+                    c.sd((c.g[T0][0] as u32).wrapping_add(0x8), 0);
+                    c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[T5][0]);
+                    c.sd((c.g[T0][0] as u32).wrapping_add(0x18), 0);
+                }
+                c.cycles += 3;
+                c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x20));
+                c.g[T3][0] = 0;
+            }
+        } else {
+            c.cycles += 2;
+            if c.g[V0][0] == c.g[A2][0] {
+                // The end tag.
+                c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x10));
+                c.cycles += 1;
+                c.g[T9][0] = 0x1;
+            } else {
+                c.cycles += 2;
+            }
+        }
+        c.cycles += 2;
+        if c.g[T9][0] != 0 {
+            break;
+        }
+        c.g[A1][0] = c.ld(c.g[T0][0] as u32);
+        if event_due(c) {
+            deliver_event_here(c, 0x003a_c100);
+        }
+    }
+    c.cycles += 8;
+    frame.restore(c, S0, 0x40);
+    c.g[V0][0] = 0x1;
+    frame.restore(c, S1, 0x30);
+    frame.restore(c, S2, 0x20);
+    frame.restore(c, S3, 0x10);
+    frame.restore(c, S4, 0);
+    frame.close(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4833,6 +5256,146 @@ pub(crate) mod tests {
                     // AI_SetTrackPathsBuffer's section number (first call).
                     c.bus.write32(LOG_RESULTS, 0x11 + r.next_u32() % 5);
                 }
+            },
+        );
+    }
+
+    /// One REF-like DMA tag at `at`: id, qwc 1..8, address `off` (relative
+    /// to its base), optionally flagged in bit 31.
+    pub(crate) fn oc383_dma_tag(c: &mut Cpu, r: &mut Rng, at: u32, id: u32, flag: bool) {
+        let qwc = 1 + r.next_u32() % 8;
+        let off = (r.next_u32() % 0x400) * 0x10;
+        c.bus.write32(
+            at,
+            id << 28 | (r.next_u32() & 0x0fff_0000) & !0x7000_0000 | qwc,
+        );
+        c.bus
+            .write32(at + 4, off | if flag { 0x8000_0000 } else { 0 });
+        c.bus.write64(at + 8, r.next_u32() as u64);
+    }
+
+    #[test]
+    fn c_ps2_chunk_resolve_patch_instance_dma_chain_matches() {
+        check(
+            ee::s13::f_003ac508__generated,
+            c_ps2_chunk_resolve_patch_instance_dma_chain,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0xc508 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.pc = CHUNK_DMA_ENTRY;
+                let (inst, chunk) = (DATA + 0x100, DATA + 0x200);
+                c.bus.write32(chunk + 0x24, DATA + 0x10000);
+                c.bus.write32(inst + 0x98, DATA + 0x20000);
+                fill(c, &mut r, DATA + 0x10000, 0x1000);
+                fill(c, &mut r, DATA + 0x20000, 0x1000);
+                let chain = DATA + 0x1000;
+                let mut p = chain;
+                let pairs = seed % 4;
+                let mut ended = false;
+                for _ in 0..pairs {
+                    let flagged = r.next_u32() % 2 == 0;
+                    oc383_dma_tag(c, &mut r, p, 3, flagged);
+                    let refs = r.next_u32() % 8;
+                    oc383_dma_tag(c, &mut r, p + 0x10, refs, false);
+                    p += 0x20;
+                    if flagged {
+                        if r.next_u32() % 3 == 0 {
+                            // REF then END: rewritten, the chain ends there.
+                            oc383_dma_tag(c, &mut r, p, 3, false);
+                            oc383_dma_tag(c, &mut r, p + 0x10, 6, false);
+                            ended = true;
+                            break;
+                        }
+                        let f2 = r.next_u32() % 2 == 0;
+                        oc383_dma_tag(c, &mut r, p, 3, f2);
+                        for k in 1..4 {
+                            let id = [0, 1, 2, 3, 4, 5, 7][(r.next_u32() % 7) as usize];
+                            oc383_dma_tag(c, &mut r, p + 0x10 * k, id, false);
+                        }
+                        // The next tag is the chain's next one: never END here.
+                        p += 0x40;
+                    }
+                }
+                if !ended {
+                    oc383_dma_tag(c, &mut r, p, 6, false);
+                }
+                c.g[A0][0] = r.next_u32() as u64;
+                c.g[A1][0] = sx(inst);
+                c.g[A2][0] = sx(chunk);
+                c.g[A3][0] = sx(chain);
+            },
+        );
+    }
+
+    /// Lay out a DMA chain the walker terminates on: ref/data pairs (six
+    /// slots per batch once split), then end tags.
+    #[test]
+    fn cps2_chunk_resolve_patch_dma_chain_matches() {
+        check(
+            ee::s13::f_003ac048__generated,
+            cps2_chunk_resolve_patch_dma_chain,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0396_0002 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003a_c048;
+                let (ctx, obj, chain) = (DATA + 0x40, DATA + 0x80, DATA + 0x100);
+                c.bus.write32(ctx + 0x24, DATA);
+                let mut split = seed % 4 == 0;
+                c.bus.write32(
+                    obj,
+                    if split {
+                        0x2_0000
+                    } else {
+                        r.next_u32() & !0x6_0000
+                    },
+                );
+                c.bus.write32(obj + 4, chain - DATA);
+                // End tags everywhere the walk might go.
+                for i in 0..64 {
+                    let a = chain + 0x10 * i;
+                    put_words(c, a, &[0x6000_0000, 0, 0, 0]);
+                }
+                let mut slot = 0u32;
+                let mut data_off = 0x4000u32;
+                let pairs = 1 + r.next_u32() % 4;
+                let mut write_pair =
+                    |c: &mut Cpu, r: &mut Rng, slot: u32, may_mark: bool| -> bool {
+                        let a = chain + 0x10 * slot;
+                        let mark = may_mark && r.next_u32() % 4 == 0;
+                        let addr = (r.next_u32() & 0xff0) | if mark { 0x8000_0000 } else { 0 };
+                        put_words(c, a, &[0x3000_0000 | (r.next_u32() & 0xf), addr, 0, 0]);
+                        let qwc = 1 + r.next_u32() % 4;
+                        put_words(c, a + 0x10, &[qwc, data_off, 0, 0]);
+                        data_off += 0x100;
+                        mark
+                    };
+                for p in 0..pairs {
+                    if write_pair(c, &mut r, slot, true) {
+                        split = true;
+                    }
+                    if split {
+                        if p + 1 == pairs {
+                            // The slot after the pair's follower is the end.
+                            put_words(
+                                c,
+                                chain + 0x10 * (slot + 2),
+                                &[0x3000_0000, r.next_u32() & 0xff0, 0, 0],
+                            );
+                            put_words(c, chain + 0x10 * (slot + 3), &[0x6000_0000, 0, 0, 0]);
+                            break;
+                        }
+                        write_pair(c, &mut r, slot + 2, true);
+                        slot += 6;
+                    } else {
+                        slot += 2;
+                    }
+                }
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(obj);
+                c.g[A2][0] = sx(ctx);
+                c.g[A3][0] = r.next_u32() as u64;
             },
         );
     }

@@ -529,6 +529,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_natural_air_sub_handle_input,
         "RiderNaturalAirSub_HandleInput",
     ),
+    (
+        0x0012_c230,
+        rider_gate_sub_update_charge,
+        "RiderGateSub_UpdateCharge",
+    ),
 ];
 
 /// `gp`-relative globals used here.
@@ -18076,6 +18081,211 @@ pub(crate) fn rws_landed(c: &mut Cpu) -> crate::call::Flow {
     call_ptr(c, RWS_SOUND_PHASE_END, 0x0012_d6c4)
 }
 
+// ---------------------------------------------------------------------------
+// RiderGateSub_UpdateCharge (0x12c230)
+
+pub(crate) const GATE_CHARGE_ANGLE: Callee = Callee {
+    addr: 0x0011_5ab0,
+    f: ee::s00::Rider_GetGateChargeAngle,
+};
+
+pub(crate) const GATE_START_TIME_REACHED: Callee = Callee {
+    addr: 0x0012_c028,
+    f: ee::s00::RiderGateSub_IsStartTimeReached,
+};
+
+pub(crate) const GATE_CAN_START: Callee = Callee {
+    addr: 0x0012_c078,
+    f: ee::s00::RiderGateSub_CanStart,
+};
+
+/// Gate sub-state fields: launched flag, time held at the extreme, the
+/// lowest / highest lean reached (the launch thrust once launched), the
+/// current lean, the rider.
+pub(crate) const GATE_LAUNCHED: u32 = 0x0;
+
+pub(crate) const GATE_HELD: u32 = 0x4;
+
+pub(crate) const GATE_LEAN_MIN: u32 = 0x8;
+
+pub(crate) const GATE_LEAN_MAX: u32 = 0xc;
+
+pub(crate) const GATE_LEAN: u32 = 0x10;
+
+pub(crate) const GATE_RIDER: u32 = 0x14;
+
+/// `void RiderGateSub_UpdateCharge(cGateControl* self, const PadCmd* cmd)`
+/// (0x12c230): rock in the start gate. The stick (bits 12..17 of the command,
+/// / 31) picks a lean target (forward 0.62, back 0, else 0.31); the lean moves
+/// towards it at 0.9/s (4.5 * distance/s when 0.2 or more away) per 1/60 s
+/// tick; the knee angles follow the gate charge angle. A changed lean resets
+/// the hold timer and extends the min/max. Once the start time is reached and
+/// a launch is possible, sets the launch thrust (from the rock amplitude when
+/// leaning forward and quick, at least 555.6) and the launched flag.
+pub fn rider_gate_sub_update_charge(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let gp = c.g[GP][0] as u32;
+        c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+        let frame = Frame::open(c, 0x30);
+        c.lwc1(1, gp.wrapping_sub(0x7834));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 14);
+        c.mtc1(0, 2);
+        c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 26) as u32);
+        frame.save(c, S0, 0x10);
+        c.mtc1(2, 0);
+        c.cvt_s_w(0, 0);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 20, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 21, 0x28);
+        c.mul_s(0, 0, 1);
+        c.c_lt_s(2, 0);
+        let forward = c.fcc();
+        c.lwc1(21, (c.g[S0][0] as u32).wrapping_add(GATE_LEAN)); // the old lean
+                                                                 // f20 = the lean target.
+        if forward {
+            c.cycles += 3;
+            c.lwc1(20, gp.wrapping_sub(0x7830));
+        } else {
+            c.cycles += 4;
+            c.c_lt_s(0, 2);
+            c.lwc1(20, gp.wrapping_sub(0x782c));
+            if c.fcc() {
+                c.mov_s(20, 2);
+            }
+        }
+        c.cycles += 13;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(GATE_RIDER));
+        GATE_CHARGE_ANGLE.call(c, 0x0012_c29c)?;
+        let gp = c.g[GP][0] as u32;
+        let s0 = c.g[S0][0] as u32;
+        c.g[V0][0] = c.lw(s0.wrapping_add(GATE_RIDER));
+        let rider = c.g[V0][0] as u32;
+        c.lwc1(1, gp.wrapping_sub(0x7828));
+        c.swc1(0, rider.wrapping_add(0x2c8));
+        c.sw(rider.wrapping_add(0x2cc), 0);
+        c.swc1(0, rider.wrapping_add(0x2d0));
+        // The rate: 0.9, or 4.5 * |target - lean| from 0.2 away.
+        c.lwc1(0, s0.wrapping_add(GATE_LEAN));
+        c.sub_s(0, 20, 0);
+        c.abs_s(2, 0);
+        c.c_le_s(1, 2);
+        if c.fcc() {
+            c.cycles += 4;
+            c.g[AT][0] = 0x4090_0000;
+            c.mtc1(1, 0);
+            c.mul_s(0, 2, 0);
+        } else {
+            c.cycles += 1;
+            c.lwc1(0, gp.wrapping_sub(0x7824));
+        }
+        // Step towards the target (f2 = the new lean).
+        c.cycles += 8;
+        c.lwc1(1, gp.wrapping_sub(0x7820));
+        c.lwc1(3, s0.wrapping_add(GATE_LEAN));
+        c.mul_s(1, 0, 1);
+        c.add_s(0, 20, 1);
+        c.c_lt_s(0, 3);
+        if c.fcc() {
+            c.cycles += 2;
+            c.sub_s(2, 3, 1);
+        } else {
+            c.sub_s(0, 20, 1);
+            c.cycles += 4;
+            c.c_lt_s(3, 0);
+            let below = c.fcc();
+            c.mov_s(2, 20);
+            if below {
+                c.cycles += 1;
+                c.add_s(2, 3, 1);
+            }
+        }
+        // Store; the hold timer; a changed lean resets it and extends min/max.
+        c.cycles += 7;
+        c.lwc1(0, s0.wrapping_add(GATE_HELD));
+        c.c_eq_s(21, 2);
+        c.lwc1(1, gp.wrapping_sub(0x781c));
+        c.swc1(2, s0.wrapping_add(GATE_LEAN));
+        c.add_s(0, 0, 1);
+        let same = c.fcc();
+        c.swc1(0, s0.wrapping_add(GATE_HELD));
+        if !same {
+            c.cycles += 4;
+            c.c_lt_s(21, 2);
+            let up = c.fcc();
+            c.sw(s0.wrapping_add(GATE_HELD), 0);
+            if up {
+                c.cycles += 2;
+                c.swc1(2, s0.wrapping_add(GATE_LEAN_MAX));
+            } else {
+                c.cycles += 1;
+                c.swc1(2, s0.wrapping_add(GATE_LEAN_MIN));
+            }
+        }
+        'exit: {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
+            GATE_START_TIME_REACHED.call(c, 0x0012_c358)?;
+            if c.g[V0][0] == 0 {
+                break 'exit;
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
+            GATE_CAN_START.call(c, 0x0012_c368)?;
+            if c.g[V0][0] == 0 {
+                break 'exit;
+            }
+            // The launch thrust (f4).
+            let gp = c.g[GP][0] as u32;
+            let s0 = c.g[S0][0] as u32;
+            c.cycles += 6;
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(1, 0);
+            c.mtc1(0, 4);
+            c.c_lt_s(0, 20);
+            if c.fcc() {
+                c.cycles += 5;
+                c.lwc1(5, s0.wrapping_add(GATE_HELD));
+                c.lwc1(0, gp.wrapping_sub(0x7818));
+                c.c_lt_s(5, 0);
+                if c.fcc() {
+                    c.cycles += 12;
+                    c.lwc1(2, s0.wrapping_add(GATE_LEAN_MIN));
+                    c.lwc1(0, s0.wrapping_add(GATE_LEAN_MAX));
+                    c.g[AT][0] = 0x3f80_0000;
+                    c.mtc1(1, 1);
+                    c.sub_s(0, 0, 2);
+                    c.lwc1(3, gp.wrapping_sub(0x7814));
+                    c.lwc1(2, s0.wrapping_add(GATE_LEAN));
+                    c.add_s(4, 5, 1);
+                    c.mul_s(0, 0, 3);
+                    c.sub_s(1, 1, 2);
+                    c.mul_s(0, 0, 1);
+                    c.div_s(4, 0, 4);
+                }
+            }
+            c.cycles += 5;
+            c.lwc1(0, gp.wrapping_sub(0x7810));
+            c.c_lt_s(4, 0);
+            if c.fcc() {
+                c.mov_s(4, 0);
+            }
+            c.cycles += 4;
+            c.g[V0][0] = 0x1;
+            c.swc1(4, s0.wrapping_add(GATE_LEAN_MAX));
+            c.sw(s0.wrapping_add(GATE_LAUNCHED), c.g[V0][0]);
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 5;
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x28);
+        frame.restore_fpr(c, 20, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -23326,6 +23536,169 @@ pub(crate) mod tests {
                 oc374_script(c, 17, &ids);
                 let finished = [r.next_u32() % 2, r.next_u32() % 2];
                 oc374_script(c, 21, &finished);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::rider::tests::oc396_fake;
+    pub(crate) use crate::game::ai::rider::tests::oc396_fake_call;
+    pub(crate) use crate::game::ai::rider::tests::OC396_CTRL;
+    pub(crate) use crate::game::ai::rider::tests::OC396_MAGIC;
+    pub(crate) use crate::game::ai::rider::tests::OC396_RET;
+
+    oc396_fake!(
+        oc396_fake_get_character,
+        OC396_PREV_GET_CHARACTER,
+        0x0014_a080,
+        ee::s01::f_0014a080__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_get_alt_character,
+        OC396_PREV_GET_ALT_CHARACTER,
+        0x0014_a0b0,
+        ee::s01::f_0014a0b0__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_get_be,
+        OC396_PREV_GET_BE,
+        0x0014_dc80,
+        ee::s01::f_0014dc80__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_get_interface,
+        OC396_PREV_GET_INTERFACE,
+        0x0014_dd58,
+        ee::s01::f_0014dd58__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_is_sharing,
+        OC396_PREV_IS_SHARING,
+        0x0014_77e8,
+        ee::s01::f_001477e8__generated
+    );
+
+    pub(crate) fn oc396_install_be_fakes() {
+        hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014A080),
+            oc396_fake_get_character,
+            &OC396_PREV_GET_CHARACTER,
+        );
+        hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014A0B0),
+            oc396_fake_get_alt_character,
+            &OC396_PREV_GET_ALT_CHARACTER,
+        );
+        hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+            oc396_fake_get_be,
+            &OC396_PREV_GET_BE,
+        );
+        hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+            oc396_fake_get_interface,
+            &OC396_PREV_GET_INTERFACE,
+        );
+        hook(
+            addr_of_mut!(ee::s01::OVERRIDE_001477E8),
+            oc396_fake_is_sharing,
+            &OC396_PREV_IS_SHARING,
+        );
+    }
+
+    oc396_fake!(
+        oc396_fake_start_time,
+        OC396_PREV_START_TIME,
+        0x0012_c028,
+        ee::s00::f_0012c028__generated
+    );
+
+    oc396_fake!(
+        oc396_fake_can_start,
+        OC396_PREV_CAN_START,
+        0x0012_c078,
+        ee::s00::f_0012c078__generated
+    );
+
+    /// The gate rock: stick forward / back / centred, the lean near or far
+    /// from its target, unchanged or moving up or down; launching (quick or
+    /// slow, forward or not) or not yet. The knee angle comes from the real
+    /// `Rider_GetGateChargeAngle` over the faked BE queries (calls 0-6).
+    #[test]
+    fn rider_gate_sub_update_charge_matches() {
+        oc396_install_be_fakes();
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0012C028),
+            oc396_fake_start_time,
+            &OC396_PREV_START_TIME,
+        );
+        hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0012C078),
+            oc396_fake_can_start,
+            &OC396_PREV_CAN_START,
+        );
+        covered(
+            ee::s00::f_0012c230__generated,
+            rider_gate_sub_update_charge,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0012_c230, 9);
+                c.pc = 0x0012_c230;
+                c.bus.write32(OC396_CTRL, OC396_MAGIC);
+                // Calls: GetBE, GetInterface, (size scale: character, alt = 0,
+                // GetBE, GetInterface, sharing), start time reached, can start (#8 -> 0).
+                let ret = [
+                    (seed / 4 % 2) as u32,
+                    DATA + 0x700,
+                    r.next_u32() % 8,
+                    0,
+                    DATA + 0x700,
+                    DATA + 0x700,
+                    r.next_u32() % 2,
+                    (seed / 8 % 4 != 0) as u32,
+                ];
+                put_words(c, OC396_RET, &ret);
+                for (k, v) in [
+                    0.032258064f32,
+                    0.62,
+                    0.31,
+                    0.2,
+                    0.9,
+                    0.016666668,
+                    0.016666668,
+                    0.4,
+                    2027.7778,
+                    555.55554,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    c.bus.write32(GAME_GP - 0x7834 + 4 * k as u32, v.to_bits());
+                }
+                c.bus.write32(GAME_GP - 0x6df4, 0.01f32.to_bits());
+                c.bus.write32(GAME_GP - 0x6df0, 0.8f32.to_bits());
+                let this = DATA + 0x100;
+                let rider = DATA + 0x400;
+                let stick: i32 = [20, -20, 0, 5][(seed % 4) as usize];
+                c.bus.write32(
+                    DATA,
+                    ((stick as u32) & 0x3f) << 12 | (r.next_u32() & !(0x3f << 12)),
+                );
+                let lean = [0.31f32, 0.62, 0.0, 0.5, 0.1, 0.3][(r.next_u32() % 6) as usize];
+                c.bus.write32(this + GATE_LEAN, lean.to_bits());
+                c.bus.write32(
+                    this + GATE_HELD,
+                    [0.1f32, 0.5, 0.0][(r.next_u32() % 3) as usize].to_bits(),
+                );
+                c.bus.write32(this + GATE_LEAN_MIN, r.f32(0.3));
+                c.bus.write32(this + GATE_LEAN_MAX, r.f32(0.7));
+                c.bus.write32(this + GATE_RIDER, rider);
+                c.bus.write32(rider + 0x86c, r.next_u32() % 4);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(DATA);
             },
         );
     }

@@ -17,6 +17,8 @@ pub(crate) use crate::game::fe::feasyncfile::p as p_5;
 pub(crate) use crate::game::fe::feasyncfile::p as p_6;
 pub(crate) use crate::game::fe::feasyncfile::p as p_7;
 pub(crate) use crate::game::fe::festateload::at;
+pub(crate) use crate::game::object::instancenode::ui_vector_lw;
+pub(crate) use crate::game::object::movenode::AVALANCHE_GRMAN_GP;
 pub(crate) use crate::game::object::railmodifier::reset_vtable_and_delete;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 pub(crate) use crate::game::render::particle::copy_mat;
@@ -169,6 +171,14 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0039_5f60,
         ps2_graphics_man_try_acquire_frame,
         "PS2GraphicsMan_TryAcquireFrame",
+    ),
+    (0x0039_1e30, font_draw_text_w, "Font_DrawTextW"),
+    (0x0039_21f0, font_measure_text_w, "Font_MeasureTextW"),
+    (0x0039_2430, font_find_line_break, "Font_FindLineBreak"),
+    (
+        0x0039_5f80,
+        ps2_graphics_man_is_idle,
+        "PS2GraphicsMan_IsIdle",
     ),
 ];
 
@@ -1553,6 +1563,681 @@ pub fn ps2_graphics_man_try_acquire_frame(c: &mut Cpu) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Font_MeasureTextW (0x3921f0)
+
+/// `cFont` glyph lookup: glyph count (+0), glyph table (+4, 12-byte
+/// entries keyed by their first u16), default glyph (+8), first and last
+/// directly indexed character (+0xc, +0x10), shadow offset (+0x28, +0x2c).
+pub(crate) const FONT_GLYPH_COUNT: u32 = 0x0;
+
+pub(crate) const FONT_GLYPHS: u32 = 0x4;
+
+pub(crate) const FONT_DEFAULT_GLYPH: u32 = 0x8;
+
+pub(crate) const FONT_FIRST_CHAR: u32 = 0xc;
+
+pub(crate) const FONT_LAST_DIRECT: u32 = 0x10;
+
+pub(crate) const FONT_SHADOW: u32 = 0x28;
+
+/// The glyph of character `v1` (font a0, next character pointer left in a1,
+/// result in t2), as `Font_MeasureTextW` inlines it: none below the first
+/// character, a direct index up to the last direct one, else a binary search
+/// of the table (default glyph if absent). Registers as the original leaves
+/// them (a2 = the string pointer on entry).
+pub(crate) fn font_find_glyph_inline(c: &mut Cpu, measure_head: u32) -> u64 {
+    let font = c.g[A0][0] as u32;
+    let ch = c.g[V1][0];
+    c.cycles += 4;
+    c.g[T2][0] = Addr(font + FONT_FIRST_CHAR).lw(c);
+    let below = (ch as i64) < (c.g[T2][0] as i64);
+    c.g[V0][0] = below as u64;
+    c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(2));
+    if below {
+        c.cycles += 2;
+        c.g[T2][0] = 0;
+        return 0;
+    }
+    c.cycles += 4;
+    c.g[A1][0] = Addr(font + FONT_LAST_DIRECT).lw(c);
+    let searched = (c.g[A1][0] as i64) < (ch as i64);
+    c.g[V0][0] = searched as u64;
+    if !searched {
+        // Direct: glyphs + (ch - first) * 12.
+        c.cycles += 7;
+        c.mult(0, V1, V1, T4);
+        c.mult(0, T2, T2, T4);
+        let glyphs = Addr(font + FONT_GLYPHS).lw(c);
+        c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(2));
+        c.g[V0][0] = sx((glyphs as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[T2][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[T2][0] as u32));
+        return c.g[T2][0];
+    }
+    // Binary search over [lo = last - first, hi = count).
+    c.g[T2][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[T2][0] as u32));
+    c.cycles += 5;
+    c.g[T0][0] = Addr(font + FONT_GLYPH_COUNT).lw(c);
+    c.g[T6][0] = Addr(font + FONT_GLYPHS).lw(c);
+    c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(2));
+    c.g[T1][0] = 0xc;
+    c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[T0][0] as u32));
+    loop {
+        c.cycles += 6;
+        c.g[A3][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
+        c.mult(0, A2, A3, T1);
+        let entry = (c.g[A2][0] as u32).wrapping_add(c.g[T6][0] as u32);
+        c.g[V0][0] = sx(entry);
+        c.g[A2][0] = Addr(entry).lhu(c);
+        if ch == c.g[A2][0] {
+            c.g[T2][0] = sx(entry);
+            return c.g[T2][0];
+        }
+        c.cycles += 3;
+        let lower = (ch as i64) < (c.g[A2][0] as i64);
+        c.g[V0][0] = lower as u64;
+        if !lower {
+            c.g[T2][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+        } else {
+            c.cycles += 1;
+            c.g[T0][0] = c.g[A3][0];
+        }
+        c.cycles += 3;
+        let more = (c.g[T2][0] as i64) < (c.g[T0][0] as i64);
+        c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[T0][0] as u32));
+        if !more {
+            c.cycles += 1;
+            c.g[T2][0] = Addr(font + FONT_DEFAULT_GLYPH).lw(c);
+            return c.g[T2][0];
+        }
+        if event_due(c) {
+            deliver_event_here(c, measure_head);
+        }
+    }
+}
+
+/// `float Font_MeasureTextW(cFont* font, const u16* str, Rect* out, int mono,
+/// float sx, float sy)` (0x3921f0): the bounding box (x0, y0, x1, y1) of a
+/// wide string drawn at the origin with scale (sx, sy), widened by the
+/// font's shadow offset; returns its x1. `out` may be null (a stack rect).
+pub fn font_measure_text_w(c: &mut Cpu) {
+    c.cycles += 13;
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x10));
+    c.g[T5][0] = c.g[A3][0];
+    c.g[T3][0] = if c.g[A2][0] != 0 {
+        c.g[A2][0]
+    } else {
+        c.g[SP][0]
+    };
+    let rc = c.g[T3][0] as u32;
+    Addr(rc).sw(c, 0);
+    c.g[A2][0] = c.g[A1][0];
+    Addr(rc + 4).sw(c, 0);
+    Addr(rc + 8).sw(c, 0);
+    Addr(rc + 0xc).sw(c, 0);
+    c.lwc1(6, rc); // x = 0
+    c.g[V0][0] = Addr(c.g[A2][0] as u32).lhu(c);
+    c.mov_s(7, 6); // y = 0
+    if c.g[V0][0] != 0 {
+        c.cycles += 3;
+        c.g[T4][0] = 0xc;
+        c.g[V1][0] = Addr(c.g[A2][0] as u32).lhu(c);
+        loop {
+            let glyph = font_find_glyph_inline(c, 0x0039_2288);
+            c.cycles += 2;
+            c.g[A2][0] = c.g[A1][0];
+            if glyph != 0 {
+                let g = glyph as u32;
+                c.cycles += 31;
+                c.g[V0][0] = Addr(g + 9).lb(c);
+                c.lwc1(2, rc);
+                c.mtc1(V0, 0);
+                c.cvt_s_w(0, 0);
+                c.g[V1][0] = Addr(g + 8).lb(c);
+                c.lwc1(3, rc + 4);
+                c.mtc1(V1, 1);
+                c.cvt_s_w(1, 1);
+                c.lwc1(4, rc + 0xc);
+                c.mul_s(0, 0, 12);
+                c.mul_s(5, 1, 12); // advance * sx
+                c.add_s(0, 6, 0);
+                c.min_s(0, 0, 2);
+                c.swc1(0, rc); // x0 = min(x + xoff * sx, x0)
+                c.g[V0][0] = Addr(g + 0xa).lb(c);
+                c.mtc1(V0, 0);
+                c.cvt_s_w(0, 0);
+                c.mul_s(0, 0, 13);
+                c.add_s(0, 7, 0);
+                c.min_s(0, 0, 3);
+                c.swc1(0, rc + 4); // y0 = min(y + yoff * sy, y0)
+                let yoff = Addr(g + 0xa).lb(c);
+                c.g[V1][0] = Addr(g + 3).lbu(c);
+                c.g[V0][0] = sx((yoff as u32).wrapping_add(c.g[V1][0] as u32));
+                c.mtc1(V0, 0);
+                c.cvt_s_w(0, 0);
+                c.mul_s(0, 0, 13);
+                c.add_s(0, 7, 0);
+                c.max_s(0, 0, 4);
+                c.swc1(0, rc + 0xc); // y1 = max(y + (yoff + h) * sy, y1)
+                if c.g[T5][0] != 0 {
+                    // Monospaced: x1 = max(x + advance, x1).
+                    c.cycles += 3;
+                    c.add_s(0, 6, 5);
+                    c.lwc1(1, rc + 8);
+                    c.mov_s(2, 0);
+                } else {
+                    // x1 = max(x + (xoff + w) * sx, x1).
+                    c.cycles += 10;
+                    c.g[V1][0] = Addr(g + 2).lbu(c);
+                    c.add_s(2, 6, 5);
+                    let xoff = Addr(g + 9).lb(c);
+                    c.lwc1(1, rc + 8);
+                    c.g[V0][0] = sx((xoff as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.mtc1(V0, 0);
+                    c.cvt_s_w(0, 0);
+                    c.mul_s(0, 0, 12);
+                    c.add_s(0, 6, 0);
+                }
+                c.cycles += 4;
+                c.max_s(0, 0, 1);
+                c.swc1(0, rc + 8);
+                c.mov_s(6, 2); // x += advance
+                c.g[A2][0] = c.g[A1][0];
+            }
+            c.cycles += 3;
+            c.g[V0][0] = Addr(c.g[A2][0] as u32).lhu(c);
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            c.g[V1][0] = Addr(c.g[A2][0] as u32).lhu(c);
+            if event_due(c) {
+                deliver_event_here(c, 0x0039_2230);
+            }
+        }
+    }
+    // x1 += x0, y1 += y0; then the shadow offset.
+    let font = c.g[A0][0] as u32;
+    c.cycles += 14;
+    c.lwc1(2, rc + 8);
+    c.lwc1(0, rc + 0xc);
+    c.lwc1(4, rc);
+    c.lwc1(1, rc + 4);
+    c.add_s(3, 2, 4);
+    c.add_s(0, 0, 1);
+    c.f[2] = 0;
+    c.swc1(3, rc + 8);
+    c.swc1(0, rc + 0xc);
+    c.lwc1(0, font + FONT_SHADOW);
+    c.c_lt_s(0, 2);
+    if !c.fcc() {
+        c.add_s(0, 3, 0);
+    } else {
+        c.cycles += 4;
+        c.sub_s(1, 4, 0);
+        c.swc1(1, rc);
+        c.lwc1(0, font + FONT_SHADOW);
+        c.sub_s(0, 3, 0);
+    }
+    c.cycles += 7;
+    c.swc1(0, rc + 8);
+    c.lwc1(1, font + FONT_SHADOW + 4);
+    c.f[0] = 0;
+    c.c_lt_s(1, 0);
+    if !c.fcc() {
+        c.lwc1(0, rc + 0xc);
+        c.cycles += 2;
+        c.add_s(0, 0, 1);
+        c.swc1(0, rc + 0xc);
+    } else {
+        c.cycles += 8;
+        c.lwc1(0, rc + 4);
+        c.lwc1(2, rc + 0xc);
+        c.sub_s(0, 0, 1);
+        c.swc1(0, rc + 4);
+        c.lwc1(1, font + FONT_SHADOW + 4);
+        c.sub_s(2, 2, 1);
+        c.swc1(2, rc + 0xc);
+    }
+    c.cycles += 3;
+    c.lwc1(0, rc + 8);
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x10));
+    abi::ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// Font_DrawTextW (0x391e30)
+
+/// `cFont` drawing fields: offset (+0x18), UV scale (+0x20), shadow offset
+/// (+0x28), scale (+0x38), colour (+0x40), shadow colour (+0x50), texture
+/// id (+0x60).
+pub(crate) const FONT_OFFSET: u32 = 0x18;
+
+pub(crate) const FONT_UV_SCALE: u32 = 0x20;
+
+pub(crate) const FONT_SCALE: u32 = 0x38;
+
+pub(crate) const FONT_TEXTURE: u32 = 0x60;
+
+/// GrMan's text draw (vtable `+0x288`): font, string, colour at
+/// `font + colour`, position (f12, f13), scale, UV scale, z = 0
+/// (`sp + 8`). Registers as `Font_DrawTextW` sets them.
+pub(crate) fn font_draw_text_w_call(c: &mut Cpu, colour: u32, ret: u32) -> crate::call::Flow {
+    let grman = c.g[S3][0] as u32;
+    let vt = c.g[V0][0] as u32;
+    let font = c.g[S2][0] as u32;
+    c.g[A1][0] = c.g[S2][0];
+    c.g[A2][0] = c.g[S4][0];
+    c.g[A3][0] = sx(font.wrapping_add(colour));
+    let delta = Addr(vt + 0x288).lh(c);
+    let func = Addr(vt + 0x28c).lw(c);
+    c.g[A0][0] = sx(grman.wrapping_add(delta as u32));
+    c.lwc1(14, font + FONT_SCALE);
+    c.lwc1(15, font + FONT_SCALE + 4);
+    c.lwc1(16, font + FONT_UV_SCALE);
+    c.lwc1(17, font + FONT_UV_SCALE + 4);
+    let z = sp(c) + 8;
+    c.lwc1(18, z);
+    if colour == 0x40 {
+        c.g[V1][0] = func;
+    } else {
+        c.g[T0][0] = func;
+    }
+    call_ptr(c, func as u32, ret)
+}
+
+/// `void Font_DrawTextW(cFont* font, const u16* str, float x, float y)`
+/// (0x391e30): bind the font texture, draw the string at (x, y) + offset *
+/// scale through GrMan (vtable `+0x288`); with a shadow offset, first draw
+/// the shadow (shadow colour, one layer lower) shifted by it.
+pub fn font_draw_text_w(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 29;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S4, 0x20);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x60);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S1, 0x50);
+        frame.save_ra(c, 0x10);
+        let font = c.g[S2][0] as u32;
+        let gp = c.g[GP][0] as u32;
+        let grman = Addr(gp.wrapping_add(AVALANCHE_GRMAN_GP)).lw(c);
+        c.g[S3][0] = grman;
+        let tex = Addr(font + FONT_TEXTURE).lw(c);
+        c.g[V1][0] = tex;
+        let ds = ui_vector_lw(c, grman, 0xe84);
+        c.g[V0][0] = ds;
+        Addr((ds as u32).wrapping_add(0x10)).sh(c, tex);
+        let pos = frame.at(c, 0);
+        Addr(pos + 8).sw(c, 0);
+        // pos = (x + offset.x * scale.x, y + offset.y * scale.y, 0, 0).
+        c.lwc1(2, font + FONT_SCALE);
+        c.lwc1(0, font + FONT_OFFSET);
+        c.lwc1(1, font + FONT_OFFSET + 4);
+        c.lwc1(3, font + FONT_SCALE + 4);
+        c.mul_s(0, 0, 2);
+        c.lwc1(2, font + FONT_SHADOW);
+        c.mul_s(1, 1, 3);
+        c.lwc1(4, pos + 8);
+        c.add_s(12, 12, 0);
+        Addr(pos + 0xc).sw(c, 0);
+        c.c_eq_s(2, 4);
+        c.add_s(13, 13, 1);
+        c.swc1(12, pos);
+        let mut shadow = !c.fcc();
+        c.swc1(13, pos + 4);
+        if !shadow {
+            c.cycles += 5;
+            c.lwc1(0, font + FONT_SHADOW + 4);
+            c.c_eq_s(0, 4);
+            shadow = !c.fcc();
+        }
+        if shadow {
+            // Shadow: draw-state layer (bits 5..9 of word +8) minus one.
+            c.cycles += 40;
+            let ds = ui_vector_lw(c, grman, 0xe84);
+            c.g[T0][0] = ds;
+            c.g[S1][0] = 0xffff_ffff_ffff_fc1f;
+            let w = ui_vector_lw(c, ds, 8);
+            c.g[S0][0] = sx(((w & 0x3e0) as u32) >> 5);
+            let layer = sx((c.g[S0][0] as u32).wrapping_sub(1));
+            let positive = (-1i64) < (layer as i64);
+            c.g[A0][0] = positive as u64;
+            let layer = if positive { layer } else { 0 };
+            c.g[V0][0] = sx((layer as u32) << 5) & 0x3e0;
+            c.g[V1][0] = (w & 0xffff_ffff_ffff_fc1f) | c.g[V0][0];
+            Addr((ds as u32).wrapping_add(8)).sw(c, c.g[V1][0]);
+            c.g[V0][0] = ui_vector_lw(c, grman, 0x10d8);
+            c.lwc1(0, pos);
+            c.lwc1(12, font + FONT_SHADOW);
+            c.lwc1(1, pos + 4);
+            c.lwc1(13, font + FONT_SHADOW + 4);
+            c.add_s(12, 0, 12);
+            c.add_s(13, 1, 13);
+            font_draw_text_w_call(c, 0x50, 0x0039_1f3c)?;
+            let ds = ui_vector_lw(c, c.g[S3][0], 0xe84);
+            c.g[V1][0] = ds;
+            c.g[S0][0] = sx((c.g[S0][0] as u32) << 5);
+            let w = ui_vector_lw(c, ds, 8);
+            c.g[V0][0] = (w & c.g[S1][0]) | c.g[S0][0];
+            Addr((ds as u32).wrapping_add(8)).sw(c, c.g[V0][0]);
+        }
+        let grman = c.g[S3][0];
+        c.g[V0][0] = ui_vector_lw(c, grman, 0x10d8);
+        c.cycles += 22;
+        let pos = frame.at(c, 0);
+        c.lwc1(12, pos);
+        c.lwc1(13, pos + 4);
+        font_draw_text_w_call(c, 0x40, 0x0039_1f90)?;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Small wrappers and leaves
+
+/// `bool PS2GraphicsMan_IsIdle(PS2GraphicsMan* self)` (0x395f80): forwards
+/// to `PS2GraphicsMan_IsRenderIdle` (0x382730, through the table).
+pub fn ps2_graphics_man_is_idle(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Table(0x0038_2730),
+        0x0039_5f90,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Font_FindLineBreak
+
+/// Font: horizontal shadow offset (float; its magnitude shortens the line).
+pub(crate) const FONT_FIND_LINE_BREAK_SHADOW_X: u32 = 0x28;
+
+/// Font: lowest character of the direct glyph range.
+pub(crate) const FONT_FIND_LINE_BREAK_LO: u32 = 0xc;
+
+/// Font: highest character of the direct glyph range.
+pub(crate) const FONT_FIND_LINE_BREAK_HI: u32 = 0x10;
+
+/// Font: glyph count (the end of the sorted extra glyphs).
+pub(crate) const FONT_FIND_LINE_BREAK_COUNT: u32 = 0x0;
+
+/// Font: glyph table (12-byte entries: `u16 code` at +0, `u8 w` at +2,
+/// `s8 advance` at +8, `s8 x offset` at +9).
+pub(crate) const FONT_FIND_LINE_BREAK_TABLE: u32 = 0x4;
+
+/// Font: the glyph used for a character missing from the table.
+pub(crate) const FONT_FIND_LINE_BREAK_DEFAULT: u32 = 0x8;
+
+/// The "line is full" exit of `Font_FindLineBreak`: end the copied line
+/// after the last word (`dst[lastSpace + 1] = 0`, v0 = that address - 1),
+/// then skip the spaces after it in the source; returns (v0) the start of
+/// the next line. `extra` is the cost of the branch that led here, `head`
+/// the skip loop's pc.
+pub(crate) fn font_find_line_break_skip_spaces(c: &mut Cpu, extra: u64, head: u32) {
+    c.cycles += extra;
+    c.g[A0][0] = sx(r32(c, T8).wrapping_add(r32(c, T6)));
+    let at = r32(c, V0).wrapping_add(1);
+    c.sb(at, 0);
+    c.g[V1][0] = 0x20;
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+    loop {
+        c.cycles += 7;
+        c.g[V0][0] = c.lb(r32(c, A0));
+        if c.g[V0][0] != c.g[V1][0] {
+            c.cycles += 2;
+            c.g[V0][0] = c.g[A0][0];
+            return;
+        }
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// `char* Font_FindLineBreak(cFont* font, const char* str, char* dst, int max,
+/// float scale, float width)` (0x392430): copy `str` into `dst` until the
+/// scaled glyph widths reach `width` (less the shadow offset) or `max - 1`
+/// characters. When the line is full it breaks after the last whole word
+/// and returns where the next line starts (spaces skipped); if a single word
+/// does not fit it breaks inside it and returns the rest; if everything fits
+/// it returns 0. Glyphs come from the direct range `lo..=hi`, else a binary
+/// search of the sorted extra glyphs (the default glyph when missing), and
+/// none below `lo`.
+///
+/// Registers as in the original: t0 str, t8 start, t5 n, t7 k, t6 last
+/// word end (-1: none yet), f3 width so far, f4 pending advance, f13 the
+/// width limit.
+pub fn font_find_line_break(c: &mut Cpu) {
+    c.cycles += 15;
+    c.g[SP][0] = sx(r32(c, SP).wrapping_sub(0x40));
+    let frame = r32(c, SP);
+    c.g[T3][0] = c.g[A0][0];
+    c.sq(16, frame + 0x30);
+    c.g[T0][0] = c.g[A1][0];
+    c.sq(17, frame + 0x20);
+    c.sq(18, frame + 0x10);
+    c.sq(19, frame);
+    let font = r32(c, T3);
+    // width -= |shadow x|, clamped at 0.
+    c.mtc1(0, 1);
+    c.lwc1(0, font.wrapping_add(FONT_FIND_LINE_BREAK_SHADOW_X));
+    c.abs_s(0, 0);
+    c.sub_s(13, 13, 0);
+    c.c_lt_s(13, 1);
+    if c.fcc() {
+        c.mov_s(13, 1);
+    }
+    'ret: {
+        'tail: {
+            c.cycles += 8;
+            c.mov_s(3, 1);
+            c.g[V0][0] = c.lb(r32(c, T0));
+            c.g[T8][0] = c.g[T0][0];
+            c.mov_s(4, 3);
+            c.g[T6][0] = u64::MAX;
+            c.g[T5][0] = 0;
+            let empty = c.g[V0][0] == 0;
+            c.g[T7][0] = 0;
+            if empty {
+                break 'tail;
+            }
+            c.cycles += 5;
+            c.g[S1][0] = sx(r32(c, A3).wrapping_sub(1));
+            c.g[S0][0] = 0xc;
+            c.g[S2][0] = u64::MAX;
+            c.g[V0][0] = c.lb(r32(c, T0));
+            c.g[V0][0] ^= 0x20;
+            loop {
+                // A space: break here if the line is full, else remember the
+                // end of the word before it.
+                c.cycles += 2;
+                let is_space = c.g[V0][0] == 0;
+                c.g[T9][0] = c.lbu(r32(c, T0));
+                if is_space {
+                    c.cycles += 4;
+                    c.c_le_s(13, 3);
+                    let full = c.fcc();
+                    c.g[V0][0] = sx(r32(c, T6).wrapping_add(r32(c, A2)));
+                    if full {
+                        font_find_line_break_skip_spaces(c, 4, 0x0039_24c8);
+                        break 'ret;
+                    }
+                    c.cycles += 2;
+                    let first = (c.g[T7][0] as i64) <= 0;
+                    c.g[V0][0] = sx(r32(c, T7).wrapping_add(r32(c, T8)));
+                    if !first {
+                        c.cycles += 4;
+                        c.g[A0][0] = sx(r32(c, T7).wrapping_sub(1));
+                        c.g[V1][0] = c.lb(r32(c, V0).wrapping_sub(1));
+                        c.g[V1][0] ^= 0x20;
+                        if c.g[V1][0] != 0 {
+                            c.g[T6][0] = c.g[A0][0];
+                        }
+                    }
+                }
+                // The glyph (t2; 0 = none); t1 = &dst[n].
+                'glyph: {
+                    c.cycles += 5;
+                    c.g[V1][0] = c.lbu(r32(c, T0));
+                    c.g[T2][0] = c.lw(font.wrapping_add(FONT_FIND_LINE_BREAK_LO));
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[T2][0] as i64)) as u64;
+                    let below = c.g[V0][0] != 0;
+                    c.g[T1][0] = sx(r32(c, A2).wrapping_add(r32(c, T5)));
+                    if below {
+                        c.cycles += 2;
+                        c.g[T2][0] = 0;
+                        break 'glyph;
+                    }
+                    c.cycles += 4;
+                    c.g[A0][0] = c.lw(font.wrapping_add(FONT_FIND_LINE_BREAK_HI));
+                    c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        // Direct range: table + (ch - lo) * 12.
+                        c.cycles += 7;
+                        c.mult(0, V1, V1, S0);
+                        c.mult(0, T2, T2, S0);
+                        c.g[V0][0] = c.lw(font.wrapping_add(FONT_FIND_LINE_BREAK_TABLE));
+                        c.g[T1][0] = sx(r32(c, A2).wrapping_add(r32(c, T5)));
+                        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                        c.g[T2][0] = sx(r32(c, V0).wrapping_sub(r32(c, T2)));
+                        break 'glyph;
+                    }
+                    // Above the range: binary search glyphs hi - lo .. count.
+                    c.g[A3][0] = c.lw(font.wrapping_add(FONT_FIND_LINE_BREAK_COUNT));
+                    c.cycles += 5;
+                    c.g[T2][0] = sx(r32(c, A0).wrapping_sub(r32(c, T2)));
+                    c.g[S3][0] = c.lw(font.wrapping_add(FONT_FIND_LINE_BREAK_TABLE));
+                    c.g[T1][0] = sx(r32(c, A2).wrapping_add(r32(c, T5)));
+                    c.g[T4][0] = 0xc;
+                    c.g[V0][0] = sx(r32(c, T2).wrapping_add(r32(c, A3)));
+                    loop {
+                        c.cycles += 6;
+                        c.g[A1][0] = sx((r32(c, V0) as i32 >> 1) as u32);
+                        c.mult(0, A0, A1, T4);
+                        c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, S3)));
+                        c.g[A0][0] = c.lhu(r32(c, V0));
+                        if c.g[V1][0] == c.g[A0][0] {
+                            c.g[T2][0] = c.g[V0][0];
+                            break 'glyph;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                        if c.g[V0][0] == 0 {
+                            c.g[T2][0] = sx(r32(c, A1).wrapping_add(1));
+                        } else {
+                            c.cycles += 1;
+                            c.g[A3][0] = c.g[A1][0];
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[T2][0] as i64) < (c.g[A3][0] as i64)) as u64;
+                        let more = c.g[V0][0] != 0;
+                        c.g[V0][0] = sx(r32(c, T2).wrapping_add(r32(c, A3)));
+                        if !more {
+                            c.cycles += 1;
+                            c.g[T2][0] = c.lw(font.wrapping_add(FONT_FIND_LINE_BREAK_DEFAULT));
+                            break 'glyph;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0039_2560);
+                        }
+                    }
+                }
+                // right = (xoff + w) * scale; width += pend + right;
+                // pend = advance * scale - right.
+                c.cycles += 2;
+                if c.g[T2][0] != 0 {
+                    c.cycles += 13;
+                    let glyph = r32(c, T2);
+                    c.g[V0][0] = c.lb(glyph.wrapping_add(9));
+                    c.g[V1][0] = c.lbu(glyph.wrapping_add(2));
+                    c.g[A0][0] = c.lb(glyph.wrapping_add(8));
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                    c.mtc1(V0, 0);
+                    c.cvt_s_w(0, 0);
+                    c.mtc1(A0, 1);
+                    c.cvt_s_w(1, 1);
+                    c.mul_s(0, 0, 12);
+                    c.mul_s(1, 1, 12);
+                    c.add_s(2, 4, 0);
+                    c.sub_s(4, 1, 0);
+                    c.add_s(3, 3, 2);
+                }
+                // Copy the character, unless the line is full with no word
+                // break yet: then break inside the word.
+                c.cycles += 4;
+                c.c_le_s(13, 3);
+                let dst = r32(c, T1);
+                if !c.fcc() {
+                    let ch = c.g[T9][0];
+                    c.sb(dst, ch);
+                } else {
+                    c.cycles += 2;
+                    if c.g[T6][0] == c.g[S2][0] {
+                        c.sb(dst, 0);
+                        c.cycles += 2;
+                        c.g[V0][0] = c.g[T0][0];
+                        break 'ret;
+                    }
+                    c.cycles += 1;
+                    let ch = c.g[T9][0];
+                    c.sb(dst, ch);
+                }
+                c.cycles += 4;
+                c.g[T5][0] = sx(r32(c, T5).wrapping_add(1));
+                c.g[T7][0] = sx(r32(c, T7).wrapping_add(1));
+                let at_max = c.g[T5][0] == c.g[S1][0];
+                c.g[T0][0] = sx(r32(c, T0).wrapping_add(1));
+                if at_max {
+                    break 'tail;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = c.lb(r32(c, T0));
+                let more = c.g[V0][0] != 0;
+                c.g[V0][0] ^= 0x20;
+                if !more {
+                    break 'tail;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0039_24a0);
+                }
+            }
+        }
+        // End of the string (or max): break after the last word if full.
+        c.cycles += 4;
+        c.c_le_s(13, 3);
+        let full = c.fcc();
+        c.g[V0][0] = sx(r32(c, T6).wrapping_add(r32(c, A2)));
+        if full {
+            font_find_line_break_skip_spaces(c, 5, 0x0039_2630);
+            break 'ret;
+        }
+        c.cycles += 3;
+        c.g[V1][0] = sx(r32(c, A2).wrapping_add(r32(c, T5)));
+        c.g[V0][0] = 0;
+        let end = r32(c, V1);
+        c.sb(end, 0);
+    }
+    c.cycles += 6;
+    let frame = r32(c, SP);
+    c.lq(16, frame + 0x30);
+    c.lq(17, frame + 0x20);
+    c.lq(18, frame + 0x10);
+    c.lq(19, frame);
+    c.g[SP][0] = sx(frame.wrapping_add(0x40));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2516,6 +3201,213 @@ pub(crate) mod tests {
                 c.bus.write32(this + 0x5a10, cur);
                 c.bus.write32(this + 0x5a90 + 4 * cur, (seed / 2) % 3);
             },
+        );
+    }
+
+    pub(crate) use crate::game::object::instancenode::tests::oc383_floats;
+    pub(crate) use crate::game::object::movenode::tests::oc383_vtable;
+    pub(crate) use crate::game::seg::seg_2fe810::tests::oc383_machine;
+
+    /// A font at `font`: 16 directly indexed glyphs 'A'..='P', then 8
+    /// searched ones (keys 0x60, 0x62, .. 0x6e), random metrics, shadow.
+    pub(crate) fn oc383_font(c: &mut Cpu, r: &mut Rng, font: u32, glyphs: u32) {
+        c.bus.write32(font + FONT_GLYPH_COUNT, 24);
+        c.bus.write32(font + FONT_GLYPHS, glyphs);
+        c.bus.write32(font + FONT_FIRST_CHAR, 0x41);
+        c.bus.write32(font + FONT_LAST_DIRECT, 0x50);
+        for i in 0..24u32 {
+            let e = glyphs + 12 * i;
+            fill(c, r, e, 3);
+            let key = if i < 16 {
+                0x41 + i
+            } else {
+                0x60 + 2 * (i - 16)
+            };
+            c.bus.write16(e, key as u16);
+        }
+        let default = if r.next_u32() & 1 == 0 {
+            0
+        } else {
+            glyphs + 12 * 5
+        };
+        c.bus.write32(font + FONT_DEFAULT_GLYPH, default);
+        c.bus.write32(font + FONT_SHADOW, r.f32(3.0));
+        c.bus.write32(font + FONT_SHADOW + 4, r.f32(3.0));
+    }
+
+    /// A wide string of up to 8 characters around the font's ranges.
+    pub(crate) fn oc383_put_wstr(c: &mut Cpu, r: &mut Rng, at: u32) -> u32 {
+        let len = r.next_u32() % 9;
+        for i in 0..len {
+            let k = r.next_u32();
+            let ch = match k % 5 {
+                0 => 0x30 + (k >> 8) % 0x11,
+                1 | 2 => 0x41 + (k >> 8) % 16,
+                3 => 0x5f + (k >> 8) % 0x12,
+                _ => 0x100 + (k >> 8) % 0x100,
+            };
+            c.bus.write16(at + 2 * i, ch as u16);
+        }
+        c.bus.write16(at + 2 * len, 0);
+        len
+    }
+
+    #[test]
+    fn font_measure_text_w_matches() {
+        check(
+            ee::s12::f_003921f0__generated,
+            font_measure_text_w,
+            300,
+            &|c, seed| {
+                let mut r = oc383_machine(c, seed, 0x21f0, 0x0039_21f0);
+                oc383_font(c, &mut r, DATA, DATA + 0x100);
+                oc383_put_wstr(c, &mut r, DATA + 0x400);
+                fill(c, &mut r, DATA + 0x800, 4);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x400);
+                c.g[A2][0] = if seed % 3 == 0 { 0 } else { sx(DATA + 0x800) };
+                c.g[A3][0] = match seed % 4 {
+                    0 | 1 => 0,
+                    2 => 1,
+                    _ => r.next_u32() as u64,
+                };
+                c.f[12] = r.f32(2.0);
+                c.f[13] = r.f32(2.0);
+            },
+        );
+    }
+
+    #[test]
+    fn font_draw_text_w_matches() {
+        use crate::difftest::fakes::machine;
+        check(
+            ee::s12::f_00391e30__generated,
+            font_draw_text_w,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1e30, 2);
+                c.pc = 0x0039_1e30;
+                let font = DATA;
+                fill(c, &mut r, font, 0x20);
+                oc383_floats(c, &mut r, font + FONT_OFFSET, 4, 5.0);
+                oc383_floats(c, &mut r, font + FONT_SCALE, 2, 3.0);
+                let (sx_, sy_) = match seed % 4 {
+                    0 => (0, 0),
+                    1 => (r.f32(3.0), 0),
+                    2 => (0, r.f32(3.0)),
+                    _ => (0x8000_0000, r.f32(3.0)),
+                };
+                c.bus.write32(font + FONT_SHADOW, sx_);
+                c.bus.write32(font + FONT_SHADOW + 4, sy_);
+                let grman = DATA + 0x5000;
+                c.bus.write32(GAME_GP + AVALANCHE_GRMAN_GP, grman);
+                c.bus.write32(grman + 0xe84, DATA + 0x6000);
+                fill(c, &mut r, DATA + 0x6000, 8);
+                if seed % 5 == 0 {
+                    // Layer 0: the shadow stays at layer 0.
+                    let w = c.bus.read32(DATA + 0x6008) & !0x3e0;
+                    c.bus.write32(DATA + 0x6008, w);
+                }
+                c.bus.write32(grman + 0x10d8, DATA + 0x5800);
+                oc383_vtable(c, &mut r, DATA + 0x5800, &[0x288]);
+                c.g[A0][0] = sx(font);
+                c.g[A1][0] = sx(DATA + 0x400);
+                c.f[12] = r.f32(300.0);
+                c.f[13] = r.f32(300.0);
+            },
+        );
+    }
+
+    /// PS2GraphicsMan_IsIdle: the real IsRenderIdle on a busy or idle
+    /// graphics manager.
+    #[test]
+    fn ps2_graphics_man_is_idle_matches() {
+        check(
+            ee::s13::f_00395f80__generated,
+            ps2_graphics_man_is_idle,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x395f80, 0);
+                c.pc = 0x0039_5f80;
+                c.g[A0][0] = sx(DATA);
+                let busy = if seed % 2 == 0 { 0 } else { r.next_u32() | 1 };
+                c.bus.write32(DATA + 0x5a8c, busy);
+            },
+        );
+    }
+
+    /// A font at DATA: direct glyphs for 0x20..=0x60, sorted extra glyphs
+    /// (odd codes from 0x61) after them, a default glyph (or none), and a
+    /// text of words, space runs and characters below/above the range.
+    pub(crate) fn font_find_line_break_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x0039_2430 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+        scramble(c, &mut r);
+        c.pc = 0x0039_2430;
+        let font = DATA;
+        let table = DATA + 0x400;
+        let text = DATA + 0x2000;
+        let out = DATA + 0x3000;
+        let (lo, hi) = (0x20u32, 0x60u32);
+        let direct = hi - lo + 1;
+        let count = direct + 12;
+        c.bus.write32(font + FONT_FIND_LINE_BREAK_COUNT, count);
+        c.bus.write32(font + FONT_FIND_LINE_BREAK_TABLE, table);
+        let default = if seed % 4 == 0 { 0 } else { table + 0x900 };
+        c.bus.write32(font + FONT_FIND_LINE_BREAK_DEFAULT, default);
+        c.bus.write32(font + FONT_FIND_LINE_BREAK_LO, lo);
+        c.bus.write32(font + FONT_FIND_LINE_BREAK_HI, hi);
+        c.bus
+            .write32(font + FONT_FIND_LINE_BREAK_SHADOW_X, r.f32(3.0));
+        for i in 0..=count {
+            let g = table + i * 12;
+            let code = if i < direct {
+                lo + i
+            } else {
+                0x61 + 2 * (i - direct)
+            };
+            c.bus.write16(g, code as u16);
+            c.bus.write8(g + 2, (r.next_u32() % 12) as u8);
+            c.bus.write8(g + 8, (r.next_u32() % 16) as u8);
+            c.bus.write8(g + 9, ((r.next_u32() % 7) as i8 - 2) as u8);
+        }
+        c.bus.write8(table + 0x900 + 2, 5);
+        c.bus.write8(table + 0x900 + 8, 6);
+        c.bus.write8(table + 0x900 + 9, 0xff);
+        let len = if seed % 13 == 0 { 0 } else { r.next_u32() % 48 };
+        const CHARS: &[u8] = b"  abcdeAB  ,.xyz\x10\x7a\x63\x64\x90\xff qrs   ";
+        for i in 0..len {
+            let ch = CHARS[(r.next_u32() as usize) % CHARS.len()];
+            c.bus.write8(text + i, ch);
+        }
+        c.bus.write8(text + len, 0);
+        for i in 0..64 {
+            c.bus.write8(out + i, 0xcc);
+        }
+        c.g[A0][0] = sx(font);
+        c.g[A1][0] = sx(text);
+        c.g[A2][0] = sx(out);
+        c.g[A3][0] = sx(match seed % 5 {
+            0 => 0xffff_ffff,
+            1 => 6,
+            _ => 1 + r.next_u32() % 60,
+        });
+        c.f[12] = 0.5f32.to_bits().wrapping_add(r.next_u32() % 0x0080_0000);
+        c.f[13] = match seed % 6 {
+            0 => 1000.0f32.to_bits(),
+            1 => 1.0f32.to_bits(),
+            _ => ((r.next_u32() % 200) as f32).to_bits(),
+        };
+    }
+
+    /// `Font_FindLineBreak` (0x392430): every exit (fits, word break at a
+    /// space, at the end, inside an over-long word, max reached).
+    #[test]
+    fn font_find_line_break_matches() {
+        check_lohi(
+            ee::s12::f_00392430__generated,
+            font_find_line_break,
+            300,
+            &font_find_line_break_fixture,
         );
     }
 }

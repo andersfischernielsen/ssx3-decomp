@@ -29,6 +29,7 @@ pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
 pub(crate) use crate::game::object::railmodifier::reset_vtable_and_delete;
 pub(crate) use crate::game::render::particle::at;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2;
+pub(crate) use crate::game::ui::uiengine::oc391_at;
 pub(crate) use crate::game::visualfx::boardwakefx::copy_render_state;
 pub(crate) use crate::game::visualfx::boardwakefx::gp;
 pub(crate) use crate::game::visualfx::boardwakefx::ldf_2 as ldf;
@@ -168,6 +169,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0036_a190,
         graphics_man_destroy_grid_mesh,
         "GraphicsMan_DestroyGridMesh",
+    ),
+    (
+        0x0036_98e0,
+        ps2_graphics_man_alloc_blended_matrix_history,
+        "PS2GraphicsMan_AllocBlendedMatrixHistory",
     ),
 ];
 
@@ -6602,6 +6608,200 @@ pub fn graphics_man_destroy_grid_mesh(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// PS2GraphicsMan_AllocBlendedMatrixHistory (0x3698e0)
+
+/// `PS2GraphicsMan+0xf48`: the blended-matrix history (0x200 entries of
+/// 0xc bytes: `{int count; Weight* weights; int}`, then their weights);
+/// `+0xf4c`: the number of entries in use.
+pub(crate) const PS2GM_BLEND_HISTORY: u32 = 0xf48;
+
+pub(crate) const PS2GM_BLEND_COUNT: u32 = 0xf4c;
+
+/// `PS2GraphicsMan_MatchBlendedMatrix` (0x369a78).
+pub(crate) const PS2GM_MATCH_BLENDED_MATRIX: Callee = Callee {
+    addr: 0x0036_9a78,
+    f: ee::s12::PS2GraphicsMan_MatchBlendedMatrix,
+};
+
+/// `void PS2GraphicsMan_AllocBlendedMatrixHistory(PS2GraphicsMan* self,
+/// BlendedMatrix* m)` (0x3698e0): allocate the history on first use (0x3000
+/// bytes, each entry pointing at its 3 weight words), then look for an entry
+/// that matches `m` within the tolerances (10, 20, 20): on a match copy its
+/// bone ids into `m`'s weights; else append `m` (count and weights) as a new
+/// entry.
+pub fn ps2_graphics_man_alloc_blended_matrix_history(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S3, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(oc391_at(c, S1, PS2GM_BLEND_HISTORY)).lw(c);
+        c.g[S3][0] = c.g[A1][0];
+        if c.g[V0][0] == 0 {
+            c.cycles += 10;
+            c.g[A1][0] = 0x0049_2638; // the allocation tag
+            c.g[A0][0] = 0x3000;
+            c.g[A2][0] = 0x100;
+            c.g[A3][0] = 0;
+            call_ptr(c, 0x0031_7e30, 0x0036_9920)?; // operator_new_named
+            Addr(oc391_at(c, S1, PS2GM_BLEND_HISTORY)).sw(c, c.g[V0][0]);
+            c.g[A1][0] = 0;
+            c.g[V1][0] = sx(r32(c, V0).wrapping_add(0x1800));
+            c.g[A0][0] = 0x1ff;
+            loop {
+                c.cycles += 7;
+                c.g[V0][0] = Addr(oc391_at(c, S1, PS2GM_BLEND_HISTORY)).lw(c);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_sub(1));
+                c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                Addr(oc391_at(c, V0, 4)).sw(c, c.g[V1][0]);
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(0xc));
+                let more = (c.g[A0][0] as i64) >= 0;
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(0xc));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0036_9930);
+                }
+            }
+        }
+        // Look for a matching entry.
+        c.cycles += 4;
+        c.g[V0][0] = Addr(oc391_at(c, S1, PS2GM_BLEND_COUNT)).lw(c);
+        c.g[S2][0] = 0;
+        let empty = (c.g[V0][0] as i64) <= 0;
+        c.g[S0][0] = Addr(oc391_at(c, S1, PS2GM_BLEND_HISTORY)).lw(c);
+        'append: {
+            if empty {
+                break 'append;
+            }
+            c.cycles += 1;
+            loop {
+                c.cycles += 8;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[S3][0];
+                c.g[A2][0] = 0xa;
+                c.g[A3][0] = 0x14;
+                c.g[T0][0] = 0x14;
+                PS2GM_MATCH_BLENDED_MATRIX.call(c, 0x0036_9978)?;
+                if c.g[V0][0] != 0 {
+                    // Found: copy the entry's bone ids into m.
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+                    let none = (c.g[V0][0] as i64) <= 0;
+                    c.g[A2][0] = 0;
+                    if none {
+                        c.cycles += 1;
+                    } else {
+                        c.cycles += 1;
+                        c.g[V0][0] = Addr(oc391_at(c, S0, 4)).lw(c);
+                        loop {
+                            c.cycles += 11;
+                            c.g[V1][0] = sx(r32(c, A2) << 2);
+                            c.g[A1][0] = Addr(oc391_at(c, S3, 4)).lw(c);
+                            c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                            c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+                            c.g[A0][0] = Addr(r32(c, V0)).lhu(c);
+                            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+                            Addr(r32(c, V1)).sh(c, c.g[A0][0]);
+                            c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+                            c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                            if c.g[V0][0] == 0 {
+                                break;
+                            }
+                            c.g[V0][0] = Addr(oc391_at(c, S0, 4)).lw(c);
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0036_9990);
+                            }
+                        }
+                        c.cycles += 2;
+                    }
+                    return ps2gm_blend_history_exit(c, frame);
+                }
+                c.g[V0][0] = Addr(oc391_at(c, S1, PS2GM_BLEND_COUNT)).lw(c);
+                c.cycles += 4;
+                c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(0xc));
+                if !more {
+                    break 'append;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0036_9960);
+                }
+            }
+        }
+        // Append m as entry nBlend.
+        c.cycles += 10;
+        c.g[V1][0] = Addr(oc391_at(c, S1, PS2GM_BLEND_COUNT)).lw(c);
+        c.g[V0][0] = 0xc;
+        c.g[A1][0] = Addr(oc391_at(c, S1, PS2GM_BLEND_HISTORY)).lw(c);
+        c.mult(0, V1, V1, V0);
+        c.g[A0][0] = Addr(r32(c, S3)).lw(c);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+        Addr(r32(c, V1)).sw(c, c.g[A0][0]);
+        c.g[V0][0] = Addr(r32(c, S3)).lw(c);
+        let none = (c.g[V0][0] as i64) <= 0;
+        c.g[A3][0] = 0;
+        if !none {
+            c.cycles += 3;
+            c.g[T0][0] = 0xc;
+            c.g[A0][0] = Addr(oc391_at(c, S1, PS2GM_BLEND_COUNT)).lw(c);
+            loop {
+                c.cycles += 17;
+                c.g[A1][0] = sx(r32(c, A3) << 2);
+                c.g[A2][0] = Addr(oc391_at(c, S1, PS2GM_BLEND_HISTORY)).lw(c);
+                c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                c.mult(0, A0, A0, T0);
+                c.g[V1][0] = Addr(oc391_at(c, S3, 4)).lw(c);
+                c.g[V1][0] = sx(r32(c, A1).wrapping_add(r32(c, V1)));
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A2)));
+                c.g[V0][0] = Addr(oc391_at(c, A0, 4)).lw(c);
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                let src = r32(c, V1);
+                let dst = r32(c, A1);
+                c.lwl(2, src.wrapping_add(3));
+                c.lwr(2, src);
+                c.swl(2, dst.wrapping_add(3));
+                c.swr(2, dst);
+                c.g[V0][0] = Addr(r32(c, S3)).lw(c);
+                c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[A0][0] = Addr(oc391_at(c, S1, PS2GM_BLEND_COUNT)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0036_9a08);
+                }
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = Addr(oc391_at(c, S1, PS2GM_BLEND_COUNT)).lw(c);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+        Addr(oc391_at(c, S1, PS2GM_BLEND_COUNT)).sw(c, c.g[V0][0]);
+        c.cycles += 1;
+        ps2gm_blend_history_exit(c, frame)
+    })
+}
+
+/// The epilogue of [`ps2_graphics_man_alloc_blended_matrix_history`].
+pub(crate) fn ps2gm_blend_history_exit(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    frame.restore(c, S0, 0x40);
+    c.cycles += 6;
+    frame.restore(c, S1, 0x30);
+    frame.restore(c, S2, 0x20);
+    frame.restore(c, S3, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7626,6 +7826,66 @@ pub(crate) mod tests {
                 c.bus.write32(OC338_CTRL, OC338_MAGIC);
                 c.g[A0][0] = sx(DATA + 0x5_0000);
                 c.g[A1][0] = sx(DATA + 0x5_1000 + (r.next_u32() & 0xff0));
+            },
+        );
+    }
+
+    /// PS2GraphicsMan_AllocBlendedMatrixHistory: a fresh history (the real
+    /// allocator), or 0..4 entries of 0..3 weights of which one may equal
+    /// the matrix (the real MatchBlendedMatrix): found (bone copy) or
+    /// appended.
+    #[test]
+    fn ps2_graphics_man_alloc_blended_matrix_history_matches() {
+        check(
+            ee::s12::f_003698e0__generated,
+            ps2_graphics_man_alloc_blended_matrix_history,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3698e0, 0);
+                crate::game::wscript::wscriptman::tests::alloc_ready(c);
+                c.pc = 0x0036_98e0;
+                let this = DATA + 0x100;
+                let m = DATA + 0x1800;
+                let history = DATA + 0x2000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(m);
+                let fresh = seed % 6 == 0;
+                c.bus
+                    .write32(this + PS2GM_BLEND_HISTORY, if fresh { 0 } else { history });
+                let n = (seed / 6) % 5;
+                c.bus
+                    .write32(this + PS2GM_BLEND_COUNT, if fresh { 0 } else { n });
+                // The matrix: 0..3 weights of small values.
+                let count = (seed / 2) % 4;
+                c.bus.write32(m, count);
+                c.bus.write32(m + 4, m + 0x40);
+                for k in 0..4u32 {
+                    c.bus.write32(m + 0x40 + 4 * k, r.next_u32() & 0x000f_000f);
+                }
+                // The entries; one of them may equal the matrix.
+                let same = if seed % 3 == 0 { n } else { r.next_u32() % 4 };
+                for i in 0..4u32 {
+                    let e = history + 0xc * i;
+                    let w = DATA + 0x3000 + 0x40 * i;
+                    c.bus.write32(e + 4, w);
+                    if i == same {
+                        c.bus.write32(e, count);
+                        for k in 0..4u32 {
+                            let v = c.bus.read32(m + 0x40 + 4 * k);
+                            c.bus.write32(w + 4 * k, v);
+                        }
+                    } else {
+                        c.bus.write32(e, r.next_u32() % 4);
+                        for k in 0..4u32 {
+                            c.bus.write32(w + 4 * k, r.next_u32() & 0x000f_000f);
+                        }
+                    }
+                }
+                // The append target past the in-use entries.
+                for i in 4..6u32 {
+                    c.bus
+                        .write32(history + 0xc * i + 4, DATA + 0x3000 + 0x40 * i);
+                }
             },
         );
     }
