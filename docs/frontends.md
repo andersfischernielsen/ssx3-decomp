@@ -3,13 +3,13 @@
 The game is a library, `crates/ssx3-engine`. A front end is a small
 program around it: it creates a surface, feeds input, steps the game on its
 clock, presents the image, and tells the engine about its lifecycle. This
-repository has three:
+repository has two; the browser's lives in its own:
 
 | Front end | Where | What it adds |
 | --- | --- | --- |
 | Window | `crates/ssx3/src/main.rs` (`ssx3`) | winit window, `wgpu` presenter, keyboard and gilrs controllers, the settings file and the F10 overlay, F11 fullscreen, F12 screenshots. |
 | Headless | `crates/ssx3/src/bin/ssx3_headless.rs` (`ssx3-headless`) | No window: N frames, scripted input (`SSX3_INPUT`), screenshots, RAM dumps, the verification and debug reports. The RAM gate runs it. |
-| Browser | `crates/ssx3-web` | WebAssembly in a Web Worker: the disc from a `File`, an `OffscreenCanvas`, VU helper workers, audio pulled for the page. |
+| Browser | [andersfischernielsen/ssx3-web](https://github.com/andersfischernielsen/ssx3-web) | WebAssembly in a Web Worker: the disc from a `File`, an `OffscreenCanvas`, VU helper workers, audio pulled for the page. |
 
 A front end for another platform (an Android or iOS app, a console
 homebrew shell, a frame server) lives in its own repository and uses this
@@ -237,8 +237,8 @@ frame runs while the jobs do (one frame of latency, as with the native
 render thread). Jobs and results are self-contained bytes: a helper that
 runs them in a module of its own, without the game, depends on
 `ssx3-render` alone and calls `ssx3_render::vujob::run(job, store)` (what
-`run_job` is). The browser's pool (`ssx3-web`, `src/lib.rs`, `vu_pool`) is
-a complete example: a `SharedArrayBuffer` job queue, the store mirrored in
+`run_job` is). The browser front end's pool (`crates/web/src/lib.rs` there,
+`vu_pool`) is a complete example: a `SharedArrayBuffer` job queue, the store mirrored in
 each helper, the game's thread taking jobs too while it waits.
 
 To check a new front end's offload path natively, `SSX3_VU_OFFLOAD_SELFTEST=1`

@@ -41,11 +41,8 @@
 /saves/
 /target-prof
 /target-unwind
-/target-web
 # Texture packs: dumped game textures and replacements (SSX3_TEX_DUMP, textures/replace)
 /textures/
-/crates/ssx3-web/www/pkg/
-/crates/ssx3-web/www/pkg-vu/
 /target-agents
 tools/.refindex.json
 tools/.refindex2.json
