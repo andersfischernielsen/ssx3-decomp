@@ -1528,8 +1528,53 @@ impl Vu {
     }
     #[inline]
     pub fn macro_end_upper(&mut self) {
-        self.commit_stage(false);
+        self.commit_macro();
         self.flush();
+    }
+
+    /// `commit_stage(false)` for a macro op, which [`Vu::flush`] follows at
+    /// once: the stage is read in place (`macro_begin` and `start` empty it
+    /// before it is staged again), and the visible flags are left to the
+    /// flush, which sets all of them.
+    #[inline]
+    fn commit_macro(&mut self) {
+        let st = &self.stage;
+        match st.target {
+            Target::Vf(r) if r != 0 => {
+                let (r, ready) = (r as usize, self.cycle + FMAC_LATENCY);
+                for l in 0..4 {
+                    if st.dest & (8 >> l) != 0 {
+                        self.vf[r][l] = st.value[l];
+                        self.vf_ready[r][l] = ready;
+                    }
+                }
+                if st.dest & 0xf != 0 {
+                    self.ready_max = self.ready_max.max(ready);
+                }
+            }
+            Target::Acc => {
+                for l in 0..4 {
+                    if st.dest & (8 >> l) != 0 {
+                        self.acc[l] = st.value[l];
+                    }
+                }
+            }
+            _ => {}
+        }
+        if let Some(mac) = st.mac {
+            self.mac = mac;
+            let s = (mac & 0x000f != 0) as u32
+                | ((mac & 0x00f0 != 0) as u32) << 1
+                | ((mac & 0x0f00 != 0) as u32) << 2
+                | ((mac & 0xf000 != 0) as u32) << 3;
+            self.status = (self.status & !0xf) | s | (s << 6);
+        }
+        if let Some(c) = st.clip {
+            self.clip = ((self.clip << 6) | c) & 0xff_ffff;
+        }
+        self.stage.target = Target::None;
+        self.stage.mac = None;
+        self.stage.clip = None;
     }
     #[inline]
     pub fn macro_end_lower(&mut self) {
