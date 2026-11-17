@@ -2767,7 +2767,12 @@ pub(crate) enum CrrExit {
 /// `resolver+0xc` by the signs of the key's x, y, z.
 pub fn c_ps2_chunk_resolve_resolve(c: &mut Cpu) {
     if c.pc != CRR_ENTRY {
+        // The other entries: the structured form's `__entries` twin; the
+        // unwind form's body dispatches on `c.pc` itself.
+        #[cfg(not(feature = "ee-unwind"))]
         return ee::s13::f_003aae68__entries(c);
+        #[cfg(feature = "ee-unwind")]
+        return ee::s13::f_003aae68__generated(c);
     }
     c.cycles += 15;
     let frame = Frame::open(c, 0xc0);
