@@ -537,6 +537,12 @@ fn build_thread(s: &mut Sink) -> Option<std::sync::mpsc::SyncSender<Job>> {
     tx.clone()
 }
 
+/// Wait until every frame published so far has reached the sink (the
+/// build thread's queue is empty).
+pub fn wait_built() {
+    wait_delivered(QUEUED.load(Ordering::Relaxed));
+}
+
 /// Wait until the build thread has passed frames `..n` to the sink.
 fn wait_delivered(n: u64) {
     let t = web_time::Instant::now();
@@ -752,6 +758,19 @@ impl Mem for LiveMem<'_> {
     fn unchanged(&self, a: u32, b: u32, since: u64) -> bool {
         pages_unchanged(a, b, since)
     }
+
+    fn page(&self, addr: u32) -> Option<&[u8]> {
+        ram_page(self.ram, addr)
+    }
+}
+
+/// RAM page `addr` is in (not the scratchpad or its window).
+fn ram_page(ram: &[u8], addr: u32) -> Option<&[u8]> {
+    if addr & 0x8000_0000 != 0 || addr >> 28 == 7 {
+        return None;
+    }
+    let o = (addr & 0x01ff_f000) as usize;
+    ram.get(o..o + 4096)
 }
 
 fn read_ram_qwords(m: &dyn Mem, ram: &[u8], addr: u32, n: u32, out: &mut Vec<u128>) {
@@ -895,6 +914,18 @@ impl Mem for FrameMem {
     fn unchanged(&self, a: u32, b: u32, since: u64) -> bool {
         pages_unchanged(a, b, since)
     }
+
+    fn page(&self, addr: u32) -> Option<&[u8]> {
+        if let Some(f) = &self.full {
+            return f.page(addr);
+        }
+        if addr & 0x8000_0000 != 0 || addr >> 28 == 7 {
+            return None;
+        }
+        self.pages
+            .get(&((addr & 0x01ff_ffff) / 4096))
+            .map(|p| &p[..])
+    }
 }
 
 impl Drop for FrameMem {
@@ -949,6 +980,10 @@ impl Mem for DumpMem {
 
     fn unchanged(&self, a: u32, b: u32, since: u64) -> bool {
         pages_unchanged(a, b, since)
+    }
+
+    fn page(&self, addr: u32) -> Option<&[u8]> {
+        ram_page(&self.ram, addr)
     }
 }
 

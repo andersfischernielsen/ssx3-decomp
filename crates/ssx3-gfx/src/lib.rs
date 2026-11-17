@@ -502,8 +502,10 @@ impl Renderer {
             .expect("render thread");
     }
 
-    /// Wait until every frame handed over is rendered.
+    /// Wait until every frame handed over is rendered (and every frame
+    /// published is handed over: the frame sink's build thread).
     pub fn flush(&self) {
+        ssx3_ps2::frame_sink::wait_built();
         let mut p = self.1.pending.lock().unwrap();
         while *p > 0 {
             p = self.1.idle.wait(p).unwrap();
