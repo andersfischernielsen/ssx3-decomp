@@ -122,6 +122,16 @@ pub fn run_generated_at(c: &mut Cpu, f: GuestFn) {
 
 /// Run `generated` and `hand` after the same `setup`, return the differences.
 pub fn compare(generated: GuestFn, hand: GuestFn, setup: &dyn Fn(&mut Cpu)) -> Report {
+    compare_with(generated, hand, setup, |_, _, _| {})
+}
+
+/// Compare the two runs and allow the caller to add hard differences from either machine.
+fn compare_with(
+    generated: GuestFn,
+    hand: GuestFn,
+    setup: &dyn Fn(&mut Cpu),
+    check_after: impl FnOnce(&Cpu, &Cpu, &mut Vec<String>),
+) -> Report {
     let mut a = fresh();
     let mut b = fresh();
     setup(&mut a);
@@ -315,6 +325,7 @@ pub fn compare(generated: GuestFn, hand: GuestFn, setup: &dyn Fn(&mut Cpu)) -> R
             hard.push(format!("{name}: {n} differing words in total"));
         }
     }
+    check_after(&a, &b, &mut hard);
     Report { hard, soft, lohi }
 }
 
