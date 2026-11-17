@@ -6705,6 +6705,38 @@
 0x002416c0    MCManager_NextFile
 0x00241928    MCManager_FormatSlotFreeSpace
 0x00241fb0    MCManager_ReadCurrentDirInfo
+# Phase 2 wave: oc400, oc401, oc402, oc403, oc404, oc405
+0x0025fd50    LobbyMan_SendRaceReport
+0x00267468    LobbyMan_StaticInit
+0x002687c0    NetEvent10D_Clone
+0x002670c8    LobbyMan_ListClear
+0x00266fc0    cVoipMan_DebugPrintfStub
+0x00266850    cUsbKeyboard_dtor
+0x00265768    cSetupMan_SendQuit
+0x00265a68    cSharedLoginMan_Update
+0x00266358    cSharedLoginMan_McPoll
+0x00266578    cSharedLoginMan_McMapError
+0x00267128    BuddyMan_MessageVectorInsert
+0x002672c8    BuddyMan_ChallengerVectorInsert
+0x002642b8    cSetupMan_Update
+0x00265568    cSetupMan_SendBragMsg8
+0x00265458    cSetupMan_SendBragMsg6
+0x00265290    cSetupMan_HostRecvConfirm
+0x00265190    cSetupMan_HostRecvSelect
+0x00265018    cSetupMan_ConfirmCharacter
+0x00264f88    cSetupMan_SelectCharacter
+0x00264e50    cSetupMan_SendCharacterMsg
+0x00264be8    cSetupMan_SendPacket
+0x00264a58    cSetupMan_ReceivePackets
+0x00264138    cSetupMan_dtor
+0x00263cf0    Net_UpdateGameSetup
+0x00263ba8    Net_AbortGameSetup
+0x002639e0    Net_StartGameSetup
+0x002636f0    Net_DisconnectAll
+0x00263500    BuddyMan_DeleteMessage
+0x00263270    BuddyMan_GetChallengerByName
+0x002631e0    BuddyMan_HasChallengerStr
+0x00263018    BuddyMan_RemoveChallenger
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks

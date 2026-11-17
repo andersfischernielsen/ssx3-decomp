@@ -14,7 +14,6 @@ use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-pub(crate) use crate::game::ai::computer::sd;
 pub(crate) use crate::game::animation::rideranimbase::sw as sw_4;
 pub(crate) use crate::game::bx::memblockman::gp_2 as gp;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_2;
@@ -39,7 +38,6 @@ pub(crate) use crate::game::fe::feasyncfile::lw_7;
 pub(crate) use crate::game::fe::feasyncfile::lw_at_2;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
 pub(crate) use crate::game::fe::feasyncfile::p_5;
-pub(crate) use crate::game::fe::feasyncfile::sra32;
 pub(crate) use crate::game::fe::feasyncfile::sw_r;
 pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw_6;
@@ -713,6 +711,113 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cDSockChannel_BaseDisconnect",
     ),
     (0x0026_3828, net_update_connect, "Net_UpdateConnect"),
+    (
+        0x0025_fd50,
+        lobby_man_send_race_report,
+        "LobbyMan_SendRaceReport",
+    ),
+    (
+        0x0026_3018,
+        buddy_man_remove_challenger,
+        "BuddyMan_RemoveChallenger",
+    ),
+    (
+        0x0026_31e0,
+        buddy_man_has_challenger_str,
+        "BuddyMan_HasChallengerStr",
+    ),
+    (
+        0x0026_3270,
+        buddy_man_get_challenger_by_name,
+        "BuddyMan_GetChallengerByName",
+    ),
+    (
+        0x0026_3500,
+        buddy_man_delete_message,
+        "BuddyMan_DeleteMessage",
+    ),
+    (0x0026_36f0, net_disconnect_all, "Net_DisconnectAll"),
+    (0x0026_39e0, net_start_game_setup, "Net_StartGameSetup"),
+    (0x0026_3ba8, net_abort_game_setup, "Net_AbortGameSetup"),
+    (0x0026_3cf0, net_update_game_setup, "Net_UpdateGameSetup"),
+    (0x0026_4138, c_setup_man_dtor, "cSetupMan_dtor"),
+    (0x0026_42b8, c_setup_man_update, "cSetupMan_Update"),
+    (
+        0x0026_4a58,
+        c_setup_man_receive_packets,
+        "cSetupMan_ReceivePackets",
+    ),
+    (0x0026_4be8, c_setup_man_send_packet, "cSetupMan_SendPacket"),
+    (
+        0x0026_4e50,
+        c_setup_man_send_character_msg,
+        "cSetupMan_SendCharacterMsg",
+    ),
+    (
+        0x0026_4f88,
+        c_setup_man_select_character,
+        "cSetupMan_SelectCharacter",
+    ),
+    (
+        0x0026_5018,
+        c_setup_man_confirm_character,
+        "cSetupMan_ConfirmCharacter",
+    ),
+    (
+        0x0026_5190,
+        c_setup_man_host_recv_select,
+        "cSetupMan_HostRecvSelect",
+    ),
+    (
+        0x0026_5290,
+        c_setup_man_host_recv_confirm,
+        "cSetupMan_HostRecvConfirm",
+    ),
+    (
+        0x0026_5458,
+        c_setup_man_send_brag_msg6,
+        "cSetupMan_SendBragMsg6",
+    ),
+    (
+        0x0026_5568,
+        c_setup_man_send_brag_msg8,
+        "cSetupMan_SendBragMsg8",
+    ),
+    (0x0026_5768, c_setup_man_send_quit, "cSetupMan_SendQuit"),
+    (
+        0x0026_5a68,
+        c_shared_login_man_update,
+        "cSharedLoginMan_Update",
+    ),
+    (
+        0x0026_6358,
+        c_shared_login_man_mc_poll,
+        "cSharedLoginMan_McPoll",
+    ),
+    (
+        0x0026_6578,
+        c_shared_login_man_mc_map_error,
+        "cSharedLoginMan_McMapError",
+    ),
+    (0x0026_6850, c_usb_keyboard_dtor, "cUsbKeyboard_dtor"),
+    (
+        0x0026_6fc0,
+        c_voip_man_debug_printf_stub,
+        "cVoipMan_DebugPrintfStub",
+    ),
+    (0x0026_70c8, lobby_man_list_clear, "LobbyMan_ListClear"),
+    (
+        0x0026_7128,
+        buddy_man_message_vector_insert,
+        "BuddyMan_MessageVectorInsert",
+    ),
+    (
+        0x0026_72c8,
+        buddy_man_challenger_vector_insert,
+        "BuddyMan_ChallengerVectorInsert",
+    ),
+    (0x0026_7468, lobby_man_static_init, "LobbyMan_StaticInit"),
+    (0x0026_87c0, net_event10d_clone, "NetEvent10D_Clone"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -754,7 +859,6 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_RELEASE_SNAPSHOT_LISTS;
     pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_SEND_DECLINE;
     pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_SEND_REQUEST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::STRCASECMP;
     pub(crate) use crate::game::fe::feasyncfile::callee::STRCMP;
     pub(crate) use crate::game::fe::feasyncfile::callee::VOIP_MAN_ACTIVATE;
     pub(crate) use crate::game::fe::feasyncfile::callee::VOIP_MAN_DEACTIVATE;
@@ -1994,36 +2098,6 @@ pub(crate) mod callee {
         f: ee::s06::LobbyMan_SendRequest,
     };
 
-    pub const NET_1: Callee = Callee {
-        addr: 0x0026_0f80,
-        f: ee::s06::f_00260f80,
-    };
-
-    pub const NET_2: Callee = Callee {
-        addr: 0x0026_1460,
-        f: ee::s06::f_00261460,
-    };
-
-    pub const NET_3: Callee = Callee {
-        addr: 0x0026_13c8,
-        f: ee::s06::f_002613c8,
-    };
-
-    pub const NET_4: Callee = Callee {
-        addr: 0x0026_1408,
-        f: ee::s06::f_00261408,
-    };
-
-    pub const NET_FLUSH: Callee = Callee {
-        addr: 0x0025_b800,
-        f: ee::s06::f_0025b800,
-    };
-
-    pub const NET_5: Callee = Callee {
-        addr: 0x0025_5fa0,
-        f: ee::s06::f_00255fa0,
-    };
-
     // Audio speech helpers.
     pub const IS_PA_SPEECH_ON: Callee = Callee {
         addr: 0x0029_f128,
@@ -2076,34 +2150,10 @@ pub(crate) mod callee {
     };
 
     // Network teardown.
-    pub const NET_FIND: Callee = Callee {
-        addr: 0x0025_5d38,
-        f: ee::s06::f_00255d38,
-    };
-
-    pub const NET_REMOVE: Callee = Callee {
-        addr: 0x0025_5cc8,
-        f: ee::s06::f_00255cc8,
-    };
-
-    pub const VOIP_DEACTIVATE: Callee = Callee {
-        addr: 0x0026_6e88,
-        f: ee::s07::cVoipMan_Deactivate,
-    };
-
-    pub const VOIP_STOP: Callee = Callee {
-        addr: 0x0026_6df8,
-        f: ee::s07::cVoipMan_Stop,
-    };
 
     pub const SETUPMAN_DESTROY: Callee = Callee {
         addr: 0x0026_4098,
         f: ee::s07::cSetupMan_Destroy,
-    };
-
-    pub const NET_RESET: Callee = Callee {
-        addr: 0x0025_f740,
-        f: ee::s06::f_0025f740,
     };
 
     // Text layout helpers for the popup description.
@@ -2157,6 +2207,325 @@ pub(crate) mod callee {
         addr: 0x002e_4370,
         f: ee::s09::cTransitionMan_Start,
     };
+
+    pub const BE_NEW_RACE_INT_SET_NUM_HUMAN_PLAYERS: Callee = Callee {
+        addr: 0x0014_4aa8,
+        f: ee::s01::f_00144aa8,
+    };
+
+    pub const BE_NEW_RACE_INT_GET_TRACK: Callee = Callee {
+        addr: 0x0014_4be0,
+        f: ee::s01::f_00144be0,
+    };
+
+    pub const BE_NEW_PLAYER_INT_SET_PAD_INDEX_BY_SLOT: Callee = Callee {
+        addr: 0x0014_72c8,
+        f: ee::s01::f_001472c8,
+    };
+
+    pub const BE_NEW_PLAYER_INT_SET_CHARACTER: Callee = Callee {
+        addr: 0x0014_7338,
+        f: ee::s01::f_00147338,
+    };
+
+    pub const BE_NEW_PLAYER_INT_GET_CHARACTER_BY_SLOT: u32 = 0x0014_7488;
+
+    pub const BE_BACKUP_PLAYER_SETUP: Callee = Callee {
+        addr: 0x0014_ebf8,
+        f: ee::s01::f_0014ebf8,
+    };
+
+    pub const PRE_GAME_LOAD_SCREEN_CTOR: Callee = Callee {
+        addr: 0x0023_2720,
+        f: ee::s06::f_00232720,
+    };
+
+    pub const C_COMM_SYSTEM_HAS_CHANNEL: Callee = Callee {
+        addr: 0x0025_5d38,
+        f: ee::s06::f_00255d38,
+    };
+
+    pub const C_COMM_SYSTEM_CHANNEL_RECV: u32 = 0x0025_5dc0;
+
+    pub const LOBBY_MAN_CLEAR_CHALLENGE_LOCK: u32 = 0x0025_f740;
+
+    pub const BUDDY_MAN_CREATE: Callee = Callee {
+        addr: 0x0026_0f80,
+        f: ee::s06::f_00260f80,
+    };
+
+    pub const BUDDY_MAN_RECONNECT: Callee = Callee {
+        addr: 0x0026_13c8,
+        f: ee::s06::f_002613c8,
+    };
+
+    pub const BUDDY_MAN_IS_CONNECTED: Callee = Callee {
+        addr: 0x0026_1460,
+        f: ee::s06::f_00261460,
+    };
+
+    pub const BUDDY_MAN_IS_TEMP: Callee = Callee {
+        addr: 0x0026_2438,
+        f: ee::s07::BuddyMan_IsTemp,
+    };
+
+    pub const BUDDY_MAN_HAS_MESSAGE_FROM: Callee = Callee {
+        addr: 0x0026_2a38,
+        f: ee::s07::BuddyMan_HasMessageFrom,
+    };
+
+    pub const BUDDY_MAN_FIND_CHALLENGER_INDEX: Callee = Callee {
+        addr: 0x0026_2e20,
+        f: ee::s07::BuddyMan_FindChallengerIndex,
+    };
+
+    pub const BUDDY_MAN_REMOVE_CHALLENGER: Callee = Callee {
+        addr: 0x0026_3018,
+        f: ee::s07::BuddyMan_RemoveChallenger,
+    };
+
+    pub const BUDDY_MAN_HAS_CHALLENGER: Callee = Callee {
+        addr: 0x0026_3128,
+        f: ee::s07::BuddyMan_HasChallenger,
+    };
+
+    pub const NET_ABORT_GAME_SETUP: Callee = Callee {
+        addr: 0x0026_3ba8,
+        f: ee::s07::f_00263ba8,
+    };
+
+    pub const SETUP_MAN_CREATE: Callee = Callee {
+        addr: 0x0026_4030,
+        f: ee::s07::f_00264030,
+    };
+
+    pub const SETUP_MAN_ALLOC_PACKET: Callee = Callee {
+        addr: 0x0026_4960,
+        f: ee::s07::cSetupMan_AllocPacket,
+    };
+
+    pub const SETUP_MAN_POP_PACKET: Callee = Callee {
+        addr: 0x0026_49b0,
+        f: ee::s07::cSetupMan_PopPacket,
+    };
+
+    pub const SETUP_MAN_RECEIVE_PACKETS: Callee = Callee {
+        addr: 0x0026_4a58,
+        f: ee::s07::cSetupMan_ReceivePackets,
+    };
+
+    pub const SETUP_MAN_FLUSH_SEND_QUEUE: Callee = Callee {
+        addr: 0x0026_4b20,
+        f: ee::s07::cSetupMan_FlushSendQueue,
+    };
+
+    pub const SETUP_MAN_SEND_HELLO: Callee = Callee {
+        addr: 0x0026_4cb8,
+        f: ee::s07::f_00264cb8,
+    };
+
+    pub const SETUP_MAN_SET_REMOTE_CHARACTER: Callee = Callee {
+        addr: 0x0026_4d80,
+        f: ee::s07::cSetupMan_SetRemoteCharacter,
+    };
+
+    pub const SETUP_MAN_SELECT_CHARACTER: Callee = Callee {
+        addr: 0x0026_4f88,
+        f: ee::s07::cSetupMan_SelectCharacter,
+    };
+
+    pub const SETUP_MAN_HOST_RECV_SELECT: Callee = Callee {
+        addr: 0x0026_5190,
+        f: ee::s07::cSetupMan_HostRecvSelect,
+    };
+
+    pub const SETUP_MAN_HOST_RECV_CONFIRM: Callee = Callee {
+        addr: 0x0026_5290,
+        f: ee::s07::cSetupMan_HostRecvConfirm,
+    };
+
+    pub const SETUP_MAN_HOST_RECV_CANCEL: Callee = Callee {
+        addr: 0x0026_5398,
+        f: ee::s07::cSetupMan_HostRecvCancel,
+    };
+
+    pub const SHARED_LOGIN_MAN_DO_LOAD: Callee = Callee {
+        addr: 0x0026_5d98,
+        f: ee::s07::f_00265d98,
+    };
+
+    pub const SHARED_LOGIN_MAN_DO_UPDATE: Callee = Callee {
+        addr: 0x0026_5e40,
+        f: ee::s07::f_00265e40,
+    };
+
+    pub const SHARED_LOGIN_MAN_DO_CREATE: Callee = Callee {
+        addr: 0x0026_5e80,
+        f: ee::s07::f_00265e80,
+    };
+
+    pub const SHARED_LOGIN_MAN_DO_DELETE: Callee = Callee {
+        addr: 0x0026_5ec8,
+        f: ee::s07::f_00265ec8,
+    };
+
+    pub const SHARED_LOGIN_MAN_DO_FINISH: Callee = Callee {
+        addr: 0x0026_5f00,
+        f: ee::s07::f_00265f00,
+    };
+
+    pub const SHARED_LOGIN_MAN_MC_MAP_ERROR: Callee = Callee {
+        addr: 0x0026_6578,
+        f: ee::s07::f_00266578,
+    };
+
+    pub const VOIP_MAN_START: Callee = Callee {
+        addr: 0x0026_6d58,
+        f: ee::s07::f_00266d58,
+    };
+
+    pub const SETUP_MAN_CLIENT_RECV_MSG1: Callee = Callee {
+        addr: 0x0026_9008,
+        f: ee::s07::cSetupMan_ClientRecvMsg1,
+    };
+
+    pub const SETUP_MAN_CLIENT_RECV_MSG3: Callee = Callee {
+        addr: 0x0026_90c8,
+        f: ee::s07::cSetupMan_ClientRecvMsg3,
+    };
+
+    pub const SETUP_MAN_CLIENT_RECV_MSG5: Callee = Callee {
+        addr: 0x0026_9188,
+        f: ee::s07::cSetupMan_ClientRecvMsg5,
+    };
+
+    pub const SETUP_MAN_CLIENT_RECV_MSG0: Callee = Callee {
+        addr: 0x0026_9240,
+        f: ee::s07::cSetupMan_ClientRecvMsg0,
+    };
+
+    pub const SETUP_MAN_CLIENT_RECV_MSG2: Callee = Callee {
+        addr: 0x0026_9300,
+        f: ee::s07::cSetupMan_ClientRecvMsg2,
+    };
+
+    pub const SETUP_MAN_CLIENT_RECV_MSG4: Callee = Callee {
+        addr: 0x0026_93c0,
+        f: ee::s07::cSetupMan_ClientRecvMsg4,
+    };
+
+    pub const SETUP_MAN_HOST_RECV_MSG7: Callee = Callee {
+        addr: 0x0026_9478,
+        f: ee::s07::cSetupMan_HostRecvMsg7,
+    };
+
+    pub const SETUP_MAN_HOST_RECV_MSG9: Callee = Callee {
+        addr: 0x0026_9538,
+        f: ee::s07::cSetupMan_HostRecvMsg9,
+    };
+
+    pub const SETUP_MAN_HOST_RECV_MSG11: Callee = Callee {
+        addr: 0x0026_9608,
+        f: ee::s07::cSetupMan_HostRecvMsg11,
+    };
+
+    pub const SETUP_MAN_HOST_RECV_MSG13: Callee = Callee {
+        addr: 0x0026_96f8,
+        f: ee::s07::cSetupMan_HostRecvMsg13,
+    };
+
+    pub const SETUP_MAN_CLIENT_RECV_MSG6: Callee = Callee {
+        addr: 0x0026_97d0,
+        f: ee::s07::cSetupMan_ClientRecvMsg6,
+    };
+
+    pub const SETUP_MAN_CLIENT_RECV_MSG7: Callee = Callee {
+        addr: 0x0026_9890,
+        f: ee::s07::cSetupMan_ClientRecvMsg7,
+    };
+
+    pub const SETUP_MAN_CLIENT_RECV_MSG8: Callee = Callee {
+        addr: 0x0026_9948,
+        f: ee::s07::cSetupMan_ClientRecvMsg8,
+    };
+
+    pub const SETUP_MAN_CLIENT_RECV_MSG9: Callee = Callee {
+        addr: 0x0026_9a18,
+        f: ee::s07::cSetupMan_ClientRecvMsg9,
+    };
+
+    pub const SETUP_MAN_CLIENT_RECV_MSG10: Callee = Callee {
+        addr: 0x0026_9ae0,
+        f: ee::s07::cSetupMan_ClientRecvMsg10,
+    };
+
+    pub const SETUP_MAN_CLIENT_RECV_MSG11: Callee = Callee {
+        addr: 0x0026_9b90,
+        f: ee::s07::cSetupMan_ClientRecvMsg11,
+    };
+
+    pub const SETUP_MAN_CLIENT_RECV_MSG12: Callee = Callee {
+        addr: 0x0026_9c40,
+        f: ee::s07::cSetupMan_ClientRecvMsg12,
+    };
+
+    pub const SETUP_MAN_CLIENT_RECV_MSG13: Callee = Callee {
+        addr: 0x0026_9cf0,
+        f: ee::s07::cSetupMan_ClientRecvMsg13,
+    };
+
+    pub const MEMCARD_GET_PORT_ERROR: u32 = 0x002c_51d0;
+
+    pub const MEMCARD_GET_DIR_ENTRY_NAME: u32 = 0x002c_68c8;
+
+    pub const APP_SET_NEXT_STATE: Callee = Callee {
+        addr: 0x0031_6ef8,
+        f: ee::s10::f_00316ef8,
+    };
+
+    pub const EA_MEM_COPY: u32 = 0x003e_6574;
+
+    pub const TAG_FIELD_SET_NUMBER: Callee = Callee {
+        addr: 0x003e_be40,
+        f: ee::s14::f_003ebe40,
+    };
+
+    pub const TAG_FIELD_SET_DATE: Callee = Callee {
+        addr: 0x003e_c7e0,
+        f: ee::s14::f_003ec7e0,
+    };
+
+    pub const USB_KB_SHUTDOWN: u32 = 0x003f_62f8;
+
+    pub const SLOGIN_POLL: u32 = 0x003f_80e0;
+
+    pub const SLOGIN_MC_IS_AVAILABLE_WRAPPER: u32 = 0x003f_a360;
+
+    pub const MEM_MOVE: u32 = 0x0041_610c;
+
+    pub const C_COMM_SYSTEM_CREATE_CHANNEL: u32 = 0x0025_5bf8;
+
+    pub const C_COMM_SYSTEM_CLOSE_CHANNEL: u32 = 0x0025_5cc8;
+
+    pub const C_COMM_SYSTEM_DISCONNECT: u32 = 0x0025_5fa0;
+
+    pub const C_COMM_SYSTEM_IS_CHANNEL_CONNECTED: u32 = 0x0025_5d50;
+
+    pub const C_COMM_SYSTEM_GET_CHANNEL_STATUS: u32 = 0x0025_5e40;
+
+    pub const C_GAME_COMM_CREATE: u32 = 0x0025_6bf8;
+
+    pub const SETUP_MAN_UPDATE: Callee = Callee {
+        addr: 0x0026_42b8,
+        f: ee::s07::cSetupMan_Update,
+    };
+
+    pub const C_USB_KEYBOARD_DTOR: Callee = Callee {
+        addr: 0x0026_6850,
+        f: ee::s07::cUsbKeyboard_dtor,
+    };
+
+    pub const BUDDY_API_DEL: u32 = 0x003f_11f8;
 }
 
 // ---------------------------------------------------------------------------
@@ -6459,82 +6828,6 @@ pub fn c_setup_man_set_local_character(c: &mut Cpu) {
 }
 
 // ---------------------------------------------------------------------------
-// Character selection (cSetupMan).
-
-/// `int cSetupMan_SelectCharacter(cSetupMan* self, int character)`
-/// (0x264f88): called when the player picks a character in the front end.
-///
-/// When the setup manager is already switching to `character` (its state is
-/// 12) there is nothing to do. Otherwise, if a character change is pending
-/// (`self+0x124`), the chosen character becomes the local character and the
-/// script is told about it with the current state; if none is pending the
-/// script only gets the "player selected" message.
-pub fn c_setup_man_select_character(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 9;
-        let frame = Frame::open(c, 0x30);
-        c.g[V0][0] = 0xc;
-        frame.save(c, S0, 0x20);
-        frame.save(c, S1, 0x10);
-        c.g[S0][0] = c.g[A0][0];
-        frame.save_ra(c, 0);
-        c.g[V1][0] = Addr(r32(c, S0)).lw(c);
-        c.g[S1][0] = c.g[A1][0];
-
-        let this = r32(c, S0);
-        let state = c.g[V1][0];
-        if state == c.g[V0][0] {
-            // Already on the way to this character.
-            c.cycles += 1;
-            frame.restore(c, S0, 0x20);
-        } else {
-            c.cycles += 3;
-            let pending = Addr(p_m2(this, 0x124)).lw(c);
-            c.g[V0][0] = pending;
-            if pending == 0 {
-                c.g[V0][0] = 1;
-                c.cycles += 5;
-                // SendCharacterMsg(self, 1, character, 0).
-                c.g[A0][0] = c.g[S0][0];
-                c.g[A2][0] = c.g[S1][0];
-                c.g[A1][0] = 1;
-                c.g[A3][0] = 0;
-                callee::SETUP_MAN_SEND_CHARACTER_MSG.call(c, 0x0026_4fe4)?;
-                c.cycles += 1;
-                frame.restore(c, S0, 0x20);
-            } else {
-                c.cycles += 2;
-                if state == c.g[V0][0] {
-                    // The pending character is the one asked for: mark the
-                    // setup manager as "switching".
-                    c.cycles += 2;
-                    c.g[V0][0] = 2;
-                    Addr(this).sw(c, c.g[V0][0]);
-                } else {
-                    c.g[A0][0] = c.g[S0][0];
-                }
-                c.cycles += 9;
-                // SetLocalCharacter(self, character).
-                c.g[A1][0] = c.g[S1][0];
-                callee::SETUP_MAN_SET_LOCAL_CHARACTER.call(c, 0x0026_4fd0)?;
-                // SendCharacterMsg(self, 0, character, self->state).
-                c.g[A0][0] = c.g[S0][0];
-                c.g[A2][0] = c.g[S1][0];
-                c.g[A3][0] = Addr(r32(c, A0)).lw(c);
-                c.g[A1][0] = 0;
-                callee::SETUP_MAN_SEND_CHARACTER_MSG.call(c, 0x0026_4fe4)?;
-                frame.restore(c, S0, 0x20);
-            }
-        }
-        frame.restore(c, S1, 0x10);
-        frame.restore_ra(c, 0);
-        c.cycles += 4;
-        frame.close(c);
-        Ok(())
-    })
-}
-
-// ---------------------------------------------------------------------------
 // Network lock message.
 
 /// `void* NetEvent102Lock_Clone(NetEvent102Lock* self)` (0x268308): allocates
@@ -6981,119 +7274,6 @@ pub fn buddy_man_destroy_api(c: &mut Cpu) {
                 }
                 _ => {
                     c.jump_out(pc, 0x0026_1530, 0x0026_15c8);
-                    return Ok(());
-                }
-            }
-        }
-    })
-}
-
-/// `BuddyMan_GetChallengerByName` (0x263270): linear search of the buddy
-/// manager's list for the challenger with the given name. Dispatcher-shaped
-/// like the original.
-pub fn buddy_man_get_challenger_by_name(c: &mut Cpu) {
-    guest(c, |c| {
-        let mut pc = c.pc;
-        loop {
-            match pc {
-                0x0026_3270 => {
-                    c.cycles += 13;
-                    let frame = Frame::open(c, 0x50);
-                    frame.save(c, S2, 0x20);
-                    frame.save(c, S3, 0x10);
-                    let this = r(c, A0);
-                    c.g[S2][0] = sx(this);
-                    frame.save(c, S0, 0x40);
-                    frame.save(c, S1, 0x30);
-                    frame.save_ra(c, 0);
-                    c.g[A0][0] = Addr(p_m2(this, 0xc0)).lw(c);
-                    c.g[V1][0] = Addr(p_m2(this, 0xbc)).lw(c);
-                    c.g[V0][0] = sx(r(c, A0).wrapping_sub(r(c, V1)));
-                    c.g[V0][0] = sra32(c.g[V0][0], 2);
-                    let empty = c.g[V0][0] == 0;
-                    c.g[S3][0] = c.g[A1][0];
-                    if empty {
-                        pc = 0x0026_32a4;
-                    } else {
-                        pc = 0x0026_32b4;
-                    }
-                }
-                0x0026_32a4 => {
-                    c.cycles += 2;
-                    c.g[V0][0] = 0;
-                    pc = 0x0026_32ec;
-                }
-                0x0026_32ac => {
-                    c.cycles += 2;
-                    c.g[V0][0] = c.g[S1][0];
-                    pc = 0x0026_32ec;
-                }
-                0x0026_32b4 => {
-                    c.cycles += 3;
-                    c.g[S0][0] = c.g[V1][0];
-                    let end = c.g[S0][0] == c.g[A0][0];
-                    c.g[V0][0] = 0;
-                    if end {
-                        pc = 0x0026_32ec;
-                    } else {
-                        pc = 0x0026_32c0;
-                    }
-                }
-                0x0026_32c0 => {
-                    c.cycles += 2;
-                    c.g[S1][0] = Addr(r(c, S0)).lw(c);
-                    pc = 0x0026_32c8;
-                }
-                0x0026_32c8 => {
-                    c.cycles += 5;
-                    c.g[A1][0] = c.g[S3][0];
-                    c.g[RA][0] = sx(0x0026_32d4);
-                    c.g[A0][0] = Addr(r(c, S1)).lw(c);
-                    call_ptr(c, callee::STRCASECMP, 0x0026_32d4)?;
-                    let differ = c.g[V0][0] == 0;
-                    c.g[S0][0] = sx(r(c, S0).wrapping_add(4));
-                    if differ {
-                        if back_edge_unwinds(c, 0x0026_32ac) {
-                            return Ok(());
-                        }
-                        pc = 0x0026_32ac;
-                    } else {
-                        pc = 0x0026_32dc;
-                    }
-                }
-                0x0026_32dc => {
-                    c.cycles += 3;
-                    c.g[V0][0] = Addr(p_m2(r(c, S2), 0xc0)).lw(c);
-                    if c.g[S0][0] != c.g[V0][0] {
-                        c.g[S1][0] = Addr(r(c, S0)).lw(c);
-                        if back_edge_unwinds(c, 0x0026_32c8) {
-                            return Ok(());
-                        }
-                        pc = 0x0026_32c8;
-                    } else {
-                        pc = 0x0026_32e8;
-                    }
-                }
-                0x0026_32e8 => {
-                    c.cycles += 1;
-                    c.g[V0][0] = 0;
-                    pc = 0x0026_32ec;
-                }
-                0x0026_32ec => {
-                    c.cycles += 7;
-                    let sp = r(c, SP);
-                    c.lq(16, p_m2(sp, 0x40));
-                    c.lq(17, p_m2(sp, 0x30));
-                    c.lq(18, p_m2(sp, 0x20));
-                    c.lq(19, p_m2(sp, 0x10));
-                    c.g[RA][0] = c.ld(sp);
-                    let ra = r(c, RA);
-                    c.g[SP][0] = sx(sp.wrapping_add(0x50));
-                    c.pc = ra;
-                    return Ok(());
-                }
-                _ => {
-                    c.jump_out(pc, 0x0026_3270, 0x0026_3308);
                     return Ok(());
                 }
             }
@@ -9536,427 +9716,6 @@ pub fn lobby_man_on_connect_reply(c: &mut Cpu) {
     return;
 }
 
-/// `void func_00267128(sPtrVec* self, void** pos, void* const& x)` (0x267128):
-/// insert `x` into the pointer vector before `pos`, growing the buffer to
-/// twice its size (or 1) when it is full.
-pub fn buddy_man_message_vector_insert(c: &mut Cpu) {
-    let frame = Frame::open(c, 0x70);
-    'b_2672a4: {
-        'b_2671a4: {
-            c.cycles += 14;
-            frame.save(c, S1, 0x50);
-            frame.save(c, S3, 0x30);
-            c.g[S1][0] = c.g[A0][0];
-            frame.save(c, S4, 0x20);
-            c.g[S3][0] = c.g[A1][0];
-            frame.save(c, S0, 0x60);
-            frame.save(c, S2, 0x40);
-            frame.save(c, S5, 0x10);
-            sd(c, r32(c, SP), c.g[RA][0]);
-            c.g[V1][0] = lw(c, at_3(c, S1, 0x8));
-            c.g[V0][0] = lw(c, at_3(c, S1, 0xc));
-            let t = c.g[V1][0] == c.g[V0][0];
-            c.g[S4][0] = c.g[A2][0];
-            if t {
-                break 'b_2671a4;
-            } else {
-                'b_267174: {
-                    c.cycles += 2;
-                    if c.g[V1][0] == 0u64 {
-                        c.g[A0][0] = lw(c, at_3(c, S1, 0x8));
-                        break 'b_267174;
-                    } else {
-                        c.cycles += 3;
-                        c.g[V0][0] = lw(c, r32(c, V1).wrapping_sub(0x4));
-                        sw_6(c, r32(c, V1), c.g[V0][0]);
-                        c.g[A0][0] = lw(c, at_3(c, S1, 0x8));
-                        break 'b_267174;
-                    }
-                }
-                c.cycles += 12;
-                c.g[A1][0] = c.g[S3][0];
-                c.g[A2][0] = sx(r32(c, A0).wrapping_sub(0x4));
-                c.g[V0][0] = sx(at_3(c, A0, 0x4));
-                c.g[A2][0] = sx(r32(c, A2).wrapping_sub(r32(c, S3)));
-                sw_6(c, at_3(c, S1, 0x8), c.g[V0][0]);
-                c.g[A2][0] = sx((r32(c, A2) as i32 >> 2) as u32);
-                c.g[A2][0] = sx(r32(c, A2) << 2);
-                c.g[S0][0] = lw(c, r32(c, S4));
-                c.g[RA][0] = sx(0x0026719c);
-                c.g[A0][0] = sx(r32(c, A0).wrapping_sub(r32(c, A2)));
-                if call_ptr(c, 0x0041610c, 0x0026719c).is_err() {
-                    return;
-                }
-                let t = true;
-                sw_6(c, r32(c, S3), c.g[S0][0]);
-                if t {
-                    break 'b_2672a4;
-                } else {
-                    break 'b_2671a4;
-                }
-            }
-        }
-        'b_26720c: {
-            'b_2671ec: {
-                c.cycles += 9;
-                c.g[V0][0] = lw(c, at_3(c, S1, 0x4));
-                c.g[S0][0] = 0x1;
-                c.g[A0][0] = 0x1;
-                c.g[V0][0] = sx(r32(c, V1).wrapping_sub(r32(c, V0)));
-                c.g[V0][0] = sx((r32(c, V0) as i32 >> 2) as u32);
-                c.g[V1][0] = sx(r32(c, V0) << 1);
-                if c.g[V0][0] != 0 {
-                    c.g[S0][0] = c.g[V1][0];
-                }
-                let t = c.g[S0][0] != c.g[A0][0];
-                c.g[S0][0] = sx(r32(c, S0) << 2);
-                if t {
-                    break 'b_2671ec;
-                } else {
-                    c.cycles += 9;
-                    c.g[A1][0] = 0x480000;
-                    c.g[A0][0] = 0x4;
-                    c.g[A1][0] = sx(at_3(c, A1, 0x4a8));
-                    c.g[A2][0] = 0x20000000;
-                    c.g[A3][0] = 0u64;
-                    c.g[RA][0] = sx(0x002671e4);
-                    c.g[S5][0] = 0x4;
-                    if call_ptr(c, 0x00317d70, 0x002671e4).is_err() {
-                        return;
-                    }
-                    let t = true;
-                    c.g[S2][0] = c.g[V0][0];
-                    if t {
-                        break 'b_26720c;
-                    } else {
-                        break 'b_2671ec;
-                    }
-                }
-            }
-            c.cycles += 8;
-            c.g[A1][0] = 0x480000;
-            c.g[A1][0] = sx(at_3(c, A1, 0x4a8));
-            c.g[A0][0] = c.g[S0][0];
-            c.g[A2][0] = 0x20000000;
-            c.g[RA][0] = sx(0x00267204);
-            c.g[A3][0] = 0u64;
-            if call_ptr(c, 0x00317e30, 0x00267204).is_err() {
-                return;
-            }
-            c.g[S5][0] = c.g[S0][0];
-            c.g[S2][0] = c.g[V0][0];
-            break 'b_26720c;
-        }
-        'b_267238: {
-            c.cycles += 9;
-            c.g[A1][0] = lw(c, at_3(c, S1, 0x4));
-            c.g[A0][0] = c.g[S2][0];
-            c.g[V0][0] = sx(r32(c, S3).wrapping_sub(r32(c, A1)));
-            c.g[A2][0] = sx((r32(c, V0) as i32 >> 2) as u32);
-            c.g[S0][0] = sx(r32(c, S2).wrapping_add(r32(c, V0)));
-            c.g[RA][0] = sx(0x00267228);
-            c.g[A2][0] = sx(r32(c, A2) << 2);
-            if call_ptr(c, 0x0041610c, 0x00267228).is_err() {
-                return;
-            }
-            let t = c.g[S0][0] == 0u64;
-            c.g[V1][0] = c.g[S0][0];
-            if t {
-                break 'b_267238;
-            } else {
-                c.cycles += 2;
-                c.g[V0][0] = lw(c, r32(c, S4));
-                sw_6(c, r32(c, S0), c.g[V0][0]);
-                break 'b_267238;
-            }
-        }
-        'b_267298: {
-            'b_267294: {
-                c.cycles += 14;
-                c.g[A2][0] = lw(c, at_3(c, S1, 0x8));
-                c.g[S0][0] = sx(at_3(c, V1, 0x4));
-                c.g[A1][0] = c.g[S3][0];
-                c.g[A0][0] = c.g[S0][0];
-                c.g[A2][0] = sx(r32(c, A2).wrapping_sub(r32(c, S3)));
-                c.g[S3][0] = sx(r32(c, S0).wrapping_add(r32(c, A2)));
-                c.g[A2][0] = sx((r32(c, A2) as i32 >> 2) as u32);
-                c.g[RA][0] = sx(0x0026725c);
-                c.g[A2][0] = sx(r32(c, A2) << 2);
-                if call_ptr(c, 0x0041610c, 0x0026725c).is_err() {
-                    return;
-                }
-                c.g[A0][0] = lw(c, at_3(c, S1, 0x4));
-                c.g[V0][0] = lw(c, at_3(c, S1, 0xc));
-                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(r32(c, A0)));
-                let t = c.g[A0][0] == 0u64;
-                c.g[V1][0] = sx((r32(c, V0) as i32 >> 2) as u32);
-                if t {
-                    break 'b_267294;
-                } else {
-                    'b_26728c: {
-                        c.cycles += 3;
-                        c.g[V0][0] = 0x1;
-                        let t = c.g[V1][0] != c.g[V0][0];
-
-                        if t {
-                            break 'b_26728c;
-                        } else {
-                            c.cycles += 4;
-                            c.g[RA][0] = sx(0x00267284);
-                            if call_ptr(c, 0x00317e50, 0x00267284).is_err() {
-                                return;
-                            }
-                            let t = true;
-                            c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, S5)));
-                            if t {
-                                break 'b_267298;
-                            } else {
-                                break 'b_26728c;
-                            }
-                        }
-                    }
-                    c.cycles += 2;
-                    c.g[RA][0] = sx(0x00267294);
-                    if call_ptr(c, 0x00317e98, 0x00267294).is_err() {
-                        return;
-                    }
-                    break 'b_267294;
-                }
-            }
-            c.cycles += 1;
-            c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, S5)));
-            break 'b_267298;
-        }
-        c.cycles += 3;
-        sw_6(c, at_3(c, S1, 0x8), c.g[S3][0]);
-        sw_6(c, at_3(c, S1, 0xc), c.g[V0][0]);
-        sw_6(c, at_3(c, S1, 0x4), c.g[S2][0]);
-        break 'b_2672a4;
-    }
-    c.cycles += 9;
-    frame.restore(c, S0, 0x60);
-    frame.restore(c, S1, 0x50);
-    frame.restore(c, S2, 0x40);
-    frame.restore(c, S3, 0x30);
-    frame.restore(c, S4, 0x20);
-    frame.restore(c, S5, 0x10);
-    c.g[RA][0] = ld(c, r32(c, SP));
-    let t = c.g[RA][0] as u32;
-    c.g[SP][0] = sx(at_3(c, SP, 0x70));
-    c.pc = t;
-    return;
-}
-
-/// `void func_002672C8(sPtrVec* self, void** pos, void* const& x)` (0x2672c8):
-/// the challenger list's insert, same shape as the message-list one.
-pub fn buddy_man_challenger_vector_insert(c: &mut Cpu) {
-    let frame = Frame::open(c, 0x70);
-    'b_267444: {
-        'b_267344: {
-            c.cycles += 14;
-            frame.save(c, S1, 0x50);
-            frame.save(c, S3, 0x30);
-            c.g[S1][0] = c.g[A0][0];
-            frame.save(c, S4, 0x20);
-            c.g[S3][0] = c.g[A1][0];
-            frame.save(c, S0, 0x60);
-            frame.save(c, S2, 0x40);
-            frame.save(c, S5, 0x10);
-            sd(c, r32(c, SP), c.g[RA][0]);
-            c.g[V1][0] = lw(c, at_3(c, S1, 0x8));
-            c.g[V0][0] = lw(c, at_3(c, S1, 0xc));
-            let t = c.g[V1][0] == c.g[V0][0];
-            c.g[S4][0] = c.g[A2][0];
-            if t {
-                break 'b_267344;
-            } else {
-                'b_267314: {
-                    c.cycles += 2;
-                    if c.g[V1][0] == 0u64 {
-                        c.g[A0][0] = lw(c, at_3(c, S1, 0x8));
-                        break 'b_267314;
-                    } else {
-                        c.cycles += 3;
-                        c.g[V0][0] = lw(c, r32(c, V1).wrapping_sub(0x4));
-                        sw_6(c, r32(c, V1), c.g[V0][0]);
-                        c.g[A0][0] = lw(c, at_3(c, S1, 0x8));
-                        break 'b_267314;
-                    }
-                }
-                c.cycles += 12;
-                c.g[A1][0] = c.g[S3][0];
-                c.g[A2][0] = sx(r32(c, A0).wrapping_sub(0x4));
-                c.g[V0][0] = sx(at_3(c, A0, 0x4));
-                c.g[A2][0] = sx(r32(c, A2).wrapping_sub(r32(c, S3)));
-                sw_6(c, at_3(c, S1, 0x8), c.g[V0][0]);
-                c.g[A2][0] = sx((r32(c, A2) as i32 >> 2) as u32);
-                c.g[A2][0] = sx(r32(c, A2) << 2);
-                c.g[S0][0] = lw(c, r32(c, S4));
-                c.g[RA][0] = sx(0x0026733c);
-                c.g[A0][0] = sx(r32(c, A0).wrapping_sub(r32(c, A2)));
-                if call_ptr(c, 0x0041610c, 0x0026733c).is_err() {
-                    return;
-                }
-                let t = true;
-                sw_6(c, r32(c, S3), c.g[S0][0]);
-                if t {
-                    break 'b_267444;
-                } else {
-                    break 'b_267344;
-                }
-            }
-        }
-        'b_2673ac: {
-            'b_26738c: {
-                c.cycles += 9;
-                c.g[V0][0] = lw(c, at_3(c, S1, 0x4));
-                c.g[S0][0] = 0x1;
-                c.g[A0][0] = 0x1;
-                c.g[V0][0] = sx(r32(c, V1).wrapping_sub(r32(c, V0)));
-                c.g[V0][0] = sx((r32(c, V0) as i32 >> 2) as u32);
-                c.g[V1][0] = sx(r32(c, V0) << 1);
-                if c.g[V0][0] != 0 {
-                    c.g[S0][0] = c.g[V1][0];
-                }
-                let t = c.g[S0][0] != c.g[A0][0];
-                c.g[S0][0] = sx(r32(c, S0) << 2);
-                if t {
-                    break 'b_26738c;
-                } else {
-                    c.cycles += 9;
-                    c.g[A1][0] = 0x480000;
-                    c.g[A0][0] = 0x4;
-                    c.g[A1][0] = sx(at_3(c, A1, 0x4a8));
-                    c.g[A2][0] = 0x20000000;
-                    c.g[A3][0] = 0u64;
-                    c.g[RA][0] = sx(0x00267384);
-                    c.g[S5][0] = 0x4;
-                    if call_ptr(c, 0x00317d70, 0x00267384).is_err() {
-                        return;
-                    }
-                    let t = true;
-                    c.g[S2][0] = c.g[V0][0];
-                    if t {
-                        break 'b_2673ac;
-                    } else {
-                        break 'b_26738c;
-                    }
-                }
-            }
-            c.cycles += 8;
-            c.g[A1][0] = 0x480000;
-            c.g[A1][0] = sx(at_3(c, A1, 0x4a8));
-            c.g[A0][0] = c.g[S0][0];
-            c.g[A2][0] = 0x20000000;
-            c.g[RA][0] = sx(0x002673a4);
-            c.g[A3][0] = 0u64;
-            if call_ptr(c, 0x00317e30, 0x002673a4).is_err() {
-                return;
-            }
-            c.g[S5][0] = c.g[S0][0];
-            c.g[S2][0] = c.g[V0][0];
-            break 'b_2673ac;
-        }
-        'b_2673d8: {
-            c.cycles += 9;
-            c.g[A1][0] = lw(c, at_3(c, S1, 0x4));
-            c.g[A0][0] = c.g[S2][0];
-            c.g[V0][0] = sx(r32(c, S3).wrapping_sub(r32(c, A1)));
-            c.g[A2][0] = sx((r32(c, V0) as i32 >> 2) as u32);
-            c.g[S0][0] = sx(r32(c, S2).wrapping_add(r32(c, V0)));
-            c.g[RA][0] = sx(0x002673c8);
-            c.g[A2][0] = sx(r32(c, A2) << 2);
-            if call_ptr(c, 0x0041610c, 0x002673c8).is_err() {
-                return;
-            }
-            let t = c.g[S0][0] == 0u64;
-            c.g[V1][0] = c.g[S0][0];
-            if t {
-                break 'b_2673d8;
-            } else {
-                c.cycles += 2;
-                c.g[V0][0] = lw(c, r32(c, S4));
-                sw_6(c, r32(c, S0), c.g[V0][0]);
-                break 'b_2673d8;
-            }
-        }
-        'b_267438: {
-            'b_267434: {
-                c.cycles += 14;
-                c.g[A2][0] = lw(c, at_3(c, S1, 0x8));
-                c.g[S0][0] = sx(at_3(c, V1, 0x4));
-                c.g[A1][0] = c.g[S3][0];
-                c.g[A0][0] = c.g[S0][0];
-                c.g[A2][0] = sx(r32(c, A2).wrapping_sub(r32(c, S3)));
-                c.g[S3][0] = sx(r32(c, S0).wrapping_add(r32(c, A2)));
-                c.g[A2][0] = sx((r32(c, A2) as i32 >> 2) as u32);
-                c.g[RA][0] = sx(0x002673fc);
-                c.g[A2][0] = sx(r32(c, A2) << 2);
-                if call_ptr(c, 0x0041610c, 0x002673fc).is_err() {
-                    return;
-                }
-                c.g[A0][0] = lw(c, at_3(c, S1, 0x4));
-                c.g[V0][0] = lw(c, at_3(c, S1, 0xc));
-                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(r32(c, A0)));
-                let t = c.g[A0][0] == 0u64;
-                c.g[V1][0] = sx((r32(c, V0) as i32 >> 2) as u32);
-                if t {
-                    break 'b_267434;
-                } else {
-                    'b_26742c: {
-                        c.cycles += 3;
-                        c.g[V0][0] = 0x1;
-                        let t = c.g[V1][0] != c.g[V0][0];
-
-                        if t {
-                            break 'b_26742c;
-                        } else {
-                            c.cycles += 4;
-                            c.g[RA][0] = sx(0x00267424);
-                            if call_ptr(c, 0x00317e50, 0x00267424).is_err() {
-                                return;
-                            }
-                            let t = true;
-                            c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, S5)));
-                            if t {
-                                break 'b_267438;
-                            } else {
-                                break 'b_26742c;
-                            }
-                        }
-                    }
-                    c.cycles += 2;
-                    c.g[RA][0] = sx(0x00267434);
-                    if call_ptr(c, 0x00317e98, 0x00267434).is_err() {
-                        return;
-                    }
-                    break 'b_267434;
-                }
-            }
-            c.cycles += 1;
-            c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, S5)));
-            break 'b_267438;
-        }
-        c.cycles += 3;
-        sw_6(c, at_3(c, S1, 0x8), c.g[S3][0]);
-        sw_6(c, at_3(c, S1, 0xc), c.g[V0][0]);
-        sw_6(c, at_3(c, S1, 0x4), c.g[S2][0]);
-        break 'b_267444;
-    }
-    c.cycles += 9;
-    frame.restore(c, S0, 0x60);
-    frame.restore(c, S1, 0x50);
-    frame.restore(c, S2, 0x40);
-    frame.restore(c, S3, 0x30);
-    frame.restore(c, S4, 0x20);
-    frame.restore(c, S5, 0x10);
-    c.g[RA][0] = ld(c, r32(c, SP));
-    let t = c.g[RA][0] as u32;
-    c.g[SP][0] = sx(at_3(c, SP, 0x70));
-    c.pc = t;
-    return;
-}
-
 /// Tag names looked up in the lobby reply's tag list.
 pub(crate) const TAG_A: u32 = 0x004a_3198;
 
@@ -10219,239 +9978,6 @@ pub fn lobbyman_edit_account(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
-}
-
-/// `void Net_DisconnectAll(void *self, void *arg)` (0x2636f0): tear down the
-/// network: make sure the net manager exists, stop any session, clear the
-/// pending-message list and post the "disconnected" notification.
-pub fn net_disconnect_all(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 10;
-        let frame = Frame::open(c, 0x70);
-        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        frame.save(c, 18, 0x40);
-        frame.save(c, 19, 0x30);
-        c.g[S2][0] = abi::arg64(c, 1);
-        frame.save(c, 16, 0x60);
-        c.g[S3][0] = abi::arg64(c, 0);
-        frame.save(c, 17, 0x50);
-        let have = c.g[V0][0] != 0;
-        frame.save_ra(c, 0x20);
-        if !have {
-            c.cycles += 2;
-            callee::NET_1.call(c, 0x0026_3720)?;
-        }
-
-        c.cycles += 4;
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        callee::NET_2.call(c, 0x0026_3728)?;
-        let running = c.g[V0][0] != 0;
-        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        if !running {
-            c.cycles += 3;
-            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-            callee::NET_3.call(c, 0x0026_3738)?;
-            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        }
-
-        c.cycles += 2;
-        let pending = c.g[V0][0] != 0;
-        if !pending {
-            c.cycles += 2;
-            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-            callee::NET_FLUSH.call(c, 0x0026_374c)?;
-        }
-
-        c.cycles += 9;
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        callee::NET_4.call(c, 0x0026_3754)?;
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-        callee::NET_FLUSH.call(c, 0x0026_375c)?;
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x238));
-        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x20));
-        c.g[V0][0] = c.g[V0][0] ^ 1;
-        let idle = c.g[V0][0] == 0;
-        frame.restore(c, 16, 0x60);
-        if !idle {
-            c.cycles += 4;
-            callee::NET_5.call(c, 0x0026_3778)?;
-            let no_arg = c.g[S2][0] == 0;
-            c.g[A1][0] = 0x0048_0000;
-            if !no_arg {
-                c.cycles += 25;
-                c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xed0));
-                c.g[A0][0] = 0xc;
-                c.g[A2][0] = 0x2000_0000;
-                c.g[A3][0] = 0;
-                callee::C_MEM_MAN_ALLOC.call(c, 0x0026_3798)?;
-                c.g[S1][0] = c.g[V0][0];
-                c.g[V1][0] = 0x0048_0000;
-                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1250));
-                c.g[V0][0] = 0x116;
-                c.sw(c.g[S1][0] as u32, c.g[V0][0]);
-                c.g[A1][0] = 0x0048_0000;
-                c.sw((c.g[S1][0] as u32).wrapping_add(4), c.g[V1][0]);
-                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
-                c.sw((c.g[S1][0] as u32).wrapping_add(8), c.g[S2][0]);
-                c.g[A0][0] = 0xc;
-                c.g[A2][0] = 0x2000_0000;
-                c.g[A3][0] = 0;
-                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xf0));
-                c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
-                callee::C_MEM_MAN_ALLOC.call(c, 0x0026_37d4)?;
-                c.g[A1][0] = c.g[V0][0];
-                c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(8));
-                if c.g[V0][0] != 0 {
-                    c.sw((c.g[A1][0] as u32).wrapping_add(8), c.g[S1][0]);
-                }
-                c.cycles += 9;
-                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
-                c.sw(c.g[A1][0] as u32, c.g[V0][0]);
-                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(4));
-                c.sw((c.g[A1][0] as u32).wrapping_add(4), c.g[V1][0]);
-                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(4));
-                c.sw(c.g[A0][0] as u32, c.g[A1][0]);
-                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
-                c.sw((c.g[V0][0] as u32).wrapping_add(4), c.g[A1][0]);
-                c.sw(c.g[SP][0] as u32, c.g[A1][0]);
-            }
-            c.cycles += 2;
-            c.sw(c.g[S3][0] as u32, 0);
-            frame.restore(c, 16, 0x60);
-        }
-
-        c.cycles += 6;
-        frame.restore(c, 17, 0x50);
-        frame.restore(c, 18, 0x40);
-        frame.restore(c, 19, 0x30);
-        frame.restore_ra(c, 0x20);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `void Net_AbortGameSetup(int *self, int arg)` (0x263ba8): drop the pending
-/// game-setup session, stop VOIP and the setup manager, reset the net lobby
-/// and post the "abort" message (0x10c for arg 1, 0x112 for arg 0).
-pub fn net_abort_game_setup(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 8;
-        let frame = Frame::open(c, 0x50);
-        frame.save(c, 16, 0x40);
-        frame.save(c, 17, 0x30);
-        c.g[S0][0] = abi::arg64(c, 0);
-        frame.save_ra(c, 0x20);
-        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
-        let no_session = c.g[V0][0] == 0;
-        c.g[S1][0] = abi::arg64(c, 1);
-        if !no_session {
-            c.cycles += 5;
-            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x238));
-            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(4));
-            callee::NET_FIND.call(c, 0x0026_3bd4)?;
-            let missing = c.g[V0][0] == 0;
-            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x238));
-            if !missing {
-                c.cycles += 6;
-                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(4));
-                callee::NET_REMOVE.call(c, 0x0026_3be4)?;
-                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x304));
-                callee::VOIP_DEACTIVATE.call(c, 0x0026_3bec)?;
-                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x304));
-                callee::VOIP_STOP.call(c, 0x0026_3bf4)?;
-            }
-        }
-
-        c.cycles += 3;
-        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2dc));
-        let no_setup = c.g[V0][0] == 0;
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-        if !no_setup {
-            c.cycles += 3;
-            callee::SETUPMAN_DESTROY.call(c, 0x0026_3c08)?;
-            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-        }
-
-        c.cycles += 5;
-        c.g[A1][0] = 0;
-        callee::NET_RESET.call(c, 0x0026_3c14)?;
-        c.g[V0][0] = 1;
-        let other = c.g[S1][0] != c.g[V0][0];
-        c.sw(c.g[S0][0] as u32, 0);
-        if other {
-            // Neither 0 nor 1: no message.
-            c.cycles += 2;
-            let queued = c.g[S1][0] != 0;
-            frame.restore(c, 16, 0x40);
-            if !queued {
-                c.cycles += 9;
-                c.g[A1][0] = 0x0048_0000;
-                c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
-                c.g[A0][0] = 8;
-                c.g[A2][0] = 0x2000_0000;
-                c.g[A3][0] = 0;
-                callee::C_MEM_MAN_ALLOC.call(c, 0x0026_3c6c)?;
-                c.g[S1][0] = c.g[V0][0];
-                c.g[V1][0] = 0x112;
-                post_node(c, 0x0026_3ca4)?;
-            }
-        } else {
-            c.cycles += 10;
-            c.g[A1][0] = 0x0048_0000;
-            c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
-            c.g[A0][0] = 8;
-            c.g[A2][0] = 0x2000_0000;
-            c.g[A3][0] = 0;
-            callee::C_MEM_MAN_ALLOC.call(c, 0x0026_3c3c)?;
-            c.g[S1][0] = c.g[V0][0];
-            c.g[V1][0] = 0x10c;
-            post_node(c, 0x0026_3ca4)?;
-        }
-
-        c.cycles += 4;
-        frame.restore(c, 17, 0x30);
-        frame.restore_ra(c, 0x20);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// Post the 8-byte node `s1` (already holding its tag in `v1` and the class
-/// pointer) onto the lobby message list at_3 `s0+0xf0`, then restore `s0`.
-pub(crate) fn post_node(c: &mut Cpu, ret: u32) -> crate::call::Flow {
-    c.cycles += 16;
-    c.g[V0][0] = 0x0048_0000;
-    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
-    c.g[A1][0] = 0x0048_0000;
-    c.sw((c.g[S1][0] as u32).wrapping_add(4), c.g[V0][0]);
-    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
-    c.g[A0][0] = 0xc;
-    c.g[A2][0] = 0x2000_0000;
-    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xf0));
-    c.g[A3][0] = 0;
-    c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
-    callee::C_MEM_MAN_ALLOC.call(c, ret)?;
-    c.g[A1][0] = c.g[V0][0];
-    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(8));
-    if c.g[V0][0] != 0 {
-        c.sw((c.g[A1][0] as u32).wrapping_add(8), c.g[S1][0]);
-    }
-    c.cycles += 10;
-    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
-    c.sw(c.g[A1][0] as u32, c.g[V0][0]);
-    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(4));
-    c.sw((c.g[A1][0] as u32).wrapping_add(4), c.g[V1][0]);
-    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(4));
-    c.sw(c.g[A0][0] as u32, c.g[A1][0]);
-    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
-    c.sw((c.g[V0][0] as u32).wrapping_add(4), c.g[A1][0]);
-    c.sw(c.g[SP][0] as u32, c.g[A1][0]);
-    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
-    Ok(())
 }
 
 /// `void cUsbKeyboard_Update(cUsbKeyboard *this)` (0x2668e8): when enabled,
@@ -11095,7 +10621,7 @@ pub fn c_usb_keyboard_destroy(c: &mut Cpu) {
         if !absent {
             c.cycles += 3;
             c.g[A1][0] = 0x3;
-            call_ptr(c, 0x0026_6850, 0x0026_67d8)?;
+            call_ptr(c, callee::C_USB_KEYBOARD_DTOR.addr, 0x0026_67d8)?;
             Addr(r32(c, GP).wrapping_add(0x300)).sw(c, 0);
         }
         c.cycles += 3;
@@ -11345,6 +10871,9 @@ pub(crate) const NET_COMM_SYSTEM_GP: u32 = 0x238;
 
 pub(crate) const NET_LOBBY_MAN_GP: u32 = 0xc8;
 
+/// `gp+0x238`: the buddy manager (`BuddyMan`).
+pub(crate) const BUDDY_MAN_GP: i32 = 0x238;
+
 /// The connect timer: `+0` state (1 connecting, 2 connected), `+4` the time
 /// left.
 pub(crate) const NET_CONNECT_STATE: u32 = 0x0;
@@ -11508,6 +11037,5696 @@ pub(crate) fn net_update_connect_connecting(
     c.sub_s(0, 1, 0);
     c.swc1(0, oc391_at(c, A0, NET_CONNECT_TIMER));
     Ok(NetConnectExit::Full)
+}
+
+pub(crate) mod tag {
+
+    pub const WHEN: u32 = 0x004a_2f80;
+
+    pub const REPT: u32 = 0x004a_3278;
+
+    pub const AUTH: u32 = 0x004a_2f78;
+
+    pub const COMMERR: u32 = 0x004a_3280;
+
+    pub const SCOMERR: u32 = 0x004a_3288;
+
+    pub const FINISH0: u32 = 0x004a_3290;
+
+    pub const FINISH1: u32 = 0x004a_3298;
+
+    pub const DNF0: u32 = 0x004a_32a0;
+
+    pub const DNF1: u32 = 0x004a_32a8;
+
+    pub const DESYNC: u32 = 0x004a_32b0;
+
+    pub const NAME0: u32 = 0x004a_32b8;
+
+    pub const QUIT0: u32 = 0x004a_32c0;
+
+    pub const CHEAT0: u32 = 0x004a_32c8;
+
+    pub const DISC0: u32 = 0x004a_32d0;
+
+    pub const SCORE0: u32 = 0x004a_32d8;
+
+    pub const POINTS0: u32 = 0x004a_32e0;
+
+    pub const SCORE1: u32 = 0x004a_32e8;
+
+    pub const NAME1: u32 = 0x004a_32f0;
+
+    pub const QUIT1: u32 = 0x004a_32f8;
+
+    pub const CHEAT1: u32 = 0x004a_3300;
+
+    pub const DISC1: u32 = 0x004a_3308;
+
+    pub const POINTS1: u32 = 0x004a_3310;
+
+    pub const PINGRSLT: u32 = 0x0048_0920;
+
+    pub const STALLCNT: u32 = 0x0048_0930;
+
+    pub const CERRSTAT: u32 = 0x0048_0940;
+
+    pub const CERRFLGS: u32 = 0x0048_0950;
+
+    pub const DIDQUIT0: u32 = 0x0048_0960;
+
+    pub const DIDQUIT1: u32 = 0x0048_0970;
+
+    pub const RSLTSLCK: u32 = 0x0048_0980;
+
+    pub const RACETRA0: u32 = 0x0048_0990;
+
+    pub const RACEEVE0: u32 = 0x0048_09a0;
+
+    pub const CHARACTER0: u32 = 0x0048_09b0;
+
+    pub const RACETIM0: u32 = 0x0048_09c0;
+
+    /// First per-rider stat tag for rider 0 (`SPINDEG0`); the rest follow at
+    /// +0x10 steps through `PLOSTRE0`, except the `POINTS0` tag.
+    pub const STATS0_BASE: u32 = 0x0048_09d0;
+
+    pub const CHARACTER1: u32 = 0x0048_0be0;
+
+    pub const RACETIM1: u32 = 0x0048_0bf0;
+
+    /// First per-rider stat tag for rider 1 (`SPINDEG1`).
+    pub const STATS1_BASE: u32 = 0x0048_0c00;
+}
+
+/// Size of the report record built on the stack.
+pub(crate) const REPORT_BUF_SIZE: u32 = 0x800;
+
+/// `EA_MemAllocNamed` name string for the queued lobby message.
+pub(crate) const NET_EVENT_TAG: u32 = 0x0048_0488;
+
+/// Vtable stored in the queued lobby message.
+pub(crate) const NET_EVENT_VTABLE: u32 = 0x0048_12b0;
+
+/// The `'rank'` request kind passed to `LobbyMan_SendRequest`.
+pub(crate) const REQ_RANK: u32 = 0x7261_6e6b;
+
+/// `lw reg, GAME_COMM_GP(gp)`: the report reloads the game-comm pointer
+/// before each of its field reads, into the register the compiled code uses.
+pub(crate) fn load_game_comm(c: &mut Cpu, reg: usize) {
+    c.g[reg][0] = c.lw(gp_8(c, GAME_COMM_GP));
+}
+
+/// `TagFieldSetNumber(sp, 0x800, tag, a3)`: the caller sets `a3` itself
+/// (a stats load, a stack spill, or `v0` after `__fixunssfsi`).
+pub(crate) fn set_number(c: &mut Cpu, tag_addr: u32, ret_addr: u32) -> crate::call::Flow {
+    c.g[A0][0] = c.g[SP][0];
+    c.g[A1][0] = REPORT_BUF_SIZE as u64;
+    c.g[A2][0] = sx(tag_addr);
+    callee::TAG_FIELD_SET_NUMBER.call(c, ret_addr)
+}
+
+/// Return addresses of one rider's stat-block calls, in call order.
+pub(crate) struct RiderRets {
+    ints: [u32; 14],
+    float_fix: [u32; 10],
+    float_num: [u32; 10],
+    tail: [u32; 10],
+}
+
+pub(crate) const RIDER_STATS_INT_OFFS: [u32; 14] = [
+    0x00, 0x04, 0x08, 0x10, 0x14, 0x18, 0x24, 0x28, 0x2c, 0x30, 0x34, 0x38, 0x3c, 0x40,
+];
+
+pub(crate) const RIDER_STATS_FLOAT_OFFS: [u32; 10] =
+    [0x44, 0x48, 0x4c, 0x50, 0x54, 0x58, 0x60, 0x64, 0x68, 0x6c];
+
+pub(crate) const RIDER_STATS_TAIL_OFFS: [u32; 10] =
+    [0x70, 0x74, 0x78, 0x7c, 0x80, 0x84, 0x90, 0x9c, 0xa4, 0xa8];
+
+/// One rider's stat block: 14 int fields, 10 float fields converted with
+/// `__fixunssfsi`, then 10 more int fields (the `+0x9c` field takes
+/// `points_tag` instead of the sequential tag). The two generated blocks
+/// have this exact shape apart from the stats register, the tag base and
+/// the return addresses, which are all parameters.
+pub(crate) fn report_rider_stats(
+    c: &mut Cpu,
+    stats_reg: usize,
+    base_tag: u32,
+    points_tag: u32,
+    rets: &RiderRets,
+) -> crate::call::Flow {
+    for (i, &off) in RIDER_STATS_INT_OFFS.iter().enumerate() {
+        c.g[A3][0] = c.lw((c.g[stats_reg][0] as u32).wrapping_add(off));
+        set_number(c, base_tag.wrapping_add(0x10 * i as u32), rets.ints[i])?;
+    }
+    for (i, &off) in RIDER_STATS_FLOAT_OFFS.iter().enumerate() {
+        let tag_addr = base_tag.wrapping_add(0x10 * (14 + i) as u32);
+        c.lwc1(12, (c.g[stats_reg][0] as u32).wrapping_add(off));
+        c.g[S0][0] = sx(tag_addr);
+        call_ptr(c, callee::FLOAT_TO_UINT, rets.float_fix[i])?;
+        c.g[A3][0] = c.g[V0][0];
+        set_number(c, tag_addr, rets.float_num[i])?;
+    }
+    for (i, &off) in RIDER_STATS_TAIL_OFFS.iter().enumerate() {
+        let tag_addr = if i == 7 {
+            points_tag
+        } else if i < 7 {
+            base_tag.wrapping_add(0x10 * (24 + i) as u32)
+        } else {
+            base_tag.wrapping_add(0x10 * (23 + i) as u32)
+        };
+        c.g[A3][0] = c.lw((c.g[stats_reg][0] as u32).wrapping_add(off));
+        set_number(c, tag_addr, rets.tail[i])?;
+    }
+    Ok(())
+}
+
+pub(crate) const RIDER0_RETS: RiderRets = RiderRets {
+    ints: [
+        0x0026_0378,
+        0x0026_0390,
+        0x0026_03a8,
+        0x0026_03c0,
+        0x0026_03d8,
+        0x0026_03f0,
+        0x0026_0408,
+        0x0026_0420,
+        0x0026_0438,
+        0x0026_0450,
+        0x0026_0468,
+        0x0026_0480,
+        0x0026_0498,
+        0x0026_04b0,
+    ],
+    float_fix: [
+        0x0026_04c0,
+        0x0026_04e4,
+        0x0026_0508,
+        0x0026_052c,
+        0x0026_0550,
+        0x0026_0574,
+        0x0026_0598,
+        0x0026_05bc,
+        0x0026_05e0,
+        0x0026_0604,
+    ],
+    float_num: [
+        0x0026_04d4,
+        0x0026_04f8,
+        0x0026_051c,
+        0x0026_0540,
+        0x0026_0564,
+        0x0026_0588,
+        0x0026_05ac,
+        0x0026_05d0,
+        0x0026_05f4,
+        0x0026_0618,
+    ],
+    tail: [
+        0x0026_0630,
+        0x0026_0648,
+        0x0026_0660,
+        0x0026_0678,
+        0x0026_0690,
+        0x0026_06a8,
+        0x0026_06c0,
+        0x0026_06d8,
+        0x0026_06f0,
+        0x0026_0708,
+    ],
+};
+
+/// `void LobbyMan_SendRaceReport(LobbyMan* self, int auth, int player0, int
+/// player1, void* stats0, void* stats1)` (0x25fd50): build the post-race
+/// "rank" report record (WHEN/REPT/AUTH, race flags, both riders' stat
+/// tags) in a 0x800-byte stack buffer, send it with `LobbyMan_SendRequest`,
+/// and queue the NetEvent message on the lobby list. Returns at once when
+/// `*self == 0`.
+pub fn lobby_man_send_race_report(c: &mut Cpu) {
+    guest(c, |c| {
+        {
+            c.cycles += 19;
+            let frame = Frame::open(c, 0x900);
+            frame.save(c, S0, 0x8f0);
+            frame.save(c, S1, 0x8e0);
+            c.g[S0][0] = c.g[A2][0];
+            frame.save(c, S3, 0x8c0);
+            c.g[S1][0] = c.g[A3][0];
+            frame.save(c, S5, 0x8a0);
+            c.g[S3][0] = c.g[T1][0];
+            frame.save(c, S2, 0x8d0);
+            frame.save(c, S4, 0x8b0);
+            frame.save(c, S6, 0x890);
+            frame.save(c, S7, 0x880);
+            frame.save(c, FP, 0x870);
+            frame.save_ra(c, 0x860);
+            c.sw(frame.at(c, 0x820), c.g[A0][0]);
+            c.sw(frame.at(c, 0x824), c.g[A1][0]);
+            c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+            let no_report = c.g[V0][0] == 0;
+            c.g[S5][0] = c.g[T0][0];
+            if !no_report {
+                {
+                    c.cycles += 18;
+                    call_ptr(c, callee::BE_LIBRARY_GET_INSTANCE, 0x0025_fda4)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A1][0] = 0;
+                    call_ptr(c, callee::BE_LIBRARY_GET_INTERFACE, 0x0025_fdb0)?;
+                    c.sw(frame.at(c, 0x828), c.g[V0][0]);
+                    c.g[A1][0] = 0x7;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x78));
+                    call_ptr(c, callee::BE_LIBRARY_GET_INTERFACE, 0x0025_fdc4)?;
+                    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                    c.g[T4][0] = 0;
+                    load_game_comm(c, A0);
+                    c.g[T3][0] = 0;
+                    c.g[V1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc0));
+                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x18));
+                    let no_flags = c.g[V0][0] == 0;
+                    c.sw(frame.at(c, 0x82c), c.g[V1][0]);
+                    if !no_flags {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x9c));
+                        if c.g[V0][0] != 0 {
+                            c.g[T3][0] = 0x1;
+                        } else {
+                            c.cycles += 1;
+                            c.g[T4][0] = 0x1;
+                        }
+                    }
+                }
+                {
+                    let swapped;
+                    {
+                        c.cycles += 13;
+                        load_game_comm(c, V0);
+                        c.g[V1][0] = 0x530000;
+                        c.g[A0][0] = 0x1;
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4b30));
+                        c.g[A2][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xa0));
+                        c.g[T0][0] = c.g[V0][0];
+                        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xa4));
+                        c.g[T2][0] = c.g[A0][0];
+                        c.g[T1][0] = c.g[A0][0];
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+                        if c.g[A1][0] != 0 {
+                            c.g[T2][0] = 0;
+                        }
+                        swapped = c.g[V0][0] == 0;
+                        if c.g[A2][0] != 0 {
+                            c.g[T1][0] = 0;
+                        }
+                        if !swapped {
+                            // Player order from the 0x534b30 table: rider 0
+                            // is finish0/stats0 (report+0x90 name).
+                            c.cycles += 4;
+                            c.sw(frame.at(c, 0x830), c.g[S0][0]);
+                            c.g[V0][0] = c.lw(frame.at(c, 0x820));
+                            c.g[S2][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x90));
+                            if c.g[T1][0] == 0 {
+                                c.cycles += 1;
+                                c.sw(frame.at(c, 0x834), 0);
+                            } else {
+                                c.cycles += 3;
+                                c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x38));
+                                let zero = c.g[V1][0] == 0;
+                                c.g[A3][0] = 0;
+                                if !zero {
+                                    c.cycles += 2;
+                                    c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x34));
+                                    c.g[A3][0] =
+                                        sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                                }
+                                c.cycles += 2;
+                                c.sw(frame.at(c, 0x834), c.g[A3][0]);
+                            }
+                            c.cycles += 2;
+                            if c.g[T4][0] == 0 {
+                                c.sw(frame.at(c, 0x838), 0);
+                            } else {
+                                c.cycles += 3;
+                                c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x38));
+                                let zero = c.g[V1][0] == 0;
+                                c.g[A3][0] = 0;
+                                if !zero {
+                                    c.cycles += 2;
+                                    c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x34));
+                                    c.g[A3][0] =
+                                        sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                                }
+                                c.cycles += 1;
+                                c.sw(frame.at(c, 0x838), c.g[A3][0]);
+                            }
+                            c.cycles += 15;
+                            c.g[V0][0] = 0x1;
+                            c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x10));
+                            c.g[FP][0] = c.g[V0][0];
+                            c.g[S7][0] = c.g[V0][0];
+                            c.g[V0][0] = 0x530000;
+                            c.g[A0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0xa0));
+                            c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4b30));
+                            if c.g[V1][0] == 0 {
+                                c.g[S7][0] = 0;
+                            }
+                            c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x32c));
+                            if c.g[A0][0] == 0 {
+                                c.g[FP][0] = 0;
+                            }
+                            c.g[S4][0] = c.g[S5][0];
+                            c.sw(frame.at(c, 0x840), c.g[A1][0]);
+                            c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x24));
+                            c.sw(frame.at(c, 0x83c), c.g[V1][0]);
+                            if c.g[T2][0] == 0 {
+                                c.cycles += 1;
+                                c.sw(frame.at(c, 0x844), 0);
+                            } else {
+                                c.cycles += 3;
+                                c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x3c));
+                                let zero = c.g[V1][0] == 0;
+                                c.g[A3][0] = 0;
+                                if !zero {
+                                    c.cycles += 2;
+                                    c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x34));
+                                    c.g[A3][0] =
+                                        sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                                }
+                                c.cycles += 2;
+                                c.sw(frame.at(c, 0x844), c.g[A3][0]);
+                            }
+                            c.cycles += 2;
+                            if c.g[T3][0] == 0 {
+                                c.sw(frame.at(c, 0x848), 0);
+                            } else {
+                                c.cycles += 3;
+                                c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x3c));
+                                let zero = c.g[V1][0] == 0;
+                                c.g[A3][0] = 0;
+                                if !zero {
+                                    c.cycles += 2;
+                                    c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x34));
+                                    c.g[A3][0] =
+                                        sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                                }
+                                c.cycles += 1;
+                                c.sw(frame.at(c, 0x848), c.g[A3][0]);
+                            }
+                            c.cycles += 9;
+                            c.g[V0][0] = 0x1;
+                            load_game_comm(c, V1);
+                            c.g[S6][0] = c.g[V0][0];
+                            c.g[S0][0] = c.g[V0][0];
+                            c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xa4));
+                            c.g[S5][0] = c.g[S3][0];
+                            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+                            c.g[V1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x28));
+                        }
+                    }
+                    if swapped {
+                        // Player order swapped: rider 0 is finish1/stats1
+                        // (report+0x94 name).
+                        c.cycles += 4;
+                        c.sw(frame.at(c, 0x830), c.g[S1][0]);
+                        c.g[A0][0] = c.lw(frame.at(c, 0x820));
+                        c.g[S2][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x94));
+                        if c.g[T2][0] == 0 {
+                            c.cycles += 1;
+                            c.sw(frame.at(c, 0x834), 0);
+                        } else {
+                            c.cycles += 3;
+                            c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x3c));
+                            let zero = c.g[V1][0] == 0;
+                            c.g[A3][0] = 0;
+                            if !zero {
+                                c.cycles += 2;
+                                c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x34));
+                                c.g[A3][0] =
+                                    sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                            }
+                            c.cycles += 2;
+                            c.sw(frame.at(c, 0x834), c.g[A3][0]);
+                        }
+                        c.cycles += 2;
+                        if c.g[T3][0] == 0 {
+                            c.sw(frame.at(c, 0x838), 0);
+                        } else {
+                            c.cycles += 3;
+                            c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x3c));
+                            let zero = c.g[V1][0] == 0;
+                            c.g[A3][0] = 0;
+                            if !zero {
+                                c.cycles += 2;
+                                c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x34));
+                                c.g[A3][0] =
+                                    sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                            }
+                            c.cycles += 1;
+                            c.sw(frame.at(c, 0x838), c.g[A3][0]);
+                        }
+                        c.cycles += 16;
+                        c.g[V0][0] = 0x1;
+                        c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x14));
+                        c.g[FP][0] = c.g[V0][0];
+                        c.g[S7][0] = c.g[V0][0];
+                        c.g[V0][0] = 0x530000;
+                        c.g[A0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0xa4));
+                        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4b30));
+                        if c.g[V1][0] == 0 {
+                            c.g[S7][0] = 0;
+                        }
+                        c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x328));
+                        if c.g[A0][0] == 0 {
+                            c.g[FP][0] = 0;
+                        }
+                        c.g[S4][0] = c.g[S3][0];
+                        c.g[S1][0] = c.g[S0][0];
+                        c.sw(frame.at(c, 0x840), c.g[A1][0]);
+                        c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x28));
+                        c.sw(frame.at(c, 0x83c), c.g[V1][0]);
+                        if c.g[T1][0] == 0 {
+                            c.cycles += 1;
+                            c.sw(frame.at(c, 0x844), 0);
+                        } else {
+                            c.cycles += 3;
+                            c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x38));
+                            let zero = c.g[V1][0] == 0;
+                            c.g[A3][0] = 0;
+                            if !zero {
+                                c.cycles += 2;
+                                c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x34));
+                                c.g[A3][0] =
+                                    sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                            }
+                            c.cycles += 2;
+                            c.sw(frame.at(c, 0x844), c.g[A3][0]);
+                        }
+                        c.cycles += 2;
+                        if c.g[T4][0] == 0 {
+                            c.sw(frame.at(c, 0x848), 0);
+                        } else {
+                            c.cycles += 3;
+                            c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x38));
+                            let zero = c.g[V1][0] == 0;
+                            c.g[A3][0] = 0;
+                            if !zero {
+                                c.cycles += 2;
+                                c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x34));
+                                c.g[A3][0] =
+                                    sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                            }
+                            c.cycles += 1;
+                            c.sw(frame.at(c, 0x848), c.g[A3][0]);
+                        }
+                        c.cycles += 7;
+                        c.g[V0][0] = 0x1;
+                        load_game_comm(c, V1);
+                        c.g[S6][0] = c.g[V0][0];
+                        c.g[S0][0] = c.g[V0][0];
+                        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xa0));
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+                        c.g[V1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
+                    }
+                }
+                {
+                    c.cycles += 20;
+                    if c.g[A0][0] == 0 {
+                        c.g[S6][0] = 0;
+                    }
+                    if c.g[V0][0] == 0 {
+                        c.g[S0][0] = 0;
+                    }
+                    c.sw(frame.at(c, 0x84c), c.g[V1][0]);
+                    c.g[A0][0] = c.lw(frame.at(c, 0x820));
+                    c.g[A3][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xa0));
+                    c.g[A0][0] = c.g[SP][0];
+                    c.g[A1][0] = REPORT_BUF_SIZE as u64;
+                    c.g[A2][0] = sx(tag::WHEN);
+                    c.sb(sp(c), 0);
+                    callee::TAG_FIELD_SET_DATE.call(c, 0x0026_0030)?;
+                    c.g[A3][0] = c.g[S2][0];
+                    c.g[A0][0] = c.g[SP][0];
+                    c.g[A1][0] = REPORT_BUF_SIZE as u64;
+                    c.g[A2][0] = sx(tag::REPT);
+                    call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0026_0048)?;
+                    c.g[V0][0] = c.lw(frame.at(c, 0x824));
+                    let has_auth = c.g[V0][0] != 0;
+                    c.g[V1][0] = c.lw(frame.at(c, 0x820));
+                    if has_auth {
+                        c.cycles += 6;
+                        c.g[A3][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x9c));
+                        c.g[A0][0] = c.g[SP][0];
+                        c.g[A1][0] = REPORT_BUF_SIZE as u64;
+                        c.g[A2][0] = sx(tag::AUTH);
+                        call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0026_006c)?;
+                    }
+                }
+                // One 115-cycle charge covers the next 15 calls.
+                c.cycles += 115;
+                load_game_comm(c, V0);
+                c.g[A3][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x30));
+                c.g[V0][0] = c.lw(frame.at(c, 0x830));
+                c.g[S1][0] = sx((c.g[S1][0] as u32) << 2);
+                c.g[S3][0] = 0x1;
+                c.g[S2][0] = sx((c.g[V0][0] as u32) << 2);
+                set_number(c, tag::COMMERR, 0x0026_0098)?;
+                c.sw(frame.at(c, 0x850), c.g[S2][0]);
+                load_game_comm(c, V0);
+                c.g[A3][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x18));
+                set_number(c, tag::SCOMERR, 0x0026_00b8)?;
+                c.sw(frame.at(c, 0x854), c.g[S1][0]);
+                load_game_comm(c, V0);
+                c.g[A3][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x9c));
+                set_number(c, tag::PINGRSLT, 0x0026_00d8)?;
+                load_game_comm(c, V1);
+                c.g[A3][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xb4));
+                set_number(c, tag::STALLCNT, 0x0026_00f4)?;
+                load_game_comm(c, V1);
+                c.g[A3][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+                set_number(c, tag::CERRSTAT, 0x0026_0110)?;
+                load_game_comm(c, V1);
+                c.g[A3][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x20));
+                set_number(c, tag::CERRFLGS, 0x0026_012c)?;
+                c.g[A3][0] = c.g[S7][0];
+                set_number(c, tag::DIDQUIT0, 0x0026_0144)?;
+                c.g[A3][0] = c.g[S0][0];
+                set_number(c, tag::DIDQUIT1, 0x0026_015c)?;
+                c.g[A3][0] = c.g[FP][0];
+                set_number(c, tag::FINISH0, 0x0026_0174)?;
+                c.g[A3][0] = c.g[S6][0];
+                set_number(c, tag::FINISH1, 0x0026_018c)?;
+                c.g[S0][0] = 0x530000;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x66a8));
+                c.g[A3][0] = 0;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+                if c.g[V0][0] != 0 {
+                    c.g[A3][0] = c.g[S3][0];
+                }
+                set_number(c, tag::DNF0, 0x0026_01b8)?;
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                c.g[A3][0] = 0;
+                if c.g[V0][0] != 0 {
+                    c.g[A3][0] = c.g[S3][0];
+                }
+                set_number(c, tag::DNF1, 0x0026_01dc)?;
+                c.g[A0][0] = c.lw(frame.at(c, 0x82c));
+                c.g[A3][0] = 0;
+                c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x9c));
+                if c.g[V1][0] != 0 {
+                    c.g[A3][0] = c.g[S3][0];
+                }
+                set_number(c, tag::RSLTSLCK, 0x0026_0200)?;
+                c.g[A0][0] = c.lw(frame.at(c, 0x828));
+                callee::BE_NEW_RACE_INT_GET_TRACK.call(c, 0x0026_0208)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A3][0] = c.g[S0][0];
+                set_number(c, tag::RACETRA0, 0x0026_0224)?;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xe));
+                c.g[V0][0] = 0x530000;
+                c.g[S0][0] = (c.g[S0][0] < 0x3) as u64;
+                c.g[S1][0] = c.lb((c.g[V0][0] as u32).wrapping_add(0x5c12));
+                if c.g[S0][0] != 0 {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x4;
+                    let not_four = c.g[S1][0] != c.g[V0][0];
+                    c.g[S1][0] = 0x1;
+                    if !not_four {
+                        c.cycles += 1;
+                        c.g[S1][0] = 0;
+                    }
+                }
+                // Rider 0 header.
+                c.cycles += 48;
+                c.g[A3][0] = c.g[S1][0];
+                set_number(c, tag::RACEEVE0, 0x0026_0260)?;
+                load_game_comm(c, V1);
+                c.g[A3][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                set_number(c, tag::DESYNC, 0x0026_027c)?;
+                c.g[V0][0] = c.lw(frame.at(c, 0x820));
+                c.g[A3][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x90));
+                c.g[A0][0] = c.g[SP][0];
+                c.g[A1][0] = REPORT_BUF_SIZE as u64;
+                c.g[A2][0] = sx(tag::NAME0);
+                call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0026_0298)?;
+                c.g[A3][0] = c.lw(frame.at(c, 0x834));
+                set_number(c, tag::QUIT0, 0x0026_02b0)?;
+                c.g[A3][0] = c.lw(frame.at(c, 0x83c));
+                set_number(c, tag::CHEAT0, 0x0026_02c8)?;
+                c.g[A3][0] = c.lw(frame.at(c, 0x838));
+                set_number(c, tag::DISC0, 0x0026_02e0)?;
+                c.g[A0][0] = 0x530000;
+                c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4b30));
+                c.g[A3][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x328));
+                set_number(c, tag::CHARACTER0, 0x0026_0300)?;
+                c.g[V1][0] = 0x530000;
+                if c.g[S1][0] != 0 {
+                    c.cycles += 11;
+                    c.g[A0][0] = c.lw(frame.at(c, 0x850));
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6640));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[V0][0] as u32);
+                    c.g[S2][0] = c.g[V1][0];
+                    set_number(c, tag::SCORE0, 0x0026_0360)?;
+                } else {
+                    c.cycles += 12;
+                    c.g[A0][0] = c.lw(frame.at(c, 0x850));
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6640));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[V0][0] as u32);
+                    c.g[S2][0] = c.g[V1][0];
+                    set_number(c, tag::RACETIM0, 0x0026_0330)?;
+                }
+                // Rider 0 stats, then rider 1's character.
+                c.cycles += 241;
+                report_rider_stats(c, S4, tag::STATS0_BASE, tag::POINTS0, &RIDER0_RETS)?;
+                c.g[A3][0] = c.lw(frame.at(c, 0x840));
+                set_number(c, tag::CHARACTER1, 0x0026_0720)?;
+                c.g[A0][0] = c.lw(frame.at(c, 0x854));
+                if c.g[S1][0] == 0 {
+                    c.cycles += 11;
+                    c.g[V1][0] = c.lw(frame.at(c, 0x854));
+                    c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x6640));
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[V0][0] as u32);
+                    set_number(c, tag::RACETIM1, 0x0026_074c)?;
+                    c.g[V0][0] = c.lw(frame.at(c, 0x820));
+                } else {
+                    c.cycles += 9;
+                    c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x6640));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[V0][0] as u32);
+                    set_number(c, tag::SCORE1, 0x0026_0774)?;
+                    c.g[V0][0] = c.lw(frame.at(c, 0x820));
+                }
+                // Rider 1 header and stats, then send and queue the message.
+                {
+                    c.cycles += 294;
+                    c.g[A3][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x94));
+                    c.g[A0][0] = c.g[SP][0];
+                    c.g[A1][0] = REPORT_BUF_SIZE as u64;
+                    c.g[A2][0] = sx(tag::NAME1);
+                    c.g[S1][0] = 0x100;
+                    call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0026_0794)?;
+                    c.g[A3][0] = c.lw(frame.at(c, 0x844));
+                    set_number(c, tag::QUIT1, 0x0026_07ac)?;
+                    c.g[A3][0] = c.lw(frame.at(c, 0x84c));
+                    set_number(c, tag::CHEAT1, 0x0026_07c4)?;
+                    c.g[A3][0] = c.lw(frame.at(c, 0x848));
+                    set_number(c, tag::DISC1, 0x0026_07dc)?;
+                    report_rider_stats(c, S5, tag::STATS1_BASE, tag::POINTS1, &RIDER1_RETS)?;
+                    c.g[V1][0] = c.lw(frame.at(c, 0x820));
+                    c.g[T0][0] = 0x270000;
+                    c.g[AT][0] = 0x41a00000;
+                    c.mtc1(1, 12);
+                    c.g[A2][0] = REQ_RANK as u64;
+                    c.g[A1][0] = c.lw(c.g[V1][0] as u32);
+                    c.g[A3][0] = c.g[SP][0];
+                    c.g[A0][0] = c.g[V1][0];
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x7110));
+                    callee::LOBBY_MAN_SEND_REQUEST.call(c, 0x0026_0bb0)?;
+                    c.g[A1][0] = sx(NET_EVENT_TAG);
+                    c.g[A0][0] = 0x8;
+                    c.g[A2][0] = 0x20000000;
+                    c.g[A3][0] = 0;
+                    callee::EA_MEM_ALLOC_NAMED.call(c, 0x0026_0bc8)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A0][0] = c.lw(frame.at(c, 0x820));
+                    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xf0));
+                    c.g[V0][0] = sx(NET_EVENT_VTABLE);
+                    c.sw(c.g[S0][0] as u32, c.g[S1][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    c.sw(frame.at(c, 0x810), c.g[V1][0]);
+                    c.g[A1][0] = 0x480000;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+                    c.g[A0][0] = 0xc;
+                    c.g[A2][0] = 0x20000000;
+                    c.g[A3][0] = 0;
+                    callee::EA_MEM_ALLOC_NAMED.call(c, 0x0026_0c00)?;
+                    c.g[A1][0] = c.g[V0][0];
+                    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+                    if c.g[V0][0] != 0 {
+                        c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[S0][0]);
+                    }
+                }
+                c.cycles += 9;
+                c.g[V0][0] = c.lw(frame.at(c, 0x810));
+                c.sw(c.g[A1][0] as u32, c.g[V0][0]);
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                c.sw(c.g[A0][0] as u32, c.g[A1][0]);
+                c.g[V0][0] = c.lw(frame.at(c, 0x810));
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[A1][0]);
+                c.sw(frame.at(c, 0x800), c.g[A1][0]);
+            }
+        }
+        c.cycles += 12;
+        let frame = Frame { size: 0x900 };
+        frame.restore(c, S0, 0x8f0);
+        frame.restore(c, S1, 0x8e0);
+        frame.restore(c, S2, 0x8d0);
+        frame.restore(c, S3, 0x8c0);
+        frame.restore(c, S4, 0x8b0);
+        frame.restore(c, S5, 0x8a0);
+        frame.restore(c, S6, 0x890);
+        frame.restore(c, S7, 0x880);
+        frame.restore(c, FP, 0x870);
+        frame.restore_ra(c, 0x860);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+pub(crate) const RIDER1_RETS: RiderRets = RiderRets {
+    ints: [
+        0x0026_07f4,
+        0x0026_080c,
+        0x0026_0824,
+        0x0026_083c,
+        0x0026_0854,
+        0x0026_086c,
+        0x0026_0884,
+        0x0026_089c,
+        0x0026_08b4,
+        0x0026_08cc,
+        0x0026_08e4,
+        0x0026_08fc,
+        0x0026_0914,
+        0x0026_092c,
+    ],
+    float_fix: [
+        0x0026_093c,
+        0x0026_0960,
+        0x0026_0984,
+        0x0026_09a8,
+        0x0026_09cc,
+        0x0026_09f0,
+        0x0026_0a14,
+        0x0026_0a38,
+        0x0026_0a5c,
+        0x0026_0a80,
+    ],
+    float_num: [
+        0x0026_0950,
+        0x0026_0974,
+        0x0026_0998,
+        0x0026_09bc,
+        0x0026_09e0,
+        0x0026_0a04,
+        0x0026_0a28,
+        0x0026_0a4c,
+        0x0026_0a70,
+        0x0026_0a94,
+    ],
+    tail: [
+        0x0026_0aac,
+        0x0026_0ac4,
+        0x0026_0adc,
+        0x0026_0af4,
+        0x0026_0b0c,
+        0x0026_0b24,
+        0x0026_0b3c,
+        0x0026_0b54,
+        0x0026_0b6c,
+        0x0026_0b84,
+    ],
+};
+
+/// `void LobbyMan_StaticInit(int, int)` (0x267468): when the second
+/// argument is 0xffff and the first is non-zero, placement-constructs the
+/// lobby's static tables: 56 colours at 0x4d2c38..0x4d2fb8 (from the float
+/// constants at gp-0x4b70..) and the handle/pair entries at gp+0x1fe8..
+/// (0x4a50d8..0x4a5158, bytes and words); otherwise it returns without
+/// touching them. No calls, no loops.
+pub fn lobby_man_static_init(c: &mut Cpu) {
+    let frame = Frame::open(c, 0x90);
+    c.cycles += 12;
+    c.g[V0][0] = 0xffff;
+    frame.save(c, S0, 0x80);
+    frame.save(c, S1, 0x70);
+    frame.save(c, S2, 0x60);
+    frame.save(c, S3, 0x50);
+    frame.save(c, S4, 0x40);
+    frame.save(c, S5, 0x30);
+    frame.save(c, S6, 0x20);
+    frame.save(c, S7, 0x10);
+    let t = c.g[A1][0] != c.g[V0][0];
+    frame.save(c, 30, 0);
+    if !t {
+        c.cycles += 2;
+        let t = c.g[A0][0] == 0u64;
+        c.g[T5][0] = 0x4d0000;
+        if !t {
+            c.cycles += 558;
+            c.lwc1(9, (c.g[GP][0] as u32).wrapping_sub(0x4b70));
+            c.lwc1(10, (c.g[GP][0] as u32).wrapping_sub(0x4b6c));
+            c.g[T6][0] = 0x4d0000;
+            c.lwc1(11, (c.g[GP][0] as u32).wrapping_sub(0x4b68));
+            c.g[T7][0] = 0x4d0000;
+            c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x4b64));
+            c.g[V0][0] = sx((c.g[T7][0] as u32).wrapping_add(0x2c68));
+            c.swc1(9, (c.g[T5][0] as u32).wrapping_add(0x2c48));
+            c.g[S1][0] = 0x4d0000;
+            c.swc1(10, (c.g[T6][0] as u32).wrapping_add(0x2c58));
+            c.g[S2][0] = 0x4d0000;
+            c.swc1(11, (c.g[T7][0] as u32).wrapping_add(0x2c68));
+            c.g[S3][0] = 0x4d0000;
+            c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x4b60));
+            c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x2c98));
+            c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x4b5c));
+            c.g[S5][0] = 0x4d0000;
+            c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x4b58));
+            c.g[S4][0] = 0x4d0000;
+            c.swc1(7, (c.g[V0][0] as u32).wrapping_add(0xc));
+            c.g[T3][0] = 0x4d0000;
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4b54));
+            c.g[A1][0] = sx((c.g[S5][0] as u32).wrapping_add(0x2c38));
+            c.g[AT][0] = 0x3f800000;
+            c.mtc1(1, 0);
+            c.g[A3][0] = sx((c.g[T5][0] as u32).wrapping_add(0x2c48));
+            c.swc1(8, (c.g[S1][0] as u32).wrapping_add(0x2c78));
+            c.g[T1][0] = sx((c.g[T6][0] as u32).wrapping_add(0x2c58));
+            c.swc1(4, (c.g[S2][0] as u32).wrapping_add(0x2c88));
+            c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x2c78));
+            c.swc1(5, (c.g[S3][0] as u32).wrapping_add(0x2c98));
+            c.g[T0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x2c88));
+            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x4b50));
+            c.g[A2][0] = sx((c.g[S4][0] as u32).wrapping_add(0x2ca8));
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x4b4c));
+            c.g[T4][0] = sx((c.g[T3][0] as u32).wrapping_add(0x2cb8));
+            c.swc1(2, (c.g[A0][0] as u32).wrapping_add(0xc));
+            c.g[T9][0] = 0x4d0000;
+            c.g[AT][0] = 0x3f000000;
+            c.mtc1(1, 6);
+            c.g[T2][0] = sx((c.g[T9][0] as u32).wrapping_add(0x2cc8));
+            c.swc1(3, (c.g[S4][0] as u32).wrapping_add(0x2ca8));
+            c.g[S6][0] = 0x4d0000;
+            c.swc1(1, (c.g[T3][0] as u32).wrapping_add(0x2cb8));
+            c.g[T7][0] = sx((c.g[S6][0] as u32).wrapping_add(0x2cf8));
+            c.swc1(0, (c.g[S5][0] as u32).wrapping_add(0x2c38));
+            c.g[S2][0] = 0x4d0000;
+            c.swc1(6, (c.g[A1][0] as u32).wrapping_add(0xc));
+            c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x2d18));
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[S3][0] = 0x4d0000;
+            c.lwc1(17, (c.g[GP][0] as u32).wrapping_sub(0x4b48));
+            c.g[S2][0] = sx((c.g[S3][0] as u32).wrapping_add(0x2d28));
+            c.lwc1(18, (c.g[GP][0] as u32).wrapping_sub(0x4b44));
+            c.g[T8][0] = 0x4d0000;
+            c.sw((c.g[T1][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[FP][0] = 0x4d0000;
+            c.lwc1(13, (c.g[GP][0] as u32).wrapping_sub(0x4b40));
+            c.g[S3][0] = sx((c.g[FP][0] as u32).wrapping_add(0x2d38));
+            c.lwc1(14, (c.g[GP][0] as u32).wrapping_sub(0x4b3c));
+            c.g[T5][0] = sx((c.g[T8][0] as u32).wrapping_add(0x2cd8));
+            c.swc1(17, (c.g[V0][0] as u32).wrapping_add(0x4));
+            c.g[S7][0] = 0x4d0000;
+            c.swc1(18, (c.g[V0][0] as u32).wrapping_add(0x8));
+            c.g[FP][0] = 0x4d0000;
+            c.swc1(13, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = 0x4d0000;
+            c.swc1(14, (c.g[V1][0] as u32).wrapping_add(0x8));
+            c.g[S5][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2d48));
+            c.sw((c.g[V1][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[T6][0] = sx((c.g[S7][0] as u32).wrapping_add(0x2ce8));
+            c.lwc1(15, (c.g[GP][0] as u32).wrapping_sub(0x4b38));
+            c.g[V1][0] = 0x4d0000;
+            c.lwc1(16, (c.g[GP][0] as u32).wrapping_sub(0x4b34));
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2d88));
+            c.sw((c.g[T0][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[V1][0] = sx((c.g[FP][0] as u32).wrapping_add(0x2da8));
+            c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(0x4b30));
+            c.g[S0][0] = 0x4d0000;
+            c.swc1(15, (c.g[A0][0] as u32).wrapping_add(0x4));
+            c.swc1(16, (c.g[A0][0] as u32).wrapping_add(0x8));
+            c.swc1(12, (c.g[A2][0] as u32).wrapping_add(0x4));
+            c.g[A0][0] = 0x4d0000;
+            c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0xc));
+            c.g[S4][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2d98));
+            c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x4));
+            c.g[A0][0] = 0x4d0000;
+            c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x8));
+            c.g[T3][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2db8));
+            c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x4));
+            c.g[A0][0] = 0x4d0000;
+            c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x8));
+            c.g[FP][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2dc8));
+            c.swc1(0, (c.g[T1][0] as u32).wrapping_add(0x4));
+            c.g[A1][0] = 0x4d0000;
+            c.swc1(0, (c.g[T1][0] as u32).wrapping_add(0x8));
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2dd8));
+            c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0x4));
+            c.g[A3][0] = 0x4d0000;
+            c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0x8));
+            c.lwc1(19, (c.g[GP][0] as u32).wrapping_sub(0x4b2c));
+            c.g[T0][0] = sx((c.g[A3][0] as u32).wrapping_add(0x2e08));
+            c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x8));
+            c.g[A3][0] = 0x4d0000;
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4b28));
+            c.g[A2][0] = 0x4d0000;
+            c.swc1(19, (c.g[T4][0] as u32).wrapping_add(0x4));
+            c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2de8));
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x4b24));
+            c.g[A2][0] = 0x4d0000;
+            c.swc1(2, (c.g[T9][0] as u32).wrapping_add(0x2cc8));
+            c.g[T1][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2e18));
+            c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x4b20));
+            c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_add(0x2e38));
+            c.swc1(1, (c.g[T2][0] as u32).wrapping_add(0xc));
+            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x4b1c));
+            c.swc1(8, (c.g[T7][0] as u32).wrapping_add(0xc));
+            c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x4b18));
+            c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x4b14));
+            c.swc1(3, (c.g[T4][0] as u32).wrapping_add(0x8));
+            c.sw((c.g[T4][0] as u32).wrapping_add(0xc), 0u64);
+            c.swc1(4, (c.g[T2][0] as u32).wrapping_add(0x4));
+            c.swc1(5, (c.g[T2][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[T8][0] as u32).wrapping_add(0x2cd8));
+            c.g[T2][0] = 0x4d0000;
+            c.swc1(0, (c.g[T5][0] as u32).wrapping_add(0xc));
+            c.g[A3][0] = sx((c.g[T2][0] as u32).wrapping_add(0x2e98));
+            c.swc1(0, (c.g[S7][0] as u32).wrapping_add(0x2ce8));
+            c.g[T2][0] = 0x4d0000;
+            c.sw((c.g[T6][0] as u32).wrapping_add(0xc), 0u64);
+            c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x4b10));
+            c.swc1(0, (c.g[S6][0] as u32).wrapping_add(0x2cf8));
+            c.swc1(7, (c.g[T7][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x2d08));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2d08));
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4b0c));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[S0][0] = 0x4d0000;
+            c.swc1(0, (c.g[T2][0] as u32).wrapping_add(0x2d18));
+            c.g[T4][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2eb8));
+            c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0xc));
+            c.g[S0][0] = 0x4d0000;
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x4b08));
+            c.g[T2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2ec8));
+            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x4b04));
+            c.g[S0][0] = 0x4d0000;
+            c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x4b00));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x2d28));
+            c.sw((c.g[S2][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[S0][0] = 0x4d0000;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x2d38));
+            c.swc1(0, (c.g[T5][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = 0x4d0000;
+            c.swc1(0, (c.g[T5][0] as u32).wrapping_add(0x8));
+            c.sw((c.g[T6][0] as u32).wrapping_add(0x4), 0u64);
+            c.g[T5][0] = 0x4d0000;
+            c.sw((c.g[T6][0] as u32).wrapping_add(0x8), 0u64);
+            c.g[T5][0] = sx((c.g[T5][0] as u32).wrapping_add(0x2d08));
+            c.swc1(8, (c.g[T7][0] as u32).wrapping_add(0x4));
+            c.g[T6][0] = 0x4d0000;
+            c.swc1(0, (c.g[T5][0] as u32).wrapping_add(0x4));
+            c.g[T7][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2f48));
+            c.swc1(0, (c.g[T5][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = 0x4d0000;
+            c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x4));
+            c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x8));
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x4), 0u64);
+            c.g[S1][0] = sx((c.g[T6][0] as u32).wrapping_add(0x2f28));
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x8), 0u64);
+            c.g[T6][0] = 0xffffffffffff0000;
+            c.sw((c.g[S3][0] as u32).wrapping_add(0x4), 0u64);
+            c.g[S2][0] = 0x4d0000;
+            c.sw((c.g[S3][0] as u32).wrapping_add(0x8), 0u64);
+            c.g[T5][0] = sx((c.g[S2][0] as u32).wrapping_add(0x2f58));
+            c.sw((c.g[S3][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[S2][0] = 0x4d0000;
+            c.g[S3][0] = 0x4d0000;
+            c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x4afc));
+            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x2d78));
+            c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x4af8));
+            c.swc1(6, (c.g[S3][0] as u32).wrapping_add(0xc));
+            c.g[T6][0] = c.g[T6][0] | 0xff00;
+            c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0xc));
+            c.g[S3][0] = 0x4d0000;
+            c.swc1(1, (c.g[S0][0] as u32).wrapping_add(0x2da8));
+            c.swc1(0, (c.g[S2][0] as u32).wrapping_add(0x2d48));
+            c.g[S0][0] = 0x4d0000;
+            c.swc1(0, (c.g[S5][0] as u32).wrapping_add(0xc));
+            c.g[S2][0] = sx((c.g[S3][0] as u32).wrapping_add(0x2f68));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x2d58));
+            c.g[S0][0] = 0x4d0000;
+            c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x4af4));
+            c.g[S3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2f78));
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4af0));
+            c.g[S0][0] = 0x4d0000;
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x4aec));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2d58));
+            c.lwc1(9, (c.g[GP][0] as u32).wrapping_sub(0x4ae8));
+            c.swc1(6, (c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[S0][0] = 0x4d0000;
+            c.lwc1(10, (c.g[GP][0] as u32).wrapping_sub(0x4ae4));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x2d68));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2d68));
+            c.lwc1(11, (c.g[GP][0] as u32).wrapping_sub(0x4ae0));
+            c.swc1(6, (c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[S0][0] = 0x4d0000;
+            c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(0x4adc));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x2d78));
+            c.g[S0][0] = 0x4d0000;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x2d88));
+            c.swc1(3, (c.g[V0][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = 0x4d0000;
+            c.swc1(4, (c.g[V0][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] = 0x4d0000;
+            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x4ad8));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x2d98));
+            c.swc1(5, (c.g[S4][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] = 0x4d0000;
+            c.sw((c.g[S4][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2d58));
+            c.swc1(7, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.swc1(8, (c.g[V1][0] as u32).wrapping_add(0x8));
+            c.sw((c.g[V1][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[V1][0] = 0x4d0000;
+            c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x4ad4));
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x2db8));
+            c.swc1(0, (c.g[T3][0] as u32).wrapping_add(0xc));
+            c.g[V1][0] = 0x4d0000;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x2dc8));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2d68));
+            c.swc1(0, (c.g[S5][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = 0x4d0000;
+            c.swc1(0, (c.g[S5][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2d78));
+            c.swc1(6, (c.g[V0][0] as u32).wrapping_add(0x4));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x8));
+            c.swc1(6, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = 0x4d0000;
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x8));
+            c.swc1(6, (c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = 0x4d0000;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[S4][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = 0x4d0000;
+            c.swc1(0, (c.g[T3][0] as u32).wrapping_add(0x4));
+            c.swc1(0, (c.g[T3][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x4));
+            c.swc1(2, (c.g[A1][0] as u32).wrapping_add(0xc));
+            c.swc1(1, (c.g[T0][0] as u32).wrapping_add(0xc));
+            c.swc1(3, (c.g[FP][0] as u32).wrapping_add(0x8));
+            c.sw((c.g[FP][0] as u32).wrapping_add(0xc), 0u64);
+            c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x4ad0));
+            c.g[FP][0] = 0x4d0000;
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x2dd8));
+            c.swc1(5, (c.g[A0][0] as u32).wrapping_add(0x8));
+            c.g[FP][0] = 0x4d0000;
+            c.swc1(4, (c.g[A0][0] as u32).wrapping_add(0x4));
+            c.sw((c.g[A0][0] as u32).wrapping_add(0xc), 0u64);
+            c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x4acc));
+            c.g[A0][0] = c.g[V1][0];
+            c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x4ac8));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2df8));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x2de8));
+            c.swc1(6, (c.g[A1][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = c.g[FP][0];
+            c.swc1(7, (c.g[A1][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2e28));
+            c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x4ac4));
+            c.g[A1][0] = 0x4d0000;
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x2df8));
+            c.swc1(8, (c.g[A0][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = 0x4d0000;
+            c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0xc));
+            c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x2e08));
+            c.g[A0][0] = 0x4d0000;
+            c.swc1(9, (c.g[T0][0] as u32).wrapping_add(0x4));
+            c.g[A1][0] = 0x4d0000;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x2e18));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2df8));
+            c.swc1(0, (c.g[T1][0] as u32).wrapping_add(0xc));
+            c.g[S0][0] = 0x4d0000;
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x2e28));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0xc));
+            c.g[FP][0] = 0x4d0000;
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x2e38));
+            c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_add(0x2ea8));
+            c.swc1(10, (c.g[A2][0] as u32).wrapping_add(0x4));
+            c.swc1(11, (c.g[A2][0] as u32).wrapping_add(0x8));
+            c.sw((c.g[A2][0] as u32).wrapping_add(0xc), 0u64);
+            c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x2e48));
+            c.g[A2][0] = c.g[A0][0];
+            c.swc1(12, (c.g[A1][0] as u32).wrapping_add(0x4));
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2e48));
+            c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0x8));
+            c.g[A0][0] = 0x4d0000;
+            c.swc1(0, (c.g[T1][0] as u32).wrapping_add(0x4));
+            c.g[A1][0] = c.g[A0][0];
+            c.swc1(0, (c.g[T1][0] as u32).wrapping_add(0x8));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2e68));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x4));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = 0x4d0000;
+            c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = c.g[V0][0];
+            c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x4ac0));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2e58));
+            c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0xc));
+            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x4abc));
+            c.g[A2][0] = 0x4d0000;
+            c.swc1(4, (c.g[S0][0] as u32).wrapping_add(0x2e88));
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4ab8));
+            c.g[S0][0] = c.g[A2][0];
+            c.swc1(3, (c.g[A3][0] as u32).wrapping_add(0xc));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2e78));
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x4ab4));
+            c.swc1(2, (c.g[FP][0] as u32).wrapping_add(0xc));
+            c.swc1(1, (c.g[T2][0] as u32).wrapping_add(0xc));
+            c.g[FP][0] = 0x4d0000;
+            c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x4ab0));
+            c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_add(0x2e88));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x2e58));
+            c.swc1(5, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = 0x4d0000;
+            c.sw((c.g[V1][0] as u32).wrapping_add(0xc), 0u64);
+            c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x2e68));
+            c.g[V1][0] = 0x4d0000;
+            c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0xc));
+            c.g[A0][0] = c.g[V1][0];
+            c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x2e78));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2ea8));
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[A1][0] = 0x4d0000;
+            c.sw((c.g[FP][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[A2][0] = 0x4d0000;
+            c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x4aac));
+            c.g[S0][0] = 0x4d0000;
+            c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x4aa8));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2e58));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x2e98));
+            c.g[FP][0] = 0x4d0000;
+            c.swc1(6, (c.g[A3][0] as u32).wrapping_add(0x4));
+            c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_add(0x2e68));
+            c.swc1(7, (c.g[A3][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] = 0x4d0000;
+            c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x4aa4));
+            c.g[A3][0] = 0x4d0000;
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x2ea8));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2e78));
+            c.swc1(8, (c.g[A0][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = 0x4d0000;
+            c.lwc1(9, (c.g[GP][0] as u32).wrapping_sub(0x4aa0));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2e88));
+            c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x2eb8));
+            c.swc1(9, (c.g[T4][0] as u32).wrapping_add(0x8));
+            c.g[A1][0] = 0x4d0000;
+            c.sw((c.g[T4][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2ee8));
+            c.lwc1(10, (c.g[GP][0] as u32).wrapping_sub(0x4a9c));
+            c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x2ec8));
+            c.swc1(10, (c.g[T2][0] as u32).wrapping_add(0x4));
+            c.g[A2][0] = 0x4d0000;
+            c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x2ed8));
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2f38));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x4));
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x4));
+            c.g[FP][0] = 0x4d0000;
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x4), 0u64);
+            c.g[V0][0] = c.g[FP][0];
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x8), 0u64);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2f08));
+            c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = 0x4d0000;
+            c.swc1(0, (c.g[T4][0] as u32).wrapping_add(0x4));
+            c.g[A0][0] = c.g[A3][0];
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2ed8));
+            c.swc1(0, (c.g[T2][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x4));
+            c.g[T2][0] = 0x4d0000;
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4a98));
+            c.g[A3][0] = 0x4d0000;
+            c.swc1(12, (c.g[A1][0] as u32).wrapping_add(0xc));
+            c.g[S0][0] = c.g[T2][0];
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x4a94));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2ef8));
+            c.swc1(2, (c.g[S1][0] as u32).wrapping_add(0xc));
+            c.g[A1][0] = 0x4d0000;
+            c.swc1(1, (c.g[A2][0] as u32).wrapping_add(0xc));
+            c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0xc));
+            c.g[A2][0] = 0x4d0000;
+            c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x2ee8));
+            c.g[A0][0] = c.g[V1][0];
+            c.swc1(0, (c.g[T2][0] as u32).wrapping_add(0x2ef8));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2f18));
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[A3][0] = c.g[A2][0];
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x2f08));
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x2f38));
+            c.sw((c.g[V0][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[T2][0] = 0x4d0000;
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x2f18));
+            c.g[S0][0] = 0x4d0000;
+            c.sw((c.g[A0][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[FP][0] = 0x4d0000;
+            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x4a90));
+            c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_add(0x2ed8));
+            c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x2f28));
+            c.g[V0][0] = 0x4d0000;
+            c.swc1(3, (c.g[S1][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2ee8));
+            c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x4a8c));
+            c.g[V1][0] = 0x4d0000;
+            c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x2f38));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2ef8));
+            c.swc1(4, (c.g[A3][0] as u32).wrapping_add(0x8));
+            c.g[A0][0] = 0x4d0000;
+            c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x4a88));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2f08));
+            c.swc1(0, (c.g[T2][0] as u32).wrapping_add(0x2f48));
+            c.g[A1][0] = 0x4d0000;
+            c.swc1(5, (c.g[T7][0] as u32).wrapping_add(0x8));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2f18));
+            c.sw((c.g[T7][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[A2][0] = 0xffffffffffffffff;
+            c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x4a84));
+            c.g[T2][0] = 0x2;
+            c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x4a80));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x2f58));
+            c.swc1(6, (c.g[T5][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = 0x4d0000;
+            c.swc1(7, (c.g[T5][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x8));
+            c.swc1(12, (c.g[V0][0] as u32).wrapping_add(0x4));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x4));
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x8), 0u64);
+            c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x4));
+            c.sw((c.g[A0][0] as u32).wrapping_add(0x8), 0u64);
+            c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x4));
+            c.sw((c.g[A1][0] as u32).wrapping_add(0x8), 0u64);
+            c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x4));
+            c.swc1(0, (c.g[T7][0] as u32).wrapping_add(0x4));
+            c.g[A3][0] = 0x1;
+            c.sw((c.g[T5][0] as u32).wrapping_add(0xc), 0u64);
+            c.sb((c.g[GP][0] as u32).wrapping_add(0x1fe8), c.g[A2][0]);
+            c.g[T5][0] = 0x4d0000;
+            c.sb((c.g[GP][0] as u32).wrapping_add(0x1ff8), 0u64);
+            c.g[T5][0] = sx((c.g[T5][0] as u32).wrapping_add(0x2f88));
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4a7c));
+            c.g[V0][0] = c.g[A2][0] & 0xff;
+            c.sb((c.g[GP][0] as u32).wrapping_add(0x2000), c.g[A3][0]);
+            c.g[V0][0] = c.g[V0][0] | c.g[T6][0];
+            c.sb((c.g[GP][0] as u32).wrapping_add(0x2008), c.g[T2][0]);
+            c.g[T6][0] = 0x4d0000;
+            c.g[A1][0] = c.lbu((c.g[GP][0] as u32).wrapping_add(0x1ff8));
+            c.g[V1][0] = c.g[A3][0] & 0xff;
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x4a78));
+            c.g[A2][0] = 0x4d0000;
+            c.swc1(2, (c.g[S3][0] as u32).wrapping_add(0xc));
+            c.g[A3][0] = c.g[A2][0];
+            c.swc1(1, (c.g[T5][0] as u32).wrapping_add(0xc));
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x2fa8));
+            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x4a74));
+            c.g[V1][0] = c.g[V1][0] | 0x100;
+            c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x4a70));
+            c.g[A0][0] = c.g[T2][0] & 0xff;
+            c.swc1(0, (c.g[T6][0] as u32).wrapping_add(0x2f68));
+            c.g[A0][0] = c.g[A0][0] | 0x200;
+            c.swc1(3, (c.g[S2][0] as u32).wrapping_add(0x4));
+            c.g[T2][0] = 0x3;
+            c.swc1(4, (c.g[S2][0] as u32).wrapping_add(0x8));
+            c.g[T6][0] = 0x5;
+            c.sw((c.g[S2][0] as u32).wrapping_add(0xc), 0u64);
+            c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x4a6c));
+            c.g[S2][0] = 0x4d0000;
+            c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x4a68));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x2f78));
+            c.swc1(5, (c.g[S3][0] as u32).wrapping_add(0x4));
+            c.g[S0][0] = 0x6;
+            c.swc1(6, (c.g[S3][0] as u32).wrapping_add(0x8));
+            c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x4a64));
+            c.g[S3][0] = 0x4d0000;
+            c.lwc1(8, (c.g[GP][0] as u32).wrapping_sub(0x4a60));
+            c.g[FP][0] = c.g[S3][0];
+            c.swc1(0, (c.g[S2][0] as u32).wrapping_add(0x2f88));
+            c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_add(0x2f98));
+            c.swc1(7, (c.g[T5][0] as u32).wrapping_add(0x4));
+            c.g[S2][0] = 0x7;
+            c.swc1(8, (c.g[T5][0] as u32).wrapping_add(0x8));
+            c.swc1(0, (c.g[S3][0] as u32).wrapping_add(0x2f98));
+            c.g[T5][0] = 0x4;
+            c.sw((c.g[FP][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[S3][0] = 0x8;
+            c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x2fa8));
+            c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x4));
+            c.sw((c.g[A3][0] as u32).wrapping_add(0xc), 0u64);
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x1fe8), c.g[V0][0]);
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x1ff8), c.g[A1][0]);
+            c.g[V0][0] = 0xa;
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x2000), c.g[V1][0]);
+            c.g[A1][0] = 0xd;
+            c.sw((c.g[FP][0] as u32).wrapping_add(0x4), 0u64);
+            c.g[V1][0] = 0xb;
+            c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x8));
+            c.sw((c.g[A3][0] as u32).wrapping_add(0x8), 0u64);
+            c.g[FP][0] = 0x9;
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x1ff4), 0u64);
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x1ff0), 0u64);
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x2008), c.g[A0][0]);
+            c.sb((c.g[GP][0] as u32).wrapping_add(0x2010), c.g[T2][0]);
+            c.g[A0][0] = 0xc;
+            c.sb((c.g[GP][0] as u32).wrapping_add(0x2018), c.g[T5][0]);
+            c.sb((c.g[GP][0] as u32).wrapping_add(0x2020), c.g[T6][0]);
+            c.g[T1][0] = c.g[T2][0] & 0xff;
+            c.sb((c.g[GP][0] as u32).wrapping_add(0x2048), c.g[V0][0]);
+            c.g[T3][0] = c.g[T5][0] & 0xff;
+            c.sb((c.g[GP][0] as u32).wrapping_add(0x2050), c.g[V1][0]);
+            c.g[T4][0] = c.g[T6][0] & 0xff;
+            c.sb((c.g[GP][0] as u32).wrapping_add(0x2058), c.g[A0][0]);
+            c.g[T1][0] = c.g[T1][0] | 0x300;
+            c.sb((c.g[GP][0] as u32).wrapping_add(0x2060), c.g[A1][0]);
+            c.g[A0][0] = c.g[V1][0] & 0xff;
+            c.g[A1][0] = c.g[V0][0] & 0xff;
+            c.sb((c.g[GP][0] as u32).wrapping_add(0x2028), c.g[S0][0]);
+            c.sb((c.g[GP][0] as u32).wrapping_add(0x2030), c.g[S2][0]);
+            c.g[T3][0] = c.g[T3][0] | 0x400;
+            c.sb((c.g[GP][0] as u32).wrapping_add(0x2038), c.g[S3][0]);
+            c.g[T2][0] = c.g[S0][0] & 0xff;
+            c.sb((c.g[GP][0] as u32).wrapping_add(0x2040), c.g[FP][0]);
+            c.g[T0][0] = c.g[S2][0] & 0xff;
+            c.g[V1][0] = c.lbu((c.g[GP][0] as u32).wrapping_add(0x2058));
+            c.g[A3][0] = c.g[S3][0] & 0xff;
+            c.g[V0][0] = c.lbu((c.g[GP][0] as u32).wrapping_add(0x2060));
+            c.g[A2][0] = c.g[FP][0] & 0xff;
+            c.g[T4][0] = c.g[T4][0] | 0x500;
+            c.g[T2][0] = c.g[T2][0] | 0x600;
+            c.g[T0][0] = c.g[T0][0] | 0x700;
+            c.g[A3][0] = c.g[A3][0] | 0x800;
+            c.g[A2][0] = c.g[A2][0] | 0x900;
+            c.g[A1][0] = c.g[A1][0] | 0xa00;
+            c.g[A0][0] = c.g[A0][0] | 0xb00;
+            c.g[V1][0] = c.g[V1][0] | 0xc00;
+            c.g[V0][0] = c.g[V0][0] | 0xd00;
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x2010), c.g[T1][0]);
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x2018), c.g[T3][0]);
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x2020), c.g[T4][0]);
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x2028), c.g[T2][0]);
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x2030), c.g[T0][0]);
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x2038), c.g[A3][0]);
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x2040), c.g[A2][0]);
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x2048), c.g[A1][0]);
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x2050), c.g[A0][0]);
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x2058), c.g[V1][0]);
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x2060), c.g[V0][0]);
+        }
+    }
+    c.cycles += 11;
+    frame.restore(c, S0, 0x80);
+    frame.restore(c, S1, 0x70);
+    frame.restore(c, S2, 0x60);
+    frame.restore(c, S3, 0x50);
+    frame.restore(c, S4, 0x40);
+    frame.restore(c, S5, 0x30);
+    frame.restore(c, S6, 0x20);
+    frame.restore(c, S7, 0x10);
+    frame.restore(c, 30, 0);
+    frame.close(c);
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// NetEvent10D_Clone.
+
+pub(crate) const NET_EVENT_CLONE_SIZE: u32 = 0x164;
+
+pub(crate) const NET_EVENT_CLONE_VTABLE: u32 = 0x0048_1110;
+
+pub(crate) const NET_EVENT_CLONE_TYPE: u32 = 0x10d;
+
+/// `void* NetEvent10D_Clone(NetEvent* self)` (0x2687c0): allocate a 0x164-byte
+/// copy of the event, stamp type 0x10d and the clone vtable, copy the three
+/// strings at +0x8/+0x28/+0x48, the words at +0x148/+0x14c and the blob at
+/// +0x150, and return the copy.
+pub fn net_event10d_clone(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 52;
+        let frame = Frame::open(c, 0x50);
+        c.g[A1][0] = 0x48_0000;
+        frame.save(c, S1, 0x30);
+        c.g[A2][0] = 0x2000_0000;
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        frame.save(c, S2, 0x20);
+        c.g[A3][0] = 0;
+        frame.save(c, S3, 0x10);
+        c.g[A1][0] = sx(NET_EVENT_TAG);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = NET_EVENT_CLONE_SIZE as u64;
+        call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_87f4)?;
+        c.g[S3][0] = sx((c.g[S1][0] as u32).wrapping_add(0x28));
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A2][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x148)).lw(c);
+        c.g[A3][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x14c)).lw(c);
+        c.g[V1][0] = sx(NET_EVENT_CLONE_VTABLE);
+        c.g[V0][0] = NET_EVENT_CLONE_TYPE as u64;
+        Addr((c.g[S0][0] as u32).wrapping_add(0x4)).sw(c, c.g[V1][0]);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8));
+        Addr((c.g[S0][0] as u32).wrapping_add(0x148)).sw(c, c.g[A2][0]);
+        c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
+        Addr((c.g[S0][0] as u32).wrapping_add(0x14c)).sw(c, c.g[A3][0]);
+        c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_add(0x48));
+        Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
+        call_ptr(c, callee::STRCPY.addr, 0x0026_8830)?;
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x28));
+        call_ptr(c, callee::STRCPY.addr, 0x0026_883c)?;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x48));
+        call_ptr(c, callee::STRCPY.addr, 0x0026_8848)?;
+        c.ldl(3, (c.g[S1][0] as u32).wrapping_add(0x157));
+        c.ldr(3, (c.g[S1][0] as u32).wrapping_add(0x150));
+        c.ldl(4, (c.g[S1][0] as u32).wrapping_add(0x15f));
+        c.ldr(4, (c.g[S1][0] as u32).wrapping_add(0x158));
+        c.g[A1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x160)).lw(c);
+        c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x157));
+        c.sdr(3, (c.g[S0][0] as u32).wrapping_add(0x150));
+        c.sdl(4, (c.g[S0][0] as u32).wrapping_add(0x15f));
+        c.sdr(4, (c.g[S0][0] as u32).wrapping_add(0x158));
+        Addr((c.g[S0][0] as u32).wrapping_add(0x160)).sw(c, c.g[A1][0]);
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// LobbyMan_ListClear.
+
+pub(crate) const LOBBY_LIST_HEAD: u32 = 0x4;
+
+/// `void LobbyMan_ListClear(list* self)` (0x2670c8): delete every node of the
+/// circular list headed at self+4, then re-link the head to itself. The loop
+/// head is 0x2670f0 (back-edge event check there, as generated).
+pub fn lobby_man_list_clear(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(LOBBY_LIST_HEAD)).lw(c);
+        c.g[S0][0] = Addr(c.g[V0][0] as u32).lw(c);
+        if c.g[S0][0] != c.g[V0][0] {
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S0][0];
+            loop {
+                c.cycles += 5;
+                c.g[S0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                call_ptr(c, callee::BUILTIN_DELETE, 0x0026_70f8)?;
+                c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(LOBBY_LIST_HEAD)).lw(c);
+                let more = c.g[S0][0] != c.g[V0][0];
+                c.g[A0][0] = c.g[S0][0];
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0026_70f0);
+                    }
+                    continue;
+                }
+                c.cycles += 2;
+                c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(LOBBY_LIST_HEAD)).lw(c);
+                break;
+            }
+        }
+        c.cycles += 7;
+        Addr(c.g[V0][0] as u32).sw(c, c.g[V0][0]);
+        frame.restore_ra(c, 0);
+        c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_add(LOBBY_LIST_HEAD)).lw(c);
+        frame.restore(c, S1, 0x10);
+        Addr((c.g[V1][0] as u32).wrapping_add(0x4)).sw(c, c.g[V1][0]);
+        frame.restore(c, S0, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// cVoipMan_DebugPrintfStub.
+
+/// `void* cVoipMan_DebugPrintfStub(void* self, ...)` (0x266fc0): varargs stub
+/// that spills the argument registers/FPRs to its frame and returns `self`
+/// unchanged.
+pub fn c_voip_man_debug_printf_stub(c: &mut Cpu) {
+    c.cycles += 15;
+    let frame = Frame::open(c, 0x80);
+    let base = sp(c);
+    c.g[V0][0] = c.g[A0][0];
+    c.sd(base.wrapping_add(0x48), c.g[A1][0]);
+    c.sd(base.wrapping_add(0x50), c.g[A2][0]);
+    c.sd(base.wrapping_add(0x58), c.g[A3][0]);
+    c.sd(base.wrapping_add(0x60), c.g[T0][0]);
+    c.sd(base.wrapping_add(0x68), c.g[T1][0]);
+    c.sd(base.wrapping_add(0x70), c.g[T2][0]);
+    c.sd(base.wrapping_add(0x78), c.g[T3][0]);
+    c.swc1(12, base.wrapping_add(0x38));
+    c.swc1(14, base.wrapping_add(0x3c));
+    c.swc1(16, base.wrapping_add(0x40));
+    c.swc1(18, base.wrapping_add(0x44));
+    frame.close(c);
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// cUsbKeyboard_dtor.
+
+/// `void cUsbKeyboard_dtor(cUsbKeyboard* self, int flags)` (0x266850): shut
+/// the keyboard down if it was opened (`UsbKb_Shutdown`, then clear the
+/// word at self+0x460), and delete the object when bit 0 of `flags` is set.
+pub fn c_usb_keyboard_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(usb_kb::ACTIVE)).lw(c);
+        let empty = c.g[V0][0] == 0;
+        c.g[S1][0] = c.g[A1][0];
+        if !empty {
+            c.cycles += 3;
+            call_ptr(c, callee::USB_KB_SHUTDOWN, 0x0026_6878)?;
+            Addr((c.g[S0][0] as u32).wrapping_add(usb_kb::ACTIVE)).sw(c, 0);
+        }
+        c.cycles += 3;
+        c.g[V0][0] = c.g[S1][0] & 0x1;
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, callee::BUILTIN_DELETE, 0x0026_6890)?;
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// cSetupMan_SendQuit.
+
+/// The `"StlBlock"` allocation name.
+pub(crate) const STL_BLOCK_TAG: u32 = 0x0048_04a8;
+
+pub(crate) const SETUP_STATE_QUIT: u32 = 0xb;
+
+pub(crate) const SETUP_QUIT_ID: u32 = 0xf9;
+
+/// `void cSetupMan_SendQuit(cSetupMan* self, int id)` (0x265768): unless the
+/// setup state is already 10, build/send the quit packet (allocating and
+/// queueing a 0x10c event when `id == 0xf9`), notify the lobby, and set the
+/// state to 11.
+pub fn c_setup_man_send_quit(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x70);
+        c.g[V0][0] = 0xa;
+        frame.save(c, S2, 0x40);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S0, 0x60);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S1, 0x50);
+        frame.save_ra(c, 0x20);
+        c.g[V1][0] = Addr(c.g[S3][0] as u32).lw(c);
+        let already = c.g[V1][0] == c.g[V0][0];
+        c.g[S2][0] = c.g[A1][0];
+        if !already {
+            c.cycles += 3;
+            c.g[V0][0] = SETUP_QUIT_ID as u64;
+            let is_quit = c.g[S2][0] == c.g[V0][0];
+            c.g[S0][0] = c.g[S2][0];
+            if is_quit {
+                c.cycles += 26;
+                c.g[A1][0] = 0x48_0000;
+                c.g[S0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                c.g[A1][0] = sx(NET_EVENT_TAG);
+                c.g[A0][0] = 0x8;
+                c.g[A2][0] = 0x2000_0000;
+                c.g[A3][0] = 0;
+                call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_57bc)?;
+                c.g[S1][0] = c.g[V0][0];
+                c.g[V1][0] = 0x10c;
+                c.g[V0][0] = 0x48_0000;
+                Addr(c.g[S1][0] as u32).sw(c, c.g[V1][0]);
+                c.g[V0][0] = sx(NET_EVENT_VTABLE);
+                c.g[A1][0] = 0x48_0000;
+                Addr((c.g[S1][0] as u32).wrapping_add(0x4)).sw(c, c.g[V0][0]);
+                c.g[A1][0] = sx(STL_BLOCK_TAG);
+                c.g[A0][0] = 0xc;
+                c.g[A2][0] = 0x2000_0000;
+                c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(SETUP_LIST_HEAD)).lw(c);
+                c.g[A3][0] = 0;
+                c.g[S0][0] = 0xf8;
+                Addr(frame.at(c, 0x10)).sw(c, c.g[V0][0]);
+                call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_57f8)?;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+                if c.g[V0][0] != 0 {
+                    Addr((c.g[A1][0] as u32).wrapping_add(0x8)).sw(c, c.g[S1][0]);
+                }
+                c.cycles += 9;
+                setup_insert_list_tail(c, 0x10);
+                Addr(frame.at(c, 0)).sw(c, c.g[A1][0]);
+            }
+            c.cycles += 14;
+            c.g[V0][0] = 0xffff_ffff_ffff_0000;
+            c.g[A1][0] = c.g[SP][0];
+            c.g[V0][0] |= 0xffff;
+            Addr(sp(c)).sw(c, c.g[S0][0]);
+            Addr(sp(c).wrapping_add(0x4)).sw(c, c.g[V0][0]);
+            c.g[A0][0] = c.g[S3][0];
+            Addr(sp(c).wrapping_add(0x8)).sw(c, 0);
+            c.g[A2][0] = 0x14;
+            callee::CSETUP_MAN_SEND_PACKET.call(c, 0x0026_5850)?;
+            c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+            c.g[A1][0] = c.g[S2][0];
+            call_ptr(c, callee::LOBBY_MAN_CLEAR_CHALLENGE_LOCK, 0x0026_585c)?;
+            c.g[V0][0] = SETUP_STATE_QUIT as u64;
+            Addr(c.g[S3][0] as u32).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// BuddyMan vector inserts.
+
+pub(crate) const BUDDY_VEC_FIRST: u32 = 0x4;
+
+pub(crate) const BUDDY_VEC_LAST: u32 = 0x8;
+
+pub(crate) const BUDDY_VEC_CAP: u32 = 0xc;
+
+/// The pointer-vector insert both BuddyMan vectors compile to: insert `*x`
+/// at `pos`, growing (allocate, copy, free) when full. The two copies differ
+/// only in their return addresses (`rets`, in call order).
+fn buddy_vec_insert(c: &mut Cpu, rets: [u32; 7]) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x70);
+        'outer: {
+            {
+                c.cycles += 14;
+                frame.save(c, S1, 0x50);
+                frame.save(c, S3, 0x30);
+                c.g[S1][0] = c.g[A0][0];
+                frame.save(c, S4, 0x20);
+                c.g[S3][0] = c.g[A1][0];
+                frame.save(c, S0, 0x60);
+                frame.save(c, S2, 0x40);
+                frame.save(c, S5, 0x10);
+                frame.save_ra(c, 0);
+                c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_add(BUDDY_VEC_LAST)).lw(c);
+                c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(BUDDY_VEC_CAP)).lw(c);
+                let full = c.g[V1][0] == c.g[V0][0];
+                c.g[S4][0] = c.g[A2][0];
+                if !full {
+                    c.cycles += 2;
+                    if c.g[V1][0] == 0 {
+                        c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(BUDDY_VEC_LAST)).lw(c);
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_sub(0x4)).lw(c);
+                        Addr(c.g[V1][0] as u32).sw(c, c.g[V0][0]);
+                        c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(BUDDY_VEC_LAST)).lw(c);
+                    }
+                    c.cycles += 12;
+                    c.g[A1][0] = c.g[S3][0];
+                    c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x4));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[S3][0] as u32));
+                    Addr((c.g[S1][0] as u32).wrapping_add(BUDDY_VEC_LAST)).sw(c, c.g[V0][0]);
+                    c.g[A2][0] = sx(((c.g[A2][0] as u32) as i32 >> 2) as u32);
+                    c.g[A2][0] = sx((c.g[A2][0] as u32) << 2);
+                    c.g[S0][0] = Addr(c.g[S4][0] as u32).lw(c);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[A2][0] as u32));
+                    call_ptr(c, callee::MEM_MOVE, rets[0])?;
+                    Addr(c.g[S3][0] as u32).sw(c, c.g[S0][0]);
+                    break 'outer;
+                }
+            }
+            'alloc: {
+                {
+                    c.cycles += 9;
+                    c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(BUDDY_VEC_FIRST)).lw(c);
+                    c.g[S0][0] = 0x1;
+                    c.g[A0][0] = 0x1;
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 2) as u32);
+                    c.g[V1][0] = sx((c.g[V0][0] as u32) << 1);
+                    if c.g[V0][0] != 0 {
+                        c.g[S0][0] = c.g[V1][0];
+                    }
+                    let need = c.g[S0][0] != c.g[A0][0];
+                    c.g[S0][0] = sx((c.g[S0][0] as u32) << 2);
+                    if !need {
+                        c.cycles += 9;
+                        c.g[A1][0] = 0x48_0000;
+                        c.g[A0][0] = 0x4;
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+                        c.g[A2][0] = 0x2000_0000;
+                        c.g[A3][0] = 0;
+                        c.g[S5][0] = 0x4;
+                        call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, rets[1])?;
+                        c.g[S2][0] = c.g[V0][0];
+                        break 'alloc;
+                    }
+                }
+                c.cycles += 8;
+                c.g[A1][0] = 0x48_0000;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A2][0] = 0x2000_0000;
+                c.g[A3][0] = 0;
+                call_ptr(c, callee::OPERATOR_NEW_NAMED.addr, rets[2])?;
+                c.g[S5][0] = c.g[S0][0];
+                c.g[S2][0] = c.g[V0][0];
+            }
+            c.cycles += 9;
+            c.g[A1][0] = Addr((c.g[S1][0] as u32).wrapping_add(BUDDY_VEC_FIRST)).lw(c);
+            c.g[A0][0] = c.g[S2][0];
+            c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+            c.g[A2][0] = sx(((c.g[V0][0] as u32) as i32 >> 2) as u32);
+            c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A2][0] = sx((c.g[A2][0] as u32) << 2);
+            call_ptr(c, callee::MEM_MOVE, rets[3])?;
+            let at_pos = c.g[S0][0] == 0;
+            c.g[V1][0] = c.g[S0][0];
+            if !at_pos {
+                c.cycles += 2;
+                c.g[V0][0] = Addr(c.g[S4][0] as u32).lw(c);
+                Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
+            }
+            'tail: {
+                {
+                    c.cycles += 14;
+                    c.g[A2][0] = Addr((c.g[S1][0] as u32).wrapping_add(BUDDY_VEC_LAST)).lw(c);
+                    c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+                    c.g[A1][0] = c.g[S3][0];
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[S3][0] as u32));
+                    c.g[S3][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[A2][0] = sx(((c.g[A2][0] as u32) as i32 >> 2) as u32);
+                    c.g[A2][0] = sx((c.g[A2][0] as u32) << 2);
+                    call_ptr(c, callee::MEM_MOVE, rets[4])?;
+                    c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(BUDDY_VEC_FIRST)).lw(c);
+                    c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(BUDDY_VEC_CAP)).lw(c);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+                    let no_old = c.g[A0][0] == 0;
+                    c.g[V1][0] = sx(((c.g[V0][0] as u32) as i32 >> 2) as u32);
+                    if !no_old {
+                        c.cycles += 3;
+                        c.g[V0][0] = 0x1;
+                        if c.g[V1][0] == c.g[V0][0] {
+                            c.cycles += 4;
+                            call_ptr(c, callee::BUILTIN_DELETE, rets[5])?;
+                            c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S5][0] as u32));
+                            break 'tail;
+                        }
+                        c.cycles += 2;
+                        call_ptr(c, callee::EA_MEM_FREE.addr, rets[6])?;
+                    }
+                }
+                c.cycles += 1;
+                c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S5][0] as u32));
+            }
+            c.cycles += 3;
+            Addr((c.g[S1][0] as u32).wrapping_add(BUDDY_VEC_LAST)).sw(c, c.g[S3][0]);
+            Addr((c.g[S1][0] as u32).wrapping_add(BUDDY_VEC_CAP)).sw(c, c.g[V0][0]);
+            Addr((c.g[S1][0] as u32).wrapping_add(BUDDY_VEC_FIRST)).sw(c, c.g[S2][0]);
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void BuddyMan_MessageVectorInsert(vec* self, void** pos, void* const& x)`
+/// (0x267128): insert into the message pointer vector.
+pub fn buddy_man_message_vector_insert(c: &mut Cpu) {
+    buddy_vec_insert(
+        c,
+        [
+            0x0026_719c,
+            0x0026_71e4,
+            0x0026_7204,
+            0x0026_7228,
+            0x0026_725c,
+            0x0026_7284,
+            0x0026_7294,
+        ],
+    );
+}
+
+/// `void BuddyMan_ChallengerVectorInsert(vec* self, void** pos, void* const& x)`
+/// (0x2672c8): insert into the challenger pointer vector.
+pub fn buddy_man_challenger_vector_insert(c: &mut Cpu) {
+    buddy_vec_insert(
+        c,
+        [
+            0x0026_733c,
+            0x0026_7384,
+            0x0026_73a4,
+            0x0026_73c8,
+            0x0026_73fc,
+            0x0026_7424,
+            0x0026_7434,
+        ],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// cSharedLoginMan_McMapError: match-pc dispatcher (value jump tables at
+// 0x480fe0/0x481020/0x481040/0x481060, event heads listed in the doc).
+
+/// `int cSharedLoginMan_McMapError(int err)` (0x266578): map a memory-card
+/// error code to a result code via jump tables indexed by the mode word at
+/// gp+0x2e4 and by `err`. Dispatcher: resume heads (event unwind targets in
+/// the generated body) are 0x2665b4, 0x2665b8, 0x2665c8, 0x2665dc, 0x26660c,
+/// 0x266658 and 0x266660; every arm is re-enterable.
+pub fn c_shared_login_man_mc_map_error(c: &mut Cpu) {
+    let mut pc: u32 = c.pc;
+    loop {
+        match pc {
+            0x0026_6578 => {
+                c.cycles += 5;
+                c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x2e4)).lw(c);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                c.g[V0][0] = (c.g[V1][0] < 0xe) as u64;
+                let out = c.g[V0][0] == 0;
+                c.g[A1][0] = c.g[A0][0];
+                pc = if out { 0x0026_6718 } else { 0x0026_658c };
+            }
+            0x0026_658c => {
+                c.cycles += 7;
+                c.g[V0][0] = 0x48_0000;
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xfe0));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                pc = c.g[A0][0] as u32;
+            }
+            0x0026_65a8 => {
+                c.cycles += 3;
+                c.g[V0][0] = 0xffff_ffff_ffff_fffc;
+                pc = if c.g[A1][0] == c.g[V0][0] {
+                    0x0026_65c8
+                } else {
+                    0x0026_65b4
+                };
+            }
+            0x0026_65b4 => {
+                c.cycles += 1;
+                c.g[V0][0] = 0xffff_ffff_ffff_fffe;
+                pc = 0x0026_65b8;
+            }
+            0x0026_65b8 => {
+                c.cycles += 2;
+                let ne = c.g[A1][0] != c.g[V0][0];
+                c.g[V0][0] = 0x3;
+                pc = if ne { 0x0026_671c } else { 0x0026_65c0 };
+            }
+            0x0026_65c0 => {
+                c.cycles += 2;
+                c.g[V0][0] = 0x9;
+                ret(c);
+                return;
+            }
+            0x0026_65c8 => {
+                c.cycles += 2;
+                c.g[V0][0] = 0x4;
+                ret(c);
+                return;
+            }
+            0x0026_65d0 => {
+                c.cycles += 3;
+                c.g[V0][0] = 0xffff_ffff_ffff_fffe;
+                let ne = c.g[A1][0] != c.g[V0][0];
+                c.g[V0][0] = 0x3;
+                pc = if ne { 0x0026_671c } else { 0x0026_65dc };
+            }
+            0x0026_65dc => {
+                c.cycles += 2;
+                c.g[V0][0] = 0x11;
+                ret(c);
+                return;
+            }
+            0x0026_65e4 => {
+                c.cycles += 4;
+                c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7));
+                c.g[V0][0] = (c.g[V1][0] < 0x6) as u64;
+                let out = c.g[V0][0] == 0;
+                c.g[V0][0] = 0x48_0000;
+                pc = if out { 0x0026_6718 } else { 0x0026_65f4 };
+            }
+            0x0026_65f4 => {
+                c.cycles += 6;
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1020));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                pc = c.g[A0][0] as u32;
+            }
+            0x0026_660c => {
+                c.cycles += 2;
+                c.g[V0][0] = 0xd;
+                ret(c);
+                return;
+            }
+            0x0026_6614 => {
+                c.cycles += 3;
+                c.g[V0][0] = 0xffff_ffff_ffff_fffc;
+                let eq = c.g[A1][0] == c.g[V0][0];
+                c.g[V0][0] = 0xffff_ffff_ffff_fffe;
+                if eq {
+                    if back_edge_unwinds(c, 0x0026_65c8) {
+                        return;
+                    }
+                    pc = 0x0026_65c8;
+                } else {
+                    pc = 0x0026_6620;
+                }
+            }
+            0x0026_6620 => {
+                c.cycles += 2;
+                if c.g[A1][0] != c.g[V0][0] {
+                    if back_edge_unwinds(c, 0x0026_65dc) {
+                        return;
+                    }
+                    pc = 0x0026_65dc;
+                } else {
+                    pc = 0x0026_6628;
+                }
+            }
+            0x0026_6628 => {
+                c.cycles += 2;
+                c.g[V0][0] = 0x9;
+                ret(c);
+                return;
+            }
+            0x0026_6630 => {
+                c.cycles += 4;
+                c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = (c.g[V1][0] < 0x7) as u64;
+                let out = c.g[V0][0] == 0;
+                c.g[V0][0] = 0x48_0000;
+                pc = if out { 0x0026_6718 } else { 0x0026_6640 };
+            }
+            0x0026_6640 => {
+                c.cycles += 6;
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1040));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                pc = c.g[A0][0] as u32;
+            }
+            0x0026_6658 => {
+                c.cycles += 2;
+                c.g[V0][0] = 0xe;
+                ret(c);
+                return;
+            }
+            0x0026_6660 => {
+                c.cycles += 3;
+                c.g[V0][0] = 0xffff_ffff_ffff_fffc;
+                let ne = c.g[A1][0] != c.g[V0][0];
+                c.g[V0][0] = 0xffff_ffff_ffff_fffe;
+                if ne {
+                    if back_edge_unwinds(c, 0x0026_65b8) {
+                        return;
+                    }
+                    pc = 0x0026_65b8;
+                } else {
+                    pc = 0x0026_666c;
+                }
+            }
+            0x0026_666c => {
+                c.cycles += 2;
+                if back_edge_unwinds(c, 0x0026_65c8) {
+                    return;
+                }
+                pc = 0x0026_65c8;
+            }
+            0x0026_6674 => {
+                c.cycles += 3;
+                c.g[V0][0] = 0xffff_ffff_ffff_fffc;
+                let eq = c.g[A1][0] == c.g[V0][0];
+                c.g[V0][0] = ((c.g[A1][0] as i64) < -3) as u64;
+                if eq {
+                    if back_edge_unwinds(c, 0x0026_65c8) {
+                        return;
+                    }
+                    pc = 0x0026_65c8;
+                } else {
+                    pc = 0x0026_6680;
+                }
+            }
+            0x0026_6680 => {
+                c.cycles += 2;
+                let z = c.g[V0][0] == 0;
+                c.g[V0][0] = 0xffff_ffff_ffff_fffb;
+                if z {
+                    if back_edge_unwinds(c, 0x0026_65b4) {
+                        return;
+                    }
+                    pc = 0x0026_65b4;
+                } else {
+                    pc = 0x0026_6688;
+                }
+            }
+            0x0026_6688 => {
+                c.cycles += 2;
+                let ne = c.g[A1][0] != c.g[V0][0];
+                c.g[V0][0] = 0x3;
+                pc = if ne { 0x0026_671c } else { 0x0026_6690 };
+            }
+            0x0026_6690 => {
+                c.cycles += 2;
+                if back_edge_unwinds(c, 0x0026_660c) {
+                    return;
+                }
+                pc = 0x0026_660c;
+            }
+            0x0026_6698 => {
+                c.cycles += 4;
+                c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = (c.g[V1][0] < 0x7) as u64;
+                let out = c.g[V0][0] == 0;
+                c.g[V0][0] = 0x48_0000;
+                pc = if out { 0x0026_6718 } else { 0x0026_66a8 };
+            }
+            0x0026_66a8 => {
+                c.cycles += 6;
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1060));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                pc = c.g[A0][0] as u32;
+            }
+            0x0026_66c0 => {
+                c.cycles += 3;
+                c.g[V0][0] = 0xffff_ffff_ffff_fffd;
+                let eq = c.g[A1][0] == c.g[V0][0];
+                c.g[V0][0] = ((c.g[A1][0] as i64) < -2) as u64;
+                if eq {
+                    if back_edge_unwinds(c, 0x0026_6658) {
+                        return;
+                    }
+                    pc = 0x0026_6658;
+                } else {
+                    pc = 0x0026_66cc;
+                }
+            }
+            0x0026_66cc => {
+                c.cycles += 2;
+                let z = c.g[V0][0] == 0;
+                c.g[V0][0] = 0xffff_ffff_ffff_fffc;
+                if z {
+                    if back_edge_unwinds(c, 0x0026_65b4) {
+                        return;
+                    }
+                    pc = 0x0026_65b4;
+                } else {
+                    pc = 0x0026_66d4;
+                }
+            }
+            0x0026_66d4 => {
+                c.cycles += 2;
+                let ne = c.g[A1][0] != c.g[V0][0];
+                c.g[V0][0] = 0x3;
+                pc = if ne { 0x0026_671c } else { 0x0026_66dc };
+            }
+            0x0026_66dc => {
+                c.cycles += 2;
+                c.g[V0][0] = 0x8;
+                ret(c);
+                return;
+            }
+            0x0026_66e4 => {
+                c.cycles += 3;
+                c.g[V0][0] = 0xffff_ffff_ffff_fffb;
+                let eq = c.g[A1][0] == c.g[V0][0];
+                c.g[V0][0] = ((c.g[A1][0] as i64) < -4) as u64;
+                pc = if eq { 0x0026_6708 } else { 0x0026_66f0 };
+            }
+            0x0026_66f0 => {
+                c.cycles += 2;
+                let z = c.g[V0][0] == 0;
+                c.g[V0][0] = 0xffff_ffff_ffff_fffa;
+                if z {
+                    if back_edge_unwinds(c, 0x0026_6660) {
+                        return;
+                    }
+                    pc = 0x0026_6660;
+                } else {
+                    pc = 0x0026_66f8;
+                }
+            }
+            0x0026_66f8 => {
+                c.cycles += 2;
+                let eq = c.g[A1][0] == c.g[V0][0];
+                c.g[V0][0] = 0x3;
+                pc = if eq { 0x0026_6710 } else { 0x0026_6700 };
+            }
+            0x0026_6700 => {
+                c.cycles += 2;
+                pc = 0x0026_671c;
+            }
+            0x0026_6708 => {
+                c.cycles += 2;
+                c.g[V0][0] = 0x5;
+                ret(c);
+                return;
+            }
+            0x0026_6710 => {
+                c.cycles += 2;
+                c.g[V0][0] = 0x6;
+                ret(c);
+                return;
+            }
+            0x0026_6718 => {
+                c.cycles += 1;
+                c.g[V0][0] = 0x3;
+                pc = 0x0026_671c;
+            }
+            0x0026_671c => {
+                c.cycles += 2;
+                ret(c);
+                return;
+            }
+            _ => {
+                c.jump_out(pc, 0x0026_6578, 0x0026_6724);
+                return;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// cSharedLoginMan_McPoll.
+
+/// `gp` slots of the shared-login memory-card stage (offsets from `gp`).
+/// The operation word McPoll dispatches on.
+pub(crate) const MC_MODE_GP: i32 = 0x2e4;
+/// The `cPS2MemCard` object.
+pub(crate) const MC_CARD_GP: i32 = 0x2e8;
+/// Second argument of `cPS2MemCard_RequestGetInfoNow`.
+pub(crate) const MC_INFO_ARG_GP: i32 = 0x2ec;
+/// Set to 1 when an info request comes due with no retries left.
+pub(crate) const MC_RETRY_FAILED_GP: i32 = 0x2f0;
+/// Info-request retries left.
+pub(crate) const MC_RETRIES_GP: i32 = 0x2f4;
+/// The word McPoll stores as its result for table arms 0x2664e8..0x2664f8.
+pub(crate) const MC_SAVED_RESULT_GP: i32 = 0x850;
+/// McPoll's jump table, one word per mode below 15.
+pub(crate) const MC_POLL_TABLE: u32 = 0x0048_0fa0;
+/// The buffer `cPS2MemCard_GetDirEntryName` fills for the availability check.
+pub(crate) const MC_DIR_NAME_BUF: u32 = 0x0053_7190;
+
+/// How `cSharedLoginMan_McPoll` ends.
+#[derive(Clone, Copy, PartialEq)]
+enum McPollEnd {
+    /// `*status = v1`, return 0.
+    SetStatus,
+    /// `*result = v1`, return 0.
+    SetResult,
+    /// `*result = v0`, return 0.
+    SetSavedResult,
+    /// Return 0.
+    ReturnZero,
+    /// Return `v0` as it stands.
+    ReturnV0,
+    /// Return what `cSharedLoginMan_McMapError` returned (`s0` already
+    /// reloaded).
+    MapError,
+}
+
+/// `int cSharedLoginMan_McPoll(int* status, int* result)` (0x266358): clear
+/// `*result`, then by the operation word at `gp+MC_MODE_GP`: mode 10 sets
+/// status 2 and result 0x800; modes 3, 15 and 16 set status 2; the others
+/// ask the card object (vtable slot 0x58) and set status 1 if it answers
+/// non-zero. Otherwise status becomes 2, a port error is mapped through
+/// `cSharedLoginMan_McMapError` and returned, and without one modes below
+/// 15 dispatch through the table at 0x480fa0 (retry an info request, scan
+/// the directory entries for an available one, hand back the saved result,
+/// or the card's vtable slot 0xa0 shifted left by 10).
+///
+/// The count loop's head 0x2664b0 checks events with the result ignored. A
+/// table word equal to the function's start re-runs it from the prologue
+/// (the real table never holds it). Entries other than the start go to the
+/// generated `__entries` twin (override stub).
+pub fn c_shared_login_man_mc_poll(c: &mut Cpu) {
+    use McPollEnd::*;
+    guest(c, |c| {
+        let (frame, end) = 'restart: loop {
+            c.cycles += 11;
+            let frame = Frame::open(c, 0x40);
+            c.g[V0][0] = 0xa;
+            frame.save(c, S2, 0x10);
+            frame.save(c, S0, 0x30);
+            c.g[S2][0] = c.g[A1][0];
+            frame.save(c, S1, 0x20);
+            frame.save_ra(c, 0);
+            Addr(c.g[S2][0] as u32).sw(c, 0);
+            c.g[V1][0] = c.lw(gp_8(c, MC_MODE_GP));
+            c.g[S0][0] = c.g[A0][0];
+            let mode = c.g[V1][0] as i64;
+            if mode == 0xa {
+                c.cycles += 4;
+                c.g[V0][0] = 0x2;
+                c.g[V1][0] = 0x800;
+                Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
+                break (frame, SetResult);
+            }
+            c.cycles += 3;
+            c.g[V0][0] = 0x3;
+            if mode < 11 {
+                c.cycles += 2;
+                c.g[A1][0] = c.lw(gp_8(c, MC_CARD_GP));
+                if mode == 3 {
+                    c.cycles += 2;
+                    c.g[V1][0] = 0x2;
+                    break (frame, SetStatus);
+                }
+                c.cycles += 2;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = (mode < 15) as u64;
+                if mode >= 17 {
+                    c.cycles += 1;
+                    c.g[A1][0] = c.lw(gp_8(c, MC_CARD_GP));
+                } else {
+                    c.cycles += 2;
+                    c.g[A1][0] = c.lw(gp_8(c, MC_CARD_GP));
+                    if mode >= 15 {
+                        c.cycles += 2;
+                        c.g[V1][0] = 0x2;
+                        break (frame, SetStatus);
+                    }
+                }
+                c.cycles += 1;
+            }
+            // Ask the card: vtable slot 0x58.
+            let vt = c.lw(c.g[A1][0] as u32);
+            c.g[V1][0] = vt;
+            c.cycles += 6;
+            let m = VSlot::read(c, vt, 0x58);
+            c.g[A0][0] = m.delta;
+            c.g[V0][0] = m.func;
+            c.g[A0][0] = m.this(c.g[A1][0]);
+            call_ptr(c, m.func as u32, 0x0026_63e4)?;
+            let answered = c.g[V0][0] != 0;
+            c.g[V1][0] = 0x1;
+            if answered {
+                break (frame, SetStatus);
+            }
+            // No answer: status 2, then a port error ends the poll.
+            c.cycles += 7;
+            c.g[V0][0] = 0x2;
+            Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
+            c.g[A0][0] = c.lw(gp_8(c, MC_CARD_GP));
+            c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+            call_ptr(c, callee::MEMCARD_GET_PORT_ERROR, 0x0026_640c)?;
+            let error = c.g[V0][0] != 0;
+            c.g[A0][0] = c.lw(gp_8(c, MC_CARD_GP));
+            if error {
+                c.cycles += 6;
+                c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+                call_ptr(c, callee::MEMCARD_GET_PORT_ERROR, 0x0026_641c)?;
+                c.g[A0][0] = c.g[V0][0];
+                callee::SHARED_LOGIN_MAN_MC_MAP_ERROR.call(c, 0x0026_6424)?;
+                frame.restore(c, S0, 0x30);
+                break (frame, MapError);
+            }
+            c.cycles += 4;
+            c.g[V1][0] = c.lw(gp_8(c, MC_MODE_GP));
+            c.g[V0][0] = 0x48_0000;
+            if c.g[V1][0] >= 0xf {
+                break (frame, ReturnZero);
+            }
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx(MC_POLL_TABLE);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+            let t = c.g[A0][0] as u32;
+            let end = match t {
+                0x0026_6358 => {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0026_6358);
+                    }
+                    continue 'restart;
+                }
+                0x0026_6454 => mc_poll_retry(c)?,
+                0x0026_648c => mc_poll_scan(c)?,
+                0x0026_64e8 | 0x0026_64f0 | 0x0026_64f8 => {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.lw(gp_8(c, MC_SAVED_RESULT_GP));
+                    SetSavedResult
+                }
+                0x0026_6510 => {
+                    // The card's vtable slot 0xa0, shifted left by 10.
+                    c.cycles += 7;
+                    c.g[A1][0] = c.lw(gp_8(c, MC_CARD_GP));
+                    let vt = c.lw(c.g[A1][0] as u32);
+                    c.g[V1][0] = vt;
+                    let m = VSlot::read(c, vt, 0xa0);
+                    c.g[A0][0] = m.delta;
+                    c.g[V0][0] = m.func;
+                    c.g[A0][0] = m.this(c.g[A1][0]);
+                    call_ptr(c, m.func as u32, 0x0026_6528)?;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 10);
+                    SetSavedResult
+                }
+                0x0026_6530 => ReturnZero,
+                _ => {
+                    c.jump_out(t, 0x0026_6358, 0x0026_654c);
+                    return Ok(());
+                }
+            };
+            break (frame, end);
+        };
+        match end {
+            SetStatus => {
+                c.cycles += 3;
+                c.g[V0][0] = 0;
+                Addr(c.g[S0][0] as u32).sw(c, c.g[V1][0]);
+            }
+            SetResult => {
+                c.cycles += 3;
+                c.g[V0][0] = 0;
+                Addr(c.g[S2][0] as u32).sw(c, c.g[V1][0]);
+            }
+            SetSavedResult => {
+                c.cycles += 2;
+                Addr(c.g[S2][0] as u32).sw(c, c.g[V0][0]);
+                c.g[V0][0] = 0;
+            }
+            ReturnZero => {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+            ReturnV0 | MapError => {}
+        }
+        if end != MapError {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// McPoll's table arm 0x266454: with retries left, set status 1, spend one
+/// and request the card info again (return `v0 = 0` as left); with none,
+/// mark the retry as failed.
+fn mc_poll_retry(c: &mut Cpu) -> Result<McPollEnd, crate::call::Unwound> {
+    c.cycles += 3;
+    c.g[V0][0] = c.lw(gp_8(c, MC_RETRIES_GP));
+    let left = (c.g[V0][0] as i64) > 0;
+    c.g[V0][0] = 0x1;
+    if !left {
+        c.cycles += 2;
+        c.sw(gp_8(c, MC_RETRY_FAILED_GP), c.g[V0][0]);
+        return Ok(McPollEnd::ReturnZero);
+    }
+    c.cycles += 9;
+    Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
+    c.g[V1][0] = c.lw(gp_8(c, MC_RETRIES_GP));
+    c.g[A0][0] = c.lw(gp_8(c, MC_CARD_GP));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+    c.g[A1][0] = c.lw(gp_8(c, MC_INFO_ARG_GP));
+    c.sw(gp_8(c, MC_RETRIES_GP), c.g[V1][0]);
+    call_ptr(c, callee::MEMCARD_REQUEST_GET_INFO_NOW.addr, 0x0026_647c)?;
+    c.g[V0][0] = 0;
+    Ok(McPollEnd::ReturnV0)
+}
+
+/// McPoll's table arm 0x26648c: scan the card's directory entries (count at
+/// card+0x54) for one `SLoginMc_IsAvailable_Wrapper` accepts; `*result` is
+/// 1 if one is found, else 0.
+fn mc_poll_scan(c: &mut Cpu) -> Result<McPollEnd, crate::call::Unwound> {
+    c.cycles += 4;
+    c.g[V0][0] = c.lw(gp_8(c, MC_CARD_GP));
+    c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x54));
+    if (c.g[V0][0] as i64) <= 0 {
+        Addr(c.g[S2][0] as u32).sw(c, 0);
+        return Ok(McPollEnd::ReturnZero);
+    }
+    c.cycles += 5;
+    c.g[S0][0] = 0;
+    c.g[V0][0] = 0x53_0000;
+    c.g[S1][0] = sx(MC_DIR_NAME_BUF);
+    c.g[A0][0] = c.lw(gp_8(c, MC_CARD_GP));
+    loop {
+        c.cycles += 7;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S1][0];
+        call_ptr(c, callee::MEMCARD_GET_DIR_ENTRY_NAME, 0x0026_64bc)?;
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, callee::SLOGIN_MC_IS_AVAILABLE_WRAPPER, 0x0026_64c4)?;
+        let found = c.g[V0][0] != 0;
+        c.g[V1][0] = c.lw(gp_8(c, MC_CARD_GP));
+        if found {
+            c.cycles += 1;
+            c.g[V1][0] = 0x1;
+            return Ok(McPollEnd::SetResult);
+        }
+        c.cycles += 5;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x54));
+        c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        if c.g[V0][0] == 0 {
+            c.cycles += 2;
+            Addr(c.g[S2][0] as u32).sw(c, 0);
+            return Ok(McPollEnd::ReturnZero);
+        }
+        c.g[A0][0] = c.lw(gp_8(c, MC_CARD_GP));
+        if event_due(c) {
+            deliver_event_here(c, 0x0026_64b0);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// cSharedLoginMan_Update.
+
+/// `cSharedLoginMan_Update`'s busy check: ask the card object (vtable slot
+/// 0x58, `this` adjusted by the slot's delta) and leave its answer in `v0`.
+fn card_busy(c: &mut Cpu, ret: u32) -> crate::call::Flow {
+    c.cycles += 8;
+    c.g[A1][0] = c.lw(gp_8(c, MC_CARD_GP));
+    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+    let m = VSlot::read(c, c.g[V1][0], 0x58);
+    c.g[A0][0] = m.delta;
+    c.g[V0][0] = m.func;
+    c.g[A0][0] = m.this(c.g[A1][0]);
+    call_ptr(c, m.func as u32, ret)
+}
+
+/// `void cSharedLoginMan_Update(cSharedLoginMan* self)` (0x265a68): advance
+/// the shared-login state machine: call the card object's vtable slot 0x18,
+/// then for states below 0x17 dispatch through the table at 0x480f40: the
+/// Do* stages (load, update, create, delete, finish) run when the card is
+/// not busy (slot 0x58), the poll stage stores `SLogin_Poll`'s result at
+/// `+4` and steps the state, and the last stages pick the next state from
+/// the card's answer and `gp+0x850`. No loops. Entries other than the
+/// start go to the generated `__entries` twin (override stub).
+pub fn c_shared_login_man_update(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x30);
+        c.cycles += 14;
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[A1][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x2e8)).lw(c);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x18)).lh(c);
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x1c)).lw(c);
+        let tgt = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, tgt, 0x0026_5a90)?;
+        c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+        c.g[V0][0] = (c.g[V1][0] < 0x17) as u64;
+        let out_of_range = c.g[V0][0] == 0;
+        Addr(frame.at(c, 0)).sw(c, 0);
+        // How the chosen arm leaves: restore s0 here, store the new state
+        // first, or the arm already restored s0 itself.
+        #[derive(Clone, Copy, PartialEq)]
+        enum After {
+            RestoreExit,
+            StoreExit,
+            FullExit,
+        }
+        let mut after = After::RestoreExit;
+        if !out_of_range {
+            // The jump-table lookup (table at 0x480f40, indexed by state).
+            c.cycles += 7;
+            c.g[V0][0] = 0x48_0000;
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xf40));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+            let t = c.g[A0][0] as u32;
+            // One Do* arm: ask the manager object (slot +0x58); when it is
+            // busy the arm ends, otherwise it runs its Do* stage.
+            let do_arm = |c: &mut Cpu, stage: Callee, vret: u32, dret: u32| -> crate::call::Flow {
+                card_busy(c, vret)?;
+                if c.g[V0][0] != 0 {
+                    frame.restore(c, S0, 0x20);
+                    return Ok(());
+                }
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S0][0];
+                stage.call(c, dret)?;
+                frame.restore(c, S0, 0x20);
+                Ok(())
+            };
+            after = match t {
+                0x0026_5abc => {
+                    do_arm(
+                        c,
+                        callee::SHARED_LOGIN_MAN_DO_LOAD,
+                        0x0026_5ad4,
+                        0x0026_5ae4,
+                    )?;
+                    After::FullExit
+                }
+                0x0026_5aec => {
+                    do_arm(
+                        c,
+                        callee::SHARED_LOGIN_MAN_DO_UPDATE,
+                        0x0026_5b04,
+                        0x0026_5b14,
+                    )?;
+                    After::FullExit
+                }
+                0x0026_5b1c => {
+                    do_arm(
+                        c,
+                        callee::SHARED_LOGIN_MAN_DO_CREATE,
+                        0x0026_5b34,
+                        0x0026_5b44,
+                    )?;
+                    After::FullExit
+                }
+                0x0026_5b4c => {
+                    do_arm(
+                        c,
+                        callee::SHARED_LOGIN_MAN_DO_DELETE,
+                        0x0026_5b64,
+                        0x0026_5b74,
+                    )?;
+                    After::FullExit
+                }
+                0x0026_5b7c => {
+                    do_arm(
+                        c,
+                        callee::SHARED_LOGIN_MAN_DO_FINISH,
+                        0x0026_5b94,
+                        0x0026_5ba4,
+                    )?;
+                    After::FullExit
+                }
+                0x0026_5bac => {
+                    // Poll the async stage and store its result at self+4:
+                    // non-zero steps the state by 2; zero with status 2 steps
+                    // it by 1; zero with any other status leaves it.
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[SP][0];
+                    call_ptr(c, callee::SLOGIN_POLL, 0x0026_5bb4)?;
+                    let nz = c.g[V0][0] != 0;
+                    Addr((c.g[S0][0] as u32).wrapping_add(0x4)).sw(c, c.g[V0][0]);
+                    if nz {
+                        c.cycles += 3;
+                        c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2));
+                        After::StoreExit
+                    } else {
+                        c.cycles += 4;
+                        c.g[V1][0] = Addr(frame.at(c, 0)).lw(c);
+                        c.g[V0][0] = 0x2;
+                        if c.g[V1][0] != c.g[V0][0] {
+                            frame.restore(c, S0, 0x20);
+                            After::FullExit
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                            After::StoreExit
+                        }
+                    }
+                }
+                0x0026_5be4 => {
+                    card_busy(c, 0x0026_5bfc)?;
+                    let nz = c.g[V0][0] != 0;
+                    frame.restore(c, S0, 0x20);
+                    if nz {
+                        After::FullExit
+                    } else {
+                        c.cycles += 9;
+                        c.g[A2][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x2e8)).lw(c);
+                        c.g[A1][0] = 0;
+                        c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+                        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x28)).lh(c);
+                        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x2c)).lw(c);
+                        let tgt2 = c.g[V1][0] as u32;
+                        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, tgt2, 0x0026_5c20)?;
+                        frame.restore(c, S0, 0x20);
+                        After::FullExit
+                    }
+                }
+                0x0026_5c28 => {
+                    card_busy(c, 0x0026_5c40)?;
+                    if c.g[V0][0] != 0 {
+                        frame.restore(c, S0, 0x20);
+                        After::FullExit
+                    } else {
+                        c.cycles += 8;
+                        c.g[A1][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x2e8)).lw(c);
+                        c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
+                        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x40)).lh(c);
+                        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x44)).lw(c);
+                        let tgt2 = c.g[V1][0] as u32;
+                        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, tgt2, 0x0026_5c60)?;
+                        c.g[V0][0] = 0x14;
+                        After::StoreExit
+                    }
+                }
+                0x0026_5c68 => {
+                    card_busy(c, 0x0026_5c80)?;
+                    if c.g[V0][0] != 0 {
+                        frame.restore(c, S0, 0x20);
+                        After::FullExit
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x850)).lw(c);
+                        let nz = c.g[V0][0] != 0;
+                        c.g[V0][0] = 0x16;
+                        if !nz {
+                            c.cycles += 1;
+                            c.g[V0][0] = 0x15;
+                        }
+                        After::StoreExit
+                    }
+                }
+                0x0026_5c9c => After::RestoreExit,
+                _ => {
+                    c.jump_out(t, 0x0026_5a68, 0x0026_5cac);
+                    return Ok(());
+                }
+            };
+        }
+        if after == After::StoreExit {
+            c.cycles += 1;
+            Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
+        }
+        if after != After::FullExit {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Where a `cSetupMan_Update` stage goes next (the compiled code's shared
+/// blocks; single-entry ones are inlined into their stage).
+#[derive(Clone, Copy)]
+enum UpdateStage {
+    /// Receive and flush; states 5 and 10 run the handshake.
+    Start,
+    /// States 5 and 10: with the stats flag set, or in state 10, check the
+    /// host flag; in state 5 with the stats flag clear (either role) go to
+    /// state 7 and post a 0xf6 lobby message.
+    Handshake,
+    /// The host (flag set) goes to state 12 and sends packet 0xf.
+    HostHandshake,
+    /// `a0 = self`, then the pop.
+    PopSelf,
+    /// Pop one queued packet: 0xf completes the handshake (state 0xd; a
+    /// client first replies from state 0xc), 0x10 copies the peer's info to
+    /// the lobby manager and selects its character; other types by role.
+    Pop,
+    /// By the host flag and the state: the host before state 7 handles 1, 3
+    /// and 5 here.
+    ByRole,
+    /// The host's type 3 (`cSetupMan_HostRecvConfirm`).
+    HostConfirm,
+    /// The host from state 7: types 7, 9, 11, 13, 0xf8 and (through
+    /// `DropFa`) 0xfa.
+    HostLate,
+    /// A client before state 7: types 0-5.
+    Client,
+    /// Type 0xf8 (before state 7, either role).
+    DropF8,
+    /// Type 0xfa.
+    DropFa,
+    /// `v0 = 0xb` before the drop.
+    DropState,
+    /// State 0xb and the challenger drop (host or early copy).
+    DropChallenger,
+    /// A client from state 7: types 6, 7 and 10.
+    ClientLate,
+    /// A client from state 7: types 8 and 9.
+    ClientLate8,
+    /// A client from state 7: types 11-13, 0xf8 and 0xfa.
+    ClientLate11,
+    /// State 0xb and the challenger drop (the late client copy).
+    ClientLateDrop,
+}
+
+/// How `cSetupMan_Update` leaves: which saved registers it still reloads.
+#[derive(Clone, Copy, PartialEq)]
+enum UpdateEnd {
+    /// `s0`, `s1`, then the epilogue.
+    RestoreS0,
+    /// `s1` (s0 already reloaded), then the epilogue.
+    RestoreS1,
+    /// Both already reloaded.
+    Epilogue,
+}
+
+/// `void cSetupMan_Update(cSetupMan* self)` (0x2642b8): the setup manager's
+/// per-frame update: receive pending packets and flush the send queue, run
+/// the handshake of states 5 and 10, then pop one queued packet and handle
+/// it by type, role (host flag) and state (before 7 or not). The compiled
+/// body is a tree of compare chains with no loops and no event checks; the
+/// port walks its shared blocks as [`UpdateStage`]s.
+pub fn c_setup_man_update(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x80);
+        let mut stage = UpdateStage::Start;
+        let end = loop {
+            stage = match stage {
+                UpdateStage::Start => {
+                    c.cycles += 13;
+                    frame.save(c, S1, 0x60);
+                    frame.save(c, S0, 0x70);
+                    frame.save(c, S2, 0x50);
+                    frame.save_ra(c, 0x40);
+                    c.g[S1][0] = c.g[A0][0];
+                    callee::SETUP_MAN_RECEIVE_PACKETS.call(c, 0x0026_42d4)?;
+                    c.g[A0][0] = c.g[S1][0];
+                    callee::SETUP_MAN_FLUSH_SEND_QUEUE.call(c, 0x0026_42dc)?;
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
+                    c.g[V0][0] = 0x5;
+                    let t = c.g[V1][0] == c.g[V0][0];
+                    c.g[V0][0] = 0xa;
+                    if t {
+                        UpdateStage::Handshake
+                    } else {
+                        c.cycles += 2;
+                        if c.g[V1][0] != c.g[V0][0] {
+                            c.g[A0][0] = c.g[S1][0];
+                            UpdateStage::Pop
+                        } else {
+                            UpdateStage::Handshake
+                        }
+                    }
+                }
+                UpdateStage::Handshake => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(SETUP_STATS_FLAG));
+                    if c.g[V0][0] != 0 {
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(SETUP_HOST_FLAG));
+                        UpdateStage::HostHandshake
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = 0xa;
+                        let t = c.g[V1][0] != c.g[V0][0];
+                        c.g[V0][0] = 0x7;
+                        if t {
+                            c.cycles += 26;
+                            c.g[A1][0] = 0x0048_0000;
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
+                            c.g[S0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                            c.g[A0][0] = 0x8;
+                            c.g[A2][0] = 0x2000_0000;
+                            c.g[A3][0] = 0;
+                            c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+                            call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_4364)?;
+                            c.g[S2][0] = c.g[V0][0];
+                            c.g[V1][0] = 0xf6;
+                            c.g[V0][0] = 0x0048_0000;
+                            c.sw(c.g[S2][0] as u32, c.g[V1][0]);
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
+                            c.g[A1][0] = 0x0048_0000;
+                            c.sw((c.g[S2][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+                            c.g[A0][0] = 0xc;
+                            c.g[A2][0] = 0x2000_0000;
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xf0));
+                            c.g[A3][0] = 0;
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0x30), c.g[V0][0]);
+                            call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_439c)?;
+                            c.g[A1][0] = c.g[V0][0];
+                            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+                            if c.g[V0][0] != 0 {
+                                c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[S2][0]);
+                            }
+                            c.cycles += 9;
+                            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                            c.sw(c.g[A1][0] as u32, c.g[V0][0]);
+                            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                            c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                            c.sw(c.g[A0][0] as u32, c.g[A1][0]);
+                            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                            c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[A1][0]);
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0x20), c.g[A1][0]);
+                            UpdateStage::PopSelf
+                        } else {
+                            c.cycles += 1;
+                            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(SETUP_HOST_FLAG));
+                            UpdateStage::HostHandshake
+                        }
+                    }
+                }
+                UpdateStage::HostHandshake => {
+                    c.cycles += 2;
+                    let t = c.g[V0][0] == 0;
+                    c.g[V0][0] = 0xc;
+                    if t {
+                        UpdateStage::PopSelf
+                    } else {
+                        c.cycles += 11;
+                        c.g[V1][0] = 0xf;
+                        c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+                        c.g[A0][0] = c.g[S1][0];
+                        c.sw(c.g[SP][0] as u32, c.g[V1][0]);
+                        c.g[A1][0] = c.g[SP][0];
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x4), 0);
+                        c.g[A2][0] = 0x14;
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0);
+                        callee::CSETUP_MAN_SEND_PACKET.call(c, 0x0026_433c)?;
+                        c.g[A0][0] = c.g[S1][0];
+                        UpdateStage::Pop
+                    }
+                }
+                UpdateStage::PopSelf => {
+                    c.cycles += 1;
+                    c.g[A0][0] = c.g[S1][0];
+                    UpdateStage::Pop
+                }
+                UpdateStage::Pop => {
+                    c.cycles += 5;
+                    c.g[A1][0] = c.g[SP][0];
+                    c.g[A2][0] = 0x14;
+                    callee::SETUP_MAN_POP_PACKET.call(c, 0x0026_43e0)?;
+                    let t = c.g[V0][0] == 0;
+                    c.g[V1][0] = c.lw(c.g[SP][0] as u32);
+                    if t {
+                        break UpdateEnd::RestoreS0;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = 0xf;
+                        let t = c.g[V1][0] != c.g[V0][0];
+                        c.g[V0][0] = 0x10;
+                        if t {
+                            c.cycles += 2;
+                            if c.g[V1][0] != c.g[V0][0] {
+                                c.g[V0][0] =
+                                    c.lw((c.g[S1][0] as u32).wrapping_add(SETUP_HOST_FLAG));
+                                UpdateStage::ByRole
+                            } else {
+                                c.cycles += 25;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                c.g[A1][0] = 0x1;
+                                c.g[V1][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x20), c.g[V0][0]);
+                                c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x27));
+                                c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x20));
+                                c.ldl(4, (c.g[SP][0] as u32).wrapping_add(0x2f));
+                                c.ldr(4, (c.g[SP][0] as u32).wrapping_add(0x28));
+                                c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
+                                c.sdl(2, (c.g[V1][0] as u32).wrapping_add(0xd3));
+                                c.sdr(2, (c.g[V1][0] as u32).wrapping_add(0xcc));
+                                c.sdl(4, (c.g[V1][0] as u32).wrapping_add(0xdb));
+                                c.sdr(4, (c.g[V1][0] as u32).wrapping_add(0xd4));
+                                c.sw((c.g[V1][0] as u32).wrapping_add(0xdc), c.g[A2][0]);
+                                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x78));
+                                call_ptr(c, callee::BE_LIBRARY_GET_INTERFACE, 0x0026_447c)?;
+                                c.g[A0][0] = c.g[V0][0];
+                                c.g[A1][0] = 0;
+                                call_ptr(
+                                    c,
+                                    callee::BE_NEW_PLAYER_INT_GET_CHARACTER_BY_SLOT,
+                                    0x0026_4488,
+                                )?;
+                                c.g[A0][0] = c.g[S1][0];
+                                c.g[A1][0] = c.g[V0][0];
+                                callee::SETUP_MAN_SELECT_CHARACTER.call(c, 0x0026_4494)?;
+                                frame.restore(c, S0, 0x70);
+                                break UpdateEnd::RestoreS1;
+                            }
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(SETUP_HOST_FLAG));
+                            let t = c.g[V0][0] != 0;
+                            c.g[V0][0] = 0xd;
+                            if !t {
+                                c.cycles += 10;
+                                c.g[V0][0] = 0xc;
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x20), c.g[V1][0]);
+                                c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+                                c.g[A0][0] = c.g[S1][0];
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x24), 0);
+                                c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0x28), 0);
+                                c.g[A2][0] = 0x14;
+                                callee::CSETUP_MAN_SEND_PACKET.call(c, 0x0026_4424)?;
+                                c.g[V0][0] = 0xd;
+                            }
+                            c.cycles += 2;
+                            c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+                            break UpdateEnd::RestoreS0;
+                        }
+                    }
+                }
+                UpdateStage::ByRole => {
+                    c.cycles += 2;
+                    let t = c.g[V0][0] == 0;
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                    if t {
+                        UpdateStage::Client
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < 7i64) as u64;
+                        let t = c.g[V0][0] == 0;
+                        c.g[V0][0] = 0x5;
+                        if t {
+                            UpdateStage::HostLate
+                        } else {
+                            c.cycles += 2;
+                            let t = c.g[V1][0] == c.g[V0][0];
+                            c.g[V0][0] = (c.g[V1][0] < 0x6u64) as u64;
+                            if t {
+                                c.cycles += 4;
+                                c.g[A0][0] = c.g[S1][0];
+                                callee::SETUP_MAN_HOST_RECV_CANCEL.call(c, 0x0026_450c)?;
+                                frame.restore(c, S0, 0x70);
+                                break UpdateEnd::RestoreS1;
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[V0][0] == 0;
+                                c.g[V0][0] = 0x1;
+                                if t {
+                                    UpdateStage::DropF8
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V1][0] == c.g[V0][0];
+                                    c.g[V0][0] = 0x3;
+                                    if t {
+                                        c.cycles += 6;
+                                        c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                        c.g[A0][0] = c.g[S1][0];
+                                        c.g[A2][0] = c.g[SP][0] | 0xc;
+                                        callee::SETUP_MAN_HOST_RECV_SELECT.call(c, 0x0026_44e8)?;
+                                        frame.restore(c, S0, 0x70);
+                                        break UpdateEnd::RestoreS1;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V1][0] == c.g[V0][0];
+                                        frame.restore(c, S0, 0x70);
+                                        if t {
+                                            UpdateStage::HostConfirm
+                                        } else {
+                                            c.cycles += 2;
+                                            frame.restore(c, S1, 0x60);
+                                            break UpdateEnd::Epilogue;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                UpdateStage::HostConfirm => {
+                    c.cycles += 5;
+                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                    c.g[A0][0] = c.g[S1][0];
+                    callee::SETUP_MAN_HOST_RECV_CONFIRM.call(c, 0x0026_44fc)?;
+                    frame.restore(c, S0, 0x70);
+                    break UpdateEnd::RestoreS1;
+                }
+                UpdateStage::HostLate => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0xb;
+                    let t = c.g[V1][0] == c.g[V0][0];
+                    c.g[V0][0] = (c.g[V1][0] < 0xcu64) as u64;
+                    if t {
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[S1][0];
+                        callee::SETUP_MAN_HOST_RECV_MSG11.call(c, 0x0026_4598)?;
+                        frame.restore(c, S0, 0x70);
+                        break UpdateEnd::RestoreS1;
+                    } else {
+                        c.cycles += 2;
+                        let t = c.g[V0][0] == 0;
+                        c.g[V0][0] = 0x7;
+                        if t {
+                            c.cycles += 3;
+                            c.g[V0][0] = 0xf8;
+                            let t = c.g[V1][0] == c.g[V0][0];
+                            c.g[V0][0] = (c.g[V1][0] < 0xf9u64) as u64;
+                            if t {
+                                UpdateStage::DropState
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[V0][0] == 0;
+                                c.g[V0][0] = 0xd;
+                                if t {
+                                    UpdateStage::DropFa
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V1][0] == c.g[V0][0];
+                                    frame.restore(c, S0, 0x70);
+                                    if t {
+                                        c.cycles += 4;
+                                        c.g[A0][0] = c.g[S1][0];
+                                        callee::SETUP_MAN_HOST_RECV_MSG13.call(c, 0x0026_45a8)?;
+                                        frame.restore(c, S0, 0x70);
+                                        break UpdateEnd::RestoreS1;
+                                    } else {
+                                        c.cycles += 2;
+                                        frame.restore(c, S1, 0x60);
+                                        break UpdateEnd::Epilogue;
+                                    }
+                                }
+                            }
+                        } else {
+                            c.cycles += 2;
+                            let t = c.g[V1][0] == c.g[V0][0];
+                            c.g[V0][0] = 0x9;
+                            if t {
+                                c.cycles += 5;
+                                c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                c.g[A0][0] = c.g[S1][0];
+                                callee::SETUP_MAN_HOST_RECV_MSG7.call(c, 0x0026_4570)?;
+                                frame.restore(c, S0, 0x70);
+                                break UpdateEnd::RestoreS1;
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[V1][0] == c.g[V0][0];
+                                frame.restore(c, S0, 0x70);
+                                if t {
+                                    c.cycles += 6;
+                                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                    c.g[A0][0] = c.g[S1][0];
+                                    c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                                    callee::SETUP_MAN_HOST_RECV_MSG9.call(c, 0x0026_4588)?;
+                                    frame.restore(c, S0, 0x70);
+                                    break UpdateEnd::RestoreS1;
+                                } else {
+                                    c.cycles += 2;
+                                    frame.restore(c, S1, 0x60);
+                                    break UpdateEnd::Epilogue;
+                                }
+                            }
+                        }
+                    }
+                }
+                UpdateStage::Client => {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < 7i64) as u64;
+                    let t = c.g[V0][0] == 0;
+                    c.g[V0][0] = 0x3;
+                    if t {
+                        UpdateStage::ClientLate
+                    } else {
+                        c.cycles += 2;
+                        let t = c.g[V1][0] == c.g[V0][0];
+                        c.g[V0][0] = (c.g[V1][0] < 0x4u64) as u64;
+                        if t {
+                            c.cycles += 6;
+                            c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                            c.g[A0][0] = c.g[S1][0];
+                            c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                            callee::SETUP_MAN_CLIENT_RECV_MSG3.call(c, 0x0026_4640)?;
+                            frame.restore(c, S0, 0x70);
+                            break UpdateEnd::RestoreS1;
+                        } else {
+                            c.cycles += 2;
+                            let t = c.g[V0][0] == 0;
+                            c.g[V0][0] = 0x1;
+                            if t {
+                                c.cycles += 3;
+                                c.g[V0][0] = 0x5;
+                                let t = c.g[V1][0] == c.g[V0][0];
+                                c.g[V0][0] = (c.g[V1][0] < 0x5u64) as u64;
+                                if t {
+                                    c.cycles += 5;
+                                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                                    c.g[A0][0] = c.g[S1][0];
+                                    callee::SETUP_MAN_CLIENT_RECV_MSG5.call(c, 0x0026_4654)?;
+                                    frame.restore(c, S0, 0x70);
+                                    break UpdateEnd::RestoreS1;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] != 0;
+                                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                                    if t {
+                                        c.cycles += 4;
+                                        c.g[A0][0] = c.g[S1][0];
+                                        callee::SETUP_MAN_CLIENT_RECV_MSG4.call(c, 0x0026_468c)?;
+                                        frame.restore(c, S0, 0x70);
+                                        break UpdateEnd::RestoreS1;
+                                    } else {
+                                        UpdateStage::DropF8
+                                    }
+                                }
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[V1][0] == c.g[V0][0];
+                                c.g[V0][0] = (c.g[V1][0] < 0x2u64) as u64;
+                                if t {
+                                    c.cycles += 6;
+                                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                    c.g[A0][0] = c.g[S1][0];
+                                    c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                                    callee::SETUP_MAN_CLIENT_RECV_MSG1.call(c, 0x0026_4628)?;
+                                    frame.restore(c, S0, 0x70);
+                                    break UpdateEnd::RestoreS1;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0;
+                                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                    if t {
+                                        c.cycles += 5;
+                                        c.g[A0][0] = c.g[S1][0];
+                                        c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                                        callee::SETUP_MAN_CLIENT_RECV_MSG2.call(c, 0x0026_467c)?;
+                                        frame.restore(c, S0, 0x70);
+                                        break UpdateEnd::RestoreS1;
+                                    } else {
+                                        c.cycles += 2;
+                                        c.g[A0][0] = c.g[S1][0];
+                                        c.cycles += 5;
+                                        c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                                        c.g[A3][0] = c.g[SP][0] | 0xc;
+                                        callee::SETUP_MAN_CLIENT_RECV_MSG0.call(c, 0x0026_4668)?;
+                                        frame.restore(c, S0, 0x70);
+                                        break UpdateEnd::RestoreS1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                UpdateStage::DropF8 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0xf8;
+                    let t = c.g[V1][0] == c.g[V0][0];
+                    c.g[V0][0] = 0xb;
+                    if t {
+                        UpdateStage::DropChallenger
+                    } else {
+                        UpdateStage::DropFa
+                    }
+                }
+                UpdateStage::DropFa => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0xfa;
+                    let t = c.g[V1][0] == c.g[V0][0];
+                    frame.restore(c, S0, 0x70);
+                    if t {
+                        UpdateStage::DropState
+                    } else {
+                        c.cycles += 2;
+                        frame.restore(c, S1, 0x60);
+                        break UpdateEnd::Epilogue;
+                    }
+                }
+                UpdateStage::DropState => {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0xb;
+                    UpdateStage::DropChallenger
+                }
+                UpdateStage::DropChallenger => {
+                    c.cycles += 3;
+                    setup_update_drop_challenger(
+                        c,
+                        [
+                            0x0026_46ac,
+                            0x0026_46b4,
+                            0x0026_46c4,
+                            0x0026_46d8,
+                            0x0026_46e8,
+                            0x0026_4700,
+                            0x0026_4708,
+                            0x0026_4718,
+                            0x0026_472c,
+                            0x0026_473c,
+                            0x0026_4748,
+                        ],
+                        5,
+                    )?;
+                    frame.restore(c, S0, 0x70);
+                    break UpdateEnd::RestoreS1;
+                }
+                UpdateStage::ClientLate => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0xa;
+                    let t = c.g[V1][0] == c.g[V0][0];
+                    c.g[V0][0] = (c.g[V1][0] < 0xbu64) as u64;
+                    if t {
+                        c.cycles += 5;
+                        c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                        c.g[A0][0] = c.g[S1][0];
+                        callee::SETUP_MAN_CLIENT_RECV_MSG10.call(c, 0x0026_484c)?;
+                        frame.restore(c, S0, 0x70);
+                        break UpdateEnd::RestoreS1;
+                    } else {
+                        c.cycles += 2;
+                        let t = c.g[V0][0] == 0;
+                        c.g[V0][0] = 0x7;
+                        if t {
+                            UpdateStage::ClientLate11
+                        } else {
+                            c.cycles += 2;
+                            let t = c.g[V1][0] == c.g[V0][0];
+                            c.g[V0][0] = (c.g[V1][0] < 0x8u64) as u64;
+                            if t {
+                                c.cycles += 5;
+                                c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                c.g[A0][0] = c.g[S1][0];
+                                callee::SETUP_MAN_CLIENT_RECV_MSG7.call(c, 0x0026_4808)?;
+                                frame.restore(c, S0, 0x70);
+                                break UpdateEnd::RestoreS1;
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[V0][0] == 0;
+                                c.g[V0][0] = 0x6;
+                                if t {
+                                    UpdateStage::ClientLate8
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V1][0] == c.g[V0][0];
+                                    frame.restore(c, S0, 0x70);
+                                    if t {
+                                        c.cycles += 5;
+                                        c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                        c.g[A0][0] = c.g[S1][0];
+                                        callee::SETUP_MAN_CLIENT_RECV_MSG6.call(c, 0x0026_47f4)?;
+                                        frame.restore(c, S0, 0x70);
+                                        break UpdateEnd::RestoreS1;
+                                    } else {
+                                        c.cycles += 2;
+                                        frame.restore(c, S1, 0x60);
+                                        break UpdateEnd::Epilogue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                UpdateStage::ClientLate8 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x8;
+                    let t = c.g[V1][0] == c.g[V0][0];
+                    c.g[V0][0] = 0x9;
+                    if t {
+                        c.cycles += 6;
+                        c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                        c.g[A0][0] = c.g[S1][0];
+                        c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                        callee::SETUP_MAN_CLIENT_RECV_MSG8.call(c, 0x0026_4820)?;
+                        frame.restore(c, S0, 0x70);
+                        break UpdateEnd::RestoreS1;
+                    } else {
+                        c.cycles += 2;
+                        let t = c.g[V1][0] == c.g[V0][0];
+                        frame.restore(c, S0, 0x70);
+                        if t {
+                            c.cycles += 6;
+                            c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                            c.g[A0][0] = c.g[S1][0];
+                            c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                            callee::SETUP_MAN_CLIENT_RECV_MSG9.call(c, 0x0026_4838)?;
+                            frame.restore(c, S0, 0x70);
+                            break UpdateEnd::RestoreS1;
+                        } else {
+                            c.cycles += 2;
+                            frame.restore(c, S1, 0x60);
+                            break UpdateEnd::Epilogue;
+                        }
+                    }
+                }
+                UpdateStage::ClientLate11 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0xd;
+                    let t = c.g[V1][0] == c.g[V0][0];
+                    c.g[V0][0] = (c.g[V1][0] < 0xeu64) as u64;
+                    if t {
+                        c.cycles += 5;
+                        c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                        c.g[A0][0] = c.g[S1][0];
+                        callee::SETUP_MAN_CLIENT_RECV_MSG13.call(c, 0x0026_4888)?;
+                        frame.restore(c, S0, 0x70);
+                        break UpdateEnd::RestoreS1;
+                    } else {
+                        c.cycles += 2;
+                        let t = c.g[V0][0] == 0;
+                        c.g[V0][0] = 0xb;
+                        if t {
+                            c.cycles += 3;
+                            c.g[V0][0] = 0xf8;
+                            let t = c.g[V1][0] == c.g[V0][0];
+                            c.g[V0][0] = 0xfa;
+                            if t {
+                                UpdateStage::ClientLateDrop
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[V1][0] == c.g[V0][0];
+                                frame.restore(c, S0, 0x70);
+                                if t {
+                                    UpdateStage::ClientLateDrop
+                                } else {
+                                    c.cycles += 2;
+                                    frame.restore(c, S1, 0x60);
+                                    break UpdateEnd::Epilogue;
+                                }
+                            }
+                        } else {
+                            c.cycles += 2;
+                            let t = c.g[V1][0] == c.g[V0][0];
+                            c.g[V0][0] = 0xc;
+                            if t {
+                                c.cycles += 5;
+                                c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                c.g[A0][0] = c.g[S1][0];
+                                callee::SETUP_MAN_CLIENT_RECV_MSG11.call(c, 0x0026_4860)?;
+                                frame.restore(c, S0, 0x70);
+                                break UpdateEnd::RestoreS1;
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[V1][0] == c.g[V0][0];
+                                frame.restore(c, S0, 0x70);
+                                if t {
+                                    c.cycles += 5;
+                                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                    c.g[A0][0] = c.g[S1][0];
+                                    callee::SETUP_MAN_CLIENT_RECV_MSG12.call(c, 0x0026_4874)?;
+                                    frame.restore(c, S0, 0x70);
+                                    break UpdateEnd::RestoreS1;
+                                } else {
+                                    c.cycles += 2;
+                                    frame.restore(c, S1, 0x60);
+                                    break UpdateEnd::Epilogue;
+                                }
+                            }
+                        }
+                    }
+                }
+                UpdateStage::ClientLateDrop => {
+                    c.cycles += 4;
+                    c.g[V0][0] = 0xb;
+                    setup_update_drop_challenger(
+                        c,
+                        [
+                            0x0026_48a8,
+                            0x0026_48b0,
+                            0x0026_48c0,
+                            0x0026_48d4,
+                            0x0026_48e4,
+                            0x0026_48fc,
+                            0x0026_4904,
+                            0x0026_4914,
+                            0x0026_4928,
+                            0x0026_4938,
+                            0x0026_4944,
+                        ],
+                        3,
+                    )?;
+                    break UpdateEnd::RestoreS0;
+                }
+            };
+        };
+        if end == UpdateEnd::RestoreS0 {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x70);
+        }
+        if end != UpdateEnd::Epilogue {
+            c.cycles += 1;
+            frame.restore(c, S1, 0x60);
+        }
+        c.cycles += 4;
+        frame.restore(c, S2, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The 0xF8/0xFA ("challenger gone") tail both roles share: make sure the
+/// buddy manager exists and is connected (create it, reconnect, or else
+/// disconnect the lobby), and if the challenger is still listed do the same
+/// again and remove it, then clear the lobby's challenge lock for the
+/// packet's sender. `rets` are the return addresses in call order;
+/// `lock_cycles` is the charge before the last call (3 or 5 in the two
+/// copies).
+fn setup_update_drop_challenger(c: &mut Cpu, rets: [u32; 11], lock_cycles: u64) -> Flow {
+    c.g[V1][0] = c.lw(gp_8(c, BUDDY_MAN_GP));
+    let t = c.g[V1][0] != 0;
+    c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+    if !t {
+        c.cycles += 2;
+        call_ptr(c, callee::BUDDY_MAN_CREATE.addr, rets[0])?;
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.lw(gp_8(c, BUDDY_MAN_GP));
+    call_ptr(c, callee::BUDDY_MAN_IS_CONNECTED.addr, rets[1])?;
+    let t = c.g[V0][0] != 0;
+    c.g[V0][0] = c.lw(gp_8(c, BUDDY_MAN_GP));
+    if !t {
+        c.cycles += 3;
+        c.g[A0][0] = c.lw(gp_8(c, BUDDY_MAN_GP));
+        call_ptr(c, callee::BUDDY_MAN_RECONNECT.addr, rets[2])?;
+        c.g[V0][0] = c.lw(gp_8(c, BUDDY_MAN_GP));
+    }
+    c.cycles += 2;
+    let t = c.g[V0][0] != 0;
+    c.g[V0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+    if !t {
+        c.cycles += 3;
+        c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+        call_ptr(c, callee::LOBBY_MAN_DISCONNECT.addr, rets[3])?;
+        c.g[V0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+    }
+    c.cycles += 5;
+    c.g[A0][0] = c.lw(gp_8(c, BUDDY_MAN_GP));
+    c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x98));
+    callee::BUDDY_MAN_HAS_CHALLENGER.call(c, rets[4])?;
+    let t = c.g[V0][0] == 0;
+    c.g[V0][0] = c.lw(gp_8(c, BUDDY_MAN_GP));
+    if !t {
+        c.cycles += 2;
+        let t = c.g[V0][0] != 0;
+        if !t {
+            c.cycles += 2;
+            call_ptr(c, callee::BUDDY_MAN_CREATE.addr, rets[5])?;
+        }
+        c.cycles += 4;
+        c.g[A0][0] = c.lw(gp_8(c, BUDDY_MAN_GP));
+        call_ptr(c, callee::BUDDY_MAN_IS_CONNECTED.addr, rets[6])?;
+        let t = c.g[V0][0] != 0;
+        c.g[V0][0] = c.lw(gp_8(c, BUDDY_MAN_GP));
+        if !t {
+            c.cycles += 3;
+            c.g[A0][0] = c.lw(gp_8(c, BUDDY_MAN_GP));
+            call_ptr(c, callee::BUDDY_MAN_RECONNECT.addr, rets[7])?;
+            c.g[V0][0] = c.lw(gp_8(c, BUDDY_MAN_GP));
+        }
+        c.cycles += 2;
+        let t = c.g[V0][0] != 0;
+        c.g[V0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+        if !t {
+            c.cycles += 3;
+            c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+            call_ptr(c, callee::LOBBY_MAN_DISCONNECT.addr, rets[8])?;
+            c.g[V0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+        }
+        c.cycles += 3;
+        c.g[A0][0] = c.lw(gp_8(c, BUDDY_MAN_GP));
+        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x98));
+        callee::BUDDY_MAN_REMOVE_CHALLENGER.call(c, rets[9])?;
+    }
+    c.cycles += lock_cycles;
+    c.g[A0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
+    c.g[A1][0] = c.lw(c.g[SP][0] as u32);
+    call_ptr(c, callee::LOBBY_MAN_CLEAR_CHALLENGE_LOCK, rets[10])?;
+    Ok(())
+}
+// Field offsets of the cSetupMan object (one name per offset).
+#[cfg(test)]
+pub(crate) const SETUP_STATE: u32 = 0x0;
+
+pub(crate) const SETUP_CUR_PACKET: u32 = 0x4;
+
+pub(crate) const SETUP_RECV_TAIL: u32 = 0x8;
+
+pub(crate) const SETUP_RECV_HEAD: u32 = 0xc;
+
+pub(crate) const SETUP_RECV_SLOTS: u32 = 0x10;
+
+pub(crate) const SETUP_SEND_TAIL: u32 = 0x90;
+
+pub(crate) const SETUP_SEND_HEAD: u32 = 0x94;
+
+pub(crate) const SETUP_SEND_SLOTS: u32 = 0x98;
+
+pub(crate) const SETUP_CHANNEL: u32 = 0x120;
+
+pub(crate) const SETUP_HOST_FLAG: u32 = 0x124;
+
+pub(crate) const SETUP_STATS_FLAG: u32 = 0x128;
+
+/// Offset of the message-list head inside the globals struct at `gp-0xc8`.
+pub(crate) const SETUP_LIST_HEAD: u32 = 0xf0;
+
+/// Link the list node in `a1` in front of the lobby message list whose head
+/// the caller saved at `sp+head_off` (the insert the setup-manager senders
+/// share).
+pub(crate) fn setup_insert_list_tail(c: &mut Cpu, head_off: u32) {
+    c.g[V0][0] = Addr(sp(c).wrapping_add(head_off)).lw(c);
+    Addr(c.g[A1][0] as u32).sw(c, c.g[V0][0]);
+    c.g[V1][0] = Addr(c.g[V0][0] as u32).off(4).lw(c);
+    Addr(c.g[A1][0] as u32).off(4).sw(c, c.g[V1][0]);
+    c.g[A0][0] = Addr(c.g[V0][0] as u32).off(4).lw(c);
+    Addr(c.g[A0][0] as u32).sw(c, c.g[A1][0]);
+    c.g[V0][0] = Addr(sp(c).wrapping_add(head_off)).lw(c);
+    Addr(c.g[V0][0] as u32).off(4).sw(c, c.g[A1][0]);
+}
+
+/// `void cSetupMan_SendBragMsg8(cSetupMan* self, int slot, int value)`
+/// (0x265568): unless the setup state is 12, post an 8-type brag message
+/// (9 when the host flag at +0x124 is clear; a state in [5,7) first
+/// advances to 7) through SendPacket, then queue a 0xfc net message
+/// carrying slot/value on the global message list.
+pub fn c_setup_man_send_brag_msg8(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x80);
+        c.g[V0][0] = 0xc;
+        frame.save(c, S1, 0x60);
+        frame.save(c, S2, 0x50);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S0, 0x70);
+        frame.save_ra(c, 0x40);
+        c.g[V1][0] = Addr(c.g[A0][0] as u32).lw(c);
+        let done = c.g[V1][0] == c.g[V0][0];
+        c.g[S2][0] = c.g[A2][0];
+        if !done {
+            // Message type in v0 (8, or 9 when the host flag is clear).
+            c.cycles += 3;
+            let flag = Addr(c.g[A0][0] as u32).off(SETUP_HOST_FLAG).lw(c);
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 5) as u64;
+            if flag == 0 {
+                c.cycles += 1;
+                c.g[V0][0] = 0x9;
+            } else {
+                c.cycles += 2;
+                if c.g[V0][0] != 0 {
+                    c.g[V0][0] = 0x8;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < 7) as u64;
+                    let below7 = c.g[V0][0] != 0;
+                    c.g[V0][0] = 0x7;
+                    if below7 {
+                        c.cycles += 1;
+                        Addr(c.g[A0][0] as u32).sw(c, c.g[V0][0]);
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x8;
+                }
+            }
+            c.cycles += 34;
+            c.g[A1][0] = c.g[SP][0];
+            Addr(sp(c)).sw(c, c.g[V0][0]);
+            Addr(sp(c).wrapping_add(4)).sw(c, c.g[S1][0]);
+            c.g[A2][0] = 0x14;
+            Addr(sp(c).wrapping_add(8)).sw(c, c.g[S2][0]);
+            callee::CSETUP_MAN_SEND_PACKET.call(c, 0x0026_55d8)?;
+            c.g[A1][0] = 0x0048_0000;
+            c.g[A0][0] = 0x14;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xf18));
+            c.g[A2][0] = 0x2000_0000;
+            c.g[A3][0] = 0;
+            call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_55f0)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[V1][0] = 0x0048_0000;
+            c.g[V0][0] = 0xfc;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1130));
+            Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
+            c.g[A1][0] = 0x0048_0000;
+            Addr(c.g[S0][0] as u32).off(4).sw(c, c.g[V1][0]);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+            Addr(c.g[S0][0] as u32).off(0xc).sw(c, c.g[S1][0]);
+            c.g[A0][0] = 0xc;
+            Addr(c.g[S0][0] as u32).off(0x10).sw(c, c.g[S2][0]);
+            c.g[A2][0] = 0x2000_0000;
+            Addr(c.g[S0][0] as u32).off(8).sw(c, 0);
+            c.g[A3][0] = 0;
+            c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0xc8)).lw(c);
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).off(SETUP_LIST_HEAD).lw(c);
+            Addr(sp(c).wrapping_add(0x30)).sw(c, c.g[V1][0]);
+            call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_5638)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(8));
+            if c.g[V0][0] != 0 {
+                Addr(c.g[A1][0] as u32).off(8).sw(c, c.g[S0][0]);
+            }
+            c.cycles += 9;
+            setup_insert_list_tail(c, 0x30);
+            Addr(sp(c).wrapping_add(0x20)).sw(c, c.g[A1][0]);
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cSetupMan_SendBragMsg6(cSetupMan* self, int id)` (0x265458):
+/// like SendBragMsg8, but the message type (6, or 7 when the host flag
+/// is clear) is carried in v1, the packet payload is (type, id, current
+/// state), and the queued net message is 0xfb with only the id payload.
+pub fn c_setup_man_send_brag_msg6(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x70);
+        c.g[V0][0] = 0xc;
+        frame.save(c, S1, 0x50);
+        frame.save(c, S0, 0x60);
+        frame.save_ra(c, 0x40);
+        c.g[V1][0] = Addr(c.g[A0][0] as u32).lw(c);
+        let done = c.g[V1][0] == c.g[V0][0];
+        c.g[S1][0] = c.g[A1][0];
+        if !done {
+            c.cycles += 3;
+            let flag = Addr(c.g[A0][0] as u32).off(SETUP_HOST_FLAG).lw(c);
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 5) as u64;
+            if flag == 0 {
+                c.cycles += 1;
+                c.g[V1][0] = 0x7;
+            } else {
+                c.cycles += 2;
+                if c.g[V0][0] != 0 {
+                    c.g[V1][0] = 0x6;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < 7) as u64;
+                    let below7 = c.g[V0][0] != 0;
+                    c.g[V0][0] = 0x7;
+                    if below7 {
+                        c.cycles += 1;
+                        Addr(c.g[A0][0] as u32).sw(c, c.g[V0][0]);
+                    }
+                    c.cycles += 2;
+                    c.g[V1][0] = 0x6;
+                }
+            }
+            c.cycles += 34;
+            c.g[V0][0] = Addr(c.g[A0][0] as u32).lw(c);
+            c.g[A1][0] = c.g[SP][0];
+            Addr(sp(c)).sw(c, c.g[V1][0]);
+            c.g[A2][0] = 0x14;
+            Addr(sp(c).wrapping_add(8)).sw(c, c.g[V0][0]);
+            Addr(sp(c).wrapping_add(4)).sw(c, c.g[S1][0]);
+            callee::CSETUP_MAN_SEND_PACKET.call(c, 0x0026_54c4)?;
+            c.g[A1][0] = 0x0048_0000;
+            c.g[A0][0] = 0x10;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xf18));
+            c.g[A2][0] = 0x2000_0000;
+            c.g[A3][0] = 0;
+            call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_54dc)?;
+            c.g[V1][0] = 0x0048_0000;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1150));
+            c.g[V0][0] = 0xfb;
+            Addr(c.g[S0][0] as u32).off(4).sw(c, c.g[V1][0]);
+            c.g[A1][0] = 0x0048_0000;
+            Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+            Addr(c.g[S0][0] as u32).off(0xc).sw(c, c.g[S1][0]);
+            c.g[A0][0] = 0xc;
+            Addr(c.g[S0][0] as u32).off(8).sw(c, 0);
+            c.g[A2][0] = 0x2000_0000;
+            c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0xc8)).lw(c);
+            c.g[A3][0] = 0;
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(SETUP_LIST_HEAD).lw(c);
+            Addr(sp(c).wrapping_add(0x30)).sw(c, c.g[V0][0]);
+            call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_5520)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(8));
+            if c.g[V0][0] != 0 {
+                Addr(c.g[A1][0] as u32).off(8).sw(c, c.g[S0][0]);
+            }
+            c.cycles += 9;
+            setup_insert_list_tail(c, 0x30);
+            Addr(sp(c).wrapping_add(0x20)).sw(c, c.g[A1][0]);
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cSetupMan_HostRecvSelect(cSetupMan* self, int rider)`
+/// (0x265190): advance state 1 -> 2 (state 2 and >= 3 pass through),
+/// then set the remote character (the caller's `a2` passes through), send
+/// character message 1 and queue a 0xf3 net message.
+pub fn c_setup_man_host_recv_select(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S2, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x40);
+        frame.save_ra(c, 0x20);
+        c.g[A0][0] = 0x2;
+        c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+        let is2 = c.g[V1][0] == c.g[A0][0];
+        c.g[S2][0] = c.g[A1][0];
+        if !is2 {
+            c.cycles += 3;
+            let below3 = (c.g[V1][0] as i64) < 3;
+            c.g[V0][0] = 0x1;
+            if below3 {
+                c.cycles += 2;
+                if c.g[V1][0] == c.g[V0][0] {
+                    Addr(c.g[S0][0] as u32).sw(c, c.g[A0][0]);
+                }
+            }
+        }
+        c.cycles += 33;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S2][0];
+        callee::SETUP_MAN_SET_REMOTE_CHARACTER.call(c, 0x0026_51d8)?;
+        c.g[S1][0] = 0xf3;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S2][0];
+        c.g[A3][0] = Addr(c.g[A0][0] as u32).lw(c);
+        c.g[A1][0] = 0x1;
+        callee::SETUP_MAN_SEND_CHARACTER_MSG.call(c, 0x0026_51f0)?;
+        c.g[A1][0] = 0x0048_0000;
+        c.g[S0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0xc8)).lw(c);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
+        c.g[A0][0] = 0x8;
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_520c)?;
+        c.g[S2][0] = c.g[V0][0];
+        c.g[A1][0] = 0x0048_0000;
+        c.g[V0][0] = 0x0048_0000;
+        Addr(c.g[S2][0] as u32).sw(c, c.g[S1][0]);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+        Addr(c.g[S2][0] as u32).off(4).sw(c, c.g[V0][0]);
+        c.g[A0][0] = 0xc;
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(SETUP_LIST_HEAD).lw(c);
+        Addr(sp(c).wrapping_add(0x10)).sw(c, c.g[V0][0]);
+        call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_5240)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(8));
+        if c.g[V0][0] != 0 {
+            Addr(c.g[A1][0] as u32).off(8).sw(c, c.g[S2][0]);
+        }
+        c.cycles += 15;
+        setup_insert_list_tail(c, 0x10);
+        Addr(sp(c)).sw(c, c.g[A1][0]);
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cSetupMan_HostRecvConfirm(cSetupMan* self, int rider)`
+/// (0x265290): advance state 1/2 -> 3 and 4 -> 5, then set the remote
+/// character (with a zero third argument), send character message 3
+/// and queue a 0xf5 net message.
+pub fn c_setup_man_host_recv_confirm(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S2, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x40);
+        frame.save_ra(c, 0x20);
+        c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+        let positive = (c.g[V1][0] as i64) > 0;
+        c.g[S2][0] = c.g[A1][0];
+        let mut skip_common = false;
+        if positive {
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 3) as u64;
+            if c.g[V0][0] != 0 {
+                c.g[V0][0] = 0x3;
+                c.cycles += 1;
+                Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 0x4;
+                c.g[A0][0] = c.g[S0][0];
+                if c.g[V1][0] == c.g[V0][0] {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0x5;
+                    c.cycles += 1;
+                    Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
+                } else {
+                    skip_common = true;
+                }
+            }
+        }
+        if !skip_common {
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S0][0];
+        }
+        c.cycles += 33;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A2][0] = 0;
+        c.g[S1][0] = 0xf5;
+        callee::SETUP_MAN_SET_REMOTE_CHARACTER.call(c, 0x0026_52e8)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S2][0];
+        c.g[A3][0] = Addr(c.g[A0][0] as u32).lw(c);
+        c.g[A1][0] = 0x3;
+        callee::SETUP_MAN_SEND_CHARACTER_MSG.call(c, 0x0026_52fc)?;
+        c.g[A1][0] = 0x0048_0000;
+        c.g[S0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0xc8)).lw(c);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
+        c.g[A0][0] = 0x8;
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_5318)?;
+        c.g[S2][0] = c.g[V0][0];
+        c.g[A1][0] = 0x0048_0000;
+        c.g[V0][0] = 0x0048_0000;
+        Addr(c.g[S2][0] as u32).sw(c, c.g[S1][0]);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+        Addr(c.g[S2][0] as u32).off(4).sw(c, c.g[V0][0]);
+        c.g[A0][0] = 0xc;
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(SETUP_LIST_HEAD).lw(c);
+        Addr(sp(c).wrapping_add(0x10)).sw(c, c.g[V0][0]);
+        call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_534c)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(8));
+        if c.g[V0][0] != 0 {
+            Addr(c.g[A1][0] as u32).off(8).sw(c, c.g[S2][0]);
+        }
+        c.cycles += 15;
+        setup_insert_list_tail(c, 0x10);
+        Addr(sp(c)).sw(c, c.g[A1][0]);
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cSetupMan_ConfirmCharacter(cSetupMan* self, int rider)`
+/// (0x265018): with the host flag set, advance state 1/2 -> 4 and
+/// 3 -> 5, set the local character, send character message 2 and
+/// queue a 0xf4 net message; with the flag clear, only send
+/// character message 3.
+pub fn c_setup_man_confirm_character(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S2, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x40);
+        frame.save_ra(c, 0x20);
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(SETUP_HOST_FLAG).lw(c);
+        let host = c.g[V0][0] != 0;
+        c.g[S2][0] = c.g[A1][0];
+        if host {
+            c.cycles += 3;
+            c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+            let positive = (c.g[V1][0] as i64) > 0;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 3) as u64;
+            let mut skip_common = false;
+            if positive {
+                c.cycles += 2;
+                if c.g[V0][0] != 0 {
+                    c.g[V0][0] = 0x4;
+                    c.cycles += 1;
+                    Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x3;
+                    c.g[A0][0] = c.g[S0][0];
+                    if c.g[V1][0] == c.g[V0][0] {
+                        c.cycles += 1;
+                        c.g[V0][0] = 0x5;
+                        c.cycles += 1;
+                        Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
+                    } else {
+                        skip_common = true;
+                    }
+                }
+            }
+            if !skip_common {
+                c.cycles += 1;
+                c.g[A0][0] = c.g[S0][0];
+            }
+            c.cycles += 32;
+            c.g[A1][0] = c.g[S2][0];
+            callee::SETUP_MAN_SET_LOCAL_CHARACTER.call(c, 0x0026_5070)?;
+            c.g[S1][0] = 0xf4;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = c.g[S2][0];
+            c.g[A3][0] = Addr(c.g[A0][0] as u32).lw(c);
+            c.g[A1][0] = 0x2;
+            callee::SETUP_MAN_SEND_CHARACTER_MSG.call(c, 0x0026_5088)?;
+            c.g[A1][0] = 0x0048_0000;
+            c.g[S0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0xc8)).lw(c);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
+            c.g[A0][0] = 0x8;
+            c.g[A2][0] = 0x2000_0000;
+            c.g[A3][0] = 0;
+            call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_50a4)?;
+            c.g[S2][0] = c.g[V0][0];
+            c.g[A1][0] = 0x0048_0000;
+            c.g[V0][0] = 0x0048_0000;
+            Addr(c.g[S2][0] as u32).sw(c, c.g[S1][0]);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+            Addr(c.g[S2][0] as u32).off(4).sw(c, c.g[V0][0]);
+            c.g[A0][0] = 0xc;
+            c.g[A2][0] = 0x2000_0000;
+            c.g[A3][0] = 0;
+            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(SETUP_LIST_HEAD).lw(c);
+            Addr(sp(c).wrapping_add(0x10)).sw(c, c.g[V0][0]);
+            call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_50d8)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(8));
+            if c.g[V0][0] != 0 {
+                Addr(c.g[A1][0] as u32).off(8).sw(c, c.g[S2][0]);
+            }
+            c.cycles += 10;
+            setup_insert_list_tail(c, 0x10);
+            Addr(sp(c)).sw(c, c.g[A1][0]);
+        } else {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = c.g[S2][0];
+            c.g[A3][0] = Addr(c.g[A0][0] as u32).lw(c);
+            c.g[A1][0] = 0x3;
+            callee::SETUP_MAN_SEND_CHARACTER_MSG.call(c, 0x0026_5124)?;
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cSetupMan_SelectCharacter(cSetupMan* self, int rider)`
+/// (0x264f88): unless the state is 12, with the host flag set advance
+/// state 1 -> 2, set the local character and send character message
+/// 0; with the flag clear send character message 1 with a zero state.
+pub fn c_setup_man_select_character(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0xc;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+        let done = c.g[V1][0] == c.g[V0][0];
+        c.g[S1][0] = c.g[A1][0];
+        if !done {
+            c.cycles += 3;
+            let host = Addr(c.g[S0][0] as u32).off(SETUP_HOST_FLAG).lw(c) != 0;
+            c.g[V0][0] = 0x1;
+            if !host {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A2][0] = c.g[S1][0];
+                c.g[A1][0] = 0x1;
+                c.g[A3][0] = 0;
+                callee::SETUP_MAN_SEND_CHARACTER_MSG.call(c, 0x0026_5000)?;
+            } else {
+                c.cycles += 2;
+                c.g[A0][0] = c.g[S0][0];
+                if c.g[V1][0] == c.g[V0][0] {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x2;
+                    Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
+                }
+                c.cycles += 9;
+                c.g[A1][0] = c.g[S1][0];
+                callee::SETUP_MAN_SET_LOCAL_CHARACTER.call(c, 0x0026_4fd0)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A2][0] = c.g[S1][0];
+                c.g[A3][0] = Addr(c.g[A0][0] as u32).lw(c);
+                c.g[A1][0] = 0;
+                callee::SETUP_MAN_SEND_CHARACTER_MSG.call(c, 0x0026_4fe4)?;
+                frame.restore(c, S0, 0x20);
+                c.cycles += 4;
+                frame.restore(c, S1, 0x10);
+                frame.restore_ra(c, 0);
+                frame.close(c);
+                return Ok(());
+            }
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cSetupMan_SendCharacterMsg(cSetupMan* self, int event, int rider,
+/// int state)` (0x264e50): build the 0x14-byte character message
+/// (event, rider, state, then seven stat bytes: all 40 when the stats
+/// flag at +0x128 is set, else the seven BE character attribute
+/// getters) and post it through SendPacket.
+pub fn c_setup_man_send_character_msg(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, S0, 0x50);
+        c.g[S2][0] = c.g[A0][0];
+        Addr(sp(c)).sw(c, c.g[A1][0]);
+        frame.save_ra(c, 0x20);
+        Addr(sp(c).wrapping_add(8)).sw(c, c.g[A3][0]);
+        Addr(sp(c).wrapping_add(4)).sw(c, c.g[S1][0]);
+        call_ptr(c, callee::BE_LIBRARY_GET_INSTANCE, 0x0026_4e7c)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0x3;
+        call_ptr(c, callee::BE_LIBRARY_GET_INTERFACE, 0x0026_4e88)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A1][0] = 0x7;
+        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x78).lw(c);
+        call_ptr(c, callee::BE_LIBRARY_GET_INTERFACE, 0x0026_4e9c)?;
+        c.g[V1][0] = Addr(c.g[S2][0] as u32).off(SETUP_STATS_FLAG).lw(c);
+        if c.g[V1][0] != 0 {
+            c.cycles += 2;
+            c.g[V1][0] = 0x6;
+            c.g[A0][0] = 0x28;
+            c.g[V0][0] = sx(sp(c).wrapping_add(0x12));
+            loop {
+                c.cycles += 7;
+                Addr(c.g[V0][0] as u32).sb(c, c.g[A0][0]);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+                let more = (c.g[V1][0] as i64) >= 0;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0026_4eb0);
+                    }
+                    continue;
+                }
+                c.cycles += 2;
+                c.g[A0][0] = c.g[S2][0];
+                break;
+            }
+        } else {
+            c.cycles += 36;
+            // Seven attribute getters, one stat byte each at sp+0xc..0x12.
+            const GETTERS: [(u32, u32, u32); 7] = [
+                (0x0014_8bc8, 0x0026_4ee4, 0xc),
+                (0x0014_8c68, 0x0026_4ef8, 0xd),
+                (0x0014_8b78, 0x0026_4f0c, 0xe),
+                (0x0014_8cb8, 0x0026_4f20, 0xf),
+                (0x0014_8d58, 0x0026_4f34, 0x10),
+                (0x0014_8d08, 0x0026_4f48, 0x11),
+                (0x0014_8c18, 0x0026_4f5c, 0x12),
+            ];
+            for (addr, ret_addr, off) in GETTERS {
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0;
+                c.g[A2][0] = c.g[S1][0];
+                call_ptr(c, addr, ret_addr)?;
+                Addr(sp(c).wrapping_add(off)).sb(c, c.g[V0][0]);
+            }
+            c.g[A0][0] = c.g[S2][0];
+        }
+        c.cycles += 9;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0x14;
+        callee::CSETUP_MAN_SEND_PACKET.call(c, 0x0026_4f70)?;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int cSetupMan_SendPacket(cSetupMan* self, void* msg, int size)`
+/// (0x264be8): flush the send queue, wrap the message in a packet
+/// header (kind/flags zero, size+4), try the channel send; on failure
+/// copy the packet into a freshly allocated ring slot. Always
+/// returns 1 in v0.
+pub fn c_setup_man_send_packet(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x130);
+        frame.save(c, S2, 0x100);
+        frame.save(c, S0, 0x120);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x110);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save_ra(c, 0xf0);
+        c.g[S1][0] = c.g[A1][0];
+        callee::SETUP_MAN_FLUSH_SEND_QUEUE.call(c, 0x0026_4c0c)?;
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(4));
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[SP][0] | 0x4;
+        Addr(sp(c).wrapping_add(2)).sh(c, c.g[V0][0]);
+        Addr(sp(c)).sb(c, 0);
+        Addr(sp(c).wrapping_add(1)).sb(c, 0);
+        call_ptr(c, callee::EA_MEM_COPY, 0x0026_4c2c)?;
+        c.g[A3][0] = Addr(sp(c).wrapping_add(2)).lhu(c);
+        c.g[A2][0] = c.g[SP][0];
+        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x238)).lw(c);
+        c.g[A1][0] = Addr(c.g[S2][0] as u32).off(SETUP_CHANNEL).lw(c);
+        call_ptr(c, callee::C_COMM_SYSTEM_CHANNEL_SEND.addr, 0x0026_4c40)?;
+        if c.g[V0][0] != 0 {
+            c.g[V0][0] = 0x1;
+        } else {
+            c.cycles += 22;
+            c.g[A0][0] = c.g[S2][0];
+            callee::SETUP_MAN_ALLOC_PACKET.call(c, 0x0026_4c50)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A2][0] = Addr(sp(c).wrapping_add(2)).lhu(c);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[SP][0];
+            call_ptr(c, callee::EA_MEM_COPY, 0x0026_4c64)?;
+            c.g[A2][0] = Addr(c.g[S2][0] as u32).off(SETUP_SEND_TAIL).lw(c);
+            c.g[A0][0] = 0xffff_ffff_ffff_ffff;
+            c.g[V0][0] = 0x1;
+            c.g[A1][0] = c.g[A2][0];
+            c.g[A0][0] = ((c.g[A0][0] as i64) < (c.g[A1][0] as i64)) as u64;
+            c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1f));
+            if c.g[A0][0] != 0 {
+                c.g[V1][0] = c.g[A1][0];
+            }
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 5) as u32);
+            Addr(c.g[S2][0] as u32)
+                .off(SETUP_SEND_TAIL)
+                .sw(c, c.g[A2][0]);
+            c.g[A0][0] = sx((c.g[V1][0] as u32) << 5);
+            c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            Addr(c.g[V1][0] as u32)
+                .off(SETUP_SEND_SLOTS)
+                .sw(c, c.g[S0][0]);
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x120);
+        frame.restore(c, S1, 0x110);
+        frame.restore(c, S2, 0x100);
+        frame.restore_ra(c, 0xf0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Stages of `cSetupMan_ReceivePackets` between its resume points
+/// (the generated loop head at 0x264a80 is the only resume entry).
+#[derive(Clone, Copy, PartialEq)]
+enum RecvStage {
+    /// Prologue, then the current-packet check.
+    Entry,
+    /// The current-packet check (0x264ac8).
+    Check,
+    /// Allocate and receive a packet (0x264ad4).
+    Alloc,
+    /// The ring store at the loop head (0x264a80).
+    Head,
+    /// Epilogue (0x264b08).
+    Done,
+}
+
+/// `void cSetupMan_ReceivePackets(cSetupMan* self)` (0x264a58): drain
+/// the receive channel into the 32-slot ring at +0x10 (indices at
+/// +0x8/+0xc, current packet at +0x4) until the channel is empty or
+/// the ring holds 31 packets; a packet that arrives when the ring is
+/// checked is deleted unused. Dispatcher-shaped: re-enters at the
+/// loop head 0x264a80 after an event unwind. The generated state
+/// 0x264a7c is never targeted (entry jumps straight to the check).
+pub fn c_setup_man_receive_packets(c: &mut Cpu) {
+    let frame = Frame { size: 0x40 };
+    let mut stage = if c.pc == 0x0026_4a80 {
+        RecvStage::Head
+    } else if c.pc == 0x0026_4a58 {
+        RecvStage::Entry
+    } else {
+        c.jump_out(c.pc, 0x0026_4a58, 0x0026_4b20);
+        return;
+    };
+    loop {
+        stage = match stage {
+            RecvStage::Entry => {
+                c.cycles += 9;
+                let frame = Frame::open(c, 0x40);
+                frame.save(c, S0, 0x30);
+                frame.save(c, S1, 0x20);
+                c.g[S0][0] = c.g[A0][0];
+                frame.save(c, S2, 0x10);
+                c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(SETUP_RECV_SLOTS));
+                frame.save_ra(c, 0);
+                c.g[S2][0] = 0xffff_ffff_ffff_ffff;
+                RecvStage::Check
+            }
+            RecvStage::Check => {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(SETUP_CUR_PACKET).lw(c);
+                if c.g[V0][0] != 0 {
+                    c.g[A1][0] = Addr(c.g[S0][0] as u32).off(SETUP_RECV_TAIL).lw(c);
+                    if back_edge_unwinds(c, 0x0026_4a80) {
+                        return;
+                    }
+                    RecvStage::Head
+                } else {
+                    RecvStage::Alloc
+                }
+            }
+            RecvStage::Alloc => {
+                c.cycles += 10;
+                c.g[A0][0] = c.g[S0][0];
+                if callee::SETUP_MAN_ALLOC_PACKET.call(c, 0x0026_4adc).is_err() {
+                    return;
+                }
+                c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x238)).lw(c);
+                c.g[A2][0] = c.g[V0][0];
+                c.g[A1][0] = Addr(c.g[S0][0] as u32).off(SETUP_CHANNEL).lw(c);
+                c.g[A3][0] = 0xf0;
+                Addr(c.g[S0][0] as u32)
+                    .off(SETUP_CUR_PACKET)
+                    .sw(c, c.g[V0][0]);
+                if call_ptr(c, callee::C_COMM_SYSTEM_CHANNEL_RECV, 0x0026_4af4).is_err() {
+                    return;
+                }
+                if c.g[V0][0] != 0 {
+                    c.g[A1][0] = Addr(c.g[S0][0] as u32).off(SETUP_RECV_TAIL).lw(c);
+                    if back_edge_unwinds(c, 0x0026_4a80) {
+                        return;
+                    }
+                    RecvStage::Head
+                } else {
+                    c.cycles += 3;
+                    c.g[A0][0] = Addr(c.g[S0][0] as u32).off(SETUP_CUR_PACKET).lw(c);
+                    if call_ptr(c, callee::BUILTIN_DELETE, 0x0026_4b04).is_err() {
+                        return;
+                    }
+                    Addr(c.g[S0][0] as u32).off(SETUP_CUR_PACKET).sw(c, 0);
+                    RecvStage::Done
+                }
+            }
+            RecvStage::Head => {
+                c.cycles += 6;
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(SETUP_RECV_HEAD).lw(c);
+                c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                c.g[V0][0] = ((c.g[V0][0] as i64) < 31) as u64;
+                c.g[V0][0] ^= 0x1;
+                let full = c.g[V0][0] != 0;
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                if full {
+                    RecvStage::Done
+                } else {
+                    c.cycles += 12;
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1f));
+                    if c.g[V0][0] != 0 {
+                        c.g[V1][0] = c.g[A1][0];
+                    }
+                    c.g[A0][0] = Addr(c.g[S0][0] as u32).off(SETUP_CUR_PACKET).lw(c);
+                    c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 5) as u32);
+                    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 5);
+                    Addr(c.g[S0][0] as u32)
+                        .off(SETUP_RECV_TAIL)
+                        .sw(c, c.g[V0][0]);
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                    c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    Addr(c.g[V0][0] as u32).sw(c, c.g[A0][0]);
+                    Addr(c.g[S0][0] as u32).off(SETUP_CUR_PACKET).sw(c, 0);
+                    RecvStage::Check
+                }
+            }
+            RecvStage::Done => {
+                c.cycles += 6;
+                frame.restore(c, S0, 0x30);
+                frame.restore(c, S1, 0x20);
+                frame.restore(c, S2, 0x10);
+                frame.restore_ra(c, 0);
+                frame.close(c);
+                return;
+            }
+        };
+    }
+}
+
+/// `void cSetupMan_dtor(cSetupMan* self, int flags)` (0x264138):
+/// free the current packet and every packet in both 32-slot rings
+/// (receive ring at +0x10 with indices +0xc/+0x8, send ring at +0x98
+/// with indices +0x94/+0x90), mark the object destroyed (+0 = 1) and,
+/// when flags bit 0 is set, delete the object itself.
+/// Dispatcher-shaped: re-enters at 0x264178 / 0x264208 after an event
+/// unwind. The generated states 0x264174, 0x2641f0-via-loop and the
+/// 0x264208 fall-through from 0x2641fc are unreachable (the generator
+/// emits them for unconditional branches).
+pub fn c_setup_man_dtor(c: &mut Cpu) {
+    let mut pc: u32 = c.pc;
+    loop {
+        match pc {
+            0x0026_4138 => {
+                c.cycles += 11;
+                let frame = Frame::open(c, 0x50);
+                frame.save(c, S0, 0x40);
+                frame.save(c, S1, 0x30);
+                c.g[S0][0] = c.g[A0][0];
+                frame.save(c, S2, 0x20);
+                c.g[S1][0] = c.g[A1][0];
+                frame.save(c, S3, 0x10);
+                frame.save_ra(c, 0);
+                c.g[A1][0] = Addr(c.g[S0][0] as u32).off(SETUP_CUR_PACKET).lw(c);
+                let empty = c.g[A1][0] == 0;
+                c.g[S3][0] = c.g[S1][0] & 0x1;
+                pc = if empty { 0x0026_41b4 } else { 0x0026_4164 };
+            }
+            0x0026_4164 => {
+                c.cycles += 4;
+                if callee::C_SETUP_MAN_FREE_PACKET
+                    .call(c, 0x0026_416c)
+                    .is_err()
+                {
+                    return;
+                }
+                c.g[A0][0] = Addr(c.g[S0][0] as u32).off(SETUP_RECV_HEAD).lw(c);
+                pc = 0x0026_41b8;
+            }
+            0x0026_4178 => {
+                c.cycles += 15;
+                c.g[A1][0] = 0xffff_ffff_ffff_ffff;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[V1][0] = c.g[A2][0];
+                c.g[A1][0] = ((c.g[A1][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1f));
+                if c.g[A1][0] != 0 {
+                    c.g[V0][0] = c.g[V1][0];
+                }
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+                c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 5) as u32);
+                Addr(c.g[S0][0] as u32)
+                    .off(SETUP_RECV_HEAD)
+                    .sw(c, c.g[A2][0]);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 5);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[A1][0] = Addr(c.g[V1][0] as u32).off(SETUP_RECV_SLOTS).lw(c);
+                if callee::C_SETUP_MAN_FREE_PACKET
+                    .call(c, 0x0026_41b4)
+                    .is_err()
+                {
+                    return;
+                }
+                pc = 0x0026_41b4;
+            }
+            0x0026_41b4 => {
+                c.cycles += 1;
+                c.g[A0][0] = Addr(c.g[S0][0] as u32).off(SETUP_RECV_HEAD).lw(c);
+                pc = 0x0026_41b8;
+            }
+            0x0026_41b8 => {
+                c.cycles += 4;
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(SETUP_RECV_TAIL).lw(c);
+                c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+                pc = if more { 0x0026_41c8 } else { 0x0026_41f0 };
+            }
+            0x0026_41c8 => {
+                c.cycles += 10;
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1f));
+                c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                if c.g[V1][0] != 0 {
+                    c.g[V0][0] = c.g[A0][0];
+                }
+                c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 5) as u32);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 5);
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[V0][0] = Addr(c.g[V0][0] as u32).off(SETUP_RECV_SLOTS).lw(c);
+                pc = 0x0026_41f4;
+            }
+            0x0026_41f0 => {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+                pc = 0x0026_41f4;
+            }
+            0x0026_41f4 => {
+                c.cycles += 2;
+                if c.g[V0][0] != 0 {
+                    c.g[A2][0] = Addr(c.g[S0][0] as u32).off(SETUP_RECV_HEAD).lw(c);
+                    if back_edge_unwinds(c, 0x0026_4178) {
+                        return;
+                    }
+                    pc = 0x0026_4178;
+                } else {
+                    pc = 0x0026_41fc;
+                }
+            }
+            0x0026_41fc => {
+                c.cycles += 3;
+                c.g[S2][0] = 0xffff_ffff_ffff_ffff;
+                c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(SETUP_SEND_SLOTS));
+                pc = 0x0026_4240;
+            }
+            0x0026_4208 => {
+                c.cycles += 14;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[V1][0] = c.g[A2][0];
+                c.g[A1][0] = ((c.g[S2][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1f));
+                if c.g[A1][0] != 0 {
+                    c.g[V0][0] = c.g[V1][0];
+                }
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+                c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 5) as u32);
+                Addr(c.g[S0][0] as u32)
+                    .off(SETUP_SEND_HEAD)
+                    .sw(c, c.g[A2][0]);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 5);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[A1][0] = Addr(c.g[V1][0] as u32).lw(c);
+                if callee::C_SETUP_MAN_FREE_PACKET
+                    .call(c, 0x0026_4240)
+                    .is_err()
+                {
+                    return;
+                }
+                pc = 0x0026_4240;
+            }
+            0x0026_4240 => {
+                c.cycles += 5;
+                c.g[A0][0] = Addr(c.g[S0][0] as u32).off(SETUP_SEND_HEAD).lw(c);
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(SETUP_SEND_TAIL).lw(c);
+                c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1f));
+                pc = if more { 0x0026_4254 } else { 0x0026_4278 };
+            }
+            0x0026_4254 => {
+                c.cycles += 9;
+                c.g[V1][0] = ((c.g[S2][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                if c.g[V1][0] != 0 {
+                    c.g[V0][0] = c.g[A0][0];
+                }
+                c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 5) as u32);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 5);
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[V0][0] = Addr(c.g[V0][0] as u32).lw(c);
+                pc = 0x0026_427c;
+            }
+            0x0026_4278 => {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+                pc = 0x0026_427c;
+            }
+            0x0026_427c => {
+                c.cycles += 2;
+                if c.g[V0][0] != 0 {
+                    c.g[A2][0] = Addr(c.g[S0][0] as u32).off(SETUP_SEND_HEAD).lw(c);
+                    if back_edge_unwinds(c, 0x0026_4208) {
+                        return;
+                    }
+                    pc = 0x0026_4208;
+                } else {
+                    pc = 0x0026_4284;
+                }
+            }
+            0x0026_4284 => {
+                c.cycles += 3;
+                c.g[V0][0] = 0x1;
+                let keep = c.g[S3][0] == 0;
+                Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
+                pc = if keep { 0x0026_4298 } else { 0x0026_4290 };
+            }
+            0x0026_4290 => {
+                c.cycles += 2;
+                c.g[A0][0] = c.g[S0][0];
+                if call_ptr(c, callee::BUILTIN_DELETE, 0x0026_4298).is_err() {
+                    return;
+                }
+                pc = 0x0026_4298;
+            }
+            0x0026_4298 => {
+                c.cycles += 7;
+                let frame = Frame { size: 0x50 };
+                frame.restore(c, S0, 0x40);
+                frame.restore(c, S1, 0x30);
+                frame.restore(c, S2, 0x20);
+                frame.restore(c, S3, 0x10);
+                frame.restore_ra(c, 0);
+                frame.close(c);
+                return;
+            }
+            _ => {
+                c.jump_out(pc, 0x0026_4138, 0x0026_42b4);
+                return;
+            }
+        }
+    }
+}
+
+/// Which saved registers `Net_UpdateGameSetup` still reloads on its way
+/// out (the compiled code's three epilogue entries).
+#[derive(Clone, Copy, PartialEq)]
+enum NetUpdateEnd {
+    /// `s0`, `s1` and `s2`.
+    RestoreS0,
+    /// `s1` and `s2` (`s0` already reloaded).
+    RestoreS1,
+    /// `s2` only.
+    RestoreS2,
+}
+
+/// `Net_UpdateGameSetup`'s epilogue from `end`.
+fn net_update_finish(c: &mut Cpu, frame: Frame, end: NetUpdateEnd) -> crate::call::Flow {
+    if end == NetUpdateEnd::RestoreS0 {
+        c.cycles += 1;
+        frame.restore(c, S0, 0x50);
+    }
+    if end != NetUpdateEnd::RestoreS2 {
+        c.cycles += 1;
+        frame.restore(c, S1, 0x40);
+    }
+    c.cycles += 4;
+    frame.restore(c, S2, 0x30);
+    frame.restore_ra(c, 0x20);
+    frame.close(c);
+    Ok(())
+}
+
+/// `void Net_UpdateGameSetup(NetGameSetup* self)` (0x263cf0): advance the
+/// game-setup state machine in `self[0]`. State 1 waits for the comm channel:
+/// on connect it creates the setup manager and says hello (moving to state
+/// 2), on error/timeout it aborts. State 2 waits for the setup manager: when
+/// it reports ready (0xd) the race is launched (presence, rider character,
+/// game-comm construct and the next module), when it reports 0xb the setup
+/// is aborted. Other states return at once.
+pub fn net_update_game_setup(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x60);
+        c.cycles += 10;
+        frame.save(c, S2, 0x30);
+        frame.save(c, S0, 0x50);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x40);
+        frame.save_ra(c, 0x20);
+        c.g[V1][0] = c.lw(r32(c, S2));
+        let state1 = c.g[V1][0] == 1u64;
+        c.g[V0][0] = ((c.g[V1][0] as i64) < 2i64) as u64;
+        if !state1 {
+            c.cycles += 2;
+            let below2 = c.g[V0][0] != 0u64;
+            frame.restore(c, S0, 0x50);
+            if below2 {
+                // State 0: nothing to do.
+                return net_update_finish(c, frame, NetUpdateEnd::RestoreS1);
+            }
+            c.cycles += 3;
+            c.g[V0][0] = 0x2;
+            let state2 = c.g[V1][0] == c.g[V0][0];
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x238));
+            if !state2 {
+                // State 3+: nothing to do.
+                c.cycles += 2;
+                frame.restore(c, S1, 0x40);
+                return net_update_finish(c, frame, NetUpdateEnd::RestoreS2);
+            }
+            // State 2: fall through to the state-2 work below.
+        } else {
+            // State 1: if the channel is connected, either abort when a
+            // challenger is already present or create the setup and say
+            // hello; otherwise check the connect timeout.
+            c.cycles += 5;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x238));
+            c.g[A1][0] = c.lw((r32(c, S2)).wrapping_add(0x4));
+            call_ptr(c, callee::C_COMM_SYSTEM_IS_CHANNEL_CONNECTED, 0x0026_3d40)?;
+            let not_connected = c.g[V0][0] == 0u64;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x238));
+            if !not_connected {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((r32(c, S2)).wrapping_add(0xc));
+                let no_challenger = c.g[V0][0] == 0u64;
+                c.g[A0][0] = c.g[S2][0];
+                if !no_challenger {
+                    c.cycles += 4;
+                    c.g[A1][0] = 0x1;
+                    callee::NET_ABORT_GAME_SETUP.call(c, 0x0026_3d5c)?;
+                    frame.restore(c, S0, 0x50);
+                    return net_update_finish(c, frame, NetUpdateEnd::RestoreS1);
+                }
+                c.cycles += 16;
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                c.g[A1][0] = 0x7;
+                c.g[A0][0] = c.lw((r32(c, V0)).wrapping_add(0x78));
+                call_ptr(c, callee::BE_LIBRARY_GET_INTERFACE, 0x0026_3d74)?;
+                c.g[V1][0] = 0x530000;
+                c.g[A0][0] = c.lw((r32(c, S2)).wrapping_add(0x4));
+                c.g[A2][0] = c.lw((r32(c, V1)).wrapping_add(0x4b34));
+                c.g[A1][0] = c.lw((r32(c, S2)).wrapping_add(0x8));
+                callee::SETUP_MAN_CREATE.call(c, 0x0026_3d88)?;
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2dc));
+                c.g[A1][0] = c.lw((r32(c, V0)).wrapping_add(0x8c));
+                callee::SETUP_MAN_SEND_HELLO.call(c, 0x0026_3d98)?;
+                c.g[V0][0] = 0x2;
+                c.sw(r32(c, S2), c.g[V0][0]);
+                return net_update_finish(c, frame, NetUpdateEnd::RestoreS0);
+            }
+            // Not connected: the float at +0x10 is the connect timer.
+            c.cycles += 4;
+            c.g[A1][0] = c.lw((r32(c, S2)).wrapping_add(0x4));
+            call_ptr(c, callee::C_COMM_SYSTEM_GET_CHANNEL_STATUS, 0x0026_3dac)?;
+            let error = c.g[V0][0] != 0u64;
+            c.g[A0][0] = c.g[S2][0];
+            if !error {
+                c.cycles += 6;
+                c.lwc1(1, (r32(c, S2)).wrapping_add(0x10));
+                c.mtc1(0, 0);
+                c.c_lt_s(1, 0);
+                let timed_out = c.fcc();
+                c.g[V0][0] = 0x1;
+                if !timed_out {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0u64;
+                }
+                c.cycles += 2;
+                let still_waiting = c.g[V0][0] == 0u64;
+                c.g[A0][0] = c.g[S2][0];
+                if still_waiting {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                    c.lwc1(0, (r32(c, V0)).wrapping_add(0x14));
+                    c.sub_s(0, 1, 0);
+                    c.swc1(0, (r32(c, S2)).wrapping_add(0x10));
+                    return net_update_finish(c, frame, NetUpdateEnd::RestoreS0);
+                }
+            }
+            c.cycles += 4;
+            c.g[A1][0] = 0u64;
+            callee::NET_ABORT_GAME_SETUP.call(c, 0x0026_3de0)?;
+            frame.restore(c, S0, 0x50);
+            return net_update_finish(c, frame, NetUpdateEnd::RestoreS1);
+        }
+        if !state1 {
+            // State 2 (state 1 returned above): if the channel reports an
+            // error, post the 0x113 notice unless the setup state is 0xb,
+            // then abort; otherwise run the setup update and launch when
+            // it reaches state 0xd.
+            c.cycles += 4;
+            c.g[A1][0] = c.lw((r32(c, S2)).wrapping_add(0x4));
+            call_ptr(c, callee::C_COMM_SYSTEM_GET_CHANNEL_STATUS, 0x0026_3e04)?;
+            let no_error = c.g[V0][0] == 0u64;
+            c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2dc));
+            if !no_error {
+                c.cycles += 4;
+                c.g[V0][0] = c.lw(r32(c, V1));
+                c.g[V0][0] = c.g[V0][0] ^ 0xb;
+                let is_b = c.g[V0][0] == 0u64;
+                c.g[A1][0] = 0x480000;
+                if !is_b {
+                    c.cycles += 24;
+                    c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
+                    c.g[A0][0] = 0x8;
+                    c.g[A2][0] = 0x20000000;
+                    c.g[A3][0] = 0u64;
+                    callee::EA_MEM_ALLOC_NAMED.call(c, 0x0026_3e34)?;
+                    c.g[S1][0] = c.g[V0][0];
+                    c.g[V1][0] = 0x113;
+                    c.g[V0][0] = 0x480000;
+                    c.sw(r32(c, S1), c.g[V1][0]);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
+                    c.g[A1][0] = 0x480000;
+                    c.sw((r32(c, S1)).wrapping_add(0x4), c.g[V0][0]);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+                    c.g[A0][0] = 0xc;
+                    c.g[A2][0] = 0x20000000;
+                    c.g[V0][0] = c.lw((r32(c, S0)).wrapping_add(0xf0));
+                    c.g[A3][0] = 0u64;
+                    c.sw((r32(c, SP)).wrapping_add(0x10), c.g[V0][0]);
+                    callee::EA_MEM_ALLOC_NAMED.call(c, 0x0026_3e6c)?;
+                    c.g[A1][0] = c.g[V0][0];
+                    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+                    if c.g[V0][0] != 0u64 {
+                        c.sw((r32(c, A1)).wrapping_add(0x8), c.g[S1][0]);
+                    }
+                    c.cycles += 9;
+                    c.g[V0][0] = c.lw((r32(c, SP)).wrapping_add(0x10));
+                    c.sw(r32(c, A1), c.g[V0][0]);
+                    c.g[V1][0] = c.lw((r32(c, V0)).wrapping_add(0x4));
+                    c.sw((r32(c, A1)).wrapping_add(0x4), c.g[V1][0]);
+                    c.g[A0][0] = c.lw((r32(c, V0)).wrapping_add(0x4));
+                    c.sw(r32(c, A0), c.g[A1][0]);
+                    c.g[V0][0] = c.lw((r32(c, SP)).wrapping_add(0x10));
+                    c.sw((r32(c, V0)).wrapping_add(0x4), c.g[A1][0]);
+                    c.sw(r32(c, SP), c.g[A1][0]);
+                }
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = 0x2;
+                callee::NET_ABORT_GAME_SETUP.call(c, 0x0026_3eac)?;
+                frame.restore(c, S0, 0x50);
+                return net_update_finish(c, frame, NetUpdateEnd::RestoreS1);
+            }
+        }
+        // Run the setup update, then launch on state 0xd (abort on 0xb).
+        c.cycles += 8;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2dc));
+        c.g[S0][0] = 0u64;
+        callee::SETUP_MAN_UPDATE.call(c, 0x0026_3ec0)?;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2dc));
+        c.g[V1][0] = 0xd;
+        c.g[A0][0] = c.lw(r32(c, V0));
+        let not_d = c.g[A0][0] != c.g[V1][0];
+        c.g[V0][0] = 0xb;
+        if !not_d {
+            c.cycles += 2;
+            c.g[S0][0] = 0x1;
+        } else {
+            c.cycles += 2;
+            let not_b = c.g[A0][0] != c.g[V0][0];
+            c.g[A0][0] = c.g[S2][0];
+            if !not_b {
+                c.cycles += 2;
+                c.g[A1][0] = 0x2;
+                callee::NET_ABORT_GAME_SETUP.call(c, 0x0026_3eec)?;
+            }
+        }
+        c.cycles += 2;
+        if c.g[S0][0] == 0u64 {
+            frame.restore(c, S0, 0x50);
+            return net_update_finish(c, frame, NetUpdateEnd::RestoreS1);
+        }
+        c.cycles += 8;
+        callee::SETUPMAN_DESTROY.call(c, 0x0026_3efc)?;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+        callee::LOBBY_MAN_DISCONNECT.call(c, 0x0026_3f04)?;
+        c.g[V0][0] = 0x34;
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+        let comm_present = c.g[V1][0] != 0u64;
+        c.sw((c.g[GP][0] as u32).wrapping_sub(0x172c), c.g[V0][0]);
+        if !comm_present {
+            c.cycles += 2;
+            callee::BUDDY_MAN_CREATE.call(c, 0x0026_3f1c)?;
+        }
+        c.cycles += 4;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+        callee::BUDDY_MAN_IS_CONNECTED.call(c, 0x0026_3f24)?;
+        let connected = c.g[V0][0] != 0u64;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+        if !connected {
+            c.cycles += 3;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+            callee::BUDDY_MAN_RECONNECT.call(c, 0x0026_3f34)?;
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+        }
+        c.cycles += 2;
+        let comm_again = c.g[V0][0] != 0u64;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+        if !comm_again {
+            c.cycles += 3;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+            callee::LOBBY_MAN_DISCONNECT.call(c, 0x0026_3f48)?;
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+        }
+        c.cycles += 33;
+        c.g[T0][0] = 0u64;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+        c.g[T1][0] = 0u64;
+        c.g[A3][0] = c.lw((r32(c, V0)).wrapping_add(0x98));
+        c.g[A2][0] = 0x9;
+        c.g[A1][0] = 0x1;
+        call_ptr(c, callee::BUDDY_MAN_SET_PRESENCE_ADDR, 0x0026_3f68)?;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        c.g[A1][0] = 0x7;
+        c.g[A0][0] = c.lw((r32(c, V0)).wrapping_add(0x78));
+        call_ptr(c, callee::BE_LIBRARY_GET_INTERFACE, 0x0026_3f78)?;
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A1][0] = 0x1;
+        c.g[A0][0] = c.lw((r32(c, V1)).wrapping_add(0x78));
+        call_ptr(c, callee::BE_LIBRARY_GET_INTERFACE, 0x0026_3f8c)?;
+        c.g[V1][0] = 0x530000;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A2][0] = c.lw((r32(c, V1)).wrapping_add(0x4e58));
+        c.g[A1][0] = 0u64;
+        c.g[A0][0] = c.g[S0][0];
+        callee::BE_NEW_PLAYER_INT_SET_CHARACTER.call(c, 0x0026_3fa4)?;
+        c.g[V0][0] = c.lw((r32(c, S0)).wrapping_add(0xc));
+        c.g[A0][0] = c.lh((r32(c, V0)).wrapping_add(0x8));
+        c.g[V1][0] = c.lw((r32(c, V0)).wrapping_add(0xc));
+        let target = r32(c, V1);
+        c.g[A0][0] = sx((r32(c, S0)).wrapping_add(r32(c, A0)));
+        call_ptr(c, target, 0x0026_3fb8)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = 0u64;
+        callee::BE_BACKUP_PLAYER_SETUP.call(c, 0x0026_3fc4)?;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x204));
+        if c.g[V0][0] == 0u64 {
+            c.g[A1][0] = c.lw((r32(c, S2)).wrapping_add(0x8));
+        } else {
+            c.cycles += 3;
+            call_ptr(c, callee::GAME_COMM_DESTROY.addr, 0x0026_3fd8)?;
+            c.g[A1][0] = c.lw((r32(c, S2)).wrapping_add(0x8));
+        }
+        c.cycles += 14;
+        c.g[A0][0] = c.lw((r32(c, S2)).wrapping_add(0x4));
+        call_ptr(c, callee::C_GAME_COMM_CREATE, 0x0026_3fe4)?;
+        c.g[A1][0] = 0x480000;
+        c.g[A2][0] = 0x100;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xef0));
+        c.g[A3][0] = 0u64;
+        c.g[A0][0] = 0x8;
+        callee::EA_MEM_ALLOC_NAMED.call(c, 0x0026_3ffc)?;
+        c.g[A0][0] = c.g[V0][0];
+        callee::PRE_GAME_LOAD_SCREEN_CTOR.call(c, 0x0026_4004)?;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        c.g[A1][0] = c.g[V0][0];
+        callee::APP_SET_NEXT_STATE.call(c, 0x0026_4010)?;
+        c.sw(r32(c, S2), 0u64);
+        net_update_finish(c, frame, NetUpdateEnd::RestoreS0)
+    })
+}
+
+/// Post the abort notification node for `Net_AbortGameSetup`: fill the
+/// message in `s1` (code already in `v1`), allocate the list node and link
+/// it into the manager list at `s0 + 0xf0`, then reload `s0`. Shared by the
+/// arg-1 (0x10c) and arg-0 (0x112) tails, which differ only in the code.
+pub(crate) fn abort_post_node(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 16;
+    c.g[V0][0] = 0x0048_0000;
+    c.sw(r32(c, S1), c.g[V1][0]);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
+    c.g[A1][0] = 0x0048_0000;
+    c.sw((r32(c, S1)).wrapping_add(4), c.g[V0][0]);
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+    c.g[A0][0] = 0xc;
+    c.g[A2][0] = 0x2000_0000;
+    c.g[V0][0] = c.lw((r32(c, S0)).wrapping_add(0xf0));
+    c.g[A3][0] = 0u64;
+    c.sw((r32(c, SP)).wrapping_add(0x10), c.g[V0][0]);
+    callee::EA_MEM_ALLOC_NAMED.call(c, 0x0026_3ca4)?;
+    c.g[A1][0] = c.g[V0][0];
+    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(8));
+    if c.g[V0][0] != 0u64 {
+        c.sw((r32(c, A1)).wrapping_add(8), c.g[S1][0]);
+    }
+    c.cycles += 10;
+    c.g[V0][0] = c.lw((r32(c, SP)).wrapping_add(0x10));
+    c.sw(r32(c, A1), c.g[V0][0]);
+    c.g[V1][0] = c.lw((r32(c, V0)).wrapping_add(4));
+    c.sw((r32(c, A1)).wrapping_add(4), c.g[V1][0]);
+    c.g[A0][0] = c.lw((r32(c, V0)).wrapping_add(4));
+    c.sw(r32(c, A0), c.g[A1][0]);
+    c.g[V0][0] = c.lw((r32(c, SP)).wrapping_add(0x10));
+    c.sw((r32(c, V0)).wrapping_add(4), c.g[A1][0]);
+    c.sw(r32(c, SP), c.g[A1][0]);
+    frame.restore(c, S0, 0x40);
+    Ok(())
+}
+
+/// `void Net_AbortGameSetup(int* self, int arg)` (0x263ba8): drop the
+/// pending game-setup session: remove its comm channel and stop VoIP when
+/// the channel exists, destroy the setup manager, reset the lobby state,
+/// clear `self[0]`, and post the abort notice (0x10c for arg 1, 0x112 for
+/// arg 0; no notice for other args).
+pub fn net_abort_game_setup(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        c.g[V0][0] = c.lw(r32(c, S0));
+        let no_session = c.g[V0][0] == 0u64;
+        c.g[S1][0] = c.g[A1][0];
+        if !no_session {
+            c.cycles += 5;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x238));
+            c.g[A1][0] = c.lw((r32(c, S0)).wrapping_add(4));
+            callee::C_COMM_SYSTEM_HAS_CHANNEL.call(c, 0x0026_3bd4)?;
+            let missing = c.g[V0][0] == 0u64;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x238));
+            if !missing {
+                c.cycles += 6;
+                c.g[A1][0] = c.lw((r32(c, S0)).wrapping_add(4));
+                call_ptr(c, callee::C_COMM_SYSTEM_CLOSE_CHANNEL, 0x0026_3be4)?;
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x304));
+                callee::VOIP_MAN_DEACTIVATE.call(c, 0x0026_3bec)?;
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x304));
+                callee::VOIP_MAN_STOP.call(c, 0x0026_3bf4)?;
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2dc));
+        let no_setup = c.g[V0][0] == 0u64;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+        if !no_setup {
+            c.cycles += 3;
+            callee::SETUPMAN_DESTROY.call(c, 0x0026_3c08)?;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+        }
+        c.cycles += 5;
+        c.g[A1][0] = 0u64;
+        call_ptr(c, callee::LOBBY_MAN_CLEAR_CHALLENGE_LOCK, 0x0026_3c14)?;
+        c.g[V0][0] = 0x1;
+        let other = c.g[S1][0] != c.g[V0][0];
+        c.sw(r32(c, S0), 0u64);
+        if other {
+            c.cycles += 2;
+            let queued = c.g[S1][0] != 0u64;
+            frame.restore(c, S0, 0x40);
+            if !queued {
+                c.cycles += 9;
+                c.g[A1][0] = 0x0048_0000;
+                c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
+                c.g[A0][0] = 0x8;
+                c.g[A2][0] = 0x2000_0000;
+                c.g[A3][0] = 0u64;
+                callee::EA_MEM_ALLOC_NAMED.call(c, 0x0026_3c6c)?;
+                c.g[S1][0] = c.g[V0][0];
+                c.g[V1][0] = 0x112;
+                abort_post_node(c, frame)?;
+            }
+        } else {
+            c.cycles += 10;
+            c.g[A1][0] = 0x0048_0000;
+            c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
+            c.g[A0][0] = 0x8;
+            c.g[A2][0] = 0x2000_0000;
+            c.g[A3][0] = 0u64;
+            callee::EA_MEM_ALLOC_NAMED.call(c, 0x0026_3c3c)?;
+            c.g[S1][0] = c.g[V0][0];
+            c.g[V1][0] = 0x10c;
+            abort_post_node(c, frame)?;
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Call interface slot 1 (`+0xc` vtable, entry at `+8`/`+0xc`) of `iface`
+/// for `Net_StartGameSetup`, leaving the dance in v0/a0/v1 as generated.
+pub(crate) fn start_iface_call(c: &mut Cpu, iface: u64, ret: u32) -> crate::call::Flow {
+    c.g[V0][0] = c.lw((iface as u32).wrapping_add(0xc));
+    c.g[A0][0] = c.lh((r32(c, V0)).wrapping_add(0x8));
+    c.g[V1][0] = c.lw((r32(c, V0)).wrapping_add(0xc));
+    let target = r32(c, V1);
+    c.g[A0][0] = sx((iface as u32).wrapping_add(r32(c, A0)));
+    call_ptr(c, target, ret)
+}
+
+/// `void Net_StartGameSetup(self, ip, chan, a3, a4)` (0x2639e0): open the
+/// game-setup session: configure the race/player interfaces for two
+/// humans, publish the DSock channel record (port 0xe4a), format the peer
+/// IP and open the channel, start VoIP when the global flag allows, then
+/// mark the session live (`self[0] = 1`, timeout at `self + 0x10`).
+pub fn net_start_game_setup(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 96;
+        let frame = Frame::open(c, 0x180);
+        frame.save(c, S5, 0x120);
+        frame.save(c, S0, 0x170);
+        c.g[S5][0] = c.g[A0][0];
+        frame.save(c, S1, 0x160);
+        frame.save(c, S2, 0x150);
+        frame.save(c, S3, 0x140);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S4, 0x130);
+        c.g[S3][0] = c.g[A3][0];
+        frame.save(c, S6, 0x110);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save_ra(c, 0x100);
+        c.g[S6][0] = 0x1;
+        c.sw((r32(c, S5)).wrapping_add(0xc), c.g[T0][0]);
+        call_ptr(c, callee::BE_LIBRARY_GET_INSTANCE, 0x0026_3a20)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0x1;
+        call_ptr(c, callee::BE_LIBRARY_GET_INTERFACE, 0x0026_3a2c)?;
+        c.g[S1][0] = c.g[V0][0];
+        call_ptr(c, callee::BE_LIBRARY_GET_INSTANCE, 0x0026_3a34)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0u64;
+        call_ptr(c, callee::BE_LIBRARY_GET_INTERFACE, 0x0026_3a40)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A1][0] = 0x2;
+        c.g[A0][0] = c.g[S0][0];
+        callee::BE_NEW_RACE_INT_SET_NUM_HUMAN_PLAYERS.call(c, 0x0026_3a50)?;
+        start_iface_call(c, c.g[S0][0], 0x0026_3a64)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[S3][0];
+        c.g[A1][0] = 0u64;
+        callee::BE_NEW_PLAYER_INT_SET_PAD_INDEX_BY_SLOT.call(c, 0x0026_3a74)?;
+        c.g[A2][0] = 0u64;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = 0x1;
+        callee::BE_NEW_PLAYER_INT_SET_PAD_INDEX_BY_SLOT.call(c, 0x0026_3a84)?;
+        start_iface_call(c, c.g[S1][0], 0x0026_3a98)?;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        c.g[A1][0] = 0x7;
+        c.g[A0][0] = c.lw((r32(c, V0)).wrapping_add(0x78));
+        call_ptr(c, callee::BE_LIBRARY_GET_INTERFACE, 0x0026_3aa8)?;
+        c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x4b74));
+        c.g[V1][0] = 0x530000;
+        c.sw((r32(c, V1)).wrapping_add(0x4b30), c.g[S6][0]);
+        c.g[S1][0] = sx((r32(c, V1)).wrapping_add(0x4b30));
+        c.g[A0][0] = 0xe4a;
+        c.swc1(0, (r32(c, S1)).wrapping_add(0x10));
+        c.sw((r32(c, S1)).wrapping_add(0xc), c.g[A0][0]);
+        c.g[S0][0] = c.g[V0][0];
+        c.sw((r32(c, S1)).wrapping_add(0x8), c.g[S2][0]);
+        start_iface_call(c, c.g[S0][0], 0x0026_3ae0)?;
+        start_iface_call(c, c.g[S0][0], 0x0026_3af4)?;
+        c.sw((r32(c, S5)).wrapping_add(0x8), c.g[S2][0]);
+        c.g[A1][0] = 0x480000;
+        c.g[A3][0] = sx((r32(c, S4)) >> 16);
+        c.g[T0][0] = sx((r32(c, S4)) >> 8);
+        c.g[A0][0] = c.g[SP][0];
+        c.g[T1][0] = c.g[S4][0] & 0xff;
+        c.g[T0][0] = c.g[T0][0] & 0xff;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xee0));
+        c.g[A3][0] = c.g[A3][0] & 0xff;
+        c.g[A2][0] = sx((r32(c, S4)) >> 24);
+        call_ptr(c, callee::SPRINTF_6.addr, 0x0026_3b20)?;
+        c.g[A2][0] = c.lhu((r32(c, S1)).wrapping_add(0xc));
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x238));
+        c.g[A3][0] = c.g[S2][0];
+        call_ptr(c, callee::C_COMM_SYSTEM_CREATE_CHANNEL, 0x0026_3b34)?;
+        c.sw((r32(c, S5)).wrapping_add(0x4), c.g[V0][0]);
+        call_ptr(c, callee::BE_LIBRARY_GET_INSTANCE, 0x0026_3b3c)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0x4;
+        call_ptr(c, callee::BE_LIBRARY_GET_INTERFACE, 0x0026_3b48)?;
+        c.g[V1][0] = 0x530000;
+        c.g[V0][0] = c.lw((r32(c, V1)).wrapping_add(0x5610));
+        c.g[V0][0] = sx(((r32(c, V0)) as i32 >> 18) as u32);
+        c.g[V0][0] = c.g[V0][0] & 0x1;
+        let voip_off = c.g[V0][0] == 0u64;
+        c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x1dc));
+        if !voip_off {
+            c.cycles += 6;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x304));
+            c.g[A1][0] = c.g[S4][0];
+            callee::VOIP_MAN_START.call(c, 0x0026_3b6c)?;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x304));
+            callee::VOIP_MAN_ACTIVATE.call(c, 0x0026_3b74)?;
+            c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x1dc));
+        }
+        c.cycles += 12;
+        c.sw(r32(c, S5), c.g[S6][0]);
+        c.swc1(0, (r32(c, S5)).wrapping_add(0x10));
+        frame.restore(c, S0, 0x170);
+        frame.restore(c, S1, 0x160);
+        frame.restore(c, S2, 0x150);
+        frame.restore(c, S3, 0x140);
+        frame.restore(c, S4, 0x130);
+        frame.restore(c, S5, 0x120);
+        frame.restore(c, S6, 0x110);
+        frame.restore_ra(c, 0x100);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Net_DisconnectAll(void* self, void* arg)` (0x2636f0): tear down
+/// the network: make sure the buddy manager exists and is connected (create
+/// it, reconnect, or else `LobbyMan_Disconnect`), disconnect the buddy
+/// manager and the lobby, and when the comm system's state (`+0x20`) is not
+/// 1 disconnect it, post the 0x116 notice carrying `arg` unless `arg` is 0,
+/// and clear `self[0]`.
+pub fn net_disconnect_all(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x70);
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+        frame.save(c, S2, 0x40);
+        frame.save(c, S3, 0x30);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S0, 0x60);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S1, 0x50);
+        let have = c.g[V0][0] != 0u64;
+        frame.save_ra(c, 0x20);
+        if !have {
+            c.cycles += 2;
+            callee::BUDDY_MAN_CREATE.call(c, 0x0026_3720)?;
+        }
+        c.cycles += 4;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+        callee::BUDDY_MAN_IS_CONNECTED.call(c, 0x0026_3728)?;
+        let running = c.g[V0][0] != 0u64;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+        if !running {
+            c.cycles += 3;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+            callee::BUDDY_MAN_RECONNECT.call(c, 0x0026_3738)?;
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+        }
+        c.cycles += 2;
+        let pending = c.g[V0][0] != 0u64;
+        if !pending {
+            c.cycles += 2;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+            callee::LOBBY_MAN_DISCONNECT.call(c, 0x0026_374c)?;
+        }
+        c.cycles += 9;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+        callee::BUDDY_MAN_DISCONNECT.call(c, 0x0026_3754)?;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+        callee::LOBBY_MAN_DISCONNECT.call(c, 0x0026_375c)?;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x238));
+        c.g[V0][0] = c.lw((r32(c, A0)).wrapping_add(0x20));
+        c.g[V0][0] = c.g[V0][0] ^ 1;
+        let idle = c.g[V0][0] == 0u64;
+        frame.restore(c, S0, 0x60);
+        if !idle {
+            c.cycles += 4;
+            call_ptr(c, callee::C_COMM_SYSTEM_DISCONNECT, 0x0026_3778)?;
+            let no_arg = c.g[S2][0] == 0u64;
+            c.g[A1][0] = 0x0048_0000;
+            if !no_arg {
+                c.cycles += 25;
+                c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xed0));
+                c.g[A0][0] = 0xc;
+                c.g[A2][0] = 0x2000_0000;
+                c.g[A3][0] = 0u64;
+                callee::EA_MEM_ALLOC_NAMED.call(c, 0x0026_3798)?;
+                c.g[S1][0] = c.g[V0][0];
+                c.g[V1][0] = 0x0048_0000;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1250));
+                c.g[V0][0] = 0x116;
+                c.sw(r32(c, S1), c.g[V0][0]);
+                c.g[A1][0] = 0x0048_0000;
+                c.sw((r32(c, S1)).wrapping_add(4), c.g[V1][0]);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+                c.sw((r32(c, S1)).wrapping_add(8), c.g[S2][0]);
+                c.g[A0][0] = 0xc;
+                c.g[A2][0] = 0x2000_0000;
+                c.g[A3][0] = 0u64;
+                c.g[V0][0] = c.lw((r32(c, S0)).wrapping_add(0xf0));
+                c.sw((r32(c, SP)).wrapping_add(0x10), c.g[V0][0]);
+                callee::EA_MEM_ALLOC_NAMED.call(c, 0x0026_37d4)?;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(8));
+                if c.g[V0][0] != 0u64 {
+                    c.sw((r32(c, A1)).wrapping_add(8), c.g[S1][0]);
+                }
+                c.cycles += 9;
+                c.g[V0][0] = c.lw((r32(c, SP)).wrapping_add(0x10));
+                c.sw(r32(c, A1), c.g[V0][0]);
+                c.g[V1][0] = c.lw((r32(c, V0)).wrapping_add(4));
+                c.sw((r32(c, A1)).wrapping_add(4), c.g[V1][0]);
+                c.g[A0][0] = c.lw((r32(c, V0)).wrapping_add(4));
+                c.sw(r32(c, A0), c.g[A1][0]);
+                c.g[V0][0] = c.lw((r32(c, SP)).wrapping_add(0x10));
+                c.sw((r32(c, V0)).wrapping_add(4), c.g[A1][0]);
+                c.sw(r32(c, SP), c.g[A1][0]);
+            }
+            c.cycles += 2;
+            c.sw(r32(c, S3), 0u64);
+            frame.restore(c, S0, 0x60);
+        }
+        c.cycles += 6;
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void BuddyMan_DeleteMessage(BuddyMan* self, void* msg)` (0x263500):
+/// scan the message vector backwards from its finish (`+0xb0`) to its
+/// begin (`+0xac`); on finding `msg`, shift the tail down over it, drop
+/// the finish by one slot and release the message through its vtable.
+/// The backward scan delivers events at its head (0x263528) and carries
+/// on (no resume entry).
+pub fn buddy_man_delete_message(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x30);
+        c.cycles += 9;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw((r32(c, S0)).wrapping_add(0xb0));
+        c.g[V0][0] = c.lw((r32(c, S0)).wrapping_add(0xac));
+        if c.g[A0][0] == c.g[V0][0] {
+            frame.restore(c, S0, 0x20);
+        } else {
+            c.cycles += 1;
+            c.g[S1][0] = c.lw(r32(c, A0));
+            // The generated scan walks down from the finish slot; its
+            // back edge checks events at 0x263528.
+            'scan: loop {
+                c.cycles += 2;
+                if c.g[S1][0] != c.g[A1][0] {
+                    c.g[V0][0] = c.lw((r32(c, S0)).wrapping_add(0xac));
+                    c.cycles += 3;
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_sub(4));
+                    if c.g[A0][0] == c.g[V0][0] {
+                        c.cycles += 1;
+                        frame.restore(c, S0, 0x20);
+                        break 'scan;
+                    }
+                    c.g[S1][0] = c.lw(r32(c, A0));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0026_3528);
+                    }
+                    continue 'scan;
+                }
+                c.cycles += 4;
+                c.g[V0][0] = c.lw((r32(c, S0)).wrapping_add(0xb0));
+                c.g[V1][0] = sx((r32(c, A0)).wrapping_add(4));
+                let last = c.g[V1][0] == c.g[V0][0];
+                c.g[A1][0] = sx((r32(c, S0)).wrapping_add(0xa8));
+                if !last {
+                    c.cycles += 7;
+                    c.g[A2][0] = c.lw((r32(c, A1)).wrapping_add(8));
+                    c.g[A1][0] = c.g[V1][0];
+                    c.g[A2][0] = sx((r32(c, A2)).wrapping_sub(r32(c, V1)));
+                    c.g[A2][0] = sx(((r32(c, A2) as i32) >> 2) as u32);
+                    c.g[A2][0] = sx(r32(c, A2) << 2);
+                    call_ptr(c, callee::MEM_MOVE, 0x0026_3558)?;
+                    c.g[V0][0] = c.lw((r32(c, S0)).wrapping_add(0xb0));
+                }
+                c.cycles += 3;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(4));
+                let empty = c.g[S1][0] == 0u64;
+                c.sw((r32(c, S0)).wrapping_add(0xb0), c.g[V0][0]);
+                if empty {
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x20);
+                    break 'scan;
+                }
+                c.cycles += 8;
+                c.g[V0][0] = c.lw((r32(c, S1)).wrapping_add(0xc));
+                c.g[A1][0] = 0x3;
+                c.g[A0][0] = c.lh((r32(c, V0)).wrapping_add(8));
+                c.g[V1][0] = c.lw((r32(c, V0)).wrapping_add(0xc));
+                let target = r32(c, V1);
+                c.g[A0][0] = sx((r32(c, S1)).wrapping_add(r32(c, A0)));
+                call_ptr(c, target, 0x0026_3580)?;
+                frame.restore(c, S0, 0x20);
+                break 'scan;
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `Buddy* BuddyMan_GetChallengerByName(BuddyMan* self, char* name)`
+/// (0x263270): linear scan of the challenger vector (`+0xbc`..`+0xc0`)
+/// for the entry whose first word names `name` (`strcmp`);
+/// returns the entry or 0. Dispatcher-shaped like the original: the
+/// scan checks events at 0x2632ac (match) and 0x2632c8 (loop head).
+pub fn buddy_man_get_challenger_by_name(c: &mut Cpu) {
+    const ENTRY: u32 = 0x0026_3270;
+    const FOUND: u32 = 0x0026_32ac;
+    const HEAD: u32 = 0x0026_32c8;
+    const DONE: u32 = 0x0026_32ec;
+    let frame = Frame { size: 0x50 };
+    guest(c, |c| {
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                ENTRY => {
+                    c.cycles += 13;
+                    Frame::open(c, 0x50);
+                    frame.save(c, S2, 0x20);
+                    frame.save(c, S3, 0x10);
+                    c.g[S2][0] = c.g[A0][0];
+                    frame.save(c, S0, 0x40);
+                    frame.save(c, S1, 0x30);
+                    frame.save_ra(c, 0);
+                    c.g[A0][0] = c.lw((r32(c, S2)).wrapping_add(0xc0));
+                    c.g[V1][0] = c.lw((r32(c, S2)).wrapping_add(0xbc));
+                    c.g[V0][0] = sx(r32(c, A0).wrapping_sub(r32(c, V1)));
+                    c.g[V0][0] = sx(((r32(c, V0) as i32) >> 2) as u32);
+                    let empty = c.g[V0][0] == 0u64;
+                    c.g[S3][0] = c.g[A1][0];
+                    if empty {
+                        c.cycles += 2;
+                        c.g[V0][0] = 0u64;
+                        pc = DONE;
+                    } else {
+                        pc = 0x0026_32b4;
+                    }
+                }
+                0x0026_32b4 => {
+                    c.cycles += 3;
+                    c.g[S0][0] = c.g[V1][0];
+                    let at_end = c.g[S0][0] == c.g[A0][0];
+                    c.g[V0][0] = 0u64;
+                    if at_end {
+                        pc = DONE;
+                    } else {
+                        pc = 0x0026_32c0;
+                    }
+                }
+                0x0026_32c0 => {
+                    c.cycles += 2;
+                    c.g[S1][0] = c.lw(r32(c, S0));
+                    pc = HEAD;
+                }
+                HEAD => {
+                    c.cycles += 5;
+                    c.g[A1][0] = c.g[S3][0];
+                    c.g[A0][0] = c.lw(r32(c, S1));
+                    call_ptr(c, callee::STRCMP, 0x0026_32d4)?;
+                    let same = c.g[V0][0] == 0u64;
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+                    if same {
+                        if back_edge_unwinds(c, FOUND) {
+                            return Ok(());
+                        }
+                        pc = FOUND;
+                    } else {
+                        pc = 0x0026_32dc;
+                    }
+                }
+                FOUND => {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[S1][0];
+                    pc = DONE;
+                }
+                0x0026_32dc => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((r32(c, S2)).wrapping_add(0xc0));
+                    if c.g[S0][0] != c.g[V0][0] {
+                        c.g[S1][0] = c.lw(r32(c, S0));
+                        if back_edge_unwinds(c, HEAD) {
+                            return Ok(());
+                        }
+                        pc = HEAD;
+                    } else {
+                        pc = 0x0026_32e8;
+                    }
+                }
+                0x0026_32e8 => {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0u64;
+                    pc = DONE;
+                }
+                DONE => {
+                    c.cycles += 7;
+                    frame.restore(c, S0, 0x40);
+                    frame.restore(c, S1, 0x30);
+                    frame.restore(c, S2, 0x20);
+                    frame.restore(c, S3, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                other => {
+                    c.jump_out(other, ENTRY, 0x0026_3308);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `bool BuddyMan_HasChallengerStr(BuddyMan* self, char** name)`
+/// (0x2631e0): like `BuddyMan_GetChallengerByName`, but the name arrives
+/// indirected (`*name`) and the result is 1/0. Dispatcher-shaped: the
+/// scan checks events at 0x263218 (match) and 0x263230 (loop head).
+pub fn buddy_man_has_challenger_str(c: &mut Cpu) {
+    const ENTRY: u32 = 0x0026_31e0;
+    const FOUND: u32 = 0x0026_3218;
+    const HEAD: u32 = 0x0026_3230;
+    const DONE: u32 = 0x0026_3254;
+    let frame = Frame { size: 0x40 };
+    guest(c, |c| {
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                ENTRY => {
+                    c.cycles += 12;
+                    Frame::open(c, 0x40);
+                    frame.save(c, S1, 0x20);
+                    frame.save(c, S2, 0x10);
+                    c.g[S1][0] = c.g[A0][0];
+                    frame.save(c, S0, 0x30);
+                    frame.save_ra(c, 0);
+                    c.g[A0][0] = c.lw((r32(c, S1)).wrapping_add(0xc0));
+                    c.g[V1][0] = c.lw((r32(c, S1)).wrapping_add(0xbc));
+                    c.g[V0][0] = sx(r32(c, A0).wrapping_sub(r32(c, V1)));
+                    c.g[V0][0] = sx(((r32(c, V0) as i32) >> 2) as u32);
+                    let empty = c.g[V0][0] == 0u64;
+                    c.g[S2][0] = c.g[A1][0];
+                    if empty {
+                        c.cycles += 2;
+                        c.g[V0][0] = 0u64;
+                        pc = DONE;
+                    } else {
+                        pc = 0x0026_3220;
+                    }
+                }
+                0x0026_3220 => {
+                    c.cycles += 3;
+                    c.g[S0][0] = c.g[V1][0];
+                    let at_end = c.g[S0][0] == c.g[A0][0];
+                    c.g[V0][0] = 0u64;
+                    if at_end {
+                        pc = DONE;
+                    } else {
+                        pc = 0x0026_322c;
+                    }
+                }
+                0x0026_322c => {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw(r32(c, S0));
+                    pc = HEAD;
+                }
+                HEAD => {
+                    c.cycles += 5;
+                    c.g[A1][0] = c.lw(r32(c, S2));
+                    c.g[A0][0] = c.lw(r32(c, V0));
+                    call_ptr(c, callee::STRCMP, 0x0026_323c)?;
+                    let same = c.g[V0][0] == 0u64;
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+                    if same {
+                        if back_edge_unwinds(c, FOUND) {
+                            return Ok(());
+                        }
+                        pc = FOUND;
+                    } else {
+                        pc = 0x0026_3244;
+                    }
+                }
+                FOUND => {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x1;
+                    pc = DONE;
+                }
+                0x0026_3244 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((r32(c, S1)).wrapping_add(0xc0));
+                    if c.g[S0][0] != c.g[V0][0] {
+                        c.g[V0][0] = c.lw(r32(c, S0));
+                        if back_edge_unwinds(c, HEAD) {
+                            return Ok(());
+                        }
+                        pc = HEAD;
+                    } else {
+                        pc = 0x0026_3250;
+                    }
+                }
+                0x0026_3250 => {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0u64;
+                    pc = DONE;
+                }
+                DONE => {
+                    c.cycles += 6;
+                    frame.restore(c, S0, 0x30);
+                    frame.restore(c, S1, 0x20);
+                    frame.restore(c, S2, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                other => {
+                    c.jump_out(other, ENTRY, 0x0026_326c);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `void BuddyMan_RemoveChallenger(BuddyMan* self, char* name)`
+/// (0x263018): remove the named challenger: notify the lobby, erase the
+/// entry from the challenger vector (`+0xbc`..`+0xc0`) and release it;
+/// then, for a temporary buddy with no pending message, delete its roster
+/// entry through `BuddyApi_Del` on the buddy API at `self + 0xc8` (reply
+/// callback `BuddyMan_OnRosterRemoveReplyThunk`, timeout 600).
+pub fn buddy_man_remove_challenger(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x40);
+        c.cycles += 11;
+        frame.save(c, S0, 0x30);
+        frame.save(c, S2, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A1][0];
+        callee::BUDDY_MAN_FIND_CHALLENGER_INDEX.call(c, 0x0026_3038)?;
+        c.g[S1][0] = c.g[V0][0];
+        let missing = (c.g[S1][0] as i64) < 0;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+        // Set on the has-message path, which restores s0 early and skips
+        // the shared +1 charge at the epilogue.
+        let mut s0_restored = false;
+        if !missing {
+            c.cycles += 10;
+            c.g[A1][0] = c.g[S2][0];
+            call_ptr(c, callee::LOBBY_MAN_SEND_DECLINE.addr, 0x0026_304c)?;
+            c.g[V0][0] = c.lw((r32(c, S0)).wrapping_add(0xbc));
+            c.g[V1][0] = sx(r32(c, S1) << 2);
+            c.g[A0][0] = c.lw((r32(c, S0)).wrapping_add(0xc0));
+            c.g[A1][0] = sx((r32(c, S0)).wrapping_add(0xb8));
+            c.g[V0][0] = sx((r32(c, V0)).wrapping_add(r32(c, V1)));
+            c.g[V1][0] = sx((r32(c, V0)).wrapping_add(4));
+            let last = c.g[V1][0] == c.g[A0][0];
+            c.g[S1][0] = c.lw(r32(c, V0));
+            if !last {
+                c.cycles += 7;
+                c.g[A2][0] = c.lw((r32(c, A1)).wrapping_add(8));
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[V1][0];
+                c.g[A2][0] = sx((r32(c, A2)).wrapping_sub(r32(c, V1)));
+                c.g[A2][0] = sx(((r32(c, A2) as i32) >> 2) as u32);
+                c.g[A2][0] = sx(r32(c, A2) << 2);
+                call_ptr(c, callee::MEM_MOVE, 0x0026_3088)?;
+            }
+            c.cycles += 4;
+            c.g[V0][0] = c.lw((r32(c, S0)).wrapping_add(0xc0));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(4));
+            let empty = c.g[S1][0] == 0u64;
+            c.sw((r32(c, S0)).wrapping_add(0xc0), c.g[V0][0]);
+            if !empty {
+                c.cycles += 6;
+                c.g[V0][0] = c.lw((r32(c, S1)).wrapping_add(0x3c));
+                c.g[A1][0] = 0x3;
+                c.g[A0][0] = c.lh((r32(c, V0)).wrapping_add(8));
+                c.g[V1][0] = c.lw((r32(c, V0)).wrapping_add(0xc));
+                let target = r32(c, V1);
+                c.g[A0][0] = sx((r32(c, S1)).wrapping_add(r32(c, A0)));
+                call_ptr(c, target, 0x0026_30b0)?;
+            }
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S2][0];
+            callee::BUDDY_MAN_IS_TEMP.call(c, 0x0026_30bc)?;
+            let not_temp = c.g[V0][0] == 0u64;
+            c.g[A0][0] = c.g[S0][0];
+            if !not_temp {
+                c.cycles += 4;
+                c.g[A1][0] = c.g[S2][0];
+                callee::BUDDY_MAN_HAS_MESSAGE_FROM.call(c, 0x0026_30cc)?;
+                if c.g[V0][0] != 0u64 {
+                    frame.restore(c, S0, 0x30);
+                    s0_restored = true;
+                } else {
+                    c.cycles += 8;
+                    c.g[A1][0] = c.g[S2][0];
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::BUDDY_FIND_ROSTER_ENTRY.call(c, 0x0026_30e0)?;
+                    c.g[A1][0] = c.g[V0][0];
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::BUDDY_MAN_GET_ROSTER_ENTRY.call(c, 0x0026_30ec)?;
+                    let no_entry = c.g[V0][0] == 0u64;
+                    c.g[A2][0] = 0x270000;
+                    if !no_entry {
+                        c.cycles += 6;
+                        c.g[A0][0] = c.lw((r32(c, S0)).wrapping_add(0xc8));
+                        c.g[A1][0] = c.g[V0][0];
+                        c.g[A2][0] = sx((r32(c, A2)).wrapping_sub(0x7070));
+                        c.g[A3][0] = c.g[S0][0];
+                        c.g[T0][0] = 0x258;
+                        call_ptr(c, callee::BUDDY_API_DEL, 0x0026_310c)?;
+                    }
+                }
+            }
+        }
+        if !s0_restored {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -16212,6 +21431,2478 @@ pub(crate) mod tests {
                 c.bus.write32(head + 4, prev);
                 c.bus.write32(GAME_GP - 0x848, app);
                 c.bus.write32(app + 0x14, r.f32(0.1));
+            },
+        );
+    }
+    use crate::difftest::check_paths;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    use crate::difftest::events::Events;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+    use crate::difftest::fakes::prev_cell;
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    /// Write `s` and a terminating NUL at `at`.
+    pub(crate) fn put_cstr(c: &mut Cpu, at: u32, s: &[u8]) {
+        for (i, b) in s.iter().enumerate() {
+            c.bus.write8(at + i as u32, *b);
+        }
+        c.bus.write8(at + s.len() as u32, 0);
+    }
+
+    /// The engine heap, so `EA_MemAllocNamed`/`MEM_AllocInternal` have an arena.
+    pub(crate) fn race_report_heap_init(c: &mut Cpu) {
+        const MEM_HEAP: u32 = 0x004f_f250;
+        const RET: u64 = 0x0012_3450;
+        c.g[A0][0] = MEM_HEAP as u64;
+        c.g[A1][0] = (DATA + 0x4_0000) as u64;
+        c.g[A2][0] = 0x4_0000;
+        c.g[RA][0] = RET;
+        c.pc = 0x0031_ff60;
+        ee::s10::DLHeap_InitArena(c);
+        assert_eq!(c.pc, RET as u32, "DLHeap_InitArena did not return");
+    }
+
+    /// The size-class pool allocator's heads and free lists.
+    pub(crate) fn race_report_pool(c: &mut Cpu) {
+        const POOLS: [(u32, u32); 7] = [
+            (0x2a70, 0x800),
+            (0x2a60, 0x2000),
+            (0x2a6c, 0x6000),
+            (0x2a7c, 0x32000),
+            (0x2a84, 0x25800),
+            (0x2a78, 0x20000),
+            (0x2a68, 0x20000),
+        ];
+        c.bus.write32(GAME_GP.wrapping_add(0xdd8), 1);
+        for (i, (slot, head)) in POOLS.into_iter().enumerate() {
+            let i = i as u32;
+            let pl = DATA + 0x40_0000 + 0x4_0000 * i;
+            let base = DATA + 0x80_0000 + 0x4000 * i;
+            for n in 0..8u32 {
+                let node = base + 0x400 * n;
+                c.bus.write32(node, if n == 7 { 0 } else { node + 0x400 });
+            }
+            c.bus.write32(pl + head, base);
+            c.bus.write32(GAME_GP.wrapping_add(slot), pl);
+        }
+    }
+
+    // Branch steering is all seed arithmetic: `seed % 7` the *report==0 exit,
+    // `b = seed/7` residues for auth, the race+0x18/+0x9c flags, the table
+    // player order, the +0xa0 player and the zero timers; the +0xa4 player
+    // and the +0x3c timer from `seed / 17` and `seed / 19`; finishes seed % 3.
+    #[test]
+    fn lobby_man_send_race_report_matches() {
+        check(
+            ee::s06::f_0025fd50__generated,
+            lobby_man_send_race_report,
+            210,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x25_fd50, 0);
+                elf_image(c);
+                race_report_heap_init(c);
+                race_report_pool(c);
+                let b = seed / 7;
+                // BELibrary dummy, interface table and world.
+                c.bus.write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x3_0000);
+                c.bus.write32(GAME_GP.wrapping_sub(0x1efc), 0);
+                c.bus.write32(0x0053_08a8, DATA + 0x8000);
+                c.bus.write32(DATA + 0x8000 + 4, DATA + 0x8100);
+                c.bus.write16(DATA + 0x8100 + 8, 0);
+                c.bus.write32(DATA + 0x8100 + 0xc, FAKE);
+                let world = DATA + 0x9000;
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+                c.bus.write32(world + 0x78, DATA + 0x9100);
+                c.bus.write32(world + 0xc0, DATA + 0x9200);
+                c.bus
+                    .write32(DATA + 0x9200 + 0x9c, if (b / 5) % 2 == 0 { 0 } else { 1 });
+                // Race state and the static player-order table.
+                let race = DATA + 0x2000;
+                c.bus.write32(GAME_GP.wrapping_sub(0x204), race);
+                let f18 = (b / 2) % 3;
+                c.bus.write32(race + 0x18, if f18 == 0 { 0 } else { 1 });
+                c.bus.write32(race + 0x9c, if f18 == 2 { 1 } else { 0 });
+                c.bus.write32(
+                    race + 0xa0,
+                    if (b / 12) % 2 == 0 { 0 } else { DATA + 0x4000 },
+                );
+                c.bus.write32(
+                    race + 0xa4,
+                    if (seed / 17) % 2 == 0 {
+                        0
+                    } else {
+                        DATA + 0x4100
+                    },
+                );
+                c.bus
+                    .write32(race + 0x34, if (b / 3) % 2 == 0 { 0 } else { 100 });
+                c.bus
+                    .write32(race + 0x38, if (b / 5) % 2 == 0 { 0 } else { 250 });
+                c.bus
+                    .write32(race + 0x3c, if (seed / 19) % 2 == 0 { 0 } else { 400 });
+                c.bus.write32(race + 0x10, (seed / 11) % 2);
+                c.bus.write32(race + 0x14, (seed / 13) % 2);
+                for off in [0xcu32, 0x1c, 0x20, 0x24, 0x28, 0x30, 0xb4] {
+                    c.bus.write32(race + off, r.next_u32());
+                }
+                c.bus
+                    .write32(0x0053_4b38, if (b / 6) % 2 == 0 { 0 } else { 1 });
+                c.bus.write32(0x0053_4b30 + 0x328, r.next_u32());
+                c.bus.write32(0x0053_4b30 + 0x32c, r.next_u32());
+                // Track id / desync byte and the finish-indexed tables.
+                let track = [0u32, 14, 15, 16][((b / 4) % 4) as usize];
+                c.bus.write32(0x0053_5c08, track);
+                c.bus
+                    .write8(0x0053_5c12, if (b / 8) % 2 == 0 { 4 } else { 7 });
+                for i in 0..4u32 {
+                    c.bus
+                        .write32(0x0053_66a8 + 4 * i, if (seed + i) % 2 == 0 { 0 } else { 1 });
+                    c.bus.write32(0x0053_6640 + 4 * i, r.next_u32());
+                }
+                // Report object, names and the lobby list head.
+                let report = DATA + 0x1000;
+                c.bus
+                    .write32(report, if seed % 7 == 0 { 0 } else { DATA + 0x6000 });
+                c.bus.write32(report + 0x54, 0);
+                c.bus.write32(report + 0xf0, DATA + 0x5000);
+                c.bus.write32(DATA + 0x5000 + 4, DATA + 0x5100);
+                c.bus.write32(report + 0x90, DATA + 0x3000);
+                c.bus.write32(report + 0x94, DATA + 0x3100);
+                c.bus.write32(report + 0x9c, DATA + 0x3200);
+                c.bus.write32(report + 0xa0, r.next_u32());
+                put_cstr(c, DATA + 0x3000, b"rider zero");
+                put_cstr(c, DATA + 0x3100, b"rider one");
+                put_cstr(c, DATA + 0x3200, b"auth-str");
+                // Two rider stat blocks: payload ints, seed-derived edge floats.
+                const EDGE: [u32; 10] = [
+                    0,
+                    0x8000_0000,
+                    0x3f80_0000,
+                    0xbf80_0000,
+                    0x7f80_0000,
+                    0x7fc0_0000,
+                    0x4b00_0000,
+                    0xcf00_0000,
+                    0x42c8_0000,
+                    0x0000_0001,
+                ];
+                for (si, stats) in [DATA + 0x7000, DATA + 0x7200].into_iter().enumerate() {
+                    for off in RIDER_STATS_INT_OFFS
+                        .iter()
+                        .chain(RIDER_STATS_TAIL_OFFS.iter())
+                    {
+                        c.bus.write32(stats + off, r.next_u32());
+                    }
+                    for (i, &off) in RIDER_STATS_FLOAT_OFFS.iter().enumerate() {
+                        c.bus
+                            .write32(stats + off, EDGE[(seed as usize + si * 3 + i) % 10]);
+                    }
+                }
+                c.g[A0][0] = sx(report);
+                c.g[A1][0] = if b % 2 == 0 { 0 } else { sx(DATA + 0x3300) };
+                c.g[A2][0] = (seed % 3) as u64;
+                c.g[A3][0] = ((seed / 3) % 3) as u64;
+                c.g[T0][0] = sx(DATA + 0x7000);
+                c.g[T1][0] = sx(DATA + 0x7200);
+                c.pc = 0x0025_fd50;
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_man_static_init_matches() {
+        check_paths(
+            ee::s07::f_00267468__generated,
+            lobby_man_static_init,
+            300,
+            &[23, 25, 583],
+            &|c, seed| {
+                let mut r = Rng(0x2674_6800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0026_7468;
+                c.g[GP][0] = sx(GAME_GP);
+                // Steering from seed arithmetic only: seed % 3 picks the guard outcome.
+                match seed % 3 {
+                    0 => {
+                        c.g[A1][0] = 0x1234 + seed as u64; // != 0xffff: skip
+                        c.g[A0][0] = 1;
+                    }
+                    1 => {
+                        c.g[A1][0] = 0xffff;
+                        c.g[A0][0] = 0; // zero first arg: skip
+                    }
+                    _ => {
+                        c.g[A1][0] = 0xffff;
+                        c.g[A0][0] = 1; // run the full init
+                    }
+                }
+                // Junk in the float-constant pool below gp and in the
+                // destination tables, so every load/store is observable.
+                fill(c, &mut r, GAME_GP - 0x4b70, 0x100);
+                fill(c, &mut r, 0x004d_2c00, 0x100);
+                fill(c, &mut r, GAME_GP + 0x1fe8, 0x24);
+            },
+        );
+    }
+
+    pub(crate) const MEM_FAKES_CTRL: u32 = DATA + 0xe_0000;
+
+    pub(crate) const MEM_FAKES_MAGIC: u32 = 0x0c40_2001;
+
+    pub(crate) fn mem_fake_alloc(c: &mut Cpu) {
+        if c.bus.read32(MEM_FAKES_CTRL) != MEM_FAKES_MAGIC {
+            return fall_back(c, prev_cell(mem_fake_alloc), ee::s10::f_00317d70__generated);
+        }
+        let n = c.bus.read32(MEM_FAKES_CTRL + 4);
+        c.bus.write32(MEM_FAKES_CTRL + 4, n + 1);
+        c.g[V0][0] = c.bus.read32(MEM_FAKES_CTRL + 0x10 + 4 * (n & 7)) as u64;
+        c.cycles += 11;
+        ret(c);
+    }
+
+    pub(crate) fn mem_fake_strcpy(c: &mut Cpu) {
+        if c.bus.read32(MEM_FAKES_CTRL) != MEM_FAKES_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(mem_fake_strcpy),
+                ee::s15::f_004166f4__generated,
+            );
+        }
+        let dst = c.g[A0][0] as u32;
+        let src = c.g[A1][0] as u32;
+        for i in 0..0x1000u32 {
+            let b = c.bus.read8(src.wrapping_add(i));
+            c.bus.write8(dst.wrapping_add(i), b);
+            if b == 0 {
+                break;
+            }
+        }
+        c.g[V0][0] = c.g[A0][0];
+        c.cycles += 5;
+        ret(c);
+    }
+
+    pub(crate) fn mem_fake_delete(c: &mut Cpu) {
+        if c.bus.read32(MEM_FAKES_CTRL) != MEM_FAKES_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(mem_fake_delete),
+                ee::s10::f_00317e50__generated,
+            );
+        }
+        c.cycles += 3;
+        ret(c);
+    }
+
+    pub(crate) fn mem_fakes_hook() {
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            mem_fake_alloc,
+            prev_cell(mem_fake_alloc),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_004166F4),
+            mem_fake_strcpy,
+            prev_cell(mem_fake_strcpy),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            mem_fake_delete,
+            prev_cell(mem_fake_delete),
+        );
+    }
+
+    #[test]
+    fn net_event10d_clone_matches() {
+        mem_fakes_hook();
+        check(
+            ee::s07::f_002687c0__generated,
+            net_event10d_clone,
+            60,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2687c0, 0);
+                c.pc = 0x0026_87c0;
+                c.bus.write32(MEM_FAKES_CTRL, MEM_FAKES_MAGIC);
+                c.bus.write32(MEM_FAKES_CTRL + 4, 0);
+                c.bus.write32(MEM_FAKES_CTRL + 0x10, DATA + 0x4000);
+                let self_ = DATA;
+                c.g[A0][0] = self_ as u64;
+                for (off, base) in [(0x8u32, b'a'), (0x28, b'm'), (0x48, b'z')] {
+                    for i in 0..8u32 {
+                        c.bus
+                            .write8(self_ + off + i, base + ((seed + i) % 20) as u8);
+                    }
+                    c.bus.write8(self_ + off + 8, 0);
+                }
+                c.bus.write32(self_ + 0x148, 0x1111 * seed);
+                c.bus.write32(self_ + 0x14c, 0x2222 * seed);
+                for i in 0..0x14u32 {
+                    c.bus.write8(self_ + 0x150 + i, (seed + i) as u8);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_man_list_clear_matches() {
+        mem_fakes_hook();
+        check(
+            ee::s07::f_002670c8__generated,
+            lobby_man_list_clear,
+            60,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2670c8, 0);
+                c.pc = 0x0026_70c8;
+                c.bus.write32(MEM_FAKES_CTRL, MEM_FAKES_MAGIC);
+                let self_ = DATA;
+                let head = DATA + 0x100;
+                let n1 = DATA + 0x200;
+                let n2 = DATA + 0x300;
+                c.g[A0][0] = self_ as u64;
+                c.bus.write32(self_ + LOBBY_LIST_HEAD, head);
+                match seed % 3 {
+                    0 => {
+                        c.bus.write32(head, head);
+                        c.bus.write32(head + 4, head);
+                    }
+                    1 => {
+                        c.bus.write32(head, n1);
+                        c.bus.write32(head + 4, n1);
+                        c.bus.write32(n1, head);
+                        c.bus.write32(n1 + 4, head);
+                    }
+                    _ => {
+                        c.bus.write32(head, n1);
+                        c.bus.write32(head + 4, n2);
+                        c.bus.write32(n1, n2);
+                        c.bus.write32(n1 + 4, head);
+                        c.bus.write32(n2, head);
+                        c.bus.write32(n2 + 4, n1);
+                    }
+                }
+            },
+        );
+    }
+
+    /// Four nodes, so the loop head 0x2670f0 meets the due event.
+    #[test]
+    fn lobby_man_list_clear_events() {
+        mem_fakes_hook();
+        driven!(gen, ee::s07::f_002670c8__generated);
+        driven!(hand, lobby_man_list_clear);
+        check_events(gen, hand, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x2670c9, 0);
+            c.bus.write32(MEM_FAKES_CTRL, MEM_FAKES_MAGIC);
+            let self_ = DATA;
+            let head = DATA + 0x100;
+            c.g[A0][0] = self_ as u64;
+            c.bus.write32(self_ + LOBBY_LIST_HEAD, head);
+            let nodes = [head, DATA + 0x200, DATA + 0x300, DATA + 0x400, DATA + 0x500];
+            for (i, &n) in nodes.iter().enumerate() {
+                c.bus.write32(n, nodes[(i + 1) % 5]);
+                c.bus.write32(n + 4, nodes[(i + 4) % 5]);
+            }
+            schedule(c, &mut r, seed, 0x0026_70c8)
+        });
+    }
+
+    #[test]
+    fn c_voip_man_debug_printf_stub_matches() {
+        check(
+            ee::s07::f_00266fc0__generated,
+            c_voip_man_debug_printf_stub,
+            30,
+            &|c, seed| {
+                let mut r = Rng(0x266fc0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0026_6fc0;
+                c.g[A0][0] = (DATA + 0x100 * (seed % 8)) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn c_usb_keyboard_dtor_matches() {
+        mem_fakes_hook();
+        check(
+            ee::s07::f_00266850__generated,
+            c_usb_keyboard_dtor,
+            80,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x266850, 0);
+                c.pc = 0x0026_6850;
+                c.bus.write32(MEM_FAKES_CTRL, MEM_FAKES_MAGIC);
+                let self_ = DATA + 0x1000;
+                c.g[A0][0] = self_ as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+                // `seed / 4 % 2`: opened, so `UsbKb_Shutdown` runs; its two
+                // module ids are -1 (nothing loaded to unload).
+                let opened = seed / 4 % 2 == 1;
+                c.bus.write32(self_ + usb_kb::ACTIVE, opened as u32);
+                c.bus.write32(0x0052_5f80, u32::MAX);
+                c.bus.write32(0x0052_5f84, u32::MAX);
+            },
+        );
+    }
+
+    pub(crate) fn mem_fake_new(c: &mut Cpu) {
+        if c.bus.read32(MEM_FAKES_CTRL) != MEM_FAKES_MAGIC {
+            return fall_back(c, prev_cell(mem_fake_new), ee::s10::f_00317e30__generated);
+        }
+        c.g[V0][0] = c.bus.read32(MEM_FAKES_CTRL + 0x18) as u64;
+        c.cycles += 7;
+        ret(c);
+    }
+
+    pub(crate) fn mem_fake_free(c: &mut Cpu) {
+        if c.bus.read32(MEM_FAKES_CTRL) != MEM_FAKES_MAGIC {
+            return fall_back(c, prev_cell(mem_fake_free), ee::s10::f_00317e98__generated);
+        }
+        c.cycles += 3;
+        ret(c);
+    }
+
+    pub(crate) fn mem_fakes_hook_with_new() {
+        mem_fakes_hook();
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+            mem_fake_new,
+            prev_cell(mem_fake_new),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317E98),
+            mem_fake_free,
+            prev_cell(mem_fake_free),
+        );
+    }
+
+    pub(crate) fn buddy_vec_fixture(c: &mut Cpu, seed: u32, entry: u32) {
+        let _r = machine(c, seed, entry as u64, 0);
+        c.pc = entry;
+        c.bus.write32(MEM_FAKES_CTRL, MEM_FAKES_MAGIC);
+        c.bus.write32(MEM_FAKES_CTRL + 4, 0);
+        c.bus.write32(MEM_FAKES_CTRL + 0x10, DATA + 0x4000);
+        c.bus.write32(MEM_FAKES_CTRL + 0x18, DATA + 0x5000);
+        let self_ = DATA;
+        let buf = DATA + 0x1000;
+        let xref = DATA + 0x2000;
+        c.bus.write32(xref, DATA + 0x3000);
+        c.g[A0][0] = self_ as u64;
+        c.g[A2][0] = xref as u64;
+        for i in 0..8u32 {
+            c.bus.write32(buf + 4 * i, 0x1000 + i);
+        }
+        match seed % 6 {
+            0 => {
+                // not full, insert mid (3 elements; tail copy is 4 bytes)
+                c.bus.write32(self_ + BUDDY_VEC_FIRST, buf);
+                c.bus.write32(self_ + BUDDY_VEC_LAST, buf + 12);
+                c.bus.write32(self_ + BUDDY_VEC_CAP, buf + 16);
+                c.g[A1][0] = (buf + 4) as u64;
+            }
+            1 => {
+                // not full, insert at the beginning (1 element; tail copy 0)
+                c.bus.write32(self_ + BUDDY_VEC_FIRST, buf);
+                c.bus.write32(self_ + BUDDY_VEC_LAST, buf + 4);
+                c.bus.write32(self_ + BUDDY_VEC_CAP, buf + 16);
+                c.g[A1][0] = buf as u64;
+            }
+            2 => {
+                // full, count 1 -> operator-new grow, delete-old
+                c.bus.write32(self_ + BUDDY_VEC_FIRST, buf);
+                c.bus.write32(self_ + BUDDY_VEC_LAST, buf + 4);
+                c.bus.write32(self_ + BUDDY_VEC_CAP, buf + 4);
+                c.g[A1][0] = buf as u64;
+            }
+            3 => {
+                // full, count 2 -> operator-new grow, free-old
+                c.bus.write32(self_ + BUDDY_VEC_FIRST, buf);
+                c.bus.write32(self_ + BUDDY_VEC_LAST, buf + 8);
+                c.bus.write32(self_ + BUDDY_VEC_CAP, buf + 8);
+                c.g[A1][0] = (buf + 4) as u64;
+            }
+            4 => {
+                // full, count 0 (non-null) -> named-alloc grow, free-old
+                c.bus.write32(self_ + BUDDY_VEC_FIRST, buf);
+                c.bus.write32(self_ + BUDDY_VEC_LAST, buf);
+                c.bus.write32(self_ + BUDDY_VEC_CAP, buf);
+                c.g[A1][0] = buf as u64;
+            }
+            _ => {
+                // full, empty null vector -> named-alloc grow, no free
+                c.bus.write32(self_ + BUDDY_VEC_FIRST, 0);
+                c.bus.write32(self_ + BUDDY_VEC_LAST, 0);
+                c.bus.write32(self_ + BUDDY_VEC_CAP, 0);
+                c.g[A1][0] = 0;
+            }
+        }
+    }
+
+    #[test]
+    fn buddy_man_message_vector_insert_matches() {
+        mem_fakes_hook_with_new();
+        check(
+            ee::s07::f_00267128__generated,
+            buddy_man_message_vector_insert,
+            60,
+            &|c, seed| {
+                buddy_vec_fixture(c, seed, 0x267128);
+            },
+        );
+    }
+
+    #[test]
+    fn buddy_man_challenger_vector_insert_matches() {
+        mem_fakes_hook_with_new();
+        check(
+            ee::s07::f_002672c8__generated,
+            buddy_man_challenger_vector_insert,
+            60,
+            &|c, seed| {
+                buddy_vec_fixture(c, seed, 0x2672c8);
+            },
+        );
+    }
+
+    /// McMapError's operation word (`gp+MC_MODE_GP`) and error code (`a0`);
+    /// its four jump tables (0x480fe0, 0x481020, 0x481040, 0x481060) come from
+    /// the game image.
+    pub(crate) fn mc_map_fixture(c: &mut Cpu, seed: u32, mode: u32, err: i32) {
+        let _r = machine(c, seed, 0x266578, 0);
+        elf_image(c);
+        c.pc = 0x0026_6578;
+        c.bus.write32(GAME_GP.wrapping_add(MC_MODE_GP as u32), mode);
+        c.g[A0][0] = err as i64 as u64;
+    }
+
+    /// Mode 0-15 (0 and 15 leave the table's range) crossed with errors -8..2:
+    /// every arm of the four tables, every return and every back edge.
+    #[test]
+    fn c_shared_login_man_mc_map_error_matches() {
+        // Every cycle total the cross produces (the arms share some).
+        const PATHS: &[u64] = &[8, 15, 17, 19, 20, 21, 22, 23, 24, 25];
+        check_paths(
+            ee::s07::f_00266578__generated,
+            c_shared_login_man_mc_map_error,
+            176,
+            PATHS,
+            &|c, seed| {
+                mc_map_fixture(c, seed, seed % 16, (seed / 16 % 11) as i32 - 8);
+            },
+        );
+    }
+
+    /// One `(mode, err)` pair per resume head, so every event mode meets
+    /// every head.
+    #[test]
+    fn c_shared_login_man_mc_map_error_events() {
+        const HEADS: [(u32, i32); 7] = [
+            (8, -4),  // 0x2665c8
+            (8, 0),   // 0x2665dc
+            (7, 0),   // 0x2665b8
+            (6, 0),   // 0x2665b4
+            (6, -5),  // 0x26660c
+            (11, -3), // 0x266658
+            (12, 0),  // 0x266660
+        ];
+        driven!(gen, ee::s07::f_00266578__generated);
+        driven!(hand, c_shared_login_man_mc_map_error);
+        check_events(gen, hand, 420, &|c, seed| {
+            let (mode, err) = HEADS[(seed / 3 % 7) as usize];
+            mc_map_fixture(c, seed, mode, err);
+            let mut r = Rng(0x266578 ^ seed as u64);
+            schedule(c, &mut r, seed, 0x0026_6578)
+        });
+    }
+
+    /// `RiderIface_HasVisited` (0x1406c0): returns 0 in 2 cycles.
+    pub(crate) const RIDER_IFACE_HAS_VISITED: u32 = 0x0014_06c0;
+    /// `SLoginMc_IsAvailable` (0x3fb278): returns 1 in 2 cycles.
+    pub(crate) const SLOGIN_MC_IS_AVAILABLE: u32 = 0x003f_b278;
+
+    /// A shared-login card object at `gp+MC_CARD_GP` (port 0) with its
+    /// vtable; `slots` gives `(slot, function)` pairs (delta 0). Returns the
+    /// card. The game image supplies the jump tables.
+    pub(crate) fn shared_login_card(c: &mut Cpu, slots: &[(u32, u32)]) -> u32 {
+        elf_image(c);
+        let card = DATA + 0x1000;
+        let vt = DATA + 0x2000;
+        c.bus.write32(GAME_GP.wrapping_add(MC_CARD_GP as u32), card);
+        c.bus.write32(card, vt);
+        c.bus.write32(card + 0xc, 0);
+        for &(slot, f) in slots {
+            c.bus.write16(vt + slot, 0);
+            c.bus.write32(vt + slot + 4, f);
+        }
+        card
+    }
+
+    /// McPoll's operation words: 10, 3, 15 and 16 end before the card is
+    /// asked; 20 is past the table; the rest index the table at 0x480fa0
+    /// (1 retry, 2 directory scan, 5/6/14 saved result, 9 vtable slot 0xa0,
+    /// 0/4/11 nothing).
+    pub(crate) const MC_POLL_MODES: [u32; 14] = [10, 3, 15, 16, 20, 0, 1, 2, 4, 5, 6, 9, 11, 14];
+
+    /// `cSharedLoginMan_McPoll`: mode `MC_POLL_MODES[seed % 14]`; by
+    /// `seed / 14 % 5`: 0 the card answers (slot 0x58 is a fake, non-zero),
+    /// 1 port error -3, 2 port error word 1 (reported as -10), 3 no error with
+    /// no retries and no directory entries, 4 no error with two retries and
+    /// three entries.
+    pub(crate) fn mc_poll_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x266358, 0);
+        c.pc = 0x0026_6358;
+        let class = seed / 14 % 5;
+        let answer = if class == 0 {
+            FAKE
+        } else {
+            RIDER_IFACE_HAS_VISITED
+        };
+        let card = shared_login_card(c, &[(0x58, answer), (0xa0, FAKE + 0x10)]);
+        let error: i32 = match class {
+            1 => -3,
+            2 => 1,
+            _ => 0,
+        };
+        c.bus.write32(card + 0x184, error as u32);
+        let more = class == 4;
+        c.bus.write32(card + 0x54, if more { 3 } else { 0 });
+        c.bus.write32(
+            GAME_GP.wrapping_add(MC_RETRIES_GP as u32),
+            if more { 2 } else { 0 },
+        );
+        c.bus.write32(
+            GAME_GP.wrapping_add(MC_SAVED_RESULT_GP as u32),
+            r.next_u32(),
+        );
+        c.bus.write32(
+            GAME_GP.wrapping_add(MC_MODE_GP as u32),
+            MC_POLL_MODES[(seed % 14) as usize],
+        );
+        c.g[A0][0] = DATA as u64;
+        c.g[A1][0] = (DATA + 0x800) as u64;
+    }
+
+    #[test]
+    fn c_shared_login_man_mc_poll_matches() {
+        check(
+            ee::s07::f_00266358__generated,
+            c_shared_login_man_mc_poll,
+            70,
+            &|c, seed| mc_poll_fixture(c, seed),
+        );
+    }
+
+    /// `cSharedLoginMan_Update`: state `seed % 24` through the game's table at
+    /// 0x480f40 (23 is out of range); by `seed / 24 % 2` the card is idle
+    /// (slot 0x58 returns 0, so the stage runs) or busy (returns 1); by
+    /// `seed / 48 % 2` the SLogin object has finished (`+0xd0 == 4`, so
+    /// `SLogin_Poll` returns 0 with status 0) or runs its callback (a fake,
+    /// non-zero), and `gp+0x850` is 0 or 1. The card's other slots (0x18,
+    /// 0x28, 0x40) return 0.
+    pub(crate) fn shared_login_update_fixture(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x265a68, 0);
+        c.pc = 0x0026_5a68;
+        let busy = if seed / 24 % 2 == 1 {
+            SLOGIN_MC_IS_AVAILABLE
+        } else {
+            RIDER_IFACE_HAS_VISITED
+        };
+        shared_login_card(
+            c,
+            &[
+                (0x18, RIDER_IFACE_HAS_VISITED),
+                (0x28, RIDER_IFACE_HAS_VISITED),
+                (0x40, RIDER_IFACE_HAS_VISITED),
+                (0x58, busy),
+            ],
+        );
+        let finished = seed / 48 % 2 == 0;
+        let slogin = DATA + 0x3000;
+        c.bus.write32(GAME_GP.wrapping_add(0x1ad4), slogin);
+        c.bus.write32(slogin + 0xd0, if finished { 4 } else { 0 });
+        c.bus.write32(slogin + 0xd4, FAKE + 0x20);
+        c.bus.write32(
+            GAME_GP.wrapping_add(MC_SAVED_RESULT_GP as u32),
+            seed / 48 % 2,
+        );
+        let self_ = DATA;
+        c.g[A0][0] = self_ as u64;
+        c.bus.write32(self_, seed % 24);
+        c.bus.write32(self_ + 4, 0);
+    }
+
+    #[test]
+    fn c_shared_login_man_update_matches() {
+        // Every cycle total the fixture produces: each table target with both card answers.
+        const PATHS: &[u64] = &[
+            20, 27, 36, 41, 42, 45, 47, 48, 54, 74, 128, 133, 147, 156, 187, 201,
+        ];
+        check_paths(
+            ee::s07::f_00265a68__generated,
+            c_shared_login_man_update,
+            96,
+            PATHS,
+            &|c, seed| shared_login_update_fixture(c, seed),
+        );
+    }
+
+    #[test]
+    fn c_setup_man_send_quit_matches() {
+        mem_fakes_hook();
+        check(
+            ee::s07::f_00265768__generated,
+            c_setup_man_send_quit,
+            60,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x265768, 0);
+                c.pc = 0x0026_5768;
+                c.bus.write32(MEM_FAKES_CTRL, MEM_FAKES_MAGIC);
+                c.bus.write32(MEM_FAKES_CTRL + 4, 0);
+                c.bus.write32(MEM_FAKES_CTRL + 0x10, DATA + 0x800);
+                c.bus.write32(MEM_FAKES_CTRL + 0x14, DATA + 0x900);
+                c.bus.write32(GAME_GP - 0x1f04, DATA + 0x9000);
+                c.bus.write32(GAME_GP - 0x848, DATA + 0x9100);
+                let self_ = DATA;
+                c.g[A0][0] = self_ as u64;
+                let lobby = DATA + 0x500;
+                c.bus.write32(GAME_GP - 0xc8, lobby);
+                c.bus.write32(lobby, 0);
+                let head = DATA + 0x600;
+                c.bus.write32(lobby + 0xf0, head);
+                c.bus.write32(head + 4, DATA + 0x700);
+                c.bus.write32(self_ + 0x90, 0);
+                c.bus.write32(self_ + 0x94, 0);
+                c.bus.write32(self_ + 0x120, 0);
+                let comm = DATA + 0xa00;
+                c.bus.write32(GAME_GP - 0x238, comm);
+                c.bus.write32(comm, DATA + 0xa100);
+                c.bus.write32(DATA + 0xa100 + 8, DATA + 0xa200);
+                c.bus.write16(DATA + 0xa200 + 0x40, 0);
+                c.bus.write32(DATA + 0xa200 + 0x44, FAKE);
+                match seed % 3 {
+                    0 => {
+                        c.bus.write32(self_, 10);
+                        c.g[A1][0] = 0x42;
+                    }
+                    1 => {
+                        c.bus.write32(self_, 5);
+                        c.g[A1][0] = 0x42;
+                    }
+                    _ => {
+                        c.bus.write32(self_, 5);
+                        c.g[A1][0] = SETUP_QUIT_ID as u64;
+                    }
+                }
+            },
+        );
+    }
+
+    /// Gate and steering words of the `cSetupMan_Update` fakes.
+    pub(crate) const SETUP_MAN_UPDATE_CTRL: u32 = DATA + 0xf_0000;
+
+    pub(crate) const SETUP_MAN_UPDATE_MAGIC: u32 = 0x0c40_32b8;
+
+    pub(crate) const SETUP_MAN_UPDATE_POP_PRESENT: u32 = SETUP_MAN_UPDATE_CTRL + 0x04;
+
+    pub(crate) const SETUP_MAN_UPDATE_MSG: u32 = SETUP_MAN_UPDATE_CTRL + 0x08;
+
+    pub(crate) const SETUP_MAN_UPDATE_HAS: u32 = SETUP_MAN_UPDATE_CTRL + 0x18;
+
+    /// `BuddyMan_IsConnected` answers, one bit per call.
+    pub(crate) const SETUP_MAN_UPDATE_CONNECTED: u32 = SETUP_MAN_UPDATE_CTRL + 0x1c;
+
+    pub(crate) const SETUP_MAN_UPDATE_CONNECTED_CALLS: u32 = SETUP_MAN_UPDATE_CTRL + 0x20;
+
+    /// What `BuddyMan_Create` stores at `gp+BUDDY_MAN_GP` (0: it fails).
+    pub(crate) const SETUP_MAN_UPDATE_CREATED: u32 = SETUP_MAN_UPDATE_CTRL + 0x30;
+
+    pub(crate) const SETUP_MAN_UPDATE_UNWIND_AT: u32 = SETUP_MAN_UPDATE_CTRL + 0x24;
+
+    pub(crate) const SETUP_MAN_UPDATE_FAKE_COUNT: u32 = SETUP_MAN_UPDATE_CTRL + 0x28;
+
+    pub(crate) const SETUP_MAN_UPDATE_ALLOC_COUNT: u32 = SETUP_MAN_UPDATE_CTRL + 0x2c;
+
+    /// Count one fake call; true (with `pc` parked) when this call unwinds.
+    pub(crate) fn setup_man_update_fake_step(c: &mut Cpu) -> bool {
+        let n = c.bus.read32(SETUP_MAN_UPDATE_FAKE_COUNT);
+        c.bus.write32(SETUP_MAN_UPDATE_FAKE_COUNT, n + 1);
+        if n == c.bus.read32(SETUP_MAN_UPDATE_UNWIND_AT) {
+            c.pc = 0xdead_0000;
+            return true;
+        }
+        false
+    }
+
+    /// The next fake allocation block (distinct, writable, non-zero).
+    pub(crate) fn setup_man_update_fake_block(c: &mut Cpu) -> u64 {
+        let n = c.bus.read32(SETUP_MAN_UPDATE_ALLOC_COUNT);
+        c.bus.write32(SETUP_MAN_UPDATE_ALLOC_COUNT, n + 1);
+        (DATA + 0x4_0000 + (n & 7) * 0x2000) as u64
+    }
+
+    macro_rules! setup_man_update_plain_fake {
+        ($name:ident, $gen:path) => {
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(SETUP_MAN_UPDATE_CTRL) != SETUP_MAN_UPDATE_MAGIC {
+                    return fall_back(c, prev_cell($name), $gen);
+                }
+                if setup_man_update_fake_step(c) {
+                    return;
+                }
+                c.cycles += 7;
+                ret(c);
+            }
+        };
+    }
+
+    setup_man_update_plain_fake!(setup_man_update_fake_flush, ee::s07::f_00264b20__generated);
+
+    setup_man_update_plain_fake!(setup_man_update_fake_delete, ee::s10::f_00317e50__generated);
+
+    pub(crate) fn setup_man_update_fake_pop(c: &mut Cpu) {
+        if c.bus.read32(SETUP_MAN_UPDATE_CTRL) != SETUP_MAN_UPDATE_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(setup_man_update_fake_pop),
+                ee::s07::f_002649b0__generated,
+            );
+        }
+        if setup_man_update_fake_step(c) {
+            return;
+        }
+        c.cycles += 7;
+        if c.bus.read32(SETUP_MAN_UPDATE_POP_PRESENT) == 0 {
+            c.g[V0][0] = 0;
+        } else {
+            let dst = c.g[A1][0] as u32;
+            for i in 0..5u32 {
+                let w = c.bus.read32(SETUP_MAN_UPDATE_MSG + 4 * i);
+                c.bus.write32(dst + 4 * i, w);
+            }
+            c.g[V0][0] = 0x14;
+        }
+        ret(c);
+    }
+
+    pub(crate) fn setup_man_update_fake_alloc_packet(c: &mut Cpu) {
+        if c.bus.read32(SETUP_MAN_UPDATE_CTRL) != SETUP_MAN_UPDATE_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(setup_man_update_fake_alloc_packet),
+                ee::s07::f_00264960__generated,
+            );
+        }
+        if setup_man_update_fake_step(c) {
+            return;
+        }
+        c.cycles += 7;
+        c.g[V0][0] = setup_man_update_fake_block(c);
+        ret(c);
+    }
+
+    pub(crate) fn setup_man_update_fake_mem_alloc(c: &mut Cpu) {
+        if c.bus.read32(SETUP_MAN_UPDATE_CTRL) != SETUP_MAN_UPDATE_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(setup_man_update_fake_mem_alloc),
+                ee::s10::f_00317d70__generated,
+            );
+        }
+        if setup_man_update_fake_step(c) {
+            return;
+        }
+        c.cycles += 7;
+        c.g[V0][0] = setup_man_update_fake_block(c);
+        ret(c);
+    }
+
+    pub(crate) fn setup_man_update_fake_has_challenger(c: &mut Cpu) {
+        if c.bus.read32(SETUP_MAN_UPDATE_CTRL) != SETUP_MAN_UPDATE_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(setup_man_update_fake_has_challenger),
+                ee::s07::f_00263128__generated,
+            );
+        }
+        if setup_man_update_fake_step(c) {
+            return;
+        }
+        c.cycles += 7;
+        c.g[V0][0] = c.bus.read32(SETUP_MAN_UPDATE_HAS) as u64;
+        ret(c);
+    }
+
+    pub(crate) fn setup_man_update_fake_buddy_connected(c: &mut Cpu) {
+        if c.bus.read32(SETUP_MAN_UPDATE_CTRL) != SETUP_MAN_UPDATE_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(setup_man_update_fake_buddy_connected),
+                ee::s06::f_00261460__generated,
+            );
+        }
+        if setup_man_update_fake_step(c) {
+            return;
+        }
+        c.cycles += 7;
+        // One answer bit per call, in call order.
+        let k = c.bus.read32(SETUP_MAN_UPDATE_CONNECTED_CALLS);
+        c.bus.write32(SETUP_MAN_UPDATE_CONNECTED_CALLS, k + 1);
+        c.g[V0][0] = (c.bus.read32(SETUP_MAN_UPDATE_CONNECTED) >> k & 1) as u64;
+        ret(c);
+    }
+
+    /// `BuddyMan_Create`: stores the buddy manager at `gp+BUDDY_MAN_GP` when
+    /// the steering word says it succeeds.
+    pub(crate) fn setup_man_update_fake_buddy_create(c: &mut Cpu) {
+        if c.bus.read32(SETUP_MAN_UPDATE_CTRL) != SETUP_MAN_UPDATE_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(setup_man_update_fake_buddy_create),
+                ee::s06::f_00260f80__generated,
+            );
+        }
+        if setup_man_update_fake_step(c) {
+            return;
+        }
+        c.cycles += 7;
+        let buddy = c.bus.read32(SETUP_MAN_UPDATE_CREATED);
+        c.bus
+            .write32(GAME_GP.wrapping_add(BUDDY_MAN_GP as u32), buddy);
+        ret(c);
+    }
+
+    setup_man_update_plain_fake!(
+        setup_man_update_fake_buddy_reconnect,
+        ee::s06::f_002613c8__generated
+    );
+
+    setup_man_update_plain_fake!(
+        setup_man_update_fake_lobby_disconnect,
+        ee::s06::f_0025b800__generated
+    );
+
+    /// Hooks the `cSetupMan_Update` fakes (gated by `SETUP_MAN_UPDATE_CTRL`).
+    pub(crate) fn setup_man_update_hooks() {
+        hook(
+            std::ptr::addr_of_mut!(ee::s07::OVERRIDE_002649B0),
+            setup_man_update_fake_pop,
+            prev_cell(setup_man_update_fake_pop),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s07::OVERRIDE_00264B20),
+            setup_man_update_fake_flush,
+            prev_cell(setup_man_update_fake_flush),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s07::OVERRIDE_00264960),
+            setup_man_update_fake_alloc_packet,
+            prev_cell(setup_man_update_fake_alloc_packet),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            setup_man_update_fake_mem_alloc,
+            prev_cell(setup_man_update_fake_mem_alloc),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            setup_man_update_fake_delete,
+            prev_cell(setup_man_update_fake_delete),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s07::OVERRIDE_00263128),
+            setup_man_update_fake_has_challenger,
+            prev_cell(setup_man_update_fake_has_challenger),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_00261460),
+            setup_man_update_fake_buddy_connected,
+            prev_cell(setup_man_update_fake_buddy_connected),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_00260F80),
+            setup_man_update_fake_buddy_create,
+            prev_cell(setup_man_update_fake_buddy_create),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_002613C8),
+            setup_man_update_fake_buddy_reconnect,
+            prev_cell(setup_man_update_fake_buddy_reconnect),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s06::OVERRIDE_0025B800),
+            setup_man_update_fake_lobby_disconnect,
+            prev_cell(setup_man_update_fake_lobby_disconnect),
+        );
+    }
+
+    /// Packet types `cSetupMan_Update` dispatches (and 0x77, which no table
+    /// lists).
+    pub(crate) const SETUP_MAN_UPDATE_TYPES: [u32; 19] = [
+        0xf, 0x10, 1, 3, 5, 0xf8, 0xfa, 7, 9, 0xb, 0xd, 0, 2, 4, 6, 8, 0xa, 0xc, 0x77,
+    ];
+
+    /// The setup manager at `DATA` in `state` with the host and stats flags,
+    /// a queued packet of `kind` (`None`: the queue is empty), the fakes'
+    /// answers (`has`: HasChallenger, `connected`: IsConnected bits per
+    /// call, `buddy`: the buddy manager at `gp+BUDDY_MAN_GP`, `created`: what
+    /// Create stores there) and the fake call that unwinds (`u32::MAX`:
+    /// none).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn setup_man_update_fixture(
+        c: &mut Cpu,
+        seed: u32,
+        state: u32,
+        host: bool,
+        stats: bool,
+        kind: Option<u32>,
+        has: u32,
+        connected: u32,
+        buddy: bool,
+        unwind_at: u32,
+    ) {
+        // Real callees on the packet paths allocate: give both sides the
+        // pool allocator and a DLHeap arena.
+        let _r = crate::game::dirtysock::tagsunk::tests::alloc_machine(c, seed, 0x2642_b8);
+        c.pc = 0x0026_42b8;
+        let this = DATA;
+        c.g[A0][0] = sx(this);
+        c.bus.write32(this, state);
+        c.bus.write32(this + SETUP_HOST_FLAG, host as u32);
+        c.bus.write32(this + SETUP_STATS_FLAG, stats as u32);
+        c.bus.write32(this + SETUP_SEND_TAIL, 0);
+        c.bus.write32(this + SETUP_SEND_HEAD, 0);
+        c.bus.write32(this + SETUP_CHANNEL, 0);
+        c.bus.write32(SETUP_MAN_UPDATE_CTRL, SETUP_MAN_UPDATE_MAGIC);
+        c.bus
+            .write32(SETUP_MAN_UPDATE_POP_PRESENT, kind.is_some() as u32);
+        c.bus.write32(SETUP_MAN_UPDATE_MSG, kind.unwrap_or(0));
+        c.bus.write32(SETUP_MAN_UPDATE_MSG + 4, seed % 9);
+        c.bus.write32(SETUP_MAN_UPDATE_MSG + 8, seed % 5);
+        c.bus.write32(SETUP_MAN_UPDATE_MSG + 0xc, seed % 7);
+        c.bus.write32(SETUP_MAN_UPDATE_MSG + 0x10, seed % 3);
+        c.bus.write32(SETUP_MAN_UPDATE_HAS, has);
+        c.bus.write32(SETUP_MAN_UPDATE_CONNECTED, connected);
+        c.bus.write32(SETUP_MAN_UPDATE_CONNECTED_CALLS, 0);
+        c.bus.write32(SETUP_MAN_UPDATE_UNWIND_AT, unwind_at);
+        c.bus.write32(SETUP_MAN_UPDATE_FAKE_COUNT, 0);
+        c.bus.write32(SETUP_MAN_UPDATE_ALLOC_COUNT, 0);
+        // Globals: comm system (gp-0x238), buddy manager (gp+0x238), lobby
+        // (gp-0xc8), app (gp-0x848).
+        let comm = DATA + 0x1000;
+        let lobby = DATA + 0x2000;
+        let app = DATA + 0x3000;
+        let buddy_man = DATA + 0x1800;
+        c.bus.write32(SETUP_MAN_UPDATE_CREATED, buddy_man);
+        c.bus.write32(
+            GAME_GP.wrapping_add(BUDDY_MAN_GP as u32),
+            if buddy { buddy_man } else { 0 },
+        );
+        c.bus.write32(GAME_GP - NET_COMM_SYSTEM_GP, comm);
+        c.bus
+            .write32(GAME_GP.wrapping_add(LOBBY_INSTANCE_GP as u32), lobby);
+        c.bus.write32(GAME_GP - 0x848, app);
+        c.bus.write32(comm, DATA + 0x1100);
+        c.bus.write32(DATA + 0x1100 + 8, DATA + 0x1200);
+        c.bus.write16(DATA + 0x1200 + 0x38, 0);
+        c.bus.write32(DATA + 0x1200 + 0x3c, RIDER_IFACE_HAS_VISITED);
+        c.bus.write16(DATA + 0x1200 + 0x40, 0);
+        c.bus.write32(DATA + 0x1200 + 0x44, RIDER_IFACE_HAS_VISITED);
+        c.bus.write32(lobby, 0);
+        c.bus.write32(lobby + 0x98, DATA + 0x900);
+        c.bus.write32(lobby + 0xbc, DATA + 0x200);
+        c.bus.write32(lobby + 0xc0, DATA + 0x200);
+        c.bus.write32(lobby + SETUP_LIST_HEAD, DATA + 0x2800);
+        c.bus.write32(app + 0x78, DATA + 0x3100);
+        // BELibrary dummy (GetInstance reads gp-0x1f04).
+        c.bus.write32(GAME_GP - 0x1f04, DATA + 0x3200);
+        c.bus.write32(DATA + 0x3200 + 4, DATA + 0x3300);
+        c.bus.write16(DATA + 0x3300 + 8, 0);
+        c.bus.write32(DATA + 0x3300 + 0xc, RIDER_IFACE_HAS_VISITED);
+    }
+
+    /// `cSetupMan_Update`, every packet type (and an empty queue) crossed
+    /// with the role, the state (0, 8, and the handshake states 5 and 10) and
+    /// the stats flag: `seed % 20` the type (19: no packet), `seed / 20 % 2`
+    /// the host flag, `seed / 40 % 4` the state, `seed / 160 % 2` the stats
+    /// flag. Seeds 320-639 repeat the cross with one fake call unwinding
+    /// (index `seed / 7 % 8`). Real callees: the packet handlers (they
+    /// cannot unwind here) and the channel vtable leaf; faked: PopPacket,
+    /// FlushSendQueue, AllocPacket, MemAlloc, operator delete and the
+    /// buddy/lobby calls of the challenger drop.
+    #[test]
+    fn c_setup_man_update_matches() {
+        setup_man_update_hooks();
+        // Every cycle total of the unwind-free half (seeds 0-319): the handlers of all four chains.
+        const PATHS: &[u64] = &[
+            102, 106, 108, 110, 112, 120, 121, 122, 123, 124, 127, 129, 131, 133, 137, 156, 164,
+            175, 177, 178, 181, 183, 184, 185, 187, 188, 189, 191, 193, 194, 195, 198, 200, 201,
+            204, 205, 221, 223, 225, 226, 227, 228, 229, 230, 231, 233, 234, 235, 237, 238, 239,
+            242, 245, 248, 249, 277, 281, 282, 283, 296, 299, 304, 306, 308, 319, 327, 436, 438,
+            440, 442, 444, 446, 450, 455, 457, 458, 460, 461, 464, 494, 507, 515, 518, 520, 524,
+            525, 527, 531, 557, 559, 562, 563, 564, 568, 640, 648, 650, 658, 693, 701, 703, 711,
+            749, 752, 759, 760, 773, 796, 812, 826, 849, 866, 981, 992, 1045,
+        ];
+        check_paths(
+            ee::s07::f_002642b8__generated,
+            c_setup_man_update,
+            640,
+            PATHS,
+            &|c, seed| {
+                let t = seed % 20;
+                let kind = (t < 19).then(|| SETUP_MAN_UPDATE_TYPES[t as usize]);
+                let host = seed / 20 % 2 == 1;
+                let state = [0, 8, 5, 10][(seed / 40 % 4) as usize];
+                let stats = seed / 160 % 2 == 1;
+                let unwind_at = if seed >= 320 { seed / 7 % 8 } else { u32::MAX };
+                setup_man_update_fixture(c, seed, state, host, stats, kind, 1, 3, true, unwind_at);
+            },
+        );
+    }
+
+    /// The challenger drop (types 0xf8 and 0xfa) in both roles before and
+    /// from state 7, crossed with the fakes' answers: `seed % 2` the type,
+    /// `seed / 2 % 2` the host flag, `seed / 4 % 2` the state (0 or 8),
+    /// `seed / 8 % 2` HasChallenger, `seed / 16 % 4` the two IsConnected
+    /// answers, `seed / 64 % 2` whether the buddy manager exists (Create
+    /// then stores it).
+    #[test]
+    fn c_setup_man_update_drop_matches() {
+        setup_man_update_hooks();
+        // Every cycle total of the drop cross.
+        const PATHS: &[u64] = &[
+            166, 168, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184,
+            185, 187, 189, 190, 191, 192, 193, 194, 221, 223, 225, 226, 227, 228, 229, 230, 231,
+            232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248,
+            249, 250, 252, 254, 255, 256, 257, 258, 259,
+        ];
+        check_paths(
+            ee::s07::f_002642b8__generated,
+            c_setup_man_update,
+            128,
+            PATHS,
+            &|c, seed| {
+                let kind = Some([0xf8, 0xfa][(seed % 2) as usize]);
+                let host = seed / 2 % 2 == 1;
+                let state = [0, 8][(seed / 4 % 2) as usize];
+                let has = seed / 8 % 2;
+                let connected = seed / 16 % 4;
+                let buddy = seed / 64 % 2 == 1;
+                setup_man_update_fixture(
+                    c,
+                    seed,
+                    state,
+                    host,
+                    false,
+                    kind,
+                    has,
+                    connected,
+                    buddy,
+                    u32::MAX,
+                );
+            },
+        );
+    }
+
+    pub(crate) const SETUP_FAKES_CTRL: u32 = DATA + 0xe_0000;
+
+    pub(crate) const SETUP_FAKES_MAGIC: u32 = 0x0c40_4001;
+
+    pub(crate) const SETUP_SELF: u32 = DATA + 0x400;
+
+    pub(crate) fn zero_words(c: &mut Cpu, addr: u32, bytes: u32) {
+        for i in (0..bytes).step_by(4) {
+            c.bus.write32(addr + i, 0);
+        }
+    }
+
+    pub(crate) fn setup_fake_alloc(c: &mut Cpu) {
+        if c.bus.read32(SETUP_FAKES_CTRL) != SETUP_FAKES_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(setup_fake_alloc),
+                ee::s10::f_00317d70__generated,
+            );
+        }
+        let n = c.bus.read32(SETUP_FAKES_CTRL + 4);
+        c.bus.write32(SETUP_FAKES_CTRL + 4, n + 1);
+        c.g[V0][0] = sx(DATA + 0x8_0000 + (n & 7) * 0x40);
+        c.cycles += 11;
+        ret(c);
+    }
+
+    pub(crate) fn setup_fake_delete(c: &mut Cpu) {
+        if c.bus.read32(SETUP_FAKES_CTRL) != SETUP_FAKES_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(setup_fake_delete),
+                ee::s10::f_00317e50__generated,
+            );
+        }
+        c.cycles += 6;
+        ret(c);
+    }
+
+    pub(crate) fn setup_fake_get_be(c: &mut Cpu) {
+        if c.bus.read32(SETUP_FAKES_CTRL) != SETUP_FAKES_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(setup_fake_get_be),
+                ee::s01::f_0014dc80__generated,
+            );
+        }
+        c.g[V0][0] = sx(DATA + 0x3_0000);
+        c.cycles += 5;
+        ret(c);
+    }
+
+    pub(crate) fn setup_fake_get_interface(c: &mut Cpu) {
+        if c.bus.read32(SETUP_FAKES_CTRL) != SETUP_FAKES_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(setup_fake_get_interface),
+                ee::s01::f_0014dd58__generated,
+            );
+        }
+        c.g[V0][0] = sx(DATA + 0x3_b000);
+        c.cycles += 5;
+        ret(c);
+    }
+
+    pub(crate) fn setup_fake_set_local(c: &mut Cpu) {
+        if c.bus.read32(SETUP_FAKES_CTRL) != SETUP_FAKES_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(setup_fake_set_local),
+                ee::s07::f_00264cf0__generated,
+            );
+        }
+        c.g[V0][0] = sx(DATA + 0x3_9000);
+        c.cycles += 7;
+        ret(c);
+    }
+
+    pub(crate) fn setup_fake_set_remote(c: &mut Cpu) {
+        if c.bus.read32(SETUP_FAKES_CTRL) != SETUP_FAKES_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(setup_fake_set_remote),
+                ee::s07::f_00264d80__generated,
+            );
+        }
+        c.g[V0][0] = sx(DATA + 0x3_9000);
+        c.cycles += 7;
+        ret(c);
+    }
+
+    pub(crate) fn setup_fake_flush(c: &mut Cpu) {
+        if c.bus.read32(SETUP_FAKES_CTRL) != SETUP_FAKES_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(setup_fake_flush),
+                ee::s07::f_00264b20__generated,
+            );
+        }
+        c.cycles += 5;
+        ret(c);
+    }
+
+    pub(crate) fn setup_fake_alloc_packet(c: &mut Cpu) {
+        if c.bus.read32(SETUP_FAKES_CTRL) != SETUP_FAKES_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(setup_fake_alloc_packet),
+                ee::s07::f_00264960__generated,
+            );
+        }
+        let n = c.bus.read32(SETUP_FAKES_CTRL + 8);
+        c.bus.write32(SETUP_FAKES_CTRL + 8, n + 1);
+        c.g[V0][0] = sx(DATA + 0xa_0000 + (n & 3) * 0x100);
+        c.cycles += 6;
+        ret(c);
+    }
+
+    pub(crate) fn setup_fake_free_packet(c: &mut Cpu) {
+        if c.bus.read32(SETUP_FAKES_CTRL) != SETUP_FAKES_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(setup_fake_free_packet),
+                ee::s07::f_00264990__generated,
+            );
+        }
+        c.cycles += 6;
+        ret(c);
+    }
+
+    pub(crate) fn setup_fakes_install() {
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            setup_fake_alloc,
+            prev_cell(setup_fake_alloc),
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            setup_fake_delete,
+            prev_cell(setup_fake_delete),
+        );
+        hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+            setup_fake_get_be,
+            prev_cell(setup_fake_get_be),
+        );
+        hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+            setup_fake_get_interface,
+            prev_cell(setup_fake_get_interface),
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00264CF0),
+            setup_fake_set_local,
+            prev_cell(setup_fake_set_local),
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00264D80),
+            setup_fake_set_remote,
+            prev_cell(setup_fake_set_remote),
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00264B20),
+            setup_fake_flush,
+            prev_cell(setup_fake_flush),
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00264960),
+            setup_fake_alloc_packet,
+            prev_cell(setup_fake_alloc_packet),
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00264990),
+            setup_fake_free_packet,
+            prev_cell(setup_fake_free_packet),
+        );
+    }
+
+    /// Scrambled machine, gated fakes, and the globals every port here
+    /// touches: BELibrary dummy, world, comm channel 0 vtable, and the
+    /// global message-list head chain.
+    pub(crate) fn setup_machine(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        setup_fakes_install();
+        let r = crate::difftest::fakes::machine(c, seed, salt, 0);
+        c.bus.write32(SETUP_FAKES_CTRL, SETUP_FAKES_MAGIC);
+        c.bus.write32(SETUP_FAKES_CTRL + 4, 0);
+        c.bus.write32(SETUP_FAKES_CTRL + 8, 0);
+        zero_words(c, DATA + 0x3_0000, 0x100);
+        zero_words(c, DATA + 0x3_1000, 0x100);
+        zero_words(c, DATA + 0x3_2000, 0x300);
+        zero_words(c, DATA + 0x3_3000, 0x400);
+        c.bus.write32(GAME_GP.wrapping_sub(0xc8), DATA + 0x3_3000);
+        c.bus.write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x3_0000);
+        c.bus.write32(GAME_GP.wrapping_sub(0x848), DATA + 0x3_1000);
+        c.bus.write32(GAME_GP.wrapping_sub(0x238), DATA + 0x3_2000);
+        c.bus
+            .write32(DATA + 0x3_3000 + SETUP_LIST_HEAD, DATA + 0x3_3200);
+        c.bus.write32(DATA + 0x3_3200 + 4, DATA + 0x3_3300);
+        // Comm channel 0 -> object -> vtable (send slot +0x44, recv +0x3c).
+        c.bus.write32(DATA + 0x3_2000, DATA + 0x3_2100);
+        c.bus.write32(DATA + 0x3_2100 + 8, DATA + 0x3_2200);
+        c.bus.write16(DATA + 0x3_2200 + 0x38, 0);
+        c.bus.write16(DATA + 0x3_2200 + 0x40, 0);
+        c.bus.write32(DATA + 0x3_2200 + 0x3c, FAKE);
+        c.bus.write32(DATA + 0x3_2200 + 0x44, FAKE);
+        zero_words(c, SETUP_SELF, 0x200);
+        r
+    }
+
+    pub(crate) fn setup_self_with_state(c: &mut Cpu, state: u32, flag124: u32) {
+        c.bus.write32(SETUP_SELF + SETUP_STATE, state);
+        c.bus.write32(SETUP_SELF + SETUP_HOST_FLAG, flag124);
+        c.g[A0][0] = sx(SETUP_SELF);
+    }
+
+    #[test]
+    fn c_setup_man_send_brag_msg8_matches() {
+        check(
+            ee::s07::f_00265568__generated,
+            c_setup_man_send_brag_msg8,
+            210,
+            &|c, seed| {
+                let _r = setup_machine(c, seed, 0x265568);
+                c.pc = 0x0026_5568;
+                let state = [12u32, 0, 3, 5, 6, 7, 9][(seed % 7) as usize];
+                setup_self_with_state(c, state, seed % 2);
+                c.g[A1][0] = sx(seed % 16);
+                c.g[A2][0] = sx((seed / 7 % 16) as u32);
+            },
+        );
+    }
+
+    #[test]
+    fn c_setup_man_send_brag_msg6_matches() {
+        check(
+            ee::s07::f_00265458__generated,
+            c_setup_man_send_brag_msg6,
+            210,
+            &|c, seed| {
+                let _r = setup_machine(c, seed, 0x265458);
+                c.pc = 0x0026_5458;
+                let state = [12u32, 0, 3, 5, 6, 7, 9][(seed % 7) as usize];
+                setup_self_with_state(c, state, seed % 2);
+                c.g[A1][0] = sx(seed % 16);
+            },
+        );
+    }
+
+    #[test]
+    fn c_setup_man_host_recv_select_matches() {
+        check(
+            ee::s07::f_00265190__generated,
+            c_setup_man_host_recv_select,
+            200,
+            &|c, seed| {
+                let _r = setup_machine(c, seed, 0x265190);
+                c.pc = 0x0026_5190;
+                let state = [2u32, 1, 0, 3, 0xffff_ffff][(seed % 5) as usize];
+                setup_self_with_state(c, state, 0);
+                c.bus.write32(SETUP_SELF + SETUP_STATS_FLAG, 1);
+                c.g[A1][0] = sx(seed % 8);
+                c.g[A2][0] = sx(DATA + 0x5000);
+            },
+        );
+    }
+
+    #[test]
+    fn c_setup_man_host_recv_confirm_matches() {
+        check(
+            ee::s07::f_00265290__generated,
+            c_setup_man_host_recv_confirm,
+            210,
+            &|c, seed| {
+                let _r = setup_machine(c, seed, 0x265290);
+                c.pc = 0x0026_5290;
+                let state = [0u32, 0xffff_ffff, 1, 2, 3, 4, 5][(seed % 7) as usize];
+                setup_self_with_state(c, state, 0);
+                c.bus.write32(SETUP_SELF + SETUP_STATS_FLAG, 1);
+                c.g[A1][0] = sx(seed % 8);
+            },
+        );
+    }
+
+    #[test]
+    fn c_setup_man_confirm_character_matches() {
+        check(
+            ee::s07::f_00265018__generated,
+            c_setup_man_confirm_character,
+            240,
+            &|c, seed| {
+                let _r = setup_machine(c, seed, 0x265018);
+                c.pc = 0x0026_5018;
+                let state = [0u32, 1, 2, 3, 4, 0xffff_ffff][(seed % 6) as usize];
+                setup_self_with_state(c, state, (seed / 6 % 2) as u32);
+                c.bus.write32(SETUP_SELF + SETUP_STATS_FLAG, 1);
+                c.g[A1][0] = sx(seed % 8);
+            },
+        );
+    }
+
+    #[test]
+    fn c_setup_man_select_character_matches() {
+        check(
+            ee::s07::f_00264f88__generated,
+            c_setup_man_select_character,
+            240,
+            &|c, seed| {
+                let _r = setup_machine(c, seed, 0x264f88);
+                c.pc = 0x0026_4f88;
+                let state = [12u32, 1, 0, 5][(seed % 4) as usize];
+                setup_self_with_state(c, state, (seed / 4 % 2) as u32);
+                c.bus.write32(SETUP_SELF + SETUP_STATS_FLAG, 1);
+                c.g[A1][0] = sx(seed % 8);
+            },
+        );
+    }
+
+    #[test]
+    fn c_setup_man_send_character_msg_matches() {
+        check(
+            ee::s07::f_00264e50__generated,
+            c_setup_man_send_character_msg,
+            120,
+            &|c, seed| {
+                let _r = setup_machine(c, seed, 0x264e50);
+                c.pc = 0x0026_4e50;
+                setup_self_with_state(c, 0, 0);
+                c.bus.write32(SETUP_SELF + SETUP_STATS_FLAG, seed % 2);
+                c.g[A1][0] = sx(seed % 4);
+                c.g[A2][0] = sx((seed / 2 % 8) as u32);
+                c.g[A3][0] = sx((seed / 4 % 16) as u32);
+            },
+        );
+        driven!(gen, ee::s07::f_00264e50__generated);
+        driven!(hand, c_setup_man_send_character_msg);
+        check_events(gen, hand, 120, &|c, seed| {
+            let mut r = setup_machine(c, seed, 0x264e51);
+            setup_self_with_state(c, 0, 0);
+            c.bus.write32(SETUP_SELF + SETUP_STATS_FLAG, 1);
+            c.g[A1][0] = sx(seed % 4);
+            c.g[A2][0] = sx((seed / 2 % 8) as u32);
+            c.g[A3][0] = sx((seed / 4 % 16) as u32);
+            schedule(c, &mut r, seed, 0x0026_4e50)
+        });
+    }
+
+    #[test]
+    fn c_setup_man_send_packet_matches() {
+        check(
+            ee::s07::f_00264be8__generated,
+            c_setup_man_send_packet,
+            200,
+            &|c, seed| {
+                let _r = setup_machine(c, seed, 0x264be8);
+                c.pc = 0x0026_4be8;
+                setup_self_with_state(c, 0, 0);
+                c.bus.write32(SETUP_SELF + SETUP_SEND_TAIL, seed / 8 % 32);
+                let msg = DATA + 0x2000;
+                for i in 0..16u32 {
+                    c.bus.write32(msg + i * 4, 0x1000 + i);
+                }
+                if seed % 2 == 0 {
+                    c.bus
+                        .write32(DATA + 0x3_2200 + 0x44, RIDER_IFACE_HAS_VISITED);
+                }
+                c.g[A1][0] = sx(msg);
+                c.g[A2][0] = sx([0u32, 4, 0x14, 0x40][(seed / 2 % 4) as usize]);
+            },
+        );
+    }
+
+    #[test]
+    fn c_setup_man_receive_packets_matches() {
+        check(
+            ee::s07::f_00264a58__generated,
+            c_setup_man_receive_packets,
+            200,
+            &|c, seed| {
+                let _r = setup_machine(c, seed, 0x264a58);
+                c.pc = 0x0026_4a58;
+                setup_self_with_state(c, 0, 0);
+                if seed % 3 != 0 {
+                    c.bus.write32(SETUP_SELF + SETUP_CUR_PACKET, DATA + 0x6000);
+                }
+                c.bus.write32(
+                    SETUP_SELF + SETUP_RECV_TAIL,
+                    [0u32, 5, 31, 40][(seed % 4) as usize],
+                );
+                if seed % 2 == 0 {
+                    c.bus
+                        .write32(DATA + 0x3_2200 + 0x3c, RIDER_IFACE_HAS_VISITED);
+                }
+            },
+        );
+        driven!(gen, ee::s07::f_00264a58__generated);
+        driven!(hand, c_setup_man_receive_packets);
+        check_events(gen, hand, 120, &|c, seed| {
+            let mut r = setup_machine(c, seed, 0x264a59);
+            setup_self_with_state(c, 0, 0);
+            c.bus.write32(SETUP_SELF + SETUP_CUR_PACKET, DATA + 0x6000);
+            schedule(c, &mut r, seed, 0x0026_4a58)
+        });
+    }
+
+    #[test]
+    fn c_setup_man_dtor_matches() {
+        check(
+            ee::s07::f_00264138__generated,
+            c_setup_man_dtor,
+            240,
+            &|c, seed| {
+                let _r = setup_machine(c, seed, 0x264138);
+                c.pc = 0x0026_4138;
+                setup_self_with_state(c, 0, 0);
+                if seed % 2 == 0 {
+                    c.bus.write32(SETUP_SELF + SETUP_CUR_PACKET, DATA + 0x6000);
+                }
+                // Receive ring: head +0xc, tail +0x8, slots at +0x10.
+                let (head, tail) = [(0u32, 0u32), (0, 2), (2, 2), (31, 33)][(seed % 4) as usize];
+                c.bus.write32(SETUP_SELF + SETUP_RECV_HEAD, head);
+                c.bus.write32(SETUP_SELF + SETUP_RECV_TAIL, tail);
+                for i in 0..4u32 {
+                    c.bus.write32(
+                        SETUP_SELF + SETUP_RECV_SLOTS + i * 4,
+                        DATA + 0x6000 + i * 0x10,
+                    );
+                }
+                let (shead, stail) = [(0u32, 0u32), (0, 1), (3, 3)][(seed / 4 % 3) as usize];
+                c.bus.write32(SETUP_SELF + SETUP_SEND_HEAD, shead);
+                c.bus.write32(SETUP_SELF + SETUP_SEND_TAIL, stail);
+                for i in 0..4u32 {
+                    c.bus.write32(
+                        SETUP_SELF + SETUP_SEND_SLOTS + i * 4,
+                        DATA + 0x7000 + i * 0x10,
+                    );
+                }
+                c.g[A1][0] = sx(seed % 2);
+            },
+        );
+        driven!(gen, ee::s07::f_00264138__generated);
+        driven!(hand, c_setup_man_dtor);
+        check_events(gen, hand, 120, &|c, seed| {
+            let mut r = setup_machine(c, seed, 0x264139);
+            setup_self_with_state(c, 0, 0);
+            // `seed / 3 % 3`: packets in the receive ring (loop head
+            // 0x264178), the send ring (0x264208) or both.
+            let rings = seed / 3 % 3;
+            let recv = if rings != 1 { 3 } else { 0 };
+            let send = if rings != 0 { 3 } else { 0 };
+            c.bus.write32(SETUP_SELF + SETUP_RECV_HEAD, 0);
+            c.bus.write32(SETUP_SELF + SETUP_RECV_TAIL, recv);
+            c.bus.write32(SETUP_SELF + SETUP_SEND_HEAD, 0);
+            c.bus.write32(SETUP_SELF + SETUP_SEND_TAIL, send);
+            for i in 0..4u32 {
+                c.bus.write32(
+                    SETUP_SELF + SETUP_RECV_SLOTS + i * 4,
+                    DATA + 0x6000 + i * 0x10,
+                );
+                c.bus.write32(
+                    SETUP_SELF + SETUP_SEND_SLOTS + i * 4,
+                    DATA + 0x7000 + i * 0x10,
+                );
+            }
+            c.g[A1][0] = 0;
+            schedule(c, &mut r, seed, 0x0026_4138)
+        });
+    }
+
+    /// Gate for this module's callee fakes: a word in the machine's RAM.
+    /// With it off, a hooked slot runs the body it held before.
+    pub(crate) const NET_FAKES_CTRL: u32 = DATA + 0xf_ff00;
+
+    pub(crate) const NET_FAKES_MAGIC: u32 = 0x6f63_3405;
+
+    pub(crate) const NET_FAKES_COUNT: u32 = DATA + 0xf_ff04;
+
+    pub(crate) const NET_FAKES_UNWIND: u32 = DATA + 0xf_ff08;
+
+    /// Per-callee forced `v0` result cells.
+    pub(crate) const NET_FAKE_BE: u32 = DATA + 0xf_ff10;
+
+    pub(crate) const NET_FAKE_IFACE: u32 = DATA + 0xf_ff14;
+
+    pub(crate) const NET_FAKE_ALLOC: u32 = DATA + 0xf_ff18;
+
+    pub(crate) const NET_FAKE_ISCONN: u32 = DATA + 0xf_ff1c;
+
+    pub(crate) const NET_FAKE_FIND: u32 = DATA + 0xf_ff20;
+
+    pub(crate) const NET_FAKE_IDX: u32 = DATA + 0xf_ff24;
+
+    pub(crate) const NET_FAKE_ISTEMP: u32 = DATA + 0xf_ff28;
+
+    pub(crate) const NET_FAKE_HASMSG: u32 = DATA + 0xf_ff2c;
+
+    pub(crate) const NET_FAKE_GROSTER: u32 = DATA + 0xf_ff30;
+
+    macro_rules! net_gated_fake {
+        ($name:ident, $prev:ident, $cell:expr, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(NET_FAKES_CTRL) == NET_FAKES_MAGIC {
+                    let idx = c.bus.read32(NET_FAKES_COUNT);
+                    c.bus.write32(NET_FAKES_COUNT, idx + 1);
+                    if idx == c.bus.read32(NET_FAKES_UNWIND) {
+                        c.pc = 0xdead_0000 | idx << 4;
+                        return;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = sx(c.bus.read32($cell));
+                    c.pc = r32(c, RA);
+                    return;
+                }
+                fakes::fall_back(c, &$prev, $gen)
+            }
+        };
+    }
+
+    net_gated_fake!(
+        net_fake_get_be,
+        NET_PREV_GET_BE,
+        NET_FAKE_BE,
+        ee::s01::f_0014dc80__generated
+    );
+
+    net_gated_fake!(
+        net_fake_get_iface,
+        NET_PREV_GET_IFACE,
+        NET_FAKE_IFACE,
+        ee::s01::f_0014dd58__generated
+    );
+
+    net_gated_fake!(
+        net_fake_set_humans,
+        NET_PREV_SET_HUMANS,
+        NET_FAKE_BE,
+        ee::s01::f_00144aa8__generated
+    );
+
+    net_gated_fake!(
+        net_fake_set_rider,
+        NET_PREV_SET_RIDER,
+        NET_FAKE_BE,
+        ee::s01::f_001472c8__generated
+    );
+
+    net_gated_fake!(
+        net_fake_set_char,
+        NET_PREV_SET_CHAR,
+        NET_FAKE_BE,
+        ee::s01::f_00147338__generated
+    );
+
+    net_gated_fake!(
+        net_fake_iface_ebf8,
+        NET_PREV_IFACE_EBF8,
+        NET_FAKE_BE,
+        ee::s01::f_0014ebf8__generated
+    );
+
+    net_gated_fake!(
+        net_fake_alloc,
+        NET_PREV_ALLOC,
+        NET_FAKE_ALLOC,
+        ee::s10::f_00317d70__generated
+    );
+
+    net_gated_fake!(
+        net_fake_setup_create,
+        NET_PREV_SETUP_CREATE,
+        NET_FAKE_ALLOC,
+        ee::s07::f_00264030__generated
+    );
+
+    net_gated_fake!(
+        net_fake_setup_hello,
+        NET_PREV_SETUP_HELLO,
+        NET_FAKE_BE,
+        ee::s07::f_00264cb8__generated
+    );
+
+    net_gated_fake!(
+        net_fake_setup_destroy,
+        NET_PREV_SETUP_DESTROY,
+        NET_FAKE_BE,
+        ee::s07::f_00264098__generated
+    );
+
+    net_gated_fake!(
+        net_fake_flush,
+        NET_PREV_FLUSH,
+        NET_FAKE_BE,
+        ee::s06::f_0025b800__generated
+    );
+
+    net_gated_fake!(
+        net_fake_net_create,
+        NET_PREV_NET_CREATE,
+        NET_FAKE_BE,
+        ee::s06::f_00260f80__generated
+    );
+
+    net_gated_fake!(
+        net_fake_is_conn,
+        NET_PREV_IS_CONN,
+        NET_FAKE_ISCONN,
+        ee::s06::f_00261460__generated
+    );
+
+    net_gated_fake!(
+        net_fake_reconnect,
+        NET_PREV_RECONNECT,
+        NET_FAKE_BE,
+        ee::s06::f_002613c8__generated
+    );
+
+    net_gated_fake!(
+        net_fake_net_disc,
+        NET_PREV_NET_DISC,
+        NET_FAKE_BE,
+        ee::s06::f_00261408__generated
+    );
+
+    net_gated_fake!(
+        net_fake_find_chan,
+        NET_PREV_FIND_CHAN,
+        NET_FAKE_FIND,
+        ee::s06::f_00255d38__generated
+    );
+
+    net_gated_fake!(
+        net_fake_voip_start,
+        NET_PREV_VOIP_START,
+        NET_FAKE_BE,
+        ee::s07::f_00266d58__generated
+    );
+
+    net_gated_fake!(
+        net_fake_voip_activate,
+        NET_PREV_VOIP_ACTIVATE,
+        NET_FAKE_BE,
+        ee::s07::f_00266e30__generated
+    );
+
+    net_gated_fake!(
+        net_fake_voip_deactivate,
+        NET_PREV_VOIP_DEACTIVATE,
+        NET_FAKE_BE,
+        ee::s07::f_00266e88__generated
+    );
+
+    net_gated_fake!(
+        net_fake_voip_stop,
+        NET_PREV_VOIP_STOP,
+        NET_FAKE_BE,
+        ee::s07::f_00266df8__generated
+    );
+
+    net_gated_fake!(
+        net_fake_module_ctor,
+        NET_PREV_MODULE_CTOR,
+        NET_FAKE_ALLOC,
+        ee::s06::f_00232720__generated
+    );
+
+    net_gated_fake!(
+        net_fake_set_next,
+        NET_PREV_SET_NEXT,
+        NET_FAKE_BE,
+        ee::s10::f_00316ef8__generated
+    );
+
+    net_gated_fake!(
+        net_fake_find_chal,
+        NET_PREV_FIND_CHAL,
+        NET_FAKE_IDX,
+        ee::s07::f_00262e20__generated
+    );
+
+    net_gated_fake!(
+        net_fake_is_temp,
+        NET_PREV_IS_TEMP,
+        NET_FAKE_ISTEMP,
+        ee::s07::f_00262438__generated
+    );
+
+    net_gated_fake!(
+        net_fake_has_msg,
+        NET_PREV_HAS_MSG,
+        NET_FAKE_HASMSG,
+        ee::s07::f_00262a38__generated
+    );
+
+    net_gated_fake!(
+        net_fake_find_roster,
+        NET_PREV_FIND_ROSTER,
+        NET_FAKE_GROSTER,
+        ee::s07::f_00262468__generated
+    );
+
+    net_gated_fake!(
+        net_fake_get_roster,
+        NET_PREV_GET_ROSTER,
+        NET_FAKE_GROSTER,
+        ee::s07::f_002625c8__generated
+    );
+
+    /// Install every gated fake used below (once per process each).
+    pub(crate) fn net_fakes_install() {
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+            net_fake_get_be,
+            &NET_PREV_GET_BE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+            net_fake_get_iface,
+            &NET_PREV_GET_IFACE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_00144AA8),
+            net_fake_set_humans,
+            &NET_PREV_SET_HUMANS,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_001472C8),
+            net_fake_set_rider,
+            &NET_PREV_SET_RIDER,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_00147338),
+            net_fake_set_char,
+            &NET_PREV_SET_CHAR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014EBF8),
+            net_fake_iface_ebf8,
+            &NET_PREV_IFACE_EBF8,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            net_fake_alloc,
+            &NET_PREV_ALLOC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00264030),
+            net_fake_setup_create,
+            &NET_PREV_SETUP_CREATE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00264CB8),
+            net_fake_setup_hello,
+            &NET_PREV_SETUP_HELLO,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00264098),
+            net_fake_setup_destroy,
+            &NET_PREV_SETUP_DESTROY,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_0025B800),
+            net_fake_flush,
+            &NET_PREV_FLUSH,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_00260F80),
+            net_fake_net_create,
+            &NET_PREV_NET_CREATE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_00261460),
+            net_fake_is_conn,
+            &NET_PREV_IS_CONN,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_002613C8),
+            net_fake_reconnect,
+            &NET_PREV_RECONNECT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_00261408),
+            net_fake_net_disc,
+            &NET_PREV_NET_DISC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_00255D38),
+            net_fake_find_chan,
+            &NET_PREV_FIND_CHAN,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00266D58),
+            net_fake_voip_start,
+            &NET_PREV_VOIP_START,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00266E30),
+            net_fake_voip_activate,
+            &NET_PREV_VOIP_ACTIVATE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00266E88),
+            net_fake_voip_deactivate,
+            &NET_PREV_VOIP_DEACTIVATE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00266DF8),
+            net_fake_voip_stop,
+            &NET_PREV_VOIP_STOP,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_00232720),
+            net_fake_module_ctor,
+            &NET_PREV_MODULE_CTOR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00316EF8),
+            net_fake_set_next,
+            &NET_PREV_SET_NEXT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00262E20),
+            net_fake_find_chal,
+            &NET_PREV_FIND_CHAL,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00262438),
+            net_fake_is_temp,
+            &NET_PREV_IS_TEMP,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00262A38),
+            net_fake_has_msg,
+            &NET_PREV_HAS_MSG,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00262468),
+            net_fake_find_roster,
+            &NET_PREV_FIND_ROSTER,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_002625C8),
+            net_fake_get_roster,
+            &NET_PREV_GET_ROSTER,
+        );
+    }
+
+    pub(crate) fn net_fakes_on(c: &mut Cpu) {
+        net_fakes_install();
+        c.bus.write32(NET_FAKES_CTRL, NET_FAKES_MAGIC);
+        c.bus.write32(NET_FAKES_COUNT, 0);
+        c.bus.write32(NET_FAKES_UNWIND, u32::MAX);
+        c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+    }
+
+    /// A BuddyMan at DATA with three challengers named alice/bob/carol.
+    /// Returns the wanted name text for `class` (see the tests).
+    pub(crate) fn buddy_challengers_fixture(c: &mut Cpu, class: u32) -> &'static [u8] {
+        let begin = DATA + 0x200;
+        c.bus.write32(DATA + 0xbc, begin);
+        let n: u32 = if class == 0 { 0 } else { 3 };
+        c.bus.write32(DATA + 0xc0, begin + 4 * n);
+        let names: [&[u8]; 3] = [b"alice", b"bob", b"carol"];
+        for i in 0..3u32 {
+            let entry = DATA + 0x400 + 0x40 * i;
+            c.bus.write32(begin + 4 * i, entry);
+            c.bus.write32(entry, DATA + 0x600 + 0x20 * i);
+            put_cstr(c, DATA + 0x600 + 0x20 * i, names[i as usize]);
+        }
+        match class {
+            1 => b"alice",
+            2 => b"carol",
+            3 => b"dave",
+            _ => b"bob",
+        }
+    }
+
+    /// Gate of [`strcmp_fake`]: a word in the machine's RAM.
+    pub(crate) const STRCMP_FAKE_CTRL: u32 = DATA + 0xf_fe00;
+
+    pub(crate) const STRCMP_FAKE_MAGIC: u32 = 0x0041_65a8;
+
+    /// `strcmp` without event checks, for the name scans' event tests: an
+    /// event delivered inside the real one resumes there, and `drive` only
+    /// re-enters the function under test.
+    pub(crate) fn strcmp_fake(c: &mut Cpu) {
+        if c.bus.read32(STRCMP_FAKE_CTRL) != STRCMP_FAKE_MAGIC {
+            return fall_back(c, prev_cell(strcmp_fake), ee::s15::f_004165a8__generated);
+        }
+        let (a, b) = (c.g[A0][0] as u32, c.g[A1][0] as u32);
+        let mut i = 0;
+        let d = loop {
+            let (x, y) = (c.bus.read8(a + i), c.bus.read8(b + i));
+            if x != y || x == 0 {
+                break x as i32 - y as i32;
+            }
+            i += 1;
+        };
+        c.g[V0][0] = d as i64 as u64;
+        c.cycles += 10;
+        ret(c);
+    }
+
+    /// Hooks [`strcmp_fake`] and turns it on for this machine.
+    pub(crate) fn strcmp_fake_on(c: &mut Cpu) {
+        hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_004165A8),
+            strcmp_fake,
+            prev_cell(strcmp_fake),
+        );
+        c.bus.write32(STRCMP_FAKE_CTRL, STRCMP_FAKE_MAGIC);
+    }
+
+    #[test]
+    fn buddy_man_has_challenger_str_matches() {
+        check(
+            ee::s07::f_002631e0__generated,
+            buddy_man_has_challenger_str,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x0026_31e0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                let want = buddy_challengers_fixture(c, seed % 5);
+                put_cstr(c, DATA + 0x800, want);
+                c.bus.write32(DATA + 0x880, DATA + 0x800);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x880) as u64;
+                c.pc = 0x0026_31e0;
+            },
+        );
+    }
+
+    #[test]
+    fn buddy_man_has_challenger_str_events() {
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = Rng(0x0026_31e0 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            let want = buddy_challengers_fixture(c, seed % 5);
+            put_cstr(c, DATA + 0x800, want);
+            c.bus.write32(DATA + 0x880, DATA + 0x800);
+            c.g[A0][0] = DATA as u64;
+            c.g[A1][0] = (DATA + 0x880) as u64;
+            strcmp_fake_on(c);
+            schedule(c, &mut r, seed, 0x0026_31e0)
+        };
+        driven!(gen, ee::s07::f_002631e0__generated);
+        driven!(hand, buddy_man_has_challenger_str);
+        check_events(gen, hand, 60, &setup);
+    }
+
+    #[test]
+    fn buddy_man_get_challenger_by_name_matches() {
+        check(
+            ee::s07::f_00263270__generated,
+            buddy_man_get_challenger_by_name,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x0026_3270 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                let want = buddy_challengers_fixture(c, seed % 5);
+                put_cstr(c, DATA + 0x800, want);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x800) as u64;
+                c.pc = 0x0026_3270;
+            },
+        );
+    }
+
+    #[test]
+    fn buddy_man_get_challenger_by_name_events() {
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = Rng(0x0026_3270 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            let want = buddy_challengers_fixture(c, seed % 5);
+            put_cstr(c, DATA + 0x800, want);
+            c.g[A0][0] = DATA as u64;
+            c.g[A1][0] = (DATA + 0x800) as u64;
+            strcmp_fake_on(c);
+            schedule(c, &mut r, seed, 0x0026_3270)
+        };
+        driven!(gen, ee::s07::f_00263270__generated);
+        driven!(hand, buddy_man_get_challenger_by_name);
+        check_events(gen, hand, 60, &setup);
+    }
+
+    /// Message vector fixture for `BuddyMan_DeleteMessage`: entries in the
+    /// slots at DATA+0x200.., finish pointing at the last slot.
+    pub(crate) fn buddy_messages_fixture(c: &mut Cpu, seed: u32) -> u32 {
+        let buf = DATA + 0x200;
+        for i in 0..3u32 {
+            let obj = DATA + 0x400 + 0x40 * i;
+            let vt = DATA + 0x800 + 0x20 * i;
+            c.bus.write32(buf + 4 * i, obj);
+            c.bus.write32(obj + 0xc, vt);
+            c.bus.write16(vt + 8, 0);
+            c.bus.write32(vt + 0xc, FAKE);
+        }
+        // The scan starts at the finish slot `*(self+0xb0)` and walks down
+        // to `*(self+0xac)`; the finish slot holds a dummy that never
+        // matches, the three messages sit below it. A match one slot below
+        // the finish needs no tail shift; lower matches shift the slots
+        // above them down by one (memmove size from the finish value).
+        c.bus.write32(buf + 12, DATA + 0x6000);
+        let class = seed % 5;
+        if class == 0 {
+            // Empty: begin == finish.
+            c.bus.write32(DATA + 0xac, buf + 12);
+            c.bus.write32(DATA + 0xb0, buf + 12);
+        } else {
+            c.bus.write32(DATA + 0xac, buf - 4);
+            c.bus.write32(DATA + 0xb0, buf + 12);
+        }
+        match class {
+            // Target one slot below the finish: no tail shift.
+            1 => DATA + 0x400 + 0x80,
+            // Target two slots below: tail shifts by one.
+            2 => DATA + 0x400 + 0x40,
+            // Null message two slots below: drop only.
+            4 => {
+                c.bus.write32(buf + 4, 0);
+                0
+            }
+            // Absent (also the empty-vector class).
+            _ => DATA + 0x5000,
+        }
+    }
+
+    #[test]
+    fn buddy_man_delete_message_matches() {
+        check(
+            ee::s07::f_00263500__generated,
+            buddy_man_delete_message,
+            100,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x263500, 4);
+                c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+                let target = buddy_messages_fixture(c, seed);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = target as u64;
+                c.pc = 0x0026_3500;
+            },
+        );
+    }
+
+    #[test]
+    fn buddy_man_delete_message_events() {
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = machine(c, seed, 0x263500, 4);
+            c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+            let target = buddy_messages_fixture(c, seed);
+            c.g[A0][0] = DATA as u64;
+            c.g[A1][0] = target as u64;
+            schedule(c, &mut r, seed, 0x0026_3500)
+        };
+        driven!(gen, ee::s07::f_00263500__generated);
+        driven!(hand, buddy_man_delete_message);
+        check_events(gen, hand, 60, &setup);
+    }
+
+    #[test]
+    fn buddy_man_remove_challenger_matches() {
+        check(
+            ee::s07::f_00263018__generated,
+            buddy_man_remove_challenger,
+            160,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x263018, 6);
+                net_fakes_on(c);
+                // Challenger vector (finish at the last slot) and vtables.
+                let buf = DATA + 0x200;
+                for i in 0..3u32 {
+                    let obj = DATA + 0x400 + 0x40 * i;
+                    let vt = DATA + 0x800 + 0x20 * i;
+                    c.bus.write32(buf + 4 * i, obj);
+                    c.bus.write32(obj + 0x3c, vt);
+                    c.bus.write16(vt + 8, 0);
+                    c.bus.write32(vt + 0xc, FAKE);
+                }
+                c.bus.write32(DATA + 0xbc, buf);
+                c.bus.write32(DATA + 0xc0, buf + 12);
+                c.bus.write32(DATA + 0xc8, DATA + 0x2000);
+                // Lobby manager for the notify callee: no API, one list node.
+                let mgr = DATA + 0x1000;
+                c.bus.write32(GAME_GP - 0xc8, mgr);
+                c.bus.write32(mgr + 0xf0, DATA + 0x1800);
+                c.bus.write32(DATA + 0x1800 + 4, DATA + 0x1900);
+                // Branch steering from the seed residue only.
+                let class = seed % 8;
+                let (idx, temp, msg, roster) = match class {
+                    0 => (u32::MAX, 0, 0, 0),
+                    1 => (2, 0, 0, 0),
+                    2 => (1, 0, 0, 0),
+                    3 => (0, 1, 1, 0),
+                    4 => (1, 1, 0, 0),
+                    5 => (1, 1, 0, DATA + 0x2100),
+                    6 => (1, 0, 0, 0),
+                    _ => (2, 1, 0, DATA + 0x2100),
+                };
+                if class == 6 {
+                    c.bus.write32(buf + 4, 0);
+                }
+                c.bus.write32(NET_FAKE_IDX, idx);
+                c.bus.write32(NET_FAKE_ISTEMP, temp);
+                c.bus.write32(NET_FAKE_HASMSG, msg);
+                c.bus.write32(NET_FAKE_GROSTER, roster);
+                if class == 7 {
+                    c.bus.write32(NET_FAKES_UNWIND, (seed / 8) % 3);
+                }
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x900) as u64;
+                c.pc = 0x0026_3018;
+            },
+        );
+    }
+
+    /// Globals shared by the Net fixtures: comm system, lobby manager,
+    /// setup manager, world and the BE-library dummy.
+    pub(crate) fn net_globals_fixture(c: &mut Cpu) {
+        c.bus.write32(GAME_GP - 0x1f04, DATA + 0x9000);
+        let world = DATA + 0x4000;
+        c.bus.write32(GAME_GP - 0x848, world);
+        c.bus.write32(world + 0x78, DATA + 0x2100);
+        c.bus.write32(world + 0x14, 0x3f00_0000);
+        let mgr = DATA + 0x1000;
+        c.bus.write32(GAME_GP - 0xc8, mgr);
+        c.bus.write32(mgr + 0xf0, DATA + 0x1800);
+        c.bus.write32(DATA + 0x1800 + 4, DATA + 0x1900);
+        c.bus.write32(mgr + 0x8c, 7);
+        c.bus.write32(mgr + 0x98, 9);
+        let comm = DATA + 0x3000;
+        c.bus.write32(GAME_GP - 0x238, comm);
+        c.bus.write32(comm, DATA + 0x3100);
+        let chan = DATA + 0x3100;
+        let vt = DATA + 0x3200;
+        c.bus.write32(chan + 8, vt);
+        c.bus.write16(vt + 8, 0);
+        c.bus.write32(vt + 0xc, FAKE);
+        c.bus.write16(vt + 0x10, 0);
+        c.bus.write32(vt + 0x14, FAKE);
+        c.bus.write16(vt + 0x20, 0);
+        c.bus.write32(vt + 0x24, FAKE);
+        let iface = DATA + 0x2100;
+        c.bus.write32(iface + 0xc, DATA + 0x2200);
+        c.bus.write16(DATA + 0x2200 + 8, 0);
+        c.bus.write32(DATA + 0x2200 + 0xc, FAKE);
+    }
+
+    #[test]
+    fn net_disconnect_all_matches() {
+        check(
+            ee::s07::f_002636f0__generated,
+            net_disconnect_all,
+            160,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2636f0, 6);
+                net_fakes_on(c);
+                net_globals_fixture(c);
+                c.bus.write32(NET_FAKE_ALLOC, DATA + 0x6000);
+                c.bus.write32(NET_FAKE_ISCONN, (seed / 2) & 1);
+                // Net manager pointer and the comm busy flag, from seed bits.
+                if seed & 1 == 0 {
+                    c.bus.write32(GAME_GP + 0x238, DATA + 0x3800);
+                }
+                let comm = DATA + 0x3000;
+                c.bus.write32(comm + 0x1c, u32::MAX);
+                c.bus.write32(comm + 0x20, (seed / 4) & 1);
+                if seed % 16 == 15 {
+                    c.bus.write32(NET_FAKES_UNWIND, (seed / 16) % 4);
+                }
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = if seed & 8 == 0 {
+                    0
+                } else {
+                    (DATA + 0x500) as u64
+                };
+                c.pc = 0x0026_36f0;
+            },
+        );
+    }
+
+    #[test]
+    fn net_abort_game_setup_matches() {
+        check(
+            ee::s07::f_00263ba8__generated,
+            net_abort_game_setup,
+            240,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x263ba8, 6);
+                net_fakes_on(c);
+                net_globals_fixture(c);
+                c.bus.write32(NET_FAKE_ALLOC, DATA + 0x6000);
+                c.bus.write32(NET_FAKE_FIND, (seed / 2) & 1);
+                if (seed / 4) & 1 == 1 {
+                    c.bus.write32(GAME_GP + 0x2dc, DATA + 0x2000);
+                }
+                c.bus.write32(GAME_GP + 0x304, DATA + 0x5000);
+                c.bus.write32(DATA, seed & 1);
+                c.bus.write32(DATA + 4, 0);
+                if seed % 24 == 23 {
+                    c.bus.write32(NET_FAKES_UNWIND, (seed / 24) % 3);
+                }
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 3) as u64;
+                c.pc = 0x0026_3ba8;
+            },
+        );
+    }
+
+    #[test]
+    fn net_start_game_setup_matches() {
+        check(
+            ee::s07::f_002639e0__generated,
+            net_start_game_setup,
+            60,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2639e0, 8);
+                net_fakes_on(c);
+                net_globals_fixture(c);
+                c.bus.write32(NET_FAKE_BE, DATA + 0x2000);
+                c.bus.write32(NET_FAKE_IFACE, DATA + 0x2100);
+                c.bus.write32(NET_FAKE_ALLOC, DATA + 0x6000);
+                c.bus.write32(GAME_GP - 0x4b74, 0x3c88_8889);
+                c.bus.write32(GAME_GP - 0x1dc, 0x3f80_0000);
+                c.bus.write32(GAME_GP + 0x304, DATA + 0x5000);
+                c.bus
+                    .write32(0x0053_5610, if seed & 1 == 1 { 1 << 18 } else { 0 });
+                if seed % 12 == 11 {
+                    c.bus.write32(NET_FAKES_UNWIND, (seed / 12) % 4);
+                }
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (0xc0a8_0101 + (seed % 4)) as u64;
+                c.g[A2][0] = 0;
+                c.g[A3][0] = (seed % 3) as u64;
+                c.g[T0][0] = (seed % 5) as u64;
+                c.pc = 0x0026_39e0;
+            },
+        );
+    }
+
+    #[test]
+    fn net_update_game_setup_matches() {
+        check(
+            ee::s07::f_00263cf0__generated,
+            net_update_game_setup,
+            240,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x263cf0, 10);
+                net_fakes_on(c);
+                net_globals_fixture(c);
+                c.bus.write32(NET_FAKE_IFACE, DATA + 0x2100);
+                c.bus.write32(NET_FAKE_ALLOC, DATA + 0x6000);
+                // The launch's buddy-manager checks: `seed / 12 % 2` whether it
+                // exists (else Create, a fake, leaves it missing and the
+                // lobby is disconnected), `seed / 24 % 2` IsConnected.
+                c.bus.write32(NET_FAKE_ISCONN, seed / 24 % 2);
+                c.bus.write32(NET_FAKE_FIND, 1);
+                c.bus.write32(
+                    GAME_GP.wrapping_add(BUDDY_MAN_GP as u32),
+                    if seed / 12 % 2 == 0 { DATA + 0x3800 } else { 0 },
+                );
+                c.bus.write32(GAME_GP + 0x304, DATA + 0x5000);
+                let setup = DATA + 0x2000;
+                c.bus.write32(GAME_GP + 0x2dc, setup);
+                let comm = DATA + 0x3000;
+                let chan = DATA + 0x3100;
+                // The state classes, `seed % 12`.
+                let class = seed % 12;
+                let (state, setup_state, comm28, chan_fn, timer) = match class {
+                    0 => (0, 0, 0, FAKE, 0),
+                    1 => (3, 0, 0, FAKE, 0),
+                    2 => (1, 0, 0, FAKE, 0),
+                    3 => (1, 0, 0, FAKE, 0),
+                    4 => (1, 0, 1, 0x0014_06c0, 0),
+                    5 => (1, 0, 0, 0x0014_06c0, 0x3fc0_0000),
+                    6 => (1, 0, 0, 0x0014_06c0, 0xbfc0_0000),
+                    7 => (2, 5, 1, FAKE, 0),
+                    8 => (2, 0xd, 0, FAKE, 0),
+                    9 => (2, 0xb, 0, FAKE, 0),
+                    10 => (2, 5, 0, FAKE, 0),
+                    _ => (2, 0xb, 1, FAKE, 0),
+                };
+                c.bus.write32(DATA, state);
+                c.bus.write32(DATA + 4, 0);
+                c.bus.write32(DATA + 8, DATA + 0x1111);
+                c.bus.write32(DATA + 0xc, if class == 2 { 1 } else { 0 });
+                c.bus.write32(DATA + 0x10, timer);
+                c.bus.write32(setup, setup_state);
+                c.bus.write32(comm + 0x28, comm28);
+                c.bus.write32(chan + 4, 0);
+                c.bus.write32(chan + 0x20, 0);
+                c.bus.write32(DATA + 0x3200 + 0x24, chan_fn);
+                if class == 9 {
+                    c.bus.write32(NET_FAKES_UNWIND, 1);
+                }
+                c.g[A0][0] = DATA as u64;
+                c.pc = 0x0026_3cf0;
             },
         );
     }
