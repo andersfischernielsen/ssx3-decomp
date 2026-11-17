@@ -6674,6 +6674,37 @@
 0x001d8de0    MemCardStateBase_Update
 # Phase 2 wave: oc398
 0x001d8700    MemCardStateBase_OnChildEvent
+# Phase 2 wave: oc399
+0x0023c808    MCManager_GetInstance
+0x0023c8f0    MCManager_BeginLoad
+0x0023caa0    MCManager_SetDataSize
+0x0023cae8    MCManager_BeginSave
+0x0023cc58    MCManager_SetDataSize_Wrapper
+0x0023cc78    MCManager_FormatSaveDesc
+0x0023cdb0    MCManager_BuildSaveTitle
+0x0023d660    MCManager_UpdateMode1
+0x0023e268    MCManager_State31
+0x0023e2c0    MCManager_State32
+0x0023e4f0    MCManager_State34
+0x0023e8a0    MCManager_ClassifyCardState
+0x0023f308    MCManager_State0D
+0x0023f578    MCManager_State11_Save
+0x0023fb18    MCManager_SetSlot
+0x0023fd40    MCManager_State16
+0x0023fff0    MCManager_State1E
+0x002409c8    MCManager_State09
+0x00240cc0    MCManager_State2B
+0x00240d90    MCManager_State2C_Delete
+0x00240f10    MCManager_State2F
+0x00240fb0    MCManager_WriteSaveByName
+0x00241050    MCManager_WriteSaveBySlot
+0x002410d0    MCManager_ClampFileIndex
+0x00241400    MCManager_NextSlot
+0x00241540    MCManager_PrevSlot
+0x00241678    MCManager_PrevFile
+0x002416c0    MCManager_NextFile
+0x00241928    MCManager_FormatSlotFreeSpace
+0x00241fb0    MCManager_ReadCurrentDirInfo
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks

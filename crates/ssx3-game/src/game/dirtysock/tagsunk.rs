@@ -1946,11 +1946,6 @@ pub(crate) mod callee {
     };
 
     // Front-end back-end interface accessors.
-    pub const CBE_GET_BE: Callee = Callee {
-        addr: 0x0014_dc80,
-        f: ee::s01::f_0014dc80,
-    };
-
     pub const CBE_GET_INTERFACE: Callee = Callee {
         addr: 0x0014_dd58,
         f: ee::s01::f_0014dd58,
@@ -1966,42 +1961,7 @@ pub(crate) mod callee {
         f: ee::s01::f_001474c8,
     };
 
-    // The GM handler and the memory-card manager.
-
-    pub const MC_SET_MODE: Callee = Callee {
-        addr: 0x0023_d570,
-        f: ee::s06::MCManager_SetMode,
-    };
-
-    pub const MC_GET_PRODUCT_CODE: Callee = Callee {
-        addr: 0x0024_1aa0,
-        f: ee::s06::MCManager_GetProductCode,
-    };
-
-    pub const MC_GET_SAVE_TYPE_TAG: Callee = Callee {
-        addr: 0x0024_1d40,
-        f: ee::s06::MCManager_GetSaveTypeTag,
-    };
-
-    pub const F_00152BA8: Callee = Callee {
-        addr: 0x0015_2ba8,
-        f: ee::s01::f_00152ba8,
-    };
-
-    pub const F_00152948: Callee = Callee {
-        addr: 0x0015_2948,
-        f: ee::s01::f_00152948,
-    };
-
-    pub const F_002C2540: Callee = Callee {
-        addr: 0x002c_2540,
-        f: ee::s08::f_002c2540,
-    };
-
-    pub const F_002C26D0: Callee = Callee {
-        addr: 0x002c_26d0,
-        f: ee::s08::f_002c26d0,
-    };
+    // The GM handler.
 
     pub const MESSAGE_CENTER_IS_FLAG_SET_2: Callee = Callee {
         addr: 0x001e_3a30,
