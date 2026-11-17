@@ -6672,6 +6672,8 @@
 0x0019ee88    FEModule_RiderPreviewRender
 0x00392430    Font_FindLineBreak
 0x001d8de0    MemCardStateBase_Update
+# Phase 2 wave: oc398
+0x001d8700    MemCardStateBase_OnChildEvent
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
