@@ -30711,6 +30711,7 @@ pub(crate) mod tests {
         let man = DATA + 0x1000;
         let list = DATA + 0x2000;
         let array = DATA + 0x2100;
+        let node = DATA + 0x2180;
         let entry = DATA + 0x2200;
         match seed % 4 {
             0 => {
@@ -30726,7 +30727,9 @@ pub(crate) mod tests {
                 c.bus.write32(man + 0xcc, list);
                 c.bus.write32(list + 0x18, 2);
                 c.bus.write32(list + 0x40, array);
-                c.bus.write32(array, entry);
+                // `Lobby_ListGetAt` returns the first word of the slot's node.
+                c.bus.write32(array, node);
+                c.bus.write32(node, entry);
                 c.bus
                     .write32(entry + 0xa8, if seed % 4 == 2 { 0 } else { bit });
             }
@@ -31186,7 +31189,10 @@ pub(crate) mod tests {
                 c.bus.write32(0x0053_4b30 + 0x328, r.next_u32());
                 c.bus.write32(0x0053_4b30 + 0x32c, r.next_u32());
                 // Track id / desync byte and the finish-indexed tables.
-                let track = [0u32, 14, 15, 16][((b / 4) % 4) as usize];
+                // Tracks 14-16 are the range the event byte is checked for;
+                // 0 and 17 lie outside it. `b / 4` and `b / 8` share digits, so
+                // track 17 only meets event byte 4; the bound needs only the track.
+                let track = [0u32, 14, 15, 16, 17][((b / 4) % 5) as usize];
                 c.bus.write32(0x0053_5c08, track);
                 c.bus
                     .write8(0x0053_5c12, if (b / 8) % 2 == 0 { 4 } else { 7 });
@@ -32239,6 +32245,32 @@ pub(crate) mod tests {
         );
     }
 
+    /// The types just past two dispatch bounds, which no table lists: 0xe
+    /// (the client's split at 0xe) and 0xf9 (the host's at 0xf9). `seed % 2`
+    /// the type, `seed / 2 % 2` the host flag, `seed / 4 % 4` the state as
+    /// in the main cross, `seed / 16 % 2` the stats flag.
+    #[test]
+    fn c_setup_man_update_bounds_matches() {
+        setup_man_update_hooks();
+        // Every cycle total of the cross.
+        const PATHS: &[u64] = &[
+            122, 124, 125, 127, 131, 133, 137, 178, 179, 181, 458, 459, 460, 461, 464, 465,
+        ];
+        check_paths(
+            ee::s07::f_002642b8__generated,
+            c_setup_man_update,
+            32,
+            PATHS,
+            &|c, seed| {
+                let kind = Some([0xe, 0xf9][(seed % 2) as usize]);
+                let host = seed / 2 % 2 == 1;
+                let state = [0, 8, 5, 10][(seed / 4 % 4) as usize];
+                let stats = seed / 16 % 2 == 1;
+                setup_man_update_fixture(c, seed, state, host, stats, kind, 1, 3, true, u32::MAX);
+            },
+        );
+    }
+
     pub(crate) const SETUP_FAKES_CTRL: u32 = DATA + 0xe_0000;
 
     pub(crate) const SETUP_FAKES_MAGIC: u32 = 0x0c40_4001;
@@ -32595,7 +32627,12 @@ pub(crate) mod tests {
                 let _r = setup_machine(c, seed, 0x264be8);
                 c.pc = 0x0026_4be8;
                 setup_self_with_state(c, 0, 0);
-                c.bus.write32(SETUP_SELF + SETUP_SEND_TAIL, seed / 8 % 32);
+                // The send tail, `seed / 8 % 7`: in the first lap of the
+                // 32-slot ring, past slot 31, and negative (-1, -33).
+                c.bus.write32(
+                    SETUP_SELF + SETUP_SEND_TAIL,
+                    [0u32, 5, 31, 32, 45, u32::MAX, 0xffff_ffdf][(seed / 8 % 7) as usize],
+                );
                 let msg = DATA + 0x2000;
                 for i in 0..16u32 {
                     c.bus.write32(msg + i * 4, 0x1000 + i);
@@ -32623,11 +32660,23 @@ pub(crate) mod tests {
                 if seed % 3 != 0 {
                     c.bus.write32(SETUP_SELF + SETUP_CUR_PACKET, DATA + 0x6000);
                 }
-                c.bus.write32(
-                    SETUP_SELF + SETUP_RECV_TAIL,
-                    [0u32, 5, 31, 40][(seed % 4) as usize],
-                );
-                if seed % 2 == 0 {
+                // Ring head and tail, `seed / 6 % 6`: empty, part-full and
+                // full first laps, full past slot 31, a store past slot 31
+                // (tail 40, head 20) and a tail of -1.
+                let (head, tail) = [
+                    (0u32, 0u32),
+                    (0, 5),
+                    (0, 31),
+                    (0, 40),
+                    (20, 40),
+                    (0xffff_fffd, u32::MAX),
+                ][(seed / 6 % 6) as usize];
+                c.bus.write32(SETUP_SELF + SETUP_RECV_HEAD, head);
+                c.bus.write32(SETUP_SELF + SETUP_RECV_TAIL, tail);
+                // ChannelRecv answers 0 on even seeds, else a packet each
+                // time until the ring is full. Always 0 for tail -1: its
+                // store lands on the head word, and the ring never fills.
+                if seed % 2 == 0 || tail == u32::MAX {
                     c.bus
                         .write32(DATA + 0x3_2200 + 0x3c, RIDER_IFACE_HAS_VISITED);
                 }
@@ -32653,29 +32702,39 @@ pub(crate) mod tests {
                 let _r = setup_machine(c, seed, 0x264138);
                 c.pc = 0x0026_4138;
                 setup_self_with_state(c, 0, 0);
-                if seed % 2 == 0 {
+                if seed / 60 % 2 == 0 {
                     c.bus.write32(SETUP_SELF + SETUP_CUR_PACKET, DATA + 0x6000);
                 }
-                // Receive ring: head +0xc, tail +0x8, slots at +0x10.
-                let (head, tail) = [(0u32, 0u32), (0, 2), (2, 2), (31, 33)][(seed % 4) as usize];
+                // Receive ring: head +0xc, tail +0x8, slots at +0x10; send
+                // ring: head +0x94, tail +0x90, slots at +0x98. Head/tail
+                // pairs from `seed % 5` and `seed / 5 % 6`, with the wrap past
+                // slot 31 and a head of -1. Every slot holds a packet except,
+                // on `seed / 30 % 2`, slots 1 and 31 (an empty slot ends the
+                // walk). With head -1 the slot is -1: the head word itself.
+                let (head, tail) =
+                    [(0u32, 0u32), (0, 2), (2, 2), (31, 33), (u32::MAX, 1)][(seed % 5) as usize];
+                let (shead, stail) = [
+                    (0u32, 0u32),
+                    (0, 1),
+                    (3, 3),
+                    (31, 33),
+                    (u32::MAX, 1),
+                    (1, 3),
+                ][(seed / 5 % 6) as usize];
+                let holes = seed / 30 % 2 == 1;
                 c.bus.write32(SETUP_SELF + SETUP_RECV_HEAD, head);
                 c.bus.write32(SETUP_SELF + SETUP_RECV_TAIL, tail);
-                for i in 0..4u32 {
-                    c.bus.write32(
-                        SETUP_SELF + SETUP_RECV_SLOTS + i * 4,
-                        DATA + 0x6000 + i * 0x10,
-                    );
-                }
-                let (shead, stail) = [(0u32, 0u32), (0, 1), (3, 3)][(seed / 4 % 3) as usize];
                 c.bus.write32(SETUP_SELF + SETUP_SEND_HEAD, shead);
                 c.bus.write32(SETUP_SELF + SETUP_SEND_TAIL, stail);
-                for i in 0..4u32 {
-                    c.bus.write32(
-                        SETUP_SELF + SETUP_SEND_SLOTS + i * 4,
-                        DATA + 0x7000 + i * 0x10,
-                    );
+                for i in 0..32u32 {
+                    let empty = holes && (i == 1 || i == 31);
+                    let packet = |base: u32| if empty { 0 } else { base + i * 0x10 };
+                    c.bus
+                        .write32(SETUP_SELF + SETUP_RECV_SLOTS + i * 4, packet(DATA + 0x6000));
+                    c.bus
+                        .write32(SETUP_SELF + SETUP_SEND_SLOTS + i * 4, packet(DATA + 0x7000));
                 }
-                c.g[A1][0] = sx(seed % 2);
+                c.g[A1][0] = sx(seed / 120 % 2);
             },
         );
         driven!(gen, ee::s07::f_00264138__generated);
@@ -33462,6 +33521,9 @@ pub(crate) mod tests {
                 c.bus.write32(GAME_GP - 0x4b74, 0x3c88_8889);
                 c.bus.write32(GAME_GP - 0x1dc, 0x3f80_0000);
                 c.bus.write32(GAME_GP + 0x304, DATA + 0x5000);
+                // The game's address format, so the channel name spells the
+                // address's four bytes.
+                put_cstr(c, 0x0048_0ee0, b"%d.%d.%d.%d");
                 c.bus
                     .write32(0x0053_5610, if seed & 1 == 1 { 1 << 18 } else { 0 });
                 if seed % 12 == 11 {
@@ -33529,7 +33591,9 @@ pub(crate) mod tests {
                 c.bus.write32(chan + 4, 0);
                 c.bus.write32(chan + 0x20, 0);
                 c.bus.write32(DATA + 0x3200 + 0x24, chan_fn);
-                if class == 9 {
+                // Class 9 unwinds at the second fake call on even `seed / 48`;
+                // on odd it runs on to the abort for state 0xb.
+                if class == 9 && seed / 48 % 2 == 0 {
                     c.bus.write32(NET_FAKES_UNWIND, 1);
                 }
                 c.g[A0][0] = DATA as u64;
