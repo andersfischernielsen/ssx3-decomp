@@ -176,6 +176,9 @@ pub struct Inner {
     )>,
     /// This frame's number if it has no depth (handed over as none).
     pending_none: Option<u64>,
+    /// With a render thread: the depth thread, which hands each frame's
+    /// depth over as soon as the GPU has written it (in frame order).
+    depth_tx: Option<std::sync::mpsc::Sender<DepthPost>>,
     /// Frames received by `render_built` (the next frame's number).
     frames_in: u64,
     /// ZMAX + 1 of the frame's Z buffer (depth is stored as Z / it).
@@ -225,6 +228,78 @@ pub struct Shared {
     /// The latest frame's images (in-between ones first) and when they
     /// were ready.
     present: Mutex<Option<(Vec<wgpu::Texture>, web_time::Instant)>>,
+}
+
+/// A frame's depth for the depth thread: none, or its readback in flight.
+enum DepthPost {
+    None(u64),
+    Buf {
+        buf: wgpu::Buffer,
+        idx: wgpu::SubmissionIndex,
+        zs: f32,
+        w: u32,
+        h: u32,
+        mapped: Arc<std::sync::atomic::AtomicBool>,
+        frame: u64,
+    },
+}
+
+/// A mapped depth readback as the light queries read it: in GS pixels (the
+/// sample at each pixel's centre, `depth_query`), converted when a query
+/// reads it.
+fn depth_from(raw: Vec<u8>, zs: f32, lw: u32, lh: u32) -> Depth {
+    let zs = zs as f64;
+    let z = move |x: u32, y: u32| {
+        let o = 4 * (y as usize * lw as usize + x as usize);
+        let d = f32::from_le_bytes([raw[o], raw[o + 1], raw[o + 2], raw[o + 3]]);
+        (d as f64 * zs).round().min(zs - 1.0) as u32
+    };
+    Depth {
+        w: lw,
+        h: lh,
+        z: Box::new(z),
+    }
+}
+
+/// The depth thread: each frame's depth handed over once the GPU is done
+/// with it, so the game's light queries do not wait for the render thread
+/// to get to the next frame.
+fn spawn_depth_thread(
+    dev: wgpu::Device,
+    shared: Arc<Shared>,
+) -> std::sync::mpsc::Sender<DepthPost> {
+    let (tx, rx) = std::sync::mpsc::channel::<DepthPost>();
+    std::thread::Builder::new()
+        .name("ssx3-gfx-depth".into())
+        .spawn(move || {
+            for p in rx {
+                match p {
+                    DepthPost::None(f) => shared.post_depth(f, None),
+                    DepthPost::Buf {
+                        buf,
+                        idx,
+                        zs,
+                        w,
+                        h,
+                        mapped,
+                        frame,
+                    } => {
+                        let _ = dev.poll(wgpu::PollType::Wait {
+                            submission_index: Some(idx),
+                            timeout: None,
+                        });
+                        let d = mapped
+                            .load(std::sync::atomic::Ordering::Acquire)
+                            .then(|| buf.slice(..).get_mapped_range())
+                            .and_then(|r| r.ok())
+                            .map(|v| depth_from(v.to_vec(), zs, w, h));
+                        shared.post_depth(frame, d);
+                    }
+                }
+            }
+        })
+        .expect("depth thread");
+    tx
 }
 
 impl Shared {
@@ -381,6 +456,7 @@ impl Renderer {
                 depth_query,
                 pending_depth: None,
                 pending_none: None,
+                depth_tx: None,
                 frames_in: 0,
                 zscale: 16777216.0,
                 timing: (0, [0.0; 4]),
@@ -404,6 +480,10 @@ impl Renderer {
     pub fn start_worker(&self) {
         let (tx, rx) = std::sync::mpsc::sync_channel::<Job>(1);
         *self.1.tx.lock().unwrap() = Some(tx);
+        {
+            let mut g = self.0.lock().unwrap();
+            g.depth_tx = Some(spawn_depth_thread(g.dev.clone(), self.1.clone()));
+        }
         let (inner, shared) = (self.0.clone(), self.1.clone());
         std::thread::Builder::new()
             .name("ssx3-gfx".into())
@@ -571,6 +651,20 @@ impl ssx3_ps2::frame_sink::FrameSink for Renderer {
 }
 
 impl Inner {
+    /// This frame has no depth: hand that over (with the depth thread at
+    /// once, else with the next frame's).
+    fn post_none(&mut self) {
+        if !self.want_depth {
+            return;
+        }
+        match &self.depth_tx {
+            Some(tx) => {
+                let _ = tx.send(DepthPost::None(self.frames_in - 1));
+            }
+            None => self.pending_none = Some(self.frames_in - 1),
+        }
+    }
+
     fn ensure_targets(&mut self, w: u32, h: u32) {
         if self.targets.as_ref().is_some_and(|t| t.w == w && t.h == h) {
             return;
@@ -1038,7 +1132,7 @@ impl Inner {
         self.stats.unknown_tex += self.gs.unknown_tex - p0.2;
         if self.gs.verts.is_empty() && self.gs.gpu.calls.is_empty() {
             finish_depth(self);
-            self.pending_none = self.want_depth.then(|| self.frames_in - 1);
+            self.post_none();
             return;
         }
         // Vertex buffer.
@@ -1796,7 +1890,7 @@ impl Inner {
         }
         if items.is_empty() {
             finish_depth(self);
-            self.pending_none = self.want_depth.then(|| self.frames_in - 1);
+            self.post_none();
             return;
         }
         let t_prepared = web_time::Instant::now();
@@ -2530,30 +2624,31 @@ impl Inner {
                     .then(|| slice.get_mapped_range())
                     .and_then(|r| r.ok())
                 {
-                    // In GS pixels (the sample at each pixel's centre,
-                    // `depth_query`), converted when a query reads it.
-                    let raw = v.to_vec();
-                    let zs = zs as f64;
-                    let z = move |x: u32, y: u32| {
-                        let o = 4 * (y as usize * lw as usize + x as usize);
-                        let d = f32::from_le_bytes([raw[o], raw[o + 1], raw[o + 2], raw[o + 3]]);
-                        (d as f64 * zs).round().min(zs - 1.0) as u32
-                    };
-                    this.shared.post_depth(
-                        prev_frame,
-                        Some(Depth {
-                            w: lw,
-                            h: lh,
-                            z: Box::new(z),
-                        }),
-                    );
+                    this.shared
+                        .post_depth(prev_frame, Some(depth_from(v.to_vec(), zs, lw, lh)));
                 } else {
                     this.shared.post_depth(prev_frame, None);
                 }
                 this.depth_parts[1] += t_copy.elapsed().as_secs_f64() * 1e3;
             }
         }
-        if let Some(buf) = depth_buf {
+        if let (Some(buf), Some(tx)) = (&depth_buf, &self.depth_tx) {
+            let mapped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let m = mapped.clone();
+            buf.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+                m.store(r.is_ok(), std::sync::atomic::Ordering::Release)
+            });
+            let _ = tx.send(DepthPost::Buf {
+                buf: buf.clone(),
+                idx: sub_idx.clone(),
+                zs: self.zscale,
+                w,
+                h,
+                mapped,
+                frame: self.frames_in - 1,
+            });
+            self.timing.1[3] += t_sub.elapsed().as_secs_f64() * 1e3;
+        } else if let Some(buf) = depth_buf {
             // The previous frame's depth (its readback has had a frame to
             // complete): the light queries see depth one frame late, and
             // the CPU does not wait for this frame's GPU work.
