@@ -14,7 +14,7 @@ Status legend: ✅ done · 🟡 in progress · ⬜ not started
 | Layer | Today |
 | --- | --- |
 | Game logic (EE) | Statically compiled to Rust; about half of it hand-written typed Rust (the README's progress chart, `tools/progress.py`), the rest generated. Still PS2-shaped: register file, guest RAM, PS2 float rules. |
-| Kernel | Native HLE: guest threads as coroutines on one host thread, semaphores, alarms, interrupts. |
+| Kernel | Native HLE: guest threads as coroutines on one host thread, semaphores, alarms, interrupts. The final state has no guest threads (below). |
 | Graphics | Native: the draw functions record typed draws, `ssx3-gfx` (wgpu) renders them. The emulated DMA/VIF/VU1/GS remain only for the reference path (`--features vu1-microcode`). |
 | Movies, sound, files, pads, memory card | Native (`ssx3-mpeg`, `ssx3-snd`, `std::fs`, native libpad/libmc). The IOP does not run. |
 | Game rate | Configurable (`SSX3_TICK_HZ`), bit-exact at 60: `configurable-tick-rate.md`. |
@@ -81,13 +81,50 @@ The browser front end (its own repository, `frontends.md`): the unwind form of
 the EE code in a Web Worker, the disc image read with `FileReaderSync`, ssx3-gfx drawing with
 WebGPU. Lowest-priority target: keep the unwind form working
 (`ssx3-headless --features ee-unwind` checks it natively) and avoid new
-blocking GPU readbacks.
+blocking GPU readbacks. The unwind form exists only because of the game's
+threads; it goes away with them (final state below).
 
 ## Final task (required before the project is called done) ⬜
 
 - **Light glows/flares must be occluded by geometry**:
   `../investigation/flare-occlusion.md`. Parked by the owner on 2026-10-15,
   but explicitly required. Confirm against PCSX2.
+
+## Final state: no guest threads ⬜
+
+Agreed with the project owner on 2026-11-17: the decompilation ends with the
+game as one loop that the port drives, without the EE kernel's threads.
+
+The EE has one core, but the game is written as kernel threads (8 in a race:
+`CreateThread`, semaphores, `SleepThread`/`iWakeupThread`, alarms), one
+running at a time. Recompiled, a guest call is a host call, so a thread that
+blocks deep in a call chain holds host stack frames. Keeping that working
+costs two mechanisms today: a host stack per guest thread (coroutines,
+`ssx3-ps2/src/threads.rs`, the default form) and, for single-threaded
+targets, a second form of the generated code that unwinds to a trampoline
+and re-enters at the saved `pc` (`recomp-ee --unwind`, feature `ee-unwind`,
+resume labels, `__entries` twins, `Cpu::no_unwind`, the browser build's
+form). Neither is the game; both are there because its threads are.
+
+The way out is to remove the threads from the game itself: once everything
+on each thread's paths is hand-written, what a thread does becomes a call
+from the frame loop (a VBlank wait becomes the end of a frame, a semaphore a
+direct call or a flag, a streaming thread a step per frame), still deterministic and
+RAM-identical at each step under the gate.
+
+Done when:
+- no guest thread is created; the kernel's thread, semaphore and alarm
+  services are unused by the game;
+- the coroutine layer (`threads.rs`, `corosensei`) and the unwind form
+  (`recomp-ee --unwind`, the `ee-unwind` feature and everything that exists
+  only for it) are deleted;
+- every front end, the browser included, runs the same code with no stack
+  switching.
+
+Until then, the browser could run the default form instead of the unwind
+form with WebAssembly JavaScript Promise Integration (JSPI: one wasm stack
+per guest thread, in Chrome/Edge 137+, Firefox 153+, Safari 27); that would
+retire the unwind form earlier. Investigated 2026-11-17, not prototyped.
 
 ## Verification (applies to every phase)
 
