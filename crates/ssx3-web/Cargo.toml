@@ -10,12 +10,6 @@ crate-type = ["cdylib"]
 
 # Everything is for wasm32 only: natively this is an empty library.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-ssx3-core.workspace = true
-ssx3-ps2 = { path = "../ssx3-ps2" }
-ssx3-iop = { path = "../ssx3-iop" }
-ssx3-gfx = { path = "../ssx3-gfx" }
-ssx3-render = { path = "../ssx3-render" }
-ssx3-ee-rt = { path = "../ssx3-ee-rt" }
 ssx3-engine = { path = "../ssx3-engine", default-features = false, features = ["ee-unwind"] }
 # wgpu's types are Send + Sync in a single-threaded wasm build with this.
 wgpu = { version = "30.0.1", features = ["fragile-send-sync-non-atomic-wasm"] }

@@ -5,9 +5,9 @@
 //! code is the unwind form (`generated/ee-unwind`): one host thread, so a
 //! game frame (`Game::frame`) returns to the browser like any other call.
 //!
-//! The image: rendered at the canvas's pixel size, the game's own 4:3 view
-//! (boxed in the canvas), no anisotropic filtering, no interpolation, no
-//! texture packs.
+//! The image: rendered at the canvas's pixel size, the game's 4:3 view
+//! boxed in the canvas (`SSX3_ASPECT=fill` fills it), no anisotropic
+//! filtering, no interpolation, no texture packs.
 //!
 //! The game itself is `ssx3-engine` (unwind form): this crate is the
 //! browser front end (disc from a `File`, the canvas, the VU helpers).
@@ -21,17 +21,18 @@
 
 use std::sync::Arc;
 
-use ssx3_core::iso::{self, Source};
-use ssx3_engine::{Engine, EngineConfig};
+use ssx3_engine::ssx3_core::iso::{self, Source};
+use ssx3_engine::{vu, Engine, EngineConfig};
 use wasm_bindgen::prelude::*;
 
 /// The settings: what the page passes (`SSX3_*` keys, e.g. from the URL
 /// query), else the default, except the ones that would change the
-/// original image.
+/// original image: no anisotropic filtering, the 4:3 box.
 fn settings(page: std::collections::HashMap<String, String>) -> impl ssx3_engine::Settings {
     move |key: &str| match page.get(key) {
         Some(v) => Some(v.clone()),
         None if key == "SSX3_ANISO" => Some("1".into()),
+        None if key == "SSX3_ASPECT" => Some("4:3".into()),
         None => None,
     }
 }
@@ -97,11 +98,12 @@ unsafe impl Sync for SendBlob {}
 /// [3] jobs done, [4] output base, [5] arena bytes per helper, [6] store
 /// generation, [7] store bytes used, [8] store base; from int 16, per job:
 /// input offset, length, output offset (-1: did not fit), length. Inputs
-/// follow the header, then the store (`ssx3_render::vujob::SharedStore`:
+/// follow the header, then the store ([`vu::SharedStore`]:
 /// replayed calls' input, written once; helpers mirror it), then each
 /// helper's output arena.
 mod vu_pool {
     use js_sys::{Atomics, Int32Array, SharedArrayBuffer, Uint8Array};
+    use ssx3_engine::vu;
 
     const HEADER: u32 = 65536;
     const TABLE: u32 = 16;
@@ -145,7 +147,7 @@ mod vu_pool {
             })
         }
 
-        /// [`ssx3_render::vujob::SharedStore`]: data under `key`, appended
+        /// [`super::vu::SharedStore`]: data under `key`, appended
         /// once (the store starts over, a new generation, when full).
         fn store_offset(&self, key: u64, bytes: &mut dyn FnMut() -> Vec<u8>) -> Option<u32> {
             let mut s = self.store.lock().unwrap();
@@ -188,8 +190,8 @@ mod vu_pool {
         /// Start `jobs` on the helpers; the returned function waits for
         /// them (taking any not started yet itself) and gives the results
         /// in order.
-        pub fn start(self: &std::sync::Arc<Self>, jobs: Vec<Vec<u8>>) -> ssx3_gfx::VuCollect {
-            let local = |j: &[u8]| ssx3_gfx::run_vu_job(j, &self.store.lock().unwrap().bytes);
+        pub fn start(self: &std::sync::Arc<Self>, jobs: Vec<Vec<u8>>) -> vu::Collect {
+            let local = |j: &[u8]| vu::run_job(j, &self.store.lock().unwrap().bytes);
             let size: usize = jobs.iter().map(|j| j.len()).sum();
             if jobs.len() > MAX_JOBS || size > INPUTS as usize {
                 let r: Vec<Vec<u8>> = jobs.iter().map(|j| local(j)).collect();
@@ -217,7 +219,7 @@ mod vu_pool {
         }
 
         fn collect(&self, jobs: Vec<Vec<u8>>, tag: i32, n: i32) -> Vec<Vec<u8>> {
-            let local = |j: &[u8]| ssx3_gfx::run_vu_job(j, &self.store.lock().unwrap().bytes);
+            let local = |j: &[u8]| vu::run_job(j, &self.store.lock().unwrap().bytes);
             let mut out: Vec<Option<Vec<u8>>> = vec![None; jobs.len()];
             while let Some(j) = self.claim(tag, n) {
                 out[j] = Some(local(&jobs[j]));
@@ -251,14 +253,13 @@ mod vu_pool {
     /// The pool as the renderer's store of shared input.
     pub struct PoolStore(pub std::sync::Arc<Pool>);
 
-    impl ssx3_render::vujob::SharedStore for PoolStore {
+    impl vu::SharedStore for PoolStore {
         fn offset(&mut self, key: u64, bytes: &mut dyn FnMut() -> Vec<u8>) -> Option<u32> {
             self.0.store_offset(key, bytes)
         }
     }
 }
 
-/// The largest 4:3 box in a `w`×`h` canvas (whole pixels).
 /// The largest box of aspect `a` (width / height) in `w` x `h`.
 fn fit(w: u32, h: u32, a: f32) -> (f32, f32) {
     let (w, h) = (w as f32, h as f32);
@@ -284,7 +285,7 @@ struct VsOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
 #[wasm_bindgen]
 pub struct Game {
     engine: Engine,
-    gfx: ssx3_gfx::Renderer,
+    gfx: ssx3_engine::Renderer,
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
@@ -327,7 +328,7 @@ pub async fn start(
             reader,
         }) as Box<dyn Source>)
     }));
-    let ctx = ssx3_ps2::gpu::init_context()
+    let ctx = ssx3_engine::ssx3_ps2::gpu::init_context()
         .await
         .ok_or("WebGPU is not available")?;
     let (w, h) = (canvas.width().max(64), canvas.height().max(64));
@@ -389,7 +390,7 @@ pub async fn start(
     if !page.is_empty() {
         log(&format!("[ssx3] settings: {page:?}"));
     }
-    let engine = Engine::boot(EngineConfig {
+    let mut engine = Engine::boot(EngineConfig {
         // The page plays the sound (`Game::audio`).
         audio: ssx3_engine::Audio::Pull,
         // No files in the browser: don't keep pipelines between runs.
@@ -402,10 +403,11 @@ pub async fn start(
     if let Some(p) = pool {
         log(&format!("[ssx3] {helpers} VU helper workers"));
         let p = std::sync::Arc::new(p);
-        ssx3_gfx::set_vu_store(Box::new(vu_pool::PoolStore(p.clone())));
-        ssx3_gfx::set_vu_offload(Box::new(move |jobs| p.start(jobs)), helpers as usize);
+        vu::set_store(Box::new(vu_pool::PoolStore(p.clone())));
+        vu::set_offload(Box::new(move |jobs| p.start(jobs)), helpers as usize);
     }
-    let game = Game {
+    engine.set_surface_size(w, h);
+    Ok(Game {
         engine,
         gfx,
         device: ctx.device.clone(),
@@ -419,9 +421,7 @@ pub async fn start(
         ms_frame: 0.0,
         ms_present: 0.0,
         vu_buffer,
-    };
-    game.follow_size();
-    Ok(game)
+    })
 }
 
 #[wasm_bindgen]
@@ -431,29 +431,8 @@ impl Game {
         self.vu_buffer.clone()
     }
 
-    /// Render at the pixel size of the box the image fills in the canvas
-    /// (`present`): the game's own 4:3 view unless the settings ask for an
-    /// aspect (`SSX3_ASPECT`), with `SSX3_RESOLUTION` and `SSX3_FOV`; a
-    /// fixed `SSX3_RENDER_SIZE` is left as the engine set it.
-    fn follow_size(&self) {
-        if !self.engine.follows_surface() {
-            return;
-        }
-        let aspect = self.engine.aspect_box();
-        let (w, h) = fit(
-            self.config.width,
-            self.config.height,
-            aspect.unwrap_or(4.0 / 3.0),
-        );
-        let k = self.engine.resolution();
-        self.gfx.set_output_size(Some((
-            ((w * k).round() as u32).max(64),
-            ((h * k).round() as u32).max(64),
-        )));
-        ssx3_ps2::frame_sink::set_view(aspect.map_or(0.0, |_| w / h), self.engine.fov());
-    }
-
-    /// The canvas was resized (device pixels).
+    /// The canvas was resized (device pixels): the engine renders at the
+    /// size of the box the image fills in it (`present`).
     pub fn resize(&mut self, w: u32, h: u32) {
         if w == 0 || h == 0 || (w, h) == (self.config.width, self.config.height) {
             return;
@@ -461,7 +440,7 @@ impl Game {
         self.config.width = w;
         self.config.height = h;
         self.surface.configure(&self.device, &self.config);
-        self.follow_size();
+        self.engine.set_surface_size(w, h);
     }
 
     /// Run one game frame with pad 1's buttons (libpad bits, pressed = 1).
@@ -478,20 +457,16 @@ impl Game {
                 self.engine.status()
             ));
             log(&format!(
-                "  last 300 frames: {:.2} ms per frame in run_frame, {:.2} ms in present; {}; {}",
+                "  last 300 frames: {:.2} ms per frame in run_frame, {:.2} ms in present; {}",
                 self.ms_frame / 300.0,
                 self.ms_present / 300.0,
-                ssx3_ps2::frame_sink::timing_report(),
-                self.gfx.0.lock().unwrap().timing_report()
+                self.engine.timing_report()
             ));
             self.ms_frame = 0.0;
             self.ms_present = 0.0;
         }
         if !alive {
-            log(&format!(
-                "halted: {:?}",
-                ssx3_ps2::mr!(self.engine.cpu()).kernel.halted
-            ));
+            log(&format!("halted: {:?}", self.engine.halted()));
         }
         alive
     }
