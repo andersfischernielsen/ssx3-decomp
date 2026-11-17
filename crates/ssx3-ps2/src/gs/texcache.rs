@@ -9,7 +9,7 @@
 //!
 //! Code that modifies `Gs::vram` directly must call `Gs::vram_written`.
 
-use std::collections::HashMap;
+use ssx3_core::hash::HashMap;
 use std::sync::Arc;
 
 use super::raster::{self, Decoded, Pages, Tex, TexKey};
@@ -37,7 +37,7 @@ pub(crate) struct TexCache {
 impl Default for TexCache {
     fn default() -> Self {
         TexCache {
-            entries: HashMap::new(),
+            entries: HashMap::default(),
             page_gen: Box::new([0; 512]),
             gen: 0,
             live: Pages::default(),

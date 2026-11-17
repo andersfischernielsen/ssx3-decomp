@@ -21,7 +21,8 @@ fn read_setting() -> bool {
     var.is_some_and(|v| !v.is_empty() && v != "0") && crate::gpu::enabled()
 }
 
-/// Whether the renderer's float paths use host `f32`.
+/// Whether the renderer's float paths use host `f32` (also the speech
+/// decoder's filter, `ssx3_game::game::lib::snd`).
 #[inline(always)]
 pub fn on() -> bool {
     *FAST_MATH.get_or_init(read_setting)

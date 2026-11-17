@@ -2,8 +2,8 @@
 //! No driver objects or game data.
 
 use super::{PipeKey, Prewarm};
+use ssx3_core::hash::HashSet;
 use ssx3_render::gpu::Program;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -242,7 +242,7 @@ fn parse(bytes: &[u8], renderer: u64) -> Option<Vec<Prewarm>> {
     if u64::from_le_bytes(bytes[SUM].try_into().ok()?) != hash(body, FNV_BASIS) {
         return None;
     }
-    let mut seen = HashSet::new();
+    let mut seen = HashSet::default();
     let mut keys = Vec::with_capacity(count);
     for record in body.chunks_exact(RECORD) {
         let key = decode(record)?;

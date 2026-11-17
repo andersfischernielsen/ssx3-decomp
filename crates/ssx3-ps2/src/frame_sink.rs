@@ -645,7 +645,7 @@ static PAGE_STORE: Mutex<Vec<Option<(std::sync::Arc<Page>, u64)>>> = Mutex::new(
 /// [`frame::texture_ranges`] (reads elsewhere give 0 and are counted), or
 /// a full snapshot (frame dumps).
 pub struct FrameMem {
-    pages: std::collections::HashMap<u32, std::sync::Arc<Page>>,
+    pages: ssx3_core::hash::HashMap<u32, std::sync::Arc<Page>>,
     snap: u64,
     /// A full snapshot of EE memory (frame dumps, `SSX3_FULL_SNAPSHOT=1`).
     pub full: Option<Box<DumpMem>>,
@@ -661,7 +661,7 @@ impl FrameMem {
             store.resize(npages, None);
         }
         let gens = PAGE_GEN.get();
-        let mut pages = std::collections::HashMap::new();
+        let mut pages = ssx3_core::hash::HashMap::default();
         for &(a, b) in ranges {
             if a & 0x8000_0000 != 0 || b <= a {
                 continue;
@@ -699,7 +699,7 @@ impl FrameMem {
     /// The pages covering `ranges`, copied from `ram` (no store; frame
     /// dumps).
     pub fn from_ram(ram: &[u8], ranges: &[(u32, u32)]) -> FrameMem {
-        let mut pages = std::collections::HashMap::new();
+        let mut pages = ssx3_core::hash::HashMap::default();
         let npages = ram.len() / 4096;
         for &(a, b) in ranges {
             if a & 0x8000_0000 != 0 || b <= a {

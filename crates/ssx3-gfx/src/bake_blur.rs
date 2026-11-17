@@ -4,7 +4,7 @@
 //! (17 taps on two rings of 8 and 4 texels, through the draw's own sampler)
 //! instead of in every pixel that draws it.
 
-use std::collections::HashMap;
+use ssx3_core::hash::HashMap;
 
 const SHADER: &str = r#"
 @group(0) @binding(0) var src: texture_2d<f32>;
@@ -99,7 +99,7 @@ impl<K: std::hash::Hash + Eq> BakeBlur<K> {
         BakeBlur {
             pipe,
             layout,
-            cache: HashMap::new(),
+            cache: HashMap::default(),
         }
     }
 

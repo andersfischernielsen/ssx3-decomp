@@ -21,7 +21,7 @@
 //! Triangles whose state the hardware path cannot express go to the
 //! emulated GS (counted per [`Fallback`] reason).
 
-use std::collections::HashMap;
+use ssx3_core::hash::HashMap;
 use std::sync::Arc;
 
 use super::super::raster::{Blend, Draw, FbFmt, Pages, Prim, Shape};
@@ -560,7 +560,7 @@ pub(crate) struct AlphaCache {
 impl Default for AlphaCache {
     fn default() -> Self {
         AlphaCache {
-            map: HashMap::new(),
+            map: HashMap::default(),
             page_gen: Box::new([0; 512]),
             clock: 1,
             hits: 0,
@@ -1043,7 +1043,7 @@ impl Gpu {
             layout,
             module,
             dual,
-            pipes: HashMap::new(),
+            pipes: HashMap::default(),
             pipelines: Vec::new(),
         }
     }

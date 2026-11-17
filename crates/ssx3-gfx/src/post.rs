@@ -4,7 +4,7 @@
 //! channel holds the GS's destination alpha, which later draws test and
 //! blend with.
 
-use std::collections::HashMap;
+use ssx3_core::hash::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::OnceLock;
 
@@ -279,7 +279,7 @@ impl Post {
             module,
             layout,
             pipe_layout,
-            pipes: HashMap::new(),
+            pipes: HashMap::default(),
             samp,
             ubufs,
             next_u: 0,

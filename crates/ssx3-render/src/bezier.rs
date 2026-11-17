@@ -983,7 +983,7 @@ pub mod gpu {
         let pos =
             |v: usize| -> [f32; 3] { std::array::from_fn(|l| f32::from_bits(data[2 * v][l])) };
         let key = |v: usize| -> [u32; 3] { [data[2 * v][0], data[2 * v][1], data[2 * v][2]] };
-        let mut acc: std::collections::HashMap<[u32; 3], [f32; 3]> = Default::default();
+        let mut acc: ssx3_core::hash::HashMap<[u32; 3], [f32; 3]> = Default::default();
         let mut start = 0usize;
         let mut faces: Vec<([usize; 3], [f32; 3])> = Vec::new();
         for &len in &s.lens {

@@ -15,7 +15,7 @@
 //! Alpha: the GS's is 0..0x80 (0x80 = opaque). The PNGs hold it ×2 (0xFF =
 //! opaque), and replacements are scaled back.
 
-use std::collections::{HashMap, HashSet};
+use ssx3_core::hash::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::tex::{Decoded, TexKey};
@@ -56,7 +56,7 @@ impl Pack {
             }
         }
         let dir = ssx3_core::platform_paths::texture_replacements();
-        let mut replace = HashMap::new();
+        let mut replace = HashMap::default();
         if dir.as_os_str() != "0" {
             if let Ok(rd) = std::fs::read_dir(&dir) {
                 for e in rd.flatten() {
@@ -78,7 +78,7 @@ impl Pack {
         }
         Pack {
             dump,
-            dumped: HashSet::new(),
+            dumped: HashSet::default(),
             replace,
         }
     }
@@ -238,8 +238,8 @@ mod tests {
         };
         let mut p = Pack {
             dump: Some(dir.clone()),
-            dumped: HashSet::new(),
-            replace: HashMap::new(),
+            dumped: HashSet::default(),
+            replace: HashMap::default(),
         };
         p.dump(&k, &d);
         let file = dir.join(format!("{}.png", name(&k)));

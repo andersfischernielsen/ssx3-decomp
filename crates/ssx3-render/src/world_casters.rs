@@ -27,7 +27,7 @@
 //! published as one list, renewed when the set changes (sections stream in
 //! and out along the course).
 
-use std::collections::HashMap;
+use ssx3_core::hash::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
@@ -382,7 +382,7 @@ impl CasterCache {
         };
         let mut set = Vec::new();
         let mut lights = Vec::new();
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = ssx3_core::hash::HashSet::default();
         let mut stack: Vec<(u32, u32)> = (0..8)
             .map(|k| (word(m, nash + 0x14 * k + 0x10), 0))
             .collect();
@@ -428,9 +428,9 @@ impl CasterCache {
             return self.current.clone();
         }
         if ssx3_core::config::var_os("SSX3_CASTERS_DEBUG").is_some() {
-            let old: std::collections::HashMap<u32, u64> =
+            let old: ssx3_core::hash::HashMap<u32, u64> =
                 self.set.iter().map(|e| (e.0, e.1)).collect();
-            let new: std::collections::HashMap<u32, u64> = set.iter().map(|e| (e.0, e.1)).collect();
+            let new: ssx3_core::hash::HashMap<u32, u64> = set.iter().map(|e| (e.0, e.1)).collect();
             for (a, h) in &new {
                 match old.get(a) {
                     None => eprintln!(
@@ -451,7 +451,7 @@ impl CasterCache {
             }
         }
         // The set changed: tessellate what is new, drop what is gone.
-        let keep: std::collections::HashSet<u32> = set.iter().map(|&(p, _, _)| p).collect();
+        let keep: ssx3_core::hash::HashSet<u32> = set.iter().map(|&(p, _, _)| p).collect();
         self.meshes.retain(|p, _| keep.contains(p));
         let mut triangles = Vec::new();
         for &(p, h, instance) in &set {
@@ -957,7 +957,7 @@ mod tests {
     fn corners_of_a_power_basis_patch() {
         // P(u, v) = C15 + u·(10, 0, 0) + v·(0, 20, 0): C[11] (u¹v⁰), C[14] (u⁰v¹).
         let p = 0x20_0000;
-        let mut mem = HashMap::new();
+        let mut mem = HashMap::default();
         for i in 0..16 {
             mem.insert(p + PATCH_COEFFS + 16 * i, q([0.0, 0.0, 0.0, 1.0]));
         }

@@ -33,7 +33,7 @@ pub mod tex;
 pub use options::{Aa, Bloom, Options};
 pub use shadow::{set_debug_knob, DEBUG_KNOBS};
 
-use std::collections::HashMap;
+use ssx3_core::hash::HashMap;
 use std::sync::{Arc, Mutex};
 
 use ssx3_ps2::frame_sink::Depth;
@@ -116,7 +116,7 @@ pub struct Inner {
     aniso: u16,
     white: wgpu::TextureView,
     /// TexInfos that failed to decode (reported once).
-    failed: std::collections::HashSet<u32>,
+    failed: ssx3_core::hash::HashSet<u32>,
     pub stats: Stats,
     /// Texture dumps and replacements (`pack`).
     pack: pack::Pack,
@@ -347,13 +347,13 @@ impl Renderer {
                 queue,
                 pipes,
                 targets: None,
-                rts: HashMap::new(),
+                rts: HashMap::default(),
                 gs: gs::Gs::new(),
                 vu: Box::new([0; 16384]),
-                texcache: HashMap::new(),
+                texcache: HashMap::default(),
                 bake_blur,
                 texkeys: Default::default(),
-                samplers: HashMap::new(),
+                samplers: HashMap::default(),
                 aniso: 16,
                 white,
                 failed: Default::default(),
@@ -1309,7 +1309,7 @@ impl Inner {
         // targets its silhouettes (mat6 entry 0x20) are drawn into, and every
         // draw that projects them (`SSX3_SHADOW_DEBUG=game-shadows` keeps
         // them).
-        let silhouette_rts: std::collections::HashSet<u32> =
+        let silhouette_rts: ssx3_core::hash::HashSet<u32> =
             if light.is_some() && !shadow::debug("game-shadows") {
                 batches
                     .iter()
@@ -1361,7 +1361,8 @@ impl Inner {
         let mut ubytes: Vec<u8> = Vec::new();
         let mut binds: Vec<(Option<wgpu::TextureView>, draw::SampKey)> = Vec::new();
         let mut bind_amax: Vec<u8> = Vec::new();
-        let mut bind_ix: HashMap<(Option<u32>, u64, draw::SampKey, bool), usize> = HashMap::new();
+        let mut bind_ix: HashMap<(Option<u32>, u64, draw::SampKey, bool), usize> =
+            HashMap::default();
         // Debug: SSX3_GFX_SKIPTEST=hex,... drops batches with that TEST.
         // A trailing `c`/`a`: only colour-writing / only alpha-only batches.
         let dbg = debug::get();
@@ -2111,7 +2112,7 @@ impl Inner {
                 })
                 .forget_lifetime()
             };
-        let mut started: std::collections::HashSet<u32> = Default::default();
+        let mut started: ssx3_core::hash::HashSet<u32> = Default::default();
         let mut cur_target = main;
         started.insert(main);
         let mut pass = begin(&mut enc, main, true);
@@ -2814,7 +2815,7 @@ impl VuReceiver {
         if plan.bounds.len() > 1 && debug::get().vucheck {
             if let Some(o) = &out {
                 self.seen
-                    .get_or_insert_with(HashMap::new)
+                    .get_or_insert_with(HashMap::default)
                     .insert(i, o.clone());
             }
         }
@@ -3229,17 +3230,33 @@ impl Build {
         // of `per`; the start images have every earlier call's inputs applied.
         let mut bounds: Vec<usize> = Vec::new();
         let mut starts = Vec::new();
-        let mut img = b.vu.clone();
+        // (As qwords: one store per write; bytes only for the start images.)
+        let mut img: Box<[u128; 1024]> = Box::new(std::array::from_fn(|q| {
+            u128::from_le_bytes(b.vu[16 * q..16 * q + 16].try_into().unwrap())
+        }));
+        let image = |img: &[u128; 1024]| {
+            let mut out = Box::new([0u8; 16384]);
+            for (o, q) in out.chunks_exact_mut(16).zip(img.iter()) {
+                o.copy_from_slice(&q.to_le_bytes());
+            }
+            out
+        };
         drop(arena);
         for (k, it) in calls.iter().enumerate() {
             if k == 0 || (k >= bounds.last().unwrap() + per && draw_start[k] && threads > 1) {
                 bounds.push(k);
-                starts.push(std::sync::Mutex::new(Some(img.clone())));
+                starts.push(std::sync::Mutex::new(Some(if k == 0 {
+                    b.vu.clone()
+                } else {
+                    image(&img)
+                })));
             }
             if let (true, ssx3_render::vujob::JobItem::Call((_, c, _, _))) = (threads > 1, it) {
-                for &(a, v) in c.writes() {
-                    let a = (a as usize & 1023) * 16;
-                    img[a..a + 16].copy_from_slice(&v.to_le_bytes());
+                // (`writes()`'s order: the input, then the shared input.)
+                for part in [&c.input[..], c.shared.as_deref().unwrap_or(&[])] {
+                    for &(a, v) in part {
+                        img[a as usize & 1023] = v;
+                    }
                 }
             }
         }

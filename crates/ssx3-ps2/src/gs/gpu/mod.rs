@@ -44,7 +44,8 @@
 //!
 //! See the `S_*` (draw setup) and `P_*` (primitive) constants in `gs.wgsl`.
 
-use std::collections::{HashMap, VecDeque};
+use ssx3_core::hash::HashMap;
+use std::collections::VecDeque;
 use std::sync::{Arc, OnceLock};
 
 use super::batch::WriteSet;
@@ -617,8 +618,8 @@ impl GpuGs {
             batch: GBatch::default(),
             scratch: Region::default(),
             last_draw: None,
-            palettes: HashMap::new(),
-            decoded: HashMap::new(),
+            palettes: HashMap::default(),
+            decoded: HashMap::default(),
             dec_used: 0,
             cpu_dirty: Pages::ALL,
             gpu_dirty: Pages::default(),
