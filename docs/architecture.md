@@ -55,7 +55,6 @@ default native mode does not use them on the frame path.
 | `ssx3-snd` | The native sound driver (EA's IOP SNDDRV in Rust). |
 | `ssx3-mc` | The native memory card. |
 | `ssx3-engine` | The game as a library for every front end: boot, input, pacing, renderer, lifecycle (`frontends.md`). |
-| `ssx3-web` | The browser front end (unwind form in a Web Worker, WebGPU). |
 | `ssx3-iop` | IOP runtime for the recompiled IRX modules, SPU2, SIO2/pad/memory card. |
 | `ssx3-recomp` | `recomp-ee`, `recomp-iop` (generators). |
 | `ssx3` | Desktop front ends (window, headless). |

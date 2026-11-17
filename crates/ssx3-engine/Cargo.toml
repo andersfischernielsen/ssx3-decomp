@@ -23,6 +23,8 @@ vu1-microcode = ["ssx3-ps2/vu1-microcode", "emu-gs"]
 ssx3-core.workspace = true
 ssx3-ps2 = { path = "../ssx3-ps2" }
 ssx3-gfx = { path = "../ssx3-gfx" }
+# The VU job format (`ssx3_engine::vu`).
+ssx3-render = { path = "../ssx3-render" }
 ssx3-ee-rt = { path = "../ssx3-ee-rt" }
 ssx3-ee-threads = { path = "../../generated/ee/game", package = "ssx3-ee", optional = true }
 ssx3-ee-unwind = { path = "../../generated/ee-unwind/game", package = "ssx3-ee-unwind", optional = true }

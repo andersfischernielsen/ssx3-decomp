@@ -19,7 +19,7 @@ emulated.
   through the game's own projection, adjustable field of view, texture packs, optional
   modern graphics (AA, AO, bloom, draw distance).
 - Configurable game rate: 60/120/144/240 Hz, without interpolation.
-- Runs on macOS, Windows and Linux, plus an experimental browser build ([`crates/ssx3-web`](crates/ssx3-web/README.md)).
+- Runs on macOS, Windows and Linux, plus an experimental browser build in its own repository ([ssx3-web](https://github.com/andersfischernielsen/ssx3-web)).
 
 #### Porting progress
 
@@ -100,7 +100,6 @@ emulated reference paths: [`docs/options.md`](docs/options.md).
 | `ssx3-snd` | The native sound driver (EA's IOP SNDDRV in Rust). |
 | `ssx3-mc` | The memory card: the PS2 card filesystem on the raw `.ps2` image, answering libmc as MCMAN/MCSERV do (byte-identical saves). |
 | `ssx3-vu` | VU0/VU1: registers, pipeline timing, the translated microcode (`generated/vu/`). |
-| `ssx3-web`, `ssx3-vuworker` | The browser build: the single-thread form of the generated code as WebAssembly, drawn with WebGPU from a Web Worker; VU1 jobs in a worker of their own. |
 | `ssx3-iop`, `ssx3-gs` | Reference paths only: the IOP runtime for the recompiled IRX modules, and the Graphics Synthesizer model (verification builds, `emu-gs`). |
 | `ssx3-core`, `ssx3-runtime` | Machine-model and execution-state scaffolding (memory map, ISO reading). |
 

@@ -15,7 +15,7 @@ Related: [`roadmap.md`](roadmap.md) (phase 3, the native port),
 
 ## Where we are (2026-10-18)
 
-A frame today (native build; browser numbers in `crates/ssx3-web/README.md`):
+A frame today (native build; browser numbers in the browser front end's README):
 
 1. The game's render code (decompiled game code) records draws
    (`DeferMan`, 0x80-byte records) and builds VIF/GIF packets in guest RAM;

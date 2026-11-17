@@ -62,11 +62,14 @@ fn main() {
     });
     let gfx = engine.renderer().cloned();
     // Check of the browser's VU offload path: every chunk of VU1 calls
-    // encoded, run from the bytes and decoded (`ssx3_render::vujob`).
+    // encoded, run from the bytes and decoded (`ssx3_engine::vu`).
     if ssx3_core::config::var_os("SSX3_VU_OFFLOAD_SELFTEST").is_some() {
-        ssx3_gfx::set_vu_offload(
+        ssx3_engine::vu::set_offload(
             Box::new(|jobs| {
-                let r: Vec<Vec<u8>> = jobs.iter().map(|j| ssx3_gfx::run_vu_job(j, &[])).collect();
+                let r: Vec<Vec<u8>> = jobs
+                    .iter()
+                    .map(|j| ssx3_engine::vu::run_job(j, &[]))
+                    .collect();
                 Box::new(move || r)
             }),
             4,
