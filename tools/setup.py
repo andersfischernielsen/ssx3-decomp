@@ -3,7 +3,7 @@
 game's executable from your disc image and translate the game into Rust
 (`generated/`, not in git: it is made from your own copy of the game).
 
-    python3 tools/setup.py [--iso PATH] [recomp-ee args...]
+    python3 tools/setup.py [--iso PATH] [--unwind] [recomp-ee args...]
     python3 tools/setup.py --stubs-only     # no disc: only the stub crates (CI)
 
 What `tools/extract-from-iso.sh` and `tools/bootstrap.sh` do, in Python (no
@@ -14,6 +14,8 @@ POSIX shell or bsdtar needed):
 2. Empty stub crates for the generated code, so cargo can load the workspace.
 3. The VU microcode (`vu_recomp`) and the EE game code (`recomp-ee`), which
    also writes the IOP modules.
+4. With `--unwind`, the EE game code's unwind form as well
+   (`generated/ee-unwind`: single-threaded, for the browser build).
 
 Run it again after pulling changes to the recompiler (`crates/ssx3-recomp`).
 """
@@ -109,6 +111,9 @@ def main(argv=None):
     ap.add_argument("--stubs-only", action="store_true",
                     help="only write the stub crates (no disc needed): enough for the crates "
                          "that do not use the generated game (CI)")
+    ap.add_argument("--unwind", action="store_true",
+                    help="also write the unwind form of the EE code (generated/ee-unwind), "
+                         "for single-threaded front ends such as the browser")
     a, recomp_args = ap.parse_known_args(argv)
     if a.stubs_only:
         stubs()
@@ -122,6 +127,12 @@ def main(argv=None):
         vu_placeholder()
         run(["cargo", "run", "--release", "-p", "ssx3-ps2", "--bin", "vu_recomp"])
     run(["cargo", "run", "--release", "-p", "ssx3-recomp", "--bin", "recomp-ee", "--", *recomp_args])
+    if a.unwind:
+        # The unwind arguments last: recomp-ee takes the last `--out` and
+        # `--package-prefix`, and `--unwind` after a `--threads`.
+        run(["cargo", "run", "--release", "-p", "ssx3-recomp", "--bin", "recomp-ee", "--",
+             *recomp_args, "--unwind", "--out", "generated/ee-unwind",
+             "--package-prefix", "ssx3-ee-unwind"])
 
 
 def is_set_up():

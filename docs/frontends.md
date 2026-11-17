@@ -3,13 +3,13 @@
 The game is a library, `crates/ssx3-engine`. A front end is a small
 program around it: it creates a surface, feeds input, steps the game on its
 clock, presents the image, and tells the engine about its lifecycle. This
-repository has three:
+repository has two; the browser's lives in its own:
 
 | Front end | Where | What it adds |
 | --- | --- | --- |
 | Window | `crates/ssx3/src/main.rs` (`ssx3`) | winit window, `wgpu` presenter, keyboard and gilrs controllers, the settings file and the F10 overlay, F11 fullscreen, F12 screenshots. |
 | Headless | `crates/ssx3/src/bin/ssx3_headless.rs` (`ssx3-headless`) | No window: N frames, scripted input (`SSX3_INPUT`), screenshots, RAM dumps, the verification and debug reports. The RAM gate runs it. |
-| Browser | `crates/ssx3-web` | WebAssembly in a Web Worker: the disc from a `File`, an `OffscreenCanvas`, VU helper workers, audio pulled for the page. |
+| Browser | [andersfischernielsen/ssx3-web](https://github.com/andersfischernielsen/ssx3-web) | WebAssembly in a Web Worker: the disc from a `File`, an `OffscreenCanvas`, VU helper workers, audio pulled for the page. |
 
 A front end for another platform (an Android or iOS app, a console
 homebrew shell, a frame server) lives in its own repository and uses this
@@ -83,6 +83,8 @@ impl Engine {
     pub fn frames(&self) -> u64;
     pub fn status(&self) -> String;
     pub fn dump(&self) -> String;
+    pub fn halted(&self) -> Option<String>;        // why step() returned false
+    pub fn timing_report(&self) -> String;         // ms per frame: frame sink, renderer stages
     pub fn cpu(&self) -> &ssx3_ps2::Cpu;
     pub fn cpu_mut(&mut self) -> &mut ssx3_ps2::Cpu;
 }
@@ -90,7 +92,8 @@ impl Engine {
 
 The engine re-exports the crates a front end touches (`ssx3_ps2`,
 `ssx3_gfx`, `ssx3_iop`, `ssx3_game`, `ssx3_core`), so a front end depends on
-`ssx3-engine` alone and gets the same versions.
+`ssx3-engine` alone and gets the same versions. `ssx3_engine::vu` is
+for a front end that runs the renderer's VU1 work elsewhere (below).
 
 ### Features
 
@@ -124,6 +127,22 @@ The engine re-exports the crates a front end touches (`ssx3_ps2`,
    settings, then process defaults (`config::set_default`). Empty values
    from the settings count as unset. The image settings are read through
    it whenever they apply; most others once, at boot or when first needed.
+
+   A front end without a file system for the disc image (the browser: the
+   image is a `File` the user picks) supplies it before booting with
+   `ssx3_core::iso::set_opener`. The opener is a factory: the engine calls it
+   for every open (more than once), and each call returns a new
+   `Box<dyn ssx3_core::iso::Source>` (`len`, `read_at`) over the same image:
+
+   ```rust
+   let image = std::sync::Arc::new(handle); // what the front end reads from
+   ssx3_core::iso::set_opener(Box::new(move || {
+       Ok(Box::new(MySource::new(image.clone())?) as Box<dyn ssx3_core::iso::Source>)
+   }));
+   ```
+
+   The engine then reads the disc and the executable through it whatever
+   `SSX3_ISO` says.
 2. **Boot.** `Engine::boot(config)` creates the machine, loads the disc and
    the executable, installs the hand-written functions and the renderer
    (`SSX3_RENDER`). The GPU context is created on demand; a front end that
@@ -208,6 +227,34 @@ the engine's ring), and one that keeps its own buffer reports it with
 whenever it changes. A front end that does neither (the browser, which
 pulls once per presented frame) is not topped up.
 
+### VU offload
+
+The renderer runs the game's VU1 programs as native code, in chunks. Native
+builds run the chunks on threads. A front end without threads (the browser)
+can run them elsewhere (helper workers) through `ssx3_engine::vu`:
+
+| Item | What it is |
+| --- | --- |
+| `set_offload(f: Offload, workers)` | Install the offload: `f` gets a frame's jobs (`Vec<Vec<u8>>`, one per chunk, split for `workers` at a time), starts them and returns a `Collect`, a function that waits for the results (bytes, in order). |
+| `set_store(Box<dyn SharedStore + Send>)` | Optional: where the input replayed calls share (the same every frame) is kept, so jobs reference it instead of carrying it. `SharedStore::offset(key, bytes)` stores `bytes()` once and returns its offset, or `None` (the job carries it). |
+| `run_job(job, store) -> Vec<u8>` | Run one job; `store` is what the `SharedStore` holds (empty without one). |
+
+Install both after `Engine::boot` and before the first `step`; each is set
+once per process. With an offload, a published frame's jobs start at once
+and the frame is drawn when the next one is published, so the game's next
+frame runs while the jobs do (one frame of latency, as with the native
+render thread). Jobs and results are self-contained bytes: a helper that
+runs them in a module of its own, without the game, depends on
+`ssx3-render` alone and calls `ssx3_render::vujob::run(job, store)` (what
+`run_job` is). The browser front end's pool (`crates/web/src/lib.rs` there,
+`vu_pool`) is a complete example: a `SharedArrayBuffer` job queue, the store mirrored in
+each helper, the game's thread taking jobs too while it waits.
+
+To check a new front end's offload path natively, `SSX3_VU_OFFLOAD_SELFTEST=1`
+on `ssx3-headless` installs an offload that runs every job in place through
+the same encode/run/decode path: its screenshots are identical to a run
+without it.
+
 ## Using this repository from another one
 
 The generated code is made locally from your own disc (`tools/setup.py`)
@@ -219,9 +266,8 @@ git submodule add https://github.com/andersfischernielsen/ssx3-decomp ssx3
 cd ssx3
 cp /path/to/your/image.iso "SSX 3 (USA).iso"
 python3 tools/setup.py          # orig/, generated/ (ee, iop, vu)
-# the unwind form, only for single-threaded targets:
-# cargo run --release -p ssx3-recomp --bin recomp-ee -- --unwind \
-#     --out generated/ee-unwind --package-prefix ssx3-ee-unwind
+# or, for single-threaded targets (the browser), with the unwind form too:
+python3 tools/setup.py --unwind # also generated/ee-unwind
 ```
 
 Then depend on the engine by path from the front end's own workspace:
@@ -245,8 +291,8 @@ pack, the platform's user folder: Windows `%APPDATA%\SSX3`, macOS
 `~/Library/Application Support/SSX3`, iOS `~/Documents/saves` (backed up and
 visible in Files), elsewhere `$XDG_DATA_HOME/ssx3` (or `~/.local/share/ssx3`;
 an empty or relative variable counts as unset); none on Android, so saves stay
-in `./saves`. Update the submodule and run `tools/setup.py` again when the
-recompiler changes.
+in `./saves`. Update the submodule and run `tools/setup.py` (with the same
+options) again when the recompiler changes.
 
 Keep the front end on the public API above. A change that needs more from
 the engine (a hook, a setting, an image format) belongs in `ssx3-engine`

@@ -41,6 +41,21 @@ pub use ssx3_ps2::Cpu;
 /// The crates a front end works with, at the versions the engine uses.
 pub use {ssx3_core, ssx3_game, ssx3_gfx, ssx3_iop, ssx3_ps2};
 
+/// Running the renderer's VU1 work elsewhere (`docs/frontends.md`, "VU
+/// offload"): the browser's helper workers. A front end without threads
+/// installs an offload ([`set_offload`](vu::set_offload)) and, to keep jobs
+/// small, a store of the input they share ([`set_store`](vu::set_store)),
+/// both after [`Engine::boot`] and before the first [`Engine::step`]. A job
+/// is bytes; whoever runs it calls [`run_job`](vu::run_job) (a helper
+/// without the game: `ssx3_render::vujob::run`, the same function).
+pub mod vu {
+    pub use ssx3_gfx::{
+        run_vu_job as run_job, set_vu_offload as set_offload, set_vu_store as set_store,
+        VuCollect as Collect, VuOffload as Offload,
+    };
+    pub use ssx3_render::vujob::SharedStore;
+}
+
 use ssx3_game::tick::{self, Pacer};
 
 /// Where a front end's settings come from (a settings file, the environment,
@@ -284,6 +299,21 @@ impl Engine {
     /// Every thread and semaphore ([`dump`]).
     pub fn dump(&self) -> String {
         dump(&self.cpu)
+    }
+
+    /// Why the game stopped, once [`Engine::step`] returned false.
+    pub fn halted(&self) -> Option<String> {
+        ssx3_ps2::mr!(self.cpu).kernel.halted.clone()
+    }
+
+    /// Mean time per frame in the frame sink (on the game's thread) and in
+    /// each stage of the renderer (ms).
+    pub fn timing_report(&self) -> String {
+        let sink = ssx3_ps2::frame_sink::timing_report();
+        match self.gfx.as_ref() {
+            Some(g) => format!("{sink}; {}", g.0.lock().unwrap().timing_report()),
+            None => sink,
+        }
     }
 
     // ------------------------------------------------------------ input
