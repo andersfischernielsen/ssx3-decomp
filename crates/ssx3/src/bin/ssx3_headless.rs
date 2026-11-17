@@ -66,7 +66,10 @@ fn main() {
     if ssx3_core::config::var_os("SSX3_VU_OFFLOAD_SELFTEST").is_some() {
         ssx3_engine::vu::set_offload(
             Box::new(|jobs| {
-                let r: Vec<Vec<u8>> = jobs.iter().map(|j| ssx3_engine::vu::run_job(j, &[])).collect();
+                let r: Vec<Vec<u8>> = jobs
+                    .iter()
+                    .map(|j| ssx3_engine::vu::run_job(j, &[]))
+                    .collect();
                 Box::new(move || r)
             }),
             4,
