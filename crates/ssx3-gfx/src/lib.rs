@@ -2815,18 +2815,25 @@ impl VuPlan<'_> {
 
     /// Worker: take chunks until none are left.
     fn work(&self) {
-        loop {
-            let j = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let Some(start) = self.starts.get(j) else {
-                break;
-            };
-            let st = start.lock().unwrap().take().expect("chunk");
-            let e = self.bounds.get(j + 1).copied().unwrap_or(self.calls.len());
-            let r = Self::run(&self.calls[self.bounds[j]..e], st);
-            let (slot, cv) = &self.done[j];
-            *slot.lock().unwrap() = Some(r);
-            cv.notify_all();
-        }
+        while self.step() {}
+    }
+
+    /// Take the next chunk and run it; false when none are left. (A chunk
+    /// whose start image is gone was run elsewhere: the offload.)
+    fn step(&self) -> bool {
+        let j = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let Some(start) = self.starts.get(j) else {
+            return false;
+        };
+        let Some(st) = start.lock().unwrap().take() else {
+            return true;
+        };
+        let e = self.bounds.get(j + 1).copied().unwrap_or(self.calls.len());
+        let r = Self::run(&self.calls[self.bounds[j]..e], st);
+        let (slot, cv) = &self.done[j];
+        *slot.lock().unwrap() = Some(r);
+        cv.notify_all();
+        true
     }
 
     /// Whether the chunks go to the installed [`VuOffload`] (the browser's
@@ -2872,6 +2879,13 @@ impl VuPlan<'_> {
     }
 
     fn wait(&self, j: usize) -> VuChunk {
+        // Chunks up to `j` no worker has taken yet: run them here rather
+        // than wait for one to get to them.
+        while self.next.load(std::sync::atomic::Ordering::Relaxed) <= j {
+            if !self.step() {
+                break;
+            }
+        }
         let (slot, cv) = &self.done[j];
         let mut g = slot.lock().unwrap();
         loop {
