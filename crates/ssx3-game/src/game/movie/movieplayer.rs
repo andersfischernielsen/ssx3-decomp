@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -10,6 +11,7 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::delete_if_flag;
@@ -313,9 +315,95 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "OcclusionMan_BuildOccluderPlanes",
     ),
     (
+        0x0023_c808,
+        mc_manager_get_instance,
+        "MCManager_GetInstance",
+    ),
+    (0x0023_c8f0, mc_manager_begin_load, "MCManager_BeginLoad"),
+    (
+        0x0023_caa0,
+        mc_manager_set_data_size,
+        "MCManager_SetDataSize",
+    ),
+    (0x0023_cae8, mc_manager_begin_save, "MCManager_BeginSave"),
+    (
+        0x0023_cc58,
+        mc_manager_set_data_size_wrapper,
+        "MCManager_SetDataSize_Wrapper",
+    ),
+    (
+        0x0023_cc78,
+        mc_manager_format_save_desc,
+        "MCManager_FormatSaveDesc",
+    ),
+    (
+        0x0023_cdb0,
+        mc_manager_build_save_title,
+        "MCManager_BuildSaveTitle",
+    ),
+    (
+        0x0023_d660,
+        mc_manager_update_mode1,
+        "MCManager_UpdateMode1",
+    ),
+    (
         0x0023_d7d8,
         mc_manager_update_states,
         "MCManager_UpdateStates",
+    ),
+    (0x0023_e268, mc_manager_state31, "MCManager_State31"),
+    (0x0023_e2c0, mc_manager_state32, "MCManager_State32"),
+    (0x0023_e4f0, mc_manager_state34, "MCManager_State34"),
+    (
+        0x0023_e8a0,
+        mc_manager_classify_card_state,
+        "MCManager_ClassifyCardState",
+    ),
+    (0x0023_f308, mc_manager_state0d, "MCManager_State0D"),
+    (
+        0x0023_f578,
+        mc_manager_state11_save,
+        "MCManager_State11_Save",
+    ),
+    (0x0023_fb18, mc_manager_set_slot, "MCManager_SetSlot"),
+    (0x0023_fd40, mc_manager_state16, "MCManager_State16"),
+    (0x0023_fff0, mc_manager_state1e, "MCManager_State1E"),
+    (0x0024_09c8, mc_manager_state09, "MCManager_State09"),
+    (0x0024_0cc0, mc_manager_state2b, "MCManager_State2B"),
+    (
+        0x0024_0d90,
+        mc_manager_state2c_delete,
+        "MCManager_State2C_Delete",
+    ),
+    (0x0024_0f10, mc_manager_state2f, "MCManager_State2F"),
+    (
+        0x0024_0fb0,
+        mc_manager_write_save_by_name,
+        "MCManager_WriteSaveByName",
+    ),
+    (
+        0x0024_1050,
+        mc_manager_write_save_by_slot,
+        "MCManager_WriteSaveBySlot",
+    ),
+    (
+        0x0024_10d0,
+        mc_manager_clamp_file_index,
+        "MCManager_ClampFileIndex",
+    ),
+    (0x0024_1400, mc_manager_next_slot, "MCManager_NextSlot"),
+    (0x0024_1540, mc_manager_prev_slot, "MCManager_PrevSlot"),
+    (0x0024_1678, mc_manager_prev_file, "MCManager_PrevFile"),
+    (0x0024_16c0, mc_manager_next_file, "MCManager_NextFile"),
+    (
+        0x0024_1928,
+        mc_manager_format_slot_free_space,
+        "MCManager_FormatSlotFreeSpace",
+    ),
+    (
+        0x0024_1fb0,
+        mc_manager_read_current_dir_info,
+        "MCManager_ReadCurrentDirInfo",
     ),
 ];
 
@@ -331,19 +419,8 @@ pub(crate) mod callee {
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_END_OPERATION;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_ON_OPERATION_DONE;
 
-    pub(crate) use crate::game::dirtysock::tagsunk::callee::CBE_GET_BE as CBE_GET_BE_2;
-    pub(crate) use crate::game::dirtysock::tagsunk::callee::CBE_GET_INTERFACE as CBE_GET_INTERFACE_2;
-
-    pub(crate) use crate::game::dirtysock::tagsunk::callee::F_00152948;
-    pub(crate) use crate::game::dirtysock::tagsunk::callee::F_00152BA8;
-    pub(crate) use crate::game::dirtysock::tagsunk::callee::F_002C2540;
-    pub(crate) use crate::game::dirtysock::tagsunk::callee::F_002C26D0;
-
-    pub(crate) use crate::game::dirtysock::tagsunk::callee::MC_GET_PRODUCT_CODE;
-    pub(crate) use crate::game::dirtysock::tagsunk::callee::MC_GET_SAVE_TYPE_TAG;
     pub(crate) use crate::game::dirtysock::tagsunk::callee::MC_MANAGER_END_OPERATION_2;
     pub(crate) use crate::game::dirtysock::tagsunk::callee::MC_MANAGER_REQUEST_CARD_INFO;
-    pub(crate) use crate::game::dirtysock::tagsunk::callee::MC_SET_MODE;
 
     pub(crate) use crate::game::dirtysock::tagsunk::callee::OPERATOR_NEW_NAMED;
 
@@ -357,6 +434,11 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::fepopupmisc::callee::MC_MANAGER_END_PROGRESS;
     pub(crate) use crate::game::fe::fepopupmisc::callee::MC_MANAGER_REQUEST_CARD_INFO_2;
     pub(crate) use crate::game::fe::fepopupmisc::callee::MC_MANAGER_SET_MODE;
+
+    pub(crate) use crate::game::be::beintoption::callee::USTR_FROM_ASCII_2;
+
+    pub(crate) use crate::game::fe::feasyncfile::callee::USTR_COPY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::U_STR_SPRINTF;
 
     pub(crate) use crate::game::sound::bankmonitor::callee::PS2_MEMCARD_CREATE;
 
@@ -632,6 +714,96 @@ pub(crate) mod callee {
     pub const MC_MANAGER_SET_MODE_2: Callee = Callee {
         addr: 0x0023_d570,
         f: ee::s06::f_0023d570,
+    };
+
+    pub const MC_MANAGER_CTOR: Callee = Callee {
+        addr: 0x0024_2288,
+        f: ee::s06::MCManager_ctor,
+    };
+
+    pub const MC_MANAGER_SET_DATA_SIZE: Callee = Callee {
+        addr: 0x0023_caa0,
+        f: ee::s06::MCManager_SetDataSize,
+    };
+
+    pub const MC_MANAGER_RESET: Callee = Callee {
+        addr: 0x0023_fb58,
+        f: ee::s06::MCManager_Reset,
+    };
+
+    pub const MC_MANAGER_READ_DIR_INFO: Callee = Callee {
+        addr: 0x0024_20c8,
+        f: ee::s06::MCManager_ReadDirInfo,
+    };
+
+    pub const MC_MANAGER_CLAMP_FILE_INDEX: Callee = Callee {
+        addr: 0x0024_10d0,
+        f: ee::s06::MCManager_ClampFileIndex,
+    };
+
+    pub const MC_MANAGER_CARD_SET_STATE18: Callee = Callee {
+        addr: 0x0023_cc20,
+        f: ee::s06::MCManager_CardSetState18,
+    };
+
+    pub const MC_MANAGER_GET_PRODUCT_CODE: Callee = Callee {
+        addr: 0x0024_1aa0,
+        f: ee::s06::MCManager_GetProductCode,
+    };
+
+    pub const MC_MANAGER_GET_SAVE_TYPE_TAG: Callee = Callee {
+        addr: 0x0024_1d40,
+        f: ee::s06::MCManager_GetSaveTypeTag,
+    };
+
+    pub const MC_MANAGER_SET_SLOT: Callee = Callee {
+        addr: 0x0023_fb18,
+        f: ee::s06::MCManager_SetSlot,
+    };
+
+    pub const MC_MANAGER_REFRESH_SLOT: Callee = Callee {
+        addr: 0x0023_fae0,
+        f: ee::s06::MCManager_RefreshSlot,
+    };
+
+    pub const MC_MANAGER_GET_NUM_SLOTS: Callee = Callee {
+        addr: 0x0024_1ac0,
+        f: ee::s06::MCManager_GetNumSlots,
+    };
+
+    pub const MC_MANAGER_STATE31: Callee = Callee {
+        addr: 0x0023_e268,
+        f: ee::s06::MCManager_State31,
+    };
+
+    pub const MC_MANAGER_STATE33: Callee = Callee {
+        addr: 0x0023_e498,
+        f: ee::s06::MCManager_State33,
+    };
+
+    pub const MC_MANAGER_STATE36: Callee = Callee {
+        addr: 0x0023_e320,
+        f: ee::s06::MCManager_State36,
+    };
+
+    pub const MC_MANAGER_FORMAT_SAVE_DESC: Callee = Callee {
+        addr: 0x0023_cc78,
+        f: ee::s06::MCManager_FormatSaveDesc,
+    };
+
+    pub const BE_SAVE_INT_GET_PROFILE_SAVE_SIZE: Callee = Callee {
+        addr: 0x0015_2ba8,
+        f: ee::s01::BESaveInt_GetProfileSaveSize,
+    };
+
+    pub const BE_SAVE_INT_GET_SYSTEM_SAVE_SIZE: Callee = Callee {
+        addr: 0x0015_2948,
+        f: ee::s01::BESaveInt_GetSystemSaveSize,
+    };
+
+    pub const BE_NEW_PLAYER_INT_GET_NAME: Callee = Callee {
+        addr: 0x0014_7170,
+        f: ee::s01::BENewPlayerInt_GetName,
     };
 
     pub const FE_POPUP_CONFIRM_RESET_LAYOUT: Callee = Callee {
@@ -4667,104 +4839,6 @@ pub fn mc_manager_state0a_format(c: &mut Cpu) {
 // ---------------------------------------------------------------------------
 // Memory card manager.
 
-/// `void MCManager_State09(MCManager* m)` (0x2409c8): the memory-card
-/// manager's "check" state. The first sub-object query sets the next state
-/// directly; otherwise the idle/defer query runs, then the two condition
-/// callbacks, and a non-zero result selects state `1` or `0xd`.
-pub fn mcmanager_state09(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 12;
-        let frame = Frame::open(c, 0x20);
-        frame.save(c, S0, 0x10);
-        frame.save_ra(c, 0);
-        c.g[S0][0] = c.g[A0][0];
-
-        // if (m->sub434->v11()) return;
-        c.g[A1][0] = Addr(r(c, S0)).off(0x434).lw(c);
-        c.g[V1][0] = Addr(r(c, A1)).lw(c);
-        c.g[A0][0] = Addr(r(c, V1)).off(0x58).lh(c);
-        c.g[V0][0] = Addr(r(c, V1)).off(0x5c).lw(c);
-        let target = r(c, V0);
-        c.g[A0][0] = sx(p(r(c, A1), r(c, A0)));
-        call_ptr(c, target, 0x0024_09f0)?;
-        if r(c, V0) != 0 {
-            return mcmanager_return(c, frame);
-        }
-
-        c.cycles += 8;
-        c.g[A1][0] = Addr(r(c, S0)).off(0x434).lw(c);
-        c.g[V1][0] = Addr(r(c, A1)).lw(c);
-        c.g[A0][0] = Addr(r(c, V1)).off(0x1a8).lh(c);
-        c.g[V0][0] = Addr(r(c, V1)).off(0x1ac).lw(c);
-        let target = r(c, V0);
-        c.g[A0][0] = sx(p(r(c, A1), r(c, A0)));
-        call_ptr(c, target, 0x0024_0a10)?;
-        if r(c, V0) != 0 {
-            // v53() non-zero: the sub-object's v73() decides whether to wait.
-            c.g[A1][0] = Addr(r(c, S0)).off(0x434).lw(c);
-            c.cycles += 7;
-            c.g[V1][0] = Addr(r(c, A1)).lw(c);
-            c.g[A0][0] = Addr(r(c, V1)).off(0x248).lh(c);
-            c.g[V0][0] = Addr(r(c, V1)).off(0x24c).lw(c);
-            let target = r(c, V0);
-            c.g[A0][0] = sx(p(r(c, A1), r(c, A0)));
-            call_ptr(c, target, 0x0024_0a38)?;
-            let idle = r(c, V0) == 0;
-            c.g[A1][0] = 0x14;
-            if !idle {
-                c.cycles += 2;
-                c.g[V0][0] = Addr(r(c, S0)).off(0x748).lw(c);
-            }
-        } else {
-            c.cycles += 3;
-            c.g[V0][0] = Addr(r(c, S0)).off(0x748).lw(c);
-            c.g[A1][0] = 4;
-        }
-
-        // if (m->v70() == 0) { if (m->v6c() != 0) m->v01(1); return; }
-        c.cycles += 5;
-        c.g[V0][0] = Addr(r(c, S0)).off(0x70).lw(c);
-        let target = r(c, V0);
-        call_ptr(c, target, 0x0024_0a54)?;
-        let zero = r(c, V0) == 0;
-        c.g[A1][0] = 0xd;
-        if zero {
-            c.cycles += 5;
-            c.g[V0][0] = Addr(r(c, S0)).off(0x6c).lw(c);
-            let target = r(c, V0);
-            call_ptr(c, target, 0x0024_0a84)?;
-            let zero = r(c, V0) == 0;
-            c.g[A1][0] = 1;
-            if !zero {
-                c.cycles += 5;
-                c.g[V0][0] = Addr(r(c, S0)).off(0x748).lw(c);
-                c.g[A0][0] = sx(p(r(c, S0), Addr(r(c, V0)).off(0x8).lh(c) as u32));
-                let target = Addr(r(c, V0)).off(0xc).lw(c) as u32;
-                call_ptr(c, target, 0x0024_0aa0)?;
-            }
-        } else {
-            c.cycles += 1;
-            c.g[V0][0] = Addr(r(c, S0)).off(0x748).lw(c);
-            c.cycles += 6;
-            c.g[A0][0] = sx(p(r(c, S0), Addr(r(c, V0)).off(0x8).lh(c) as u32));
-            let target = Addr(r(c, V0)).off(0xc).lw(c) as u32;
-            call_ptr(c, target, 0x0024_0a70)?;
-        }
-
-        c.cycles += 1;
-        mcmanager_return(c, frame)
-    })
-}
-
-/// The `MCManager_State09` tail: `lq s0; ld ra; addiu sp; jr ra`.
-pub(crate) fn mcmanager_return(c: &mut Cpu, frame: Frame) -> Flow {
-    c.cycles += 3;
-    frame.restore(c, 16, 0x10);
-    frame.restore_ra(c, 0);
-    frame.close(c);
-    Ok(())
-}
-
 /// `MCManager_State1A_Delete(self)` (0x240860): delete the selected item of
 /// state 1A: ask the screen (or, when the delete countdown is done, the
 /// focused list) whether its confirm handler wants to run, otherwise step
@@ -4876,212 +4950,6 @@ pub fn mcmanager_state1a_delete(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
-}
-
-/// `void MCManager_BeginSave(MCManager *self, int mode, int arg)` (0x23cae8):
-/// start a save: record the mode, pick the "saving"/"loading" state word and
-/// tell the movie object, then format the three 0x200-byte strings (title,
-/// product code, save-type tag) into the request at `self+0x1b4`.
-pub fn mcmanager_begin_save(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 15;
-        let frame = Frame::open(c, 0x640);
-        frame.save(c, 18, 0x610);
-        let self_ = abi::arg64(c, 0);
-        frame.save(c, 16, 0x630);
-        frame.save(c, 17, 0x620);
-        c.g[S0][0] = abi::arg64(c, 2);
-        frame.save_ra(c, 0x600);
-        let this = self_ as u32;
-        c.sw(this.wrapping_add(0xb4), abi::arg64(c, 1));
-        c.g[A1][0] = 1;
-        callee::MC_SET_MODE.call(c, 0x0023_cb10)?;
-
-        c.g[V1][0] = 1;
-        c.g[V0][0] = c.lw(this.wrapping_add(0xb4));
-        c.sw(this.wrapping_add(0xfc), c.g[S0][0]);
-        let nonzero = c.g[V0][0] != 0;
-        c.sw(this.wrapping_add(0xbc), c.g[V1][0]);
-        // `buf` receives the format string; `desc`, `name` the other two.
-        let fmt = (c.g[SP][0] as u32).wrapping_add(0x400);
-        let desc = c.g[SP][0] as u32;
-        let name = (c.g[SP][0] as u32).wrapping_add(0x200);
-        if !nonzero {
-            // mode 0: "saving", tell the movie object directly.
-            c.cycles += 5;
-            c.g[V0][0] = 4;
-            c.g[A2][0] = c.lw(this.wrapping_add(0x434));
-            c.sw(this.wrapping_add(0xec), c.g[V0][0]);
-            c.g[A1][0] = 0x0008_0000;
-            c.cycles += 7;
-            movie_finish_step(c, 0x0023_cb78)?;
-            c.g[S0][0] = sx(fmt);
-        } else {
-            c.cycles += 2;
-            let mode_is_one = c.g[V0][0] == c.g[V1][0];
-            c.g[V0][0] = 6;
-            if !mode_is_one {
-                // mode 2+: "loading", ask the BAGT interface.
-                c.cycles += 15;
-                c.sw(this.wrapping_add(0xec), c.g[V1][0]);
-                callee::CBE_GET_BE_2.call(c, 0x0023_cb88)?;
-                c.g[A0][0] = c.g[V0][0];
-                c.g[A1][0] = 5;
-                callee::CBE_GET_INTERFACE_2.call(c, 0x0023_cb94)?;
-                callee::F_00152948.call(c, 0x0023_cb9c)?;
-                c.g[A2][0] = c.lw(this.wrapping_add(0x434));
-                c.g[A1][0] = c.g[V0][0];
-                movie_finish_step(c, 0x0023_cbb8)?;
-                c.g[S0][0] = sx(fmt);
-            } else {
-                // mode 1: "saving", ask the player interface.
-                c.cycles += 9;
-                c.sw(this.wrapping_add(0xec), c.g[V0][0]);
-                callee::CBE_GET_BE_2.call(c, 0x0023_cb48)?;
-                c.g[A0][0] = c.g[V0][0];
-                c.g[A1][0] = 5;
-                callee::CBE_GET_INTERFACE_2.call(c, 0x0023_cb54)?;
-                callee::F_00152BA8.call(c, 0x0023_cb5c)?;
-                c.g[A2][0] = c.lw(this.wrapping_add(0x434));
-                c.g[A1][0] = c.g[V0][0];
-                c.cycles += 7;
-                movie_finish_step(c, 0x0023_cb78)?;
-                c.g[S0][0] = sx(fmt);
-            }
-        }
-
-        c.cycles += 24;
-        c.g[A1][0] = 0x004a_0000;
-        c.g[A0][0] = c.g[S0][0];
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c80));
-        callee::F_002C2540.call(c, 0x0023_cbcc)?;
-        c.g[A0][0] = sx(desc);
-        c.g[A1][0] = 0x200;
-        callee::MC_GET_PRODUCT_CODE.call(c, 0x0023_cbd8)?;
-        c.g[A1][0] = c.lw(this.wrapping_add(0xb4));
-        c.g[A0][0] = self_;
-        c.g[A2][0] = sx(name);
-        c.g[A3][0] = 0x100;
-        callee::MC_GET_SAVE_TYPE_TAG.call(c, 0x0023_cbf0)?;
-        c.g[A0][0] = sx(this.wrapping_add(0x1b4));
-        c.g[A1][0] = c.g[S0][0];
-        c.g[A3][0] = sx(name);
-        c.g[A2][0] = sx(desc);
-        callee::F_002C26D0.call(c, 0x0023_cc04)?;
-        frame.restore(c, 16, 0x630);
-        frame.restore(c, 17, 0x620);
-        frame.restore(c, 18, 0x610);
-        frame.restore_ra(c, 0x600);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `void MCManager_BeginLoad(MCManager *self, int mode)` (0x23c8f0): the load
-/// twin of [`mcmanager_begin_save`] (`-1` in the request slot, no cached
-/// value, and the "loading" state word in the mode-2 path).
-pub fn mcmanager_begin_load(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 14;
-        let frame = Frame::open(c, 0x640);
-        frame.save(c, 18, 0x610);
-        let self_ = abi::arg64(c, 0);
-        frame.save(c, 16, 0x630);
-        frame.save(c, 17, 0x620);
-        frame.save_ra(c, 0x600);
-        let this = self_ as u32;
-        c.sw(this.wrapping_add(0xb4), abi::arg64(c, 1));
-        c.g[A1][0] = 1;
-        callee::MC_SET_MODE.call(c, 0x0023_c914)?;
-
-        c.g[V0][0] = u64::MAX;
-        c.g[V1][0] = c.lw(this.wrapping_add(0xb4));
-        c.sw(this.wrapping_add(0xfc), c.g[V0][0]);
-        let nonzero = c.g[V1][0] != 0;
-        c.sw(this.wrapping_add(0xbc), 0);
-        let fmt = (c.g[SP][0] as u32).wrapping_add(0x400);
-        let desc = c.g[SP][0] as u32;
-        let name = (c.g[SP][0] as u32).wrapping_add(0x200);
-        if !nonzero {
-            // mode 0: "loading", tell the movie object directly.
-            c.cycles += 5;
-            c.g[V0][0] = 4;
-            c.g[A2][0] = c.lw(this.wrapping_add(0x434));
-            c.sw(this.wrapping_add(0xec), c.g[V0][0]);
-            c.g[A1][0] = 0x0008_0000;
-            c.cycles += 7;
-            movie_finish_step(c, 0x0023_c984)?;
-            c.g[S0][0] = sx(fmt);
-        } else {
-            c.cycles += 3;
-            c.g[V0][0] = 1;
-            if c.g[V1][0] != c.g[V0][0] {
-                // mode 2+: "loading", ask the BAGT interface.
-                c.cycles += 15;
-                c.sw(this.wrapping_add(0xec), c.g[V0][0]);
-                callee::CBE_GET_BE_2.call(c, 0x0023_c994)?;
-                c.g[A0][0] = c.g[V0][0];
-                c.g[A1][0] = 5;
-                callee::CBE_GET_INTERFACE_2.call(c, 0x0023_c9a0)?;
-                callee::F_00152948.call(c, 0x0023_c9a8)?;
-                c.g[A2][0] = c.lw(this.wrapping_add(0x434));
-                c.g[A1][0] = c.g[V0][0];
-                movie_finish_step(c, 0x0023_c9c4)?;
-                c.g[S0][0] = sx(fmt);
-            } else {
-                // mode 1: "loading", ask the player interface.
-                c.cycles += 10;
-                c.g[V0][0] = 6;
-                c.sw(this.wrapping_add(0xec), c.g[V0][0]);
-                callee::CBE_GET_BE_2.call(c, 0x0023_c954)?;
-                c.g[A0][0] = c.g[V0][0];
-                c.g[A1][0] = 5;
-                callee::CBE_GET_INTERFACE_2.call(c, 0x0023_c960)?;
-                callee::F_00152BA8.call(c, 0x0023_c968)?;
-                c.g[A2][0] = c.lw(this.wrapping_add(0x434));
-                c.g[A1][0] = c.g[V0][0];
-                c.cycles += 7;
-                movie_finish_step(c, 0x0023_c984)?;
-                c.g[S0][0] = sx(fmt);
-            }
-        }
-
-        c.cycles += 24;
-        c.g[A1][0] = 0x004a_0000;
-        c.g[A0][0] = c.g[S0][0];
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c80));
-        callee::F_002C2540.call(c, 0x0023_c9d8)?;
-        c.g[A0][0] = sx(desc);
-        c.g[A1][0] = 0x200;
-        callee::MC_GET_PRODUCT_CODE.call(c, 0x0023_c9e4)?;
-        c.g[A1][0] = c.lw(this.wrapping_add(0xb4));
-        c.g[A0][0] = self_;
-        c.g[A2][0] = sx(name);
-        c.g[A3][0] = 0x100;
-        callee::MC_GET_SAVE_TYPE_TAG.call(c, 0x0023_c9fc)?;
-        c.g[A0][0] = sx(this.wrapping_add(0x1b4));
-        c.g[A1][0] = c.g[S0][0];
-        c.g[A3][0] = sx(name);
-        c.g[A2][0] = sx(desc);
-        callee::F_002C26D0.call(c, 0x0023_ca10)?;
-        frame.restore(c, 16, 0x630);
-        frame.restore(c, 17, 0x620);
-        frame.restore(c, 18, 0x610);
-        frame.restore_ra(c, 0x600);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// The movie object's vtable slot 0x98/0x9c call shared by the save modes:/// `a2` (the movie object) and `a1` (the step argument) are already set.
-pub(crate) fn movie_finish_step(c: &mut Cpu, ret: u32) -> crate::call::Flow {
-    c.g[V0][0] = c.lw(c.g[A2][0] as u32);
-    c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x98));
-    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x9c));
-    let f = c.g[V1][0] as u32;
-    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
-    crate::call::call_ptr(c, f, ret)?;
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -6132,6 +6000,42 @@ pub fn mc_manager_update_states(c: &mut Cpu) {
     })
 }
 
+/// `MCManager *MCManager_GetInstance(void)` (0x23c808): the manager singleton
+/// at `gp-0x47c`, creating it through `MCManager_ctor` on first use.
+pub fn mc_manager_get_instance(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        let slot = Addr((c.g[GP][0] as u32).wrapping_sub(0x47c));
+        c.g[V0][0] = slot.lw(c);
+        let missing = c.g[V0][0] == 0;
+        frame.save_ra(c, 0);
+        if !missing {
+            c.cycles += 4;
+            c.g[V0][0] = slot.lw(c);
+            frame.restore_ra(c, 0);
+            frame.close(c);
+            return Ok(());
+        }
+        c.cycles += 9;
+        c.g[A1][0] = 0x480000;
+        c.g[A0][0] = 0x74c;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x3ed8));
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        // EA_MemAllocNamed(size 0x74c); the name pointer is in a1.
+        callee::MEM_ALLOC_NAMED.call(c, 0x0023_c830)?;
+        c.g[A0][0] = c.g[V0][0];
+        callee::MC_MANAGER_CTOR.call(c, 0x0023_c838)?;
+        slot.sw(c, c.g[V0][0]);
+        c.cycles += 4;
+        c.g[V0][0] = slot.lw(c);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 /// `MEM_fill(&m->mDevices[a0], 0, 0xe0)` (`a0` holds the slot index).
 pub(crate) fn mcus_clear_device(c: &mut Cpu, m: u32, ret: u32) -> Flow {
     c.g[A1][0] = 0;
@@ -6178,6 +6082,2222 @@ pub(crate) fn mcus_epilogue(c: &mut Cpu, frame: Frame) {
     frame.restore(c, S1, 0x30);
     frame.restore(c, S2, 0x20);
     frame.restore(c, S3, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+}
+
+/// `void MCManager_SetSlot(MCManager *self, int slot)` (0x23fb18): record the
+/// selected save slot at `self+0x428`.
+pub fn mc_manager_set_slot(c: &mut Cpu) {
+    c.cycles += 2;
+    Addr(abi::arg(c, 0)).off(0x428).sw(c, c.g[A1][0]);
+    ret(c);
+}
+
+/// `void *MCManager_SetDataSize_Wrapper(MCManager *self)` (0x23cc58): call
+/// through to `MCManager_SetDataSize` and return.
+pub fn mc_manager_set_data_size_wrapper(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        callee::MC_MANAGER_SET_DATA_SIZE.call(c, 0x0023_cc68)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *MCManager_State2F(MCManager *self)` (0x240f10): reset the manager
+/// through `MCManager_Reset` and return.
+pub fn mc_manager_state2f(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        callee::MC_MANAGER_RESET.call(c, 0x0024_0f20)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *MCManager_ReadCurrentDirInfo(MCManager *self)` (0x241fb0): reread
+/// the directory info for the current slot (`self+0x42c`) through
+/// `MCManager_ReadDirInfo` and return.
+pub fn mc_manager_read_current_dir_info(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = Addr(abi::arg(c, 0)).off(0x42c).lw(c);
+        callee::MC_MANAGER_READ_DIR_INFO.call(c, 0x0024_1fc0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_State32(MCManager *self)` (0x23e2c0): no-op state step,
+/// returns immediately.
+pub fn mc_manager_state32(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void MCManager_State34(MCManager *self)` (0x23e4f0): no-op state step,
+/// returns immediately.
+pub fn mc_manager_state34(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void *MCManager_SetDataSize(MCManager *self, int size)` (0x23caa0): store
+/// `size` as the pending data size at `self+0xf0` through the backend's size
+/// hook (vtable at `self+0x434`, method `+0x98/0x9c`).
+pub fn mc_manager_set_data_size(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A2][0] = Addr(c.g[S1][0] as u32).off(0x434).lw(c);
+        c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x98).lh(c);
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x9c).lw(c);
+        let target = r32(c, V1);
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0023_cad0)?;
+        Addr(c.g[S1][0] as u32).off(0xf0).sw(c, c.g[S0][0]);
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_PrevFile(MCManager *self)` (0x241678): step the file index
+/// at `+0xf8` down by one, or wrap to the clamped top when it is already 0
+/// and the list at `+0x100` is non-empty.
+pub fn mc_manager_prev_file(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0xf8).lw(c);
+        let above_zero = (c.g[V0][0] as i64) > 0;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+        if above_zero {
+            c.cycles += 2;
+            Addr(c.g[S0][0] as u32).off(0xf8).sw(c, c.g[V0][0]);
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x100).lw(c);
+            if c.g[V0][0] == 0 {
+                frame.restore(c, S0, 0x10);
+            } else {
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S0][0];
+                callee::MC_MANAGER_CLAMP_FILE_INDEX.call(c, 0x0024_16a8)?;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                c.cycles += 2;
+                Addr(c.g[S0][0] as u32).off(0xf8).sw(c, c.g[V0][0]);
+                frame.restore(c, S0, 0x10);
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_NextFile(MCManager *self)` (0x2416c0): step the file index
+/// at `+0xf8` up by one toward the clamped top, wrapping to 0 when it is
+/// already there and the list at `+0x100` is non-empty.
+pub fn mc_manager_next_file(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        callee::MC_MANAGER_CLAMP_FILE_INDEX.call(c, 0x0024_16d4)?;
+        c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0xf8).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+        c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        let at_top = c.g[V0][0] == 0;
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+        if at_top {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x100).lw(c);
+            if c.g[V0][0] != 0 {
+                Addr(c.g[S0][0] as u32).off(0xf8).sw(c, 0);
+            }
+        } else {
+            c.cycles += 2;
+            Addr(c.g[S0][0] as u32).off(0xf8).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_WriteSaveByName(MCManager *self, int a, int b, int c)`
+/// (0x240fb0): flag the save pending at `gp-0x478`, run the backend's
+/// by-name write hook (vtable at `self+0x434`, method `+0x120/0x124`) and
+/// keep `c` at `self+0xe4`.
+pub fn mc_manager_write_save_by_name(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 1;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A3][0];
+        c.g[S1][0] = c.g[A0][0];
+        c.g[T0][0] = Addr(c.g[S1][0] as u32).off(0x434).lw(c);
+        Addr((c.g[GP][0] as u32).wrapping_sub(0x478)).sw(c, c.g[V0][0]);
+        c.g[V1][0] = Addr(c.g[T0][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x120).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x124).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0024_0fe8)?;
+        Addr(c.g[S1][0] as u32).off(0xe4).sw(c, c.g[S0][0]);
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_WriteSaveBySlot(MCManager *self, int a, int b, int c)`
+/// (0x241050): flag the save pending at `gp-0x478`, run the backend's
+/// by-slot write hook (vtable at `self+0x434`, method `+0x130/0x134`) and
+/// keep `c` at `self+0xe4`.
+pub fn mc_manager_write_save_by_slot(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 1;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A3][0];
+        c.g[S1][0] = c.g[A0][0];
+        c.g[T0][0] = Addr(c.g[S1][0] as u32).off(0x434).lw(c);
+        Addr((c.g[GP][0] as u32).wrapping_sub(0x478)).sw(c, c.g[V0][0]);
+        c.g[V1][0] = Addr(c.g[T0][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x130).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x134).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0024_1088)?;
+        Addr(c.g[S1][0] as u32).off(0xe4).sw(c, c.g[S0][0]);
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_State31(MCManager *self)` (0x23e268): when the backend
+/// at `+0x434` does not report the operation done, send message 0x32 to the
+/// message sink at `+0x748` (slot `+8/+0xc`).
+pub fn mc_manager_state31(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+        c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x58).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x5c).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0023_e290)?;
+        if c.g[V0][0] == 0 {
+            c.cycles += 7;
+            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+            c.g[A1][0] = 0x32;
+            c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+            let target = r32(c, V1);
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0023_e2b0)?;
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int MCManager_ClampFileIndex(MCManager *self)` (0x2410d0): the smaller
+/// of the file count at `+0xec` and the backend's count (vtable at
+/// `self+0x434`, method `+0x220/0x224`); the backend is asked again when
+/// its first count is not larger.
+pub fn mc_manager_clamp_file_index(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+        c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x220).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x224).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0024_10f8)?;
+        c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0xec).lw(c);
+        c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        // True when the +0xec count is the smaller one (nothing clamped).
+        let fits = c.g[V0][0] != 0;
+        c.g[V0][0] = c.g[V1][0];
+        if fits {
+            c.cycles += 1;
+        } else {
+            c.cycles += 8;
+            c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+            c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x220).lh(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x224).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0024_1120)?;
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_State0D(MCManager *self)` (0x23f308): poll the backend
+/// at the file index (vtable methods `+0x218/0x21c`, then `+0x208/0x20c`
+/// only when the first poll returns 0); report message 0xf only when the
+/// second poll also returns 0, and 0xe otherwise.
+pub fn mc_manager_state0d(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A2][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0xf8).lw(c);
+        c.g[V1][0] = Addr(c.g[A2][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x218).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x21c).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0023_f334)?;
+        let mut second_done = false;
+        if c.g[V0][0] != 0 {
+            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+        } else {
+            c.cycles += 9;
+            c.g[A2][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+            c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0xf8).lw(c);
+            c.g[V1][0] = Addr(c.g[A2][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x208).lh(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x20c).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0023_f358)?;
+            second_done = c.g[V0][0] == 0;
+            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+        }
+        let ret = if second_done {
+            c.cycles += 6;
+            c.g[A1][0] = 0xf;
+            0x0023_f390
+        } else {
+            c.cycles += 7;
+            c.g[A1][0] = 0xe;
+            0x0023_f374
+        };
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+        let target = r32(c, V1);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, ret)?;
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_FormatSlotFreeSpace(MCManager *self, ...)` (0x241928):
+/// format one memory-card device's free space into a wide buffer. The device
+/// record is at `self + a1 * 0xe0`; a missing record, or one with any of
+/// three optional strings null, leaves the destination untouched.
+pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x450);
+        c.g[V0][0] = 0xe0;
+        frame.save(c, S1, 0x430);
+        c.mult(0, 17, 5, 2);
+        frame.save(c, S2, 0x420);
+        frame.save(c, S3, 0x410);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x440);
+        frame.save_ra(c, 0x400);
+        let dev = (c.g[S2][0] as u32).wrapping_add(c.g[S1][0] as u32);
+        c.g[V0][0] = sx(dev);
+        c.g[V1][0] = Addr(dev).off(0x350).lw(c);
+        let missing = c.g[V1][0] == 0;
+        c.g[S3][0] = c.g[A2][0];
+        // 7 cycles for the two skipped block tails, 6 for the middle one, 5
+        // for the outer one (see the generated nesting).
+        let mut tail = 7u64;
+        // The generated body also restores s0 just after the +0x344 load
+        // and s1 inside the +0x348 arm; the tail restores stay (the loads
+        // are idempotent, and s0 is reused as scratch on the full path).
+        'checks: {
+            if missing {
+                break 'checks;
+            }
+            c.cycles += 3;
+            c.g[V1][0] = Addr(dev).off(0x344).lw(c);
+            let missing = c.g[V1][0] == 0;
+            frame.restore(c, S0, 0x440);
+            if missing {
+                tail = 6;
+                break 'checks;
+            }
+            c.cycles += 3;
+            c.g[V1][0] = Addr(dev).off(0x348).lw(c);
+            if c.g[V1][0] == 0 {
+                frame.restore(c, S1, 0x430);
+                tail = 5;
+                break 'checks;
+            }
+            c.cycles += 3;
+            c.g[V1][0] = Addr(dev).off(0x34c).lw(c);
+            let missing = c.g[V1][0] == 0;
+            c.g[A1][0] = 0x4a0000;
+            if missing {
+                tail = 6;
+                break 'checks;
+            }
+            // Two wide strings then the formatted line.
+            c.cycles += 14;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c90));
+            callee::USTR_FROM_ASCII_2.call(c, 0x0024_198c)?;
+            c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x200));
+            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c98));
+            c.g[A0][0] = c.g[S0][0];
+            callee::USTR_FROM_ASCII_2.call(c, 0x0024_19a0)?;
+            c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S1][0] as u32));
+            c.g[A0][0] = c.g[S3][0];
+            c.g[A2][0] = Addr(c.g[V1][0] as u32).off(0x354).lw(c);
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A3][0] = c.g[SP][0];
+            callee::U_STR_SPRINTF.call(c, 0x0024_19b8)?;
+        }
+        c.cycles += tail;
+        frame.restore(c, S0, 0x440);
+        frame.restore(c, S1, 0x430);
+        frame.restore(c, S2, 0x420);
+        frame.restore(c, S3, 0x410);
+        frame.restore_ra(c, 0x400);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_State1E(MCManager *self)` (0x23fff0): when the backend
+/// at `+0x434` says the operation is done, return at once; otherwise poll
+/// the backend (vtable `+0x1a8/0x1ac`) and either run the pending hook at
+/// `+0x78` or report to the message sink at `+0x748` (slot `+8/+0xc`).
+pub fn mc_manager_state1e(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+        c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x58).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x5c).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0024_0018)?;
+        if c.g[V0][0] != 0 {
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 8;
+            c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+            c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x1a8).lh(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x1ac).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0024_0038)?;
+            let mut report = false;
+            if c.g[V0][0] != 0 {
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x78).lw(c);
+                c.cycles += 4;
+                let target = r32(c, V0);
+                call_ptr(c, target, 0x0024_0054)?;
+                let done = c.g[V0][0] == 0;
+                c.g[A1][0] = 0x1f;
+                if done {
+                    c.cycles += 5;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x6c).lw(c);
+                    let target = r32(c, V0);
+                    call_ptr(c, target, 0x0024_0084)?;
+                    let done = c.g[V0][0] == 0;
+                    c.g[A1][0] = 0x1d;
+                    if !done {
+                        c.cycles += 5;
+                        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                        c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+                        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+                        let target = r32(c, V1);
+                        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, target, 0x0024_00a0)?;
+                    }
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x10);
+                } else {
+                    c.cycles += 1;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                    report = true;
+                }
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                c.g[A1][0] = 4;
+                report = true;
+            }
+            if report {
+                c.cycles += 6;
+                c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+                let target = r32(c, V1);
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0024_0070)?;
+                frame.restore(c, S0, 0x10);
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_State2B(MCManager *self)` (0x240cc0): when the backend
+/// at `+0x434` says the operation is done, return at once; otherwise poll
+/// the backend (vtable `+0x1a8/0x1ac`) and either run the pending hook at
+/// `+0x68` or report to the message sink at `+0x748` (slot `+8/+0xc`).
+pub fn mc_manager_state2b(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+        c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x58).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x5c).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0024_0ce8)?;
+        if c.g[V0][0] != 0 {
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 8;
+            c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+            c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x1a8).lh(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x1ac).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0024_0d08)?;
+            let mut report = false;
+            let mut tail = false;
+            if c.g[V0][0] != 0 {
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x68).lw(c);
+                c.cycles += 4;
+                let target = r32(c, V0);
+                call_ptr(c, target, 0x0024_0d24)?;
+                let done = c.g[V0][0] == 0;
+                c.g[A1][0] = 0x2c;
+                if done {
+                    c.cycles += 5;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x6c).lw(c);
+                    let target = r32(c, V0);
+                    call_ptr(c, target, 0x0024_0d40)?;
+                    let done = c.g[V0][0] == 0;
+                    c.g[A1][0] = 6;
+                    if done {
+                        tail = true;
+                    } else {
+                        c.cycles += 1;
+                        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                        report = true;
+                    }
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                    report = true;
+                }
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                c.g[A1][0] = 4;
+                report = true;
+            }
+            if report {
+                c.cycles += 6;
+                c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+                let target = r32(c, V1);
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0024_0d5c)?;
+                frame.restore(c, S0, 0x10);
+            }
+            if tail {
+                c.cycles += 8;
+                c.g[A2][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+                c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x428).lw(c);
+                c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+                c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x28).lh(c);
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x2c).lw(c);
+                let target = r32(c, V1);
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0024_0d80)?;
+                frame.restore(c, S0, 0x10);
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_State09(MCManager *self)` (0x2409c8): when the backend
+/// at `+0x434` says the operation is done, return at once; otherwise poll
+/// the backend (vtable `+0x1a8/0x1ac`) and either run the pending hook at
+/// `+0x70` or report to the message sink at `+0x748` (slot `+8/+0xc`).
+pub fn mc_manager_state09(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+        c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x58).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x5c).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0024_09f0)?;
+        if c.g[V0][0] != 0 {
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 8;
+            c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+            c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x1a8).lh(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x1ac).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0024_0a10)?;
+            let mut report = false;
+            let mut tail = false;
+            if c.g[V0][0] != 0 {
+                c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+                c.cycles += 7;
+                c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x248).lh(c);
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x24c).lw(c);
+                let target = r32(c, V0);
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0024_0a38)?;
+                let done = c.g[V0][0] == 0;
+                c.g[A1][0] = 0x14;
+                if done {
+                    c.cycles += 5;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x70).lw(c);
+                    let target = r32(c, V0);
+                    call_ptr(c, target, 0x0024_0a54)?;
+                    let done = c.g[V0][0] == 0;
+                    c.g[A1][0] = 0xd;
+                    if done {
+                        tail = true;
+                    } else {
+                        c.cycles += 1;
+                        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                        report = true;
+                    }
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                    report = true;
+                }
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                c.g[A1][0] = 4;
+                report = true;
+            }
+            if report {
+                c.cycles += 6;
+                c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+                let target = r32(c, V1);
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0024_0a70)?;
+                frame.restore(c, S0, 0x10);
+            }
+            if tail {
+                c.cycles += 5;
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x6c).lw(c);
+                let target = r32(c, V0);
+                call_ptr(c, target, 0x0024_0a84)?;
+                let done = c.g[V0][0] == 0;
+                c.g[A1][0] = 1;
+                if !done {
+                    c.cycles += 5;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                    c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+                    c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+                    let target = r32(c, V1);
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, target, 0x0024_0aa0)?;
+                }
+                c.cycles += 1;
+                frame.restore(c, S0, 0x10);
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_State11_Save(MCManager *self)` (0x23f578): count the
+/// save down, update the progress fraction and either wait on the backend
+/// at `+0x434` (vtable `+0x248/0x24c`) or finish the progress bar and
+/// start the save.
+pub fn mc_manager_state11_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0xe4));
+        c.cvt_s_w(0, 0);
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x108).lw(c);
+        c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0xf0));
+        c.cvt_s_w(1, 1);
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+        Addr(c.g[S0][0] as u32).off(0x108).sw(c, c.g[V0][0]);
+        c.div_s(0, 0, 1);
+        c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x10c));
+        c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x248).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x24c).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0023_f5c4)?;
+        if c.g[V0][0] != 0 {
+            c.g[A0][0] = c.g[S0][0];
+            c.cycles += 4;
+            c.g[A1][0] = 1;
+            callee::MC_MANAGER_END_PROGRESS.call(c, 0x0023_f624)?;
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 9;
+            c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+            c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x150).lh(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x154).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0023_f5e4)?;
+            c.g[V1][0] = 1;
+            if c.g[V0][0] != c.g[V1][0] {
+                c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+                c.cycles += 7;
+                c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x248).lh(c);
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x24c).lw(c);
+                let target = r32(c, V0);
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0023_f674)?;
+                let done = c.g[V0][0] == 0;
+                c.g[A0][0] = c.g[S0][0];
+                if !done {
+                    c.cycles += 2;
+                    c.g[A1][0] = 1;
+                    callee::MC_MANAGER_END_PROGRESS.call(c, 0x0023_f684)?;
+                }
+                c.cycles += 1;
+                frame.restore(c, S0, 0x10);
+            } else {
+                c.cycles += 5;
+                c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0xe4).lw(c);
+                c.g[A0][0] = Addr(c.g[S0][0] as u32).off(0xf0).lw(c);
+                c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                let under = c.g[V0][0] == 0;
+                if under {
+                    c.cycles += 13;
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::MC_MANAGER_CARD_SET_STATE18.call(c, 0x0023_f634)?;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(8).lw(c);
+                    let target = r32(c, V0);
+                    call_ptr(c, target, 0x0023_f640)?;
+                    c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                    c.g[A1][0] = 0x12;
+                    c.g[A0][0] = Addr(c.g[V1][0] as u32).off(8).lh(c);
+                    c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0xc).lw(c);
+                    let target = r32(c, V0);
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, target, 0x0023_f658)?;
+                    frame.restore(c, S0, 0x10);
+                } else {
+                    c.cycles += 5;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(4).lw(c);
+                    let target = r32(c, V0);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                    call_ptr(c, target, 0x0023_f610)?;
+                    if c.g[V0][0] != 0 {
+                        frame.restore(c, S0, 0x10);
+                    } else {
+                        c.cycles += 1;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.cycles += 4;
+                        c.g[A1][0] = 1;
+                        callee::MC_MANAGER_END_PROGRESS.call(c, 0x0023_f624)?;
+                        frame.restore(c, S0, 0x10);
+                    }
+                }
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_State2C_Delete(MCManager *self)` (0x240d90): count the
+/// delete down and either wait on the backend at `+0x434` (vtable
+/// `+0x248/0x24c`) or advance the delete slot and report to the message
+/// sink at `+0x748` (slot `+8/+0xc`).
+pub fn mc_manager_state2c_delete(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x108).lw(c);
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+        Addr(c.g[S0][0] as u32).off(0x108).sw(c, c.g[V0][0]);
+        c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x58).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x5c).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0024_0dc4)?;
+        if c.g[V0][0] != 0 {
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x108).lw(c);
+            if (c.g[V0][0] as i64) > 0 {
+                frame.restore(c, S0, 0x10);
+            } else {
+                c.cycles += 8;
+                c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+                c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x248).lh(c);
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x24c).lw(c);
+                let target = r32(c, V0);
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0024_0df0)?;
+                let done = c.g[V0][0] == 0;
+                c.g[A1][0] = 0x2d;
+                if done {
+                    c.cycles += 10;
+                    c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+                    c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+                    c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x68).lh(c);
+                    c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x6c).lw(c);
+                    let target = r32(c, V0);
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, target, 0x0024_0e2c)?;
+                    c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x438).lw(c);
+                    c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                        c.cycles += 5;
+                        c.g[A1][0] = 0x2e;
+                        c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+                        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+                        let target = r32(c, V1);
+                        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, target, 0x0024_0e9c)?;
+                    } else {
+                        c.cycles += 8;
+                        c.g[A2][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+                        c.g[V1][0] = Addr(c.g[A2][0] as u32).lw(c);
+                        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x208).lh(c);
+                        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x20c).lw(c);
+                        let target = r32(c, V0);
+                        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, target, 0x0024_0e54)?;
+                        if c.g[V0][0] != 0 {
+                            c.cycles += 8;
+                            c.g[A2][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+                            c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x438).lw(c);
+                            c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+                            c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x50).lh(c);
+                            c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x54).lw(c);
+                            let target = r32(c, V1);
+                            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                            call_ptr(c, target, 0x0024_0e78)?;
+                        }
+                        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x438).lw(c);
+                        c.cycles += 3;
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+                        Addr(c.g[S0][0] as u32).off(0x438).sw(c, c.g[V0][0]);
+                    }
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x10);
+                } else {
+                    c.cycles += 7;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                    c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+                    c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+                    let target = r32(c, V1);
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, target, 0x0024_0e0c)?;
+                    frame.restore(c, S0, 0x10);
+                }
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_State16(MCManager *self)` (0x23fd40): when the backend
+/// at `+0x434` says the operation is done, return at once; otherwise,
+/// when no load is pending and the backend poll (vtable `+0x1a8/0x1ac`)
+/// is ready, end the operation (or report it done).
+pub fn mc_manager_state16(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+        c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x58).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x5c).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0023_fd68)?;
+        if c.g[V0][0] != 0 {
+            frame.restore(c, S0, 0x10);
+        } else {
+            let mut report = false;
+            let mut finish = false;
+            c.cycles += 3;
+            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x338).lw(c);
+            let mut to_hook = false;
+            if c.g[V0][0] != 0 {
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x6c).lw(c);
+                to_hook = true;
+            } else {
+                c.cycles += 8;
+                c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+                c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x1a8).lh(c);
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x1ac).lw(c);
+                let target = r32(c, V0);
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0023_fd94)?;
+                if c.g[V0][0] != 0 {
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x6c).lw(c);
+                    to_hook = true;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                    c.g[A1][0] = 4;
+                    report = true;
+                }
+            }
+            if to_hook {
+                c.cycles += 4;
+                let target = r32(c, V0);
+                call_ptr(c, target, 0x0023_fdb0)?;
+                let done = c.g[V0][0] == 0;
+                c.g[A0][0] = c.g[S0][0];
+                if done {
+                    c.cycles += 5;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x84).lw(c);
+                    let target = r32(c, V0);
+                    call_ptr(c, target, 0x0023_fdd4)?;
+                    if c.g[V0][0] == 0 {
+                        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x68).lw(c);
+                        c.cycles += 4;
+                        let target = r32(c, V0);
+                        call_ptr(c, target, 0x0023_fdf4)?;
+                        let done = c.g[V0][0] == 0;
+                        c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x234));
+                        if done {
+                            c.cycles += 5;
+                            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x70).lw(c);
+                            let target = r32(c, V0);
+                            call_ptr(c, target, 0x0023_fe44)?;
+                            let done = c.g[V0][0] == 0;
+                            c.g[A1][0] = 0xd;
+                            if !done {
+                                c.cycles += 5;
+                                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                                c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+                                c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+                                let target = r32(c, V1);
+                                c.g[A0][0] =
+                                    sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                call_ptr(c, target, 0x0023_fe60)?;
+                            }
+                            finish = true;
+                        } else {
+                            c.cycles += 9;
+                            c.g[A3][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+                            c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0xf8).lw(c);
+                            c.g[V0][0] = Addr(c.g[A3][0] as u32).lw(c);
+                            c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x70).lh(c);
+                            c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x74).lw(c);
+                            let target = r32(c, V1);
+                            c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                            call_ptr(c, target, 0x0023_fe18)?;
+                            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                            c.g[A1][0] = 0x19;
+                            report = true;
+                        }
+                    } else {
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[S0][0];
+                        callee::MC_MANAGER_ON_OPERATION_DONE.call(c, 0x0023_fde4)?;
+                        frame.restore(c, S0, 0x10);
+                    }
+                } else {
+                    c.cycles += 4;
+                    c.g[A1][0] = 0;
+                    callee::MC_MANAGER_END_OPERATION_4.call(c, 0x0023_fdc0)?;
+                    frame.restore(c, S0, 0x10);
+                }
+            }
+            if report {
+                c.cycles += 6;
+                c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+                let target = r32(c, V1);
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0023_fe30)?;
+                frame.restore(c, S0, 0x10);
+            }
+            if finish {
+                c.cycles += 1;
+                frame.restore(c, S0, 0x10);
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_BeginSave(MCManager *self, int mode, int arg)` (0x23cae8):
+/// start a save: record the mode, pick the "saving"/"loading" state word and
+/// tell the movie object, then format the three 0x200-byte strings (title,
+/// product code, save-type tag) into the request at `self+0x1b4`.
+pub fn mc_manager_begin_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x640);
+        frame.save(c, S2, 0x610);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x630);
+        frame.save(c, S1, 0x620);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save_ra(c, 0x600);
+        Addr(c.g[S2][0] as u32).off(0xb4).sw(c, c.g[A1][0]);
+        c.g[A1][0] = 1;
+        callee::MC_MANAGER_SET_MODE_2.call(c, 0x0023_cb10)?;
+        c.g[V1][0] = 1;
+        c.g[V0][0] = Addr(c.g[S2][0] as u32).off(0xb4).lw(c);
+        Addr(c.g[S2][0] as u32).off(0xfc).sw(c, c.g[S0][0]);
+        let mode_nonzero = c.g[V0][0] != 0;
+        Addr(c.g[S2][0] as u32).off(0xbc).sw(c, c.g[V1][0]);
+        if !mode_nonzero {
+            c.cycles += 5;
+            c.g[V0][0] = 4;
+            c.g[A2][0] = Addr(c.g[S2][0] as u32).off(0x434).lw(c);
+            Addr(c.g[S2][0] as u32).off(0xec).sw(c, c.g[V0][0]);
+            c.g[A1][0] = 0x80000;
+            c.cycles += 7;
+            c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x98).lh(c);
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x9c).lw(c);
+            let target = r32(c, V1);
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0023_cb78)?;
+            c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x400));
+        } else {
+            c.cycles += 2;
+            let mode_not_one = c.g[V0][0] != c.g[V1][0];
+            c.g[V0][0] = 6;
+            if mode_not_one {
+                c.cycles += 15;
+                Addr(c.g[S2][0] as u32).off(0xec).sw(c, c.g[V1][0]);
+                callee::CBE_GET_BE.call(c, 0x0023_cb88)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 5;
+                callee::CBE_GET_INTERFACE.call(c, 0x0023_cb94)?;
+                callee::BE_SAVE_INT_GET_SYSTEM_SAVE_SIZE.call(c, 0x0023_cb9c)?;
+                c.g[A2][0] = Addr(c.g[S2][0] as u32).off(0x434).lw(c);
+                c.g[A1][0] = c.g[V0][0];
+                c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+                c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x98).lh(c);
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x9c).lw(c);
+                let target = r32(c, V1);
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0023_cbb8)?;
+                c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x400));
+            } else {
+                c.cycles += 9;
+                Addr(c.g[S2][0] as u32).off(0xec).sw(c, c.g[V0][0]);
+                callee::CBE_GET_BE.call(c, 0x0023_cb48)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 5;
+                callee::CBE_GET_INTERFACE.call(c, 0x0023_cb54)?;
+                callee::BE_SAVE_INT_GET_PROFILE_SAVE_SIZE.call(c, 0x0023_cb5c)?;
+                c.g[A2][0] = Addr(c.g[S2][0] as u32).off(0x434).lw(c);
+                c.g[A1][0] = c.g[V0][0];
+                c.cycles += 7;
+                c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+                c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x98).lh(c);
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x9c).lw(c);
+                let target = r32(c, V1);
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0023_cb78)?;
+                c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x400));
+            }
+        }
+        c.cycles += 24;
+        c.g[A1][0] = 0x4a0000;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c80));
+        callee::USTR_FROM_ASCII_2.call(c, 0x0023_cbcc)?;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = 0x200;
+        callee::MC_MANAGER_GET_PRODUCT_CODE.call(c, 0x0023_cbd8)?;
+        c.g[S1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x200));
+        c.g[A1][0] = Addr(c.g[S2][0] as u32).off(0xb4).lw(c);
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A3][0] = 0x100;
+        callee::MC_MANAGER_GET_SAVE_TYPE_TAG.call(c, 0x0023_cbf0)?;
+        c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1b4));
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A3][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[SP][0];
+        callee::U_STR_SPRINTF.call(c, 0x0023_cc04)?;
+        frame.restore(c, S0, 0x630);
+        frame.restore(c, S1, 0x620);
+        frame.restore(c, S2, 0x610);
+        frame.restore_ra(c, 0x600);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_BeginLoad(MCManager *self, int mode)` (0x23c8f0): the load
+/// twin of `mc_manager_begin_save` (`-1` in the request slot, no cached
+/// value, and the "loading" state word in the mode-2 path).
+pub fn mc_manager_begin_load(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x640);
+        frame.save(c, S2, 0x610);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x630);
+        frame.save(c, S1, 0x620);
+        frame.save_ra(c, 0x600);
+        Addr(c.g[S2][0] as u32).off(0xb4).sw(c, c.g[A1][0]);
+        c.g[A1][0] = 1;
+        callee::MC_MANAGER_SET_MODE_2.call(c, 0x0023_c914)?;
+        c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        c.g[V1][0] = Addr(c.g[S2][0] as u32).off(0xb4).lw(c);
+        Addr(c.g[S2][0] as u32).off(0xfc).sw(c, c.g[V0][0]);
+        let mode_nonzero = c.g[V1][0] != 0;
+        Addr(c.g[S2][0] as u32).off(0xbc).sw(c, 0);
+        if !mode_nonzero {
+            c.cycles += 5;
+            c.g[V0][0] = 4;
+            c.g[A2][0] = Addr(c.g[S2][0] as u32).off(0x434).lw(c);
+            Addr(c.g[S2][0] as u32).off(0xec).sw(c, c.g[V0][0]);
+            c.g[A1][0] = 0x80000;
+            c.cycles += 7;
+            c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x98).lh(c);
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x9c).lw(c);
+            let target = r32(c, V1);
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0023_c984)?;
+            c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x400));
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 1;
+            let mode_not_one = c.g[V1][0] != c.g[V0][0];
+            if mode_not_one {
+                c.cycles += 15;
+                Addr(c.g[S2][0] as u32).off(0xec).sw(c, c.g[V0][0]);
+                callee::CBE_GET_BE.call(c, 0x0023_c994)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 5;
+                callee::CBE_GET_INTERFACE.call(c, 0x0023_c9a0)?;
+                callee::BE_SAVE_INT_GET_SYSTEM_SAVE_SIZE.call(c, 0x0023_c9a8)?;
+                c.g[A2][0] = Addr(c.g[S2][0] as u32).off(0x434).lw(c);
+                c.g[A1][0] = c.g[V0][0];
+                c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+                c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x98).lh(c);
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x9c).lw(c);
+                let target = r32(c, V1);
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0023_c9c4)?;
+                c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x400));
+            } else {
+                c.cycles += 10;
+                c.g[V0][0] = 6;
+                Addr(c.g[S2][0] as u32).off(0xec).sw(c, c.g[V0][0]);
+                callee::CBE_GET_BE.call(c, 0x0023_c954)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 5;
+                callee::CBE_GET_INTERFACE.call(c, 0x0023_c960)?;
+                callee::BE_SAVE_INT_GET_PROFILE_SAVE_SIZE.call(c, 0x0023_c968)?;
+                c.g[A2][0] = Addr(c.g[S2][0] as u32).off(0x434).lw(c);
+                c.g[A1][0] = c.g[V0][0];
+                c.cycles += 7;
+                c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+                c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x98).lh(c);
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x9c).lw(c);
+                let target = r32(c, V1);
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0023_c984)?;
+                c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x400));
+            }
+        }
+        c.cycles += 24;
+        c.g[A1][0] = 0x4a0000;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c80));
+        callee::USTR_FROM_ASCII_2.call(c, 0x0023_c9d8)?;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = 0x200;
+        callee::MC_MANAGER_GET_PRODUCT_CODE.call(c, 0x0023_c9e4)?;
+        c.g[S1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x200));
+        c.g[A1][0] = Addr(c.g[S2][0] as u32).off(0xb4).lw(c);
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A3][0] = 0x100;
+        callee::MC_MANAGER_GET_SAVE_TYPE_TAG.call(c, 0x0023_c9fc)?;
+        c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1b4));
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A3][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[SP][0];
+        callee::U_STR_SPRINTF.call(c, 0x0023_ca10)?;
+        frame.restore(c, S0, 0x630);
+        frame.restore(c, S1, 0x620);
+        frame.restore(c, S2, 0x610);
+        frame.restore_ra(c, 0x600);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_FormatSaveDesc(MCManager *self, int mode, char *dst)`
+/// (0x23cc78): switch on the word at `self+0xb4` (the `mode` argument is
+/// only passed on): values 0 and 1 run the same
+/// `UStr_FromAscii`/`GetSaveTypeTag`/`UStr_Sprintf` sequence, 2 takes the
+/// world-device hash path ending in `UStr_Copy`, and values of 3 or more
+/// (and negative values) write nothing.
+pub fn mc_manager_format_save_desc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x350);
+        c.g[V0][0] = 1;
+        frame.save(c, S1, 0x330);
+        frame.save(c, S2, 0x320);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x310);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S0, 0x340);
+        frame.save_ra(c, 0x300);
+        c.g[V1][0] = Addr(c.g[S1][0] as u32).off(0xb4).lw(c);
+        let mode_is_one = c.g[V1][0] == c.g[V0][0];
+        c.g[S3][0] = c.g[A1][0];
+        if mode_is_one {
+            c.cycles += 16;
+            c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x100));
+            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c88));
+            c.g[A0][0] = c.g[S0][0];
+            callee::USTR_FROM_ASCII_2.call(c, 0x0023_cd6c)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A2][0] = c.g[SP][0];
+            c.g[A1][0] = Addr(c.g[A0][0] as u32).off(0xb4).lw(c);
+            c.g[A3][0] = 0x80;
+            callee::MC_MANAGER_GET_SAVE_TYPE_TAG.call(c, 0x0023_cd80)?;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A3][0] = sx((c.g[S3][0] as u32).wrapping_add(1));
+            c.g[A2][0] = c.g[SP][0];
+            callee::U_STR_SPRINTF.call(c, 0x0023_cd94)?;
+            frame.restore(c, S0, 0x340);
+            c.cycles += 1;
+            frame.restore(c, S1, 0x330);
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 2i64) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[V0][0] = 2;
+                c.cycles += 2;
+                let mode_is_two = c.g[V1][0] == c.g[V0][0];
+                c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+                if mode_is_two {
+                    c.cycles += 16;
+                    c.g[A0][0] = 0x480000;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x3ec8));
+                    c.g[S0][0] = Addr(c.g[V0][0] as u32).off(0x8c).lw(c);
+                    c.g[S1][0] = Addr(c.g[S0][0] as u32).off(4).lw(c);
+                    c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x20).lh(c);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    callee::GET_HASH_VALUE_32.call(c, 0x0023_cd34)?;
+                    c.g[V1][0] = Addr(c.g[S1][0] as u32).off(0x24).lw(c);
+                    c.g[A0][0] = c.g[S0][0];
+                    let target = r32(c, V1);
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, target, 0x0023_cd44)?;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A1][0] = c.g[V0][0];
+                    callee::USTR_COPY.call(c, 0x0023_cd50)?;
+                    frame.restore(c, S0, 0x340);
+                } else {
+                    c.cycles += 2;
+                    frame.restore(c, S0, 0x340);
+                }
+                c.cycles += 1;
+                frame.restore(c, S1, 0x330);
+            } else {
+                c.cycles += 2;
+                let mode_is_zero = c.g[V1][0] == 0;
+                frame.restore(c, S0, 0x340);
+                if mode_is_zero {
+                    c.cycles += 17;
+                    c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x100));
+                    c.g[A1][0] = 0x4a0000;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c88));
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::USTR_FROM_ASCII_2.call(c, 0x0023_cce8)?;
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A2][0] = c.g[SP][0];
+                    c.g[A1][0] = Addr(c.g[A0][0] as u32).off(0xb4).lw(c);
+                    c.g[A3][0] = 0x80;
+                    callee::MC_MANAGER_GET_SAVE_TYPE_TAG.call(c, 0x0023_ccfc)?;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A3][0] = sx((c.g[S3][0] as u32).wrapping_add(1));
+                    c.g[A2][0] = c.g[SP][0];
+                    callee::U_STR_SPRINTF.call(c, 0x0023_cd10)?;
+                    frame.restore(c, S0, 0x340);
+                    c.cycles += 1;
+                    frame.restore(c, S1, 0x330);
+                } else {
+                    c.cycles += 2;
+                    frame.restore(c, S1, 0x330);
+                }
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S2, 0x320);
+        frame.restore(c, S3, 0x310);
+        frame.restore_ra(c, 0x300);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_UpdateMode1(MCManager *self)` (0x23d660): refresh the
+/// saved-slot count when the load changed, then run the finished-movie hook
+/// matching the mode word at `+0x130` (states 31, 33 and 36).
+pub fn mc_manager_update_mode1(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+        c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x18).lh(c);
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x1c).lw(c);
+        let target = r32(c, V1);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0023_d688)?;
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x338).lw(c);
+        let mut exited = false;
+        if c.g[V0][0] == 0 {
+            c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x424).lw(c);
+        } else {
+            c.cycles += 8;
+            c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+            c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x58).lh(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x5c).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0023_d6ac)?;
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x10);
+                exited = true;
+            } else {
+                c.cycles += 2;
+                Addr(c.g[S0][0] as u32).off(0x338).sw(c, 0);
+                c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x424).lw(c);
+            }
+        }
+        if !exited {
+            c.cycles += 3;
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+            if c.g[V1][0] != c.g[V0][0] {
+                c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+            } else {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S0][0];
+                callee::MC_MANAGER_GET_NUM_SLOTS.call(c, 0x0023_d6d0)?;
+                Addr(c.g[S0][0] as u32).off(0x424).sw(c, c.g[V0][0]);
+                c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+            }
+            c.cycles += 7;
+            c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x58).lh(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x5c).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0023_d6ec)?;
+            if c.g[V0][0] != 0 {
+                c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x130).lw(c);
+            } else {
+                c.cycles += 7;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0;
+                callee::MC_MANAGER_SET_MODE_2.call(c, 0x0023_d700)?;
+                c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x130).lw(c);
+                c.g[V0][0] = c.g[V1][0] ^ 0x31;
+                let is_31 = c.g[V0][0] == 0;
+                c.g[A0][0] = 0;
+                if !is_31 {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.g[V1][0] ^ 0x32;
+                    let is_32 = c.g[V0][0] == 0;
+                    c.g[V0][0] = c.g[V1][0] ^ 0x33;
+                    if !is_32 {
+                        c.cycles += 2;
+                        let is_33 = c.g[V0][0] == 0;
+                        c.g[V0][0] = c.g[V1][0] ^ 0x34;
+                        if !is_33 {
+                            c.cycles += 2;
+                            let is_34 = c.g[V0][0] == 0;
+                            c.g[V0][0] = c.g[V1][0] ^ 0x36;
+                            if !is_34 {
+                                c.cycles += 1;
+                                c.g[A0][0] = (0u64 < c.g[V0][0]) as u64;
+                            }
+                        }
+                    }
+                }
+                c.cycles += 2;
+                let mode_set = c.g[A0][0] == 0;
+                c.g[A1][0] = 3;
+                if !mode_set {
+                    c.cycles += 5;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                    c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+                    c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+                    let target = r32(c, V1);
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, target, 0x0023_d74c)?;
+                }
+                c.cycles += 1;
+                c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x130).lw(c);
+            }
+            c.cycles += 3;
+            c.g[V0][0] = 0x31;
+            let not_31 = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x33;
+            if !not_31 {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S0][0];
+                callee::MC_MANAGER_STATE31.call(c, 0x0023_d764)?;
+                frame.restore(c, S0, 0x10);
+            } else {
+                c.cycles += 2;
+                let not_33 = c.g[V1][0] != c.g[V0][0];
+                c.g[V0][0] = 0x36;
+                if !not_33 {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::MC_MANAGER_STATE33.call(c, 0x0023_d77c)?;
+                    frame.restore(c, S0, 0x10);
+                } else {
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        frame.restore(c, S0, 0x10);
+                    } else {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[S0][0];
+                        callee::MC_MANAGER_STATE36.call(c, 0x0023_d794)?;
+                        frame.restore(c, S0, 0x10);
+                    }
+                }
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_BuildSaveTitle(MCManager *self, ...)` (0x23cdb0): format
+/// the save title into the 0x200-byte scratch buffers. The switch is the
+/// word at `self+0xb4`: mode 0 and every other value name the world
+/// device through its hash path (the other values copy the name with
+/// `UStr_Copy`), mode 1 takes the "new player" path; `GetSaveTypeTag` is
+/// only called inside `FormatSaveDesc`, which runs first.
+pub fn mc_manager_build_save_title(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x870);
+        frame.save(c, S2, 0x840);
+        c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x200));
+        frame.save(c, S4, 0x820);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S3, 0x830);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S5, 0x810);
+        frame.save(c, S0, 0x860);
+        frame.save(c, S1, 0x850);
+        frame.save_ra(c, 0x800);
+        c.g[S3][0] = c.g[A2][0];
+        callee::MC_MANAGER_FORMAT_SAVE_DESC.call(c, 0x0023_cde4)?;
+        c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x400));
+        c.g[A1][0] = 0x480000;
+        c.g[S5][0] = c.g[A0][0];
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x3eb0));
+        callee::USTR_FROM_ASCII_2.call(c, 0x0023_cdf8)?;
+        c.g[V1][0] = Addr(c.g[S2][0] as u32).off(0xb4).lw(c);
+        let mode_is_zero = c.g[V1][0] == 0;
+        c.g[V0][0] = 1;
+        if mode_is_zero {
+            c.cycles += 19;
+            c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+            c.g[A0][0] = 0x480000;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x3ea0));
+            c.g[S0][0] = Addr(c.g[V0][0] as u32).off(0x8c).lw(c);
+            c.g[S1][0] = Addr(c.g[S0][0] as u32).off(4).lw(c);
+            c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x20).lh(c);
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            callee::GET_HASH_VALUE_32.call(c, 0x0023_ce34)?;
+            c.g[V1][0] = Addr(c.g[S1][0] as u32).off(0x24).lw(c);
+            c.g[A0][0] = c.g[S0][0];
+            let target = r32(c, V1);
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, target, 0x0023_ce44)?;
+            c.g[A1][0] = c.g[S5][0];
+            c.g[A2][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S3][0];
+            callee::U_STR_SPRINTF.call(c, 0x0023_ce54)?;
+            c.g[A1][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S4][0];
+            c.cycles += 4;
+            c.g[A0][0] = c.g[SP][0];
+            callee::U_STR_SPRINTF.call(c, 0x0023_cea0)?;
+            c.g[A2][0] = Addr(c.g[S2][0] as u32).off(0x434).lw(c);
+        } else {
+            c.cycles += 2;
+            let mode_is_one = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+            if mode_is_one {
+                c.cycles += 14;
+                callee::CBE_GET_BE.call(c, 0x0023_ce68)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 1;
+                callee::CBE_GET_INTERFACE.call(c, 0x0023_ce74)?;
+                c.g[A1][0] = Addr(c.g[S2][0] as u32).off(0xfc).lw(c);
+                c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x600));
+                c.g[A0][0] = c.g[V0][0];
+                callee::BE_NEW_PLAYER_INT_GET_NAME.call(c, 0x0023_ce84)?;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S0][0];
+                callee::USTR_FROM_ASCII_2.call(c, 0x0023_ce90)?;
+                c.g[A1][0] = c.g[S5][0];
+                c.g[A2][0] = c.g[S0][0];
+                c.cycles += 4;
+                c.g[A0][0] = c.g[SP][0];
+                callee::U_STR_SPRINTF.call(c, 0x0023_cea0)?;
+                c.g[A2][0] = Addr(c.g[S2][0] as u32).off(0x434).lw(c);
+            } else {
+                c.cycles += 2;
+                c.g[A0][0] = 0x480000;
+                c.cycles += 18;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x3ec8));
+                c.g[S0][0] = Addr(c.g[V0][0] as u32).off(0x8c).lw(c);
+                c.g[S1][0] = Addr(c.g[S0][0] as u32).off(4).lw(c);
+                c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x20).lh(c);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                callee::GET_HASH_VALUE_32.call(c, 0x0023_cec0)?;
+                c.g[V1][0] = Addr(c.g[S1][0] as u32).off(0x24).lw(c);
+                c.g[A0][0] = c.g[S0][0];
+                let target = r32(c, V1);
+                c.g[A1][0] = c.g[V0][0];
+                call_ptr(c, target, 0x0023_ced0)?;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S3][0];
+                callee::USTR_COPY.call(c, 0x0023_cedc)?;
+                c.g[A1][0] = c.g[S5][0];
+                c.g[A2][0] = c.g[S3][0];
+                c.g[A0][0] = c.g[SP][0];
+                callee::U_STR_SPRINTF.call(c, 0x0023_ceec)?;
+                c.g[A2][0] = Addr(c.g[S2][0] as u32).off(0x434).lw(c);
+            }
+        }
+        c.cycles += 18;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x168).lh(c);
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x16c).lw(c);
+        let target = r32(c, V1);
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0023_cf08)?;
+        c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x234));
+        c.g[A1][0] = c.g[SP][0];
+        callee::USTR_COPY.call(c, 0x0023_cf14)?;
+        frame.restore(c, S0, 0x860);
+        frame.restore(c, S1, 0x850);
+        frame.restore(c, S2, 0x840);
+        frame.restore(c, S3, 0x830);
+        frame.restore(c, S4, 0x820);
+        frame.restore(c, S5, 0x810);
+        frame.restore_ra(c, 0x800);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int MCManager_ClassifyCardState(MCManager *self, int arg)` (0x23e8a0):
+/// walk the card-state vtable cascade (busy chain, then idle chain),
+/// reporting 6, 7, 5, 4 or 0x1d through the message sink at `+0x748` along
+/// the way, or finishing quietly. The state words at `+0xbc` and `+0x130`
+/// are only compared (against 0 and 4), never returned; the result is the
+/// last probe or sink call's return value.
+pub fn mc_manager_classify_card_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+        c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x1a8).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x1ac).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0023_e8d0)?;
+        let busy = c.g[V0][0] != 0;
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+        // 0 = report to the sink at +0x748, 1 = report 0x1d, 2 = finish quietly.
+        let mut seg = 0u8;
+        if busy {
+            c.cycles += 7;
+            c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x1b8).lh(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x1bc).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0023_e968)?;
+            let mut after = false;
+            if c.g[V0][0] == 0 {
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0xbc).lw(c);
+                after = true;
+            } else {
+                c.cycles += 8;
+                c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+                c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x1d0).lh(c);
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x1d4).lw(c);
+                let target = r32(c, V0);
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0023_e988)?;
+                if c.g[V0][0] == 0 {
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0xbc).lw(c);
+                    after = true;
+                } else {
+                    c.cycles += 8;
+                    c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+                    c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+                    c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x198).lh(c);
+                    c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x19c).lw(c);
+                    let target = r32(c, V0);
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, target, 0x0023_e9a8)?;
+                    if c.g[V0][0] != 0 {
+                        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0xbc).lw(c);
+                        after = true;
+                    } else {
+                        c.cycles += 8;
+                        c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+                        c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+                        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x1d8).lh(c);
+                        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x1dc).lw(c);
+                        let target = r32(c, V0);
+                        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, target, 0x0023_e9c8)?;
+                        if c.g[V0][0] != 0 {
+                            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0xbc).lw(c);
+                            after = true;
+                        } else {
+                            c.cycles += 2;
+                            let arg_is_zero = c.g[S1][0] == 0;
+                            c.g[A1][0] = 6;
+                            if arg_is_zero {
+                                seg = 2;
+                            } else {
+                                c.cycles += 2;
+                                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                            }
+                        }
+                    }
+                }
+            }
+            if after {
+                c.cycles += 2;
+                let done = c.g[V0][0] == 0;
+                c.g[A1][0] = 7;
+                if done {
+                    seg = 1;
+                } else {
+                    c.cycles += 1;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                }
+            }
+        } else {
+            c.cycles += 7;
+            c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x188).lh(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x18c).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0023_e8ec)?;
+            let mut report5 = false;
+            let mut after = false;
+            if c.g[V0][0] != 0 {
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                report5 = true;
+            } else {
+                c.cycles += 8;
+                c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+                c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x198).lh(c);
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x19c).lw(c);
+                let target = r32(c, V0);
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0023_e90c)?;
+                if c.g[V0][0] != 0 {
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                    report5 = true;
+                } else {
+                    c.cycles += 8;
+                    c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x434).lw(c);
+                    c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+                    c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x1d8).lh(c);
+                    c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x1dc).lw(c);
+                    let target = r32(c, V0);
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, target, 0x0023_e92c)?;
+                    if c.g[V0][0] == 0 {
+                        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x130).lw(c);
+                        after = true;
+                    } else {
+                        c.cycles += 1;
+                        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                        report5 = true;
+                    }
+                }
+            }
+            if report5 {
+                c.cycles += 2;
+                c.g[A1][0] = 5;
+            }
+            if after {
+                c.cycles += 3;
+                c.g[V0][0] ^= 4;
+                let is_four = c.g[V0][0] == 0;
+                c.g[A1][0] = 4;
+                if is_four {
+                    seg = 2;
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+                }
+            }
+        }
+        if seg == 0 {
+            c.cycles += 6;
+            c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+            let target = r32(c, V1);
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0023_e9fc)?;
+            frame.restore(c, S0, 0x20);
+        } else if seg == 1 {
+            c.cycles += 6;
+            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x748).lw(c);
+            c.g[A1][0] = 0x1d;
+            c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+            let target = r32(c, V1);
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0023_ea1c)?;
+            c.cycles += 1;
+            frame.restore(c, S0, 0x20);
+        } else {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MCManager_NextSlot(MCManager *self)` (0x241400): step the chapter
+/// at `+0x428` forward to the next chapter that has content (wrapping past
+/// the end back to the current one), then record it and refresh the slot.
+/// The back edge re-enters at 0x241430, so that address is an entry too.
+pub fn mc_manager_next_slot(c: &mut Cpu) {
+    // The frame size must equal the size `Frame::open` uses on the entry arm.
+    let frame = Frame { size: 0x30 };
+    // Entry, or re-entry at the loop head after a back-edge unwind (the
+    // loop state is in the registers and the saved frame).
+    let mut first = false;
+    match c.pc {
+        0x0024_1400 => {
+            c.cycles += 9;
+            Frame::open(c, 0x30);
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+            frame.save(c, S1, 0x10);
+            frame.save(c, S0, 0x20);
+            c.g[S1][0] = c.g[A0][0];
+            frame.save_ra(c, 0);
+            c.g[V1][0] = Addr(c.g[S1][0] as u32).off(0x424).lw(c);
+            let no_slot = c.g[V1][0] == c.g[V0][0];
+            c.g[S0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+            if no_slot {
+                c.cycles += 5;
+                frame.restore(c, S0, 0x20);
+                frame.restore(c, S1, 0x10);
+                frame.restore_ra(c, 0);
+                frame.close(c);
+                return;
+            }
+            c.cycles += 2;
+            c.g[A0][0] = c.g[V1][0];
+            first = true;
+        }
+        0x0024_1430 => {}
+        pc => {
+            c.jump_out(pc, 0x0024_1400, 0x0024_1540);
+            return;
+        }
+    }
+    // Scan forward from the candidate in s0 until a chapter has content.
+    'scan: loop {
+        if first {
+            first = false;
+            c.cycles += 1;
+            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(1));
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+            let mut probe = false;
+            if c.g[S0][0] == c.g[V0][0] {
+                c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+                probe = true;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x100).lw(c);
+                let list_done = c.g[V0][0] == 0;
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(1));
+                if !list_done {
+                    c.cycles += 1;
+                    c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+                    probe = true;
+                }
+            }
+            if probe {
+                c.cycles += 2;
+                let wrapped = c.g[S0][0] == c.g[V0][0];
+                c.g[V0][0] = 1;
+                if wrapped {
+                    c.cycles += 1;
+                    c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x100).lw(c);
+                    break 'scan;
+                }
+                c.cycles += 3;
+                c.g[V1][0] = Addr(c.g[S1][0] as u32).off(0x100).lw(c);
+                if c.g[V1][0] != c.g[V0][0] {
+                    c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x100).lw(c);
+                    break 'scan;
+                }
+                c.cycles += 1;
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(1));
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x100).lw(c);
+            c.cycles += 1;
+            if c.g[V0][0] != 0 {
+                c.g[S0][0] = 0;
+            }
+        } else {
+            c.cycles += 2;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+        }
+        c.cycles += 9;
+        c.g[A2][0] = Addr(c.g[S1][0] as u32).off(0x434).lw(c);
+        c.g[A1][0] = c.g[S0][0];
+        c.g[V1][0] = Addr(c.g[A2][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x1a0).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x1a4).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        if call_ptr(c, target, 0x0024_149c).is_err() {
+            return;
+        }
+        if c.g[V0][0] != 0 {
+            c.cycles += 1;
+            c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x100).lw(c);
+            break 'scan;
+        }
+        c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x424).lw(c);
+        if back_edge_unwinds(c, 0x0024_1430) {
+            return;
+        }
+    }
+    c.cycles += 2;
+    if c.g[V0][0] != 0 {
+        c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+    } else {
+        c.cycles += 4;
+        c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x424).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+        if c.g[S0][0] != c.g[V0][0] {
+            c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+        } else {
+            c.cycles += 9;
+            c.g[A2][0] = Addr(c.g[S1][0] as u32).off(0x434).lw(c);
+            c.g[A1][0] = c.g[S0][0];
+            c.g[V1][0] = Addr(c.g[A2][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x1a0).lh(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x1a4).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            if call_ptr(c, target, 0x0024_14dc).is_err() {
+                return;
+            }
+            if c.g[V0][0] != 0 {
+                c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+            } else {
+                c.cycles += 10;
+                c.g[A2][0] = Addr(c.g[S1][0] as u32).off(0x434).lw(c);
+                c.g[S0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+                c.g[V1][0] = Addr(c.g[A2][0] as u32).lw(c);
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x1a0).lh(c);
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x1a4).lw(c);
+                let target = r32(c, V0);
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                if call_ptr(c, target, 0x0024_1504).is_err() {
+                    return;
+                }
+                if c.g[V0][0] == 0 {
+                    c.g[S0][0] = 0;
+                }
+                c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+            }
+        }
+    }
+    c.cycles += 2;
+    if c.g[V0][0] == c.g[S0][0] {
+        Addr(c.g[S1][0] as u32).off(0xe0).sw(c, 0);
+    } else {
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S0][0];
+        if callee::MC_MANAGER_SET_SLOT.call(c, 0x0024_1520).is_err() {
+            return;
+        }
+        c.g[A0][0] = c.g[S1][0];
+        if callee::MC_MANAGER_REFRESH_SLOT
+            .call(c, 0x0024_1528)
+            .is_err()
+        {
+            return;
+        }
+        Addr(c.g[S1][0] as u32).off(0xe0).sw(c, 0);
+    }
+    c.cycles += 5;
+    frame.restore(c, S0, 0x20);
+    frame.restore(c, S1, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+}
+
+/// `void MCManager_PrevSlot(MCManager *self)` (0x241540): step the chapter
+/// at `+0x428` back to the previous chapter that has content (wrapping
+/// past the start back to the current one), then record it and refresh
+/// the slot. The back edge re-enters at 0x241570, so that address is an
+/// entry too.
+pub fn mc_manager_prev_slot(c: &mut Cpu) {
+    // The frame size must equal the size `Frame::open` uses on the entry arm.
+    let frame = Frame { size: 0x40 };
+    // Entry, or re-entry at the loop head after a back-edge unwind (the
+    // loop state is in the registers and the saved frame).
+    let mut first = false;
+    match c.pc {
+        0x0024_1540 => {
+            c.cycles += 10;
+            Frame::open(c, 0x40);
+            c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+            frame.save(c, S1, 0x20);
+            frame.save(c, S0, 0x30);
+            c.g[S1][0] = c.g[A0][0];
+            frame.save(c, S2, 0x10);
+            frame.save_ra(c, 0);
+            c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x424).lw(c);
+            let no_slot = c.g[V0][0] == c.g[V1][0];
+            c.g[S0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+            if no_slot {
+                c.cycles += 6;
+                frame.restore(c, S0, 0x30);
+                frame.restore(c, S1, 0x20);
+                frame.restore(c, S2, 0x10);
+                frame.restore_ra(c, 0);
+                frame.close(c);
+                return;
+            }
+            c.cycles += 2;
+            c.g[S2][0] = 1;
+            first = true;
+        }
+        0x0024_1570 => {}
+        pc => {
+            c.jump_out(pc, 0x0024_1540, 0x0024_1674);
+            return;
+        }
+    }
+    // Scan backward from the candidate in s0 until a chapter has content.
+    'scan: loop {
+        if first {
+            first = false;
+        } else {
+            c.cycles += 2;
+            let mut probe = false;
+            if c.g[S0][0] == 0 {
+                c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+                probe = true;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x100).lw(c);
+                if c.g[V0][0] != 0 {
+                    c.cycles += 1;
+                    c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+                    probe = true;
+                }
+            }
+            if probe {
+                c.cycles += 2;
+                let wrapped = c.g[S0][0] == c.g[V0][0];
+                c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x100).lw(c);
+                if wrapped {
+                    break 'scan;
+                }
+                c.cycles += 2;
+                if c.g[V0][0] != c.g[S2][0] {
+                    break 'scan;
+                }
+            }
+        }
+        c.cycles += 2;
+        if (c.g[S0][0] as i64) <= 0 {
+            c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x100).lw(c);
+            c.cycles += 2;
+            if c.g[V0][0] == 0 {
+                c.g[A2][0] = Addr(c.g[S1][0] as u32).off(0x434).lw(c);
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x424).lw(c);
+                c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                c.cycles += 1;
+                c.g[A2][0] = Addr(c.g[S1][0] as u32).off(0x434).lw(c);
+            }
+        } else {
+            c.cycles += 2;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
+            c.cycles += 1;
+            c.g[A2][0] = Addr(c.g[S1][0] as u32).off(0x434).lw(c);
+        }
+        c.cycles += 8;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[V1][0] = Addr(c.g[A2][0] as u32).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x1a0).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x1a4).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        if call_ptr(c, target, 0x0024_15d4).is_err() {
+            return;
+        }
+        if c.g[V0][0] != 0 {
+            c.cycles += 1;
+            c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x100).lw(c);
+            break 'scan;
+        }
+        if back_edge_unwinds(c, 0x0024_1570) {
+            return;
+        }
+    }
+    c.cycles += 2;
+    if c.g[V0][0] != 0 {
+        c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+    } else {
+        c.cycles += 2;
+        if c.g[S0][0] != 0 {
+            c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+        } else {
+            c.cycles += 9;
+            c.g[A2][0] = Addr(c.g[S1][0] as u32).off(0x434).lw(c);
+            c.g[A1][0] = 0;
+            c.g[V1][0] = Addr(c.g[A2][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x1a0).lh(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x1a4).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            if call_ptr(c, target, 0x0024_160c).is_err() {
+                return;
+            }
+            if c.g[V0][0] != 0 {
+                c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+            } else {
+                c.cycles += 10;
+                c.g[A2][0] = Addr(c.g[S1][0] as u32).off(0x434).lw(c);
+                c.g[S0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+                c.g[V1][0] = Addr(c.g[A2][0] as u32).lw(c);
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x1a0).lh(c);
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x1a4).lw(c);
+                let target = r32(c, V0);
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                if call_ptr(c, target, 0x0024_1634).is_err() {
+                    return;
+                }
+                if c.g[V0][0] == 0 {
+                    c.g[S0][0] = 0;
+                }
+                c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x428).lw(c);
+            }
+        }
+    }
+    c.cycles += 2;
+    if c.g[V0][0] == c.g[S0][0] {
+        Addr(c.g[S1][0] as u32).off(0xe0).sw(c, 0);
+    } else {
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S0][0];
+        if callee::MC_MANAGER_SET_SLOT.call(c, 0x0024_1650).is_err() {
+            return;
+        }
+        c.g[A0][0] = c.g[S1][0];
+        if callee::MC_MANAGER_REFRESH_SLOT
+            .call(c, 0x0024_1658)
+            .is_err()
+        {
+            return;
+        }
+        Addr(c.g[S1][0] as u32).off(0xe0).sw(c, 0);
+    }
+    c.cycles += 6;
+    frame.restore(c, S0, 0x30);
+    frame.restore(c, S1, 0x20);
+    frame.restore(c, S2, 0x10);
     frame.restore_ra(c, 0);
     frame.close(c);
 }
@@ -8472,6 +10592,885 @@ pub(crate) mod tests {
                     };
                     c.bus.write32(mcus::JUMP_TABLE + 4 * i, entry);
                 }
+            },
+        );
+    }
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+
+    /// Zeroed manager at `DATA+0x400` with a backend holder/vtable and a
+    /// crowd-manager vtable, like the movieplayer `mc_setup_2` fixture but
+    /// with the first poll result steered by `poll` (`RET_ZERO` goes on to
+    /// poll, `FAKE` reports finished).
+    pub(crate) fn mgr(c: &mut Cpu, seed: u32, salt: u64, poll: u32) -> Rng {
+        let r = machine(c, seed, salt, 0);
+        globals(c);
+        let this = DATA + 0x400;
+        zero(c, this, 0x800);
+        let holder = DATA + 0x1000;
+        let vt = DATA + 0x1100;
+        w32(c, this + 0x434, holder);
+        w32(c, holder, vt);
+        ret_slot(c, vt, 0x58, poll);
+        let crowd = DATA + 0x1200;
+        w32(c, this + 0x748, crowd);
+        ret_slot(c, crowd, 8, FAKE);
+        ret_slot(c, crowd, 0xc, FAKE);
+        c.g[A0][0] = sx(this);
+        r
+    }
+
+    #[test]
+    fn mc_manager_state32_matches() {
+        check(
+            ee::s06::f_0023e2c0__generated,
+            mc_manager_state32,
+            32,
+            &|c, seed| {
+                let mut r = Rng(0x23e2_c0 ^ seed as u64);
+                scramble(c, &mut r);
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_state34_matches() {
+        check(
+            ee::s06::f_0023e4f0__generated,
+            mc_manager_state34,
+            32,
+            &|c, seed| {
+                let mut r = Rng(0x23e4_f0 ^ seed as u64);
+                scramble(c, &mut r);
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_set_slot_matches() {
+        check(
+            ee::s06::f_0023fb18__generated,
+            mc_manager_set_slot,
+            32,
+            &|c, seed| {
+                let mut r = Rng(0x23fb_18 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = match seed % 4 {
+                    0 => 0,
+                    1 => 1,
+                    2 => 7,
+                    _ => r.next_u32() as u64,
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_set_data_size_wrapper_matches() {
+        check(
+            ee::s06::f_0023cc58__generated,
+            mc_manager_set_data_size_wrapper,
+            48,
+            &|c, seed| {
+                let _ = mgr(c, seed, 0xcc58, FAKE);
+                let this = DATA + 0x400;
+                w32(c, this + 0x434, DATA + 0x1000);
+                w32(c, DATA + 0x1000, DATA + 0x1100);
+                ret_slot(c, DATA + 0x1100, 0x98, FAKE);
+                c.g[A1][0] = match seed % 3 {
+                    0 => 0,
+                    1 => 0x200,
+                    _ => 0x8000_0000,
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_state2f_matches() {
+        check(
+            ee::s06::f_00240f10__generated,
+            mc_manager_state2f,
+            48,
+            &|c, seed| {
+                let _ = mgr(c, seed, 0x40f10, FAKE);
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_read_current_dir_info_matches() {
+        check(
+            ee::s06::f_00241fb0__generated,
+            mc_manager_read_current_dir_info,
+            40,
+            &|c, seed| {
+                let _ = mgr(c, seed, 0x41fb0, FAKE);
+                let this = DATA + 0x400;
+                w32(
+                    c,
+                    this + 0x42c,
+                    match seed % 4 {
+                        0 => 0,
+                        1 => 1,
+                        2 => 2,
+                        _ => 5,
+                    },
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_get_instance_matches() {
+        use crate::game::dirtysock::tagsunk::tests::alloc_ready;
+        use crate::game::movie::movieplayer::tests::allocator_mutex;
+        check(
+            ee::s06::f_0023c808__generated,
+            mc_manager_get_instance,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x23c808, 0);
+                alloc_ready(c);
+                allocator_mutex(c);
+                // Null slot takes the create path, set slot returns it.
+                c.bus.write32(
+                    GAME_GP.wrapping_sub(0x47c),
+                    match seed % 3 {
+                        0 => 0,
+                        1 => DATA + 0x500,
+                        _ => r.next_u32() & 0x00ff_ffff,
+                    },
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_set_data_size_matches() {
+        check(
+            ee::s06::f_0023caa0__generated,
+            mc_manager_set_data_size,
+            48,
+            &|c, seed| {
+                let _ = mgr(c, seed, 0xcaa0, FAKE);
+                let this = DATA + 0x400;
+                w32(c, this + 0x434, DATA + 0x1000);
+                w32(c, DATA + 0x1000, DATA + 0x1100);
+                ret_slot(c, DATA + 0x1100, 0x98, FAKE);
+                c.g[A1][0] = match seed % 3 {
+                    0 => 0,
+                    1 => 0x200,
+                    _ => 0x8000_0000,
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_prev_file_matches() {
+        check(
+            ee::s06::f_00241678__generated,
+            mc_manager_prev_file,
+            64,
+            &|c, seed| {
+                let _ = mgr(c, seed, 0x41678, FAKE);
+                let this = DATA + 0x400;
+                w32(c, this + 0xf8, (seed % 5) as u32);
+                w32(c, this + 0x100, if seed % 3 == 0 { 0 } else { 1 });
+                w32(c, this + 0xec, (seed % 4) as u32);
+                w32(c, this + 0x434, DATA + 0x1000);
+                w32(c, DATA + 0x1000, DATA + 0x1100);
+                ret_slot(c, DATA + 0x1100, 0x220, FAKE);
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_next_file_matches() {
+        check(
+            ee::s06::f_002416c0__generated,
+            mc_manager_next_file,
+            64,
+            &|c, seed| {
+                let _ = mgr(c, seed, 0x416c0, FAKE);
+                let this = DATA + 0x400;
+                w32(c, this + 0xf8, (seed % 5) as u32);
+                w32(c, this + 0x100, if seed % 3 == 0 { 0 } else { 1 });
+                w32(c, this + 0xec, (seed % 4) as u32);
+                w32(c, this + 0x434, DATA + 0x1000);
+                w32(c, DATA + 0x1000, DATA + 0x1100);
+                // A small clamped top reaches the at-top wrap to 0.
+                ret_slot(
+                    c,
+                    DATA + 0x1100,
+                    0x220,
+                    match seed % 3 {
+                        0 => RET_ZERO,
+                        1 => RET_ONE,
+                        _ => FAKE,
+                    },
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_write_save_by_name_matches() {
+        check(
+            ee::s06::f_00240fb0__generated,
+            mc_manager_write_save_by_name,
+            48,
+            &|c, seed| {
+                let _ = mgr(c, seed, 0x40fb0, FAKE);
+                let this = DATA + 0x400;
+                w32(c, this + 0x434, DATA + 0x1000);
+                w32(c, DATA + 0x1000, DATA + 0x1100);
+                ret_slot(c, DATA + 0x1100, 0x120, FAKE);
+                c.g[A3][0] = match seed % 3 {
+                    0 => 0,
+                    1 => 1,
+                    _ => 0xabcd,
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_write_save_by_slot_matches() {
+        check(
+            ee::s06::f_00241050__generated,
+            mc_manager_write_save_by_slot,
+            48,
+            &|c, seed| {
+                let _ = mgr(c, seed, 0x41050, FAKE);
+                let this = DATA + 0x400;
+                w32(c, this + 0x434, DATA + 0x1000);
+                w32(c, DATA + 0x1000, DATA + 0x1100);
+                ret_slot(c, DATA + 0x1100, 0x130, FAKE);
+                c.g[A3][0] = match seed % 3 {
+                    0 => 0,
+                    1 => 1,
+                    _ => 0xabcd,
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_state31_matches() {
+        check(
+            ee::s06::f_0023e268__generated,
+            mc_manager_state31,
+            64,
+            &|c, seed| {
+                let poll = if seed % 2 == 0 { RET_ZERO } else { FAKE };
+                let _ = mgr(c, seed, 0x23e268, poll);
+                c.pc = 0x0023_e268;
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_clamp_file_index_matches() {
+        check(
+            ee::s06::f_002410d0__generated,
+            mc_manager_clamp_file_index,
+            48,
+            &|c, seed| {
+                let _ = mgr(c, seed, 0x410d0, FAKE);
+                let this = DATA + 0x400;
+                w32(c, this + 0xec, (seed % 5) as u32);
+                w32(c, this + 0x434, DATA + 0x1000);
+                w32(c, DATA + 0x1000, DATA + 0x1100);
+                // A count at or below +0xec reaches the second backend call.
+                ret_slot(
+                    c,
+                    DATA + 0x1100,
+                    0x220,
+                    match seed % 3 {
+                        0 => RET_ZERO,
+                        1 => RET_ONE,
+                        _ => FAKE,
+                    },
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_state0d_matches() {
+        check(
+            ee::s06::f_0023f308__generated,
+            mc_manager_state0d,
+            64,
+            &|c, seed| {
+                let _ = mgr(c, seed, 0x23f308, FAKE);
+                let this = DATA + 0x400;
+                let vt = DATA + 0x1100;
+                w32(c, this + 0xf8, (seed % 3) as u32);
+                // First poll done or not, second poll done or not.
+                ret_slot(c, vt, 0x218, if seed % 4 < 2 { RET_ZERO } else { FAKE });
+                ret_slot(c, vt, 0x208, if seed % 4 == 0 { RET_ZERO } else { FAKE });
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_format_slot_free_space_matches() {
+        check(
+            ee::s06::f_00241928__generated,
+            mc_manager_format_slot_free_space,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x41928, 0);
+                let idx = (seed % 3) as u32;
+                let dev = DATA + idx * 0xe0;
+                let dst = DATA + 0x2000;
+                let variant = seed / 3 % 5;
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = idx as u64;
+                c.g[A2][0] = sx(dst);
+                c.bus.write32(dev + 0x350, if variant == 0 { 0 } else { 1 });
+                c.bus.write32(dev + 0x344, if variant == 1 { 0 } else { 1 });
+                c.bus.write32(dev + 0x348, if variant == 2 { 0 } else { 1 });
+                c.bus.write32(dev + 0x34c, if variant == 3 { 0 } else { 1 });
+                c.bus.write32(dev + 0x354, DATA + 0x3000);
+                for i in (0..0x40).step_by(4) {
+                    c.bus.write32(DATA + 0x3000 + i, r.next_u32());
+                }
+                for i in (0..0x100).step_by(4) {
+                    c.bus.write32(dst + i, r.next_u32());
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_state1e_matches() {
+        check(
+            ee::s06::f_0023fff0__generated,
+            mc_manager_state1e,
+            64,
+            &|c, seed| {
+                let _ = mgr(
+                    c,
+                    seed,
+                    0x23fff0,
+                    if seed % 2 == 0 { RET_ZERO } else { FAKE },
+                );
+                let vt = DATA + 0x1100;
+                ret_slot(c, vt, 0x1a8, if seed % 4 < 2 { RET_ZERO } else { FAKE });
+                // RET_ZERO hooks make the "done" branches run (a FAKE hook
+                // can never return 0).
+                w32(
+                    c,
+                    DATA + 0x400 + 0x78,
+                    if seed % 8 == 2 { RET_ZERO } else { FAKE },
+                );
+                w32(
+                    c,
+                    DATA + 0x400 + 0x6c,
+                    if seed % 16 == 2 { RET_ZERO } else { FAKE },
+                );
+                c.pc = 0x0023_fff0;
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_state2b_matches() {
+        check(
+            ee::s06::f_00240cc0__generated,
+            mc_manager_state2b,
+            64,
+            &|c, seed| {
+                let _ = mgr(
+                    c,
+                    seed,
+                    0x40cc0,
+                    if seed % 2 == 0 { RET_ZERO } else { FAKE },
+                );
+                let vt = DATA + 0x1100;
+                ret_slot(c, vt, 0x1a8, if seed % 4 < 2 { RET_ZERO } else { FAKE });
+                ret_slot(c, vt, 0x28, FAKE);
+                w32(
+                    c,
+                    DATA + 0x400 + 0x68,
+                    if seed % 8 == 2 { RET_ZERO } else { FAKE },
+                );
+                w32(
+                    c,
+                    DATA + 0x400 + 0x6c,
+                    if seed % 16 == 2 { RET_ZERO } else { FAKE },
+                );
+                w32(c, DATA + 0x400 + 0x428, (seed % 3) as u32);
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_state09_matches() {
+        check(
+            ee::s06::f_002409c8__generated,
+            mc_manager_state09,
+            64,
+            &|c, seed| {
+                let _ = mgr(
+                    c,
+                    seed,
+                    0x409c8,
+                    if seed % 2 == 0 { RET_ZERO } else { FAKE },
+                );
+                let vt = DATA + 0x1100;
+                ret_slot(c, vt, 0x1a8, if seed % 4 < 2 { RET_ZERO } else { FAKE });
+                ret_slot(c, vt, 0x248, if seed % 8 == 2 { RET_ZERO } else { FAKE });
+                // Different moduli for the two tail hooks: seed%32==2 keeps
+                // both at 0 (quiet tail), seed%32==18 leaves +0x6c non-zero
+                // (report 1), seed%16==10 leaves +0x70 non-zero with the
+                // same poll (report 0xd).
+                w32(
+                    c,
+                    DATA + 0x400 + 0x70,
+                    if seed % 32 == 2 || seed % 32 == 18 {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
+                );
+                w32(
+                    c,
+                    DATA + 0x400 + 0x6c,
+                    if seed % 32 == 2 { RET_ZERO } else { FAKE },
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_state11_save_matches() {
+        check(
+            ee::s06::f_0023f578__generated,
+            mc_manager_state11_save,
+            64,
+            &|c, seed| {
+                let mut r = mgr(c, seed, 0x23f578, FAKE);
+                let this = DATA + 0x400;
+                let vt = DATA + 0x1100;
+                ret_slot(c, vt, 0x248, if seed % 4 < 2 { RET_ZERO } else { FAKE });
+                // RET_ONE at +0x150 reaches the == 1 branch (CardSetState18,
+                // the +4 hook and both report calls below it).
+                ret_slot(
+                    c,
+                    vt,
+                    0x150,
+                    match seed % 4 {
+                        0 => RET_ZERO,
+                        1 => RET_ONE,
+                        _ => FAKE,
+                    },
+                );
+                w32(c, this + 0x108, (seed % 3) as u32);
+                // seed%16==1: e4 >= f0 (the CardSetState18 path);
+                // seed%16==5: e4 < f0 (the +4 hook path, hook returns 0);
+                // seed%16==13: e4 < f0 with the hook non-zero (early return).
+                let (e4, f0) = if seed % 16 == 1 {
+                    (5, 3)
+                } else if seed % 16 == 5 || seed % 16 == 13 {
+                    (3, 5)
+                } else {
+                    (r.next_u32(), r.next_u32())
+                };
+                c.bus.write32(this + 0xe4, e4);
+                c.bus.write32(this + 0xf0, f0);
+                w32(c, this + 0x4, if seed % 16 == 5 { RET_ZERO } else { FAKE });
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_state2c_delete_matches() {
+        check(
+            ee::s06::f_00240d90__generated,
+            mc_manager_state2c_delete,
+            64,
+            &|c, seed| {
+                let _ = mgr(
+                    c,
+                    seed,
+                    0x40d90,
+                    if seed % 2 == 0 { RET_ZERO } else { FAKE },
+                );
+                let this = DATA + 0x400;
+                let vt = DATA + 0x1100;
+                // Per seed%16 (even seeds pass the first poll): 0 countdown
+                // still running, 2 report 0x2d, 4 report 0x2e (RET_ZERO
+                // count), 6 the 0x208 == 0 skip, 8/10 the 0x208 != 0 arm
+                // with the slot-0x50 call.
+                let (s248, s68, s208, n108, n438) = match seed % 16 {
+                    0 => (FAKE, FAKE, FAKE, 2, 0),
+                    2 => (FAKE, FAKE, FAKE, 0, 0),
+                    4 => (RET_ZERO, RET_ZERO, FAKE, 0, 0),
+                    6 => (RET_ZERO, FAKE, RET_ZERO, 1, 1),
+                    8 => (RET_ZERO, FAKE, FAKE, 0, 2),
+                    10 => (RET_ZERO, FAKE, FAKE, 1, 0),
+                    _ => (
+                        if seed % 4 < 2 { RET_ZERO } else { FAKE },
+                        FAKE,
+                        FAKE,
+                        (seed % 3) as u32,
+                        (seed % 3) as u32,
+                    ),
+                };
+                ret_slot(c, vt, 0x248, s248);
+                ret_slot(c, vt, 0x208, s208);
+                ret_slot(c, vt, 0x68, s68);
+                ret_slot(c, vt, 0x50, FAKE);
+                w32(c, this + 0x108, n108);
+                w32(c, this + 0x438, n438);
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_state16_matches() {
+        check(
+            ee::s06::f_0023fd40__generated,
+            mc_manager_state16,
+            64,
+            &|c, seed| {
+                let _ = mgr(
+                    c,
+                    seed,
+                    0x23fd40,
+                    if seed % 2 == 0 { RET_ZERO } else { FAKE },
+                );
+                let this = DATA + 0x400;
+                let vt = DATA + 0x1100;
+                ret_slot(c, vt, 0x1a8, if seed % 4 < 2 { RET_ZERO } else { FAKE });
+                ret_slot(c, vt, 0x70, FAKE);
+                w32(c, this + 0x338, if seed % 3 == 0 { 0 } else { 1 });
+                // RET_ZERO hooks make the "done" chain under `done` run.
+                // seed%16==10 stops at +0x84 (OnOperationDone); seed%16==14
+                // leaves +0x68 non-zero (the +0x70 call, report 0x19).
+                w32(
+                    c,
+                    this + 0x6c,
+                    if matches!(seed % 16, 2 | 6 | 10 | 14) {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
+                );
+                w32(
+                    c,
+                    this + 0x84,
+                    if matches!(seed % 16, 2 | 6 | 14) {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
+                );
+                w32(
+                    c,
+                    this + 0x68,
+                    if matches!(seed % 16, 2 | 6) {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
+                );
+                w32(c, this + 0x70, if seed % 8 == 2 { FAKE } else { RET_ZERO });
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_begin_save_matches() {
+        check(
+            ee::s06::f_0023cae8__generated,
+            mc_manager_begin_save,
+            64,
+            &|c, seed| {
+                let _ = mgr(c, seed, 0x23cae8, FAKE);
+                let this = DATA + 0x400;
+                w32(c, this + 0x434, DATA + 0x1000);
+                w32(c, DATA + 0x1000, DATA + 0x1100);
+                ret_slot(c, DATA + 0x1100, 0x98, FAKE);
+                c.g[A1][0] = (seed % 3) as u64;
+                c.g[A2][0] = match seed % 3 {
+                    0 => 0,
+                    1 => 1,
+                    _ => 0x200,
+                };
+            },
+        );
+    }
+
+    driven!(gen_prev_slot, ee::s06::f_00241540__generated);
+    driven!(hand_prev_slot, mc_manager_prev_slot);
+
+    #[test]
+    fn mc_manager_prev_slot_matches() {
+        check_events(gen_prev_slot, hand_prev_slot, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x41540, 0);
+            globals(c);
+            let this = DATA + 0x400;
+            zero(c, this, 0x800);
+            let holder = DATA + 0x1000;
+            let vt = DATA + 0x1100;
+            w32(c, this + 0x434, holder);
+            w32(c, holder, vt);
+            // (idx, count, list) restricted to combos that terminate under an
+            // always-zero hasChapter (verified with a stage-level simulator;
+            // other combos spin forever even in the generated body).
+            // hasChapter returns 0 on even seeds (loop + events) and FAKE on
+            // odd seeds (immediate exit).
+            let (idx, count, list) = match seed % 8 {
+                0 => (0, -1, 0),
+                1 => (0, 2, 1),
+                2 => (1, 2, 0),
+                3 => (0, 3, 1),
+                4 => (1, 4, 0),
+                5 => (2, 4, 0),
+                6 => (3, 4, 0),
+                _ => (1, 3, 1),
+            };
+            ret_slot(c, vt, 0x1a0, if seed % 2 == 0 { RET_ZERO } else { FAKE });
+            w32(c, this + 0x428, idx as u32);
+            w32(
+                c,
+                this + 0x424,
+                if count < 0 { 0xffff_ffff } else { count as u32 },
+            );
+            w32(c, this + 0x100, list as u32);
+            c.g[A0][0] = sx(this);
+            schedule(c, &mut r, seed, 0x0024_1540)
+        });
+    }
+
+    #[test]
+    fn mc_manager_begin_load_matches() {
+        check(
+            ee::s06::f_0023c8f0__generated,
+            mc_manager_begin_load,
+            64,
+            &|c, seed| {
+                let _ = mgr(c, seed, 0x23c8f0, FAKE);
+                let this = DATA + 0x400;
+                w32(c, this + 0x434, DATA + 0x1000);
+                w32(c, DATA + 0x1000, DATA + 0x1100);
+                ret_slot(c, DATA + 0x1100, 0x98, FAKE);
+                c.g[A1][0] = (seed % 3) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_format_save_desc_matches() {
+        check(
+            ee::s06::f_0023cc78__generated,
+            mc_manager_format_save_desc,
+            64,
+            &|c, seed| {
+                let _ = mgr(c, seed, 0x23cc78, FAKE);
+                // The body switches on self+0xb4, not on the mode argument.
+                w32(c, DATA + 0x400 + 0xb4, seed % 4);
+                c.g[A1][0] = (seed % 4) as u64;
+                c.g[A2][0] = sx(DATA + 0x5000);
+                zero(c, DATA + 0x5000, 0x200);
+            },
+        );
+    }
+
+    driven!(gen_next_slot, ee::s06::f_00241400__generated);
+    driven!(hand_next_slot, mc_manager_next_slot);
+
+    #[test]
+    fn mc_manager_next_slot_matches() {
+        check_events(gen_next_slot, hand_next_slot, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x41400, 0);
+            globals(c);
+            let this = DATA + 0x400;
+            zero(c, this, 0x800);
+            let holder = DATA + 0x1000;
+            let vt = DATA + 0x1100;
+            w32(c, this + 0x434, holder);
+            w32(c, holder, vt);
+            // (idx, count, list) restricted to combos that terminate under an
+            // always-zero hasChapter (verified with a stage-level simulator;
+            // other combos spin forever even in the generated body).
+            // hasChapter returns 0 on even seeds (loop + events) and FAKE on
+            // odd seeds (immediate exit).
+            let (idx, count, list) = match seed % 8 {
+                0 => (0, -1, 0),
+                1 => (0, 2, 1),
+                2 => (1, 2, 0),
+                3 => (0, 3, 1),
+                4 => (1, 4, 0),
+                5 => (2, 4, 0),
+                6 => (3, 4, 0),
+                _ => (1, 3, 1),
+            };
+            ret_slot(c, vt, 0x1a0, if seed % 2 == 0 { RET_ZERO } else { FAKE });
+            w32(c, this + 0x428, idx as u32);
+            w32(
+                c,
+                this + 0x424,
+                if count < 0 { 0xffff_ffff } else { count as u32 },
+            );
+            w32(c, this + 0x100, list as u32);
+            c.g[A0][0] = sx(this);
+            schedule(c, &mut r, seed, 0x0024_1400)
+        });
+    }
+
+    #[test]
+    fn mc_manager_update_mode1_matches() {
+        check(
+            ee::s06::f_0023d660__generated,
+            mc_manager_update_mode1,
+            64,
+            &|c, seed| {
+                let _ = mgr(
+                    c,
+                    seed,
+                    0x23d660,
+                    if seed % 2 == 0 { RET_ZERO } else { FAKE },
+                );
+                let this = DATA + 0x400;
+                let vt = DATA + 0x1100;
+                ret_slot(c, vt, 0x58, if seed % 4 < 2 { RET_ZERO } else { FAKE });
+                ret_slot(c, vt, 0x18, FAKE);
+                w32(c, this + 0x338, if seed % 3 == 0 { 0 } else { 1 });
+                // -1 at +0x424 reaches the GetNumSlots branch.
+                w32(
+                    c,
+                    this + 0x424,
+                    if seed % 5 == 4 {
+                        0xffff_ffff
+                    } else {
+                        (seed % 4) as u32
+                    },
+                );
+                w32(
+                    c,
+                    this + 0x130,
+                    match seed % 5 {
+                        0 => 0x31,
+                        1 => 0x32,
+                        2 => 0x33,
+                        3 => 0x36,
+                        _ => 0x40,
+                    },
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_build_save_title_matches() {
+        check(
+            ee::s06::f_0023cdb0__generated,
+            mc_manager_build_save_title,
+            64,
+            &|c, seed| {
+                let _ = mgr(c, seed, 0x23cdb0, FAKE);
+                ret_slot(c, DATA + 0x1100, 0x168, FAKE);
+                // The body switches on self+0xb4 (modes 0, 1 and >= 2).
+                w32(c, DATA + 0x400 + 0xb4, seed % 3);
+                c.g[A1][0] = (seed % 3) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_classify_card_state_matches() {
+        check(
+            ee::s06::f_0023e8a0__generated,
+            mc_manager_classify_card_state,
+            80,
+            &|c, seed| {
+                let _ = mgr(
+                    c,
+                    seed,
+                    0x23e8a0,
+                    if seed % 2 == 0 { RET_ZERO } else { FAKE },
+                );
+                let vt = DATA + 0x1100;
+                let this = DATA + 0x400;
+                // Steer the cascade per seed%16 so every leaf runs in both
+                // chains: busy 0x1b8/0x1d0/0x198/0x1d8 finishing at +0xbc
+                // (== 0: report 0x1d, != 0: report 7), busy fall-through
+                // (arg 0: quiet, arg != 0: report 6), idle 0x188/0x198/0x1d8
+                // (report 5) and idle +0x130 (== 4: quiet, != 4: report 4).
+                let combo = seed % 16;
+                let busy = combo <= 9 || combo == 15;
+                ret_slot(c, vt, 0x1a8, if busy { FAKE } else { RET_ZERO });
+                ret_slot(
+                    c,
+                    vt,
+                    0x1b8,
+                    if matches!(combo, 2 | 3) {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
+                );
+                ret_slot(
+                    c,
+                    vt,
+                    0x1d0,
+                    if matches!(combo, 4 | 5) {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
+                );
+                ret_slot(
+                    c,
+                    vt,
+                    0x198,
+                    if matches!(combo, 0 | 1 | 8 | 9 | 12 | 13 | 14 | 15) {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
+                );
+                ret_slot(
+                    c,
+                    vt,
+                    0x1d8,
+                    if matches!(combo, 0 | 1 | 13 | 14 | 15) {
+                        RET_ZERO
+                    } else {
+                        FAKE
+                    },
+                );
+                ret_slot(c, vt, 0x188, if combo == 10 { FAKE } else { RET_ZERO });
+                w32(
+                    c,
+                    this + 0xbc,
+                    if matches!(combo, 3 | 5 | 7 | 9) { 3 } else { 0 },
+                );
+                w32(
+                    c,
+                    this + 0x130,
+                    match combo {
+                        13 => 4,
+                        14 => 2,
+                        _ => (seed % 3) as u32,
+                    },
+                );
+                c.g[A1][0] = if combo == 0 || combo == 15 {
+                    0
+                } else if combo == 1 {
+                    1
+                } else {
+                    (seed % 2) as u64
+                };
             },
         );
     }
