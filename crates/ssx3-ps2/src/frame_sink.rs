@@ -501,7 +501,7 @@ fn build_thread(s: &mut Sink) -> Option<std::sync::mpsc::SyncSender<Job>> {
     }
     let mut tx = BUILD_TX.lock().unwrap();
     if tx.is_none() {
-        let (t, rx) = std::sync::mpsc::sync_channel::<Job>(2);
+        let (t, rx) = std::sync::mpsc::sync_channel::<Job>(1);
         let mut builder = std::mem::take(&mut s.builder);
         std::thread::Builder::new()
             .name("ssx3-frame-build".into())
@@ -509,12 +509,15 @@ fn build_thread(s: &mut Sink) -> Option<std::sync::mpsc::SyncSender<Job>> {
                 for job in rx {
                     let t0 = web_time::Instant::now();
                     let (built, carry) = builder.build(job.gm, &*job.snap, job.direct);
+                    // The renderer reads the frame's textures (pages kept
+                    // from frame to frame while unwritten); the snapshot
+                    // goes back to the pool, so fewer are in flight and
+                    // each refill copies fewer pages.
+                    let mut ranges = Vec::new();
+                    frame::texture_ranges(&*job.snap, &built.frame, &mut ranges);
+                    let mem = FrameMem::from_store(&job.snap.ram, &ranges, job.snap.snap);
+                    recycle(job.snap);
                     let ms = t0.elapsed().as_secs_f64() * 1e3;
-                    let mem = FrameMem {
-                        pages: Default::default(),
-                        snap: job.snap.snap,
-                        full: Some(job.snap),
-                    };
                     if let Some(s) = SINK.lock().unwrap().as_mut() {
                         s.sink.frame(Published {
                             gm: job.gm,
