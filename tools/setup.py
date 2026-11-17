@@ -128,9 +128,11 @@ def main(argv=None):
         run(["cargo", "run", "--release", "-p", "ssx3-ps2", "--bin", "vu_recomp"])
     run(["cargo", "run", "--release", "-p", "ssx3-recomp", "--bin", "recomp-ee", "--", *recomp_args])
     if a.unwind:
+        # The unwind arguments last: recomp-ee takes the last `--out` and
+        # `--package-prefix`, and `--unwind` after a `--threads`.
         run(["cargo", "run", "--release", "-p", "ssx3-recomp", "--bin", "recomp-ee", "--",
-             "--unwind", "--out", "generated/ee-unwind", "--package-prefix", "ssx3-ee-unwind",
-             *recomp_args])
+             *recomp_args, "--unwind", "--out", "generated/ee-unwind",
+             "--package-prefix", "ssx3-ee-unwind"])
 
 
 def is_set_up():

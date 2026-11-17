@@ -77,7 +77,7 @@ for verification until then).
 
 ## Optional: browser (WebAssembly) 🟡
 
-The browser front end (its own repository, `frontends.md`): the unwind form of
+The browser front end (its own repository, [`../frontends.md`](../frontends.md)): the unwind form of
 the EE code in a Web Worker, the disc image read with `FileReaderSync`, ssx3-gfx drawing with
 WebGPU. Lowest-priority target: keep the unwind form working
 (`ssx3-headless --features ee-unwind` checks it natively) and avoid new

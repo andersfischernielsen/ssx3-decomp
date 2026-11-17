@@ -130,9 +130,18 @@ for a front end that runs the renderer's VU1 work elsewhere (below).
 
    A front end without a file system for the disc image (the browser: the
    image is a `File` the user picks) supplies it before booting with
-   `ssx3_core::iso::set_opener(Box::new(|| Ok(Box::new(source))))`, where
-   `source` implements `ssx3_core::iso::Source` (`len`, `read_at`). The
-   engine then reads the disc and the executable through it whatever
+   `ssx3_core::iso::set_opener`. The opener is a factory: the engine calls it
+   for every open (more than once), and each call returns a new
+   `Box<dyn ssx3_core::iso::Source>` (`len`, `read_at`) over the same image:
+
+   ```rust
+   let image = std::sync::Arc::new(handle); // what the front end reads from
+   ssx3_core::iso::set_opener(Box::new(move || {
+       Ok(Box::new(MySource::new(image.clone())?) as Box<dyn ssx3_core::iso::Source>)
+   }));
+   ```
+
+   The engine then reads the disc and the executable through it whatever
    `SSX3_ISO` says.
 2. **Boot.** `Engine::boot(config)` creates the machine, loads the disc and
    the executable, installs the hand-written functions and the renderer
@@ -220,9 +229,9 @@ pulls once per presented frame) is not topped up.
 
 ### VU offload
 
-The renderer runs the game's VU1 programs natively, in chunks: on threads
-natively. A front end without threads (the browser) can run the chunks
-elsewhere (helper workers) through `ssx3_engine::vu`:
+The renderer runs the game's VU1 programs as native code, in chunks. Native
+builds run the chunks on threads. A front end without threads (the browser)
+can run them elsewhere (helper workers) through `ssx3_engine::vu`:
 
 | Item | What it is |
 | --- | --- |
