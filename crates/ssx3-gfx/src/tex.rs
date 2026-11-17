@@ -132,7 +132,7 @@ fn fingerprint(m: &dyn Mem, pixels: u32, bytes: u32, clut: u32, clut_bytes: u32)
 /// (TexInfo, TEXA), the key, the bytes of pixels and CLUT it covers, the
 /// snapshot it was made in.
 #[derive(Default)]
-pub struct KeyCache(std::collections::HashMap<(u32, u64), (TexKey, u32, u32, u64)>);
+pub struct KeyCache(ssx3_core::hash::HashMap<(u32, u64), (TexKey, u32, u32, u64)>);
 
 impl KeyCache {
     pub fn key(&mut self, m: &dyn Mem, info: u32, texa: u64) -> TexKey {

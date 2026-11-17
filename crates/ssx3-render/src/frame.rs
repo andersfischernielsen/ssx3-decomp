@@ -32,7 +32,7 @@
 //! runs with, and records what the chain actually wrote ([`ChainObs`]) so the
 //! two can be compared.
 
-use std::collections::HashMap;
+use ssx3_core::hash::HashMap;
 use std::ops::Range;
 
 use crate::chain::Mem;

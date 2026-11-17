@@ -20,8 +20,8 @@
 //! syscall; it re-reads all state after the suspension returns (the call
 //! takes `&mut Cpu`, so the compiler cannot cache across it).
 
+use ssx3_core::hash::HashMap;
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 
 use corosensei::stack::DefaultStack;
 use corosensei::{Coroutine, CoroutineResult, Yielder};
@@ -36,9 +36,9 @@ thread_local! {
     static CURRENT: Cell<i32> = const { Cell::new(0) };
     /// The coroutines by token (leaked boxes: a parked guest thread is never
     /// dropped, which would unwind its stack).
-    static COROUTINES: RefCell<HashMap<i32, *mut GuestCoroutine>> = RefCell::new(HashMap::new());
+    static COROUTINES: RefCell<HashMap<i32, *mut GuestCoroutine>> = RefCell::new(HashMap::default());
     /// Each coroutine's yielder, for suspending from deep inside a syscall.
-    static YIELDERS: RefCell<HashMap<i32, *const Yielder<(), i32>>> = RefCell::new(HashMap::new());
+    static YIELDERS: RefCell<HashMap<i32, *const Yielder<(), i32>>> = RefCell::new(HashMap::default());
 }
 
 /// The running context's baton token (0 = frame driver).

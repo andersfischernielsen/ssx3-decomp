@@ -566,7 +566,7 @@ mod tests {
     /// Shared input kept in a store: the same results as carried inline.
     #[test]
     fn shared_store_round_trip() {
-        struct Store(Vec<u8>, std::collections::HashMap<u64, u32>);
+        struct Store(Vec<u8>, ssx3_core::hash::HashMap<u64, u32>);
         impl SharedStore for Store {
             fn offset(&mut self, key: u64, bytes: &mut dyn FnMut() -> Vec<u8>) -> Option<u32> {
                 if let Some(&o) = self.1.get(&key) {

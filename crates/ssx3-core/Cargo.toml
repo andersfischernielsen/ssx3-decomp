@@ -6,3 +6,4 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+foldhash = { version = "0.2", default-features = false }

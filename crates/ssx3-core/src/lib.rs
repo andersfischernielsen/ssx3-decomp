@@ -14,6 +14,7 @@ pub mod config;
 pub mod devices;
 pub mod elf;
 pub mod gs;
+pub mod hash;
 pub mod iso;
 pub mod memory;
 pub mod memory_map;
