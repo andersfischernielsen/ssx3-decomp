@@ -35965,11 +35965,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// `check_events` does not compare `next_event`: run `generated` and `hand`
-    /// once more on two fresh machines for every event seed of `setup` and
-    /// require the same `next_event` (both delivered their events at the same
-    /// cycles). `each(seed, mode, due, gen, hand)` adds the caller's checks;
-    /// `due` is `next_event` after `setup`.
+    /// Run `generated` and `hand` on two fresh machines for each event seed,
+    /// require the same `next_event`, and pass both machines to the caller's
+    /// delivery checks. `due` is the deadline before either side runs.
     pub(crate) fn same_event_cycles(
         generated: GuestFn,
         hand: GuestFn,

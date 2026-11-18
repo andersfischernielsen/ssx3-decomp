@@ -7,10 +7,10 @@
 //! function the way the trampoline does (re-entering it at the cleared `pc`
 //! after an unwind until it returns to `RA`), and [`driven!`] wraps a
 //! function in it as a plain `fn` for the comparison. [`check_events`] is
-//! `check` that also requires equal temporaries and that the event seeds
-//! really reached an event.
+//! `check` that also requires equal temporaries and verifies that the event
+//! seeds really reached an event. The default form also compares schedules.
 
-use super::{compare, fresh, Rng, RA};
+use super::{compare_with, fresh, Rng, RA};
 use crate::events::event_due;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -127,9 +127,44 @@ fn drive_rest(c: &mut Cpu, f: GuestFn) {
     }
 }
 
-/// Like `difftest::check` (and also requiring equal temporaries), and
-/// asserts that the event seeds really delivered an event inside the
-/// function often enough to mean something.
+/// Compare the deadlines each run leaves behind to catch missed event checks.
+fn compare_schedule(a: &Cpu, b: &Cpu, hard: &mut Vec<String>) {
+    let (ma, mb) = (ssx3_ps2::mr!(a), ssx3_ps2::mr!(b));
+    let (sa, sb) = (&ma.sched, &mb.sched);
+    // A nearer poll can mask a difference in the deadlines it is polling.
+    for (name, generated, hand) in [
+        ("next_event", a.next_event, b.next_event),
+        ("next_vblank", sa.next_vblank, sb.next_vblank),
+        ("next_vblank_end", sa.next_vblank_end, sb.next_vblank_end),
+    ] {
+        if generated != hand {
+            hard.push(format!(
+                "{name} after the run (generated {generated:?}, hand {hand:?})"
+            ));
+        }
+    }
+    for (name, generated, hand) in [
+        (
+            "next_alarm",
+            ssx3_ps2::kernel::next_alarm(a),
+            ssx3_ps2::kernel::next_alarm(b),
+        ),
+        (
+            "next_timer",
+            ma.hw.next_timer_event(),
+            mb.hw.next_timer_event(),
+        ),
+    ] {
+        if generated != hand {
+            hard.push(format!(
+                "{name} after the run (generated {generated:?}, hand {hand:?})"
+            ));
+        }
+    }
+}
+
+/// Like `difftest::check` with equal temporaries and, in the default form,
+/// equal event schedules. Also checks that enough seeds delivered an event.
 pub fn check_events(
     generated: GuestFn,
     hand: GuestFn,
@@ -146,9 +181,19 @@ pub fn check_events(
         generated
     };
     for seed in 0..super::seed_count(seeds) {
-        let r = compare(gen_fn, hand, &|c| {
-            setup(c, seed);
-        });
+        let r = compare_with(
+            gen_fn,
+            hand,
+            &|c| {
+                setup(c, seed);
+            },
+            |a, b, hard| {
+                // In the unwind form, hand-written structured loops defer a finished frame.
+                if !cfg!(feature = "ee-unwind") {
+                    compare_schedule(a, b, hard);
+                }
+            },
+        );
         assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
         // Temporaries too: the replacements reproduce every register. VU0
         // status/MAC/clip flags (ctrl 16-18) stay report-only, as in `check`:
