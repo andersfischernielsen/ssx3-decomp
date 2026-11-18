@@ -6591,7 +6591,6 @@ pub(crate) mod tests {
                 w(c, nested, vtable);
                 ret_slot(c, vtable, 0x28, RET_ZERO);
                 ret_slot(c, vtable, 0x8, RET_ZERO);
-                ret_slot(c, vtable, 0xc, RET_ZERO);
                 let _ = nested;
                 c.g[A0][0] = self_ as u64;
                 c.g[A1][0] = stream as u64;

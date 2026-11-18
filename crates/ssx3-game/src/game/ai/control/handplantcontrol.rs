@@ -11752,7 +11752,7 @@ pub(crate) mod tests {
                 c.g[RA][0] = crate::difftest::RA as u64;
                 c.f[12] = air_last_turn_fraction(&mut c, FpuF32::ONE, fallback).0;
                 c.f[13] = cap.to_bits();
-                s00::f_00121aa0(&mut c);
+                crate::difftest::run_generated(&mut c, s00::f_00121aa0);
                 assert_eq!(c.pc, crate::difftest::RA);
             }
             let x = f32::from_bits(c.bus.read32(R + 0x1c0));

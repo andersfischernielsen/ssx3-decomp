@@ -1510,7 +1510,10 @@ mod tests {
 
     #[test]
     fn jump_table_miss() {
-        // A corrupted jump table entry leaves through `jump_out`.
+        // A corrupted jump table entry leaves through `jump_out`. The
+        // values must not be block labels: the unwind-form generated body
+        // accepts every label as a continuation, while the hand match only
+        // lists the case entries (0x111444 is case 0's return label).
         check(
             ssx3_ee::s00::f_00111408,
             super::rider_base_update_main_state,
@@ -1524,7 +1527,7 @@ mod tests {
                 put_words(
                     c,
                     0x0045_6b50,
-                    &[[0x0011_1440, 0x0011_1444, 0x0011_1448, 0x0011_1450][(seed % 4) as usize]; 6],
+                    &[[0x0011_1440, 0x0011_1442, 0x0011_1448, 0x0011_1450][(seed % 4) as usize]; 6],
                 );
             },
         );
