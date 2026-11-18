@@ -9,7 +9,7 @@
 //! shader outputting C) and `Cs·(1 + C)` (premultiplied; the clamp matches
 //! the GS's).
 
-use std::collections::HashMap;
+use ssx3_core::hash::HashMap;
 
 mod driver_cache;
 mod persist;
@@ -712,19 +712,19 @@ impl Pipelines {
             module,
             layout,
             pl,
-            cache: HashMap::new(),
+            cache: HashMap::default(),
             gpu_module,
             clip_depth,
             gpu_layout,
             gpu_pl,
-            gpu_cache: HashMap::new(),
+            gpu_cache: HashMap::default(),
             prewarm_rx: None,
             key_store: writer.and_then(|w| persist::KeyStore::open(w, fresh)),
             driver_cache,
             start: start.map(|(mark, _)| mark),
             shadow_module,
             shadow_pl,
-            shadow_cache: HashMap::new(),
+            shadow_cache: HashMap::default(),
         }
     }
 

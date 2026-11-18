@@ -32,7 +32,7 @@
 //! runs with, and records what the chain actually wrote ([`ChainObs`]) so the
 //! two can be compared.
 
-use std::collections::HashMap;
+use ssx3_core::hash::HashMap;
 use std::ops::Range;
 
 use crate::chain::Mem;
@@ -1136,7 +1136,9 @@ impl Walker<'_> {
             Some(d) => Owner::Payload(d),
             None => Owner::Unattributed,
         };
-        for e in std::mem::take(&mut self.vif.events) {
+        // (Drained and put back: the VIF's list keeps its capacity.)
+        let mut events = std::mem::take(&mut self.vif.events);
+        for e in events.drain(..) {
             if let Event::Direct(d) = &e {
                 let (emitted, actual, tex0) = (&mut self.emitted, &mut self.actual, &mut self.tex0);
                 let payload = self.in_payload.is_some();
@@ -1156,6 +1158,7 @@ impl Walker<'_> {
             }
             self.events.push((owner, e));
         }
+        self.vif.events = events;
     }
 }
 

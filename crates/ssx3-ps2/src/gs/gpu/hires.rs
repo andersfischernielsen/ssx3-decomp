@@ -13,7 +13,7 @@
 //! native runs) stamps its pages, and a copy older than its pages is
 //! refreshed from VRAM (an upscale) before the next run that draws it.
 
-use std::collections::HashMap;
+use ssx3_core::hash::HashMap;
 
 use super::super::raster::Pages;
 
@@ -105,7 +105,7 @@ impl Hires {
             scale,
             w: 0,
             h: 0,
-            surfs: HashMap::new(),
+            surfs: HashMap::default(),
             prev: None,
             dummy_color: None,
             dummy_depth: None,

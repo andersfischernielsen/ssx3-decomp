@@ -9,7 +9,7 @@
 //! PATH3 windows (textures come from TexMan). `SSX3_NATIVE_FRAME_CHECK=1`
 //! (`compare`) lists the differences.
 
-use std::collections::HashMap;
+use ssx3_core::hash::HashMap;
 use std::sync::Arc;
 
 use super::*;
@@ -95,9 +95,9 @@ struct Native<'a> {
 
 impl Native<'_> {
     fn flush(&mut self, owner: Owner) {
-        for e in std::mem::take(&mut self.vif.events) {
-            self.events.push((owner, e));
-        }
+        // (Drained in place: the VIF's list keeps its capacity.)
+        self.events
+            .extend(self.vif.events.drain(..).map(|e| (owner, e)));
     }
 
     fn push(&mut self, owner: Owner, e: Event) {
@@ -115,10 +115,11 @@ impl Native<'_> {
 
     /// A CALL of a w3 packet (slot 124 lighting, slot 101 shadow header).
     fn call_w3(&mut self, w3: u32, cache: &mut ChainCache) {
-        match self.at.get(&w3).map(|&k| &self.direct[k].cmd) {
+        // (`direct` outlives `self`: no copy of the steps.)
+        let direct = self.direct;
+        match self.at.get(&w3).map(|&k| &direct[k].cmd) {
             Some(Cmd::Vu(steps)) => {
-                let steps = steps.clone();
-                self.vif.native(&steps);
+                self.vif.native(steps);
             }
             _ => {
                 self.issues.push(format!("w3 packet {w3:#x} not captured"));
@@ -380,10 +381,10 @@ impl Native<'_> {
     /// A captured packet at `t` applied (as the walker does); its end.
     fn packet(&mut self, t: u32, owner: Owner, cache: &mut ChainCache) -> Option<u32> {
         let &k = self.at.get(&t)?;
-        let r = &self.direct[k];
+        let direct = self.direct;
+        let r = &direct[k];
         match &r.cmd {
             Cmd::Vu(steps) => {
-                let steps = steps.clone();
                 for run in steps.split_inclusive(|s| matches!(s, crate::direct::Step::Chain(_))) {
                     self.vif.native(run);
                     if let Some(&crate::direct::Step::Chain(a)) = run.last() {
@@ -549,8 +550,8 @@ pub(super) fn build(
     let num_views = word(m, g + gm::NUM_VIEWS).min(4);
     let vif_heads = [word(m, g + gm::QUEUED_VIF1), word(m, g + gm::QUEUED_VIF2)];
     let gif_heads = [word(m, g + gm::QUEUED_GIF1), word(m, g + gm::QUEUED_GIF2)];
-    let mut at = HashMap::new();
-    let mut links = HashMap::new();
+    let mut at = HashMap::default();
+    let mut links = HashMap::default();
     let mut posts: [Vec<usize>; 3] = Default::default();
     for (k, r) in direct.iter().enumerate() {
         match &r.cmd {

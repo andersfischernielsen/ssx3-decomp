@@ -6807,6 +6807,18 @@
 0x002594d0    LobbyMan_ctor
 0x00259468    LobbyMan_CompareRankAsc
 0x00259400    LobbyMan_CompareRankDesc
+# Phase 2 wave: oc1040, oc1041, oc1042, oc1043
+0x0023cf38    MCManager_v01
+0x00241710    MCManager_GetCardErrorText
+0x00241b20    MCManager_ReadCardStatus
+0x00241e18    MCManager_GetStatusText
+0x002420c8    MCManager_ReadDirInfo
+0x0023e540    MCManager_State03_Check
+0x0023ec00    MCManager_State06_Check
+0x0023f698    MCManager_State07_Check
+0x00240130    MCManager_State20_Load
+0x002402d0    MCManager_State1D_Check
+0x00242288    MCManager_ctor
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks

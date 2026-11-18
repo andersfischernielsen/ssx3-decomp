@@ -195,7 +195,7 @@ pub struct GpuFrame {
     pub verts: u32,
     /// `Link::Source` calls by key: their first data qword, alpha maximum,
     /// uniform `SPLIT_BASE` (a reusing call of a split program takes it).
-    pub sources: std::collections::HashMap<u32, (u32, f32, [u32; 4])>,
+    pub sources: ssx3_core::hash::HashMap<u32, (u32, f32, [u32; 4])>,
     /// The per-frame part of the last split call kept (data index,
     /// length), for the next one to share.
     pub last_split: Option<(usize, usize)>,
@@ -210,7 +210,7 @@ pub struct GpuFrame {
 pub struct MeshArena {
     pub data: Vec<[u32; 4]>,
     /// Per key: where its data starts, its alpha maximum.
-    pub at: std::collections::HashMap<u64, (u32, f32)>,
+    pub at: ssx3_core::hash::HashMap<u64, (u32, f32)>,
     /// `data[uploaded..]` is not on the GPU yet.
     pub uploaded: usize,
     /// Bumped when the arena is cleared (its buffer is filled anew).
@@ -306,7 +306,7 @@ pub struct Gs {
     /// The upload being captured (DBP, data so far).
     capture: Option<(u32, Upload)>,
     /// Small PSMCT32 uploads by DBP (CLUTs), kept across frames.
-    pub uploads: std::collections::HashMap<u32, Upload>,
+    pub uploads: ssx3_core::hash::HashMap<u32, Upload>,
     /// The frame's alpha holds Z bits 8..15 (the depth-fog copy ran).
     zalpha: bool,
     /// The primitives now coming are HUD (squeezed horizontally by
@@ -333,7 +333,7 @@ pub struct Gs {
     xyoffset_set: [bool; 2],
     /// Texture base pointer (TEX0.TBP0) → TexInfo, kept current by the
     /// renderer as it walks the frame.
-    pub tex_map: std::collections::HashMap<u32, u32>,
+    pub tex_map: ssx3_core::hash::HashMap<u32, u32>,
     /// Textured primitives whose TBP is not in `tex_map`.
     pub unknown_tex: u64,
     /// Debug trace (`SSX3_GFX_TRACE`): label of what is being processed,
@@ -342,9 +342,9 @@ pub struct Gs {
     pub trace: Option<String>,
     pub trace_log: Vec<String>,
     /// Render targets by FBP (kept across frames).
-    pub rts: std::collections::HashMap<u32, Rt>,
+    pub rts: ssx3_core::hash::HashMap<u32, Rt>,
     /// Primitives for other frame buffers: (FBP, FBW, PSM) → count.
-    pub dropped_fbp: std::collections::HashMap<(u32, u32, u32), u64>,
+    pub dropped_fbp: ssx3_core::hash::HashMap<(u32, u32, u32), u64>,
 }
 
 #[derive(Clone, Copy, Debug)]

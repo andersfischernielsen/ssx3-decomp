@@ -1838,6 +1838,7 @@ pub fn snd_utk_lpc_filter(c: &mut Cpu) {
         c.f[k] = a[k].0;
     }
     c.f[31] = zero.0;
+    let fast = ssx3_render::render_math::on();
     loop {
         // Loop head 0x3ce474 (a0 blocks left, a3 the block).
         c.cycles += 196;
@@ -1848,12 +1849,8 @@ pub fn snd_utk_lpc_filter(c: &mut Cpu) {
         let mut acc = FpuF32::ZERO;
         for j in 0..12 {
             x = x_at.off(4 * j as u32).read_fpu(c);
-            acc = x + zero;
-            for t in 0..12 {
-                let k = if j == 0 { t } else { (t + 1) % 12 };
-                acc = FpuF32::madd(acc, a[k], h[(k + 12 - j) % 12]);
-            }
-            let y = FpuF32::madd(acc, zero, zero);
+            let y;
+            (acc, y) = lpc_sample(fast, &a, &h, j, x);
             h[11 - j] = y;
             x_at.off(4 * j as u32).write_fpu(c, y);
         }
@@ -1879,6 +1876,36 @@ pub fn snd_utk_lpc_filter(c: &mut Cpu) {
         history.off(4 * k as u32).write_fpu(c, *y);
     }
     abi::ret(c);
+}
+
+/// Sample `j` of a block of [`snd_utk_lpc_filter`]: the accumulator and the
+/// output. PS2-exact, or with fast math (`SSX3_FAST_MATH=1`) host `f32` (it
+/// is the speech decoder's hot loop; the samples only go to the mixer).
+#[inline(always)]
+fn lpc_sample(
+    fast: bool,
+    a: &[FpuF32; 12],
+    h: &[FpuF32; 12],
+    j: usize,
+    x: FpuF32,
+) -> (FpuF32, FpuF32) {
+    if fast {
+        let mut s = x.to_f32();
+        for t in 0..12 {
+            let k = if j == 0 { t } else { (t + 1) % 12 };
+            s += a[k].to_f32() * h[(k + 12 - j) % 12].to_f32();
+        }
+        // Finite, as the PS2's arithmetic keeps it.
+        let y = FpuF32::from_f32(s.clamp(-f32::MAX, f32::MAX));
+        return (y, y);
+    }
+    let zero = FpuF32::ZERO;
+    let mut acc = x + zero;
+    for t in 0..12 {
+        let k = if j == 0 { t } else { (t + 1) % 12 };
+        acc = FpuF32::madd(acc, a[k], h[(k + 12 - j) % 12]);
+    }
+    (acc, FpuF32::madd(acc, zero, zero))
 }
 
 // ---------------------------------------------------------------------------
@@ -25860,6 +25887,24 @@ pub(crate) mod tests {
                 }
             },
         );
+    }
+
+    /// Fast math's LPC filter stays within float rounding of the exact one.
+    #[test]
+    fn lpc_sample_fast_close_to_exact() {
+        let mut r = Rng(0x7a11_00f3);
+        for _ in 0..2000 {
+            let a: [FpuF32; 12] = std::array::from_fn(|_| FpuF32(r.f32(0.5)));
+            let h: [FpuF32; 12] = std::array::from_fn(|_| FpuF32(r.f32(1000.0)));
+            let x = FpuF32(r.f32(1000.0));
+            for j in 0..12 {
+                let (_, exact) = lpc_sample(false, &a, &h, j, x);
+                let (_, fast) = lpc_sample(true, &a, &h, j, x);
+                let scale = 1.0 + h.iter().map(|v| v.to_f32().abs()).sum::<f32>();
+                let d = (exact.to_f32() - fast.to_f32()).abs();
+                assert!(d <= scale * 1e-5, "j {j}: {exact:?} vs {fast:?}");
+            }
+        }
     }
 
     #[test]
