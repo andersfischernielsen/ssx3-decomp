@@ -186,7 +186,7 @@ s00	001125b8	001125c0	o	Rider_ReturnZero_25b8
 s00	001125c0	001127f0	o	Rider_UpdateAIPathProgress
 s00	001127f0	00112a4c	o	Rider_SelectRacePath
 s00	00112a50	00112d58	o	Rider_SelectAIPath
-s00	00112d58	00112fac	-	Rider_SnapToNearestAIPath
+s00	00112d58	00112fac	o	Rider_SnapToNearestAIPath
 s00	00112fb0	00113128	o	Rider_UpdateDistToFinish
 s00	00113128	00113130	o	Rider_GetDistToFinish
 s00	00113130	00113138	-	Rider_GetStartDistToFinish
@@ -327,7 +327,7 @@ s00	0011b678	0011b694	o	Rider_LoadListCompare
 s00	0011b698	0011b978	o	Rider_ctor
 s00	0011b978	0011bb3c	-	Rider_dtor
 s00	0011bb40	0011bb94	o	Rider_CreateFocusBox
-s00	0011bb98	0011bbe8	-	Rider_CreateRiderMetrix
+s00	0011bb98	0011bbe8	o	Rider_CreateRiderMetrix
 s00	0011bbe8	0011bd5c	o	Rider_GetEquippedBolts
 s00	0011bd60	0011be88	o	Rider_AddBoltNamesToLoadList
 s00	0011be88	0011c0dc	o	Rider_AddBoltFilesToLoadList
@@ -426,7 +426,7 @@ s00	00125970	00125ad0	o	Rider_ApplyWindForce
 s00	00125ad0	00125ad8	o	Rider_EmptyProgressHook
 s00	00125ad8	00125b18	o	Rider_GetSyncChecksum
 s00	00125b18	00125c6c	o	Player_ApplyRumble
-s00	00125c70	00125eb8	-	Player_ctor
+s00	00125c70	00125eb8	o	Player_ctor
 s00	00125eb8	001276f0	-	Player_dtor
 s00	001276f0	00127844	o	Player_GetTrickButton
 s00	00127848	001278c0	o	Player_GetUberGrindButton
@@ -453,9 +453,9 @@ s00	001296f8	00129764	o	AI_LoadNextRider
 s00	00129768	001297c4	o	AI_Restart
 s00	001297c8	001298c4	o	AI_ResetRiders
 s00	001298c8	001298dc	o	AI_GetFrameCounter
-s00	001298e0	00129bfc	-	AI_CreatePlayers
+s00	001298e0	00129bfc	o	AI_CreatePlayers
 s00	00129c00	00129e20	-	AI_CreateMissionRider
-s00	00129e20	00129ff8	-	AI_CreateComputerRiders
+s00	00129e20	00129ff8	o	AI_CreateComputerRiders
 s00	00129ff8	0012a180	-	AI_CreateActorRiders
 s00	0012a180	0012a1f0	o	AI_AreAllRidersLoaded
 s00	0012a1f0	0012a23c	-	AI_IsRiderInSpecialList
@@ -486,7 +486,7 @@ s00	0012b200	0012b280	o	AI_FreeAnimDataSources
 s00	0012b280	0012b33c	-	AI_LoadAnimDataSources
 s00	0012b340	0012b420	o	AI_ForceFinishRiders
 s00	0012b420	0012b498	o	AI_GetSyncChecksum
-s00	0012b498	0012b694	-	AI_ApplyPlayerRiderSettings
+s00	0012b498	0012b694	o	AI_ApplyPlayerRiderSettings
 s00	0012b698	0012b788	o	AI_ApplyComputerRiderSettings
 s00	0012b788	0012b7ec	o	AI_RefreshRiderOverlaps
 s00	0012b7f0	0012b944	o	AI_SaveState
@@ -927,7 +927,7 @@ s01	0014bc18	0014bd74	-	BEBoltInt_CollectEquippedFileNames
 s01	0014bd78	0014bd98	-	Bolts_LoadGlobalDB
 s01	0014bd98	0014bdb8	-	Bolts_PrepareGameDB
 s01	0014bdb8	0014bdc4	o	Bolts_GetDB
-s01	0014be70	0014c064	-	Bolts_ReadFile
+s01	0014be70	0014c064	o	Bolts_ReadFile
 s01	0014c068	0014c2ac	-	Bolts_BuildChildTables
 s01	0014c2b0	0014c31c	o	Bolts_IndexBoltsByChar
 s01	0014c320	0014c3c4	o	Bolts_IndexTable2ByChar
@@ -940,7 +940,7 @@ s01	0014c620	0014c654	o	Bolts_InitDB
 s01	0014c658	0014c69c	o	Bolts_DestroyDB
 s01	0014c6a0	0014c7a0	o	Bolts_LoadDB
 s01	0014c7a0	0014d064	o	Bolts_BuildGameBolts
-s01	0014d068	0014d23c	-	Bolts_PrepareForGame
+s01	0014d068	0014d23c	o	Bolts_PrepareForGame
 s01	0014d240	0014d364	o	Bolts_FreeDB
 s01	0014d448	0014d4c8	o	Bolts_FindBoltIndex
 s01	0014d4c8	0014d554	-	Bolts_CountChildren
@@ -954,9 +954,9 @@ s01	0014d9d0	0014da04	o	Bolts_GetCharBolts_2
 s01	0014daa0	0014dabc	-	Bolts_FindTable2Entries_Wrapper
 s01	0014dac0	0014db40	-	Bolts_FindTable2Entries
 s01	0014db40	0014dbfc	-	Bolts_FindTable2EntriesByFlag
-s01	0014dc00	0014dc10	-	Bolts_GetCharTable3Count
+s01	0014dc00	0014dc10	o	Bolts_GetCharTable3Count
 s01	0014dc10	0014dc40	o	Bolts_GetCharTable3
-s01	0014dc40	0014dc50	-	Bolts_GetCharTable4Count
+s01	0014dc40	0014dc50	o	Bolts_GetCharTable4Count
 s01	0014dc50	0014dc80	o	Bolts_GetCharTable4
 s01	0014dc80	0014dd48	o	BELibrary_GetInstance
 s01	0014dd58	0014dd98	o	BELibrary_GetInterface
@@ -1016,7 +1016,7 @@ s01	0014f870	0014f898	o	BEOptionInt_GetMaxHandicap
 s01	0014f898	0014f8fc	o	BEOptionInt_SwapPlayerSettings
 s01	0014f900	0014f960	o	BEBAGTInt_GetInstance
 s01	0014f960	0014facc	-	BEBAGTInt_v01
-s01	0014fad0	0014fc3c	-	BEBAGTInt_Reset
+s01	0014fad0	0014fc3c	o	BEBAGTInt_Reset
 s01	0014fc40	0014fd7c	-	BEBAGTInt_ResetProfile
 s01	0014fd80	0014fe08	o	BEBAGTInt_SetUberTrickButton
 s01	0014fe08	0014fea8	o	BEBAGTInt_ClearUberTrickBit
@@ -1091,7 +1091,7 @@ s01	00152948	00152950	-	BESaveInt_GetSystemSaveSize
 s01	00152950	00152ba4	-	BESaveInt_BuildProfileSave
 s01	00152ba8	00152bb0	o	BESaveInt_GetProfileSaveSize
 s01	00152bb0	00152de0	-	BESaveInt_LoadSystemSave
-s01	00152de0	0015304c	-	BESaveInt_LoadProfileSave
+s01	00152de0	0015304c	o	BESaveInt_LoadProfileSave
 s01	00153050	00153088	o	BESaveInt_Destroy
 s01	00153088	001530e0	o	BERace_GetInstance
 s01	001530e0	001531fc	oe	BERace_GetInterface
@@ -1174,7 +1174,7 @@ s01	00155aa8	00155ab0	-	BEAggressionInt_Reset
 s01	00155ab0	00155b50	o	BEAggressionInt_GetRivalState
 s01	00155b50	00155bf0	o	BEAggressionInt_GetRivalLevel
 s01	00155bf0	00155e54	o	BEAggressionInt_AddAggression
-s01	00155e58	0015609c	-	BEAggressionInt_DecayAll
+s01	00155e58	0015609c	o	BEAggressionInt_DecayAll
 s01	001560a0	001561b0	o	BEAggressionInt_SaveState
 s01	001561b0	001562b8	-	BEAggressionInt_LoadState
 s01	001562b8	00156334	-	BELibrary_SwitchPhase
@@ -1265,8 +1265,8 @@ s01	001589b0	00158a50	o	BERewardInt_GetCollectibleTier
 s01	00158a50	00158af0	o	BERewardInt_GetMissionTier
 s01	00158af0	00158b70	o	BERewardInt_HasPointsTier
 s01	00158be0	00158c7c	o	BERewardInt_GetNextPointsThreshold
-s01	00158c80	00158d58	-	BERewardInt_GetNextCollectibleThreshold
-s01	00158d58	00158e30	-	BERewardInt_GetNextMissionThreshold
+s01	00158c80	00158d58	o	BERewardInt_GetNextCollectibleThreshold
+s01	00158d58	00158e30	o	BERewardInt_GetNextMissionThreshold
 s01	00158e30	00158f1c	-	BERewardInt_BeginRewardTracking
 s01	00158f20	00158f2c	o	BERewardInt_GetNewRewards
 s01	00158f30	00158f50	o	BERewardInt_GetNewRewardTotal
@@ -1467,7 +1467,7 @@ s01	00162290	001622b0	-	ChaseCamController_RestoreDefaultAlgorithm
 s01	001622b0	00162310	o	RiderCameraAlgorithm_ctor
 s01	00162310	00162318	o	RiderCameraAlgorithm_SetTarget
 s01	00162318	00162454	o	ChaseCameraAlgorithm_ctor
-s01	00162458	001624e8	-	ChaseCameraAlgorithm_dtor
+s01	00162458	001624e8	o	ChaseCameraAlgorithm_dtor
 s01	001624e8	0016255c	o	ChaseCameraAlgorithm_Tick
 s01	00162568	00162998	o	ChaseCameraAlgorithm_GatherRiderState
 s01	00162998	00162a20	o	ChaseCameraAlgorithm_UpdateHandplantFade
@@ -1552,7 +1552,7 @@ s02	00168d80	00168f60	-	MidLeftChaseCameraAlgorithm_Update
 s02	00168f60	00168fe8	o	MidLeftChaseCameraAlgorithm_ResetForRider
 s02	00168fe8	001690d0	o	ScriptCamController_ctor
 s02	001690d0	0016918c	o	ScriptCamController_dtor
-s02	00169190	001692d4	-	ScriptCamController_StartScriptCamera
+s02	00169190	001692d4	o	ScriptCamController_StartScriptCamera
 s02	001692d8	00169340	o	ScriptCamController_StopScriptCamera
 s02	00169340	00169364	o	ScriptCamController_PushAlgorithm
 s02	00169368	00169418	o	ScriptCamController_Update
@@ -1614,7 +1614,7 @@ s02	0016c968	0016c9b0	o	CameraTriggerMan_ResetActive
 s02	0016c9b0	0016ca08	o	CameraTriggerMan_Unload
 s02	0016ca10	0016ca18	-	CameraTriggerMan_EmptyHook
 s02	0016ca18	0016cbdc	-	CameraTriggerMan_RemoveTriggerRegions
-s02	0016cbe0	0016cdc8	-	CameraTriggerMan_RemoveAllTriggers
+s02	0016cbe0	0016cdc8	o	CameraTriggerMan_RemoveAllTriggers
 s02	0016cdc8	0016ce30	-	CameraTriggerMan_Load
 s02	0016ce30	0016cea8	-	CameraTriggerMan_Reload
 s02	0016cea8	0016cec4	-	CameraTriggerMan_RemoveTriggerRegions_Wrapper
@@ -1622,7 +1622,7 @@ s02	0016cec8	0016cef0	-	CameraTriggerMan_ReloadIf_Global
 s02	0016cef0	0016cf14	-	CameraTriggerMan_ReloadIf
 s02	0016cf18	0016cf3c	o	CameraTriggerMan_EmptyGlobalCall
 s02	0016cf40	0016cf48	-	CameraTriggerMan_EmptyStub
-s02	0016cf48	0016d1b4	-	CameraTriggerMan_UpdateTriggers
+s02	0016cf48	0016d1b4	o	CameraTriggerMan_UpdateTriggers
 s02	0016d1b8	0016d1d4	-	CameraTriggerMan_UpdateTriggersMask2
 s02	0016d1d8	0016d1f4	-	CameraTriggerMan_UpdateTriggersMask1
 s02	0016d200	0016d20c	-	CameraTriggerStack_Clear
@@ -1679,11 +1679,11 @@ s02	00176368	00176398	-	ManualScriptCameraAlgo_dtor
 s02	00176398	001763c8	-	TargetScriptCameraAlgo_dtor
 s02	001763c8	001763f8	-	SubjectScriptCameraAlgo_dtor
 s02	001763f8	00176428	o	AlgorithmicScriptCameraAlgo_dtor
-s02	00176440	00176448	-	CameraBoundObj_GetPosition
+s02	00176440	00176448	o	CameraBoundObj_GetPosition
 s02	00176448	00176450	-	CameraBoundObj_GetRotX
 s02	00176450	00176458	-	CameraBoundObj_GetRotY
-s02	00176458	00176460	-	CameraBoundObj_GetField14
-s02	00176460	00176468	-	CameraBoundObj_GetScale
+s02	00176458	00176460	o	CameraBoundObj_GetField14
+s02	00176460	00176468	o	CameraBoundObj_GetScale
 s02	001765f8	00176600	-	CameraAction_v01_Empty
 s02	00176808	00176840	o	CameraPointBoundObj_ClampPoint
 s02	00176840	00176868	o	CameraTriggerArray_45c1d0_v01
@@ -3250,7 +3250,7 @@ s04	001dd530	001dd560	-	FEUIInput_dtor
 s04	001dd560	001dd568	-	FEUIInput_v41
 s04	001dd568	001dd570	-	FEUIInput_v42
 s04	001dd570	001dd578	-	FEUIInput_v43
-s04	001dd580	001dd598	-	UIScreenFlags_ctor
+s04	001dd580	001dd598	o	UIScreenFlags_ctor
 s04	001dd598	001dd5b4	-	UIScreenVt46d1a0_dtor
 s04	001dd5b8	001dd648	-	UIScreenVt46d1a0_ctor
 s04	001dd6a8	001dd6e0	-	cFEState_ctor_2
@@ -4186,7 +4186,7 @@ s05	00224f30	00224f68	o	cLunoTable_FreeData
 s05	00224f68	00225068	-	cLunoTable_Clear
 s05	00225068	002250dc	o	cLunoTable_Assign
 s05	002250e0	00225244	-	cLunoTable_FindInt
-s05	00225248	00225334	-	cLunoTable_Find
+s05	00225248	00225334	o	cLunoTable_Find
 s05	00225338	002257dc	o	cLunoTable_Set
 s05	002257e0	002259a4	o	cLunoTable_Write
 s05	002259a8	00225b90	-	cLunoTable_Read
@@ -4205,7 +4205,7 @@ s05	00226810	00226830	-	LunoVM_GlobalDtors
 s05	00226830	00226900	-	SSXApp_ctor
 s05	00226900	00226b60	-	SSXApp_Init
 s05	00226b60	00227bec	-	InputMap_LoadFromFile
-s05	00227bf0	00227e64	-	SSXApp_ParseCommandLine
+s05	00227bf0	00227e64	o	SSXApp_ParseCommandLine
 s05	00227e68	00227e94	-	SSXApp_FlushTicks
 s05	00227e98	00227f58	o	SSXApp_NextTick
 s05	00227f58	00227f7c	o	SSXApp_Tick
@@ -4217,8 +4217,8 @@ s05	00228238	002282cc	o	SSXApp_StartFEModule
 s05	002282d0	00228a74	-	SSXApp_BootLoad
 s05	00228a78	00228bb8	-	SSXApp_LoadLocale
 s05	00228bb8	00228c04	-	SSXApp_v02
-s05	00228c08	00228ee0	-	SSXApp_ApplyDisplayOptions
-s05	00228ee0	00229180	-	ssx_LoadNetModules
+s05	00228c08	00228ee0	o	SSXApp_ApplyDisplayOptions
+s05	00228ee0	00229180	o	ssx_LoadNetModules
 s05	00229180	00229278	-	CrowdMan2d_ctor
 s05	00229278	002292dc	o	CrowdMan2d_dtor
 s05	002292e0	00229398	o	CrowdMan2d_Reset
@@ -4263,7 +4263,7 @@ s05	0022cce8	0022cd14	o	SectionMan_ctor
 s05	0022cd18	0022cd3c	o	SectionMan_dtor
 s05	0022cd40	0022cea8	-	SectionMan_Init
 s05	0022cea8	0022d084	-	SectionMan_RequestEvent
-s05	0022d088	0022d274	-	SectionMan_LoadEvent
+s05	0022d088	0022d274	o	SectionMan_LoadEvent
 s05	0022d278	0022d390	o	SectionMan_IsEventLoaded
 s05	0022d390	0022d3d4	o	SectionMan_IsEventReady
 s05	0022d3d8	0022d478	e	SectionMan_RequestLoad
@@ -4290,16 +4290,16 @@ s05	0022e288	0022e298	o	SectionMan_PushFreeNode
 s05	0022e298	0022e344	o	SectionMan_QueueSection
 s05	0022e348	0022e360	o	SectionMan_NextQueued
 s05	0022e360	0022e3b4	o	SectionMan_DequeueSection
-s05	0022e3b8	0022e54c	-	GameViewMan_ctor
+s05	0022e3b8	0022e54c	o	GameViewMan_ctor
 s05	0022e550	0022e730	o	GameViewMan_UpdateSplitScreen
 s05	0022e730	0022e7c4	o	GameViewMan_dtor
 s05	0022e7c8	0022e840	o	GameViewMan_ResetCameras
 s05	0022e840	0022e8b4	o	GameViewMan_UpdateCameras
 s05	0022e8b8	0022e91c	o	GameViewMan_PrefetchViews
 s05	0022e920	0022e964	o	GameViewMan_AllViewsReady
-s05	0022e968	0022ebc8	-	GameModule_ctor
+s05	0022e968	0022ebc8	o	GameModule_ctor
 s05	0022ebc8	0022f6ac	o	GameModule_Load
-s06	0022f6b0	0022fa98	-	GameModule_LoadWorld
+s06	0022f6b0	0022fa98	o	GameModule_LoadWorld
 s06	0022fa98	00230050	-	GameModule_Unload
 s06	00230050	002300f0	-	GameModule_Enter
 s06	002300f0	0023017c	o	GameModule_ResetScriptsAndWorld
@@ -4307,7 +4307,7 @@ s06	00230180	002302a8	-	GameModule_ResetRace
 s06	002302a8	00230338	o	GameModule_QuickRestart
 s06	00230338	0023035c	o	GameModule_InvalidateFocus
 s06	00230360	0023042c	o	GameModule_OnSectionUnload
-s06	00230430	00230484	-	GameModule_CreateSectionScriptTable
+s06	00230430	00230484	o	GameModule_CreateSectionScriptTable
 s06	00230488	00230558	-	GameModule_QuitToLoadScreen
 s06	00230558	002305c8	-	GameModule_BeginReplayPlayback
 s06	002305c8	0023063c	o	GameModule_EndReplayPlayback
@@ -4363,10 +4363,10 @@ s06	00232cf8	00232d14	o	StartScreen_TryExit
 s06	00232d18	00232d50	o	StartScreen_Update
 s06	00232d50	00232da8	o	StartScreen_Unload
 s06	00232da8	00232e1c	o	StartScreen_Render
-s06	00232e20	00233048	-	cGameLoadScreen_Load
+s06	00232e20	00233048	o	cGameLoadScreen_Load
 s06	00233048	00233260	-	cGameLoadScreen_LoadPictures
 s06	00233260	002332c4	o	cGameLoadScreen_Enter
-s06	002332c8	002332e8	-	cGameLoadScreen_TryExit
+s06	002332c8	002332e8	o	cGameLoadScreen_TryExit
 s06	002332e8	00233390	o	cGameLoadScreen_Unload
 s06	00233390	00233404	o	cGameLoadScreen_Render
 s06	00233408	00233438	o	cGameLoadScreen_Update
@@ -5459,7 +5459,7 @@ s07	0026b598	0026b5dc	o	PathData_HasMarker
 s07	0026b5e0	0026b644	o	PathData_FindMarker
 s07	0026b680	0026b7d4	-	PathData_FindNearestMarker
 s07	0026b7d8	0026b87c	o	PathData_ReadFloatIntPairs
-s07	0026b880	0026ba48	-	PathData_ReadMarkers
+s07	0026b880	0026ba48	o	PathData_ReadMarkers
 s07	0026ba48	0026ba68	o	PathData_ReadVec3
 s07	0026ba68	0026ba88	o	PathData_ReadInt
 s07	0026ba88	0026baa8	o	PathData_ReadFloat
@@ -5472,7 +5472,7 @@ s07	0026c458	0026c584	-	PlaybackMan_ctor
 s07	0026c588	0026c5f8	-	PlaybackMan_dtor
 s07	0026c5f8	0026c6e8	o	PlaybackMan_PollFileLoad
 s07	0026c6e8	0026c898	-	PlaybackMan_Init
-s07	0026c898	0026c994	-	PlaybackMan_FreeData
+s07	0026c898	0026c994	o	PlaybackMan_FreeData
 s07	0026c998	0026c9f0	-	PlaybackMan_IsFileLoaded
 s07	0026c9f0	0026ca90	-	PlaybackMan_StartFileLoad
 s07	0026ca90	0026caf8	o	PlaybackMan_Reset
@@ -5709,8 +5709,8 @@ s07	002743c8	002743d4	o	InSeq_ChannelGetId
 s07	002743e8	00274518	o	InSeq_ChannelUpdateTracks
 s07	00274518	00274574	o	InSeq_Instance_ctor
 s07	00274578	002745bc	-	InSeq_Instance_dtor
-s07	002745c0	002746f8	-	InSeq_InstanceSetup
-s07	002746f8	00274804	-	InSeq_InstanceRelease
+s07	002745c0	002746f8	o	InSeq_InstanceSetup
+s07	002746f8	00274804	o	InSeq_InstanceRelease
 s07	00274808	00274810	-	InSeq_InstanceSetSpeed
 s07	00274810	0027482c	-	InSeq_InstanceRestart
 s07	00274830	00274860	o	InSeq_InstanceStart
@@ -5754,7 +5754,7 @@ s07	002753a0	002753a8	-	InSeq_RampTrackGetChannel
 s07	002753a8	002753b4	-	InSeq_RampTrackIsStarted
 s07	002753b8	00275494	-	ScriptAnimBankMan_ctor
 s07	00275498	002754fc	o	ScriptAnimBankMan_dtor
-s07	00275500	00275650	-	ScriptAnimBankMan_AddBank
+s07	00275500	00275650	o	ScriptAnimBankMan_AddBank
 s07	00275650	00275694	o	ScriptAnimBankMan_RemoveBank
 s07	00275698	00275714	o	ScriptAnimBankMan_RemoveAll
 s07	00275718	0027575c	o	ScriptAnimBankMan_FindBank
@@ -5762,7 +5762,7 @@ s07	00275760	002757ec	o	ScriptAnimBankMan_FreeEntry
 s07	002757f0	00275828	o	ScriptAnimBankMan_FindFreeEntry
 s07	00275828	002758c0	o	DataInstanceMan_ctor
 s07	002758c0	0027591c	o	DataInstanceMan_dtor
-s07	00275920	00275a1c	-	DataInstanceMan_AddData
+s07	00275920	00275a1c	o	DataInstanceMan_AddData
 s07	00275a20	00275b08	-	DataInstanceMan_RemoveData
 s07	00275b08	00275b78	o	DataInstanceMan_RemoveAll
 s07	00275b98	00275cd0	o	DataInstanceMan_AddBigEntries
@@ -5771,14 +5771,14 @@ s07	00275cf8	00275d10	o	DataInstanceMan_AllocInfo
 s07	00275d10	00275d8c	o	ScriptList_ctor
 s07	00275d90	00275dd8	o	ScriptList_dtor
 s07	00275dd8	00275ecc	o	ScriptList_Add
-s07	00275ed0	00276048	e	ScriptList_AddChoice
+s07	00275ed0	00276048	oe	ScriptList_AddChoice
 s07	00276048	00276194	-	ScriptList_AddMovie
 s07	00276198	0027626c	-	ScriptList_TakeFrom
 s07	00276270	00276388	-	ScriptList_Prepare
 s07	00276388	002766b0	o	ScriptList_Start
 s07	002766b0	002766cc	-	ScriptList_SetPausedNested
 s07	002766d0	00276868	-	ScriptList_Skip
-s07	00276868	00276998	-	ScriptList_Stop
+s07	00276868	00276998	o	ScriptList_Stop
 s07	00276998	00276a04	o	ScriptList_GetEntryType
 s07	00276a08	00276a78	-	ScriptList_GetEntryExtType
 s07	00276a78	00276b08	-	ScriptList_GetEntryScriptIndex
@@ -5811,11 +5811,11 @@ s07	00277c08	00277dd8	-	ScriptList_SetPaused
 s07	00277dd8	00277de8	o	ScriptList_IsMovieEntry
 s07	00277de8	00277f04	-	ScriptList_GetMovieInfo
 s07	00277f08	00277f20	o	ScriptBankSlot_Clear
-s07	00277f20	002780b4	-	ScriptEngine_ctor
+s07	00277f20	002780b4	o	ScriptEngine_ctor
 s07	002780b8	00278210	o	ScriptEngine_dtor
 s07	00278210	00278304	-	ScriptEngine_LoadMaster
 s07	00278308	00278358	o	ScriptEngine_UnloadMaster
-s07	00278358	00278590	-	ScriptEngine_LoadMainScripts
+s07	00278358	00278590	o	ScriptEngine_LoadMainScripts
 s07	00278590	00278710	-	ScriptEngine_Shutdown
 s07	00278710	00278718	-	ScriptEngine_ClearSkipDelayOnEnter
 s07	00278718	00278720	-	ScriptEngine_ClearSkipDelayOnExit
@@ -5878,7 +5878,7 @@ s07	00279ed8	00279ef4	-	ScriptEngine_FindAnimBank
 s07	00279ef8	00279f14	-	ScriptEngine_FindSoundBank
 s07	00279f18	0027a0d4	oe	ScriptEngine_GetTargetObject
 s07	0027a0d8	0027a4a0	oe	ScriptEngine_GetTargetPose
-s07	0027a4a0	0027a668	e	ScriptEngine_GetTransitionTarget
+s07	0027a4a0	0027a668	oe	ScriptEngine_GetTransitionTarget
 s07	0027a668	0027a684	-	ScriptEngine_GetInstanceScript
 s07	0027a688	0027a6b0	o	ScriptEngine_GetWorldSection2B
 s07	0027a6b0	0027a720	o	ScriptEngine_OnSeqStart
@@ -5890,7 +5890,7 @@ s07	0027a9f0	0027aa7c	e	ScriptEngine_SkipFinishScript
 s07	0027aa80	0027aaf4	o	ScriptEngine_IsFinishScriptActive
 s07	0027aaf8	0027ac60	o	ScriptEngine_QueueIntroScripts
 s07	0027ac60	0027b0bc	-	ScriptEngine_QueueRaceCutscene
-s07	0027b0c0	0027b264	-	ScriptEngine_ChooseScript
+s07	0027b0c0	0027b264	o	ScriptEngine_ChooseScript
 s07	0027b268	0027b36c	-	ScriptEngine_LoadBankSync
 s07	0027b370	0027b40c	o	ScriptEngine_LoadBankAsync
 s07	0027b410	0027b4b4	o	ScriptEngine_UnloadBank
@@ -5911,9 +5911,9 @@ s07	0027bfd0	0027c01c	o	ScriptDummyObj_ctor
 s07	0027c020	0027c03c	o	ScriptDummyObj_Deactivate
 s07	0027c040	0027c04c	o	ScriptDummyObj_AcceptCommand
 s07	0027c050	0027c070	o	ScriptDummyObj_Apply
-s07	0027c070	0027c078	-	ScriptData_GetInfo
+s07	0027c070	0027c078	o	ScriptData_GetInfo
 s07	0027c078	0027c094	-	ScriptData_GetBankList
-s07	0027c098	0027c0a0	-	ScriptCam_GetManualParams
+s07	0027c098	0027c0a0	o	ScriptCam_GetManualParams
 s07	0027c0a0	0027c0bc	-	ScriptCam_ManualGetKeyBlock
 s07	0027c0c0	0027c0f0	-	ScriptCam_ManualGetTrackBlock
 s07	0027c0f0	0027c2a8	o	ScriptCam_ReadManualFields
@@ -5929,7 +5929,7 @@ s07	0027c6a0	0027c6a8	-	ScriptCam_GetAlgorithmicParams
 s07	0027c6a8	0027c6c4	-	ScriptCam_AlgorithmicGetKeyBlock
 s07	0027c6c8	0027c6f8	-	ScriptCam_AlgorithmicGetTrackBlock
 s07	0027c6f8	0027c888	o	ScriptCam_ReadAlgorithmicFields
-s07	0027c888	0027c890	-	ScriptView_GetParams
+s07	0027c888	0027c890	o	ScriptView_GetParams
 s07	0027c890	0027c8ac	-	ScriptView_GetKeyBlock
 s07	0027c8b0	0027c8e0	-	ScriptView_GetTrackBlock
 s07	0027c8e0	0027c954	o	ScriptView_ReadFields
@@ -5982,7 +5982,7 @@ s07	002807b0	002808d8	-	ScriptAudioObj_Deactivate
 s07	002808d8	002808e4	o	ScriptAudioObj_AcceptCommand
 s07	002808e8	00281000	-	ScriptAudioObj_Apply
 s07	00281000	00281014	-	ScriptAudioObj_GetSoundBankEntry
-s07	00281018	00281100	-	ScriptViewObj_ctor
+s07	00281018	00281100	o	ScriptViewObj_ctor
 s07	00281100	0028115c	o	ScriptViewObj_Update
 s07	00281160	00281168	-	ScriptViewObj_SetViewIndex
 s07	00281168	00281170	-	ScriptViewObj_GetBindingCount
@@ -5991,8 +5991,8 @@ s07	00281190	002811e4	o	ScriptViewObj_AddCam
 s07	002811e8	002812dc	-	ScriptViewObj_RemoveCam
 s07	002812e0	0028136c	o	ScriptViewObj_SetTransition
 s07	00281370	00281400	-	ScriptViewObj_Activate
-s07	00281400	002814f4	-	ScriptViewObj_Deactivate
-s07	002814f8	002816a0	-	ScriptViewObj_Apply
+s07	00281400	002814f4	o	ScriptViewObj_Deactivate
+s07	002814f8	002816a0	o	ScriptViewObj_Apply
 s07	002816a0	00281a00	e	ScriptViewObj_Tick
 s07	00281a00	00281a4c	o	ScriptViewObj_AcceptCommand
 s07	00281a50	00281ac4	o	ScriptViewObj_Reset
@@ -6014,7 +6014,7 @@ s07	002823f0	0028244c	o	ScriptEngine_KillAllProcesses
 s07	00282450	00282498	o	ScriptEngine_TickProcess
 s07	00282498	00282500	-	ScriptEngine_SetProcessSpeed
 s07	00282510	00282540	-	ScriptEngine_SetProcessUserData
-s07	00282540	00282698	e	ScriptEngine_KillProcess
+s07	00282540	00282698	oe	ScriptEngine_KillProcess
 s07	00282698	002826b4	-	ScriptEngine_PauseAllSeqs
 s07	002826b8	002826d4	-	ScriptEngine_ResumeAllSeqs
 s07	002826d8	00282720	o	ScriptEngine_PauseProcess
@@ -6041,11 +6041,11 @@ s07	00282cd0	00282d30	o	cTransitionMan_ScriptObjCtor
 s07	00282d30	00282da4	o	cTransitionMan_ScriptAdvanceTimer
 s07	00282da8	00282db0	-	cTransitionMan_ScriptSetOwner
 s07	00282db0	00282dcc	-	cTransitionMan_StopTransition
-s07	00282dd0	00282eec	-	cTransitionMan_StartTransition
+s07	00282dd0	00282eec	o	cTransitionMan_StartTransition
 s07	00282ef0	00282f00	o	ScriptObjCam_HasBinding
 s07	00282f00	00282f2c	o	cTransitionMan_ScriptPause
 s07	00282f30	00282f5c	o	cTransitionMan_ScriptResume
-s07	00282f60	00282f80	-	ScriptBinding_ctor
+s07	00282f60	00282f80	o	ScriptBinding_ctor
 s07	00282f80	00282f8c	-	ScriptBinding_IsBound
 s07	00282f90	00282fb8	o	ScriptBinding_ClearListener
 s07	00282fb8	00283000	o	ScriptBinding_Bind
@@ -6084,7 +6084,7 @@ s07	00283bb8	00283be0	o	ScriptMovie_GetId
 s07	00283be0	00283c1c	-	ScriptMovie_DebugPrintf
 s07	00283c20	00283c30	o	ScriptCmdQueue_Clear
 s07	00283c30	00283c58	o	ScriptCmdQueue_ctor
-s07	00283c58	00283c60	-	ScriptCmdQueue_IsFull
+s07	00283c58	00283c60	o	ScriptCmdQueue_IsFull
 s07	00283c60	00283c7c	o	ScriptCmdQueue_NextIndex
 s07	00283c80	00283d24	-	ScriptCmdQueue_Push
 s07	00283d28	00283d70	o	ScriptCmdQueue_Count
@@ -8123,8 +8123,8 @@ s10	002fee98	002ff1c4	o	WorldObjFactory_AddDynamicParticleData
 s10	002ff1c8	002ff390	o	WScriptFn_AddRailModifier
 s10	002ff390	002ff5e8	-	WorldObjFactory_FloatRail
 s10	002ff5e8	002ff850	-	WorldObjFactory_SpringRail
-s10	002ff850	002ff9a4	-	WScriptFn_RiderCommand
-s10	002ff9a8	002ffb4c	-	WScriptFn_ObjectSlot36
+s10	002ff850	002ff9a4	o	WScriptFn_RiderCommand
+s10	002ff9a8	002ffb4c	o	WScriptFn_ObjectSlot36
 s10	002ffb50	002ffd54	o	WorldObjFactory_Hide
 s10	002ffd58	002fff00	-	WScriptFn_Unhide
 s10	002fff00	003000a4	o	WScriptFn_PlayObjectSound
@@ -8137,7 +8137,7 @@ s10	00300948	00300b1c	-	WScriptFn_PlaceRiderAtObject
 s10	00300b20	00300c74	-	WScriptFn_SetRailEnabled
 s10	00300c78	00300e28	-	WScriptFn_PlayScriptList
 s10	00300e28	00300f50	-	WScriptFn_DefineCollectSet
-s10	00300f50	00301120	-	WScriptFn_AddCollectItems
+s10	00300f50	00301120	o	WScriptFn_AddCollectItems
 s10	00301120	003012f0	-	WScriptFn_CollectItem
 s10	003012f0	0030143c	o	WScriptFn_MissionCommand
 s10	00301440	00301560	-	WScriptFn_Nop_1440
@@ -8267,10 +8267,10 @@ s10	00308988	00308a44	o	WScriptMan_Reset
 s10	00308a48	00308a9c	o	WScriptMan_FreeLocalTables
 s10	00308aa0	00308b54	o	WScriptMan_CreateLocalTables
 s10	00308b58	00308b74	-	WScriptMan_CreateLocalTableThunk
-s10	00308b78	00308bdc	-	WScriptMan_CreateLocalTable
+s10	00308b78	00308bdc	o	WScriptMan_CreateLocalTable
 s10	00308be0	00308c5c	o	WScriptMan_SpawnProcesses
-s10	00308c60	00308db8	-	WScriptMan_SpawnMissions
-s10	00308db8	00308f38	-	WScriptMan_RunMissionSetupScripts
+s10	00308c60	00308db8	o	WScriptMan_SpawnMissions
+s10	00308db8	00308f38	o	WScriptMan_RunMissionSetupScripts
 s10	00308f38	00308f70	o	WScriptMan_DeleteAllProcesses
 s10	00308f70	00308fe0	o	WScriptMan_UnloadSection
 s10	00308fe0	0030902c	o	WScriptMan_UnloadSectionAndFree
@@ -8383,7 +8383,7 @@ s10	0030d420	0030d450	o	WScriptMan_SubObjDtor_d420
 s10	0030d480	0030d488	-	WScriptMission_IsMission
 s10	0030d498	0030d4b8	-	WScriptMan_GlobalCtors
 s10	0030d4b8	0030d540	o	RiderModel_ctor
-s10	0030d540	0030d840	-	RiderModel_dtor
+s10	0030d540	0030d840	o	RiderModel_dtor
 s10	0030d840	0030d8b8	o	RiderModel_AllocModelRefs
 s10	0030d8b8	0030db6c	o	RiderModel_LoadVariant
 s10	0030db70	0030db8c	o	RiderModel_AddModelRef
@@ -8413,7 +8413,7 @@ s10	00310f18	00311044	o	AnimDataBase_AllocChanCache
 s10	00311048	00311084	o	AnimDataBase_ctor
 s10	00311088	003110d0	o	AnimDataBase_dtor
 s10	003110d0	0031110c	o	AnimDataBase_ResetChanCacheTable
-s10	00311110	00311220	-	AnimDataBase_FreeChanCaches
+s10	00311110	00311220	o	AnimDataBase_FreeChanCaches
 s10	00311220	0031124c	-	cAdfDataSource_ctor
 s10	00311250	00311290	-	AdfDataSource_ctor
 s10	00311290	003112c4	o	AdfDataSource_SetData
@@ -8490,7 +8490,7 @@ s10	00314978	00314984	o	MdfFile_ctor
 s10	00314988	003149cc	o	MdfFile_dtor
 s10	003149d0	00314a14	o	MdfFile_Free
 s10	00314a18	00314a3c	o	MdfFile_SetData
-s10	00314a40	00314a60	-	MdfFile_SetBorrowedData
+s10	00314a40	00314a60	o	MdfFile_SetBorrowedData
 s10	00314a60	00314a9c	-	MdfFile_Load
 s10	00314aa0	00314ac0	o	MdfFile_ParseHeader
 s10	00314ae0	00314b6c	-	MdfFile_HasModel
@@ -8781,7 +8781,7 @@ s10	00321010	00321108	-	InputMap_EvalFloatArgs
 s10	00321108	00321188	o	InputMap_EvalBool
 s10	00321188	00321298	-	InputMap_EvalBoolArgs
 s10	00321298	00321428	o	InputPad_Update
-s10	00321428	003214fc	-	InputParser_ctor
+s10	00321428	003214fc	o	InputParser_ctor
 s10	00321500	00321590	o	InputParser_Error
 s10	00321590	003215f8	-	InputParser_SkipStatement
 s10	003215f8	00321638	o	InputParser_AllocNode
@@ -8816,7 +8816,7 @@ s10	00325430	00325450	o	InputVM_ReadBuiltin
 s10	00325450	00325f44	o	InputVM_Execute
 s10	00325f44	00325f48	-	-
 s10	00325f48	00326078	e	InputPreproc_Run
-s10	00326078	0032614c	-	InputPreproc_ProcessFile
+s10	00326078	0032614c	o	InputPreproc_ProcessFile
 s10	00326150	00326308	o	InputPreproc_ProcessText
 s10	00326308	0032635c	o	InputPreproc_WriteString
 s10	00326360	0032642c	o	InputPreproc_Write
@@ -8908,7 +8908,7 @@ s11	0032d440	0032d46c	-	SphereTree_PointInTriangle
 s11	0032d470	0032da40	-	SphereTree_CollideTriangleNode
 s11	0032da40	0032db3c	o	ShellSortDesc_KeyVal
 s11	0032db40	0032dc0c	-	SphereTree_SortChildOrder
-s11	0032dc10	0032de1c	-	World_InitSphereTreeCache
+s11	0032dc10	0032de1c	o	World_InitSphereTreeCache
 s11	0032de20	0032df28	-	World_FreeSphereTreeCache
 s11	0032df28	0032e100	-	SphereTreeCache_GetMasks
 s11	0032e100	0032e284	o	CollSegment_ctor
@@ -9247,7 +9247,7 @@ s11	00351120	00351170	o	InstancesMan_dtor
 s11	00351170	003511cc	o	InstancesMan_Alloc
 s11	003511d0	0035125c	o	InstancesMan_AllocByHandle
 s11	00351260	00351270	o	InstancesMan_Free
-s11	00351270	003512bc	-	InstancesMan_CopyInstance
+s11	00351270	003512bc	o	InstancesMan_CopyInstance
 s11	003512c0	00351330	o	InstancesMan_ResolveHandle
 s11	00351330	00351394	-	IntersectInfo_ctor
 s11	00351398	003513d0	o	IntersectInfo_SetSource
@@ -9365,7 +9365,7 @@ s11	00355978	003559f4	o	ModObj_AddParentModifier
 s11	003559f8	00355a78	o	ModObj_AddMagnetModifier
 s11	00355a78	00355ad0	o	ModObj_AddAvaSplineModifier
 s11	00355ad0	00355b2c	o	ModObj_AddSplineModifier
-s11	00355b30	00355b90	-	ModObj_AddMultiSplineModifier
+s11	00355b30	00355b90	o	ModObj_AddMultiSplineModifier
 s11	00355b90	00355bec	o	ModObj_AddUVScrollModifier
 s11	00355bf0	00355c50	o	ModObj_AddTexFlipModifier
 s11	00355c50	00355cb0	o	ModObj_AddBoostModifier
@@ -9428,7 +9428,7 @@ s11	003579a8	003579c4	o	Particle_Save
 s11	003579c8	003579fc	o	MultiParticleMan_ctor
 s11	00357a00	00357a78	o	MultiParticleMan_dtor
 s11	00357a78	00357ae8	o	MultiParticleMan_CreateSlot
-s11	00357ae8	00357b10	-	MultiParticleMan_AddInstance
+s11	00357ae8	00357b10	o	MultiParticleMan_AddInstance
 s11	00357b10	00357b38	-	MultiParticleMan_RemoveInstance
 s11	00357b38	00357b8c	o	MultiParticleMan_Clear
 s11	00357b90	00357bf4	o	MultiParticleMan_OnSectionUnload
@@ -9805,7 +9805,7 @@ s12	00362660	003626d8	o	GsPkt_AddZbuf
 s12	003626d8	003627a4	o	GsPkt_AddTest
 s12	003627a8	00362974	o	GsPkt_Finish
 s12	00362978	003629b8	o	DeferMan_AppendPacket
-s12	003629b8	00362cc4	-	DeferMan_Init
+s12	003629b8	00362cc4	o	DeferMan_Init
 s12	00362cc8	00362de8	o	DeferMan_ResetFrame
 s12	00362de8	0036348c	o	DeferMan_BuildBuckets
 s12	00363490	00363c1c	o	PS2GraphicsMan_RenderFrame
@@ -9816,7 +9816,7 @@ s12	00364360	003645b4	o	DeferMan_EmitDefaultState
 s12	003645b8	00364b84	o	DeferMan_InternMatrixRecord
 s12	00364b88	00364c8c	o	DeferMan_SetScissor
 s12	00364cd0	00365e3c	e	DeferMan_EmitMaterialSetup
-s12	00365e40	00365f68	-	VramHeap_Init
+s12	00365e40	00365f68	o	VramHeap_Init
 s12	00365f68	00365fa4	o	VramHeap_NodesToScratchpad
 s12	00365fa8	00365fe4	o	VramHeap_NodesFromScratchpad
 s12	00365fe8	00366008	o	VramHeap_PopSpareNode
@@ -10815,7 +10815,7 @@ s13	003a7dd0	003a7e38	-	cWorldCache_ctor
 s13	003a7e38	003a7e94	o	cWorldCache_dtor
 s13	003a7e98	003a7f8c	-	cWorldCache_Free
 s13	003a7f90	003a7fc0	o	cWorldCache_Reset
-s13	003a7fc0	003a81a8	-	cWorldCache_Load
+s13	003a7fc0	003a81a8	o	cWorldCache_Load
 s13	003a81a8	003a822c	o	cWorldCache_CreateSectionTable
 s13	003a8230	003a828c	-	cWorldCache_FreeSectionTable
 s13	003a8290	003a82c8	o	cWorldCache_Update
@@ -10850,7 +10850,7 @@ s13	003a9800	003a981c	o	cWorldCache_StreamerGetSectionCount
 s13	003a9820	003a9854	o	cWorldCache_StreamerGetSection
 s13	003a9858	003a9890	o	cWorldCache_StreamerIsSectionResident
 s13	003a9890	003a98c4	o	cWorldCache_StreamerIsSectionUnloaded
-s13	003a98c8	003a9958	e	cWorldCache_StreamerRequestSection
+s13	003a98c8	003a9958	oe	cWorldCache_StreamerRequestSection
 s13	003a9958	003a99d4	e	cWorldCache_StreamerReleaseSection
 s13	003a99d8	003a9a48	o	cWorldCache_StreamerActivateSection
 s13	003a9a98	003a9aac	o	cWorldCache_StreamerGetHull
