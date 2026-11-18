@@ -179,10 +179,12 @@ pub fn timing_report() -> String {
         k => format!("; {k} reads outside the frame's memory"),
     };
     format!(
-        "frame sink: {:.2} ms per frame on the game thread, typed frame {:.2} ms ({} frames){miss}",
+        "frame sink: {:.2} ms per frame on the game thread, typed frame {:.2} ms ({} frames); waits for the build {:.2} ms, for the depth {:.2} ms{miss}",
         t.2 / n,
         t.1 / n,
-        t.0
+        t.0,
+        WAIT_BUILD_US.load(Ordering::Relaxed) as f64 / 1e3 / n,
+        WAIT_DEPTH_US.load(Ordering::Relaxed) as f64 / 1e3 / n,
     )
 }
 
@@ -343,12 +345,38 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
     ]
     .map(|o| frame::word(&mem, g + o));
     let snap_id = advance_pages(c.bus.ram.len());
+    let direct = std::sync::Arc::new(ssx3_render::direct::take());
+    if let Some(tx) = build_thread(s) {
+        // The typed frame is built on the build thread from a snapshot of
+        // EE memory (the pages written since the buffer's last fill), so
+        // the game goes on meanwhile.
+        let snap = take_snapshot(c, snap_id, direct.clone());
+        let n = QUEUED.fetch_add(1, Ordering::Relaxed);
+        drop(guard);
+        let _ = tx.send(Job {
+            gm: g,
+            snap,
+            direct,
+        });
+        // For the next frame (this one's projection is already built).
+        apply_view(c, g);
+        {
+            let mut t = TIMING.lock().unwrap();
+            t.0 += 1;
+            t.2 += t0.elapsed().as_secs_f64() * 1e3;
+        }
+        // The depth the light queries read below is the frame two before's,
+        // which the render thread reads back while it renders the previous
+        // frame: that one must have reached it.
+        wait_delivered(n);
+        finish_publish(c, SINK.lock().unwrap(), heads);
+        return;
+    }
     let live = LiveMem {
         ram: &c.bus.ram,
         spr: &c.bus.spr,
         snap: snap_id,
     };
-    let direct = std::sync::Arc::new(ssx3_render::direct::take());
     let (built, carry) = s.builder.build(g, &live, direct.clone());
     let t_built = t0.elapsed().as_secs_f64() * 1e3;
     // What the renderer reads afterwards: the frame's textures (pages kept
@@ -358,21 +386,7 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
     frame::texture_ranges(&live, &built.frame, &mut ranges);
     let mut fm = FrameMem::from_store(&c.bus.ram, &ranges, snap_id);
     if dump_keep().is_some() || full_snapshot() {
-        let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| {
-            Box::new(DumpMem {
-                ram: Vec::new(),
-                spr: Vec::new(),
-                vu1: Vec::new(),
-                id: usize::MAX,
-                direct: Default::default(),
-                snap: 0,
-            })
-        });
-        snapshot_ram(&mut snap, &c.bus.ram, snap_id);
-        snap.direct = direct;
-        snap.spr.clear();
-        snap.spr.extend_from_slice(&c.bus.spr);
-        fm.full = Some(snap);
+        fm.full = Some(take_snapshot(c, snap_id, direct));
     }
     s.sink.frame(Published {
         gm: g,
@@ -388,29 +402,155 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
         t.1 += t_built;
         t.2 += t0.elapsed().as_secs_f64() * 1e3;
     }
-    if native() {
-        for (h, v) in HEADS.iter().zip(heads) {
-            h.store(v as u64, Ordering::Release);
-        }
-        // (The light queries this frame's kick runs read the depth of the
-        // frame two before, the newest the render thread has surely read
-        // back: the same depth whatever the threads' timing.
-        // SSX3_DEPTH_SYNC=0: the latest instead.)
-        static SYNC: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let n = PUBLISHED.fetch_add(1, Ordering::Relaxed);
-        let depth = if *SYNC
-            .get_or_init(|| ssx3_core::config::var("SSX3_DEPTH_SYNC").map_or(true, |v| v != "0"))
-        {
-            n.checked_sub(2).and_then(|f| s.sink.depth_of(f))
-        } else {
-            s.sink.depth()
-        };
-        drop(guard);
-        LAST_PUBLISH.store(crate::mr!(c).sched.frames.max(1), Ordering::Release);
-        if let Some(d) = depth {
-            *DEPTH.lock().unwrap() = Some(d);
-        }
+    finish_publish(c, guard, heads);
+}
+
+/// Native mode, after a frame went to the sink: its chain heads (their
+/// kicks complete without running) and the depth for the light queries.
+fn finish_publish(
+    c: &mut Cpu,
+    mut guard: std::sync::MutexGuard<'_, Option<Sink>>,
+    heads: [u32; 4],
+) {
+    if !native() {
+        return;
     }
+    let Some(s) = guard.as_mut() else { return };
+    for (h, v) in HEADS.iter().zip(heads) {
+        h.store(v as u64, Ordering::Release);
+    }
+    // (The light queries this frame's kick runs read the depth of the
+    // frame two before, the newest the render thread has surely read
+    // back: the same depth whatever the threads' timing.
+    // SSX3_DEPTH_SYNC=0: the latest instead.)
+    static SYNC: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let n = PUBLISHED.fetch_add(1, Ordering::Relaxed);
+    let t = web_time::Instant::now();
+    let depth = if *SYNC
+        .get_or_init(|| ssx3_core::config::var("SSX3_DEPTH_SYNC").map_or(true, |v| v != "0"))
+    {
+        n.checked_sub(2).and_then(|f| s.sink.depth_of(f))
+    } else {
+        s.sink.depth()
+    };
+    WAIT_DEPTH_US.fetch_add(t.elapsed().as_micros() as u64, Ordering::Relaxed);
+    drop(guard);
+    LAST_PUBLISH.store(crate::mr!(c).sched.frames.max(1), Ordering::Release);
+    if let Some(d) = depth {
+        *DEPTH.lock().unwrap() = Some(d);
+    }
+}
+
+/// A snapshot of EE memory for frame `snap_id` (a pooled buffer brought up
+/// to date with the pages written since its last fill).
+fn take_snapshot(
+    c: &Cpu,
+    snap_id: u64,
+    direct: std::sync::Arc<Vec<ssx3_render::direct::Recorded>>,
+) -> Box<DumpMem> {
+    let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| {
+        Box::new(DumpMem {
+            ram: Vec::new(),
+            spr: Vec::new(),
+            vu1: Vec::new(),
+            id: usize::MAX,
+            direct: Default::default(),
+            snap: 0,
+        })
+    });
+    snapshot_ram(&mut snap, &c.bus.ram, snap_id);
+    snap.direct = direct;
+    snap.spr.clear();
+    snap.spr.extend_from_slice(&c.bus.spr);
+    snap
+}
+
+/// A frame for the build thread.
+struct Job {
+    gm: u32,
+    snap: Box<DumpMem>,
+    direct: std::sync::Arc<Vec<ssx3_render::direct::Recorded>>,
+}
+
+/// Frames handed to the build thread, and those it has passed to the sink.
+static QUEUED: AtomicU64 = AtomicU64::new(0);
+/// Time the game's thread waited for the build thread and for the depth
+/// (µs, `timing_report`).
+static WAIT_BUILD_US: AtomicU64 = AtomicU64::new(0);
+static WAIT_DEPTH_US: AtomicU64 = AtomicU64::new(0);
+static DELIVERED: (Mutex<u64>, std::sync::Condvar) = (Mutex::new(0), std::sync::Condvar::new());
+static BUILD_TX: Mutex<Option<std::sync::mpsc::SyncSender<Job>>> = Mutex::new(None);
+
+/// Whether typed frames are built on a thread of their own
+/// (`SSX3_BUILD_THREAD=0`: on the game's thread; always there without
+/// threads, and for frame dumps).
+fn threaded_build() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        cfg!(not(target_arch = "wasm32"))
+            && dump_keep().is_none()
+            && ssx3_core::config::var("SSX3_BUILD_THREAD").map_or(true, |v| v != "0")
+    })
+}
+
+/// The build thread's queue, started on the first frame (it takes over the
+/// sink's builder); `None` when frames are built on the game's thread.
+fn build_thread(s: &mut Sink) -> Option<std::sync::mpsc::SyncSender<Job>> {
+    if !threaded_build() {
+        return None;
+    }
+    let mut tx = BUILD_TX.lock().unwrap();
+    if tx.is_none() {
+        let (t, rx) = std::sync::mpsc::sync_channel::<Job>(1);
+        let mut builder = std::mem::take(&mut s.builder);
+        std::thread::Builder::new()
+            .name("ssx3-frame-build".into())
+            .spawn(move || {
+                for job in rx {
+                    let t0 = web_time::Instant::now();
+                    let (built, carry) = builder.build(job.gm, &*job.snap, job.direct);
+                    // The renderer reads the frame's textures (pages kept
+                    // from frame to frame while unwritten); the snapshot
+                    // goes back to the pool, so fewer are in flight and
+                    // each refill copies fewer pages.
+                    let mut ranges = Vec::new();
+                    frame::texture_ranges(&*job.snap, &built.frame, &mut ranges);
+                    let mem = FrameMem::from_store(&job.snap.ram, &ranges, job.snap.snap);
+                    recycle(job.snap);
+                    let ms = t0.elapsed().as_secs_f64() * 1e3;
+                    if let Some(s) = SINK.lock().unwrap().as_mut() {
+                        s.sink.frame(Published {
+                            gm: job.gm,
+                            built,
+                            carry,
+                            mem,
+                        });
+                    }
+                    TIMING.lock().unwrap().1 += ms;
+                    *DELIVERED.0.lock().unwrap() += 1;
+                    DELIVERED.1.notify_all();
+                }
+            })
+            .ok()?;
+        *tx = Some(t);
+    }
+    tx.clone()
+}
+
+/// Wait until every frame published so far has reached the sink (the
+/// build thread's queue is empty).
+pub fn wait_built() {
+    wait_delivered(QUEUED.load(Ordering::Relaxed));
+}
+
+/// Wait until the build thread has passed frames `..n` to the sink.
+fn wait_delivered(n: u64) {
+    let t = web_time::Instant::now();
+    let mut d = DELIVERED.0.lock().unwrap();
+    while *d < n {
+        d = DELIVERED.1.wait(d).unwrap();
+    }
+    WAIT_BUILD_US.fetch_add(t.elapsed().as_micros() as u64, Ordering::Relaxed);
 }
 
 // Frame dumps (debug): `SSX3_FRAME_DUMP=<n>` keeps the inputs of the last n
@@ -618,6 +758,19 @@ impl Mem for LiveMem<'_> {
     fn unchanged(&self, a: u32, b: u32, since: u64) -> bool {
         pages_unchanged(a, b, since)
     }
+
+    fn page(&self, addr: u32) -> Option<&[u8]> {
+        ram_page(self.ram, addr)
+    }
+}
+
+/// RAM page `addr` is in (not the scratchpad or its window).
+fn ram_page(ram: &[u8], addr: u32) -> Option<&[u8]> {
+    if addr & 0x8000_0000 != 0 || addr >> 28 == 7 {
+        return None;
+    }
+    let o = (addr & 0x01ff_f000) as usize;
+    ram.get(o..o + 4096)
 }
 
 fn read_ram_qwords(m: &dyn Mem, ram: &[u8], addr: u32, n: u32, out: &mut Vec<u128>) {
@@ -761,6 +914,18 @@ impl Mem for FrameMem {
     fn unchanged(&self, a: u32, b: u32, since: u64) -> bool {
         pages_unchanged(a, b, since)
     }
+
+    fn page(&self, addr: u32) -> Option<&[u8]> {
+        if let Some(f) = &self.full {
+            return f.page(addr);
+        }
+        if addr & 0x8000_0000 != 0 || addr >> 28 == 7 {
+            return None;
+        }
+        self.pages
+            .get(&((addr & 0x01ff_ffff) / 4096))
+            .map(|p| &p[..])
+    }
 }
 
 impl Drop for FrameMem {
@@ -815,6 +980,10 @@ impl Mem for DumpMem {
 
     fn unchanged(&self, a: u32, b: u32, since: u64) -> bool {
         pages_unchanged(a, b, since)
+    }
+
+    fn page(&self, addr: u32) -> Option<&[u8]> {
+        ram_page(&self.ram, addr)
     }
 }
 
