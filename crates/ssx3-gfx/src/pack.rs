@@ -76,6 +76,9 @@ impl Pack {
                 );
             }
         }
+        // (Names come from the fingerprints: without a dump or
+        // replacements, they need not be the names' hash.)
+        crate::tex::set_named(dump.is_some() || !replace.is_empty());
         Pack {
             dump,
             dumped: HashSet::default(),

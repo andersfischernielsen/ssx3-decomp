@@ -94,36 +94,71 @@ pub fn tex0(m: &dyn Mem, info: u32) -> u64 {
     dword(m, info + ti::TEX0)
 }
 
+/// Texture names are needed (a texture dump or replacements: `pack`), so
+/// fingerprints are the FNV-1a hash the names are made of; otherwise any
+/// hash of the contents will do, and a faster one is used.
+static NAMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Whether fingerprints must be the names' FNV-1a hash (`pack::Pack`).
+pub fn set_named(on: bool) {
+    NAMED.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The bytes of `addr..addr + len` in pieces: whole RAM pages where the
+/// memory has them, else qword by qword.
+fn each_piece(m: &dyn Mem, addr: u32, len: u32, f: &mut dyn FnMut(&[u8])) {
+    let mut addr = addr;
+    let end = addr.saturating_add(len);
+    while addr < end {
+        if let Some(p) = m.page(addr) {
+            let o = (addr & 0xfff) as usize;
+            let n = (4096 - o).min((end - addr) as usize);
+            f(&p[o..o + n]);
+            addr += n as u32;
+        } else {
+            let base = addr & !15;
+            let start = (addr - base) as usize;
+            let count = (16 - start).min((end - addr) as usize);
+            f(&m.qword(base).to_le_bytes()[start..start + count]);
+            addr += count as u32;
+        }
+    }
+}
+
 /// Content fingerprint of the level-0 pixels and the whole CLUT.
 fn fingerprint(m: &dyn Mem, pixels: u32, bytes: u32, clut: u32, clut_bytes: u32) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    let mut mix = |b: u8| {
-        h ^= b as u64;
-        h = h.wrapping_mul(0x0100_0000_01b3);
-    };
-    let mut addr = pixels;
-    let end = pixels.saturating_add(bytes);
-    while addr < end {
-        let base = addr & !15;
-        let start = (addr - base) as usize;
-        let count = (16 - start).min((end - addr) as usize);
-        for &b in &m.qword(base).to_le_bytes()[start..start + count] {
-            mix(b);
+    if NAMED.load(std::sync::atomic::Ordering::Relaxed) {
+        let mut mix = |s: &[u8]| {
+            for &b in s {
+                h ^= b as u64;
+                h = h.wrapping_mul(0x0100_0000_01b3);
+            }
+        };
+        each_piece(m, pixels, bytes, &mut mix);
+        if clut_bytes != 0 {
+            each_piece(m, clut, clut_bytes, &mut mix);
         }
-        addr += count as u32;
+        return h;
     }
-    let mut addr = clut;
-    let end = clut.saturating_add(clut_bytes);
-    while clut_bytes != 0 && addr < end {
-        let base = addr & !15;
-        let start = (addr - base) as usize;
-        let count = (16 - start).min((end - addr) as usize);
-        for &b in &m.qword(base).to_le_bytes()[start..start + count] {
-            mix(b);
-        }
-        addr += count as u32;
+    each_piece(m, pixels, bytes, &mut |s| fold8(&mut h, s));
+    h ^= 0xff;
+    if clut_bytes != 0 {
+        each_piece(m, clut, clut_bytes, &mut |s| fold8(&mut h, s));
     }
     h
+}
+
+/// Mix `s` into `h` eight bytes at a time (the tail byte by byte).
+fn fold8(h: &mut u64, s: &[u8]) {
+    let mut w = s.chunks_exact(8);
+    for c in &mut w {
+        let v = u64::from_le_bytes(c.try_into().unwrap());
+        *h = (*h ^ v).wrapping_mul(0x9e37_79b9_7f4a_7c15).rotate_left(29);
+    }
+    for &b in w.remainder() {
+        *h = (*h ^ b as u64).wrapping_mul(0x0100_0000_01b3);
+    }
 }
 
 /// [`key`], reused while the TexInfo fields it reads are the same and the
@@ -363,4 +398,50 @@ pub fn decode(m: &dyn Mem, info: u32, texa: u64) -> Option<Decoded> {
         height: h,
         rgba,
     })
+}
+
+#[cfg(test)]
+mod fingerprint_tests {
+    use super::*;
+
+    /// RAM with or without whole pages (`Mem::page`).
+    struct Ram(Vec<u8>, bool);
+    impl Mem for Ram {
+        fn qword(&self, a: u32) -> u128 {
+            let a = a as usize & !15;
+            u128::from_le_bytes(self.0[a..a + 16].try_into().unwrap())
+        }
+        fn page(&self, a: u32) -> Option<&[u8]> {
+            let o = a as usize & !0xfff;
+            self.1.then(|| &self.0[o..o + 4096])
+        }
+    }
+
+    /// Named fingerprints are FNV-1a over the bytes (texture pack names
+    /// depend on it), whether read in pages or qwords; the fast ones are
+    /// the same in both.
+    #[test]
+    fn fingerprint_names_are_fnv1a() {
+        let ram: Vec<u8> = (0..0x6000u32)
+            .map(|i| (i.wrapping_mul(2654435761) >> 13) as u8)
+            .collect();
+        let (px, n, cl, cn) = (0x0ff8, 0x1234, 0x4ffc, 0x40);
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for &b in ram[px as usize..(px + n) as usize]
+            .iter()
+            .chain(&ram[cl as usize..(cl + cn) as usize])
+        {
+            h = (h ^ b as u64).wrapping_mul(0x0100_0000_01b3);
+        }
+        let paged = Ram(ram.clone(), true);
+        let qwords = Ram(ram, false);
+        set_named(true);
+        assert_eq!(fingerprint(&paged, px, n, cl, cn), h);
+        assert_eq!(fingerprint(&qwords, px, n, cl, cn), h);
+        set_named(false);
+        let fast = fingerprint(&paged, px, n, cl, cn);
+        assert_ne!(fast, h);
+        assert_eq!(fingerprint(&paged, px, n, cl, cn), fast);
+        set_named(true);
+    }
 }

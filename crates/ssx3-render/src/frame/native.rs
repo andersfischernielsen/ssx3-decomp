@@ -95,9 +95,9 @@ struct Native<'a> {
 
 impl Native<'_> {
     fn flush(&mut self, owner: Owner) {
-        for e in std::mem::take(&mut self.vif.events) {
-            self.events.push((owner, e));
-        }
+        // (Drained in place: the VIF's list keeps its capacity.)
+        self.events
+            .extend(self.vif.events.drain(..).map(|e| (owner, e)));
     }
 
     fn push(&mut self, owner: Owner, e: Event) {
