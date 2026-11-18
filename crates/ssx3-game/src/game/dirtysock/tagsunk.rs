@@ -1756,7 +1756,7 @@ pub(crate) mod callee {
 
     pub const DIRTY_SOCK_CREATE: u32 = 0x003f_7f48;
 
-    pub const DIRTY_SOCK_DESTROY: u32 = 0x003f_6b50;
+    pub const VOIP_RPC_DISABLE_VOICE: u32 = 0x003f_6b50;
 
     pub const VID_ENGINE_PLAYER_REQUEST: u32 = 0x003e_7218;
 
@@ -3378,7 +3378,7 @@ pub(crate) mod table {
     pub(crate) use crate::game::fe::feasyncfile::table::VOIP_RPC_SET_PARAMS;
     pub(crate) use crate::game::fe::feasyncfile::table::VOIP_RPC_START;
     pub(crate) use crate::game::movie::movieplayer::table::LOBBY_LIST_GET_NAME;
-    pub(crate) use crate::game::movie::movieplayer::table::VOIP_RPC_CALL;
+    pub(crate) use crate::game::movie::movieplayer::table::VOIP_RPC_GET_STATUS;
 }
 
 pub(crate) mod addr {
@@ -4045,7 +4045,7 @@ pub fn c_voip_man_get_status(c: &mut Cpu) {
         c.g[A1][0] = b;
         if !idle {
             c.cycles += 2;
-            call_ptr(c, table::VOIP_RPC_CALL, 0x0026_6fb0)?;
+            call_ptr(c, table::VOIP_RPC_GET_STATUS, 0x0026_6fb0)?;
         }
         c.cycles += 3;
         frame.restore_ra(c, 0);
@@ -5034,7 +5034,7 @@ pub fn voip_man_deactivate(c: &mut Cpu) {
                 frame.restore(c, S0, 0x10);
             } else {
                 c.cycles += 4;
-                call_ptr(c, callee::DIRTY_SOCK_DESTROY, 0x0026_6eb8)?;
+                call_ptr(c, callee::VOIP_RPC_DISABLE_VOICE, 0x0026_6eb8)?;
                 sw(c, r32(c, S0), 0x04, 0);
                 frame.restore(c, S0, 0x10);
             }

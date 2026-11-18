@@ -1177,7 +1177,7 @@ pub(crate) mod table {
 
     pub const LOBBY_LIST_GET_NAME: u32 = 0x003e_e560;
 
-    pub const VOIP_RPC_CALL: u32 = 0x003f_6ba0;
+    pub const VOIP_RPC_GET_STATUS: u32 = 0x003f_6ba0;
 
     pub const MC_CARD_DESTROY: u32 = 0x002c_2300;
 }
