@@ -157,6 +157,46 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "InputParser_ParseUnary",
     ),
     (0x0032_4678, input_parser_emit_node, "InputParser_EmitNode"),
+    (
+        0x0032_30e0,
+        input_parser_parse_statement,
+        "InputParser_ParseStatement",
+    ),
+    (
+        0x0032_3268,
+        input_parser_parse_conditional,
+        "InputParser_ParseConditional",
+    ),
+    (
+        0x0032_33b8,
+        input_parser_parse_logical_or,
+        "InputParser_ParseLogicalOr",
+    ),
+    (
+        0x0032_3540,
+        input_parser_parse_logical_and,
+        "InputParser_ParseLogicalAnd",
+    ),
+    (
+        0x0032_4138,
+        input_parser_parse_function_2,
+        "InputParser_ParseFunction2",
+    ),
+    (
+        0x0032_4ec8,
+        input_parser_emit_binary_op,
+        "InputParser_EmitBinaryOp",
+    ),
+    (
+        0x0032_50d8,
+        input_parser_emit_unary_op,
+        "InputParser_EmitUnaryOp",
+    ),
+    (
+        0x0032_6150,
+        input_preproc_process_text,
+        "InputPreproc_ProcessText",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6643,6 +6683,1681 @@ pub fn input_parser_parse_comparison(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------- helpers
+
+/// `lw` through a register: `*(reg + off)` (sign-extended word).
+pub(crate) fn o406_lw(c: &mut Cpu, reg: usize, off: u32) -> u64 {
+    let a = (c.g[reg][0] as u32).wrapping_add(off);
+    c.lw(a)
+}
+
+/// `sw` through a register: `*(reg + off) = val_reg`.
+pub(crate) fn o406_sw(c: &mut Cpu, reg: usize, off: u32, val_reg: usize) {
+    let a = (c.g[reg][0] as u32).wrapping_add(off);
+    let v = c.g[val_reg][0];
+    c.sw(a, v);
+}
+
+// ----------------------------------------------- InputParser_ParseLogicalAnd
+
+/// Is the constant node `node` (kind 4, value at +4) equal to 0.0 on the FPU
+/// compare the parser uses (`c.eq.s f1, f0`)? Sets f1/f0/fcc like the original.
+pub(crate) fn o406_const_is_zero(c: &mut Cpu, node_reg: usize) -> bool {
+    let a = (c.g[node_reg][0] as u32).wrapping_add(4);
+    c.lwc1(1, a);
+    c.mtc1(0, 0);
+    c.c_eq_s(1, 0);
+    c.fcc()
+}
+
+/// `tParseNode *InputParser_ParseLogicalAnd(InputParser *self)` (0x323540):
+/// `a && b && ...` with constant folding (a constant 0 operand makes the
+/// whole chain 0, a constant non-zero operand disappears). Node kind 7 is
+/// the `&&` node (children +4, +8); token 0xd is `&&`.
+pub fn input_parser_parse_logical_and(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S2, 0x50);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x60);
+        frame.save(c, S0, 0x70);
+        frame.save(c, S3, 0x40);
+        frame.save(c, S4, 0x30);
+        frame.save(c, S5, 0x20);
+        frame.save(c, S6, 0x10);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 21, 0x88);
+        frame.save_fpr(c, 20, 0x80);
+        call_ptr(c, 0x0032_36d8, 0x0032_3574)?;
+        c.g[S1][0] = c.g[V0][0];
+        'body: {
+            if c.g[S1][0] == 0 {
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+                break 'body;
+            }
+            c.g[V1][0] = o406_lw(c, S1, 0);
+            c.cycles += 3;
+            c.g[V0][0] = 4;
+            c.g[S4][0] = 0;
+            if c.g[V1][0] == 4 {
+                c.cycles += 6;
+                if o406_const_is_zero(c, S1) {
+                    c.g[S4][0] = 1;
+                }
+            }
+            c.cycles += 4;
+            c.g[V1][0] = o406_lw(c, S2, 0x98);
+            c.g[V0][0] = 0xd;
+            c.g[V0][0] = c.g[S1][0];
+            if c.g[V1][0] != 0xd {
+                break 'body;
+            }
+            c.cycles += 5;
+            c.mtc1(0, 21);
+            c.g[S6][0] = 7;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 20);
+            c.g[S5][0] = 0xd;
+            loop {
+                c.cycles += 7;
+                c.g[A0][0] = c.g[S2][0];
+                call_ptr(c, 0x0032_1af0, 0x0032_35e8)?;
+                c.g[A0][0] = c.g[S2][0];
+                call_ptr(c, 0x0032_36d8, 0x0032_35f0)?;
+                c.g[S0][0] = c.g[V0][0];
+                if c.g[S0][0] == 0 {
+                    c.g[A0][0] = c.g[S2][0];
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0032_3588);
+                    }
+                    c.cycles += 4;
+                    c.g[A1][0] = c.g[S1][0];
+                    call_ptr(c, 0x0032_1638, 0x0032_3590)?;
+                    c.g[V0][0] = 0;
+                    break 'body;
+                }
+                c.cycles += 2;
+                c.g[A1][0] = c.g[S0][0];
+                'iter: {
+                    if c.g[S4][0] != 0 {
+                        // The chain is already constant 0: drop the operand.
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[S2][0];
+                        call_ptr(c, 0x0032_1638, 0x0032_360c)?;
+                        c.g[V0][0] = o406_lw(c, S2, 0x98);
+                        break 'iter;
+                    }
+                    c.cycles += 4;
+                    c.g[V0][0] = o406_lw(c, S0, 0);
+                    c.g[S3][0] = 4;
+                    if c.g[V0][0] != 4 {
+                        c.g[V0][0] = o406_lw(c, S1, 0);
+                        c.cycles += 2;
+                        c.g[A1][0] = c.g[S1][0];
+                        if c.g[V0][0] == 4 {
+                            c.cycles += 4;
+                            c.g[A0][0] = c.g[S2][0];
+                            call_ptr(c, 0x0032_1638, 0x0032_367c)?;
+                            c.g[S1][0] = c.g[S0][0];
+                        } else {
+                            c.cycles += 6;
+                            c.g[A0][0] = c.g[S2][0];
+                            call_ptr(c, 0x0032_15f8, 0x0032_368c)?;
+                            o406_sw(c, V0, 4, S1);
+                            o406_sw(c, V0, 8, S0);
+                            c.g[S1][0] = c.g[V0][0];
+                            o406_sw(c, V0, 0, S6);
+                        }
+                    } else {
+                        c.cycles += 5;
+                        let a = (c.g[S0][0] as u32).wrapping_add(4);
+                        c.lwc1(0, a);
+                        c.c_eq_s(0, 21);
+                        let nonzero = !c.fcc();
+                        c.g[A1][0] = c.g[S1][0];
+                        if nonzero {
+                            c.cycles += 6;
+                            c.g[A1][0] = c.g[S0][0];
+                            c.g[A0][0] = c.g[S2][0];
+                            call_ptr(c, 0x0032_1638, 0x0032_3658)?;
+                            c.g[V0][0] = o406_lw(c, S1, 0);
+                            if c.g[V0][0] == c.g[S3][0] {
+                                let a = (c.g[S1][0] as u32).wrapping_add(4);
+                                c.swc1(20, a);
+                            } else {
+                                c.cycles += 2;
+                                c.g[V0][0] = o406_lw(c, S2, 0x98);
+                                break 'iter;
+                            }
+                        } else {
+                            // The operand is the constant 0: the chain is 0.
+                            c.cycles += 5;
+                            c.g[A0][0] = c.g[S2][0];
+                            call_ptr(c, 0x0032_1638, 0x0032_3640)?;
+                            c.g[S1][0] = c.g[S0][0];
+                            c.g[S4][0] = 1;
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = o406_lw(c, S2, 0x98);
+                }
+                c.cycles += 2;
+                let more = c.g[V0][0] == c.g[S5][0];
+                c.g[V0][0] = c.g[S1][0];
+                if !more {
+                    break 'body;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_35e0);
+                }
+            }
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x88);
+        frame.restore_fpr(c, 20, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ------------------------------------------------ InputParser_ParseLogicalOr
+
+/// `tParseNode *InputParser_ParseLogicalOr(InputParser *self)` (0x3233b8):
+/// `a || b || ...` over `ParseLogicalAnd`, with constant folding (a constant
+/// non-zero operand makes the chain 1.0, a constant 0 operand disappears).
+/// Node kind 6 is the `||` node; token 0xc is `||`.
+pub fn input_parser_parse_logical_or(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S2, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x50);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S4, 0x20);
+        frame.save(c, S5, 0x10);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 21, 0x78);
+        frame.save_fpr(c, 20, 0x70);
+        call_ptr(c, 0x0032_3540, 0x0032_33e8)?;
+        c.g[S1][0] = c.g[V0][0];
+        'body: {
+            if c.g[S1][0] == 0 {
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+                break 'body;
+            }
+            c.g[V1][0] = o406_lw(c, S1, 0);
+            c.cycles += 3;
+            c.g[V0][0] = 4;
+            c.g[S3][0] = 0;
+            if c.g[V1][0] == 4 {
+                c.cycles += 6;
+                if !o406_const_is_zero(c, S1) {
+                    c.g[S3][0] = 1;
+                }
+            }
+            c.cycles += 4;
+            c.g[V1][0] = o406_lw(c, S2, 0x98);
+            c.g[V0][0] = 0xc;
+            c.g[V0][0] = c.g[S1][0];
+            if c.g[V1][0] != 0xc {
+                break 'body;
+            }
+            c.cycles += 6;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 20);
+            c.g[S5][0] = 6;
+            c.mtc1(0, 21);
+            c.g[S4][0] = 0xc;
+            loop {
+                c.cycles += 7;
+                c.g[A0][0] = c.g[S2][0];
+                call_ptr(c, 0x0032_1af0, 0x0032_3460)?;
+                c.g[A0][0] = c.g[S2][0];
+                call_ptr(c, 0x0032_3540, 0x0032_3468)?;
+                c.g[S0][0] = c.g[V0][0];
+                if c.g[S0][0] == 0 {
+                    c.g[A0][0] = c.g[S2][0];
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0032_33fc);
+                    }
+                    c.cycles += 4;
+                    c.g[A1][0] = c.g[S1][0];
+                    call_ptr(c, 0x0032_1638, 0x0032_3404)?;
+                    c.g[V0][0] = 0;
+                    break 'body;
+                }
+                c.cycles += 2;
+                'iter: {
+                    // true: go on to the node-combining code at 0x323484
+                    // (after the `s3` shortcut).
+                    let mut combine = true;
+                    if c.g[S3][0] != 0 {
+                        // The chain is already constant 1.0.
+                        c.cycles += 2;
+                        let a = (c.g[S1][0] as u32).wrapping_add(4);
+                        c.swc1(20, a);
+                        combine = false;
+                    } else {
+                        c.g[V0][0] = o406_lw(c, S0, 0);
+                    }
+                    if combine {
+                        c.cycles += 3;
+                        c.g[V1][0] = 4;
+                        if c.g[V0][0] != c.g[V1][0] {
+                            c.g[V0][0] = o406_lw(c, S1, 0);
+                            c.cycles += 2;
+                            c.g[A1][0] = c.g[S1][0];
+                            if c.g[V0][0] == c.g[V1][0] {
+                                c.cycles += 4;
+                                c.g[A0][0] = c.g[S2][0];
+                                call_ptr(c, 0x0032_1638, 0x0032_34e4)?;
+                                c.g[S1][0] = c.g[S0][0];
+                            } else {
+                                c.cycles += 6;
+                                c.g[A0][0] = c.g[S2][0];
+                                call_ptr(c, 0x0032_15f8, 0x0032_34f4)?;
+                                o406_sw(c, V0, 4, S1);
+                                o406_sw(c, V0, 8, S0);
+                                c.g[S1][0] = c.g[V0][0];
+                                o406_sw(c, V0, 0, S5);
+                            }
+                            c.cycles += 1;
+                            c.g[V0][0] = o406_lw(c, S2, 0x98);
+                            break 'iter;
+                        }
+                        c.cycles += 5;
+                        let a = (c.g[S0][0] as u32).wrapping_add(4);
+                        c.lwc1(0, a);
+                        c.c_eq_s(0, 21);
+                        let zero = c.fcc();
+                        c.g[A1][0] = c.g[S0][0];
+                        if !zero {
+                            // The operand is a non-zero constant: the chain is 1.0.
+                            c.cycles += 7;
+                            let a = (c.g[S0][0] as u32).wrapping_add(4);
+                            c.swc1(20, a);
+                            c.g[A1][0] = c.g[S1][0];
+                            c.g[A0][0] = c.g[S2][0];
+                            c.g[S1][0] = c.g[S0][0];
+                            call_ptr(c, 0x0032_1638, 0x0032_34b8)?;
+                            c.g[S3][0] = 1;
+                            c.cycles += 1;
+                            c.g[V0][0] = o406_lw(c, S2, 0x98);
+                            break 'iter;
+                        }
+                    } else {
+                        c.cycles += 1;
+                        c.g[A1][0] = c.g[S0][0];
+                    }
+                    // 0x3234c4: drop the operand `s0`.
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S2][0];
+                    call_ptr(c, 0x0032_1638, 0x0032_34cc)?;
+                    c.g[V0][0] = o406_lw(c, S2, 0x98);
+                }
+                c.cycles += 2;
+                let more = c.g[V0][0] == c.g[S4][0];
+                c.g[V0][0] = c.g[S1][0];
+                if !more {
+                    break 'body;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_3458);
+                }
+            }
+        }
+        c.cycles += 11;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x78);
+        frame.restore_fpr(c, 20, 0x70);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ------------------------------------------------ InputParser_ParseConditional
+
+/// `tParseNode *InputParser_ParseConditional(InputParser *self)` (0x323268):
+/// `cond ? a : b` over `ParseLogicalOr` (token 6 `?`, token 7 `:`), folding
+/// a constant condition. Node kind 5 is the select node (children +4 cond,
+/// +8 then, +0xc else).
+pub fn input_parser_parse_conditional(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0032_33b8, 0x0032_3288)?;
+        c.g[S1][0] = c.g[V0][0];
+        'body: {
+            if c.g[S1][0] == 0 {
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+                break 'body;
+            }
+            c.g[V1][0] = o406_lw(c, S0, 0x98);
+            c.cycles += 3;
+            c.g[V0][0] = 6;
+            c.g[V0][0] = c.g[S1][0];
+            if c.g[V1][0] != 6 {
+                break 'body;
+            }
+            // `?`: the "then" expression.
+            c.cycles += 7;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x0032_1af0, 0x0032_32b0)?;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x0032_3268, 0x0032_32b8)?;
+            c.g[S3][0] = c.g[V0][0];
+            'fail: {
+                // `fail`: free the condition, then the "then" node, return 0.
+                if c.g[S3][0] == 0 {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[S1][0];
+                    break 'fail;
+                }
+                c.g[V1][0] = o406_lw(c, S0, 0x98);
+                c.cycles += 3;
+                c.g[V0][0] = 7;
+                c.g[A1][0] = 0x0049_0000;
+                if c.g[V1][0] != 7 {
+                    // Missing `:`.
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x2058));
+                    call_ptr(c, 0x0032_1500, 0x0032_32e8)?;
+                    c.g[A1][0] = c.g[S1][0];
+                } else {
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x0032_1af0, 0x0032_32f8)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x0032_3268, 0x0032_3300)?;
+                    c.g[S2][0] = c.g[V0][0];
+                    if c.g[S2][0] != 0 {
+                        // Both branches parsed: fold or build the select node.
+                        c.g[V1][0] = o406_lw(c, S1, 0);
+                        c.cycles += 3;
+                        c.g[V0][0] = 4;
+                        if c.g[V1][0] == 4 {
+                            c.cycles += 6;
+                            let zero = o406_const_is_zero(c, S1);
+                            c.g[A0][0] = c.g[S0][0];
+                            if !zero {
+                                // Constant true: the "then" node.
+                                c.cycles += 4;
+                                c.g[A1][0] = c.g[S2][0];
+                                call_ptr(c, 0x0032_1638, 0x0032_335c)?;
+                                c.g[V0][0] = c.g[S3][0];
+                                break 'body;
+                            }
+                            // Constant false: the "else" node.
+                            c.cycles += 4;
+                            c.g[A1][0] = c.g[S3][0];
+                            call_ptr(c, 0x0032_1638, 0x0032_336c)?;
+                            c.g[V0][0] = c.g[S2][0];
+                            break 'body;
+                        }
+                        c.cycles += 9;
+                        c.g[A0][0] = c.g[S0][0];
+                        call_ptr(c, 0x0032_15f8, 0x0032_337c)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        c.g[V0][0] = 5;
+                        o406_sw(c, V1, 4, S1);
+                        o406_sw(c, V1, 0, V0);
+                        o406_sw(c, V1, 8, S3);
+                        c.g[V0][0] = c.g[V1][0];
+                        o406_sw(c, V1, 0xc, S2);
+                        break 'body;
+                    }
+                    c.cycles += 1;
+                    c.g[A1][0] = c.g[S1][0];
+                }
+                // 0x323310: free the condition, then the "then" node.
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0032_1638, 0x0032_3318)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[S3][0];
+            }
+            // 0x323320: free `a1` and return 0.
+            c.cycles += 4;
+            call_ptr(c, 0x0032_1638, 0x0032_3328)?;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ------------------------------------------------ InputParser_ParseStatement
+
+/// `void InputParser_ParseStatement(InputParser *self)` (0x3230e0): one
+/// `name = expression;` statement of an input map script. The name token
+/// (kind 2) must not be a button, a builtin or an existing identifier; it
+/// gets the next entry of the variable table (0x44 bytes each from +0x80e8,
+/// count at +0x80e4), which is constructed; then `=` (token 3), the
+/// expression (`ParseConditional`) and `;` (token 5) follow. Any error
+/// skips to the end of the statement.
+pub fn input_parser_parse_statement(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        c.g[V1][0] = 2;
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = o406_lw(c, S0, 0x98);
+        c.g[A1][0] = 0x0049_0000;
+        // The error exits: `'skip` skips the statement (0x32322c),
+        // `'finish` is the normal end (0x323254).
+        'finish: {
+            'accepted: {
+                'skip: {
+                    'error: {
+                        if c.g[V0][0] != c.g[V1][0] {
+                            c.cycles += 2;
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x2130));
+                            break 'error;
+                        }
+                        c.cycles += 6;
+                        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x9c));
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A1][0] = c.g[S1][0];
+                        call_ptr(c, 0x0032_16e8, 0x0032_3120)?;
+                        let found = (c.g[V0][0] as i64) >= 0;
+                        c.g[A1][0] = 0x0049_0000;
+                        if found {
+                            c.cycles += 6;
+                            c.g[A0][0] = c.g[S0][0];
+                            c.g[A2][0] = c.g[S1][0];
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x2108));
+                            call_ptr(c, 0x0032_1500, 0x0032_3138)?;
+                            break 'skip;
+                        }
+                        c.cycles += 5;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A1][0] = c.g[S1][0];
+                        call_ptr(c, 0x0032_1880, 0x0032_314c)?;
+                        let found = (c.g[V0][0] as i64) >= 0;
+                        c.g[A1][0] = 0x0049_0000;
+                        if found {
+                            c.cycles += 6;
+                            c.g[A0][0] = c.g[S0][0];
+                            c.g[A2][0] = c.g[S1][0];
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x20e0));
+                            call_ptr(c, 0x0032_1500, 0x0032_3164)?;
+                            break 'skip;
+                        }
+                        c.cycles += 5;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A1][0] = c.g[S1][0];
+                        call_ptr(c, 0x0032_1a40, 0x0032_3178)?;
+                        let found = c.g[V0][0] != 0;
+                        c.g[A1][0] = 0x0049_0000;
+                        if found {
+                            c.cycles += 6;
+                            c.g[A0][0] = c.g[S0][0];
+                            c.g[A2][0] = c.g[S1][0];
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x20b8));
+                            call_ptr(c, 0x0032_1500, 0x0032_3190)?;
+                            break 'skip;
+                        }
+                        // A new variable: entry `count` of the table.
+                        c.cycles += 20;
+                        c.g[V0][0] = 0x8000;
+                        c.g[A2][0] = 0x44;
+                        c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.g[A0][0] = 0x80e8;
+                        c.g[V0][0] = o406_lw(c, S2, 0xe4);
+                        c.g[A1][0] = c.g[S1][0];
+                        c.g[V1][0] = 0x10000;
+                        c.mult(0, V0, V0, A2);
+                        c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        o406_sw(c, V1, 0x8e8, S1);
+                        c.g[A0][0] = c.g[S1][0];
+                        call_ptr(c, 0x0041_66f4, 0x0032_31d0)?;
+                        c.g[A0][0] = c.g[S0][0];
+                        call_ptr(c, 0x0032_1af0, 0x0032_31d8)?;
+                        c.g[V1][0] = o406_lw(c, S0, 0x98);
+                        c.g[V0][0] = 3;
+                        c.g[A1][0] = 0x0049_0000;
+                        if c.g[V1][0] != 3 {
+                            // Missing `=`.
+                            c.cycles += 3;
+                            c.g[A0][0] = c.g[S0][0];
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x2098));
+                            break 'error;
+                        }
+                        c.cycles += 6;
+                        c.g[A0][0] = c.g[S0][0];
+                        call_ptr(c, 0x0032_1af0, 0x0032_31fc)?;
+                        c.g[A0][0] = c.g[S0][0];
+                        call_ptr(c, 0x0032_3268, 0x0032_3204)?;
+                        o406_sw(c, S1, 0x40, V0);
+                        if c.g[V0][0] == 0 {
+                            break 'skip;
+                        }
+                        c.cycles += 4;
+                        c.g[V1][0] = o406_lw(c, S0, 0x98);
+                        c.g[V0][0] = 5;
+                        c.g[A1][0] = 0x0049_0000;
+                        if c.g[V1][0] == 5 {
+                            break 'accepted;
+                        }
+                        c.cycles += 2;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x2078));
+                    }
+                    // 0x323224: report the error.
+                    c.cycles += 2;
+                    call_ptr(c, 0x0032_1500, 0x0032_322c)?;
+                }
+                // 0x32322c: skip the rest of the statement.
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0032_1590, 0x0032_3234)?;
+                frame.restore(c, S0, 0x30);
+                break 'finish;
+            }
+            // 0x32323c: the `;` ends the statement; count the variable.
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x0032_1af0, 0x0032_3244)?;
+            c.g[V0][0] = o406_lw(c, S2, 0xe4);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+            o406_sw(c, S2, 0xe4, V0);
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ------------------------------------------------ InputParser_EmitBinaryOp
+
+/// `int InputParser_EmitBinaryOp(InputParser *self, Node *node, int *dst,
+/// u32 *code, int cap, int op, int a, int b)` (0x324ec8): compile both
+/// operands of a binary node (`node+4`, `node+8`) with `EmitNode`, free
+/// their temporary registers, pick the destination register, and emit the
+/// opcode word (`op` 6 bits, `dst` 6 bits, src 10 bits, arg 10 bits).
+/// Returns the number of words written, or -1 after an error.
+pub fn input_parser_emit_binary_op(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 27;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S1, 0x90);
+        c.g[S0][0] = c.g[T0][0];
+        frame.save(c, S2, 0x80);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x70);
+        c.g[S2][0] = c.g[A3][0];
+        frame.save(c, S4, 0x60);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save(c, S5, 0x50);
+        c.g[S4][0] = c.g[T2][0];
+        frame.save(c, S6, 0x40);
+        frame.save(c, S7, 0x30);
+        c.g[S6][0] = c.g[A2][0];
+        frame.save(c, FP, 0x20);
+        c.g[S7][0] = u64::MAX;
+        frame.save_ra(c, 0x10);
+        c.g[FP][0] = c.g[T1][0];
+        c.g[A2][0] = c.g[SP][0];
+        c.g[A1][0] = o406_lw(c, S3, 4);
+        o406_sw(c, SP, 0, S7);
+        c.g[T1][0] = c.g[S4][0];
+        call_ptr(c, 0x0032_4678, 0x0032_4f28)?;
+        c.g[S5][0] = c.g[V0][0];
+        'body: {
+            if (c.g[S5][0] as i64) < 0 {
+                c.g[V0][0] = u64::MAX;
+                break 'body;
+            }
+            c.cycles += 14;
+            c.g[V0][0] = sx((c.g[S5][0] as u32) << 2);
+            c.g[A1][0] = o406_lw(c, S3, 8);
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[S5][0] as u32));
+            c.g[T0][0] = c.g[S0][0];
+            o406_sw(c, SP, 4, S7);
+            c.g[T1][0] = c.g[S4][0];
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A2][0] = c.g[SP][0] | 4;
+            c.g[A3][0] = c.g[S2][0];
+            call_ptr(c, 0x0032_4678, 0x0032_4f60)?;
+            c.g[T0][0] = c.g[V0][0];
+            if (c.g[T0][0] as i64) < 0 {
+                c.g[V0][0] = u64::MAX;
+                break 'body;
+            }
+            c.cycles += 6;
+            c.g[V0][0] = sx((c.g[T0][0] as u32) << 2);
+            c.g[A1][0] = o406_lw(c, SP, 4);
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V0][0] = (c.g[A1][0] < 0x40) as u64;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[T0][0] as u32));
+            if c.g[V0][0] != 0 {
+                c.cycles += 8;
+                o406_emit_free_reg(c);
+            }
+            c.cycles += 4;
+            c.g[A1][0] = o406_lw(c, SP, 0);
+            c.g[V0][0] = (c.g[A1][0] < 0x40) as u64;
+            c.g[A0][0] = 0x10000;
+            if c.g[V0][0] != 0 {
+                c.cycles += 7;
+                o406_emit_free_reg(c);
+            }
+            'overflow: {
+                'alloc_failed: {
+                    c.cycles += 3;
+                    c.g[V0][0] = o406_lw(c, S6, 0);
+                    let have_dst = (c.g[V0][0] as i64) >= 0;
+                    c.g[V0][0] = 0x10000;
+                    if !have_dst {
+                        c.cycles += 4;
+                        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.g[V0][0] = o406_lw(c, A0, 0x9e8);
+                        let none = (c.g[V0][0] as i64) <= 0;
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                        if !none {
+                            c.cycles += 5;
+                            c.g[V1][0] = sx((c.g[V0][0] as u32) << 2);
+                            o406_sw(c, A0, 0x9e8, V0);
+                            c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                            c.g[V0][0] = o406_lw(c, V1, 0x8ec);
+                            o406_sw(c, S6, 0, V0);
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = o406_lw(c, S6, 0);
+                        let have_dst = (c.g[V0][0] as i64) >= 0;
+                        c.g[A1][0] = 0x0049_0000;
+                        if !have_dst {
+                            c.cycles += 3;
+                            c.g[A0][0] = c.g[S1][0];
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1dc0));
+                            break 'alloc_failed;
+                        }
+                    }
+                    c.cycles += 2;
+                    let no_room = (c.g[S0][0] as i64) <= 0;
+                    c.g[V0][0] = 0xffff_ffff_ffff_ffc0;
+                    if no_room {
+                        c.cycles += 3;
+                        c.g[A1][0] = 0x0049_0000;
+                        c.g[A0][0] = c.g[S1][0];
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1dd8));
+                        break 'overflow;
+                    }
+                    // Emit the opcode word.
+                    c.cycles += 28;
+                    c.g[V1][0] = o406_lw(c, S2, 0);
+                    c.g[A0][0] = c.g[FP][0] & 0x3f;
+                    c.g[A2][0] = o406_lw(c, SP, 0);
+                    c.g[V1][0] &= c.g[V0][0];
+                    c.g[A1][0] = 0xffff_ffff_ffff_f03f;
+                    c.g[V1][0] |= c.g[A0][0];
+                    c.g[A3][0] = 0xffff_ffff_ffc0_0000;
+                    o406_sw(c, S2, 0, V1);
+                    c.g[A2][0] &= 0x3ff;
+                    c.g[V1][0] &= c.g[A1][0];
+                    c.g[A3][0] |= 0xfff;
+                    c.g[V0][0] = o406_lw(c, S6, 0);
+                    c.g[A2][0] = sx((c.g[A2][0] as u32) << 12);
+                    c.g[A1][0] = o406_lw(c, SP, 4);
+                    c.g[A0][0] = 0x3f_0000;
+                    c.g[V0][0] &= 0x3f;
+                    c.g[A0][0] |= 0xffff;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 6);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32) << 22);
+                    c.g[V1][0] |= c.g[V0][0];
+                    c.g[V1][0] &= c.g[A3][0];
+                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                    c.g[V1][0] |= c.g[A2][0];
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+                    c.g[V1][0] &= c.g[A0][0];
+                    c.g[V1][0] |= c.g[A1][0];
+                    o406_sw(c, S2, 0, V1);
+                    break 'body;
+                }
+                // 0x3250a8-side: both failures end in the parser error.
+                break 'overflow;
+            }
+            c.cycles += 3;
+            call_ptr(c, 0x0032_1500, 0x0032_50a4)?;
+            c.g[V0][0] = u64::MAX;
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Return a temporary register (`a1`, below 0x40) to the parser's free list:
+/// `list[count++] = a1` (list at +0x108ec, count at +0x109e8), as both
+/// operand registers of `EmitBinaryOp` are.
+pub(crate) fn o406_emit_free_reg(c: &mut Cpu) {
+    c.g[A0][0] = 0x10000;
+    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    c.g[V1][0] = o406_lw(c, A0, 0x9e8);
+    c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+    o406_sw(c, V0, 0x8ec, A1);
+    o406_sw(c, A0, 0x9e8, V1);
+}
+
+// ------------------------------------------------ InputPreproc_ProcessText
+
+/// `int InputPreproc_ProcessText(InputPreproc *self, Cursor *in, a2, a3)`
+/// (0x326150): copy one source line to the output. Leading blanks (space,
+/// tab, CR) are written through; a `#` starts a directive, `//` a line
+/// comment, `/*` a block comment (each handled by its own function); any
+/// other character copies the rest of the line, counting it at its
+/// newline. Returns 1 at end of input (when the lookahead char at +0xc is
+/// negative), else 0.
+pub fn input_preproc_process_text(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S0, 0x80);
+        frame.save(c, S2, 0x60);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S3, 0x50);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S4, 0x40);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, S5, 0x30);
+        c.g[S4][0] = c.g[A3][0];
+        frame.save(c, S6, 0x20);
+        c.g[S5][0] = 0xd;
+        frame.save(c, S7, 0x10);
+        c.g[S6][0] = 9;
+        frame.save(c, S1, 0x70);
+        c.g[S7][0] = 0x20;
+        frame.save_ra(c, 0);
+        'epilogue: {
+            'to_d8: {
+                'to_d4: {
+                    // Leading blanks.
+                    let mut first = true;
+                    loop {
+                        if !first {
+                            c.cycles += 8;
+                            c.g[A0][0] = c.g[S0][0];
+                            call_ptr(c, 0x0032_6360, 0x0032_61a0)?;
+                            c.g[A0][0] = c.g[S0][0];
+                            c.g[A1][0] = c.g[S2][0];
+                            call_ptr(c, 0x0032_6478, 0x0032_61ac)?;
+                            c.g[V0][0] = o406_lw(c, S0, 0xc);
+                            let eof = (c.g[V0][0] as i64) < 0;
+                            c.g[V0][0] = 0;
+                            if eof {
+                                break 'epilogue;
+                            }
+                        }
+                        first = false;
+                        c.cycles += 3;
+                        c.g[S1][0] = o406_lw(c, S0, 0xc);
+                        c.g[V0][0] = 0;
+                        if c.g[S1][0] == c.g[S7][0] {
+                            c.cycles += 1;
+                            c.g[V0][0] = 1;
+                        } else {
+                            c.cycles += 2;
+                            if c.g[S1][0] == c.g[S6][0] {
+                                c.g[V0][0] = 1;
+                            } else {
+                                c.cycles += 2;
+                                if c.g[S1][0] == c.g[S5][0] {
+                                    c.cycles += 1;
+                                    c.g[V0][0] = 1;
+                                }
+                            }
+                        }
+                        c.cycles += 2;
+                        if c.g[V0][0] == 0 {
+                            break;
+                        }
+                        let a = (c.g[S0][0] as u32).wrapping_add(0xc);
+                        c.g[A1][0] = c.lb(a);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0032_6198);
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x23;
+                    let not_hash = c.g[S1][0] != c.g[V0][0];
+                    c.g[V0][0] = 0x2f;
+                    if !not_hash {
+                        // `#`: a directive.
+                        c.cycles += 10;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A1][0] = c.g[S2][0];
+                        call_ptr(c, 0x0032_6478, 0x0032_61f8)?;
+                        c.g[A1][0] = c.g[S2][0];
+                        c.g[A2][0] = c.g[S3][0];
+                        c.g[A3][0] = c.g[S4][0];
+                        c.g[A0][0] = c.g[S0][0];
+                        call_ptr(c, 0x0032_66e8, 0x0032_620c)?;
+                        c.g[V0][0] = o406_lw(c, S0, 0xc);
+                        break 'to_d4;
+                    }
+                    c.cycles += 2;
+                    if c.g[S1][0] != c.g[V0][0] {
+                        c.g[S1][0] = 0xa;
+                    } else {
+                        // `/`: a comment, or a plain slash.
+                        c.cycles += 6;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A1][0] = c.g[S2][0];
+                        call_ptr(c, 0x0032_6478, 0x0032_6228)?;
+                        c.g[V1][0] = o406_lw(c, S0, 0xc);
+                        let not_slash = c.g[V1][0] != c.g[S1][0];
+                        c.g[V0][0] = 0x2a;
+                        if !not_slash {
+                            c.cycles += 7;
+                            c.g[A1][0] = c.g[S2][0];
+                            c.g[A2][0] = c.g[S3][0];
+                            c.g[A3][0] = c.g[S4][0];
+                            c.g[A0][0] = c.g[S0][0];
+                            call_ptr(c, 0x0032_65c0, 0x0032_6248)?;
+                            c.g[V0][0] = o406_lw(c, S0, 0xc);
+                            break 'to_d4;
+                        }
+                        c.cycles += 2;
+                        let not_star = c.g[V1][0] != c.g[V0][0];
+                        c.g[A0][0] = c.g[S0][0];
+                        if !not_star {
+                            c.cycles += 9;
+                            c.g[A1][0] = c.g[S2][0];
+                            call_ptr(c, 0x0032_6478, 0x0032_6260)?;
+                            c.g[A1][0] = c.g[S2][0];
+                            c.g[A2][0] = c.g[S3][0];
+                            c.g[A3][0] = c.g[S4][0];
+                            c.g[A0][0] = c.g[S0][0];
+                            call_ptr(c, 0x0032_64b0, 0x0032_6274)?;
+                            c.g[V0][0] = o406_lw(c, S0, 0xc);
+                            break 'to_d4;
+                        }
+                        // A plain `/`: write it, then the rest of the line.
+                        c.cycles += 4;
+                        c.g[A1][0] = 0x2f;
+                        call_ptr(c, 0x0032_6360, 0x0032_6284)?;
+                        c.g[S1][0] = 0xa;
+                    }
+                    // The rest of the line, up to the newline in s1.
+                    loop {
+                        c.cycles += 3;
+                        c.g[V0][0] = o406_lw(c, S0, 0xc);
+                        let eof = (c.g[V0][0] as i64) < 0;
+                        c.g[V0][0] = !c.g[V0][0];
+                        if eof {
+                            break 'to_d8;
+                        }
+                        c.cycles += 6;
+                        let a = (c.g[S0][0] as u32).wrapping_add(0xc);
+                        c.g[A1][0] = c.lb(a);
+                        c.g[A0][0] = c.g[S0][0];
+                        call_ptr(c, 0x0032_6360, 0x0032_62b0)?;
+                        c.g[V0][0] = o406_lw(c, S0, 0xc);
+                        let more = c.g[V0][0] != c.g[S1][0];
+                        c.g[A0][0] = c.g[S0][0];
+                        if more {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0032_6290);
+                            }
+                            c.cycles += 2;
+                            c.g[A1][0] = c.g[S2][0];
+                            call_ptr(c, 0x0032_6478, 0x0032_6298)?;
+                            continue;
+                        }
+                        // Newline: count the line, step past it.
+                        c.cycles += 6;
+                        c.g[V0][0] = o406_lw(c, S2, 0xc);
+                        c.g[A1][0] = c.g[S2][0];
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+                        o406_sw(c, S2, 0xc, V0);
+                        call_ptr(c, 0x0032_6478, 0x0032_62d0)?;
+                        c.g[V0][0] = o406_lw(c, S0, 0xc);
+                        break 'to_d4;
+                    }
+                }
+                c.cycles += 1;
+                c.g[V0][0] = !c.g[V0][0];
+            }
+            c.cycles += 1;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) >> 31);
+        }
+        c.cycles += 11;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore(c, S6, 0x20);
+        frame.restore(c, S7, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// InputParser_EmitUnaryOp (0x003250d8)
+
+/// `InputParser_EmitNode` (0x00324678).
+pub(crate) const INPUT_PARSER_EMIT_NODE_CALL: Callee = Callee {
+    addr: 0x0032_4678,
+    f: ee::s10::InputParser_EmitNode,
+};
+
+/// `InputParser_Error` (0x00321500).
+pub(crate) const INPUT_PARSER_ERROR_CALL: Callee = Callee {
+    addr: 0x0032_1500,
+    f: ee::s10::InputParser_Error,
+};
+
+/// `int InputParser::EmitUnaryOp(this, node, dst*, code, cap, op, modifier)` (0x3250d8): compile the operand of a unary node, return its source register to the free-register stack, allocate a destination register when `*dst < 0`, then emit one opcode word (op, dst, src, modifier) into the buffer. Returns the number of words used (-1 after an error or when the buffer overflows).
+pub fn input_parser_emit_unary_op(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame { size: 0x70 };
+        'b_32522c: {
+            c.cycles += 21;
+            Frame::open(c, 0x70);
+            c.g[V0][0] = 0xffffffffffffffff;
+            frame.save(c, S0, 0x60);
+            frame.save(c, S1, 0x50);
+            c.g[S0][0] = c.g[A0][0];
+            frame.save(c, S2, 0x40);
+            c.g[S1][0] = c.g[T0][0];
+            frame.save(c, S3, 0x30);
+            c.g[S2][0] = c.g[A3][0];
+            frame.save(c, S4, 0x20);
+            c.g[S3][0] = c.g[A2][0];
+            frame.save_ra(c, 0x10);
+            c.g[S4][0] = c.g[T1][0];
+            c.g[T1][0] = c.g[T2][0];
+            c.g[A1][0] = c.lw(r32(c, A1).wrapping_add(0x4));
+            c.sw(r32(c, SP), c.g[V0][0]);
+            c.g[A2][0] = c.g[SP][0];
+            INPUT_PARSER_EMIT_NODE_CALL.call(c, 0x0032_5120)?;
+            c.g[T0][0] = c.g[V0][0];
+            let t = (c.g[T0][0] as i64) < 0;
+            c.g[V0][0] = 0xffffffffffffffff;
+            if t {
+                break 'b_32522c;
+            } else {
+                'b_325164: {
+                    c.cycles += 6;
+                    c.g[V0][0] = sx(r32(c, T0) << 2);
+                    c.g[A1][0] = c.lw(r32(c, SP));
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_add(r32(c, V0)));
+                    c.g[V0][0] = (c.g[A1][0] < 0x40u64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_sub(r32(c, T0)));
+                    if t {
+                        break 'b_325164;
+                    } else {
+                        c.cycles += 8;
+                        c.g[A0][0] = 0x10000;
+                        c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+                        c.g[V1][0] = c.lw(r32(c, A0).wrapping_add(0x9e8));
+                        c.g[V0][0] = sx(r32(c, V1) << 2);
+                        c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+                        c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x1));
+                        c.sw(r32(c, V0).wrapping_add(0x8ec), c.g[A1][0]);
+                        c.sw(r32(c, A0).wrapping_add(0x9e8), c.g[V1][0]);
+                        break 'b_325164;
+                    }
+                }
+                'b_325220: {
+                    'b_3251ac: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(r32(c, S3));
+                        let t = (c.g[V0][0] as i64) >= 0;
+                        c.g[V0][0] = 0x10000;
+                        if t {
+                            break 'b_3251ac;
+                        } else {
+                            'b_325194: {
+                                c.cycles += 4;
+                                c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, V0)));
+                                c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(0x9e8));
+                                let t = (c.g[V0][0] as i64) <= 0;
+                                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x1));
+                                if t {
+                                    break 'b_325194;
+                                } else {
+                                    c.cycles += 5;
+                                    c.g[V1][0] = sx(r32(c, V0) << 2);
+                                    c.sw(r32(c, A0).wrapping_add(0x9e8), c.g[V0][0]);
+                                    c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                                    c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x8ec));
+                                    c.sw(r32(c, S3), c.g[V0][0]);
+                                    break 'b_325194;
+                                }
+                            }
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw(r32(c, S3));
+                            let t = (c.g[V0][0] as i64) >= 0;
+                            c.g[A1][0] = 0x490000;
+                            if t {
+                                break 'b_3251ac;
+                            } else {
+                                c.cycles += 3;
+                                c.g[A0][0] = c.g[S0][0];
+                                let t = true;
+                                c.g[A1][0] = sx(r32(c, A1).wrapping_sub(0x1dc0));
+                                if t {
+                                    break 'b_325220;
+                                } else {
+                                    break 'b_3251ac;
+                                }
+                            }
+                        }
+                    }
+                    'b_325214: {
+                        c.cycles += 2;
+                        let t = (c.g[S1][0] as i64) <= 0;
+                        c.g[V0][0] = 0xffffffffffffffc0;
+                        if t {
+                            break 'b_325214;
+                        } else {
+                            c.cycles += 24;
+                            c.g[V1][0] = c.lw(r32(c, S2));
+                            c.g[A0][0] = c.g[S4][0] & 0x3f;
+                            c.g[A2][0] = c.lw(r32(c, SP));
+                            c.g[V1][0] = c.g[V1][0] & c.g[V0][0];
+                            c.g[A1][0] = 0xfffffffffffff03f;
+                            c.g[V1][0] = c.g[V1][0] | c.g[A0][0];
+                            c.g[A3][0] = 0xffffffffffc00000;
+                            c.sw(r32(c, S2), c.g[V1][0]);
+                            c.g[A2][0] = c.g[A2][0] & 0x3ff;
+                            c.g[V1][0] = c.g[V1][0] & c.g[A1][0];
+                            c.g[A3][0] = c.g[A3][0] | 0xfff;
+                            c.g[A0][0] = c.lw(r32(c, S3));
+                            c.g[A2][0] = sx(r32(c, A2) << 12);
+                            c.g[A1][0] = 0x3f0000;
+                            c.g[V0][0] = sx(r32(c, T0).wrapping_add(0x1));
+                            c.g[A0][0] = c.g[A0][0] & 0x3f;
+                            c.g[A1][0] = c.g[A1][0] | 0xffff;
+                            c.g[A0][0] = sx(r32(c, A0) << 6);
+                            c.g[V1][0] = c.g[V1][0] | c.g[A0][0];
+                            c.g[V1][0] = c.g[V1][0] & c.g[A3][0];
+                            c.g[V1][0] = c.g[V1][0] | c.g[A2][0];
+                            c.g[V1][0] = c.g[V1][0] & c.g[A1][0];
+                            let t = true;
+                            c.sw(r32(c, S2), c.g[V1][0]);
+                            if t {
+                                break 'b_32522c;
+                            } else {
+                                break 'b_325214;
+                            }
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[A1][0] = 0x490000;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_sub(0x1dd8));
+                    break 'b_325220;
+                }
+                c.cycles += 3;
+                INPUT_PARSER_ERROR_CALL.call(c, 0x0032_5228)?;
+                c.g[V0][0] = 0xffffffffffffffff;
+                break 'b_32522c;
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `Node* InputParser_ParseFunction2(Parser* self, int op)` (0x324138): parse
+/// the `( a , b )` arguments of a two-argument expression function; with two
+/// constant operands fold `min`/`max`/`pow`/`atan2` (ops 21, 20, 22, 23),
+/// else build a binary node. Errors free the parsed operands and return 0.
+/// Kept as the generated block dispatcher (`pc` is the block address).
+pub fn input_parser_parse_function_2(c: &mut Cpu) {
+    const INPUT_PARSER_ALLOC_NODE: Callee = Callee {
+        addr: 0x003215f8,
+        f: ee::s10::f_003215f8,
+    };
+    const INPUT_PARSER_ERROR: Callee = Callee {
+        addr: 0x00321500,
+        f: ee::s10::f_00321500,
+    };
+    const INPUT_PARSER_FREE_NODE: Callee = Callee {
+        addr: 0x00321638,
+        f: ee::s10::f_00321638,
+    };
+    const INPUT_PARSER_NEXT_TOKEN: Callee = Callee {
+        addr: 0x00321af0,
+        f: ee::s10::f_00321af0,
+    };
+    const INPUT_PARSER_PARSE_CONDITIONAL: Callee = Callee {
+        addr: 0x00323268,
+        f: ee::s10::f_00323268,
+    };
+    const MATH_ATAN: Callee = Callee {
+        addr: 0x0031c228,
+        f: ee::s10::f_0031c228,
+    };
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x00324138 => {
+                    c.cycles += 14;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+                    c.g[V0][0] = 0x9;
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S0][0] = c.g[A0][0];
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.swc1(22, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0x58));
+                    c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x98));
+                    let t = c.g[V1][0] == c.g[V0][0];
+                    c.g[S3][0] = c.g[A1][0];
+                    if t {
+                        pc = 0x00324184;
+                        continue;
+                    }
+                    pc = 0x00324170;
+                    continue;
+                }
+                0x00324170 => {
+                    c.cycles += 3;
+                    c.g[A1][0] = 0x490000;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1e68));
+                    INPUT_PARSER_ERROR.call(c, 0x0032417c)?;
+                    pc = 0x0032417c;
+                    continue;
+                }
+                0x0032417c => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x0032436c;
+                        continue;
+                    }
+                    pc = 0x00324184;
+                    continue;
+                }
+                0x00324184 => {
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S0][0];
+                    INPUT_PARSER_NEXT_TOKEN.call(c, 0x0032418c)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    INPUT_PARSER_PARSE_CONDITIONAL.call(c, 0x00324194)?;
+                    c.g[S1][0] = c.g[V0][0];
+                    let t = c.g[S1][0] == 0u64;
+                    c.g[V0][0] = 0x8;
+                    if t {
+                        if back_edge_unwinds(c, 0x0032417c) {
+                            return Ok(());
+                        }
+                        pc = 0x0032417c;
+                        continue;
+                    }
+                    pc = 0x003241a0;
+                    continue;
+                }
+                0x003241a0 => {
+                    c.cycles += 3;
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x98));
+                    let t = c.g[V1][0] == c.g[V0][0];
+                    c.g[A1][0] = 0x490000;
+                    if t {
+                        pc = 0x003241c4;
+                        continue;
+                    }
+                    pc = 0x003241ac;
+                    continue;
+                }
+                0x003241ac => {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1e48));
+                    INPUT_PARSER_ERROR.call(c, 0x003241b8)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    let t = true;
+                    c.g[A1][0] = c.g[S1][0];
+                    if t {
+                        pc = 0x0032420c;
+                        continue;
+                    }
+                    pc = 0x003241c4;
+                    continue;
+                }
+                0x003241c4 => {
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S0][0];
+                    INPUT_PARSER_NEXT_TOKEN.call(c, 0x003241cc)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    INPUT_PARSER_PARSE_CONDITIONAL.call(c, 0x003241d4)?;
+                    c.g[S2][0] = c.g[V0][0];
+                    let t = c.g[S2][0] == 0u64;
+                    c.g[V0][0] = 0xa;
+                    if t {
+                        if back_edge_unwinds(c, 0x0032417c) {
+                            return Ok(());
+                        }
+                        pc = 0x0032417c;
+                        continue;
+                    }
+                    pc = 0x003241e0;
+                    continue;
+                }
+                0x003241e0 => {
+                    c.cycles += 3;
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x98));
+                    let t = c.g[V1][0] == c.g[V0][0];
+                    c.g[A1][0] = 0x490000;
+                    if t {
+                        pc = 0x0032421c;
+                        continue;
+                    }
+                    pc = 0x003241ec;
+                    continue;
+                }
+                0x003241ec => {
+                    c.cycles += 8;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1f48));
+                    INPUT_PARSER_ERROR.call(c, 0x003241f8)?;
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[A0][0] = c.g[S0][0];
+                    INPUT_PARSER_FREE_NODE.call(c, 0x00324204)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[S2][0];
+                    pc = 0x0032420c;
+                    continue;
+                }
+                0x0032420c => {
+                    c.cycles += 4;
+                    INPUT_PARSER_FREE_NODE.call(c, 0x00324214)?;
+                    let t = true;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x0032436c;
+                        continue;
+                    }
+                    pc = 0x0032421c;
+                    continue;
+                }
+                0x0032421c => {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S0][0];
+                    INPUT_PARSER_NEXT_TOKEN.call(c, 0x00324224)?;
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
+                    c.g[V0][0] = 0x4;
+                    let t = c.g[V1][0] != c.g[V0][0];
+
+                    if t {
+                        pc = 0x00324354;
+                        continue;
+                    }
+                    pc = 0x00324234;
+                    continue;
+                }
+                0x00324234 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+                    let t = c.g[V0][0] != c.g[V1][0];
+                    c.g[V0][0] = 0x15;
+                    if t {
+                        pc = 0x00324354;
+                        continue;
+                    }
+                    pc = 0x00324240;
+                    continue;
+                }
+                0x00324240 => {
+                    c.cycles += 2;
+                    let t = c.g[S3][0] == c.g[V0][0];
+                    c.g[V0][0] = ((c.g[S3][0] as i64) < 22i64) as u64;
+                    if t {
+                        pc = 0x0032427c;
+                        continue;
+                    }
+                    pc = 0x00324248;
+                    continue;
+                }
+                0x00324248 => {
+                    c.cycles += 2;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = 0x14;
+                    if t {
+                        pc = 0x00324260;
+                        continue;
+                    }
+                    pc = 0x00324250;
+                    continue;
+                }
+                0x00324250 => {
+                    c.cycles += 2;
+                    let t = c.g[S3][0] == c.g[V0][0];
+                    c.g[A0][0] = c.g[S0][0];
+                    if t {
+                        pc = 0x0032428c;
+                        continue;
+                    }
+                    pc = 0x00324258;
+                    continue;
+                }
+                0x00324258 => {
+                    c.cycles += 2;
+                    let t = true;
+
+                    if t {
+                        pc = 0x00324344;
+                        continue;
+                    }
+                    pc = 0x00324260;
+                    continue;
+                }
+                0x00324260 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x16;
+                    let t = c.g[S3][0] == c.g[V0][0];
+                    c.g[V0][0] = 0x17;
+                    if t {
+                        pc = 0x0032429c;
+                        continue;
+                    }
+                    pc = 0x0032426c;
+                    continue;
+                }
+                0x0032426c => {
+                    c.cycles += 2;
+                    let t = c.g[S3][0] == c.g[V0][0];
+                    c.g[A0][0] = c.g[S0][0];
+                    if t {
+                        pc = 0x003242b8;
+                        continue;
+                    }
+                    pc = 0x00324274;
+                    continue;
+                }
+                0x00324274 => {
+                    c.cycles += 2;
+                    let t = true;
+
+                    if t {
+                        pc = 0x00324344;
+                        continue;
+                    }
+                    pc = 0x0032427c;
+                    continue;
+                }
+                0x0032427c => {
+                    c.cycles += 4;
+                    c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x4));
+                    c.lwc1(1, (c.g[S1][0] as u32).wrapping_add(0x4));
+                    let t = true;
+                    c.min_s(0, 0, 1);
+                    if t {
+                        pc = 0x0032433c;
+                        continue;
+                    }
+                    pc = 0x0032428c;
+                    continue;
+                }
+                0x0032428c => {
+                    c.cycles += 4;
+                    c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x4));
+                    c.lwc1(1, (c.g[S1][0] as u32).wrapping_add(0x4));
+                    let t = true;
+                    c.max_s(0, 0, 1);
+                    if t {
+                        pc = 0x0032433c;
+                        continue;
+                    }
+                    pc = 0x0032429c;
+                    continue;
+                }
+                0x0032429c => {
+                    c.cycles += 7;
+                    c.lwc1(12, (c.g[S1][0] as u32).wrapping_add(0x4));
+                    c.lwc1(20, (c.g[S2][0] as u32).wrapping_add(0x4));
+                    call_ptr(c, 0x0040da10, 0x003242a8)?;
+                    c.mul_s(12, 0, 20);
+                    call_ptr(c, 0x0040d758, 0x003242b0)?;
+                    let t = true;
+                    c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x4));
+                    if t {
+                        pc = 0x00324340;
+                        continue;
+                    }
+                    pc = 0x003242b8;
+                    continue;
+                }
+                0x003242b8 => {
+                    c.cycles += 6;
+                    c.lwc1(20, (c.g[S2][0] as u32).wrapping_add(0x4));
+                    c.mtc1(0, 22);
+                    c.c_eq_s(20, 22);
+                    let t = !c.fcc();
+                    c.lwc1(21, (c.g[S1][0] as u32).wrapping_add(0x4));
+                    if t {
+                        pc = 0x003242fc;
+                        continue;
+                    }
+                    pc = 0x003242d0;
+                    continue;
+                }
+                0x003242d0 => {
+                    c.cycles += 4;
+                    c.c_eq_s(21, 22);
+                    let t = c.fcc();
+                    c.mov_s(0, 21);
+                    if t {
+                        pc = 0x0032433c;
+                        continue;
+                    }
+                    pc = 0x003242e0;
+                    continue;
+                }
+                0x003242e0 => {
+                    c.cycles += 4;
+                    c.c_le_s(22, 21);
+                    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x2e3c));
+
+                    if !c.fcc() {
+                        c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x4));
+                        pc = 0x00324340;
+                        continue;
+                    }
+                    pc = 0x003242f0;
+                    continue;
+                }
+                0x003242f0 => {
+                    c.cycles += 3;
+                    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x2e38));
+                    let t = true;
+                    c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x4));
+                    if t {
+                        pc = 0x00324340;
+                        continue;
+                    }
+                    pc = 0x003242fc;
+                    continue;
+                }
+                0x003242fc => {
+                    c.cycles += 7;
+                    c.div_s(12, 21, 20);
+                    MATH_ATAN.call(c, 0x00324308)?;
+                    c.c_lt_s(20, 22);
+                    let t = !c.fcc();
+                    c.mov_s(12, 0);
+                    if t {
+                        pc = 0x00324338;
+                        continue;
+                    }
+                    pc = 0x00324318;
+                    continue;
+                }
+                0x00324318 => {
+                    c.cycles += 3;
+                    c.c_lt_s(22, 21);
+                    let t = !c.fcc();
+
+                    if t {
+                        pc = 0x00324330;
+                        continue;
+                    }
+                    pc = 0x00324324;
+                    continue;
+                }
+                0x00324324 => {
+                    c.cycles += 3;
+                    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x2e34));
+                    let t = true;
+                    c.add_s(12, 12, 0);
+                    if t {
+                        pc = 0x00324338;
+                        continue;
+                    }
+                    pc = 0x00324330;
+                    continue;
+                }
+                0x00324330 => {
+                    c.cycles += 2;
+                    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x2e30));
+                    c.sub_s(12, 12, 0);
+                    pc = 0x00324338;
+                    continue;
+                }
+                0x00324338 => {
+                    c.cycles += 1;
+                    c.mov_s(0, 12);
+                    pc = 0x0032433c;
+                    continue;
+                }
+                0x0032433c => {
+                    c.cycles += 1;
+                    c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x4));
+                    pc = 0x00324340;
+                    continue;
+                }
+                0x00324340 => {
+                    c.cycles += 1;
+                    c.g[A0][0] = c.g[S0][0];
+                    pc = 0x00324344;
+                    continue;
+                }
+                0x00324344 => {
+                    c.cycles += 4;
+                    c.g[A1][0] = c.g[S2][0];
+                    INPUT_PARSER_FREE_NODE.call(c, 0x0032434c)?;
+                    let t = true;
+                    c.g[V0][0] = c.g[S1][0];
+                    if t {
+                        pc = 0x0032436c;
+                        continue;
+                    }
+                    pc = 0x00324354;
+                    continue;
+                }
+                0x00324354 => {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S0][0];
+                    INPUT_PARSER_ALLOC_NODE.call(c, 0x0032435c)?;
+                    c.g[V1][0] = c.g[V0][0];
+                    c.sw(c.g[V1][0] as u32, c.g[S3][0]);
+                    c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[S1][0]);
+                    c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[S2][0]);
+                    pc = 0x0032436c;
+                    continue;
+                }
+                0x0032436c => {
+                    c.cycles += 10;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    c.lwc1(22, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.lwc1(21, (c.g[SP][0] as u32).wrapping_add(0x58));
+                    c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x00324138, 0x00324394);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8325,6 +10040,541 @@ pub(crate) mod tests {
             2 * EXPRS.len() as u32,
             &|c, seed| {
                 oc396_parser(c, seed, EXPRS[seed as usize % EXPRS.len()], 0x0032_3a68);
+            },
+        );
+    }
+
+    use std::ptr::addr_of_mut;
+
+    pub(crate) use crate::game::ai::rider::tests::w32_2;
+    pub(crate) use crate::game::world::worldview::tests::oc410_machine;
+    pub(crate) use crate::game::world::worldview::tests::oc410_out;
+    pub(crate) use crate::game::world::worldview::tests::oc410_result;
+
+    pub(crate) use crate::game::ai::ai::tests::oc414_env;
+
+    // ------------------------------------------------------------ fixtures
+
+    /// Gate of the callee fakes (a magic word in the machine's RAM). Above
+    /// the fakes' call log (`DATA + 0x10_0000`).
+    pub(crate) const O406_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const O406_MAGIC: u32 = 0x4f34_3036;
+
+    /// Index of the next 64-bit fake result, and the results (24).
+    pub(crate) const O406_RESULT_IDX: u32 = O406_CTRL + 0x10;
+
+    pub(crate) const O406_RESULTS: u32 = O406_CTRL + 0x20;
+
+    /// Index of the next token kind a `NextToken` fake delivers, and the kinds (32).
+    pub(crate) const O406_KIND_IDX: u32 = O406_CTRL + 0x14;
+
+    pub(crate) const O406_KINDS: u32 = O406_CTRL + 0x104;
+
+    /// Index of the next character a `NextChar` fake delivers, and the characters (64).
+    pub(crate) const O406_CHAR_IDX: u32 = O406_CTRL + 0x18;
+
+    pub(crate) const O406_CHARS: u32 = O406_CTRL + 0x204;
+
+    /// The InputParser, the expression node pool, the bolt database.
+    pub(crate) const O406_PARSER: u32 = DATA + 0x4_0000;
+
+    pub(crate) const O406_NODES: u32 = DATA + 0x5_0000;
+
+    pub(crate) const O406_BOLT_DB: u32 = DATA + 0x1000;
+
+    /// A sequence track (the `GetTrack` fake's result).
+    pub(crate) const O406_TRACK: u32 = DATA + 0x400;
+
+    pub(crate) fn o406_w(c: &mut Cpu, addr: u32, v: u32) {
+        c.bus.write32(addr, v);
+    }
+
+    pub(crate) fn o406_pop64(c: &mut Cpu) -> u64 {
+        let i = c.bus.read32(O406_RESULT_IDX);
+        c.bus.write32(O406_RESULT_IDX, i + 1);
+        if i >= 24 {
+            0
+        } else {
+            c.bus.read64(O406_RESULTS + 8 * i)
+        }
+    }
+
+    pub(crate) fn o406_pop_kind(c: &mut Cpu) -> u32 {
+        let i = c.bus.read32(O406_KIND_IDX);
+        c.bus.write32(O406_KIND_IDX, i + 1);
+        if i >= 32 {
+            0
+        } else {
+            c.bus.read32(O406_KINDS + 4 * i)
+        }
+    }
+
+    pub(crate) fn o406_pop_char(c: &mut Cpu) -> u32 {
+        let i = c.bus.read32(O406_CHAR_IDX);
+        c.bus.write32(O406_CHAR_IDX, i + 1);
+        if i >= 64 {
+            u32::MAX
+        } else {
+            c.bus.read32(O406_CHARS + 4 * i)
+        }
+    }
+
+    /// A gated callee fake: logs the call like `fakes::fake` and, for the
+    /// callees whose results the parsers and sequences act on, delivers the
+    /// next queued value (the setup of the test fills the queues).
+    pub(crate) fn o406_fake_call(c: &mut Cpu, addr: u32, ra: u32) {
+        let a0 = c.g[A0][0] as u32;
+        let a2 = c.g[A2][0] as u32;
+        fakes::fake(c, addr, ra);
+        if c.pc != ra {
+            return;
+        }
+        match addr {
+            // ParseComparison, Lookup*/FindIdentifier, FindBoltIndex,
+            // SetCharProfileBoltEquipped, ChannelGetLength/Listener/Flush, the
+            // rider state, an animation id, a flag test.
+            0x0032_36d8 | 0x0032_16e8 | 0x0032_1880 | 0x0032_1a40 | 0x0014_d448 | 0x0015_1c90
+            | 0x0027_4c70 | 0x0027_4d70 | 0x0027_3d20 | 0x0011_fe98 | 0x0031_1ae8 | 0x0014_46a0 => {
+                c.g[V0][0] = o406_pop64(c);
+            }
+            // NextToken: the parser's token kind.
+            0x0032_1af0 => {
+                let kind = o406_pop_kind(c);
+                c.bus.write32(a0 + 0x98, kind);
+            }
+            // EmitNode: a word count and the register it chose.
+            0x0032_4678 => {
+                c.g[V0][0] = o406_pop64(c);
+                let reg = o406_pop64(c) as u32;
+                c.bus.write32(a2, reg);
+            }
+            // NextChar: the preprocessor's lookahead character.
+            0x0032_6478 => {
+                let ch = o406_pop_char(c);
+                c.bus.write32(a0 + 0xc, ch);
+            }
+            // EventTrack_NextKey: the next key.
+            0x0027_3468 => {
+                let key = o406_pop64(c) as u32;
+                c.bus.write32(a0 + 0x14, key);
+            }
+            0x0014_bdb8 => c.g[V0][0] = O406_BOLT_DB as u64,
+            0x0027_42c8 => c.g[V0][0] = O406_TRACK as u64,
+            _ => {}
+        }
+    }
+
+    macro_rules! o406_fakes {
+        ($(($name:ident, $addr:expr, $shard:ident, $slot:ident, $gen:ident)),* $(,)?) => {
+            $(
+                pub(crate) fn $name(c: &mut Cpu) {
+                    if c.bus.read32(O406_CTRL) != O406_MAGIC {
+                        return fakes::fall_back(c, fakes::prev_cell($name), ee::$shard::$gen);
+                    }
+                    let ra = c.g[RA][0] as u32;
+                    o406_fake_call(c, $addr, ra);
+                }
+            )*
+
+            /// Hooks the gated fakes into the callees' override slots (once
+            /// per process; with the gate off they run what the slots held).
+            pub(crate) fn o406_install_fakes() {
+                $( fakes::hook(addr_of_mut!(ee::$shard::$slot), $name, fakes::prev_cell($name)); )*
+            }
+        };
+    }
+
+    o406_fakes! {
+        (o406_fake_boost, 0x0011_4130, s00, OVERRIDE_00114130, f_00114130__generated),
+        (o406_fake_wait_push, 0x0012_c0c0, s00, OVERRIDE_0012C0C0, f_0012c0c0__generated),
+        (o406_fake_push, 0x0012_c130, s00, OVERRIDE_0012C130, f_0012c130__generated),
+        (o406_fake_charge, 0x0012_c230, s00, OVERRIDE_0012C230, f_0012c230__generated),
+        (o406_fake_launch, 0x0012_c408, s00, OVERRIDE_0012C408, f_0012c408__generated),
+        (o406_fake_rider_state, 0x0011_fe98, s00, OVERRIDE_0011FE98, f_0011fe98__generated),
+        (o406_fake_rider_misc, 0x0011_5640, s00, OVERRIDE_00115640, f_00115640__generated),
+        (o406_fake_rider_leave, 0x0011_fec8, s00, OVERRIDE_0011FEC8, f_0011fec8__generated),
+        (o406_fake_compare, 0x0032_36d8, s10, OVERRIDE_003236D8, f_003236d8__generated),
+        (o406_fake_next_token, 0x0032_1af0, s10, OVERRIDE_00321AF0, f_00321af0__generated),
+        (o406_fake_alloc_node, 0x0032_15f8, s10, OVERRIDE_003215F8, f_003215f8__generated),
+        (o406_fake_parser_error, 0x0032_1500, s10, OVERRIDE_00321500, f_00321500__generated),
+        (o406_fake_lookup_button, 0x0032_16e8, s10, OVERRIDE_003216E8, f_003216e8__generated),
+        (o406_fake_lookup_builtin, 0x0032_1880, s10, OVERRIDE_00321880, f_00321880__generated),
+        (o406_fake_find_identifier, 0x0032_1a40, s10, OVERRIDE_00321A40, f_00321a40__generated),
+        (o406_fake_emit_node, 0x0032_4678, s10, OVERRIDE_00324678, f_00324678__generated),
+        (o406_fake_preproc_write, 0x0032_6360, s10, OVERRIDE_00326360, f_00326360__generated),
+        (o406_fake_next_char, 0x0032_6478, s10, OVERRIDE_00326478, f_00326478__generated),
+        (o406_fake_skip_line_comment, 0x0032_65c0, s10, OVERRIDE_003265C0, f_003265c0__generated),
+        (o406_fake_rand, 0x0031_77f0, s10, OVERRIDE_003177F0, f_003177f0__generated),
+        (o406_fake_new_named, 0x0031_7e30, s10, OVERRIDE_00317E30, f_00317e30__generated),
+        (o406_fake_anim_a, 0x0031_1ae8, s10, OVERRIDE_00311AE8, f_00311ae8__generated),
+        (o406_fake_anim_b, 0x0031_1b20, s10, OVERRIDE_00311B20, f_00311b20__generated),
+        (o406_fake_chunk_record, 0x0032_c540, s10, OVERRIDE_0032C540, f_0032c540__generated),
+        (o406_fake_event_fire_key, 0x0027_3418, s07, OVERRIDE_00273418, f_00273418__generated),
+        (o406_fake_event_next_key, 0x0027_3468, s07, OVERRIDE_00273468, f_00273468__generated),
+        (o406_fake_flush_events, 0x0027_3d20, s07, OVERRIDE_00273D20, f_00273d20__generated),
+        (o406_fake_get_length, 0x0027_4c70, s07, OVERRIDE_00274C70, f_00274c70__generated),
+        (o406_fake_get_listener, 0x0027_4d70, s07, OVERRIDE_00274D70, f_00274d70__generated),
+        (o406_fake_get_track, 0x0027_42c8, s07, OVERRIDE_002742C8, f_002742c8__generated),
+        (o406_fake_node_matrix, 0x0034_fed8, s11, OVERRIDE_0034FED8, f_0034fed8__generated),
+        (o406_fake_collide_instance, 0x0033_5960, s11, OVERRIDE_00335960, f_00335960__generated),
+        (o406_fake_collide_object, 0x0033_5b90, s11, OVERRIDE_00335B90, f_00335b90__generated),
+        (o406_fake_bolts_db, 0x0014_bdb8, s01, OVERRIDE_0014BDB8, f_0014bdb8__generated),
+        (o406_fake_find_bolt, 0x0014_d448, s01, OVERRIDE_0014D448, f_0014d448__generated),
+        (o406_fake_set_bolt, 0x0015_1c90, s01, OVERRIDE_00151C90, f_00151c90__generated),
+        (o406_fake_flags_test, 0x0014_46a0, s01, OVERRIDE_001446A0, f_001446a0__generated),
+        (o406_fake_mem_fill, 0x003e_6448, s14, OVERRIDE_003E6448, f_003e6448__generated),
+    }
+
+    /// The miss hook of the sequence tests: the track player's tick (vtable
+    /// target `FAKE`) answers from the result queue and writes a flag word;
+    /// the key-distance call (`FAKE + 0x30`) answers a small count.
+    pub(crate) fn o406_miss(c: &mut Cpu, target: u32) {
+        let a1 = c.g[A1][0] as u32;
+        let ra = c.g[RA][0] as u32;
+        fakes::fake_call(c, target);
+        if c.pc != ra {
+            return;
+        }
+        if target == fakes::FAKE {
+            c.g[V0][0] = o406_pop64(c);
+            let flags = o406_pop64(c) as u32;
+            c.bus.write32(a1, flags);
+        } else if target == fakes::FAKE + 0x30 {
+            c.g[V0][0] = o406_pop64(c);
+        }
+    }
+
+    /// Scrambled registers, the gate, `pc` at the entry, the fakes.
+    pub(crate) fn o406_base(c: &mut Cpu, seed: u32, salt: u64, calls: u32, entry: u32) -> Rng {
+        o406_install_fakes();
+        let r = machine(c, seed, salt, calls);
+        c.pc = entry;
+        c.bus.write32(O406_CTRL, O406_MAGIC);
+        c.hooks.miss = o406_miss;
+        r
+    }
+
+    /// Fill the 64-bit result queue.
+    pub(crate) fn o406_results(c: &mut Cpu, values: &[u64]) {
+        for (i, v) in values.iter().enumerate() {
+            c.bus.write64(O406_RESULTS + 8 * i as u32, *v);
+        }
+    }
+
+    pub(crate) fn o406_kinds(c: &mut Cpu, kinds: &[u32]) {
+        for (i, k) in kinds.iter().enumerate() {
+            c.bus.write32(O406_KINDS + 4 * i as u32, *k);
+        }
+    }
+
+    /// A pool of 12 expression nodes at `O406_NODES`: constants (kind 4,
+    /// value 0.0 / 1.0 / -3.5 / 0.5) and other leaf kinds (children null).
+    pub(crate) fn o406_node_pool(c: &mut Cpu, r: &mut Rng) {
+        const VALUES: [u32; 4] = [0, 0x3f80_0000, 0xc060_0000, 0x3f00_0000];
+        const KINDS: [u32; 5] = [5, 6, 7, 0x10, 0x21];
+        for i in 0..12u32 {
+            let n = O406_NODES + 0x40 * i;
+            for off in (0..0x40).step_by(4) {
+                c.bus.write32(n + off, 0);
+            }
+            if r.next_u32() % 20 < 11 {
+                c.bus.write32(n, 4);
+                c.bus.write32(n + 4, VALUES[(r.next_u32() % 4) as usize]);
+            } else {
+                c.bus.write32(n, KINDS[(r.next_u32() % 5) as usize]);
+            }
+        }
+    }
+
+    /// Queue of node results: the pool in a random order, null now and then.
+    pub(crate) fn o406_node_results(c: &mut Cpu, r: &mut Rng, first: usize) {
+        let mut values = vec![0u64; first];
+        for i in 0..14u32 {
+            let k = (r.next_u32() % 12) + i % 3;
+            values.push(if r.next_u32() % 8 == 0 {
+                0
+            } else {
+                (O406_NODES + 0x40 * (k % 12)) as u64
+            });
+        }
+        o406_results(c, &values);
+    }
+
+    /// An InputParser at `O406_PARSER` holding `kind` as the current token.
+    pub(crate) fn o406_parser(c: &mut Cpu, kind: u32) {
+        for off in (0..0x200).step_by(4) {
+            c.bus.write32(O406_PARSER + off, 0);
+        }
+        c.bus.write32(O406_PARSER + 0x98, kind);
+        c.g[A0][0] = O406_PARSER as u64;
+    }
+
+    /// A random token kind out of `kinds`.
+    pub(crate) fn o406_pick(r: &mut Rng, kinds: &[u32]) -> u32 {
+        kinds[(r.next_u32() as usize) % kinds.len()]
+    }
+
+    // --------------------------------------- InputParser_ParseLogicalAnd/Or/...
+
+    /// `a && b && ...`: a constant 0 / 1 / other operands, `&&` tokens, a null
+    /// operand (error), node kinds; the comparison/NextToken/alloc callees are
+    /// fakes fed from queues; `FreeNode` is real.
+    #[test]
+    fn input_parser_parse_logical_and_matches() {
+        fakes::covered(
+            ee::s10::f_00323540__generated,
+            input_parser_parse_logical_and,
+            200,
+            &|c, seed| {
+                let mut r = o406_base(c, seed, 0x323540, 8, 0x0032_3540);
+                elf_image(c);
+                o406_node_pool(c, &mut r);
+                o406_node_results(c, &mut r, 0);
+                let mut kinds = vec![];
+                for _ in 0..6 {
+                    kinds.push(o406_pick(&mut r, &[0xd, 0xd, 0xd, 0]));
+                }
+                o406_kinds(c, &kinds);
+                o406_parser(c, o406_pick(&mut r, &[0xd, 0xd, 0xd, 0xc]));
+            },
+        );
+    }
+
+    /// `a || b || ...` over the real `ParseLogicalAnd`.
+    #[test]
+    fn input_parser_parse_logical_or_matches() {
+        fakes::covered(
+            ee::s10::f_003233b8__generated,
+            input_parser_parse_logical_or,
+            200,
+            &|c, seed| {
+                let mut r = o406_base(c, seed, 0x3233b8, 8, 0x0032_33b8);
+                elf_image(c);
+                o406_node_pool(c, &mut r);
+                o406_node_results(c, &mut r, 0);
+                let mut kinds = vec![];
+                for _ in 0..8 {
+                    kinds.push(o406_pick(&mut r, &[0xc, 0xc, 0xd, 0]));
+                }
+                o406_kinds(c, &kinds);
+                o406_parser(c, o406_pick(&mut r, &[0xc, 0xc, 0xd, 0xd, 0]));
+            },
+        );
+    }
+
+    /// `c ? a : b` (recursing into the real `ParseConditional`).
+    #[test]
+    fn input_parser_parse_conditional_matches() {
+        fakes::covered(
+            ee::s10::f_00323268__generated,
+            input_parser_parse_conditional,
+            240,
+            &|c, seed| {
+                let mut r = o406_base(c, seed, 0x323268, 10, 0x0032_3268);
+                elf_image(c);
+                o406_node_pool(c, &mut r);
+                o406_node_results(c, &mut r, 0);
+                let mut kinds = vec![];
+                for _ in 0..10 {
+                    kinds.push(o406_pick(&mut r, &[7, 7, 6, 0, 0xc, 0xd, 5]));
+                }
+                o406_kinds(c, &kinds);
+                o406_parser(c, o406_pick(&mut r, &[6, 6, 6, 0, 7]));
+            },
+        );
+    }
+
+    /// `name = expression;`: the name token, the three lookups (button,
+    /// builtin, identifier: mostly "not found"), the new variable (real
+    /// `strcpy`), `=`, the expression (real parser chain) and `;`, with the
+    /// error exits (missing `=`, missing `;`, failed expression, redefined
+    /// name).
+    #[test]
+    fn input_parser_parse_statement_matches() {
+        fakes::covered(
+            ee::s10::f_003230e0__generated,
+            input_parser_parse_statement,
+            260,
+            &|c, seed| {
+                let mut r = o406_base(c, seed, 0x3230e0, 10, 0x0032_30e0);
+                elf_image(c);
+                o406_node_pool(c, &mut r);
+                o406_node_results(c, &mut r, 3);
+                let lookups = [u64::MAX, u64::MAX, 0, 0, 0, 1];
+                let mut head = vec![];
+                for i in 0..3 {
+                    let pick = if r.next_u32() % 5 == 0 {
+                        lookups[(r.next_u32() % 6) as usize]
+                    } else if i < 2 {
+                        u64::MAX
+                    } else {
+                        0
+                    };
+                    head.push(pick);
+                }
+                for (i, v) in head.iter().enumerate() {
+                    c.bus.write64(O406_RESULTS + 8 * i as u32, *v);
+                }
+                let kinds = [
+                    o406_pick(&mut r, &[3, 3, 3, 3, 4]),
+                    o406_pick(&mut r, &[5, 5, 5, 5, 0xd, 0xc, 6, 0]),
+                    o406_pick(&mut r, &[5, 5, 0, 7]),
+                    o406_pick(&mut r, &[5, 0]),
+                    0,
+                    5,
+                ];
+                o406_kinds(c, &kinds);
+                o406_parser(c, o406_pick(&mut r, &[2, 2, 2, 2, 2, 5]));
+                // The token text and the variable table (count at +0x80e4).
+                c.bus.write32(O406_PARSER + 0x9c, 0x0000_6261);
+                c.bus.write32(O406_PARSER + 0x80e4, r.next_u32() % 4);
+            },
+        );
+    }
+
+    // --------------------------------------------- InputParser_EmitBinaryOp
+
+    /// Compile a binary node: both `EmitNode` calls (fakes: a word count or -1
+    /// and the chosen register), the free-register list, the destination
+    /// choice, the allocation and overflow errors and the opcode word.
+    #[test]
+    fn input_parser_emit_binary_op_matches() {
+        fakes::covered(
+            ee::s10::f_00324ec8__generated,
+            input_parser_emit_binary_op,
+            260,
+            &|c, seed| {
+                let mut r = o406_base(c, seed, 0x324ec8, 3, 0x0032_4ec8);
+                let regs = [u64::MAX, 3, 0x20, 0x3f, 0x40, 0x7f, 1, 2];
+                let counts = [u64::MAX, 0, 1, 2, 3, 1, 2];
+                let mut values = vec![];
+                for _ in 0..2 {
+                    values.push(counts[(r.next_u32() % 7) as usize]);
+                    values.push(regs[(r.next_u32() % 8) as usize]);
+                }
+                o406_results(c, &values);
+                o406_parser(c, 0);
+                let free_count = r.next_u32() % 4;
+                // The free list (+0x108ec) and its count (+0x109e8).
+                c.bus.write32(O406_PARSER + 0x10000 + 0x9e8, free_count);
+                for i in 0..4 {
+                    c.bus
+                        .write32(O406_PARSER + 0x10000 + 0x8ec + 4 * i, r.next_u32() % 0x40);
+                }
+                c.g[A1][0] = (O406_NODES) as u64;
+                c.g[A2][0] = (DATA + 0x100) as u64;
+                let dst = [u32::MAX, 5, 0x30, u32::MAX][(r.next_u32() % 4) as usize];
+                c.bus.write32(DATA + 0x100, dst);
+                c.g[A3][0] = (DATA + 0x800) as u64;
+                c.bus.write32(DATA + 0x800, r.next_u32());
+                c.g[T0][0] = (r.next_u32() % 9) as u64;
+                c.g[T1][0] = r.next_u32() as u64;
+                c.g[T2][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    // --------------------------------------------- InputPreproc_ProcessText
+
+    /// One source line: leading blanks, `//` and `/*` comments, a plain `/`
+    /// and ordinary text up to the newline (lookahead characters from a
+    /// queue; `Write`, `NextChar` and the line-comment skipper are fakes, the
+    /// block-comment skipper is real). The `#` directive path is not
+    /// reached (the real directive handler reads files).
+    #[test]
+    fn input_preproc_process_text_matches() {
+        fakes::covered(
+            ee::s10::f_00326150__generated,
+            input_preproc_process_text,
+            260,
+            &|c, seed| {
+                let mut r = o406_base(c, seed, 0x326150, 6, 0x0032_6150);
+                const ALPHABET: [u32; 9] = [0x20, 9, 0xd, 0x78, 0x2f, 0x2a, 0xa, 0x2f, 0x79];
+                let first = ALPHABET[(r.next_u32() % 9) as usize];
+                for i in 0..20u32 {
+                    let ch = if i == 16 {
+                        u32::MAX
+                    } else {
+                        ALPHABET[(r.next_u32() % 9) as usize]
+                    };
+                    c.bus.write32(O406_CHARS + 4 * i, ch);
+                }
+                o406_w(c, DATA + 0xc, if seed % 17 == 0 { u32::MAX } else { first });
+                o406_w(c, DATA + 0x100 + 0xc, r.next_u32() % 50);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x100) as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+                c.g[A3][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// `InputParser_EmitUnaryOp`: operand compile, register bookkeeping and the
+    /// error exits.
+    #[test]
+    fn input_parser_emit_unary_op_matches() {
+        const PARSER: u32 = DATA + 0x2_0000;
+        check(
+            ee::s10::f_003250d8__generated,
+            input_parser_emit_unary_op,
+            400,
+            &|c, seed| {
+                let mut r = oc410_machine(c, seed, 0x0032_50d8, 2);
+                c.pc = 0x0032_50d8;
+                c.g[A0][0] = PARSER as u64;
+                c.g[A1][0] = (DATA + 0x600) as u64;
+                c.g[A2][0] = (DATA + 0x700) as u64;
+                c.g[A3][0] = (DATA + 0x800) as u64;
+                let cap = [0xffff_ffffu32, 0, 1, 2, 5][(seed % 5) as usize];
+                c.g[T0][0] = cap as u64;
+                c.g[T1][0] = r.next_u32() as u64;
+                c.g[T2][0] = r.next_u32() as u64;
+                w32_2(c, DATA + 0x604, DATA + 0x900);
+                w32_2(
+                    c,
+                    DATA + 0x700,
+                    if seed % 2 == 0 {
+                        0xffff_fff0
+                    } else {
+                        r.next_u32() % 64
+                    },
+                );
+                w32_2(c, PARSER + 0x1_09e8, r.next_u32() % 4);
+                for k in 0..6 {
+                    w32_2(c, PARSER + 0x1_08ec + 4 * k, r.next_u32() % 64);
+                }
+                let n = [0, 1, 2, 3, 0xffff_ffff][((seed / 5) % 5) as usize];
+                w32_2(c, oc410_result(21), n);
+                w32_2(
+                    c,
+                    oc410_out(21),
+                    [5, 0x3f, 0x40, 0xffff_ffff][((seed / 3) % 4) as usize],
+                );
+            },
+        );
+    }
+
+    /// `InputParser_ParseFunction2`: the first-token error (the current token
+    /// is not `(`), and `(` followed by an empty input (the first operand
+    /// fails to parse). The folding paths need a tokenised expression and are
+    /// not reached by this fixture.
+    #[test]
+    fn input_parser_parse_function_2_matches() {
+        check(
+            ee::s10::f_00324138__generated,
+            input_parser_parse_function_2,
+            24,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x324138, 0);
+                elf_image(c);
+                oc414_env(c);
+                c.pc = 0x0032_4138;
+                let this = DATA + 0x100;
+                c.bus
+                    .write32(this + 0x98, if seed % 3 == 0 { 5 } else { 9 });
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = [20u64, 21, 22, 23][(seed % 4) as usize];
             },
         );
     }

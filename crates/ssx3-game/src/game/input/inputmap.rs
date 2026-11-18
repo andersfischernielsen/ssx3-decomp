@@ -5,6 +5,7 @@ use crate::abi;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
@@ -19,6 +20,7 @@ pub(crate) use crate::game::render::lightman::off;
 pub(crate) use crate::game::render::lightman::Oc49Mem;
 pub(crate) use crate::game::sound::bankmonitor::p;
 use crate::guest::Addr;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -45,6 +47,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0032_16e8,
         input_parser_lookup_button,
         "InputParser_LookupButton",
+    ),
+    (
+        0x0032_0e18,
+        input_map_compile_entry,
+        "InputMap_CompileEntry",
     ),
 ];
 
@@ -680,6 +687,134 @@ pub(crate) fn input_parser_tail(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// InputMap_CompileEntry (0x320e18)
+
+/// `operator new(size, name, align, flags)` (0x317e30).
+pub(crate) const OPERATOR_NEW_NAMED: Callee = Callee {
+    addr: 0x0031_7e30,
+    f: ee::s10::operator_new_named,
+};
+
+/// `EA_MemFree(ptr)` (0x317e98).
+pub(crate) const EA_MEM_FREE_CALLEE: Callee = Callee {
+    addr: 0x0031_7e98,
+    f: ee::s10::EA_MemFree,
+};
+
+/// `cInputMapParser::compileStatement` (0x3245a8).
+pub(crate) const INPUT_PARSER_COMPILE_IDENTIFIER: Callee = Callee {
+    addr: 0x0032_45a8,
+    f: ee::s10::InputParser_CompileIdentifier,
+};
+
+/// `EA_MemCopy(dst, src, bytes)` (0x3e6574; called through the table).
+pub(crate) const EA_MEM_COPY_ADDR: u32 = 0x003e_6574;
+
+/// InputMap fields: offsets table (+4), parser (+8), capacity (+0xc), used
+/// (+0x10), code buffer (+0x14), all in words.
+pub(crate) const INPUT_MAP_OFFSETS: u32 = 0x4;
+
+pub(crate) const INPUT_MAP_PARSER: u32 = 0x8;
+
+pub(crate) const INPUT_MAP_CAP: u32 = 0xc;
+
+pub(crate) const INPUT_MAP_USED: u32 = 0x10;
+
+pub(crate) const INPUT_MAP_CODE: u32 = 0x14;
+
+/// `void InputMap::CompileEntry(this, idx, src)` (0x320e18): grow the opcode
+/// buffer by 0x400 words when less than 0x100 remain, record the current
+/// `used` as `offsets[idx]`, compile the statement at the end of the buffer
+/// and add the words it produced to `used`.
+pub fn input_map_compile_entry(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S3, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S4, 0x10);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(INPUT_MAP_CAP));
+        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(INPUT_MAP_USED));
+        c.g[V0][0] = sx(r32(c, A0).wrapping_sub(r32(c, V0)));
+        c.g[V0][0] = ((c.g[V0][0] as i64) < 256) as u64;
+        let roomy = c.g[V0][0] == 0;
+        c.g[S4][0] = c.g[A2][0];
+        if !roomy {
+            // Fewer than 0x100 words left: allocate a bigger buffer.
+            c.cycles += 10;
+            c.g[S2][0] = sx(r32(c, A0).wrapping_add(0x400));
+            c.g[A1][0] = sx(0x0049_0000u32.wrapping_sub(0x22e0));
+            c.g[A0][0] = sx(r32(c, S2) << 2);
+            c.g[A2][0] = 0x100;
+            c.g[A3][0] = 0;
+            OPERATOR_NEW_NAMED.call(c, 0x0032_0e70)?;
+            c.g[A1][0] = c.lw(r32(c, S0).wrapping_add(INPUT_MAP_CODE));
+            let no_old = c.g[A1][0] == 0;
+            c.g[S1][0] = c.g[V0][0];
+            let mut store_code = true;
+            if !no_old {
+                c.cycles += 7;
+                c.g[A2][0] = c.lw(r32(c, S0).wrapping_add(INPUT_MAP_CAP));
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A2][0] = sx(r32(c, A2) << 2);
+                call_ptr(c, EA_MEM_COPY_ADDR, 0x0032_0e8c)?;
+                c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(INPUT_MAP_CODE));
+                if c.g[A0][0] == 0 {
+                    let new_code = c.g[S1][0];
+                    c.sw(r32(c, S0).wrapping_add(INPUT_MAP_CODE), new_code);
+                    store_code = false;
+                } else {
+                    c.cycles += 2;
+                    EA_MEM_FREE_CALLEE.call(c, 0x0032_0ea0)?;
+                }
+            }
+            if store_code {
+                c.cycles += 1;
+                let new_code = c.g[S1][0];
+                c.sw(r32(c, S0).wrapping_add(INPUT_MAP_CODE), new_code);
+            }
+            c.cycles += 1;
+            let new_cap = c.g[S2][0];
+            c.sw(r32(c, S0).wrapping_add(INPUT_MAP_CAP), new_cap);
+        }
+        c.cycles += 26;
+        c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(INPUT_MAP_OFFSETS));
+        c.g[V0][0] = sx(r32(c, S3) << 2);
+        c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(INPUT_MAP_USED));
+        c.g[A1][0] = c.g[S4][0];
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+        c.g[T0][0] = 5;
+        let used = c.g[A0][0];
+        c.sw(r32(c, V0), used);
+        c.g[A3][0] = c.lw(r32(c, S0).wrapping_add(INPUT_MAP_USED));
+        c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(INPUT_MAP_CAP));
+        c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(INPUT_MAP_CODE));
+        c.g[A2][0] = sx(r32(c, A3) << 2);
+        c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(INPUT_MAP_PARSER));
+        c.g[A3][0] = sx(r32(c, V1).wrapping_sub(r32(c, A3)));
+        c.g[A2][0] = sx(r32(c, V0).wrapping_add(r32(c, A2)));
+        INPUT_PARSER_COMPILE_IDENTIFIER.call(c, 0x0032_0ee4)?;
+        c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(INPUT_MAP_USED));
+        frame.restore(c, S1, 0x40);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        frame.restore(c, S2, 0x30);
+        let used = c.g[V1][0];
+        c.sw(r32(c, S0).wrapping_add(INPUT_MAP_USED), used);
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1008,6 +1143,46 @@ pub(crate) mod tests {
                     c.bus.write8(DATA + 0x900 + i as u32, *b);
                 }
                 c.g[A1][0] = (DATA + 0x900) as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::world::worldview::tests::oc410_machine;
+    pub(crate) use crate::game::world::worldview::tests::oc410_result;
+
+    pub(crate) const IMAP: u32 = DATA + 0x1000;
+
+    /// `InputMap_CompileEntry`: grows the opcode buffer when fewer than 0x100
+    /// words remain, then compiles the statement at the end.
+    #[test]
+    fn input_map_compile_entry_matches() {
+        check(
+            ee::s10::f_00320e18__generated,
+            input_map_compile_entry,
+            300,
+            &|c, seed| {
+                let mut r = oc410_machine(c, seed, 0x0032_0e18, 0);
+                c.pc = 0x0032_0e18;
+                c.g[A0][0] = IMAP as u64;
+                c.g[A1][0] = (seed % 8) as u64;
+                c.g[A2][0] = (DATA + 0x700) as u64;
+                c.bus.write32(IMAP + INPUT_MAP_OFFSETS, DATA + 0x1800);
+                c.bus.write32(IMAP + INPUT_MAP_PARSER, DATA + 0x1900);
+                let used = r.next_u32() % 0x300;
+                let cap = match seed % 4 {
+                    0 => used + 0x100 + r.next_u32() % 0x200,
+                    1 => used + r.next_u32() % 0x100,
+                    2 => used.wrapping_sub(r.next_u32() % 8),
+                    _ => used + 0xff,
+                };
+                c.bus.write32(IMAP + INPUT_MAP_CAP, cap);
+                c.bus.write32(IMAP + INPUT_MAP_USED, used);
+                c.bus.write32(
+                    IMAP + INPUT_MAP_CODE,
+                    if seed % 5 == 0 { 0 } else { DATA + 0x5000 },
+                );
+                c.bus.write32(oc410_result(1), DATA + 0x6000);
+                c.bus.write32(oc410_result(4), r.next_u32() % 40);
             },
         );
     }

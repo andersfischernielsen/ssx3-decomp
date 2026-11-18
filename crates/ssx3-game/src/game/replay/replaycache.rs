@@ -45,6 +45,8 @@ pub(crate) use crate::game::fe::festateloadhint::lqsp;
 pub(crate) use crate::game::fe::festateloadhint::p_3 as p_8;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
 pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_2;
+pub(crate) use crate::game::input::inputparse::o406_lw;
+pub(crate) use crate::game::input::inputparse::o406_sw;
 pub(crate) use crate::game::main::gamemode::gpo;
 pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::lw_r;
@@ -52,6 +54,11 @@ pub(crate) use crate::game::main::gamemode::sp_2;
 pub(crate) use crate::game::main::gamemode::sw_r;
 pub(crate) use crate::game::scripter::ssxscriptengine::p as p_10;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2 as p_3;
+pub(crate) use crate::game::seg::seg_1fbe38::oc417_add;
+pub(crate) use crate::game::seg::seg_1fbe38::oc417_lbu;
+pub(crate) use crate::game::seg::seg_1fbe38::oc417_lh;
+pub(crate) use crate::game::seg::seg_1fbe38::oc417_lw;
+pub(crate) use crate::game::seg::seg_1fbe38::oc417_sw0;
 pub(crate) use crate::game::sound::bankmonitor::p as p_2;
 pub(crate) use crate::game::sound::soundsys::p as p_15;
 use crate::guest::Addr;
@@ -359,6 +366,30 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0027_3698,
         in_seq_ramp_track_update,
         "InSeq_RampTrackUpdate",
+    ),
+    (0x0027_2308, in_seq_heap_alloc, "InSeq_HeapAlloc"),
+    (
+        0x0027_2f28,
+        in_seq_span_track_update,
+        "InSeq_SpanTrackUpdate",
+    ),
+    (
+        0x0027_3330,
+        in_seq_event_track_update,
+        "InSeq_EventTrackUpdate",
+    ),
+    (0x0027_3dc0, in_seq_channel_stop, "InSeq_ChannelStop"),
+    (0x0027_4100, in_seq_channel_advance, "InSeq_ChannelAdvance"),
+    (
+        0x0027_43e8,
+        in_seq_channel_update_tracks,
+        "InSeq_ChannelUpdateTracks",
+    ),
+    (0x0027_4de0, in_seq_instance_tick, "InSeq_InstanceTick"),
+    (
+        0x0027_51a0,
+        in_seq_instance_advance,
+        "InSeq_InstanceAdvance",
     ),
 ];
 
@@ -5480,6 +5511,1433 @@ pub fn in_seq_ramp_track_update(c: &mut Cpu) {
     })
 }
 
+// ------------------------------------------------ InSeq_ChannelUpdateTracks
+
+/// `bool InSeq_ChannelUpdateTracks(InSeqChannel *self, float frame, float dt)`
+/// (0x2743e8): update every track player of the channel (virtual call at
+/// vtable +0x1c with the frame, dt and an output flag word), OR the
+/// flags together and tell the entity communicator (`self+0x2c`), if any,
+/// about them. Returns whether any track reported progress.
+pub fn in_seq_channel_update_tracks(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = 0;
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = 0;
+        frame.save_fpr(c, 21, 0x68);
+        c.g[S3][0] = 0;
+        frame.save_fpr(c, 20, 0x60);
+        c.mov_s(21, 13);
+        frame.save_ra(c, 0x10);
+        c.g[V1][0] = o406_lw(c, S0, 0x1c);
+        let a = (c.g[V1][0] as u32).wrapping_add(2);
+        c.g[V0][0] = c.lbu(a);
+        c.mov_s(20, 12);
+        if c.g[V0][0] != 0 {
+            c.cycles += 1;
+            loop {
+                c.cycles += 22;
+                c.g[V1][0] = o406_lw(c, S0, 0x24);
+                c.g[V0][0] = sx((c.g[S1][0] as u32) << 2);
+                let a = frame.at(c, 0);
+                c.sw(a, 0);
+                c.mov_s(12, 20);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.mov_s(13, 21);
+                c.g[A2][0] = o406_lw(c, V0, 0);
+                c.g[A1][0] = c.g[SP][0];
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                c.g[V1][0] = o406_lw(c, A2, 4);
+                let a = (c.g[V1][0] as u32).wrapping_add(0x18);
+                c.g[A0][0] = c.lh(a);
+                c.g[V0][0] = o406_lw(c, V1, 0x1c);
+                let target = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0027_4468)?;
+                c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
+                c.g[A0][0] = o406_lw(c, S0, 0x1c);
+                c.g[S3][0] |= c.g[V0][0];
+                c.g[V1][0] = c.lw(frame.at(c, 0));
+                let a = (c.g[A0][0] as u32).wrapping_add(2);
+                c.g[V0][0] = c.lbu(a);
+                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let again = c.g[V0][0] != 0;
+                c.g[S2][0] |= c.g[V1][0];
+                if !again {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_4430);
+                }
+            }
+        }
+        c.cycles += 3;
+        c.g[T1][0] = o406_lw(c, S0, 0x2c);
+        c.g[V0][0] = c.g[S3][0];
+        if c.g[T1][0] != 0 {
+            c.cycles += 2;
+            c.g[A1][0] = c.g[S0][0];
+            if c.g[S2][0] != 0 {
+                c.cycles += 9;
+                c.g[V1][0] = o406_lw(c, T1, 0);
+                c.g[T0][0] = o406_lw(c, S0, 0x1c);
+                c.mov_s(12, 20);
+                let a = (c.g[V1][0] as u32).wrapping_add(0x18);
+                c.g[A0][0] = c.lh(a);
+                c.g[A3][0] = c.g[S2][0];
+                c.g[V0][0] = o406_lw(c, V1, 0x1c);
+                let a = (c.g[T0][0] as u32).wrapping_add(3);
+                c.g[A2][0] = c.lbu(a);
+                let target = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0027_44c0)?;
+            }
+            c.cycles += 13;
+            c.g[T0][0] = o406_lw(c, S0, 0x2c);
+            c.g[A1][0] = c.g[S0][0];
+            c.g[V0][0] = o406_lw(c, S0, 0x1c);
+            c.mov_s(12, 20);
+            c.g[V1][0] = o406_lw(c, T0, 0);
+            c.mov_s(13, 21);
+            let a = (c.g[V0][0] as u32).wrapping_add(3);
+            c.g[A2][0] = c.lbu(a);
+            c.g[A3][0] = c.g[S2][0];
+            let a = (c.g[V1][0] as u32).wrapping_add(0x20);
+            c.g[A0][0] = c.lh(a);
+            c.g[V0][0] = o406_lw(c, V1, 0x24);
+            let target = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0027_44f0)?;
+            c.g[V0][0] = c.g[S3][0];
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.restore_fpr(c, 21, 0x68);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ------------------------------------------------- InSeq_EventTrackUpdate
+
+/// `bool InSeq_EventTrackUpdate(EventTrack *self, float time, u32 *flags)`
+/// (0x273330): fire every key (`self+0x14`, a key with its time in the
+/// half-word at +2) that `time` has reached: set bit 0x10 in `*flags`,
+/// fire the key and advance to the next one. Returns whether keys remain.
+pub fn in_seq_event_track_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 21, 0x38);
+        frame.save_ra(c, 0);
+        c.mov_s(21, 12);
+        frame.save_fpr(c, 20, 0x30);
+        let a = (c.g[S0][0] as u32).wrapping_add(0x24);
+        c.lwc1(0, a);
+        c.c_eq_s(0, 21);
+        let same_time = c.fcc();
+        c.g[S1][0] = c.g[A1][0];
+        if !same_time {
+            c.cycles += 2;
+            o406_sw(c, S0, 0x20, ZERO);
+        }
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = o406_lw(c, S0, 0x14);
+            if c.g[V0][0] == 0 {
+                frame.restore(c, S0, 0x20);
+                break;
+            }
+            c.cycles += 7;
+            let a = (c.g[V0][0] as u32).wrapping_add(2);
+            c.g[V0][0] = c.lhu(a);
+            c.mtc1(V0, 20);
+            c.cvt_s_w(20, 20);
+            c.c_lt_s(21, 20);
+            if !c.fcc() {
+                c.g[V0][0] = o406_lw(c, S1, 0);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_3370);
+                }
+                c.cycles += 8;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[V0][0] |= 0x10;
+                o406_sw(c, S1, 0, V0);
+                c.g[A1][0] = o406_lw(c, S0, 0x14);
+                call_ptr(c, 0x0027_3418, 0x0027_3384)?;
+                let a = (c.g[S0][0] as u32).wrapping_add(0x24);
+                c.swc1(20, a);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0027_3468, 0x0027_3390)?;
+                continue;
+            }
+            c.cycles += 2;
+            c.g[V0][0] = o406_lw(c, S0, 0x14);
+            frame.restore(c, S0, 0x20);
+            break;
+        }
+        c.cycles += 7;
+        frame.restore(c, S1, 0x10);
+        c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x38);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ----------------------------------------------------- InSeq_ChannelAdvance
+
+/// `bool InSeq_ChannelAdvance(InSeqChannel *self, float frame, float dt,
+/// ..., int step)` (0x274100): advance the channel by `dt`. With a
+/// non-zero `step` the time is first cut to the nearest key time any track
+/// player (vtable +0x34, returns a frame count) says is ahead, and
+/// `UpdateTracks` runs until the whole time is used or a call reports no
+/// progress. Returns 1 when the channel is finished (`+0x28 == 0`), else
+/// the last `UpdateTracks` result.
+pub fn in_seq_channel_advance(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x10);
+        frame.save_fpr(c, 22, 0x40);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_fpr(c, 21, 0x38);
+        c.mov_s(22, 13);
+        frame.save(c, S0, 0x20);
+        c.mov_s(21, 12);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 23, 0x48);
+        frame.save_fpr(c, 20, 0x30);
+        c.g[V0][0] = o406_lw(c, S1, 0x28);
+        let running = c.g[V0][0] != 0;
+        c.mov_s(13, 14);
+        'end: {
+            if !running {
+                c.cycles += 2;
+                c.g[V0][0] = 1;
+                break 'end;
+            }
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S1][0];
+            let to_last_update = if c.g[A1][0] == 0 {
+                // 0x274200.
+                c.cycles += 1;
+                c.mov_s(12, 22);
+                true
+            } else {
+                c.cycles += 1;
+                c.g[V1][0] = o406_lw(c, S1, 0x1c);
+                'step: loop {
+                    // 0x274158: the smallest positive key distance of any track.
+                    c.cycles += 4;
+                    c.mov_s(20, 22);
+                    let a = (c.g[V1][0] as u32).wrapping_add(2);
+                    c.g[V0][0] = c.lbu(a);
+                    c.g[S0][0] = 0;
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 2;
+                        c.mtc1(0, 23);
+                        c.g[V1][0] = o406_lw(c, S1, 0x24);
+                        loop {
+                            c.cycles += 14;
+                            c.g[V0][0] = sx((c.g[S0][0] as u32) << 2);
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                            c.g[A0][0] = o406_lw(c, V0, 0);
+                            c.g[V1][0] = o406_lw(c, A0, 4);
+                            let a = (c.g[V1][0] as u32).wrapping_add(0x30);
+                            c.g[A1][0] = c.lh(a);
+                            c.g[V0][0] = o406_lw(c, V1, 0x34);
+                            let target = c.g[V0][0] as u32;
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                            call_ptr(c, target, 0x0027_4190)?;
+                            c.mtc1(2, 0);
+                            c.cvt_s_w(0, 0);
+                            c.c_le_s(23, 0);
+                            if !c.fcc() {
+                                c.g[V1][0] = o406_lw(c, S1, 0x1c);
+                            } else {
+                                c.cycles += 4;
+                                c.c_lt_s(0, 20);
+                                if c.fcc() {
+                                    c.mov_s(20, 0);
+                                }
+                                c.cycles += 1;
+                                c.g[V1][0] = o406_lw(c, S1, 0x1c);
+                            }
+                            c.cycles += 5;
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                            let a = (c.g[V1][0] as u32).wrapping_add(2);
+                            c.g[V0][0] = c.lbu(a);
+                            c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                            if c.g[V0][0] == 0 {
+                                break;
+                            }
+                            c.g[V1][0] = o406_lw(c, S1, 0x24);
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0027_4170);
+                            }
+                        }
+                    }
+                    // 0x2741d0.
+                    c.cycles += 4;
+                    c.c_eq_s(20, 22);
+                    let nothing_left = c.fcc();
+                    c.g[A0][0] = c.g[S1][0];
+                    if nothing_left {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0027_4140);
+                        }
+                        // 0x274140.
+                        c.cycles += 3;
+                        c.mov_s(12, 22);
+                        c.sub_s(13, 12, 21);
+                        break 'step true;
+                    }
+                    c.cycles += 6;
+                    c.sub_s(13, 20, 21);
+                    c.mov_s(21, 20);
+                    c.mov_s(12, 21);
+                    call_ptr(c, 0x0027_43e8, 0x0027_41f0)?;
+                    if c.g[V0][0] != 0 {
+                        c.g[V1][0] = o406_lw(c, S1, 0x1c);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0027_4158);
+                        }
+                        continue 'step;
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    break 'step false;
+                }
+            };
+            if to_last_update {
+                c.cycles += 2;
+                call_ptr(c, 0x0027_43e8, 0x0027_420c)?;
+            }
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 23, 0x48);
+        frame.restore_fpr(c, 22, 0x40);
+        frame.restore_fpr(c, 21, 0x38);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ------------------------------------------------- InSeq_InstanceTick
+
+/// The two per-channel loops of `InSeq_InstanceTick` that share one shape:
+/// `flush` true calls `InSeq_ChannelFlushEvents` on every channel (counter
+/// s1, previous result s5, 0x274fc0), false calls `InSeq_ChannelRestart`
+/// (counter s4, previous result s1, 0x275078). A channel reports "progress"
+/// in s2 when its call returns non-zero or the previous one did.
+pub(crate) fn o406_inseq_channel_loop(c: &mut Cpu, flush: bool) -> Flow {
+    // `flush`: the FlushEvents loop (counter s1, offset s3, previous s5, flag
+    // s2) at 0x274fc0; otherwise the Restart loop (counter s4, offset s3,
+    // previous s1, flag s2) at 0x275078.
+    let (counter, prev, call, ret, head) = if flush {
+        (S1, S5, 0x0027_3d20u32, 0x0027_4f90u32, 0x0027_4f80u32)
+    } else {
+        (S4, S1, 0x0027_3f68u32, 0x0027_5048u32, 0x0027_5038u32)
+    };
+    if flush {
+        c.cycles += 4;
+    } else {
+        c.cycles += 5;
+    }
+    c.g[V1][0] = o406_lw(c, S0, 0x10);
+    let a = (c.g[V1][0] as u32).wrapping_add(1);
+    c.g[V0][0] = c.lbu(a);
+    let none = c.g[V0][0] == 0;
+    if !flush {
+        c.g[S4][0] = 0;
+    }
+    c.g[S1][0] = 0;
+    if none {
+        return Ok(());
+    }
+    c.cycles += if flush { 1 } else { 2 };
+    c.g[S3][0] = 0;
+    loop {
+        c.cycles += 6;
+        c.g[A0][0] = o406_lw(c, S0, 0x18);
+        c.g[S2][0] = 0;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S3][0] as u32));
+        call_ptr(c, call, ret)?;
+        if c.g[V0][0] != 0 {
+            c.g[S2][0] = 1;
+            c.cycles += 1;
+            c.g[V1][0] = o406_lw(c, S0, 0x10);
+        } else {
+            c.cycles += 2;
+            if c.g[prev][0] == 0 {
+                c.g[V1][0] = o406_lw(c, S0, 0x10);
+            } else {
+                c.cycles += 1;
+                c.g[S2][0] = 1;
+                c.cycles += 1;
+                c.g[V1][0] = o406_lw(c, S0, 0x10);
+            }
+        }
+        c.cycles += 6;
+        c.g[counter][0] = sx((c.g[counter][0] as u32).wrapping_add(1));
+        c.g[prev][0] = c.g[S2][0];
+        let a = (c.g[V1][0] as u32).wrapping_add(1);
+        c.g[V0][0] = c.lbu(a);
+        c.g[V0][0] = ((c.g[counter][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        let again = c.g[V0][0] != 0;
+        c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x3c));
+        if !again {
+            return Ok(());
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// Call `listener->vtable[off]` (`lh +off` this adjust, `lw +off+4`
+/// function) with `a1 = inst` (the instance), through the listener `s4`:
+/// the notification the tick sends on a state change.
+pub(crate) fn o406_inseq_notify(c: &mut Cpu, voff: u32, ret: u32) -> Flow {
+    c.g[V0][0] = o406_lw(c, S4, 0);
+    c.g[A1][0] = c.g[S0][0];
+    let a = (c.g[V0][0] as u32).wrapping_add(voff);
+    c.g[A0][0] = c.lh(a);
+    c.g[V1][0] = o406_lw(c, V0, voff + 4);
+    let target = c.g[V1][0] as u32;
+    c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, ret)
+}
+
+/// `bool InSeq_InstanceTick(InSeqInstance *self, ...)` (0x274de0): advance a
+/// playing sequence instance (state at +0x20: 0 idle, 1 starting, 2
+/// playing, 3 stopping, 4 finished). Tells the listener about the start,
+/// runs `InstanceAdvance` over the time left (state 3 and 4 clamp to the
+/// length), starts / flushes / restarts the channels, loops the time and
+/// finally stops the instance or reports the end to the listener.
+pub fn in_seq_instance_tick(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S0, 0x70);
+        frame.save(c, S1, 0x60);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x50);
+        frame.save(c, S3, 0x40);
+        frame.save(c, S4, 0x30);
+        frame.save(c, S5, 0x20);
+        frame.save(c, S6, 0x10);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 21, 0x88);
+        frame.save_fpr(c, 20, 0x80);
+        c.g[V0][0] = o406_lw(c, S0, 0x20);
+        'exit: {
+            if c.g[V0][0] == 0 {
+                break 'exit;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = o406_lw(c, S0, 0x2c);
+            if (c.g[V0][0] as i64) > 0 {
+                break 'exit;
+            }
+            c.cycles += 7;
+            call_ptr(c, 0x0027_4d70, 0x0027_4e30)?;
+            c.g[S4][0] = c.g[V0][0];
+            c.g[V1][0] = o406_lw(c, S0, 0x20);
+            c.g[V0][0] = 1;
+            if c.g[V1][0] != c.g[V0][0] {
+                c.g[V0][0] = o406_lw(c, S0, 0x2c);
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 2;
+                o406_sw(c, S0, 0x20, V0);
+                if c.g[S4][0] != 0 {
+                    c.cycles += 6;
+                    o406_inseq_notify(c, 8, 0x0027_4e68)?;
+                }
+                c.cycles += 1;
+                c.g[V0][0] = o406_lw(c, S0, 0x2c);
+            }
+            c.cycles += 2;
+            if (c.g[V0][0] as i64) > 0 {
+                break 'exit;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = o406_lw(c, S0, 0x20);
+            if c.g[V0][0] == 0 {
+                break 'exit;
+            }
+            'stop: {
+                'to_j: {
+                    'g: {
+                        c.cycles += 10;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[S5][0] = 0;
+                        call_ptr(c, 0x0027_4c70, 0x0027_4e8c)?;
+                        c.mtc1(V0, 20);
+                        c.cvt_s_w(20, 20);
+                        c.g[V1][0] = o406_lw(c, S0, 0x20);
+                        c.mtc1(0, 21);
+                        c.g[V0][0] = 4;
+                        c.g[S6][0] = 0;
+                        if c.g[V1][0] == 4 {
+                            c.cycles += 4;
+                            let a = (c.g[S0][0] as u32).wrapping_add(0x28);
+                            c.lwc1(0, a);
+                            c.c_le_s(20, 0);
+                            if c.fcc() {
+                                break 'stop;
+                            }
+                        }
+                        break 'g;
+                    }
+                    'finish: {
+                        'check: {
+                            c.cycles += 4;
+                            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(3));
+                            c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+                            let other_state = c.g[V0][0] == 0;
+                            c.g[V0][0] = 4;
+                            if !other_state {
+                                // State 3 or 4: advance to the end time.
+                                c.cycles += 5;
+                                let a = (c.g[S0][0] as u32).wrapping_add(0x24);
+                                c.lwc1(14, a);
+                                let a = (c.g[S0][0] as u32).wrapping_add(0x28);
+                                c.lwc1(13, a);
+                                c.mov_s(0, 14);
+                                let not_four = c.g[V1][0] != c.g[V0][0];
+                                c.add_s(12, 13, 14);
+                                if !not_four {
+                                    c.cycles += 1;
+                                    c.mov_s(12, 20);
+                                }
+                                c.cycles += 4;
+                                c.c_le_s(20, 12);
+                                let within = !c.fcc();
+                                c.g[V0][0] = 1;
+                                if !within {
+                                    c.cycles += 4;
+                                    c.sub_s(14, 12, 13);
+                                    c.g[S6][0] = 1;
+                                    c.mov_s(12, 20);
+                                    c.sub_s(21, 0, 14);
+                                }
+                                c.cycles += 5;
+                                c.g[A0][0] = c.g[S0][0];
+                                o406_sw(c, S0, 0x3c, V0);
+                                call_ptr(c, 0x0027_51a0, 0x0027_4f0c)?;
+                                o406_sw(c, S0, 0x3c, ZERO);
+                                break 'finish;
+                            }
+                            break 'check;
+                        }
+                        // 0x274f28: any other state starts / flushes the channels.
+                        c.cycles += 5;
+                        c.mtc1(0, 0);
+                        c.c_eq_s(20, 0);
+                        if c.fcc() {
+                            c.g[S6][0] = 1;
+                        }
+                        c.cycles += 6;
+                        c.g[V0][0] = 1;
+                        c.g[V1][0] = o406_lw(c, S0, 0x10);
+                        o406_sw(c, S0, 0x3c, V0);
+                        let a = (c.g[V1][0] as u32).wrapping_add(1);
+                        c.g[V0][0] = c.lbu(a);
+                        let none = c.g[V0][0] == 0;
+                        c.g[S1][0] = 0;
+                        if !none {
+                            c.cycles += 2;
+                            c.g[S2][0] = 0;
+                            loop {
+                                c.cycles += 9;
+                                c.g[A0][0] = o406_lw(c, S0, 0x18);
+                                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                                c.g[A0][0] =
+                                    sx((c.g[A0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                                call_ptr(c, 0x0027_3aa8, 0x0027_4f58)?;
+                                c.g[V1][0] = o406_lw(c, S0, 0x10);
+                                let a = (c.g[V1][0] as u32).wrapping_add(1);
+                                c.g[V0][0] = c.lbu(a);
+                                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                                let again = c.g[V0][0] != 0;
+                                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x3c));
+                                if !again {
+                                    break;
+                                }
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x0027_4f48);
+                                }
+                            }
+                        }
+                        o406_inseq_channel_loop(c, true)?;
+                        c.cycles += 4;
+                        c.g[V0][0] = 3;
+                        o406_sw(c, S0, 0x3c, ZERO);
+                        let no_listener = c.g[S4][0] == 0;
+                        o406_sw(c, S0, 0x20, V0);
+                        if !no_listener {
+                            c.cycles += 8;
+                            c.g[V1][0] = o406_lw(c, S4, 0);
+                            c.g[A1][0] = c.g[S0][0];
+                            c.mtc1(0, 12);
+                            let a = (c.g[V1][0] as u32).wrapping_add(0x10);
+                            c.g[A0][0] = c.lh(a);
+                            c.g[V0][0] = o406_lw(c, V1, 0x14);
+                            c.mov_s(13, 12);
+                            let target = c.g[V0][0] as u32;
+                            c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                            call_ptr(c, target, 0x0027_4ff0)?;
+                        }
+                    }
+                    // 0x274ff0.
+                    c.cycles += 3;
+                    c.g[V0][0] = o406_lw(c, S0, 0x40);
+                    let has_flag = c.g[V0][0] != 0;
+                    c.g[V0][0] = 4;
+                    if has_flag {
+                        break 'stop;
+                    }
+                    c.cycles += 3;
+                    c.g[V1][0] = o406_lw(c, S0, 0x20);
+                    if c.g[V1][0] == c.g[V0][0] {
+                        break 'stop;
+                    }
+                    c.cycles += 2;
+                    if c.g[S6][0] == 0 {
+                        let a = (c.g[S0][0] as u32).wrapping_add(0x28);
+                        c.lwc1(0, a);
+                        break 'to_j;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = o406_lw(c, S0, 0x1c);
+                    if c.g[V0][0] == 0 {
+                        let a = (c.g[S0][0] as u32).wrapping_add(0x28);
+                        c.lwc1(0, a);
+                        break 'to_j;
+                    }
+                    // Loop the sequence: restart the channels and wrap the time.
+                    o406_inseq_channel_loop(c, false)?;
+                    c.cycles += 4;
+                    c.c_lt_s(20, 21);
+                    let skip = !c.fcc();
+                    o406_sw(c, S0, 0x28, ZERO);
+                    if !skip {
+                        c.cycles += 2;
+                        c.sub_s(21, 21, 20);
+                        loop {
+                            c.cycles += 5;
+                            c.c_lt_s(20, 21);
+                            if !c.fcc() {
+                                break;
+                            }
+                            c.sub_s(21, 21, 20);
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0027_5090);
+                            }
+                        }
+                    }
+                    c.cycles += 5;
+                    c.mtc1(0, 0);
+                    c.c_eq_s(21, 0);
+                    if c.fcc() {
+                        c.g[V0][0] = o406_lw(c, S0, 0x40);
+                    } else {
+                        c.cycles += 9;
+                        let a = (c.g[S0][0] as u32).wrapping_add(0x28);
+                        c.lwc1(13, a);
+                        c.g[V0][0] = 1;
+                        o406_sw(c, S0, 0x3c, V0);
+                        c.mov_s(14, 21);
+                        c.add_s(12, 13, 21);
+                        c.g[A0][0] = c.g[S0][0];
+                        call_ptr(c, 0x0027_51a0, 0x0027_50d4)?;
+                        o406_sw(c, S0, 0x3c, ZERO);
+                        c.g[V0][0] = o406_lw(c, S0, 0x40);
+                    }
+                    c.cycles += 2;
+                    if c.g[V0][0] == 0 {
+                        break 'exit;
+                    }
+                    break 'stop;
+                }
+                // 0x2750f4: the time is within the length: end, or keep going.
+                c.cycles += 6;
+                let a = (c.g[S0][0] as u32).wrapping_add(0x24);
+                c.lwc1(1, a);
+                c.add_s(0, 0, 1);
+                c.c_le_s(20, 0);
+                if !c.fcc() {
+                    break 'exit;
+                }
+                c.cycles += 3;
+                c.g[V1][0] = o406_lw(c, S0, 0x1c);
+                let looping = c.g[V1][0] == 0;
+                c.g[V0][0] = 4;
+                if !looping {
+                    c.cycles += 2;
+                    let none = c.g[S4][0] == 0;
+                    c.g[A1][0] = c.g[S0][0];
+                    if !none {
+                        c.cycles += 6;
+                        c.g[V1][0] = o406_lw(c, S4, 0);
+                        let a = (c.g[V1][0] as u32).wrapping_add(0x28);
+                        c.g[A0][0] = c.lh(a);
+                        c.g[V0][0] = o406_lw(c, V1, 0x2c);
+                        let target = c.g[V0][0] as u32;
+                        c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, target, 0x0027_5134)?;
+                        c.g[V1][0] = c.g[V0][0];
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = o406_lw(c, S0, 0x20);
+                    if c.g[V0][0] == 0 {
+                        break 'exit;
+                    }
+                    c.cycles += 2;
+                    if c.g[V1][0] != 0 {
+                        break 'exit;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = 4;
+                }
+                // 0x275150: the sequence has ended: state 4 and tell the listener.
+                c.cycles += 2;
+                let none = c.g[S4][0] == 0;
+                o406_sw(c, S0, 0x20, V0);
+                if !none {
+                    c.cycles += 6;
+                    o406_inseq_notify(c, 0x18, 0x0027_5170)?;
+                }
+                c.cycles += 1;
+                break 'exit;
+            }
+            // 0x2750e4: stop the instance.
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x0027_4918, 0x0027_50ec)?;
+        }
+        c.cycles += 11;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x88);
+        frame.restore_fpr(c, 20, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// InSeq_SpanTrackUpdate (0x00272f28)
+
+/// `InSeq_SpanTrackActivateKey` (0x002730c0).
+pub(crate) const IN_SEQ_SPAN_TRACK_ACTIVATE_KEY_CALL: Callee = Callee {
+    addr: 0x0027_30c0,
+    f: ee::s07::InSeq_SpanTrackActivateKey,
+};
+
+/// `InSeq_SpanTrackNextKey` (0x00273140).
+pub(crate) const IN_SEQ_SPAN_TRACK_NEXT_KEY_CALL: Callee = Callee {
+    addr: 0x0027_3140,
+    f: ee::s07::InSeq_SpanTrackNextKey,
+};
+
+/// `int InSeq::SpanTrackUpdate(this, flags*, time)` (0x272f28): retire the expired cached events (`end <= time`: unlink, flag 8, decrement the count at +0x28), then activate and advance every key record whose time has come (flag 4) until the next one lies in the future. Returns 1 while events or a pending record remain, else 0. `time` is passed in f12.
+pub fn in_seq_span_track_update(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame { size: 0x40 };
+        'b_272fb4: {
+            c.cycles += 12;
+            Frame::open(c, 0x40);
+            frame.save(c, S0, 0x20);
+            frame.save(c, S1, 0x10);
+            c.g[S0][0] = c.g[A0][0];
+            frame.save_fpr(c, 20, 0x30);
+            c.g[S1][0] = c.g[A1][0];
+            frame.save_ra(c, 0);
+            c.mov_s(20, 12);
+            frame.save_fpr(c, 21, 0x38);
+            c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x24));
+            let t = c.g[V1][0] == 0u64;
+            c.g[A0][0] = 0u64;
+            if t {
+                break 'b_272fb4;
+            } else {
+                'l_272f58: loop {
+                    'b_272fac: {
+                        'b_272fa8: {
+                            c.cycles += 6;
+                            c.lwc1(0, r32(c, V1).wrapping_add(0xc));
+                            c.cvt_s_w(0, 0);
+                            c.c_le_s(0, 20);
+                            if !c.fcc() {
+                                c.g[A0][0] = c.g[V1][0];
+                                break 'b_272fa8;
+                            } else {
+                                'b_272f98: {
+                                    'b_272f90: {
+                                        c.cycles += 4;
+                                        c.g[V0][0] = c.lw(r32(c, S1));
+                                        c.g[V0][0] = c.g[V0][0] | 0x8;
+                                        let t = c.g[A0][0] != 0u64;
+                                        c.sw(r32(c, S1), c.g[V0][0]);
+                                        if t {
+                                            break 'b_272f90;
+                                        } else {
+                                            c.cycles += 4;
+                                            c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x18));
+                                            c.g[V1][0] = c.g[V0][0];
+                                            let t = true;
+                                            c.sw(r32(c, S0).wrapping_add(0x24), c.g[V0][0]);
+                                            if t {
+                                                break 'b_272f98;
+                                            } else {
+                                                break 'b_272f90;
+                                            }
+                                        }
+                                    }
+                                    c.cycles += 2;
+                                    c.g[V1][0] = c.lw(r32(c, V1).wrapping_add(0x18));
+                                    c.sw(r32(c, A0).wrapping_add(0x18), c.g[V1][0]);
+                                    break 'b_272f98;
+                                }
+                                c.cycles += 4;
+                                c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x28));
+                                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x1));
+                                let t = true;
+                                c.sw(r32(c, S0).wrapping_add(0x28), c.g[V0][0]);
+                                if t {
+                                    break 'b_272fac;
+                                } else {
+                                    break 'b_272fa8;
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V1][0] = c.lw(r32(c, V1).wrapping_add(0x18));
+                        break 'b_272fac;
+                    }
+                    c.cycles += 2;
+                    let t = c.g[V1][0] != 0u64;
+
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0027_2f58);
+                        }
+                        continue 'l_272f58;
+                    } else {
+                        break 'b_272fb4;
+                    }
+                }
+            }
+        }
+        c.cycles += 3;
+        c.mtc1(0, 21);
+        c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x14));
+        'l_272fc0: loop {
+            'b_273010: {
+                c.cycles += 2;
+                if c.g[V1][0] == 0u64 {
+                    c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x24));
+                    break 'b_273010;
+                } else {
+                    'b_27300c: {
+                        c.cycles += 8;
+                        c.g[V0][0] = c.lhu(r32(c, V1).wrapping_add(0x4));
+                        c.mtc1(2, 0);
+                        c.cvt_s_w(0, 0);
+                        c.sub_s(0, 20, 0);
+                        c.c_le_s(21, 0);
+                        let t = !c.fcc();
+                        c.g[A0][0] = c.g[S0][0];
+                        if t {
+                            break 'b_27300c;
+                        } else {
+                            c.cycles += 9;
+                            c.g[V0][0] = c.lw(r32(c, S1));
+                            c.g[V0][0] = c.g[V0][0] | 0x4;
+                            c.sw(r32(c, S1), c.g[V0][0]);
+                            c.g[A1][0] = c.lw(r32(c, S0).wrapping_add(0x14));
+                            IN_SEQ_SPAN_TRACK_ACTIVATE_KEY_CALL.call(c, 0x0027_2ffc)?;
+                            c.g[A0][0] = c.g[S0][0];
+                            IN_SEQ_SPAN_TRACK_NEXT_KEY_CALL.call(c, 0x0027_3004)?;
+                            let t = true;
+                            c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x14));
+                            if t {
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x0027_2fc0);
+                                }
+                                continue 'l_272fc0;
+                            } else {
+                                break 'b_27300c;
+                            }
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0x24));
+                    break 'b_273010;
+                }
+            }
+            'b_273024: {
+                c.cycles += 2;
+                let t = c.g[V0][0] != 0u64;
+                c.g[V0][0] = 0x1;
+                if t {
+                    break 'b_273024;
+                } else {
+                    c.cycles += 2;
+                    let t = c.g[V1][0] == 0u64;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        break 'b_273024;
+                    } else {
+                        c.cycles += 1;
+                        c.g[V0][0] = 0x1;
+                        break 'b_273024;
+                    }
+                }
+            }
+            c.cycles += 7;
+            frame.restore(c, S0, 0x20);
+            frame.restore(c, S1, 0x10);
+            frame.restore_ra(c, 0);
+            frame.restore_fpr(c, 21, 0x38);
+            frame.restore_fpr(c, 20, 0x30);
+            frame.close(c);
+            return Ok(());
+        }
+    })
+}
+
+// ---------------------------------------------------------------------------
+// InSeq_InstanceAdvance (0x002751a0)
+
+/// `InSeq_ChannelAdvance` (0x00274100).
+pub(crate) const IN_SEQ_CHANNEL_ADVANCE_CALL: Callee = Callee {
+    addr: 0x0027_4100,
+    f: ee::s07::InSeq_ChannelAdvance,
+};
+
+/// `InSeq_InstanceGetListener` (0x00274d70).
+pub(crate) const IN_SEQ_INSTANCE_GET_LISTENER_CALL: Callee = Callee {
+    addr: 0x0027_4d70,
+    f: ee::s07::InSeq_InstanceGetListener,
+};
+
+/// `int InSeq::InstanceAdvance(this, time, prev, speed)` (0x2751a0): store the new time (f12, at +0x28), decide whether the play head jumped (speed above 1 or the integer part of the time changed), advance every channel (0x3c bytes each), and notify the listener (vtable +0x14) of the new time and speed. Returns 1 when any channel changed.
+pub fn in_seq_instance_advance(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame { size: 0x80 };
+        'b_27522c: {
+            'b_275228: {
+                'b_2751f8: {
+                    c.cycles += 20;
+                    Frame::open(c, 0x80);
+                    c.g[AT][0] = 0x3f80_0000;
+                    c.mtc1(1, 0);
+                    frame.save_fpr(c, 21, 0x78);
+                    c.mov_s(21, 14);
+                    frame.save(c, S0, 0x60);
+                    c.c_lt_s(0, 21);
+                    frame.save(c, S4, 0x20);
+                    frame.save(c, S5, 0x10);
+                    c.g[S0][0] = c.g[A0][0];
+                    frame.save_fpr(c, 20, 0x70);
+                    c.g[S5][0] = 0u64;
+                    frame.save(c, S1, 0x50);
+                    c.mov_s(20, 13);
+                    frame.save(c, S2, 0x40);
+                    c.g[S4][0] = 0u64;
+                    frame.save(c, S3, 0x30);
+                    frame.save_ra(c, 0);
+                    let t = !c.fcc();
+                    c.swc1(12, r32(c, S0).wrapping_add(0x28));
+                    if t {
+                        break 'b_2751f8;
+                    } else {
+                        c.cycles += 2;
+                        let t = true;
+                        c.g[S4][0] = 0x1;
+                        if t {
+                            break 'b_275228;
+                        } else {
+                            break 'b_2751f8;
+                        }
+                    }
+                }
+                c.cycles += 10;
+                c.cvt_w_s(0, 12);
+                c.mfc1(2, 0);
+                c.cvt_w_s(0, 20);
+                c.mfc1(3, 0);
+                c.mtc1(2, 0);
+                c.cvt_s_w(0, 0);
+                c.c_eq_s(0, 12);
+                if c.fcc() {
+                    c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x10));
+                    break 'b_27522c;
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[V1][0] ^ c.g[V0][0];
+                    c.g[S4][0] = (0u64 < c.g[V0][0]) as u64;
+                    break 'b_275228;
+                }
+            }
+            c.cycles += 1;
+            c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x10));
+            break 'b_27522c;
+        }
+        'b_275290: {
+            c.cycles += 3;
+            c.g[V0][0] = c.lbu(r32(c, V1).wrapping_add(0x1));
+            let t = c.g[V0][0] == 0u64;
+            c.g[S1][0] = 0u64;
+            if t {
+                break 'b_275290;
+            } else {
+                c.cycles += 2;
+                c.g[S3][0] = 0u64;
+                'l_275240: loop {
+                    'b_275278: {
+                        'b_275274: {
+                            c.cycles += 10;
+                            c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0x18));
+                            c.g[S2][0] = 0u64;
+                            c.lwc1(13, r32(c, S0).wrapping_add(0x28));
+                            c.mov_s(12, 20);
+                            c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, S3)));
+                            c.mov_s(14, 21);
+                            c.g[A1][0] = c.g[S4][0];
+                            IN_SEQ_CHANNEL_ADVANCE_CALL.call(c, 0x0027_5260)?;
+                            if c.g[V0][0] != 0u64 {
+                                c.g[S2][0] = 0x1;
+                                break 'b_275274;
+                            } else {
+                                c.cycles += 2;
+                                if c.g[S5][0] == 0u64 {
+                                    c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x10));
+                                    break 'b_275278;
+                                } else {
+                                    c.cycles += 1;
+                                    c.g[S2][0] = 0x1;
+                                    break 'b_275274;
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[V1][0] = c.lw(r32(c, S0).wrapping_add(0x10));
+                        break 'b_275278;
+                    }
+                    c.cycles += 6;
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(0x1));
+                    c.g[S5][0] = c.g[S2][0];
+                    c.g[V0][0] = c.lbu(r32(c, V1).wrapping_add(0x1));
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S3][0] = sx(r32(c, S3).wrapping_add(0x3c));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0027_5240);
+                        }
+                        continue 'l_275240;
+                    } else {
+                        break 'b_275290;
+                    }
+                }
+            }
+        }
+        'b_2752c0: {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            IN_SEQ_INSTANCE_GET_LISTENER_CALL.call(c, 0x0027_5298)?;
+            c.g[A2][0] = c.g[V0][0];
+            let t = c.g[A2][0] == 0u64;
+            c.g[A1][0] = c.g[S0][0];
+            if t {
+                break 'b_2752c0;
+            } else {
+                c.cycles += 7;
+                c.g[V0][0] = c.lw(r32(c, A2));
+                c.lwc1(12, r32(c, A1).wrapping_add(0x28));
+                c.mov_s(13, 21);
+                c.g[A0][0] = c.lh(r32(c, V0).wrapping_add(0x10));
+                c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x14));
+                let t = c.g[V1][0] as u32;
+                c.g[A0][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
+                call_ptr(c, t, 0x0027_52c0)?;
+                break 'b_2752c0;
+            }
+        }
+        c.cycles += 12;
+        c.g[V0][0] = c.g[S5][0];
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x78);
+        frame.restore_fpr(c, 20, 0x70);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void* InSeq_HeapAlloc(Heap* heap, uint size)` (0x272308): first-fit
+/// allocation from the free list at +8 (size rounded up to 4; a block is
+/// split when it leaves 16 bytes more); returns the block's data or null.
+pub fn in_seq_heap_alloc(c: &mut Cpu) {
+    'b_27239c: {
+        c.cycles += 10;
+        c.g[V0][0] = 0xffffffffffff0000;
+        c.g[T1][0] = c.g[A0][0];
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3));
+        c.g[V0][0] = c.g[V0][0] | 0xfffc;
+        c.g[A1][0] = c.g[A1][0] & c.g[V0][0];
+        c.g[A2][0] = c.lw((c.g[T1][0] as u32).wrapping_add(0x8));
+        c.g[T2][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+        c.g[A3][0] = 0u64;
+        let t = c.g[A2][0] == 0u64;
+        c.g[A0][0] = 0u64;
+        if t {
+            break 'b_27239c;
+        } else {
+            c.cycles += 2;
+            c.g[T0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = c.lw(c.g[A2][0] as u32);
+            'l_272338: loop {
+                'b_272390: {
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[V1][0] < c.g[A1][0]) as u64;
+                    if c.g[V0][0] != 0u64 {
+                        c.g[A3][0] = c.g[A2][0];
+                        break 'b_272390;
+                    } else {
+                        'b_27236c: {
+                            c.cycles += 3;
+                            c.g[V0][0] = (c.g[T2][0] < c.g[V1][0]) as u64;
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+                            if t {
+                                break 'b_27236c;
+                            } else {
+                                c.cycles += 7;
+                                c.g[A0][0] =
+                                    sx((c.g[A2][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x8));
+                                c.sw(c.g[A0][0] as u32, c.g[V0][0]);
+                                c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
+                                c.sw((c.g[A0][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                                c.sw((c.g[A2][0] as u32).wrapping_add(0x4), c.g[A0][0]);
+                                c.sw(c.g[A2][0] as u32, c.g[A1][0]);
+                                break 'b_27236c;
+                            }
+                        }
+                        'b_272388: {
+                            'b_272380: {
+                                c.cycles += 2;
+                                let t = c.g[A3][0] != 0u64;
+                                c.g[A0][0] = c.g[A2][0];
+                                if t {
+                                    break 'b_272380;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
+                                    let t = true;
+                                    c.sw((c.g[T1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                                    if t {
+                                        break 'b_272388;
+                                    } else {
+                                        break 'b_272380;
+                                    }
+                                }
+                            }
+                            c.cycles += 2;
+                            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
+                            c.sw((c.g[A3][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                            break 'b_272388;
+                        }
+                        c.cycles += 2;
+                        let t = true;
+                        c.sw((c.g[A2][0] as u32).wrapping_add(0x4), 0u64);
+                        if t {
+                            break 'b_27239c;
+                        } else {
+                            break 'b_272390;
+                        }
+                    }
+                }
+                c.cycles += 3;
+                c.g[A2][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
+                if c.g[A2][0] != 0u64 {
+                    c.g[V1][0] = c.lw(c.g[A2][0] as u32);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x00272338);
+                    }
+                    continue 'l_272338;
+                } else {
+                    break 'b_27239c;
+                }
+            }
+        }
+    }
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x8));
+    c.pc = t;
+}
+
+// ---------------------------------------------------------------------------
+// InSeq_ChannelStop (0x273dc0)
+
+/// `InSeq_HeapDelete(obj)` (0x2724e8).
+pub(crate) const CHANNEL_STOP_HEAP_DELETE: Callee = Callee {
+    addr: 0x0027_24e8,
+    f: ee::s07::InSeq_HeapDelete,
+};
+
+/// `InSeq_HeapFree(heap, block)` (0x2723a8).
+pub(crate) const CHANNEL_STOP_HEAP_FREE: Callee = Callee {
+    addr: 0x0027_23a8,
+    f: ee::s07::InSeq_HeapFree,
+};
+
+/// Which way `InSeq_ChannelStop` disposes of one channel player.
+#[derive(Clone, Copy)]
+pub(crate) enum ChannelStopCase {
+    /// Kind 0: `InSeq_HeapDelete(player)`.
+    Delete,
+    /// Kinds 1 and 2: `player->vfunc(3)` when the player is not null.
+    ReleaseA,
+    /// Kind 3: the same virtual call (its own copy of the code).
+    ReleaseB,
+    /// Any other kind: nothing.
+    Skip,
+}
+
+/// `void cInSeqChannel::stop()` (0x273dc0): when playing (`+0x28`), tell the
+/// entity comm object (`+0x2c`, a vtable call with the system header's byte
+/// 3), clear it, then for each of the header's channel count (byte 2) stop
+/// the channel player (vtable `+0x4`, entries `0x10/0x14`: stop; the kind
+/// virtual at `0x38/0x3c`: 0 deletes the player, 1-3 call its release
+/// virtual with 3), free the player array from the owner's heap and clear
+/// the playing flag.
+pub fn in_seq_channel_stop(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S0, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = oc417_lw(c, S1, 0x28);
+        let idle = c.g[V0][0] == 0;
+        frame.restore(c, S0, 0x30);
+        'stopped: {
+            if idle {
+                break 'stopped;
+            }
+            c.cycles += 3;
+            c.g[T0][0] = oc417_lw(c, S1, 0x2c);
+            let no_comm = c.g[T0][0] == 0;
+            c.g[A1][0] = c.g[S1][0];
+            if !no_comm {
+                c.cycles += 7;
+                c.g[V0][0] = oc417_lw(c, T0, 0);
+                c.g[V1][0] = oc417_lw(c, S1, 0x1c);
+                c.g[A0][0] = oc417_lh(c, V0, 0x10);
+                c.g[A3][0] = oc417_lw(c, V0, 0x14);
+                c.g[A2][0] = oc417_lbu(c, V1, 3);
+                let target = c.g[A3][0] as u32;
+                c.g[A0][0] = oc417_add(c.g[T0][0], c.g[A0][0]);
+                call_ptr(c, target, 0x0027_3e0c)?;
+            }
+            c.cycles += 5;
+            oc417_sw0(c, S1, 0x2c);
+            c.g[V1][0] = oc417_lw(c, S1, 0x1c);
+            c.g[V0][0] = oc417_lbu(c, V1, 2);
+            if c.g[V0][0] == 0 {
+                oc417_sw0(c, S1, 0x28);
+            } else {
+                c.cycles += 2;
+                c.g[S2][0] = 0;
+                c.cycles += 2;
+                c.g[V0][0] = oc417_lw(c, S1, 0x24);
+                loop {
+                    // Stop the player.
+                    c.cycles += 20;
+                    c.g[S0][0] = sx((c.g[S2][0] as u32) << 2);
+                    c.g[V0][0] = oc417_add(c.g[S0][0], c.g[V0][0]);
+                    c.g[A2][0] = oc417_lw(c, V0, 0);
+                    c.g[V1][0] = oc417_lw(c, A2, 4);
+                    c.g[A0][0] = oc417_lh(c, V1, 0x10);
+                    c.g[A1][0] = oc417_lw(c, V1, 0x14);
+                    let target = c.g[A1][0] as u32;
+                    c.g[A0][0] = oc417_add(c.g[A2][0], c.g[A0][0]);
+                    call_ptr(c, target, 0x0027_3e50)?;
+                    // Ask its kind.
+                    c.g[V0][0] = oc417_lw(c, S1, 0x24);
+                    c.g[V0][0] = oc417_add(c.g[S0][0], c.g[V0][0]);
+                    c.g[A1][0] = oc417_lw(c, V0, 0);
+                    c.g[V1][0] = oc417_lw(c, A1, 4);
+                    c.g[A0][0] = oc417_lh(c, V1, 0x38);
+                    c.g[V0][0] = oc417_lw(c, V1, 0x3c);
+                    let target = c.g[V0][0] as u32;
+                    c.g[A0][0] = oc417_add(c.g[A1][0], c.g[A0][0]);
+                    call_ptr(c, target, 0x0027_3e70)?;
+                    c.g[V1][0] = c.g[V0][0];
+                    c.g[V0][0] = 1;
+                    let is_one = c.g[V1][0] == c.g[V0][0];
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < 2) as u64;
+                    let case = if is_one {
+                        ChannelStopCase::ReleaseA
+                    } else {
+                        c.cycles += 2;
+                        let at_least_two = c.g[V0][0] == 0;
+                        c.g[V0][0] = 2;
+                        if !at_least_two {
+                            c.cycles += 2;
+                            if c.g[V1][0] == 0 {
+                                c.g[V0][0] = oc417_lw(c, S1, 0x24);
+                                ChannelStopCase::Delete
+                            } else {
+                                c.cycles += 2;
+                                c.g[V1][0] = oc417_lw(c, S1, 0x1c);
+                                ChannelStopCase::Skip
+                            }
+                        } else {
+                            c.cycles += 2;
+                            let is_two = c.g[V1][0] == c.g[V0][0];
+                            c.g[V0][0] = 3;
+                            if is_two {
+                                ChannelStopCase::ReleaseA
+                            } else {
+                                c.cycles += 2;
+                                if c.g[V1][0] == c.g[V0][0] {
+                                    c.g[V0][0] = oc417_lw(c, S1, 0x24);
+                                    ChannelStopCase::ReleaseB
+                                } else {
+                                    c.cycles += 2;
+                                    c.g[V1][0] = oc417_lw(c, S1, 0x1c);
+                                    ChannelStopCase::Skip
+                                }
+                            }
+                        }
+                    };
+                    match case {
+                        ChannelStopCase::Delete => {
+                            c.cycles += 5;
+                            c.g[V0][0] = oc417_add(c.g[S0][0], c.g[V0][0]);
+                            c.g[A0][0] = oc417_lw(c, V0, 0);
+                            CHANNEL_STOP_HEAP_DELETE.call(c, 0x0027_3ebc)?;
+                            c.g[V1][0] = oc417_lw(c, S1, 0x1c);
+                        }
+                        ChannelStopCase::ReleaseA => {
+                            c.cycles += 5;
+                            c.g[V0][0] = oc417_lw(c, S1, 0x24);
+                            c.g[V0][0] = oc417_add(c.g[S0][0], c.g[V0][0]);
+                            c.g[A2][0] = oc417_lw(c, V0, 0);
+                            let null = c.g[A2][0] == 0;
+                            c.g[A1][0] = 3;
+                            if null {
+                                c.cycles += 1;
+                                c.g[V1][0] = oc417_lw(c, S1, 0x1c);
+                            } else {
+                                c.cycles += 7;
+                                c.g[V0][0] = oc417_lw(c, A2, 4);
+                                c.g[A0][0] = oc417_lh(c, V0, 0x50);
+                                c.g[V1][0] = oc417_lw(c, V0, 0x54);
+                                let target = c.g[V1][0] as u32;
+                                c.g[A0][0] = oc417_add(c.g[A2][0], c.g[A0][0]);
+                                call_ptr(c, target, 0x0027_3eec)?;
+                                c.g[V1][0] = oc417_lw(c, S1, 0x1c);
+                            }
+                        }
+                        ChannelStopCase::ReleaseB => {
+                            c.cycles += 4;
+                            c.g[V0][0] = oc417_add(c.g[S0][0], c.g[V0][0]);
+                            c.g[A2][0] = oc417_lw(c, V0, 0);
+                            let null = c.g[A2][0] == 0;
+                            c.g[A1][0] = 3;
+                            if !null {
+                                c.cycles += 5;
+                                c.g[V0][0] = oc417_lw(c, A2, 4);
+                                c.g[A0][0] = oc417_lh(c, V0, 0x50);
+                                c.g[V1][0] = oc417_lw(c, V0, 0x54);
+                                let target = c.g[V1][0] as u32;
+                                c.g[A0][0] = oc417_add(c.g[A2][0], c.g[A0][0]);
+                                call_ptr(c, target, 0x0027_3f18)?;
+                            }
+                            c.cycles += 1;
+                            c.g[V1][0] = oc417_lw(c, S1, 0x1c);
+                        }
+                        ChannelStopCase::Skip => {}
+                    }
+                    // Next player.
+                    c.cycles += 5;
+                    c.g[S2][0] = oc417_add(c.g[S2][0], 1);
+                    c.g[V0][0] = oc417_lbu(c, V1, 2);
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[V0][0] = oc417_lw(c, S1, 0x24);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0027_3e30);
+                        }
+                        continue;
+                    }
+                    break;
+                }
+                // Free the player array.
+                c.cycles += 7;
+                c.g[V0][0] = oc417_lw(c, S1, 8);
+                c.g[A1][0] = oc417_lw(c, S1, 0x24);
+                c.g[A0][0] = oc417_lw(c, V0, 8);
+                c.g[A0][0] = oc417_add(c.g[A0][0], 8);
+                CHANNEL_STOP_HEAP_FREE.call(c, 0x0027_3f44)?;
+                oc417_sw0(c, S1, 0x24);
+                oc417_sw0(c, S1, 0x28);
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8027,6 +9485,385 @@ pub(crate) mod tests {
                 c.bus.write32(this + 0x1c, pool);
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(flags);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::input::inputparse::tests::o406_w;
+
+    pub(crate) use crate::game::input::inputparse::tests::o406_base;
+    pub(crate) use crate::game::input::inputparse::tests::o406_results;
+
+    pub(crate) use crate::game::ai::rider::tests::w32_2;
+    pub(crate) use crate::game::world::worldview::tests::oc410_machine;
+    pub(crate) use crate::game::world::worldview::tests::oc410_out;
+    pub(crate) use crate::game::world::worldview::tests::oc410_result;
+
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::oc417_machine;
+
+    // ------------------------------------------------ InSeq channel updates
+
+    /// A channel at `DATA`: header (+0x1c: byte +2 track count, byte +3
+    /// type), the track player array (+0x24), a communicator (+0x2c) whose
+    /// vtable entries (+0x1c, +0x24) are fakes. Each track player's vtable
+    /// (+0x1c tick, +0x34 key distance) points at `FAKE`/`FAKE + 0x30`.
+    pub(crate) fn o406_channel(c: &mut Cpu, r: &mut Rng, tracks: u32) {
+        let hdr = DATA + 0x100;
+        let array = DATA + 0x200;
+        let vtbl = DATA + 0x500;
+        let comm_vt = DATA + 0x600;
+        o406_w(c, DATA + 0x1c, hdr);
+        c.bus.write8(hdr + 2, tracks as u8);
+        c.bus.write8(hdr + 3, (r.next_u32() % 4) as u8);
+        o406_w(c, DATA + 0x24, array);
+        for i in 0..tracks {
+            let player = DATA + 0x300 + 0x40 * i;
+            o406_w(c, array + 4 * i, player);
+            o406_w(c, player + 4, vtbl);
+        }
+        c.bus.write16(vtbl + 0x18, 0x10);
+        o406_w(c, vtbl + 0x1c, fakes::FAKE);
+        c.bus.write16(vtbl + 0x30, 0x20);
+        o406_w(c, vtbl + 0x34, fakes::FAKE + 0x30);
+        let comm = if r.next_u32() % 4 == 0 {
+            0
+        } else {
+            DATA + 0x580
+        };
+        o406_w(c, DATA + 0x2c, comm);
+        o406_w(c, DATA + 0x580, comm_vt);
+        c.bus.write16(comm_vt + 0x18, 0x8);
+        o406_w(c, comm_vt + 0x1c, fakes::FAKE + 0x10);
+        c.bus.write16(comm_vt + 0x20, 0x8);
+        o406_w(c, comm_vt + 0x24, fakes::FAKE + 0x20);
+    }
+
+    /// Tick results the track players give: progress or none, and flag words.
+    pub(crate) fn o406_tick_results(c: &mut Cpu, r: &mut Rng) {
+        let mut values = vec![];
+        for _ in 0..10 {
+            values.push([0u64, 1, 1, 5][(r.next_u32() % 4) as usize]);
+            values.push([0u64, 0, 1, 0x10][(r.next_u32() % 4) as usize]);
+        }
+        o406_results(c, &values);
+    }
+
+    /// Run every track's tick (vtable call), OR the flags and notify the
+    /// communicator (0 to 3 tracks, with and without a communicator).
+    #[test]
+    fn in_seq_channel_update_tracks_matches() {
+        fakes::covered(
+            ee::s07::f_002743e8__generated,
+            in_seq_channel_update_tracks,
+            200,
+            &|c, seed| {
+                let mut r = o406_base(c, seed, 0x2743e8, 6, 0x0027_43e8);
+                let tracks = r.next_u32() % 4;
+                o406_channel(c, &mut r, tracks);
+                o406_tick_results(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.f[12] = r.f32(100.0);
+                c.f[13] = r.f32(2.0);
+            },
+        );
+    }
+
+    /// Advance a channel: stopped (`+0x28 == 0`), without a step, and with
+    /// one: the key distances (fake `FAKE + 0x30`) clamp the time, the real
+    /// `UpdateTracks` runs until the time is used or reports no progress.
+    #[test]
+    fn in_seq_channel_advance_matches() {
+        fakes::covered(
+            ee::s07::f_00274100__generated,
+            in_seq_channel_advance,
+            200,
+            &|c, seed| {
+                let mut r = o406_base(c, seed, 0x274100, 12, 0x0027_4100);
+                let tracks = r.next_u32() % 3;
+                o406_channel(c, &mut r, tracks);
+                o406_tick_results(c, &mut r);
+                // Key distances after the tick answers: small counts.
+                let mut values = vec![];
+                for i in 0..24 {
+                    values.push(if i % 3 == 0 {
+                        [0u64, 1, 2, 3, 6][(r.next_u32() % 5) as usize]
+                    } else if i % 3 == 1 {
+                        r.next_u32() as u64 % 2
+                    } else {
+                        r.next_u32() as u64 % 0x20
+                    });
+                }
+                o406_results(c, &values);
+                o406_w(c, DATA + 0x28, if seed % 7 == 0 { 0 } else { 1 });
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = if seed % 5 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64 | 1
+                };
+                c.f[12] = r.f32(10.0);
+                c.f[13] = r.f32(5.0);
+                c.f[14] = r.f32(5.0);
+            },
+        );
+    }
+
+    /// Event track: the keys (halfword time at +2) at `DATA + 0x300`.
+    pub(crate) fn o406_event_track(c: &mut Cpu, r: &mut Rng) {
+        let n = 1 + r.next_u32() % 4;
+        let mut t = r.next_u32() % 3;
+        let mut next = vec![];
+        for i in 0..n {
+            let key = DATA + 0x300 + 0x10 * i;
+            c.bus.write16(key + 2, t as u16);
+            t += r.next_u32() % 3;
+            next.push((key + 0x10) as u64);
+        }
+        // The chain ends (the key after the last is null).
+        let last = next.len() - 1;
+        next[last] = 0;
+        o406_results(c, &next);
+        o406_w(c, DATA + 0x14, DATA + 0x300);
+        if r.next_u32() % 6 == 0 {
+            o406_w(c, DATA + 0x14, 0);
+        }
+        c.f[12] = ((r.next_u32() % 12) as f32).to_bits();
+        let t = c.f[12];
+        o406_w(
+            c,
+            DATA + 0x24,
+            if r.next_u32() % 3 == 0 { t } else { r.f32(5.0) },
+        );
+    }
+
+    /// Fire the keys the time has reached (the fire/advance callees are
+    /// fakes; the next-key fake feeds the chain).
+    #[test]
+    fn in_seq_event_track_update_matches() {
+        fakes::covered(
+            ee::s07::f_00273330__generated,
+            in_seq_event_track_update,
+            200,
+            &|c, seed| {
+                let mut r = o406_base(c, seed, 0x273330, 6, 0x0027_3330);
+                o406_event_track(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x80) as u64;
+                o406_w(c, DATA + 0x80, r.next_u32() & !0x10);
+            },
+        );
+    }
+
+    // ------------------------------------------------------ InSeq_InstanceTick
+
+    /// An instance at `DATA`: state at +0x20, delay +0x2c, channel table
+    /// header +0x10 (byte +1 = channel count) with channels (0x3c each) at
+    /// +0x18, flag +0x1c, times +0x24/+0x28, +0x40, listener from the fake.
+    #[test]
+    fn in_seq_instance_tick_matches() {
+        fakes::covered(
+            ee::s07::f_00274de0__generated,
+            in_seq_instance_tick,
+            300,
+            &|c, seed| {
+                let mut r = o406_base(c, seed, 0x274de0, 8, 0x0027_4de0);
+                let listener = DATA + 0x700;
+                let l_vt = DATA + 0x780;
+                o406_w(c, listener, l_vt);
+                for off in [8u32, 0x10, 0x18, 0x28] {
+                    c.bus.write16(l_vt + off, 0x4);
+                    o406_w(c, l_vt + off + 4, fakes::FAKE + 0x10 + off);
+                }
+                // Results: listener, length, then channel flush answers.
+                let mut values = vec![];
+                values.push(if r.next_u32() % 4 == 0 {
+                    0
+                } else {
+                    listener as u64
+                });
+                values.push([4u64, 4, 8, 12][(r.next_u32() % 4) as usize]);
+                for _ in 0..6 {
+                    values.push(r.next_u32() as u64 % 2);
+                }
+                o406_results(c, &values);
+                let states = [0u32, 1, 2, 3, 4, 2, 3, 1];
+                o406_w(c, DATA + 0x20, states[(seed % 8) as usize]);
+                o406_w(c, DATA + 0x2c, if seed % 9 == 0 { 3 } else { 0 });
+                let hdr = DATA + 0x100;
+                o406_w(c, DATA + 0x10, hdr);
+                c.bus.write8(hdr + 1, (seed % 3 == 0) as u8);
+                o406_w(c, DATA + 0x18, DATA + 0x200);
+                o406_w(c, DATA + 0x1c, (seed % 3 == 0) as u32);
+                o406_w(c, DATA + 0x24, r.f32(3.0));
+                o406_w(c, DATA + 0x28, r.f32(12.0) & 0x7fff_ffff);
+                o406_w(c, DATA + 0x40, (seed % 5 == 0) as u32);
+                c.g[A0][0] = DATA as u64;
+            },
+        );
+    }
+
+    /// `InSeq_SpanTrackUpdate`: expired events are unlinked, due key records
+    /// activated and advanced.
+    #[test]
+    fn in_seq_span_track_update_matches() {
+        const THIS: u32 = DATA + 0x1000;
+        const FLAGS: u32 = DATA + 0x500;
+        const EVENTS: u32 = DATA + 0x2000;
+        const REC0: u32 = DATA + 0x3000;
+        const REC1: u32 = DATA + 0x3100;
+        check(
+            ee::s07::f_00272f28__generated,
+            in_seq_span_track_update,
+            300,
+            &|c, seed| {
+                let mut r = oc410_machine(c, seed, 0x0027_2f28, 4);
+                c.pc = 0x0027_2f28;
+                c.g[A0][0] = THIS as u64;
+                c.g[A1][0] = FLAGS as u64;
+                c.f[12] = ((r.next_u32() % 100) as f32 + 0.5).to_bits();
+                w32_2(c, FLAGS, r.next_u32());
+                let n = seed % 4;
+                w32_2(c, THIS + 0x24, if n == 0 { 0 } else { EVENTS });
+                w32_2(c, THIS + 0x28, r.next_u32() % 8);
+                for i in 0..n {
+                    let ev = EVENTS + 0x40 * i;
+                    w32_2(c, ev + 0xc, r.next_u32() % 100);
+                    w32_2(c, ev + 0x18, if i + 1 < n { ev + 0x40 } else { 0 });
+                }
+                w32_2(c, THIS + 0x14, if seed % 3 == 0 { 0 } else { REC0 });
+                c.bus.write16(REC0 + 4, (r.next_u32() % 100) as u16);
+                c.bus.write16(REC1 + 4, 65000);
+                // The key reader moves on to a future record, or to none.
+                w32_2(c, oc410_out(20), if seed % 2 == 0 { 0 } else { REC1 });
+            },
+        );
+    }
+
+    /// `InSeq_InstanceAdvance`: jump decision, channel loop (real
+    /// `InSeq_ChannelAdvance` on empty channels) and the listener call.
+    #[test]
+    fn in_seq_instance_advance_matches() {
+        const THIS: u32 = DATA + 0x1000;
+        const HDR: u32 = DATA + 0x1100;
+        const TRACKS: u32 = DATA + 0x2000;
+        const EMPTY_HDR: u32 = DATA + 0x5000;
+        const LISTENER: u32 = DATA + 0x6000;
+        check(
+            ee::s07::f_002751a0__generated,
+            in_seq_instance_advance,
+            400,
+            &|c, seed| {
+                let mut r = oc410_machine(c, seed, 0x0027_51a0, 2);
+                c.pc = 0x0027_51a0;
+                c.g[A0][0] = THIS as u64;
+                let frac = |r: &mut Rng| if r.next_u32() & 1 == 0 { 0.0 } else { 0.5 };
+                let time = (r.next_u32() % 50) as f32 + frac(&mut r);
+                let prev = (r.next_u32() % 50) as f32 + frac(&mut r);
+                c.f[12] = time.to_bits();
+                c.f[13] = prev.to_bits();
+                c.f[14] = [0.5f32, 1.0, 2.0][(seed % 3) as usize].to_bits();
+                w32_2(c, THIS + 0x10, HDR);
+                let channels = (seed / 3) % 4;
+                c.bus.write8(HDR + 1, channels as u8);
+                w32_2(c, THIS + 0x18, TRACKS);
+                for i in 0..channels {
+                    let ch = TRACKS + 0x3c * i;
+                    w32_2(c, ch + 0x28, if r.next_u32() & 1 == 0 { 0 } else { 1 });
+                    w32_2(c, ch + 0x1c, EMPTY_HDR);
+                    w32_2(c, ch + 0x2c, 0);
+                }
+                let listener = if seed % 5 == 0 { 0 } else { LISTENER };
+                w32_2(c, oc410_result(24), listener);
+                let vt = fakes::vtable(c, &mut r, &[0x10]);
+                w32_2(c, LISTENER, vt);
+            },
+        );
+    }
+
+    /// `InSeq_HeapAlloc`: free lists of 0..3 blocks of assorted sizes against
+    /// requests that fit exactly, split a block, or fit nowhere.
+    #[test]
+    fn in_seq_heap_alloc_matches() {
+        check(
+            ee::s07::f_00272308__generated,
+            in_seq_heap_alloc,
+            120,
+            &|c, seed| {
+                let mut r = Rng(0x2723_0800 ^ seed as u64);
+                scramble(c, &mut r);
+                let heap = DATA;
+                let blocks = [DATA + 0x100, DATA + 0x200, DATA + 0x300];
+                let n = (seed % 4) as usize;
+                c.bus.write32(heap + 8, if n == 0 { 0 } else { blocks[0] });
+                for i in 0..n {
+                    let size = [8u32, 16, 40, 100, 200, 4][r.next_u32() as usize % 6];
+                    c.bus.write32(blocks[i], size);
+                    c.bus
+                        .write32(blocks[i] + 4, if i + 1 < n { blocks[i + 1] } else { 0 });
+                }
+                let want = [1u32, 4, 8, 13, 24, 40, 90, 150][r.next_u32() as usize % 8];
+                c.g[A0][0] = sx(heap);
+                c.g[A1][0] = if seed % 5 == 0 {
+                    want as u64 | ((r.next_u32() as u64) << 32)
+                } else {
+                    want as u64
+                };
+            },
+        );
+    }
+
+    // ----------------------------------------------------------------------
+    // InSeq_ChannelStop
+
+    /// A channel with up to three players of every kind (0 delete, 1-3
+    /// release, others nothing; the kind virtual is `0x27c958`, which reads
+    /// `obj+0x20`, so the fixture chooses the kind), with or without the
+    /// entity comm object, playing or idle, 0-3 players.
+    #[test]
+    fn in_seq_channel_stop_matches() {
+        const CHAN: u32 = DATA + 0x1000;
+        const COMM: u32 = DATA + 0x1200;
+        const HEADER: u32 = DATA + 0x1400;
+        const PLAYERS: u32 = DATA + 0x1600;
+        const OWNER: u32 = DATA + 0x1800;
+        const HEAP: u32 = DATA + 0x1900;
+        const COMM_VT: u32 = DATA + 0x3200;
+        const PLAYER_VT: u32 = DATA + 0x3000;
+        check(
+            ee::s07::f_00273dc0__generated,
+            in_seq_channel_stop,
+            300,
+            &|c, seed| {
+                let mut r = oc417_machine(c, seed, 0x4170_0006, 8);
+                c.pc = 0x0027_3dc0;
+                c.bus
+                    .write32(CHAN + 0x28, if seed % 7 == 6 { 0 } else { 1 });
+                c.bus
+                    .write32(CHAN + 0x2c, if seed % 3 == 0 { 0 } else { COMM });
+                c.bus.write32(COMM, COMM_VT);
+                c.bus.write16(COMM_VT + 0x10, (r.next_u32() % 4 * 4) as u16);
+                c.bus.write32(COMM_VT + 0x14, fakes::FAKE + 0x40);
+                c.bus.write32(CHAN + 0x1c, HEADER);
+                c.bus.write8(HEADER + 2, (seed / 3 % 4) as u8);
+                c.bus.write8(HEADER + 3, r.next_u32() as u8);
+                c.bus.write32(CHAN + 0x24, PLAYERS);
+                c.bus.write32(CHAN + 8, OWNER);
+                c.bus.write32(OWNER + 8, HEAP);
+                c.bus.write32(HEAP + 8, r.next_u32());
+                c.bus.write16(PLAYER_VT + 0x10, 0);
+                c.bus.write32(PLAYER_VT + 0x14, fakes::FAKE);
+                c.bus.write16(PLAYER_VT + 0x38, 0);
+                c.bus.write32(PLAYER_VT + 0x3c, 0x0027_c958);
+                c.bus.write16(PLAYER_VT + 0x50, 0);
+                c.bus.write32(PLAYER_VT + 0x54, fakes::FAKE + 0x10);
+                for i in 0..3u32 {
+                    let obj = DATA + 0x2000 + 0x100 * i;
+                    c.bus.write32(PLAYERS + 4 * i, obj);
+                    c.bus.write32(obj + 4, PLAYER_VT);
+                    c.bus
+                        .write32(obj + 0x20, (seed / 12 + i * 2 + r.next_u32() % 3) % 6);
+                }
+                c.g[A0][0] = CHAN as u64;
             },
         );
     }

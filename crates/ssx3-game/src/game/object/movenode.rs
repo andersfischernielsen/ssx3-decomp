@@ -316,6 +316,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         parent_modifier_update_transform,
         "ParentModifier_UpdateTransform",
     ),
+    (0x0035_7538, magnet_modifier_v21, "MagnetModifier_v21"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5185,6 +5186,119 @@ pub fn mod_obj_v05(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// MagnetModifier_v21 (0x357538)
+
+/// The initial-value quad the magnet modifier writes into both transform
+/// rows of every contact it creates (`.rodata` at 0x4ff120).
+#[cfg(test)]
+pub(crate) const MAGNET_CONTACT_INIT_QUAD: u32 = 0x004f_f120;
+
+/// `int cMagnetModifier::intersect(this, obj, contacts, ctx, flags)`
+/// (0x357538): when `flags & 1`, copy the modifier's two vectors (+0x20,
+/// +0x30; three floats each) to the stack and ask `obj`'s collision object
+/// (vtable `+0x3c`, `this` adjusted by the halfword at `+0x38`) for its
+/// contacts. Every contact (0x80 bytes, written into `contacts`) is then
+/// initialised: both vector rows from the constant quad, state 1, and the
+/// modifier's value at `this+0xa0` in `+0x50`. Returns the contact count.
+pub fn magnet_modifier_v21(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = c.g[A1][0];
+        frame.save(c, S0, 0x40);
+        c.g[T0][0] &= 1;
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        c.g[S1][0] = c.g[A2][0];
+        let wanted = c.g[T0][0] != 0;
+        c.g[T1][0] = 0;
+        if wanted {
+            c.cycles += 24;
+            c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x50));
+            c.g[T0][0] = c.g[A3][0];
+            c.lwc1(5, r32(c, S0).wrapping_add(0x20));
+            c.g[A1][0] = c.g[SP][0];
+            c.lwc1(3, r32(c, S0).wrapping_add(0x24));
+            c.g[A2][0] = sx(sp(c).wrapping_add(0x10));
+            c.lwc1(4, r32(c, S0).wrapping_add(0x28));
+            c.lwc1(0, r32(c, S0).wrapping_add(0x30));
+            c.lwc1(1, r32(c, S0).wrapping_add(0x34));
+            c.lwc1(2, r32(c, S0).wrapping_add(0x38));
+            c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x38));
+            c.swc1(5, sp(c));
+            c.swc1(3, sp(c).wrapping_add(0x4));
+            c.g[A0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+            c.swc1(4, sp(c).wrapping_add(0x8));
+            c.swc1(0, sp(c).wrapping_add(0x10));
+            c.swc1(1, sp(c).wrapping_add(0x14));
+            c.swc1(2, sp(c).wrapping_add(0x18));
+            c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x3c));
+            let method = r32(c, V0);
+            c.g[A3][0] = c.g[S1][0];
+            call_ptr(c, method, 0x0035_75b4)?;
+            c.g[T1][0] = c.g[V0][0];
+            let none = (c.g[T1][0] as i64) <= 0;
+            c.g[V0][0] = 0x0050_0000;
+            if !none {
+                c.cycles += 6;
+                c.g[A2][0] = c.g[S1][0];
+                c.g[T0][0] = sx(r32(c, V0).wrapping_sub(0xee0));
+                c.g[A3][0] = u64::MAX;
+                c.g[T3][0] = 2;
+                c.g[T2][0] = 1;
+                c.g[A1][0] = c.g[T1][0];
+                loop {
+                    c.cycles += 27;
+                    let contact = r32(c, A2);
+                    let quad = r32(c, T0);
+                    c.sw(contact.wrapping_add(0x50), 0);
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_sub(1));
+                    c.sw(contact.wrapping_add(0x5c), c.g[A3][0]);
+                    c.sw(contact.wrapping_add(0x44), c.g[T3][0]);
+                    c.sw(contact.wrapping_add(0x54), 0);
+                    c.sw(contact.wrapping_add(0x58), 0);
+                    c.sw(contact.wrapping_add(0x60), c.g[A3][0]);
+                    c.sw(contact.wrapping_add(0x64), c.g[A3][0]);
+                    c.sw(contact.wrapping_add(0x4c), c.g[A3][0]);
+                    c.lq(2, quad);
+                    c.sq(2, contact.wrapping_add(0x20));
+                    c.lq(3, quad);
+                    c.sw(contact.wrapping_add(0x68), 0);
+                    c.sq(3, contact.wrapping_add(0x30));
+                    c.sw(contact.wrapping_add(0x6c), 0);
+                    c.sw(contact.wrapping_add(0x70), 0);
+                    c.sw(contact.wrapping_add(0x44), c.g[T2][0]);
+                    c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0xa0));
+                    c.sw(contact.wrapping_add(0x5c), 0);
+                    c.sw(contact.wrapping_add(0x50), c.g[V0][0]);
+                    c.sw(contact.wrapping_add(0x48), 0);
+                    c.lq(2, quad);
+                    c.sq(2, contact.wrapping_add(0x20));
+                    c.lq(3, quad);
+                    c.sq(3, contact.wrapping_add(0x30));
+                    let more = c.g[A1][0] != 0;
+                    c.g[A2][0] = sx(contact.wrapping_add(0x80));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0035_75d8);
+                    }
+                }
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x40);
+        c.g[V0][0] = c.g[T1][0];
+        frame.restore(c, S1, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8291,6 +8405,53 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(DATA + 0x2000);
                 c.g[A2][0] = (r.next_u32() & 0xff) as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::world::worldview::tests::oc410_machine;
+
+    pub(crate) const MAGNET_THIS: u32 = DATA + 0x1000;
+
+    pub(crate) const MAGNET_OBJ: u32 = DATA + 0x2000;
+
+    pub(crate) const MAGNET_OUT: u32 = DATA + 0x4000;
+
+    /// `MagnetModifier_v21`: the contact query through the object's vtable and
+    /// the initialisation of every returned contact.
+    #[test]
+    fn magnet_modifier_v21_matches() {
+        check(
+            ee::s11::f_00357538__generated,
+            magnet_modifier_v21,
+            300,
+            &|c, seed| {
+                let mut r = oc410_machine(c, seed, 0x0035_7538, 1);
+                c.pc = 0x0035_7538;
+                c.g[A0][0] = MAGNET_THIS as u64;
+                c.g[A1][0] = MAGNET_OBJ as u64;
+                c.g[A2][0] = MAGNET_OUT as u64;
+                c.g[A3][0] = r.next_u32() as u64;
+                // Bit 0 of the fifth argument selects the contact query.
+                c.g[T0][0] = if seed % 4 == 3 {
+                    r.next_u32() as u64 & !1
+                } else {
+                    r.next_u32() as u64 | 1
+                };
+                for k in 0..0x30 {
+                    c.bus.write32(MAGNET_THIS + 0x20 + 4 * k, r.next_u32());
+                }
+                c.bus.write32(MAGNET_THIS + 0xa0, r.next_u32());
+                let vt = fakes::vtable(c, &mut r, &[0x38]);
+                c.bus.write32(MAGNET_OBJ + 0x50, vt);
+                // The fake method returns 1..4 contacts; a real leaf returns 0.
+                if seed % 5 == 0 {
+                    c.bus.write32(vt + 0x3c, 0x0014_06c0);
+                } else {
+                    c.bus.write32(fakes::LOG_RESULTS, 1 + seed % 4);
+                }
+                let quad = [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()];
+                crate::difftest::put_vec(c, MAGNET_CONTACT_INIT_QUAD, quad);
             },
         );
     }

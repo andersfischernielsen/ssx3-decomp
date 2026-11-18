@@ -28,6 +28,8 @@ pub(crate) use crate::game::fe::fepopup::sq;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw_2;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw as lw_2;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
+pub(crate) use crate::game::input::inputparse::o406_lw;
+pub(crate) use crate::game::input::inputparse::o406_sw;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_at;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_sll;
@@ -216,6 +218,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0033_9598,
         cell_gather_type2_recursive,
         "Cell_GatherType2Recursive",
+    ),
+    (
+        0x0033_dbe8,
+        cell_collide_column_recursive,
+        "Cell_CollideColumnRecursive",
     ),
 ];
 
@@ -16280,6 +16287,223 @@ pub fn cell_gather_type2_recursive(c: &mut Cpu) {
     })
 }
 
+// ------------------------------------------- Cell_CollideColumnRecursive
+
+/// Recurse into one octree child: `Cell_CollideColumnRecursive(a0 = s6,
+/// query s4, inside query s2, ctx s5, node = t0, cell = sp)`.
+pub(crate) fn o406_collide_child(c: &mut Cpu, ret: u32) -> Flow {
+    c.cycles += 6;
+    c.g[A0][0] = c.g[S6][0];
+    c.g[A1][0] = c.g[S4][0];
+    c.g[A2][0] = c.g[S2][0];
+    c.g[A3][0] = c.g[S5][0];
+    c.g[T1][0] = c.g[SP][0];
+    call_ptr(c, 0x0033_dbe8, ret)
+}
+
+/// `void Cell_CollideColumnRecursive(int flag, Query *q, Query *inside,
+/// Ctx *ctx, OctNode *node, Cell *cell)` (0x33dbe8): walk the collision
+/// octree against the query box. The cell (level +0, x +4, y +8, z +0xc)
+/// is classified against the ctx box (float compares of the cell's
+/// min/max); a cell the box only partly covers (class 2) collides the node's
+/// two object lists (`Cell_CollideInstance`, `Cell_CollideObject`) and, unless
+/// at the finest level 11, recurses into the eight children with the
+/// sub-cell (level - 1, coordinates doubled and offset per child).
+///
+/// The generated classification only ever yields 1 (outside) or 2
+/// (partial): the original's "fully inside" branch (class 0, which would
+/// collide the subtree with `Cell_CollideVolumeSubtree`) is unreachable and
+/// not ported.
+pub fn cell_collide_column_recursive(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, 0x90);
+        let a = (c.g[GP][0] as u32).wrapping_sub(0x2ce0);
+        c.lwc1(3, a);
+        frame.save(c, S1, 0x70);
+        frame.save(c, S2, 0x60);
+        c.g[S1][0] = c.g[T0][0];
+        frame.save(c, S3, 0x50);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S4, 0x40);
+        c.g[S3][0] = c.g[T1][0];
+        frame.save(c, S5, 0x30);
+        frame.save(c, S6, 0x20);
+        c.g[S5][0] = c.g[A3][0];
+        frame.save(c, S0, 0x80);
+        c.g[S6][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        c.g[V1][0] = o406_lw(c, S3, 4);
+        c.g[V0][0] = o406_lw(c, S3, 0);
+        c.mtc1(V1, 0);
+        c.cvt_s_w(0, 0);
+        c.g[A0][0] = o406_lw(c, S5, 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7f));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 23);
+        let a = c.g[A0][0] as u32;
+        c.lwc1(2, a);
+        c.sub_s(0, 0, 3);
+        c.mtc1(V0, 1);
+        c.mul_s(0, 0, 1);
+        c.c_lt_s(2, 0);
+        let mut outside = c.fcc();
+        c.g[S4][0] = c.g[A1][0];
+        if !outside {
+            c.cycles += 9;
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+            c.mtc1(V0, 0);
+            c.cvt_s_w(0, 0);
+            c.add_s(0, 0, 3);
+            c.mul_s(0, 0, 1);
+            c.c_lt_s(0, 2);
+            let t = c.fcc();
+            c.g[V1][0] = 1;
+            if !t {
+                c.cycles += 10;
+                c.g[V0][0] = o406_lw(c, S3, 8);
+                let a = (c.g[A0][0] as u32).wrapping_add(4);
+                c.lwc1(2, a);
+                c.mtc1(V0, 0);
+                c.cvt_s_w(0, 0);
+                c.sub_s(0, 0, 3);
+                c.mul_s(0, 0, 1);
+                c.c_lt_s(2, 0);
+                let t = c.fcc();
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+                if !t {
+                    c.cycles += 8;
+                    c.mtc1(V0, 0);
+                    c.cvt_s_w(0, 0);
+                    c.add_s(0, 0, 3);
+                    c.mul_s(0, 0, 1);
+                    c.c_lt_s(0, 2);
+                    let partial = !c.fcc();
+                    c.g[V1][0] = 2;
+                    outside = !partial;
+                }
+            }
+        }
+        if outside {
+            c.cycles += 1;
+            c.g[V1][0] = 1;
+        }
+        'exit: {
+            // `v1 != 0` always holds here (see the doc comment).
+            c.cycles += 2;
+            c.g[V0][0] = 2;
+            c.cycles += 2;
+            if c.g[V1][0] != c.g[V0][0] {
+                break 'exit;
+            }
+            // Partly covered: the node's two object lists.
+            c.cycles += 3;
+            c.g[S0][0] = o406_lw(c, S1, 0x24);
+            if c.g[S0][0] == 0 {
+                c.g[S0][0] = o406_lw(c, S1, 0x20);
+            } else {
+                c.cycles += 2;
+                c.g[A1][0] = c.g[S0][0];
+                loop {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S4][0];
+                    call_ptr(c, 0x0033_5960, 0x0033_ddf0)?;
+                    c.g[S0][0] = o406_lw(c, S0, 0);
+                    let more = c.g[S0][0] != 0;
+                    c.g[A1][0] = c.g[S0][0];
+                    if !more {
+                        c.cycles += 1;
+                        c.g[S0][0] = o406_lw(c, S1, 0x20);
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0033_dde8);
+                    }
+                }
+            }
+            c.cycles += 2;
+            if c.g[S0][0] == 0 {
+                c.g[A1][0] = o406_lw(c, S3, 0);
+            } else {
+                c.cycles += 2;
+                c.g[A1][0] = c.g[S0][0];
+                loop {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S4][0];
+                    call_ptr(c, 0x0033_5b90, 0x0033_de18)?;
+                    c.g[S0][0] = o406_lw(c, S0, 0);
+                    let more = c.g[S0][0] != 0;
+                    c.g[A1][0] = c.g[S0][0];
+                    if !more {
+                        c.cycles += 1;
+                        c.g[A1][0] = o406_lw(c, S3, 0);
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0033_de10);
+                    }
+                }
+            }
+            // The cell's level: nothing below 11.
+            c.cycles += 3;
+            c.g[V0][0] = 0xb;
+            let finest = c.g[A1][0] == c.g[V0][0];
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+            if finest {
+                c.cycles += 1;
+                break 'exit;
+            }
+            // The sub-cell on the stack: level - 1, x, y, z doubled.
+            c.cycles += 12;
+            c.g[A0][0] = o406_lw(c, S3, 0xc);
+            c.g[V0][0] = o406_lw(c, S3, 4);
+            c.g[V1][0] = o406_lw(c, S3, 8);
+            c.g[A0][0] = sx((c.g[A0][0] as u32) << 1);
+            c.g[T0][0] = o406_lw(c, S1, 0);
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 1);
+            o406_sw(c, SP, 0, A1);
+            o406_sw(c, SP, 4, V0);
+            o406_sw(c, SP, 8, V1);
+            o406_sw(c, SP, 0xc, A0);
+            if c.g[T0][0] != 0 {
+                o406_collide_child(c, 0x0033_de7c)?;
+            }
+            // (child offset, sub-cell word, delta, return address)
+            const CHILDREN: [(u32, u32, u32, u32); 7] = [
+                (0x10, 4, 1, 0x0033_dea8),
+                (0x18, 8, 1, 0x0033_ded4),
+                (0x8, 4, u32::MAX, 0x0033_df00),
+                (0xc, 0xc, 1, 0x0033_df2c),
+                (0x1c, 4, 1, 0x0033_df58),
+                (0x14, 8, u32::MAX, 0x0033_df84),
+                (0x4, 4, u32::MAX, 0x0033_dfb0),
+            ];
+            for (child, word, delta, ret) in CHILDREN {
+                c.cycles += 5;
+                c.g[V0][0] = o406_lw(c, SP, word);
+                c.g[T0][0] = o406_lw(c, S1, child);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(delta));
+                o406_sw(c, SP, word, V0);
+                if c.g[T0][0] != 0 {
+                    o406_collide_child(c, ret)?;
+                }
+            }
+            c.cycles += 1;
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore(c, S6, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -18752,6 +18976,84 @@ pub(crate) mod tests {
                 c.g[A3][0] = sx(bx);
                 c.g[T0][0] = sx(root);
                 c.g[T1][0] = sx(cell);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::input::inputparse::tests::o406_w;
+
+    pub(crate) use crate::game::input::inputparse::tests::o406_base;
+
+    // ------------------------------------ Cell_CollideColumnRecursive
+
+    /// Octree column collision: the cell classified against the box
+    /// (outside, partly covered), the node's two object lists (fakes) and
+    /// the eight children (real recursion).
+    #[test]
+    fn cell_collide_column_recursive_matches() {
+        fakes::covered(
+            ee::s11::f_0033dbe8__generated,
+            cell_collide_column_recursive,
+            240,
+            &|c, seed| {
+                let mut r = o406_base(c, seed, 0x33dbe8, 4, 0x0033_dbe8);
+                let node = DATA + 0x1000;
+                let cell = DATA + 0x2000;
+                let ctx = DATA + 0x3000;
+                let floats = DATA + 0x3100;
+                let level = 3 + r.next_u32() % 9;
+                let (x, y) = (r.next_u32() % 4, r.next_u32() % 4);
+                o406_w(c, cell, level);
+                o406_w(c, cell + 4, x);
+                o406_w(c, cell + 8, y);
+                o406_w(c, cell + 0xc, r.next_u32() % 4);
+                o406_w(c, GAME_GP - 0x2ce0, 0x3f00_0000);
+                o406_w(c, ctx, floats);
+                let scale = f32::from_bits((level + 0x7f) << 23);
+                let draw = |r: &mut Rng, base: u32| {
+                    let u = (r.next_u32() % 3000) as f32 / 1000.0 - 1.0;
+                    ((base as f32 + u) * scale).to_bits()
+                };
+                o406_w(c, floats, draw(&mut r, x));
+                o406_w(c, floats + 4, draw(&mut r, y));
+                // Object lists and children.
+                for off in (0..0x40).step_by(4) {
+                    o406_w(c, node + off, 0);
+                }
+                if r.next_u32() % 2 == 0 {
+                    o406_w(c, node + 0x24, DATA + 0x900);
+                    o406_w(
+                        c,
+                        DATA + 0x900,
+                        if r.next_u32() % 2 == 0 {
+                            DATA + 0x910
+                        } else {
+                            0
+                        },
+                    );
+                    o406_w(c, DATA + 0x910, 0);
+                }
+                if r.next_u32() % 2 == 0 {
+                    o406_w(c, node + 0x20, DATA + 0x920);
+                    o406_w(c, DATA + 0x920, 0);
+                }
+                for child in 0..8u32 {
+                    if r.next_u32() % 2 == 0 {
+                        let n = DATA + 0x1400 + 0x40 * child;
+                        for off in (0..0x40).step_by(4) {
+                            o406_w(c, n + off, 0);
+                        }
+                        o406_w(c, node + 4 * child, n);
+                    }
+                }
+                c.g[A0][0] = r.next_u32() as u64;
+                c.g[A1][0] = (DATA + 0x4000) as u64;
+                c.g[A2][0] = (DATA + 0x4100) as u64;
+                c.g[A3][0] = ctx as u64;
+                c.g[T0][0] = node as u64;
+                c.g[T1][0] = cell as u64;
             },
         );
     }

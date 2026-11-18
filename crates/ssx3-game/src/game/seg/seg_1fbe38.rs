@@ -86,6 +86,27 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         wscript_fn_get_object_slot30,
         "WScriptFn_GetObjectSlot30",
     ),
+    (0x002f_c9c8, w_script_fn_create_flag, "WScriptFn_CreateFlag"),
+    (
+        0x0030_2778,
+        w_script_fn_is_event_type,
+        "WScriptFn_IsEventType",
+    ),
+    (
+        0x0030_3df8,
+        wscript_fn_event_type_matches,
+        "WScriptFn_EventTypeMatches",
+    ),
+    (
+        0x0030_5478,
+        wscript_fn_add_magnet_modifier,
+        "WScriptFn_AddMagnetModifier",
+    ),
+    (
+        0x0030_6cb0,
+        wscript_fn_multi_particle_control,
+        "WScriptFn_MultiParticleControl",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3126,6 +3147,923 @@ pub fn wscript_fn_get_object_slot30(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// WScriptFn_CreateFlag (0x002fc9c8)
+
+/// `WorldObjFactory_AttachModifier` (0x002fae38).
+pub(crate) const WORLD_OBJ_FACTORY_ATTACH_MODIFIER_CALL: Callee = Callee {
+    addr: 0x002f_ae38,
+    f: ee::s10::WorldObjFactory_AttachModifier,
+};
+
+/// `EA_MemAllocNamed` (0x00317d70).
+pub(crate) const EA_MEM_ALLOC_NAMED_CALL: Callee = Callee {
+    addr: 0x0031_7d70,
+    f: ee::s10::EA_MemAllocNamed,
+};
+
+/// `WScriptFn::CreateFlag(entries, n)` (0x2fc9c8): build the 108-byte flag template (static, initialised once), apply the `n` (idx, type, value) overrides (floats converted when the slot is a float), resolve the target object (the world object of the id in the template, or the default one), and unless it already has an active node of kind 10, allocate a 0x1c-byte flag node on it. Returns a constant.
+pub fn w_script_fn_create_flag(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame { size: 0xe0 };
+        'b_2fca98: {
+            c.cycles += 13;
+            Frame::open(c, 0xe0);
+            c.g[V0][0] = c.lw(r32(c, GP).wrapping_add(0x2500));
+            frame.save(c, S4, 0x90);
+            frame.save(c, S0, 0xd0);
+            c.g[S4][0] = c.g[A2][0];
+            frame.save(c, S2, 0xb0);
+            c.g[S0][0] = c.g[A1][0];
+            frame.save(c, S1, 0xc0);
+            c.g[S2][0] = c.g[A0][0];
+            frame.save(c, S3, 0xa0);
+            c.g[A2][0] = 0x500000;
+            let t = c.g[V0][0] != 0u64;
+            frame.save_ra(c, 0x80);
+            if t {
+                break 'b_2fca98;
+            } else {
+                c.cycles += 39;
+                c.g[V0][0] = sx(r32(c, A2).wrapping_sub(0x4ac0));
+                c.g[V1][0] = 0xffffffffffff0000;
+                c.mtc1(0, 1);
+                c.g[V1][0] = c.g[V1][0] | 0xffff;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(1, 0);
+                c.g[A0][0] = 0x1;
+                c.g[A1][0] = c.lbu(r32(c, V0).wrapping_add(0x68));
+                c.g[AT][0] = 0x41c8_0000;
+                c.mtc1(1, 2);
+                c.sw(r32(c, A2).wrapping_sub(0x4ac0), c.g[V1][0]);
+                c.sb(r32(c, V0).wrapping_add(0x68), c.g[A1][0]);
+                c.swc1(2, r32(c, V0).wrapping_add(0x14));
+                c.swc1(0, r32(c, V0).wrapping_add(0x3c));
+                c.swc1(1, r32(c, V0).wrapping_add(0x60));
+                c.sw(r32(c, GP).wrapping_add(0x2500), c.g[A0][0]);
+                c.sw(r32(c, V0).wrapping_add(0x4), c.g[A0][0]);
+                c.sw(r32(c, V0).wrapping_add(0x8), 0u64);
+                c.sw(r32(c, V0).wrapping_add(0xc), 0u64);
+                c.swc1(0, r32(c, V0).wrapping_add(0x10));
+                c.swc1(0, r32(c, V0).wrapping_add(0x18));
+                c.swc1(0, r32(c, V0).wrapping_add(0x1c));
+                c.swc1(1, r32(c, V0).wrapping_add(0x20));
+                c.swc1(0, r32(c, V0).wrapping_add(0x24));
+                c.swc1(0, r32(c, V0).wrapping_add(0x28));
+                c.swc1(1, r32(c, V0).wrapping_add(0x2c));
+                c.swc1(0, r32(c, V0).wrapping_add(0x30));
+                c.swc1(0, r32(c, V0).wrapping_add(0x34));
+                c.swc1(1, r32(c, V0).wrapping_add(0x38));
+                c.swc1(1, r32(c, V0).wrapping_add(0x40));
+                c.swc1(1, r32(c, V0).wrapping_add(0x44));
+                c.swc1(1, r32(c, V0).wrapping_add(0x48));
+                c.swc1(1, r32(c, V0).wrapping_add(0x4c));
+                c.swc1(1, r32(c, V0).wrapping_add(0x50));
+                c.swc1(1, r32(c, V0).wrapping_add(0x54));
+                c.swc1(1, r32(c, V0).wrapping_add(0x58));
+                c.swc1(1, r32(c, V0).wrapping_add(0x5c));
+                c.sw(r32(c, V0).wrapping_add(0x64), 0u64);
+                c.sb(r32(c, SP), c.g[A1][0]);
+                break 'b_2fca98;
+            }
+        }
+        'b_2fcb20: {
+            c.cycles += 11;
+            c.g[V0][0] = 0xffffffffffff0000;
+            c.g[S1][0] = sx(r32(c, SP).wrapping_add(0x10));
+            c.g[V0][0] = c.g[V0][0] | 0xffff;
+            c.g[A1][0] = sx(r32(c, A2).wrapping_sub(0x4ac0));
+            c.g[A2][0] = 0x6c;
+            c.sw(r32(c, SP).wrapping_add(0x10), c.g[V0][0]);
+            c.g[A0][0] = c.g[S1][0];
+            c.g[S3][0] = 0x4d0000;
+            call_ptr(c, 0x003e_6574, 0x002f_cabc)?;
+            let t = (c.g[S0][0] as i64) <= 0;
+            c.g[A2][0] = c.g[S4][0];
+            if t {
+                break 'b_2fcb20;
+            } else {
+                c.cycles += 5;
+                c.g[V0][0] = 0x440000;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[T0][0] = sx(r32(c, V0).wrapping_add(0x5fc0));
+                c.g[A3][0] = 0x2;
+                'l_2fcad8: loop {
+                    'b_2fcb14: {
+                        'b_2fcb10: {
+                            c.cycles += 8;
+                            c.g[V0][0] = c.lw(r32(c, A2));
+                            c.g[V1][0] = c.lw(r32(c, A2).wrapping_add(0xc));
+                            c.g[V0][0] = sx(r32(c, V0) << 2);
+                            c.g[A0][0] = sx(r32(c, V0).wrapping_add(r32(c, S1)));
+                            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, T0)));
+                            c.g[V0][0] = c.lw(r32(c, V0));
+                            if c.g[V1][0] == c.g[V0][0] {
+                                c.g[V0][0] = c.lw(r32(c, A2).wrapping_add(0x4));
+                                break 'b_2fcb10;
+                            } else {
+                                c.cycles += 2;
+                                if c.g[V0][0] != c.g[A3][0] {
+                                    c.g[V0][0] = c.lw(r32(c, A2).wrapping_add(0x4));
+                                    break 'b_2fcb10;
+                                } else {
+                                    c.cycles += 4;
+                                    c.lwc1(0, r32(c, A2).wrapping_add(0x4));
+                                    c.cvt_s_w(0, 0);
+                                    let t = true;
+                                    c.swc1(0, r32(c, A0));
+                                    if t {
+                                        break 'b_2fcb14;
+                                    } else {
+                                        break 'b_2fcb10;
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.sw(r32(c, A0), c.g[V0][0]);
+                        break 'b_2fcb14;
+                    }
+                    c.cycles += 3;
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_sub(0x1));
+                    let t = c.g[A1][0] != 0u64;
+                    c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x10));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002f_cad8);
+                        }
+                        continue 'l_2fcad8;
+                    } else {
+                        break 'b_2fcb20;
+                    }
+                }
+            }
+        }
+        'b_2fcb8c: {
+            'b_2fcb3c: {
+                c.cycles += 4;
+                c.g[A2][0] = c.lw(r32(c, S1));
+                c.g[V0][0] = !(0u64 | c.g[A2][0]);
+                let t = c.g[V0][0] != 0u64;
+                c.g[A1][0] = c.lw(r32(c, GP).wrapping_add(0x16c8));
+                if t {
+                    break 'b_2fcb3c;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(r32(c, GP).wrapping_add(0xce8));
+                    let t = true;
+                    c.g[S0][0] = c.lw(r32(c, V0).wrapping_add(0x290));
+                    if t {
+                        break 'b_2fcb8c;
+                    } else {
+                        break 'b_2fcb3c;
+                    }
+                }
+            }
+            'b_2fcb88: {
+                'b_2fcb64: {
+                    c.cycles += 8;
+                    c.g[V0][0] = c.g[A2][0] & 0xff;
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    c.g[V1][0] = c.lw(r32(c, A1));
+                    c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x8));
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                    c.g[V1][0] = c.lw(r32(c, V0));
+                    if c.g[V1][0] != 0u64 {
+                        c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x1c));
+                        break 'b_2fcb64;
+                    } else {
+                        c.cycles += 2;
+                        let t = true;
+                        c.g[A2][0] = 0u64;
+                        if t {
+                            break 'b_2fcb88;
+                        } else {
+                            break 'b_2fcb64;
+                        }
+                    }
+                }
+                'b_2fcb84: {
+                    c.cycles += 7;
+                    c.g[V0][0] = sx(r32(c, A2) >> 8);
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                    c.g[V1][0] = c.lw(r32(c, V0));
+                    c.g[V0][0] = sx(r32(c, V1) >> 8);
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    if t {
+                        break 'b_2fcb84;
+                    } else {
+                        c.cycles += 1;
+                        c.g[V0][0] = 0u64;
+                        break 'b_2fcb84;
+                    }
+                }
+                c.cycles += 1;
+                c.g[A2][0] = c.g[V0][0];
+                break 'b_2fcb88;
+            }
+            c.cycles += 1;
+            c.g[S0][0] = c.g[A2][0];
+            break 'b_2fcb8c;
+        }
+        'b_2fcbdc: {
+            c.cycles += 2;
+            let t = c.g[S0][0] == 0u64;
+
+            if t {
+                break 'b_2fcbdc;
+            } else {
+                'b_2fcbb0: {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0xc));
+                    let t = c.g[A0][0] == 0u64;
+                    c.g[A1][0] = 0xa;
+                    if t {
+                        break 'b_2fcbb0;
+                    } else {
+                        c.cycles += 4;
+                        c.g[A2][0] = c.g[S1][0];
+                        WORLD_OBJ_FACTORY_ATTACH_MODIFIER_CALL.call(c, 0x002f_cba8)?;
+                        let t = c.g[V0][0] != 0u64;
+
+                        if t {
+                            break 'b_2fcbdc;
+                        } else {
+                            break 'b_2fcbb0;
+                        }
+                    }
+                }
+                c.cycles += 11;
+                c.g[A1][0] = 0x4a0000;
+                c.g[A0][0] = 0x1c;
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x3c08));
+                c.g[A2][0] = 0x2000_0000;
+                c.g[A3][0] = 0u64;
+                EA_MEM_ALLOC_NAMED_CALL.call(c, 0x002f_cbc8)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 0x1;
+                c.g[A2][0] = c.g[S0][0];
+                c.g[A3][0] = c.g[S1][0];
+                call_ptr(c, 0x0034_add8, 0x002f_cbdc)?;
+                break 'b_2fcbdc;
+            }
+        }
+        c.cycles += 16;
+        c.g[A1][0] = sx(r32(c, S3).wrapping_sub(0x6f68));
+        c.ldl(2, r32(c, A1).wrapping_add(0x7));
+        c.ldr(2, r32(c, A1));
+        c.g[V1][0] = c.lw(r32(c, A1).wrapping_add(0x8));
+        c.sdl(2, r32(c, S2).wrapping_add(0x7));
+        c.sdr(2, r32(c, S2));
+        c.sw(r32(c, S2).wrapping_add(0x8), c.g[V1][0]);
+        c.g[V0][0] = c.g[S2][0];
+        frame.restore(c, S0, 0xd0);
+        frame.restore(c, S1, 0xc0);
+        frame.restore(c, S2, 0xb0);
+        frame.restore(c, S3, 0xa0);
+        frame.restore(c, S4, 0x90);
+        frame.restore_ra(c, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `Result* WScriptFn_IsEventType(Result* ret, int n, Arg* e)` (0x302778):
+/// bind the script call's arguments into a 2-word record (defaults
+/// `{-1, ...}` set once), convert the float ones, store `IsEventType(v[0])`
+/// as the integer result and return `ret`.
+pub fn w_script_fn_is_event_type(c: &mut Cpu) {
+    const W_SCRIPT_FN_EVENT_TYPE_MATCHES: Callee = Callee {
+        addr: 0x00303df8,
+        f: ee::s10::f_00303df8,
+    };
+    guest(c, |c| {
+        'b_3027bc: {
+            c.cycles += 11;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2660));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S1][0] = c.g[A1][0];
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[S2][0] = c.g[A0][0];
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[S3][0] = c.g[A2][0];
+            let t = c.g[V0][0] != 0u64;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+            if t {
+                break 'b_3027bc;
+            } else {
+                c.cycles += 6;
+                c.g[V0][0] = c.lbu((c.g[GP][0] as u32).wrapping_add(0x265c));
+                c.g[V1][0] = 0xffffffffffffffff;
+                c.g[A0][0] = 0x1;
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x2658), c.g[V1][0]);
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x2660), c.g[A0][0]);
+                c.sb(c.g[SP][0] as u32, c.g[V0][0]);
+                break 'b_3027bc;
+            }
+        }
+        'b_302830: {
+            c.cycles += 7;
+            c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[A2][0] = 0x8;
+            c.g[A1][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2658));
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x003e6574, 0x003027d0)?;
+            let t = (c.g[S1][0] as i64) <= 0;
+            c.g[A2][0] = c.g[S3][0];
+            if t {
+                break 'b_302830;
+            } else {
+                c.cycles += 4;
+                c.g[A1][0] = c.g[S1][0];
+                c.g[T0][0] = sx((c.g[GP][0] as u32).wrapping_add(0xbe8));
+                c.g[A3][0] = 0x2;
+                'l_3027e8: loop {
+                    'b_302824: {
+                        'b_302820: {
+                            c.cycles += 8;
+                            c.g[V0][0] = c.lw(c.g[A2][0] as u32);
+                            c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0xc));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                            c.g[V0][0] = c.lw(c.g[V0][0] as u32);
+                            if c.g[V1][0] == c.g[V0][0] {
+                                c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
+                                break 'b_302820;
+                            } else {
+                                c.cycles += 2;
+                                if c.g[V0][0] != c.g[A3][0] {
+                                    c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
+                                    break 'b_302820;
+                                } else {
+                                    c.cycles += 4;
+                                    c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x4));
+                                    c.cvt_s_w(0, 0);
+                                    let t = true;
+                                    c.swc1(0, c.g[A0][0] as u32);
+                                    if t {
+                                        break 'b_302824;
+                                    } else {
+                                        break 'b_302820;
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.sw(c.g[A0][0] as u32, c.g[V0][0]);
+                        break 'b_302824;
+                    }
+                    c.cycles += 3;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
+                    let t = c.g[A1][0] != 0u64;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x10));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003027e8);
+                        }
+                        continue 'l_3027e8;
+                    } else {
+                        break 'b_302830;
+                    }
+                }
+            }
+        }
+        c.cycles += 16;
+        c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+        W_SCRIPT_FN_EVENT_TYPE_MATCHES.call(c, 0x00302838)?;
+        c.g[V1][0] = 0x1;
+        c.g[S0][0] = c.g[V0][0];
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+        c.g[A0][0] = c.g[S2][0];
+        call_ptr(c, 0x00226610, 0x0030284c)?;
+        c.sw(c.g[V0][0] as u32, c.g[S0][0]);
+        c.g[V0][0] = c.g[S2][0];
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+        c.pc = t;
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Small register-relative accessors (`lw off(reg)` and friends). They read the
+// base register themselves, so the call never borrows `c` twice.
+
+/// `lw dst, off(reg)` (sign-extended).
+#[inline]
+pub(crate) fn oc417_lw(c: &mut Cpu, reg: usize, off: u32) -> u64 {
+    let a = (c.g[reg][0] as u32).wrapping_add(off);
+    Addr(a).lw(c)
+}
+
+/// `lh dst, off(reg)` (sign-extended).
+#[inline]
+pub(crate) fn oc417_lh(c: &mut Cpu, reg: usize, off: u32) -> u64 {
+    let a = (c.g[reg][0] as u32).wrapping_add(off);
+    Addr(a).lh(c)
+}
+
+/// `lb dst, off(reg)` (sign-extended).
+#[inline]
+pub(crate) fn oc417_lb(c: &mut Cpu, reg: usize, off: u32) -> u64 {
+    let a = (c.g[reg][0] as u32).wrapping_add(off);
+    Addr(a).lb(c)
+}
+
+/// `lbu dst, off(reg)`.
+#[inline]
+pub(crate) fn oc417_lbu(c: &mut Cpu, reg: usize, off: u32) -> u64 {
+    let a = (c.g[reg][0] as u32).wrapping_add(off);
+    Addr(a).lbu(c)
+}
+
+/// `sw src, off(reg)`.
+#[inline]
+pub(crate) fn oc417_sw(c: &mut Cpu, reg: usize, off: u32, src: usize) {
+    let a = (c.g[reg][0] as u32).wrapping_add(off);
+    let v = c.g[src][0];
+    Addr(a).sw(c, v);
+}
+
+/// `sw zero, off(reg)`.
+#[inline]
+pub(crate) fn oc417_sw0(c: &mut Cpu, reg: usize, off: u32) {
+    let a = (c.g[reg][0] as u32).wrapping_add(off);
+    Addr(a).sw(c, 0);
+}
+
+/// `addu` of two registers' low words, sign-extended.
+#[inline]
+pub(crate) fn oc417_add(a: u64, b: u64) -> u64 {
+    sx((a as u32).wrapping_add(b as u32))
+}
+
+// ---------------------------------------------------------------------------
+// WScriptFn_EventTypeMatches (0x303df8)
+
+/// `int WScriptFn_EventTypeMatches(unsigned i)` (0x303df8): is the world
+/// script's event type `i` (below 8) equal to the current event byte
+/// (`*0x535c10`)? Looks the BE interface up first (result unused), then
+/// compares `table[i]` (`0x4465f8`) with the byte. 0 for `i >= 8`.
+pub fn wscript_fn_event_type_matches(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = (c.g[S0][0] < 8) as u64;
+        let in_range = c.g[V0][0] != 0;
+        frame.save_ra(c, 0);
+        if in_range {
+            c.cycles += 14;
+            call_ptr(c, 0x0014_dc80, 0x0030_3e20)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x0014_dd58, 0x0030_3e2c)?;
+            c.g[V1][0] = 0x44_0000;
+            c.g[V0][0] = 0x53_0000;
+            c.g[A0][0] = sx((c.g[S0][0] as u32) << 2);
+            c.g[V1][0] = oc417_add(c.g[V1][0], 0x65f8);
+            c.g[A1][0] = oc417_lb(c, V0, 0x5c10);
+            c.g[A0][0] = oc417_add(c.g[A0][0], c.g[V1][0]);
+            c.g[V0][0] = oc417_lw(c, A0, 0);
+            c.g[V0][0] ^= c.g[A1][0];
+            c.g[V0][0] = (c.g[V0][0] < 1) as u64;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// WScriptFn_MultiParticleControl (0x306cb0) and WScriptFn_AddMagnetModifier
+// (0x305478): the same world-script argument decoding.
+
+/// The `MEM_copy` (0x3e6574) both functions use to copy the default record.
+pub(crate) const WSCRIPT_MEM_COPY: u32 = 0x003e_6574;
+
+/// `WScriptFn_MultiParticleControl(Rec* result, int n, Ent* entries)`
+/// (0x306cb0): on first use initialise the static default record
+/// (`0x4fc050`: object id -1 ...), copy it to a 16-byte stack record, apply
+/// the `n` 16-byte `{index, value, type, ..}` argument entries to the
+/// record's words (an int argument for a float parameter is converted with
+/// `cvt.s.w`), resolve the object id (`rec[1]`, -1 = the current object at
+/// `world+0x290`, else the world cache's slot table) and, when found, call
+/// `MultiParticle` add (`rec[2] == 0`, `0x357ae8`) or remove (`0x357b10`)
+/// with the world's particle manager (`gp-0xf38 slot`, `rec[0]`) and the
+/// object's `+0x78`. Copies the 12-byte default result (`0x4c9098`) to
+/// `*result` and returns `result`.
+pub fn wscript_fn_multi_particle_control(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x70);
+        c.g[V0][0] = oc417_lw(c, GP, 0x27c8);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S1, 0x50);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S3, 0x30);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S0, 0x60);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        let initialised = c.g[V0][0] != 0;
+        c.g[A2][0] = 0x50_0000;
+        if !initialised {
+            c.cycles += 11;
+            c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x3fb0));
+            c.g[V0][0] = 0xffff_ffff_ffff_0000;
+            c.g[A1][0] = oc417_lbu(c, V1, 0xc);
+            c.g[V0][0] |= 0xffff;
+            Addr((c.g[A2][0] as u32).wrapping_sub(0x3fb0)).sw(c, 0);
+            c.g[A0][0] = 1;
+            let a = (c.g[V1][0] as u32).wrapping_add(0xc);
+            let v = c.g[A1][0];
+            Addr(a).sb(c, v);
+            oc417_sw(c, V1, 4, V0);
+            oc417_sw(c, GP, 0x27c8, A0);
+            oc417_sw0(c, V1, 8);
+            let a = sp(c);
+            let v = c.g[A1][0];
+            Addr(a).sb(c, v);
+        }
+        c.cycles += 10;
+        c.g[V0][0] = 0xffff_ffff_ffff_0000;
+        c.g[S0][0] = oc417_add(c.g[SP][0], 0x10);
+        c.g[V0][0] |= 0xffff;
+        c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x3fb0));
+        c.g[A2][0] = 0x10;
+        oc417_sw(c, SP, 0x14, V0);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, WSCRIPT_MEM_COPY, 0x0030_6d2c)?;
+        let no_entries = (c.g[S1][0] as i64) <= 0;
+        c.g[A2][0] = c.g[S2][0];
+        if !no_entries {
+            c.cycles += 5;
+            c.g[V0][0] = 0x44_0000;
+            c.g[A1][0] = c.g[S1][0];
+            c.g[T0][0] = oc417_add(c.g[V0][0], 0x6970);
+            c.g[A3][0] = 2;
+            loop {
+                c.cycles += 8;
+                c.g[V0][0] = oc417_lw(c, A2, 0);
+                c.g[V1][0] = oc417_lw(c, A2, 0xc);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[A0][0] = oc417_add(c.g[V0][0], c.g[S0][0]);
+                c.g[V0][0] = oc417_add(c.g[V0][0], c.g[T0][0]);
+                c.g[V0][0] = oc417_lw(c, V0, 0);
+                // `entry.type != paramType && paramType == 2`: int -> float.
+                let convert = if c.g[V1][0] == c.g[V0][0] {
+                    c.g[V0][0] = oc417_lw(c, A2, 4);
+                    false
+                } else {
+                    c.cycles += 2;
+                    if c.g[V0][0] != c.g[A3][0] {
+                        c.g[V0][0] = oc417_lw(c, A2, 4);
+                        false
+                    } else {
+                        c.cycles += 4;
+                        let a = (c.g[A2][0] as u32).wrapping_add(4);
+                        c.lwc1(0, a);
+                        c.cvt_s_w(0, 0);
+                        let a = c.g[A0][0] as u32;
+                        c.swc1(0, a);
+                        true
+                    }
+                };
+                if !convert {
+                    c.cycles += 1;
+                    oc417_sw(c, A0, 0, V0);
+                }
+                c.cycles += 3;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+                let more = c.g[A1][0] != 0;
+                c.g[A2][0] = oc417_add(c.g[A2][0], 0x10);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0030_6d48);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        // Resolve the object (rec[1]).
+        c.cycles += 4;
+        c.g[A2][0] = oc417_lw(c, S0, 4);
+        c.g[V0][0] = !(c.g[A2][0]);
+        let looked_up = c.g[V0][0] != 0;
+        c.g[A1][0] = oc417_lw(c, GP, 0x16c8);
+        if !looked_up {
+            c.cycles += 3;
+            c.g[V0][0] = oc417_lw(c, GP, 0xce8);
+            c.g[V1][0] = oc417_lw(c, V0, 0x290);
+        } else {
+            c.cycles += 8;
+            c.g[V0][0] = c.g[A2][0] & 0xff;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V1][0] = oc417_lw(c, A1, 0);
+            c.g[A0][0] = oc417_lw(c, V1, 8);
+            c.g[V0][0] = oc417_add(c.g[V0][0], c.g[A0][0]);
+            c.g[V1][0] = oc417_lw(c, V0, 0);
+            let no_slot = c.g[V1][0] == 0;
+            c.g[V0][0] = sx((c.g[A2][0] as u32) >> 8);
+            let mut found = false;
+            if !no_slot {
+                c.cycles += 7;
+                c.g[A0][0] = oc417_lw(c, V1, 0x1c);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V0][0] = oc417_add(c.g[V0][0], c.g[A0][0]);
+                c.g[V1][0] = oc417_lw(c, V0, 0);
+                c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+                found = c.g[V0][0] != 0;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            }
+            if !found {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+            c.cycles += 1;
+            c.g[V1][0] = c.g[V0][0];
+        }
+        c.cycles += 2;
+        if c.g[V1][0] == 0 {
+            c.g[V1][0] = 0x4d_0000;
+        } else {
+            let remove_instead = {
+                c.cycles += 3;
+                c.g[V0][0] = oc417_lw(c, S0, 8);
+                let r = c.g[V0][0] != 0;
+                c.g[A1][0] = oc417_lw(c, S0, 0);
+                r
+            };
+            if !remove_instead {
+                c.cycles += 5;
+                c.g[A2][0] = oc417_lw(c, V1, 0x78);
+                c.g[A0][0] = oc417_lw(c, GP, 0xf38);
+                call_ptr(c, 0x0035_7ae8, 0x0030_6e10)?;
+                c.g[V1][0] = 0x4d_0000;
+            } else {
+                c.cycles += 4;
+                c.g[A2][0] = oc417_lw(c, V1, 0x78);
+                c.g[A0][0] = oc417_lw(c, GP, 0xf38);
+                call_ptr(c, 0x0035_7b10, 0x0030_6e24)?;
+                c.g[V1][0] = 0x4d_0000;
+            }
+        }
+        // Copy the default result record to *result.
+        c.cycles += 15;
+        c.g[V0][0] = c.g[S3][0];
+        c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6f68));
+        let a = (c.g[A3][0] as u32).wrapping_add(7);
+        c.ldl(4, a);
+        let a = c.g[A3][0] as u32;
+        c.ldr(4, a);
+        c.g[A1][0] = oc417_lw(c, A3, 8);
+        let a = (c.g[S3][0] as u32).wrapping_add(7);
+        c.sdl(4, a);
+        let a = c.g[S3][0] as u32;
+        c.sdr(4, a);
+        oc417_sw(c, S3, 8, A1);
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `WScriptFn_AddMagnetModifier(Rec* result, int n, Ent* entries)`
+/// (0x305478): like `WScriptFn_MultiParticleControl` but with the static
+/// default record at `0x4fbd58` (object id -1, strength 400.0, radius 30.0)
+/// and the parameter types at `0x4466a0`. When the resolved object has a
+/// move node (`obj+0xc`) whose virtual `0x80` says it accepts magnets, adds
+/// a magnet to it (`0x3559f8`: node, the node's virtual `0xc0` result,
+/// strength, radius). Returns `result` with the default result record
+/// (`0x4c9098`) copied in.
+pub fn wscript_fn_add_magnet_modifier(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x70);
+        c.g[V0][0] = oc417_lw(c, GP, 0x2750);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S0, 0x60);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S3, 0x30);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x50);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        let initialised = c.g[V0][0] != 0;
+        c.g[A2][0] = 0x50_0000;
+        if !initialised {
+            c.cycles += 15;
+            c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x42a8));
+            c.g[V0][0] = 0xffff_ffff_ffff_0000;
+            c.g[A1][0] = oc417_lbu(c, V1, 0xc);
+            c.g[V0][0] |= 0xffff;
+            c.g[AT][0] = 0x43c8_0000;
+            c.mtc1(1, 1);
+            c.g[A0][0] = 1;
+            c.g[AT][0] = 0x41f0_0000;
+            c.mtc1(1, 0);
+            let a = (c.g[A2][0] as u32).wrapping_sub(0x42a8);
+            let v = c.g[V0][0];
+            Addr(a).sw(c, v);
+            let a = (c.g[V1][0] as u32).wrapping_add(0xc);
+            let v = c.g[A1][0];
+            Addr(a).sb(c, v);
+            let a = (c.g[V1][0] as u32).wrapping_add(4);
+            c.swc1(1, a);
+            let a = (c.g[V1][0] as u32).wrapping_add(8);
+            c.swc1(0, a);
+            oc417_sw(c, GP, 0x2750, A0);
+            let a = sp(c);
+            let v = c.g[A1][0];
+            Addr(a).sb(c, v);
+        }
+        c.cycles += 10;
+        c.g[V0][0] = 0xffff_ffff_ffff_0000;
+        c.g[S1][0] = oc417_add(c.g[SP][0], 0x10);
+        c.g[V0][0] |= 0xffff;
+        c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x42a8));
+        c.g[A2][0] = 0x10;
+        oc417_sw(c, SP, 0x10, V0);
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, WSCRIPT_MEM_COPY, 0x0030_5504)?;
+        let no_entries = (c.g[S0][0] as i64) <= 0;
+        c.g[A2][0] = c.g[S2][0];
+        if !no_entries {
+            c.cycles += 5;
+            c.g[V0][0] = 0x44_0000;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[T0][0] = oc417_add(c.g[V0][0], 0x66a0);
+            c.g[A3][0] = 2;
+            loop {
+                c.cycles += 8;
+                c.g[V0][0] = oc417_lw(c, A2, 0);
+                c.g[V1][0] = oc417_lw(c, A2, 0xc);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[A0][0] = oc417_add(c.g[V0][0], c.g[S1][0]);
+                c.g[V0][0] = oc417_add(c.g[V0][0], c.g[T0][0]);
+                c.g[V0][0] = oc417_lw(c, V0, 0);
+                let convert = if c.g[V1][0] == c.g[V0][0] {
+                    c.g[V0][0] = oc417_lw(c, A2, 4);
+                    false
+                } else {
+                    c.cycles += 2;
+                    if c.g[V0][0] != c.g[A3][0] {
+                        c.g[V0][0] = oc417_lw(c, A2, 4);
+                        false
+                    } else {
+                        c.cycles += 4;
+                        let a = (c.g[A2][0] as u32).wrapping_add(4);
+                        c.lwc1(0, a);
+                        c.cvt_s_w(0, 0);
+                        let a = c.g[A0][0] as u32;
+                        c.swc1(0, a);
+                        true
+                    }
+                };
+                if !convert {
+                    c.cycles += 1;
+                    oc417_sw(c, A0, 0, V0);
+                }
+                c.cycles += 3;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+                let more = c.g[A1][0] != 0;
+                c.g[A2][0] = oc417_add(c.g[A2][0], 0x10);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0030_5520);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        // Resolve the object (rec[0]).
+        c.cycles += 4;
+        c.g[A2][0] = oc417_lw(c, S1, 0);
+        c.g[V0][0] = !(c.g[A2][0]);
+        let looked_up = c.g[V0][0] != 0;
+        c.g[A1][0] = oc417_lw(c, GP, 0x16c8);
+        if !looked_up {
+            c.cycles += 3;
+            c.g[V0][0] = oc417_lw(c, GP, 0xce8);
+            c.g[V0][0] = oc417_lw(c, V0, 0x290);
+        } else {
+            c.cycles += 8;
+            c.g[V0][0] = c.g[A2][0] & 0xff;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V1][0] = oc417_lw(c, A1, 0);
+            c.g[A0][0] = oc417_lw(c, V1, 8);
+            c.g[V0][0] = oc417_add(c.g[V0][0], c.g[A0][0]);
+            c.g[V1][0] = oc417_lw(c, V0, 0);
+            let no_slot = c.g[V1][0] == 0;
+            c.g[V0][0] = sx((c.g[A2][0] as u32) >> 8);
+            let mut found = false;
+            if !no_slot {
+                c.cycles += 7;
+                c.g[A0][0] = oc417_lw(c, V1, 0x1c);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V0][0] = oc417_add(c.g[V0][0], c.g[A0][0]);
+                c.g[V1][0] = oc417_lw(c, V0, 0);
+                c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+                found = c.g[V0][0] != 0;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            }
+            if !found {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+        }
+        // 'b_305624: the move node and the magnet.
+        'magnet: {
+            'result_v0: {
+                c.cycles += 2;
+                let no_object = c.g[V0][0] == 0;
+                c.g[V1][0] = 0x4d_0000;
+                if no_object {
+                    break 'result_v0;
+                }
+                c.cycles += 3;
+                c.g[S0][0] = oc417_lw(c, V0, 0xc);
+                let no_node = c.g[S0][0] == 0;
+                c.g[V0][0] = c.g[S3][0];
+                if no_node {
+                    break 'magnet;
+                }
+                c.cycles += 7;
+                c.g[V1][0] = oc417_lw(c, S0, 0xc);
+                c.g[A0][0] = oc417_lh(c, V1, 0x80);
+                c.g[V0][0] = oc417_lw(c, V1, 0x84);
+                let target = c.g[V0][0] as u32;
+                c.g[A0][0] = oc417_add(c.g[S0][0], c.g[A0][0]);
+                call_ptr(c, target, 0x0030_55ec)?;
+                let rejects = c.g[V0][0] == 0;
+                c.g[V1][0] = 0x4d_0000;
+                if rejects {
+                    break 'result_v0;
+                }
+                c.cycles += 11;
+                c.g[V1][0] = oc417_lw(c, S0, 0xc);
+                c.g[A0][0] = oc417_lh(c, V1, 0xc0);
+                c.g[V0][0] = oc417_lw(c, V1, 0xc4);
+                let target = c.g[V0][0] as u32;
+                c.g[A0][0] = oc417_add(c.g[S0][0], c.g[A0][0]);
+                call_ptr(c, target, 0x0030_5608)?;
+                let a = (c.g[S1][0] as u32).wrapping_add(8);
+                c.lwc1(13, a);
+                c.g[A0][0] = c.g[S0][0];
+                let a = (c.g[S1][0] as u32).wrapping_add(4);
+                c.lwc1(12, a);
+                c.g[A1][0] = c.g[V0][0];
+                call_ptr(c, 0x0035_59f8, 0x0030_561c)?;
+                c.g[V1][0] = 0x4d_0000;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S3][0];
+        }
+        c.cycles += 14;
+        c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6f68));
+        let a = (c.g[A3][0] as u32).wrapping_add(7);
+        c.ldl(4, a);
+        let a = c.g[A3][0] as u32;
+        c.ldr(4, a);
+        c.g[A1][0] = oc417_lw(c, A3, 8);
+        let a = (c.g[S3][0] as u32).wrapping_add(7);
+        c.sdl(4, a);
+        let a = c.g[S3][0] as u32;
+        c.sdr(4, a);
+        oc417_sw(c, S3, 8, A1);
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4346,6 +5284,773 @@ pub(crate) mod tests {
                     .write32(target + 0xc, if seed % 3 == 0 { 0 } else { comp });
                 let vt = vtable(c, &mut r, &[0xf0]);
                 c.bus.write32(comp + 0xc, vt);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::ai::rider::tests::w32_2 as w32;
+    pub(crate) use crate::game::world::worldview::tests::oc410_machine;
+    pub(crate) use crate::game::world::worldview::tests::oc410_result;
+
+    pub(crate) use crate::game::ai::ai::tests::oc414_env;
+
+    /// `WScriptFn_CreateFlag`: static template init, the override loop (raw
+    /// and float-converted), the object lookup and the node allocation.
+    #[test]
+    fn w_script_fn_create_flag_matches() {
+        const ENTRIES: u32 = DATA + 0x1000;
+        const WORLD_CELL: u32 = DATA + 0x2000;
+        const WORLD_1: u32 = DATA + 0x2100;
+        const WORLD_ARR: u32 = DATA + 0x2200;
+        const SLOT_OBJ: u32 = DATA + 0x2300;
+        const SLOT_TAB: u32 = DATA + 0x2400;
+        const DEFAULT_CELL: u32 = DATA + 0x2500;
+        const OBJ: u32 = DATA + 0x3000;
+        const GP_FIRST_INIT: u32 = crate::difftest::GAME_GP + 0x2500;
+        check(
+            ee::s10::f_002fc9c8__generated,
+            w_script_fn_create_flag,
+            400,
+            &|c, seed| {
+                let mut r = oc410_machine(c, seed, 0x002f_c9c8, 5);
+                c.pc = 0x002f_c9c8;
+                c.g[A0][0] = (DATA + 0x500) as u64;
+                let n = seed % 4;
+                c.g[A1][0] = n as u64;
+                c.g[A2][0] = ENTRIES as u64;
+                w32(c, GP_FIRST_INIT, (seed % 2 == 0) as u32);
+                for idx in 0..9u32 {
+                    w32(
+                        c,
+                        0x0044_5fc0 + 4 * idx,
+                        if idx == 0 { 0 } else { r.next_u32() % 4 },
+                    );
+                }
+                let (lo, hi) = (seed % 3, seed % 2);
+                for i in 0..n {
+                    let e = ENTRIES + 0x10 * i;
+                    if i == 0 {
+                        w32(c, e, 0);
+                        w32(c, e + 4, (hi << 8) | lo);
+                        w32(c, e + 0xc, 0);
+                    } else {
+                        w32(c, e, 1 + r.next_u32() % 8);
+                        w32(c, e + 4, r.next_u32() % 1000);
+                        w32(c, e + 0xc, r.next_u32() % 4);
+                    }
+                }
+                w32(c, crate::difftest::GAME_GP + 0x16c8, WORLD_CELL);
+                w32(c, WORLD_CELL, WORLD_1);
+                w32(c, WORLD_1 + 8, WORLD_ARR);
+                for i in 0..3 {
+                    w32(
+                        c,
+                        WORLD_ARR + 4 * i,
+                        if seed % 5 == 2 && i == lo {
+                            0
+                        } else {
+                            SLOT_OBJ
+                        },
+                    );
+                }
+                w32(c, SLOT_OBJ + 0x1c, SLOT_TAB);
+                for i in 0..2 {
+                    let x = if seed % 9 == 4 {
+                        0
+                    } else {
+                        ((OBJ >> 2) << 8) | (r.next_u32() & 0xff)
+                    };
+                    w32(c, SLOT_TAB + 4 * i, x);
+                }
+                w32(c, crate::difftest::GAME_GP + 0xce8, DEFAULT_CELL);
+                w32(c, DEFAULT_CELL + 0x290, if seed % 6 == 5 { 0 } else { OBJ });
+                w32(c, OBJ + 0xc, if seed % 4 == 3 { 0 } else { DATA + 0x3400 });
+                w32(c, oc410_result(30), (seed % 3 == 0) as u32);
+                w32(c, oc410_result(12), DATA + 0x3800);
+                for k in 0..3 {
+                    w32(c, 0x004c_9098 + 4 * k, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// `WScriptFn_IsEventType`: first call (the record defaults are set) and
+    /// later ones, 0..3 arguments whose type matches the table or not
+    /// (matching: integer store; table type 2: float conversion).
+    #[test]
+    fn w_script_fn_is_event_type_matches() {
+        check(
+            ee::s10::f_00302778__generated,
+            w_script_fn_is_event_type,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x302778, 0);
+                c.pc = 0x0030_2778;
+                oc414_env(c);
+                let gp = GAME_GP;
+                c.bus.write32(gp + 0x2660, (seed % 2) as u32);
+                c.bus.write8(gp + 0x265c, r.next_u32() as u8);
+                for i in 0..4u32 {
+                    c.bus.write32(gp + 0xbe8 + 4 * i, 2 + r.next_u32() % 2);
+                }
+                let args = DATA + 0x200;
+                let n = seed % 4;
+                for i in 0..n {
+                    let rec = args + 16 * i;
+                    c.bus.write32(rec, r.next_u32() % 2);
+                    c.bus.write32(rec + 4, r.next_u32() % 100);
+                    c.bus.write32(rec + 0xc, 2 + r.next_u32() % 2);
+                }
+                c.g[A0][0] = sx(DATA + 0x100);
+                c.g[A1][0] = n as u64;
+                c.g[A2][0] = sx(args);
+            },
+        );
+    }
+
+    /// Control block of the gated fakes: the gate word, the call counter, the
+    /// call index that unwinds, forced results (`+0x10 + 4 * id`), forced
+    /// `f0` results (`+0x80 + 4 * id`) and the call log (`+0x100`).
+    pub(crate) const OC417_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC417_MAGIC: u32 = 0x0c41_7a17;
+
+    /// A gated fake callee: records its arguments, returns the forced result
+    /// of its id, and unwinds at the chosen call index.
+    pub(crate) fn oc417_fake(c: &mut Cpu, id: u32) {
+        let n = c.bus.read32(OC417_CTRL + 4);
+        c.bus.write32(OC417_CTRL + 4, n.wrapping_add(1));
+        let p = OC417_CTRL + 0x100 + (n & 0x3f) * 0x40;
+        c.bus.write32(p, id);
+        c.bus.write32(p + 4, c.pc);
+        for i in 0..4usize {
+            let v = c.g[A0 + i][0];
+            c.bus.write64(p + 8 + 8 * i as u32, v);
+        }
+        let (f12, f13) = (c.f[12], c.f[13]);
+        c.bus.write32(p + 0x28, f12);
+        c.bus.write32(p + 0x2c, f13);
+        let (ra, spv, cyc) = (c.g[RA][0] as u32, c.g[SP][0] as u32, c.cycles);
+        c.bus.write32(p + 0x30, ra);
+        c.bus.write32(p + 0x34, spv);
+        c.bus.write64(p + 0x38, cyc);
+        let forced = c.bus.read32(OC417_CTRL + 0x10 + 4 * id);
+        c.g[V0][0] = sx(forced);
+        c.g[V1][0] = 0x5151_0000 + n as u64;
+        c.f[0] = c.bus.read32(OC417_CTRL + 0x80 + 4 * id);
+        c.cycles += 5;
+        if n == c.bus.read32(OC417_CTRL + 8) {
+            c.pc = 0xdead_0000 | n << 4;
+        } else {
+            c.pc = c.g[RA][0] as u32;
+        }
+    }
+
+    macro_rules! oc417_gated {
+        ($name:ident, $prev:ident, $id:expr, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(OC417_CTRL) == OC417_MAGIC {
+                    return oc417_fake(c, $id);
+                }
+                fakes::fall_back(c, &$prev, $gen)
+            }
+        };
+    }
+
+    // Fake ids (index into the forced-result table).
+    pub(crate) const FK_BE_INSTANCE: u32 = 0;
+
+    pub(crate) const FK_BE_INTERFACE: u32 = 1;
+
+    pub(crate) const FK_READ_U32: u32 = 2;
+
+    pub(crate) const FK_NEW_NAMED: u32 = 3;
+
+    pub(crate) const FK_BOLT_COUNT: u32 = 4;
+
+    pub(crate) const FK_BOLTS: u32 = 5;
+
+    pub(crate) const FK_HEAP_FREE: u32 = 6;
+
+    pub(crate) const FK_QUEUE_SECTION: u32 = 7;
+
+    pub(crate) const FK_ADD_MAGNET: u32 = 8;
+
+    pub(crate) const FK_LUNO_DTOR: u32 = 9;
+
+    pub(crate) const FK_LUNO_ASSIGN: u32 = 10;
+
+    pub(crate) const FK_MEM_ALLOC: u32 = 11;
+
+    pub(crate) const FK_BE_TABLE: u32 = 12;
+
+    pub(crate) const FK_BE_DB_ENTRY: u32 = 13;
+
+    pub(crate) const FK_GET_CHARACTER: u32 = 14;
+
+    pub(crate) const FK_SET_SUB_STATE: u32 = 15;
+
+    pub(crate) const FK_SET_MAIN_STATE: u32 = 16;
+
+    pub(crate) const FK_RESET_FX: u32 = 17;
+
+    pub(crate) const FK_BOOST_INPUT: u32 = 18;
+
+    pub(crate) const FK_BUILD_MATRIX: u32 = 19;
+
+    pub(crate) const FK_QUAT_EULER: u32 = 20;
+
+    pub(crate) const FK_ANIM_LAYER_A: u32 = 21;
+
+    pub(crate) const FK_ANIM_LAYER_B: u32 = 22;
+
+    pub(crate) const FK_ANIM_RESET: u32 = 23;
+
+    pub(crate) const FK_ANIM_PLAY: u32 = 24;
+
+    pub(crate) const FK_SINCOS: u32 = 25;
+
+    oc417_gated!(
+        fake_be_instance,
+        PREV_BE_INSTANCE,
+        FK_BE_INSTANCE,
+        ee::s01::f_0014dc80__generated
+    );
+
+    oc417_gated!(
+        fake_be_interface,
+        PREV_BE_INTERFACE,
+        FK_BE_INTERFACE,
+        ee::s01::f_0014dd58__generated
+    );
+
+    oc417_gated!(
+        fake_read_u32,
+        PREV_READ_U32,
+        FK_READ_U32,
+        ee::s09::f_002d2510__generated
+    );
+
+    oc417_gated!(
+        fake_new_named,
+        PREV_NEW_NAMED,
+        FK_NEW_NAMED,
+        ee::s10::f_00317e30__generated
+    );
+
+    oc417_gated!(
+        fake_bolt_count,
+        PREV_BOLT_COUNT,
+        FK_BOLT_COUNT,
+        ee::s01::f_0014d988__generated
+    );
+
+    oc417_gated!(
+        fake_bolts,
+        PREV_BOLTS,
+        FK_BOLTS,
+        ee::s01::f_0014d998__generated
+    );
+
+    oc417_gated!(
+        fake_heap_free,
+        PREV_HEAP_FREE,
+        FK_HEAP_FREE,
+        ee::s07::f_002723a8__generated
+    );
+
+    oc417_gated!(
+        fake_queue_section,
+        PREV_QUEUE_SECTION,
+        FK_QUEUE_SECTION,
+        ee::s05::f_0022e298__generated
+    );
+
+    oc417_gated!(
+        fake_add_magnet,
+        PREV_ADD_MAGNET,
+        FK_ADD_MAGNET,
+        ee::s11::f_003559f8__generated
+    );
+
+    oc417_gated!(
+        fake_luno_dtor,
+        PREV_LUNO_DTOR,
+        FK_LUNO_DTOR,
+        ee::s05::f_00224df0__generated
+    );
+
+    oc417_gated!(
+        fake_luno_assign,
+        PREV_LUNO_ASSIGN,
+        FK_LUNO_ASSIGN,
+        ee::s05::f_00225068__generated
+    );
+
+    oc417_gated!(
+        fake_mem_alloc,
+        PREV_MEM_ALLOC,
+        FK_MEM_ALLOC,
+        ee::s10::f_00317d70__generated
+    );
+
+    oc417_gated!(
+        fake_be_table,
+        PREV_BE_TABLE,
+        FK_BE_TABLE,
+        ee::s01::f_0014bdb8__generated
+    );
+
+    oc417_gated!(
+        fake_be_db_entry,
+        PREV_BE_DB_ENTRY,
+        FK_BE_DB_ENTRY,
+        ee::s01::f_0014ad50__generated
+    );
+
+    oc417_gated!(
+        fake_get_character,
+        PREV_GET_CHARACTER,
+        FK_GET_CHARACTER,
+        ee::s00::f_00123128__generated
+    );
+
+    oc417_gated!(
+        fake_set_sub_state,
+        PREV_SET_SUB_STATE,
+        FK_SET_SUB_STATE,
+        ee::s00::f_0011fec8__generated
+    );
+
+    oc417_gated!(
+        fake_set_main_state,
+        PREV_SET_MAIN_STATE,
+        FK_SET_MAIN_STATE,
+        ee::s00::f_0011fe78__generated
+    );
+
+    oc417_gated!(
+        fake_reset_fx,
+        PREV_RESET_FX,
+        FK_RESET_FX,
+        ee::s00::f_00111890__generated
+    );
+
+    oc417_gated!(
+        fake_boost_input,
+        PREV_BOOST_INPUT,
+        FK_BOOST_INPUT,
+        ee::s00::f_00114130__generated
+    );
+
+    oc417_gated!(
+        fake_build_matrix,
+        PREV_BUILD_MATRIX,
+        FK_BUILD_MATRIX,
+        ee::s00::f_0011e098__generated
+    );
+
+    oc417_gated!(
+        fake_quat_euler,
+        PREV_QUAT_EULER,
+        FK_QUAT_EULER,
+        ee::s00::f_001241c0__generated
+    );
+
+    oc417_gated!(
+        fake_anim_layer_a,
+        PREV_ANIM_LAYER_A,
+        FK_ANIM_LAYER_A,
+        ee::s10::f_0030e9e0__generated
+    );
+
+    oc417_gated!(
+        fake_anim_layer_b,
+        PREV_ANIM_LAYER_B,
+        FK_ANIM_LAYER_B,
+        ee::s10::f_0030ea80__generated
+    );
+
+    oc417_gated!(
+        fake_anim_reset,
+        PREV_ANIM_RESET,
+        FK_ANIM_RESET,
+        ee::s10::f_00311a50__generated
+    );
+
+    oc417_gated!(
+        fake_anim_play,
+        PREV_ANIM_PLAY,
+        FK_ANIM_PLAY,
+        ee::s10::f_003128e8__generated
+    );
+
+    oc417_gated!(
+        fake_sincos,
+        PREV_SINCOS,
+        FK_SINCOS,
+        ee::s10::f_0031be50__generated
+    );
+
+    /// Put every fake of this module in its override slot (once per
+    /// process; with the gate word clear they run what the slot held).
+    pub(crate) fn oc417_hook_fakes() {
+        use std::ptr::addr_of_mut;
+        let slots: [(*mut fn(&mut Cpu), fn(&mut Cpu), &AtomicUsize); 26] = [
+            (
+                addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+                fake_be_instance,
+                &PREV_BE_INSTANCE,
+            ),
+            (
+                addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+                fake_be_interface,
+                &PREV_BE_INTERFACE,
+            ),
+            (
+                addr_of_mut!(ee::s09::OVERRIDE_002D2510),
+                fake_read_u32,
+                &PREV_READ_U32,
+            ),
+            (
+                addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+                fake_new_named,
+                &PREV_NEW_NAMED,
+            ),
+            (
+                addr_of_mut!(ee::s01::OVERRIDE_0014D988),
+                fake_bolt_count,
+                &PREV_BOLT_COUNT,
+            ),
+            (
+                addr_of_mut!(ee::s01::OVERRIDE_0014D998),
+                fake_bolts,
+                &PREV_BOLTS,
+            ),
+            (
+                addr_of_mut!(ee::s07::OVERRIDE_002723A8),
+                fake_heap_free,
+                &PREV_HEAP_FREE,
+            ),
+            (
+                addr_of_mut!(ee::s05::OVERRIDE_0022E298),
+                fake_queue_section,
+                &PREV_QUEUE_SECTION,
+            ),
+            (
+                addr_of_mut!(ee::s11::OVERRIDE_003559F8),
+                fake_add_magnet,
+                &PREV_ADD_MAGNET,
+            ),
+            (
+                addr_of_mut!(ee::s05::OVERRIDE_00224DF0),
+                fake_luno_dtor,
+                &PREV_LUNO_DTOR,
+            ),
+            (
+                addr_of_mut!(ee::s05::OVERRIDE_00225068),
+                fake_luno_assign,
+                &PREV_LUNO_ASSIGN,
+            ),
+            (
+                addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+                fake_mem_alloc,
+                &PREV_MEM_ALLOC,
+            ),
+            (
+                addr_of_mut!(ee::s01::OVERRIDE_0014BDB8),
+                fake_be_table,
+                &PREV_BE_TABLE,
+            ),
+            (
+                addr_of_mut!(ee::s01::OVERRIDE_0014AD50),
+                fake_be_db_entry,
+                &PREV_BE_DB_ENTRY,
+            ),
+            (
+                addr_of_mut!(ee::s00::OVERRIDE_00123128),
+                fake_get_character,
+                &PREV_GET_CHARACTER,
+            ),
+            (
+                addr_of_mut!(ee::s00::OVERRIDE_0011FEC8),
+                fake_set_sub_state,
+                &PREV_SET_SUB_STATE,
+            ),
+            (
+                addr_of_mut!(ee::s00::OVERRIDE_0011FE78),
+                fake_set_main_state,
+                &PREV_SET_MAIN_STATE,
+            ),
+            (
+                addr_of_mut!(ee::s00::OVERRIDE_00111890),
+                fake_reset_fx,
+                &PREV_RESET_FX,
+            ),
+            (
+                addr_of_mut!(ee::s00::OVERRIDE_00114130),
+                fake_boost_input,
+                &PREV_BOOST_INPUT,
+            ),
+            (
+                addr_of_mut!(ee::s00::OVERRIDE_0011E098),
+                fake_build_matrix,
+                &PREV_BUILD_MATRIX,
+            ),
+            (
+                addr_of_mut!(ee::s00::OVERRIDE_001241C0),
+                fake_quat_euler,
+                &PREV_QUAT_EULER,
+            ),
+            (
+                addr_of_mut!(ee::s10::OVERRIDE_0030E9E0),
+                fake_anim_layer_a,
+                &PREV_ANIM_LAYER_A,
+            ),
+            (
+                addr_of_mut!(ee::s10::OVERRIDE_0030EA80),
+                fake_anim_layer_b,
+                &PREV_ANIM_LAYER_B,
+            ),
+            (
+                addr_of_mut!(ee::s10::OVERRIDE_00311A50),
+                fake_anim_reset,
+                &PREV_ANIM_RESET,
+            ),
+            (
+                addr_of_mut!(ee::s10::OVERRIDE_003128E8),
+                fake_anim_play,
+                &PREV_ANIM_PLAY,
+            ),
+            (
+                addr_of_mut!(ee::s10::OVERRIDE_0031BE50),
+                fake_sincos,
+                &PREV_SINCOS,
+            ),
+        ];
+        for (slot, fake, prev) in slots {
+            fakes::hook(slot, fake, prev);
+        }
+    }
+
+    /// Scrambled machine with a game gp, the fakes' gate open and (one seed
+    /// in three, if `calls > 0`) a gated fake call that unwinds. The
+    /// generic fakes (`fakes::machine`) take the vtable calls; their own
+    /// unwinding is chosen with the same `calls`.
+    pub(crate) fn oc417_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        oc417_hook_fakes();
+        let mut r = machine(c, seed, salt, calls);
+        c.bus.write32(OC417_CTRL, OC417_MAGIC);
+        let unwind = if calls > 0 && seed % 3 == 1 {
+            r.next_u32() % calls
+        } else {
+            u32::MAX
+        };
+        c.bus.write32(OC417_CTRL + 8, unwind);
+        for id in 0..32 {
+            c.bus.write32(OC417_CTRL + 0x10 + 4 * id, 0);
+        }
+        r
+    }
+
+    // ----------------------------------------------------------------------
+    // WScriptFn_EventTypeMatches
+
+    /// Event type below and above 8; table entry equal to the current event
+    /// byte or not; the BE lookups faked (and unwinding at one of them).
+    #[test]
+    fn wscript_fn_event_type_matches_matches() {
+        check(
+            ee::s10::f_00303df8__generated,
+            wscript_fn_event_type_matches,
+            200,
+            &|c, seed| {
+                let mut r = oc417_machine(c, seed, 0x4170_0002, 2);
+                c.pc = 0x0030_3df8;
+                let current = r.next_u32() % 4;
+                c.bus.write8(0x0053_5c10, current as u8);
+                for i in 0..8u32 {
+                    let v = if r.next_u32() % 3 == 0 {
+                        current
+                    } else {
+                        r.next_u32() % 4
+                    };
+                    c.bus.write32(0x0044_65f8 + 4 * i, v);
+                }
+                c.g[A0][0] = (seed % 12) as u64;
+            },
+        );
+    }
+
+    // ----------------------------------------------------------------------
+    // WScriptFn_MultiParticleControl / WScriptFn_AddMagnetModifier
+
+    pub(crate) const WS_WORLD: u32 = DATA + 0x2000;
+
+    pub(crate) const WS_CACHE_PTR: u32 = DATA + 0x2800;
+
+    pub(crate) const WS_CACHE: u32 = DATA + 0x2900;
+
+    pub(crate) const WS_SLOTS: u32 = DATA + 0x2a00;
+
+    pub(crate) const WS_SLOT: u32 = DATA + 0x2b00;
+
+    pub(crate) const WS_ENTRIES: u32 = DATA + 0x2c00;
+
+    pub(crate) const WS_OBJ: u32 = DATA + 0x4000;
+
+    pub(crate) const WS_OBJ2: u32 = DATA + 0x4100;
+
+    pub(crate) const WS_NODE: u32 = DATA + 0x4400;
+
+    pub(crate) const WS_NODE_VT: u32 = DATA + 0x4600;
+
+    pub(crate) const WS_MGR: u32 = DATA + 0x5000;
+
+    pub(crate) const WS_ARGS: u32 = DATA + 0x1000;
+
+    pub(crate) const WS_RESULT: u32 = DATA + 0x1800;
+
+    /// The world, its object cache and two objects ids can name, written
+    /// the way both functions look them up: `-1` is the current object
+    /// (`world+0x290`), `slot | index << 8` goes through the cache's slot
+    /// table.
+    pub(crate) fn oc417_wscript_world(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        c.bus.write32(GAME_GP + 0xce8, WS_WORLD);
+        c.bus
+            .write32(WS_WORLD + 0x290, if seed % 5 == 0 { 0 } else { WS_OBJ2 });
+        c.bus.write32(GAME_GP + 0x16c8, WS_CACHE_PTR);
+        c.bus.write32(WS_CACHE_PTR, WS_CACHE);
+        c.bus.write32(WS_CACHE + 8, WS_SLOTS);
+        c.bus.write32(WS_SLOTS, WS_SLOT);
+        c.bus.write32(WS_SLOTS + 5 * 4, WS_SLOT);
+        c.bus.write32(WS_SLOT + 0x1c, WS_ENTRIES);
+        c.bus.write32(WS_ENTRIES, (WS_OBJ >> 2) << 8);
+        c.bus.write32(
+            WS_ENTRIES + 3 * 4,
+            if seed % 4 == 0 { 0 } else { (WS_OBJ >> 2) << 8 },
+        );
+        c.bus.write32(WS_OBJ + 0x78, r.next_u32());
+        c.bus.write32(WS_OBJ2 + 0x78, r.next_u32());
+        c.bus.write32(GAME_GP + 0xf38, WS_MGR);
+        for i in 0..4u32 {
+            c.bus.write32(WS_MGR + 4 * i, WS_MGR + 0x400);
+        }
+    }
+
+    /// The 12-byte default result record both functions copy out.
+    pub(crate) fn oc417_wscript_result(c: &mut Cpu, r: &mut Rng) {
+        for i in 0..3u32 {
+            c.bus.write32(0x004c_9098 + 4 * i, r.next_u32());
+        }
+    }
+
+    /// `n` argument entries (`{index, value, ?, type}`): index 0-3 of the
+    /// 4-word record, the id word taken from the ids above.
+    pub(crate) fn oc417_wscript_args(
+        c: &mut Cpu,
+        r: &mut Rng,
+        seed: u32,
+        id_index: u32,
+        types: u32,
+    ) {
+        let n = (seed / 2) % 4;
+        for i in 0..n {
+            let e = WS_ARGS + 0x10 * i;
+            let idx = r.next_u32() % 4;
+            c.bus.write32(e, idx);
+            let value = if idx == id_index {
+                [0xffff_ffffu32, 0x0000, 0x0305, 0x0107, 0x0900][(r.next_u32() % 5) as usize]
+            } else if idx == 0 {
+                r.next_u32() % 4
+            } else {
+                r.next_u32() % 3
+            };
+            c.bus.write32(e + 4, value);
+            c.bus.write32(e + 0xc, r.next_u32() % 3);
+        }
+        for i in 0..4u32 {
+            c.bus.write32(types + 4 * i, r.next_u32() % 3);
+        }
+    }
+
+    /// Both initialisation states of the static record, 0-3 entries (int to
+    /// float conversions included), objects found through the current object,
+    /// the slot table or not at all, add and remove.
+    #[test]
+    fn wscript_fn_multi_particle_control_matches() {
+        check(
+            ee::s10::f_00306cb0__generated,
+            wscript_fn_multi_particle_control,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x4170_0007, 0);
+                c.pc = 0x0030_6cb0;
+                oc417_wscript_world(c, &mut r, seed);
+                oc417_wscript_result(c, &mut r);
+                oc417_wscript_args(c, &mut r, seed, 1, 0x0044_6970);
+                let initialised = seed % 3 != 0;
+                c.bus.write32(GAME_GP + 0x27c8, initialised as u32);
+                if initialised {
+                    for i in 0..4u32 {
+                        let w = if i == 1 {
+                            0xffff_ffff
+                        } else {
+                            r.next_u32() % 3
+                        };
+                        c.bus.write32(0x004f_c050 + 4 * i, w);
+                    }
+                }
+                c.g[A0][0] = WS_RESULT as u64;
+                c.g[A1][0] = ((seed / 2) % 4) as u64;
+                c.g[A2][0] = WS_ARGS as u64;
+            },
+        );
+    }
+
+    /// As above for the magnet modifier: the object's move node, its
+    /// "accepts magnets" virtual (`0x27c070` reads the node, so the fixture
+    /// chooses the answer) and the faked magnet call.
+    #[test]
+    fn wscript_fn_add_magnet_modifier_matches() {
+        check(
+            ee::s10::f_00305478__generated,
+            wscript_fn_add_magnet_modifier,
+            300,
+            &|c, seed| {
+                let mut r = oc417_machine(c, seed, 0x4170_0008, 4);
+                c.pc = 0x0030_5478;
+                oc417_wscript_world(c, &mut r, seed);
+                oc417_wscript_result(c, &mut r);
+                oc417_wscript_args(c, &mut r, seed, 0, 0x0044_66a0);
+                for obj in [WS_OBJ, WS_OBJ2] {
+                    c.bus
+                        .write32(obj + 0xc, if seed % 7 == 0 { 0 } else { WS_NODE });
+                }
+                c.bus.write32(WS_NODE + 0xc, WS_NODE_VT);
+                c.bus.write32(WS_NODE + 0x14, (seed / 3) % 2);
+                c.bus.write16(WS_NODE_VT + 0x80, 0);
+                c.bus.write32(WS_NODE_VT + 0x84, 0x0027_c070);
+                c.bus
+                    .write16(WS_NODE_VT + 0xc0, (r.next_u32() % 4 * 4) as u16);
+                c.bus.write32(WS_NODE_VT + 0xc4, fakes::FAKE);
+                c.bus.write32(GAME_GP + 0x2750, (seed % 3 != 0) as u32);
+                if seed % 3 != 0 {
+                    for i in 0..4u32 {
+                        let w = if i == 0 {
+                            0xffff_ffff
+                        } else {
+                            r.next_u32() % 5
+                        };
+                        c.bus.write32(0x004f_bd58 + 4 * i, w);
+                    }
+                }
+                c.g[A0][0] = WS_RESULT as u64;
+                c.g[A1][0] = ((seed / 2) % 4) as u64;
+                c.g[A2][0] = WS_ARGS as u64;
             },
         );
     }

@@ -83,28 +83,6 @@ pub mod audio_system;
 pub mod graphics;
 #[cfg(feature = "streaming")]
 pub mod native_files;
-#[cfg(feature = "oc406")]
-pub mod oc406;
-#[cfg(feature = "oc407")]
-pub mod oc407;
-#[cfg(feature = "oc408")]
-pub mod oc408;
-#[cfg(feature = "oc409")]
-pub mod oc409;
-#[cfg(feature = "oc410")]
-pub mod oc410;
-#[cfg(feature = "oc411")]
-pub mod oc411;
-#[cfg(feature = "oc412")]
-pub mod oc412;
-#[cfg(feature = "oc413")]
-pub mod oc413;
-#[cfg(feature = "oc414")]
-pub mod oc414;
-#[cfg(feature = "oc415")]
-pub mod oc415;
-#[cfg(feature = "oc417")]
-pub mod oc417;
 #[cfg(feature = "rider_logic")]
 pub mod rider_logic;
 #[cfg(feature = "snd_lib")]
@@ -130,28 +108,6 @@ const CORE: &[(u32, GuestFn, &str)] = &[(
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v: Vec<(u32, GuestFn, &'static str)> = CORE.to_vec();
     v.extend(game::overrides());
-    #[cfg(feature = "oc406")]
-    v.extend_from_slice(oc406::OVERRIDES);
-    #[cfg(feature = "oc407")]
-    v.extend_from_slice(oc407::OVERRIDES);
-    #[cfg(feature = "oc408")]
-    v.extend_from_slice(oc408::OVERRIDES);
-    #[cfg(feature = "oc409")]
-    v.extend_from_slice(oc409::OVERRIDES);
-    #[cfg(feature = "oc410")]
-    v.extend_from_slice(oc410::OVERRIDES);
-    #[cfg(feature = "oc411")]
-    v.extend_from_slice(oc411::OVERRIDES);
-    #[cfg(feature = "oc412")]
-    v.extend_from_slice(oc412::OVERRIDES);
-    #[cfg(feature = "oc413")]
-    v.extend_from_slice(oc413::OVERRIDES);
-    #[cfg(feature = "oc414")]
-    v.extend_from_slice(oc414::OVERRIDES);
-    #[cfg(feature = "oc415")]
-    v.extend_from_slice(oc415::OVERRIDES);
-    #[cfg(feature = "oc417")]
-    v.extend_from_slice(oc417::OVERRIDES);
     v.extend_from_slice(movie::overrides());
     #[cfg(feature = "math")]
     v.extend_from_slice(math::OVERRIDES);

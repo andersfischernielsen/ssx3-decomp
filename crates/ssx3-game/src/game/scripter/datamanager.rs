@@ -129,6 +129,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ScriptEngine_UnloadMaster",
     ),
     (0x0028_3818, script_movie_stop, "ScriptMovie_Stop"),
+    (
+        0x0027_6bd8,
+        script_list_get_play_status,
+        "ScriptList_GetPlayStatus",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1941,6 +1946,143 @@ fn script_list_update_leave(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// ScriptList_GetPlayStatus (0x00276bd8)
+
+/// `ScriptCmdQueue_At` (0x00283d70).
+pub(crate) const SCRIPT_CMD_QUEUE_AT_CALL: Callee = Callee {
+    addr: 0x0028_3d70,
+    f: ee::s07::ScriptCmdQueue_At,
+};
+
+/// `ScriptEngine_IsProcessFinished` (0x00282838).
+pub(crate) const SCRIPT_ENGINE_IS_PROCESS_FINISHED_CALL: Callee = Callee {
+    addr: 0x0028_2838,
+    f: ee::s07::ScriptEngine_IsProcessFinished,
+};
+
+/// `int ScriptList::GetPlayStatus(this)` (0x276bd8): the play state of a script list. 0 unless the state (+0xa4) is 3 (playing); 3 when +0xc4 is set (paused); otherwise, when +0xc8 is clear, look at the first queued command: if its flag 8 is set the list waits (2 with no wait object at +0xb0, or while the count at +0xb8 is above 1), else if the script process of its id (+0xc) has not finished the status is 1. The rest is 4 or, with a negative +0xbc, 5.
+pub fn script_list_get_play_status(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame { size: 0x30 };
+        'b_276c98: {
+            'b_276c94: {
+                c.cycles += 9;
+                Frame::open(c, 0x30);
+                c.g[V1][0] = 0x3;
+                frame.save(c, S0, 0x20);
+                frame.save(c, S1, 0x10);
+                c.g[S0][0] = c.g[A0][0];
+                frame.save_ra(c, 0);
+                c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0xa4));
+                let t = c.g[V0][0] != c.g[V1][0];
+                c.g[V0][0] = 0u64;
+                if t {
+                    break 'b_276c94;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0xc4));
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = 0x3;
+                    if t {
+                        break 'b_276c94;
+                    } else {
+                        'b_276c80: {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0xc8));
+                            if c.g[V0][0] != 0u64 {
+                                c.g[A1][0] = c.lw(r32(c, S0).wrapping_add(0xbc));
+                                break 'b_276c80;
+                            } else {
+                                'b_276c7c: {
+                                    'b_276c58: {
+                                        c.cycles += 8;
+                                        c.g[S1][0] = sx(r32(c, S0).wrapping_add(0xc));
+                                        c.g[A1][0] = 0u64;
+                                        c.g[A0][0] = c.g[S1][0];
+                                        SCRIPT_CMD_QUEUE_AT_CALL.call(c, 0x0027_6c24)?;
+                                        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x8));
+                                        c.g[V1][0] = c.g[V1][0] & 0x8;
+                                        if c.g[V1][0] == 0u64 {
+                                            c.g[A0][0] = c.g[S1][0];
+                                            break 'b_276c58;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0xb0));
+                                            let t = c.g[V0][0] == 0u64;
+                                            c.g[V0][0] = 0x2;
+                                            if t {
+                                                break 'b_276c94;
+                                            } else {
+                                                c.cycles += 4;
+                                                c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(0xb8));
+                                                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x1));
+                                                let t = (c.g[V0][0] as i64) <= 0;
+                                                c.g[V0][0] = 0x2;
+                                                if t {
+                                                    break 'b_276c7c;
+                                                } else {
+                                                    c.cycles += 2;
+                                                    let t = true;
+                                                    frame.restore(c, S0, 0x20);
+                                                    if t {
+                                                        break 'b_276c98;
+                                                    } else {
+                                                        break 'b_276c58;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    c.cycles += 7;
+                                    c.g[A1][0] = 0u64;
+                                    SCRIPT_CMD_QUEUE_AT_CALL.call(c, 0x0027_6c60)?;
+                                    c.g[A1][0] = c.lw(r32(c, V0).wrapping_add(0xc));
+                                    c.g[A0][0] = c.lw(r32(c, S0));
+                                    SCRIPT_ENGINE_IS_PROCESS_FINISHED_CALL.call(c, 0x0027_6c6c)?;
+                                    if c.g[V0][0] != 0u64 {
+                                        c.g[A1][0] = c.lw(r32(c, S0).wrapping_add(0xbc));
+                                        break 'b_276c80;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = true;
+                                        c.g[V0][0] = 0x1;
+                                        if t {
+                                            break 'b_276c94;
+                                        } else {
+                                            break 'b_276c7c;
+                                        }
+                                    }
+                                }
+                                c.cycles += 1;
+                                c.g[A1][0] = c.lw(r32(c, S0).wrapping_add(0xbc));
+                                break 'b_276c80;
+                            }
+                        }
+                        c.cycles += 5;
+                        c.g[V1][0] = 0xffffffffffffffff;
+                        c.g[A0][0] = 0x4;
+                        c.g[V0][0] = 0x5;
+                        c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                        if c.g[V1][0] != 0 {
+                            c.g[V0][0] = c.g[A0][0];
+                        }
+                        break 'b_276c94;
+                    }
+                }
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x20);
+            break 'b_276c98;
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2811,5 +2953,46 @@ pub(crate) mod tests {
                 );
             }
         }
+    }
+
+    pub(crate) use crate::game::ai::rider::tests::w32_2;
+    pub(crate) use crate::game::world::worldview::tests::oc410_machine;
+    pub(crate) use crate::game::world::worldview::tests::oc410_result;
+
+    /// `ScriptList_GetPlayStatus`: every state of the play status chain.
+    #[test]
+    fn script_list_get_play_status_matches() {
+        const LIST: u32 = DATA + 0x1000;
+        const CMD: u32 = DATA + 0x2000;
+        check(
+            ee::s07::f_00276bd8__generated,
+            script_list_get_play_status,
+            300,
+            &|c, seed| {
+                let mut r = oc410_machine(c, seed, 0x0027_6bd8, 2);
+                c.pc = 0x0027_6bd8;
+                c.g[A0][0] = LIST as u64;
+                w32_2(c, LIST, DATA + 0x600);
+                w32_2(
+                    c,
+                    LIST + 0xa4,
+                    if seed % 6 == 0 { r.next_u32() % 3 } else { 3 },
+                );
+                w32_2(c, LIST + 0xc4, (seed % 5 == 1) as u32);
+                w32_2(c, LIST + 0xc8, (seed % 4 == 2) as u32);
+                w32_2(c, LIST + 0xb0, (seed % 3 == 0) as u32);
+                w32_2(c, LIST + 0xb8, r.next_u32() % 4);
+                let bc = if r.next_u32() & 1 == 0 {
+                    r.next_u32() | 0x8000_0000
+                } else {
+                    r.next_u32() & 0x7fff_ffff
+                };
+                w32_2(c, LIST + 0xbc, bc);
+                w32_2(c, oc410_result(17), CMD);
+                w32_2(c, CMD + 8, if (seed / 3) % 2 == 0 { 8 } else { 0 });
+                w32_2(c, CMD + 0xc, r.next_u32());
+                w32_2(c, oc410_result(18), (seed / 7) % 2);
+            },
+        );
     }
 }

@@ -163,6 +163,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         math_wrap_angle_clamp_half_pi,
         "Math_WrapAngleClampHalfPi",
     ),
+    (
+        0x0016_9368,
+        script_cam_controller_update_2,
+        "ScriptCamController_Update",
+    ),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -1635,6 +1640,99 @@ pub fn math_wrap_angle_clamp_half_pi(c: &mut Cpu) {
     abi::ret(c);
 }
 
+// ---------------------------------------------------------------------------
+// ScriptCamController_Update (0x169368)
+
+/// `ScriptCameraAlgo::GetScriptObj(algo)` (0x1694b0).
+pub(crate) const SCRIPT_CAMERA_ALGO_GET_SCRIPT_OBJ: Callee = Callee {
+    addr: 0x0016_94b0,
+    f: ee::s02::ScriptCameraAlgo_GetScriptObj,
+};
+
+/// Controller: pointer to the list head pointer (+8).
+pub(crate) const SCRIPT_CAM_CTRL_LIST: u32 = 0x8;
+
+/// Node: algo (+0), progress t (+4), blend weight (+0xc), next (+0x14).
+#[cfg(test)]
+pub(crate) const SCRIPT_CAM_NODE_ALGO: u32 = 0x0;
+
+pub(crate) const SCRIPT_CAM_NODE_T: u32 = 0x4;
+
+pub(crate) const SCRIPT_CAM_NODE_WEIGHT: u32 = 0xc;
+
+pub(crate) const SCRIPT_CAM_NODE_NEXT: u32 = 0x14;
+
+/// `void ScriptCamController::Update(this)` (0x169368): for every algo node
+/// in the list, read its script object's progress (+0x18), store it as the
+/// node's `t`, store the smoothstep `3p^2 - 2p^3` clamped to 1.0 as the
+/// weight, then call the algo's vtable method at +0x2c (`this + delta(+0x28)`).
+pub fn script_cam_controller_update_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 21, 0x28);
+        frame.save_fpr(c, 20, 0x20);
+        let list = c.lw(r32(c, A0).wrapping_add(SCRIPT_CAM_CTRL_LIST));
+        c.g[V0][0] = list;
+        c.g[S0][0] = c.lw(list as u32);
+        if c.g[S0][0] == 0 {
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 5;
+            c.g[AT][0] = 0x4040_0000;
+            c.mtc1(AT, 21);
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 20);
+            loop {
+                c.cycles += 12;
+                c.g[A0][0] = c.lw(r32(c, S0));
+                SCRIPT_CAMERA_ALGO_GET_SCRIPT_OBJ.call(c, 0x0016_93a8)?;
+                c.lwc1(2, r32(c, V0).wrapping_add(0x18));
+                c.mul_s(1, 2, 2);
+                c.add_s(0, 1, 1);
+                c.mul_s(1, 1, 21);
+                c.mul_s(0, 0, 2);
+                c.sub_s(1, 1, 0);
+                c.c_lt_s(20, 1);
+                let within = !c.fcc();
+                c.swc1(2, r32(c, S0).wrapping_add(SCRIPT_CAM_NODE_T));
+                if !within {
+                    // The weight exceeds 1.0: clamp.
+                    c.cycles += 2;
+                    c.g[AT][0] = 0x3f80_0000;
+                    c.mtc1(AT, 1);
+                }
+                c.cycles += 10;
+                c.swc1(1, r32(c, S0).wrapping_add(SCRIPT_CAM_NODE_WEIGHT));
+                c.g[A1][0] = c.lw(r32(c, S0));
+                c.g[V0][0] = c.lw(r32(c, A1).wrapping_add(0x10));
+                c.g[A0][0] = c.lh(r32(c, V0).wrapping_add(0x28));
+                c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x2c));
+                let method = r32(c, V1);
+                c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+                call_ptr(c, method, 0x0016_93f4)?;
+                c.g[S0][0] = c.lw(r32(c, S0).wrapping_add(SCRIPT_CAM_NODE_NEXT));
+                if c.g[S0][0] == 0 {
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x10);
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0016_93a0);
+                }
+            }
+        }
+        c.cycles += 5;
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x28);
+        frame.restore_fpr(c, 20, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2245,6 +2343,56 @@ pub(crate) mod tests {
                 c.bus.write32(GAME_GP.wrapping_sub(0x6468), r_m2.edge_f32());
                 c.bus.write32(GAME_GP.wrapping_sub(0x6464), r_m2.edge_f32());
                 c.bus.write32(DATA, r_m2.edge_f32());
+            },
+        );
+    }
+
+    pub(crate) use crate::game::world::worldview::tests::oc410_machine;
+    pub(crate) use crate::game::world::worldview::tests::oc410_result;
+
+    /// Controller `CTRL`, node list at `NODES`, algos at `ALGOS`.
+    pub(crate) const SCAM_CTRL: u32 = DATA + 0x1000;
+
+    pub(crate) const SCAM_NODES: u32 = DATA + 0x2000;
+
+    pub(crate) const SCAM_ALGOS: u32 = DATA + 0x3000;
+
+    pub(crate) const SCAM_SCRIPT_OBJ: u32 = DATA + 0x4000;
+
+    /// `ScriptCamController_Update`: progress -> smoothstep weight, then the
+    /// algo's virtual method for every node (some seeds unwind in one).
+    #[test]
+    fn script_cam_controller_update_matches() {
+        check(
+            ee::s02::f_00169368__generated,
+            script_cam_controller_update_2,
+            300,
+            &|c, seed| {
+                let mut r = oc410_machine(c, seed, 0x0016_9368, 4);
+                c.pc = 0x0016_9368;
+                c.g[A0][0] = SCAM_CTRL as u64;
+                c.bus
+                    .write32(SCAM_CTRL + SCRIPT_CAM_CTRL_LIST, SCAM_CTRL + 0x100);
+                let nodes = seed % 5;
+                c.bus
+                    .write32(SCAM_CTRL + 0x100, if nodes == 0 { 0 } else { SCAM_NODES });
+                for i in 0..nodes {
+                    let node = SCAM_NODES + 0x40 * i;
+                    let algo = SCAM_ALGOS + 0x40 * i;
+                    c.bus.write32(node + SCRIPT_CAM_NODE_ALGO, algo);
+                    let next = if i + 1 < nodes { node + 0x40 } else { 0 };
+                    c.bus.write32(node + SCRIPT_CAM_NODE_NEXT, next);
+                    let vt = fakes::vtable(c, &mut r, &[0x28]);
+                    c.bus.write32(algo + 0x10, vt);
+                }
+                c.bus.write32(oc410_result(5), SCAM_SCRIPT_OBJ);
+                // Progress: inside 0..1 (no clamp) or anywhere (negative: clamp).
+                let progress = if seed % 2 == 0 {
+                    r.f32(1.0) & 0x3fff_ffff
+                } else {
+                    r.edge_f32()
+                };
+                c.bus.write32(SCAM_SCRIPT_OBJ + 0x18, progress);
             },
         );
     }

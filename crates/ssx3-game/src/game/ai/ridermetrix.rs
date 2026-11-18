@@ -7,9 +7,11 @@ use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::ai::stream_write_member;
@@ -283,6 +285,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0011_a8c8,
         rider_metrix_build_trick_desc,
         "RiderMetrix_BuildTrickDesc",
+    ),
+    (
+        0x0011_b678,
+        rider_load_list_compare,
+        "Rider_LoadListCompare",
     ),
 ];
 
@@ -7152,6 +7159,12 @@ pub fn rider_metrix_build_trick_desc(c: &mut Cpu) {
     })
 }
 
+/// `int Rider_LoadListCompare(const char* a, const char* b)` (0x11b678):
+/// the load list's sort callback: `strcasecmp`.
+pub fn rider_load_list_compare(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x0041_aa88), 0x0011_b688);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9462,6 +9475,36 @@ pub(crate) mod tests {
                     0
                 };
                 c.g[T1][0] = pick(&mut r, &[0, 0, 0, 1, 2, 3]) as u64;
+            },
+        );
+    }
+
+    /// `Rider_LoadListCompare` is `strcasecmp` of its two arguments.
+    #[test]
+    fn rider_load_list_compare_matches() {
+        check(
+            ee::s00::f_0011b678__generated,
+            rider_load_list_compare,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x11b678, 0);
+                c.pc = 0x0011_b678;
+                let (a, b) = (DATA + 0x100, DATA + 0x200);
+                for k in 0..8u32 {
+                    let ch = b'a' + (r.next_u32() % 3) as u8;
+                    c.bus.write8(a + k, ch);
+                    let other = if seed % 2 == 0 {
+                        ch.to_ascii_uppercase()
+                    } else {
+                        ch
+                    };
+                    c.bus
+                        .write8(b + k, if k == 6 && seed % 3 == 0 { b'z' } else { other });
+                }
+                c.bus.write8(a + 8, 0);
+                c.bus.write8(b + 8, 0);
+                c.g[A0][0] = sx(a);
+                c.g[A1][0] = sx(b);
             },
         );
     }

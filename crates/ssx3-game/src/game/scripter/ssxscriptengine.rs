@@ -41,6 +41,8 @@ pub(crate) use crate::game::fe::festaterewards::gp_4 as gp_7;
 pub(crate) use crate::game::fe::festaterewards::lw_3;
 pub(crate) use crate::game::fe::festatetrophyroom::r;
 pub(crate) use crate::game::fe::festatetrophyroom::Ops;
+pub(crate) use crate::game::input::inputparse::o406_lw;
+pub(crate) use crate::game::input::inputparse::o406_sw;
 pub(crate) use crate::game::main::gamemode::low as low_2;
 pub(crate) use crate::game::main::gamemode::lw_r;
 pub(crate) use crate::game::main::gamemode::sp_2;
@@ -59,7 +61,13 @@ use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
+use ssx3_ee_rt::vu0::Y;
+use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -523,6 +531,31 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0027_89c0,
         script_engine_toggle_movie_pause,
         "ScriptEngine_ToggleMoviePause",
+    ),
+    (
+        0x0027_92e0,
+        script_engine_is_hud_allowed_2,
+        "ScriptEngine_IsHUDAllowed",
+    ),
+    (
+        0x0027_a0d8,
+        script_engine_get_target_pose,
+        "ScriptEngine_GetTargetPose",
+    ),
+    (
+        0x0027_c9b0,
+        script_rider_read_fields,
+        "ScriptRider_ReadFields",
+    ),
+    (
+        0x0027_d970,
+        script_obj_cam_build_matrix_from_script,
+        "ScriptObjCam_BuildMatrixFromScript",
+    ),
+    (
+        0x0027_f9f8,
+        rider_script_obj_activate,
+        "RiderScriptObj_Activate",
     ),
 ];
 
@@ -7010,6 +7043,2011 @@ pub fn script_engine_toggle_movie_pause(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod rider_activate_callee {
+    use crate::call::Callee;
+    use ssx3_ee as ee;
+
+    pub const SCRIPT_OBJ_ACTIVATE: Callee = Callee {
+        addr: 0x0028_3430,
+        f: ee::s07::ScriptObj_Activate,
+    };
+
+    pub const SCRIPT_RIDER_GET_PARAMS: Callee = Callee {
+        addr: 0x0027_c958,
+        f: ee::s07::ScriptRider_GetParams,
+    };
+
+    pub const SCRIPT_ENGINE_GET_TARGET_POSE: Callee = Callee {
+        addr: 0x0027_a0d8,
+        f: ee::s07::ScriptEngine_GetTargetPose,
+    };
+
+    pub const SCRIPT_DATA_GET_INFO: Callee = Callee {
+        addr: 0x0027_c070,
+        f: ee::s07::ScriptData_GetInfo,
+    };
+
+    pub const SCRIPT_ENGINE_FIND_ANIM_BANK: Callee = Callee {
+        addr: 0x0027_9ed8,
+        f: ee::s07::ScriptEngine_FindAnimBank,
+    };
+
+    pub const SCRIPT_ENGINE_FIND_SOUND_BANK: Callee = Callee {
+        addr: 0x0027_9ef8,
+        f: ee::s07::ScriptEngine_FindSoundBank,
+    };
+}
+
+// ------------------------------------------------ ScriptRider_ReadFields
+
+/// How `ScriptRider_ReadFields` stores one track value.
+#[derive(Clone, Copy)]
+pub(crate) enum O406Store {
+    /// `out[n] = *value` (word read through the returned pointer).
+    Deref,
+    /// `out[n] = value` (the call returns the word itself).
+    Direct,
+    /// `out[n] = *(float*)value`.
+    Float,
+}
+
+/// `void ScriptRider_ReadFields(ScriptEntity *self, ScriptRiderFields *out)`
+/// (0x27c9b0): read the twelve values of the rider's script channels into
+/// `out`: three (value, value) word pairs from tracks 0..2, then six floats
+/// from tracks 3..8. Each is one `InSeq_ChannelGetTrack(self, track)` and
+/// one virtual read call on the track (vtable offsets +0x20 / +0x28).
+pub fn script_rider_read_fields(c: &mut Cpu) {
+    // (voff, vcall return, store, out offset, next track, GetTrack return)
+    const STEPS: [(u32, u32, O406Store, u32, u32, u32); 12] = [
+        (0x20, 0x0027_c9e4, O406Store::Deref, 0x0, 0, 0x0027_c9f8),
+        (0x28, 0x0027_ca0c, O406Store::Direct, 0x4, 1, 0x0027_ca1c),
+        (0x20, 0x0027_ca30, O406Store::Deref, 0x8, 1, 0x0027_ca44),
+        (0x28, 0x0027_ca58, O406Store::Direct, 0xc, 2, 0x0027_ca68),
+        (0x20, 0x0027_ca7c, O406Store::Deref, 0x10, 2, 0x0027_ca90),
+        (0x28, 0x0027_caa4, O406Store::Direct, 0x14, 3, 0x0027_cab4),
+        (0x20, 0x0027_cac8, O406Store::Float, 0x18, 4, 0x0027_cadc),
+        (0x20, 0x0027_caf0, O406Store::Float, 0x1c, 5, 0x0027_cb04),
+        (0x20, 0x0027_cb18, O406Store::Float, 0x20, 6, 0x0027_cb2c),
+        (0x20, 0x0027_cb40, O406Store::Float, 0x24, 7, 0x0027_cb54),
+        (0x20, 0x0027_cb68, O406Store::Float, 0x28, 8, 0x0027_cb7c),
+        (0x20, 0x0027_cb90, O406Store::Float, 0x2c, 0, 0),
+    ];
+    guest(c, |c| {
+        c.cycles += 127;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0027_42c8, 0x0027_c9d0)?;
+        for (n, &(voff, vret, store, dst, next, next_ret)) in STEPS.iter().enumerate() {
+            // The virtual read call on the track in v0.
+            c.g[V1][0] = o406_lw(c, V0, 4);
+            let a = (c.g[V1][0] as u32).wrapping_add(voff);
+            c.g[A0][0] = c.lh(a);
+            c.g[A1][0] = o406_lw(c, V1, voff + 4);
+            let target = c.g[A1][0] as u32;
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, vret)?;
+            let last = n == STEPS.len() - 1;
+            match store {
+                O406Store::Deref => {
+                    c.g[V1][0] = o406_lw(c, V0, 0);
+                    c.g[A1][0] = next as u64;
+                    c.g[A0][0] = c.g[S0][0];
+                    o406_sw(c, S1, dst, V1);
+                }
+                O406Store::Direct => {
+                    c.g[A1][0] = next as u64;
+                    c.g[A0][0] = c.g[S0][0];
+                    o406_sw(c, S1, dst, V0);
+                }
+                O406Store::Float => {
+                    c.lwc1(0, c.g[V0][0] as u32);
+                    if last {
+                        frame.restore(c, S0, 0x20);
+                    } else {
+                        c.g[A1][0] = next as u64;
+                        c.g[A0][0] = c.g[S0][0];
+                    }
+                    let a = (c.g[S1][0] as u32).wrapping_add(dst);
+                    c.swc1(0, a);
+                }
+            }
+            if last {
+                break;
+            }
+            call_ptr(c, 0x0027_42c8, next_ret)?;
+        }
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `base + off` of a guest register, as the compiled code forms addresses.
+macro_rules! cam_ea {
+    ($c:ident, $r:expr, $o:expr) => {
+        ($c.g[$r][0] as u32).wrapping_add($o)
+    };
+}
+
+macro_rules! cam_ea_sub {
+    ($c:ident, $r:expr, $o:expr) => {
+        ($c.g[$r][0] as u32).wrapping_sub($o)
+    };
+}
+
+/// A guest register plus a (possibly negative) offset.
+pub(crate) fn cam_at(c: &Cpu, (reg, off): (usize, i32)) -> u32 {
+    (c.g[reg][0] as u32).wrapping_add(off as u32)
+}
+
+/// `dst = a * b` for 4x4 float matrices in guest memory (row vectors, VU0
+/// `vmula/vmadda/vmadd` chain per row of `b`); `dst` may alias `a` (all
+/// loads happen first).
+pub(crate) fn cam_mat_mul(c: &mut Cpu, a: (usize, i32), b: (usize, i32), dst: (usize, i32)) {
+    let (pa, pb, pd) = (cam_at(c, a), cam_at(c, b), cam_at(c, dst));
+    for i in 0..4u32 {
+        c.lqc2((4 + i) as usize, pa.wrapping_add(0x10 * i));
+    }
+    for i in 0..4u32 {
+        c.lqc2((8 + i) as usize, pb.wrapping_add(0x10 * i));
+    }
+    c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+    c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+    c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+    c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+    c.vu0().mula(0b1111, 4, Src::Bc(9, X));
+    c.vu0().madda(0b1111, 5, Src::Bc(9, Y));
+    c.vu0().madda(0b1111, 6, Src::Bc(9, Z));
+    c.vu0().madd(0b1111, 13, 7, Src::Bc(9, W));
+    c.vu0().mula(0b1111, 4, Src::Bc(10, X));
+    c.vu0().madda(0b1111, 5, Src::Bc(10, Y));
+    c.vu0().madda(0b1111, 6, Src::Bc(10, Z));
+    c.vu0().madd(0b1111, 14, 7, Src::Bc(10, W));
+    c.vu0().mula(0b1111, 4, Src::Bc(11, X));
+    c.vu0().madda(0b1111, 5, Src::Bc(11, Y));
+    c.vu0().madda(0b1111, 6, Src::Bc(11, Z));
+    c.vu0().madd(0b1111, 15, 7, Src::Bc(11, W));
+    for i in 0..4u32 {
+        c.sqc2((12 + i) as usize, pd.wrapping_add(0x10 * i));
+    }
+}
+
+/// Axis-angle rotation matrix (the camera's per-axis rotation): with the
+/// `Math_SinCos` results at `sin`/`cos` (f8 = sin, f11 = cos, f1 = 1 - cos)
+/// and the axis `(x, y, z)` read from `k0` (x), `k + 4` (y), `k + 8` (z), it
+/// writes the 4x4 matrix at `dst` (translation row zero, `f20` = 1.0 in the
+/// corner). Leaves f0..f13 as the generated sequence does.
+pub(crate) fn cam_rot_core(
+    c: &mut Cpu,
+    sin: (usize, i32),
+    cos: (usize, i32),
+    k: (usize, i32),
+    k0: (usize, i32),
+    dst: (usize, i32),
+) {
+    let (ps, pc, pk, pk0, pd) = (
+        cam_at(c, sin),
+        cam_at(c, cos),
+        cam_at(c, k),
+        cam_at(c, k0),
+        cam_at(c, dst),
+    );
+    c.lwc1(11, pc);
+    c.lwc1(3, pk.wrapping_add(0x8));
+    c.sub_s(1, 20, 11);
+    c.lwc1(0, pk0);
+    c.lwc1(6, pk.wrapping_add(0x4));
+    c.lwc1(8, ps);
+    c.mul_s(2, 1, 3);
+    c.mul_s(4, 1, 0);
+    c.mul_s(1, 1, 6);
+    c.mul_s(13, 8, 3);
+    c.mul_s(12, 8, 0);
+    c.mul_s(9, 2, 3);
+    c.mul_s(10, 4, 3);
+    c.mul_s(5, 2, 0);
+    c.mul_s(7, 4, 0);
+    c.mul_s(3, 1, 3);
+    c.mul_s(0, 1, 0);
+    c.mul_s(8, 8, 6);
+    c.mul_s(2, 2, 6);
+    c.mul_s(4, 4, 6);
+    c.mul_s(1, 1, 6);
+    c.add_s(5, 5, 8);
+    c.sub_s(0, 0, 13);
+    c.sub_s(2, 2, 12);
+    c.add_s(9, 9, 11);
+    c.add_s(7, 7, 11);
+    c.add_s(4, 4, 13);
+    c.sub_s(10, 10, 8);
+    c.add_s(1, 1, 11);
+    c.add_s(3, 3, 12);
+    for off in [0x30, 0x34, 0x38, 0xc, 0x1c, 0x2c] {
+        c.sw(pd.wrapping_add(off), 0u64);
+    }
+    c.swc1(20, pd.wrapping_add(0x3c));
+    for (reg, off) in [
+        (7, 0x0),
+        (0, 0x4),
+        (5, 0x8),
+        (4, 0x10),
+        (1, 0x14),
+        (2, 0x18),
+        (10, 0x20),
+        (3, 0x24),
+        (9, 0x28),
+    ] {
+        c.swc1(reg, pd.wrapping_add(off));
+    }
+}
+
+/// `void ScriptObjCam_BuildMatrixFromScript(ScriptObjCam* cam, ScriptArg* arg)`
+/// (0x27d970): builds the scripted camera's matrix (`cam + 0x30`, 4x4) and
+/// its euler offsets (`cam + 0x70..0x7c`) from the script channel's params.
+///
+/// The channel id of `arg->script` selects the mode: 0 manual, 1 target,
+/// 2 subject, 3 algorithmic (anything else leaves the matrix at the
+/// identity copy and returns). Each mode reads its params block
+/// (`script->params`), forms the offset vector, rotates by the three
+/// per-axis angles (`Math_SinCos` + [`cam_rot_core`] + [`cam_mat_mul`]) and,
+/// for the pose modes, multiplies in `ScriptEngine_GetTargetPose`'s result.
+/// The block structure of the generated body (shared mode tails) is kept.
+pub fn script_obj_cam_build_matrix_from_script(c: &mut Cpu) {
+    ssx3_ee_rt::prof::enter(c, 0x0027_d970);
+    guest(c, |c| {
+        'b_27f93c: {
+            'b_27f938: {
+                'b_27f934: {
+                    'b_27f538: {
+                        'b_27f510: {
+                            'b_27ec1c: {
+                                'b_27e324: {
+                                    c.cycles += 34;
+                                    c.g[SP][0] = sx(cam_ea_sub!(c, SP, 0x250));
+                                    c.g[V0][0] = 0x500000;
+                                    c.sq(18, cam_ea!(c, SP, 0x210));
+                                    c.sq(22, cam_ea!(c, SP, 0x1d0));
+                                    c.g[S2][0] = sx(cam_ea_sub!(c, V0, 0xe60));
+                                    c.sq(30, cam_ea!(c, SP, 0x1b0));
+                                    c.sq(16, cam_ea!(c, SP, 0x230));
+                                    c.g[FP][0] = c.g[A0][0];
+                                    c.sq(17, cam_ea!(c, SP, 0x220));
+                                    c.g[S6][0] = sx(cam_ea!(c, FP, 0x30));
+                                    c.sq(19, cam_ea!(c, SP, 0x200));
+                                    c.sq(20, cam_ea!(c, SP, 0x1f0));
+                                    c.sq(21, cam_ea!(c, SP, 0x1e0));
+                                    c.sd(cam_ea!(c, SP, 0x1a0), c.g[RA][0]);
+                                    c.swc1(20, cam_ea!(c, SP, 0x240));
+                                    c.sq(23, cam_ea!(c, SP, 0x1c0));
+                                    c.g[S7][0] = c.lw(cam_ea!(c, A1, 0x8));
+                                    c.lqc2(1, cam_ea!(c, S2, 0));
+                                    c.lqc2(2, cam_ea!(c, S2, 0x10));
+                                    c.lqc2(3, cam_ea!(c, S2, 0x20));
+                                    c.lqc2(4, cam_ea!(c, S2, 0x30));
+                                    c.sqc2(1, cam_ea!(c, S6, 0));
+                                    c.sqc2(2, cam_ea!(c, S6, 0x10));
+                                    c.sqc2(3, cam_ea!(c, S6, 0x20));
+                                    c.sqc2(4, cam_ea!(c, S6, 0x30));
+                                    c.sw(cam_ea!(c, FP, 0x70), 0u64);
+                                    c.g[A0][0] = c.g[S7][0];
+                                    c.sw(cam_ea!(c, FP, 0x74), 0u64);
+                                    c.sw(cam_ea!(c, FP, 0x78), 0u64);
+                                    call_ptr(c, 0x002743c8, 0x0027d9e8)?; // InSeq_ChannelGetId
+                                    c.g[V1][0] = c.g[V0][0];
+                                    c.g[V0][0] = 0x1;
+                                    let t = c.g[V1][0] == c.g[V0][0];
+                                    c.g[V0][0] = ((c.g[V1][0] as i64) < 2i64) as u64;
+                                    if t {
+                                        break 'b_27e324;
+                                    } else {
+                                        'b_27da28: {
+                                            'b_27da10: {
+                                                c.cycles += 2;
+                                                if c.g[V0][0] == 0u64 {
+                                                    c.g[V0][0] = 0x2;
+                                                    break 'b_27da10;
+                                                } else {
+                                                    c.cycles += 2;
+                                                    let t = c.g[V1][0] == 0u64;
+                                                    c.lq(16, cam_ea!(c, SP, 0x230));
+                                                    if t {
+                                                        break 'b_27da28;
+                                                    } else {
+                                                        c.cycles += 2;
+                                                        c.lq(17, cam_ea!(c, SP, 0x220));
+                                                        break 'b_27f93c;
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 2;
+                                            let t = c.g[V1][0] == c.g[V0][0];
+                                            c.g[V0][0] = 0x3;
+                                            if t {
+                                                break 'b_27ec1c;
+                                            } else {
+                                                c.cycles += 2;
+                                                let t = c.g[V1][0] == c.g[V0][0];
+
+                                                if t {
+                                                    break 'b_27f538;
+                                                } else {
+                                                    c.cycles += 2;
+                                                    c.lq(16, cam_ea!(c, SP, 0x230));
+                                                    break 'b_27f938;
+                                                }
+                                            }
+                                        }
+                                        c.cycles += 575;
+                                        c.g[AT][0] = 0x3f800000;
+                                        c.mtc1(1, 20);
+                                        c.g[A0][0] = c.g[S7][0];
+                                        call_ptr(c, 0x0027c098, 0x0027da38)?; // ScriptCam_GetManualParams
+                                        c.g[S0][0] = c.g[V0][0];
+                                        c.lwc1(2, cam_ea_sub!(c, GP, 0x479c));
+                                        c.lwc1(1, cam_ea!(c, S0, 0x1c));
+                                        c.g[S1][0] = sx(cam_ea!(c, SP, 0x10));
+                                        c.mul_s(1, 1, 2);
+                                        c.swc1(1, cam_ea!(c, FP, 0x70));
+                                        c.lwc1(0, cam_ea!(c, S0, 0x18));
+                                        c.mul_s(0, 0, 2);
+                                        c.swc1(0, cam_ea!(c, FP, 0x74));
+                                        c.lwc1(1, cam_ea!(c, S0, 0x14));
+                                        c.mul_s(1, 1, 2);
+                                        c.swc1(1, cam_ea!(c, FP, 0x78));
+                                        c.lwc1(0, cam_ea!(c, S0, 0x8));
+                                        c.lwc1(1, cam_ea!(c, S0, 0xc));
+                                        c.lwc1(2, cam_ea!(c, S0, 0x10));
+                                        c.swc1(0, cam_ea!(c, SP, 0));
+                                        c.swc1(1, cam_ea!(c, SP, 0x4));
+                                        c.swc1(2, cam_ea!(c, SP, 0x8));
+                                        c.swc1(20, cam_ea!(c, SP, 0xc));
+                                        c.lqc2(1, cam_ea!(c, S2, 0));
+                                        c.lqc2(2, cam_ea!(c, S2, 0x10));
+                                        c.lqc2(3, cam_ea!(c, S2, 0x20));
+                                        c.lqc2(4, cam_ea!(c, S2, 0x30));
+                                        c.sqc2(1, cam_ea!(c, S1, 0));
+                                        c.sqc2(2, cam_ea!(c, S1, 0x10));
+                                        c.sqc2(3, cam_ea!(c, S1, 0x20));
+                                        c.sqc2(4, cam_ea!(c, S1, 0x30));
+                                        c.lqc2(4, cam_ea!(c, S1, 0));
+                                        c.lqc2(5, cam_ea!(c, S1, 0x10));
+                                        c.lqc2(6, cam_ea!(c, S1, 0x20));
+                                        c.lqc2(7, cam_ea!(c, S1, 0x30));
+                                        c.lqc2(8, cam_ea!(c, SP, 0));
+                                        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+                                        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+                                        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+                                        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+                                        c.sqc2(12, cam_ea!(c, S1, 0x30));
+                                        c.lwc1(12, cam_ea!(c, FP, 0x78));
+                                        c.g[V0][0] = 0x500000;
+                                        c.g[S5][0] = sx(cam_ea_sub!(c, V0, 0xea0));
+                                        c.g[A0][0] = sx(cam_ea!(c, SP, 0xd0));
+                                        c.neg_s(12, 12);
+                                        c.g[A1][0] = sx(cam_ea!(c, SP, 0xd4));
+                                        call_ptr(c, 0x0031be50, 0x0027dae8)?; // Math_SinCos
+                                        c.g[V1][0] = 0x500000;
+                                        c.g[S2][0] = sx(cam_ea!(c, SP, 0x50));
+                                        cam_rot_core(
+                                            c,
+                                            (SP, 0xd0),
+                                            (SP, 0xd4),
+                                            (S5, 0x0),
+                                            (V1, -0xea0),
+                                            (SP, 0x50),
+                                        );
+                                        cam_mat_mul(c, (S1, 0x0), (S2, 0x0), (S1, 0x0));
+                                        c.lwc1(12, cam_ea!(c, FP, 0x74));
+                                        c.g[A0][0] = sx(cam_ea!(c, SP, 0xd8));
+                                        c.g[A1][0] = sx(cam_ea!(c, SP, 0xdc));
+                                        call_ptr(c, 0x0031be50, 0x0027dc28)?; // Math_SinCos
+                                        c.g[V0][0] = 0x500000;
+                                        c.g[S4][0] = sx(cam_ea_sub!(c, V0, 0xeb0));
+                                        cam_rot_core(
+                                            c,
+                                            (SP, 0xd8),
+                                            (SP, 0xdc),
+                                            (S4, 0x0),
+                                            (V0, -0xeb0),
+                                            (SP, 0x50),
+                                        );
+                                        cam_mat_mul(c, (S1, 0x0), (S2, 0x0), (S1, 0x0));
+                                        c.lwc1(12, cam_ea!(c, FP, 0x70));
+                                        c.g[A0][0] = sx(cam_ea!(c, SP, 0xe0));
+                                        c.g[A1][0] = sx(cam_ea!(c, SP, 0xe4));
+                                        call_ptr(c, 0x0031be50, 0x0027dd68)?; // Math_SinCos
+                                        c.g[V1][0] = 0x500000;
+                                        c.g[S3][0] = sx(cam_ea_sub!(c, V1, 0xec0));
+                                        cam_rot_core(
+                                            c,
+                                            (SP, 0xe0),
+                                            (SP, 0xe4),
+                                            (S3, 0x0),
+                                            (V1, -0xec0),
+                                            (SP, 0x50),
+                                        );
+                                        cam_mat_mul(c, (S1, 0x0), (S2, 0x0), (S1, 0x0));
+                                        c.g[A1][0] = c.lb(cam_ea!(c, S0, 0x20));
+                                        c.g[A3][0] = c.g[S2][0];
+                                        c.g[A2][0] = c.lw(cam_ea!(c, S7, 0x8));
+                                        c.g[T0][0] = sx(cam_ea!(c, SP, 0xe8));
+                                        c.g[A0][0] = c.lw(cam_ea_sub!(c, GP, 0x84c));
+                                        c.g[T1][0] = sx(cam_ea!(c, SP, 0xec));
+                                        c.g[T2][0] = sx(cam_ea!(c, SP, 0xf0));
+                                        call_ptr(c, 0x0027a0d8, 0x0027deb8)?; // ScriptEngine_GetTargetPose
+                                        c.lqc2(4, cam_ea!(c, S6, 0));
+                                        c.lqc2(5, cam_ea!(c, S6, 0x10));
+                                        c.lqc2(6, cam_ea!(c, S6, 0x20));
+                                        c.lqc2(7, cam_ea!(c, S6, 0x30));
+                                        c.lqc2(8, cam_ea!(c, SP, 0x50));
+                                        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+                                        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+                                        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+                                        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+                                        c.sqc2(12, cam_ea!(c, S6, 0x30));
+                                        c.lwc1(12, cam_ea!(c, SP, 0xf0));
+                                        c.g[A0][0] = sx(cam_ea!(c, SP, 0xf4));
+                                        c.g[A1][0] = sx(cam_ea!(c, SP, 0xf8));
+                                        c.g[S0][0] = c.g[S6][0];
+                                        c.neg_s(12, 12);
+                                        call_ptr(c, 0x0031be50, 0x0027def8)?; // Math_SinCos
+                                        c.g[V1][0] = 0x500000;
+                                        c.g[V0][0] = sx(cam_ea!(c, SP, 0x90));
+                                        cam_rot_core(
+                                            c,
+                                            (SP, 0xf4),
+                                            (SP, 0xf8),
+                                            (S5, 0x0),
+                                            (V1, -0xea0),
+                                            (SP, 0x90),
+                                        );
+                                        cam_mat_mul(c, (S0, 0x0), (V0, 0x0), (S0, 0x0));
+                                        c.lwc1(12, cam_ea!(c, SP, 0xec));
+                                        c.g[A0][0] = sx(cam_ea!(c, SP, 0xfc));
+                                        c.g[A1][0] = sx(cam_ea!(c, SP, 0x100));
+                                        call_ptr(c, 0x0031be50, 0x0027e038)?; // Math_SinCos
+                                        c.g[V0][0] = 0x500000;
+                                        c.g[S2][0] = sx(cam_ea!(c, SP, 0x60));
+                                        cam_rot_core(
+                                            c,
+                                            (SP, 0xfc),
+                                            (SP, 0x100),
+                                            (S4, 0x0),
+                                            (V0, -0xeb0),
+                                            (SP, 0x60),
+                                        );
+                                        cam_mat_mul(c, (S0, 0x0), (S2, 0x0), (S0, 0x0));
+                                        c.lwc1(12, cam_ea!(c, SP, 0xe8));
+                                        c.g[A0][0] = sx(cam_ea!(c, SP, 0x104));
+                                        c.g[A1][0] = sx(cam_ea!(c, SP, 0x108));
+                                        call_ptr(c, 0x0031be50, 0x0027e178)?; // Math_SinCos
+                                        c.g[V1][0] = 0x500000;
+                                        cam_rot_core(
+                                            c,
+                                            (SP, 0x104),
+                                            (SP, 0x108),
+                                            (S3, 0x0),
+                                            (V1, -0xec0),
+                                            (SP, 0x60),
+                                        );
+                                        cam_mat_mul(c, (S0, 0x0), (S2, 0x0), (S0, 0x0));
+                                        cam_mat_mul(c, (S0, 0x0), (S1, 0x0), (S0, 0x0));
+                                        c.lwc1(3, cam_ea!(c, SP, 0xe8));
+                                        c.lwc1(4, cam_ea!(c, SP, 0xec));
+                                        c.lwc1(5, cam_ea!(c, SP, 0xf0));
+                                        break 'b_27f510;
+                                    }
+                                }
+                                c.cycles += 574;
+                                c.g[AT][0] = 0x3f800000;
+                                c.mtc1(1, 20);
+                                c.g[A0][0] = c.g[S7][0];
+                                call_ptr(c, 0x0027c2a8, 0x0027e334)?; // ScriptCam_GetTargetParams
+                                c.g[S0][0] = c.g[V0][0];
+                                c.lwc1(2, cam_ea_sub!(c, GP, 0x4798));
+                                c.lwc1(1, cam_ea!(c, S0, 0x1c));
+                                c.g[S1][0] = sx(cam_ea!(c, SP, 0x10));
+                                c.mul_s(1, 1, 2);
+                                c.swc1(1, cam_ea!(c, FP, 0x70));
+                                c.lwc1(0, cam_ea!(c, S0, 0x18));
+                                c.mul_s(0, 0, 2);
+                                c.swc1(0, cam_ea!(c, FP, 0x74));
+                                c.lwc1(1, cam_ea!(c, S0, 0x14));
+                                c.mul_s(1, 1, 2);
+                                c.swc1(1, cam_ea!(c, FP, 0x78));
+                                c.lwc1(0, cam_ea!(c, S0, 0x8));
+                                c.lwc1(1, cam_ea!(c, S0, 0xc));
+                                c.lwc1(2, cam_ea!(c, S0, 0x10));
+                                c.swc1(0, cam_ea!(c, SP, 0));
+                                c.swc1(1, cam_ea!(c, SP, 0x4));
+                                c.swc1(2, cam_ea!(c, SP, 0x8));
+                                c.swc1(20, cam_ea!(c, SP, 0xc));
+                                c.lqc2(1, cam_ea!(c, S2, 0));
+                                c.lqc2(2, cam_ea!(c, S2, 0x10));
+                                c.lqc2(3, cam_ea!(c, S2, 0x20));
+                                c.lqc2(4, cam_ea!(c, S2, 0x30));
+                                c.sqc2(1, cam_ea!(c, S1, 0));
+                                c.sqc2(2, cam_ea!(c, S1, 0x10));
+                                c.sqc2(3, cam_ea!(c, S1, 0x20));
+                                c.sqc2(4, cam_ea!(c, S1, 0x30));
+                                c.lqc2(4, cam_ea!(c, S1, 0));
+                                c.lqc2(5, cam_ea!(c, S1, 0x10));
+                                c.lqc2(6, cam_ea!(c, S1, 0x20));
+                                c.lqc2(7, cam_ea!(c, S1, 0x30));
+                                c.lqc2(8, cam_ea!(c, SP, 0));
+                                c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+                                c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+                                c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+                                c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+                                c.sqc2(12, cam_ea!(c, S1, 0x30));
+                                c.lwc1(12, cam_ea!(c, FP, 0x78));
+                                c.g[V0][0] = 0x500000;
+                                c.g[S5][0] = sx(cam_ea_sub!(c, V0, 0xea0));
+                                c.g[A0][0] = sx(cam_ea!(c, SP, 0x10c));
+                                c.neg_s(12, 12);
+                                c.g[A1][0] = sx(cam_ea!(c, SP, 0x110));
+                                call_ptr(c, 0x0031be50, 0x0027e3e4)?; // Math_SinCos
+                                c.g[V1][0] = 0x500000;
+                                c.g[S2][0] = sx(cam_ea!(c, SP, 0x50));
+                                cam_rot_core(
+                                    c,
+                                    (SP, 0x10c),
+                                    (SP, 0x110),
+                                    (S5, 0x0),
+                                    (V1, -0xea0),
+                                    (SP, 0x50),
+                                );
+                                cam_mat_mul(c, (S1, 0x0), (S2, 0x0), (S1, 0x0));
+                                c.lwc1(12, cam_ea!(c, FP, 0x74));
+                                c.g[A0][0] = sx(cam_ea!(c, SP, 0x114));
+                                c.g[A1][0] = sx(cam_ea!(c, SP, 0x118));
+                                call_ptr(c, 0x0031be50, 0x0027e524)?; // Math_SinCos
+                                c.g[V0][0] = 0x500000;
+                                c.g[S4][0] = sx(cam_ea_sub!(c, V0, 0xeb0));
+                                cam_rot_core(
+                                    c,
+                                    (SP, 0x114),
+                                    (SP, 0x118),
+                                    (S4, 0x0),
+                                    (V0, -0xeb0),
+                                    (SP, 0x50),
+                                );
+                                cam_mat_mul(c, (S1, 0x0), (S2, 0x0), (S1, 0x0));
+                                c.lwc1(12, cam_ea!(c, FP, 0x70));
+                                c.g[A0][0] = sx(cam_ea!(c, SP, 0x11c));
+                                c.g[A1][0] = sx(cam_ea!(c, SP, 0x120));
+                                call_ptr(c, 0x0031be50, 0x0027e664)?; // Math_SinCos
+                                c.g[V1][0] = 0x500000;
+                                c.g[S3][0] = sx(cam_ea_sub!(c, V1, 0xec0));
+                                cam_rot_core(
+                                    c,
+                                    (SP, 0x11c),
+                                    (SP, 0x120),
+                                    (S3, 0x0),
+                                    (V1, -0xec0),
+                                    (SP, 0x50),
+                                );
+                                cam_mat_mul(c, (S1, 0x0), (S2, 0x0), (S1, 0x0));
+                                c.g[A1][0] = c.lb(cam_ea!(c, S0, 0x20));
+                                c.g[A3][0] = c.g[S2][0];
+                                c.g[A2][0] = c.lw(cam_ea!(c, S7, 0x8));
+                                c.g[T0][0] = sx(cam_ea!(c, SP, 0x124));
+                                c.g[A0][0] = c.lw(cam_ea_sub!(c, GP, 0x84c));
+                                c.g[T1][0] = sx(cam_ea!(c, SP, 0x128));
+                                c.g[T2][0] = sx(cam_ea!(c, SP, 0x12c));
+                                call_ptr(c, 0x0027a0d8, 0x0027e7b4)?; // ScriptEngine_GetTargetPose
+                                c.lqc2(4, cam_ea!(c, S6, 0));
+                                c.lqc2(5, cam_ea!(c, S6, 0x10));
+                                c.lqc2(6, cam_ea!(c, S6, 0x20));
+                                c.lqc2(7, cam_ea!(c, S6, 0x30));
+                                c.lqc2(8, cam_ea!(c, SP, 0x50));
+                                c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+                                c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+                                c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+                                c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+                                c.sqc2(12, cam_ea!(c, S6, 0x30));
+                                c.lwc1(12, cam_ea!(c, SP, 0x12c));
+                                c.g[A0][0] = sx(cam_ea!(c, SP, 0x130));
+                                c.g[A1][0] = sx(cam_ea!(c, SP, 0x134));
+                                c.g[S0][0] = c.g[S6][0];
+                                c.neg_s(12, 12);
+                                call_ptr(c, 0x0031be50, 0x0027e7f4)?; // Math_SinCos
+                                c.g[V0][0] = 0x500000;
+                                c.g[S2][0] = sx(cam_ea!(c, SP, 0x60));
+                                cam_rot_core(
+                                    c,
+                                    (SP, 0x130),
+                                    (SP, 0x134),
+                                    (S5, 0x0),
+                                    (V0, -0xea0),
+                                    (SP, 0x60),
+                                );
+                                cam_mat_mul(c, (S0, 0x0), (S2, 0x0), (S0, 0x0));
+                                c.lwc1(12, cam_ea!(c, SP, 0x128));
+                                c.g[A0][0] = sx(cam_ea!(c, SP, 0x138));
+                                c.g[A1][0] = sx(cam_ea!(c, SP, 0x13c));
+                                call_ptr(c, 0x0031be50, 0x0027e934)?; // Math_SinCos
+                                c.g[V1][0] = 0x500000;
+                                cam_rot_core(
+                                    c,
+                                    (SP, 0x138),
+                                    (SP, 0x13c),
+                                    (S4, 0x0),
+                                    (V1, -0xeb0),
+                                    (SP, 0x60),
+                                );
+                                cam_mat_mul(c, (S0, 0x0), (S2, 0x0), (S0, 0x0));
+                                c.lwc1(12, cam_ea!(c, SP, 0x124));
+                                c.g[A0][0] = sx(cam_ea!(c, SP, 0x140));
+                                c.g[A1][0] = sx(cam_ea!(c, SP, 0x144));
+                                call_ptr(c, 0x0031be50, 0x0027ea70)?; // Math_SinCos
+                                c.g[V0][0] = 0x500000;
+                                cam_rot_core(
+                                    c,
+                                    (SP, 0x140),
+                                    (SP, 0x144),
+                                    (S3, 0x0),
+                                    (V0, -0xec0),
+                                    (SP, 0x60),
+                                );
+                                cam_mat_mul(c, (S0, 0x0), (S2, 0x0), (S0, 0x0));
+                                cam_mat_mul(c, (S0, 0x0), (S1, 0x0), (S0, 0x0));
+                                c.lwc1(3, cam_ea!(c, SP, 0x124));
+                                c.lwc1(4, cam_ea!(c, SP, 0x128));
+                                c.lwc1(5, cam_ea!(c, SP, 0x12c));
+                                break 'b_27f510;
+                            }
+                            c.cycles += 573;
+                            c.g[AT][0] = 0x3f800000;
+                            c.mtc1(1, 20);
+                            c.g[A0][0] = c.g[S7][0];
+                            call_ptr(c, 0x0027c4b8, 0x0027ec2c)?; // ScriptCam_GetSubjectParams
+                            c.g[S0][0] = c.g[V0][0];
+                            c.lwc1(2, cam_ea_sub!(c, GP, 0x4794));
+                            c.lwc1(1, cam_ea!(c, S0, 0x1c));
+                            c.g[S1][0] = sx(cam_ea!(c, SP, 0x10));
+                            c.mul_s(1, 1, 2);
+                            c.swc1(1, cam_ea!(c, FP, 0x70));
+                            c.lwc1(0, cam_ea!(c, S0, 0x18));
+                            c.mul_s(0, 0, 2);
+                            c.swc1(0, cam_ea!(c, FP, 0x74));
+                            c.lwc1(1, cam_ea!(c, S0, 0x14));
+                            c.mul_s(1, 1, 2);
+                            c.swc1(1, cam_ea!(c, FP, 0x78));
+                            c.lwc1(0, cam_ea!(c, S0, 0x8));
+                            c.lwc1(1, cam_ea!(c, S0, 0xc));
+                            c.lwc1(2, cam_ea!(c, S0, 0x10));
+                            c.swc1(0, cam_ea!(c, SP, 0));
+                            c.swc1(1, cam_ea!(c, SP, 0x4));
+                            c.swc1(2, cam_ea!(c, SP, 0x8));
+                            c.swc1(20, cam_ea!(c, SP, 0xc));
+                            c.lqc2(1, cam_ea!(c, S2, 0));
+                            c.lqc2(2, cam_ea!(c, S2, 0x10));
+                            c.lqc2(3, cam_ea!(c, S2, 0x20));
+                            c.lqc2(4, cam_ea!(c, S2, 0x30));
+                            c.sqc2(1, cam_ea!(c, S1, 0));
+                            c.sqc2(2, cam_ea!(c, S1, 0x10));
+                            c.sqc2(3, cam_ea!(c, S1, 0x20));
+                            c.sqc2(4, cam_ea!(c, S1, 0x30));
+                            c.lqc2(4, cam_ea!(c, S1, 0));
+                            c.lqc2(5, cam_ea!(c, S1, 0x10));
+                            c.lqc2(6, cam_ea!(c, S1, 0x20));
+                            c.lqc2(7, cam_ea!(c, S1, 0x30));
+                            c.lqc2(8, cam_ea!(c, SP, 0));
+                            c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+                            c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+                            c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+                            c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+                            c.sqc2(12, cam_ea!(c, S1, 0x30));
+                            c.lwc1(12, cam_ea!(c, FP, 0x78));
+                            c.g[V1][0] = 0x500000;
+                            c.g[S5][0] = sx(cam_ea_sub!(c, V1, 0xea0));
+                            c.g[A0][0] = sx(cam_ea!(c, SP, 0x148));
+                            c.neg_s(12, 12);
+                            c.g[A1][0] = sx(cam_ea!(c, SP, 0x14c));
+                            call_ptr(c, 0x0031be50, 0x0027ecdc)?; // Math_SinCos
+                            c.g[V0][0] = 0x500000;
+                            c.g[S2][0] = sx(cam_ea!(c, SP, 0x50));
+                            cam_rot_core(
+                                c,
+                                (SP, 0x148),
+                                (SP, 0x14c),
+                                (S5, 0x0),
+                                (V0, -0xea0),
+                                (SP, 0x50),
+                            );
+                            cam_mat_mul(c, (S1, 0x0), (S2, 0x0), (S1, 0x0));
+                            c.lwc1(12, cam_ea!(c, FP, 0x74));
+                            c.g[A0][0] = sx(cam_ea!(c, SP, 0x150));
+                            c.g[A1][0] = sx(cam_ea!(c, SP, 0x154));
+                            call_ptr(c, 0x0031be50, 0x0027ee1c)?; // Math_SinCos
+                            c.g[V1][0] = 0x500000;
+                            c.g[S4][0] = sx(cam_ea_sub!(c, V1, 0xeb0));
+                            cam_rot_core(
+                                c,
+                                (SP, 0x150),
+                                (SP, 0x154),
+                                (S4, 0x0),
+                                (V1, -0xeb0),
+                                (SP, 0x50),
+                            );
+                            cam_mat_mul(c, (S1, 0x0), (S2, 0x0), (S1, 0x0));
+                            c.lwc1(12, cam_ea!(c, FP, 0x70));
+                            c.g[A0][0] = sx(cam_ea!(c, SP, 0x158));
+                            c.g[A1][0] = sx(cam_ea!(c, SP, 0x15c));
+                            call_ptr(c, 0x0031be50, 0x0027ef5c)?; // Math_SinCos
+                            c.g[V0][0] = 0x500000;
+                            c.g[S3][0] = sx(cam_ea_sub!(c, V0, 0xec0));
+                            cam_rot_core(
+                                c,
+                                (SP, 0x158),
+                                (SP, 0x15c),
+                                (S3, 0x0),
+                                (V0, -0xec0),
+                                (SP, 0x50),
+                            );
+                            cam_mat_mul(c, (S1, 0x0), (S2, 0x0), (S1, 0x0));
+                            c.g[A1][0] = c.lb(cam_ea!(c, S0, 0x20));
+                            c.g[A3][0] = c.g[S2][0];
+                            c.g[A2][0] = c.lw(cam_ea!(c, S7, 0x8));
+                            c.g[T0][0] = sx(cam_ea!(c, SP, 0x160));
+                            c.g[A0][0] = c.lw(cam_ea_sub!(c, GP, 0x84c));
+                            c.g[T1][0] = sx(cam_ea!(c, SP, 0x164));
+                            c.g[T2][0] = sx(cam_ea!(c, SP, 0x168));
+                            call_ptr(c, 0x0027a0d8, 0x0027f0ac)?; // ScriptEngine_GetTargetPose
+                            c.lqc2(4, cam_ea!(c, S6, 0));
+                            c.lqc2(5, cam_ea!(c, S6, 0x10));
+                            c.lqc2(6, cam_ea!(c, S6, 0x20));
+                            c.lqc2(7, cam_ea!(c, S6, 0x30));
+                            c.lqc2(8, cam_ea!(c, SP, 0x50));
+                            c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+                            c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+                            c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+                            c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+                            c.sqc2(12, cam_ea!(c, S6, 0x30));
+                            c.lwc1(12, cam_ea!(c, SP, 0x168));
+                            c.g[A0][0] = sx(cam_ea!(c, SP, 0x16c));
+                            c.g[A1][0] = sx(cam_ea!(c, SP, 0x170));
+                            c.g[S0][0] = c.g[S6][0];
+                            c.neg_s(12, 12);
+                            call_ptr(c, 0x0031be50, 0x0027f0ec)?; // Math_SinCos
+                            c.g[V1][0] = 0x500000;
+                            c.g[S2][0] = sx(cam_ea!(c, SP, 0x60));
+                            cam_rot_core(
+                                c,
+                                (SP, 0x16c),
+                                (SP, 0x170),
+                                (S5, 0x0),
+                                (V1, -0xea0),
+                                (SP, 0x60),
+                            );
+                            cam_mat_mul(c, (S0, 0x0), (S2, 0x0), (S0, 0x0));
+                            c.lwc1(12, cam_ea!(c, SP, 0x164));
+                            c.g[A0][0] = sx(cam_ea!(c, SP, 0x174));
+                            c.g[A1][0] = sx(cam_ea!(c, SP, 0x178));
+                            call_ptr(c, 0x0031be50, 0x0027f22c)?; // Math_SinCos
+                            c.g[V0][0] = 0x500000;
+                            cam_rot_core(
+                                c,
+                                (SP, 0x174),
+                                (SP, 0x178),
+                                (S4, 0x0),
+                                (V0, -0xeb0),
+                                (SP, 0x60),
+                            );
+                            cam_mat_mul(c, (S0, 0x0), (S2, 0x0), (S0, 0x0));
+                            c.lwc1(12, cam_ea!(c, SP, 0x160));
+                            c.g[A0][0] = sx(cam_ea!(c, SP, 0x17c));
+                            c.g[A1][0] = sx(cam_ea!(c, SP, 0x180));
+                            call_ptr(c, 0x0031be50, 0x0027f368)?; // Math_SinCos
+                            c.g[V1][0] = 0x500000;
+                            cam_rot_core(
+                                c,
+                                (SP, 0x17c),
+                                (SP, 0x180),
+                                (S3, 0x0),
+                                (V1, -0xec0),
+                                (SP, 0x60),
+                            );
+                            cam_mat_mul(c, (S0, 0x0), (S2, 0x0), (S0, 0x0));
+                            cam_mat_mul(c, (S0, 0x0), (S1, 0x0), (S0, 0x0));
+                            c.lwc1(3, cam_ea!(c, SP, 0x160));
+                            c.lwc1(4, cam_ea!(c, SP, 0x164));
+                            c.lwc1(5, cam_ea!(c, SP, 0x168));
+                            break 'b_27f510;
+                        }
+                        c.cycles += 10;
+                        c.lwc1(0, cam_ea!(c, FP, 0x70));
+                        c.lwc1(1, cam_ea!(c, FP, 0x74));
+                        c.lwc1(2, cam_ea!(c, FP, 0x78));
+                        c.add_s(0, 0, 3);
+                        c.add_s(1, 1, 4);
+                        c.add_s(2, 2, 5);
+                        c.swc1(0, cam_ea!(c, FP, 0x70));
+                        c.swc1(1, cam_ea!(c, FP, 0x74));
+                        c.swc1(2, cam_ea!(c, FP, 0x78));
+                        break 'b_27f934;
+                    }
+                    c.cycles += 222;
+                    c.g[AT][0] = 0x3f800000;
+                    c.mtc1(1, 20);
+                    c.g[A0][0] = c.g[S7][0];
+                    call_ptr(c, 0x0027c6a0, 0x0027f548)?; // ScriptCam_GetAlgorithmicParams
+                    c.g[S1][0] = 0x500000;
+                    c.lwc1(2, cam_ea_sub!(c, GP, 0x4790));
+                    c.g[A0][0] = sx(cam_ea!(c, SP, 0x184));
+                    c.lwc1(1, cam_ea!(c, V0, 0x10));
+                    c.g[A1][0] = sx(cam_ea!(c, SP, 0x188));
+                    c.g[S0][0] = sx(cam_ea_sub!(c, S1, 0xea0));
+                    c.g[S2][0] = c.g[S6][0];
+                    c.mul_s(1, 1, 2);
+                    c.swc1(1, cam_ea!(c, FP, 0x70));
+                    c.lwc1(0, cam_ea!(c, V0, 0xc));
+                    c.mul_s(0, 0, 2);
+                    c.swc1(0, cam_ea!(c, FP, 0x74));
+                    c.lwc1(1, cam_ea!(c, V0, 0x8));
+                    c.mul_s(1, 1, 2);
+                    c.neg_s(12, 1);
+                    c.swc1(1, cam_ea!(c, FP, 0x78));
+                    call_ptr(c, 0x0031be50, 0x0027f58c)?; // Math_SinCos
+                    cam_rot_core(
+                        c,
+                        (SP, 0x184),
+                        (SP, 0x188),
+                        (S0, 0x0),
+                        (S1, -0xea0),
+                        (SP, 0x0),
+                    );
+                    cam_mat_mul(c, (S2, 0x0), (SP, 0x0), (S2, 0x0));
+                    c.lwc1(12, cam_ea!(c, FP, 0x74));
+                    c.g[A0][0] = sx(cam_ea!(c, SP, 0x18c));
+                    c.g[A1][0] = sx(cam_ea!(c, SP, 0x190));
+                    c.g[S0][0] = 0x500000;
+                    call_ptr(c, 0x0031be50, 0x0027f6c8)?; // Math_SinCos
+                    c.g[V0][0] = sx(cam_ea_sub!(c, S0, 0xeb0));
+                    cam_rot_core(
+                        c,
+                        (SP, 0x18c),
+                        (SP, 0x190),
+                        (V0, 0x0),
+                        (S0, -0xeb0),
+                        (SP, 0x0),
+                    );
+                    cam_mat_mul(c, (S2, 0x0), (SP, 0x0), (S2, 0x0));
+                    c.lwc1(12, cam_ea!(c, FP, 0x70));
+                    c.g[A0][0] = sx(cam_ea!(c, SP, 0x194));
+                    c.g[A1][0] = sx(cam_ea!(c, SP, 0x198));
+                    c.g[S0][0] = 0x500000;
+                    call_ptr(c, 0x0031be50, 0x0027f808)?; // Math_SinCos
+                    c.lwc1(11, cam_ea!(c, SP, 0x198));
+                    c.g[V0][0] = sx(cam_ea_sub!(c, S0, 0xec0));
+                    c.lwc1(3, cam_ea!(c, V0, 0x8));
+                    c.sub_s(1, 20, 11);
+                    c.lwc1(0, cam_ea_sub!(c, S0, 0xec0));
+                    c.lwc1(6, cam_ea!(c, V0, 0x4));
+                    c.lwc1(8, cam_ea!(c, SP, 0x194));
+                    c.mul_s(2, 1, 3);
+                    c.swc1(20, cam_ea!(c, SP, 0x3c));
+                    c.mul_s(4, 1, 0);
+                    c.sw(cam_ea!(c, SP, 0x30), 0u64);
+                    c.mul_s(1, 1, 6);
+                    c.sw(cam_ea!(c, SP, 0x34), 0u64);
+                    c.mul_s(13, 8, 3);
+                    c.sw(cam_ea!(c, SP, 0x38), 0u64);
+                    c.mul_s(12, 8, 0);
+                    c.sw(cam_ea!(c, SP, 0xc), 0u64);
+                    c.mul_s(9, 2, 3);
+                    c.sw(cam_ea!(c, SP, 0x1c), 0u64);
+                    c.mul_s(10, 4, 3);
+                    c.sw(cam_ea!(c, SP, 0x2c), 0u64);
+                    c.mul_s(5, 2, 0);
+                    c.mul_s(7, 4, 0);
+                    c.mul_s(3, 1, 3);
+                    c.mul_s(0, 1, 0);
+                    c.mul_s(8, 8, 6);
+                    c.mul_s(2, 2, 6);
+                    c.mul_s(4, 4, 6);
+                    c.mul_s(1, 1, 6);
+                    c.add_s(5, 5, 8);
+                    c.sub_s(0, 0, 13);
+                    c.sub_s(2, 2, 12);
+                    c.add_s(9, 9, 11);
+                    c.swc1(5, cam_ea!(c, SP, 0x8));
+                    c.add_s(7, 7, 11);
+                    c.swc1(0, cam_ea!(c, SP, 0x4));
+                    c.add_s(4, 4, 13);
+                    c.swc1(2, cam_ea!(c, SP, 0x18));
+                    c.sub_s(10, 10, 8);
+                    c.swc1(9, cam_ea!(c, SP, 0x28));
+                    c.add_s(1, 1, 11);
+                    c.swc1(7, cam_ea!(c, SP, 0));
+                    break 'b_27f934;
+                }
+                c.cycles += 1;
+                c.lq(16, cam_ea!(c, SP, 0x230));
+                break 'b_27f938;
+            }
+            c.cycles += 1;
+            c.lq(17, cam_ea!(c, SP, 0x220));
+            break 'b_27f93c;
+        }
+        c.cycles += 11;
+        c.lq(18, cam_ea!(c, SP, 0x210));
+        c.lq(19, cam_ea!(c, SP, 0x200));
+        c.lq(20, cam_ea!(c, SP, 0x1f0));
+        c.lq(21, cam_ea!(c, SP, 0x1e0));
+        c.lq(22, cam_ea!(c, SP, 0x1d0));
+        c.lq(23, cam_ea!(c, SP, 0x1c0));
+        c.lq(30, cam_ea!(c, SP, 0x1b0));
+        c.g[RA][0] = c.ld(cam_ea!(c, SP, 0x1a0));
+        c.lwc1(20, cam_ea!(c, SP, 0x240));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(cam_ea!(c, SP, 0x250));
+        c.pc = t;
+        Ok(())
+    });
+}
+
+/// Identity matrix constant, and the X/Y/Z axis vectors (`t4vect_*Axis`).
+pub(crate) const RIDER_ACTIVATE_IDENTITY: u32 = 0x004f_f1a0;
+
+#[cfg(test)]
+pub(crate) const RIDER_ACTIVATE_Z_AXIS: u32 = 0x004f_f160;
+
+#[cfg(test)]
+pub(crate) const RIDER_ACTIVATE_Y_AXIS: u32 = 0x004f_f150;
+
+#[cfg(test)]
+pub(crate) const RIDER_ACTIVATE_X_AXIS: u32 = 0x004f_f140;
+
+/// `gp - 0x478c`: degrees to radians (pi / 180).
+pub(crate) const RIDER_ACTIVATE_DEG2RAD_GP: u32 = 0x478c;
+
+/// `gp - 0x84c`: the script engine pointer.
+pub(crate) const RIDER_ACTIVATE_ENGINE_GP: u32 = 0x84c;
+
+/// Row-vector times 4x4 matrix chain `dst = a * b` with the VU0 macro ops the
+/// compiled code uses (`a` rows in vf4..vf7, `b` rows in vf8..vf11, result rows
+/// vf12..vf15 stored at `dst`).
+pub(crate) fn rider_activate_mat_mul(c: &mut Cpu, a: u32, b: u32, dst: u32) {
+    c.lqc2(4, a);
+    c.lqc2(5, a.wrapping_add(0x10));
+    c.lqc2(6, a.wrapping_add(0x20));
+    c.lqc2(7, a.wrapping_add(0x30));
+    c.lqc2(8, b);
+    c.lqc2(9, b.wrapping_add(0x10));
+    c.lqc2(10, b.wrapping_add(0x20));
+    c.lqc2(11, b.wrapping_add(0x30));
+    c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+    c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+    c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+    c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+    c.vu0().mula(0b1111, 4, Src::Bc(9, X));
+    c.vu0().madda(0b1111, 5, Src::Bc(9, Y));
+    c.vu0().madda(0b1111, 6, Src::Bc(9, Z));
+    c.vu0().madd(0b1111, 13, 7, Src::Bc(9, W));
+    c.vu0().mula(0b1111, 4, Src::Bc(10, X));
+    c.vu0().madda(0b1111, 5, Src::Bc(10, Y));
+    c.vu0().madda(0b1111, 6, Src::Bc(10, Z));
+    c.vu0().madd(0b1111, 14, 7, Src::Bc(10, W));
+    c.vu0().mula(0b1111, 4, Src::Bc(11, X));
+    c.vu0().madda(0b1111, 5, Src::Bc(11, Y));
+    c.vu0().madda(0b1111, 6, Src::Bc(11, Z));
+    c.vu0().madd(0b1111, 15, 7, Src::Bc(11, W));
+    c.sqc2(12, dst);
+    c.sqc2(13, dst.wrapping_add(0x10));
+    c.sqc2(14, dst.wrapping_add(0x20));
+    c.sqc2(15, dst.wrapping_add(0x30));
+}
+
+/// Copy the 4x4 matrix at `src` to `dst` through vf1..vf4.
+pub(crate) fn rider_activate_mat_copy(c: &mut Cpu, src: u32, dst: u32) {
+    c.lqc2(1, src);
+    c.lqc2(2, src.wrapping_add(0x10));
+    c.lqc2(3, src.wrapping_add(0x20));
+    c.lqc2(4, src.wrapping_add(0x30));
+    c.sqc2(1, dst);
+    c.sqc2(2, dst.wrapping_add(0x10));
+    c.sqc2(3, dst.wrapping_add(0x20));
+    c.sqc2(4, dst.wrapping_add(0x30));
+}
+
+/// The axis-angle rotation matrix written at `m` after `Math_SinCos` has stored
+/// sin at `sin_p` and cos at `cos_p` (f1 = 1 - cos; f20 = 1.0). `axis` is the
+/// unit axis vector's address.
+pub(crate) fn rider_activate_rot_matrix(c: &mut Cpu, sin_p: u32, cos_p: u32, axis: u32, m: u32) {
+    c.lwc1(11, cos_p);
+    c.lwc1(3, axis.wrapping_add(0x8));
+    c.sub_s(1, 20, 11);
+    c.lwc1(0, axis);
+    c.lwc1(6, axis.wrapping_add(0x4));
+    c.lwc1(8, sin_p);
+    c.mul_s(2, 1, 3);
+    c.sw(m.wrapping_add(0x30), 0u64);
+    c.mul_s(4, 1, 0);
+    c.sw(m.wrapping_add(0x34), 0u64);
+    c.mul_s(1, 1, 6);
+    c.sw(m.wrapping_add(0x38), 0u64);
+    c.mul_s(13, 8, 3);
+    c.sw(m.wrapping_add(0xc), 0u64);
+    c.mul_s(12, 8, 0);
+    c.sw(m.wrapping_add(0x1c), 0u64);
+    c.mul_s(9, 2, 3);
+    c.sw(m.wrapping_add(0x2c), 0u64);
+    c.mul_s(10, 4, 3);
+    c.swc1(20, m.wrapping_add(0x3c));
+    c.mul_s(5, 2, 0);
+    c.mul_s(7, 4, 0);
+    c.mul_s(3, 1, 3);
+    c.mul_s(0, 1, 0);
+    c.mul_s(8, 8, 6);
+    c.mul_s(2, 2, 6);
+    c.mul_s(4, 4, 6);
+    c.mul_s(1, 1, 6);
+    c.add_s(5, 5, 8);
+    c.sub_s(0, 0, 13);
+    c.sub_s(2, 2, 12);
+    c.add_s(9, 9, 11);
+    c.swc1(5, m.wrapping_add(0x8));
+    c.add_s(7, 7, 11);
+    c.swc1(0, m.wrapping_add(0x4));
+    c.add_s(4, 4, 13);
+    c.swc1(2, m.wrapping_add(0x18));
+    c.sub_s(10, 10, 8);
+    c.swc1(9, m.wrapping_add(0x28));
+    c.add_s(1, 1, 11);
+    c.swc1(7, m);
+    c.add_s(3, 3, 12);
+    c.swc1(4, m.wrapping_add(0x10));
+    c.swc1(10, m.wrapping_add(0x20));
+    c.swc1(1, m.wrapping_add(0x14));
+    c.swc1(3, m.wrapping_add(0x24));
+}
+
+/// `void RiderScriptObj_Activate(RiderScriptObj *self)` (0x27f9f8,
+/// `cScriptObjRider_OnStartObjectUse`): activate the base script object
+/// (`self + 0xc`), then build the object's local transform at `self + 0x30`
+/// from the rider's script params (base offset and rotation in degrees at
+/// info +0x8..+0x1c, converted to radians into `self + 0x70..0x78`), compose it
+/// with the target pose the script engine returns for the object, add the
+/// pose's rotation to the stored angles, and look up the animation and sound
+/// banks of the object's script data (`self + 0x1c`, `self + 0x20`).
+pub fn rider_script_obj_activate(c: &mut Cpu) {
+    use rider_activate_callee::*;
+    guest(c, |c| {
+        c.cycles += 638;
+        let frame = Frame::open(c, 0x1c0);
+        let sp0 = sp(c);
+        frame.save(c, 17, 0x190);
+        c.g[S1][0] = c.g[A0][0];
+        let this = c.g[S1][0] as u32;
+        frame.save(c, 16, 0x1a0);
+        frame.save(c, 20, 0x160);
+        c.g[A0][0] = sx(this.wrapping_add(0xc));
+        frame.save(c, 18, 0x180);
+        c.g[S4][0] = sx(this.wrapping_add(0x30));
+        let mat = this.wrapping_add(0x30);
+        frame.save(c, 19, 0x170);
+        frame.save(c, 21, 0x150);
+        frame.save(c, 22, 0x140);
+        frame.save(c, 23, 0x130);
+        frame.save(c, 30, 0x120);
+        frame.save_ra(c, 0x110);
+        frame.save_fpr(c, 20, 0x1b0);
+        SCRIPT_OBJ_ACTIVATE.call(c, 0x0027_fa38)?;
+
+        // sp+0x10c: the script object (self + 8)
+        c.g[V0][0] = c.lw(this.wrapping_add(0x8));
+        c.g[S0][0] = 0x0050_0000;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xe60));
+        c.sw(sp0.wrapping_add(0x10c), c.g[V0][0]);
+        rider_activate_mat_copy(c, RIDER_ACTIVATE_IDENTITY, mat);
+        c.sw(this.wrapping_add(0x70), 0u64);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 20);
+        c.g[A0][0] = c.lw(sp0.wrapping_add(0x10c));
+        c.sw(this.wrapping_add(0x74), 0u64);
+        c.sw(this.wrapping_add(0x78), 0u64);
+        SCRIPT_RIDER_GET_PARAMS.call(c, 0x0027_fa84)?;
+        c.g[S2][0] = c.g[V0][0];
+        let info = c.g[S2][0] as u32;
+        c.lwc1(
+            2,
+            (c.g[GP][0] as u32).wrapping_sub(RIDER_ACTIVATE_DEG2RAD_GP),
+        );
+        c.lwc1(1, info.wrapping_add(0x1c));
+        let local = sp0.wrapping_add(0x10); // local matrix m
+        c.g[S3][0] = sx(local);
+        c.mul_s(1, 1, 2);
+        c.swc1(1, this.wrapping_add(0x70));
+        c.lwc1(0, info.wrapping_add(0x18));
+        c.mul_s(0, 0, 2);
+        c.swc1(0, this.wrapping_add(0x74));
+        c.lwc1(1, info.wrapping_add(0x14));
+        c.mul_s(1, 1, 2);
+        c.swc1(1, this.wrapping_add(0x78));
+        // base offset vector (x, y, z, 1) at sp+0
+        c.lwc1(0, info.wrapping_add(0x8));
+        c.lwc1(1, info.wrapping_add(0xc));
+        c.lwc1(2, info.wrapping_add(0x10));
+        c.swc1(0, sp0);
+        c.swc1(1, sp0.wrapping_add(0x4));
+        c.swc1(2, sp0.wrapping_add(0x8));
+        c.swc1(20, sp0.wrapping_add(0xc));
+        // m = identity; m.row3 = offset * m
+        let identity = (c.g[S0][0]) as u32;
+        rider_activate_mat_copy(c, identity, local);
+        c.lqc2(4, local);
+        c.lqc2(5, local.wrapping_add(0x10));
+        c.lqc2(6, local.wrapping_add(0x20));
+        c.lqc2(7, local.wrapping_add(0x30));
+        c.lqc2(8, sp0);
+        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+        c.sqc2(12, local.wrapping_add(0x30));
+
+        // Rotate m about Z by -self.rz (angle in f12)
+        c.lwc1(12, this.wrapping_add(0x78));
+        c.g[V1][0] = 0x0050_0000;
+        c.g[S7][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xea0));
+        c.g[A0][0] = sx(sp0.wrapping_add(0xd0));
+        c.neg_s(12, 12);
+        c.g[A1][0] = sx(sp0.wrapping_add(0xd4));
+        call_ptr(c, 0x0031_be50, 0x0027_fb34)?;
+        c.g[V0][0] = 0x0050_0000;
+        c.g[S0][0] = sx(sp0.wrapping_add(0x50));
+        let s7 = c.g[S7][0] as u32;
+        rider_activate_rot_matrix(
+            c,
+            sp0.wrapping_add(0xd0),
+            sp0.wrapping_add(0xd4),
+            s7,
+            sp0.wrapping_add(0x50),
+        );
+        rider_activate_mat_mul(c, local, sp0.wrapping_add(0x50), local);
+
+        // about Y by self.ry
+        c.lwc1(12, this.wrapping_add(0x74));
+        c.g[A0][0] = sx(sp0.wrapping_add(0xd8));
+        c.g[A1][0] = sx(sp0.wrapping_add(0xdc));
+        call_ptr(c, 0x0031_be50, 0x0027_fc74)?;
+        c.g[V1][0] = 0x0050_0000;
+        c.g[S6][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xeb0));
+        let s6 = c.g[S6][0] as u32;
+        rider_activate_rot_matrix(
+            c,
+            sp0.wrapping_add(0xd8),
+            sp0.wrapping_add(0xdc),
+            s6,
+            sp0.wrapping_add(0x50),
+        );
+        rider_activate_mat_mul(c, local, sp0.wrapping_add(0x50), local);
+
+        // about X by self.rx
+        c.lwc1(12, this.wrapping_add(0x70));
+        c.g[A0][0] = sx(sp0.wrapping_add(0xe0));
+        c.g[A1][0] = sx(sp0.wrapping_add(0xe4));
+        c.g[FP][0] = 0x0050_0000;
+        call_ptr(c, 0x0031_be50, 0x0027_fdb8)?;
+        c.g[S5][0] = sx((c.g[FP][0] as u32).wrapping_sub(0xec0));
+        let s5 = c.g[S5][0] as u32;
+        rider_activate_rot_matrix(
+            c,
+            sp0.wrapping_add(0xe0),
+            sp0.wrapping_add(0xe4),
+            s5,
+            sp0.wrapping_add(0x50),
+        );
+        rider_activate_mat_mul(c, local, sp0.wrapping_add(0x50), local);
+
+        // target pose: (pos, rx, ry, rz) into sp+0x50, 0xe8, 0xec, 0xf0
+        c.g[V0][0] = c.lw(sp0.wrapping_add(0x10c));
+        c.g[A3][0] = c.g[S0][0];
+        c.g[A1][0] = c.lb(info.wrapping_add(0x1));
+        c.g[T0][0] = sx(sp0.wrapping_add(0xe8));
+        c.g[A2][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8));
+        c.g[T1][0] = sx(sp0.wrapping_add(0xec));
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(RIDER_ACTIVATE_ENGINE_GP));
+        c.g[T2][0] = sx(sp0.wrapping_add(0xf0));
+        SCRIPT_ENGINE_GET_TARGET_POSE.call(c, 0x0027_ff08)?;
+        // mat.row3 = pos * mat
+        c.lqc2(4, mat);
+        c.lqc2(5, mat.wrapping_add(0x10));
+        c.lqc2(6, mat.wrapping_add(0x20));
+        c.lqc2(7, mat.wrapping_add(0x30));
+        c.lqc2(8, sp0.wrapping_add(0x50));
+        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+        c.sqc2(12, mat.wrapping_add(0x30));
+        // about Z by -rz
+        c.lwc1(12, sp0.wrapping_add(0xf0));
+        c.g[A0][0] = sx(sp0.wrapping_add(0xf4));
+        c.g[A1][0] = sx(sp0.wrapping_add(0xf8));
+        c.neg_s(12, 12);
+        call_ptr(c, 0x0031_be50, 0x0027_ff44)?;
+        c.g[V1][0] = 0x0050_0000;
+        c.g[V0][0] = sx(sp0.wrapping_add(0x90));
+        rider_activate_rot_matrix(
+            c,
+            sp0.wrapping_add(0xf4),
+            sp0.wrapping_add(0xf8),
+            s7,
+            sp0.wrapping_add(0x90),
+        );
+        rider_activate_mat_mul(c, mat, sp0.wrapping_add(0x90), mat);
+        // about Y by ry
+        c.lwc1(12, sp0.wrapping_add(0xec));
+        c.g[A0][0] = sx(sp0.wrapping_add(0xfc));
+        c.g[A1][0] = sx(sp0.wrapping_add(0x100));
+        call_ptr(c, 0x0031_be50, 0x0028_0084)?;
+        c.g[V0][0] = 0x0050_0000;
+        c.g[S0][0] = sx(sp0.wrapping_add(0x60));
+        rider_activate_rot_matrix(
+            c,
+            sp0.wrapping_add(0xfc),
+            sp0.wrapping_add(0x100),
+            s6,
+            sp0.wrapping_add(0x60),
+        );
+        rider_activate_mat_mul(c, mat, sp0.wrapping_add(0x60), mat);
+        // about X by rx
+        c.lwc1(12, sp0.wrapping_add(0xe8));
+        c.g[A0][0] = sx(sp0.wrapping_add(0x104));
+        c.g[A1][0] = sx(sp0.wrapping_add(0x108));
+        call_ptr(c, 0x0031_be50, 0x0028_01c4)?;
+        rider_activate_rot_matrix(
+            c,
+            sp0.wrapping_add(0x104),
+            sp0.wrapping_add(0x108),
+            s5,
+            sp0.wrapping_add(0x60),
+        );
+        rider_activate_mat_mul(c, mat, sp0.wrapping_add(0x60), mat);
+        // mat = mat * m
+        rider_activate_mat_mul(c, mat, local, mat);
+        // angles += pose rotation
+        c.lwc1(3, sp0.wrapping_add(0xe8));
+        c.lwc1(4, sp0.wrapping_add(0xec));
+        c.lwc1(5, sp0.wrapping_add(0xf0));
+        c.lwc1(0, this.wrapping_add(0x70));
+        c.lwc1(1, this.wrapping_add(0x74));
+        c.lwc1(2, this.wrapping_add(0x78));
+        c.add_s(0, 0, 3);
+        c.add_s(1, 1, 4);
+        c.add_s(2, 2, 5);
+        c.swc1(0, this.wrapping_add(0x70));
+        c.swc1(1, this.wrapping_add(0x74));
+        c.swc1(2, this.wrapping_add(0x78));
+        // anim / sound banks of the script data
+        c.g[V1][0] = c.lw(sp0.wrapping_add(0x10c));
+        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+        SCRIPT_DATA_GET_INFO.call(c, 0x0028_0398)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(RIDER_ACTIVATE_ENGINE_GP));
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+        SCRIPT_ENGINE_FIND_ANIM_BANK.call(c, 0x0028_03a8)?;
+        c.sw(this.wrapping_add(0x1c), c.g[V0][0]);
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(RIDER_ACTIVATE_ENGINE_GP));
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+        SCRIPT_ENGINE_FIND_SOUND_BANK.call(c, 0x0028_03b8)?;
+        c.sw(this.wrapping_add(0x20), c.g[V0][0]);
+        frame.restore(c, 16, 0x1a0);
+        frame.restore(c, 17, 0x190);
+        frame.restore(c, 18, 0x180);
+        frame.restore(c, 19, 0x170);
+        frame.restore(c, 20, 0x160);
+        frame.restore(c, 21, 0x150);
+        frame.restore(c, 22, 0x140);
+        frame.restore(c, 23, 0x130);
+        frame.restore(c, 30, 0x120);
+        frame.restore_ra(c, 0x110);
+        frame.restore_fpr(c, 20, 0x1b0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `bool ScriptEngine_IsHUDAllowed(ScriptEngine* self)` (0x2792e0): true
+/// while a NIS list is playing (index 2); else false while frames are
+/// no-skip, otherwise whether the current list can be skipped and is not in
+/// play state 3.
+pub fn script_engine_is_hud_allowed_2(c: &mut Cpu) {
+    const SCRIPT_LIST_CAN_SKIP: Callee = Callee {
+        addr: 0x00277060,
+        f: ee::s07::f_00277060,
+    };
+    const SCRIPT_LIST_GET_PLAY_STATUS: Callee = Callee {
+        addr: 0x00276bd8,
+        f: ee::s07::f_00276bd8,
+    };
+    guest(c, |c| {
+        'b_279354: {
+            'b_279310: {
+                c.cycles += 10;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                c.g[V0][0] = 0x2;
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.g[S0][0] = c.g[A0][0];
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x550));
+                if c.g[A0][0] != c.g[V0][0] {
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x554));
+                    break 'b_279310;
+                } else {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = 0x1;
+                    if t {
+                        break 'b_279354;
+                    } else {
+                        break 'b_279310;
+                    }
+                }
+            }
+            'b_279350: {
+                c.cycles += 2;
+                let t = c.g[V0][0] != 0u64;
+                c.g[S2][0] = 0u64;
+                if t {
+                    break 'b_279350;
+                } else {
+                    c.cycles += 7;
+                    c.g[S1][0] = 0xcc;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x54c));
+                    c.mult(0, 4, 4, 17);
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    SCRIPT_LIST_CAN_SKIP.call(c, 0x0027932c)?;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = c.g[S2][0];
+                    if t {
+                        break 'b_279354;
+                    } else {
+                        c.cycles += 7;
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x550));
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x54c));
+                        c.mult(0, 4, 4, 17);
+                        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        SCRIPT_LIST_GET_PLAY_STATUS.call(c, 0x00279348)?;
+                        c.g[V0][0] = c.g[V0][0] ^ 0x3;
+                        c.g[S2][0] = (0u64 < c.g[V0][0]) as u64;
+                        break 'b_279350;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S2][0];
+            break 'b_279354;
+        }
+        c.cycles += 6;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// ScriptEngine_GetTargetPose (0x27a0d8)
+
+/// `void ScriptEngine_GetTargetPose(self, int id, obj, float* pos, int* flag,
+/// float* pitch, float* yaw)` (0x27a0d8): the position and orientation a
+/// script camera/object aims at, by target id. Clears `flag`, `pitch`,
+/// `yaw` and sets `pos = (0, 0, 0, 1)`, then (jump table at `0x481d00`,
+/// ids 1-60):
+/// - 40-60: the rider `id - 40` (`ScriptEngine_GetRiderPose`);
+/// - 1-18: the start point of rider `id + 2` (`GetRiderPathPose`);
+/// - 19-39 and 20-22: a locator by kind (`ScriptEngine_GetLocatorPose`, kind
+///   0-11, category 50 or 43 for the `ScriptData_GetInfo` objects), most of
+///   them dropped onto the ground (`pos.z` from the BXNash collision probe
+///   `0x3369d8`), 25 first lowering `pos.z` by 1000, 20-22 using the
+///   offsets of the static table at `0x4d3680` (built on first use).
+/// Written register for register (the jump table and its shared tails keep
+/// the generated block structure).
+#[allow(
+    unused_labels,
+    unused_assignments,
+    unused_variables,
+    unused_mut,
+    unreachable_code,
+    unused_parens
+)]
+pub fn script_engine_get_target_pose(c: &mut Cpu) {
+    'b_27a480: {
+        'b_27a47c: {
+            c.cycles += 27;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x90));
+            c.g[AT][0] = 0x3f800000;
+            c.mtc1(1, 0);
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x70));
+            c.g[S3][0] = c.g[T0][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[T0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S2][0] = c.g[A3][0];
+            c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[S4][0] = c.g[T1][0];
+            c.sw((c.g[SP][0] as u32), 0u64);
+            c.g[S5][0] = c.g[T2][0];
+            c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0xc));
+            c.g[S1][0] = c.g[A0][0];
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x4), 0u64);
+            c.g[V1][0] = (c.g[T0][0] < 0x3cu64) as u64;
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+            c.sw((c.g[S3][0] as u32), 0u64);
+            c.sw((c.g[S4][0] as u32), 0u64);
+            c.lq(2, (c.g[SP][0] as u32));
+            c.sw((c.g[S5][0] as u32), 0u64);
+            let t = c.g[V1][0] == 0u64;
+            c.sq(2, (c.g[S2][0] as u32));
+            if t {
+                break 'b_27a47c;
+            } else {
+                'b_27a458: {
+                    'b_27a440: {
+                        'b_27a410: {
+                            'b_27a404: {
+                                'b_27a348: {
+                                    'b_27a338: {
+                                        'b_27a328: {
+                                            'b_27a324: {
+                                                'b_27a30c: {
+                                                    'b_27a2fc: {
+                                                        'b_27a2e0: {
+                                                            'b_27a2c4: {
+                                                                'b_27a2b4: {
+                                                                    'b_27a280: {
+                                                                        'b_27a24c: {
+                                                                            'b_27a23c: {
+                                                                                'b_27a22c: {
+                                                                                    'b_27a21c: {
+                                                                                        'b_27a1c8: {
+                                                                                            'b_27a194: {
+                                                                                                c.cycles += 7;
+                                                                                                c.g[V0][0] = 0x480000;
+                                                                                                c.g[V1][0] = sx((c.g[T0][0] as u32) << 2);
+                                                                                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1d00));
+                                                                                                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                                                                                                c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                                                                                                let t = c.g[A0][0] as u32;
+                                                                                                match t {
+0x0027a160 => {
+c.cycles += 5;
+c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x28));
+c.g[RA][0] = sx(0x0027a16c);
+c.g[A0][0] = c.g[S1][0];
+c.pc = 0x00279f18; ee::s07::ScriptEngine_GetTargetObject(c);
+if c.pc != 0x0027a16c { return; }
+let t = c.g[V0][0] == 0u64;
+c.g[A0][0] = c.g[S1][0];
+if t {
+break 'b_27a47c;
+} else {
+c.cycles += 8;
+c.g[A1][0] = c.g[V0][0];
+c.g[A2][0] = c.g[S2][0];
+c.g[A3][0] = c.g[S3][0];
+c.g[T0][0] = c.g[S4][0];
+c.g[RA][0] = sx(0x0027a18c);
+c.g[T1][0] = c.g[S5][0];
+c.pc = 0x0027b948; ee::s07::ScriptEngine_GetRiderPose(c);
+if c.pc != 0x0027a18c { return; }
+let t = true;
+c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+if t {
+break 'b_27a480;
+} else {
+break 'b_27a194;
+}
+}
+}
+0x0027a194 => {
+break 'b_27a194;
+}
+0x0027a1c8 => {
+break 'b_27a1c8;
+}
+0x0027a21c => {
+break 'b_27a21c;
+}
+0x0027a22c => {
+break 'b_27a22c;
+}
+0x0027a23c => {
+break 'b_27a23c;
+}
+0x0027a24c => {
+break 'b_27a24c;
+}
+0x0027a280 => {
+break 'b_27a280;
+}
+0x0027a2b4 => {
+break 'b_27a2b4;
+}
+0x0027a2c4 => {
+break 'b_27a2c4;
+}
+0x0027a2e0 => {
+break 'b_27a2e0;
+}
+0x0027a2fc => {
+break 'b_27a2fc;
+}
+0x0027a30c => {
+break 'b_27a30c;
+}
+0x0027a338 => {
+break 'b_27a338;
+}
+0x0027a348 => {
+break 'b_27a348;
+}
+0x0027a404 => {
+break 'b_27a404;
+}
+0x0027a458 => {
+break 'b_27a458;
+}
+_ => { c.jump_out(t, 0x0027a0d8, 0x0027a4a0); return; }
+}
+                                                                                            }
+                                                                                            c.cycles += 5;
+                                                                                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2));
+                                                                                            c.g[RA][0] = sx(0x0027a1a0);
+                                                                                            c.g[A0][0] = c.g[S1][0];
+                                                                                            c.pc = 0x00279f18;
+                                                                                            ee::s07::ScriptEngine_GetTargetObject(c);
+                                                                                            if c.pc != 0x0027a1a0 { return; }
+                                                                                            let t = c.g[V0][0] == 0u64;
+                                                                                            c.g[A0][0] = c.g[S1][0];
+                                                                                            if t {
+                                                                                                break 'b_27a47c;
+                                                                                            } else {
+                                                                                                c.cycles += 8;
+                                                                                                c.g[A1][0] = c.g[V0][0];
+                                                                                                c.g[A2][0] = c.g[S2][0];
+                                                                                                c.g[A3][0] = c.g[S3][0];
+                                                                                                c.g[T0][0] = c.g[S4][0];
+                                                                                                c.g[RA][0] = sx(0x0027a1c0);
+                                                                                                c.g[T1][0] = c.g[S5][0];
+                                                                                                c.pc = 0x0027b750;
+                                                                                                ee::s07::ScriptEngine_GetRiderPathPose(c);
+                                                                                                if c.pc != 0x0027a1c0 { return; }
+                                                                                                let t = true;
+                                                                                                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+                                                                                                if t
+                                                                                                {
+                                                                                                    break 'b_27a480;
+                                                                                                } else {
+                                                                                                    break 'b_27a1c8;
+                                                                                                }
+                                                                                            }
+                                                                                        }
+                                                                                        c.cycles +=
+                                                                                            21;
+                                                                                        c.g[A0]
+                                                                                            [0] = c
+                                                                                            .g[S1]
+                                                                                            [0];
+                                                                                        c.g[A3]
+                                                                                            [0] = c
+                                                                                            .g[S3]
+                                                                                            [0];
+                                                                                        c.g[A1]
+                                                                                            [0] =
+                                                                                            0x1;
+                                                                                        c.g[A2]
+                                                                                            [0] = c
+                                                                                            .g[S2]
+                                                                                            [0];
+                                                                                        c.g[T0]
+                                                                                            [0] = c
+                                                                                            .g[S4]
+                                                                                            [0];
+                                                                                        c.g[T1]
+                                                                                            [0] = c
+                                                                                            .g[S5]
+                                                                                            [0];
+                                                                                        c.g[T2]
+                                                                                            [0] =
+                                                                                            0x32;
+                                                                                        c.g[RA][0] = sx(0x0027a1ec);
+                                                                                        c.g[T3]
+                                                                                            [0] =
+                                                                                            0u64;
+                                                                                        c.pc = 0x0027bb08;
+                                                                                        ee::s07::ScriptEngine_GetLocatorPose(c);
+                                                                                        if c.pc != 0x0027a1ec { return; }
+                                                                                        c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[A1]
+                                                                                            [0] = c
+                                                                                            .g[S2]
+                                                                                            [0];
+                                                                                        c.g[AT][0] = 0x447a0000;
+                                                                                        c.mtc1(
+                                                                                            1, 1,
+                                                                                        );
+                                                                                        c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                                                                                        c.g[A3]
+                                                                                            [0] = c
+                                                                                            .g[SP]
+                                                                                            [0];
+                                                                                        c.sub_s(
+                                                                                            0, 0, 1,
+                                                                                        );
+                                                                                        c.swc1(0, (c.g[S2][0] as u32).wrapping_add(0x8));
+                                                                                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                                                                                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+                                                                                        let t =
+                                                                                            true;
+                                                                                        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x20));
+                                                                                        if t {
+                                                                                            break 'b_27a440;
+                                                                                        } else {
+                                                                                            break 'b_27a21c;
+                                                                                        }
+                                                                                    }
+                                                                                    c.cycles += 4;
+                                                                                    c.g[A0][0] =
+                                                                                        c.g[S1][0];
+                                                                                    c.g[A3][0] =
+                                                                                        c.g[S3][0];
+                                                                                    let t = true;
+                                                                                    c.g[A1][0] =
+                                                                                        0x2;
+                                                                                    if t {
+                                                                                        break 'b_27a410;
+                                                                                    } else {
+                                                                                        break 'b_27a22c;
+                                                                                    }
+                                                                                }
+                                                                                c.cycles += 4;
+                                                                                c.g[A0][0] =
+                                                                                    c.g[S1][0];
+                                                                                c.g[A3][0] =
+                                                                                    c.g[S3][0];
+                                                                                let t = true;
+                                                                                c.g[A1][0] = 0x3;
+                                                                                if t {
+                                                                                    break 'b_27a410;
+                                                                                } else {
+                                                                                    break 'b_27a23c;
+                                                                                }
+                                                                            }
+                                                                            c.cycles += 4;
+                                                                            c.g[A0][0] = c.g[S1][0];
+                                                                            c.g[A3][0] = c.g[S3][0];
+                                                                            let t = true;
+                                                                            c.g[A1][0] = 0x4;
+                                                                            if t {
+                                                                                break 'b_27a410;
+                                                                            } else {
+                                                                                break 'b_27a24c;
+                                                                            }
+                                                                        }
+                                                                        c.cycles += 13;
+                                                                        c.g[A0][0] = c.g[A2][0];
+                                                                        c.g[RA][0] = sx(0x0027a258);
+                                                                        c.g[S0][0] = 0x32;
+                                                                        c.pc = 0x0027c070;
+                                                                        ee::s07::ScriptData_GetInfo(
+                                                                            c,
+                                                                        );
+                                                                        if c.pc != 0x0027a258 {
+                                                                            return;
+                                                                        }
+                                                                        c.g[V1][0] =
+                                                                            c.lb(
+                                                                                (c.g[V0][0] as u32)
+                                                                            );
+                                                                        c.g[T2][0] = 0x2b;
+                                                                        c.g[A0][0] = c.g[S1][0];
+                                                                        c.g[A2][0] = c.g[S2][0];
+                                                                        if c.g[V1][0] == 0 {
+                                                                            c.g[T2][0] = c.g[S0][0];
+                                                                        }
+                                                                        c.g[A3][0] = c.g[S3][0];
+                                                                        c.g[T0][0] = c.g[S4][0];
+                                                                        c.g[T1][0] = c.g[S5][0];
+                                                                        let t = true;
+                                                                        c.g[A1][0] = 0x5;
+                                                                        if t {
+                                                                            break 'b_27a328;
+                                                                        } else {
+                                                                            break 'b_27a280;
+                                                                        }
+                                                                    }
+                                                                    c.cycles += 13;
+                                                                    c.g[A0][0] = c.g[A2][0];
+                                                                    c.g[RA][0] = sx(0x0027a28c);
+                                                                    c.g[S0][0] = 0x32;
+                                                                    c.pc = 0x0027c070;
+                                                                    ee::s07::ScriptData_GetInfo(c);
+                                                                    if c.pc != 0x0027a28c {
+                                                                        return;
+                                                                    }
+                                                                    c.g[V1][0] =
+                                                                        c.lb((c.g[V0][0] as u32));
+                                                                    c.g[T2][0] = 0x2b;
+                                                                    c.g[A0][0] = c.g[S1][0];
+                                                                    c.g[A2][0] = c.g[S2][0];
+                                                                    if c.g[V1][0] == 0 {
+                                                                        c.g[T2][0] = c.g[S0][0];
+                                                                    }
+                                                                    c.g[A3][0] = c.g[S3][0];
+                                                                    c.g[T0][0] = c.g[S4][0];
+                                                                    c.g[T1][0] = c.g[S5][0];
+                                                                    let t = true;
+                                                                    c.g[A1][0] = 0x6;
+                                                                    if t {
+                                                                        break 'b_27a328;
+                                                                    } else {
+                                                                        break 'b_27a2b4;
+                                                                    }
+                                                                }
+                                                                c.cycles += 4;
+                                                                c.g[A0][0] = c.g[S1][0];
+                                                                c.g[A3][0] = c.g[S3][0];
+                                                                let t = true;
+                                                                c.g[A1][0] = 0x9;
+                                                                if t {
+                                                                    break 'b_27a410;
+                                                                } else {
+                                                                    break 'b_27a2c4;
+                                                                }
+                                                            }
+                                                            c.cycles += 7;
+                                                            c.g[A0][0] = c.g[S1][0];
+                                                            c.g[A2][0] = c.g[S2][0];
+                                                            c.g[A3][0] = c.g[S3][0];
+                                                            c.g[T0][0] = c.g[S4][0];
+                                                            c.g[T1][0] = c.g[S5][0];
+                                                            let t = true;
+                                                            c.g[A1][0] = 0xa;
+                                                            if t {
+                                                                break 'b_27a324;
+                                                            } else {
+                                                                break 'b_27a2e0;
+                                                            }
+                                                        }
+                                                        c.cycles += 7;
+                                                        c.g[A0][0] = c.g[S1][0];
+                                                        c.g[A2][0] = c.g[S2][0];
+                                                        c.g[A3][0] = c.g[S3][0];
+                                                        c.g[T0][0] = c.g[S4][0];
+                                                        c.g[T1][0] = c.g[S5][0];
+                                                        let t = true;
+                                                        c.g[A1][0] = 0xb;
+                                                        if t {
+                                                            break 'b_27a324;
+                                                        } else {
+                                                            break 'b_27a2fc;
+                                                        }
+                                                    }
+                                                    c.cycles += 4;
+                                                    c.g[A0][0] = c.g[S1][0];
+                                                    c.g[A1][0] =
+                                                        sx((c.g[A1][0] as u32).wrapping_sub(0x16));
+                                                    let t = true;
+                                                    c.g[A3][0] = c.g[S3][0];
+                                                    if t {
+                                                        break 'b_27a410;
+                                                    } else {
+                                                        break 'b_27a30c;
+                                                    }
+                                                }
+                                                c.cycles += 6;
+                                                c.g[A0][0] = c.g[S1][0];
+                                                c.g[A1][0] =
+                                                    sx((c.g[A1][0] as u32).wrapping_sub(0x16));
+                                                c.g[A2][0] = c.g[S2][0];
+                                                c.g[A3][0] = c.g[S3][0];
+                                                c.g[T0][0] = c.g[S4][0];
+                                                c.g[T1][0] = c.g[S5][0];
+                                                break 'b_27a324;
+                                            }
+                                            c.cycles += 1;
+                                            c.g[T2][0] = 0x32;
+                                            break 'b_27a328;
+                                        }
+                                        c.cycles += 4;
+                                        c.g[RA][0] = sx(0x0027a330);
+                                        c.g[T3][0] = 0u64;
+                                        c.pc = 0x0027bb08;
+                                        ee::s07::ScriptEngine_GetLocatorPose(c);
+                                        if c.pc != 0x0027a330 {
+                                            return;
+                                        }
+                                        let t = true;
+                                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+                                        if t {
+                                            break 'b_27a480;
+                                        } else {
+                                            break 'b_27a338;
+                                        }
+                                    }
+                                    c.cycles += 4;
+                                    c.g[A0][0] = c.g[S1][0];
+                                    c.g[A3][0] = c.g[S3][0];
+                                    let t = true;
+                                    c.g[A1][0] = 0x7;
+                                    if t {
+                                        break 'b_27a410;
+                                    } else {
+                                        break 'b_27a348;
+                                    }
+                                }
+                                'b_27a3ac: {
+                                    c.cycles += 3;
+                                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x20e8));
+                                    let t = c.g[V0][0] != 0u64;
+                                    c.g[V0][0] = 0xc;
+                                    if t {
+                                        break 'b_27a3ac;
+                                    } else {
+                                        c.cycles += 22;
+                                        c.g[V1][0] = 0x4d0000;
+                                        c.g[AT][0] = 0x438c0000;
+                                        c.mtc1(1, 4);
+                                        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x3770));
+                                        c.g[AT][0] = 0xffffffffc1a00000;
+                                        c.mtc1(1, 0);
+                                        c.swc1(4, (c.g[V0][0] as u32).wrapping_add(0x20));
+                                        c.g[A0][0] = 0x1;
+                                        c.g[AT][0] = 0x43aa0000;
+                                        c.mtc1(1, 2);
+                                        c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x47f4));
+                                        c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x47f0));
+                                        c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x3770));
+                                        c.swc1(2, (c.g[V0][0] as u32).wrapping_add(0x8));
+                                        c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x10));
+                                        c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x18));
+                                        c.swc1(3, (c.g[V0][0] as u32).wrapping_add(0x1c));
+                                        c.sw((c.g[GP][0] as u32).wrapping_add(0x20e8), c.g[A0][0]);
+                                        c.sw((c.g[V0][0] as u32).wrapping_add(0x4), 0u64);
+                                        c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0xc));
+                                        c.swc1(4, (c.g[V0][0] as u32).wrapping_add(0x14));
+                                        c.g[V0][0] = 0xc;
+                                        break 'b_27a3ac;
+                                    }
+                                }
+                                c.cycles += 22;
+                                c.g[V1][0] = 0x4d0000;
+                                c.mult(0, 2, 5, 2);
+                                c.sw((c.g[SP][0] as u32).wrapping_add(0xc), 0u64);
+                                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x3680));
+                                c.g[A0][0] = c.g[S1][0];
+                                c.g[A2][0] = c.g[S2][0];
+                                c.g[A3][0] = c.g[S3][0];
+                                c.g[T0][0] = c.g[S4][0];
+                                c.g[T1][0] = c.g[S5][0];
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                                c.g[A1][0] = 0u64;
+                                c.lwc1(2, (c.g[V0][0] as u32).wrapping_add(0x8));
+                                c.g[T2][0] = 0x32;
+                                c.lwc1(1, (c.g[V0][0] as u32));
+                                c.g[T3][0] = c.g[SP][0];
+                                c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x4));
+                                c.swc1(1, (c.g[SP][0] as u32));
+                                c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
+                                c.g[RA][0] = sx(0x0027a3fc);
+                                c.swc1(2, (c.g[SP][0] as u32).wrapping_add(0x8));
+                                c.pc = 0x0027bb08;
+                                ee::s07::ScriptEngine_GetLocatorPose(c);
+                                if c.pc != 0x0027a3fc {
+                                    return;
+                                }
+                                let t = true;
+                                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+                                if t {
+                                    break 'b_27a480;
+                                } else {
+                                    break 'b_27a404;
+                                }
+                            }
+                            c.cycles += 3;
+                            c.g[A0][0] = c.g[S1][0];
+                            c.g[A3][0] = c.g[S3][0];
+                            c.g[A1][0] = 0u64;
+                            break 'b_27a410;
+                        }
+                        c.cycles += 12;
+                        c.g[A2][0] = c.g[S2][0];
+                        c.g[T0][0] = c.g[S4][0];
+                        c.g[T1][0] = c.g[S5][0];
+                        c.g[T2][0] = 0x32;
+                        c.g[RA][0] = sx(0x0027a428);
+                        c.g[T3][0] = 0u64;
+                        c.pc = 0x0027bb08;
+                        ee::s07::ScriptEngine_GetLocatorPose(c);
+                        if c.pc != 0x0027a428 {
+                            return;
+                        }
+                        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                        c.g[A1][0] = c.g[S2][0];
+                        c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                        c.g[A3][0] = c.g[SP][0];
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+                        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x20));
+                        break 'b_27a440;
+                    }
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x0027a448);
+                    c.pc = 0x003369d8;
+                    call_indirect(c, 0x003369d8);
+                    if c.pc != 0x0027a448 {
+                        return;
+                    }
+                    let t = c.g[V0][0] == 0u64;
+                    c.lwc1(0, (c.g[SP][0] as u32).wrapping_add(0x18));
+                    if t {
+                        break 'b_27a47c;
+                    } else {
+                        c.cycles += 2;
+                        let t = true;
+                        c.swc1(0, (c.g[S2][0] as u32).wrapping_add(0x8));
+                        if t {
+                            break 'b_27a47c;
+                        } else {
+                            break 'b_27a458;
+                        }
+                    }
+                }
+                c.cycles += 9;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A2][0] = c.g[S2][0];
+                c.g[A3][0] = c.g[S3][0];
+                c.g[T0][0] = c.g[S4][0];
+                c.g[T1][0] = c.g[S5][0];
+                c.g[A1][0] = 0x8;
+                c.g[T2][0] = 0x32;
+                c.g[RA][0] = sx(0x0027a47c);
+                c.g[T3][0] = 0u64;
+                c.pc = 0x0027bb08;
+                ee::s07::ScriptEngine_GetLocatorPose(c);
+                if c.pc != 0x0027a47c {
+                    return;
+                }
+                break 'b_27a47c;
+            }
+        }
+        c.cycles += 1;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+        break 'b_27a480;
+    }
+    c.cycles += 8;
+    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x70));
+    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x60));
+    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x50));
+    c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x40));
+    c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x30));
+    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+    let t = c.g[RA][0] as u32;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x90));
+    c.pc = t;
+    return;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9897,6 +11935,263 @@ pub(crate) mod tests {
                 c.bus.write32(player + 0x3c, 0);
                 c.g[A0][0] = sx(engine);
                 c.pc = 0x0027_89c0;
+            },
+        );
+    }
+
+    use std::ptr::addr_of_mut;
+
+    use std::sync::atomic::AtomicUsize;
+
+    pub(crate) use crate::game::input::inputparse::tests::o406_w;
+    pub(crate) use crate::game::input::inputparse::tests::O406_TRACK;
+
+    pub(crate) use crate::game::input::inputparse::tests::o406_base;
+
+    pub(crate) use crate::game::ai::ai::tests::oc414_env;
+
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::oc417_machine;
+
+    /// `ScriptRider_ReadFields`: the twelve (track lookup, virtual read) pairs.
+    #[test]
+    fn script_rider_read_fields_matches() {
+        fakes::covered(
+            ee::s07::f_0027c9b0__generated,
+            script_rider_read_fields,
+            120,
+            &|c, seed| {
+                let mut r = o406_base(c, seed, 0x27c9b0, 24, 0x0027_c9b0);
+                let vt = DATA + 0x500;
+                o406_w(c, O406_TRACK + 4, vt);
+                for off in [0x20u32, 0x28] {
+                    c.bus.write16(vt + off, 0x10);
+                    o406_w(c, vt + off + 4, fakes::FAKE + off);
+                }
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x2000) as u64;
+                for off in (0..0x100).step_by(4) {
+                    o406_w(c, DATA + 0x2000 + off, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// Gate of the channel-id fake (+4: the id it returns).
+    pub(crate) const CAM_CTRL: u32 = DATA + 0xf_f000;
+
+    pub(crate) const CAM_MAGIC: u32 = 0x4341_4d42;
+
+    pub(crate) const CAM_OBJ: u32 = DATA + 0x1000;
+
+    pub(crate) const CAM_ARG: u32 = DATA + 0x1100;
+
+    pub(crate) const CAM_SCRIPT: u32 = DATA + 0x1200;
+
+    pub(crate) const CAM_PARAMS: u32 = DATA + 0x1300;
+
+    pub(crate) static CAM_PREV_ID: AtomicUsize = AtomicUsize::new(0);
+
+    /// `InSeq_ChannelGetId` fake: returns the id the fixture chose (and
+    /// unwinds at the scheduled call).
+    pub(crate) fn cam_fake_channel_id(c: &mut Cpu) {
+        if c.bus.read32(CAM_CTRL) != CAM_MAGIC {
+            return fakes::fall_back(c, &CAM_PREV_ID, ee::s07::f_002743c8__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        let id = c.bus.read32(CAM_CTRL + 4);
+        fakes::fake(c, 0x0027_43c8, ra);
+        if c.pc == ra {
+            c.g[V0][0] = sx(id);
+        }
+    }
+
+    /// `ScriptObjCam_BuildMatrixFromScript` against the generated body: all
+    /// four modes plus the ids that leave early (4, -1, 7, i32::MIN), random
+    /// params and constants, pose kind byte (0 or out of range: the real
+    /// `ScriptEngine_GetTargetPose` zeroes its outputs), real
+    /// `Math_SinCos` and param getters, and a channel-id fake that
+    /// sometimes unwinds.
+    #[test]
+    fn script_obj_cam_build_matrix_from_script_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_002743C8),
+            cam_fake_channel_id,
+            &CAM_PREV_ID,
+        );
+        check(
+            ee::s07::f_0027d970__generated,
+            script_obj_cam_build_matrix_from_script,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x27_d970, 1);
+                c.pc = 0x0027_d970;
+                let ids: [u32; 8] = [0, 1, 2, 3, 4, 0xffff_ffff, 7, 0x8000_0000];
+                c.bus.write32(CAM_CTRL, CAM_MAGIC);
+                c.bus.write32(CAM_CTRL + 4, ids[(seed % 8) as usize]);
+                c.g[A0][0] = sx(CAM_OBJ);
+                c.g[A1][0] = sx(CAM_ARG);
+                c.bus.write32(CAM_ARG + 8, CAM_SCRIPT);
+                c.bus.write32(CAM_SCRIPT + 8, r.next_u32());
+                c.bus.write32(CAM_SCRIPT + 0x20, CAM_PARAMS);
+                for k in 0..0x40 {
+                    c.bus.write32(CAM_OBJ + 4 * k, r.next_u32());
+                }
+                // Params block: floats at +8..+0x1c, pose kind byte at +0x20.
+                for off in (8..0x20).step_by(4) {
+                    c.bus.write32(CAM_PARAMS + off, r.f32(3.0));
+                }
+                let kind: [u8; 4] = [0, 0x70, 0xf0, 0];
+                c.bus
+                    .write8(CAM_PARAMS + 0x20, kind[((seed / 8) % 4) as usize]);
+                // Static data: constant matrix, axis vectors, angle scales.
+                for off in (0..0x40).step_by(4) {
+                    c.bus.write32(0x004f_f1a0 + off, r.f32(2.0));
+                }
+                for base in [0x004f_f140u32, 0x004f_f150, 0x004f_f160] {
+                    for off in [0u32, 4, 8] {
+                        c.bus.write32(base + off, r.f32(1.0));
+                    }
+                }
+                for off in [0x479cu32, 0x4798, 0x4794, 0x4790] {
+                    c.bus.write32(GAME_GP - off, r.f32(2.0));
+                }
+                c.bus.write32(GAME_GP - 0x84c, r.next_u32());
+            },
+        );
+    }
+
+    /// `RiderScriptObj_Activate`: the object at DATA, its script object at
+    /// DATA+0x1000, the params record at DATA+0x2000 (info +1 = 0: the
+    /// target-pose default path), engine at DATA+0x3000 (empty bank lists).
+    #[test]
+    fn rider_script_obj_activate_matches() {
+        check(
+            ee::s07::f_0027f9f8__generated,
+            rider_script_obj_activate,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x5eed_1234 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+                scramble(c, &mut r);
+                c.pc = 0x0027_f9f8;
+                c.g[GP][0] = sx(GAME_GP);
+                let this = DATA;
+                let obj = DATA + 0x1000;
+                let info = DATA + 0x2000;
+                let engine = DATA + 0x3000;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + 0x8, obj);
+                c.bus.write32(obj + 0x8, DATA + 0x5000); // script thing
+                c.bus.write32(DATA + 0x5000 + 0x14, DATA + 0x4000); // its data
+                c.bus.write32(DATA + 0x4000 + 0x1c, r.next_u32() & 0xff);
+                c.bus.write32(obj + 0x20, info);
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(RIDER_ACTIVATE_ENGINE_GP), engine);
+                c.bus.write32(
+                    GAME_GP.wrapping_sub(RIDER_ACTIVATE_DEG2RAD_GP),
+                    0.017453292f32.to_bits(),
+                );
+                // info: byte +1 selects the pose kind: 0 or out of range
+                c.bus.write8(info + 1, if seed % 2 == 0 { 0 } else { 0x7f });
+                for off in [0x8u32, 0xc, 0x10, 0x14, 0x18, 0x1c] {
+                    c.bus.write32(info + off, r.f32(180.0));
+                }
+                // constants: identity matrix and axes (random identity row
+                // variation to exercise the multiplies)
+                for i in 0..16u32 {
+                    let v = if seed % 3 == 0 {
+                        if i % 5 == 0 {
+                            1.0f32.to_bits()
+                        } else {
+                            0
+                        }
+                    } else {
+                        r.f32(2.0)
+                    };
+                    c.bus.write32(RIDER_ACTIVATE_IDENTITY + 4 * i, v);
+                }
+                let axes = [
+                    (RIDER_ACTIVATE_X_AXIS, [1.0f32, 0.0, 0.0, 0.0]),
+                    (RIDER_ACTIVATE_Y_AXIS, [0.0, 1.0, 0.0, 0.0]),
+                    (RIDER_ACTIVATE_Z_AXIS, [0.0, 0.0, 1.0, 0.0]),
+                ];
+                for (a, v) in axes {
+                    for (k, f) in v.iter().enumerate() {
+                        let f = if seed % 4 == 1 && k < 3 { f * 0.6 } else { *f };
+                        c.bus.write32(a + 4 * k as u32, f.to_bits());
+                    }
+                }
+            },
+        );
+    }
+
+    /// `ScriptEngine_IsHUDAllowed`: the playing list is 2 (allowed), the
+    /// no-skip frame count is set, or the list's skip/play state decides.
+    #[test]
+    fn script_engine_is_hud_allowed_matches() {
+        check(
+            ee::s07::f_002792e0__generated,
+            script_engine_is_hud_allowed_2,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2792e0, 0);
+                oc414_env(c);
+                c.pc = 0x0027_92e0;
+                let this = DATA + 0x100;
+                let lists = DATA + 0x1000;
+                c.bus.write32(this + 0x550, seed % 4);
+                c.bus.write32(this + 0x554, (seed / 4 % 2) as u32);
+                c.bus.write32(this + 0x54c, lists);
+                for k in 0..(4 * 0xcc / 4) as u32 {
+                    c.bus.write32(lists + 4 * k, r.next_u32() % 4);
+                }
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    // ----------------------------------------------------------------------
+    // ScriptEngine_GetTargetPose
+
+    /// Target ids across the jump table (the ELF image provides the table
+    /// and its constants; every other state is zero, so the real script
+    /// callees find nothing and take their short paths): rider targets
+    /// (1-18, 40-60), locator kinds 0-11, the object categories of 29/30,
+    /// the static offset table of 20-22 and ids outside the table. The
+    /// ids that drop the pose onto the ground (19, 23-28, 31, 34-36) call
+    /// the collision probe `0x3369d8` for real and are left out of the
+    /// fixture.
+    #[test]
+    fn script_engine_get_target_pose_matches() {
+        const SELF: u32 = DATA + 0x1000;
+        const OBJ: u32 = DATA + 0x1400;
+        const INFO: u32 = DATA + 0x1500;
+        const POS: u32 = DATA + 0x1800;
+        const OUTS: u32 = DATA + 0x1900;
+        const IDS: [u32; 38] = [
+            1, 5, 18, 40, 44, 60, 29, 30, 32, 33, 37, 38, 39, 24, 20, 21, 22, 2, 9, 12, 41, 50, 55,
+            59, 29, 30, 20, 22, 0, 61, 62, 100, 3, 4, 6, 7, 8, 10,
+        ];
+        check(
+            ee::s07::f_0027a0d8__generated,
+            script_engine_get_target_pose,
+            200,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = oc417_machine(c, seed, 0x4170_000a, 6);
+                c.pc = 0x0027_a0d8;
+                c.bus.write32(OBJ + 0x14, INFO);
+                c.bus.write8(INFO, (seed % 3 == 0) as u8);
+                c.bus.write32(GAME_GP + 0x20e8, (seed % 4 == 1) as u32);
+                c.g[A0][0] = SELF as u64;
+                c.g[A1][0] = IDS[(seed % 38) as usize] as u64;
+                c.g[A2][0] = OBJ as u64;
+                c.g[A3][0] = POS as u64;
+                c.g[T0][0] = OUTS as u64;
+                c.g[T1][0] = (OUTS + 4) as u64;
+                c.g[T2][0] = (OUTS + 8) as u64;
+                for i in 0..8u32 {
+                    c.bus.write32(POS + 4 * i, r.next_u32());
+                }
             },
         );
     }

@@ -20,6 +20,8 @@ pub(crate) use crate::game::fe::feasyncfile::sw_r;
 pub(crate) use crate::game::fe::festateloadhint::p_3;
 pub(crate) use crate::game::fe::festatetrophyroom::r;
 pub(crate) use crate::game::fe::festatetrophyroom::Ops;
+pub(crate) use crate::game::input::inputparse::o406_lw;
+pub(crate) use crate::game::input::inputparse::o406_sw;
 pub(crate) use crate::game::object::splinemodifier::lwc1_r;
 pub(crate) use crate::game::object::splinemodifier::swc1_r;
 pub(crate) use crate::game::render::particle::add32;
@@ -148,6 +150,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x003a_c508,
         c_ps2_chunk_resolve_patch_instance_dma_chain,
         "cPS2ChunkResolve_PatchInstanceDmaChain",
+    ),
+    (0x003a_aa08, c_ps2_chunk_resolve_v19, "cPS2ChunkResolve_v19"),
+    (
+        0x003a_bf20,
+        c_ps2_chunk_resolve_relocate_mesh_dma,
+        "cPS2ChunkResolve_RelocateMeshDma",
+    ),
+    (
+        0x003a_bf50,
+        c_ps2_chunk_resolve_relocate_mesh_dma_parts,
+        "cPS2ChunkResolve_RelocateMeshDmaParts",
+    ),
+    (
+        0x003a_bfc0,
+        c_ps2_chunk_resolve_relocate_mesh_dma_part,
+        "cPS2ChunkResolve_RelocateMeshDmaPart",
     ),
 ];
 
@@ -3739,6 +3757,359 @@ pub fn cps2_chunk_resolve_patch_dma_chain(c: &mut Cpu) {
     frame.close(c);
 }
 
+// --------------------------------------------------- cPS2ChunkResolve_v19
+
+/// `int cPS2ChunkResolve_v19(Resolver *self, void *base, Chunk *chunk)`
+/// (0x3aaa08): resolve a chunk's internal offsets into pointers. The three
+/// offsets at +4, +8 and +0xc are rebased; then chunk type 3 (a table of
+/// 0x140-byte records at `+8`, count `+2`: each one's own resolver at
+/// 0x32c540, then 0x327da8 over the data at `+4`) or type 1 (a table of
+/// variable-size records, each with four rebased offsets) is walked.
+/// Returns 1.
+pub fn c_ps2_chunk_resolve_v19(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x60);
+        c.g[V0][0] = u64::MAX;
+        frame.save(c, S0, 0x50);
+        frame.save(c, S4, 0x10);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = o406_lw(c, S0, 4);
+        c.g[S4][0] = c.g[A1][0];
+        c.cycles += 2;
+        if c.g[V1][0] != c.g[V0][0] {
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            o406_sw(c, S0, 4, V0);
+        } else {
+            o406_sw(c, S0, 4, ZERO);
+        }
+        for off in [8u32, 0xc] {
+            c.cycles += 4;
+            c.g[V1][0] = o406_lw(c, S0, off);
+            c.g[V0][0] = u64::MAX;
+            let fixed = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            if fixed {
+                c.cycles += 1;
+                o406_sw(c, S0, off, V0);
+            } else {
+                c.cycles += 2;
+                o406_sw(c, S0, off, ZERO);
+            }
+        }
+        'done: {
+            'tail: {
+                'not_three: {
+                    c.cycles += 4;
+                    let a = c.g[S0][0] as u32;
+                    c.g[V1][0] = c.lhu(a);
+                    c.g[V0][0] = 3;
+                    let not_three = c.g[V1][0] != c.g[V0][0];
+                    c.g[V0][0] = 1;
+                    if not_three {
+                        break 'not_three;
+                    }
+                    c.cycles += 9;
+                    c.g[S1][0] = o406_lw(c, S0, 8);
+                    c.g[S2][0] = 0;
+                    o406_sw(c, S1, 4, ZERO);
+                    o406_sw(c, S1, 0, ZERO);
+                    let a = (c.g[S0][0] as u32).wrapping_add(2);
+                    c.g[V1][0] = c.lhu(a);
+                    o406_sw(c, S1, 4, V1);
+                    c.g[V0][0] = o406_lw(c, S0, 0xc);
+                    let empty = c.g[V1][0] == 0;
+                    o406_sw(c, S1, 0, V0);
+                    if !empty {
+                        c.cycles += 1;
+                        c.g[S3][0] = 0;
+                        loop {
+                            c.cycles += 8;
+                            c.g[A0][0] = o406_lw(c, S1, 0);
+                            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                            call_ptr(c, 0x0032_c540, 0x003a_aac8)?;
+                            c.g[V0][0] = o406_lw(c, S1, 4);
+                            c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                            let again = c.g[V0][0] != 0;
+                            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x140));
+                            if !again {
+                                break;
+                            }
+                            if event_due(c) {
+                                deliver_event_here(c, 0x003a_aab8);
+                            }
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[V0][0] = o406_lw(c, S1, 4);
+                    c.g[S2][0] = 0;
+                    let none = (c.g[V0][0] as i64) <= 0;
+                    c.g[S0][0] = o406_lw(c, S0, 4);
+                    if none {
+                        break 'tail;
+                    }
+                    c.cycles += 2;
+                    c.g[S3][0] = 0;
+                    loop {
+                        c.cycles += 11;
+                        c.g[A0][0] = o406_lw(c, S1, 0);
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A2][0] = c.g[S4][0];
+                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                        call_ptr(c, 0x0032_7da8, 0x003a_ab08)?;
+                        c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x140));
+                        c.g[V1][0] = o406_lw(c, S1, 4);
+                        c.g[V1][0] = ((c.g[S2][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                        let again = c.g[V1][0] != 0;
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        if !again {
+                            c.cycles += 2;
+                            break 'done;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003a_aaf0);
+                        }
+                    }
+                }
+                // Not type 3.
+                c.cycles += 2;
+                if c.g[V1][0] != c.g[V0][0] {
+                    break 'done;
+                }
+                c.cycles += 10;
+                c.g[T0][0] = o406_lw(c, S0, 8);
+                c.g[A3][0] = 0;
+                o406_sw(c, T0, 4, ZERO);
+                o406_sw(c, T0, 0, ZERO);
+                let a = (c.g[S0][0] as u32).wrapping_add(2);
+                c.g[V1][0] = c.lhu(a);
+                o406_sw(c, T0, 4, V1);
+                c.g[V0][0] = o406_lw(c, S0, 0xc);
+                o406_sw(c, T0, 0, V0);
+                let empty = c.g[V1][0] == 0;
+                c.g[A2][0] = o406_lw(c, S0, 4);
+                if empty {
+                    break 'tail;
+                }
+                c.cycles += 1;
+                loop {
+                    c.cycles += 23;
+                    c.g[V1][0] = o406_lw(c, T0, 0);
+                    c.g[V0][0] = sx((c.g[A3][0] as u32) << 2);
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    o406_sw(c, V0, 0, A2);
+                    c.g[V1][0] = o406_lw(c, A2, 4);
+                    c.g[V0][0] = o406_lw(c, A2, 8);
+                    c.g[A0][0] = o406_lw(c, A2, 0xc);
+                    c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[A1][0] = o406_lw(c, A2, 0x10);
+                    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    o406_sw(c, A2, 8, V0);
+                    c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    o406_sw(c, A2, 4, V1);
+                    o406_sw(c, A2, 0xc, A0);
+                    o406_sw(c, A2, 0x10, A1);
+                    let a = c.g[A2][0] as u32;
+                    c.g[V0][0] = c.lhu(a);
+                    c.g[V1][0] = o406_lw(c, T0, 4);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
+                    c.g[V1][0] = ((c.g[A3][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    let again = c.g[V1][0] != 0;
+                    c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    if !again {
+                        break 'tail;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003a_ab58);
+                    }
+                }
+            }
+            c.cycles += 1;
+        }
+        c.cycles += 8;
+        c.g[V0][0] = 1;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// cPS2ChunkResolve: relocating mesh DMA lists.
+
+/// `cPS2ChunkResolve::PatchDmaChain(ctx, chain, list, index)` (0x3ac048).
+pub(crate) const CHUNK_PATCH_DMA_CHAIN: Callee = Callee {
+    addr: 0x003a_c048,
+    f: ee::s13::cPS2ChunkResolve_PatchDmaChain,
+};
+
+/// `cPS2ChunkResolve::RelocateMeshDmaParts(ctx, mesh)` (0x3abf50).
+pub(crate) const CHUNK_RELOCATE_MESH_DMA_PARTS: Callee = Callee {
+    addr: 0x003a_bf50,
+    f: ee::s13::cPS2ChunkResolve_RelocateMeshDmaParts,
+};
+
+/// `cPS2ChunkResolve::RelocateMeshDmaPart(ctx, part, mesh)` (0x3abfc0).
+pub(crate) const CHUNK_RELOCATE_MESH_DMA_PART: Callee = Callee {
+    addr: 0x003a_bfc0,
+    f: ee::s13::cPS2ChunkResolve_RelocateMeshDmaPart,
+};
+
+/// Mesh: relocation offset field (made absolute by `RelocateMeshDma`).
+pub(crate) const CHUNK_MESH_RELOC: u32 = 0x24;
+
+/// Mesh: number of parts, pointer to the part table (16-byte entries).
+pub(crate) const CHUNK_MESH_PART_COUNT: u32 = 0x4;
+
+pub(crate) const CHUNK_MESH_PART_TABLE: u32 = 0x8;
+
+/// Part: number of DMA chains, pointer to the chain pointers.
+pub(crate) const CHUNK_PART_CHAIN_COUNT: u32 = 0x1c;
+
+pub(crate) const CHUNK_PART_CHAIN_LIST: u32 = 0x20;
+
+/// `int cPS2ChunkResolve::RelocateMeshDma(ctx, mesh)` (0x3abf20): make the
+/// mesh's `+0x24` field absolute (add the mesh address), relocate its parts,
+/// return 1.
+pub fn c_ps2_chunk_resolve_relocate_mesh_dma(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        c.g[V1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(CHUNK_MESH_RELOC)).lw(c);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+        let relocated = c.g[V0][0];
+        Addr(r32(c, V1).wrapping_add(CHUNK_MESH_RELOC)).sw(c, relocated);
+        CHUNK_RELOCATE_MESH_DMA_PARTS.call(c, 0x003a_bf3c)?;
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = 1;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cPS2ChunkResolve::RelocateMeshDmaParts(ctx, mesh)` (0x3abf50):
+/// for each part entry with a non-null part pointer (+4), relocate it.
+/// Returns 1.
+pub fn c_ps2_chunk_resolve_relocate_mesh_dma_parts(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S0, 0x40);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, S2).wrapping_add(CHUNK_MESH_PART_COUNT)).lw(c);
+        let empty = (c.g[V0][0] as i64) <= 0;
+        c.g[S1][0] = Addr(r32(c, S2).wrapping_add(CHUNK_MESH_PART_TABLE)).lw(c);
+        if !empty {
+            c.cycles += 1;
+            c.g[S0][0] = c.g[V0][0];
+            loop {
+                c.cycles += 3;
+                c.g[A1][0] = Addr(r32(c, S1).wrapping_add(4)).lw(c);
+                let null = c.g[A1][0] == 0;
+                c.g[A0][0] = c.g[S3][0];
+                if !null {
+                    c.cycles += 2;
+                    c.g[A2][0] = c.g[S2][0];
+                    CHUNK_RELOCATE_MESH_DMA_PART.call(c, 0x003a_bf94)?;
+                }
+                c.cycles += 3;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_sub(1));
+                let more = c.g[S0][0] != 0;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(0x10));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003a_bf80);
+                }
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x40);
+        c.g[V0][0] = 1;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cPS2ChunkResolve::RelocateMeshDmaPart(ctx, part, mesh)` (0x3abfc0):
+/// patch each of the part's DMA chains (`PatchDmaChain(ctx, chain, mesh,
+/// index)`). Returns 1.
+pub fn c_ps2_chunk_resolve_relocate_mesh_dma_part(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S2, 0x30);
+        c.g[S0][0] = 0;
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S4, 0x10);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, S1, 0x40);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, S2).wrapping_add(CHUNK_PART_CHAIN_COUNT)).lw(c);
+        let empty = (c.g[V0][0] as i64) <= 0;
+        c.g[S1][0] = Addr(r32(c, S2).wrapping_add(CHUNK_PART_CHAIN_LIST)).lw(c);
+        if !empty {
+            loop {
+                c.cycles += 10;
+                c.g[A1][0] = Addr(r32(c, S1)).lw(c);
+                c.g[A3][0] = c.g[S0][0];
+                c.g[A0][0] = c.g[S4][0];
+                c.g[A2][0] = c.g[S3][0];
+                CHUNK_PATCH_DMA_CHAIN.call(c, 0x003a_c00c)?;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                c.g[V0][0] = Addr(r32(c, S2).wrapping_add(CHUNK_PART_CHAIN_COUNT)).lw(c);
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003a_bff8);
+                }
+            }
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x50);
+        c.g[V0][0] = 1;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5402,6 +5773,262 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(ctx);
                 c.g[A3][0] = r.next_u32() as u64;
             },
+        );
+    }
+
+    pub(crate) use crate::game::input::inputparse::tests::o406_w;
+
+    pub(crate) use crate::game::input::inputparse::tests::o406_base;
+
+    // ---------------------------------------------- cPS2ChunkResolve_v19
+
+    /// Resolve a chunk: the three offsets (-1 or relative), type 3 (the
+    /// records walk; one fake callee, one real) and type 1 (the variable
+    /// records), type 2 (nothing more).
+    #[test]
+    fn c_ps2_chunk_resolve_v19_matches() {
+        fakes::covered(
+            ee::s13::f_003aaa08__generated,
+            c_ps2_chunk_resolve_v19,
+            200,
+            &|c, seed| {
+                let mut r = o406_base(c, seed, 0x3aaa08, 4, 0x003a_aa08);
+                let chunk = DATA + 0x1000;
+                c.g[A1][0] = (DATA + 0x2000) as u64;
+                c.g[A2][0] = chunk as u64;
+                let off = |r: &mut Rng, v: u32| if r.next_u32() % 3 == 0 { u32::MAX } else { v };
+                o406_w(c, chunk + 4, off(&mut r, 0x100));
+                o406_w(c, chunk + 8, off(&mut r, 0x200));
+                o406_w(c, chunk + 0xc, off(&mut r, 0x300));
+                let kind = [1u16, 3, 3, 1, 2, 7][(r.next_u32() % 6) as usize];
+                c.bus.write16(chunk, kind);
+                c.bus.write16(chunk + 2, (r.next_u32() % 3) as u16);
+                // The records (type 3: a table at +0x200 of 0x140-byte
+                // entries; type 1: variable records at +0x100, 0x10 bytes
+                // apart plus their offsets).
+                for i in 0..3u32 {
+                    let rec = chunk + 0x100 + 0x40 * i;
+                    c.bus.write16(rec, (r.next_u32() % 2) as u16);
+                    for k in 1..5u32 {
+                        o406_w(c, rec + 4 * k, 0x10 * k);
+                    }
+                }
+            },
+        );
+    }
+
+    /// Gate word, call counter (+4), unwind index (+8), forced results
+    /// (`+0x10 + 4*id`), float results (`+0x200 + 4*id`), out-parameter words
+    /// (`+0x400 + 0x40*id`) and the call log (`+0x1000`, 0x40 bytes per call) of
+    /// the fake callees. Not near `DATA+0x100000`.
+    pub(crate) const OC410_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC410_MAGIC: u32 = 0x0c41_0a11;
+
+    /// Result word of fake `id` (what its caller sees in `v0`).
+    pub(crate) const fn oc410_result(id: u32) -> u32 {
+        OC410_CTRL + 0x10 + 4 * id
+    }
+
+    /// Float result (`f0`) of fake `id`.
+    pub(crate) const fn oc410_fresult(id: u32) -> u32 {
+        OC410_CTRL + 0x200 + 4 * id
+    }
+
+    /// The words fake `id` stores through its out-parameters, in order
+    /// (`outs`: register holding the pointer, byte offset, word count).
+    pub(crate) const fn oc410_out(id: u32) -> u32 {
+        OC410_CTRL + 0x400 + 0x40 * id
+    }
+
+    /// Fake callee `id`: logs its arguments and cycles, returns the forced
+    /// result (or unwinds when its call index is the one in `CTRL+8`).
+    pub(crate) fn oc410_fake(c: &mut Cpu, id: u32, outs: &[(usize, u32, u32)]) {
+        let n = c.bus.read32(OC410_CTRL + 4);
+        c.bus.write32(OC410_CTRL + 4, n.wrapping_add(1));
+        let p = OC410_CTRL + 0x1000 + (n & 0x3f) * 0x40;
+        c.bus.write32(p, id);
+        for i in 0..4 {
+            c.bus.write64(p + 8 + 8 * i as u32, c.g[A0 + i][0]);
+        }
+        c.bus.write32(p + 0x28, c.f[12]);
+        c.bus.write32(p + 0x2c, c.f[13]);
+        c.bus.write32(p + 0x30, c.g[RA][0] as u32);
+        c.bus.write32(p + 0x34, c.g[SP][0] as u32);
+        c.bus.write64(p + 0x38, c.cycles);
+        let mut src = oc410_out(id);
+        for &(reg, byte_off, words) in outs {
+            let dst = (c.g[reg][0] as u32).wrapping_add(byte_off);
+            for w in 0..words {
+                let v = c.bus.read32(src);
+                c.bus.write32(dst + 4 * w, v);
+                src += 4;
+            }
+        }
+        let forced = c.bus.read32(oc410_result(id));
+        c.g[V0][0] = sx(forced);
+        c.g[V1][0] = 0x5151_0000 + n as u64;
+        c.f[0] = c.bus.read32(oc410_fresult(id));
+        c.cycles += 5;
+        if n == c.bus.read32(OC410_CTRL + 8) {
+            c.pc = 0xdead_0000 | n << 4;
+        } else {
+            c.pc = c.g[RA][0] as u32;
+        }
+    }
+
+    /// Defines the gated fake callees and `oc410_hook_fakes`, which puts each
+    /// in its override slot (once per process; with the gate word clear a fake
+    /// runs what the slot held before).
+    macro_rules! oc410_fakes {
+        ($(($name:ident, $id:expr, $out:expr, $shard:ident, $slot:ident, $gen:ident)),* $(,)?) => {
+            $(
+                fn $name(c: &mut Cpu) {
+                    if c.bus.read32(OC410_CTRL) == OC410_MAGIC {
+                        return oc410_fake(c, $id, $out);
+                    }
+                    fakes::fall_back(c, fakes::prev_cell($name), ee::$shard::$gen)
+                }
+            )*
+            pub(crate) fn oc410_hook_fakes() {
+                $(
+                    fakes::hook(
+                        std::ptr::addr_of_mut!(ee::$shard::$slot),
+                        $name,
+                        fakes::prev_cell($name),
+                    );
+                )*
+            }
+        };
+    }
+
+    oc410_fakes! {
+        (fake_patch_dma_chain, 0, &[], s13, OVERRIDE_003AC048, f_003ac048__generated),
+        (fake_new_named, 1, &[], s10, OVERRIDE_00317E30, f_00317e30__generated),
+        (fake_mem_copy, 2, &[], s14, OVERRIDE_003E6574, f_003e6574__generated),
+        (fake_mem_free, 3, &[], s10, OVERRIDE_00317E98, f_00317e98__generated),
+        (fake_compile_identifier, 4, &[], s10, OVERRIDE_003245A8, f_003245a8__generated),
+        (fake_get_script_obj, 5, &[], s02, OVERRIDE_001694B0, f_001694b0__generated),
+        (fake_be_get_instance, 6, &[], s01, OVERRIDE_0014DC80, f_0014dc80__generated),
+        (fake_be_get_interface, 7, &[], s01, OVERRIDE_0014DD58, f_0014dd58__generated),
+        (fake_be_char_profile_data, 8, &[], s01, OVERRIDE_0014AD28, f_0014ad28__generated),
+        (fake_bolts_char_bolt_count, 9, &[], s01, OVERRIDE_0014D988, f_0014d988__generated),
+        (fake_bolts_char_bolts, 10, &[], s01, OVERRIDE_0014D998, f_0014d998__generated),
+        (fake_get_uint, 11, &[(A1, 0, 1)], s09, OVERRIDE_002D2558, f_002d2558__generated),
+        (fake_operator_new, 12, &[], s10, OVERRIDE_00317D70, f_00317d70__generated),
+        (fake_cam_act_type0, 13, &[], s02, OVERRIDE_001715A0, f_001715a0__generated),
+        (fake_cam_act_type1, 14, &[], s02, OVERRIDE_001714E8, f_001714e8__generated),
+        (fake_cam_act_type2, 15, &[], s02, OVERRIDE_001715F8, f_001715f8__generated),
+        (fake_cam_act_type3, 16, &[], s02, OVERRIDE_00171680, f_00171680__generated),
+        (fake_script_cmd_queue_at, 17, &[], s07, OVERRIDE_00283D70, f_00283d70__generated),
+        (fake_script_process_finished, 18, &[], s07, OVERRIDE_00282838, f_00282838__generated),
+        (fake_span_activate_key, 19, &[], s07, OVERRIDE_002730C0, f_002730c0__generated),
+        (fake_span_next_key, 20, &[(A0, 0x14, 1)], s07, OVERRIDE_00273140, f_00273140__generated),
+        (fake_input_emit_node, 21, &[(A2, 0, 1)], s10, OVERRIDE_00324678, f_00324678__generated),
+        (fake_input_error, 22, &[], s10, OVERRIDE_00321500, f_00321500__generated),
+        (fake_get_listener, 24, &[], s07, OVERRIDE_00274D70, f_00274d70__generated),
+        (fake_get_char_id, 25, &[], s01, OVERRIDE_0014A080, f_0014a080__generated),
+        (fake_get_cheat_char_id, 26, &[], s01, OVERRIDE_0014A0B0, f_0014a0b0__generated),
+        (fake_get_db, 27, &[], s01, OVERRIDE_0014BDB8, f_0014bdb8__generated),
+        (fake_rider_data, 28, &[], s01, OVERRIDE_0014AD50, f_0014ad50__generated),
+        (fake_model_lookup, 29, &[], s09, OVERRIDE_002D1BD8, f_002d1bd8__generated),
+        (fake_attach_modifier, 30, &[], s10, OVERRIDE_002FAE38, f_002fae38__generated),
+        (fake_flag_node_ctor, 31, &[], s11, OVERRIDE_0034ADD8, f_0034add8__generated),
+        (fake_sine, 32, &[], s10, OVERRIDE_0031C040, f_0031c040__generated),
+        (fake_get_deriv, 33, &[(A1, 0, 4), (A2, 0, 4)], s11, OVERRIDE_00351660, f_00351660__generated),
+        (fake_sin_cos, 34, &[(A0, 0, 1), (A1, 0, 1)], s10, OVERRIDE_0031BE50, f_0031be50__generated),
+    }
+
+    /// Scrambled machine with a game gp, the fakes' gate open and (one seed in
+    /// three) a fake call that unwinds (`calls`: how many fake calls to choose from).
+    pub(crate) fn oc410_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        let mut r = fakes::machine(c, seed, salt, calls);
+        c.bus.write32(OC410_CTRL, OC410_MAGIC);
+        let unwind = if calls > 0 && seed % 3 == 0 {
+            r.next_u32() % calls
+        } else {
+            u32::MAX
+        };
+        c.bus.write32(OC410_CTRL + 8, unwind);
+        oc410_hook_fakes();
+        r
+    }
+
+    /// The mesh at `MESH`: parts at `PARTS`, items at `ITEMS`.
+    pub(crate) const MESH: u32 = DATA + 0x1000;
+
+    pub(crate) const PARTS: u32 = DATA + 0x2000;
+
+    pub(crate) const ITEMS: u32 = DATA + 0x3000;
+
+    pub(crate) fn chunk_resolve_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        let mut r = oc410_machine(c, seed, salt, 0);
+        c.pc = entry;
+        c.g[A0][0] = (DATA + 0x500) as u64;
+        c.g[A1][0] = MESH as u64;
+        c.bus.write32(MESH + CHUNK_MESH_RELOC, r.next_u32());
+        let parts = match seed % 7 {
+            0 => 0,
+            1 => 0xffff_fffe,
+            n => n % 4,
+        };
+        c.bus.write32(MESH + CHUNK_MESH_PART_COUNT, parts);
+        c.bus.write32(MESH + CHUNK_MESH_PART_TABLE, PARTS);
+        for i in 0..4u32 {
+            let item = ITEMS + i * 0x100;
+            c.bus.write32(PARTS + 0x10 * i, r.next_u32());
+            let null = (seed >> i) & 1 == 1 && i != 0;
+            c.bus
+                .write32(PARTS + 0x10 * i + 4, if null { 0 } else { item });
+            let chains = match (seed + i) % 6 {
+                0 => 0,
+                1 => 0xffff_ffff,
+                n => n % 4,
+            };
+            c.bus.write32(item + CHUNK_PART_CHAIN_COUNT, chains);
+            c.bus.write32(item + CHUNK_PART_CHAIN_LIST, item + 0x40);
+            for k in 0..4 {
+                c.bus.write32(item + 0x40 + 4 * k, r.next_u32());
+            }
+        }
+        c.g[A2][0] = (ITEMS + 0x20) as u64;
+        // A `part` call from the test of `RelocateMeshDmaPart` itself.
+        if entry == 0x003a_bfc0 {
+            c.g[A1][0] = (ITEMS + 0x100 * (seed % 4)) as u64;
+            c.g[A2][0] = MESH as u64;
+        }
+    }
+
+    /// `RelocateMeshDma` makes `+0x24` absolute and relocates every part.
+    #[test]
+    fn c_ps2_chunk_resolve_relocate_mesh_dma_matches() {
+        check(
+            ee::s13::f_003abf20__generated,
+            c_ps2_chunk_resolve_relocate_mesh_dma,
+            300,
+            &|c, seed| chunk_resolve_setup(c, seed, 0x003a_bf20, 0x003a_bf20),
+        );
+    }
+
+    /// `RelocateMeshDmaParts` walks the part table, skipping null entries.
+    #[test]
+    fn c_ps2_chunk_resolve_relocate_mesh_dma_parts_matches() {
+        check(
+            ee::s13::f_003abf50__generated,
+            c_ps2_chunk_resolve_relocate_mesh_dma_parts,
+            300,
+            &|c, seed| chunk_resolve_setup(c, seed, 0x003a_bf50, 0x003a_bf50),
+        );
+    }
+
+    /// `RelocateMeshDmaPart` patches each DMA chain of one part.
+    #[test]
+    fn c_ps2_chunk_resolve_relocate_mesh_dma_part_matches() {
+        check(
+            ee::s13::f_003abfc0__generated,
+            c_ps2_chunk_resolve_relocate_mesh_dma_part,
+            300,
+            &|c, seed| chunk_resolve_setup(c, seed, 0x003a_bfc0, 0x003a_bfc0),
         );
     }
 }

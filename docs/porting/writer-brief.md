@@ -220,6 +220,21 @@ every difference a parameter.
   full paths still resolve.
 - Never name a test constant `SP`: it shadows the stack-pointer register index
   from `reg::*`.
+- A callee that allocates (`operator_new_named`, `EA_MemAlloc`, the pool
+  allocator) runs the real `DLHeap_*` code: with an uninitialised heap it
+  loops ("runaway", pc around `0x31ef40`). Give the fixture a real allocator
+  (`rbc_test_allocator` in `game/object/` ports; `game/be/beintstat.rs`) or
+  fake the allocator entry points. Keep your fixture's data out of the pool
+  and arena regions.
+- `fakes::covered` needs at least one fake call and one unwind: a leaf
+  function with no callees uses `difftest::check`.
+- A function that returns to its caller must end with `c.pc = ra` (the
+  generated `c.pc = t; return;`): a script that turns it into a bare
+  `return Ok(())` leaves `pc` at the last block head.
+- A function with resume entries (`if c.pc != ENTRY { return ..__entries }`)
+  falls back to `ee::sNN::f_XXXXXXXX__generated(c)`, which exists in both the
+  normal and the unwind form; `__entries` exists only in the normal one.
+- Constants used only by tests: `#[cfg(test)]`, or the game build warns.
 
 ## Report
 

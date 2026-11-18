@@ -36,6 +36,7 @@ pub(crate) use crate::game::fe::fepopup::lw_9 as lw_4;
 pub(crate) use crate::game::fe::fepopup::sh;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw;
 pub(crate) use crate::game::fe::splashmanager::oc230_gp;
+pub(crate) use crate::game::input::inputparse::o406_lw;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_sll;
 pub(crate) use crate::game::intersect::worldsphtree::forward_to_arg_vtable;
@@ -373,6 +374,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0035_c698,
         railmodifier_find_closest_point,
         "RailModifier_FindClosestPoint",
+    ),
+    (
+        0x0035_c5a0,
+        rail_modifier_get_world_matrix,
+        "RailModifier_GetWorldMatrix",
     ),
 ];
 
@@ -6939,6 +6945,77 @@ pub(crate) fn rmfcp_epilogue(c: &mut Cpu, frame: Frame) {
     frame.close(c);
 }
 
+// --------------------------------------------- RailModifier_GetWorldMatrix
+
+/// `void RailModifier_GetWorldMatrix(RailModifier *self, Matrix *m)`
+/// (0x35c5a0): `m = m * self->localMatrix(+0x50) * nodeMatrix`, i.e. the
+/// instance's node matrix is fetched into a stack temporary, the 4x4
+/// product of `m` and the modifier's matrix (VU0) is written over `m`
+/// (through a second stack copy, as the compiler did).
+pub fn rail_modifier_get_world_matrix(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 61;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S1, 0x90);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x80);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A0][0] = o406_lw(c, S0, 0x40);
+        c.g[A1][0] = o406_lw(c, S0, 0x34);
+        call_ptr(c, 0x0034_fed8, 0x0035_c5c8)?;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x50));
+        c.g[V0][0] = sx(frame.at(c, 0x40));
+        let m = c.g[S1][0] as u32;
+        let local = c.g[S0][0] as u32;
+        let tmp = c.g[V0][0] as u32;
+        let sp0 = frame.at(c, 0);
+        for i in 0..4u32 {
+            c.lqc2(4 + i as usize, m.wrapping_add(0x10 * i));
+        }
+        for i in 0..4u32 {
+            c.lqc2(8 + i as usize, local.wrapping_add(0x10 * i));
+        }
+        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+        c.vu0().mula(0b1111, 4, Src::Bc(9, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(9, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(9, Z));
+        c.vu0().madd(0b1111, 13, 7, Src::Bc(9, W));
+        c.vu0().mula(0b1111, 4, Src::Bc(10, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(10, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(10, Z));
+        c.vu0().madd(0b1111, 14, 7, Src::Bc(10, W));
+        c.vu0().mula(0b1111, 4, Src::Bc(11, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(11, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(11, Z));
+        c.vu0().madd(0b1111, 15, 7, Src::Bc(11, W));
+        for i in 0..4u32 {
+            c.sqc2(12 + i as usize, tmp.wrapping_add(0x10 * i));
+        }
+        for i in 0..4u32 {
+            c.lqc2(1 + i as usize, tmp.wrapping_add(0x10 * i));
+        }
+        for i in 0..4u32 {
+            c.sqc2(1 + i as usize, sp0.wrapping_add(0x10 * i));
+        }
+        for i in 0..4u32 {
+            c.lqc2(1 + i as usize, sp0.wrapping_add(0x10 * i));
+        }
+        for i in 0..4u32 {
+            c.sqc2(1 + i as usize, m.wrapping_add(0x10 * i));
+        }
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore_ra(c, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9823,6 +9900,37 @@ pub(crate) mod tests {
                 c.g[T1][0] = sx(FOUND);
                 c.g[T2][0] = sx(DIST);
                 c.g[T3][0] = sx(HIT);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::input::inputparse::tests::o406_w;
+
+    pub(crate) use crate::game::input::inputparse::tests::o406_base;
+
+    // -------------------------------------------- RailModifier_GetWorldMatrix
+
+    /// `m = m * local * node` with random matrices (the node-matrix callee is
+    /// a fake); VU0 results are compared as registers and memory.
+    #[test]
+    fn rail_modifier_get_world_matrix_matches() {
+        fakes::covered(
+            ee::s11::f_0035c5a0__generated,
+            rail_modifier_get_world_matrix,
+            100,
+            &|c, seed| {
+                let mut r = o406_base(c, seed, 0x35c5a0, 1, 0x0035_c5a0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x400) as u64;
+                for off in [0x34u32, 0x40] {
+                    o406_w(c, DATA + off, r.next_u32());
+                }
+                for row in 0..4u32 {
+                    let a = [r.f32(4.0), r.f32(4.0), r.f32(4.0), r.f32(2.0)];
+                    let b = [r.f32(4.0), r.f32(4.0), r.f32(4.0), r.f32(2.0)];
+                    put_vec(c, DATA + 0x400 + 0x10 * row, a);
+                    put_vec(c, DATA + 0x50 + 0x10 * row, b);
+                }
             },
         );
     }

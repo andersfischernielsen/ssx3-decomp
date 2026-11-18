@@ -29,6 +29,10 @@ pub(crate) use crate::game::render::particle::ldf;
 pub(crate) use crate::game::render::particle::le;
 pub(crate) use crate::game::render::particle::p;
 pub(crate) use crate::game::render::particle::setf;
+pub(crate) use crate::game::seg::seg_1fbe38::oc417_add;
+pub(crate) use crate::game::seg::seg_1fbe38::oc417_lw;
+pub(crate) use crate::game::seg::seg_1fbe38::oc417_sw;
+pub(crate) use crate::game::seg::seg_1fbe38::oc417_sw0;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -108,6 +112,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "GameModule_RenderLensFlares",
     ),
     (0x0022_d8d8, section_man_update, "SectionMan_Update"),
+    (
+        0x0022_d598,
+        section_man_request_unload,
+        "SectionMan_RequestUnload",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1673,6 +1682,101 @@ pub(crate) fn section_man_update_epilogue(c: &mut Cpu, frame: Frame) {
     frame.close(c);
 }
 
+// ---------------------------------------------------------------------------
+// SectionMan_RequestUnload (0x22d598)
+
+/// `SectionMan_QueueSection(section)` (0x22e298).
+pub(crate) const REQUEST_UNLOAD_QUEUE_SECTION: Callee = Callee {
+    addr: 0x0022_e298,
+    f: ee::s05::SectionMan_QueueSection,
+};
+
+/// The section map (`0x442168`, 16-byte entries: +4 slot, +8 state).
+#[cfg(test)]
+pub(crate) const REQUEST_UNLOAD_SECTION_MAP: u32 = 0x0044_2168;
+
+/// `void cSectionMan::requestUnload(int section)` (0x22d598): when the
+/// section's slot (`+4`) is not negative, state 3 (loaded) becomes 0
+/// (unloaded) and states 1, 2 and 6 become 5 (unloading); any other state is
+/// left alone. A section whose state changed is queued
+/// (`SectionMan_QueueSection`). The state switch is a jump table at
+/// `0x484c00`, one of three code labels per state.
+pub fn section_man_request_unload(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        c.g[V0][0] = 0x44_0000;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[T0][0] = c.g[V0][0];
+        c.g[A3][0] = oc417_add(c.g[V0][0], 0x2168);
+        c.g[A2][0] = sx((c.g[A1][0] as u32) << 4);
+        c.g[V0][0] = oc417_add(c.g[A3][0], c.g[A2][0]);
+        c.g[V1][0] = oc417_lw(c, V0, 4);
+        let not_loaded = (c.g[V1][0] as i64) < 0;
+        c.g[T1][0] = c.g[A0][0];
+        if not_loaded {
+            c.cycles += 1;
+            frame.restore_ra(c, 0);
+        } else {
+            c.cycles += 5;
+            c.g[V1][0] = c.g[V0][0];
+            c.g[V1][0] = oc417_lw(c, V1, 8);
+            c.g[V0][0] = (c.g[V1][0] < 9) as u64;
+            let state_out_of_range = c.g[V0][0] == 0;
+            c.g[A2][0] = 0;
+            if !state_out_of_range {
+                c.cycles += 7;
+                c.g[V0][0] = 0x48_0000;
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4c00));
+                c.g[V1][0] = oc417_add(c.g[V1][0], c.g[V0][0]);
+                c.g[A0][0] = oc417_lw(c, V1, 0);
+                let label = c.g[A0][0] as u32;
+                match label {
+                    // State 3: back to 0.
+                    0x0022_d5f0 => {
+                        c.cycles += 6;
+                        c.g[V0][0] = oc417_add(c.g[T0][0], 0x2168);
+                        c.g[V1][0] = sx((c.g[A1][0] as u32) << 4);
+                        c.g[V0][0] = oc417_add(c.g[V0][0], c.g[V1][0]);
+                        c.g[A2][0] = 1;
+                        oc417_sw0(c, V0, 8);
+                    }
+                    // States 1, 2, 6: to 5.
+                    0x0022_d608 => {
+                        c.cycles += 6;
+                        c.g[V0][0] = oc417_add(c.g[T0][0], 0x2168);
+                        c.g[V1][0] = sx((c.g[A1][0] as u32) << 4);
+                        c.g[V0][0] = oc417_add(c.g[V0][0], c.g[V1][0]);
+                        c.g[A0][0] = 5;
+                        oc417_sw(c, V0, 8, A0);
+                        c.g[A2][0] = 1;
+                    }
+                    // Other states: unchanged.
+                    0x0022_d620 => {}
+                    _ => {
+                        c.jump_out(label, 0x0022_d598, 0x0022_d63c);
+                        return Ok(());
+                    }
+                }
+            }
+            c.cycles += 2;
+            let unchanged = c.g[A2][0] == 0;
+            frame.restore_ra(c, 0);
+            if !unchanged {
+                c.cycles += 2;
+                c.g[A0][0] = c.g[T1][0];
+                REQUEST_UNLOAD_QUEUE_SECTION.call(c, 0x0022_d630)?;
+                c.cycles += 1;
+                frame.restore_ra(c, 0);
+            }
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2371,6 +2475,53 @@ pub(crate) mod tests {
                     c.bus.write32(this + 0x19c, 0);
                 }
                 c.bus.write32(this + 0x1a0, n);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::oc417_machine;
+
+    // ----------------------------------------------------------------------
+    // SectionMan_RequestUnload
+
+    /// Every section state 0-9 (the jump table `0x484c00` is written with
+    /// the three code labels, and, for one seed in 40, a wild address that
+    /// leaves through the `jump_out` hook), negative and non-negative slots,
+    /// the faked queue call.
+    #[test]
+    fn section_man_request_unload_matches() {
+        check(
+            ee::s05::f_0022d598__generated,
+            section_man_request_unload,
+            200,
+            &|c, seed| {
+                let mut r = oc417_machine(c, seed, 0x4170_0009, 1);
+                c.pc = 0x0022_d598;
+                let labels = [0x0022_d5f0u32, 0x0022_d608, 0x0022_d620];
+                for state in 0..9u32 {
+                    let label = match state {
+                        3 => labels[0],
+                        1 | 2 | 6 => labels[1],
+                        _ => labels[2],
+                    };
+                    let label = if seed % 40 == 39 && state == 4 {
+                        0x0022_d640
+                    } else {
+                        label
+                    };
+                    c.bus.write32(0x0048_4c00 + 4 * state, label);
+                }
+                let idx = seed % 4;
+                let section = REQUEST_UNLOAD_SECTION_MAP + 0x10 * idx;
+                let slot = if (seed / 4) % 5 == 0 {
+                    0xffff_ffff
+                } else {
+                    r.next_u32() % 3
+                };
+                c.bus.write32(section + 4, slot);
+                c.bus.write32(section + 8, (seed / 4 + idx) % 10);
+                c.g[A0][0] = (r.next_u32() % 16) as u64;
+                c.g[A1][0] = idx as u64;
             },
         );
     }
