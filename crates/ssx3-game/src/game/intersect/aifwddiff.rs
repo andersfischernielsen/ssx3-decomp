@@ -101,6 +101,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cps2_chunk_resolve_parse_header,
         "cPS2ChunkResolve_ParseHeader",
     ),
+    (0x0032_7890, ai_fwd_diff_cache_init, "AIFwdDiffCache_Init"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3349,11 +3350,142 @@ pub fn cps2_chunk_resolve_parse_header(c: &mut Cpu) {
     })
 }
 
+/// `void AIFwdDiffCache_Init(self, int n)` (0x327890): allocates the cache
+/// entries (`n * 0x1cd0` bytes, "AIFwdDiffCache"), constructs each, stores
+/// them at `self + 0`, links them into a ring (`entry[i].next = &entry[i +
+/// 1]`, `.prev = &entry[i - 1]`, `.key = -1`; the first entry's prev is the
+/// last entry, the last one's next is the first), sets the LRU head
+/// (`self + 4`) to the first entry, the bucket count (`self + 0xc`) to `n * 2
+/// + 13` and allocates the bucket table (`count * 4` bytes, "AIFwdDiffHash",
+/// flag 0x80000000) at `self + 8`. Frame 0x70 (s0-s5).
+pub fn ai_fwd_diff_cache_init(c: &mut Cpu) {
+    const NEW_NAMED: Callee = Callee {
+        addr: 0x0031_7e30,
+        f: ee::s10::f_00317e30,
+    };
+    const ENTRY_CTOR: u32 = 0x0034_0970;
+    const ENTRY_SIZE: u32 = 0x1cd0;
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x70);
+        c.g[A2][0] = 0;
+        frame.save(c, S2, 0x40);
+        c.g[A3][0] = 0;
+        frame.save(c, S3, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        c.g[S3][0] = c.g[A1][0];
+        c.g[A0][0] = ENTRY_SIZE as u64;
+        c.mult(0, 0, S3, A0);
+        c.g[A1][0] = 0x49_0000;
+        frame.save(c, S0, 0x60);
+        c.g[A1][0] = sx(r32(c, A1).wrapping_sub(0x1b08));
+        frame.save(c, S1, 0x50);
+        frame.save(c, S4, 0x20);
+        frame.save(c, S5, 0x10);
+        c.g[A0][0] = c.lo[0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = sx(r32(c, S3).wrapping_sub(1));
+        NEW_NAMED.call(c, 0x0032_78dc)?;
+        c.g[S4][0] = c.g[V0][0];
+        let none = c.g[S3][0] == 0;
+        c.g[S0][0] = c.g[S4][0];
+        // Construct the entries.
+        if !none {
+            c.cycles += 2;
+            c.g[S5][0] = u64::MAX;
+            loop {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[S1][0] = sx(r32(c, S1).wrapping_sub(1));
+                call_ptr(c, ENTRY_CTOR, 0x0032_78fc)?;
+                let more = c.g[S1][0] != c.g[S5][0];
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(ENTRY_SIZE));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_78f0);
+                }
+            }
+        }
+        // Link the entries: next, prev, key = -1.
+        c.cycles += 3;
+        let this = r32(c, S2);
+        c.sw(this, c.g[S4][0]);
+        let none = (c.g[S3][0] as i64) <= 0;
+        c.g[T2][0] = sx(r32(c, S3) << 1);
+        if !none {
+            c.cycles += 4;
+            c.g[A3][0] = 0xffff_ffff_ffff_0000;
+            c.g[A1][0] = 0;
+            c.g[A3][0] |= 0xffff;
+            c.g[A2][0] = c.g[S3][0];
+            loop {
+                c.cycles += 14;
+                c.g[A0][0] = c.lw(this);
+                c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+                c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+                c.g[V0][0] = sx(r32(c, A0).wrapping_add(ENTRY_SIZE));
+                c.sw(r32(c, A0).wrapping_add(4), c.g[V0][0]);
+                c.g[V1][0] = c.lw(this);
+                c.g[V1][0] = sx(r32(c, A1).wrapping_add(r32(c, V1)));
+                c.g[A0][0] = sx(r32(c, V1).wrapping_sub(ENTRY_SIZE));
+                c.sw(r32(c, V1).wrapping_add(8), c.g[A0][0]);
+                c.g[V0][0] = c.lw(this);
+                c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                c.sw(r32(c, V0), c.g[A3][0]);
+                let more = c.g[A2][0] != 0;
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(ENTRY_SIZE));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_7920);
+                }
+            }
+        }
+        // Close the ring, LRU head, bucket table.
+        c.cycles += 29;
+        c.g[T0][0] = ENTRY_SIZE as u64;
+        c.g[T1][0] = c.lw(this);
+        c.mult(0, T0, S3, T0);
+        c.g[T2][0] = sx(r32(c, T2).wrapping_add(0xd));
+        c.g[A1][0] = 0x49_0000;
+        c.g[A0][0] = sx(r32(c, T2) << 2);
+        c.g[A1][0] = sx(r32(c, A1).wrapping_sub(0x1af8));
+        c.g[A2][0] = 0xffff_ffff_8000_0000;
+        c.g[A3][0] = 0;
+        c.g[V0][0] = sx(r32(c, T1).wrapping_add(r32(c, T0)));
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(ENTRY_SIZE));
+        c.sw(r32(c, T1).wrapping_add(8), c.g[V0][0]);
+        c.g[V1][0] = c.lw(this);
+        c.g[T0][0] = sx(r32(c, T0).wrapping_add(r32(c, V1)));
+        c.sw(r32(c, T0).wrapping_sub(0x1ccc), c.g[V1][0]);
+        c.sw(this.wrapping_add(0xc), c.g[T2][0]);
+        c.g[V0][0] = c.lw(this);
+        c.sw(this.wrapping_add(4), c.g[V0][0]);
+        NEW_NAMED.call(c, 0x0032_79a4)?;
+        c.sw(this.wrapping_add(8), c.g[V0][0]);
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::game::camera::trigger::cameratriggerlist::tests::{
+        fake_operator_new_named, PREV_OPERATOR_NEW_NAMED,
+    };
 
     use crate::difftest::fakes::machine;
 
@@ -4273,6 +4405,48 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = if seed % 7 == 0 { 0 } else { buf as u64 };
                 c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    pub(crate) use crate::game::ai::ai::tests::oc432_fake;
+    pub(crate) use crate::game::ai::ai::tests::OC432_CTRL;
+    pub(crate) use crate::game::ai::ai::tests::OC432_MAGIC;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    oc432_fake!(
+        fake_ai_fwd_diff_entry_ctor,
+        PREV_AI_FWD_DIFF_ENTRY_CTOR,
+        ee::s11::f_00340970__generated,
+        0x0034_0970
+    );
+
+    /// `AIFwdDiffCache_Init`: n = 0..4 entries (including the empty cache);
+    /// the allocator and the entry constructor are fakes.
+    #[test]
+    fn ai_fwd_diff_cache_init_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+            fake_operator_new_named,
+            &PREV_OPERATOR_NEW_NAMED,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00340970),
+            fake_ai_fwd_diff_entry_ctor,
+            &PREV_AI_FWD_DIFF_ENTRY_CTOR,
+        );
+        fakes::covered(
+            ee::s10::f_00327890__generated,
+            ai_fwd_diff_cache_init,
+            160,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x327890, 6);
+                c.bus.write32(OC432_CTRL, OC432_MAGIC);
+                c.g[A0][0] = (DATA + 0x5_0000) as u64;
+                c.g[A1][0] = (r.next_u32() % 5) as u64;
+                let _ = seed;
             },
         );
     }

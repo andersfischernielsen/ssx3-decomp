@@ -372,6 +372,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "WScriptMan_CollectSetAddItems",
     ),
     (0x0030_d540, rider_model_dtor, "RiderModel_dtor"),
+    (0x0030_9f18, wscript_man_shutdown, "WScriptMan_Shutdown"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5389,11 +5390,165 @@ pub fn rider_model_dtor(c: &mut Cpu) {
     })
 }
 
+/// `void WScriptMan_Shutdown(self)` (0x309f18): destroys all Avalanche
+/// objects (`0x2d9b40`), resets the collect sets (the table at +0x2c0, one
+/// entry of 0x10c bytes, only one is walked), then runs the global shutdown
+/// scripts of every world section of type 3: `self + 0x28c` is the world;
+/// section `i` (`info->sections + i * 0xc`) of type 3 yields
+/// `World_GetSectionShutdownFuncs` (`globals`) and their count, and each
+/// function is run with `WScriptMan_CallFunc(self, fn)`. The script id slot
+/// `self + 0` is set to -1 meanwhile (restored at the end) and the counters
+/// at +0x290, +0x294, +0x298, +0x2a4, +0x2a8 are cleared before and after.
+/// Frame 0x80 (s0-s6).
+pub fn wscript_man_shutdown(c: &mut Cpu) {
+    const RESET_COLLECT_SET: Callee = Callee {
+        addr: 0x0030_c390,
+        f: ee::s10::f_0030c390,
+    };
+    const CALL_FUNC: Callee = Callee {
+        addr: 0x0030_9c88,
+        f: ee::s10::f_00309c88,
+    };
+    const WORLD: u32 = 0x28c;
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S2, 0x50);
+        frame.save(c, S0, 0x70);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x60);
+        c.g[S0][0] = sx(r32(c, S2).wrapping_add(0x2c0));
+        frame.save(c, S3, 0x40);
+        frame.save(c, S4, 0x30);
+        frame.save(c, S5, 0x20);
+        frame.save(c, S6, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = 0;
+        call_ptr(c, 0x002d_9b40, 0x0030_9f4c)?;
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[S1][0] = sx(r32(c, S1).wrapping_sub(1));
+            RESET_COLLECT_SET.call(c, 0x0030_9f5c)?;
+            let more = (c.g[S1][0] as i64) >= 0;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(0x10c));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0030_9f50);
+            }
+        }
+        // Clear the busy state, remembering the current script id.
+        c.cycles += 16;
+        let this = r32(c, S2);
+        c.g[S6][0] = c.lw(this);
+        c.g[V0][0] = u64::MAX;
+        c.sw(this, c.g[V0][0]);
+        c.g[S0][0] = 0;
+        for off in [0x290, 0x294, 0x298, 0x2a4, 0x2a8] {
+            c.sw(this.wrapping_add(off), 0);
+        }
+        c.g[V0][0] = c.lw(this.wrapping_add(WORLD));
+        c.g[A0][0] = c.lw(r32(c, V0));
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x10));
+        call_ptr(c, 0x003a_9800, 0x0030_9f98)?;
+        c.g[S4][0] = c.g[V0][0];
+        let no_sections = (c.g[S4][0] as i64) <= 0;
+        c.g[S5][0] = 0xc;
+        if !no_sections {
+            c.cycles += 1;
+            c.g[A1][0] = c.lw(this.wrapping_add(WORLD));
+            loop {
+                'next: {
+                    'skip: {
+                        c.cycles += 8;
+                        c.mult(0, A0, S0, S5);
+                        c.g[V0][0] = c.lw(r32(c, A1).wrapping_add(4));
+                        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(4));
+                        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                        c.g[V0][0] = c.lh(r32(c, A0));
+                        c.g[V0][0] ^= 3;
+                        let not_type3 = c.g[V0][0] != 0;
+                        c.g[S3][0] = sx(r32(c, S0).wrapping_add(1));
+                        if not_type3 {
+                            break 'skip;
+                        }
+                        c.cycles += 6;
+                        c.g[A0][0] = c.g[A1][0];
+                        c.g[A1][0] = c.g[S0][0];
+                        call_ptr(c, 0x003a_6bd8, 0x0030_9fd4)?;
+                        c.g[S1][0] = c.g[V0][0];
+                        if c.g[S1][0] == 0 {
+                            c.g[S0][0] = c.g[S3][0];
+                            break 'next;
+                        }
+                        c.cycles += 5;
+                        c.g[A0][0] = c.lw(this.wrapping_add(WORLD));
+                        c.g[A1][0] = c.g[S0][0];
+                        call_ptr(c, 0x003a_6ba8, 0x0030_9fec)?;
+                        let none = (c.g[V0][0] as i64) <= 0;
+                        c.g[S0][0] = c.g[V0][0];
+                        if none {
+                            break 'skip;
+                        }
+                        c.cycles += 1;
+                        loop {
+                            c.cycles += 6;
+                            c.g[A1][0] = c.g[S1][0];
+                            c.g[A0][0] = c.g[S2][0];
+                            CALL_FUNC.call(c, 0x0030_a004)?;
+                            c.g[S0][0] = sx(r32(c, S0).wrapping_sub(1));
+                            let more = c.g[S0][0] != 0;
+                            c.g[S1][0] = sx(r32(c, S1).wrapping_add(4));
+                            if !more {
+                                break 'skip;
+                            }
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0030_9ff8);
+                            }
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[S0][0] = c.g[S3][0];
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S4][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[A1][0] = c.lw(this.wrapping_add(WORLD));
+                if event_due(c) {
+                    deliver_event_here(c, 0x0030_9fa8);
+                }
+            }
+        }
+        c.cycles += 16;
+        c.sw(this, c.g[S6][0]);
+        for off in [0x290, 0x294, 0x298, 0x2a4, 0x2a8] {
+            c.sw(this.wrapping_add(off), 0);
+        }
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::game::main::game::tests::{
+        fake_streamer_section_count, PREV_STREAMER_SECTION_COUNT,
+    };
 
     use crate::difftest::fakes::covered;
 
@@ -8095,5 +8250,100 @@ pub(crate) mod tests {
     #[test]
     fn ssx_load_net_modules_matches() {
         oc429_in_child("ssx_load_net_modules_matches", oc429_lnm_checked);
+    }
+
+    pub(crate) use crate::game::ai::ai::tests::oc432_fake;
+    pub(crate) use crate::game::ai::ai::tests::OC432_CTRL;
+    pub(crate) use crate::game::ai::ai::tests::OC432_MAGIC;
+
+    oc432_fake!(
+        fake_avalanche_destroy_all,
+        PREV_AVALANCHE_DESTROY_ALL,
+        ee::s09::f_002d9b40__generated,
+        0x002d_9b40
+    );
+
+    oc432_fake!(
+        fake_wscript_reset_collect_set,
+        PREV_WSCRIPT_RESET_COLLECT_SET,
+        ee::s10::f_0030c390__generated,
+        0x0030_c390
+    );
+
+    oc432_fake!(
+        fake_wscript_call_func,
+        PREV_WSCRIPT_CALL_FUNC,
+        ee::s10::f_00309c88__generated,
+        0x0030_9c88
+    );
+
+    /// `WScriptMan_Shutdown`: 0..3 world sections of type 3 or not, with or
+    /// without a script cache, 0..3 global shutdown functions each (the two
+    /// world accessors run real on the fixture's tables).
+    #[test]
+    fn wscript_man_shutdown_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002D9B40),
+            fake_avalanche_destroy_all,
+            &PREV_AVALANCHE_DESTROY_ALL,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0030C390),
+            fake_wscript_reset_collect_set,
+            &PREV_WSCRIPT_RESET_COLLECT_SET,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00309C88),
+            fake_wscript_call_func,
+            &PREV_WSCRIPT_CALL_FUNC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003A9800),
+            fake_streamer_section_count,
+            &PREV_STREAMER_SECTION_COUNT,
+        );
+        fakes::covered(
+            ee::s10::f_00309f18__generated,
+            wscript_man_shutdown,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x309f18, 12);
+                c.bus.write32(OC432_CTRL, OC432_MAGIC);
+                let nsect = r.next_u32() % 4;
+                c.bus.write32(OC432_CTRL + 4, nsect);
+                let this = DATA + 0x5_0000;
+                let world = DATA + 0x5_1000;
+                let view = DATA + 0x5_2000;
+                let info = DATA + 0x5_3000;
+                let sections = DATA + 0x5_4000;
+                c.g[A0][0] = this as u64;
+                c.bus.write32(this + 0x28c, world);
+                c.bus.write32(world, view);
+                c.bus.write32(world + 4, info);
+                c.bus.write32(info + 4, sections);
+                for i in 0..3u32 {
+                    let sect = sections + i * 0xc;
+                    let cache = DATA + 0x5_5000 + i * 0x40;
+                    let ty = if r.next_u32() % 4 == 0 {
+                        r.next_u32() & 0xffff
+                    } else {
+                        3
+                    };
+                    c.bus.write16(sect, ty as u16);
+                    c.bus
+                        .write32(sect + 8, if r.next_u32() % 5 == 0 { 0 } else { cache });
+                    c.bus.write32(cache + 0x10, r.next_u32() % 4);
+                    c.bus.write32(
+                        cache + 0x14,
+                        if r.next_u32() % 4 == 0 {
+                            0
+                        } else {
+                            DATA + 0x5_6000 + i * 0x40
+                        },
+                    );
+                }
+                c.bus.write32(this, r.next_u32());
+            },
+        );
     }
 }

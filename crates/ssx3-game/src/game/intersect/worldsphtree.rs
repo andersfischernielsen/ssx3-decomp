@@ -230,6 +230,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ai_fwd_diff_cache_entry_ctor,
         "AIFwdDiffCacheEntry_ctor",
     ),
+    (0x0034_15a8, oc436_boost_v01, "Boost_v01"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -16955,6 +16956,30 @@ pub fn nash_probe_vertical(c: &mut Cpu) {
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x2190));
         c.pc = t;
+        Ok(())
+    })
+}
+
+/// `Boost.vtable` (+0xc).
+pub(crate) const OC436_BOOST_VTABLE: u32 = 0xc;
+
+/// `void Boost_v01::~Boost_v01(Boost* b)` (0x3415a8): point the vtable
+/// (+0xc) at the base class's table (0x4914e0), then `WorldObj_dtor(b)`.
+pub fn oc436_boost_v01(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x49_0000;
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x14e0));
+        c.sw(
+            (c.g[V1][0] as u32).wrapping_add(OC436_BOOST_VTABLE),
+            c.g[V0][0],
+        );
+        call_ptr(c, 0x0034_fbf0, 0x0034_15c4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
         Ok(())
     })
 }

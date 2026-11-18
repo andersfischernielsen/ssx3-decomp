@@ -173,6 +173,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_cache_streamer_request_section,
         "cWorldCache_StreamerRequestSection",
     ),
+    (
+        0x003a_a2f0,
+        c_ps2_chunk_resolve_ctor,
+        "cPS2ChunkResolve_ctor",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4202,6 +4207,101 @@ pub fn world_cache_streamer_request_section(c: &mut Cpu) {
     c.pc = ra;
 }
 
+/// `cPS2ChunkResolve* cPS2ChunkResolve_ctor(cPS2ChunkResolve* self)` (0x3aa2f0): set
+/// the vtable and the shared static table (cleared once, 24 entries of
+/// `{-1, 1000.0, 0.5}`); returns `self`.
+#[allow(unreachable_code)]
+pub fn c_ps2_chunk_resolve_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_3aa33c: {
+            c.cycles += 13;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+            c.g[V0][0] = 0x490000;
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5150));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S1][0] = c.g[A0][0];
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[S2][0] = 0x510000;
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2978));
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+            let t = c.g[V1][0] != 0u64;
+            c.sw(c.g[S1][0] as u32, 0u64);
+            if t {
+                break 'b_3aa33c;
+            } else {
+                c.cycles += 6;
+                c.g[V0][0] = 0xffffffffffff0000;
+                c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x70b0));
+                c.g[V0][0] = c.g[V0][0] | 0xffff;
+                c.g[A0][0] = 0x1;
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x2978), c.g[A0][0]);
+                break 'b_3aa33c;
+            }
+        }
+        c.cycles += 21;
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x70b0));
+        c.g[A1][0] = 0u64;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[S0][0]);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0x130;
+        call_ptr(c, 0x003e6448, 0x003aa354)?;
+        c.g[V0][0] = 0xffffffffffff0000;
+        c.g[V1][0] = 0x510000;
+        c.g[V0][0] = c.g[V0][0] | 0xffff;
+        c.g[A0][0] = 0xffffffffffffffff;
+        c.sw((c.g[V1][0] as u32).wrapping_sub(0x70a8), c.g[V0][0]);
+        c.g[A1][0] = 0xffffffffffffffff;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[A0][0]);
+        c.g[V1][0] = c.g[S0][0];
+        c.g[AT][0] = 0x447a0000;
+        c.mtc1(1, 1);
+        c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x120));
+        c.g[AT][0] = 0x3f000000;
+        c.mtc1(1, 0);
+        c.sw((c.g[S2][0] as u32).wrapping_sub(0x70b0), 0u64);
+        c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x10));
+        'l_3aa390: loop {
+            c.cycles += 7;
+            c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x14));
+            c.sh((c.g[V1][0] as u32).wrapping_add(0x18), 0u64);
+            c.sh((c.g[V1][0] as u32).wrapping_add(0x1a), c.g[A1][0]);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xc));
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+            if c.g[V0][0] != 0u64 {
+                c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x10));
+                if event_due(c) {
+                    deliver_event_here(c, 0x003aa390);
+                }
+                continue 'l_3aa390;
+            } else {
+                c.cycles += 16;
+                c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x70b0));
+                c.g[A0][0] = 0xffffffffffff0000;
+                c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = c.g[A0][0] | 0xfffb;
+                c.g[V0][0] = c.g[S1][0];
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.g[V1][0] = c.g[V1][0] | 0x1;
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[V1][0] = c.g[V1][0] | 0x2;
+                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 16);
+                c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+                c.pc = t;
+                return Ok(());
+            }
+        }
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5946,7 +6046,8 @@ pub(crate) mod tests {
         c.bus.write32(p + 0x28, c.f[12]);
         c.bus.write32(p + 0x2c, c.f[13]);
         c.bus.write32(p + 0x30, c.g[RA][0] as u32);
-        c.bus.write32(p + 0x34, c.g[SP][0] as u32);
+        c.bus
+            .write32(p + 0x34, c.g[ssx3_ee_rt::cpu::reg::SP][0] as u32);
         c.bus.write64(p + 0x38, c.cycles);
         let mut src = oc410_out(id);
         for &(reg, byte_off, words) in outs {
@@ -6169,6 +6270,28 @@ pub(crate) mod tests {
                     n => (n % 4) as u64,
                 };
                 c.f[12] = r.next_u32();
+            },
+        );
+    }
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_gp;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_run;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC433_FIX;
+
+    /// `cPS2ChunkResolve_ctor` against the generated body: first construction
+    /// (the static table is built) or a later one.
+    #[test]
+    fn c_ps2_chunk_resolve_ctor_matches() {
+        oc433_run(
+            ee::s13::f_003aa2f0__generated,
+            c_ps2_chunk_resolve_ctor,
+            0x003a_a2f0,
+            1,
+            60,
+            &|c, _r, seed| {
+                oc433_gp(c, 0x2978, seed % 2);
+                c.g[A0][0] = sx(OC433_FIX + 0x1000);
             },
         );
     }

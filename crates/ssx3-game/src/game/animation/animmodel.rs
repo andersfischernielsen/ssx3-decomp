@@ -135,6 +135,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         anim_data_base_free_chan_caches,
         "AnimDataBase_FreeChanCaches",
     ),
+    (
+        0x0031_1220,
+        oc436_cadf_data_source_ctor,
+        "cAdfDataSource_ctor",
+    ),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -7233,6 +7238,55 @@ pub fn anim_data_base_free_chan_caches(c: &mut Cpu) {
         frame.restore(c, S7, 0x20);
         frame.restore(c, FP, 0x10);
         frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void* AdfDataSource_ctor(AdfDataSource* self, const char* path)`
+/// (0x311250): load the (decompressed) file `path` with
+/// `EAFile_LoadDecompressed(path, 0)`, store the buffer at `self+0`, and hand
+/// it to `AdfDataSource_SetData(self, buffer)`; returns `self`.
+///
+/// No `OVERRIDES` entry and no test: the file loader cannot be bounded in a
+/// fixture (it reaches `EAFile_CallWithPriority`). Transcribed from the
+/// generated body.
+pub fn oc436_adf_data_source_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x003e_22f0, 0x0031_126c)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+        call_ptr(c, 0x0031_1290, 0x0031_127c)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `AdfDataSource* cAdfDataSource_ctor(AdfDataSource* self, data)` (0x311220):
+/// clear `self+0`, then `AdfDataSource_SetData(self, data)`; returns `self`.
+pub fn oc436_cadf_data_source_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.sw(c.g[S0][0] as u32, 0);
+        call_ptr(c, 0x0031_1290, 0x0031_1238)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
         frame.close(c);
         Ok(())
     })

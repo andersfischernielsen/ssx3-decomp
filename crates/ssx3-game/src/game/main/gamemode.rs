@@ -109,6 +109,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "GameModeMan_GetInstance",
     ),
     (0x0023_a108, gm_handler1_reset, "GMHandler1_Reset"),
+    (
+        0x0023_8160,
+        game_mode_man_start_mode,
+        "GameModeMan_StartMode",
+    ),
+    (
+        0x0023_a4f0,
+        gm_handler1_pick_opponents,
+        "GMHandler1_PickOpponents",
+    ),
+    (
+        0x0023_a668,
+        gm_handler1_setup_rider_slots,
+        "GMHandler1_SetupRiderSlots",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3656,8 +3671,432 @@ pub fn gm_handler1_reset(c: &mut Cpu) {
     })
 }
 
+/// `void GMHandler1_PickOpponents(self)` (0x23a4f0): picks the opponents of
+/// a single-player event. Asks the BE for the player (interface 1) and race
+/// (interface 0) objects, the human rider's character (`charA`) and the peak
+/// rival's character (`charB`), then builds `arr[10]` on the stack:
+/// `arr[0] = GMrand() % 7 + 10`, `arr[1] = GMrand() % 6 + 10` (+1 when not
+/// below `arr[0]`), `arr[2..]` = the characters 0..9 except `charA`/`charB`
+/// (while there is room), shuffles the array (`GameRand_Shuffle(arr, 10)`)
+/// and writes charA and the array's entries into the handler's slots
+/// (+0x10, +0x14..+0x24, +0x34..+0x3c, +0x50, +0x54). Frame 0x70 (s0-s2).
+pub fn gm_handler1_pick_opponents(c: &mut Cpu) {
+    const GET_BE: u32 = 0x0014_dc80;
+    const GET_INTERFACE: u32 = 0x0014_dd58;
+    const GET_HUMAN_RIDER: u32 = 0x0014_6e98;
+    const GET_CHARACTER: u32 = 0x0014_7398;
+    const GET_PEAK_RIVAL: u32 = 0x0014_5750;
+    const RAND: Callee = Callee {
+        addr: 0x0023_7cd8,
+        f: ee::s06::f_00237cd8,
+    };
+    const SHUFFLE: Callee = Callee {
+        addr: 0x0023_c770,
+        f: ee::s06::f_0023c770,
+    };
+    guest(c, |c| {
+        c.cycles += 31;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S1, 0x50);
+        frame.save_ra(c, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        call_ptr(c, GET_BE, 0x0023_a50c)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 1;
+        call_ptr(c, GET_INTERFACE, 0x0023_a518)?;
+        c.g[S0][0] = c.g[V0][0]; // player interface
+        call_ptr(c, GET_BE, 0x0023_a520)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, GET_INTERFACE, 0x0023_a52c)?;
+        c.g[S1][0] = c.g[V0][0]; // race interface
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, GET_HUMAN_RIDER, 0x0023_a53c)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, GET_CHARACTER, 0x0023_a548)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[S0][0] = c.g[V0][0]; // charA
+        call_ptr(c, GET_PEAK_RIVAL, 0x0023_a554)?;
+        c.g[S1][0] = c.g[V0][0]; // charB
+
+        RAND.call(c, 0x0023_a55c)?;
+        c.g[V1][0] = 7;
+        c.divu(0, V0, V1);
+        c.cycles += 8;
+        c.g[A0][0] = c.hi[0];
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0xa));
+        let arr = r32(c, SP);
+        c.sw(arr, c.g[A0][0]);
+        RAND.call(c, 0x0023_a57c)?;
+        c.g[V1][0] = 6;
+        c.divu(0, V0, V1);
+
+        c.cycles += 6;
+        c.g[V0][0] = c.lw(arr);
+        c.g[A0][0] = c.hi[0];
+        c.g[V1][0] = sx(r32(c, A0).wrapping_add(0xa));
+        c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        let below = c.g[V0][0] != 0;
+        c.sw(arr.wrapping_add(4), c.g[V1][0]);
+        if !below {
+            c.cycles += 2;
+            c.g[V0][0] = sx(r32(c, A0).wrapping_add(0xb));
+            c.sw(arr.wrapping_add(4), c.g[V0][0]);
+        }
+
+        // arr[n + 2] = i for every character i in 0..10 other than charA and
+        // charB, while n + 2 < 10.
+        c.cycles += 3;
+        c.g[A1][0] = 0;
+        c.g[V1][0] = 0;
+        c.g[A0][0] = sx(arr.wrapping_add(8));
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 10) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[A0][0] = c.g[SP][0];
+                break;
+            }
+            c.cycles += 2;
+            let is_a = c.g[V1][0] == c.g[S0][0];
+            c.g[V0][0] = sx(r32(c, A1).wrapping_add(2));
+            let mut still_room_known = false;
+            if is_a {
+                // skipped: fall to the common "v0 = (a1 + 2) < 10" below
+            } else {
+                c.cycles += 2;
+                let is_b = c.g[V1][0] == c.g[S1][0];
+                c.g[V0][0] = ((c.g[V0][0] as i64) < 10) as u64;
+                if is_b {
+                    still_room_known = true;
+                } else {
+                    c.cycles += 4;
+                    c.sw(r32(c, A0), c.g[V1][0]);
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(4));
+                    c.g[V0][0] = sx(r32(c, A1).wrapping_add(2));
+                }
+            }
+            if !still_room_known {
+                c.cycles += 1;
+                c.g[V0][0] = ((c.g[V0][0] as i64) < 10) as u64;
+            }
+            c.cycles += 2;
+            let room = c.g[V0][0] != 0;
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(1));
+            if room {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0023_a5b8);
+                }
+                continue;
+            }
+            c.cycles += 1;
+            c.g[A0][0] = c.g[SP][0];
+            break;
+        }
+
+        c.cycles += 29;
+        c.g[A1][0] = 10;
+        SHUFFLE.call(c, 0x0023_a5fc)?;
+        let arr = r32(c, SP);
+        c.g[V1][0] = c.lw(arr);
+        c.g[A0][0] = c.lw(arr.wrapping_add(0x4));
+        c.g[A1][0] = c.lw(arr.wrapping_add(0x8));
+        c.g[A2][0] = c.lw(arr.wrapping_add(0xc));
+        c.g[A3][0] = c.lw(arr.wrapping_add(0x10));
+        c.g[T0][0] = c.lw(arr.wrapping_add(0x14));
+        c.g[T1][0] = c.lw(arr.wrapping_add(0x18));
+        c.g[T2][0] = c.lw(arr.wrapping_add(0x1c));
+        c.g[T3][0] = c.lw(arr.wrapping_add(0x20));
+        c.g[V0][0] = c.lw(arr.wrapping_add(0x24));
+        let this = r32(c, S2);
+        c.sw(this.wrapping_add(0x10), c.g[S0][0]);
+        c.sw(this.wrapping_add(0x54), c.g[V0][0]);
+        c.sw(this.wrapping_add(0x14), c.g[V1][0]);
+        c.sw(this.wrapping_add(0x18), c.g[A0][0]);
+        c.sw(this.wrapping_add(0x1c), c.g[A1][0]);
+        c.sw(this.wrapping_add(0x20), c.g[A2][0]);
+        c.sw(this.wrapping_add(0x24), c.g[A3][0]);
+        c.sw(this.wrapping_add(0x34), c.g[T0][0]);
+        c.sw(this.wrapping_add(0x38), c.g[T1][0]);
+        c.sw(this.wrapping_add(0x3c), c.g[T2][0]);
+        c.sw(this.wrapping_add(0x50), c.g[T3][0]);
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void GameModeMan_StartMode(self, int type)` (0x238160): switches the
+/// game mode manager to a new event type. Asks the BE for interface 0 (result
+/// unused), calls the current mode handler's virtual method 3 (handler table
+/// `0x536668[self->iCurrModeHandler]`), stores `type` at `self + 8` and the
+/// network-path byte (0x535c11) at `self + 0xc`, picks the new handler index
+/// from `type` (a `jr` table at 0x47c0d0 for the network path 2: types 0..5;
+/// otherwise a table at 0x47c0f0: types 0..12, out of range keeps the old
+/// handler), stores it at `self + 4`, sets `self + 0x84 = 1` and calls
+/// `GameModeMan_ResetMode(self)`. Frame 0x30 (s0, s1).
+pub fn game_mode_man_start_mode(c: &mut Cpu) {
+    const RESET_MODE: Callee = Callee {
+        addr: 0x0023_82d8,
+        f: ee::s06::f_002382d8,
+    };
+    const ENTRY: u32 = 0x0023_8160;
+    const NET_PATH_NOT_2: u32 = 0x0023_8228;
+    const NET_PATH_2: u32 = 0x0023_81cc;
+    const NET_TABLE_JUMP: u32 = 0x0023_81d8;
+    const OFFLINE_TABLE_JUMP: u32 = 0x0023_8234;
+    const NET_OUT_OF_RANGE: u32 = 0x0023_8220;
+    const KEEP_HANDLER: u32 = 0x0023_824c;
+    const STORE_HANDLER: u32 = 0x0023_8290;
+    const FINISH: u32 = 0x0023_8294;
+    guest(c, |c| {
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                ENTRY => {
+                    c.cycles += 27;
+                    let frame = Frame::open(c, 0x30);
+                    frame.save(c, S0, 0x20);
+                    frame.save(c, S1, 0x10);
+                    c.g[S0][0] = c.g[A0][0];
+                    frame.save_ra(c, 0);
+                    c.g[S1][0] = c.g[A1][0];
+                    call_ptr(c, 0x0014_dc80, 0x0023_817c)?;
+                    c.g[A1][0] = 0;
+                    c.g[A0][0] = c.g[V0][0];
+                    call_ptr(c, 0x0014_dd58, 0x0023_8188)?;
+                    // handler = HANDLERS[self->iCurrModeHandler]; handler->vt[3]()
+                    let this = r32(c, S0);
+                    c.g[V1][0] = c.lw(this.wrapping_add(4));
+                    c.g[V0][0] = 0x53_0000;
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x6668));
+                    c.g[V1][0] = sx(r32(c, V1) << 2);
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+                    c.g[A1][0] = c.lw(r32(c, V1));
+                    c.g[V0][0] = c.lw(r32(c, A1));
+                    c.g[A0][0] = c.lh(r32(c, V0).wrapping_add(0x18));
+                    c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x1c));
+                    let method = r32(c, V1);
+                    c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+                    call_ptr(c, method, 0x0023_81b4)?;
+                    let this = r32(c, S0);
+                    c.sw(this.wrapping_add(8), c.g[S1][0]);
+                    c.g[V1][0] = 0x53_0000;
+                    c.g[A0][0] = 2;
+                    c.g[V0][0] = c.lb(r32(c, V1).wrapping_add(0x5c11));
+                    let not_net2 = c.g[V0][0] != c.g[A0][0];
+                    c.sw(this.wrapping_add(0xc), c.g[V0][0]);
+                    pc = if not_net2 { NET_PATH_NOT_2 } else { NET_PATH_2 };
+                }
+                NET_PATH_2 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[S1][0] < 6) as u64;
+                    let out_of_range = c.g[V0][0] == 0;
+                    c.g[V0][0] = 0x48_0000;
+                    pc = if out_of_range {
+                        NET_OUT_OF_RANGE
+                    } else {
+                        NET_TABLE_JUMP
+                    };
+                }
+                NET_TABLE_JUMP | OFFLINE_TABLE_JUMP => {
+                    c.cycles += 6;
+                    let table_hi = if pc == NET_TABLE_JUMP { 0x3f30 } else { 0x3f10 };
+                    c.g[V1][0] = sx(r32(c, S1) << 2);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(table_hi));
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+                    c.g[A0][0] = c.lw(r32(c, V1));
+                    pc = r32(c, A0);
+                }
+                // The switch cases: each stores a handler index (or, for
+                // KEEP_HANDLER, clears `self + 4`).
+                0x0023_81f0 | 0x0023_81f8 | 0x0023_8200 | 0x0023_8208 | 0x0023_8210
+                | 0x0023_8218 | NET_OUT_OF_RANGE | 0x0023_8254 | 0x0023_825c | 0x0023_8264
+                | 0x0023_826c | 0x0023_8274 | 0x0023_827c | 0x0023_8284 => {
+                    let v = match pc {
+                        0x0023_81f0 => 8,
+                        0x0023_81f8 | 0x0023_8200 | 0x0023_8208 => 9,
+                        0x0023_8210 => 5,
+                        0x0023_8218 => 6,
+                        NET_OUT_OF_RANGE => 8,
+                        0x0023_8254 => 1,
+                        0x0023_825c => 2,
+                        0x0023_8264 => 5,
+                        0x0023_826c | 0x0023_8274 | 0x0023_827c => 4,
+                        _ => 6,
+                    };
+                    c.cycles += 2;
+                    c.g[V0][0] = v;
+                    pc = STORE_HANDLER;
+                }
+                0x0023_828c => {
+                    c.cycles += 1;
+                    c.g[V0][0] = 7;
+                    pc = STORE_HANDLER;
+                }
+                NET_PATH_NOT_2 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[S1][0] < 0xd) as u64;
+                    let out_of_range = c.g[V0][0] == 0;
+                    c.g[V0][0] = 0x48_0000;
+                    pc = if out_of_range {
+                        FINISH
+                    } else {
+                        OFFLINE_TABLE_JUMP
+                    };
+                }
+                KEEP_HANDLER => {
+                    c.cycles += 2;
+                    let this = r32(c, S0);
+                    c.sw(this.wrapping_add(4), 0);
+                    pc = FINISH;
+                }
+                STORE_HANDLER => {
+                    c.cycles += 1;
+                    let this = r32(c, S0);
+                    c.sw(this.wrapping_add(4), c.g[V0][0]);
+                    pc = FINISH;
+                }
+                FINISH => {
+                    c.cycles += 9;
+                    c.g[V0][0] = 1;
+                    c.g[A0][0] = c.g[S0][0];
+                    let this = r32(c, S0);
+                    c.sw(this.wrapping_add(0x84), c.g[V0][0]);
+                    RESET_MODE.call(c, 0x0023_82a4)?;
+                    let frame = Frame { size: 0x30 };
+                    frame.restore(c, S0, 0x20);
+                    frame.restore(c, S1, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0023_8160, 0x0023_82b8);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `void GMHandler1_SetupRiderSlots(GMHandler1* self)` (0x23a668): fills the game mode
+/// manager's six character slots (`+0x18`, ids from the heat's row at `self + 0x10 +
+/// 0x18 * heat`) and cheat character slots (`+0x40`): ids of 10 or more become the
+/// human rider's character, the cheat slot keeping the id; the human's own slot gets
+/// the alternate character.
+pub fn gm_handler1_setup_rider_slots(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 38;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S1][0] = c.g[A0][0];
+        call_ptr(c, 0x0014dc80, 0x0023a688)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0x1;
+        call_ptr(c, 0x0014dd58, 0x0023a694)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A1][0] = 0u64;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x00146e98, 0x0023a6a4)?;
+        c.g[S2][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S2][0];
+        call_ptr(c, 0x00147398, 0x0023a6b4)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S2][0];
+        c.g[S3][0] = c.g[V0][0];
+        call_ptr(c, 0x00147410, 0x0023a6c4)?;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+        c.g[T1][0] = c.g[V0][0];
+        c.g[V1][0] = 0xffffffffffffffff;
+        c.g[A1][0] = 0x18;
+        c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x10));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
+        c.g[T0][0] = 0u64;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+        c.g[A3][0] = 0u64;
+        c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        if c.g[V1][0] == 0 {
+            c.g[V0][0] = 0u64;
+        }
+        c.mult(0, 2, 2, 5);
+        c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+        'l_23a700: loop {
+            'b_23a718: {
+                c.cycles += 4;
+                c.g[V1][0] = c.lw(c.g[A2][0] as u32);
+                c.g[V0][0] = ((c.g[V1][0] as i64) < 10i64) as u64;
+                if c.g[V0][0] != 0u64 {
+                    c.sw(c.g[A0][0] as u32, 0u64);
+                    break 'b_23a718;
+                } else {
+                    c.cycles += 2;
+                    c.sw(c.g[A0][0] as u32, c.g[V1][0]);
+                    c.g[V1][0] = c.g[S3][0];
+                    break 'b_23a718;
+                }
+            }
+            'b_23a72c: {
+                c.cycles += 4;
+                c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
+                c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                let t = c.g[T0][0] != c.g[S2][0];
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x18), c.g[V1][0]);
+                if t {
+                    break 'b_23a72c;
+                } else {
+                    c.cycles += 1;
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x40), c.g[T1][0]);
+                    break 'b_23a72c;
+                }
+            }
+            c.cycles += 6;
+            c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = ((c.g[T0][0] as i64) < 6i64) as u64;
+            let t = c.g[V0][0] != 0u64;
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0023a700);
+                }
+                continue 'l_23a700;
+            } else {
+                c.cycles += 7;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+                c.pc = t;
+                return Ok(());
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
+    use crate::game::main::game::tests::fake_get_be;
+    use crate::game::main::game::tests::PREV_GET_BE;
+    use crate::game::main::game::tests::{fake_be_get_interface, PREV_BE_GET_INTERFACE};
 
     use super::*;
     use crate::difftest::check;
@@ -4741,6 +5180,190 @@ pub(crate) mod tests {
                 oc427_queue(c, 0x0014_5750, &[(r.next_u32() % 4) as u64]);
                 put_words(c, 0x0053_6708, &[0, 1, 2]);
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ai::tests::oc432_fake;
+    pub(crate) use crate::game::ai::ai::tests::oc434_force;
+    pub(crate) use crate::game::ai::ai::tests::oc434_setup;
+    pub(crate) use crate::game::ai::ai::tests::oc434_w;
+    pub(crate) use crate::game::ai::ai::tests::OC432_CTRL;
+    pub(crate) use crate::game::ai::ai::tests::OC432_MAGIC;
+
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    oc432_fake!(
+        fake_get_human_rider,
+        PREV_GET_HUMAN_RIDER,
+        ee::s01::f_00146e98__generated,
+        0x0014_6e98
+    );
+
+    oc432_fake!(
+        fake_get_character,
+        PREV_GET_CHARACTER,
+        ee::s01::f_00147398__generated,
+        0x0014_7398
+    );
+
+    oc432_fake!(
+        fake_get_peak_rival,
+        PREV_GET_PEAK_RIVAL,
+        ee::s01::f_00145750__generated,
+        0x0014_5750
+    );
+
+    oc432_fake!(
+        fake_game_rand_next,
+        PREV_GAME_RAND_NEXT,
+        ee::s06::f_00237cd8__generated,
+        0x0023_7cd8
+    );
+
+    oc432_fake!(
+        fake_game_rand_shuffle,
+        PREV_GAME_RAND_SHUFFLE,
+        ee::s06::f_0023c770__generated,
+        0x0023_c770
+    );
+
+    /// `GMHandler1_PickOpponents`: the BE getters, the rand and the shuffle
+    /// are logging fakes; the two characters come from forced results (some
+    /// equal to loop indices, so the skip branches run, some out of range).
+    #[test]
+    fn gm_handler1_pick_opponents_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+            fake_get_be,
+            &PREV_GET_BE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+            fake_be_get_interface,
+            &PREV_BE_GET_INTERFACE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_00146E98),
+            fake_get_human_rider,
+            &PREV_GET_HUMAN_RIDER,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_00147398),
+            fake_get_character,
+            &PREV_GET_CHARACTER,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_00145750),
+            fake_get_peak_rival,
+            &PREV_GET_PEAK_RIVAL,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_00237CD8),
+            fake_game_rand_next,
+            &PREV_GAME_RAND_NEXT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_0023C770),
+            fake_game_rand_shuffle,
+            &PREV_GAME_RAND_SHUFFLE,
+        );
+        fakes::covered(
+            ee::s06::f_0023a4f0__generated,
+            gm_handler1_pick_opponents,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x23a4f0, 10);
+                c.bus.write32(OC432_CTRL, OC432_MAGIC);
+                c.g[A0][0] = DATA as u64;
+                let pick =
+                    |r: &mut Rng| [1u32, 2, 3, 4, 5, 6, 7, 8, 9, 20][(r.next_u32() % 10) as usize];
+                c.bus.write32(fakes::LOG_RESULTS + 4 * 5, pick(&mut r));
+                c.bus.write32(fakes::LOG_RESULTS + 4 * 6, pick(&mut r));
+                c.bus.write32(fakes::LOG_RESULTS + 4 * 7, r.next_u32() | 1);
+                let _ = seed;
+            },
+        );
+    }
+
+    oc432_fake!(
+        fake_game_mode_reset,
+        PREV_GAME_MODE_RESET,
+        ee::s06::f_002382d8__generated,
+        0x0023_82d8
+    );
+
+    /// `GameModeMan_StartMode`: every event type 0..14 on both network paths
+    /// (byte at 0x535c11 equal to 2 or not); the current handler's virtual
+    /// method is a fake, reset mode is a fake.
+    #[test]
+    fn game_mode_man_start_mode_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+            fake_get_be,
+            &PREV_GET_BE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+            fake_be_get_interface,
+            &PREV_BE_GET_INTERFACE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_002382D8),
+            fake_game_mode_reset,
+            &PREV_GAME_MODE_RESET,
+        );
+        fakes::covered(
+            ee::s06::f_00238160__generated,
+            game_mode_man_start_mode,
+            200,
+            &|c, seed| {
+                crate::difftest::elf_image(c);
+                let mut r = machine(c, seed, 0x238160, 4);
+                c.bus.write32(OC432_CTRL, OC432_MAGIC);
+                c.pc = 0x0023_8160;
+                let this = DATA + 0x5_0000;
+                let handler = DATA + 0x5_1000;
+                let vt = DATA + 0x5_2000;
+                let cur = r.next_u32() % 10;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (seed % 15) as u64;
+                c.bus.write32(this + 4, cur);
+                for i in 0..10u32 {
+                    c.bus.write32(0x0053_6668 + 4 * i, handler);
+                }
+                c.bus.write32(handler, vt);
+                c.bus.write16(vt + 0x18, (r.next_u32() % 32) as u16);
+                c.bus.write32(vt + 0x1c, fakes::FAKE);
+                c.bus
+                    .write8(0x0053_5c11, if r.next_u32() % 2 == 0 { 2 } else { 1 });
+            },
+        );
+    }
+
+    /// `GMHandler1_SetupRiderSlots`: heat 0..3 (rows of ids below and above 10), the
+    /// human rider in slot 1..3 or past the last slot.
+    #[test]
+    fn gm_handler1_setup_rider_slots_matches() {
+        fakes::covered(
+            ee::s06::f_0023a668__generated,
+            gm_handler1_setup_rider_slots,
+            24,
+            &|c, seed| {
+                let mut r = oc434_setup(c, seed, 0x23a668, 5, 0x0023_a668);
+                let (this, mgr) = (DATA + 0x100, DATA + 0x2000);
+                c.g[A0][0] = this as u64;
+                oc434_w(c, GAME_GP.wrapping_sub(0x480), mgr);
+                oc434_w(c, mgr, seed % 5);
+                for i in 0..24 {
+                    oc434_w(c, this + 0x10 + 4 * i, r.next_u32() % 20);
+                }
+                oc434_force(c, 0, DATA + 0x3000);
+                oc434_force(c, 1, DATA + 0x3100);
+                oc434_force(c, 2, [1, 2, 3, 6][(seed % 4) as usize]);
+                oc434_force(c, 3, 5 + seed % 4);
+                oc434_force(c, 4, 20 + seed % 3);
             },
         );
     }

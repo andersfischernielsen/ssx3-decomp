@@ -48,6 +48,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ProcessList_SetSortedInsert",
     ),
     (0x0035_5280, mod_obj_ctor, "ModObj_ctor"),
+    (0x0035_49e0, process_list_init, "ProcessList_Init"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -518,6 +519,136 @@ pub fn mod_obj_ctor(c: &mut Cpu) {
     })
 }
 
+/// `void ProcessList_Init(self, int n)` (0x3549e0): allocates the bucket
+/// array (`operator_new(n * 0x44 + 0x10, "Buckets")`; its first word holds
+/// `n`, the buckets start at +0x10), constructs every bucket (four
+/// self-linked list heads at +0x8/+0x18/+0x28/+0x38 whose vtable words at
+/// +0x10/+0x20/+0x30/+0x40 are 0x491f00), stores the array at `self + 4` and
+/// `n` at `self + 0`, then links every bucket's lists (`l0.prev = &l1`,
+/// `l1.next = &l0`, `l2.prev = &l3`, `l3.next = &l2`) and clears its flags
+/// (+0). Frame 0x40 (s0-s2).
+pub fn process_list_init(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = 0x44;
+        frame.save(c, S1, 0x20);
+        c.g[A2][0] = 0;
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S0, 0x30);
+        c.mult(0, V0, S1, V0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A1][0] = 0x4a_0000;
+        frame.save(c, S2, 0x10);
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x4020));
+        frame.save_ra(c, 0);
+        c.g[A3][0] = 0;
+        c.g[S2][0] = sx(r32(c, S0).wrapping_add(4));
+        c.g[A0][0] = sx(r32(c, V0).wrapping_add(0x10));
+        call_ptr(c, 0x0031_7e30, 0x0035_4a20)?;
+        c.g[A1][0] = sx(r32(c, V0).wrapping_add(0x10));
+        c.g[A0][0] = sx(r32(c, S1).wrapping_sub(1));
+        c.sw(r32(c, V0), c.g[S1][0]);
+        let zero = c.g[S1][0] == 0;
+        c.g[V1][0] = c.g[A1][0];
+        // Construct the buckets: vtable words and cleared list links.
+        if !zero {
+            c.cycles += 3;
+            c.g[V0][0] = 0x49_0000;
+            c.g[A2][0] = u64::MAX;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x1f00));
+            loop {
+                c.cycles += 15;
+                let b = r32(c, V1);
+                c.sw(b.wrapping_add(0x10), c.g[V0][0]);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_sub(1));
+                c.sw(b.wrapping_add(0x8), 0);
+                c.sw(b.wrapping_add(0xc), 0);
+                c.sw(b.wrapping_add(0x20), c.g[V0][0]);
+                c.sw(b.wrapping_add(0x18), 0);
+                c.sw(b.wrapping_add(0x1c), 0);
+                c.sw(b.wrapping_add(0x30), c.g[V0][0]);
+                c.sw(b.wrapping_add(0x28), 0);
+                c.sw(b.wrapping_add(0x2c), 0);
+                c.sw(b.wrapping_add(0x40), c.g[V0][0]);
+                c.sw(b.wrapping_add(0x38), 0);
+                c.sw(b.wrapping_add(0x3c), 0);
+                let more = c.g[A0][0] != c.g[A2][0];
+                c.g[V1][0] = sx(b.wrapping_add(0x44));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_4a40);
+                }
+            }
+        }
+        c.cycles += 4;
+        c.sw(r32(c, S2), c.g[A1][0]);
+        c.g[A2][0] = 0;
+        let empty = (c.g[S1][0] as i64) <= 0;
+        c.sw(r32(c, S0), c.g[S1][0]);
+        if !empty {
+            c.cycles += 1;
+            c.g[A1][0] = 0;
+            loop {
+                c.cycles += 36;
+                let this = r32(c, S0);
+                // The bucket's address is re-read from `self + 4` each time.
+                c.g[A0][0] = c.lw(this.wrapping_add(4));
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+                c.g[V1][0] = sx(r32(c, A0).wrapping_add(0x14));
+                c.sw(r32(c, A0).wrapping_add(0x8), c.g[V1][0]);
+                c.g[V0][0] = c.lw(this.wrapping_add(4));
+                c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                c.sw(r32(c, V0).wrapping_add(0xc), 0);
+                c.g[V1][0] = c.lw(this.wrapping_add(4));
+                c.g[V1][0] = sx(r32(c, A1).wrapping_add(r32(c, V1)));
+                c.sw(r32(c, V1).wrapping_add(0x18), 0);
+                c.g[V0][0] = c.lw(this.wrapping_add(4));
+                c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                c.g[A0][0] = sx(r32(c, V0).wrapping_add(4));
+                c.sw(r32(c, V0).wrapping_add(0x1c), c.g[A0][0]);
+                c.g[V1][0] = c.lw(this.wrapping_add(4));
+                c.g[V1][0] = sx(r32(c, A1).wrapping_add(r32(c, V1)));
+                c.g[A0][0] = sx(r32(c, V1).wrapping_add(0x34));
+                c.sw(r32(c, V1).wrapping_add(0x28), c.g[A0][0]);
+                c.g[V0][0] = c.lw(this.wrapping_add(4));
+                c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                c.sw(r32(c, V0).wrapping_add(0x2c), 0);
+                c.g[V1][0] = c.lw(this.wrapping_add(4));
+                c.g[V1][0] = sx(r32(c, A1).wrapping_add(r32(c, V1)));
+                c.sw(r32(c, V1).wrapping_add(0x38), 0);
+                c.g[A0][0] = c.lw(this.wrapping_add(4));
+                c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+                c.g[V1][0] = sx(r32(c, A0).wrapping_add(0x24));
+                c.sw(r32(c, A0).wrapping_add(0x3c), c.g[V1][0]);
+                c.g[V0][0] = c.lw(this.wrapping_add(4));
+                c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                c.sw(r32(c, V0), 0);
+                c.g[V0][0] = c.lw(this);
+                c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x44));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_4a90);
+                }
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -854,6 +985,31 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(list);
                 c.g[A2][0] = sx(kind);
                 c.g[A3][0] = sx(NODE);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::ai::ai::tests::OC432_CTRL;
+    pub(crate) use crate::game::ai::ai::tests::OC432_MAGIC;
+    pub(crate) use crate::game::camera::trigger::cameratriggerlist::tests::camera_trigger_install_fakes;
+
+    /// `ProcessList_Init`: n = 0..4 buckets (including the empty case); the
+    /// allocation is a fake returning a pointer into the data area.
+    #[test]
+    fn process_list_init_matches() {
+        camera_trigger_install_fakes();
+        fakes::covered(
+            ee::s11::f_003549e0__generated,
+            process_list_init,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3549e0, 3);
+                c.bus.write32(OC432_CTRL, OC432_MAGIC);
+                c.g[A0][0] = (DATA + 0x5_0000) as u64;
+                c.g[A1][0] = (r.next_u32() % 5) as u64;
+                let _ = seed;
             },
         );
     }

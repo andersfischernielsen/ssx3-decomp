@@ -2,6 +2,7 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -54,6 +55,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_2de0,
         be_save_int_load_profile_save,
         "BESaveInt_LoadProfileSave",
+    ),
+    (
+        0x0015_2948,
+        be_save_int_get_system_save_size,
+        "BESaveInt_GetSystemSaveSize",
     ),
 ];
 
@@ -471,6 +477,13 @@ pub fn be_save_int_load_profile_save(c: &mut Cpu) {
     })
 }
 
+/// `int BESaveInt_GetSystemSaveSize(void)` (0x152948): 0xccc.
+pub fn be_save_int_get_system_save_size(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0xccc;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -638,6 +651,21 @@ pub(crate) mod tests {
                 c.bus.write32(OC430_CTRL, OC430_MAGIC);
                 c.pc = 0x0015_2de0;
                 oc430_profile_fixture(c, &mut r, seed);
+            },
+        );
+    }
+
+    /// `BESaveInt_GetSystemSaveSize`: constant 0xccc.
+    #[test]
+    fn be_save_int_get_system_save_size_matches() {
+        check(
+            ee::s01::f_00152948__generated,
+            be_save_int_get_system_save_size,
+            20,
+            &|c, seed| {
+                let mut r = Rng(0x5a ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0015_2948;
             },
         );
     }

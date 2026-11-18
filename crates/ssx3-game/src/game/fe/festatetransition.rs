@@ -10,6 +10,7 @@ pub(crate) use crate::game::fe::feasyncfile::at as at_2;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at_3;
 pub(crate) use crate::game::fe::feasyncfile::lw_6 as lw;
 pub(crate) use crate::game::fe::feasyncfile::p;
+pub(crate) use crate::game::fe::festatecharsetup::oc437_fe_state_dtor;
 pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::lw_r;
 pub(crate) use crate::game::main::gamemode::sp_2 as sp;
@@ -43,6 +44,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cFEStateTransition_StartFade",
     ),
     (0x0019_4738, c_fe_state_title_ctor, "cFEStateTitle_ctor"),
+    (
+        0x001d_e5c8,
+        fe_state_background_dtor,
+        "cFEStateBackground_dtor",
+    ),
+    (
+        0x001d_e668,
+        fe_state_transition_dtor,
+        "cFEStateTransition_dtor",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -301,6 +312,16 @@ pub fn cfe_state_transition_v16(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+/// `cFEStateTransition_dtor(this, flags)` (0x1de668).
+pub fn fe_state_transition_dtor(c: &mut Cpu) {
+    oc437_fe_state_dtor(c, 0x4478, 0x001d_e684)
+}
+
+/// `cFEStateBackground_dtor(this, flags)` (0x1de5c8).
+pub fn fe_state_background_dtor(c: &mut Cpu) {
+    oc437_fe_state_dtor(c, 0x43a8, 0x001d_e5e4)
 }
 
 #[cfg(test)]

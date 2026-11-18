@@ -7,8 +7,10 @@ use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -147,6 +149,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0030_8db8,
         w_script_man_run_mission_setup_scripts,
         "WScriptMan_RunMissionSetupScripts",
+    ),
+    (0x0030_87d0, w_script_man_ctor, "WScriptMan_ctor"),
+    (
+        0x0030_8b58,
+        oc436_wscript_man_create_local_table_thunk,
+        "WScriptMan_CreateLocalTableThunk",
     ),
 ];
 
@@ -2650,6 +2658,132 @@ pub fn wscript_man_spawn_missions(c: &mut Cpu) {
     })
 }
 
+/// `WScriptMan* WScriptMan_ctor(WScriptMan* self)` (0x3087d0): construct the command
+/// queue, the three process lists and the collect sets (the inner 0x40-word tables
+/// filled with -1), register `self` in the global, clear the 200-byte block at
+/// `+0x3cc` and `WScriptMan_Reset(self)`; returns `self`.
+#[allow(unreachable_code)]
+pub fn w_script_man_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+        c.g[V0][0] = 0xffffffffffff0000;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[V0][0] = c.g[V0][0] | 0xffff;
+        c.g[S0][0] = c.g[A0][0];
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1c4));
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S3][0] = 0xffffffffffff0000;
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S5][0] = sx((c.g[S0][0] as u32).wrapping_add(0x3cc));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S3][0] = c.g[S3][0] | 0xffff;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S4][0] = 0xffffffffffffffff;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), c.g[V0][0]);
+        Callee {
+            addr: 0x0030c738,
+            f: ee::s10::WScriptMan_CmdQueueCtor,
+        }
+        .call(c, 0x00308818)?;
+        c.g[V0][0] = 0x490000;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2b4));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x6400));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x494), c.g[V0][0]);
+        Callee {
+            addr: 0x0030b058,
+            f: ee::s10::WScriptProcessList_ctor,
+        }
+        .call(c, 0x0030882c)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2b8));
+        Callee {
+            addr: 0x0030b058,
+            f: ee::s10::WScriptProcessList_ctor,
+        }
+        .call(c, 0x00308834)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2bc));
+        Callee {
+            addr: 0x0030b058,
+            f: ee::s10::WScriptProcessList_ctor,
+        }
+        .call(c, 0x0030883c)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2c0));
+        c.g[V0][0] = 0u64;
+        'l_308848: loop {
+            c.cycles += 4;
+            c.g[S2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+            c.g[S1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10c));
+            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xc));
+            c.g[V1][0] = 0x3f;
+            'l_308858: loop {
+                c.cycles += 7;
+                c.sw(c.g[V0][0] as u32, c.g[S3][0]);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                let t = c.g[V1][0] != c.g[S4][0];
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x00308858);
+                    }
+                    continue 'l_308858;
+                } else {
+                    c.cycles += 5;
+                    Callee {
+                        addr: 0x0030c390,
+                        f: ee::s10::WScriptMan_ResetCollectSet,
+                    }
+                    .call(c, 0x0030887c)?;
+                    c.g[V0][0] = c.g[S2][0];
+                    let t = c.g[V0][0] != c.g[S4][0];
+                    c.g[A0][0] = c.g[S1][0];
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00308848);
+                        }
+                        continue 'l_308848;
+                    } else {
+                        c.cycles += 19;
+                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x16c8));
+                        c.g[A0][0] = c.g[S5][0];
+                        c.sw((c.g[GP][0] as u32).wrapping_add(0xce8), c.g[S0][0]);
+                        c.g[A1][0] = 0u64;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x28c), c.g[V0][0]);
+                        c.g[A2][0] = 0xc8;
+                        call_ptr(c, 0x003e6448, 0x003088a4)?;
+                        c.g[A0][0] = c.g[S0][0];
+                        Callee {
+                            addr: 0x00308988,
+                            f: ee::s10::WScriptMan_Reset,
+                        }
+                        .call(c, 0x003088ac)?;
+                        c.g[V0][0] = c.g[S0][0];
+                        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+                        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+                        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                        let t = c.g[RA][0] as u32;
+                        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+                        c.pc = t;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        Ok(())
+    })
+}
+
+/// `void WScriptMan_CreateLocalTableThunk(...)` (0x308b58): tail call of
+/// `WScriptMan_CreateLocalTable` with the same arguments.
+pub fn oc436_wscript_man_create_local_table_thunk(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x0030_8b78), 0x0030_8b68)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3755,5 +3889,110 @@ pub(crate) mod tests {
                 c.g[A0][0] = this as u64;
             },
         );
+    }
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_gp;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_run;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC433_FIX;
+
+    /// `WScriptMan_ctor` against the generated body (the sub-object
+    /// constructors, memset and reset are fakes).
+    #[test]
+    fn w_script_man_ctor_matches() {
+        oc433_run(
+            ee::s10::f_003087d0__generated,
+            w_script_man_ctor,
+            0x0030_87d0,
+            7,
+            60,
+            &|c, r, _seed| {
+                oc433_gp(c, 0x16c8, r.next_u32());
+                c.g[A0][0] = sx(OC433_FIX + 0x1000);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ai::oc436_ai_reset_riders_default;
+
+    pub(crate) use crate::game::ai::rider::tests::oc436_machine;
+
+    pub(crate) use crate::game::ai::ridermetrix::oc436_rider_metrix_set_grind_orientation;
+    pub(crate) use crate::game::animation::animmodel::oc436_cadf_data_source_ctor;
+    pub(crate) use crate::game::camera::camera::tests::SEEDS_5 as SEEDS_6;
+    pub(crate) use crate::game::camera::trigger::cameratriggerlist::oc436_camera_trigger_man_clear_data;
+    pub(crate) use crate::game::intersect::worldsphtree::oc436_boost_v01;
+    pub(crate) use crate::game::object::instancenode::oc436_mod_obj_run_script_event_19b8;
+    pub(crate) use crate::game::replay::replaycache::oc436_in_seq_heap_new_array;
+    pub(crate) use crate::game::replay::replaycache::tests::oc436_word;
+    pub(crate) use crate::game::scripter::bxscriptengine::oc436_script_cam_binding_unbind;
+
+    /// The wrappers with one call each: the thunks, `AI_ResetRidersDefault`,
+    /// `Boost_v01`, `ModObj_RunScriptEvent19b8`, `CameraTriggerMan_ClearData`,
+    /// `cAdfDataSource_ctor`, `ScriptCamBinding_Unbind` and
+    /// `RiderMetrix_SetGrindOrientation`: random registers, the object in
+    /// a0 (or a1), the callee a gated logged fake that may unwind.
+    #[test]
+    fn oc436_one_call_wrappers_match() {
+        type Fns = (GuestFn, GuestFn, u64);
+        let all: [Fns; 9] = [
+            (
+                ee::s10::f_00308b58__generated,
+                oc436_wscript_man_create_local_table_thunk,
+                0x308b58,
+            ),
+            (
+                ee::s07::f_002724c8__generated,
+                oc436_in_seq_heap_new_array,
+                0x2724c8,
+            ),
+            (
+                ee::s00::f_001289f0__generated,
+                oc436_ai_reset_riders_default,
+                0x1289f0,
+            ),
+            (ee::s11::f_003415a8__generated, oc436_boost_v01, 0x3415a8),
+            (
+                ee::s11::f_0034fe00__generated,
+                oc436_mod_obj_run_script_event_19b8,
+                0x34fe00,
+            ),
+            (
+                ee::s02::f_0016bf20__generated,
+                oc436_camera_trigger_man_clear_data,
+                0x16bf20,
+            ),
+            (
+                ee::s10::f_00311220__generated,
+                oc436_cadf_data_source_ctor,
+                0x311220,
+            ),
+            (
+                ee::s07::f_00283180__generated,
+                oc436_script_cam_binding_unbind,
+                0x283180,
+            ),
+            (
+                ee::s00::f_00119918__generated,
+                oc436_rider_metrix_set_grind_orientation,
+                0x119918,
+            ),
+        ];
+        for (gen, hand, salt) in all {
+            covered(gen, hand, SEEDS_6, &|c, seed| {
+                let mut r = oc436_machine(c, seed, salt, 1);
+                let obj = DATA + 0x1000 + (r.next_u32() & 0xff0);
+                for reg in [A0, A1, A2, A3] {
+                    c.g[reg][0] = sx(oc436_word(&mut r));
+                }
+                c.g[A0][0] = sx(obj);
+                if salt == 0x34fe00 {
+                    // `a1` is the object here.
+                    c.g[A1][0] = sx(obj);
+                }
+                let old = r.next_u32();
+                c.bus.write32(obj, old);
+            });
+        }
     }
 }

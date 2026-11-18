@@ -70,6 +70,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0022_5338, c_luno_table_set, "cLunoTable_Set"),
     (0x0022_4e50, cluno_table_alloc, "cLunoTable_Alloc"),
     (0x0022_5248, c_luno_table_find, "cLunoTable_Find"),
+    (0x0022_6620, luno_vm_register_as_id, "LunoVMRegister_AsId"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5004,6 +5005,13 @@ pub fn c_luno_table_find(c: &mut Cpu) {
     ret(c);
 }
 
+/// `LunoVMRegister LunoVMRegister_AsId(id)` (0x226620): returns its argument.
+pub fn luno_vm_register_as_id(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A0][0];
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5985,6 +5993,17 @@ pub(crate) mod tests {
             c_luno_table_find,
             600,
             &oc428_luno_setup,
+        );
+    }
+
+    pub(crate) use crate::game::animation::gameanimmap::tests::oc438_leaf;
+
+    #[test]
+    fn luno_vm_register_as_id_matches() {
+        oc438_leaf(
+            ee::s05::f_00226620__generated,
+            luno_vm_register_as_id,
+            0x0022_6620,
         );
     }
 }

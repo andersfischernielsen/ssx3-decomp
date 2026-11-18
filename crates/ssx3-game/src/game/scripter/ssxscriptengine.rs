@@ -7,9 +7,11 @@ use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::call::Unwound;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
@@ -57,6 +59,7 @@ pub(crate) use crate::game::sound::bankmonitor::add32;
 pub(crate) use crate::game::sound::bankmonitor::leave;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
 pub(crate) use crate::game::visualfx::renderstateman::gp;
+pub(crate) use crate::game::world::world::oc435_callee;
 pub(crate) use crate::game::wscript::wscriptman::sw;
 use crate::guest::Addr;
 use ssx3_ee as ee;
@@ -635,6 +638,81 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ScriptViewObj_Deactivate",
     ),
     (0x0028_14f8, script_view_obj_apply, "ScriptViewObj_Apply"),
+    (
+        0x0027_8b98,
+        script_engine_load_world_scripts,
+        "ScriptEngine_LoadWorldScripts",
+    ),
+    (
+        0x0027_90a0,
+        script_engine_list_stop_2,
+        "ScriptEngine_ListStop",
+    ),
+    (
+        0x0027_9ed8,
+        script_engine_find_anim_bank,
+        "ScriptEngine_FindAnimBank",
+    ),
+    (
+        0x0027_9ef8,
+        script_engine_find_sound_bank,
+        "ScriptEngine_FindSoundBank",
+    ),
+    (
+        0x0027_a668,
+        script_engine_get_instance_script,
+        "ScriptEngine_GetInstanceScript",
+    ),
+    (
+        0x0027_b268,
+        script_engine_load_bank_sync,
+        "ScriptEngine_LoadBankSync",
+    ),
+    (
+        0x0027_c078,
+        script_data_get_bank_list,
+        "ScriptData_GetBankList",
+    ),
+    (
+        0x0027_c958,
+        script_rider_get_params,
+        "ScriptRider_GetParams",
+    ),
+    (
+        0x0028_0520,
+        rider_script_obj_get_anim_bank_entry,
+        "RiderScriptObj_GetAnimBankEntry",
+    ),
+    (
+        0x0028_07b0,
+        script_audio_obj_deactivate,
+        "ScriptAudioObj_Deactivate",
+    ),
+    (
+        0x0028_1370,
+        script_view_obj_activate_2,
+        "ScriptViewObj_Activate",
+    ),
+    (
+        0x0027_8710,
+        script_engine_clear_skip_delay_on_enter,
+        "ScriptEngine_ClearSkipDelayOnEnter",
+    ),
+    (
+        0x0027_9888,
+        oc436_script_engine_unload_script_bank,
+        "ScriptEngine_UnloadScriptBank",
+    ),
+    (
+        0x0027_d680,
+        script_obj_cam_set_owner,
+        "ScriptObjCam_SetOwner",
+    ),
+    (
+        0x0028_1160,
+        script_view_obj_set_view_index,
+        "ScriptViewObj_SetViewIndex",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -12527,9 +12605,715 @@ pub fn script_view_obj_ctor(c: &mut Cpu) {
     })
 }
 
+/// `void ScriptEngine_LoadWorldScripts(self)` (0x278b98): starts loading the
+/// current track's script data. Builds the track's file name from the race
+/// interface's track info (`name = trackInfo + 0x34`), kicks off the async
+/// load of the filter table (`"data/scripts/scdat_big/data/scripts/scfi" +
+/// name + ".dat"`, handle stored at `self + 0x538`, `self + 0x620` counts the
+/// pending loads) and then loads the script bank
+/// (`ScriptEngine_LoadBankAsync(self, 1, "…/scda" + name + ".big", 0, -1, 0,
+/// 0)`). The `cBXString` temporaries live in the frame (0x90, s0-s3).
+pub fn script_engine_load_world_scripts(c: &mut Cpu) {
+    const LOAD_BANK_ASYNC: Callee = Callee {
+        addr: 0x0027_b370,
+        f: ee::s07::f_0027b370,
+    };
+    const FILTER_HANDLE: u32 = 0x538;
+    const PENDING_LOADS: u32 = 0x620;
+    guest(c, |c| {
+        c.cycles += 36;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S2, 0x60);
+        frame.save(c, S1, 0x70);
+        frame.save(c, S3, 0x50);
+        frame.save(c, S0, 0x80);
+        frame.save_ra(c, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        call_ptr(c, 0x0014_dc80, 0x0027_8bb8)?;
+        c.g[A1][0] = 0;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x0014_dd58, 0x0027_8bc4)?;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x0014_4bc0, 0x0027_8bcc)?;
+        // name = cBXString(trackInfo + 0x34)
+        let name = r32(c, SP);
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = sx(r32(c, V0).wrapping_add(0x34));
+        call_ptr(c, 0x0031_82d8, 0x0027_8bd8)?;
+        c.g[S1][0] = sx(name.wrapping_add(0x20));
+        c.g[A1][0] = 0x48_0000;
+        c.g[A2][0] = c.g[SP][0];
+        c.g[S3][0] = sx(name.wrapping_add(0x10));
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x1c08));
+        c.g[A0][0] = c.g[S1][0];
+        // tmp = "data/scripts/scdat_big/data/scripts/scfi" + name
+        call_ptr(c, 0x0031_86d0, 0x0027_8bf4)?;
+        c.g[A2][0] = 0x4a_0000;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x34b8));
+        c.g[A1][0] = c.g[S1][0];
+        // path = tmp + ".dat"
+        call_ptr(c, 0x0031_8630, 0x0027_8c08)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = 2;
+        call_ptr(c, 0x0031_8260, 0x0027_8c14)?;
+        c.g[A0][0] = c.lw(name.wrapping_add(0x10));
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x003d_f690, 0x0027_8c20)?;
+        let failed = c.g[V0][0] == 0;
+        let this = r32(c, S2);
+        c.sw(this.wrapping_add(FILTER_HANDLE), c.g[V0][0]);
+        if !failed {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(this.wrapping_add(PENDING_LOADS));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+            c.sw(this.wrapping_add(PENDING_LOADS), c.g[V0][0]);
+        }
+        c.cycles += 41;
+        c.g[S0][0] = sx(name.wrapping_add(0x30));
+        c.g[A1][0] = 0x48_0000;
+        c.g[A2][0] = c.g[SP][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x1c38));
+        // tmp2 = "data/scripts/scdat_big/data/scripts/scda" + name
+        call_ptr(c, 0x0031_86d0, 0x0027_8c4c)?;
+        c.g[A2][0] = 0x4a_0000;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x34c0));
+        c.g[A1][0] = c.g[S0][0];
+        // tmp = tmp2 + ".big"
+        call_ptr(c, 0x0031_8630, 0x0027_8c60)?;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0031_8448, 0x0027_8c6c)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = 2;
+        call_ptr(c, 0x0031_8260, 0x0027_8c78)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 2;
+        call_ptr(c, 0x0031_8260, 0x0027_8c84)?;
+        c.g[A2][0] = c.lw(name.wrapping_add(0x10));
+        c.g[A3][0] = 0;
+        c.g[T0][0] = u64::MAX;
+        c.g[T1][0] = 0;
+        c.g[T2][0] = 0;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = 1;
+        LOAD_BANK_ASYNC.call(c, 0x0027_8ca4)?;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = 2;
+        call_ptr(c, 0x0031_8260, 0x0027_8cb0)?;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = 2;
+        call_ptr(c, 0x0031_8260, 0x0027_8cbc)?;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void ScriptAudioObj_Deactivate(ScriptAudioObj* self)` (0x2807b0): deactivate
+/// the base object, free the script audio events (`+0x1c`, `+0xec` of them) in
+/// the script manager, stop the three audio handles (`+0xbc`) that are in use,
+/// clear the object's counters and, when the audio-fields reader reports so,
+/// clear the global at `gp+0xa70`.
+#[allow(unreachable_code)]
+pub fn script_audio_obj_deactivate(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_280814: {
+            c.cycles += 15;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xa0));
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[S3][0] = c.g[A0][0];
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+            c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0xc));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+            c.g[S1][0] = 0u64;
+            Callee {
+                addr: 0x00283440,
+                f: ee::s07::ScriptObj_Deactivate,
+            }
+            .call(c, 0x002807e0)?;
+            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xec));
+            let t = (c.g[V0][0] as i64) <= 0;
+            c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1c));
+            if t {
+                break 'b_280814;
+            } else {
+                c.cycles += 1;
+                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                'l_2807f0: loop {
+                    c.cycles += 9;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xce8));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8));
+                    call_ptr(c, 0x00309e50, 0x00280804)?;
+                    c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xec));
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] != 0u64 {
+                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002807f0);
+                        }
+                        continue 'l_2807f0;
+                    } else {
+                        break 'b_280814;
+                    }
+                }
+            }
+        }
+        'b_280830: {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xf0));
+            let t = c.g[V0][0] == 0u64;
+            c.g[S2][0] = sx((c.g[S3][0] as u32).wrapping_add(0xbc));
+            if t {
+                break 'b_280830;
+            } else {
+                c.cycles += 4;
+                Callee {
+                    addr: 0x0028b180,
+                    f: ee::s07::SSXAudioSystem_GetInstance,
+                }
+                .call(c, 0x00280828)?;
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x002a1bd0, 0x00280830)?;
+                break 'b_280830;
+            }
+        }
+        c.cycles += 4;
+        c.g[S4][0] = 0xffffffffffffffff;
+        c.g[S1][0] = c.g[S2][0];
+        c.g[S5][0] = sx((c.g[S3][0] as u32).wrapping_add(0xec));
+        'l_280840: loop {
+            'b_280874: {
+                c.cycles += 3;
+                c.g[S0][0] = c.lw(c.g[S2][0] as u32);
+                if (c.g[S0][0] as i64) < 0 {
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[S4][0]);
+                    break 'b_280874;
+                } else {
+                    c.cycles += 10;
+                    Callee {
+                        addr: 0x0028b180,
+                        f: ee::s07::SSXAudioSystem_GetInstance,
+                    }
+                    .call(c, 0x00280854)?;
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x118));
+                    c.g[A1][0] = c.g[S0][0];
+                    c.mtc1(0, 12);
+                    c.g[A2][0] = 0x1;
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1d8));
+                    call_ptr(c, 0x002ad5f0, 0x00280870)?;
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[S4][0]);
+                    break 'b_280874;
+                }
+            }
+            c.cycles += 6;
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0xc));
+            c.sw(c.g[S1][0] as u32, c.g[S4][0]);
+            c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[S5][0] as i64)) as u64;
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x4), 0u64);
+            let t = c.g[V0][0] != 0u64;
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x00280840);
+                }
+                continue 'l_280840;
+            } else {
+                'b_2808a4: {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+                    c.g[A1][0] = c.g[SP][0];
+                    Callee {
+                        addr: 0x0027cc28,
+                        f: ee::s07::ScriptAudio_ReadFields,
+                    }
+                    .call(c, 0x00280898)?;
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
+                    if c.g[V0][0] != 0u64 {
+                        c.sw((c.g[GP][0] as u32).wrapping_add(0xa70), 0u64);
+                        break 'b_2808a4;
+                    } else {
+                        break 'b_2808a4;
+                    }
+                }
+                c.cycles += 13;
+                c.sw((c.g[S3][0] as u32).wrapping_add(0xf8), 0u64);
+                c.sw((c.g[S3][0] as u32).wrapping_add(0xec), 0u64);
+                c.sw((c.g[S3][0] as u32).wrapping_add(0xf0), 0u64);
+                c.sw((c.g[S3][0] as u32).wrapping_add(0xf4), 0u64);
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+                c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa0));
+                c.pc = t;
+                return Ok(());
+            }
+        }
+        Ok(())
+    })
+}
+
+/// `void ScriptViewObj_Activate(ScriptViewObj* self, int a1)` (0x281370): bind the
+/// object filter in the script engine, reset the view object and, when the
+/// sequence is playing, run the camera hook and set `+0x110`; then activate the
+/// base `ScriptObj`.
+#[allow(unreachable_code)]
+pub fn script_view_obj_activate_2(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2813e0: {
+            c.cycles += 21;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S0][0] = c.g[A0][0];
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[S1][0] = c.g[A1][0];
+            Callee {
+                addr: 0x0027d2e8,
+                f: ee::s07::ScriptEngine_GetInstance,
+            }
+            .call(c, 0x0028138c)?;
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A2][0] = c.g[S1][0];
+            Callee {
+                addr: 0x0027d0c0,
+                f: ee::s07::ScriptEngine_SetObjBindingFilter,
+            }
+            .call(c, 0x0028139c)?;
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x00281a50,
+                f: ee::s07::ScriptViewObj_Reset,
+            }
+            .call(c, 0x002813a4)?;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x84c));
+            c.g[A1][0] = c.g[S1][0];
+            Callee {
+                addr: 0x00282c18,
+                f: ee::s07::ScriptEngine_GetSeqInstance,
+            }
+            .call(c, 0x002813b0)?;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x84c));
+            c.g[A1][0] = c.g[V0][0];
+            Callee {
+                addr: 0x00279370,
+                f: ee::s07::ScriptEngine_IsPlayingScript,
+            }
+            .call(c, 0x002813bc)?;
+            let t = c.g[V0][0] == 0u64;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+            if t {
+                break 'b_2813e0;
+            } else {
+                c.cycles += 7;
+                c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x100));
+                c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x84));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xa4));
+                call_ptr(c, 0x001033b0, 0x002813d8)?;
+                c.g[V0][0] = 0x1;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x110), c.g[V0][0]);
+                break 'b_2813e0;
+            }
+        }
+        c.cycles += 8;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        Callee {
+            addr: 0x00283430,
+            f: ee::s07::ScriptObj_Activate,
+        }
+        .call(c, 0x002813ec)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        return Ok(());
+        Ok(())
+    })
+}
+
+/// `void ScriptEngine_ListStop(ScriptEngine* self, int i)` (0x2790a0): stop NIS list
+/// `i` (`ScriptList_Stop(lists + i * 0xcc, 1)`), and leave script mode when it was
+/// the playing list.
+#[allow(unreachable_code)]
+pub fn script_engine_list_stop_2(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2790e8: {
+            c.cycles += 15;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+            c.g[V0][0] = 0xcc;
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[S0][0] = c.g[A1][0];
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.mult(0, 2, 16, 2);
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[S1][0] = c.g[A0][0];
+            c.g[A1][0] = 0x1;
+            c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x54c));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            Callee {
+                addr: 0x00276868,
+                f: ee::s07::ScriptList_Stop,
+            }
+            .call(c, 0x002790d0)?;
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x550));
+            let t = c.g[V0][0] != c.g[S0][0];
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            if t {
+                break 'b_2790e8;
+            } else {
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S1][0];
+                Callee {
+                    addr: 0x0027bf90,
+                    f: ee::s07::ScriptEngine_ExitScriptMode,
+                }
+                .call(c, 0x002790e4)?;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                break 'b_2790e8;
+            }
+        }
+        c.cycles += 4;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        return Ok(());
+        Ok(())
+    })
+}
+
+/// `void ScriptEngine_LoadBankSync(ScriptEngine* self, int bank, const char* name,
+/// int memFlags, int key, char* mem, int memSize)` (0x27b268): load a script bank
+/// synchronously (from `mem` with `FILE_loadatz`, or `FILE_loadz` plus
+/// `BXFILE_size`) and attach the data to the bank slot; a slot that is in use is
+/// left alone, a failed load clears the slot.
+#[allow(unreachable_code)]
+pub fn script_engine_load_bank_sync(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_27b348: {
+            'b_27b344: {
+                c.cycles += 19;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+                c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[S6][0] = c.g[A1][0];
+                c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.g[V0][0] = sx((c.g[S6][0] as u32) << 4);
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x628));
+                c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.g[S4][0] = c.g[A0][0];
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+                c.g[S1][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.g[S2][0] = c.g[A2][0];
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                c.g[A1][0] = c.g[A3][0];
+                c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                let t = c.g[V0][0] != 0u64;
+                c.g[S3][0] = c.g[T1][0];
+                if t {
+                    break 'b_27b344;
+                } else {
+                    'b_27b314: {
+                        'b_27b304: {
+                            'b_27b2fc: {
+                                'b_27b2dc: {
+                                    c.cycles += 3;
+                                    c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[T0][0]);
+                                    let t = c.g[S3][0] == 0u64;
+                                    c.g[S5][0] = 0u64;
+                                    if t {
+                                        break 'b_27b2dc;
+                                    } else {
+                                        c.cycles += 7;
+                                        c.g[A0][0] = c.g[S2][0];
+                                        c.g[A1][0] = c.g[S3][0];
+                                        c.g[A2][0] = 0u64;
+                                        c.g[S0][0] = 0u64;
+                                        call_ptr(c, 0x003e1bb8, 0x0027b2d4)?;
+                                        let t = true;
+                                        if c.g[V0][0] != 0 {
+                                            c.g[S0][0] = c.g[S3][0];
+                                        }
+                                        if t {
+                                            break 'b_27b2fc;
+                                        } else {
+                                            break 'b_27b2dc;
+                                        }
+                                    }
+                                }
+                                c.cycles += 5;
+                                c.g[A0][0] = c.g[S2][0];
+                                call_ptr(c, 0x003e1908, 0x0027b2e4)?;
+                                c.g[S0][0] = c.g[V0][0];
+                                let t = c.g[S0][0] == 0u64;
+
+                                if t {
+                                    break 'b_27b304;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[A0][0] = c.g[S2][0];
+                                    call_ptr(c, 0x00317f98, 0x0027b2f8)?;
+                                    c.g[S5][0] = c.g[V0][0];
+                                    break 'b_27b2fc;
+                                }
+                            }
+                            c.cycles += 2;
+                            if c.g[S0][0] != 0u64 {
+                                c.sw((c.g[S4][0] as u32).wrapping_add(0xa48), c.g[S6][0]);
+                                break 'b_27b314;
+                            } else {
+                                break 'b_27b304;
+                            }
+                        }
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[S1][0];
+                        Callee {
+                            addr: 0x00277f08,
+                            f: ee::s07::ScriptBankSlot_Clear,
+                        }
+                        .call(c, 0x0027b30c)?;
+                        let t = true;
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+                        if t {
+                            break 'b_27b348;
+                        } else {
+                            break 'b_27b314;
+                        }
+                    }
+                    c.cycles += 11;
+                    c.g[A1][0] = c.g[S2][0];
+                    c.g[A2][0] = c.g[S0][0];
+                    c.g[A3][0] = c.g[S5][0];
+                    c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(0x51c));
+                    Callee {
+                        addr: 0x00275920,
+                        f: ee::s07::DataInstanceMan_AddData,
+                    }
+                    .call(c, 0x0027b328)?;
+                    c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+                    c.g[V1][0] = 0x1;
+                    c.g[V0][0] = 0xa;
+                    c.sw((c.g[S4][0] as u32).wrapping_add(0xa48), c.g[V0][0]);
+                    let t = c.g[S3][0] == 0u64;
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+                    if t {
+                        break 'b_27b344;
+                    } else {
+                        c.cycles += 1;
+                        c.sw((c.g[S1][0] as u32).wrapping_add(0xc), 0u64);
+                        break 'b_27b344;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+            break 'b_27b348;
+        }
+        c.cycles += 9;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        return Ok(());
+        Ok(())
+    })
+}
+
+/// `void RiderScriptObj_GetAnimBankEntry(RiderScriptObj* self, int index, int* entry, int* count)`
+/// (0x280520): `*count` = field `+4` of the bank at `self + 0x1c`, `*entry` = its entry
+/// `index` (array at `+0x10`).
+pub fn rider_script_obj_get_anim_bank_entry(c: &mut Cpu) {
+    c.cycles += 10;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1c));
+    c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+    c.sw(c.g[A3][0] as u32, c.g[V1][0]);
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1c));
+    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x10));
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+    let t = c.g[RA][0] as u32;
+    c.sw(c.g[A2][0] as u32, c.g[V0][0]);
+    c.pc = t;
+}
+
+/// `void ScriptEngine_FindSoundBank(ScriptEngine* self)` (0x279ef8): forwards to
+/// `ScriptSoundBankMan_FindBank(self + 0xa38)`.
+pub fn script_engine_find_sound_bank(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xa38));
+        Callee {
+            addr: 0x002836d8,
+            f: ee::s07::ScriptSoundBankMan_FindBank,
+        }
+        .call(c, 0x00279f08)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `int ScriptRider_GetParams(ScriptRider *self)` (0x27c958): the word at
+/// `+0x20`.
+pub fn script_rider_get_params(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = Addr(r32(c, A0).wrapping_add(0x20)).lw(c);
+    ret(c);
+}
+
+/// `void *ScriptData_GetBankList(ScriptData *d)` (0x27c078):
+/// `InSeq_GetHeaderExtra(d)`.
+pub fn script_data_get_bank_list(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(oc435_callee!(0x0027_4c38, ee::s07::InSeq_GetHeaderExtra)),
+        0x0027_c088,
+    )
+}
+
+/// `ScriptEngine_GetInstanceScript(engine, inst)` (0x27a668):
+/// `ScriptEngine_GetSeqProcessScript(engine, inst)`.
+pub fn script_engine_get_instance_script(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(oc435_callee!(
+            0x0028_2bb0,
+            ee::s07::ScriptEngine_GetSeqProcessScript
+        )),
+        0x0027_a678,
+    )
+}
+
+/// `ScriptEngine_FindAnimBank(engine, id)` (0x279ed8):
+/// `ScriptAnimBankMan_FindBank(engine + 0xa28, id)`.
+pub fn script_engine_find_anim_bank(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0xa28));
+        oc435_callee!(0x0027_5718, ee::s07::ScriptAnimBankMan_FindBank).call(c, 0x0027_9ee8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void ScriptEngine_UnloadScriptBank(int id)` (0x279888): find the bank
+/// slot of `id` (`FindBankSlotById(id, ?, 2)`); when it is found (>= 0),
+/// `ScriptEngine_UnloadBank(id, slot)`.
+pub fn oc436_script_engine_unload_script_bank(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        c.g[A2][0] = 2;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0027_b578, 0x0027_98a0)?;
+        let not_found = (c.g[V0][0] as i64) < 0;
+        c.g[A0][0] = c.g[S0][0];
+        if !not_found {
+            c.cycles += 2;
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, 0x0027_b410, 0x0027_98b0)?;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void ScriptViewObj_SetViewIndex(ScriptViewObj* o, int i)` (0x281160):
+/// `o->view_index (+0xf8) = i`.
+pub fn script_view_obj_set_view_index(c: &mut Cpu) {
+    c.cycles += 2;
+    {
+        let v = c.g[A1][0];
+        Addr((c.g[A0][0] as u32).wrapping_add(0xf8)).sw(c, v);
+    }
+    ret(c);
+}
+
+/// `void ScriptObjCam_SetOwner(ScriptObjCam* o, int owner)` (0x27d680):
+/// `o->owner (+0x10) = owner`.
+pub fn script_obj_cam_set_owner(c: &mut Cpu) {
+    c.cycles += 2;
+    {
+        let v = c.g[A1][0];
+        Addr((c.g[A0][0] as u32).wrapping_add(0x10)).sw(c, v);
+    }
+    ret(c);
+}
+
+// -- Trivial leaves -----------------------------------------------------------
+
+/// `void ScriptEngine_ClearSkipDelayOnEnter(ScriptEngine* self)` (0x278710):
+/// `self->skip_delay_on_enter = 0` (+0x554).
+pub fn script_engine_clear_skip_delay_on_enter(c: &mut Cpu) {
+    c.cycles += 2;
+    let this = c.g[A0][0] as u32;
+    c.sw(this.wrapping_add(0x554), 0);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
+    use crate::game::main::game::tests::fake_get_be;
+    use crate::game::main::game::tests::PREV_GET_BE;
+    use crate::game::main::game::tests::{fake_be_get_interface, PREV_BE_GET_INTERFACE};
+    use crate::game::main::gamestate::tests::{
+        fake_async_file_assign_serial, fake_bxstring_assign, fake_bxstring_ctor_cstr,
+        fake_bxstring_dtor, fake_bxstring_plus_cstr_str, fake_bxstring_plus_str_cstr,
+        fake_eafile_queue_open, fake_eafile_set_request_callback, fake_eamutex_lock,
+        fake_eamutex_unlock, fake_get_track_info, fake_script_load_bank_async,
+        PREV_ASYNC_FILE_ASSIGN_SERIAL, PREV_BXSTRING_ASSIGN, PREV_BXSTRING_CTOR_CSTR,
+        PREV_BXSTRING_DTOR, PREV_BXSTRING_PLUS_CSTR_STR, PREV_BXSTRING_PLUS_STR_CSTR,
+        PREV_EAFILE_QUEUE_OPEN, PREV_EAFILE_SET_REQUEST_CALLBACK, PREV_EAMUTEX_LOCK,
+        PREV_EAMUTEX_UNLOCK, PREV_GET_TRACK_INFO, PREV_SCRIPT_LOAD_BANK_ASYNC,
+    };
 
     use crate::game::animation::animmodel::tests::oc427_install_fakes;
 
@@ -17095,6 +17879,576 @@ pub(crate) mod tests {
                 c.bus.write32(world + 0x84, focus1);
                 c.bus.write32(focus1 + 0xc, focus2);
                 c.bus.write32(focus2 + 0xa4, r.next_u32());
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ai::tests::oc434_setup;
+    pub(crate) use crate::game::ai::ai::tests::oc434_w;
+    pub(crate) use crate::game::ai::ai::tests::OC432_CTRL;
+    pub(crate) use crate::game::ai::ai::tests::OC432_MAGIC;
+
+    pub(crate) use crate::game::world::world::tests::w_2 as w_6;
+    pub(crate) use crate::game::world::world::tests::BASE_2 as BASE;
+    pub(crate) use crate::game::world::world::tests::SEEDS_4 as SEEDS_16;
+
+    /// `ScriptEngine_LoadWorldScripts`: the string operations, track info and
+    /// bank load are fakes; the async file open (`0x3df690`) runs real on a
+    /// fixture file pool that is empty or has a free node, with a queue-open
+    /// that fails or not.
+    #[test]
+    fn script_engine_load_world_scripts_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+            fake_get_be,
+            &PREV_GET_BE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+            fake_be_get_interface,
+            &PREV_BE_GET_INTERFACE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_00144BC0),
+            fake_get_track_info,
+            &PREV_GET_TRACK_INFO,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003182D8),
+            fake_bxstring_ctor_cstr,
+            &PREV_BXSTRING_CTOR_CSTR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003186D0),
+            fake_bxstring_plus_cstr_str,
+            &PREV_BXSTRING_PLUS_CSTR_STR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00318630),
+            fake_bxstring_plus_str_cstr,
+            &PREV_BXSTRING_PLUS_STR_CSTR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00318260),
+            fake_bxstring_dtor,
+            &PREV_BXSTRING_DTOR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00318448),
+            fake_bxstring_assign,
+            &PREV_BXSTRING_ASSIGN,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0027B370),
+            fake_script_load_bank_async,
+            &PREV_SCRIPT_LOAD_BANK_ASYNC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E5700),
+            fake_eamutex_lock,
+            &PREV_EAMUTEX_LOCK,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E5760),
+            fake_eamutex_unlock,
+            &PREV_EAMUTEX_UNLOCK,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003DEF40),
+            fake_async_file_assign_serial,
+            &PREV_ASYNC_FILE_ASSIGN_SERIAL,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003DD4E8),
+            fake_eafile_queue_open,
+            &PREV_EAFILE_QUEUE_OPEN,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003DCF70),
+            fake_eafile_set_request_callback,
+            &PREV_EAFILE_SET_REQUEST_CALLBACK,
+        );
+        fakes::covered(
+            ee::s07::f_00278b98__generated,
+            script_engine_load_world_scripts,
+            160,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x278b98, 16);
+                c.bus.write32(OC432_CTRL, OC432_MAGIC);
+                c.bus
+                    .write32(OC432_CTRL + 0x24, (r.next_u32() % 3 == 0) as u32);
+                let this = DATA + 0x5_0000;
+                c.g[A0][0] = this as u64;
+                c.bus.write32(this + 0x620, r.next_u32() % 4);
+                // The async file pool (0x519bf8): a free node or none.
+                let node = DATA + 0x5_a000;
+                c.bus
+                    .write32(0x0051_9bf8, if r.next_u32() % 3 == 0 { 0 } else { node });
+                c.bus.write32(node + 4, 0);
+                c.bus.write32(node, r.next_u32());
+            },
+        );
+    }
+
+    /// Fixture controls (above the fakes' log, `DATA + 0x200000`).
+    pub(crate) const OC433_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC433_MAGIC: u32 = 0x0c43_3c43;
+
+    /// Forced results of fake callees: one 0x40-byte slot per callee address.
+    pub(crate) const OC433_FORCE: u32 = OC433_CTRL + 0x100;
+
+    /// Fixture objects live here: above the zeroed region the fakes' pointer
+    /// results fall in (`DATA..DATA + 0x40000`).
+    pub(crate) const OC433_FIX: u32 = DATA + 0x4_0000;
+
+    /// A 32-bit word of test data.
+    pub(crate) fn oc433_w(c: &mut Cpu, a: u32, v: u32) {
+        c.bus.write32(a, v);
+    }
+
+    /// A word at `gp + off`.
+    pub(crate) fn oc433_gp(c: &mut Cpu, off: i32, v: u32) {
+        c.bus.write32((GAME_GP as i32 + off) as u32, v);
+    }
+
+    pub(crate) fn oc433_slot(addr: u32) -> u32 {
+        OC433_FORCE + ((addr >> 2) % 0x3fd) * 0x40
+    }
+
+    /// Force the results (`v0`, sign-extended) of the successive calls of fake
+    /// callee `addr` (the last value repeats).
+    pub(crate) fn oc433_force(c: &mut Cpu, addr: u32, vals: &[i32]) {
+        let s = oc433_slot(addr);
+        c.bus.write32(s, vals.len() as u32);
+        c.bus.write32(s + 4, 0);
+        for (i, v) in vals.iter().enumerate() {
+            c.bus.write32(s + 8 + 4 * i as u32, *v as u32);
+        }
+    }
+
+    /// A fake callee: log (`fakes::fake`), then the forced result if any.
+    pub(crate) fn oc433_fake_call(c: &mut Cpu, addr: u32, ra: u32) {
+        fakes::fake(c, addr, ra);
+        if c.pc != ra {
+            return;
+        }
+        let s = oc433_slot(addr);
+        let n = c.bus.read32(s);
+        if n != 0 {
+            let i = c.bus.read32(s + 4);
+            c.bus.write32(s + 4, i + 1);
+            let v = c.bus.read32(s + 8 + 4 * i.min(n - 1));
+            c.g[V0][0] = sx(v);
+        }
+    }
+
+    macro_rules! oc433_fakes {
+        ($(($name:ident, $addr:expr, $shard:ident, $slot:ident, $gen:ident)),* $(,)?) => {
+            $(
+                pub(crate) fn $name(c: &mut Cpu) {
+                    if c.bus.read32(OC433_CTRL) != OC433_MAGIC {
+                        return fakes::fall_back(c, fakes::prev_cell($name), ee::$shard::$gen);
+                    }
+                    let ra = c.g[RA][0] as u32;
+                    oc433_fake_call(c, $addr, ra);
+                }
+            )*
+
+            /// Hooks the gated fakes into the callees' override slots (once
+            /// per process; with the gate off they run what the slots held).
+            fn oc433_install_fakes() {
+                $( fakes::hook(addr_of_mut!(ee::$shard::$slot), $name, fakes::prev_cell($name)); )*
+            }
+        };
+    }
+
+    oc433_fakes! {
+        (oc433_fake_00101310, 0x0010_1310, s00, OVERRIDE_00101310, f_00101310__generated),
+        (oc433_fake_001033b0, 0x0010_33b0, s00, OVERRIDE_001033B0, f_001033b0__generated),
+        (oc433_fake_00113b10, 0x0011_3b10, s00, OVERRIDE_00113B10, f_00113b10__generated),
+        (oc433_fake_00144bc0, 0x0014_4bc0, s01, OVERRIDE_00144BC0, f_00144bc0__generated),
+        (oc433_fake_00145dd0, 0x0014_5dd0, s01, OVERRIDE_00145DD0, f_00145dd0__generated),
+        (oc433_fake_0014dc80, 0x0014_dc80, s01, OVERRIDE_0014DC80, f_0014dc80__generated),
+        (oc433_fake_0014dd58, 0x0014_dd58, s01, OVERRIDE_0014DD58, f_0014dd58__generated),
+        (oc433_fake_0014de68, 0x0014_de68, s01, OVERRIDE_0014DE68, f_0014de68__generated),
+        (oc433_fake_0015cd80, 0x0015_cd80, s01, OVERRIDE_0015CD80, f_0015cd80__generated),
+        (oc433_fake_0015cf80, 0x0015_cf80, s01, OVERRIDE_0015CF80, f_0015cf80__generated),
+        (oc433_fake_0015d698, 0x0015_d698, s01, OVERRIDE_0015D698, f_0015d698__generated),
+        (oc433_fake_0015e030, 0x0015_e030, s01, OVERRIDE_0015E030, f_0015e030__generated),
+        (oc433_fake_001619a8, 0x0016_19a8, s01, OVERRIDE_001619A8, f_001619a8__generated),
+        (oc433_fake_00161a60, 0x0016_1a60, s01, OVERRIDE_00161A60, f_00161a60__generated),
+        (oc433_fake_00162060, 0x0016_2060, s01, OVERRIDE_00162060, f_00162060__generated),
+        (oc433_fake_00162310, 0x0016_2310, s01, OVERRIDE_00162310, f_00162310__generated),
+        (oc433_fake_00168fe8, 0x0016_8fe8, s02, OVERRIDE_00168FE8, f_00168fe8__generated),
+        (oc433_fake_00176d68, 0x0017_6d68, s02, OVERRIDE_00176D68, f_00176d68__generated),
+        (oc433_fake_002300f0, 0x0023_00f0, s06, OVERRIDE_002300F0, f_002300f0__generated),
+        (oc433_fake_00233aa0, 0x0023_3aa0, s06, OVERRIDE_00233AA0, f_00233aa0__generated),
+        (oc433_fake_00234be8, 0x0023_4be8, s06, OVERRIDE_00234BE8, f_00234be8__generated),
+        (oc433_fake_00238510, 0x0023_8510, s06, OVERRIDE_00238510, f_00238510__generated),
+        (oc433_fake_0026d5e8, 0x0026_d5e8, s07, OVERRIDE_0026D5E8, f_0026d5e8__generated),
+        (oc433_fake_0026f228, 0x0026_f228, s07, OVERRIDE_0026F228, f_0026f228__generated),
+        (oc433_fake_0026f7b8, 0x0026_f7b8, s07, OVERRIDE_0026F7B8, f_0026f7b8__generated),
+        (oc433_fake_00272cc0, 0x0027_2cc0, s07, OVERRIDE_00272CC0, f_00272cc0__generated),
+        (oc433_fake_00275920, 0x0027_5920, s07, OVERRIDE_00275920, f_00275920__generated),
+        (oc433_fake_00276868, 0x0027_6868, s07, OVERRIDE_00276868, f_00276868__generated),
+        (oc433_fake_00277450, 0x0027_7450, s07, OVERRIDE_00277450, f_00277450__generated),
+        (oc433_fake_00277598, 0x0027_7598, s07, OVERRIDE_00277598, f_00277598__generated),
+        (oc433_fake_002776e0, 0x0027_76e0, s07, OVERRIDE_002776E0, f_002776e0__generated),
+        (oc433_fake_00277778, 0x0027_7778, s07, OVERRIDE_00277778, f_00277778__generated),
+        (oc433_fake_00277dd8, 0x0027_7dd8, s07, OVERRIDE_00277DD8, f_00277dd8__generated),
+        (oc433_fake_00277f08, 0x0027_7f08, s07, OVERRIDE_00277F08, f_00277f08__generated),
+        (oc433_fake_00279370, 0x0027_9370, s07, OVERRIDE_00279370, f_00279370__generated),
+        (oc433_fake_0027bf90, 0x0027_bf90, s07, OVERRIDE_0027BF90, f_0027bf90__generated),
+        (oc433_fake_0027cc28, 0x0027_cc28, s07, OVERRIDE_0027CC28, f_0027cc28__generated),
+        (oc433_fake_0027d0c0, 0x0027_d0c0, s07, OVERRIDE_0027D0C0, f_0027d0c0__generated),
+        (oc433_fake_0027d2e8, 0x0027_d2e8, s07, OVERRIDE_0027D2E8, f_0027d2e8__generated),
+        (oc433_fake_00281a50, 0x0028_1a50, s07, OVERRIDE_00281A50, f_00281a50__generated),
+        (oc433_fake_00282540, 0x0028_2540, s07, OVERRIDE_00282540, f_00282540__generated),
+        (oc433_fake_00282798, 0x0028_2798, s07, OVERRIDE_00282798, f_00282798__generated),
+        (oc433_fake_00283430, 0x0028_3430, s07, OVERRIDE_00283430, f_00283430__generated),
+        (oc433_fake_00283440, 0x0028_3440, s07, OVERRIDE_00283440, f_00283440__generated),
+        (oc433_fake_00283818, 0x0028_3818, s07, OVERRIDE_00283818, f_00283818__generated),
+        (oc433_fake_00283d28, 0x0028_3d28, s07, OVERRIDE_00283D28, f_00283d28__generated),
+        (oc433_fake_00283d70, 0x0028_3d70, s07, OVERRIDE_00283D70, f_00283d70__generated),
+        (oc433_fake_00288ae0, 0x0028_8ae0, s07, OVERRIDE_00288AE0, f_00288ae0__generated),
+        (oc433_fake_0028b180, 0x0028_b180, s07, OVERRIDE_0028B180, f_0028b180__generated),
+        (oc433_fake_002ad5f0, 0x002a_d5f0, s08, OVERRIDE_002AD5F0, f_002ad5f0__generated),
+        (oc433_fake_00308988, 0x0030_8988, s10, OVERRIDE_00308988, f_00308988__generated),
+        (oc433_fake_00308c60, 0x0030_8c60, s10, OVERRIDE_00308C60, f_00308c60__generated),
+        (oc433_fake_00308f38, 0x0030_8f38, s10, OVERRIDE_00308F38, f_00308f38__generated),
+        (oc433_fake_00309e50, 0x0030_9e50, s10, OVERRIDE_00309E50, f_00309e50__generated),
+        (oc433_fake_0030b058, 0x0030_b058, s10, OVERRIDE_0030B058, f_0030b058__generated),
+        (oc433_fake_0030b928, 0x0030_b928, s10, OVERRIDE_0030B928, f_0030b928__generated),
+        (oc433_fake_0030c390, 0x0030_c390, s10, OVERRIDE_0030C390, f_0030c390__generated),
+        (oc433_fake_0030c738, 0x0030_c738, s10, OVERRIDE_0030C738, f_0030c738__generated),
+        (oc433_fake_00316898, 0x0031_6898, s10, OVERRIDE_00316898, f_00316898__generated),
+        (oc433_fake_00317670, 0x0031_7670, s10, OVERRIDE_00317670, f_00317670__generated),
+        (oc433_fake_00317d70, 0x0031_7d70, s10, OVERRIDE_00317D70, f_00317d70__generated),
+        (oc433_fake_00317e30, 0x0031_7e30, s10, OVERRIDE_00317E30, f_00317e30__generated),
+        (oc433_fake_00326c60, 0x0032_6c60, s10, OVERRIDE_00326C60, f_00326c60__generated),
+        (oc433_fake_00370018, 0x0037_0018, s12, OVERRIDE_00370018, f_00370018__generated),
+        (oc433_fake_003705e0, 0x0037_05e0, s12, OVERRIDE_003705E0, f_003705e0__generated),
+        (oc433_fake_0039f840, 0x0039_f840, s13, OVERRIDE_0039F840, f_0039f840__generated),
+        (oc433_fake_003a8528, 0x003a_8528, s13, OVERRIDE_003A8528, f_003a8528__generated),
+        (oc433_fake_003a9800, 0x003a_9800, s13, OVERRIDE_003A9800, f_003a9800__generated),
+        (oc433_fake_003a9858, 0x003a_9858, s13, OVERRIDE_003A9858, f_003a9858__generated),
+        (oc433_fake_003e6448, 0x003e_6448, s14, OVERRIDE_003E6448, f_003e6448__generated),
+        (oc433_fake_003e6574, 0x003e_6574, s14, OVERRIDE_003E6574, f_003e6574__generated),
+        (oc433_fake_00417828, 0x0041_7828, s15, OVERRIDE_00417828, f_00417828__generated),
+    }
+
+    /// Run `hand` against the generated body (`generated`, entered at `entry`)
+    /// over `seeds` fixtures: scrambled registers, the gated fakes on, the
+    /// BELibrary dummy set, and `setup` for the function's own data. `calls`
+    /// is the most fake calls a path makes (the unwind index is drawn below it).
+    pub(crate) fn oc433_run(
+        generated: GuestFn,
+        hand: GuestFn,
+        entry: u32,
+        calls: u32,
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, &mut Rng, u32),
+    ) {
+        oc433_install_fakes();
+        fakes::covered(generated, hand, seeds, &|c, seed| {
+            let mut r = machine(c, seed, entry as u64, calls);
+            c.bus.write32(OC433_CTRL, OC433_MAGIC);
+            c.bus.write32(GAME_GP - 0x1f04, DATA + 0x8000);
+            c.pc = entry;
+            setup(c, &mut r, seed);
+        });
+    }
+
+    /// `ScriptAudioObj_Deactivate` against the generated body: 0..3 audio
+    /// events, the audio flag, four handle triples (some negative), and the
+    /// audio-fields reader's flag word.
+    #[test]
+    fn script_audio_obj_deactivate_matches() {
+        oc433_run(
+            ee::s07::f_002807b0__generated,
+            script_audio_obj_deactivate,
+            0x0028_07b0,
+            14,
+            120,
+            &|c, r, seed| {
+                let f = OC433_FIX;
+                let this = f + 0x1000;
+                fill(c, r, this + 0x1c, 8);
+                for k in 0..12u32 {
+                    let v = if k % 3 == 0 && r.next_u32() % 3 == 0 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % 9
+                    };
+                    oc433_w(c, this + 0xbc + 4 * k, v);
+                }
+                oc433_w(c, this + 0x8, f + 0x1800);
+                oc433_w(
+                    c,
+                    this + 0xec,
+                    [-1i32, 0, 1, 2, 3, 3][(seed % 6) as usize] as u32,
+                );
+                oc433_w(c, this + 0xf0, (seed / 6) % 2);
+                oc433_gp(c, 0xce8, f + 0x1900);
+                oc433_w(c, SP - 0xa0 + 0x24, if seed % 3 == 0 { 0 } else { 1 });
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    /// `ScriptViewObj_Activate` against the generated body: the sequence
+    /// playing or not (forced result), unwinds in every call.
+    #[test]
+    fn script_view_obj_activate_matches() {
+        oc433_run(
+            ee::s07::f_00281370__generated,
+            script_view_obj_activate_2,
+            0x0028_1370,
+            7,
+            60,
+            &|c, r, seed| {
+                let f = OC433_FIX;
+                let (this, engine, app, world, rider_tab) =
+                    (f + 0x1000, f + 0x1100, f + 0x1200, f + 0x1300, f + 0x1400);
+                oc433_gp(c, -0x84c, engine);
+                oc433_gp(c, -0x848, app);
+                oc433_w(c, app + 0x84, world);
+                oc433_w(c, world + 0xc, rider_tab);
+                fill(c, r, rider_tab + 0xa4, 1);
+                oc433_w(c, this + 4, r.next_u32());
+                oc433_force(c, 0x0027_9370, &[(seed % 2) as i32]);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    /// `ScriptEngine_ListStop` against the generated body: the stopped list is
+    /// the playing one (script mode left) or not.
+    #[test]
+    fn script_engine_list_stop_matches() {
+        oc433_run(
+            ee::s07::f_002790a0__generated,
+            script_engine_list_stop_2,
+            0x0027_90a0,
+            2,
+            60,
+            &|c, r, seed| {
+                let this = OC433_FIX + 0x1000;
+                let i = seed % 4;
+                oc433_w(c, this + 0x54c, OC433_FIX + 0x2000);
+                oc433_w(
+                    c,
+                    this + 0x550,
+                    if seed % 3 == 0 { r.next_u32() } else { i },
+                );
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = i as u64;
+            },
+        );
+    }
+
+    /// `ScriptEngine_LoadBankSync` against the generated body, for a bank
+    /// slot that is already in use (the early exit). The loading paths call
+    /// `FILE_loadz` / `FILE_loadatz` (the real EA file layer, which reaches the
+    /// disc and cannot be bounded on fixture data), so they are not covered by
+    /// this test.
+    #[test]
+    fn script_engine_load_bank_sync_matches() {
+        check(
+            ee::s07::f_0027b268__generated,
+            script_engine_load_bank_sync,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x27b268, 0);
+                let this = OC433_FIX + 0x1000;
+                let bank = seed % 4;
+                oc433_w(c, this + (bank << 4) + 0x628, 1 + (r.next_u32() & 0xffff));
+                c.pc = 0x0027_b268;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = bank as u64;
+            },
+        );
+    }
+
+    /// `RiderScriptObj_GetAnimBankEntry`: a leaf; reads two fields of the bank.
+    #[test]
+    fn rider_script_obj_get_anim_bank_entry_matches() {
+        check(
+            ee::s07::f_00280520__generated,
+            rider_script_obj_get_anim_bank_entry,
+            32,
+            &|c, seed| {
+                let mut r = oc434_setup(c, seed, 0x280520, 0, 0x0028_0520);
+                let (obj, bank, entries) = (DATA + 0x100, DATA + 0x200, DATA + 0x300);
+                c.g[A0][0] = obj as u64;
+                c.g[A1][0] = (seed % 5) as u64;
+                c.g[A2][0] = (DATA + 0x400) as u64;
+                c.g[A3][0] = (DATA + 0x410) as u64;
+                oc434_w(c, obj + 0x1c, bank);
+                oc434_w(c, bank + 4, r.next_u32());
+                oc434_w(c, bank + 0x10, entries);
+                for i in 0..5 {
+                    oc434_w(c, entries + 4 * i, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// `ScriptEngine_FindSoundBank`: one forwarded call.
+    #[test]
+    fn script_engine_find_sound_bank_matches() {
+        fakes::covered(
+            ee::s07::f_00279ef8__generated,
+            script_engine_find_sound_bank,
+            12,
+            &|c, seed| {
+                let mut r = oc434_setup(c, seed, 0x279ef8, 1, 0x0027_9ef8);
+                c.g[A0][0] = (DATA + (r.next_u32() & 0xf_f000)) as u64;
+            },
+        );
+    }
+
+    /// `ScriptRider_GetParams`: the word at `+0x20`.
+    #[test]
+    fn script_rider_get_params_matches() {
+        check(
+            ee::s07::f_0027c958__generated,
+            script_rider_get_params,
+            SEEDS_16,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x27c958, 0);
+                let this = BASE + 0x100;
+                c.g[A0][0] = this as u64;
+                w_6(c, this + 0x20, r.next_u32());
+            },
+        );
+    }
+
+    /// `ScriptData_GetBankList`: `InSeq_GetHeaderExtra` on the data (the
+    /// header's version halfword at `+2` decides).
+    #[test]
+    fn script_data_get_bank_list_matches() {
+        check(
+            ee::s07::f_0027c078__generated,
+            script_data_get_bank_list,
+            SEEDS_16,
+            &|c, seed| {
+                machine(c, seed, 0x27c078, 0);
+                c.g[A0][0] = (BASE + 0x100) as u64;
+                c.bus.write16(BASE + 0x102, (seed % 20) as u16);
+            },
+        );
+    }
+
+    /// `ScriptEngine_GetInstanceScript`: `ScriptEngine_GetSeqProcessScript`
+    /// reads `inst->+0xc->+0xc`.
+    #[test]
+    fn script_engine_get_instance_script_matches() {
+        check(
+            ee::s07::f_0027a668__generated,
+            script_engine_get_instance_script,
+            SEEDS_16,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x27a668, 0);
+                let (inst, mid) = (BASE + 0x100, BASE + 0x200);
+                c.g[A1][0] = inst as u64;
+                w_6(c, inst + 0xc, mid);
+                w_6(c, mid + 0xc, r.next_u32());
+            },
+        );
+    }
+
+    /// `ScriptEngine_FindAnimBank`: `ScriptAnimBankMan_FindBank` on the bank
+    /// manager at `engine + 0xa28` (0x14-byte bank entries, live flag at +8).
+    #[test]
+    fn script_engine_find_anim_bank_matches() {
+        check(
+            ee::s07::f_00279ed8__generated,
+            script_engine_find_anim_bank,
+            SEEDS_16,
+            &|c, seed| {
+                machine(c, seed, 0x279ed8, 0);
+                let engine = BASE + 0x1000;
+                let mgr = engine + 0xa28;
+                let banks = BASE + 0x4000;
+                let count: u32 = [0, 1, 2, 6, 0x8000_0000][seed as usize % 5];
+                w_6(c, mgr + 4, count);
+                w_6(c, mgr + 8, banks);
+                for i in 0..6u32 {
+                    let e = banks + 0x14 * i;
+                    w_6(c, e, i);
+                    w_6(c, e + 8, if i == 2 || i == 4 { 0 } else { 1 });
+                }
+                c.g[A0][0] = engine as u64;
+                c.g[A1][0] = [0u64, 2, 4, 5, 9][seed as usize % 5];
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::rider::tests::oc436_machine;
+    pub(crate) use crate::game::ai::rider::tests::OC436_BANK_RESULT;
+
+    pub(crate) use crate::game::animation::gameanimmap::tests::oc438_leaf;
+    pub(crate) use crate::game::camera::camera::tests::SEEDS_5 as SEEDS_17;
+    pub(crate) use crate::game::replay::replaycache::tests::oc436_word;
+
+    /// `ScriptEngine_UnloadScriptBank`: the bank slot found (>= 0), not found
+    /// (-1 or any negative) and a fake that unwinds.
+    #[test]
+    fn oc436_script_engine_unload_script_bank_matches() {
+        covered(
+            ee::s07::f_00279888__generated,
+            oc436_script_engine_unload_script_bank,
+            SEEDS_17,
+            &|c, seed| {
+                let mut r = oc436_machine(c, seed, 0x279888, 2);
+                let slot = match seed % 3 {
+                    0 => 0xffff_ffff,
+                    1 => 0x8000_0000 | r.next_u32(),
+                    _ => r.next_u32() & 0x7fff_ffff,
+                };
+                c.bus.write32(OC436_BANK_RESULT, slot);
+                c.g[A0][0] = sx(oc436_word(&mut r));
+            },
+        );
+    }
+
+    #[test]
+    fn script_view_obj_set_view_index_matches() {
+        oc438_leaf(
+            ee::s07::f_00281160__generated,
+            script_view_obj_set_view_index,
+            0x0028_1160,
+        );
+    }
+
+    #[test]
+    fn script_obj_cam_set_owner_matches() {
+        oc438_leaf(
+            ee::s07::f_0027d680__generated,
+            script_obj_cam_set_owner,
+            0x0027_d680,
+        );
+    }
+
+    // -- trivial leaves ----------------------------------------------------------
+
+    /// `ScriptEngine_ClearSkipDelayOnEnter`: clears +0x554 whatever it held.
+    #[test]
+    fn script_engine_clear_skip_delay_on_enter_matches() {
+        check(
+            ee::s07::f_00278710__generated,
+            script_engine_clear_skip_delay_on_enter,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x2787_1000 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0027_8710;
+                let this = DATA + 0x100 * (seed % 8);
+                c.g[A0][0] = sx(this);
+                fill(c, &mut r, this + 0x550, 4);
             },
         );
     }

@@ -2,6 +2,7 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -10,6 +11,7 @@ use crate::call::Frame;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at;
 pub(crate) use crate::game::fe::feasyncfile::gp_16 as gp;
 pub(crate) use crate::game::fe::feasyncfile::lw_6 as lw;
+pub(crate) use crate::game::world::world::oc435_callee;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -45,6 +47,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_bx_string_assign_cstr,
         "cBXString_assign_cstr",
     ),
+    (0x0015_ad58, rewards_file_load_2, "RewardsFile_Load"),
 ];
 
 /// Cross-shard calls the generator emitted as `call_indirect(c, addr)`: they
@@ -409,6 +412,64 @@ pub fn rewards_file_unload(c: &mut Cpu) {
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
         c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void RewardsFile_Load(RewardsFile **out, int a1)` (0x15ad58): with `a1 == 0`
+/// reads the rewards file (size 0x317f60, buffer 0x317e30, load 0x3e1bb8) and
+/// parses it (`RewardsFile_Parse(out, data)`), result -1; otherwise starts the
+/// async bolt file acquire (0x19da10, world + 0x7c + 0x1a70); stores the
+/// result in `*out`. Frame 0x40 (s0..s2).
+pub fn rewards_file_load_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S2, 0x10);
+        frame.save(c, S0, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x20);
+        let async_load = c.g[A1][0] != 0;
+        frame.save_ra(c, 0);
+        if !async_load {
+            c.cycles += 19;
+            c.g[A0][0] = Addr(r32(c, GP).wrapping_sub(0x1e80)).lw(c);
+            call_ptr(c, 0x0031_7f60, 0x0015_ad7c)?;
+            c.g[S1][0] = c.g[V0][0];
+            c.g[A1][0] = 0x46_0000;
+            c.g[A3][0] = 0;
+            c.g[A1][0] = sx(r32(c, A1).wrapping_sub(0x5488));
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A2][0] = 0;
+            call_ptr(c, 0x0031_7e30, 0x0015_ad98)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = Addr(r32(c, GP).wrapping_sub(0x1e80)).lw(c);
+            c.g[A2][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S0][0];
+            call_ptr(c, 0x003e_1bb8, 0x0015_adac)?;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A0][0] = c.g[S2][0];
+            oc435_callee!(0x0015_a818, ee::s01::RewardsFile_Parse).call(c, 0x0015_adb8)?;
+            c.g[V0][0] = u64::MAX;
+        } else {
+            c.cycles += 9;
+            c.g[V0][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+            c.g[T0][0] = c.g[A1][0];
+            c.g[A2][0] = Addr(r32(c, GP).wrapping_sub(0x1e80)).lw(c);
+            c.g[A1][0] = 0;
+            c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x7c)).lw(c);
+            c.g[A3][0] = 0xa;
+            c.g[T1][0] = 0;
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x1a70));
+            call_ptr(c, 0x0019_da10, 0x0015_ade4)?;
+        }
+        c.cycles += 7;
+        Addr(r32(c, S2)).sw(c, c.g[V0][0]);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
         Ok(())
     })
 }

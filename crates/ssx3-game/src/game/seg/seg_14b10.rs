@@ -4,6 +4,8 @@
 use crate::abi::r32;
 use crate::abi::ret;
 use crate::call;
+use crate::call::call_ptr;
+use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
@@ -20,6 +22,11 @@ use ssx3_ee_rt::Cpu;
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0011_3b10, ai_set_race_state, "AI_SetRaceState"),
     (0x0011_6950, trick_build_name, "Trick_BuildName"),
+    (
+        0x0011_3e18,
+        race_state_end_race_enter,
+        "RaceStateEndRace_Enter",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -302,6 +309,26 @@ pub fn trick_build_name(c: &mut Cpu) {
     ret(c);
 }
 
+/// `void RaceStateEndRace_Enter()` (0x113e18): tell the game-comm object (the
+/// global at gp-0x204), if there is one, that the race ended (0x258a48).
+pub fn race_state_end_race_enter(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x204));
+        let none = c.g[A0][0] == 0;
+        frame.save_ra(c, 0);
+        if !none {
+            c.cycles += 2;
+            call_ptr(c, 0x0025_8a48, 0x0011_3e30)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -400,6 +427,37 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = out as u64;
                 c.g[A1][0] = id as u64;
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+    use crate::difftest::GAME_GP;
+
+    /// `RaceStateEndRace_Enter`: with and without the game-comm object; the
+    /// real `0x258a48` runs on an object whose timers (+0x38/+0x3c) are set
+    /// and whose state (+0x70) skips the state change.
+    #[test]
+    fn race_state_end_race_enter_matches() {
+        check(
+            ee::s00::f_00113e18__generated,
+            race_state_end_race_enter,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x1131_e180 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0011_3e18;
+                c.g[GP][0] = GAME_GP as u64;
+                let obj = DATA + 0x400;
+                c.bus
+                    .write32(GAME_GP - 0x204, if seed % 4 == 0 { 0 } else { obj });
+                c.bus.write32(obj + 0x70, 15 + r.next_u32() % 4);
+                c.bus.write32(obj + 0x38, 1 + r.next_u32() % 100);
+                c.bus.write32(obj + 0x3c, 1 + r.next_u32() % 100);
+                fill(c, &mut r, obj + 0x40, 2);
             },
         );
     }

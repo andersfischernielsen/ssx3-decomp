@@ -2,7 +2,7 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::abi::r32;
+use crate::abi::{r32, ret};
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -99,6 +99,36 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0016_cf48,
         camera_trigger_man_update_triggers,
         "CameraTriggerMan_UpdateTriggers",
+    ),
+    (
+        0x0016_ca10,
+        camera_trigger_man_empty_hook,
+        "CameraTriggerMan_EmptyHook",
+    ),
+    (
+        0x0016_ce30,
+        oc436_camera_trigger_man_reload,
+        "CameraTriggerMan_Reload",
+    ),
+    (
+        0x0016_cec8,
+        camera_trigger_man_reload_if_global,
+        "CameraTriggerMan_ReloadIf_Global",
+    ),
+    (
+        0x0016_cef0,
+        camera_trigger_man_reload_if,
+        "CameraTriggerMan_ReloadIf",
+    ),
+    (
+        0x0016_d1b8,
+        camera_trigger_man_update_triggers_mask2,
+        "CameraTriggerMan_UpdateTriggersMask2",
+    ),
+    (
+        0x0016_d200,
+        oc436_camera_trigger_stack_clear,
+        "CameraTriggerStack_Clear",
     ),
 ];
 
@@ -2185,6 +2215,148 @@ pub fn camera_trigger_man_remove_all_triggers(c: &mut Cpu) {
     })
 }
 
+/// `CameraTriggerMan.triggers` (array of trigger pointers at +0) and
+/// `.count` (+4); a trigger's mask at +0x20.
+pub(crate) const OC436_CTM_TRIGGERS: u32 = 0x0;
+
+pub(crate) const OC436_CTM_COUNT: u32 = 0x4;
+
+pub(crate) const OC436_TRIGGER_MASK: u32 = 0x20;
+
+/// `void CameraTriggerMan_Reload(CameraTriggerMan* self, data)` (0x16ce30):
+/// `Unload(self, data)`, `Parse(self, data)`, clear the mask (+0x20) of every
+/// trigger in the new array, then `UpdateTriggersMask2(self)`.
+pub fn oc436_camera_trigger_man_reload(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        call_ptr(c, 0x0016_c9b0, 0x0016_ce4c)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, 0x0016_c228, 0x0016_ce58)?;
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(OC436_CTM_COUNT));
+        let none = (c.g[V1][0] as i64) <= 0;
+        c.g[A1][0] = 0;
+        if !none {
+            c.cycles += 1;
+            c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(OC436_CTM_TRIGGERS));
+            loop {
+                c.cycles += 9;
+                c.g[V0][0] = sx((c.g[A1][0] as u32) << 2);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                c.sw((c.g[V1][0] as u32).wrapping_add(OC436_TRIGGER_MASK), 0);
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(OC436_CTM_COUNT));
+                c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V0][0] != 0 {
+                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(OC436_CTM_TRIGGERS));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0016_ce68);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        c.cycles += 7;
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, 0x0016_d1b8, 0x0016_ce94)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void CameraTriggerStack_Clear(stack)` (0x16d200): zero +0 and +4.
+pub fn oc436_camera_trigger_stack_clear(c: &mut Cpu) {
+    c.cycles += 3;
+    c.sw((c.g[A0][0] as u32).wrapping_add(4), 0);
+    let t = c.g[RA][0] as u32;
+    c.sw(c.g[A0][0] as u32, 0);
+    c.pc = t;
+}
+
+/// `void CameraTriggerMan_ReloadIf_Global(void* file, int flag)` (0x16cec8):
+/// `CameraTriggerMan_ReloadIf(&gCameraTriggerMan (0x4c5830), file, flag)`.
+pub fn camera_trigger_man_reload_if_global(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        c.g[A2][0] = c.g[A1][0];
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x4c_0000;
+        c.g[A1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5830));
+        RELOAD_IF.call(c, 0x0016_cee4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `CameraTriggerMan_ReloadIf` (0x16cef0).
+pub(crate) const RELOAD_IF: Callee = Callee {
+    addr: 0x0016_cef0,
+    f: ee::s02::CameraTriggerMan_ReloadIf,
+};
+
+/// `void CameraTriggerMan_ReloadIf(CameraTriggerMan* man, void* file, int flag)`
+/// (0x16cef0): `CameraTriggerMan_Reload(man, flag)` when `flag != 0`.
+pub fn camera_trigger_man_reload_if(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = c.g[A2][0];
+        let skip = c.g[A1][0] == 0;
+        frame.save_ra(c, 0);
+        if !skip {
+            c.cycles += 2;
+            Callee {
+                addr: 0x0016_ce30,
+                f: ee::s02::CameraTriggerMan_Reload,
+            }
+            .call(c, 0x0016_cf08)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void CameraTriggerMan_UpdateTriggersMask2(CameraTriggerMan* man)`
+/// (0x16d1b8): `CameraTriggerMan_UpdateTriggers(man, 2)`.
+pub fn camera_trigger_man_update_triggers_mask2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0x2;
+        Callee {
+            addr: 0x0016_cf48,
+            f: ee::s02::CameraTriggerMan_UpdateTriggers,
+        }
+        .call(c, 0x0016_d1c8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void CameraTriggerMan_EmptyHook()` (0x16ca10): does nothing.
+pub fn camera_trigger_man_empty_hook(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2700,6 +2872,289 @@ pub(crate) mod tests {
                             .write32(cell + 4 * (r.next_u32() % 11), 1 + r.next_u32() % 9);
                     }
                 }
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    pub(crate) use crate::game::ai::rider::tests::oc436_machine;
+
+    pub(crate) use crate::game::camera::camera::tests::SEEDS_5 as SEEDS_3;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    /// `CameraTriggerStack_Clear`: both words are cleared whatever they held.
+    #[test]
+    fn oc436_camera_trigger_stack_clear_matches() {
+        check(
+            ee::s02::f_0016d200__generated,
+            oc436_camera_trigger_stack_clear,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = Rng(0x16d2_00 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                let stack = DATA + 0x100;
+                c.g[A0][0] = sx(stack);
+                let (a, b) = (r.next_u32(), r.next_u32());
+                c.bus.write32(stack, a);
+                c.bus.write32(stack + 4, b);
+            },
+        );
+    }
+
+    /// `CameraTriggerMan_Reload`: no triggers, negative count, 1-3 triggers
+    /// (each has its mask word cleared); the callees are logged fakes
+    /// (`UpdateTriggersMask2` runs for real on top of the `UpdateTriggers`
+    /// fake).
+    #[test]
+    fn oc436_camera_trigger_man_reload_matches() {
+        covered(
+            ee::s02::f_0016ce30__generated,
+            oc436_camera_trigger_man_reload,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = oc436_machine(c, seed, 0x16ce30, 3);
+                let man = DATA + 0x1000;
+                let array = DATA + 0x1100;
+                c.g[A0][0] = sx(man);
+                c.g[A1][0] = sx(r.next_u32());
+                let count = match seed % 5 {
+                    0 => 0,
+                    1 => 0xffff_fffe,
+                    k => k - 1,
+                };
+                c.bus.write32(man + OC436_CTM_TRIGGERS, array);
+                c.bus.write32(man + OC436_CTM_COUNT, count);
+                for i in 0..4u32 {
+                    let trigger = DATA + 0x1400 + 0x40 * i;
+                    c.bus.write32(array + 4 * i, trigger);
+                    let junk = r.next_u32() | 1;
+                    c.bus.write32(trigger + OC436_TRIGGER_MASK, junk);
+                }
+            },
+        );
+    }
+
+    /// Gate word of this module's callee fakes (in the machine's own RAM).
+    pub(crate) const OC438_CTRL: u32 = DATA + 0xf_fe00;
+
+    pub(crate) const OC438_MAGIC: u32 = 0x4f43_4438;
+
+    macro_rules! oc438_gated {
+        ($name:ident, $prev:ident, $addr:expr, $gen:path) => {
+            pub(crate) static $prev: AtomicUsize = AtomicUsize::new(0);
+            pub(crate) fn $name(c: &mut Cpu) {
+                if c.bus.read32(OC438_CTRL) == OC438_MAGIC {
+                    let ra = c.g[RA][0] as u32;
+                    return fake(c, $addr, ra);
+                }
+                fall_back(c, &$prev, $gen)
+            }
+        };
+    }
+
+    oc438_gated!(
+        oc438_fake_ui_state_dtor,
+        OC438_PREV_UI_STATE_DTOR,
+        0x0039_e390,
+        ee::s13::f_0039e390__generated
+    );
+
+    oc438_gated!(
+        oc438_fake_anim_ctrl_dtor,
+        OC438_PREV_ANIM_CTRL_DTOR,
+        0x0031_1958,
+        ee::s10::f_00311958__generated
+    );
+
+    oc438_gated!(
+        oc438_fake_read_u32,
+        OC438_PREV_READ_U32,
+        0x002d_2558,
+        ee::s09::f_002d2558__generated
+    );
+
+    oc438_gated!(
+        oc438_fake_bolts_load_db,
+        OC438_PREV_BOLTS_LOAD_DB,
+        0x0014_c6a0,
+        ee::s01::f_0014c6a0__generated
+    );
+
+    oc438_gated!(
+        oc438_fake_bolts_prepare,
+        OC438_PREV_BOLTS_PREPARE,
+        0x0014_d068,
+        ee::s01::f_0014d068__generated
+    );
+
+    oc438_gated!(
+        oc438_fake_update_triggers,
+        OC438_PREV_UPDATE_TRIGGERS,
+        0x0016_cf48,
+        ee::s02::f_0016cf48__generated
+    );
+
+    oc438_gated!(
+        oc438_fake_ctm_unload,
+        OC438_PREV_CTM_UNLOAD,
+        0x0016_c9b0,
+        ee::s02::f_0016c9b0__generated
+    );
+
+    oc438_gated!(
+        oc438_fake_ctm_parse,
+        OC438_PREV_CTM_PARSE,
+        0x0016_c228,
+        ee::s02::f_0016c228__generated
+    );
+
+    pub(crate) fn oc438_install_fakes() {
+        hook(
+            addr_of_mut!(ee::s13::OVERRIDE_0039E390),
+            oc438_fake_ui_state_dtor,
+            &OC438_PREV_UI_STATE_DTOR,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00311958),
+            oc438_fake_anim_ctrl_dtor,
+            &OC438_PREV_ANIM_CTRL_DTOR,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002D2558),
+            oc438_fake_read_u32,
+            &OC438_PREV_READ_U32,
+        );
+        hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014C6A0),
+            oc438_fake_bolts_load_db,
+            &OC438_PREV_BOLTS_LOAD_DB,
+        );
+        hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014D068),
+            oc438_fake_bolts_prepare,
+            &OC438_PREV_BOLTS_PREPARE,
+        );
+        hook(
+            addr_of_mut!(ee::s02::OVERRIDE_0016CF48),
+            oc438_fake_update_triggers,
+            &OC438_PREV_UPDATE_TRIGGERS,
+        );
+        hook(
+            addr_of_mut!(ee::s02::OVERRIDE_0016C9B0),
+            oc438_fake_ctm_unload,
+            &OC438_PREV_CTM_UNLOAD,
+        );
+        hook(
+            addr_of_mut!(ee::s02::OVERRIDE_0016C228),
+            oc438_fake_ctm_parse,
+            &OC438_PREV_CTM_PARSE,
+        );
+    }
+
+    /// Fixture of a call-making function: scrambled machine, gate on, `pc` at
+    /// the entry; `calls` is how many callees it makes.
+    pub(crate) fn oc438_machine(c: &mut Cpu, seed: u32, entry: u32, calls: u32) -> Rng {
+        let r = machine(c, seed, entry as u64, calls);
+        c.pc = entry;
+        c.bus.write32(OC438_CTRL, OC438_MAGIC);
+        r
+    }
+
+    /// A `CameraTriggerMan` at `man`: trigger count at +4 (zero, negative or
+    /// 1-3), pointer array at +0 to objects in the data area.
+    pub(crate) fn oc438_man(c: &mut Cpu, r: &mut Rng, man: u32) {
+        let count = match r.next_u32() % 4 {
+            0 => 0,
+            1 => (-(r.next_u32() as i32 % 3)) as u32,
+            _ => 1 + r.next_u32() % 3,
+        };
+        let array = DATA + 0x2000;
+        c.bus.write32(man, array);
+        c.bus.write32(man + 4, count);
+        for k in 0..4 {
+            c.bus.write32(array + 4 * k, DATA + 0x3000 + 0x100 * k);
+            c.bus
+                .write32(DATA + 0x3000 + 0x100 * k + 0x20, r.next_u32());
+        }
+    }
+
+    /// `CameraTriggerMan_ReloadIf_Global`: reloads the global manager
+    /// (0x4c5830) when the flag is non-zero; Unload, Parse and UpdateTriggers
+    /// are faked.
+    #[test]
+    fn camera_trigger_man_reload_if_global_matches() {
+        oc438_install_fakes();
+        covered(
+            ee::s02::f_0016cec8__generated,
+            camera_trigger_man_reload_if_global,
+            200,
+            &|c, seed| {
+                let mut r = oc438_machine(c, seed, 0x0016_cec8, 3);
+                oc438_man(c, &mut r, 0x004c_5830);
+                c.g[A0][0] = r.next_u32() as u64;
+                c.g[A1][0] = if seed % 4 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64 | 1
+                };
+            },
+        );
+    }
+
+    /// `CameraTriggerMan_ReloadIf`: the flag in a2 off (no call) or on
+    /// (`Reload`: Unload, Parse, a loop over the triggers, UpdateTriggers).
+    #[test]
+    fn camera_trigger_man_reload_if_matches() {
+        oc438_install_fakes();
+        covered(
+            ee::s02::f_0016cef0__generated,
+            camera_trigger_man_reload_if,
+            200,
+            &|c, seed| {
+                let mut r = oc438_machine(c, seed, 0x0016_cef0, 3);
+                let man = DATA + 0x100;
+                oc438_man(c, &mut r, man);
+                c.g[A0][0] = man as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = if seed % 4 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64 | 1
+                };
+            },
+        );
+    }
+
+    /// `CameraTriggerMan_UpdateTriggersMask2`: `UpdateTriggers(man, 2)`.
+    #[test]
+    fn camera_trigger_man_update_triggers_mask2_matches() {
+        oc438_install_fakes();
+        covered(
+            ee::s02::f_0016d1b8__generated,
+            camera_trigger_man_update_triggers_mask2,
+            200,
+            &|c, seed| {
+                let mut r = oc438_machine(c, seed, 0x0016_d1b8, 1);
+                c.g[A0][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// `CameraTriggerMan_EmptyHook`: only the return.
+    #[test]
+    fn camera_trigger_man_empty_hook_matches() {
+        check(
+            ee::s02::f_0016ca10__generated,
+            camera_trigger_man_empty_hook,
+            10,
+            &|c, seed| {
+                let mut r = Rng(0x16ca_1000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0016_ca10;
             },
         );
     }

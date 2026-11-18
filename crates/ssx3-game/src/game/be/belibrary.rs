@@ -170,6 +170,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         bolts_get_char_table4_count,
         "Bolts_GetCharTable4Count",
     ),
+    (
+        0x0014_af10,
+        be_bolt_int_restore_all_equip_flags_2,
+        "BEBoltInt_RestoreAllEquipFlags",
+    ),
+    (0x0014_bd78, bolts_load_global_db, "Bolts_LoadGlobalDB"),
+    (0x0014_bd98, bolts_prepare_game_db, "Bolts_PrepareGameDB"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4089,6 +4096,130 @@ pub fn bolts_prepare_for_game(c: &mut Cpu) {
     })
 }
 
+/// `void BEBoltInt_RestoreAllEquipFlags(void)` (0x14af10): for each of the 3
+/// profiles (0x9b50 bytes apart from 0x4a6ca8) and 10 characters (0xf88
+/// each), every flag entry (count at `+0x28c`, 4-byte entries from `+0x290`,
+/// flags halfword at `+2`) gets bit 0x10 set when bit 4 is set, else
+/// cleared. The loop counters live in a0 (profile), v1 (character), a2 (entry).
+pub fn be_bolt_int_restore_all_equip_flags_2(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V0][0] = 0x4a_0000;
+    c.g[A0][0] = 0;
+    c.g[T4][0] = sx(r32(c, V0).wrapping_add(0x6ca8));
+    c.g[T5][0] = 0x9b50;
+    c.g[T3][0] = 0xf88;
+    c.mult(0, 9, 4, 13);
+    'profiles: loop {
+        c.cycles += 4;
+        c.g[V1][0] = 0;
+        c.g[T2][0] = sx(r32(c, A0).wrapping_add(1));
+        c.mult(0, 4, 3, 11);
+        'characters: loop {
+            c.cycles += 6;
+            c.g[A3][0] = sx(r32(c, V1).wrapping_add(1));
+            c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, T4)));
+            c.g[V0][0] = sx(r32(c, T1).wrapping_add(r32(c, V0)));
+            c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x28c)).lw(c);
+            let no_flags = (c.g[V1][0] as i64) <= 0;
+            c.g[A0][0] = sx(r32(c, V0).wrapping_add(0x290));
+            if !no_flags {
+                c.cycles += 2;
+                c.g[A2][0] = c.g[V1][0];
+                c.g[T0][0] = 0xffff_ffff_ffff_ffef;
+                'entries: loop {
+                    c.cycles += 6;
+                    c.g[V0][0] = Addr(r32(c, A0).wrapping_add(2)).lhu(c);
+                    c.g[A1][0] = c.g[V0][0] | 0x10;
+                    c.g[V1][0] = c.g[V0][0] & c.g[T0][0];
+                    c.g[V0][0] &= 4;
+                    let clear = c.g[V0][0] == 0;
+                    c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+                    if clear {
+                        c.cycles += 1;
+                        Addr(r32(c, A0).wrapping_add(2)).sh(c, c.g[V1][0]);
+                    } else {
+                        c.cycles += 2;
+                        Addr(r32(c, A0).wrapping_add(2)).sh(c, c.g[A1][0]);
+                    }
+                    c.cycles += 2;
+                    let more = c.g[A2][0] != 0;
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(4));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0014_af58);
+                        }
+                        continue 'entries;
+                    }
+                    break 'entries;
+                }
+            }
+            c.cycles += 4;
+            c.g[V1][0] = c.g[A3][0];
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 10) as u64;
+            let more_characters = c.g[V0][0] != 0;
+            c.mult(0, 4, 3, 11);
+            if more_characters {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0014_af38);
+                }
+                continue 'characters;
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.g[T2][0];
+            c.g[V0][0] = ((c.g[A0][0] as i64) < 3) as u64;
+            let more_profiles = c.g[V0][0] != 0;
+            c.mult(0, 9, 4, 13);
+            if more_profiles {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0014_af28);
+                }
+                continue 'profiles;
+            }
+            c.cycles += 2;
+            ret(c);
+            return;
+        }
+    }
+}
+
+/// `void Bolts_PrepareGameDB(void)` (0x14bd98): `Bolts_PrepareForGame(0x4a6750)`.
+pub fn bolts_prepare_game_db(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 0x4a_0000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6750));
+        Callee {
+            addr: 0x0014_d068,
+            f: ee::s01::Bolts_PrepareForGame,
+        }
+        .call(c, 0x0014_bdac)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Bolts_LoadGlobalDB(void)` (0x14bd78): `Bolts_LoadDB(0x4a6750)`.
+pub fn bolts_load_global_db(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 0x4a_0000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6750));
+        Callee {
+            addr: 0x0014_c6a0,
+            f: ee::s01::Bolts_LoadDB,
+        }
+        .call(c, 0x0014_bd8c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6040,6 +6171,68 @@ pub(crate) mod tests {
                     at += n * row;
                 }
                 c.bus.write32(at, r.next_u32());
+            },
+        );
+    }
+
+    pub(crate) use crate::game::world::world::tests::w_2;
+
+    /// `BEBoltInt_RestoreAllEquipFlags`: 3 profiles x 10 characters, each with
+    /// a count (0, negative or a few) of flag entries.
+    #[test]
+    fn be_bolt_int_restore_all_equip_flags_matches() {
+        check(
+            ee::s01::f_0014af10__generated,
+            be_bolt_int_restore_all_equip_flags_2,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x14af10, 0);
+                for p in 0..3u32 {
+                    for ch in 0..10u32 {
+                        let rec = 0x4a_6ca8 + p * 0x9b50 + ch * 0xf88;
+                        let count = match r.next_u32() % 8 {
+                            0 => 0,
+                            1 => 0xffff_fffe,
+                            n => n % 5,
+                        };
+                        w_2(c, rec + 0x28c, count);
+                        for i in 0..5u32 {
+                            let flags = r.next_u32();
+                            w_2(c, rec + 0x290 + 4 * i, flags);
+                        }
+                    }
+                }
+            },
+        );
+    }
+
+    pub(crate) use crate::game::camera::trigger::cameratriggerman::tests::oc438_install_fakes;
+    pub(crate) use crate::game::camera::trigger::cameratriggerman::tests::oc438_machine;
+
+    /// `Bolts_PrepareGameDB`: forwards to `Bolts_PrepareForGame` (faked).
+    #[test]
+    fn bolts_prepare_game_db_matches() {
+        oc438_install_fakes();
+        covered(
+            ee::s01::f_0014bd98__generated,
+            bolts_prepare_game_db,
+            200,
+            &|c, seed| {
+                oc438_machine(c, seed, 0x0014_bd98, 1);
+            },
+        );
+    }
+
+    /// `Bolts_LoadGlobalDB`: forwards to `Bolts_LoadDB` (faked).
+    #[test]
+    fn bolts_load_global_db_matches() {
+        oc438_install_fakes();
+        covered(
+            ee::s01::f_0014bd78__generated,
+            bolts_load_global_db,
+            200,
+            &|c, seed| {
+                oc438_machine(c, seed, 0x0014_bd78, 1);
             },
         );
     }

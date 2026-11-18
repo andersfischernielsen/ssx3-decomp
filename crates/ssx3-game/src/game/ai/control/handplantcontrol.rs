@@ -239,6 +239,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RiderHandplantState_ctor",
     ),
     (0x0014_2388, rider_wipeout_sub_ctor, "RiderWipeoutSub_ctor"),
+    (0x0014_4610, rider_anim_dtor, "RiderAnim_dtor"),
 ];
 
 /// Direct call targets, as the generated body calls them (the shard alias,
@@ -11372,6 +11373,17 @@ pub fn script_engine_eval_choice_params(c: &mut Cpu) {
     })
 }
 
+/// `void cRiderAnim::~cRiderAnim(this)` (0x144610): runs the
+/// `AnimController` destructor (0x311958) on `this`.
+pub fn rider_anim_dtor(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Table(0x0031_1958),
+        0x0014_4620,
+    );
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::abi::ret;
@@ -14890,5 +14902,23 @@ pub(crate) mod tests {
             .write32(rec + 0x50, if h >> 24 & 1 == 0 { 0 } else { obj_a });
         c.bus.write32(rec + 0x54, obj_b);
         c.bus.write32(count_ptr, count + 1);
+    }
+
+    pub(crate) use crate::game::camera::trigger::cameratriggerman::tests::oc438_install_fakes;
+    pub(crate) use crate::game::camera::trigger::cameratriggerman::tests::oc438_machine;
+
+    /// `RiderAnim_dtor`: forwards to the `AnimController` dtor (faked).
+    #[test]
+    fn rider_anim_dtor_matches() {
+        oc438_install_fakes();
+        covered(
+            ee::s01::f_00144610__generated,
+            rider_anim_dtor,
+            200,
+            &|c, seed| {
+                let mut r = oc438_machine(c, seed, 0x0014_4610, 1);
+                c.g[A0][0] = r.next_u32() as u64;
+            },
+        );
     }
 }

@@ -120,6 +120,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "SSXApp_ApplyDisplayOptions",
     ),
     (0x0022_8ee0, ssx_load_net_modules, "ssx_LoadNetModules"),
+    (0x0022_7e68, ssx_app_flush_ticks, "SSXApp_FlushTicks"),
+    (0x0022_8a78, ssx_app_load_locale, "SSXApp_LoadLocale"),
+    (0x0022_9180, crowd_man2d_ctor, "CrowdMan2d_ctor"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -4188,11 +4191,237 @@ pub fn ssx_app_init_2(c: &mut Cpu) {
     })
 }
 
+/// `void SSXApp_LoadLocale(self)` (0x228a78): makes sure the front-end locale
+/// exists (`self + 0x8c`: allocates 0xc0 bytes named "FELocale" and runs its
+/// constructor), asks the BE for interface 4, copies the 0x288-byte options
+/// block at 0x535610 to the stack and calls the locale's virtual method 3
+/// with the language (`options.word0 >> 22 & 7`), then loads the common
+/// table (`FELocale_LoadCommonTable`). Frame 0x2b0 (s0).
+pub fn ssx_app_load_locale(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x2b0);
+        frame.save(c, S0, 0x2a0);
+        frame.save_ra(c, 0x290);
+        c.g[S0][0] = c.g[A0][0];
+        let this = r32(c, S0);
+        c.g[V0][0] = c.lw(this.wrapping_add(0x8c));
+        let have_locale = c.g[V0][0] != 0;
+        c.g[A0][0] = 0xc0;
+        if !have_locale {
+            c.cycles += 8;
+            c.g[A1][0] = 0x48_0000;
+            c.g[A1][0] = sx(r32(c, A1).wrapping_sub(0x5688));
+            c.g[A2][0] = 0;
+            c.g[A3][0] = 0;
+            call_ptr(c, 0x0031_7d70, 0x0022_8aa8)?;
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x0019_5880, 0x0022_8ab0)?;
+            c.sw(this.wrapping_add(0x8c), c.g[V0][0]);
+        }
+        c.cycles += 15;
+        call_ptr(c, 0x0014_dc80, 0x0022_8abc)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 4;
+        call_ptr(c, 0x0014_dd58, 0x0022_8ac8)?;
+        c.g[A1][0] = c.lw(this.wrapping_add(0x8c));
+        c.g[V0][0] = 0x53_0000;
+        c.g[A3][0] = sx(r32(c, V0).wrapping_add(0x5610));
+        c.g[A2][0] = c.g[SP][0];
+        let locale = r32(c, A1);
+        c.g[V1][0] = c.lw(locale.wrapping_add(4));
+        c.g[A0][0] = c.g[A3][0] & 7;
+        c.g[V0][0] = c.lh(r32(c, V1).wrapping_add(0x18));
+        c.g[T0][0] = sx(r32(c, V1).wrapping_add(0x1c));
+        // 0x535610 is 8-aligned: the aligned 8-byte copy loop always runs.
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+        c.cycles += 1;
+        c.g[V0][0] = sx(r32(c, A3).wrapping_add(0x280));
+        loop {
+            c.cycles += 11;
+            let src = r32(c, A3);
+            let dst = r32(c, A2);
+            c.g[V1][0] = c.ld(src);
+            c.g[A0][0] = c.ld(src.wrapping_add(8));
+            c.g[T1][0] = c.ld(src.wrapping_add(0x10));
+            c.g[T2][0] = c.ld(src.wrapping_add(0x18));
+            c.sd(dst, c.g[V1][0]);
+            c.sd(dst.wrapping_add(8), c.g[A0][0]);
+            c.sd(dst.wrapping_add(0x10), c.g[T1][0]);
+            c.sd(dst.wrapping_add(0x18), c.g[T2][0]);
+            c.g[A3][0] = sx(src.wrapping_add(0x20));
+            let more = c.g[A3][0] != c.g[V0][0];
+            c.g[A2][0] = sx(dst.wrapping_add(0x20));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0022_8b4c);
+            }
+        }
+        c.cycles += 16;
+        c.ldl(V0, r32(c, A3).wrapping_add(7));
+        c.ldr(V0, r32(c, A3));
+        c.sdl(V0, r32(c, A2).wrapping_add(7));
+        c.sdr(V0, r32(c, A2));
+        c.g[A0][0] = c.g[A1][0];
+        c.g[V0][0] = c.lw(r32(c, T0));
+        c.g[A1][0] = c.lw(r32(c, SP));
+        c.g[A1][0] = sx(r32(c, A1) >> 22);
+        let method = r32(c, V0);
+        c.g[A1][0] &= 7;
+        call_ptr(c, method, 0x0022_8ba0)?;
+        c.g[A0][0] = c.lw(this.wrapping_add(0x8c));
+        call_ptr(c, 0x0019_5b70, 0x0022_8ba8)?;
+        frame.restore(c, S0, 0x2a0);
+        frame.restore_ra(c, 0x290);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int SSXApp_FlushTicks(void)` (0x227e68): when the pad-queue global
+/// (`gp-0x850`) is set, call the queue flush (0x326c60) and return its result,
+/// else return 0.
+#[allow(unreachable_code)]
+pub fn ssx_app_flush_ticks(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_227e88: {
+            'b_227e80: {
+                c.cycles += 4;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x850));
+                let t = c.g[A0][0] != 0u64;
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                if t {
+                    break 'b_227e80;
+                } else {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        break 'b_227e88;
+                    } else {
+                        break 'b_227e80;
+                    }
+                }
+            }
+            c.cycles += 2;
+            call_ptr(c, 0x00326c60, 0x00227e88)?;
+            break 'b_227e88;
+        }
+        c.cycles += 3;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+        Ok(())
+    })
+}
+
+/// `CrowdMan2d* CrowdMan2d_ctor(CrowdMan2d* self)` (0x229180): clears the 128 + 40
+/// id words (`-1`) of the crowd tables, publishes `self` in the global at `gp - 0x6f0`,
+/// builds the 2D crowd renderer and its animation set, sets up the first animation
+/// record (`0x536690`) and resets the manager. Returns `self`.
+pub fn crowd_man2d_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+        c.g[V1][0] = 0xffffffffffff0000;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[V1][0] = c.g[V1][0] | 0xffff;
+        c.g[S0][0] = c.g[A0][0];
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = 0x7f;
+        c.g[S1][0] = 0x530000;
+        c.g[A1][0] = 0xffffffffffffffff;
+        'l_2291b0: loop {
+            c.cycles += 7;
+            c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+            let t = c.g[A0][0] != c.g[A1][0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x002291b0);
+                }
+                continue 'l_2291b0;
+            } else {
+                c.cycles += 5;
+                c.g[V0][0] = 0x7f;
+                c.g[V1][0] = 0xffffffffffffffff;
+                c.g[V0][0] = 0x27;
+                c.g[V1][0] = 0xffffffffffffffff;
+                'l_2291e0: loop {
+                    c.cycles += 7;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    let t = c.g[V0][0] != c.g[V1][0];
+                    c.g[A2][0] = 0x20000000;
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002291e0);
+                        }
+                        continue 'l_2291e0;
+                    } else {
+                        c.cycles += 31;
+                        c.g[A1][0] = 0x480000;
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4ce0));
+                        c.g[A3][0] = 0u64;
+                        c.g[A0][0] = 0x10;
+                        c.sw((c.g[GP][0] as u32).wrapping_sub(0x6f0), c.g[S0][0]);
+                        call_ptr(c, 0x00317d70, 0x00229214)?;
+                        c.g[A0][0] = c.g[V0][0];
+                        call_ptr(c, 0x002db6d8, 0x0022921c)?;
+                        c.g[A0][0] = c.g[V0][0];
+                        c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+                        call_ptr(c, 0x002db980, 0x00229228)?;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                        c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x6690));
+                        c.g[A2][0] = 0xffffffffffffffff;
+                        c.g[A3][0] = 0x20000;
+                        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x10));
+                        c.g[A0][0] = c.g[S0][0];
+                        c.sh((c.g[V1][0] as u32).wrapping_add(0x6), c.g[A2][0]);
+                        c.sh((c.g[S1][0] as u32).wrapping_add(0x6690), c.g[A1][0]);
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0xc), c.g[A3][0]);
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x10), 0u64);
+                        c.sh((c.g[V1][0] as u32).wrapping_add(0x2), c.g[A2][0]);
+                        c.sh((c.g[V1][0] as u32).wrapping_add(0x4), c.g[A2][0]);
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x8), 0u64);
+                        Callee {
+                            addr: 0x002292e0,
+                            f: ee::s05::CrowdMan2d_Reset,
+                        }
+                        .call(c, 0x00229260)?;
+                        c.g[V0][0] = c.g[S0][0];
+                        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                        let t = c.g[RA][0] as u32;
+                        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                        c.pc = t;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::game::camera::trigger::cameratriggerlist::tests::{
+        fake_mem_alloc_named, PREV_MEM_ALLOC_NAMED,
+    };
+    use crate::game::main::game::tests::fake_get_be;
+    use crate::game::main::game::tests::PREV_GET_BE;
+    use crate::game::main::game::tests::{fake_be_get_interface, PREV_BE_GET_INTERFACE};
     use crate::game::wscript::wscriptman::tests::oc429_install_fakes;
 
     use crate::difftest::elf_image;
@@ -5898,6 +6127,121 @@ pub(crate) mod tests {
                 c.g[A0][0] = this as u64;
                 c.g[A1][0] = argc as u64;
                 c.g[A2][0] = argv as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ai::tests::oc432_fake;
+    pub(crate) use crate::game::ai::ai::tests::oc434_setup;
+    pub(crate) use crate::game::ai::ai::tests::OC432_CTRL;
+    pub(crate) use crate::game::ai::ai::tests::OC432_MAGIC;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_gp;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_run;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC433_FIX;
+
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    oc432_fake!(
+        fake_fe_locale_ctor,
+        PREV_FE_LOCALE_CTOR,
+        ee::s02::f_00195880__generated,
+        0x0019_5880,
+        |c: &mut Cpu| {
+            c.g[V0][0] = (DATA + 0x5_2000) as u64;
+        }
+    );
+
+    oc432_fake!(
+        fake_fe_locale_load_common,
+        PREV_FE_LOCALE_LOAD_COMMON,
+        ee::s02::f_00195b70__generated,
+        0x0019_5b70
+    );
+
+    /// `SSXApp_LoadLocale`: locale already there or created (the allocation
+    /// and constructor are fakes), the options block (0x535610) with random
+    /// words so every language value shows, the locale's virtual method 3 is
+    /// a fake.
+    #[test]
+    fn ssx_app_load_locale_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            fake_mem_alloc_named,
+            &PREV_MEM_ALLOC_NAMED,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_00195880),
+            fake_fe_locale_ctor,
+            &PREV_FE_LOCALE_CTOR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_00195B70),
+            fake_fe_locale_load_common,
+            &PREV_FE_LOCALE_LOAD_COMMON,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+            fake_get_be,
+            &PREV_GET_BE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+            fake_be_get_interface,
+            &PREV_BE_GET_INTERFACE,
+        );
+        fakes::covered(
+            ee::s05::f_00228a78__generated,
+            ssx_app_load_locale,
+            160,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x228a78, 8);
+                c.bus.write32(OC432_CTRL, OC432_MAGIC);
+                let this = DATA + 0x5_0000;
+                let locale = DATA + 0x5_2000;
+                let vt = DATA + 0x5_3000;
+                c.g[A0][0] = this as u64;
+                c.bus
+                    .write32(this + 0x8c, if r.next_u32() % 2 == 0 { 0 } else { locale });
+                c.bus.write32(locale + 4, vt);
+                c.bus.write16(vt + 0x18, (r.next_u32() % 16) as u16);
+                c.bus.write32(vt + 0x1c, fakes::FAKE);
+                for i in 0..(0x288 / 4) {
+                    c.bus.write32(0x0053_5610 + 4 * i, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// `SSXApp_FlushTicks` against the generated body: the pad-queue global
+    /// set (the flush call, sometimes unwinding) or clear.
+    #[test]
+    fn ssx_app_flush_ticks_matches() {
+        oc433_run(
+            ee::s05::f_00227e68__generated,
+            ssx_app_flush_ticks,
+            0x0022_7e68,
+            1,
+            40,
+            &|c, _r, seed| {
+                oc433_gp(c, -0x850, if seed % 3 == 0 { 0 } else { OC433_FIX });
+            },
+        );
+    }
+
+    /// `CrowdMan2d_ctor`: the real 2D renderer and animation constructors run (the texture
+    /// file load fails: the file queue fake returns 0), the allocations are fakes.
+    #[test]
+    fn crowd_man2d_ctor_matches() {
+        fakes::covered(
+            ee::s05::f_00229180__generated,
+            crowd_man2d_ctor,
+            16,
+            &|c, seed| {
+                let _ = oc434_setup(c, seed, 0x229180, 6, 0x0022_9180);
+                c.g[A0][0] = (DATA + 0x100) as u64;
             },
         );
     }

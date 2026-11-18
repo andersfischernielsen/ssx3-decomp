@@ -17,6 +17,7 @@ pub(crate) use crate::game::dirtysock::tagsunk::sw;
 pub(crate) use crate::game::fe::feasyncfile::p as p_4;
 pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_ACTIVATED;
 pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_IGNORED;
+pub(crate) use crate::game::fe::festatecharsetup::oc437_fe_state_dtor;
 pub(crate) use crate::game::fe::festatetrophyroom::init_state;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::p as p_3;
@@ -78,6 +79,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0019_5498,
         fe_state_bonus_material_ctor,
         "cFEStateBonusMaterial_ctor",
+    ),
+    (0x001d_e6c8, fe_state_title_dtor, "cFEStateTitle_dtor"),
+    (
+        0x001d_e728,
+        fe_state_main_menu_dtor,
+        "cFEStateMainMenu_dtor",
     ),
 ];
 
@@ -714,6 +721,16 @@ pub fn cfestatemainmenu_update(c: &mut Cpu) {
     })
 }
 
+/// `cFEStateMainMenu_dtor(this, flags)` (0x1de728).
+pub fn fe_state_main_menu_dtor(c: &mut Cpu) {
+    oc437_fe_state_dtor(c, 0x2f30, 0x001d_e744)
+}
+
+/// `cFEStateTitle_dtor(this, flags)` (0x1de6c8).
+pub fn fe_state_title_dtor(c: &mut Cpu) {
+    oc437_fe_state_dtor(c, 0x2f30, 0x001d_e6e4)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1125,5 +1142,52 @@ pub(crate) mod tests {
         assert!(title_fades_after(120, 600));
         assert!(!title_fades_after(240, 1199));
         assert!(title_fades_after(240, 1200));
+    }
+
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::oc437_covered;
+
+    pub(crate) use crate::game::fe::festatecharsetup::fe_state_char_setup_dtor;
+    pub(crate) use crate::game::fe::festateload::fe_state_event_select_dtor;
+    pub(crate) use crate::game::fe::festatetransition::fe_state_background_dtor;
+    pub(crate) use crate::game::fe::festatetransition::fe_state_transition_dtor;
+
+    /// The front-end state destructors differ in vtable constant and return address.
+    #[test]
+    fn fe_state_dtors_match() {
+        let all: [(fn(&mut Cpu), fn(&mut Cpu), u32); 6] = [
+            (
+                ee::s04::f_001de728__generated,
+                fe_state_main_menu_dtor,
+                0x001d_e728,
+            ),
+            (
+                ee::s04::f_001de6c8__generated,
+                fe_state_title_dtor,
+                0x001d_e6c8,
+            ),
+            (
+                ee::s04::f_001de668__generated,
+                fe_state_transition_dtor,
+                0x001d_e668,
+            ),
+            (
+                ee::s04::f_001de5c8__generated,
+                fe_state_background_dtor,
+                0x001d_e5c8,
+            ),
+            (
+                ee::s04::f_001de528__generated,
+                fe_state_event_select_dtor,
+                0x001d_e528,
+            ),
+            (
+                ee::s04::f_001dd8a0__generated,
+                fe_state_char_setup_dtor,
+                0x001d_d8a0,
+            ),
+        ];
+        for (generated, hand, entry) in all {
+            oc437_covered(generated, hand, entry, 1, &|_, _, _| {});
+        }
     }
 }

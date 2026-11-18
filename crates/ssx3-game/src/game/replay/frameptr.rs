@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -125,6 +126,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0026_fb88, replay_handle_input, "Replay_HandleInput"),
     (0x0026_f4a8, replay_update, "Replay_Update"),
     (0x0026_f228, replay_reset, "Replay_Reset"),
+    (0x0026_efb8, replay_ctor, "Replay_ctor"),
+    (
+        0x0026_f498,
+        replay_empty_reset_hook,
+        "Replay_EmptyResetHook",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2092,6 +2099,124 @@ pub fn replay_reset(c: &mut Cpu) {
     })
 }
 
+/// `Replay* Replay_ctor(Replay* self)` (0x26efb8): constructs the 16 replay frames (0x38
+/// bytes from `+0x2c`), the two snapshot lists (`+0x3b0`, `+0x3bc`) and the two highlight
+/// slots (0xb4 bytes from `+0x494`), enters replay state 15 and clears the two cache
+/// words at `+0x48c`. Returns `self`.
+pub fn replay_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S2][0] = c.g[A0][0];
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x2c));
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = 0xf;
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S3][0] = 0xffffffffffffffff;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        'l_26efe8: loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+            Callee {
+                addr: 0x0026d5e8,
+                f: ee::s07::WorldStateStream_ctor,
+            }
+            .call(c, 0x0026eff4)?;
+            let t = c.g[S1][0] != c.g[S3][0];
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x38));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0026efe8);
+                }
+                continue 'l_26efe8;
+            } else {
+                c.cycles += 9;
+                c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x3b0));
+                c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x494));
+                Callee {
+                    addr: 0x0026e5a8,
+                    f: ee::s07::SnapshotList_ctor,
+                }
+                .call(c, 0x0026f008)?;
+                c.g[S1][0] = 0x1;
+                c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x3bc));
+                c.g[S4][0] = sx((c.g[S2][0] as u32).wrapping_add(0x48c));
+                Callee {
+                    addr: 0x0026e5a8,
+                    f: ee::s07::SnapshotList_ctor,
+                }
+                .call(c, 0x0026f018)?;
+                c.g[S3][0] = 0xffffffffffffffff;
+                'l_26f020: loop {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+                    Callee {
+                        addr: 0x00272288,
+                        f: ee::s07::Replay_HighlightSlotInit,
+                    }
+                    .call(c, 0x0026f02c)?;
+                    let t = c.g[S1][0] != c.g[S3][0];
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xb4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0026f020);
+                        }
+                        continue 'l_26f020;
+                    } else {
+                        c.cycles += 5;
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[A1][0] = 0xf;
+                        Callee {
+                            addr: 0x0026f4a0,
+                            f: ee::s07::Replay_SetState,
+                        }
+                        .call(c, 0x0026f040)?;
+                        c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(0x4));
+                        c.g[V1][0] = 0x1;
+                        'l_26f048: loop {
+                            c.cycles += 7;
+                            c.sw(c.g[V0][0] as u32, 0u64);
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                            let t = (c.g[V1][0] as i64) >= 0;
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4));
+                            if t {
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x0026f048);
+                                }
+                                continue 'l_26f048;
+                            } else {
+                                c.cycles += 9;
+                                c.g[V0][0] = c.g[S2][0];
+                                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+                                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+                                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+                                c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+                                c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
+                                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                                let t = c.g[RA][0] as u32;
+                                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
+                                c.pc = t;
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    })
+}
+
+/// `Replay_EmptyResetHook(void)` (0x26f498): empty.
+pub fn replay_empty_reset_hook(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2889,6 +3014,36 @@ pub(crate) mod tests {
                 w_2(c, manager + 0xc, ai);
                 w_2(c, ai + 0x7c, if seed % 3 == 0 { 1 } else { 2 });
                 c.g[A0][0] = replay as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ai::tests::oc434_setup;
+
+    /// `Replay_ctor`: 16 frames, two snapshot lists, two highlight slots, the state
+    /// change (21 fake calls, unwinding in any of them).
+    #[test]
+    fn replay_ctor_matches() {
+        fakes::covered(
+            ee::s07::f_0026efb8__generated,
+            replay_ctor,
+            24,
+            &|c, seed| {
+                let _ = oc434_setup(c, seed, 0x26efb8, 21, 0x0026_efb8);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn replay_empty_reset_hook_matches() {
+        check(
+            ee::s07::f_0026f498__generated,
+            replay_empty_reset_hook,
+            20,
+            &|c, seed| {
+                machine(c, seed, 0x26f498, 0);
+                c.pc = 0x0026_f498;
             },
         );
     }

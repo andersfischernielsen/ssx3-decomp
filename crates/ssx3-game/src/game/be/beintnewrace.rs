@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -174,6 +175,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_bb20,
         be_new_race_int_destroy_instance,
         "BENewRaceInt_DestroyInstance",
+    ),
+    (
+        0x0014_4af8,
+        be_new_race_int_set_num_extra_riders,
+        "BENewRaceInt_SetNumExtraRiders",
     ),
 ];
 
@@ -1615,6 +1621,28 @@ pub fn benewraceint_get_event_target(c: &mut Cpu) {
     }
 }
 
+/// `void BENewRaceInt_SetNumExtraRiders(int a0_unused, int n)` (0x144af8):
+/// the new-race record at 0x535bc8 stores `extra = n` (+0x38) and
+/// `total = base (+0x34) + local (+0x3c) + n` (+0x30).
+pub fn be_new_race_int_set_num_extra_riders(c: &mut Cpu) {
+    c.cycles += 9;
+    c.g[V1][0] = sx(0x53_0000u32.wrapping_add(0x5bc8));
+    let rec = c.g[V1][0] as u32;
+    c.g[V0][0] = Addr(rec.wrapping_add(0x34)).lw(c);
+    c.g[A0][0] = Addr(rec.wrapping_add(0x3c)).lw(c);
+    {
+        let v = c.g[A1][0];
+        Addr(rec.wrapping_add(0x38)).sw(c, v);
+    }
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    {
+        let v = c.g[V0][0];
+        Addr(rec.wrapping_add(0x30)).sw(c, v);
+    }
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2354,6 +2382,25 @@ pub(crate) mod tests {
                     c.g[RA][0] = SENTINEL as u64;
                     schedule(c, &mut r, seed / 5, 0x0014_51e8);
                 }
+            },
+        );
+    }
+
+    /// `BENewRaceInt_SetNumExtraRiders`: record at 0x535bc8 with random
+    /// counts.
+    #[test]
+    fn be_new_race_int_set_num_extra_riders_matches() {
+        check(
+            ee::s01::f_00144af8__generated,
+            be_new_race_int_set_num_extra_riders,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x4a1 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0014_4af8;
+                c.bus.write32(0x0053_5bc8 + 0x34, r.next_u32());
+                c.bus.write32(0x0053_5bc8 + 0x3c, r.next_u32());
+                c.bus.write32(0x0053_5bc8 + 0x30, r.next_u32());
             },
         );
     }

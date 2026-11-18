@@ -584,6 +584,27 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ai_apply_player_rider_settings,
         "AI_ApplyPlayerRiderSettings",
     ),
+    (0x0012_86a0, ai_ctor, "AI_ctor"),
+    (
+        0x0012_b280,
+        ai_load_anim_data_sources,
+        "AI_LoadAnimDataSources",
+    ),
+    (
+        0x0012_dcb0,
+        rider_wipeout_sub_switch_to_anim_set_b,
+        "RiderWipeoutSub_SwitchToAnimSetB",
+    ),
+    (
+        0x0012_e468,
+        rider_wipeout_sub_play_final_anim,
+        "RiderWipeoutSub_PlayFinalAnim",
+    ),
+    (
+        0x0012_89f0,
+        oc436_ai_reset_riders_default,
+        "AI_ResetRidersDefault",
+    ),
 ];
 
 /// `gp`-relative globals used here.
@@ -20286,6 +20307,465 @@ pub fn ai_apply_player_rider_settings(c: &mut Cpu) {
     })
 }
 
+/// `void RiderWipeoutSub_PlayFinalAnim(self)` (0x12e468,
+/// `cWipeoutControl_playWipeoutGroundImpactAnim`): looks at the rider's
+/// current anim on layer 2 (`rider->animBase`: `*(*(self + 0x80) + 0x784)`)
+/// and, for ids 0x17b..=0x17f (a `jr` table at 0x458180), plays the matching
+/// follow-up anim 0x180..=0x184 (`PlayAnim(base, id, 0, -1.0f)`). Other ids
+/// do nothing. Frame 0x20 (s0).
+pub fn rider_wipeout_sub_play_final_anim(c: &mut Cpu) {
+    const RIDER: u32 = 0x80;
+    const ANIM_BASE: u32 = 0x784;
+    if c.pc != 0x0012_e468 {
+        return ee::s00::f_0012e468__generated(c);
+    }
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 2;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let s0 = r32(c, S0);
+        c.g[V0][0] = c.lw(s0.wrapping_add(RIDER));
+        c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(ANIM_BASE));
+        call_ptr(c, 0x0031_2aa0, 0x0012_e488)?;
+        c.g[V1][0] = sx(r32(c, V0).wrapping_sub(0x17b));
+        c.g[V0][0] = (c.g[V1][0] < 5) as u64;
+        let in_range = c.g[V0][0] != 0;
+        c.g[V0][0] = 0x46_0000;
+        if in_range {
+            c.cycles += 6;
+            c.g[V1][0] = sx(r32(c, V1) << 2);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x7e80));
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+            c.g[A0][0] = c.lw(r32(c, V1));
+            let target = r32(c, A0);
+            // (cycles before the shared tail, anim id, return address of the
+            // play call, last case). The last case (0x184) carries its own
+            // 7 cycles and one more after the call.
+            let (pre_cycles, id, play_ra, last) = match target {
+                0x0012_e4b0 => (3, 0x180, 0x0012_e4f0, false),
+                0x0012_e4bc => (3, 0x181, 0x0012_e4f0, false),
+                0x0012_e4c8 => (3, 0x182, 0x0012_e4f0, false),
+                0x0012_e4d4 => (2, 0x183, 0x0012_e4f0, false),
+                0x0012_e4f8 => (7, 0x184, 0x0012_e514, true),
+                _ => {
+                    c.jump_out(target, 0x0012_e468, 0x0012_e524);
+                    return Ok(());
+                }
+            };
+            c.cycles += pre_cycles;
+            c.g[V0][0] = c.lw(s0.wrapping_add(RIDER));
+            c.g[A1][0] = id;
+            if !last {
+                c.cycles += 7;
+            }
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.mtc1(1, 12);
+            c.g[A2][0] = 0;
+            c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(ANIM_BASE));
+            call_ptr(c, 0x0031_28e8, play_ra)?;
+            if last {
+                c.cycles += 1;
+            }
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Zeroes `v1 + 1` words downwards from `v0` (the `sw 0, 0(v0); v1 -= 1;
+/// v0 -= 4` loops of `AI_Init`), leaving v0/v1 as the loop does.
+pub(crate) fn ai_init_clear_words(c: &mut Cpu, head: u32) {
+    loop {
+        c.cycles += 7;
+        c.sw(r32(c, V0), 0);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+        let more = (c.g[V1][0] as i64) >= 0;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(4));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// `void AI_Init(self)` (0x128818): resets the AI manager. Resets the focus
+/// and danger managers (`self + 0xa4`, `+0xa8`), clears the state fields
+/// (+0x10, 0x14, 0x90, 0x78..0x88, 0x1c, 0x98, 0), sets race state 1, clears
+/// the arrays at +0x28 (6 words), +0x70 (1), +0x48 (5) and +0x20 (2), loads the
+/// anim data sources, calls the object's virtual method 6 and resets the
+/// riders (`AI_ResetRiders(self, 1)`). Frame 0x30 (s0, s1).
+///
+/// NOT installed: `AI_LoadAnimDataSources` (direct callee, loads files
+/// through callees that have no override slot) cannot be bounded in a test.
+pub fn ai_init(c: &mut Cpu) {
+    const FOCUS_MAN_RESET: Callee = Callee {
+        addr: 0x0010_3358,
+        f: ee::s00::f_00103358,
+    };
+    const DANGER_MAN_RESET: Callee = Callee {
+        addr: 0x0010_1688,
+        f: ee::s00::f_00101688,
+    };
+    const SET_RACE_STATE: Callee = Callee {
+        addr: 0x0011_3b10,
+        f: ee::s00::f_00113b10,
+    };
+    const LOAD_ANIM_DATA_SOURCES: Callee = Callee {
+        addr: 0x0012_b280,
+        f: ee::s00::f_0012b280,
+    };
+    const RESET_RIDERS: Callee = Callee {
+        addr: 0x0012_97c8,
+        f: ee::s00::f_001297c8,
+    };
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let this = r32(c, S0);
+        c.g[A0][0] = c.lw(this.wrapping_add(0xa4));
+        FOCUS_MAN_RESET.call(c, 0x0012_8834)?;
+        c.g[A0][0] = c.lw(this.wrapping_add(0xa8));
+        DANGER_MAN_RESET.call(c, 0x0012_883c)?;
+        c.sw(this.wrapping_add(0x10), 0);
+        c.g[A0][0] = c.g[S0][0];
+        c.sw(this.wrapping_add(0x14), 0);
+        c.g[A1][0] = 1;
+        for off in [0x90, 0x78, 0x7c, 0x80, 0x84, 0x88, 0x1c, 0x98] {
+            c.sw(this.wrapping_add(off), 0);
+        }
+        c.sw(this, 0);
+        SET_RACE_STATE.call(c, 0x0012_8874)?;
+        c.g[V1][0] = 5;
+        c.g[V0][0] = sx(this.wrapping_add(0x3c));
+        ai_init_clear_words(c, 0x0012_8880);
+        c.cycles += 5;
+        c.g[A0][0] = sx(this.wrapping_add(0x48));
+        c.g[S1][0] = sx(this.wrapping_add(0x20));
+        c.g[V1][0] = 0;
+        c.g[V0][0] = sx(this.wrapping_add(0x70));
+        ai_init_clear_words(c, 0x0012_88b0);
+        c.cycles += 3;
+        c.g[V0][0] = sx(r32(c, A0).wrapping_add(0x10));
+        c.g[V1][0] = 4;
+        ai_init_clear_words(c, 0x0012_88d8);
+        c.cycles += 13;
+        c.g[A0][0] = c.g[S0][0];
+        LOAD_ANIM_DATA_SOURCES.call(c, 0x0012_88fc)?;
+        c.g[V0][0] = c.lw(this.wrapping_add(0xcc));
+        c.g[A0][0] = c.lh(r32(c, V0).wrapping_add(0x30));
+        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x34));
+        let method = r32(c, V1);
+        c.g[A0][0] = sx(this.wrapping_add(r32(c, A0)));
+        call_ptr(c, method, 0x0012_8910)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 1;
+        RESET_RIDERS.call(c, 0x0012_891c)?;
+        c.g[V0][0] = sx(r32(c, S1).wrapping_add(4));
+        c.g[V1][0] = 1;
+        ai_init_clear_words(c, 0x0012_8928);
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `AI* AI_ctor(AI* self)` (0x1286a0): store the AI tuning constants, allocate
+/// the 0x8e0-byte rider table (first word cleared, five entries reset) into
+/// `+0xa4`, then allocate and construct the `DangerMan` (`+0xa8`); returns `self`.
+#[allow(unreachable_code)]
+pub fn ai_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 40;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+        c.g[A2][0] = 0x460000;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[A3][0] = 0x460000;
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.g[A0][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x7a60));
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x7ab0));
+        c.g[V0][0] = 0x460000;
+        c.g[V1][0] = 0x460000;
+        c.g[T0][0] = 0x460000;
+        c.g[T1][0] = 0x460000;
+        c.g[T2][0] = 0x460000;
+        c.g[T3][0] = 0x460000;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x7a38));
+        c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x7a88));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7b78));
+        c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_sub(0x7ad8));
+        c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x7b00));
+        c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x7b28));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xb0), c.g[A2][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xb4), c.g[A3][0]);
+        c.g[A1][0] = 0x450000;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xac), c.g[V1][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7f00));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xbc), c.g[T0][0]);
+        c.g[A0][0] = 0x8e0;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xcc), c.g[V0][0]);
+        c.g[A2][0] = 0u64;
+        c.g[A3][0] = 0u64;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xc0), c.g[T1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xc4), c.g[T2][0]);
+        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0xa4));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xc8), c.g[T3][0]);
+        call_ptr(c, 0x00317d70, 0x00128730)?;
+        c.g[T0][0] = c.g[V0][0];
+        c.g[V1][0] = 0xffffffffffffffff;
+        c.sw(c.g[T0][0] as u32, 0u64);
+        c.g[V0][0] = 0x5;
+        'l_128740: loop {
+            c.cycles += 7;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+            let t = c.g[V0][0] != c.g[V1][0];
+            c.g[A1][0] = 0x450000;
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x00128740);
+                }
+                continue 'l_128740;
+            } else {
+                c.cycles += 22;
+                c.sw(c.g[S1][0] as u32, c.g[T0][0]);
+                c.g[V1][0] = 0x1;
+                c.g[V0][0] = 0xffffffffffffffff;
+                c.sw((c.g[T0][0] as u32).wrapping_add(0xd0), c.g[V0][0]);
+                c.g[A2][0] = 0u64;
+                c.sw((c.g[T0][0] as u32).wrapping_add(0xd4), c.g[V1][0]);
+                c.g[A3][0] = 0u64;
+                c.sw((c.g[T0][0] as u32).wrapping_add(0xd8), 0u64);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7f10));
+                c.g[A0][0] = 0xb60;
+                call_ptr(c, 0x00317d70, 0x00128788)?;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A0][0] = c.g[V0][0];
+                Callee {
+                    addr: 0x00101310,
+                    f: ee::s00::DangerMan_ctor,
+                }
+                .call(c, 0x00128794)?;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xa8), c.g[V0][0]);
+                c.g[V0][0] = c.g[S0][0];
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x74), 0u64);
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                c.pc = t;
+                return Ok(());
+            }
+        }
+        Ok(())
+    })
+}
+
+#[cfg(not(feature = "ee-unwind"))]
+pub(crate) fn rider_wipeout_sub_switch_to_anim_set_b_resume_2(c: &mut Cpu) {
+    ee::s00::f_0012dcb0__entries(c)
+}
+
+#[cfg(feature = "ee-unwind")]
+pub(crate) fn rider_wipeout_sub_switch_to_anim_set_b_resume_2(c: &mut Cpu) {
+    ee::s00::f_0012dcb0__generated(c)
+}
+
+/// `RiderWipeoutSub` set-B switch: the original's jump table lives at `0x458030` (index
+/// `cur - 362`, 26 entries); its targets `0x12dd10 + 8 * k` select set-B animation `0x175 + k`.
+#[cfg(test)]
+pub(crate) const WIPEOUT_SET_B_TABLE: u32 = 0x0046_0000 - 0x7fd0;
+
+/// `void RiderWipeoutSub_SwitchToAnimSetB(RiderWipeoutSub* self)` (0x12dcb0): maps the
+/// rider's current tumble animation (layer 2) to its set-B twin (362..371 to 373..382, ...,
+/// 383 when the rider is in root pose) and plays it (`AnimController_PlayAnim(anim, next, 0,
+/// -1.0)`), then updates the animation speed. The map is the original's jump table at
+/// `0x458030 + 4 * (cur - 362)`; each target is one set-B animation.
+///
+/// Resume entries (`__entries`) go to the generated twin.
+pub fn rider_wipeout_sub_switch_to_anim_set_b(c: &mut Cpu) {
+    if c.pc != 0x0012_dcb0 {
+        return rider_wipeout_sub_switch_to_anim_set_b_resume_2(c);
+    }
+    guest(c, |c| {
+        c.cycles += 14;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+        c.g[A1][0] = 0x2;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x80));
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x784));
+        call_ptr(c, 0x0031_2aa0, 0x0012_dcd0)?;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x80));
+        c.g[A1][0] = c.g[V0][0];
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x150));
+        c.g[V0][0] ^= 0x1;
+        let root_pose = c.g[V0][0] == 0;
+        c.g[A2][0] = c.g[A1][0];
+        if root_pose {
+            // 'b_12dd60: the rider is in root pose: animation 383.
+            c.cycles += 1;
+            c.g[A1][0] = 0x17f;
+        } else {
+            c.cycles += 4;
+            c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x16a));
+            c.g[V0][0] = (c.g[V1][0] < 0x1a) as u64;
+            let out_of_range = c.g[V0][0] == 0;
+            c.g[V0][0] = 0x46_0000;
+            if !out_of_range {
+                c.cycles += 6;
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7fd0));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                let target = c.g[A0][0] as u32;
+                match target {
+                    // Set-B animations 0x175..=0x17e.
+                    0x0012_dd10 | 0x0012_dd18 | 0x0012_dd20 | 0x0012_dd28 | 0x0012_dd30
+                    | 0x0012_dd38 | 0x0012_dd40 | 0x0012_dd48 | 0x0012_dd50 | 0x0012_dd58 => {
+                        c.cycles += 2;
+                        c.g[A1][0] = 0x175 + ((target - 0x0012_dd10) / 8) as u64;
+                    }
+                    // Already a set-B animation: keep it.
+                    0x0012_dd64 => {}
+                    _ => {
+                        c.jump_out(target, 0x0012_dcb0, 0x0012_dd98);
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        c.cycles += 2;
+        let unchanged = c.g[A1][0] == c.g[A2][0];
+        c.g[A2][0] = 0;
+        if !unchanged {
+            c.cycles += 7;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x80));
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.mtc1(1, 12);
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x784));
+            call_ptr(c, 0x0031_28e8, 0x0012_dd80)?;
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x0012_e528,
+                f: ee::s00::RiderWipeoutSub_UpdateAnimSpeed,
+            }
+            .call(c, 0x0012_dd88)?;
+        }
+        c.cycles += 4;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void AI_LoadAnimDataSources(void)` (0x12b280): mounts the AI anim big
+/// file (0x3ded50), then creates one anim data source (`AdfDataSource_ctor`
+/// 0x311250 on a fresh 0x18-byte block, 0x317d70) for the one name in the
+/// table at `gp - 0x1ff0`, stores it in the `gp + 0xd08` table, registers it
+/// (0x314f30), runs the post hook (0x3150b0) and unmounts (0x3dedc0).
+/// The loop runs once (its counter starts at 0 and is tested `<= 0` after
+/// the increment). Frame 0x50 (s0..s2).
+pub fn ai_load_anim_data_sources(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x50);
+        c.g[A0][0] = 0x45_0000;
+        frame.save(c, S0, 0x40);
+        c.g[A1][0] = 0;
+        frame.save(c, S1, 0x30);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x7f58));
+        frame.save(c, S2, 0x20);
+        c.g[A2][0] = 0x64;
+        frame.save_ra(c, 0x10);
+        c.g[A3][0] = c.g[SP][0];
+        c.g[S0][0] = 0;
+        call_ptr(c, 0x003d_ed50, 0x0012_b2b0)?;
+        c.g[S2][0] = 0x45_0000;
+        c.g[S1][0] = sx(r32(c, GP).wrapping_sub(0x1ff0));
+        c.g[A2][0] = 0;
+        loop {
+            c.cycles += 20;
+            c.g[A3][0] = 0;
+            c.g[A0][0] = 0x18;
+            c.g[A1][0] = sx(r32(c, S2).wrapping_add(0x7f70));
+            call_ptr(c, 0x0031_7d70, 0x0012_b2d0)?;
+            c.g[A1][0] = Addr(r32(c, S1)).lw(c);
+            c.g[A0][0] = c.g[V0][0];
+            c.g[S1][0] = sx(r32(c, S1).wrapping_add(4));
+            call_ptr(c, 0x0031_1250, 0x0012_b2e0)?;
+            c.g[V1][0] = Addr(r32(c, GP).wrapping_add(0xd08)).lw(c);
+            c.g[A0][0] = c.g[S0][0] & 0xff;
+            c.g[A0][0] = sx(r32(c, A0) << 2);
+            c.g[A1][0] = c.g[S0][0];
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+            c.g[A2][0] = c.g[V0][0];
+            c.g[A0][0] = Addr(r32(c, GP).wrapping_add(0xd8c)).lw(c);
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+            Addr(r32(c, V1)).sw(c, c.g[V0][0]);
+            call_ptr(c, 0x0031_4f30, 0x0012_b308)?;
+            let again = (c.g[S0][0] as i64) <= 0;
+            c.g[A2][0] = 0;
+            if again {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0012_b2c0);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 11;
+        c.g[A0][0] = Addr(r32(c, GP).wrapping_add(0xd8c)).lw(c);
+        call_ptr(c, 0x0031_50b0, 0x0012_b318)?;
+        c.g[A0][0] = Addr(r32(c, SP)).lw(c);
+        c.g[A1][0] = 0x64;
+        call_ptr(c, 0x003d_edc0, 0x0012_b324)?;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AI_ResetRidersDefault(ai)` (0x1289f0): `AI_ResetRiders(ai, 0)`.
+pub fn oc436_ai_reset_riders_default(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0012_97c8, 0x0012_8a00)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
@@ -26238,6 +26718,255 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(r.next_u32());
                 c.g[A1][0] = sx(obj);
                 c.g[A2][0] = sx(r.next_u32() % 4);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::LOG_RESULTS;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_run;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC433_FIX;
+
+    /// Gate word: the oc432 fakes act only on machines whose RAM holds
+    /// `OC432_MAGIC` here (the suite runs tests in parallel; the slots are
+    /// global).
+    pub(crate) const OC432_CTRL: u32 = 0x00a0_0000;
+
+    pub(crate) const OC432_MAGIC: u32 = 0x4f43_4333;
+
+    /// Stamps a gated fake for `$addr` that logs its call (`fakes::fake`) and
+    /// falls back to the previous body in the slot when the gate is off.
+    macro_rules! oc432_fake {
+        ($name:ident, $prev:ident, $gen:path, $addr:expr) => {
+            oc432_fake!($name, $prev, $gen, $addr, |_c: &mut Cpu| {});
+        };
+        ($name:ident, $prev:ident, $gen:path, $addr:expr, $post:expr) => {
+            pub(crate) static $prev: AtomicUsize = AtomicUsize::new(0);
+            pub(crate) fn $name(c: &mut Cpu) {
+                if c.bus.read32(OC432_CTRL) != OC432_MAGIC {
+                    return fakes::fall_back(c, &$prev, $gen);
+                }
+                let ra = c.g[RA][0] as u32;
+                fakes::fake(c, $addr, ra);
+                if c.pc == ra {
+                    ($post)(c);
+                }
+            }
+        };
+    }
+    pub(crate) use oc432_fake;
+
+    oc432_fake!(
+        fake_play_anim,
+        PREV_PLAY_ANIM,
+        ee::s10::f_003128e8__generated,
+        0x0031_28e8
+    );
+
+    #[test]
+    fn rider_wipeout_sub_play_final_anim_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003128E8),
+            fake_play_anim,
+            &PREV_PLAY_ANIM,
+        );
+        fakes::covered(
+            ee::s00::f_0012e468__generated,
+            rider_wipeout_sub_play_final_anim,
+            120,
+            &|c, seed| {
+                crate::difftest::elf_image(c);
+                let mut r = machine(c, seed, 0x12e468, 2);
+                c.bus.write32(OC432_CTRL, OC432_MAGIC);
+                c.pc = 0x0012_e468;
+                let obj = DATA;
+                let rider = DATA + 0x100;
+                let base = DATA + 0x1000;
+                c.g[A0][0] = obj as u64;
+                c.bus.write32(obj + 0x80, rider);
+                c.bus.write32(rider + 0x784, base);
+                // Layer 2's anim id: 0x178..=0x182 covers every table entry and
+                // both sides of the range check.
+                c.bus.write32(base + 8, 0x178 + seed % 11);
+                c.g[RA][0] = crate::difftest::RA as u64;
+                let _ = &mut r;
+            },
+        );
+    }
+
+    /// `AI_ctor` against the generated body (allocator and `DangerMan_ctor`
+    /// are fakes).
+    #[test]
+    fn ai_ctor_matches() {
+        oc433_run(
+            ee::s00::f_001286a0__generated,
+            ai_ctor,
+            0x0012_86a0,
+            3,
+            60,
+            &|c, _r, _seed| {
+                c.g[A0][0] = sx(OC433_FIX + 0x2000);
+            },
+        );
+    }
+
+    /// Control words of the callee fakes, in the test machine's own RAM: the gate
+    /// (a fake does nothing unless the fixture wrote the magic), the bump allocator.
+    pub(crate) const OC434_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC434_MAGIC: u32 = 0x0c43_4a11;
+
+    /// Next address the allocator fakes hand out (word at `OC434_CTRL + 8`, 0: the start).
+    pub(crate) const OC434_HEAP: u32 = DATA + 0x30_0000;
+
+    /// Bit mask of the sections `cWorldCache_StreamerIsSectionUnloaded` calls unloaded.
+    pub(crate) const OC434_UNLOADED: u32 = OC434_CTRL + 0x10;
+
+    /// Post-call hooks of the fakes: `(machine, return address, a0, a1)` before the
+    /// fake clobbered the argument registers.
+    pub(crate) fn oc434_plain(_c: &mut Cpu, _ra: u32, _a0: u32, _a1: u32) {}
+
+    /// An allocator: a fresh zeroed block from the bump heap (a0 = size).
+    pub(crate) fn oc434_bump(c: &mut Cpu, ra: u32, size: u32, _a1: u32) {
+        if c.pc != ra {
+            return;
+        }
+        let mut p = c.bus.read32(OC434_CTRL + 8);
+        if p == 0 {
+            p = OC434_HEAP;
+        }
+        c.g[V0][0] = p as u64;
+        let size = (size.min(0x10_0000) + 0xff) & !0xff;
+        c.bus.write32(OC434_CTRL + 8, p + size.max(0x100));
+    }
+
+    /// A call that fails (returns 0).
+    pub(crate) fn oc434_zero(c: &mut Cpu, ra: u32, _a0: u32, _a1: u32) {
+        if c.pc == ra {
+            c.g[V0][0] = 0;
+        }
+    }
+
+    /// `StreamerIsSectionUnloaded(table, i)`: bit `i` of the fixture's mask.
+    pub(crate) fn oc434_unloaded(c: &mut Cpu, ra: u32, _a0: u32, section: u32) {
+        if c.pc == ra {
+            c.g[V0][0] = ((c.bus.read32(OC434_UNLOADED) >> (section & 31)) & 1) as u64;
+        }
+    }
+
+    /// Gated fakes in the override slots of callees that already have a hand port
+    /// (each logs its call like `difftest::fakes::fake`; the gate is off in every
+    /// other test of the binary, where the slot runs what it held before).
+    macro_rules! oc434_gated {
+        ($($fake:ident => $addr:literal, $slot:path, $generated:path, $post:path;)*) => {
+            $(
+                pub(crate) fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC434_CTRL) != OC434_MAGIC {
+                        return fakes::fall_back(c, fakes::prev_cell($fake), $generated);
+                    }
+                    let ra = c.g[RA][0] as u32;
+                    let (a0, a1) = (c.g[A0][0] as u32, c.g[A1][0] as u32);
+                    fakes::fake(c, $addr, ra);
+                    $post(c, ra, a0, a1);
+                }
+            )*
+
+            pub(crate) fn oc434_install_fakes() {
+                $( fakes::hook(addr_of_mut!($slot), $fake, fakes::prev_cell($fake)); )*
+            }
+        };
+    }
+
+    oc434_gated! {
+        oc434_fake_new => 0x0031_7e30, ee::s10::OVERRIDE_00317E30, ee::s10::f_00317e30__generated, oc434_bump;
+        oc434_fake_alloc => 0x0031_7d70, ee::s10::OVERRIDE_00317D70, ee::s10::f_00317d70__generated, oc434_bump;
+        oc434_fake_free => 0x0031_7e98, ee::s10::OVERRIDE_00317E98, ee::s10::f_00317e98__generated, oc434_plain;
+        oc434_fake_be_instance => 0x0014_dc80, ee::s01::OVERRIDE_0014DC80, ee::s01::f_0014dc80__generated, oc434_plain;
+        oc434_fake_be_interface => 0x0014_dd58, ee::s01::OVERRIDE_0014DD58, ee::s01::f_0014dd58__generated, oc434_plain;
+        oc434_fake_human_rider => 0x0014_6e98, ee::s01::OVERRIDE_00146E98, ee::s01::f_00146e98__generated, oc434_plain;
+        oc434_fake_character => 0x0014_7398, ee::s01::OVERRIDE_00147398, ee::s01::f_00147398__generated, oc434_plain;
+        oc434_fake_alt_character => 0x0014_7410, ee::s01::OVERRIDE_00147410, ee::s01::f_00147410__generated, oc434_plain;
+        oc434_fake_clear_new_rewards => 0x0015_a510, ee::s01::OVERRIDE_0015A510, ee::s01::f_0015a510__generated, oc434_plain;
+        oc434_fake_find_rider => 0x0014_a130, ee::s01::OVERRIDE_0014A130, ee::s01::f_0014a130__generated, oc434_plain;
+        oc434_fake_rider_character => 0x0014_a080, ee::s01::OVERRIDE_0014A080, ee::s01::f_0014a080__generated, oc434_plain;
+        oc434_fake_next_points => 0x0015_8be0, ee::s01::OVERRIDE_00158BE0, ee::s01::f_00158be0__generated, oc434_plain;
+        oc434_fake_next_collectible => 0x0015_8c80, ee::s01::OVERRIDE_00158C80, ee::s01::f_00158c80__generated, oc434_plain;
+        oc434_fake_next_mission => 0x0015_8d58, ee::s01::OVERRIDE_00158D58, ee::s01::f_00158d58__generated, oc434_plain;
+        oc434_fake_layer_anim => 0x0031_2aa0, ee::s10::OVERRIDE_00312AA0, ee::s10::f_00312aa0__generated, oc434_plain;
+        oc434_fake_play_anim => 0x0031_28e8, ee::s10::OVERRIDE_003128E8, ee::s10::f_003128e8__generated, oc434_plain;
+        oc434_fake_hud_number => 0x0011_7b88, ee::s00::OVERRIDE_00117B88, ee::s00::f_00117b88__generated, oc434_plain;
+        oc434_fake_update_anim_speed => 0x0012_e528, ee::s00::OVERRIDE_0012E528, ee::s00::f_0012e528__generated, oc434_plain;
+        oc434_fake_crowd_reset => 0x0022_92e0, ee::s05::OVERRIDE_002292E0, ee::s05::f_002292e0__generated, oc434_plain;
+        oc434_fake_world_state_stream => 0x0026_d5e8, ee::s07::OVERRIDE_0026D5E8, ee::s07::f_0026d5e8__generated, oc434_plain;
+        oc434_fake_snapshot_list => 0x0026_e5a8, ee::s07::OVERRIDE_0026E5A8, ee::s07::f_0026e5a8__generated, oc434_plain;
+        oc434_fake_highlight_slot => 0x0027_2288, ee::s07::OVERRIDE_00272288, ee::s07::f_00272288__generated, oc434_plain;
+        oc434_fake_replay_state => 0x0026_f4a0, ee::s07::OVERRIDE_0026F4A0, ee::s07::f_0026f4a0__generated, oc434_plain;
+        oc434_fake_free_info => 0x0027_5cd0, ee::s07::OVERRIDE_00275CD0, ee::s07::f_00275cd0__generated, oc434_plain;
+        oc434_fake_find_bank => 0x0028_36d8, ee::s07::OVERRIDE_002836D8, ee::s07::f_002836d8__generated, oc434_plain;
+        oc434_fake_parser_ctor => 0x0032_1428, ee::s10::OVERRIDE_00321428, ee::s10::f_00321428__generated, oc434_plain;
+        oc434_fake_stream_reset => 0x003a_6ed8, ee::s13::OVERRIDE_003A6ED8, ee::s13::f_003a6ed8__generated, oc434_plain;
+        oc434_fake_section_table_dtor => 0x003a_7d80, ee::s13::OVERRIDE_003A7D80, ee::s13::f_003a7d80__generated, oc434_plain;
+        oc434_fake_section_unloaded => 0x003a_9890, ee::s13::OVERRIDE_003A9890, ee::s13::f_003a9890__generated, oc434_unloaded;
+        oc434_fake_world_memman_dtor => 0x003a_7aa8, ee::s13::OVERRIDE_003A7AA8, ee::s13::f_003a7aa8__generated, oc434_plain;
+        oc434_fake_free_section_allocator => 0x003a_7b98, ee::s13::OVERRIDE_003A7B98, ee::s13::f_003a7b98__generated, oc434_plain;
+        oc434_fake_queue_close => 0x003d_d5a0, ee::s14::OVERRIDE_003DD5A0, ee::s14::f_003dd5a0__generated, oc434_zero;
+        oc434_fake_queue_open => 0x003d_d4e8, ee::s14::OVERRIDE_003DD4E8, ee::s14::f_003dd4e8__generated, oc434_zero;
+    }
+
+    pub(crate) fn oc434_w(c: &mut Cpu, addr: u32, v: u32) {
+        c.bus.write32(addr, v);
+    }
+
+    /// Scrambled machine with the fakes on, `pc` at the function's entry; at most
+    /// `calls` fake calls, one of which may unwind.
+    pub(crate) fn oc434_setup(c: &mut Cpu, seed: u32, salt: u64, calls: u32, entry: u32) -> Rng {
+        oc434_install_fakes();
+        let r = machine(c, seed, salt, calls);
+        c.bus.write32(OC434_CTRL, OC434_MAGIC);
+        c.pc = entry;
+        r
+    }
+
+    /// Force the result of fake call `n` (non-zero values only).
+    pub(crate) fn oc434_force(c: &mut Cpu, n: u32, v: u32) {
+        c.bus.write32(LOG_RESULTS + 4 * n, v);
+    }
+
+    /// `RiderWipeoutSub_SwitchToAnimSetB`: every tumble animation 361..388 (the jump table
+    /// is written into RAM), root pose, a bad table entry (the jump-out), and unwinds.
+    #[test]
+    fn rider_wipeout_sub_switch_to_anim_set_b_matches() {
+        fakes::covered(
+            ee::s00::f_0012dcb0__generated,
+            rider_wipeout_sub_switch_to_anim_set_b,
+            96,
+            &|c, seed| {
+                let _ = oc434_setup(c, seed, 0x12dcb0, 3, 0x0012_dcb0);
+                let (this, rider, anim) = (DATA + 0x100, DATA + 0x200, DATA + 0x300);
+                c.g[A0][0] = this as u64;
+                oc434_w(c, this + 0x80, rider);
+                oc434_w(c, rider + 0x784, anim);
+                oc434_w(
+                    c,
+                    rider + 0x150,
+                    if seed % 7 == 0 { 1 } else { seed % 3 * 2 },
+                );
+                let cur = 361 + seed % 29;
+                oc434_force(c, 0, cur);
+                for idx in 0..26u32 {
+                    let target = match idx {
+                        0..=9 => 0x0012_dd10 + 8 * idx,
+                        10..=21 => 0x0012_dd64,
+                        _ => 0x0012_dd10 + 8 * (6 + idx - 22),
+                    };
+                    let target = if seed % 11 == 5 && cur == 362 + idx {
+                        0x0012_dd60
+                    } else {
+                        target
+                    };
+                    oc434_w(c, WIPEOUT_SET_B_TABLE + 4 * idx, target);
+                }
             },
         );
     }

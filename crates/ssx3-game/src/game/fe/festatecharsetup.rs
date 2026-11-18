@@ -45,6 +45,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cFEStateRiderDetail_ctor",
     ),
     (0x0031_1a50, anim_controller_reset, "AnimController_Reset"),
+    (
+        0x001d_d8a0,
+        fe_state_char_setup_dtor,
+        "cFEStateCharSetup_dtor",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -235,6 +240,32 @@ pub fn anim_controller_reset(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     });
+}
+
+/// The destructor-chain helper the front-end state dtors call (0x39e390).
+pub(crate) const OC437_BASE_DTOR: u32 = 0x0039_e390;
+
+/// A front-end state destructor: `this->vtable(+8) = 0x470000 - vtable_lo`,
+/// then the base destructor helper (0x39e390) with the caller's `a0`/`a1`.
+pub(crate) fn oc437_fe_state_dtor(c: &mut Cpu, vtable_lo: u32, ret_to: u32) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x47_0000;
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx(0x47_0000u32.wrapping_sub(vtable_lo));
+        c.sw((c.g[V1][0] as u32).wrapping_add(8), c.g[V0][0]);
+        call_ptr(c, OC437_BASE_DTOR, ret_to)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cFEStateCharSetup_dtor(this, flags)` (0x1dd8a0).
+pub fn fe_state_char_setup_dtor(c: &mut Cpu) {
+    oc437_fe_state_dtor(c, 0x2f30, 0x001d_d8bc)
 }
 
 #[cfg(test)]

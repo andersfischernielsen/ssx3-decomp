@@ -10,6 +10,7 @@ use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
 pub(crate) use crate::game::dirtysock::tagsunk::arg;
+pub(crate) use crate::game::fe::festatecharsetup::oc437_fe_state_dtor;
 pub(crate) use crate::game::fe::ovstatepause::p;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
 use crate::guest::Addr;
@@ -57,6 +58,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cFEStateEventSelect_Update",
     ),
     (0x0018_6b18, cfe_state_mem_card_dtor, "cFEStateMemCard_dtor"),
+    (
+        0x001d_e528,
+        fe_state_event_select_dtor,
+        "cFEStateEventSelect_dtor",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -593,6 +599,11 @@ pub fn c_fe_state_event_select_on_widget_action(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+/// `cFEStateEventSelect_dtor(this, flags)` (0x1de528).
+pub fn fe_state_event_select_dtor(c: &mut Cpu) {
+    oc437_fe_state_dtor(c, 0x2f30, 0x001d_e544)
 }
 
 #[cfg(test)]

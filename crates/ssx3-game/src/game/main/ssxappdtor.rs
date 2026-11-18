@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -172,6 +173,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_fe_load_hint_state_dtor,
         "cFELoadHintState_dtor",
     ),
+    (0x0024_4400, value_pair_set_first, "ValuePair_SetFirst"),
+    (0x0024_4408, value_pair_set_second, "ValuePair_SetSecond"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1043,6 +1046,26 @@ pub fn c_game_load_state_init(c: &mut Cpu) {
     });
 }
 
+/// `void ValuePair_SetSecond(ValuePair* p, int v)` (0x244408): `p->second = v`.
+pub fn value_pair_set_second(c: &mut Cpu) {
+    c.cycles += 2;
+    {
+        let v = c.g[A1][0];
+        Addr((c.g[A0][0] as u32).wrapping_add(0x4)).sw(c, v);
+    }
+    ret(c);
+}
+
+/// `void ValuePair_SetFirst(ValuePair* p, int v)` (0x244400): `p->first = v`.
+pub fn value_pair_set_first(c: &mut Cpu) {
+    c.cycles += 2;
+    {
+        let v = c.g[A1][0];
+        Addr(c.g[A0][0] as u32).sw(c, v);
+    }
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1797,6 +1820,26 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA);
                 w_2(c, DATA + 0x10, r.next_u32());
             },
+        );
+    }
+
+    pub(crate) use crate::game::animation::gameanimmap::tests::oc438_leaf;
+
+    #[test]
+    fn value_pair_set_second_matches() {
+        oc438_leaf(
+            ee::s06::f_00244408__generated,
+            value_pair_set_second,
+            0x0024_4408,
+        );
+    }
+
+    #[test]
+    fn value_pair_set_first_matches() {
+        oc438_leaf(
+            ee::s06::f_00244400__generated,
+            value_pair_set_first,
+            0x0024_4400,
         );
     }
 }

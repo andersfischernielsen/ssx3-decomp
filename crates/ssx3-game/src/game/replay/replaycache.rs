@@ -3,12 +3,15 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -402,6 +405,27 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0027_46f8,
         in_seq_instance_release,
         "InSeq_InstanceRelease",
+    ),
+    (0x0027_2788, in_seq_ctor, "InSeq_ctor"),
+    (
+        0x0027_24c8,
+        oc436_in_seq_heap_new_array,
+        "InSeq_HeapNewArray",
+    ),
+    (
+        0x0027_2510,
+        inseq_heap_delete_array,
+        "InSeq_HeapDeleteArray",
+    ),
+    (
+        0x0027_4388,
+        oc436_in_seq_channel_get_header_field4,
+        "InSeq_ChannelGetHeaderField4",
+    ),
+    (
+        0x0027_4c10,
+        inseq_instance_set_user_data,
+        "InSeq_InstanceSetUserData",
     ),
 ];
 
@@ -7781,6 +7805,184 @@ pub fn in_seq_instance_release(c: &mut Cpu) {
     })
 }
 
+/// `InSeq* InSeq_ctor(self, pHeap, heapSize, count, tag)` (0x272788): sets up
+/// an instance pool. Initialises the heap (`self + 8`), stores `tag` (+0) and
+/// `count` (+4), clears +0x14/+0x18, allocates `count * 0x58 + 0x10` bytes
+/// (the first word holds the count, the items start at +0x10), constructs
+/// every item (`InSeq_Instance_ctor(item + 8)`), stores the items at +0x14,
+/// links them in a free list (`item[i].index = i`, `item[i].next = &item[i +
+/// 1]`, `item[i].prev = &item[i - 1]`), terminates both ends (the first item's
+/// prev and the last one's next = 0), clears the used list (+0x1c) and points
+/// the free list (+0x18) at the first item. Returns `self`. Frame 0x70 (s0-s5).
+pub fn in_seq_ctor(c: &mut Cpu) {
+    const HEAP_INIT: Callee = Callee {
+        addr: 0x0027_22e0,
+        f: ee::s07::f_002722e0,
+    };
+    const HEAP_NEW_ARRAY: Callee = Callee {
+        addr: 0x0027_24c8,
+        f: ee::s07::f_002724c8,
+    };
+    const INSTANCE_CTOR: Callee = Callee {
+        addr: 0x0027_4518,
+        f: ee::s07::f_00274518,
+    };
+    guest(c, |c| {
+        c.cycles += 29;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S3, 0x30);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S2, 0x40);
+        frame.save(c, S0, 0x60);
+        let this = r32(c, S3);
+        c.g[S2][0] = sx(this.wrapping_add(8));
+        frame.save(c, S1, 0x50);
+        c.g[S0][0] = c.g[A3][0];
+        c.g[S1][0] = c.g[T0][0];
+        c.g[A0][0] = c.g[S2][0];
+        frame.save(c, S4, 0x20);
+        frame.save(c, S5, 0x10);
+        c.g[S4][0] = sx(r32(c, S0).wrapping_sub(1));
+        frame.save_ra(c, 0);
+        c.g[S5][0] = sx(this.wrapping_add(0x14));
+        HEAP_INIT.call(c, 0x0027_27c8)?;
+        c.g[A0][0] = 0x58;
+        c.sw(this, c.g[S1][0]);
+        c.mult(0, A0, S0, A0);
+        c.sw(this.wrapping_add(4), c.g[S0][0]);
+        c.sw(this.wrapping_add(0x14), 0);
+        c.g[A1][0] = c.g[S2][0];
+        c.sw(this.wrapping_add(0x18), 0);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x10));
+        HEAP_NEW_ARRAY.call(c, 0x0027_27ec)?;
+        c.g[S2][0] = sx(r32(c, V0).wrapping_add(0x10));
+        c.sw(r32(c, V0), c.g[S0][0]);
+        let empty = c.g[S0][0] == 0;
+        c.g[S1][0] = c.g[S2][0];
+        // Construct the items.
+        if !empty {
+            c.cycles += 1;
+            c.g[S0][0] = u64::MAX;
+            loop {
+                c.cycles += 5;
+                c.g[A0][0] = sx(r32(c, S1).wrapping_add(8));
+                c.g[S4][0] = sx(r32(c, S4).wrapping_sub(1));
+                INSTANCE_CTOR.call(c, 0x0027_280c)?;
+                let more = c.g[S4][0] != c.g[S0][0];
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(0x58));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_2800);
+                }
+            }
+        }
+        // Link the items: index, next (+0x50), prev (+0x54).
+        c.cycles += 4;
+        c.sw(r32(c, S5), c.g[S2][0]);
+        c.g[V0][0] = c.lw(this.wrapping_add(4));
+        let none = c.g[V0][0] == 0;
+        c.g[A0][0] = 0;
+        if !none {
+            c.cycles += 3;
+            c.g[A3][0] = 0xffff_ffff_ffff_ffa8;
+            c.g[A2][0] = 0x58;
+            c.g[A1][0] = 0;
+            loop {
+                c.cycles += 18;
+                c.g[V0][0] = c.lw(this.wrapping_add(0x14));
+                c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                c.sw(r32(c, V0).wrapping_add(4), c.g[A0][0]);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                c.g[V0][0] = c.lw(this.wrapping_add(0x14));
+                c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, A2)));
+                c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x58));
+                c.sw(r32(c, V0).wrapping_add(0x50), c.g[V1][0]);
+                c.g[V0][0] = c.lw(this.wrapping_add(0x14));
+                c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, A3)));
+                c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                c.g[A3][0] = sx(r32(c, A3).wrapping_add(0x58));
+                c.sw(r32(c, V0).wrapping_add(0x54), c.g[V1][0]);
+                c.g[V0][0] = c.lw(this.wrapping_add(4));
+                c.g[V0][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x58));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_2830);
+                }
+            }
+        }
+        c.cycles += 21;
+        c.g[A0][0] = c.lw(this.wrapping_add(0x14));
+        c.g[A1][0] = 0x58;
+        c.g[V0][0] = c.g[S3][0];
+        frame.restore(c, S0, 0x60);
+        c.sw(r32(c, A0).wrapping_add(0x54), 0);
+        frame.restore(c, S1, 0x50);
+        c.g[V1][0] = c.lw(this.wrapping_add(4));
+        c.g[A0][0] = c.lw(this.wrapping_add(0x14));
+        c.mult(0, V1, V1, A1);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+        c.sw(r32(c, V1).wrapping_sub(8), 0);
+        c.sw(this.wrapping_add(0x1c), 0);
+        c.g[V1][0] = c.lw(this.wrapping_add(0x14));
+        c.sw(this.wrapping_add(0x18), c.g[V1][0]);
+        frame.restore(c, S3, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void* InSeq_ChannelGetHeaderField4(InSeqChannel* ch)` (0x274388): the
+/// word at +4 of the header the channel points to (`ch->header` at +0x10).
+pub fn oc436_in_seq_channel_get_header_field4(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(OC436_CHANNEL_HEADER));
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(4));
+    c.pc = t;
+}
+
+/// `InSeqChannel.header`.
+pub(crate) const OC436_CHANNEL_HEADER: u32 = 0x10;
+
+/// `void* InSeq_HeapNewArray(...)` (0x2724c8): tail call of `InSeq_HeapNew`.
+pub fn oc436_in_seq_heap_new_array(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x0027_2488), 0x0027_24d8)
+}
+
+/// `InSeq_HeapDeleteArray(p)` (0x272510): `InSeq_HeapDelete(p)`.
+pub fn inseq_heap_delete_array(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(Callee {
+            addr: 0x0027_24e8,
+            f: ee::s07::InSeq_HeapDelete,
+        }),
+        0x0027_2520,
+    )
+}
+
+/// `void* InSeq_InstanceSetUserData(inst, data)` (0x274c10): swaps
+/// `inst->userData` (+0xc) for `data`, returning the old value.
+pub fn inseq_instance_set_user_data(c: &mut Cpu) {
+    c.cycles += 3;
+    let inst = c.g[A0][0] as u32;
+    c.g[V0][0] = Addr(inst.wrapping_add(0xc)).lw(c);
+    c.sw(inst.wrapping_add(0xc), c.g[A1][0]);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11505,6 +11707,127 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA + 0x1000);
                 c.g[RA][0] = SENTINEL as u64;
                 mode
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ai::tests::oc432_fake;
+    pub(crate) use crate::game::ai::ai::tests::OC432_CTRL;
+    pub(crate) use crate::game::ai::ai::tests::OC432_MAGIC;
+    use std::ptr::addr_of_mut;
+
+    oc432_fake!(
+        fake_in_seq_heap_init,
+        PREV_IN_SEQ_HEAP_INIT,
+        ee::s07::f_002722e0__generated,
+        0x0027_22e0
+    );
+
+    oc432_fake!(
+        fake_in_seq_heap_new,
+        PREV_IN_SEQ_HEAP_NEW,
+        ee::s07::f_00272488__generated,
+        0x0027_2488,
+        |c: &mut Cpu| {
+            c.g[V0][0] = (DATA + 0x5_8000) as u64;
+        }
+    );
+
+    oc432_fake!(
+        fake_in_seq_instance_ctor,
+        PREV_IN_SEQ_INSTANCE_CTOR,
+        ee::s07::f_00274518__generated,
+        0x0027_4518
+    );
+
+    /// `InSeq_ctor`: 0..4 items (including the empty pool); the heap init,
+    /// the array allocation and the item constructor are fakes.
+    #[test]
+    fn in_seq_ctor_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_002722E0),
+            fake_in_seq_heap_init,
+            &PREV_IN_SEQ_HEAP_INIT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00272488),
+            fake_in_seq_heap_new,
+            &PREV_IN_SEQ_HEAP_NEW,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00274518),
+            fake_in_seq_instance_ctor,
+            &PREV_IN_SEQ_INSTANCE_CTOR,
+        );
+        fakes::covered(
+            ee::s07::f_00272788__generated,
+            in_seq_ctor,
+            160,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x272788, 6);
+                c.bus.write32(OC432_CTRL, OC432_MAGIC);
+                c.g[A0][0] = (DATA + 0x5_0000) as u64;
+                c.g[A3][0] = (r.next_u32() % 5) as u64;
+                let _ = seed;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::camera::camera::tests::SEEDS_5 as SEEDS_9;
+    pub(crate) use crate::game::camera::cameracontroller::tests::oc437_checked;
+
+    /// A random word with the edge values zero and negative mixed in.
+    pub(crate) fn oc436_word(r: &mut Rng) -> u32 {
+        match r.next_u32() % 4 {
+            0 => 0,
+            1 => 0xffff_fff0,
+            _ => r.next_u32(),
+        }
+    }
+
+    /// `InSeq_ChannelGetHeaderField4`: a channel whose header (+0x10) points
+    /// at a record with a random word at +4.
+    #[test]
+    fn oc436_in_seq_channel_get_header_field4_matches() {
+        check(
+            ee::s07::f_00274388__generated,
+            oc436_in_seq_channel_get_header_field4,
+            SEEDS_9,
+            &|c, seed| {
+                let mut r = Rng(0x2743_88 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                let ch = DATA + 0x100;
+                let header = DATA + 0x200;
+                c.g[A0][0] = sx(ch);
+                c.bus.write32(ch + OC436_CHANNEL_HEADER, header);
+                let w = oc436_word(&mut r);
+                c.bus.write32(header + 4, w);
+            },
+        );
+    }
+
+    #[test]
+    fn inseq_heap_delete_array_matches() {
+        oc437_checked(
+            ee::s07::f_00272510__generated,
+            inseq_heap_delete_array,
+            0x0027_2510,
+            &|_, _, _| {},
+        );
+    }
+
+    #[test]
+    fn inseq_instance_set_user_data_matches() {
+        check(
+            ee::s07::f_00274c10__generated,
+            inseq_instance_set_user_data,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x274c10, 0);
+                c.pc = 0x0027_4c10;
+                let obj = ptr(&mut r);
+                c.g[A0][0] = obj as u64;
+                c.bus.write32(obj + 0xc, r.next_u32());
             },
         );
     }

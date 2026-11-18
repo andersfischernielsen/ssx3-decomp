@@ -1577,6 +1577,24 @@ pub fn c_game_load_screen_load(c: &mut Cpu) {
     })
 }
 
+/// `void cInitLoadScreen::load(this)` (0x232568): `cSSXApp_initload(SSXApp)`
+/// with `SSXApp = *(gp - 0x848)`. Not installed (see `OVERRIDES`): the callee
+/// is a huge unported driver with no slot to fake, so the return path has no
+/// bounded fixture.
+#[allow(dead_code)]
+pub fn init_load_screen_enter_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+        frame.save_ra(c, 0);
+        call_ptr(c, 0x0022_82d0, 0x0023_257c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

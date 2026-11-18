@@ -110,6 +110,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0035_4920, sync_process_dtor, "SyncProcess_dtor"),
     (0x0035_8380, multi_particle_save, "MultiParticle_Save"),
     (0x0035_9460, spline_modifier_ctor, "SplineModifier_ctor"),
+    (
+        0x0035_8020,
+        multi_particle_create_emitter,
+        "MultiParticle_CreateEmitter",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2013,6 +2018,116 @@ pub fn spline_modifier_ctor(c: &mut Cpu) {
     })
 }
 
+/// `void MultiParticle_CreateEmitter(MultiParticle* self)` (0x358020): allocate the
+/// index table (`count` words, all -1) at `+0xc`, the 0x190-byte emitter block and
+/// its object (`+0x10`), clear the table again through the new object and register
+/// the emitter with the particle system.
+#[allow(unreachable_code)]
+pub fn multi_particle_create_emitter(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_35808c: {
+            c.cycles += 17;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+            c.g[A1][0] = 0x4a0000;
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4030));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S1][0] = c.g[A0][0];
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[A2][0] = 0x20000000;
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[A3][0] = 0u64;
+            c.g[S0][0] = c.lw(c.g[S1][0] as u32);
+            c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
+            c.g[A0][0] = sx((c.g[S0][0] as u32) << 2);
+            call_ptr(c, 0x00317e30, 0x00358058)?;
+            c.g[A0][0] = c.g[V0][0];
+            let t = c.g[S0][0] == 0u64;
+            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+            if t {
+                break 'b_35808c;
+            } else {
+                c.cycles += 3;
+                c.g[A1][0] = 0xffffffffffff0000;
+                c.g[A2][0] = 0xffffffffffffffff;
+                c.g[A1][0] = c.g[A1][0] | 0xffff;
+                'l_358070: loop {
+                    c.cycles += 7;
+                    c.sw(c.g[A0][0] as u32, c.g[A1][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                    let t = c.g[V1][0] != c.g[A2][0];
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00358070);
+                        }
+                        continue 'l_358070;
+                    } else {
+                        break 'b_35808c;
+                    }
+                }
+            }
+        }
+        'b_3580f0: {
+            c.cycles += 13;
+            c.g[A1][0] = 0x4a0000;
+            c.g[A0][0] = 0x190;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4038));
+            c.g[A2][0] = 0x20000000;
+            c.g[A3][0] = 0u64;
+            c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+            call_ptr(c, 0x00317d70, 0x003580a8)?;
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x00370018, 0x003580b0)?;
+            c.g[V1][0] = c.lw(c.g[S1][0] as u32);
+            c.g[A0][0] = 0u64;
+            let t = (c.g[V1][0] as i64) <= 0;
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+            if t {
+                break 'b_3580f0;
+            } else {
+                c.cycles += 4;
+                c.g[A1][0] = 0xffffffffffff0000;
+                c.g[A1][0] = c.g[A1][0] | 0xffff;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                'l_3580d0: loop {
+                    c.cycles += 8;
+                    c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sw(c.g[V1][0] as u32, c.g[A1][0]);
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                    c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] != 0u64 {
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003580d0);
+                        }
+                        continue 'l_3580d0;
+                    } else {
+                        break 'b_3580f0;
+                    }
+                }
+            }
+        }
+        c.cycles += 11;
+        c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+        c.g[A1][0] = 0x500000;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xe60));
+        call_ptr(c, 0x003705e0, 0x00358104)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        return Ok(());
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2716,6 +2831,30 @@ pub(crate) mod tests {
                     SPLINE_MODIFIER_CTOR_QUAD,
                     [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
                 );
+            },
+        );
+    }
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_run;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_w;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC433_FIX;
+
+    /// `MultiParticle_CreateEmitter` against the generated body: 0..4
+    /// emitters (an empty table allocates nothing to fill).
+    #[test]
+    fn multi_particle_create_emitter_matches() {
+        oc433_run(
+            ee::s11::f_00358020__generated,
+            multi_particle_create_emitter,
+            0x0035_8020,
+            4,
+            100,
+            &|c, r, seed| {
+                let this = OC433_FIX + 0x1000;
+                oc433_w(c, this, seed % 5);
+                fill(c, r, this + 8, 1);
+                c.g[A0][0] = sx(this);
             },
         );
     }

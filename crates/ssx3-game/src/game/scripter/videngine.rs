@@ -6,6 +6,7 @@ use crate::abi::r32;
 use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::Callee;
 use crate::call::Frame;
 pub(crate) use crate::game::dirtysock::tagsunk::arg;
 pub(crate) use crate::game::scripter::ssxscriptengine::oc428_at;
@@ -13,7 +14,6 @@ pub(crate) use crate::game::sound::bankmonitor::p;
 pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw;
 pub(crate) use crate::game::wscript::wscriptman::sw;
 use crate::guest::Addr;
-#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -54,6 +54,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         script_cmd_queue_is_full,
         "ScriptCmdQueue_IsFull",
     ),
+    (0x0028_3c80, script_cmd_queue_push_2, "ScriptCmdQueue_Push"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -618,6 +619,81 @@ pub fn script_cmd_queue_is_full(c: &mut Cpu) {
     ret(c);
 }
 
+/// `bool ScriptCmdQueue_Push(self, const Cmd* cmd)` (0x283c80): pushes a
+/// 0x1c-byte script command into the ring buffer (entries at `self + i *
+/// 0x1c`, 4 slots, head at +0x90, tail at +0x8c, "full" flag at +0x94).
+/// Returns 0 when full; otherwise copies the command to the head slot,
+/// advances the head (wrapping 4 -> 0) and sets the full flag when it reaches
+/// the tail; returns 1. Frame 0x30 (s0, s1).
+pub fn script_cmd_queue_push_2(c: &mut Cpu) {
+    const IS_FULL: Callee = Callee {
+        addr: 0x0028_3c58,
+        f: ee::s07::f_00283c58,
+    };
+    const NEXT_INDEX: Callee = Callee {
+        addr: 0x0028_3c60,
+        f: ee::s07::f_00283c60,
+    };
+    const TAIL: u32 = 0x8c;
+    const HEAD: u32 = 0x90;
+    const FULL: u32 = 0x94;
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        IS_FULL.call(c, 0x0028_3c9c)?;
+        let full = c.g[V0][0] != 0;
+        c.g[V0][0] = 0;
+        if !full {
+            c.cycles += 24;
+            let this = r32(c, S0);
+            let cmd = r32(c, S1);
+            c.g[V0][0] = c.lw(this.wrapping_add(HEAD));
+            c.g[V1][0] = 0x1c;
+            c.g[A0][0] = c.g[S0][0];
+            c.mult(0, A1, V0, V1);
+            c.g[V0][0] = sx(r32(c, A1).wrapping_add(this));
+            let slot = r32(c, V0);
+            c.ldl(A2, cmd.wrapping_add(0x7));
+            c.ldr(A2, cmd);
+            c.ldl(A3, cmd.wrapping_add(0xf));
+            c.ldr(A3, cmd.wrapping_add(0x8));
+            c.ldl(V1, cmd.wrapping_add(0x17));
+            c.ldr(V1, cmd.wrapping_add(0x10));
+            c.g[A1][0] = c.lw(cmd.wrapping_add(0x18));
+            c.sdl(A2, slot.wrapping_add(0x7));
+            c.sdr(A2, slot);
+            c.sdl(A3, slot.wrapping_add(0xf));
+            c.sdr(A3, slot.wrapping_add(0x8));
+            c.sdl(V1, slot.wrapping_add(0x17));
+            c.sdr(V1, slot.wrapping_add(0x10));
+            c.sw(slot.wrapping_add(0x18), c.g[A1][0]);
+            c.g[A1][0] = c.lw(this.wrapping_add(HEAD));
+            NEXT_INDEX.call(c, 0x0028_3cf8)?;
+            c.g[V1][0] = c.lw(this.wrapping_add(TAIL));
+            let not_full_now = c.g[V0][0] != c.g[V1][0];
+            c.sw(this.wrapping_add(HEAD), c.g[V0][0]);
+            if !not_full_now {
+                c.cycles += 2;
+                c.g[V0][0] = 1;
+                c.sw(this.wrapping_add(FULL), c.g[V0][0]);
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 1;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -910,6 +986,39 @@ pub(crate) mod tests {
             script_cmd_queue_is_full,
             0x283c58,
             SCRIPT_CMD_QUEUE_FULL,
+        );
+    }
+
+    /// `ScriptCmdQueue_Push`: full/not-full queue, head 0..4 (wrapping), tail
+    /// equal to the next head or not; the command lives at an unaligned
+    /// address.
+    #[test]
+    fn script_cmd_queue_push_matches() {
+        check(
+            ee::s07::f_00283c80__generated,
+            script_cmd_queue_push_2,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x283c80 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                let this = DATA + 0x5_0000;
+                let cmd = DATA + 0x5_1000 + seed % 8;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = cmd as u64;
+                let head = r.next_u32() % 5;
+                c.bus.write32(this + 0x90, head);
+                c.bus.write32(this + 0x94, (r.next_u32() % 4 == 0) as u32);
+                let next = if head == 4 { 0 } else { head + 1 };
+                c.bus.write32(
+                    this + 0x8c,
+                    if r.next_u32() % 2 == 0 {
+                        next
+                    } else {
+                        r.next_u32() % 5
+                    },
+                );
+                crate::difftest::fill(c, &mut r, cmd, 7);
+            },
         );
     }
 }

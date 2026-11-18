@@ -309,6 +309,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_chunk_resolve_hook,
         "World_ChunkResolveHook",
     ),
+    (
+        0x003a_dc80,
+        t_w_script_cache_get_global_count,
+        "tWScriptCache_GetGlobalCount",
+    ),
+    (
+        0x003a_dcb0,
+        w_script_cache_get_globals,
+        "tWScriptCache_GetGlobals",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5209,6 +5219,59 @@ pub fn t_wscript_cache_relocate(c: &mut Cpu) {
     })
 }
 
+/// `int tWScriptCache_GetGlobals(tWScriptCacheEntry* self)` (0x3adcb0): the entry's global
+/// script pointer (`+0x14` of its data at `+0x8`) when the entry has type 3 and data, else 0.
+pub fn w_script_cache_get_globals(c: &mut Cpu) {
+    'b_3adcd4: {
+        c.cycles += 4;
+        c.g[V0][0] = c.lh(c.g[A0][0] as u32);
+        c.g[V1][0] = 0x3;
+        let t = c.g[V0][0] != c.g[V1][0];
+        if t {
+            break 'b_3adcd4;
+        } else {
+            c.cycles += 3;
+            c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+            let t = c.g[A0][0] == 0u64;
+            if t {
+                break 'b_3adcd4;
+            } else {
+                c.cycles += 2;
+                let t = c.g[RA][0] as u32;
+                c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x14));
+                c.pc = t;
+                return;
+            }
+        }
+    }
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0u64;
+    c.pc = t;
+}
+
+/// `int tWScriptCache_GetGlobalCount(tWScriptCache *self)` (0x3adc80): when
+/// the cache kind (`+0`, halfword) is 3 and its data (`+8`) exists, the data's
+/// word at `+0x10`; else 0.
+pub fn t_w_script_cache_get_global_count(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[V0][0] = Addr(r32(c, A0)).lh(c);
+    c.g[V1][0] = 3;
+    if c.g[V0][0] == c.g[V1][0] {
+        c.cycles += 3;
+        c.g[A0][0] = Addr(r32(c, A0).wrapping_add(8)).lw(c);
+        if c.g[A0][0] != 0 {
+            c.cycles += 2;
+            c.g[V0][0] = Addr(r32(c, A0).wrapping_add(0x10)).lw(c);
+            ret(c);
+            return;
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 0;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -7150,6 +7213,52 @@ pub(crate) mod tests {
                 c.bus.write32(OC420_CTRL, OC420_MAGIC);
                 oc420_relocate_setup(c, &mut r, seed, 2);
                 schedule(c, &mut r, seed, 0x003a_ccd8)
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ai::tests::oc434_setup;
+    pub(crate) use crate::game::ai::ai::tests::oc434_w;
+
+    pub(crate) use crate::game::world::world::tests::w_2 as w_3;
+    pub(crate) use crate::game::world::world::tests::BASE_2 as BASE;
+    pub(crate) use crate::game::world::world::tests::SEEDS_4 as SEEDS_11;
+
+    /// `tWScriptCache_GetGlobals`: a leaf; type 3 with and without data, other types.
+    #[test]
+    fn w_script_cache_get_globals_matches() {
+        check(
+            ee::s13::f_003adcb0__generated,
+            w_script_cache_get_globals,
+            24,
+            &|c, seed| {
+                let mut r = oc434_setup(c, seed, 0x3adcb0, 0, 0x003a_dcb0);
+                let (entry, data) = (DATA + 0x100, DATA + 0x200);
+                c.g[A0][0] = entry as u64;
+                c.bus.write16(entry, if seed % 3 == 0 { 2 } else { 3 });
+                oc434_w(c, entry + 8, if seed % 4 == 1 { 0 } else { data });
+                oc434_w(c, data + 0x14, r.next_u32());
+            },
+        );
+    }
+
+    /// `tWScriptCache_GetGlobalCount`: kind 3 with data returns `data+0x10`;
+    /// other kinds (also a sign-extended halfword) and missing data return 0.
+    #[test]
+    fn t_w_script_cache_get_global_count_matches() {
+        check(
+            ee::s13::f_003adc80__generated,
+            t_w_script_cache_get_global_count,
+            SEEDS_11,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3adc80, 0);
+                let cache = BASE + 0x100;
+                let data = BASE + 0x200;
+                c.g[A0][0] = cache as u64;
+                c.bus
+                    .write16(cache, [3, 3, 3, 1, 0x8003][seed as usize % 5]);
+                w_3(c, cache + 8, if seed % 3 == 0 { 0 } else { data });
+                w_3(c, data + 0x10, r.next_u32());
             },
         );
     }

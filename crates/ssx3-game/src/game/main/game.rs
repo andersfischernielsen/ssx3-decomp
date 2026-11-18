@@ -7,7 +7,9 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::delete_if_flag;
@@ -33,6 +35,7 @@ pub(crate) use crate::game::seg::seg_1fbe38::oc417_add;
 pub(crate) use crate::game::seg::seg_1fbe38::oc417_lw;
 pub(crate) use crate::game::seg::seg_1fbe38::oc417_sw;
 pub(crate) use crate::game::seg::seg_1fbe38::oc417_sw0;
+pub(crate) use crate::game::world::world::oc435_callee;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -128,6 +131,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "SectionMan_RequestActivate",
     ),
     (0x0022_d088, section_man_load_event, "SectionMan_LoadEvent"),
+    (0x0022_cd40, section_man_init, "SectionMan_Init"),
+    (0x0022_de98, section_man_apply_sky, "SectionMan_ApplySky"),
+    (
+        0x0022_d668,
+        oc436_section_man_advance_event_switch_sync,
+        "SectionMan_AdvanceEventSwitchSync",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2479,6 +2489,371 @@ pub fn section_man_load_event(c: &mut Cpu) {
     })
 }
 
+/// `void SectionMan_Init(self)` (0x22cd40): resets the section manager.
+/// Clears the 50-entry section map at 0x442168 (`{.., idx = -1, 0, ..}`, 16
+/// bytes each, then entry 49's index = 0), then for each of the 50 section
+/// files of the race interface matches the file name (`strcmp`) against every
+/// streamer section name and stores the matching section index in the map.
+/// Finally resets the mode/state fields (+0x1a4..+0x1d0), initialises the
+/// node pool and sets `+0x1ac = -1`. A dispatcher: its loop back edges
+/// deliver events and may unwind, so it is re-entered at `0x22cd90`,
+/// `0x22cdc0` or `0x22cdc8`. Frame 0x80 (s0-s6).
+pub fn section_man_init(c: &mut Cpu) {
+    guest(c, section_man_init_stages)
+}
+
+pub(crate) fn section_man_init_stages(c: &mut Cpu) -> Flow {
+    const ENTRY: u32 = 0x0022_cd40;
+    const CLEAR_MAP: u32 = 0x0022_cd90;
+    const START_SCAN: u32 = 0x0022_cdac;
+    const NEXT_ENTRY: u32 = 0x0022_cdc0;
+    const COMPARE: u32 = 0x0022_cdc8;
+    const STORE_MATCH: u32 = 0x0022_ce00;
+    const SECTION_LOOP: u32 = 0x0022_ce10;
+    const NEXT_FILE: u32 = 0x0022_ce30;
+    const FINISH: u32 = 0x0022_ce40;
+    let frame = Frame { size: 0x80 };
+    let mut pc = c.pc;
+    loop {
+        match pc {
+            ENTRY => {
+                c.cycles += 20;
+                Frame::open(c, 0x80);
+                frame.save(c, S2, 0x50);
+                frame.save(c, S5, 0x20);
+                frame.save(c, S0, 0x70);
+                frame.save(c, S1, 0x60);
+                frame.save(c, S3, 0x40);
+                frame.save(c, S4, 0x30);
+                frame.save(c, S6, 0x10);
+                frame.save_ra(c, 0);
+                c.g[S2][0] = c.g[A0][0];
+                call_ptr(c, 0x0014_dc80, 0x0022_cd6c)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 0;
+                call_ptr(c, 0x0014_dd58, 0x0022_cd78)?;
+                c.g[S5][0] = c.g[V0][0];
+                c.g[A1][0] = 0x44_0000;
+                c.g[V0][0] = sx(r32(c, A1).wrapping_add(0x2168));
+                c.g[A0][0] = u64::MAX;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x8));
+                c.g[V1][0] = 0x31;
+                pc = CLEAR_MAP;
+            }
+            CLEAR_MAP => {
+                c.cycles += 7;
+                c.sw(r32(c, V0).wrapping_sub(4), c.g[A0][0]);
+                c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+                c.sw(r32(c, V0), 0);
+                let more = (c.g[V1][0] as i64) >= 0;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x10));
+                if more {
+                    if back_edge_unwinds(c, CLEAR_MAP) {
+                        return Ok(());
+                    }
+                    pc = CLEAR_MAP;
+                } else {
+                    pc = START_SCAN;
+                }
+            }
+            START_SCAN => {
+                c.cycles += 5;
+                c.g[V0][0] = sx(r32(c, A1).wrapping_add(0x2168));
+                c.g[S3][0] = 0;
+                c.sw(r32(c, V0).wrapping_add(0x314), 0);
+                c.g[S6][0] = sx(r32(c, V0).wrapping_add(4));
+                c.g[S1][0] = 0;
+                pc = NEXT_ENTRY;
+            }
+            NEXT_ENTRY => {
+                c.cycles += 2;
+                c.g[S4][0] = sx(r32(c, S3).wrapping_add(1));
+                pc = SECTION_LOOP;
+            }
+            COMPARE => {
+                c.cycles += 14;
+                c.g[A1][0] = c.g[S3][0];
+                call_ptr(c, 0x0014_4d38, 0x0022_cdd0)?;
+                let s2 = r32(c, S2);
+                c.g[V1][0] = c.lw(s2.wrapping_add(0x1b0));
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S1][0];
+                c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x10));
+                c.g[A0][0] = c.lw(r32(c, V0));
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x10));
+                call_ptr(c, 0x003a_9820, 0x0022_cdec)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[V0][0];
+                call_ptr(c, 0x0041_65a8, 0x0022_cdf8)?;
+                if c.g[V0][0] != 0 {
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                    pc = SECTION_LOOP;
+                } else {
+                    pc = STORE_MATCH;
+                }
+            }
+            STORE_MATCH => {
+                c.cycles += 4;
+                c.g[V0][0] = sx(r32(c, S3) << 4);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S6)));
+                c.sw(r32(c, V0), c.g[S1][0]);
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                pc = SECTION_LOOP;
+            }
+            SECTION_LOOP => {
+                c.cycles += 8;
+                let s2 = r32(c, S2);
+                c.g[V0][0] = c.lw(s2.wrapping_add(0x1b0));
+                c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x10));
+                c.g[A0][0] = c.lw(r32(c, V1));
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x10));
+                call_ptr(c, 0x003a_9800, 0x0022_ce24)?;
+                c.g[V0][0] = (c.g[S1][0] < c.g[V0][0]) as u64;
+                if c.g[V0][0] != 0 {
+                    c.g[A0][0] = c.g[S5][0];
+                    if back_edge_unwinds(c, COMPARE) {
+                        return Ok(());
+                    }
+                    pc = COMPARE;
+                } else {
+                    pc = NEXT_FILE;
+                }
+            }
+            NEXT_FILE => {
+                c.cycles += 4;
+                c.g[S3][0] = c.g[S4][0];
+                c.g[V0][0] = ((c.g[S3][0] as i64) < 50) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S1][0] = 0;
+                if more {
+                    if back_edge_unwinds(c, NEXT_ENTRY) {
+                        return Ok(());
+                    }
+                    pc = NEXT_ENTRY;
+                } else {
+                    pc = FINISH;
+                }
+            }
+            FINISH => {
+                c.cycles += 26;
+                c.g[V1][0] = 0x16;
+                c.g[V0][0] = 1;
+                let s2 = r32(c, S2);
+                c.sw(s2.wrapping_add(0x1b8), 0);
+                c.g[A0][0] = c.g[S2][0];
+                c.sw(s2.wrapping_add(0x1b4), 0);
+                c.sw(s2.wrapping_add(0x1c0), 0);
+                c.sw(s2.wrapping_add(0x1c8), 0);
+                c.sw(s2.wrapping_add(0x1cc), 0);
+                c.sw(s2.wrapping_add(0x1bc), c.g[V1][0]);
+                c.sw(s2.wrapping_add(0x1d0), c.g[V0][0]);
+                SECTION_MAN_INIT_NODE_POOL.call(c, 0x0022_ce6c)?;
+                c.g[V0][0] = u64::MAX;
+                let s2 = r32(c, S2);
+                c.sw(s2.wrapping_add(0x1c4), 0);
+                c.sw(s2.wrapping_add(0x1ac), c.g[V0][0]);
+                c.sw(s2.wrapping_add(0x1a4), 0);
+                c.sw(s2.wrapping_add(0x1a8), 0);
+                frame.restore(c, S0, 0x70);
+                frame.restore(c, S1, 0x60);
+                frame.restore(c, S2, 0x50);
+                frame.restore(c, S3, 0x40);
+                frame.restore(c, S4, 0x30);
+                frame.restore(c, S5, 0x20);
+                frame.restore(c, S6, 0x10);
+                frame.restore_ra(c, 0);
+                frame.close(c);
+                return Ok(());
+            }
+            _ => {
+                c.jump_out(pc, 0x0022_cd40, 0x0022_cea8);
+                return Ok(());
+            }
+        }
+    }
+}
+
+pub(crate) const SECTION_MAN_INIT_NODE_POOL: Callee = Callee {
+    addr: 0x0022_e228,
+    f: ee::s05::f_0022e228,
+};
+
+/// `SectionMan` fields of `SectionMan_ApplySky`.
+pub(crate) const SECTION_MAN_SKY_PENDING: u32 = 0x1a4;
+
+pub(crate) const SECTION_MAN_SKY_ACTIVE: u32 = 0x1a8;
+
+pub(crate) const SECTION_MAN_SKY_CURRENT: u32 = 0x1ac;
+
+pub(crate) const SECTION_MAN_SKY_BOX: u32 = 0x1b0;
+
+/// `void SectionMan_ApplySky(SectionMan *self)` (0x22de98): when a sky change
+/// is active (`+0x1a8`) and pending (`+0x1a4`), unloads every section
+/// 0x2c..0x30 other than the current sky (`+0x1ac`), then points the sky box
+/// (`+0x1b0 -> +0x14`) at the section the sky table (0x442168, 16-byte
+/// entries, word 1) names for the current sky, clearing it first when that
+/// differs from the box's present section (`+0x10`); finally clears pending
+/// and active and sets the current sky to -1. Frame 0x30 (s0, s1).
+pub fn section_man_apply_sky(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, S1).wrapping_add(SECTION_MAN_SKY_ACTIVE)).lw(c);
+        let inactive = c.g[V0][0] == 0;
+        frame.restore(c, S0, 0x20);
+        if !inactive {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, S1).wrapping_add(SECTION_MAN_SKY_PENDING)).lw(c);
+            let none_pending = c.g[V0][0] == 0;
+            c.g[S0][0] = 0x2c;
+            if !none_pending {
+                c.cycles += 1;
+                c.g[V0][0] = Addr(r32(c, S1).wrapping_add(SECTION_MAN_SKY_CURRENT)).lw(c);
+                loop {
+                    c.cycles += 2;
+                    let is_current = c.g[S0][0] == c.g[V0][0];
+                    c.g[A0][0] = c.g[S1][0];
+                    if !is_current {
+                        c.cycles += 2;
+                        c.g[A1][0] = c.g[S0][0];
+                        oc435_callee!(0x0022_d598, ee::s05::SectionMan_RequestUnload)
+                            .call(c, 0x0022_ded8)?;
+                    }
+                    c.cycles += 4;
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < 49) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[V0][0] = Addr(r32(c, S1).wrapping_add(SECTION_MAN_SKY_CURRENT)).lw(c);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0022_dec8);
+                        }
+                        continue;
+                    }
+                    break;
+                }
+                c.cycles += 11;
+                c.g[V1][0] = Addr(r32(c, S1).wrapping_add(SECTION_MAN_SKY_CURRENT)).lw(c);
+                c.g[V0][0] = 0x44_0000;
+                c.g[A0][0] = Addr(r32(c, S1).wrapping_add(SECTION_MAN_SKY_BOX)).lw(c);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x2168));
+                c.g[V1][0] = sx(r32(c, V1) << 4);
+                c.g[A0][0] = Addr(r32(c, A0).wrapping_add(0x14)).lw(c);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                c.g[S0][0] = Addr(r32(c, V0).wrapping_add(4)).lw(c);
+                c.g[V1][0] = Addr(r32(c, A0).wrapping_add(0x10)).lw(c);
+                let same = c.g[V1][0] == c.g[S0][0];
+                c.g[V0][0] = u64::MAX;
+                if !same {
+                    c.cycles += 7;
+                    call_ptr(c, 0x0035_3d98, 0x0022_df1c)?;
+                    c.g[V0][0] = Addr(r32(c, S1).wrapping_add(SECTION_MAN_SKY_BOX)).lw(c);
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x14)).lw(c);
+                    call_ptr(c, 0x0035_3cf0, 0x0022_df2c)?;
+                    c.g[V0][0] = u64::MAX;
+                }
+                c.cycles += 3;
+                Addr(r32(c, S1).wrapping_add(SECTION_MAN_SKY_PENDING)).sw(c, 0);
+                Addr(r32(c, S1).wrapping_add(SECTION_MAN_SKY_CURRENT)).sw(c, c.g[V0][0]);
+                Addr(r32(c, S1).wrapping_add(SECTION_MAN_SKY_ACTIVE)).sw(c, 0);
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `SectionMan.eventSwitchState` (+0x1b4) and `.eventSwitchArg` (+0x1b8).
+pub(crate) const OC436_SM_SWITCH_STATE: u32 = 0x1b4;
+
+pub(crate) const OC436_SM_SWITCH_ARG: u32 = 0x1b8;
+
+/// The original's jump table (states 0..4).
+#[cfg(test)]
+pub(crate) const OC436_SM_SWITCH_TABLE: u32 = 0x0047_b430;
+
+/// `void SectionMan_AdvanceEventSwitchSync(SectionMan* s, int arg)`
+/// (0x22d668): when `arg != 0` and the switch state (+0x1b4) is below 5, a
+/// jump table steps the state machine: state 0 stores `arg` (+0x1b8) and goes
+/// to 3, state 1 goes to 3 (and returns at once), state 2 goes to 4, states
+/// 3 and 4 stay. Other entries go to the generated `__entries` twin.
+pub fn oc436_section_man_advance_event_switch_sync(c: &mut Cpu) {
+    if c.pc != 0x0022_d668 {
+        return oc436_section_man_advance_resume_2(c);
+    }
+    c.cycles += 2;
+    let skip = c.g[A1][0] == 0;
+    c.g[A2][0] = c.g[A0][0];
+    if !skip {
+        c.cycles += 4;
+        c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(OC436_SM_SWITCH_STATE));
+        c.g[V0][0] = (c.g[V1][0] < 5) as u64;
+        let out_of_range = c.g[V0][0] == 0;
+        c.g[V0][0] = 0x48_0000;
+        if !out_of_range {
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4bd0));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+            let target = c.g[A0][0] as u32;
+            let this = c.g[A2][0] as u32;
+            match target {
+                0x0022_d698 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = 3;
+                    c.sw(this.wrapping_add(OC436_SM_SWITCH_ARG), c.g[A1][0]);
+                    let t = c.g[RA][0] as u32;
+                    c.sw(this.wrapping_add(OC436_SM_SWITCH_STATE), c.g[V0][0]);
+                    c.pc = t;
+                    return;
+                }
+                0x0022_d6a8 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 3;
+                    let t = c.g[RA][0] as u32;
+                    c.sw(this.wrapping_add(OC436_SM_SWITCH_STATE), c.g[V0][0]);
+                    c.pc = t;
+                    return;
+                }
+                0x0022_d6b4 => {
+                    c.cycles += 2;
+                    c.g[V0][0] = 4;
+                    c.sw(this.wrapping_add(OC436_SM_SWITCH_STATE), c.g[V0][0]);
+                }
+                0x0022_d6bc => {}
+                _ => {
+                    c.jump_out(target, 0x0022_d668, 0x0022_d6c4);
+                    return;
+                }
+            }
+        }
+    }
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.pc = t;
+}
+
+#[cfg(not(feature = "ee-unwind"))]
+pub(crate) fn oc436_section_man_advance_resume_2(c: &mut Cpu) {
+    ee::s05::f_0022d668__entries(c)
+}
+
+// At install the orchestrator switches this to the generated twin.
+#[cfg(feature = "ee-unwind")]
+pub(crate) fn oc436_section_man_advance_resume_2(c: &mut Cpu) {
+    ee::s05::f_0022d668__generated(c)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -3397,6 +3772,664 @@ pub(crate) mod tests {
                     c.bus
                         .write32(OC431_LOCATION_MODES + 8 * i + 4, r.next_u32() % 6);
                 }
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ai::ai_load_anim_data_sources;
+    pub(crate) use crate::game::ai::ai::tests::oc432_fake;
+    pub(crate) use crate::game::ai::ai::tests::OC432_CTRL;
+    pub(crate) use crate::game::ai::ai::tests::OC432_MAGIC;
+    pub(crate) use crate::game::be::bedbreward::rewards_file_load_2 as rewards_file_load;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::default_3_chase_camera_algorithm_dtor;
+    pub(crate) use crate::game::fe::debugfe::fe_ui_input_dtor;
+    pub(crate) use crate::game::input::inputparse::input_parser_parse_all;
+    pub(crate) use crate::game::main::gameload::game_module_enter_2 as game_module_enter;
+    pub(crate) use crate::game::main::sectionman::section_man_select_peak_lighting;
+    pub(crate) use crate::game::object::modifierblock::sky_box_set_section_2 as sky_box_set_section;
+    pub(crate) use crate::game::world::world::tests::w_2 as w_3;
+    pub(crate) use crate::game::world::world::tests::BASE_2 as BASE;
+    pub(crate) use crate::game::world::world::world_load_2 as world_load;
+    use ssx3_ee_rt::funcs::register_functions;
+
+    oc432_fake!(
+        fake_get_be,
+        PREV_GET_BE,
+        ee::s01::f_0014dc80__generated,
+        0x0014_dc80
+    );
+
+    oc432_fake!(
+        fake_be_get_interface,
+        PREV_BE_GET_INTERFACE,
+        ee::s01::f_0014dd58__generated,
+        0x0014_dd58
+    );
+
+    oc432_fake!(
+        fake_streamer_get_section,
+        PREV_STREAMER_GET_SECTION,
+        ee::s13::f_003a9820__generated,
+        0x003a_9820
+    );
+
+    oc432_fake!(
+        fake_streamer_section_count,
+        PREV_STREAMER_SECTION_COUNT,
+        ee::s13::f_003a9800__generated,
+        0x003a_9800,
+        |c: &mut Cpu| {
+            c.g[V0][0] = c.bus.read32(OC432_CTRL + 4) as u64;
+        }
+    );
+
+    oc432_fake!(
+        fake_get_section_entry,
+        PREV_GET_SECTION_ENTRY,
+        ee::s01::f_00144d38__generated,
+        0x0014_4d38
+    );
+
+    oc432_fake!(
+        fake_strcmp,
+        PREV_STRCMP,
+        ee::s15::f_004165a8__generated,
+        0x0041_65a8,
+        |c: &mut Cpu| {
+            let n = c.bus.read32(fakes::LOG_COUNT);
+            c.g[V0][0] = (n % 3 != 0) as u64;
+        }
+    );
+
+    oc432_fake!(
+        fake_section_init_node_pool,
+        PREV_SECTION_INIT_NODE_POOL,
+        ee::s05::f_0022e228__generated,
+        0x0022_e228
+    );
+
+    /// `SectionMan_Init`: the BE getters, the streamer's section accessors,
+    /// strcmp and the node pool init are logging fakes (the section count is
+    /// 0..2 and strcmp matches on some calls, so the map update and both loop
+    /// back edges run; fake unwinds exercise the call-unwind exits).
+    #[test]
+    fn section_man_init_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DC80),
+            fake_get_be,
+            &PREV_GET_BE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
+            fake_be_get_interface,
+            &PREV_BE_GET_INTERFACE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003A9820),
+            fake_streamer_get_section,
+            &PREV_STREAMER_GET_SECTION,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003A9800),
+            fake_streamer_section_count,
+            &PREV_STREAMER_SECTION_COUNT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_00144D38),
+            fake_get_section_entry,
+            &PREV_GET_SECTION_ENTRY,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004165A8),
+            fake_strcmp,
+            &PREV_STRCMP,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s05::OVERRIDE_0022E228),
+            fake_section_init_node_pool,
+            &PREV_SECTION_INIT_NODE_POOL,
+        );
+        fakes::covered(
+            ee::s05::f_0022cd40__generated,
+            section_man_init,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x22cd40, 60);
+                c.bus.write32(OC432_CTRL, OC432_MAGIC);
+                c.bus.write32(OC432_CTRL + 4, r.next_u32() % 3);
+                c.pc = 0x0022_cd40;
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA + 0x1b0, DATA + 0x400);
+                c.bus.write32(DATA + 0x410, DATA + 0x500);
+                c.bus.write32(DATA + 0x500, DATA + 0x600);
+            },
+        );
+    }
+
+    /// Stub controls of the parser test (`DATA + 0x200000` and up).
+    pub(crate) const CTRL: u32 = DATA + 0x20_0000;
+
+    /// Set in the child process of the tests whose callees are real guest
+    /// code (`call_ptr` targets): there the function table is empty, so every
+    /// such callee lands in the logging fake, and the direct callees' override
+    /// slots hold logging fakes too. A table swap in the shared test process
+    /// would race with the other tests' `fresh()`.
+    pub(crate) const OC435_CHILD_ENV: &str = "SSX3_OC435_CHILD";
+
+    /// Run test `name` of this module in a child process (the same test
+    /// binary, `--exact`), where `body` runs against the stub table.
+    pub(crate) fn in_child(name: &str, body: fn()) {
+        if std::env::var_os(OC435_CHILD_ENV).is_some() {
+            install_stubs();
+            return body();
+        }
+        let path = format!(
+            "{}::{name}",
+            module_path!().split_once("::").map_or("", |p| p.1)
+        );
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([path.as_str(), "--exact", "--test-threads=1", "--nocapture"])
+            .env(OC435_CHILD_ENV, "1")
+            .output()
+            .unwrap();
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            out.status.success() && text.contains("1 passed"),
+            "child run of {name}:\n{text}"
+        );
+    }
+
+    /// Per-seed machine of the child tests: scrambled registers, the fake
+    /// hooks and an empty function table.
+    pub(crate) fn child_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        let r = machine(c, seed, salt, calls);
+        register_functions(&[]);
+        r
+    }
+
+    /// A logging stub for a direct callee (reached through its override slot).
+    macro_rules! oc435_stub {
+        ($fake:ident, $prev:ident, $addr:expr) => {
+            pub(crate) static $prev: AtomicUsize = AtomicUsize::new(0);
+            pub(crate) fn $fake(c: &mut Cpu) {
+                let ra = c.g[RA][0] as u32;
+                fakes::fake(c, $addr, ra)
+            }
+        };
+    }
+
+    oc435_stub!(stub_request_unload, PREV_REQUEST_UNLOAD, 0x0022_d598);
+
+    oc435_stub!(stub_sky_box_clear, PREV_SKY_BOX_CLEAR, 0x0035_3d98);
+
+    oc435_stub!(stub_rewards_parse, PREV_REWARDS_PARSE, 0x0015_a818);
+
+    oc435_stub!(stub_world_cache_reset, PREV_WORLD_CACHE_RESET, 0x003a_7f90);
+
+    oc435_stub!(stub_world_cache_load, PREV_WORLD_CACHE_LOAD, 0x003a_7fc0);
+
+    oc435_stub!(stub_section_count, PREV_SECTION_COUNT, 0x003a_9800);
+
+    oc435_stub!(
+        stub_script_cache_alloc,
+        PREV_SCRIPT_CACHE_ALLOC,
+        0x003a_c800
+    );
+
+    pub(crate) static PREV_NEXT_TOKEN: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_PARSE_STATEMENT: AtomicUsize = AtomicUsize::new(0);
+
+    /// `InputParser_NextToken`: the token kind (`+0x98`) becomes the word at
+    /// `CTRL`.
+    pub(crate) fn stub_next_token(c: &mut Cpu) {
+        let ra = c.g[RA][0] as u32;
+        let p = c.g[A0][0] as u32;
+        fakes::fake(c, 0x0032_1af0, ra);
+        if c.pc == ra {
+            let kind = c.bus.read32(CTRL);
+            w_3(c, p.wrapping_add(0x98), kind);
+        }
+    }
+
+    /// `InputParser_ParseStatement`: consumes one of the `CTRL + 4` rounds
+    /// left; the last one ends the input (kind 0).
+    pub(crate) fn stub_parse_statement(c: &mut Cpu) {
+        let ra = c.g[RA][0] as u32;
+        let p = c.g[A0][0] as u32;
+        fakes::fake(c, 0x0032_30e0, ra);
+        if c.pc == ra {
+            let left = c.bus.read32(CTRL + 4);
+            if left == 0 {
+                w_3(c, p.wrapping_add(0x98), 0);
+            } else {
+                w_3(c, CTRL + 4, left - 1);
+            }
+        }
+    }
+
+    /// Child process only: put the logging stubs in the direct callees' slots.
+    pub(crate) fn install_stubs() {
+        fakes::hook(
+            addr_of_mut!(ee::s05::OVERRIDE_0022D598),
+            stub_request_unload,
+            &PREV_REQUEST_UNLOAD,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00353D98),
+            stub_sky_box_clear,
+            &PREV_SKY_BOX_CLEAR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0015A818),
+            stub_rewards_parse,
+            &PREV_REWARDS_PARSE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003A7F90),
+            stub_world_cache_reset,
+            &PREV_WORLD_CACHE_RESET,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003A7FC0),
+            stub_world_cache_load,
+            &PREV_WORLD_CACHE_LOAD,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003A9800),
+            stub_section_count,
+            &PREV_SECTION_COUNT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003AC800),
+            stub_script_cache_alloc,
+            &PREV_SCRIPT_CACHE_ALLOC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00321AF0),
+            stub_next_token,
+            &PREV_NEXT_TOKEN,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003230E0),
+            stub_parse_statement,
+            &PREV_PARSE_STATEMENT,
+        );
+    }
+
+    // ---- tests whose callees are real guest code: run in a child process
+
+    pub(crate) fn ai_load_anim_data_sources_checked() {
+        covered(
+            ee::s00::f_0012b280__generated,
+            ai_load_anim_data_sources,
+            100,
+            &|c, seed| {
+                let mut r = child_machine(c, seed, 0x12b280, 6);
+                w_3(c, GAME_GP_TEST.wrapping_add(0xd08), BASE + 0x1000);
+                w_3(c, GAME_GP_TEST.wrapping_add(0xd8c), r.next_u32());
+            },
+        );
+    }
+
+    /// `AI_LoadAnimDataSources`: the six guest calls (mount, data source
+    /// allocation and construction, registration, post hook, unmount) with
+    /// their arguments, the table store, unwinds at any call.
+    #[test]
+    fn ai_load_anim_data_sources_matches() {
+        in_child(
+            "ai_load_anim_data_sources_matches",
+            ai_load_anim_data_sources_checked,
+        );
+    }
+
+    pub(crate) const GAME_GP_TEST: u32 = crate::difftest::GAME_GP;
+
+    pub(crate) fn section_man_apply_sky_checked() {
+        covered(
+            ee::s05::f_0022de98__generated,
+            section_man_apply_sky,
+            200,
+            &|c, seed| {
+                let mut r = child_machine(c, seed, 0x22de98, 8);
+                let (this, sky_box, obj) = (BASE + 0x100, BASE + 0x200, BASE + 0x300);
+                c.g[A0][0] = this as u64;
+                w_3(c, this + SECTION_MAN_SKY_ACTIVE, (seed % 4 != 0) as u32);
+                w_3(c, this + SECTION_MAN_SKY_PENDING, (seed % 5 != 0) as u32);
+                let current = [0x2c_u32, 0x2e, 0x30, 5, 0xffff_ffff, 0x2d][(seed / 3) as usize % 6];
+                w_3(c, this + SECTION_MAN_SKY_CURRENT, current);
+                w_3(c, this + SECTION_MAN_SKY_BOX, sky_box);
+                w_3(c, sky_box + 0x14, obj);
+                let section = r.next_u32() & 0xff;
+                w_3(c, obj + 0x10, section);
+                // The sky table: 16-byte entries from 0x442168, word 1 the section.
+                let entry = 0x44_2168u32.wrapping_add(current << 4);
+                w_3(
+                    c,
+                    entry + 4,
+                    if seed % 2 == 0 { section } else { section + 1 },
+                );
+            },
+        );
+    }
+
+    /// `SectionMan_ApplySky`: inactive and nothing pending (both skipped),
+    /// the unload loop with the current sky in or out of 0x2c..0x30, and the
+    /// sky box cleared (section differs) or kept (same).
+    #[test]
+    fn section_man_apply_sky_matches() {
+        in_child(
+            "section_man_apply_sky_matches",
+            section_man_apply_sky_checked,
+        );
+    }
+
+    pub(crate) fn rewards_file_load_checked() {
+        covered(
+            ee::s01::f_0015ad58__generated,
+            rewards_file_load,
+            100,
+            &|c, seed| {
+                let mut r = child_machine(c, seed, 0x15ad58, 5);
+                let gp = GAME_GP_TEST;
+                let (out, world) = (BASE + 0x100, BASE + 0x200);
+                c.g[A0][0] = out as u64;
+                c.g[A1][0] = [0u64, 0, 1, 0x77][seed as usize % 4];
+                w_3(c, gp.wrapping_sub(0x848), world);
+                w_3(c, world + 0x7c, r.next_u32());
+                w_3(c, gp.wrapping_sub(0x1e80), r.next_u32());
+            },
+        );
+    }
+
+    /// `RewardsFile_Load`: the synchronous read-and-parse path (`a1 == 0`) and
+    /// the asynchronous acquire (`a1 != 0`), the result stored in `*out`.
+    #[test]
+    fn rewards_file_load_matches() {
+        in_child("rewards_file_load_matches", rewards_file_load_checked);
+    }
+
+    pub(crate) fn sky_box_set_section_checked() {
+        covered(
+            ee::s11::f_00353cf0__generated,
+            sky_box_set_section,
+            200,
+            &|c, seed| {
+                let mut r = child_machine(c, seed, 0x353cf0, 2);
+                let this = BASE + 0x100;
+                let (p, a, b, c_arr, table) = (
+                    BASE + 0x400,
+                    BASE + 0x500,
+                    BASE + 0x600,
+                    BASE + 0x1000,
+                    BASE + 0x700,
+                );
+                c.g[A0][0] = this as u64;
+                let section = [0xffff_ffffu32, 0xffff_fffb, 0, 1, 2, 3, 0x102][seed as usize % 7];
+                c.g[A1][0] = section as u64;
+                // The first fake call (0x2d1bd8) returns `p`.
+                w_3(c, LOG_RESULTS, p);
+                w_3(c, p, a);
+                w_3(c, a, b);
+                w_3(c, b + 0x14, c_arr);
+                w_3(c, a + 8, table);
+                for i in 0..4u32 {
+                    // Mesh counts: some zero or negative.
+                    c.bus.write16(
+                        c_arr + 0x58 * i + 0x26,
+                        [3u16, 0, 0xfffe, 1][((seed + i) % 4) as usize],
+                    );
+                    let entry = BASE + 0x800 + 0x20 * i;
+                    w_3(
+                        c,
+                        table + 4 * i,
+                        if (seed + i) % 5 == 1 { 0 } else { entry },
+                    );
+                    let words = BASE + 0xa00 + 0x10 * i;
+                    w_3(c, entry + 0x1c, words);
+                    w_3(
+                        c,
+                        words,
+                        if (seed + i) % 3 == 0 {
+                            0xff
+                        } else {
+                            r.next_u32()
+                        },
+                    );
+                }
+            },
+        );
+    }
+
+    /// `SkyBox_SetSection`: a negative section clears the box; otherwise the
+    /// mesh table lookup (no meshes, no table entry, a zero or non-zero
+    /// size word) decides what is stored at `+0x14`.
+    #[test]
+    fn sky_box_set_section_matches() {
+        in_child("sky_box_set_section_matches", sky_box_set_section_checked);
+    }
+
+    pub(crate) fn section_man_select_peak_lighting_checked() {
+        covered(
+            ee::s05::f_0022e180__generated,
+            section_man_select_peak_lighting,
+            200,
+            &|c, seed| {
+                child_machine(c, seed, 0x22e180, 1);
+                c.pc = 0x0022_e180;
+                // The jr table (0x47b4e0): case -> arm (the real mapping), with
+                // one bogus target at index 21 for half of the seeds.
+                let arms: [u32; 22] = [
+                    0x1fc, 0x1ac, 0x1c0, 0x1d4, 0x1e8, 0x1fc, 0x1d4, 0x1e8, 0x1fc, 0x1c0, 0x1e8,
+                    0x1ac, 0x1c0, 0x1e8, 0x1fc, 0x1d4, 0x1e8, 0x1fc, 0x1ac, 0x1c0, 0x1d4, 0x1e8,
+                ];
+                for (i, a) in arms.iter().enumerate() {
+                    w_3(c, 0x47_b4e0 + 4 * i as u32, 0x0022_e000 + a);
+                }
+                if (seed / 14) % 2 == 0 {
+                    w_3(c, 0x47_b4e0 + 4 * 21, 0x0022_e100);
+                }
+                c.g[A1][0] = [
+                    0u64,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    9,
+                    11,
+                    14,
+                    18,
+                    21,
+                    0x16,
+                    0x40,
+                    0xffff_ffff,
+                ][seed as usize % 14];
+            },
+        );
+    }
+
+    /// `SectionMan_SelectPeakLighting`: every table arm, the default, the
+    /// out-of-range sky and a table target the original sends to `jump_out`.
+    #[test]
+    fn section_man_select_peak_lighting_matches() {
+        in_child(
+            "section_man_select_peak_lighting_matches",
+            section_man_select_peak_lighting_checked,
+        );
+    }
+
+    pub(crate) fn default_3_chase_camera_algorithm_dtor_checked() {
+        covered(
+            ee::s02::f_00176da8__generated,
+            default_3_chase_camera_algorithm_dtor,
+            100,
+            &|c, seed| {
+                child_machine(c, seed, 0x176da8, 1);
+                c.g[A0][0] = (BASE + 0x100) as u64;
+            },
+        );
+    }
+
+    /// `Default_3ChaseCameraAlgorithm_dtor`: vtable store, base destructor.
+    #[test]
+    fn default_3_chase_camera_algorithm_dtor_matches() {
+        in_child(
+            "default_3_chase_camera_algorithm_dtor_matches",
+            default_3_chase_camera_algorithm_dtor_checked,
+        );
+    }
+
+    pub(crate) fn game_module_enter_checked() {
+        covered(
+            ee::s06::f_00230050__generated,
+            game_module_enter,
+            100,
+            &|c, seed| {
+                let mut r = child_machine(c, seed, 0x230050, 9);
+                let gp = GAME_GP_TEST;
+                let (this, world, obj, vt) =
+                    (BASE + 0x100, BASE + 0x200, BASE + 0x300, BASE + 0x400);
+                c.g[A0][0] = this as u64;
+                for off in [0x10u32, 0x94] {
+                    w_3(c, this + off, r.next_u32());
+                }
+                w_3(c, gp.wrapping_sub(0x848), world);
+                w_3(c, world + 0x8c, r.next_u32());
+                for off in [0x84cu32, 0x854] {
+                    w_3(c, gp.wrapping_sub(off), r.next_u32());
+                }
+                for off in [0x21e4u32, 0x410] {
+                    w_3(c, gp.wrapping_add(off), r.next_u32());
+                }
+                w_3(c, gp.wrapping_add(0x1158), obj);
+                w_3(c, obj + 4, vt);
+                c.bus.write16(vt + 0x88, (r.next_u32() & 0xfffc) as u16);
+                w_3(c, vt + 0x8c, FAKE);
+                c.bus.write16(vt + 0x20, (r.next_u32() & 0xfffc) as u16);
+                w_3(c, vt + 0x24, FAKE + 0x10);
+            },
+        );
+    }
+
+    /// `GameModule_Enter`: the nine guest calls (two of them virtual) in order
+    /// with their arguments, the three flags set, unwinds at any call.
+    #[test]
+    fn game_module_enter_matches() {
+        in_child("game_module_enter_matches", game_module_enter_checked);
+    }
+
+    pub(crate) fn world_load_checked() {
+        covered(
+            ee::s13::f_003a6ae0__generated,
+            world_load,
+            100,
+            &|c, seed| {
+                let mut r = child_machine(c, seed, 0x3a6ae0, 8);
+                let world = BASE + 0x100;
+                c.g[A0][0] = world as u64;
+                for off in [0u32, 4, 8] {
+                    w_3(c, world + off, r.next_u32());
+                }
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// `World_Load`: the eight guest calls (reset, load, two section counts,
+    /// the two allocations, the stack-record pair) with their arguments.
+    #[test]
+    fn world_load_matches() {
+        in_child("world_load_matches", world_load_checked);
+    }
+
+    pub(crate) fn fe_ui_input_dtor_checked() {
+        covered(
+            ee::s04::f_001dd530__generated,
+            fe_ui_input_dtor,
+            100,
+            &|c, seed| {
+                let mut r = child_machine(c, seed, 0x1dd530, 1);
+                c.g[A0][0] = (BASE + 0x100) as u64;
+                c.g[A1][0] = (r.next_u32() & !1 | (seed & 1)) as u64;
+            },
+        );
+    }
+
+    /// `FEUIInput_dtor`: vtable store; delete only with the flag bit set.
+    #[test]
+    fn fe_ui_input_dtor_matches() {
+        in_child("fe_ui_input_dtor_matches", fe_ui_input_dtor_checked);
+    }
+
+    pub(crate) fn input_parser_parse_all_checked() {
+        covered(
+            ee::s10::f_00323098__generated,
+            input_parser_parse_all,
+            200,
+            &|c, seed| {
+                child_machine(c, seed, 0x323098, 6);
+                c.g[A0][0] = (BASE + 0x100) as u64;
+                // First token: end of input (0) or a statement start; then 0..3
+                // further statements before the input ends.
+                w_3(c, CTRL, if seed % 4 == 0 { 0 } else { 1 + seed % 5 });
+                w_3(c, CTRL + 4, (seed / 4) % 4);
+            },
+        );
+    }
+
+    /// `InputParser_ParseAll`: empty input, and 1..4 statements parsed.
+    #[test]
+    fn input_parser_parse_all_matches() {
+        in_child(
+            "input_parser_parse_all_matches",
+            input_parser_parse_all_checked,
+        );
+    }
+
+    use crate::difftest::put_words;
+    pub(crate) use crate::game::camera::camera::tests::SEEDS_5 as SEEDS_3;
+
+    /// `SectionMan_AdvanceEventSwitchSync`: `arg` zero or not, states 0..4
+    /// (every jump-table case) and states out of range (5, 6, large,
+    /// negative).
+    #[test]
+    fn oc436_section_man_advance_event_switch_sync_matches() {
+        check(
+            ee::s05::f_0022d668__generated,
+            oc436_section_man_advance_event_switch_sync,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = Rng(0x22d6_68 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0022_d668;
+                let table = [
+                    0x0022_d698,
+                    0x0022_d6a8,
+                    0x0022_d6b4,
+                    0x0022_d6bc,
+                    0x0022_d6bc,
+                ];
+                put_words(c, OC436_SM_SWITCH_TABLE, &table);
+                let sm = DATA + 0x100;
+                c.g[A0][0] = sx(sm);
+                let arg = if seed % 5 == 0 { 0 } else { r.next_u32() | 1 };
+                c.g[A1][0] = sx(arg);
+                let state = match seed % 9 {
+                    0..=4 => seed % 9,
+                    5 => 5,
+                    6 => 6,
+                    7 => 0x8000_0000 | seed,
+                    _ => r.next_u32() % 3,
+                };
+                c.bus.write32(sm + OC436_SM_SWITCH_STATE, state);
+                let old = r.next_u32();
+                c.bus.write32(sm + OC436_SM_SWITCH_ARG, old);
             },
         );
     }
