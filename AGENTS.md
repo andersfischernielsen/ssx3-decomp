@@ -21,7 +21,9 @@ Debugging aid: `SSX3_EVENT=<code>` (`SSX3_RIDER=<name>`) boots straight into an 
 
 ## Porting loop (typed Rust replacements)
 
-Goal: replace generated EE functions with hand-written Rust, each verified by a differential test against the generated body and by the race replay gate. `generated/ee` is the authority for registers, cycles, memory and call order. The C++ decompilation in `devvydont-ssx3` (`~/Desktop/devvydont-ssx3`; ask if it is not there) and Ghidra's decompilation are readability aids.
+Folder layout: this repository and its companions sit side by side in one parent folder, wherever that is: `ssx3-decomp/`, `devvydont-ssx3/`, `peak3-ssx3/`, `ssx3-web/` (and worktrees such as `ssx3-decomp-web/`). Paths below starting with `../` are relative to this repository; the tools find the references there (override with `SSX3_REF`, `SSX3_REF2`).
+
+Goal: replace generated EE functions with hand-written Rust, each verified by a differential test against the generated body and by the race replay gate. `generated/ee` is the authority for registers, cycles, memory and call order. The C++ decompilation in `devvydont-ssx3` (`../devvydont-ssx3`; ask if it is not there) and Ghidra's decompilation are readability aids.
 
 The orchestrator (you, in the main session) runs waves: pick about 80 functions, split them into writer lists, start subagent writers, verify their modules, install, reorganise, push. Writers only write code and tests; the orchestrator does every build and run.
 
@@ -34,7 +36,7 @@ The orchestrator (you, in the main session) runs waves: pick about 80 functions,
 ### Before a wave
 
 - `main` is up to date and green. If the build stops with "generated/ee is older than overrides.txt", run `python3 tools/integrate_wave.py regen`.
-- After pulling the references (`~/Desktop/devvydont-ssx3`, and the fallback `~/Desktop/peak3-ssx3`), rebuild their indexes: `python3 tools/refindex.py` (seconds, both; `refsrc.py` warns when either is stale).
+- After pulling the references (`../devvydont-ssx3`, and the fallback `../peak3-ssx3`), rebuild their indexes: `python3 tools/refindex.py` (seconds, both; `refsrc.py` warns when either is stale).
 - Ghidra is open on `SLUS_207.72` with the GhidraMCP plugin (port 8080; check with `mcp__ghidra__get_program_info`). Without it, dossiers of functions with no C++ have no pseudo-C; say so and go on.
 - Long builds: wrap heavy commands in `caffeinate -s` (the machine sleeps otherwise). One heavy process at a time (a build, a test run or a game run), never two in parallel.
 

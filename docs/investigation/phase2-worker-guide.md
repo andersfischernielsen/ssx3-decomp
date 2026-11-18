@@ -49,7 +49,7 @@ same cycle count. A differential test proves it.
 
 ## Reference C++ decompilation (readability aid)
 
-`~/Desktop/devvydont-ssx3` is a matching C++ decompilation of the *same*
+`../devvydont-ssx3` is a matching C++ decompilation of the *same*
 executable (same SHA1). For many functions it has a readable C++
 implementation (inside `#ifdef SKIP_ASM`) with real struct fields and names.
 Use it to understand what the function does and what its fields mean. The

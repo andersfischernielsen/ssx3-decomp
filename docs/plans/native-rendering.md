@@ -406,7 +406,7 @@ typed Rust (`plans/roadmap.md` phase 2), the next step.
 
 ### Using the matching C++ decompilation (2026-10-20)
 
-`~/Desktop/devvydont-ssx3` is a matching C++ decompilation of the same
+`../devvydont-ssx3` is a matching C++ decompilation of the same
 executable (`SLUS_207.72`, same SHA1). 11,614 of its 16,535 names have a
 readable C++ body (inside `#ifdef SKIP_ASM` even where the assembly is still
 included). By address that covers 750 of the 1,342 remaining per-frame

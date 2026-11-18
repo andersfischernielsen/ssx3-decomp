@@ -13,7 +13,7 @@ import os
 from ghidra.app.cmd.disassemble import DisassembleCommand
 from ghidra.program.model.symbol import SourceType
 
-REPO = os.path.expanduser("~/Desktop/ssx3-decomp")
+REPO = os.environ.get("SSX3_REPO", "")  # this repository; asks for the file when unset
 path = askFile("discovered-names.tsv", "Use").getAbsolutePath() if not os.path.exists(
     os.path.join(REPO, "generated", "discovered-names.tsv")) else os.path.join(REPO, "generated", "discovered-names.tsv")
 

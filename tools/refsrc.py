@@ -21,11 +21,11 @@ Usage:
   python3 tools/refsrc.py 0x00122278 [more addresses...]
   python3 tools/refsrc.py --tsv file.tsv     # first column = address
 
-The reference root defaults to ``~/Desktop/devvydont-ssx3`` (override with
+The reference root defaults to ``devvydont-ssx3`` next to this repository (override with
 SSX3_REF=/path).
 
 Fallback reference: the ``peak3project/ssx3`` fork (~97% matched, the same
-layout; DevvyDont merges from it) at ``~/Desktop/peak3-ssx3`` (override with
+layout; DevvyDont merges from it) at ``peak3-ssx3``, also next to it (override with
 SSX3_REF2=/path; absent -> everything behaves as with DevvyDont alone).
 DevvyDont stays primary: its names and units are what this tool prints and
 what reorg_modules.py places by. When DevvyDont has an address only as asm
@@ -38,8 +38,10 @@ import re
 import subprocess
 import sys
 
-REF = os.environ.get("SSX3_REF", os.path.expanduser("~/Desktop/devvydont-ssx3"))
-REF2 = os.environ.get("SSX3_REF2", os.path.expanduser("~/Desktop/peak3-ssx3"))
+# The references live next to this repository (one shared parent folder).
+PARENT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REF = os.environ.get("SSX3_REF", os.path.join(PARENT, "devvydont-ssx3"))
+REF2 = os.environ.get("SSX3_REF2", os.path.join(PARENT, "peak3-ssx3"))
 if not os.path.isdir(os.path.join(REF2, "config")):
     REF2 = None  # no fallback reference
 

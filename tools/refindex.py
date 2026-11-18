@@ -4,7 +4,7 @@
     python3 tools/refindex.py [--out FILE]   # default: tools/.refindex.json
                                              # (+ tools/.refindex2.json)
 
-Scans `~/Desktop/devvydont-ssx3/src/**/*.{cpp,c}` once. For every function it
+Scans `../devvydont-ssx3/src/**/*.{cpp,c}` once. For every function it
 records whether it has a C++ body (inside `#ifdef SKIP_ASM` or otherwise) or
 only `INCLUDE_ASM`. The index lets wave selection ask "does the reference have
 readable source for this address?" without rescanning the tree per address.
@@ -13,7 +13,7 @@ in src/ only fill in names no built unit has. `refsrc.py`, `refbody.py` and
 `progress.py` read the index: rerun this after updating the reference.
 
 With the fallback reference present (the peak3project fork, `SSX3_REF2`,
-default `~/Desktop/peak3-ssx3`; same layout) it also writes its index,
+default `../peak3-ssx3`; same layout) it also writes its index,
 `tools/.refindex2.json` (`--out` names only the primary's).
 """
 import bisect

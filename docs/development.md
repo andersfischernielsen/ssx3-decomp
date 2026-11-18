@@ -72,7 +72,7 @@ the replay for the gate and the scenarios.
 
 `tools/pick_wave.py` (hot functions from a `callprof` profile),
 `tools/refsrc.py` / `refbody.py` / `refdossier2.py` (the matching C++
-decompilation, `~/Desktop/devvydont-ssx3`, by address),
+decompilation, `../devvydont-ssx3`, by address),
 `tools/integrate_wave.py` (wire, regenerate, test, build, gate). Profile:
 `CARGO_TARGET_DIR=target-prof cargo build --profile game -p ssx3 --bin ssx3-headless --features callprof`,
 then `SSX3_CALLPROF=edges.tsv:5000:5300`.
