@@ -354,6 +354,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         camera_trigger_read_sphere_trigger_data,
         "CameraTrigger_ReadSphereTriggerData",
     ),
+    (
+        0x0017_1d10,
+        camera_trigger_read_point_bound_obj,
+        "CameraTrigger_ReadPointBoundObj",
+    ),
+    (
+        0x0017_30d0,
+        camera_trigger_read_box_trigger_data_2,
+        "CameraTrigger_ReadBoxTriggerData",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6279,10 +6289,116 @@ pub fn camera_trigger_read_sphere_trigger_data(c: &mut Cpu) {
     })
 }
 
+/// `void CameraTrigger_ReadPointBoundObj(Serializer *s, BoundObjPoint *obj)`
+/// (0x171d10): marks the bound object as a point (`obj->+0x28 = 3`), asks its
+/// owner (`obj->+0x24`, vtable slot +8/+0xc) for the vector to fill, and reads
+/// three floats into it (`Serialize_ReadVec3(s, vec)`).
+pub fn camera_trigger_read_point_bound_obj(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = 3;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.sw((c.g[A1][0] as u32).wrapping_add(0x28), c.g[V0][0]);
+        c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x24));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(8));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+        let method = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, method, 0x0017_1d3c)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d_25a0, 0x0017_1d48)?; // Serialize_ReadVec3
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int CameraTrigger_ReadBoxTriggerData(Reader* reader, CameraTrigger* obj)` (0x1730d0): read a box trigger from a stream and return the number of bytes read.
+/// Mark the trigger loaded (`obj+0x28 = 1`), then read its five fields through the object's accessor virtuals (vtable at `obj+0x24`, slots +8, +0x28, +0x10, +0x18, +0x20): the center and axis vectors (`t3Vector` reads, 0x2d25a0) and the three float sizes (`Serialize_ReadU32`). Returns the summed sizes.
+pub fn camera_trigger_read_box_trigger_data_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 60;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+        c.g[V0][0] = 0x1;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S0][0] = c.g[A1][0];
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S2][0] = c.g[A0][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[V0][0]);
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x8));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+        let t = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00173108)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d25a0, 0x00173114)?;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x28));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
+        let t = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x0017312c)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d25a0, 0x00173138)?;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+        let t = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00173150)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d2510, 0x0017315c)?;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x18));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+        let t = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00173174)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d2510, 0x00173180)?;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x20));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
+        let t = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00173198)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d2510, 0x001731a4)?;
+        c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
+
     use super::*;
     use crate::difftest::check;
+    use crate::game::ai::control::handplantcontrol::tests::oc425_install;
 
     use crate::difftest::compare;
     use crate::difftest::elf_image;
@@ -8440,6 +8556,87 @@ pub(crate) mod tests {
                 c.g[A0][0] = (DATA + 0x100) as u64;
                 c.g[A1][0] = OBJ as u64;
                 c.bus.write32(OBJ + 0x28, r.next_u32());
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc423_fake;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc423_fake_call;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w_5 as w_3;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_CTRL;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_MAGIC;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_RET;
+
+    pub(crate) use crate::game::ai::ai::tests::oc425_machine;
+
+    oc423_fake!(
+        oc423_fake_serialize_read_u32,
+        OC423_PREV_SERIALIZE_READ_U32,
+        0x002d_2510,
+        ee::s09::f_002d2510__generated
+    );
+
+    pub(crate) fn hook_serialize_read_u32() {
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002D2510),
+            oc423_fake_serialize_read_u32,
+            &OC423_PREV_SERIALIZE_READ_U32,
+        );
+    }
+
+    /// The owner's vector method is a plain fake; the real `Serialize_ReadVec3`
+    /// reads three words through the faked `Serialize_ReadU32`.
+    #[test]
+    fn camera_trigger_read_point_bound_obj_matches() {
+        hook_serialize_read_u32();
+        fakes::covered(
+            ee::s02::f_00171d10__generated,
+            camera_trigger_read_point_bound_obj,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0017_1d10, 5);
+                w_3(c, OC423_CTRL, OC423_MAGIC);
+                for i in 1..4 {
+                    w_3(c, OC423_RET + 4 * i, r.next_u32() % 0x1000);
+                }
+                let obj = DATA + 0x5_0000;
+                let vt = DATA + 0x5_1000;
+                w_3(c, obj + 0x24, vt);
+                c.bus.write16(vt + 8, 0x10);
+                w_3(c, vt + 0xc, FAKE);
+                w_3(c, obj + 0x28, r.next_u32());
+                c.g[A0][0] = (DATA + 0x5_2000) as u64;
+                c.g[A1][0] = obj as u64;
+            },
+        );
+    }
+
+    /// `CameraTrigger_ReadBoxTriggerData`: the object's five accessor virtuals
+    /// (fake methods), the vector readers (real, over faked `ReadU32`) and
+    /// `ReadU32` itself are called in order (some unwinding).
+    #[test]
+    fn camera_trigger_read_box_trigger_data_matches() {
+        oc425_install();
+        covered(
+            ee::s02::f_001730d0__generated,
+            camera_trigger_read_box_trigger_data_2,
+            120,
+            &|c, seed| {
+                let mut r = oc425_machine(c, seed, 0x0017_30d0, 14);
+                c.pc = 0x0017_30d0;
+                let reader = DATA + 0x1000;
+                let obj = DATA + 0x2000;
+                let vt = crate::difftest::fakes::vtable(c, &mut r, &[0x8, 0x28, 0x10, 0x18, 0x20]);
+                c.bus.write32(obj + 0x24, vt);
+                c.bus.write32(obj + 0x28, r.next_u32());
+                c.g[A0][0] = sx(reader);
+                c.g[A1][0] = sx(obj);
             },
         );
     }

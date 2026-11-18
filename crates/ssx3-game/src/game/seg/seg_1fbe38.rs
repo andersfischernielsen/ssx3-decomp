@@ -107,6 +107,17 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         wscript_fn_multi_particle_control,
         "WScriptFn_MultiParticleControl",
     ),
+    (
+        0x002f_dc60,
+        wscript_fn_add_parent_modifier_rev,
+        "WScriptFn_AddParentModifierRev",
+    ),
+    (
+        0x0030_0260,
+        wscript_fn_stop_object_loop,
+        "WScriptFn_StopObjectLoop",
+    ),
+    (0x0030_3598, wscript_fn_rand_range, "WScriptFn_RandRange"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4064,9 +4075,497 @@ pub fn wscript_fn_add_magnet_modifier(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Shared pieces of the WScriptFn_* argument decoders.
+
+/// The argument-copy loop of the `WScriptFn_*` decoders: `a1` entries of 16
+/// bytes `{index, value, _, kind}` at `a2` are written into the word buffer
+/// at `buf_reg` (`buf[index] = value`, converted to float when the entry's
+/// kind differs from the kind table's (`t0`) and that one is 2). `a3` is 2.
+pub(crate) fn oc420_param_loop(c: &mut Cpu, buf_reg: usize, head: u32) {
+    loop {
+        c.cycles += 8;
+        c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+        c.g[V1][0] = Addr((c.g[A2][0] as u32).wrapping_add(0xc)).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[buf_reg][0] as u32));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+        c.g[V0][0] = Addr(c.g[V0][0] as u32).lw(c);
+        let mut convert = false;
+        if c.g[V1][0] == c.g[V0][0] {
+            c.g[V0][0] = Addr((c.g[A2][0] as u32).wrapping_add(4)).lw(c);
+        } else {
+            c.cycles += 2;
+            if c.g[V0][0] != c.g[A3][0] {
+                c.g[V0][0] = Addr((c.g[A2][0] as u32).wrapping_add(4)).lw(c);
+            } else {
+                convert = true;
+            }
+        }
+        if convert {
+            c.cycles += 4;
+            c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(4));
+            c.cvt_s_w(0, 0);
+            c.swc1(0, c.g[A0][0] as u32);
+        } else {
+            c.cycles += 1;
+            Addr(c.g[A0][0] as u32).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 3;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+        let more = c.g[A1][0] != 0;
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x10));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// The tail the `WScriptFn_*` decoders share: copy the 12-byte default
+/// result block at `0x4c9098` into the caller's return slot (`s3`, unaligned
+/// `ldl/ldr/sdl/sdr` plus a word) and return it in `v0`. `v1` is 0x4d0000.
+pub(crate) fn oc420_copy_result_block(c: &mut Cpu) {
+    c.cycles += 15;
+    c.g[V0][0] = c.g[S3][0];
+    c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6f68));
+    c.ldl(4, (c.g[A3][0] as u32).wrapping_add(7));
+    c.ldr(4, c.g[A3][0] as u32);
+    c.g[A1][0] = Addr((c.g[A3][0] as u32).wrapping_add(8)).lw(c);
+    c.sdl(4, (c.g[S3][0] as u32).wrapping_add(7));
+    c.sdr(4, c.g[S3][0] as u32);
+    Addr((c.g[S3][0] as u32).wrapping_add(8)).sw(c, c.g[A1][0]);
+}
+
+// ---------------------------------------------------------------------------
+// WScriptFn_RandRange.
+
+/// `float Rand_FloatRange(float min, float max)` (0x317830).
+pub(crate) const OC420_RAND_FLOAT_RANGE: Callee = Callee {
+    addr: 0x0031_7830,
+    f: ee::s10::f_00317830,
+};
+
+/// `void* WScriptFn_RandRange(Ctx* self, int n, Arg* args)` (0x303598): a
+/// script function filling a 3-float parameter block (`{min, max, ..}`,
+/// from a lazily initialised static at 0x4fbc60: 0, 1.0, flag byte) with
+/// `n` 16-byte `{index, value, _, kind}` arguments (the value is converted
+/// to float when the argument kind differs from the parameter's table kind
+/// and that kind is 2), then stores a random float in `[min, max)` into the
+/// result register of `self` (`self[2] = 2`, `LunoVMRegister_AsFloat`).
+/// Returns `self`.
+pub fn wscript_fn_rand_range(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x80);
+        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x26c8)).lw(c);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S1, 0x50);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S3, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x60);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save_ra(c, 0x20);
+        c.g[A1][0] = 0x0050_0000;
+        let initialised = c.g[V0][0] != 0;
+        frame.save_fpr(c, 20, 0x70);
+        if !initialised {
+            // First use: `static Params p = {0, 1.0f, flag}` (the guard
+            // and the trailing byte copy included).
+            c.cycles += 10;
+            c.g[V0][0] = sx(0x0050_0000u32.wrapping_sub(0x43a0));
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 0);
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(8)).lbu(c);
+            c.g[A0][0] = 1;
+            Addr(0x0050_0000u32.wrapping_sub(0x43a0)).sw(c, 0);
+            Addr((c.g[V0][0] as u32).wrapping_add(8)).sb(c, c.g[V1][0]);
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(4));
+            Addr((c.g[GP][0] as u32).wrapping_add(0x26c8)).sw(c, c.g[A0][0]);
+            Addr(sp(c)).sb(c, c.g[V1][0]);
+        }
+        c.cycles += 7;
+        c.g[S0][0] = sx(sp(c).wrapping_add(0x10));
+        c.g[A2][0] = 0xc;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x43a0));
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x003e_6574, 0x0030_3608)?;
+        c.g[A2][0] = c.g[S3][0];
+        if (c.g[S2][0] as i64) > 0 {
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S2][0];
+            c.g[T0][0] = sx((c.g[GP][0] as u32).wrapping_add(0xc30));
+            c.g[A3][0] = 2;
+            oc420_param_loop(c, S0, 0x0030_3620);
+        }
+        c.cycles += 18;
+        c.lwc1(13, (c.g[S0][0] as u32).wrapping_add(4));
+        c.lwc1(12, c.g[S0][0] as u32);
+        OC420_RAND_FLOAT_RANGE.call(c, 0x0030_3674)?;
+        c.g[V0][0] = 2;
+        c.mov_s(20, 0);
+        c.g[A0][0] = c.g[S1][0];
+        Addr((c.g[S1][0] as u32).wrapping_add(8)).sw(c, c.g[V0][0]);
+        call_ptr(c, 0x0022_6618, 0x0030_3688)?;
+        c.swc1(20, c.g[V0][0] as u32);
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.restore_fpr(c, 20, 0x70);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// WScriptFn_StopObjectLoop.
+
+/// `SSXAudioSystem_GetInstance` (0x28b180) and
+/// `SSXAudioSystem_StopObjectLoop` (0x297eb8).
+pub(crate) const OC420_AUDIO_GET_INSTANCE: u32 = 0x0028_b180;
+
+pub(crate) const OC420_AUDIO_STOP_OBJECT_LOOP: u32 = 0x0029_7eb8;
+
+/// `Result WScriptFn_StopObjectLoop(Result* out, int n, Arg* args)`
+/// (0x300260): decodes `n` arguments into `{object id, sound, loop}`
+/// (static defaults at 0x4fbb28: `-1` objects, lazily initialised), resolves
+/// the object (id `-1` is the current object `*(gp[0xce8] + 0x290)`;
+/// otherwise through the world cache) and, if there is one, stops the
+/// sound's loop on it. Always copies the 12-byte default result into `*out`.
+pub fn wscript_fn_stop_object_loop(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x70);
+        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x257c)).lw(c);
+        frame.save(c, S1, 0x50);
+        c.g[A3][0] = 0x0050_0000;
+        frame.save(c, S2, 0x40);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x30);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S0, 0x60);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        if c.g[V0][0] == 0 {
+            // First use: `static Params p = {-1, -1, -1, flag}`.
+            c.cycles += 12;
+            c.g[V1][0] = sx(0x0050_0000u32.wrapping_sub(0x44d8));
+            c.g[V0][0] = u64::MAX;
+            c.g[A2][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xc)).lbu(c);
+            Addr(0x0050_0000u32.wrapping_sub(0x44d8)).sw(c, c.g[V0][0]);
+            c.g[A0][0] = u64::MAX;
+            Addr((c.g[V1][0] as u32).wrapping_add(0xc)).sb(c, c.g[A2][0]);
+            c.g[A1][0] = 1;
+            Addr((c.g[V1][0] as u32).wrapping_add(4)).sw(c, c.g[V0][0]);
+            Addr((c.g[V1][0] as u32).wrapping_add(8)).sw(c, c.g[A0][0]);
+            Addr((c.g[GP][0] as u32).wrapping_add(0x257c)).sw(c, c.g[A1][0]);
+            Addr(sp(c)).sb(c, c.g[A2][0]);
+        }
+        c.cycles += 10;
+        c.g[V0][0] = u64::MAX;
+        c.g[S0][0] = sx(sp(c).wrapping_add(0x10));
+        c.g[A2][0] = 0x10;
+        c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x44d8));
+        Addr(sp(c).wrapping_add(0x10)).sw(c, c.g[V0][0]);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x003e_6574, 0x0030_02e0)?;
+        c.g[A2][0] = c.g[S2][0];
+        if (c.g[S1][0] as i64) > 0 {
+            c.cycles += 4;
+            c.g[V0][0] = 0x0044_0000;
+            c.g[A1][0] = c.g[S1][0];
+            c.g[T0][0] = sx(0x0044_0000u32.wrapping_add(0x6560));
+            c.g[A3][0] = 2;
+            oc420_param_loop(c, S0, 0x0030_02f8);
+        }
+        // The object id (buf[0]): -1 means the current object.
+        c.cycles += 4;
+        c.g[A2][0] = Addr(c.g[S0][0] as u32).lw(c);
+        c.g[V0][0] = !c.g[A2][0];
+        let by_id = c.g[V0][0] != 0;
+        c.g[A1][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x16c8)).lw(c);
+        if !by_id {
+            c.cycles += 3;
+            c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(0xce8)).lw(c);
+            c.g[S2][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x290)).lw(c);
+        } else {
+            c.cycles += 8;
+            c.g[V0][0] = c.g[A2][0] & 0xff;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+            c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(8)).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+            if c.g[V1][0] != 0 {
+                c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x1c)).lw(c);
+                c.cycles += 7;
+                c.g[V0][0] = sx((c.g[A2][0] as u32) >> 8);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+                let present = c.g[V0][0] != 0;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                if !present {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0;
+                }
+                c.cycles += 1;
+                c.g[A1][0] = c.g[V0][0];
+            } else {
+                c.cycles += 2;
+                c.g[A1][0] = 0;
+            }
+            c.cycles += 1;
+            c.g[S2][0] = c.g[A1][0];
+        }
+        c.cycles += 2;
+        c.g[V1][0] = 0x004d_0000;
+        if c.g[S2][0] != 0 {
+            c.cycles += 9;
+            c.g[S1][0] = Addr((c.g[S0][0] as u32).wrapping_add(8)).lw(c);
+            c.g[S0][0] = Addr((c.g[S0][0] as u32).wrapping_add(4)).lw(c);
+            call_ptr(c, OC420_AUDIO_GET_INSTANCE, 0x0030_03c0)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A2][0] = c.g[S0][0];
+            c.g[A3][0] = c.g[S1][0];
+            call_ptr(c, OC420_AUDIO_STOP_OBJECT_LOOP, 0x0030_03d4)?;
+            c.g[V1][0] = 0x004d_0000;
+        }
+        oc420_copy_result_block(c);
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// WScriptFn_AddParentModifierRev.
+
+/// `cMoveNode_addParent` (0x355978).
+pub(crate) const OC420_MOVE_NODE_ADD_PARENT: u32 = 0x0035_5978;
+
+/// `Result WScriptFn_AddParentModifierRev(Result* out, int n, Arg* args)`
+/// (0x2fdc60): decodes `n` arguments into `{child id, parent id, flags,
+/// x, y, z}` (static defaults at 0x4fb758), resolves both objects (`-1` child
+/// = the current object), and when the child's move node is not already of
+/// kind 6 (`vtable+0x50`, `v10(6)`) and the parent's move node answers
+/// `vtable+0x80`, adds the parent to its move node with the offset vector.
+/// Copies the default result block into `*out`.
+pub fn wscript_fn_add_parent_modifier_rev(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x90);
+        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x2520)).lw(c);
+        frame.save(c, S2, 0x60);
+        frame.save(c, S0, 0x80);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S3, 0x50);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x70);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_ra(c, 0x40);
+        c.g[A2][0] = 0x0050_0000;
+        if c.g[V0][0] == 0 {
+            // First use: `static Params p = {-1, -1, 0, 0.0, 0.0, 0.0, flag}`.
+            c.cycles += 15;
+            c.g[V0][0] = sx(0x0050_0000u32.wrapping_sub(0x48a8));
+            c.g[V1][0] = u64::MAX;
+            c.g[A1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x18)).lbu(c);
+            c.mtc1(0, 0);
+            c.g[A0][0] = 1;
+            Addr(0x0050_0000u32.wrapping_sub(0x48a8)).sw(c, c.g[V1][0]);
+            Addr((c.g[V0][0] as u32).wrapping_add(0x18)).sb(c, c.g[A1][0]);
+            Addr((c.g[V0][0] as u32).wrapping_add(4)).sw(c, c.g[V1][0]);
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x14));
+            Addr((c.g[GP][0] as u32).wrapping_add(0x2520)).sw(c, c.g[A0][0]);
+            Addr((c.g[V0][0] as u32).wrapping_add(8)).sw(c, 0);
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0xc));
+            c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x10));
+            Addr(sp(c)).sb(c, c.g[A1][0]);
+        }
+        c.cycles += 11;
+        c.g[V0][0] = u64::MAX;
+        c.g[S1][0] = sx(sp(c).wrapping_add(0x10));
+        c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x48a8));
+        c.g[A2][0] = 0x1c;
+        Addr(sp(c).wrapping_add(0x14)).sw(c, c.g[V0][0]);
+        c.g[A0][0] = c.g[S1][0];
+        Addr(sp(c).wrapping_add(0x10)).sw(c, c.g[V0][0]);
+        call_ptr(c, 0x003e_6574, 0x002f_dcf0)?;
+        c.g[A2][0] = c.g[S2][0];
+        if (c.g[S0][0] as i64) > 0 {
+            c.cycles += 4;
+            c.g[V0][0] = 0x0044_0000;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[T0][0] = sx(0x0044_0000u32.wrapping_add(0x61c0));
+            c.g[A3][0] = 2;
+            oc420_param_loop(c, S1, 0x002f_dd08);
+        }
+        // The child object id (buf[0]): -1 means the current object.
+        c.cycles += 4;
+        c.g[A2][0] = Addr(c.g[S1][0] as u32).lw(c);
+        c.g[V0][0] = !c.g[A2][0];
+        let by_id = c.g[V0][0] != 0;
+        c.g[A1][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x16c8)).lw(c);
+        if !by_id {
+            c.cycles += 3;
+            c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(0xce8)).lw(c);
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x290)).lw(c);
+        } else {
+            c.cycles += 8;
+            c.g[V0][0] = c.g[A2][0] & 0xff;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+            c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(8)).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+            let record = c.g[V1][0];
+            c.g[V0][0] = sx((c.g[A2][0] as u32) >> 8);
+            if record != 0 {
+                c.cycles += 7;
+                c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x1c)).lw(c);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+                let present = c.g[V0][0] != 0;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                if !present {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0;
+                }
+            } else {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+            c.cycles += 1;
+            c.g[V1][0] = c.g[V0][0];
+        }
+        // The parent: only when buf[1] is not -1.
+        c.cycles += 4;
+        c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(4)).lw(c);
+        c.g[V0][0] = !c.g[V0][0];
+        if c.g[V0][0] == 0 {
+            c.g[V1][0] = 0x004d_0000;
+        } else {
+            'done: {
+                c.cycles += 3;
+                c.g[S2][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xc)).lw(c);
+                c.g[A1][0] = 6;
+                if c.g[S2][0] != 0 {
+                    c.cycles += 7;
+                    c.g[V1][0] = Addr((c.g[S2][0] as u32).wrapping_add(0xc)).lw(c);
+                    c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x50)).lh(c);
+                    c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x54)).lw(c);
+                    let target = c.g[V0][0] as u32;
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, target, 0x002f_dde0)?;
+                    c.g[V1][0] = 0x004d_0000;
+                    if c.g[V0][0] != 0 {
+                        break 'done;
+                    }
+                    // Parent object through the world cache.
+                    c.cycles += 10;
+                    c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x16c8)).lw(c);
+                    c.g[A1][0] = Addr((c.g[S1][0] as u32).wrapping_add(4)).lw(c);
+                    c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                    c.g[V0][0] = c.g[A1][0] & 0xff;
+                    c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(8)).lw(c);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                    let record = c.g[V1][0];
+                    c.g[V0][0] = sx((c.g[A1][0] as u32) >> 8);
+                    if record != 0 {
+                        c.cycles += 7;
+                        c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x1c)).lw(c);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                        c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+                        let present = c.g[V0][0] != 0;
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                        if !present {
+                            c.cycles += 1;
+                            c.g[V0][0] = 0;
+                        }
+                    } else {
+                        c.cycles += 1;
+                        c.g[V0][0] = 0;
+                    }
+                    c.cycles += 2;
+                    c.g[S0][0] = 0;
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 1;
+                        c.g[S0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0xc)).lw(c);
+                    }
+                    c.cycles += 2;
+                    c.g[V1][0] = 0x004d_0000;
+                    if c.g[S0][0] == 0 {
+                        break 'done;
+                    }
+                    c.cycles += 7;
+                    c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0xc)).lw(c);
+                    c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x80)).lh(c);
+                    c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x84)).lw(c);
+                    let target = c.g[V0][0] as u32;
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, target, 0x002f_de58)?;
+                    let answered = c.g[V0][0] != 0;
+                    c.g[A0][0] = c.g[S0][0];
+                    if answered {
+                        // Add the parent with the offset vector (x, y, z, 0).
+                        c.cycles += 11;
+                        c.lwc1(2, (c.g[S1][0] as u32).wrapping_add(0xc));
+                        c.lwc1(0, (c.g[S1][0] as u32).wrapping_add(0x10));
+                        c.g[A3][0] = sx(sp(c).wrapping_add(0x30));
+                        c.lwc1(1, (c.g[S1][0] as u32).wrapping_add(0x14));
+                        c.g[A1][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x18)).lw(c);
+                        c.swc1(2, sp(c).wrapping_add(0x30));
+                        c.swc1(0, sp(c).wrapping_add(0x34));
+                        c.swc1(1, sp(c).wrapping_add(0x38));
+                        Addr(sp(c).wrapping_add(0x3c)).sw(c, 0);
+                        c.g[A2][0] = Addr((c.g[S1][0] as u32).wrapping_add(8)).lw(c);
+                        call_ptr(c, OC420_MOVE_NODE_ADD_PARENT, 0x002f_de8c)?;
+                    }
+                }
+                // (also the exit when the child has no move node, or the
+                // parent has none / does not answer)
+                c.cycles += 1;
+                c.g[V1][0] = 0x004d_0000;
+            }
+        }
+        oc420_copy_result_block(c);
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
+
     use super::*;
+    use crate::game::replay::replaycache::tests::{
+        oc420_hook_add_parent, oc420_hook_audio_instance, oc420_hook_audio_stop_loop,
+        oc420_hook_luno_as_float, oc420_hook_rand_range,
+    };
 
     use crate::difftest::fill;
     use crate::difftest::DATA;
@@ -6051,6 +6550,235 @@ pub(crate) mod tests {
                 c.g[A0][0] = WS_RESULT as u64;
                 c.g[A1][0] = ((seed / 2) % 4) as u64;
                 c.g[A2][0] = WS_ARGS as u64;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::FAKE;
+
+    pub(crate) use crate::game::ai::ai::tests::OC420_CTRL;
+    pub(crate) use crate::game::ai::ai::tests::OC420_MAGIC;
+    pub(crate) use crate::game::ai::ai::tests::OC420_RET;
+
+    // ------------------------------------------------------ WScriptFn_RandRange
+
+    /// With and without the first-use static init, 0..3 arguments of
+    /// matching and differing kinds (the int->float conversion included);
+    /// the random call and the register accessor are fakes, `MEM_copy` is real.
+    #[test]
+    fn wscript_fn_rand_range_matches() {
+        oc420_hook_rand_range();
+        oc420_hook_luno_as_float();
+        covered(
+            ee::s10::f_00303598__generated,
+            wscript_fn_rand_range,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x30_3598, 3);
+                c.pc = 0x0030_3598;
+                c.bus.write32(OC420_CTRL, OC420_MAGIC);
+                c.bus.write32(OC420_RET + 4 * 7, DATA + 0x5000);
+                c.bus.write32(GAME_GP + 0x26c8, (seed % 2) as u32);
+                // The static parameter block (already initialised half the time).
+                c.bus.write32(0x004f_bc60, r.next_u32());
+                c.bus.write32(0x004f_bc64, 0x3f80_0000);
+                c.bus.write8(0x004f_bc68, r.next_u32() as u8);
+                let kinds = [0u32, 1, 2];
+                for k in 0..3 {
+                    c.bus
+                        .write32(GAME_GP + 0xc30 + 4 * k, kinds[(r.next_u32() % 3) as usize]);
+                }
+                let args = DATA + 0x2000;
+                let n = (seed / 2) % 4;
+                for i in 0..n {
+                    let e = args + 0x10 * i;
+                    let k = r.next_u32() % 3;
+                    c.bus.write32(e, k);
+                    c.bus.write32(e + 4, r.next_u32() % 1000);
+                    c.bus.write32(e + 0xc, (r.next_u32() % 3) as u32);
+                }
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[A1][0] = if seed % 9 == 0 {
+                    0xffff_ffff_ffff_ffff
+                } else {
+                    n as u64
+                };
+                c.g[A2][0] = sx(args);
+            },
+        );
+    }
+
+    // ----------------------------------------- the WScriptFn_* decoder fixture
+
+    /// The object ids a decoder resolves: `slot | index << 8` for the slots
+    /// and indices of `oc420_world_objects`, and -1 (the current object).
+    pub(crate) const OC420_IDS: [u32; 8] =
+        [0xffff_ffff, 0x000, 0x100, 0x001, 0x101, 0x302, 0x005, 0x200];
+
+    /// World cache, the object records and their move nodes. The cache is
+    /// reached through `gp + 0x16c8`; slots 0..3 hold records (slot 2 empty),
+    /// whose tables hold `value << 8` with `value << 2` an object address
+    /// (zero for some entries); the current object is `OBJ0`. Each object's
+    /// word at +0xc is its move node; node vtable slots +0x50/+0x54 and
+    /// +0x80/+0x84 are fakes or the zero leaf.
+    pub(crate) fn oc420_world_objects(c: &mut Cpu, r: &mut Rng) {
+        let (cache_ptr, cache, slots) = (DATA + 0x1100, DATA + 0x1200, DATA + 0x1300);
+        c.bus.write32(GAME_GP + 0x16c8, cache_ptr);
+        c.bus.write32(cache_ptr, cache);
+        c.bus.write32(cache + 8, slots);
+        let vt = DATA + 0x2800;
+        for s in 0..4u32 {
+            let rec = DATA + 0x1400 + 0x40 * s;
+            c.bus.write32(slots + 4 * s, if s == 2 { 0 } else { rec });
+            let table = DATA + 0x1500 + 0x20 * s;
+            c.bus.write32(rec + 0x1c, table);
+            for k in 0..4u32 {
+                let obj = DATA + 0x2000 + 0x100 * ((s + k) % 4);
+                let entry = if r.next_u32() % 4 == 0 {
+                    0
+                } else {
+                    (obj >> 2) << 8
+                };
+                c.bus.write32(table + 4 * k, entry);
+            }
+        }
+        c.bus.write32(GAME_GP + 0xce8, DATA + 0x1600);
+        c.bus.write32(DATA + 0x1600 + 0x290, DATA + 0x2000);
+        for j in 0..4u32 {
+            let obj = DATA + 0x2000 + 0x100 * j;
+            let node = DATA + 0x2400 + 0x100 * j;
+            c.bus
+                .write32(obj + 0xc, if r.next_u32() % 5 == 0 { 0 } else { node });
+            c.bus.write32(node + 0xc, vt);
+            c.bus.write32(node + 0x18, r.next_u32());
+        }
+        c.bus
+            .write16(vt + 0x50, [0u16, 8][(r.next_u32() % 2) as usize]);
+        c.bus.write32(
+            vt + 0x54,
+            [FAKE + 0x10, 0x0014_06c0][(r.next_u32() % 2) as usize],
+        );
+        c.bus
+            .write16(vt + 0x80, [0u16, 4][(r.next_u32() % 2) as usize]);
+        c.bus.write32(
+            vt + 0x84,
+            [FAKE + 0x20, 0x0014_06c0][(r.next_u32() % 2) as usize],
+        );
+    }
+
+    /// `n` argument entries `{index, value, _, kind}` at `args`; the first
+    /// one often sets word 0 (the object id) to one of `OC420_IDS`.
+    pub(crate) fn oc420_args(c: &mut Cpu, r: &mut Rng, args: u32, n: u32, words: u32, table: u32) {
+        for k in 0..words {
+            c.bus
+                .write32(table + 4 * k, [0u32, 1, 2][(r.next_u32() % 3) as usize]);
+        }
+        for i in 0..n {
+            let e = args + 0x10 * i;
+            let idx = if i == 0 && r.next_u32() % 2 == 0 {
+                0
+            } else {
+                r.next_u32() % words
+            };
+            c.bus.write32(e, idx);
+            let val = if idx == 0 {
+                OC420_IDS[(r.next_u32() % 8) as usize]
+            } else {
+                r.next_u32() % 1000
+            };
+            c.bus.write32(e + 4, val);
+            let tv = c.bus.read32(table + 4 * idx);
+            c.bus.write32(e + 0xc, tv);
+            if r.next_u32() % 3 == 0 {
+                c.bus.write32(e + 0xc, r.next_u32() % 3);
+            }
+        }
+    }
+
+    // ------------------------------------------------ WScriptFn_StopObjectLoop
+
+    #[test]
+    fn wscript_fn_stop_object_loop_matches() {
+        oc420_hook_audio_instance();
+        oc420_hook_audio_stop_loop();
+        covered(
+            ee::s10::f_00300260__generated,
+            wscript_fn_stop_object_loop,
+            400,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x30_0260, 3);
+                c.pc = 0x0030_0260;
+                c.bus.write32(OC420_CTRL, OC420_MAGIC);
+                c.bus.write32(OC420_RET + 4 * 8, DATA + 0x5000);
+                c.bus.write32(GAME_GP + 0x257c, (seed % 2) as u32);
+                oc420_world_objects(c, &mut r);
+                // The static parameter block {-1, -1, -1, flag}.
+                let d = 0x004f_bb28;
+                c.bus.write32(d, OC420_IDS[(r.next_u32() % 8) as usize]);
+                c.bus.write32(d + 4, r.next_u32());
+                c.bus.write32(d + 8, r.next_u32());
+                c.bus.write8(d + 0xc, r.next_u32() as u8);
+                let args = DATA + 0x3000;
+                let n = (seed / 2) % 4;
+                oc420_args(c, &mut r, args, n, 4, 0x0044_6560);
+                c.g[A0][0] = sx(DATA + 0x500);
+                c.g[A1][0] = if seed % 11 == 0 {
+                    0xffff_ffff_ffff_ffff
+                } else {
+                    n as u64
+                };
+                c.g[A2][0] = sx(args);
+                for k in 0..3 {
+                    c.bus.write32(DATA + 0x500 + 4 * k, r.next_u32());
+                }
+                c.bus.write32(0x004c_9098, r.next_u32());
+                c.bus.write32(0x004c_909c, r.next_u32());
+                c.bus.write32(0x004c_90a0, r.next_u32());
+            },
+        );
+    }
+
+    // -------------------------------------------- WScriptFn_AddParentModifierRev
+
+    #[test]
+    fn wscript_fn_add_parent_modifier_rev_matches() {
+        oc420_hook_add_parent();
+        covered(
+            ee::s10::f_002fdc60__generated,
+            wscript_fn_add_parent_modifier_rev,
+            500,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f_dc60, 5);
+                c.pc = 0x002f_dc60;
+                c.bus.write32(OC420_CTRL, OC420_MAGIC);
+                c.bus.write32(OC420_RET + 4 * 10, DATA + 0x5000);
+                c.bus.write32(GAME_GP + 0x2520, (seed % 2) as u32);
+                oc420_world_objects(c, &mut r);
+                // The static parameter block {-1, -1, 0, 0.0 x3, flag}.
+                let d = 0x004f_b758;
+                c.bus.write32(d, OC420_IDS[(r.next_u32() % 8) as usize]);
+                c.bus.write32(d + 4, OC420_IDS[(r.next_u32() % 8) as usize]);
+                c.bus.write32(d + 8, r.next_u32());
+                for k in 3..6 {
+                    c.bus.write32(d + 4 * k, r.f32(10.0));
+                }
+                c.bus.write8(d + 0x18, r.next_u32() as u8);
+                let args = DATA + 0x3000;
+                let n = (seed / 2) % 4;
+                oc420_args(c, &mut r, args, n, 6, 0x0044_61c0);
+                c.g[A0][0] = sx(DATA + 0x500);
+                c.g[A1][0] = if seed % 13 == 0 {
+                    0xffff_ffff_ffff_ffff
+                } else {
+                    n as u64
+                };
+                c.g[A2][0] = sx(args);
+                for k in 0..3 {
+                    c.bus.write32(DATA + 0x500 + 4 * k, r.next_u32());
+                }
+                c.bus.write32(0x004c_9098, r.next_u32());
+                c.bus.write32(0x004c_909c, r.next_u32());
+                c.bus.write32(0x004c_90a0, r.next_u32());
             },
         );
     }

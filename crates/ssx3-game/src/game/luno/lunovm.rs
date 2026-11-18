@@ -66,6 +66,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0022_4df0, c_luno_table_dtor, "cLunoTable_dtor"),
     (0x0022_27d0, luno_vm_execute, "LunoVM_Execute"),
     (0x0022_5338, c_luno_table_set, "cLunoTable_Set"),
+    (0x0022_4e50, cluno_table_alloc, "cLunoTable_Alloc"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4787,6 +4788,91 @@ pub fn c_luno_table_set(c: &mut Cpu) {
     return;
 }
 
+// ---------------------------------------------------------------------------
+// cLunoTable_Alloc.
+
+/// `void cLunoTable_Alloc(cLunoTableRef* ref, int n)` (0x224e50): allocates
+/// a table object (0x14 bytes, "LunoTable": nodes, refCount, modulus) into
+/// `ref->table`, then an `n`-entry node array (32 bytes each, preceded by a
+/// count word) whose nodes are cleared and given their vtable word at +0x1c;
+/// sets `modulus = n - 1` and `refCount = 1`.
+pub fn cluno_table_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, 0x40);
+        c.g[A2][0] = 0xffff_ffff_a000_0000;
+        frame.save(c, S0, 0x30);
+        c.g[A3][0] = 0;
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A1][0] = 0x0048_0000;
+        frame.save(c, S2, 0x10);
+        c.g[A0][0] = 0x14;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx(0x0048_0000u32.wrapping_sub(0x67a0));
+        // operator new (EA_MemAllocNamed).
+        call_ptr(c, 0x0031_7d70, 0x0022_4e84)?;
+        let table = c.g[V0][0] as u32;
+        Addr(c.g[S1][0] as u32).sw(c, c.g[V0][0]);
+        c.g[A0][0] = sx((c.g[S0][0] as u32) << 5);
+        c.g[A1][0] = 0x0048_0000;
+        c.g[A0][0] |= 0x10;
+        c.g[A2][0] = 0xffff_ffff_a000_0000;
+        c.g[S2][0] = sx(table.wrapping_add(0x10));
+        c.g[A1][0] = sx(0x0048_0000u32.wrapping_sub(0x6790));
+        Addr(table.wrapping_add(0x10)).sw(c, 0);
+        Addr(table.wrapping_add(8)).sw(c, 0);
+        c.g[A3][0] = 0;
+        Addr(table.wrapping_add(0xc)).sw(c, 0);
+        // operator new[] (operator_new_named).
+        call_ptr(c, 0x0031_7e30, 0x0022_4eb4)?;
+        c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
+        Addr(c.g[V0][0] as u32).sw(c, c.g[S0][0]);
+        c.g[V1][0] = c.g[A2][0];
+        if c.g[S0][0] != 0 {
+            c.cycles += 4;
+            c.g[V0][0] = 0x0048_0000;
+            c.g[A1][0] = u64::MAX;
+            c.g[V0][0] = sx(0x0048_0000u32.wrapping_sub(0x6770));
+            loop {
+                c.cycles += 9;
+                let node = c.g[V1][0] as u32;
+                Addr(node.wrapping_add(0x1c)).sw(c, c.g[V0][0]);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(1));
+                Addr(node.wrapping_add(8)).sw(c, 0);
+                Addr(node).sw(c, 0);
+                Addr(node.wrapping_add(0x14)).sw(c, 0);
+                Addr(node.wrapping_add(0xc)).sw(c, 0);
+                Addr(node.wrapping_add(0x18)).sw(c, 0);
+                let more = c.g[A0][0] != c.g[A1][0];
+                c.g[V1][0] = sx(node.wrapping_add(0x20));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0022_4ed8);
+                }
+            }
+        }
+        c.cycles += 13;
+        c.g[A1][0] = Addr(c.g[S1][0] as u32).lw(c);
+        c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
+        Addr(c.g[S2][0] as u32).sw(c, c.g[A2][0]);
+        c.g[A0][0] = 1;
+        Addr((c.g[A1][0] as u32).wrapping_add(0xc)).sw(c, c.g[V1][0]);
+        frame.restore(c, S0, 0x30);
+        c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        Addr((c.g[V0][0] as u32).wrapping_add(8)).sw(c, c.g[A0][0]);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5672,6 +5758,33 @@ pub(crate) mod tests {
                 c.g[A0][0] = SELF as u64;
                 c.g[A1][0] = KEY as u64;
                 c.g[A2][0] = VAL as u64;
+            },
+        );
+    }
+
+    use crate::difftest::GAME_GP;
+
+    // ------------------------------------------------------- cLunoTable_Alloc
+
+    /// `cLunoTable_Alloc` against the real allocator (pool + arena): zero
+    /// to six nodes.
+    #[test]
+    fn cluno_table_alloc_matches() {
+        use crate::difftest::elf_image;
+        check(
+            ee::s05::f_00224e50__generated,
+            cluno_table_alloc,
+            14,
+            &|c, seed| {
+                machine(c, seed, 0x22_4e50, 0);
+                elf_image(c);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(GAME_GP - 0x1f04, DATA + 0x9_0000);
+                c.bus.write32(GAME_GP - 0x848, DATA + 0xa_0000);
+                crate::game::ai::computer::tests::rbc_test_allocator(c);
+                c.pc = 0x0022_4e50;
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = [0u64, 1, 2, 3, 6][(seed % 5) as usize];
             },
         );
     }

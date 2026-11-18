@@ -236,6 +236,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_mission_int_save_state,
         "BEMissionInt_SaveState",
     ),
+    (
+        0x0015_3708,
+        be_mission_int_count_collected_bits_on_peak,
+        "BEMissionInt_CountCollectedBitsOnPeak",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2089,6 +2094,174 @@ pub fn be_mission_int_save_state(c: &mut Cpu) {
     })
 }
 
+/// `int BEMissionInt::CountCollectedBitsOnPeak(this, int profile, int character, int owner)`
+/// (0x153708): when a game is running (`gp - 0x848` world, field +0x84 non-zero) ask
+/// `CountCollectedOnPeak` (rider found by `BE_FindRiderByProfile`)
+/// for the rider's index; otherwise add up the set collect bits (two words of
+/// 32 bits) of every collectible entry of the profile and character whose
+/// owner peak matches.
+pub fn be_mission_int_count_collected_bits_on_peak(c: &mut Cpu) {
+    guest(c, |c| {
+        ssx3_ee_rt::prof::enter(c, 0x00153708);
+        'b_153840: {
+            'b_15375c: {
+                c.cycles += 13;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+                c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.g[T0][0] = c.g[A1][0];
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.g[S0][0] = c.g[A0][0];
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.g[T1][0] = c.g[A2][0];
+                c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+                let t = c.g[V0][0] == 0u64;
+                c.g[S1][0] = c.g[A3][0];
+                if t {
+                    break 'b_15375c;
+                } else {
+                    c.cycles += 8;
+                    c.g[A0][0] = c.g[T0][0];
+                    Callee {
+                        addr: 0x0014a130,
+                        f: ee::s01::BE_FindRiderByProfile,
+                    }
+                    .call(c, 0x00153744)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[V0][0];
+                    c.g[A2][0] = c.g[S1][0];
+                    Callee {
+                        addr: 0x001535c0,
+                        f: ee::s01::BEMissionInt_CountCollectedOnPeak,
+                    }
+                    .call(c, 0x00153754)?;
+                    let t = true;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    if t {
+                        break 'b_153840;
+                    } else {
+                        break 'b_15375c;
+                    }
+                }
+            }
+            c.cycles += 15;
+            c.g[A1][0] = 0x9b50;
+            c.g[A0][0] = 0xf88;
+            c.mult(0, 5, 8, 5);
+            c.mult(0, 4, 9, 4);
+            c.g[V0][0] = 0x440000;
+            c.g[V1][0] = 0x4a0000;
+            c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x265c));
+            c.g[S2][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6cac));
+            c.g[T6][0] = 0u64;
+            c.g[V0][0] = 0u64;
+            c.g[S0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[T9][0] = 0x64;
+            c.g[T8][0] = 0xc;
+            c.mult(0, 13, 2, 24);
+            'l_153798: loop {
+                c.cycles += 4;
+                c.g[A0][0] = 0u64;
+                c.g[T7][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                c.mult(0, 2, 4, 25);
+                'l_1537a8: loop {
+                    'b_15381c: {
+                        c.cycles += 4;
+                        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                        let t = c.g[V0][0] != c.g[S1][0];
+                        c.g[T2][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        if t {
+                            break 'b_15381c;
+                        } else {
+                            c.cycles += 10;
+                            c.mult(0, 3, 4, 24);
+                            c.g[T0][0] = 0u64;
+                            c.g[A3][0] = 0u64;
+                            c.g[T4][0] = 0xffffffffffffffff;
+                            c.g[T3][0] = 0x1;
+                            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                            c.g[V0][0] = sx((c.g[T5][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                            c.g[T1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
+                            'l_1537e0: loop {
+                                c.cycles += 14;
+                                c.g[V0][0] = ((c.g[T4][0] as i64) < (c.g[A3][0] as i64)) as u64;
+                                c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1f));
+                                if c.g[V0][0] != 0 {
+                                    c.g[V1][0] = c.g[A3][0];
+                                }
+                                c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 5) as u32);
+                                c.g[A2][0] = sx((c.g[T3][0] as u32) << ((c.g[A3][0] as u32) & 31));
+                                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                                c.g[A1][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+                                c.g[V1][0] =
+                                    sx((c.g[T1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+                                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                                c.g[A0][0] = ((c.g[A3][0] as i64) < 64i64) as u64;
+                                c.g[V0][0] = c.g[V0][0] & c.g[A2][0];
+                                let t = c.g[A0][0] != 0u64;
+                                if c.g[V0][0] != 0 {
+                                    c.g[T0][0] = c.g[A1][0];
+                                }
+                                if t {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x001537e0);
+                                    }
+                                    continue 'l_1537e0;
+                                } else {
+                                    c.cycles += 1;
+                                    c.g[T6][0] =
+                                        sx((c.g[T6][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                                    break 'b_15381c;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[T2][0];
+                    c.g[V0][0] = ((c.g[A0][0] as i64) < 22i64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.mult(0, 2, 4, 25);
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x001537a8);
+                        }
+                        continue 'l_1537a8;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.g[T7][0];
+                        if (c.g[V0][0] as i64) <= 0 {
+                            c.mult(0, 13, 2, 24);
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00153798);
+                            }
+                            continue 'l_153798;
+                        } else {
+                            c.cycles += 2;
+                            c.g[V0][0] = c.g[T6][0];
+                            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                            break 'b_153840;
+                        }
+                    }
+                }
+            }
+        }
+        c.cycles += 6;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2756,6 +2929,43 @@ pub(crate) mod tests {
                 c.bus.write32(stream, vt);
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(stream);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc427_base;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc427_gp;
+
+    /// `BEMissionInt_CountCollectedBitsOnPeak`: with a running game (the
+    /// +0x84 field of the world) it forwards to the faked counter, otherwise
+    /// it counts the collect bits of every entry whose owner matches
+    /// (random bit words over a region covering the profiles and characters).
+    #[test]
+    fn be_mission_int_count_collected_bits_on_peak_matches() {
+        covered(
+            ee::s01::f_00153708__generated,
+            be_mission_int_count_collected_bits_on_peak,
+            120,
+            &|c, seed| {
+                let mut r = oc427_base(c, seed, 0x153708, 3, 0x0015_3708);
+                let world = DATA + 0x3000;
+                c.bus.write32(oc427_gp(-0x848), world);
+                c.bus
+                    .write32(world + 0x84, if seed % 3 == 0 { 1 } else { 0 });
+                for j in 0..22 {
+                    c.bus.write32(0x0043_d9a4 + 100 * j, r.next_u32() % 3);
+                }
+                fill(c, &mut r, 0x004a_6cac, 0x8000);
+                for k in 0..0x8000u32 {
+                    // sparse bit words: every third word zero
+                    if k % 3 == 0 {
+                        c.bus.write32(0x004a_6cac + 4 * k, 0);
+                    }
+                }
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[A1][0] = (r.next_u32() % 3) as u64;
+                c.g[A2][0] = (r.next_u32() % 4) as u64;
+                c.g[A3][0] = (r.next_u32() % 3) as u64;
             },
         );
     }

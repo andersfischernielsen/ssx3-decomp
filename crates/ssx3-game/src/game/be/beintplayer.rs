@@ -321,6 +321,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_new_player_int_get_alt_character,
         "BENewPlayerInt_GetAltCharacter",
     ),
+    (
+        0x0014_6a70,
+        be_new_player_int_get_event_type_flag,
+        "BENewPlayerInt_GetEventTypeFlag",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2913,6 +2918,93 @@ pub fn be_new_player_int_get_alt_character(c: &mut Cpu) {
     })
 }
 
+pub(crate) const OC423_BE_GET_RIDER_PROFILE: Callee = Callee {
+    addr: 0x0014_a0e0,
+    f: ee::s01::BE_GetRiderProfile,
+};
+
+#[cfg(not(feature = "ee-unwind"))]
+pub(crate) fn event_type_flag_resume_2(c: &mut Cpu) {
+    ee::s01::f_00146a70__entries(c)
+}
+
+#[cfg(feature = "ee-unwind")]
+pub(crate) fn event_type_flag_resume_2(c: &mut Cpu) {
+    ee::s01::f_00146a70__generated(c)
+}
+
+/// `bool BENewPlayerInt_GetEventTypeFlag(this, int rider, int character, int
+/// kind)` (0x146a70): the profile's event flag `kind` (6..11) of `character`:
+/// bit `kind + 8` of the 64-bit word at `+0x278` of the profile record
+/// (`0x4a6ca8 + profile * 0x9b50 + character * 0xf88`, `profile` from
+/// `BE_GetRiderProfile(rider)`); other kinds give 0. The kind goes through
+/// the original's jump table at `0x45a1f0` (one shift amount per case).
+///
+/// Resume entries (`__entries`) go to the generated twin.
+pub fn be_new_player_int_get_event_type_flag(c: &mut Cpu) {
+    if c.pc != 0x0014_6a70 {
+        return event_type_flag_resume_2(c);
+    }
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        c.g[A0][0] = c.g[A1][0];
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A3][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        OC423_BE_GET_RIDER_PROFILE.call(c, 0x0014_6a90)?;
+        c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(6));
+        c.g[A1][0] = c.g[V0][0];
+        let in_range = c.g[V1][0] < 6;
+        c.g[V0][0] = 0x46_0000;
+        if !in_range {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5e10));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+            let target = c.g[A0][0] as u32;
+            // Each jump-table target is the same code with another shift.
+            let shift = match target {
+                0x0014_6abc => 18,
+                0x0014_6af0 => 17,
+                0x0014_6b24 => 16,
+                0x0014_6b58 => 15,
+                0x0014_6b8c => 14,
+                0x0014_6bc0 => 13,
+                _ => {
+                    c.jump_out(target, 0x0014_6a70, 0x0014_6c0c);
+                    return Ok(());
+                }
+            };
+            c.cycles += 13;
+            c.g[V1][0] = 0xf88;
+            c.g[A0][0] = 0x9b50;
+            c.mult(0, V1, S1, V1);
+            c.mult(0, A0, A1, A0);
+            c.g[V0][0] = 0x4a_0000;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6ca8));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V0][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x278));
+            c.g[V0][0] <<= shift;
+            c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
+            c.g[V0][0] &= 1;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4193,6 +4285,74 @@ pub(crate) mod tests {
                 fill(c, &mut r, BENP_PLAYERS, 16 * BENP_PLAYER_SIZE / 4);
                 c.g[A0][0] = sx(DATA);
                 c.g[A1][0] = (r.next_u32() % 8) as u64 | (r.next_u32() as u64) << 32;
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc423_fake;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc423_fake_call;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w_5 as w_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_CTRL;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_MAGIC;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_RET;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    oc423_fake!(
+        oc423_fake_be_get_rider_profile,
+        OC423_PREV_BE_GET_RIDER_PROFILE,
+        0x0014_a0e0,
+        ee::s01::f_0014a0e0__generated
+    );
+
+    /// Every kind 4..=13 (6..11 select the flag bit), three characters and
+    /// profiles, random 64-bit flag words; the profile lookup faked.
+    #[test]
+    fn be_new_player_int_get_event_type_flag_matches() {
+        hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014A0E0),
+            oc423_fake_be_get_rider_profile,
+            &OC423_PREV_BE_GET_RIDER_PROFILE,
+        );
+        fakes::covered(
+            ee::s01::f_00146a70__generated,
+            be_new_player_int_get_event_type_flag,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0014_6a70, 1);
+                c.pc = 0x0014_6a70;
+                w_2(c, OC423_CTRL, OC423_MAGIC);
+                let profile = seed % 3;
+                let character = (seed / 3) % 4;
+                let kind = 4 + seed % 10;
+                w_2(c, OC423_RET, profile);
+                // The original's jump table at 0x45a1f0.
+                put_words(
+                    c,
+                    0x0045_a1f0,
+                    &[
+                        0x0014_6abc,
+                        0x0014_6af0,
+                        0x0014_6b24,
+                        0x0014_6b58,
+                        0x0014_6b8c,
+                        0x0014_6bc0,
+                    ],
+                );
+                let record = 0x004a_6ca8 + profile * 0x9b50 + character * 0xf88;
+                c.bus.write64(
+                    record + 0x278,
+                    (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+                );
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = character as u64;
+                c.g[A3][0] = kind as u64;
             },
         );
     }

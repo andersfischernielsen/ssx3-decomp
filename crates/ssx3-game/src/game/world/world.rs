@@ -47,6 +47,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_get_section_script_func,
         "World_GetSectionScriptFunc",
     ),
+    (
+        0x003a_6c68,
+        world_get_section_mission_count,
+        "World_GetSectionMissionCount",
+    ),
+    (
+        0x003a_6c98,
+        world_get_section_missions,
+        "World_GetSectionMissions",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -370,6 +380,50 @@ pub fn world_get_section_script_func(c: &mut Cpu) {
     })
 }
 
+/// `tWScriptCache_GetMissions` (0x3add70).
+pub(crate) const OC420_GET_MISSIONS: Callee = Callee {
+    addr: 0x003a_dd70,
+    f: ee::s13::f_003add70,
+};
+
+/// `tWScriptCache_GetMissionCount` (0x3add40).
+pub(crate) const OC420_GET_MISSION_COUNT: Callee = Callee {
+    addr: 0x003a_dd40,
+    f: ee::s13::f_003add40,
+};
+
+/// Shared body of the two section-mission accessors: the world's script
+/// cache table (`*(*(world + 4) + 4)`) holds 12-byte entries; call `callee`
+/// on entry `i` (`a1 = i * 12`, `v0 = 12` stay behind as `mult` leaves them).
+pub(crate) fn oc420_section_entry(c: &mut Cpu, callee: Callee, ret_addr: u32) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0xc;
+        frame.save_ra(c, 0);
+        c.mult(0, A1, A1, V0);
+        c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(4)).lw(c);
+        c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(4)).lw(c);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        callee.call(c, ret_addr)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void* World_GetSectionMissions(World* w, int section)` (0x3a6c98): the
+/// mission list of one script-cache entry.
+pub fn world_get_section_missions(c: &mut Cpu) {
+    oc420_section_entry(c, OC420_GET_MISSIONS, 0x003a_6cb8);
+}
+
+/// `int World_GetSectionMissionCount(World* w, int section)` (0x3a6c68):
+/// the mission count of one script-cache entry.
+pub fn world_get_section_mission_count(c: &mut Cpu) {
+    oc420_section_entry(c, OC420_GET_MISSION_COUNT, 0x003a_6c88);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -640,6 +694,45 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(WORLD);
                 c.g[A1][0] = sx(HANDLE);
             },
+        );
+    }
+
+    use crate::difftest::Rng;
+
+    /// Section accessors: entry `i` of the 12-byte table, read back through
+    /// the real script-cache getters.
+    pub(crate) fn oc420_section_fixture(c: &mut Cpu, seed: u32, entry: u32) {
+        let mut r = Rng(0x3a6c_0000 ^ seed as u64);
+        scramble(c, &mut r);
+        let (world, mid, table) = (DATA, DATA + 0x100, DATA + 0x200);
+        c.pc = entry;
+        c.g[A0][0] = sx(world);
+        c.g[A1][0] = [0u64, 1, 2, 5, 0xffff_ffff_0000_0003][(seed % 5) as usize];
+        c.bus.write32(world + 4, mid);
+        c.bus.write32(mid + 4, table);
+        for i in 0..8 {
+            c.bus.write32(table + 12 * i + 0x20, r.next_u32());
+            c.bus.write32(table + 12 * i + 0x24, r.next_u32());
+        }
+    }
+
+    #[test]
+    fn world_get_section_missions_matches() {
+        check_lohi(
+            ee::s13::f_003a6c98__generated,
+            world_get_section_missions,
+            40,
+            &|c, seed| oc420_section_fixture(c, seed, 0x003a_6c98),
+        );
+    }
+
+    #[test]
+    fn world_get_section_mission_count_matches() {
+        check_lohi(
+            ee::s13::f_003a6c68__generated,
+            world_get_section_mission_count,
+            40,
+            &|c, seed| oc420_section_fixture(c, seed, 0x003a_6c68),
         );
     }
 }

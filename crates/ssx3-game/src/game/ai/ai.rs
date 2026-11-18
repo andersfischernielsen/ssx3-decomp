@@ -21,6 +21,8 @@ use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::control::handplantcontrol::rider_ctor_vtables;
+pub(crate) use crate::game::ai::control::handplantcontrol::RiderCtorLayout;
 pub(crate) use crate::game::ai::rider::rate_step_60;
 pub(crate) use crate::game::camera::camera::gp;
 pub(crate) use crate::game::camera::camera::gp_at;
@@ -550,6 +552,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0013_2770,
         rider_railslide_sub_check_airborne,
         "RiderRailslideSub_CheckAirborne",
+    ),
+    (
+        0x0012_a340,
+        ai_set_track_paths_buffer,
+        "AI_SetTrackPathsBuffer",
+    ),
+    (
+        0x0013_2060,
+        rider_railslide_sub_rotate_stance,
+        "RiderRailslideSub_RotateStance",
+    ),
+    (
+        0x0013_26c8,
+        rider_railslide_sub_play_enter_anim_2,
+        "RiderRailslideSub_PlayEnterAnim",
+    ),
+    (
+        0x0013_6980,
+        rider_wipeout_state_ctor,
+        "RiderWipeoutState_ctor",
     ),
 ];
 
@@ -18832,10 +18854,673 @@ pub fn rider_gate_sub_enter(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// RiderRailslideSub_RotateStance (0x00132060)
+
+/// `cRailslideControl` self: current spin angle (radians) at +0, the rider at +8.
+pub(crate) const RRS_SELF_ANGLE: u32 = 0x0;
+
+pub(crate) const RRS_SELF_RIDER: u32 = 0x8;
+
+/// Rider fields: flip flags (+0x320), stance (1..4, +0x328), model flips
+/// (+0x238, +0x240), the anim controller (+0x784) and the metrix (+0x790).
+pub(crate) const RRS_RIDER_FLIP: u32 = 0x320;
+
+pub(crate) const RRS_RIDER_STANCE: u32 = 0x328;
+
+pub(crate) const RRS_RIDER_FLIP_X: u32 = 0x238;
+
+pub(crate) const RRS_RIDER_FLIP_Y: u32 = 0x240;
+
+pub(crate) const RRS_RIDER_ANIM: u32 = 0x784;
+
+pub(crate) const RRS_RIDER_METRIX: u32 = 0x790;
+
+/// The data-segment constants (0x4ff130, 0x4ff160) the rotation quad is built from.
+#[cfg(test)]
+pub(crate) const RRS_ROT_CONSTS: u32 = 0x4f_f130;
+
+/// What the stance (1..4) of the rider selects.
+#[derive(Clone, Copy)]
+pub(crate) enum RrsStance {
+    One,
+    Two,
+    Three,
+    Four,
+    Other,
+}
+
+/// The stance switch: cycles and v0/a3 as the generated compare chain leaves
+/// them. `state` is `v1`, the stance as loaded (sign-extended).
+pub(crate) fn rrs_pick(c: &mut Cpu, neg: bool, state: u64) -> RrsStance {
+    if state == 2 {
+        return RrsStance::Two;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 1;
+    if (state as i64) < 3 {
+        c.cycles += 2;
+        let hit = state == 1;
+        c.g[V0][0] = 0x500000;
+        if hit {
+            return RrsStance::One;
+        }
+        c.cycles += 2;
+        let rider = c.g[S3][0] as u32;
+        c.g[V0][0] = c.lw(rider.wrapping_add(RRS_SELF_RIDER));
+        return RrsStance::Other;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = 3;
+    let hit = state == 3;
+    c.g[V0][0] = 4;
+    if hit {
+        return RrsStance::Three;
+    }
+    c.cycles += 2;
+    let hit = state == 4;
+    if neg {
+        c.g[V0][0] = 0x500000;
+    } else {
+        c.g[A3][0] = 1;
+    }
+    if hit {
+        return RrsStance::Four;
+    }
+    c.cycles += 2;
+    let rider = c.g[S3][0] as u32;
+    c.g[V0][0] = c.lw(rider.wrapping_add(RRS_SELF_RIDER));
+    RrsStance::Other
+}
+
+/// The rail-spin vector: `(sin*x, cos, sin*y)` scaled by the Math_SinCos
+/// results, stored into the stack temp, then `base` (+4/+8, s0-0xea0) read.
+pub(crate) fn rrs_scale(c: &mut Cpu, base: usize, out: u32, anim_id: u64) {
+    let base_addr = c.g[base][0] as u32;
+    let s0 = c.g[S0][0] as u32;
+    let sp0 = c.g[SP][0] as u32;
+    c.lwc1(1, base_addr.wrapping_add(8));
+    c.g[A1][0] = anim_id;
+    c.lwc1(0, sp0.wrapping_add(out));
+    c.g[A2][0] = 0;
+    c.lwc1(2, s0.wrapping_sub(0xea0));
+    c.lwc1(4, base_addr.wrapping_add(4));
+    c.mul_s(1, 0, 1);
+    c.mul_s(2, 0, 2);
+    c.lwc1(3, sp0.wrapping_add(out + 4));
+}
+
+/// Finish the vector (`* f4`, w = -1.0) and store it as the anim's rotation
+/// quad at `dest + 0x40`.
+pub(crate) fn rrs_store(c: &mut Cpu, dest: usize) {
+    let sp0 = c.g[SP][0] as u32;
+    c.mul_s(0, 0, 4);
+    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+    c.mtc1(1, 12);
+    c.swc1(3, sp0.wrapping_add(0xc));
+    c.swc1(1, sp0.wrapping_add(0x8));
+    c.swc1(2, sp0);
+    c.swc1(0, sp0.wrapping_add(0x4));
+    c.lq(2, sp0);
+    let d = c.g[dest][0] as u32;
+    c.sq(2, d.wrapping_add(0x40));
+}
+
+/// Stance 1/4 style (no flip): copy the rotation constant to the anim, spin
+/// by the angle in gp-pool `gp_off`, vector from `RRS_ROT_B`.
+pub(crate) fn rrs_plain(
+    c: &mut Cpu,
+    cycles: u64,
+    gp_off: u32,
+    out: u32,
+    ret: u32,
+    anim_id: u64,
+) -> Flow {
+    c.cycles += cycles;
+    let rider = c.g[A0][0] as u32;
+    c.g[S2][0] = c.lw(rider.wrapping_add(RRS_RIDER_ANIM));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xed0));
+    c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(gp_off));
+    let v0 = c.g[V0][0] as u32;
+    c.lq(3, v0);
+    let sp0 = c.g[SP][0] as u32;
+    c.g[A0][0] = sx(sp0.wrapping_add(out));
+    c.g[A1][0] = sx(sp0.wrapping_add(out + 4));
+    c.g[S0][0] = 0x500000;
+    let s2 = c.g[S2][0] as u32;
+    c.sq(3, s2.wrapping_add(0x30));
+    c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xea0));
+    call_ptr(c, 0x0031be50, ret)?;
+    rrs_scale(c, S1, out, anim_id);
+    rrs_store(c, S2);
+    Ok(())
+}
+
+/// Stance 2/3 style (flip the model): clear or set the flip flags, negate the
+/// two model flips, spin by `gp_off`.
+pub(crate) fn rrs_flip(
+    c: &mut Cpu,
+    cycles: u64,
+    flip: u64,
+    gp_off: u32,
+    out: u32,
+    ret: u32,
+    anim_id: u64,
+    store: bool,
+) -> Flow {
+    c.cycles += cycles;
+    let rider = c.g[A0][0] as u32;
+    if flip != 0 {
+        c.g[A3][0] = flip;
+    }
+    c.sw(rider.wrapping_add(RRS_RIDER_FLIP), flip);
+    c.g[A2][0] = 0x500000;
+    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0xed0));
+    c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(gp_off));
+    let sp0 = c.g[SP][0] as u32;
+    let me = c.g[S3][0] as u32;
+    c.g[V1][0] = c.lw(me.wrapping_add(RRS_SELF_RIDER));
+    c.g[A0][0] = sx(sp0.wrapping_add(out));
+    c.g[A1][0] = sx(sp0.wrapping_add(out + 4));
+    c.g[S0][0] = 0x500000;
+    let v1 = c.g[V1][0] as u32;
+    c.g[V0][0] = c.lw(v1.wrapping_add(RRS_RIDER_ANIM));
+    c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xea0));
+    let v0 = c.g[V0][0] as u32;
+    c.sw(v0.wrapping_add(0x18), flip);
+    c.g[V1][0] = c.lw(me.wrapping_add(RRS_SELF_RIDER));
+    let v1 = c.g[V1][0] as u32;
+    c.lwc1(0, v1.wrapping_add(RRS_RIDER_FLIP_X));
+    c.neg_s(0, 0);
+    c.swc1(0, v1.wrapping_add(RRS_RIDER_FLIP_X));
+    c.g[V0][0] = c.lw(me.wrapping_add(RRS_SELF_RIDER));
+    let v0 = c.g[V0][0] as u32;
+    c.lwc1(0, v0.wrapping_add(RRS_RIDER_FLIP_Y));
+    c.neg_s(0, 0);
+    c.swc1(0, v0.wrapping_add(RRS_RIDER_FLIP_Y));
+    c.g[V1][0] = c.lw(me.wrapping_add(RRS_SELF_RIDER));
+    let a2 = c.g[A2][0] as u32;
+    c.lq(2, a2);
+    let v1 = c.g[V1][0] as u32;
+    c.g[S1][0] = c.lw(v1.wrapping_add(RRS_RIDER_ANIM));
+    let s1 = c.g[S1][0] as u32;
+    c.sq(2, s1.wrapping_add(0x30));
+    call_ptr(c, 0x0031be50, ret)?;
+    rrs_scale(c, S2, out, anim_id);
+    if store {
+        rrs_store(c, S1);
+    }
+    Ok(())
+}
+
+/// Stance 4/3 style (rotation back to 0): no gp angle, f12 = -0.0.
+pub(crate) fn rrs_zero(c: &mut Cpu, out: u32, ret: u32, anim_id: u64) -> Flow {
+    c.cycles += 21;
+    c.mtc1(0, 12);
+    c.g[V0][0] = 0x500000;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xed0));
+    let rider = c.g[A0][0] as u32;
+    c.g[S1][0] = c.lw(rider.wrapping_add(RRS_RIDER_ANIM));
+    let v0 = c.g[V0][0] as u32;
+    c.lq(3, v0);
+    c.neg_s(12, 12);
+    let sp0 = c.g[SP][0] as u32;
+    c.g[A0][0] = sx(sp0.wrapping_add(out));
+    c.g[A1][0] = sx(sp0.wrapping_add(out + 4));
+    let s1 = c.g[S1][0] as u32;
+    c.sq(3, s1.wrapping_add(0x30));
+    c.g[S0][0] = 0x500000;
+    call_ptr(c, 0x0031be50, ret)?;
+    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xea0));
+    rrs_scale(c, V0, out, anim_id);
+    Ok(())
+}
+
+/// Play the anim (`AnimController_PlayAnim(rider.anim)`, f12 = -1.0 from the
+/// vector tail) and set the new stance: `Some(v0)`, or `s4` (the `None` tail).
+pub(crate) fn rrs_play(c: &mut Cpu, ret: u32, stance: Option<u64>) -> Flow {
+    let me = c.g[S3][0] as u32;
+    c.g[V1][0] = c.lw(me.wrapping_add(RRS_SELF_RIDER));
+    let v1 = c.g[V1][0] as u32;
+    c.g[A0][0] = c.lw(v1.wrapping_add(RRS_RIDER_ANIM));
+    call_ptr(c, 0x003128e8, ret)?;
+    c.g[V1][0] = c.lw(me.wrapping_add(RRS_SELF_RIDER));
+    let v1 = c.g[V1][0] as u32;
+    let value = match stance {
+        Some(v) => {
+            c.g[V0][0] = v;
+            v
+        }
+        None => c.g[S4][0],
+    };
+    c.sw(v1.wrapping_add(RRS_RIDER_STANCE), value);
+    Ok(())
+}
+
+/// `void RiderRailslideSub_RotateStance(cRailslideControl* self, int neg)`
+/// (0x00132060): turn the rail spin a quarter (`neg`: the other way, which
+/// also decides the flip): the angle moves by a gp-pool constant, the rider's
+/// stance (1..4) steps to its neighbour, the matching spin animation is
+/// started (anim 49..54, rotation quad from `Math_SinCos`), and the
+/// rail-spin event is reported (`evRailSpin` metrix, `Rider_AddBoost`).
+pub fn rider_railslide_sub_rotate_stance(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, 19, 0x70);
+        frame.save(c, 16, 0xa0);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, 17, 0x90);
+        frame.save(c, 18, 0x80);
+        frame.save(c, 20, 0x60);
+        let neg = c.g[A1][0] != 0;
+        frame.save_ra(c, 0x50);
+        // Angle += / -= a quarter turn; read the rider's stance.
+        c.cycles += 9;
+        let me = c.g[S3][0] as u32;
+        c.lwc1(0, me.wrapping_add(RRS_SELF_ANGLE));
+        c.g[S4][0] = 2;
+        let gp = c.g[GP][0] as u32;
+        c.lwc1(1, gp.wrapping_sub(if neg { 0x7590 } else { 0x7580 }));
+        c.g[A0][0] = c.lw(me.wrapping_add(RRS_SELF_RIDER));
+        if neg {
+            c.sub_s(0, 0, 1);
+        } else {
+            c.add_s(0, 0, 1);
+        }
+        c.swc1(0, me.wrapping_add(RRS_SELF_ANGLE));
+        let rider = c.g[A0][0] as u32;
+        c.g[V1][0] = c.lw(rider.wrapping_add(RRS_RIDER_STANCE));
+        c.g[V0][0] = ((c.g[V1][0] as i64) < 3) as u64;
+        let state = c.g[V1][0];
+        let stance = rrs_pick(c, neg, state);
+        // Each case: build the spin, play it, set the next stance.
+        match (neg, stance) {
+            (_, RrsStance::Other) => {
+                // Default: no change; skips the `+1` of the normal exit.
+            }
+            (true, RrsStance::One) => {
+                rrs_plain(c, 29, 0x758c, 0x10, 0x00132104, 0x31)?;
+                c.cycles += 7;
+                rrs_play(c, 0x00132474, Some(3))?;
+                c.cycles += 1;
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(RRS_SELF_RIDER));
+            }
+            (true, RrsStance::Two) => {
+                rrs_flip(c, 43, 0, 0x7588, 0x18, 0x001321b0, 0x35, true)?;
+                c.cycles += 7;
+                rrs_play(c, 0x001323b0, Some(4))?;
+                c.cycles += 1;
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(RRS_SELF_RIDER));
+            }
+            (true, RrsStance::Three) => {
+                rrs_flip(c, 35, 1, 0x7584, 0x20, 0x00132260, 0x33, false)?;
+                c.cycles += 14;
+                rrs_store(c, S1);
+                rrs_play(c, 0x001325cc, None)?;
+                c.cycles += 1;
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(RRS_SELF_RIDER));
+            }
+            (true, RrsStance::Four) => {
+                rrs_zero(c, 0x28, 0x001322b0, 0x36)?;
+                c.cycles += 16;
+                rrs_store(c, S1);
+                rrs_play(c, 0x00132508, Some(1))?;
+                c.cycles += 1;
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(RRS_SELF_RIDER));
+            }
+            (false, RrsStance::One) => {
+                rrs_plain(c, 28, 0x757c, 0x30, 0x0013235c, 0x32)?;
+                c.cycles += 7;
+                rrs_play(c, 0x001323b0, Some(4))?;
+                c.cycles += 1;
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(RRS_SELF_RIDER));
+            }
+            (false, RrsStance::Two) => {
+                rrs_flip(c, 42, 0, 0x7578, 0x38, 0x00132420, 0x34, true)?;
+                c.cycles += 7;
+                rrs_play(c, 0x00132474, Some(3))?;
+                c.cycles += 1;
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(RRS_SELF_RIDER));
+            }
+            (false, RrsStance::Three) => {
+                rrs_zero(c, 0x40, 0x001324b0, 0x33)?;
+                c.cycles += 16;
+                rrs_store(c, S1);
+                rrs_play(c, 0x00132508, Some(1))?;
+                c.cycles += 1;
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(RRS_SELF_RIDER));
+            }
+            (false, RrsStance::Four) => {
+                rrs_flip(c, 33, 1, 0x7574, 0x48, 0x00132578, 0x36, false)?;
+                c.cycles += 14;
+                rrs_store(c, S1);
+                rrs_play(c, 0x001325cc, None)?;
+                c.cycles += 1;
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(RRS_SELF_RIDER));
+            }
+        }
+        // Report the spin event.
+        c.cycles += 18;
+        let me = c.g[S3][0] as u32;
+        c.lwc1(12, me.wrapping_add(RRS_SELF_ANGLE));
+        let rider = c.g[V0][0] as u32;
+        c.g[A1][0] = c.lw(rider.wrapping_add(RRS_RIDER_STANCE));
+        c.g[A0][0] = c.lw(rider.wrapping_add(RRS_RIDER_METRIX));
+        call_ptr(c, 0x00119918, 0x001325e8)?;
+        c.g[A0][0] = c.lw(me.wrapping_add(RRS_SELF_RIDER));
+        c.mov_s(12, 0);
+        c.g[A1][0] = 1;
+        call_ptr(c, 0x0010e098, 0x001325f8)?;
+        c.g[A0][0] = c.lw(me.wrapping_add(RRS_SELF_RIDER));
+        call_ptr(c, 0x00116930, 0x00132600)?;
+        frame.restore(c, 16, 0xa0);
+        frame.restore(c, 17, 0x90);
+        frame.restore(c, 18, 0x80);
+        frame.restore(c, 19, 0x70);
+        frame.restore(c, 20, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// AI_SetTrackPathsBuffer.
+
+/// `Rider_InitTrackPaths` (0x112180).
+pub(crate) const OC420_RIDER_INIT_TRACK_PATHS: Callee = Callee {
+    addr: 0x0011_2180,
+    f: ee::s00::f_00112180,
+};
+
+/// Where `AI_SetTrackPathsBuffer` continues after its mode checks.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Oc420PathsNext {
+    /// Straight to the epilogue (the `s0` restore already done).
+    Epilogue,
+    /// Return with `v0` as it is (`+1`, restore `s0`, epilogue).
+    Return,
+    /// Mode accepted: load the path buffer.
+    Load,
+    /// Plain mode check (modes 1 and 2 are rejected).
+    ModeCheck,
+}
+
+/// `bool AI_SetTrackPathsBuffer(AI* self, int, int mode, void* data)`
+/// (0x12a340): installs the AI path buffer `data` for the current section.
+/// The level id (`SectionMan` lookup) picks which modes are valid: on levels
+/// 17..21 the new-race interface selects mode 1 (flag bytes +0x48 == 5 or
+/// +0x4a == 11) or mode 2 (+0x48 == 6); on the other levels modes 1 and 2 are
+/// refused. On levels below 22 the global path data is purged, filled from
+/// `data`, and (when the AI interface exists) every allocated rider
+/// re-initialises its track paths. Returns whether the buffer was taken.
+pub fn ai_set_track_paths_buffer(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x50);
+        c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S3][0] = c.g[A3][0];
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x84)).lw(c);
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x78)).lw(c);
+        call_ptr(c, 0x0022_e0e0, 0x0012_a374)?;
+        c.g[S1][0] = c.g[V0][0];
+        call_ptr(c, 0x0014_dc80, 0x0012_a37c)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0014_dd58, 0x0012_a388)?;
+        c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x11));
+        c.g[V1][0] = (c.g[V1][0] < 5) as u64;
+        c.g[V0][0] = 0x0053_0000;
+        let mut next;
+        if c.g[V1][0] == 0 {
+            // Level outside 17..21: only the mode check below applies.
+            c.cycles += 1;
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
+            next = Oc420PathsNext::ModeCheck;
+        } else {
+            // The new-race interface (0x535bc8): flag bytes +0x48 and +0x4a.
+            c.cycles += 5;
+            c.g[V1][0] = 5;
+            c.g[V0][0] = sx(0x0053_0000u32.wrapping_add(0x5bc8));
+            c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x48)).lb(c);
+            // `mode1`: the interface asks for mode 1 (else mode 2 is checked).
+            let mut mode1 = false;
+            if c.g[A0][0] == c.g[V1][0] {
+                c.g[V0][0] = 1;
+                mode1 = true;
+            } else {
+                c.cycles += 4;
+                c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x4a)).lb(c);
+                c.g[V0][0] = 0xb;
+                let other = c.g[V1][0] != c.g[V0][0];
+                c.g[V0][0] = 6;
+                if !other {
+                    c.cycles += 1;
+                    c.g[V0][0] = 1;
+                    mode1 = true;
+                }
+            }
+            if mode1 {
+                c.cycles += 2;
+                let ok = c.g[S0][0] == c.g[V0][0];
+                c.g[V0][0] = 0;
+                if ok {
+                    next = Oc420PathsNext::Load;
+                } else {
+                    c.cycles += 2;
+                    frame.restore(c, S0, 0x40);
+                    next = Oc420PathsNext::Epilogue;
+                }
+            } else {
+                c.cycles += 2;
+                let not6 = c.g[A0][0] != c.g[V0][0];
+                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
+                if not6 {
+                    next = Oc420PathsNext::ModeCheck;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = 2;
+                    let ok = c.g[S0][0] == c.g[V0][0];
+                    c.g[V0][0] = 0;
+                    if ok {
+                        next = Oc420PathsNext::Load;
+                    } else {
+                        c.cycles += 2;
+                        frame.restore(c, S0, 0x40);
+                        next = Oc420PathsNext::Epilogue;
+                    }
+                }
+            }
+        }
+        if next == Oc420PathsNext::ModeCheck {
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+            let rejected = c.g[V0][0] != 0;
+            c.g[V0][0] = 0;
+            next = if rejected {
+                Oc420PathsNext::Return
+            } else {
+                Oc420PathsNext::Load
+            };
+        }
+        if next == Oc420PathsNext::Load {
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[S1][0] as i64) < 22) as u64;
+            let low_level = c.g[V0][0] != 0;
+            c.g[S0][0] = 0x004d_0000;
+            next = Oc420PathsNext::Return;
+            if low_level {
+                c.cycles += 11;
+                c.g[S0][0] = sx(0x004d_0000u32.wrapping_add(0x33a0));
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0026_af00, 0x0012_a414)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[S3][0];
+                call_ptr(c, 0x0026_ad70, 0x0012_a420)?;
+                c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+                c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x84)).lw(c);
+                c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0xc)).lw(c);
+                let no_ai = c.g[A0][0] == 0;
+                c.g[V0][0] = 1;
+                if !no_ai {
+                    // Re-initialise each allocated rider's track paths.
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x78)).lw(c);
+                    let none = (c.g[V0][0] as i64) <= 0;
+                    c.g[S1][0] = 0;
+                    if !none {
+                        c.cycles += 2;
+                        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x28));
+                        c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                        loop {
+                            c.cycles += 8;
+                            c.g[A1][0] = 0;
+                            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(4));
+                            OC420_RIDER_INIT_TRACK_PATHS.call(c, 0x0012_a458)?;
+                            c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x78)).lw(c);
+                            c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                            if c.g[V0][0] == 0 {
+                                break;
+                            }
+                            c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0012_a448);
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = 1;
+                }
+            } else {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+        }
+        if next == Oc420PathsNext::Return {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x40);
+        }
+        c.cycles += 6;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const WIPEOUT_STATE_LAYOUT: RiderCtorLayout = RiderCtorLayout {
+    rider_at: 0x70,
+    rider_ptr: 0x40,
+    script_vt: 0x6850,
+    rider_vt: 0x6808,
+    ret: 0x0013_69ac,
+    copy1: 0x0013_69f8,
+    copy2: 0x0013_6a5c,
+};
+
+/// `RiderWipeoutState* RiderWipeoutState_ctor(this, bool inChrg)` (0x136980,
+/// `cWipeoutMotion::cWipeoutMotion`): the rider base (`this+0x70`, linked at
+/// `this+0x40`) and its vtables, `this+0x44` cleared; returns `this`.
+pub fn rider_wipeout_state_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = rider_ctor_vtables(c, &WIPEOUT_STATE_LAYOUT)?;
+        c.cycles += 7;
+        c.g[V0][0] = c.g[S0][0];
+        c.sw(r32(c, S0).wrapping_add(0x44), 0);
+        frame.restore(c, S0, 0x120);
+        frame.restore(c, S1, 0x110);
+        frame.restore_ra(c, 0x100);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void RiderRailslideSub_PlayEnterAnim(RailslideSub* self, int alt)`
+/// (0x1326c8): play the rail-grind enter animation on the rider's animation
+/// controller (`rider+0x784`) with blend -1.0 (`AnimController_PlayAnim(anim,
+/// id, 0, -1.0f)`), the id picked by the rail style (`rider+0x328`) and `alt`:
+/// style 4: 20 (alt: 69); style 3: 19 (alt: 70); otherwise 18 (alt: 68).
+pub fn rider_railslide_sub_play_enter_anim_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x4;
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.lw(r32(c, A0).wrapping_add(0x8));
+        c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x328));
+        let style4 = c.g[A0][0] == c.g[V0][0];
+        c.g[V0][0] = 0x3;
+        // The id and the register state of the compiled branches, up to the call.
+        let play_18 = if style4 || c.g[A0][0] == c.g[V0][0] {
+            // Styles 4 and 3 differ in two ids.
+            let (alt_id, id) = if style4 { (0x45, 0x14) } else { (0x46, 0x13) };
+            // (Style 3 got here through one more compare.)
+            c.cycles += if style4 { 2 } else { 4 };
+            let main = c.g[A1][0] == 0;
+            c.g[A1][0] = alt_id;
+            if main {
+                c.cycles += 3;
+                c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x784));
+                c.g[A1][0] = id;
+            } else {
+                c.cycles += 2;
+                c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x784));
+            }
+            false
+        } else {
+            c.cycles += 2 + 2;
+            let main = c.g[A1][0] == 0;
+            c.g[A1][0] = 0x44;
+            if !main {
+                c.cycles += 1;
+                c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x784));
+            }
+            main
+        };
+        if play_18 {
+            c.cycles += 7;
+            c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x784));
+            c.g[A1][0] = 0x12;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.mtc1(1, 12);
+            c.g[A2][0] = 0;
+            call_ptr(c, 0x0031_28e8, 0x0013_2760)?;
+        } else {
+            c.cycles += 6;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.mtc1(1, 12);
+            c.g[A2][0] = 0;
+            call_ptr(c, 0x0031_28e8, 0x0013_2740)?;
+        }
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
+
+    use crate::game::replay::replaycache::tests::{
+        oc420_hook_get_be, oc420_hook_get_iface, oc420_hook_init_paths, oc420_hook_path_free,
+        oc420_hook_path_set, oc420_hook_section,
+    };
+
     use super::*;
     use crate::difftest::check;
+    use crate::game::ai::control::handplantcontrol::tests::oc425_install;
 
     use crate::difftest::compare;
     use crate::difftest::elf_image;
@@ -24428,6 +25113,201 @@ pub(crate) mod tests {
                     c.bus.write32(this + 4 * k, r.next_u32());
                 }
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::OC425_CTRL;
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::OC425_MAGIC;
+
+    /// Gate of this test's callee fakes (other tests' machines fall back).
+    pub(crate) const RRS_TEST_CTRL: u32 = DATA + 0x21_8200;
+
+    pub(crate) const RRS_TEST_MAGIC: u32 = 0x5a17_0c32;
+
+    pub(crate) const RRS_TEST_SELF: u32 = DATA + 0x100;
+
+    pub(crate) const RRS_TEST_RIDER: u32 = DATA + 0x1000;
+
+    pub(crate) const RRS_TEST_ANIM: u32 = DATA + 0x2800;
+
+    pub(crate) const RRS_TEST_METRIX: u32 = DATA + 0x3000;
+
+    pub(crate) static RRS_PREV_PLAY: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static RRS_PREV_BOOST: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn rrs_fake_play(c: &mut Cpu) {
+        if c.bus.read32(RRS_TEST_CTRL) != RRS_TEST_MAGIC {
+            return fakes::fall_back(c, &RRS_PREV_PLAY, ee::s10::f_003128e8__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x003128e8, ra);
+    }
+
+    pub(crate) fn rrs_fake_boost(c: &mut Cpu) {
+        if c.bus.read32(RRS_TEST_CTRL) != RRS_TEST_MAGIC {
+            return fakes::fall_back(c, &RRS_PREV_BOOST, ee::s00::f_0010e098__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0010e098, ra);
+    }
+
+    /// Rotate the stance: every stance (1..4, none, negative) in both
+    /// directions; the animation play and the boost call are fakes (one of
+    /// them unwinds on some seeds), the maths and metrix callees are real.
+    #[test]
+    fn rider_railslide_sub_rotate_stance_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003128E8),
+            rrs_fake_play,
+            &RRS_PREV_PLAY,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0010E098),
+            rrs_fake_boost,
+            &RRS_PREV_BOOST,
+        );
+        covered(
+            ee::s01::f_00132060__generated,
+            rider_railslide_sub_rotate_stance,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0013_2060, 2);
+                c.pc = 0x00132060;
+                c.bus.write32(RRS_TEST_CTRL, RRS_TEST_MAGIC);
+                c.g[GP][0] = GAME_GP as u64;
+                // Gp-pool angles (quarter turns and half turns, plus noise).
+                for off in [
+                    0x7590u32, 0x7580, 0x758c, 0x7588, 0x7584, 0x757c, 0x7578, 0x7574, 0x7a14,
+                    0x2ec0, 0x2ebc, 0x2eb8, 0x2eb4, 0x2eb0,
+                ] {
+                    let bits = r.f32(4.0);
+                    c.bus.write32(GAME_GP - off, bits);
+                }
+                fill(c, &mut r, RRS_TEST_RIDER, 0x400);
+                fill(c, &mut r, RRS_TEST_ANIM, 0x40);
+                fill(c, &mut r, RRS_TEST_METRIX, 0x20);
+                fill(c, &mut r, RRS_ROT_CONSTS, 0x20);
+                let states: [u32; 9] = [1, 2, 3, 4, 0, 5, 0xffff_ffff, 2, 3];
+                let stance = states[seed as usize % 9];
+                c.bus.write32(RRS_TEST_SELF + RRS_SELF_ANGLE, r.f32(4.0));
+                c.bus
+                    .write32(RRS_TEST_SELF + RRS_SELF_RIDER, RRS_TEST_RIDER);
+                c.bus.write32(RRS_TEST_RIDER + RRS_RIDER_STANCE, stance);
+                c.bus
+                    .write32(RRS_TEST_RIDER + RRS_RIDER_ANIM, RRS_TEST_ANIM);
+                c.bus
+                    .write32(RRS_TEST_RIDER + RRS_RIDER_METRIX, RRS_TEST_METRIX);
+                c.g[A0][0] = RRS_TEST_SELF as u64;
+                c.g[A1][0] = if (seed / 9) % 2 == 0 {
+                    0
+                } else {
+                    (r.next_u32() as u64) << 32 | (r.next_u32() | 1) as u64
+                };
+            },
+        );
+    }
+
+    // ------------------------------------------------------------ fake callees
+
+    /// Control word of this module's gated fakes (in the machine's RAM, so it
+    /// never leaks into another test even when tests share a process).
+    pub(crate) const OC420_CTRL: u32 = DATA + 0x3f_0000;
+
+    pub(crate) const OC420_MAGIC: u32 = 0x0420_f00d;
+
+    /// One forced result word per fake (`ret_idx`).
+    pub(crate) const OC420_RET: u32 = DATA + 0x3f_0010;
+
+    // ------------------------------------------------- AI_SetTrackPathsBuffer
+
+    /// Level ids around the 17..21 window, the new-race flag bytes, modes
+    /// 0-3 (and one with junk in the high word), with and without an AI
+    /// interface and 0-3 riders. The `SectionMan`/`cBE`/path callees are fakes.
+    #[test]
+    fn ai_set_track_paths_buffer_matches() {
+        oc420_hook_section();
+        oc420_hook_get_be();
+        oc420_hook_get_iface();
+        oc420_hook_path_free();
+        oc420_hook_path_set();
+        oc420_hook_init_paths();
+        covered(
+            ee::s00::f_0012a340__generated,
+            ai_set_track_paths_buffer,
+            400,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x12_a340, 8);
+                c.pc = 0x0012_a340;
+                c.bus.write32(OC420_CTRL, OC420_MAGIC);
+                let lvl = [3u32, 17, 18, 19, 20, 21, 22, 30, 16][(seed % 9) as usize];
+                c.bus.write32(OC420_RET, lvl);
+                let (world, man, this) = (DATA + 0x1000, DATA + 0x1100, DATA + 0x2000);
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, man);
+                c.bus.write32(man + 0x78, DATA + 0x1200);
+                c.bus.write32(
+                    man + 0xc,
+                    [0u32, DATA + 0x1300][(r.next_u32() % 3 != 0) as usize],
+                );
+                // The new-race interface flags.
+                let flags = [5u8, 6, 11, 0, 7];
+                c.bus
+                    .write8(0x0053_5bc8 + 0x48, flags[(r.next_u32() % 5) as usize]);
+                c.bus
+                    .write8(0x0053_5bc8 + 0x4a, flags[(r.next_u32() % 5) as usize]);
+                let riders = (r.next_u32() % 4) as u32;
+                c.bus
+                    .write32(this + 0x78, if r.next_u32() % 5 == 0 { 0 } else { riders });
+                for i in 0..4 {
+                    c.bus
+                        .write32(this + 0x28 + 4 * i, DATA + 0x3000 + 0x100 * i);
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A2][0] = match (seed / 9) % 5 {
+                    0 => 0,
+                    1 => 1,
+                    2 => 2,
+                    3 => 3,
+                    _ => 0x1_0000_0001,
+                };
+                c.g[A3][0] = sx(DATA + 0x4000);
+            },
+        );
+    }
+
+    /// Scrambled machine with the fake hooks and this module's gate set.
+    pub(crate) fn oc425_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        let r = machine(c, seed, salt, calls);
+        c.bus.write32(OC425_CTRL, OC425_MAGIC);
+        r
+    }
+
+    /// `RiderRailslideSub_PlayEnterAnim`: rail styles 4, 3 and others, with and
+    /// without `alt`; `AnimController_PlayAnim` is a fake (some unwinding).
+    #[test]
+    fn rider_railslide_sub_play_enter_anim_matches() {
+        oc425_install();
+        covered(
+            ee::s01::f_001326c8__generated,
+            rider_railslide_sub_play_enter_anim_2,
+            200,
+            &|c, seed| {
+                let mut r = oc425_machine(c, seed, 0x0013_26c8, 1);
+                c.pc = 0x0013_26c8;
+                let me = DATA + 0x1000;
+                let rider = DATA + 0x2000;
+                c.bus.write32(me + 8, rider);
+                c.bus
+                    .write32(rider + 0x328, [4, 3, 0, 5, 1, 4][(seed % 6) as usize]);
+                c.bus.write32(rider + 0x784, r.next_u32());
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = if (seed / 6) % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64 | 1
+                };
             },
         );
     }

@@ -117,6 +117,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         section_man_request_unload,
         "SectionMan_RequestUnload",
     ),
+    (
+        0x0022_d278,
+        section_man_is_event_loaded,
+        "SectionMan_IsEventLoaded",
+    ),
+    (
+        0x0022_d478,
+        section_man_request_activate,
+        "SectionMan_RequestActivate",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1777,10 +1787,269 @@ pub fn section_man_request_unload(c: &mut Cpu) {
     })
 }
 
+pub(crate) const OC423_SECTION_IS_LOADED: Callee = Callee {
+    addr: 0x0022_e078,
+    f: ee::s05::SectionMan_IsSectionLoaded,
+};
+
+/// `int SectionMan_IsEventLoaded(SectionMan *sections, int event)` (0x22d278):
+/// whether every section the event needs is loaded. Event `event` is the
+/// 0x28-byte record at `0x442488 + event*0x28`: `count` (+4) section ids at
+/// `+0x10` (each checked with `SectionMan_IsSectionLoaded`, stopping at the
+/// first miss) and two optional extra section-map indexes at `+8` and `+0xc`
+/// (negative: none; else the map entry at `0x442168 + index*0x10` is only
+/// checked when its field `+4` is non-negative).
+pub fn section_man_is_event_loaded(c: &mut Cpu) {
+    /// The event records (`0x440000 + 0x2488`) and the section map
+    /// (`0x440000 + 0x2168`).
+    const EVENT_BASE: u32 = 0x2488;
+    const SECTION_MAP: u32 = 0x2168;
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S1, 0x60);
+        frame.save(c, S3, 0x40);
+        c.g[S1][0] = 0;
+        frame.save(c, S4, 0x30);
+        c.g[S3][0] = 1;
+        frame.save(c, S5, 0x20);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S0, 0x70);
+        c.g[S5][0] = c.g[A0][0];
+        frame.save(c, S2, 0x50);
+        frame.save(c, S6, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S6][0] = 0x44_0000;
+        // The event's own sections.
+        loop {
+            c.cycles += 8;
+            c.g[V0][0] = 0x28;
+            c.g[S2][0] = sx((c.g[S6][0] as u32).wrapping_add(EVENT_BASE));
+            c.mult(0, S0, S4, V0);
+            c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S0][0] as u32));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(4));
+            c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V0][0] = sx((c.g[S1][0] as u32) << 2);
+            if !more {
+                break;
+            }
+            c.cycles += 7;
+            c.g[A0][0] = c.g[S5][0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+            c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x10));
+            OC423_SECTION_IS_LOADED.call(c, 0x0022_d2e4)?;
+            if c.g[V0][0] != 0 {
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                if event_due(c) {
+                    deliver_event_here(c, 0x0022_d2b0);
+                }
+                continue;
+            }
+            c.cycles += 1;
+            c.g[S3][0] = 0;
+            break;
+        }
+        // The first extra section (+8).
+        'first: {
+            c.cycles += 4;
+            c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S0][0] as u32));
+            c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(8));
+            let none = (c.g[A1][0] as i64) < 0;
+            c.g[V0][0] = 0x44_0000;
+            if none {
+                c.cycles += 1;
+                c.g[V0][0] = 0x28;
+                break 'first;
+            }
+            c.cycles += 6;
+            c.g[A0][0] = sx((c.g[A1][0] as u32) << 4);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(SECTION_MAP));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(4));
+            let unmapped = (c.g[V1][0] as i64) < 0;
+            c.g[V0][0] = 0x28;
+            if unmapped {
+                break 'first;
+            }
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S5][0];
+            OC423_SECTION_IS_LOADED.call(c, 0x0022_d320)?;
+            if c.g[V0][0] == 0 {
+                c.g[S3][0] = 0;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0x28;
+        }
+        // The second extra section (+0xc); the result is s3.
+        'second: {
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[S6][0] as u32).wrapping_add(EVENT_BASE));
+            c.mult(0, V0, S4, V0);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+            let none = (c.g[A1][0] as i64) < 0;
+            c.g[V0][0] = 0x44_0000;
+            if none {
+                c.cycles += 1;
+                c.g[V0][0] = c.g[S3][0];
+                break 'second;
+            }
+            c.cycles += 6;
+            c.g[A0][0] = sx((c.g[A1][0] as u32) << 4);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(SECTION_MAP));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(4));
+            let unmapped = (c.g[V1][0] as i64) < 0;
+            c.g[V0][0] = c.g[S3][0];
+            if unmapped {
+                break 'second;
+            }
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S5][0];
+            OC423_SECTION_IS_LOADED.call(c, 0x0022_d360)?;
+            if c.g[V0][0] == 0 {
+                c.g[S3][0] = 0;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S3][0];
+        }
+        c.cycles += 10;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cSectionMan_activateSection`'s state change (`section->state = state`).
+pub(crate) fn section_request_set_state(c: &mut Cpu, state: u64) {
+    c.cycles += 6;
+    c.g[V0][0] = sx(r32(c, A2).wrapping_add(0x2168));
+    c.g[V1][0] = sx(r32(c, S0) << 4);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+    c.g[A0][0] = state;
+    c.sw(r32(c, V0).wrapping_add(0x8), c.g[A0][0]);
+}
+
+/// `void SectionMan_RequestActivate(SectionMan* self, int i)` (0x22d478,
+/// `cSectionMan::activateSection`): step the load state (`+8`) of section `i`
+/// of the section map (0x442168, 16-byte entries; unless its world id at
+/// `+4` is negative). A jump table (0x47b3d0, indexed by the
+/// state, 0..8) picks: states 0, 3 and 7 become 4; 6 becomes 8; 1 and 5 become
+/// 2 and the world view activates the section
+/// (`cWorldCache_StreamerActivateSection(world + 0x10, section id)`); anything
+/// else (2, 4, 8, out of range) stays. If it changed, queue it
+/// (`SectionMan_QueueSection(self, i)`). The port accepts the resume entries
+/// of the generated `__entries` twin through its fallback.
+pub fn section_man_request_activate(c: &mut Cpu) {
+    if c.pc != 0x0022_d478 {
+        // The other entries (resume points after a callee unwound): the
+        // structured form's `__entries` twin; the unwind form's body
+        // dispatches on `c.pc` itself.
+        #[cfg(not(feature = "ee-unwind"))]
+        return ee::s05::f_0022d478__entries(c);
+        #[cfg(feature = "ee-unwind")]
+        return ee::s05::f_0022d478__generated(c);
+    }
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x44_0000;
+        frame.save(c, S0, 0x20);
+        c.g[A2][0] = c.g[V0][0];
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A3][0] = sx(r32(c, V0).wrapping_add(0x2168));
+        c.g[A1][0] = sx(r32(c, S0) << 4);
+        c.g[V0][0] = sx(r32(c, A3).wrapping_add(r32(c, A1)));
+        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x4));
+        let unused = (c.g[V1][0] as i64) < 0;
+        c.g[S1][0] = c.g[A0][0];
+        if !unused {
+            c.cycles += 5;
+            c.g[V1][0] = c.g[V0][0];
+            c.g[V1][0] = c.lw(r32(c, V1).wrapping_add(0x8));
+            c.g[V0][0] = (c.g[V1][0] < 0x9u64) as u64;
+            let out_of_range = c.g[V0][0] == 0;
+            c.g[A1][0] = 0;
+            // `changed` (a1) stays 0 unless a state arm below sets it.
+            if !out_of_range {
+                c.cycles += 7;
+                c.g[V0][0] = 0x48_0000;
+                c.g[V1][0] = sx(r32(c, V1) << 2);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x4c30));
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+                c.g[A0][0] = c.lw(r32(c, V1));
+                let case = r32(c, A0);
+                let changed = match case {
+                    0x0022_d4dc | 0x0022_d4f4 | 0x0022_d50c => {
+                        section_request_set_state(c, 4);
+                        true
+                    }
+                    0x0022_d524 => {
+                        section_request_set_state(c, 8);
+                        true
+                    }
+                    0x0022_d53c => {
+                        c.cycles += 12;
+                        c.g[V1][0] = sx(r32(c, A2).wrapping_add(0x2168));
+                        c.g[A1][0] = sx(r32(c, S0) << 4);
+                        c.g[A0][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+                        c.g[V0][0] = 0x2;
+                        c.sw(r32(c, A0).wrapping_add(0x8), c.g[V0][0]);
+                        c.g[V1][0] = c.g[A0][0];
+                        c.g[A0][0] = c.lw(r32(c, S1).wrapping_add(0x1b0));
+                        c.g[A1][0] = c.lw(r32(c, V1).wrapping_add(0x4));
+                        c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(0x10));
+                        c.g[A0][0] = c.lw(r32(c, V0));
+                        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x10));
+                        call_ptr(c, 0x003a_99d8, 0x0022_d56c)?;
+                        true
+                    }
+                    0x0022_d570 => false,
+                    _ => {
+                        c.jump_out(case, 0x0022_d478, 0x0022_d594);
+                        return Ok(());
+                    }
+                };
+                if changed {
+                    c.cycles += 1;
+                    c.g[A1][0] = 0x1;
+                }
+            }
+            c.cycles += 2;
+            let unchanged = c.g[A1][0] == 0;
+            c.g[A0][0] = c.g[S1][0];
+            if !unchanged {
+                c.cycles += 2;
+                c.g[A1][0] = c.g[S0][0];
+                call_ptr(c, 0x0022_e298, 0x0022_d580)?;
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
+
     use super::*;
     use crate::difftest::check;
+    use crate::game::ai::control::handplantcontrol::tests::oc425_install;
 
     use crate::difftest::check_paths;
 
@@ -2522,6 +2791,128 @@ pub(crate) mod tests {
                 c.bus.write32(section + 8, (seed / 4 + idx) % 10);
                 c.g[A0][0] = (r.next_u32() % 16) as u64;
                 c.g[A1][0] = idx as u64;
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    use std::ptr::addr_of_mut;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc423_fake;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc423_fake_call;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w_5 as w_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_CTRL;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_MAGIC;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_RET;
+
+    pub(crate) use crate::game::ai::ai::tests::oc425_machine;
+
+    oc423_fake!(
+        oc423_fake_section_is_loaded,
+        OC423_PREV_SECTION_IS_LOADED,
+        0x0022_e078,
+        ee::s05::f_0022e078__generated
+    );
+
+    /// Events with 0..3 own sections and optional extra sections (unmapped,
+    /// mapped); the section-loaded check scripted per call (loaded or not).
+    #[test]
+    fn section_man_is_event_loaded_matches() {
+        hook(
+            addr_of_mut!(ee::s05::OVERRIDE_0022E078),
+            oc423_fake_section_is_loaded,
+            &OC423_PREV_SECTION_IS_LOADED,
+        );
+        fakes::covered(
+            ee::s05::f_0022d278__generated,
+            section_man_is_event_loaded,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0022_d278, 6);
+                w_2(c, OC423_CTRL, OC423_MAGIC);
+                for i in 0..8u32 {
+                    // Mostly loaded, sometimes not.
+                    w_2(
+                        c,
+                        OC423_RET + 4 * i,
+                        if r.next_u32() % 4 == 0 { 0 } else { 1 },
+                    );
+                }
+                let event = seed % 3;
+                let record = 0x0044_2488 + 0x28 * event;
+                w_2(c, record + 4, seed / 3 % 4);
+                for i in 0..4u32 {
+                    w_2(c, record + 0x10 + 4 * i, r.next_u32() % 8);
+                }
+                let extra = |k: u32| match k % 3 {
+                    0 => 0xffff_ffffu32,
+                    1 => 1,
+                    _ => 2,
+                };
+                w_2(c, record + 8, extra(seed / 12));
+                w_2(c, record + 0xc, extra(seed / 36));
+                for i in 0..3u32 {
+                    let entry = 0x0044_2168 + 0x10 * i;
+                    w_2(
+                        c,
+                        entry + 4,
+                        if (seed / 7 + i) % 2 == 0 {
+                            0xffff_ffff
+                        } else {
+                            i
+                        },
+                    );
+                }
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = event as u64;
+            },
+        );
+    }
+
+    /// `SectionMan_RequestActivate`: every load state (0..9, and out of range
+    /// values), sections with a negative world id, the real jump table (and a
+    /// bogus entry for the jump-out), with the world cache's activation and
+    /// the queueing faked (some unwinding).
+    #[test]
+    fn section_man_request_activate_matches() {
+        use crate::difftest::put_words;
+        oc425_install();
+        covered(
+            ee::s05::f_0022d478__generated,
+            section_man_request_activate,
+            300,
+            &|c, seed| {
+                let mut r = oc425_machine(c, seed, 0x0022_d478, 2);
+                c.pc = 0x0022_d478;
+                let me = DATA + 0x1000;
+                let i = r.next_u32() % 3;
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(i);
+                c.bus.write32(me + 0x1b0, DATA + 0x2000);
+                c.bus.write32(DATA + 0x2010, DATA + 0x3000);
+                c.bus.write32(DATA + 0x3000, r.next_u32());
+                let section = 0x0044_2168 + 0x10 * i;
+                c.bus.write32(
+                    section + 4,
+                    if seed % 5 == 4 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % 40
+                    },
+                );
+                let states = [0u32, 1, 2, 3, 4, 5, 6, 7, 8, 9, 12, u32::MAX];
+                let state = states[(seed % 12) as usize];
+                c.bus.write32(section + 8, state);
+                let table = [
+                    0x22d4dc, 0x22d53c, 0x22d570, 0x22d50c, 0x22d570, 0x22d53c, 0x22d524, 0x22d4f4,
+                    0x22d570,
+                ];
+                put_words(c, 0x0047_b3d0, &table);
+                if seed % 17 == 16 && state < 9 {
+                    // A table entry the function does not know: jump out.
+                    c.bus.write32(0x0047_b3d0 + 4 * state, 0x0022_d5a0);
+                }
             },
         );
     }

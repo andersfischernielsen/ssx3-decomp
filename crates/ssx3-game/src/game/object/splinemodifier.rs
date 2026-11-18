@@ -32,6 +32,7 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
@@ -134,6 +135,27 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "MultiSplineModifier_AddRef",
     ),
     (0x0035_b708, rail_modifier_ctor, "RailModifier_ctor"),
+    (
+        0x0035_9f88,
+        multi_spline_modifier_ctor,
+        "MultiSplineModifier_ctor",
+    ),
+    (
+        0x0035_a328,
+        multi_spline_modifier_alloc_arrays,
+        "MultiSplineModifier_AllocArrays",
+    ),
+    (
+        0x0035_a458,
+        multi_spline_modifier_clone_instances,
+        "MultiSplineModifier_CloneInstances",
+    ),
+    (
+        0x0035_a5f8,
+        multi_spline_modifier_insert_node_instances,
+        "MultiSplineModifier_InsertNodeInstances",
+    ),
+    (0x0035_bd70, rail_modifier_dtor, "RailModifier_v01"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3137,12 +3159,993 @@ pub(crate) fn rail_mod_model_box(c: &mut Cpu) {
     c.sqc2(5, s3.wrapping_add(0x20));
 }
 
+pub(crate) const OC423_SPLINE_INIT_PATH: Callee = Callee {
+    addr: 0x0034_51c0,
+    f: ee::s11::SplineModifier_InitPath,
+};
+
+pub(crate) const OC423_MULTI_SPLINE_SET_SPEED: Callee = Callee {
+    addr: 0x0035_a550,
+    f: ee::s11::MultiSplineModifier_SetSpeed,
+};
+
+pub(crate) const OC423_MULTI_SPLINE_ALLOC_ARRAYS: Callee = Callee {
+    addr: 0x0035_a328,
+    f: ee::s11::MultiSplineModifier_AllocArrays,
+};
+
+pub(crate) const OC423_MULTI_SPLINE_ALLOC_NODE_INSTANCES: Callee = Callee {
+    addr: 0x0035_a3f0,
+    f: ee::s11::MultiSplineModifier_AllocNodeInstances,
+};
+
+pub(crate) const OC423_MULTI_SPLINE_CLONE_INSTANCES: Callee = Callee {
+    addr: 0x0035_a458,
+    f: ee::s11::MultiSplineModifier_CloneInstances,
+};
+
+pub(crate) const OC423_MULTI_SPLINE_UPDATE_NODES: Callee = Callee {
+    addr: 0x0035_ac20,
+    f: ee::s11::MultiSplineModifier_UpdateNodes,
+};
+
+pub(crate) const OC423_MULTI_SPLINE_INSERT_NODE_INSTANCES: Callee = Callee {
+    addr: 0x0035_a5f8,
+    f: ee::s11::MultiSplineModifier_InsertNodeInstances,
+};
+
+/// `MultiSplineModifier *MultiSplineModifier_ctor(MultiSplineModifier *self,
+/// const Desc *desc, Instance *instance)` (0x359f88): builds a spline
+/// modifier that moves several node instances along a path. Copies the
+/// description (node count `desc+0x2c` -> +4, `desc+8` -> +8, speed scale
+/// `desc+0x10 * gp[-0x2a2c]` -> +0xc, draw-path flag `desc+0x28 > 0` -> +0x1c,
+/// the colour quad `desc+0x18..0x24` -> +0x20), initialises the path
+/// (`SplineModifier_InitPath(&self->spline, desc+4)`), sets the speed
+/// (`desc+0xc`), picks the start offset (+0x10: `desc+0x14` when non-zero, kept
+/// in `[0, path length]`), allocates and fills the node arrays and instances
+/// and sets the focus count (+0x34) from instance flag 0x100. Returns `self`.
+pub fn multi_spline_modifier_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 37;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = 0x49_0000;
+        frame.save(c, S0, 0x30);
+        c.g[V1][0] = 0xffff_ffff_ffff_0000;
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xe98));
+        c.g[V1][0] |= 0xffff;
+        let this = c.g[S0][0] as u32;
+        c.sw(this.wrapping_add(0x40), c.g[A2][0]);
+        c.sw(this, c.g[V0][0]);
+        c.g[S1][0] = c.g[A1][0];
+        c.sw(this.wrapping_add(0x48), c.g[V1][0]);
+        c.g[A0][0] = sx(this.wrapping_add(0x48));
+        c.sw(this.wrapping_add(0x50), 0);
+        c.sw(this.wrapping_add(0x4c), 0);
+        c.sw(this.wrapping_add(0x54), 0);
+        c.sw(this.wrapping_add(0x18), 0);
+        let desc = c.g[S1][0] as u32;
+        c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x2a2c));
+        c.g[V0][0] = c.lw(desc.wrapping_add(0x2c));
+        c.sw(this.wrapping_add(4), c.g[V0][0]);
+        c.g[V1][0] = c.lw(desc.wrapping_add(8));
+        c.sw(this.wrapping_add(8), c.g[V1][0]);
+        c.lwc1(0, desc.wrapping_add(0x10));
+        c.mul_s(0, 0, 1);
+        c.swc1(0, this.wrapping_add(0xc));
+        c.g[A1][0] = c.lw(desc.wrapping_add(4));
+        OC423_SPLINE_INIT_PATH.call(c, 0x0035_9ff8)?;
+        c.lwc1(12, (c.g[S1][0] as u32).wrapping_add(0xc));
+        c.g[A0][0] = c.g[S0][0];
+        OC423_MULTI_SPLINE_SET_SPEED.call(c, 0x0035_a004)?;
+        // Start offset: 0.0 when the speed is not positive, else the +0x54 value.
+        c.mtc1(0, 1);
+        c.lwc1(0, (c.g[S1][0] as u32).wrapping_add(0xc));
+        c.c_le_s(1, 0);
+        if !c.fcc() {
+            c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0x54));
+            c.cycles += 1;
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x10));
+        } else {
+            c.cycles += 2;
+            c.swc1(1, (c.g[S0][0] as u32).wrapping_add(0x10));
+        }
+        c.cycles += 25;
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+        c.mtc1(0, 4);
+        c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+        // The colour quad, copied through the stack.
+        c.lwc1(0, (c.g[S1][0] as u32).wrapping_add(0x18));
+        c.lwc1(1, (c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.lwc1(2, (c.g[S1][0] as u32).wrapping_add(0x20));
+        c.lwc1(3, (c.g[S1][0] as u32).wrapping_add(0x24));
+        c.swc1(0, sp(c));
+        c.swc1(1, frame.at(c, 4));
+        c.swc1(2, frame.at(c, 8));
+        c.swc1(3, frame.at(c, 0xc));
+        c.ldl(2, frame.at(c, 7));
+        c.ldr(2, sp(c));
+        c.ldl(3, frame.at(c, 0xf));
+        c.ldr(3, frame.at(c, 8));
+        c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x27));
+        c.sdr(2, (c.g[S0][0] as u32).wrapping_add(0x20));
+        c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x2f));
+        c.sdr(3, (c.g[S0][0] as u32).wrapping_add(0x28));
+        c.lwc1(0, (c.g[S1][0] as u32).wrapping_add(0x14));
+        c.c_eq_s(0, 4);
+        if !c.fcc() {
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x10));
+        }
+        // Keep the offset within [0, path length].
+        c.cycles += 5;
+        c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0x10));
+        c.c_lt_s(1, 4);
+        if c.fcc() {
+            c.swc1(4, (c.g[S0][0] as u32).wrapping_add(0x10));
+        } else {
+            c.cycles += 5;
+            c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0x54));
+            c.c_lt_s(0, 1);
+            if c.fcc() {
+                c.swc1(4, (c.g[S0][0] as u32).wrapping_add(0x10));
+            }
+        }
+        c.cycles += 15;
+        c.g[A0][0] = c.g[S0][0];
+        OC423_MULTI_SPLINE_ALLOC_ARRAYS.call(c, 0x0035_a0bc)?;
+        c.g[A0][0] = c.g[S0][0];
+        OC423_MULTI_SPLINE_ALLOC_NODE_INSTANCES.call(c, 0x0035_a0c4)?;
+        c.g[A0][0] = c.g[S0][0];
+        OC423_MULTI_SPLINE_CLONE_INSTANCES.call(c, 0x0035_a0cc)?;
+        c.g[A0][0] = c.g[S0][0];
+        OC423_MULTI_SPLINE_UPDATE_NODES.call(c, 0x0035_a0d4)?;
+        c.g[A0][0] = c.g[S0][0];
+        OC423_MULTI_SPLINE_INSERT_NODE_INSTANCES.call(c, 0x0035_a0dc)?;
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x40));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(8));
+        c.g[V0][0] &= 0x100;
+        let no_focus = c.g[V0][0] == 0;
+        c.g[V0][0] = 1;
+        if no_focus {
+            c.cycles += 1;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x34), 0);
+        } else {
+            c.cycles += 2;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x34), c.g[V0][0]);
+        }
+        c.cycles += 6;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S0, 0x30);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const OC423_WORLD_OBJ_GET_BOUND_BOX: Callee = Callee {
+    addr: 0x0035_0570,
+    f: ee::s11::WorldObj_GetBoundBox,
+};
+
+/// `void MultiSplineModifier_InsertNodeInstances(MultiSplineModifier *self)`
+/// (0x35a5f8; the reference's `setupOverlapSystem`): gets the bound box of the
+/// instance (`self->+0x40 -> +0xc`) into the stack buffer and, for every node
+/// `i` from 1 to `self->+4`, builds the node's box around the instance
+/// position (`instance[i]->+0x40`) with `+-radius` (`self->+0x18`) in the node
+/// table (`self->+0x3c`, stride 0x60: min at +0x30, max at +0x40) and inserts
+/// the instance into the object interface's spatial structure
+/// (`getNash()` method calls at `0x328f28` and `0x328c20`).
+pub fn multi_spline_modifier_insert_node_instances(c: &mut Cpu) {
+    /// Node count (`self + 4`) and the node table (`+0x3c`), node
+    /// instances (`+0x44`).
+    const COUNT: u32 = 4;
+    const NODES: u32 = 0x3c;
+    const NODE_INSTANCES: u32 = 0x44;
+    /// Node table entry size.
+    const NODE_SIZE: u64 = 0x60;
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0xe0);
+        frame.save(c, S3, 0xa0);
+        c.g[A1][0] = c.g[SP][0];
+        frame.save(c, S4, 0x90);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S6, 0x70);
+        c.g[A2][0] = sx((c.g[S3][0] as u32).wrapping_add(0x18));
+        frame.save(c, S0, 0xd0);
+        c.g[S4][0] = 1;
+        frame.save(c, S1, 0xc0);
+        c.g[S6][0] = sx((c.g[S3][0] as u32).wrapping_add(COUNT));
+        frame.save(c, S2, 0xb0);
+        frame.save(c, S5, 0x80);
+        frame.save_ra(c, 0x60);
+        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x40));
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+        OC423_WORLD_OBJ_GET_BOUND_BOX.call(c, 0x0035_a63c)?;
+        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(COUNT));
+        c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        let has_nodes = c.g[V0][0] != 0;
+        c.g[S5][0] = u64::MAX;
+        if has_nodes {
+            c.cycles += 1;
+            c.lwc1(0, (c.g[S6][0] as u32).wrapping_add(0x14));
+            loop {
+                c.cycles += 66;
+                c.g[A2][0] = sx((c.g[S4][0] as u32) << 2);
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(NODE_INSTANCES));
+                c.g[S0][0] = NODE_SIZE;
+                // The extent vector (r, r, r, 0) on the stack at +0x20.
+                c.swc1(0, frame.at(c, 0x28));
+                c.mult(0, S0, S4, S0);
+                c.swc1(0, frame.at(c, 0x20));
+                c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.swc1(0, frame.at(c, 0x24));
+                c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(1));
+                c.sw(frame.at(c, 0x2c), 0);
+                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(NODES));
+                // box.min = position - extent
+                c.lq(2, (c.g[V1][0] as u32).wrapping_add(0x40));
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.sq(2, frame.at(c, 0x40));
+                c.lqc2(3, frame.at(c, 0x40));
+                c.lqc2(4, frame.at(c, 0x20));
+                c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, frame.at(c, 0x50));
+                c.lq(2, frame.at(c, 0x50));
+                c.sq(2, frame.at(c, 0x30));
+                c.sq(2, (c.g[A0][0] as u32).wrapping_add(0x30));
+                // box.max = position + extent
+                c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(NODE_INSTANCES));
+                c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(NODES));
+                c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                c.lq(2, (c.g[A0][0] as u32).wrapping_add(0x40));
+                c.sq(2, frame.at(c, 0x40));
+                c.lqc2(3, frame.at(c, 0x40));
+                c.lqc2(4, frame.at(c, 0x20));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, frame.at(c, 0x50));
+                c.lq(2, frame.at(c, 0x50));
+                c.sq(2, frame.at(c, 0x30));
+                c.sq(2, (c.g[A1][0] as u32).wrapping_add(0x40));
+                // Insert the node instance (getNash()->insert(item, &box.min)).
+                c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(NODE_INSTANCES));
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[S2][0] = c.lw(c.g[A2][0] as u32);
+                call_ptr(c, 0x002d_1be0, 0x0035_a6f0)?; // cObjectInterface_getNash
+                c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(NODES));
+                c.g[S1][0] = c.g[V0][0];
+                c.g[A0][0] = sx(frame.at(c, 0x30));
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x30));
+                call_ptr(c, 0x0032_8f28, 0x0035_a708)?;
+                c.g[V0][0] = c.lw(frame.at(c, 0x34));
+                c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x50));
+                c.g[A1][0] = c.lw(frame.at(c, 0x38));
+                c.g[A2][0] = c.g[S2][0];
+                c.g[V0][0] = ((c.g[S5][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[T0][0] = c.lw(frame.at(c, 0x3c));
+                if c.g[V0][0] != 0 {
+                    c.g[V1][0] = c.g[S1][0];
+                }
+                c.g[A1][0] = ((c.g[S5][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x28));
+                c.g[T0][0] = ((c.g[S5][0] as i64) < (c.g[T0][0] as i64)) as u64;
+                if c.g[A1][0] != 0 {
+                    c.g[A0][0] = c.g[V1][0];
+                }
+                c.g[A3][0] = sx(frame.at(c, 0x30));
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x14));
+                c.g[A1][0] = 0;
+                if c.g[T0][0] == 0 {
+                    c.g[A0][0] = c.g[V0][0];
+                }
+                call_ptr(c, 0x0032_8c20, 0x0035_a748)?;
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(COUNT));
+                c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.lwc1(0, (c.g[S6][0] as u32).wrapping_add(0x14));
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_a650);
+                }
+            }
+        }
+        c.cycles += 10;
+        frame.restore(c, S0, 0xd0);
+        frame.restore(c, S1, 0xc0);
+        frame.restore(c, S2, 0xb0);
+        frame.restore(c, S3, 0xa0);
+        frame.restore(c, S4, 0x90);
+        frame.restore(c, S5, 0x80);
+        frame.restore(c, S6, 0x70);
+        frame.restore_ra(c, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MultiSplineModifier_CloneInstances(cMultiSplineModifier* self)` (0x35a458): make every node instance a copy of the first.
+/// Copy the 0xa0-byte `self->Instance` (+0x40) over node 0 (`NodeInst`, +0x44, an array of instance pointers) keeping node 0's field +0x78, then for nodes 1 to `NumModels - 1` (+4) `InstancesMan_CopyInstance(instancesMan, node, Instance)` and set the flags (+8): clear 0x40 and 0x100, set 0x20.
+pub fn multi_spline_modifier_clone_instances(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_35a530: {
+            c.cycles += 23;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
+            c.g[A2][0] = 0xa0;
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[S1][0] = c.g[A0][0];
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.g[S2][0] = 0x1;
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x44));
+            c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
+            c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+            c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x78));
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x003e6574, 0x0035a498)?;
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x44));
+            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x78), c.g[S0][0]);
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let t = c.g[V0][0] == 0u64;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+            if t {
+                break 'b_35a530;
+            } else {
+                c.cycles += 5;
+                c.g[S4][0] = 0xffffffffffff0000;
+                c.g[S3][0] = 0xffffffffffff0000;
+                c.g[S4][0] = c.g[S4][0] | 0xffbf;
+                c.g[S3][0] = c.g[S3][0] | 0xfeff;
+                'l_35a4c8: loop {
+                    c.cycles += 26;
+                    c.g[S0][0] = sx((c.g[S2][0] as u32) << 2);
+                    call_ptr(c, 0x002d1ce0, 0x0035a4d0)?;
+                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x44));
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[V1][0] as u32);
+                    call_ptr(c, 0x00351270, 0x0035a4ec)?;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x44));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+                    c.g[V1][0] = c.g[V1][0] & c.g[S4][0];
+                    c.g[V1][0] = c.g[V1][0] | 0x20;
+                    c.sw((c.g[A0][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x44));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = c.g[V0][0] & c.g[S3][0];
+                    c.sw((c.g[A0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                    c.g[V1][0] = ((c.g[S2][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    let t = c.g[V1][0] != 0u64;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0035a4c8);
+                        }
+                        continue 'l_35a4c8;
+                    } else {
+                        break 'b_35a530;
+                    }
+                }
+            }
+        }
+        c.cycles += 7;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void RailModifier::~RailModifier(RailModifier* self, int flags)` (0x35bd70, `RailModifier_v01`): the rail modifier destructor.
+/// Sets its vtable (+8 = 0x4911d0), removes the node (`self+0x44`) from the Nash spatial hash (`SpatialKey_FromAABB` of its box at +0x10, `SpatialHash_Remove` from the
+/// one of the eight hashes the key signs pick, freeing the hash storage when it became empty), frees the node, re-inserts every segment box of its spline (found in
+/// the world's spline table by the id at +0x30) into the hash, restores the `RailLink` vtable (+8 = 0x4912..) and unlinks (`RailModifier_ListUnlink`); with `flags & 1` frees itself.
+/// Written as the dispatcher the generated body is (resume entries included).
+pub fn rail_modifier_dtor(c: &mut Cpu) {
+    let mut pc: u32 = c.pc;
+    loop {
+        match pc {
+            0x0035bd70 => {
+                c.cycles += 48;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xd0));
+                c.g[V0][0] = 0x490000;
+                c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x80));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x11d0));
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0xb0));
+                c.g[S3][0] = c.g[A0][0];
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0xa0));
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x90));
+                c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x70));
+                c.g[S2][0] = c.g[A1][0];
+                c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+                c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0xc0));
+                c.g[RA][0] = sx(0x0035bdb4);
+                c.sw((c.g[S3][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.pc = 0x002d1be0;
+                call_indirect(c, 0x002d1be0);
+                if c.pc != 0x0035bdb4 {
+                    return;
+                }
+                c.g[S0][0] = c.g[V0][0];
+                c.g[S1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x44));
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa0));
+                c.g[A0][0] = c.g[SP][0];
+                c.g[A1][0] = sx((c.g[S3][0] as u32).wrapping_add(0x10));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                c.g[RA][0] = sx(0x0035bdd4);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xa0), c.g[V0][0]);
+                c.pc = 0x00328f28;
+                call_indirect(c, 0x00328f28);
+                if c.pc != 0x0035bdd4 {
+                    return;
+                }
+                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                c.g[A3][0] = 0xffffffffffffffff;
+                c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x50));
+                c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                if c.g[V0][0] != 0 {
+                    c.g[V1][0] = c.g[S0][0];
+                }
+                c.g[A0][0] = ((c.g[A3][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x28));
+                c.g[A3][0] = ((c.g[A3][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                if c.g[A0][0] != 0 {
+                    c.g[V0][0] = c.g[V1][0];
+                }
+                c.g[A2][0] = c.g[S1][0];
+                c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x14));
+                c.g[A1][0] = 0x2;
+                if c.g[A3][0] != 0 {
+                    c.g[S0][0] = c.g[V0][0];
+                }
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                c.g[A3][0] = c.g[SP][0];
+                c.g[RA][0] = sx(0x0035be20);
+                c.g[T0][0] = c.g[S0][0];
+                c.pc = 0x003284b8;
+                call_indirect(c, 0x003284b8);
+                if c.pc != 0x0035be20 {
+                    return;
+                }
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                let t = c.g[V0][0] != 0u64;
+                c.g[S6][0] = c.g[S2][0] & 0x1;
+                if t {
+                    pc = 0x0035be84;
+                    continue;
+                }
+                pc = 0x0035be30;
+                continue;
+            }
+            0x0035be30 => {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                let t = c.g[V0][0] != 0u64;
+                c.g[V0][0] = 0u64;
+                if t {
+                    pc = 0x0035be88;
+                    continue;
+                }
+                pc = 0x0035be3c;
+                continue;
+            }
+            0x0035be3c => {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+                let t = c.g[V0][0] != 0u64;
+                c.g[V0][0] = 0u64;
+                if t {
+                    pc = 0x0035be88;
+                    continue;
+                }
+                pc = 0x0035be48;
+                continue;
+            }
+            0x0035be48 => {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                let t = c.g[V0][0] != 0u64;
+                c.g[V0][0] = 0u64;
+                if t {
+                    pc = 0x0035be88;
+                    continue;
+                }
+                pc = 0x0035be54;
+                continue;
+            }
+            0x0035be54 => {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+                let t = c.g[V0][0] != 0u64;
+                c.g[V0][0] = 0u64;
+                if t {
+                    pc = 0x0035be88;
+                    continue;
+                }
+                pc = 0x0035be60;
+                continue;
+            }
+            0x0035be60 => {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+                let t = c.g[V0][0] != 0u64;
+                c.g[V0][0] = 0u64;
+                if t {
+                    pc = 0x0035be88;
+                    continue;
+                }
+                pc = 0x0035be6c;
+                continue;
+            }
+            0x0035be6c => {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
+                let t = c.g[V0][0] != 0u64;
+                c.g[V0][0] = 0u64;
+                if t {
+                    pc = 0x0035be88;
+                    continue;
+                }
+                pc = 0x0035be78;
+                continue;
+            }
+            0x0035be78 => {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+                let t = c.g[V0][0] == 0u64;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+                if t {
+                    pc = 0x0035be98;
+                    continue;
+                }
+                pc = 0x0035be84;
+                continue;
+            }
+            0x0035be84 => {
+                c.cycles += 1;
+                c.g[V0][0] = 0u64;
+                pc = 0x0035be88;
+                continue;
+            }
+            0x0035be88 => {
+                c.cycles += 2;
+                let t = true;
+                c.g[S7][0] = 0x490000;
+                if t {
+                    pc = 0x0035bebc;
+                    continue;
+                }
+                pc = 0x0035be90;
+                continue;
+            }
+            0x0035be90 => {
+                c.cycles += 2;
+                let t = true;
+                c.g[V0][0] = 0u64;
+                if t {
+                    pc = 0x0035bebc;
+                    continue;
+                }
+                pc = 0x0035be98;
+                continue;
+            }
+            0x0035be98 => {
+                c.cycles += 2;
+                c.g[A0][0] = 0u64;
+                c.g[S7][0] = 0x490000;
+                pc = 0x0035bea0;
+                continue;
+            }
+            0x0035bea0 => {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                let t = c.g[V0][0] != 0u64;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                if t {
+                    if c.cycles >= c.next_event {
+                        c.pc = 0x0035be90;
+                        if c.event() {
+                            return;
+                        }
+                    }
+                    pc = 0x0035be90;
+                    continue;
+                }
+                pc = 0x0035beac;
+                continue;
+            }
+            0x0035beac => {
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A0][0] as i64) < 3i64) as u64;
+                let t = c.g[V0][0] != 0u64;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+                if t {
+                    if c.cycles >= c.next_event {
+                        c.pc = 0x0035bea0;
+                        if c.event() {
+                            return;
+                        }
+                    }
+                    pc = 0x0035bea0;
+                    continue;
+                }
+                pc = 0x0035beb8;
+                continue;
+            }
+            0x0035beb8 => {
+                c.cycles += 1;
+                c.g[V0][0] = 0x1;
+                pc = 0x0035bebc;
+                continue;
+            }
+            0x0035bebc => {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+
+                if t {
+                    pc = 0x0035bed0;
+                    continue;
+                }
+                pc = 0x0035bec4;
+                continue;
+            }
+            0x0035bec4 => {
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x0035becc);
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                c.pc = 0x00317e50;
+                call_indirect(c, 0x00317e50);
+                if c.pc != 0x0035becc {
+                    return;
+                }
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0u64);
+                pc = 0x0035bed0;
+                continue;
+            }
+            0x0035bed0 => {
+                c.cycles += 13;
+                c.g[RA][0] = sx(0x0035bed8);
+                c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x44));
+                c.pc = 0x00317e50;
+                call_indirect(c, 0x00317e50);
+                if c.pc != 0x0035bed8 {
+                    return;
+                }
+                c.g[RA][0] = sx(0x0035bee0);
+                c.pc = 0x002d1bd8;
+                call_indirect(c, 0x002d1bd8);
+                if c.pc != 0x0035bee0 {
+                    return;
+                }
+                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x30));
+                c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = c.g[A1][0] & 0xff;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+
+                if c.g[V1][0] != 0u64 {
+                    c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x44));
+                    pc = 0x0035bf0c;
+                    continue;
+                }
+                pc = 0x0035bf04;
+                continue;
+            }
+            0x0035bf04 => {
+                c.cycles += 2;
+                let t = true;
+                c.g[S5][0] = 0u64;
+                if t {
+                    pc = 0x0035bf30;
+                    continue;
+                }
+                pc = 0x0035bf0c;
+                continue;
+            }
+            0x0035bf0c => {
+                c.cycles += 7;
+                c.g[V0][0] = sx((c.g[A1][0] as u32) >> 8);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+                let t = c.g[V0][0] != 0u64;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                if t {
+                    pc = 0x0035bf2c;
+                    continue;
+                }
+                pc = 0x0035bf28;
+                continue;
+            }
+            0x0035bf28 => {
+                c.cycles += 1;
+                c.g[V0][0] = 0u64;
+                pc = 0x0035bf2c;
+                continue;
+            }
+            0x0035bf2c => {
+                c.cycles += 1;
+                c.g[S5][0] = c.g[V0][0];
+                pc = 0x0035bf30;
+                continue;
+            }
+            0x0035bf30 => {
+                c.cycles += 4;
+                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x20));
+                c.g[S2][0] = 0u64;
+                let t = (c.g[V0][0] as i64) <= 0;
+                c.g[S1][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x24));
+                if t {
+                    pc = 0x0035bff0;
+                    continue;
+                }
+                pc = 0x0035bf40;
+                continue;
+            }
+            0x0035bf40 => {
+                c.cycles += 4;
+                c.g[AT][0] = 0x3f800000;
+                c.mtc1(1, 20);
+                c.g[S4][0] = 0xffffffffffffffff;
+                pc = 0x0035bf50;
+                continue;
+            }
+            0x0035bf50 => {
+                c.cycles += 40;
+                c.lwc1(1, (c.g[S1][0] as u32).wrapping_add(0x6c));
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.lwc1(0, (c.g[S1][0] as u32).wrapping_add(0x70));
+                c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x14));
+                c.lwc1(1, (c.g[S1][0] as u32).wrapping_add(0x74));
+                c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x1c));
+                c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x18));
+                c.lwc1(0, (c.g[S1][0] as u32).wrapping_add(0x78));
+                c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.lwc1(1, (c.g[S1][0] as u32).wrapping_add(0x7c));
+                c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x24));
+                c.lwc1(0, (c.g[S1][0] as u32).wrapping_add(0x80));
+                c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x2c));
+                c.g[RA][0] = sx(0x0035bf90);
+                c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x28));
+                c.pc = 0x002d1be0;
+                call_indirect(c, 0x002d1be0);
+                if c.pc != 0x0035bf90 {
+                    return;
+                }
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[SP][0];
+                c.g[RA][0] = sx(0x0035bfa0);
+                c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                c.pc = 0x00328f28;
+                call_indirect(c, 0x00328f28);
+                if c.pc != 0x0035bfa0 {
+                    return;
+                }
+                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x50));
+                c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                c.g[A2][0] = c.g[S1][0];
+                c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                if c.g[V0][0] != 0 {
+                    c.g[V1][0] = c.g[S0][0];
+                }
+                c.g[A1][0] = ((c.g[S4][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x28));
+                c.g[T0][0] = ((c.g[S4][0] as i64) < (c.g[T0][0] as i64)) as u64;
+                if c.g[A1][0] != 0 {
+                    c.g[A0][0] = c.g[V1][0];
+                }
+                c.g[A3][0] = c.g[SP][0];
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x14));
+                c.g[A1][0] = 0x2;
+                c.g[RA][0] = sx(0x0035bfe0);
+                if c.g[T0][0] == 0 {
+                    c.g[A0][0] = c.g[V0][0];
+                }
+                c.pc = 0x00328c20;
+                call_indirect(c, 0x00328c20);
+                if c.pc != 0x0035bfe0 {
+                    return;
+                }
+                c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x20));
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let t = c.g[V0][0] != 0u64;
+                c.g[S1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x64));
+                if t {
+                    if c.cycles >= c.next_event {
+                        c.pc = 0x0035bf50;
+                        if c.event() {
+                            return;
+                        }
+                    }
+                    pc = 0x0035bf50;
+                    continue;
+                }
+                pc = 0x0035bff0;
+                continue;
+            }
+            0x0035bff0 => {
+                c.cycles += 6;
+                c.g[V0][0] = sx((c.g[S7][0] as u32).wrapping_add(0x1200));
+                c.g[A0][0] = c.g[S3][0];
+                c.g[RA][0] = sx(0x0035c000);
+                c.sw((c.g[S3][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.pc = 0x0035b6d0;
+                call_indirect(c, 0x0035b6d0);
+                if c.pc != 0x0035c000 {
+                    return;
+                }
+                let t = c.g[S6][0] == 0u64;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xb0));
+                if t {
+                    pc = 0x0035c014;
+                    continue;
+                }
+                pc = 0x0035c008;
+                continue;
+            }
+            0x0035c008 => {
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x0035c010);
+                c.g[A0][0] = c.g[S3][0];
+                c.pc = 0x00317e50;
+                call_indirect(c, 0x00317e50);
+                if c.pc != 0x0035c010 {
+                    return;
+                }
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xb0));
+                pc = 0x0035c014;
+                continue;
+            }
+            0x0035c014 => {
+                c.cycles += 11;
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0xa0));
+                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x90));
+                c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x80));
+                c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x70));
+                c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0xc0));
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xd0));
+                c.pc = t;
+                return;
+            }
+            _ => {
+                c.jump_out(pc, 0x0035bd70, 0x0035c040);
+                return;
+            }
+        }
+    }
+}
+
+/// `void MultiSplineModifier::AllocArrays(this)` (0x35a328): allocate the
+/// modifier's arrays with `operator new`: `MultiAnimMats` (+0x38, 0x40 bytes per
+/// node, the count at `*(*(this+0x40)+0x80)+4`, pool 0x20000000), `MultiNodes`
+/// (+0x3c, 0x60 bytes per model, `NumModels` at +4, pool 0xa0000000) and
+/// `NodeInsts` (+0x44, 4 bytes per model). A zero count turns into the -1
+/// array-size sentinel of the compiler's `new[]`.
+pub fn multi_spline_modifier_alloc_arrays(c: &mut Cpu) {
+    guest(c, |c| {
+        ssx3_ee_rt::prof::enter(c, 0x0035a328);
+        'b_35a378: {
+            c.cycles += 18;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+            c.g[A1][0] = 0x490000;
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x15d0));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S1][0] = c.g[A0][0];
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[A2][0] = 0x20000000;
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[A3][0] = 0u64;
+            c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_add(0x38));
+            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x80));
+            c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+            c.g[A0][0] = sx((c.g[S0][0] as u32) << 6);
+            call_ptr(c, 0x00317e30, 0x0035a368)?;
+            let t = c.g[S0][0] == 0u64;
+            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+            if t {
+                break 'b_35a378;
+            } else {
+                c.cycles += 2;
+                c.g[A0][0] = 0xffffffffffffffff;
+                break 'b_35a378;
+            }
+        }
+        'b_35a3b0: {
+            c.cycles += 13;
+            c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+            c.g[A0][0] = 0x60;
+            c.g[A1][0] = 0x490000;
+            c.g[A2][0] = 0xffffffffa0000000;
+            c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x15c0));
+            c.g[A3][0] = 0u64;
+            c.mult(0, 0, 16, 4);
+            c.g[A0][0] = c.lo[0];
+            c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_add(0x3c));
+            call_ptr(c, 0x00317e30, 0x0035a3a4)?;
+            let t = c.g[S0][0] == 0u64;
+            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+            if t {
+                break 'b_35a3b0;
+            } else {
+                c.cycles += 1;
+                c.g[A0][0] = 0xffffffffffffffff;
+                break 'b_35a3b0;
+            }
+        }
+        c.cycles += 15;
+        c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+        c.g[A1][0] = 0x490000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x15b0));
+        c.g[A2][0] = 0x20000000;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+        c.g[A3][0] = 0u64;
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+        call_ptr(c, 0x00317e30, 0x0035a3d0)?;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x44), c.g[V0][0]);
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
+
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
     use crate::difftest::elf_image;
+    use crate::game::ai::control::handplantcontrol::tests::oc425_install;
 
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
@@ -4169,6 +5172,400 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(me);
                 c.g[A1][0] = sx(desc);
                 c.g[A2][0] = sx(model);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::OC425_CTRL;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc423_fake;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc423_fake_call;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w_5 as w_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_CTRL;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_MAGIC;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_RET;
+
+    pub(crate) use crate::game::ai::ai::tests::oc425_machine;
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::OC425_TARGETS;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc427_base;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc427_queue;
+
+    oc423_fake!(
+        oc423_fake_spline_init_path,
+        OC423_PREV_SPLINE_INIT_PATH,
+        0x0034_51c0,
+        ee::s11::f_003451c0__generated
+    );
+
+    oc423_fake!(
+        oc423_fake_multi_spline_set_speed,
+        OC423_PREV_MULTI_SPLINE_SET_SPEED,
+        0x0035_a550,
+        ee::s11::f_0035a550__generated
+    );
+
+    oc423_fake!(
+        oc423_fake_multi_spline_alloc_node_instances,
+        OC423_PREV_MULTI_SPLINE_ALLOC_NODE_INSTANCES,
+        0x0035_a3f0,
+        ee::s11::f_0035a3f0__generated
+    );
+
+    oc423_fake!(
+        oc423_fake_multi_spline_update_nodes,
+        OC423_PREV_MULTI_SPLINE_UPDATE_NODES,
+        0x0035_ac20,
+        ee::s11::f_0035ac20__generated
+    );
+
+    oc423_fake!(
+        oc423_fake_world_obj_get_bound_box,
+        OC423_PREV_WORLD_OBJ_GET_BOUND_BOX,
+        0x0035_0570,
+        ee::s11::f_00350570__generated
+    );
+
+    oc423_fake!(
+        oc423_fake_ea_alloc,
+        OC423_PREV_EA_ALLOC,
+        0x0031_7e30,
+        ee::s10::f_00317e30__generated
+    );
+
+    oc423_fake!(
+        oc423_fake_ea_mem_copy,
+        OC423_PREV_EA_MEM_COPY,
+        0x003e_6574,
+        ee::s14::f_003e6574__generated
+    );
+
+    /// Callees shared by the multi-spline modifier tests: the allocator and
+    /// the path/instance helpers are faked; every fake returns the `POOL`
+    /// block (all words pointing at itself).
+    pub(crate) const OC423_POOL: u32 = DATA + 0x2_0000;
+
+    pub(crate) fn hook_multi_spline_callees() {
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_003451C0),
+            oc423_fake_spline_init_path,
+            &OC423_PREV_SPLINE_INIT_PATH,
+        );
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_0035A550),
+            oc423_fake_multi_spline_set_speed,
+            &OC423_PREV_MULTI_SPLINE_SET_SPEED,
+        );
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_0035A3F0),
+            oc423_fake_multi_spline_alloc_node_instances,
+            &OC423_PREV_MULTI_SPLINE_ALLOC_NODE_INSTANCES,
+        );
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_0035AC20),
+            oc423_fake_multi_spline_update_nodes,
+            &OC423_PREV_MULTI_SPLINE_UPDATE_NODES,
+        );
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00350570),
+            oc423_fake_world_obj_get_bound_box,
+            &OC423_PREV_WORLD_OBJ_GET_BOUND_BOX,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E30),
+            oc423_fake_ea_alloc,
+            &OC423_PREV_EA_ALLOC,
+        );
+        hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E6574),
+            oc423_fake_ea_mem_copy,
+            &OC423_PREV_EA_MEM_COPY,
+        );
+    }
+
+    pub(crate) fn multi_spline_pool(c: &mut Cpu) {
+        w_2(c, OC423_CTRL, OC423_MAGIC);
+        for i in 0..8u32 {
+            w_2(c, OC423_RET + 4 * i, OC423_POOL);
+        }
+        for i in 0..0x100u32 {
+            w_2(c, OC423_POOL + 4 * i, OC423_POOL);
+        }
+    }
+
+    /// One node (so the real AllocArrays/CloneInstances/InsertNodeInstances
+    /// loops end at once), speeds of both signs, offsets inside and outside
+    /// the path, draw-path and focus flags on and off.
+    #[test]
+    fn multi_spline_modifier_ctor_matches() {
+        hook_multi_spline_callees();
+        fakes::covered(
+            ee::s11::f_00359f88__generated,
+            multi_spline_modifier_ctor,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_9f88, 8);
+                multi_spline_pool(c);
+                let this = DATA;
+                let desc = DATA + 0x1000;
+                let instance = DATA + 0x2000;
+                let pick = |k: u32| [0.0f32, 1.0, -1.0, 0.5, 3.0][(k % 5) as usize].to_bits();
+                w_2(c, GAME_GP - 0x2a2c, 1.0f32.to_bits());
+                w_2(c, desc + 0x2c, seed % 2);
+                w_2(c, desc + 4, r.next_u32());
+                w_2(c, desc + 8, r.next_u32());
+                w_2(c, desc + 0xc, pick(seed));
+                w_2(c, desc + 0x10, pick(seed / 5));
+                w_2(c, desc + 0x14, pick(seed / 3));
+                for i in 0..4u32 {
+                    w_2(c, desc + 0x18 + 4 * i, r.f32(1.0));
+                }
+                w_2(c, desc + 0x28, [0, 7, 0xffff_ffff][(seed / 2 % 3) as usize]);
+                w_2(
+                    c,
+                    instance + 8,
+                    if seed % 3 == 0 { 0x100 } else { 0 } | r.next_u32() & 0xff,
+                );
+                // Path length (+0x54) and offset (+0x10) of the half-built modifier.
+                w_2(c, this + 0x54, pick(seed / 7));
+                w_2(c, this + 0x10, r.f32(2.0));
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = desc as u64;
+                c.g[A2][0] = instance as u64;
+            },
+        );
+    }
+
+    oc423_fake!(
+        oc423_fake_get_nash,
+        OC423_PREV_GET_NASH,
+        0x002d_1be0,
+        ee::s09::f_002d1be0__generated
+    );
+
+    oc423_fake!(
+        oc423_fake_nash_insert,
+        OC423_PREV_NASH_INSERT,
+        0x0032_8f28,
+        ee::s10::f_00328f28__generated
+    );
+
+    oc423_fake!(
+        oc423_fake_nash_insert_box,
+        OC423_PREV_NASH_INSERT_BOX,
+        0x0032_8c20,
+        ee::s10::f_00328c20__generated
+    );
+
+    /// One to four nodes (1 to 3 loop iterations) around a position with
+    /// random floats; the spatial-structure calls faked (their float/int
+    /// stack-buffer words select the conditional moves).
+    #[test]
+    fn multi_spline_modifier_insert_node_instances_matches() {
+        hook(
+            addr_of_mut!(ee::s11::OVERRIDE_00350570),
+            oc423_fake_world_obj_get_bound_box,
+            &OC423_PREV_WORLD_OBJ_GET_BOUND_BOX,
+        );
+        hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002D1BE0),
+            oc423_fake_get_nash,
+            &OC423_PREV_GET_NASH,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00328F28),
+            oc423_fake_nash_insert,
+            &OC423_PREV_NASH_INSERT,
+        );
+        hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00328C20),
+            oc423_fake_nash_insert_box,
+            &OC423_PREV_NASH_INSERT_BOX,
+        );
+        fakes::covered(
+            ee::s11::f_0035a5f8__generated,
+            multi_spline_modifier_insert_node_instances,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_a5f8, 10);
+                w_2(c, OC423_CTRL, OC423_MAGIC);
+                for i in 0..8u32 {
+                    w_2(c, OC423_RET + 4 * i, DATA + 0x1_0000 + 0x100 * i);
+                }
+                let this = DATA;
+                let instance = DATA + 0x1000;
+                let nodes = DATA + 0x3000;
+                let node_instances = DATA + 0x4000;
+                w_2(c, this + 4, 1 + seed % 4);
+                w_2(c, this + 0x18, r.f32(4.0));
+                w_2(c, this + 0x3c, nodes);
+                w_2(c, this + 0x40, instance);
+                w_2(c, this + 0x44, node_instances);
+                w_2(c, instance + 0xc, DATA + 0x1100);
+                for i in 0..4u32 {
+                    let item = DATA + 0x5000 + 0x100 * i;
+                    w_2(c, node_instances + 4 * i, item);
+                    for k in 0..4u32 {
+                        w_2(c, item + 0x40 + 4 * k, r.f32(10.0));
+                    }
+                }
+                for i in 0..0x200u32 {
+                    w_2(c, nodes + 4 * i, r.next_u32());
+                }
+                c.g[A0][0] = this as u64;
+            },
+        );
+    }
+
+    /// Force the result of every fake call to `target` (v0 and/or f0).
+    pub(crate) fn oc425_force_target(c: &mut Cpu, target: u32, v0: Option<u32>, f0: Option<u32>) {
+        for k in 0..14 {
+            let at = OC425_TARGETS + 0x10 * k;
+            if c.bus.read32(at) == 0 {
+                c.bus.write32(at, target);
+                c.bus
+                    .write32(at + 4, v0.is_some() as u32 | (f0.is_some() as u32) << 1);
+                c.bus.write32(at + 8, v0.unwrap_or(0));
+                c.bus.write32(at + 12, f0.unwrap_or(0));
+                return;
+            }
+        }
+        panic!("too many forced targets");
+    }
+
+    /// `MultiSplineModifier_CloneInstances`: 0..4 models (and a negative
+    /// count); the node instances hold random flags. `EA_MemCopy` and the
+    /// instances manager are fakes (some unwinding); `CopyInstance` runs for
+    /// real.
+    #[test]
+    fn multi_spline_modifier_clone_instances_matches() {
+        oc425_install();
+        covered(
+            ee::s11::f_0035a458__generated,
+            multi_spline_modifier_clone_instances,
+            200,
+            &|c, seed| {
+                let mut r = oc425_machine(c, seed, 0x0035_a458, 8);
+                c.pc = 0x0035_a458;
+                let me = DATA + 0x1000;
+                let nodes = DATA + 0x3000;
+                crate::difftest::fill(c, &mut r, DATA + 0x4000, 0x400);
+                c.bus
+                    .write32(me + 4, [0, 1, 2, 3, 4, u32::MAX][(seed % 6) as usize]);
+                c.bus.write32(me + 0x40, DATA + 0x2000);
+                c.bus.write32(me + 0x44, nodes);
+                for i in 0..5 {
+                    c.bus.write32(nodes + 4 * i, DATA + 0x4000 + 0x100 * i);
+                }
+                c.g[A0][0] = sx(me);
+            },
+        );
+    }
+
+    /// `RailModifier_v01` (the destructor): the node's spatial-hash slot empty
+    /// or still used, splines with 0..3 segments (or none: no table entry),
+    /// `flags & 1` set or clear, with the Nash, the instance table, the key
+    /// builder, hash remove/insert, delete and list unlink as fakes (some
+    /// unwinding); the key signs come from the fixture.
+    #[test]
+    fn rail_modifier_dtor_matches() {
+        oc425_install();
+        covered(
+            ee::s11::f_0035bd70__generated,
+            rail_modifier_dtor,
+            300,
+            &|c, seed| {
+                let mut r = oc425_machine(c, seed, 0x0035_bd70, 16);
+                c.pc = 0x0035_bd70;
+                let me = DATA + 0x1000;
+                let nash = DATA + 0x3000;
+                let world = DATA + 0xe800;
+                let p1 = DATA + 0xe000;
+                let table = DATA + 0xb000;
+                let ent = DATA + 0xc000;
+                let arr = DATA + 0xd000;
+                let spline = DATA + 0xa000;
+                c.bus.write32(OC425_CTRL + 4, r.next_u32());
+                c.bus.write32(OC425_CTRL + 8, r.next_u32());
+                c.bus.write32(OC425_CTRL + 12, r.next_u32());
+                // The node's hash slots: pointers to eight-word blocks.
+                for k in 0..8u32 {
+                    let block = DATA + 0x8000 + 0x100 * k;
+                    c.bus.write32(nash + 0x10 + 0x14 * k, block);
+                    for w in 0..8u32 {
+                        let used = r.next_u32() % 4 == 0;
+                        c.bus
+                            .write32(block + 4 * w, if used { r.next_u32() } else { 0 });
+                    }
+                }
+                c.bus.write32(nash + 0xa0, r.next_u32());
+                c.bus.write32(me + 0x44, DATA + 0x2000);
+                c.bus.write32(me + 0x30, 0x201);
+                c.bus.write32(world, p1);
+                c.bus.write32(p1 + 8, table);
+                c.bus
+                    .write32(table + 4, if seed % 6 == 5 { 0 } else { ent });
+                c.bus.write32(ent + 0x44, arr);
+                c.bus.write32(
+                    arr + 8,
+                    if seed % 7 == 6 {
+                        0
+                    } else {
+                        (spline >> 2) << 8 | 1
+                    },
+                );
+                c.bus.write32(spline + 0x20, r.next_u32() % 4);
+                c.bus.write32(spline + 0x24, DATA + 0x10000);
+                for k in 0..3u32 {
+                    let seg = DATA + 0x10000 + 0x100 * k;
+                    crate::difftest::fill(c, &mut r, seg + 0x6c, 6);
+                    c.bus.write32(seg + 0x64, DATA + 0x10000 + 0x100 * (k + 1));
+                }
+                oc425_force_target(c, 0x002d_1be0, Some(nash), None);
+                oc425_force_target(c, 0x002d_1bd8, Some(world), None);
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = if seed % 2 == 0 {
+                    r.next_u32() as u64 & !1
+                } else {
+                    r.next_u32() as u64 | 1
+                };
+            },
+        );
+    }
+
+    /// `MultiSplineModifier_AllocArrays`: the three allocations (faked
+    /// `operator new`), with zero and non-zero element counts.
+    #[test]
+    fn multi_spline_modifier_alloc_arrays_matches() {
+        covered(
+            ee::s11::f_0035a328__generated,
+            multi_spline_modifier_alloc_arrays,
+            100,
+            &|c, seed| {
+                let mut r = oc427_base(c, seed, 0x35a328, 3, 0x0035_a328);
+                let this = DATA + 0x1000;
+                let instance = DATA + 0x2000;
+                let model = DATA + 0x2100;
+                c.bus.write32(this + 4, r.next_u32() % 5 * (seed % 2));
+                c.bus.write32(this + 0x40, instance);
+                c.bus.write32(instance + 0x80, model);
+                c.bus
+                    .write32(model + 4, r.next_u32() % 6 * ((seed / 2) % 2));
+                oc427_queue(
+                    c,
+                    0x0031_7e30,
+                    &[
+                        (DATA + 0x1_0000) as u64,
+                        (DATA + 0x2_0000) as u64,
+                        (DATA + 0x3_0000) as u64,
+                    ],
+                );
+                c.g[A0][0] = sx(this);
             },
         );
     }

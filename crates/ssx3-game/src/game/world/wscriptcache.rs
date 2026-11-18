@@ -299,6 +299,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         wscript_cache_get_object_slot,
         "tWScriptCache_GetObjectSlot",
     ),
+    (
+        0x003a_ccd8,
+        t_wscript_cache_relocate,
+        "tWScriptCache_Relocate",
+    ),
+    (
+        0x003a_d230,
+        world_chunk_resolve_hook,
+        "World_ChunkResolveHook",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4761,11 +4771,451 @@ pub fn wscript_cache_get_object_slot(c: &mut Cpu) {
     ret(c);
 }
 
+/// `void World_ChunkResolveHook(void)` (0x3ad230): forwards to
+/// `LensFX_GetFlareSizeForRes` (0x2e27e8) through the function table.
+pub fn world_chunk_resolve_hook(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Table(0x002e_27e8),
+        0x003a_d240,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// tWScriptCache_Relocate.
+
+/// `tWScriptCache_Relocate`'s inline record lookup (the "resolve" the C++
+/// reference calls): the id in `t0` is `slot | index << 8`; `*(s1)` is the
+/// world cache whose slot table (+8) holds records; the record's table at
+/// `table_off` maps `index` to `value << 8`; the result (`value << 2`, 0 when
+/// absent) lands in `a2`. `head` is the cycle charge of the first block;
+/// `load_cache` is whether that block also loads the cache pointer into `a2`.
+/// `a3` is the running index.
+pub(crate) fn oc420_cache_record(c: &mut Cpu, head: u64, table_off: u32, load_cache: bool) {
+    c.cycles += head;
+    if load_cache {
+        c.g[A2][0] = Addr(c.g[S1][0] as u32).lw(c);
+    }
+    c.g[A1][0] = c.g[T0][0] & 0xff;
+    c.g[V0][0] = sx((c.g[A1][0] as u32) << 2);
+    c.g[V1][0] = sx((c.g[A3][0] as u32) << 8);
+    c.g[A0][0] = Addr((c.g[A2][0] as u32).wrapping_add(8)).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    c.g[V0][0] = Addr(c.g[V0][0] as u32).lw(c);
+    let present = c.g[V0][0] != 0;
+    c.g[T0][0] = c.g[A1][0] | c.g[V1][0];
+    if !present {
+        c.cycles += 2;
+        c.g[A2][0] = 0;
+    } else {
+        c.cycles += 8;
+        c.g[V0][0] = Addr((c.g[V0][0] as u32).wrapping_add(table_off)).lw(c);
+        c.g[V1][0] = sx((c.g[T0][0] as u32) >> 8);
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+        c.g[V0][0] = sx((c.g[A0][0] as u32) >> 8);
+        let found = c.g[V0][0] != 0;
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        if !found {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 1;
+        c.g[A2][0] = c.g[V0][0];
+    }
+}
+
+/// `*(reg + off) += reg` where `reg` (`v1` or `a0`) holds the script data
+/// base (reloaded from `entry + 8` first when `reload`): turns an offset
+/// into a pointer.
+pub(crate) fn oc420_rebase(c: &mut Cpu, entry: u32, reg: usize, off: u32, reload: bool) {
+    if reload {
+        c.g[reg][0] = Addr(entry.wrapping_add(8)).lw(c);
+    }
+    let base = c.g[reg][0] as u32;
+    c.g[V0][0] = Addr(base.wrapping_add(off)).lw(c);
+    c.g[V0][0] = sx(base.wrapping_add(c.g[V0][0] as u32));
+    Addr(base.wrapping_add(off)).sw(c, c.g[V0][0]);
+}
+
+/// `void tWScriptCache_Relocate(Entry* e, World** wp, int index)`
+/// (0x3accd8): turns a freshly loaded world script block (`e + 8`, header
+/// `0x1000` and the world id at +0xc) from file offsets into pointers: the
+/// ten table pointers, the entries of the +0x3c and +0x50 tables, then
+/// records the script data refers to are resolved in the world cache (the
+/// track records at +0x88/+0x8 for the +0x44 count, the type 1/3 table entries
+/// at +0xc for the +0x4c count, the spline records at +0x28/+0x1c for the +0x54
+/// count) and the two tables at +0x24/+0x20 and +0x2c/+0x28 are relocated.
+/// A block with the wrong header or world is dropped (freed when the entry
+/// owns it); the entry's state word becomes 3 either way.
+pub fn t_wscript_cache_relocate(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x10);
+        let entry = c.g[S0][0] as u32;
+        c.g[A3][0] = Addr(entry.wrapping_add(8)).lw(c);
+        c.g[S2][0] = c.g[A2][0];
+        'finish: {
+            'done: {
+                if c.g[A3][0] == 0 {
+                    break 'done;
+                }
+                c.cycles += 4;
+                c.g[V1][0] = Addr(c.g[A3][0] as u32).lhu(c);
+                c.g[V0][0] = 0x1000;
+                let mut keep = false;
+                if c.g[V1][0] == c.g[V0][0] {
+                    c.cycles += 6;
+                    c.g[A0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                    c.g[A1][0] = Addr((c.g[A3][0] as u32).wrapping_add(0xc)).lw(c);
+                    c.g[V0][0] = Addr(c.g[A0][0] as u32).lw(c);
+                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(4)).lw(c);
+                    if c.g[A1][0] == c.g[V1][0] {
+                        c.g[V1][0] = Addr(entry.wrapping_add(8)).lw(c);
+                        keep = true;
+                    } else {
+                        c.cycles += 1;
+                        c.g[V0][0] = Addr(entry.wrapping_add(2)).lh(c);
+                    }
+                } else {
+                    c.g[V0][0] = Addr(entry.wrapping_add(2)).lh(c);
+                }
+                if !keep {
+                    // Wrong block: free it when the entry owns it, and forget it.
+                    c.cycles += 2;
+                    if c.g[V0][0] != 0 {
+                        Addr(entry.wrapping_add(8)).sw(c, 0);
+                    } else {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[A3][0];
+                        call_ptr(c, 0x0031_7e98, 0x003a_cd3c)?;
+                        Addr(entry.wrapping_add(8)).sw(c, 0);
+                    }
+                    c.cycles += 1;
+                    c.g[V1][0] = Addr(entry.wrapping_add(8)).lw(c);
+                }
+                c.cycles += 2;
+                let none = c.g[V1][0] == 0;
+                c.g[V0][0] = 3;
+                if none {
+                    break 'finish;
+                }
+                // The ten table pointers.
+                c.cycles += 44;
+                c.g[A1][0] = 0;
+                for (reg, off, reload) in [
+                    (V1, 0x14u32, false),
+                    (V1, 0x1c, true),
+                    (A0, 0x24, true),
+                    (V1, 0x2c, true),
+                    (A0, 0x34, true),
+                    (V1, 0x3c, true),
+                    (A0, 0x40, true),
+                    (V1, 0x48, true),
+                    (A0, 0x50, true),
+                    (V1, 0x58, true),
+                ] {
+                    oc420_rebase(c, entry, reg, off, reload);
+                }
+                c.g[A0][0] = Addr(entry.wrapping_add(8)).lw(c);
+                c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x38)).lw(c);
+                let empty = (c.g[V0][0] as i64) <= 0;
+                c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x3c)).lw(c);
+                if !empty {
+                    // Entries of the +0x3c table (count at +0x38).
+                    c.cycles += 1;
+                    loop {
+                        c.cycles += 9;
+                        c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+                        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        Addr(c.g[V1][0] as u32).sw(c, c.g[V0][0]);
+                        c.g[A0][0] = Addr(entry.wrapping_add(8)).lw(c);
+                        c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x38)).lw(c);
+                        c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        let more = c.g[V0][0] != 0;
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(4));
+                        if !more {
+                            c.cycles += 1;
+                            c.g[A0][0] = Addr(entry.wrapping_add(8)).lw(c);
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003a_ce00);
+                        }
+                    }
+                }
+                // Entries of the +0x50 table (count at +0x4c) get the +0x40 base.
+                c.cycles += 3;
+                c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x4c)).lw(c);
+                let empty = (c.g[V0][0] as i64) <= 0;
+                c.g[A2][0] = 0;
+                if !empty {
+                    c.cycles += 1;
+                    c.g[A1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x50)).lw(c);
+                    loop {
+                        c.cycles += 12;
+                        c.g[V1][0] = sx((c.g[A2][0] as u32) << 2);
+                        c.g[A0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x40)).lw(c);
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                        c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        Addr(c.g[V1][0] as u32).sw(c, c.g[A0][0]);
+                        c.g[A0][0] = Addr(entry.wrapping_add(8)).lw(c);
+                        c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x4c)).lw(c);
+                        c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] == 0 {
+                            break;
+                        }
+                        c.g[A1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x50)).lw(c);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003a_ce38);
+                        }
+                    }
+                }
+                // Records of the world cache for the +0x44 track entries.
+                c.cycles += 7;
+                c.g[V0][0] = Addr(entry.wrapping_add(8)).lw(c);
+                c.g[T0][0] = 0xffff_ffff_ffff_0000;
+                c.g[A3][0] = 0;
+                c.g[T0][0] |= 0xff00;
+                c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x44)).lw(c);
+                let empty = (c.g[V1][0] as i64) <= 0;
+                c.g[T0][0] |= c.g[S2][0];
+                if !empty {
+                    c.cycles += 3;
+                    c.g[T1][0] = 0xffff_ffff_ffff_0000;
+                    c.g[A2][0] = Addr(c.g[S1][0] as u32).lw(c);
+                    loop {
+                        oc420_cache_record(c, 8, 0x1c, false);
+                        c.cycles += 22;
+                        c.g[V0][0] = Addr(entry.wrapping_add(8)).lw(c);
+                        c.g[A0][0] = sx((c.g[A3][0] as u32) << 1);
+                        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+                        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x48)).lw(c);
+                        c.g[A1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x50)).lw(c);
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        c.g[V0][0] = Addr(c.g[V1][0] as u32).lhu(c);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                        c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                        Addr((c.g[A2][0] as u32).wrapping_add(0x88)).sw(c, c.g[V1][0]);
+                        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(4)).lw(c);
+                        c.g[V0][0] &= c.g[T1][0];
+                        c.g[V1][0] = sx(((c.g[V0][0] as u32) as i32 >> 16) as u32);
+                        c.g[V0][0] |= c.g[V1][0];
+                        c.g[V0][0] |= 2;
+                        Addr((c.g[A2][0] as u32).wrapping_add(8)).sw(c, c.g[V0][0]);
+                        c.g[V1][0] = Addr(entry.wrapping_add(8)).lw(c);
+                        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x44)).lw(c);
+                        c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] == 0 {
+                            break;
+                        }
+                        c.g[A2][0] = Addr(c.g[S1][0] as u32).lw(c);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003a_ce90);
+                        }
+                    }
+                }
+                // Table entries of type 1 and 3 point at records (+0xc), others at 0.
+                c.cycles += 4;
+                c.g[V1][0] = Addr(entry.wrapping_add(8)).lw(c);
+                c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x4c)).lw(c);
+                let empty = (c.g[V0][0] as i64) <= 0;
+                c.g[A3][0] = 0;
+                if !empty {
+                    c.cycles += 4;
+                    c.g[T2][0] = 1;
+                    c.g[T1][0] = 3;
+                    c.g[V1][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x50)).lw(c);
+                    loop {
+                        c.cycles += 6;
+                        c.g[V0][0] = sx((c.g[A3][0] as u32) << 2);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                        c.g[A2][0] = Addr(c.g[V0][0] as u32).lw(c);
+                        c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+                        let mut resolve = true;
+                        if c.g[V0][0] == c.g[T2][0] {
+                            c.g[A1][0] = Addr((c.g[A2][0] as u32).wrapping_add(0xc)).lw(c);
+                        } else {
+                            c.cycles += 2;
+                            if c.g[V0][0] != c.g[T1][0] {
+                                Addr((c.g[A2][0] as u32).wrapping_add(0xc)).sw(c, 0);
+                                resolve = false;
+                            } else {
+                                c.cycles += 1;
+                                c.g[A1][0] = Addr((c.g[A2][0] as u32).wrapping_add(0xc)).lw(c);
+                            }
+                        }
+                        if resolve {
+                            c.cycles += 8;
+                            c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                            c.g[V1][0] = c.g[A1][0] & 0xff;
+                            c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(8)).lw(c);
+                            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                            c.g[V1][0] = Addr(c.g[V1][0] as u32).lw(c);
+                            let present = c.g[V1][0] != 0;
+                            c.g[V0][0] = sx((c.g[A1][0] as u32) >> 8);
+                            let mut found = false;
+                            if present {
+                                c.cycles += 7;
+                                c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x64)).lw(c);
+                                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                                c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+                                found = c.g[V0][0] != 0;
+                                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                            }
+                            if !found {
+                                c.cycles += 1;
+                                c.g[V0][0] = 0;
+                            }
+                            c.cycles += 1;
+                            Addr((c.g[A2][0] as u32).wrapping_add(0xc)).sw(c, c.g[V0][0]);
+                        }
+                        c.cycles += 6;
+                        c.g[V1][0] = Addr(entry.wrapping_add(8)).lw(c);
+                        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+                        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x4c)).lw(c);
+                        c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] == 0 {
+                            break;
+                        }
+                        c.g[V1][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x50)).lw(c);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003a_cf58);
+                        }
+                    }
+                }
+                // Spline records (+0x54 of them): two halfwords each from +0x58.
+                c.cycles += 4;
+                c.g[V0][0] = Addr(entry.wrapping_add(8)).lw(c);
+                c.g[T1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x54)).lw(c);
+                let empty = (c.g[T1][0] as i64) <= 0;
+                c.g[A3][0] = 0;
+                if !empty {
+                    c.cycles += 2;
+                    c.g[T2][0] = 0xffff_ffff_ffff_0000;
+                    loop {
+                        oc420_cache_record(c, 9, 0x44, true);
+                        c.cycles += 21;
+                        c.g[A0][0] = Addr(entry.wrapping_add(8)).lw(c);
+                        c.g[V0][0] = sx((c.g[A3][0] as u32) << 2);
+                        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+                        c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x58)).lw(c);
+                        c.g[A1][0] = ((c.g[A3][0] as i64) < (c.g[T1][0] as i64)) as u64;
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                        c.lwl(3, (c.g[V0][0] as u32).wrapping_add(3));
+                        c.lwr(3, c.g[V0][0] as u32);
+                        c.swl(3, sp(c).wrapping_add(3));
+                        c.swr(3, sp(c));
+                        c.g[V1][0] = Addr(sp(c).wrapping_add(2)).lhu(c);
+                        c.g[V1][0] = sx((c.g[V1][0] as u32) << 16);
+                        c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 16) as u32);
+                        Addr((c.g[A2][0] as u32).wrapping_add(0x28)).sw(c, c.g[V1][0]);
+                        c.g[V0][0] = Addr(sp(c)).lh(c);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 16);
+                        c.g[V1][0] = sx((c.g[V0][0] as u32) >> 16);
+                        c.g[V0][0] &= c.g[T2][0];
+                        c.g[V0][0] |= c.g[V1][0];
+                        let more = c.g[A1][0] != 0;
+                        Addr((c.g[A2][0] as u32).wrapping_add(0x1c)).sw(c, c.g[V0][0]);
+                        if !more {
+                            c.cycles += 1;
+                            c.g[V0][0] = Addr(entry.wrapping_add(8)).lw(c);
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003a_cff0);
+                        }
+                    }
+                }
+                // Relocate `+0x28` records (0x40 bytes each, field +8 at +0x2c).
+                c.cycles += 3;
+                c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x28)).lw(c);
+                let empty = (c.g[V1][0] as i64) <= 0;
+                c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x2c)).lw(c);
+                if !empty {
+                    c.cycles += 2;
+                    c.g[A1][0] = c.g[V1][0];
+                    loop {
+                        c.cycles += 7;
+                        c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(8)).lw(c);
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+                        c.g[V0][0] = Addr(entry.wrapping_add(8)).lw(c);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                        Addr((c.g[A0][0] as u32).wrapping_add(8)).sw(c, c.g[V0][0]);
+                        let more = c.g[A1][0] != 0;
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003a_d0b0);
+                        }
+                    }
+                }
+                // Relocate the `+0x20` records (0x54 bytes each, field +8 at +0x24).
+                c.cycles += 4;
+                c.g[V0][0] = Addr(entry.wrapping_add(8)).lw(c);
+                c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x20)).lw(c);
+                let empty = (c.g[V1][0] as i64) <= 0;
+                c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x24)).lw(c);
+                if !empty {
+                    c.cycles += 1;
+                    c.g[A1][0] = c.g[V1][0];
+                    loop {
+                        c.cycles += 7;
+                        c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(8)).lw(c);
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+                        c.g[V0][0] = Addr(entry.wrapping_add(8)).lw(c);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                        Addr((c.g[A0][0] as u32).wrapping_add(8)).sw(c, c.g[V0][0]);
+                        let more = c.g[A1][0] != 0;
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x54));
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003a_d0e0);
+                        }
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 3;
+        }
+        c.cycles += 7;
+        Addr(entry).sh(c, c.g[V0][0]);
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
+
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::game::replay::replaycache::tests::oc420_hook_mem_free;
 
     use crate::difftest::events::check_events;
     use crate::difftest::events::driven;
@@ -6562,6 +7012,144 @@ pub(crate) mod tests {
                 c.bus.write32(script + 0x8, id);
                 c.bus.write32(table + 0x1c, rows);
                 c.bus.write32(rows + row * 0x18 + i * 4, r.next_u32());
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ai::tests::OC420_CTRL;
+    pub(crate) use crate::game::ai::ai::tests::OC420_MAGIC;
+
+    /// The hook forwards to the flare-size lookup for assorted resolutions.
+    #[test]
+    fn world_chunk_resolve_hook_matches() {
+        check(
+            ee::s13::f_003ad230__generated,
+            world_chunk_resolve_hook,
+            70,
+            &|c, seed| {
+                machine(c, seed, 0x3a_d230, 0);
+                c.g[A0][0] = [0x20u64, 0x10, 0x40, 0x30, 33, 0, u64::MAX][(seed % 7) as usize];
+                c.pc = 0x003a_d230;
+            },
+        );
+    }
+
+    // ------------------------------------------------ tWScriptCache_Relocate
+
+    /// A script block at `DATA + 0x1_0000`: header `0x1000` and world id,
+    /// ten table offsets, 0..3 entries in each table (see the layout below),
+    /// the world cache with three slot records (one empty) and objects that
+    /// the records resolve to.
+    pub(crate) fn oc420_relocate_setup(c: &mut Cpu, r: &mut Rng, seed: u32, kind: u32) {
+        const D: u32 = DATA + 0x1_0000;
+        let (entry, wp, cache, ymeta, slots) = (
+            DATA + 0x1000,
+            DATA + 0x1100,
+            DATA + 0x1200,
+            DATA + 0x1210,
+            DATA + 0x1300,
+        );
+        let wid = 0x1234_5678u32;
+        c.bus
+            .write32(entry + 8, if seed % 16 == 15 && kind == 3 { 0 } else { D });
+        c.bus.write16(entry + 2, if seed % 8 < 6 { 0 } else { 1 });
+        c.bus.write32(wp, cache);
+        c.bus.write32(cache, ymeta);
+        c.bus.write32(ymeta + 4, wid);
+        c.bus.write32(cache + 8, slots);
+        c.bus.write16(D, if kind == 0 { 0x1001 } else { 0x1000 });
+        c.bus
+            .write32(D + 0xc, if kind == 1 { wid ^ 1 } else { wid });
+        // Table offsets.
+        for (off, v) in [
+            (0x14u32, 0x400u32),
+            (0x1c, 0x500),
+            (0x24, 0x600),
+            (0x2c, 0x800),
+            (0x34, 0x900),
+            (0x3c, 0xa00),
+            (0x40, 0xb00),
+            (0x48, 0xc00),
+            (0x50, 0xd00),
+            (0x58, 0xe00),
+        ] {
+            c.bus.write32(D + off, v);
+        }
+        let n4c = r.next_u32() % 4;
+        let n44 = r.next_u32() % 4;
+        c.bus.write32(D + 0x20, r.next_u32() % 3);
+        c.bus.write32(D + 0x28, r.next_u32() % 3);
+        c.bus.write32(D + 0x38, r.next_u32() % 4);
+        c.bus.write32(D + 0x44, n44);
+        c.bus.write32(D + 0x4c, n4c);
+        c.bus.write32(D + 0x54, r.next_u32() % 3);
+        // +0x3c: word offsets; +0x600/+0x800: records (field +8 an offset).
+        for i in 0..4u32 {
+            c.bus.write32(D + 0xa00 + 4 * i, 0x20 * i);
+            c.bus
+                .write16(D + 0xc00 + 2 * i, (r.next_u32() % n4c.max(1)) as u16);
+            // +0x50 table: offsets from the +0x40 base to the entries.
+            c.bus.write32(D + 0xd00 + 4 * i, 0x100 * i);
+            let e = D + 0xb00 + 0x100 * i;
+            c.bus
+                .write32(e, [0u32, 1, 3, 2][(r.next_u32() % 4) as usize]);
+            let slot = r.next_u32() % 4;
+            c.bus.write32(e + 0xc, slot | (r.next_u32() % 4) << 8);
+            c.bus
+                .write32(D + 0x600 + 0x54 * i + 8, r.next_u32() % 0x100);
+            c.bus
+                .write32(D + 0x800 + 0x40 * i + 8, r.next_u32() % 0x100);
+            c.bus.write32(e + 4, r.next_u32());
+            // +0x58: two halfwords per spline.
+            c.bus.write32(D + 0xe00 + 4 * i, r.next_u32());
+        }
+        // World cache records.
+        for s in 0..3u32 {
+            let rec = DATA + 0x1400 + 0x80 * s;
+            c.bus.write32(slots + 4 * s, if s == 2 { 0 } else { rec });
+            for (off, base) in [(0x1cu32, 0x1800u32), (0x44, 0x1900), (0x64, 0x1a00)] {
+                let table = DATA + base + 0x20 * s;
+                c.bus.write32(rec + off, table);
+                for k in 0..4u32 {
+                    let obj = DATA + 0x2000 + 0x100 * ((s + k) % 4);
+                    let word = if r.next_u32() % 4 == 0 {
+                        0
+                    } else {
+                        (obj >> 2) << 8
+                    };
+                    c.bus.write32(table + 4 * k, word);
+                }
+            }
+        }
+        c.g[A0][0] = sx(entry);
+        c.g[A1][0] = sx(wp);
+        c.g[A2][0] = [1u64, 0, 2, 5][(r.next_u32() % 4) as usize];
+    }
+
+    #[test]
+    fn t_wscript_cache_relocate_matches() {
+        use crate::difftest::events::{check_events, schedule};
+        oc420_hook_mem_free();
+        covered(
+            ee::s13::f_003accd8__generated,
+            t_wscript_cache_relocate,
+            400,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3a_ccd8, 1);
+                c.pc = 0x003a_ccd8;
+                c.bus.write32(OC420_CTRL, OC420_MAGIC);
+                oc420_relocate_setup(c, &mut r, seed, seed % 4);
+            },
+        );
+        check_events(
+            ee::s13::f_003accd8__generated,
+            t_wscript_cache_relocate,
+            150,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3a_ccd9, 0);
+                c.bus.write32(OC420_CTRL, OC420_MAGIC);
+                oc420_relocate_setup(c, &mut r, seed, 2);
+                schedule(c, &mut r, seed, 0x003a_ccd8)
             },
         );
     }

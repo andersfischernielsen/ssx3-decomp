@@ -415,6 +415,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0010_fcd8, rider_base_ctor, "RiderBase_ctor"),
     (0x0011_2180, rider_init_track_paths, "Rider_InitTrackPaths"),
+    (
+        0x0010_f3b8,
+        ai_reset_rider_relations,
+        "AI_ResetRiderRelations",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -16486,6 +16491,165 @@ pub fn rider_init_track_paths(c: &mut Cpu) {
     });
 }
 
+pub(crate) const OC423_RIDER_IS_LOADED: Callee = Callee {
+    addr: 0x0011_d640,
+    f: ee::s00::Rider_IsLoaded,
+};
+
+pub(crate) const OC423_RIDER_GET_DIST_TO_FINISH: Callee = Callee {
+    addr: 0x0011_3128,
+    f: ee::s00::Rider_GetDistToFinish,
+};
+
+/// `void cAI_RefreshGroupAI(cAI *ai)` (0x10f3b8, "AI_ResetRiderRelations"):
+/// for every rider i below `ai->rider_count` (+0x78) clears the rider's
+/// relation table to the other riders: six entries of 0x24 bytes at the start
+/// of the rider (`+0` loaded flag, `+4` value from the rider's vtable
+/// method +0x40, `+8` default float from `gp-0x7cb0`, `+0xc..+0x20` zero),
+/// then stores the distance to the finish (+0x4d8) and `-1` (+0xe8).
+pub fn ai_reset_rider_relations(c: &mut Cpu) {
+    /// Number of riders (word at `ai + 0x78`).
+    const RIDER_COUNT: u32 = 0x78;
+    /// Rider pointer array (`ai + 0x28`).
+    const RIDERS: u32 = 0x28;
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S6, 0x40);
+        frame.save(c, S0, 0xa0);
+        c.g[S6][0] = c.g[A0][0];
+        frame.save(c, S1, 0x90);
+        frame.save(c, S2, 0x80);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S4, 0x60);
+        frame.save(c, S7, 0x30);
+        frame.save(c, FP, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[V0][0] = c.lw((c.g[S6][0] as u32).wrapping_add(RIDER_COUNT));
+        c.g[S5][0] = 0;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 3;
+            c.g[FP][0] = sx((c.g[S6][0] as u32).wrapping_add(RIDERS));
+            c.g[S7][0] = sx((c.g[S5][0] as u32) << 2);
+            'riders: loop {
+                c.cycles += 8;
+                c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(1));
+                c.g[S0][0] = sx((c.g[FP][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                c.sw(frame.at(c, 4), c.g[V0][0]);
+                c.sw(frame.at(c, 0), c.g[S0][0]);
+                c.g[S3][0] = 0;
+                c.g[S1][0] = 0;
+                c.g[S4][0] = c.g[FP][0];
+                'others: loop {
+                    // Entry j of rider i: "is rider j loaded" (0 for j == i).
+                    c.cycles += 4;
+                    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[V1][0] = 0;
+                    let same = c.g[S5][0] == c.g[S3][0];
+                    c.g[S2][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    if same {
+                        c.cycles += 1;
+                        c.sw(c.g[S2][0] as u32, c.g[V1][0]);
+                    } else {
+                        c.cycles += 4;
+                        c.g[V0][0] = c.lw((c.g[S6][0] as u32).wrapping_add(RIDER_COUNT));
+                        c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] == 0 {
+                            c.sw(c.g[S2][0] as u32, c.g[V1][0]);
+                        } else {
+                            c.cycles += 3;
+                            OC423_RIDER_IS_LOADED.call(c, 0x0010_f448)?;
+                            c.g[V1][0] = (0u64 < c.g[V0][0]) as u64;
+                            c.cycles += 1;
+                            c.sw(c.g[S2][0] as u32, c.g[V1][0]);
+                        }
+                    }
+                    // Entry j value: rider j's vtable method +0x40.
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw((c.g[S6][0] as u32).wrapping_add(RIDER_COUNT));
+                    c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                    } else {
+                        c.cycles += 12;
+                        c.g[A0][0] = c.lw(c.g[S4][0] as u32);
+                        c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x6c0));
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6c0));
+                        c.g[A1][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x40));
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x44));
+                        let target = c.g[V0][0] as u32;
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                        call_ptr(c, target, 0x0010_f47c)?;
+                        c.g[A0][0] = c.lw(frame.at(c, 0));
+                        c.g[V1][0] = c.lw(c.g[A0][0] as u32);
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                        c.sw((c.g[V1][0] as u32).wrapping_add(4), c.g[V0][0]);
+                        c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                    }
+                    c.cycles += 26;
+                    c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(1));
+                    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x7cb0));
+                    c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(4));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.g[A0][0] = ((c.g[S3][0] as i64) < 6) as u64;
+                    c.swc1(0, (c.g[V1][0] as u32).wrapping_add(8));
+                    // Zero fields +0xc..+0x20, alternating v0/v1 as the compiler did.
+                    for (n, off) in [0xcu32, 0x10, 0x14, 0x18, 0x1c, 0x20]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        let r = if n % 2 == 0 { V0 } else { V1 };
+                        c.g[r][0] = c.lw(c.g[S0][0] as u32);
+                        c.g[r][0] = sx((c.g[r][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                        c.sw((c.g[r][0] as u32).wrapping_add(off), 0);
+                    }
+                    let more = c.g[A0][0] != 0;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x24));
+                    if !more {
+                        break 'others;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0010_f420);
+                    }
+                }
+                c.cycles += 13;
+                c.g[S0][0] = sx((c.g[FP][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                c.g[S5][0] = c.lw(frame.at(c, 4));
+                c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                OC423_RIDER_GET_DIST_TO_FINISH.call(c, 0x0010_f508)?;
+                c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x4d8));
+                c.g[V0][0] = u64::MAX;
+                c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                c.sw((c.g[V1][0] as u32).wrapping_add(0xe8), c.g[V0][0]);
+                c.g[V0][0] = c.lw((c.g[S6][0] as u32).wrapping_add(RIDER_COUNT));
+                c.g[V0][0] = ((c.g[S5][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[S7][0] = sx((c.g[S5][0] as u32) << 2);
+                if c.g[V0][0] == 0 {
+                    break 'riders;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0010_f400);
+                }
+            }
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -22176,6 +22340,38 @@ pub(crate) mod tests {
                 c.bus.write32(DATA + 0x3038, r.f32(100.0));
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = (seed % 2) as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w_5 as w_4;
+
+    #[test]
+    fn ai_reset_rider_relations_matches() {
+        fakes::covered(
+            ee::s00::f_0010f3b8__generated,
+            ai_reset_rider_relations,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_f3b8, 6);
+                let ai = DATA;
+                let count = seed % 5; // 0..=4 riders
+                w_4(c, ai + 0x78, count);
+                let vt = DATA + 0x8000;
+                for k in 0..6u32 {
+                    let rider = DATA + 0x1000 * (k + 1);
+                    w_4(c, ai + 0x28 + 4 * k, rider);
+                    for i in 0..0x240u32 {
+                        w_4(c, rider + 4 * i, r.next_u32());
+                    }
+                    // Load step 7 means loaded.
+                    w_4(c, rider + 0x880, if (seed + k) % 2 == 0 { 7 } else { k });
+                    w_4(c, rider + 0x6c0, vt);
+                    w_4(c, rider + 0x4d0, r.next_u32());
+                }
+                c.bus.write16(vt + 0x40, 0x10);
+                w_4(c, vt + 0x44, fakes::FAKE);
+                c.g[A0][0] = ai as u64;
             },
         );
     }

@@ -406,6 +406,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         chase_camera_algorithm_reset_for_rider,
         "ChaseCameraAlgorithm_ResetForRider",
     ),
+    (
+        0x0015_e050,
+        game_camera_snap_to_default_chase_view,
+        "GameCamera_SnapToDefaultChaseView",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -9748,6 +9753,170 @@ pub fn chase_camera_algorithm_reset_for_rider(c: &mut Cpu) {
     });
 }
 
+/// `void GameCamera::SnapToDefaultChaseView(this, Vec4* a1, Vec4* a2)` (0x15e050):
+/// build a default chase algorithm on the stack, point it at `a1` (+0x40) and
+/// `a2` (+0x20) with w = 1, run its two set-up steps and copy the resulting
+/// pose into the camera (+0x20..); then rebuild the camera matrix at +0x40
+/// (look matrix, quaternion rotation, negated translation) and store the
+/// matrix' z axis in +0x80, and destroy the algorithm.
+pub fn game_camera_snap_to_default_chase_view(c: &mut Cpu) {
+    guest(c, |c| {
+        ssx3_ee_rt::prof::enter(c, 0x0015e050);
+        c.cycles += 149;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x450));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x430));
+        c.g[S0][0] = c.g[A0][0];
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x420));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x410));
+        c.g[S1][0] = c.g[A2][0];
+        c.g[A0][0] = c.g[SP][0];
+        c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x440));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x400), c.g[RA][0]);
+        c.g[S2][0] = c.g[A1][0];
+        call_ptr(c, 0x00176d68, 0x0015e07c)?;
+        c.g[AT][0] = 0x3f800000;
+        c.mtc1(1, 20);
+        c.lq(3, c.g[S1][0] as u32);
+        c.g[A0][0] = c.g[SP][0];
+        c.lq(2, c.g[S2][0] as u32);
+        c.g[A1][0] = 0x1;
+        c.sq(3, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x4c));
+        c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x2c));
+        call_ptr(c, 0x00166640, 0x0015e0a8)?;
+        c.g[A0][0] = c.g[SP][0];
+        call_ptr(c, 0x00166f90, 0x0015e0b0)?;
+        c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x390));
+        c.g[A1][0] = c.g[SP][0];
+        call_ptr(c, 0x001673a0, 0x0015e0bc)?;
+        c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x390));
+        c.g[V1][0] = 0x4c0000;
+        c.lq(4, (c.g[SP][0] as u32).wrapping_add(0x3a0));
+        c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x30));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x53a0));
+        c.sq(2, (c.g[S0][0] as u32).wrapping_add(0x20));
+        c.sq(4, (c.g[S0][0] as u32).wrapping_add(0x30));
+        c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x40));
+        c.lqc2(1, c.g[V1][0] as u32);
+        c.lqc2(2, (c.g[V1][0] as u32).wrapping_add(0x10));
+        c.lqc2(3, (c.g[V1][0] as u32).wrapping_add(0x20));
+        c.lqc2(4, (c.g[V1][0] as u32).wrapping_add(0x30));
+        c.sqc2(1, c.g[A2][0] as u32);
+        c.sqc2(2, (c.g[A2][0] as u32).wrapping_add(0x10));
+        c.sqc2(3, (c.g[A2][0] as u32).wrapping_add(0x20));
+        c.sqc2(4, (c.g[A2][0] as u32).wrapping_add(0x30));
+        c.g[V0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x3b0));
+        c.lqc2(4, c.g[A1][0] as u32);
+        c.vu0().add(0b1110, 1, 0, Src::Bc(0, W));
+        c.vu0().add(0b1110, 5, 4, Src::Vec(4));
+        c.vu0().sub(0b0001, 10, 10, Src::Vec(10));
+        c.vu0().sub(0b0001, 11, 11, Src::Vec(11));
+        c.vu0().sub(0b0001, 12, 12, Src::Vec(12));
+        c.vu0().mul(0b1110, 6, 5, Src::Vec(4));
+        c.vu0().mul(0b1110, 7, 5, Src::Bc(4, W));
+        c.vu0().opmula(5, 4);
+        c.vu0().madd(0b1110, 8, 0, Src::Vec(0));
+        c.vu0().suba(0b1000, 1, Src::Bc(6, Y));
+        c.vu0().msub(0b1000, 10, 1, Src::Bc(6, Z));
+        c.vu0().suba(0b0100, 1, Src::Bc(6, Z));
+        c.vu0().msub(0b0100, 11, 1, Src::Bc(6, X));
+        c.vu0().suba(0b0010, 1, Src::Bc(6, X));
+        c.vu0().msub(0b0010, 12, 1, Src::Bc(6, Y));
+        c.vu0().adda(0b0100, 0, Src::Bc(8, Z));
+        c.vu0().madd(0b0100, 10, 1, Src::Bc(7, Z));
+        c.vu0().adda(0b0010, 0, Src::Bc(8, X));
+        c.vu0().madd(0b0010, 11, 1, Src::Bc(7, X));
+        c.vu0().adda(0b0100, 0, Src::Bc(8, X));
+        c.vu0().msub(0b0100, 12, 1, Src::Bc(7, X));
+        c.vu0().adda(0b0010, 0, Src::Bc(8, Y));
+        c.vu0().msub(0b0010, 10, 1, Src::Bc(7, Y));
+        c.vu0().adda(0b1000, 0, Src::Bc(8, Z));
+        c.vu0().msub(0b1000, 11, 1, Src::Bc(7, Z));
+        c.vu0().adda(0b1000, 0, Src::Bc(8, Y));
+        c.vu0().madd(0b1000, 12, 1, Src::Bc(7, Y));
+        c.sqc2(0, (c.g[V0][0] as u32).wrapping_add(0x30));
+        c.sqc2(10, c.g[V0][0] as u32);
+        c.sqc2(11, (c.g[V0][0] as u32).wrapping_add(0x10));
+        c.sqc2(12, (c.g[V0][0] as u32).wrapping_add(0x20));
+        c.lqc2(4, c.g[A2][0] as u32);
+        c.lqc2(5, (c.g[A2][0] as u32).wrapping_add(0x10));
+        c.lqc2(6, (c.g[A2][0] as u32).wrapping_add(0x20));
+        c.lqc2(7, (c.g[A2][0] as u32).wrapping_add(0x30));
+        c.lqc2(8, c.g[V0][0] as u32);
+        c.lqc2(9, (c.g[V0][0] as u32).wrapping_add(0x10));
+        c.lqc2(10, (c.g[V0][0] as u32).wrapping_add(0x20));
+        c.lqc2(11, (c.g[V0][0] as u32).wrapping_add(0x30));
+        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+        c.vu0().mula(0b1111, 4, Src::Bc(9, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(9, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(9, Z));
+        c.vu0().madd(0b1111, 13, 7, Src::Bc(9, W));
+        c.vu0().mula(0b1111, 4, Src::Bc(10, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(10, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(10, Z));
+        c.vu0().madd(0b1111, 14, 7, Src::Bc(10, W));
+        c.vu0().mula(0b1111, 4, Src::Bc(11, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(11, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(11, Z));
+        c.vu0().madd(0b1111, 15, 7, Src::Bc(11, W));
+        c.sqc2(12, c.g[A2][0] as u32);
+        c.sqc2(13, (c.g[A2][0] as u32).wrapping_add(0x10));
+        c.sqc2(14, (c.g[A2][0] as u32).wrapping_add(0x20));
+        c.sqc2(15, (c.g[A2][0] as u32).wrapping_add(0x30));
+        c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0x20));
+        c.lwc1(2, (c.g[S0][0] as u32).wrapping_add(0x24));
+        c.lwc1(3, (c.g[S0][0] as u32).wrapping_add(0x28));
+        c.neg_s(4, 0);
+        c.neg_s(5, 2);
+        c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x39c));
+        c.neg_s(1, 3);
+        c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x3f0));
+        c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x390));
+        c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x394));
+        c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x398));
+        c.swc1(2, (c.g[SP][0] as u32).wrapping_add(0x3f4));
+        c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x3f8));
+        c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x3a0));
+        c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x3a4));
+        c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x3a8));
+        c.lqc2(4, c.g[A2][0] as u32);
+        c.lqc2(5, (c.g[A2][0] as u32).wrapping_add(0x10));
+        c.lqc2(6, (c.g[A2][0] as u32).wrapping_add(0x20));
+        c.lqc2(7, (c.g[A2][0] as u32).wrapping_add(0x30));
+        c.lqc2(8, (c.g[SP][0] as u32).wrapping_add(0x390));
+        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+        c.sqc2(12, (c.g[A2][0] as u32).wrapping_add(0x30));
+        c.lwc1(2, (c.g[S0][0] as u32).wrapping_add(0x48));
+        c.g[A0][0] = c.g[SP][0];
+        c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0x58));
+        c.g[A1][0] = 0x2;
+        c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0x68));
+        c.swc1(2, (c.g[SP][0] as u32).wrapping_add(0x390));
+        c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x394));
+        c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x398));
+        c.sw((c.g[SP][0] as u32).wrapping_add(0x39c), 0u64);
+        c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x390));
+        c.sq(2, (c.g[S0][0] as u32).wrapping_add(0x80));
+        call_ptr(c, 0x00176da8, 0x0015e288)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x430));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x420));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x410));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x400));
+        c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x440));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x450));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -12716,6 +12885,37 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = (if seed % 2 == 0 { want } else { want + 1 }) as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc427_base;
+
+    /// `GameCamera_SnapToDefaultChaseView`: the chase algorithm is built and
+    /// destroyed on the stack (constructor, angle and view steps faked, the
+    /// view filled with random words; the destructors are the real ones over
+    /// a mostly empty object), the camera matrix is rebuilt through VU0.
+    #[test]
+    fn game_camera_snap_to_default_chase_view_matches() {
+        covered(
+            ee::s01::f_0015e050__generated,
+            game_camera_snap_to_default_chase_view,
+            120,
+            &|c, seed| {
+                let mut r = oc427_base(c, seed, 0x15e050, 5, 0x0015_e050);
+                let this = DATA + 0x1000;
+                for w in 0..0x40 {
+                    c.bus.write32(this + 4 * w, r.f32(10.0));
+                }
+                for w in 0..8 {
+                    c.bus.write32(DATA + 0x2000 + 4 * w, r.f32(10.0));
+                }
+                for w in 0..16 {
+                    c.bus.write32(0x004c_53a0 + 4 * w, r.f32(2.0));
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(DATA + 0x2000);
+                c.g[A2][0] = sx(DATA + 0x2010);
             },
         );
     }

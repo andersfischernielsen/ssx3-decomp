@@ -96,6 +96,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "AIFwdDiffCache_ResetEntries",
     ),
     (0x0032_8c20, spatial_hash_insert, "SpatialHash_Insert"),
+    (
+        0x0032_7da8,
+        cps2_chunk_resolve_parse_header,
+        "cPS2ChunkResolve_ParseHeader",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3195,6 +3200,155 @@ pub fn spatial_hash_insert(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// cPS2ChunkResolve_ParseHeader (bxSphereTree_Load).
+
+/// `MEM_copy(dst, src, n)` (0x3e6574) through the function table.
+pub(crate) fn oc420_mem_copy(
+    c: &mut Cpu,
+    dst: u32,
+    src: u32,
+    n: u32,
+    ret: u32,
+) -> crate::call::Flow {
+    c.g[A0][0] = sx(dst);
+    c.g[A1][0] = sx(src);
+    c.g[A2][0] = n as u64;
+    call_ptr(c, 0x003e_6574, ret)
+}
+
+/// `int cPS2ChunkResolve_ParseHeader(Tree* self, char* buf, int treeId)`
+/// (0x327da8; the reference calls it `bxSphereTree_Load`): reads the sphere
+/// tree header at `buf` into `self->blk` (the block at `self + 0xc0`, whose
+/// address is also kept at `self + 0x98`): copies the counts, the bounds
+/// and the two 36-byte tables, points the node and data arrays behind the
+/// header, caches the centre as a quad (w = 1.0) at `self + 0x80`. Returns
+/// the number of bytes consumed (0 when `buf` is null).
+pub fn cps2_chunk_resolve_parse_header(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[V0][0] = 0;
+        if c.g[S1][0] != 0 {
+            c.cycles += 61;
+            let this = c.g[S0][0] as u32;
+            let buf = c.g[S1][0] as u32;
+            c.g[V0][0] = sx(this.wrapping_add(0xc0));
+            c.g[V1][0] = 1;
+            Addr(this.wrapping_add(0xc0)).sw(c, c.g[A2][0]);
+            c.g[A0][0] = sx(sp(c).wrapping_add(0x10));
+            Addr(this.wrapping_add(0xc4)).sw(c, 0);
+            c.g[A1][0] = c.g[S1][0];
+            Addr(this.wrapping_add(0x98)).sw(c, c.g[V0][0]);
+            c.g[A2][0] = 4;
+            Addr(this.wrapping_add(0xd0)).sw(c, c.g[V1][0]);
+            call_ptr(c, 0x003e_6574, 0x0032_7df0)?;
+            // len0 -> sp+0x10, len1 -> sp+0x14.
+            oc420_mem_copy(
+                c,
+                sp(c).wrapping_add(0x14),
+                buf.wrapping_add(4),
+                4,
+                0x0032_7e00,
+            )?;
+            let mut blk = Addr(this.wrapping_add(0x98)).lw(c) as u32;
+            oc420_mem_copy(c, blk.wrapping_add(8), buf.wrapping_add(8), 4, 0x0032_7e14)?;
+            blk = Addr(this.wrapping_add(0x98)).lw(c) as u32;
+            oc420_mem_copy(
+                c,
+                blk.wrapping_add(0xc),
+                buf.wrapping_add(0xc),
+                4,
+                0x0032_7e28,
+            )?;
+            blk = Addr(this.wrapping_add(0x98)).lw(c) as u32;
+            oc420_mem_copy(
+                c,
+                blk.wrapping_add(0x14),
+                buf.wrapping_add(0x10),
+                0xc,
+                0x0032_7e3c,
+            )?;
+            blk = Addr(this.wrapping_add(0x98)).lw(c) as u32;
+            oc420_mem_copy(
+                c,
+                blk.wrapping_add(0x2c),
+                buf.wrapping_add(0x1c),
+                0xc,
+                0x0032_7e50,
+            )?;
+            blk = Addr(this.wrapping_add(0x98)).lw(c) as u32;
+            oc420_mem_copy(
+                c,
+                blk.wrapping_add(0x38),
+                buf.wrapping_add(0x28),
+                0x24,
+                0x0032_7e64,
+            )?;
+            blk = Addr(this.wrapping_add(0x98)).lw(c) as u32;
+            oc420_mem_copy(
+                c,
+                blk.wrapping_add(0x5c),
+                buf.wrapping_add(0x4c),
+                0x24,
+                0x0032_7e78,
+            )?;
+            c.g[V0][0] = Addr(this.wrapping_add(0x98)).lw(c);
+            c.g[A1][0] = sx(buf.wrapping_add(0x70));
+            c.g[A0][0] = 0xc;
+            Addr((c.g[V0][0] as u32).wrapping_add(0x20)).sw(c, c.g[A1][0]);
+            c.g[V1][0] = Addr(this.wrapping_add(0x98)).lw(c);
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xc)).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+            c.mult(0, A2, V0, A0);
+            c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            Addr((c.g[V1][0] as u32).wrapping_add(0x24)).sw(c, c.g[A1][0]);
+            c.g[A2][0] = Addr(this.wrapping_add(0x98)).lw(c);
+            c.g[V0][0] = Addr(sp(c).wrapping_add(0x14)).lw(c);
+            c.g[A0][0] = Addr(sp(c).wrapping_add(0x10)).lw(c);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = Addr((c.g[A2][0] as u32).wrapping_add(8)).lw(c);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            // Leaf tree (+8 == 0): the data pointer at +0x28 is the node
+            // pointer at +0x24; otherwise null.
+            if c.g[V1][0] == 0 {
+                c.cycles += 2;
+                c.g[V0][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x24)).lw(c);
+                Addr((c.g[A2][0] as u32).wrapping_add(0x28)).sw(c, c.g[V0][0]);
+            } else {
+                c.cycles += 2;
+                Addr((c.g[A2][0] as u32).wrapping_add(0x28)).sw(c, 0);
+            }
+            c.cycles += 13;
+            c.g[V1][0] = Addr(this.wrapping_add(0x98)).lw(c);
+            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 2);
+            let blk = c.g[V1][0] as u32;
+            c.lwc1(0, blk.wrapping_add(0x14));
+            c.swc1(0, sp(c));
+            c.lwc1(1, blk.wrapping_add(0x18));
+            c.swc1(1, sp(c).wrapping_add(4));
+            c.lwc1(0, blk.wrapping_add(0x1c));
+            c.swc1(2, sp(c).wrapping_add(0xc));
+            c.swc1(0, sp(c).wrapping_add(8));
+            c.lq(3, sp(c));
+            c.sq(3, this.wrapping_add(0x80));
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4091,6 +4245,34 @@ pub(crate) mod tests {
                         c.bus.write32(ROOT + 4 + 4 * i, v);
                     }
                 }
+            },
+        );
+    }
+
+    // ------------------------------------------- cPS2ChunkResolve_ParseHeader
+
+    /// A sphere-tree header (random words; node count 0..4, leaf or inner
+    /// flag) copied through the real `MEM_copy`, and a null buffer.
+    #[test]
+    fn cps2_chunk_resolve_parse_header_matches() {
+        check(
+            ee::s10::f_00327da8__generated,
+            cps2_chunk_resolve_parse_header,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x32_7da8, 0);
+                c.pc = 0x0032_7da8;
+                let (this, buf) = (DATA + 0x100, DATA + 0x1000);
+                for i in 0..0x40 {
+                    c.bus.write32(buf + 4 * i, r.next_u32());
+                }
+                c.bus.write32(buf, r.next_u32() % 0x100);
+                c.bus.write32(buf + 4, r.next_u32() % 0x100);
+                c.bus.write32(buf + 8, [0u32, 1, 7][(seed % 3) as usize]);
+                c.bus.write32(buf + 0xc, r.next_u32() % 5);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = if seed % 7 == 0 { 0 } else { buf as u64 };
+                c.g[A2][0] = r.next_u32() as u64;
             },
         );
     }

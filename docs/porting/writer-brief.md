@@ -235,6 +235,21 @@ every difference a parameter.
   falls back to `ee::sNN::f_XXXXXXXX__generated(c)`, which exists in both the
   normal and the unwind form; `__entries` exists only in the normal one.
 - Constants used only by tests: `#[cfg(test)]`, or the game build warns.
+- `f_XXXXXXXX__generated` exists only once the function is in `overrides.txt`
+  (after the orchestrator's `prep` + `regen`); a staging module cannot name
+  it. Until then name `f_XXXXXXXX` / `__entries` in the normal form, and tell
+  the orchestrator which resume fallback to switch at install: calling the
+  function's own wrapper from its resume path recurses forever.
+- A "runaway" in the function's *own* loop (pc inside the function) is usually
+  a port bug: a converted `c.pc = t; return;` epilogue without its `return`
+  falls out of the block and wraps around the `loop`.
+- Test helpers made by a macro or helper fn in your module (`xx_install`,
+  hooks, layout structs with private fields) are used by tests that the reorg
+  moves to other unit files: make them `pub(crate)`, fields included.
+- A big driver whose callees are mostly unported cannot be faked per slot: a
+  child-process test with a private function table works (`oc421`'s
+  `GameModule_Load`); if even that fails, drop the entry and test and keep the
+  port with a comment.
 
 ## Report
 

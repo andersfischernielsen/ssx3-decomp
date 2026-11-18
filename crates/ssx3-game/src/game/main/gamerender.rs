@@ -14,8 +14,6 @@ pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::lw_r;
 pub(crate) use crate::game::main::gamemode::sp_2 as sp;
 use crate::guest::Addr;
-#[cfg(test)]
-use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -33,6 +31,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0022_e8b8,
         game_view_man_prefetch_views,
         "GameViewMan_PrefetchViews",
+    ),
+    (
+        0x0022_e550,
+        game_view_man_update_split_screen,
+        "GameViewMan_UpdateSplitScreen",
     ),
 ];
 
@@ -216,10 +219,199 @@ pub fn game_view_man_prefetch_views(c: &mut Cpu) {
     })
 }
 
+/// `void GameViewMan_UpdateSplitScreen(GameViewMan *views)` (0x22e550): when
+/// the game's view mode (`AI + 0x214`, 0..9) changes (and the game is not in
+/// the 1..9 sized-session case read from `AI + 0x28`), stores it at `+0xc` and
+/// lays out the views: the screen width and height come from the display
+/// object (`gp - 0x854`, +0x10d8, methods +0x50/+0x54 and +0x58/+0x5c; the
+/// unsigned int results are converted to float). Modes 0..2 and 6.. use one
+/// full-screen view (far clip 30000), modes 3..5 two side-by-side views of half
+/// the width (far clip 20000). Then the world's per-view slots (`+0x250`,
+/// `+0x2a0` stride 0x50) of the unused views are cleared.
+pub fn game_view_man_update_split_screen(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.swc1(20, frame.at(c, 0x20));
+        c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x214));
+        'done: {
+            if c.g[V1][0] == c.g[A0][0] {
+                frame.restore(c, S0, 0x10);
+                break 'done;
+            }
+            c.cycles += 4;
+            c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+            c.g[V0][0] = c.lw(c.g[V0][0] as u32);
+            c.g[V1][0] = 0;
+            if c.g[V0][0] != 0 {
+                c.cycles += 1;
+                c.g[V1][0] = ((c.g[V0][0] as i64) < 10) as u64;
+            }
+            c.cycles += 2;
+            if c.g[V1][0] != 0 {
+                frame.restore(c, S0, 0x10);
+                break 'done;
+            }
+            c.cycles += 4;
+            c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+            c.g[V0][0] = 1;
+            let first_layout = c.g[V1][0] == c.g[V0][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[A0][0]);
+            if !first_layout {
+                // Screen width -> f20 (unsigned int to float).
+                c.cycles += 8;
+                c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+                c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x10d8));
+                c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x50));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x54));
+                let method = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, method, 0x0022_e5c0)?;
+                let high_bit = (c.g[V0][0] as i64) < 0;
+                c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+                if high_bit {
+                    c.cycles += 7;
+                    c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
+                    c.g[V0][0] &= 1;
+                    c.g[V0][0] |= c.g[V1][0];
+                    c.mtc1(2, 20);
+                    c.cvt_s_w(20, 20);
+                    c.add_s(20, 20, 20);
+                } else {
+                    c.cycles += 4;
+                    c.mtc1(2, 20);
+                    c.cvt_s_w(20, 20);
+                }
+                c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x10d8));
+                // Screen height -> f2.
+                c.cycles += 6;
+                c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
+                let method = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, method, 0x0022_e604)?;
+                let high_bit = (c.g[V0][0] as i64) < 0;
+                c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
+                if high_bit {
+                    c.cycles += 6;
+                    c.g[V0][0] &= 1;
+                    c.g[V0][0] |= c.g[V1][0];
+                    c.mtc1(2, 2);
+                    c.cvt_s_w(2, 2);
+                    c.add_s(2, 2, 2);
+                } else {
+                    c.cycles += 4;
+                    c.mtc1(2, 2);
+                    c.cvt_s_w(2, 2);
+                }
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                // Lay out the views for the new mode (v1).
+                c.cycles += 3;
+                let below_6 = ((c.g[V1][0] as i64) < 6) as u64;
+                c.g[V0][0] = ((c.g[V1][0] as i64) < 3) as u64;
+                if below_6 != 0 {
+                    c.cycles += 2;
+                    let below_3 = c.g[V0][0] != 0;
+                    c.g[V0][0] = 1;
+                    if !below_3 {
+                        // Modes 3..5: two views side by side.
+                        c.cycles += 20;
+                        c.g[AT][0] = 0x3f00_0000; // 0.5
+                        c.mtc1(1, 0);
+                        c.g[V0][0] = 2;
+                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(4));
+                        c.mul_s(0, 20, 0);
+                        c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x51c8));
+                        let this = c.g[S0][0] as u32;
+                        c.sw(this.wrapping_add(0x10), c.g[V0][0]);
+                        c.swc1(2, this.wrapping_add(0x34));
+                        c.swc1(0, this.wrapping_add(0x30));
+                        c.sw(this.wrapping_add(0x14), 0);
+                        c.sw(this.wrapping_add(0x18), 0);
+                        c.sw(this.wrapping_add(0x1c), 0);
+                        c.swc1(0, this.wrapping_add(0x20));
+                        c.swc1(2, this.wrapping_add(0x24));
+                        c.swc1(0, this.wrapping_add(0x28));
+                        c.sw(this.wrapping_add(0x2c), 0);
+                        c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x14));
+                        c.g[V0][0] = c.lw(this.wrapping_add(8));
+                        c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x14));
+                    } else {
+                        oc423_split_single_view(c);
+                    }
+                } else {
+                    c.cycles += 1;
+                    c.g[V0][0] = 1;
+                    oc423_split_single_view(c);
+                }
+                // Clear the unused views' world slots.
+                c.cycles += 4;
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                c.g[V0][0] = 1;
+                let two_views = c.g[V1][0] != c.g[V0][0];
+                c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                if two_views {
+                    c.cycles += 8;
+                    c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x84));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x10));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                    c.sw((c.g[A0][0] as u32).wrapping_add(0x250), 0);
+                    c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x84));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x10));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                    c.sw((c.g[A0][0] as u32).wrapping_add(0x2a0), 0);
+                } else {
+                    c.cycles += 11;
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(8));
+                    c.g[A2][0] = 0x50;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                    c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xb0));
+                    c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+                    c.mult(0, A0, A0, A2);
+                    c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x10));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x250), 0);
+                }
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 4;
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The one-view layout of `GameViewMan_UpdateSplitScreen` (v0 = 1 on entry):
+/// view count 1, the full width and height, far clip `gp - 0x51c4`.
+pub(crate) fn oc423_split_single_view(c: &mut Cpu) {
+    c.cycles += 9;
+    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(4));
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x51c4));
+    let this = c.g[S0][0] as u32;
+    c.sw(this.wrapping_add(0x10), c.g[V0][0]);
+    c.swc1(20, this.wrapping_add(0x20));
+    c.swc1(2, this.wrapping_add(0x24));
+    c.sw(this.wrapping_add(0x14), 0);
+    c.sw(this.wrapping_add(0x18), 0);
+    c.sw(this.wrapping_add(0x1c), 0);
+    c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x14));
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use ssx3_ee as ee;
 
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
@@ -345,6 +537,82 @@ pub(crate) mod tests {
                 }
                 c.bus.write32(man + 0x10, count);
                 c.g[A0][0] = sx(man);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w_5 as w_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_CTRL;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_MAGIC;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_RET;
+
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::hook_serialize_read_u32;
+
+    /// New view modes 0..8 (one view, two views, one view again), the width and
+    /// height methods answered by the faked `Serialize_ReadU32` (so the
+    /// unsigned-to-float high-bit branch is reachable through its scripted
+    /// negative results).
+    #[test]
+    fn game_view_man_update_split_screen_matches() {
+        hook_serialize_read_u32();
+        fakes::covered(
+            ee::s05::f_0022e550__generated,
+            game_view_man_update_split_screen,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0022_e550, 2);
+                w_2(c, OC423_CTRL, OC423_MAGIC);
+                let sizes = [0x500u32, 0x2d0, 0xffff_ffff, 0x8000_0001, 0x280];
+                w_2(c, OC423_RET, sizes[(seed / 5 % 5) as usize]);
+                w_2(c, OC423_RET + 4, sizes[(seed / 3 % 5) as usize]);
+                let views = DATA;
+                let display = DATA + 0x2000;
+                let display_vt = DATA + 0x4000;
+                let world = DATA + 0x5000;
+                let game = DATA + 0x5100;
+                let slots_ptr = DATA + 0x5300;
+                let table = DATA + 0x6000;
+                let cam1 = DATA + 0x7000;
+                w_2(c, GAME_GP - 0x848, world);
+                w_2(c, GAME_GP - 0x854, display);
+                w_2(c, GAME_GP - 0x51c8, 20000.0f32.to_bits());
+                w_2(c, GAME_GP - 0x51c4, 30000.0f32.to_bits());
+                w_2(c, world + 0x84, game);
+                let mode = seed % 9;
+                w_2(c, game + 0x214, mode);
+                w_2(c, game + 0x28, DATA + 0x5200);
+                w_2(
+                    c,
+                    DATA + 0x5200,
+                    [0, 0, 20, 30, 5, 10, 0, 1][(seed / 7 % 8) as usize],
+                );
+                w_2(c, game + 0x10, slots_ptr);
+                w_2(c, slots_ptr, table);
+                for i in 0..0x30u32 {
+                    w_2(c, table + 0x250 + 4 * i, r.next_u32() | 1);
+                }
+                w_2(c, display + 0x10d8, display_vt);
+                c.bus.write16(display_vt + 0x50, 0x10);
+                w_2(c, display_vt + 0x54, 0x002d_2510);
+                c.bus.write16(display_vt + 0x58, 0x20);
+                w_2(c, display_vt + 0x5c, 0x002d_2510);
+                w_2(c, views, if seed % 4 == 0 { 1 } else { 0 });
+                w_2(c, views + 4, DATA + 0x7800);
+                w_2(c, views + 8, cam1);
+                w_2(c, cam1 + 0xb0, seed / 2 % 2);
+                w_2(
+                    c,
+                    views + 0xc,
+                    if seed % 5 == 0 {
+                        mode
+                    } else {
+                        r.next_u32() % 9
+                    },
+                );
+                w_2(c, views + 0x10, r.next_u32());
+                c.g[A0][0] = views as u64;
             },
         );
     }

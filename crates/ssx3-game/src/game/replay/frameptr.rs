@@ -124,6 +124,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0026_fb88, replay_handle_input, "Replay_HandleInput"),
     (0x0026_f4a8, replay_update, "Replay_Update"),
+    (0x0026_f228, replay_reset, "Replay_Reset"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1916,6 +1917,181 @@ pub(crate) fn replay_playback(c: &mut Cpu, this: u32) -> Result<ReplayNext, crat
     Ok(ReplayNext::Command)
 }
 
+pub(crate) const OC423_REPLAY_EMPTY_RESET_HOOK: Callee = Callee {
+    addr: 0x0026_f498,
+    f: ee::s07::Replay_EmptyResetHook,
+};
+
+pub(crate) const OC423_REPLAY_SET_STATE: Callee = Callee {
+    addr: 0x0026_f4a0,
+    f: ee::s07::Replay_SetState,
+};
+
+pub(crate) const OC423_REPLAY_CACHE_RESET: Callee = Callee {
+    addr: 0x0026_d168,
+    f: ee::s07::ReplayCache_Reset,
+};
+
+pub(crate) const OC423_SNAPSHOT_LIST_CLEAR: Callee = Callee {
+    addr: 0x0026_e5c0,
+    f: ee::s07::SnapshotList_Clear,
+};
+
+pub(crate) const OC423_SNAPSHOT_LIST_PUSH_BACK: Callee = Callee {
+    addr: 0x0026_e5d0,
+    f: ee::s07::SnapshotList_PushBack,
+};
+
+/// `void Replay_Reset(Replay *replay)` (0x26f228): resets the replay
+/// recorder/player unless it is in state 14 or 15 (`SaveState` 15 mid-reset):
+/// sets state 15 and the replay state to 10, clears all playback and write
+/// bookkeeping fields, releases and re-initialises the two replay caches (their
+/// highlight slots at `+0x494`, stride 0xb4, each with 0xac bytes of data at
+/// `+0x498`), empties the frame list (`+0x3b0`) and the free list (`+0x3bc`),
+/// refills the free list with the `MaxFrames` (+8) frames at `+0x2c` (stride
+/// 0x38) and sets the highlight/chapter limits (3 and 3 when the AI object's
+/// field +0x7c is 1, else 1 and 0).
+pub fn replay_reset(c: &mut Cpu) {
+    /// Fields cleared to zero, in the compiler's store order.
+    const CLEARED: [u32; 32] = [
+        0x28, 0x608, 0x484, 0x3c8, 0x3cc, 0x488, 0x3d4, 0x3ac, 0x3d0, 0x1c, 0x20, 0x618, 0x61c,
+        0x620, 0x624, 0x63c, 0x650, 0x640, 0x644, 0x648, 0x638, 0x64c, 0x654, 0x658, 0x65c, 0x660,
+        0x664, 0x66c, 0x674, 0x678, 0x67c, 0x668,
+    ];
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S0, 0x80);
+        frame.save(c, S1, 0x70);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x60);
+        frame.save(c, S3, 0x50);
+        frame.save(c, S4, 0x40);
+        frame.save(c, S5, 0x30);
+        frame.save(c, S6, 0x20);
+        frame.save(c, S7, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xe));
+        c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+        c.g[V0][0] ^= 1;
+        if c.g[V0][0] == 0 {
+            // States 14 and 15: nothing to reset.
+            frame.restore(c, S0, 0x80);
+        } else {
+            c.cycles += 51;
+            c.g[S2][0] = 0;
+            OC423_REPLAY_EMPTY_RESET_HOOK.call(c, 0x0026_f274)?;
+            c.g[S6][0] = sx((c.g[S0][0] as u32).wrapping_add(0x3b0));
+            c.g[V0][0] = 0xf;
+            c.g[A0][0] = c.g[S0][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(4), c.g[V0][0]);
+            c.g[A1][0] = 0xa;
+            OC423_REPLAY_SET_STATE.call(c, 0x0026_f28c)?;
+            c.g[S5][0] = sx((c.g[S0][0] as u32).wrapping_add(0x3bc));
+            c.g[S7][0] = u64::MAX;
+            c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x494));
+            c.g[S4][0] = sx((c.g[S0][0] as u32).wrapping_add(0x498));
+            c.g[S3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x48c));
+            let this = c.g[S0][0] as u32;
+            for off in [0x60c, 0x610, 0x614, 0x628, 0x62c] {
+                c.sw(this.wrapping_add(off), 0);
+            }
+            for off in CLEARED {
+                c.sw(this.wrapping_add(off), 0);
+            }
+            // The two highlight slots: release the cache, clear the slot.
+            loop {
+                c.cycles += 3;
+                c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+                if c.g[A0][0] != 0 {
+                    c.cycles += 3;
+                    OC423_REPLAY_CACHE_RESET.call(c, 0x0026_f34c)?;
+                }
+                c.sw((c.g[S1][0] as u32).wrapping_add(0xb0), 0);
+                c.cycles += 12;
+                c.g[A0][0] = c.g[S4][0];
+                c.sw(c.g[S1][0] as u32, c.g[S7][0]);
+                c.g[A1][0] = 0;
+                c.g[A2][0] = 0xac;
+                c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(0xb4));
+                call_ptr(c, 0x003e_6448, 0x0026_f368)?; // EA_MemSet
+                c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(4));
+                c.sw(c.g[S1][0] as u32, c.g[S2][0]);
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                c.g[V0][0] = ((c.g[S2][0] as i64) < 2) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0xb4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0026_f338);
+                }
+            }
+            c.cycles += 8;
+            c.g[A0][0] = c.g[S6][0];
+            c.g[S2][0] = 0;
+            OC423_SNAPSHOT_LIST_CLEAR.call(c, 0x0026_f38c)?;
+            c.g[A0][0] = c.g[S5][0];
+            OC423_SNAPSHOT_LIST_CLEAR.call(c, 0x0026_f394)?;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(8));
+            c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2c));
+            if (c.g[V0][0] as i64) > 0 {
+                // Refill the free list with the frames.
+                loop {
+                    c.cycles += 8;
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[A0][0] = c.g[S5][0];
+                    OC423_SNAPSHOT_LIST_PUSH_BACK.call(c, 0x0026_f3ac)?;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(8));
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x38));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0026_f3a0);
+                    }
+                }
+            }
+            c.cycles += 9;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x630), 0);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x634), 0);
+            c.g[A1][0] = 1;
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+            c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x7c));
+            c.g[A2][0] = 3;
+            if c.g[V0][0] != c.g[A1][0] {
+                c.cycles += 2;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[A1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0);
+            } else {
+                c.cycles += 3;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[A2][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[A2][0]);
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x80);
+        }
+        c.cycles += 10;
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore(c, S6, 0x20);
+        frame.restore(c, S7, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2611,6 +2787,108 @@ pub(crate) mod tests {
                 c.bus.write32(this + REPLAY_FRAME, frame);
                 c.g[A0][0] = sx(this);
                 c.pc = 0x0026_f4a8;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w_5 as w_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_CTRL;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_MAGIC;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc423_fake;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc423_fake_call;
+
+    oc423_fake!(
+        oc423_fake_replay_set_state,
+        OC423_PREV_REPLAY_SET_STATE,
+        0x0026_f4a0,
+        ee::s07::f_0026f4a0__generated
+    );
+
+    oc423_fake!(
+        oc423_fake_replay_cache_reset,
+        OC423_PREV_REPLAY_CACHE_RESET,
+        0x0026_d168,
+        ee::s07::f_0026d168__generated
+    );
+
+    oc423_fake!(
+        oc423_fake_snapshot_clear,
+        OC423_PREV_SNAPSHOT_CLEAR,
+        0x0026_e5c0,
+        ee::s07::f_0026e5c0__generated
+    );
+
+    oc423_fake!(
+        oc423_fake_snapshot_push_back,
+        OC423_PREV_SNAPSHOT_PUSH_BACK,
+        0x0026_e5d0,
+        ee::s07::f_0026e5d0__generated
+    );
+
+    /// Resettable and non-resettable states (13/14/15/16), 0..3 frames, the
+    /// two cache slots set or not, both AI player-count variants.
+    #[test]
+    fn replay_reset_matches() {
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026F4A0),
+            oc423_fake_replay_set_state,
+            &OC423_PREV_REPLAY_SET_STATE,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026D168),
+            oc423_fake_replay_cache_reset,
+            &OC423_PREV_REPLAY_CACHE_RESET,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026E5C0),
+            oc423_fake_snapshot_clear,
+            &OC423_PREV_SNAPSHOT_CLEAR,
+        );
+        hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026E5D0),
+            oc423_fake_snapshot_push_back,
+            &OC423_PREV_SNAPSHOT_PUSH_BACK,
+        );
+        fakes::covered(
+            ee::s07::f_0026f228__generated,
+            replay_reset,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0026_f228, 8);
+                w_2(c, OC423_CTRL, OC423_MAGIC);
+                let replay = DATA;
+                // Dirty every field the reset clears.
+                for i in 0..0x700u32 {
+                    w_2(c, replay + 4 * i, r.next_u32() | 1);
+                }
+                w_2(
+                    c,
+                    replay,
+                    [13, 14, 15, 16, 0, 2, 13, 13][(seed % 8) as usize],
+                );
+                w_2(c, replay + 8, seed / 8 % 4);
+                for slot in 0..2u32 {
+                    let cache = if (seed / 32 + slot) % 2 == 0 {
+                        0
+                    } else {
+                        DATA + 0x3000
+                    };
+                    w_2(c, replay + 0x48c + 4 * slot, cache);
+                }
+                let world = DATA + 0x4000;
+                let manager = DATA + 0x4100;
+                let ai = DATA + 0x4200;
+                w_2(c, GAME_GP - 0x848, world);
+                w_2(c, world + 0x84, manager);
+                w_2(c, manager + 0xc, ai);
+                w_2(c, ai + 0x7c, if seed % 3 == 0 { 1 } else { 2 });
+                c.g[A0][0] = replay as u64;
             },
         );
     }

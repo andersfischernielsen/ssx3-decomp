@@ -29,6 +29,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_test_char_profile_flag,
         "BE_TestCharProfileFlag",
     ),
+    (
+        0x0015_2398,
+        be_get_char_profile_event_record,
+        "BE_GetCharProfileEventRecord",
+    ),
 ];
 
 /// Direct-call targets (dossier callees, found by address in `generated/ee`).
@@ -387,6 +392,45 @@ pub fn be_test_char_profile_flag(c: &mut Cpu) {
     frame.close(c);
 }
 
+pub(crate) const OC423_BE_GET_EVENT_RECORD_INDEX: Callee = Callee {
+    addr: 0x0014_ab68,
+    f: ee::s01::BE_GetEventRecordIndex,
+};
+
+/// `EventRecord *BE_GetCharProfileEventRecord(CharProfile *profile, int a, int
+/// b)` (0x152398): the profile's record for the event `BE_GetEventRecordIndex(a,
+/// b)` returns: `profile + 0xad0 + index * 8`, or null for index 0x1a (not
+/// found).
+pub fn be_get_char_profile_event_record(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        c.g[A1][0] = c.g[A2][0];
+        OC423_BE_GET_EVENT_RECORD_INDEX.call(c, 0x0015_23b4)?;
+        c.g[V1][0] = c.g[V0][0];
+        c.g[V0][0] = 0x1a;
+        let not_found = c.g[V1][0] == c.g[V0][0];
+        c.g[V0][0] = sx((c.g[V1][0] as u32) << 3);
+        if not_found {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xad0));
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -474,6 +518,51 @@ pub(crate) mod tests {
                     _ => r.next_u32(),
                 };
                 c.bus.write32(DATA + 0xacc, flags);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+    use crate::difftest::fakes::machine;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc423_fake;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc423_fake_call;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w_5 as w;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_CTRL;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_MAGIC;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC423_RET;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    oc423_fake!(
+        oc423_fake_be_event_record_index,
+        OC423_PREV_BE_EVENT_RECORD_INDEX,
+        0x0014_ab68,
+        ee::s01::f_0014ab68__generated
+    );
+
+    #[test]
+    fn be_get_char_profile_event_record_matches() {
+        hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014AB68),
+            oc423_fake_be_event_record_index,
+            &OC423_PREV_BE_EVENT_RECORD_INDEX,
+        );
+        fakes::covered(
+            ee::s01::f_00152398__generated,
+            be_get_char_profile_event_record,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0015_2398, 1);
+                w(c, OC423_CTRL, OC423_MAGIC);
+                // Index 0x1a is "not found"; the rest are record slots.
+                w(c, OC423_RET, if seed % 4 == 0 { 0x1a } else { seed % 26 });
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = r.next_u32() as u64;
             },
         );
     }

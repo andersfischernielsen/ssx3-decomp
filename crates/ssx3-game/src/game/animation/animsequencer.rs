@@ -90,6 +90,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "AnimSeqList_RemoveEventTrigger",
     ),
     (0x0031_4668, anim_seq_list_clear, "AnimSeqList_Clear"),
+    (0x0031_4a18, mdf_file_set_data, "MdfFile_SetData"),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -1336,6 +1337,28 @@ pub fn anim_seq_list_clear(c: &mut Cpu) {
     })
 }
 
+pub(crate) const OC423_MDF_PARSE_HEADER: Callee = Callee {
+    addr: 0x0031_4aa0,
+    f: ee::s10::MdfFile_ParseHeader,
+};
+
+/// `void MdfFile_SetData(MdfFile *file, void *data)` (0x314a18): stores the
+/// data pointer at `file + 0` and parses its header (`MdfFile_ParseHeader`).
+pub fn mdf_file_set_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        c.g[V1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.g[A1][0];
+        c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+        OC423_MDF_PARSE_HEADER.call(c, 0x0031_4a30)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2177,5 +2200,27 @@ pub(crate) mod tests {
             c.next_event = c.cycles + 4 + (r.next_u32() % 24) as u64;
             mode
         });
+    }
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w_5 as w_2;
+
+    #[test]
+    fn mdf_file_set_data_matches() {
+        check(
+            ee::s10::f_00314a18__generated,
+            mdf_file_set_data,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_4a18, 0);
+                let file = DATA;
+                let data = DATA + 0x100;
+                for i in 0..8u32 {
+                    w_2(c, data + 4 * i, r.next_u32());
+                }
+                c.bus.write16(data + 6, (seed % 0x40) as u16);
+                c.g[A0][0] = file as u64;
+                c.g[A1][0] = data as u64;
+            },
+        );
     }
 }

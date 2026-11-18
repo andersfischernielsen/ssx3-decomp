@@ -391,6 +391,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         in_seq_instance_advance,
         "InSeq_InstanceAdvance",
     ),
+    (0x0027_2488, in_seq_heap_new, "InSeq_HeapNew"),
+    (0x0027_24e8, in_seq_heap_delete, "InSeq_HeapDelete"),
+    (0x0027_3530, in_seq_ramp_track_start, "InSeq_RampTrackStart"),
+    (0x0027_3aa8, in_seq_channel_start, "InSeq_ChannelStart"),
+    (0x0027_4918, in_seq_instance_stop, "InSeq_InstanceStop"),
 ];
 
 /// `void WorldStateStream_Reset(WorldStateStream *stream)` (0x26d628):
@@ -6938,6 +6943,595 @@ pub fn in_seq_channel_stop(c: &mut Cpu) {
     })
 }
 
+/// `InSeq_HeapAlloc` (0x272308).
+pub(crate) const OC420_INSEQ_HEAP_ALLOC: Callee = Callee {
+    addr: 0x0027_2308,
+    f: ee::s07::f_00272308,
+};
+
+/// `void* InSeq_HeapNew(uint base, Heap* heap)` (0x272488): allocates
+/// `base + gp[0x398]` bytes from `heap` (`InSeq_HeapAlloc(heap_arg, size)`
+/// with the arguments in that order), stores `heap` at the block's first word, and
+/// returns it advanced by `gp[0x398]`.
+pub fn in_seq_heap_new(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x398)).lw(c);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.g[S0][0];
+        OC420_INSEQ_HEAP_ALLOC.call(c, 0x0027_24a8)?;
+        Addr(c.g[V0][0] as u32).sw(c, c.g[S0][0]);
+        frame.restore(c, S0, 0x10);
+        c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x398)).lw(c);
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// InSeq_ChannelStart.
+
+/// Fields of the in-sequence player instance used by `InSeq_ChannelStart`.
+pub(crate) const OC420_INST_OWNER: u32 = 0x08;
+
+pub(crate) const OC420_INST_HDR: u32 = 0x1c;
+
+pub(crate) const OC420_INST_CHANNELS: u32 = 0x24;
+
+pub(crate) const OC420_INST_READY: u32 = 0x28;
+
+pub(crate) const OC420_INST_PLAYER: u32 = 0x2c;
+
+pub(crate) const OC420_INST_DONE: u32 = 0x30;
+
+pub(crate) const OC420_INST_FLAGS: u32 = 0x34;
+
+pub(crate) const OC420_INST_STARTED: u32 = 0x38;
+
+pub(crate) const OC420_INSEQ_HEAP_NEW: Callee = Callee {
+    addr: 0x0027_2488,
+    f: ee::s07::f_00272488,
+};
+
+/// `bool InSeq_ChannelStart(Instance* self)` (0x273aa8): builds the
+/// instance's channel objects (type 0 curve, 1 ramp, 2 span, 3 event track,
+/// from the header's per-channel records, each allocated with
+/// `InSeq_HeapNew`) and starts each through its virtual at vtable+4
+/// (`done`/`flags` accumulate), then marks the instance ready, asks the
+/// owner's listener for a player and starts it. Returns `self->ready`.
+pub fn in_seq_channel_start(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0xa0);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S0, 0x90);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save_ra(c, 0x10);
+        let this = c.g[S1][0] as u32;
+        Addr(this + OC420_INST_DONE).sw(c, 0);
+        c.g[A0][0] = Addr(this + OC420_INST_HDR).lw(c);
+        Addr(this + OC420_INST_FLAGS).sw(c, 0);
+        // Header byte +2: channel count.
+        c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(2)).lbu(c);
+        c.g[A1][0] = c.g[V0][0];
+        'channels: {
+            if c.g[V0][0] == 0 {
+                break 'channels;
+            }
+            c.cycles += 13;
+            c.g[V1][0] = Addr(this + OC420_INST_OWNER).lw(c);
+            c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+            c.g[S2][0] = 0;
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(8)).lw(c);
+            c.g[S5][0] = sx((c.g[V0][0] as u32).wrapping_add(8));
+            c.g[A0][0] = c.g[S5][0];
+            OC420_INSEQ_HEAP_ALLOC.call(c, 0x0027_3b08)?;
+            Addr(this + OC420_INST_CHANNELS).sw(c, c.g[V0][0]);
+            c.g[V0][0] = Addr(this + OC420_INST_HDR).lw(c);
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).lhu(c);
+            c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(2)).lbu(c);
+            c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            if c.g[A0][0] == 0 {
+                break 'channels;
+            }
+            c.cycles += 2;
+            c.g[S7][0] = 0;
+            loop {
+                // Channel record: type (u16) and size (u16) at s3.
+                c.cycles += 5;
+                c.g[S6][0] = c.g[S3][0];
+                c.g[V0][0] = 1;
+                c.g[V1][0] = Addr(c.g[S6][0] as u32).lhu(c);
+                c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(4));
+                let kind = c.g[V1][0];
+                // (ctor, HeapNew size, HeapNew return, ctor return) per type.
+                let mut ctor: Option<(Callee, u64, u32, u32)> = None;
+                let mut tail = true;
+                if kind == 1 {
+                    c.cycles += 10;
+                    c.g[V0][0] = Addr(this + OC420_INST_CHANNELS).lw(c);
+                    ctor = Some((
+                        Callee {
+                            addr: 0x0027_34a8,
+                            f: ee::s07::f_002734a8,
+                        },
+                        0x28,
+                        0x0027_3bac,
+                        0x0027_3bb4,
+                    ));
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < 2) as u64;
+                    c.g[V0][0] = 2;
+                    if kind < 2 {
+                        c.cycles += 2;
+                        c.g[V0][0] = Addr(this + OC420_INST_CHANNELS).lw(c);
+                        if kind == 0 {
+                            c.cycles += 9;
+                            ctor = Some((
+                                Callee {
+                                    addr: 0x0027_25b8,
+                                    f: ee::s07::f_002725b8,
+                                },
+                                0x28,
+                                0x0027_3b84,
+                                0x0027_3b8c,
+                            ));
+                        } else {
+                            c.cycles += 2;
+                            tail = false;
+                        }
+                    } else {
+                        c.cycles += 2;
+                        c.g[V0][0] = 3;
+                        if kind == 2 {
+                            c.cycles += 10;
+                            c.g[V0][0] = Addr(this + OC420_INST_CHANNELS).lw(c);
+                            ctor = Some((
+                                Callee {
+                                    addr: 0x0027_2d68,
+                                    f: ee::s07::f_00272d68,
+                                },
+                                0x2c,
+                                0x0027_3bd4,
+                                0x0027_3bdc,
+                            ));
+                        } else {
+                            c.cycles += 2;
+                            c.g[V0][0] = Addr(this + OC420_INST_CHANNELS).lw(c);
+                            if kind == 3 {
+                                c.cycles += 8;
+                                ctor = Some((
+                                    Callee {
+                                        addr: 0x0027_3180,
+                                        f: ee::s07::f_00273180,
+                                    },
+                                    0x28,
+                                    0x0027_3bf8,
+                                    0x0027_3c00,
+                                ));
+                            } else {
+                                c.cycles += 2;
+                                tail = false;
+                            }
+                        }
+                    }
+                }
+                if let Some((ctor, size, heap_ret, ctor_ret)) = ctor {
+                    c.g[S0][0] = sx((c.g[S2][0] as u32) << 2);
+                    c.g[A0][0] = size;
+                    c.g[A1][0] = c.g[S5][0];
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    OC420_INSEQ_HEAP_NEW.call(c, heap_ret)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    ctor.call(c, ctor_ret)?;
+                    Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
+                }
+                if tail {
+                    c.cycles += 2;
+                    c.g[V0][0] = Addr(this + OC420_INST_CHANNELS).lw(c);
+                }
+                // Start the channel object: vtable slot 1.
+                c.g[S0][0] = sx(this + OC420_INST_DONE);
+                c.cycles += 14;
+                Addr(sp(c)).sw(c, 0);
+                c.g[S4][0] = 0;
+                c.g[V0][0] = sx((c.g[S7][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A1][0] = c.g[S3][0];
+                c.g[T0][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.g[A2][0] = c.g[S1][0];
+                c.g[A3][0] = c.g[SP][0];
+                c.g[V1][0] = Addr(c.g[T0][0] as u32).off(4).lw(c);
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).off(8).lh(c);
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0xc).lw(c);
+                let target = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0027_3c3c)?;
+                let started = if c.g[V0][0] != 0 {
+                    c.g[S4][0] = 1;
+                    c.cycles += 1;
+                    1
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(this + OC420_INST_DONE).lw(c);
+                    if c.g[V0][0] == 0 {
+                        0
+                    } else {
+                        // This `+1` and the shared one of the started path.
+                        c.cycles += 2;
+                        c.g[S4][0] = 1;
+                        1
+                    }
+                };
+                Addr(c.g[S0][0] as u32).sw(c, started);
+                c.cycles += 12;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                c.g[S7][0] = sx((c.g[S7][0] as u32).wrapping_add(4));
+                c.g[V1][0] = Addr(sp(c)).lw(c);
+                c.g[V0][0] = Addr(this + OC420_INST_FLAGS).lw(c);
+                c.g[A0][0] = Addr(this + OC420_INST_HDR).lw(c);
+                c.g[V0][0] |= c.g[V1][0];
+                Addr(this + OC420_INST_FLAGS).sw(c, c.g[V0][0]);
+                c.g[V1][0] = Addr(c.g[S6][0] as u32).off(2).lhu(c);
+                c.g[V0][0] = Addr(c.g[A0][0] as u32).off(2).lbu(c);
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                if c.g[V0][0] == 0 {
+                    break 'channels;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_3b28);
+                }
+            }
+        }
+        // Mark ready, ask the owner's listener for a player and start it.
+        c.cycles += 7;
+        c.g[S0][0] = 1;
+        c.g[A0][0] = Addr(this + OC420_INST_OWNER).lw(c);
+        Addr(this + OC420_INST_READY).sw(c, c.g[S0][0]);
+        Callee {
+            addr: 0x0027_4d70,
+            f: ee::s07::f_00274d70,
+        }
+        .call(c, 0x0027_3c98)?;
+        c.g[T0][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S1][0];
+        if c.g[T0][0] != 0 {
+            c.cycles += 8;
+            c.g[V1][0] = Addr(c.g[T0][0] as u32).lw(c);
+            c.g[A3][0] = Addr(this + OC420_INST_HDR).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x30).lh(c);
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x34).lw(c);
+            c.g[A2][0] = Addr(c.g[A3][0] as u32).off(3).lbu(c);
+            let target = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0027_3cc0)?;
+            Addr(this + OC420_INST_PLAYER).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 3;
+        c.g[T0][0] = Addr(this + OC420_INST_PLAYER).lw(c);
+        c.g[A1][0] = c.g[S1][0];
+        if c.g[T0][0] != 0 {
+            c.cycles += 7;
+            c.g[V0][0] = Addr(c.g[T0][0] as u32).lw(c);
+            c.g[V1][0] = Addr(this + OC420_INST_HDR).lw(c);
+            c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+            c.g[A3][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+            c.g[A2][0] = Addr(c.g[V1][0] as u32).off(3).lbu(c);
+            let target = c.g[A3][0] as u32;
+            c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0027_3cec)?;
+        }
+        c.cycles += 13;
+        Addr(this + OC420_INST_STARTED).sw(c, c.g[S0][0]);
+        c.g[V0][0] = Addr(this + OC420_INST_READY).lw(c);
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const OC423_INSEQ_HEAP_ALLOC: Callee = Callee {
+    addr: 0x0027_2308,
+    f: ee::s07::InSeq_HeapAlloc,
+};
+
+pub(crate) const OC423_RAMP_TRACK_ACTIVATE_KEY: Callee = Callee {
+    addr: 0x0027_3860,
+    f: ee::s07::InSeq_RampTrackActivateKey,
+};
+
+pub(crate) const OC423_RAMP_TRACK_NEXT_KEY: Callee = Callee {
+    addr: 0x0027_38f8,
+    f: ee::s07::InSeq_RampTrackNextKey,
+};
+
+/// `bool InSeq_RampTrackStart(RampTrack *track, RampKeys *keys, Seq *seq,
+/// uint *flags)` (0x273530, "cScriptPlayerChannelObject_Play"): starts a ramp
+/// track. Stores `keys` (+0x10, also +8), `seq` (+0xc), allocates
+/// `keys->count * 0x24` bytes of ramp records from the sequence heap
+/// (`*(*(seq + 8) + 8) + 8`) into +0x1c, resets the key index (+0x18) and sets
+/// the cursor (+0x14) to the first key (`keys + 4`). Then, as long as the
+/// first key has no flags, it sets bit 0 of `*flags`, activates the key under
+/// the cursor and advances to the next key until a key with flags (+4) or the
+/// end. Returns whether the key list is non-empty.
+pub fn in_seq_ramp_track_start(c: &mut Cpu) {
+    /// Key list header: `u16 key_count` (+0), `u16 record_count` (+2); keys
+    /// follow at +4.
+    const KEYS_HEADER: u32 = 4;
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[A1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[A2][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[A1][0]);
+        c.g[V0][0] = c.lhu(c.g[A1][0] as u32);
+        c.g[S1][0] = c.g[A3][0];
+        // 'done_load: reload keys into v1 and return; 'epilogue: return with v1.
+        'epilogue: {
+            'reload: {
+                if c.g[V0][0] == 0 {
+                    break 'reload;
+                }
+                c.cycles += 13;
+                c.g[V1][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(2));
+                c.g[A1][0] = 0x24;
+                c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x8));
+                c.mult(0, 0, V1, A1);
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8));
+                c.g[A1][0] = c.lo[0];
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x8));
+                OC423_INSEQ_HEAP_ALLOC.call(c, 0x0027_357c)?;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                c.g[V0][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(2));
+                if c.g[V0][0] == 0 {
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                } else {
+                    // Empty countdown over the record count.
+                    c.cycles += 2;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                    loop {
+                        c.cycles += 7;
+                        let more = c.g[V0][0] != 0;
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0027_3598);
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                }
+                c.cycles += 4;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x18), 0);
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(KEYS_HEADER));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+                if c.g[V0][0] == 0 {
+                    break 'reload;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(8));
+                if c.g[V0][0] != 0 {
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                    break 'epilogue;
+                }
+                c.cycles += 1;
+                c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                loop {
+                    c.cycles += 10;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[V0][0] |= 1;
+                    c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+                    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                    OC423_RAMP_TRACK_ACTIVATE_KEY.call(c, 0x0027_35ec)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    OC423_RAMP_TRACK_NEXT_KEY.call(c, 0x0027_35f4)?;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                    if c.g[V0][0] == 0 {
+                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                        break 'epilogue;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(4));
+                    if c.g[V0][0] != 0 {
+                        break 'reload;
+                    }
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0027_35d8);
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x20);
+        c.g[V0][0] = c.lhu(c.g[V1][0] as u32);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const OC423_INSEQ_HEAP_FREE: Callee = Callee {
+    addr: 0x0027_23a8,
+    f: ee::s07::InSeq_HeapFree,
+};
+
+/// `void InSeq_HeapDelete(void *p)` (0x2724e8): frees an object allocated by
+/// `InSeq_HeapNew`: the heap pointer sits in the word `gp[0x398]` bytes before
+/// `p`; `InSeq_HeapFree(*header, header)`.
+pub fn in_seq_heap_delete(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x398));
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lw(c.g[A1][0] as u32);
+        OC423_INSEQ_HEAP_FREE.call(c, 0x0027_2500)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void InSeq::InstanceStop(this)` (0x274918, replay cache script player): does
+/// nothing when the play state (+0x20) is 0; when an entity update is running
+/// (+0x3c) only flags a deferred stop (+0x40 = 1); otherwise stops each
+/// entity player (the header's byte +1 entries of 0x3c bytes at +0x18), clears
+/// the play state, frame, pause and step counters (+0x20..+0x38, the
+/// script length and jump frame to -1) and tells the in-sequence listener
+/// (`GetListener`) through its vtable slot +0x20/+0x24.
+pub fn in_seq_instance_stop(c: &mut Cpu) {
+    guest(c, |c| {
+        ssx3_ee_rt::prof::enter(c, 0x00274918);
+        'b_2749d4: {
+            c.cycles += 9;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[S0][0] = c.g[A0][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
+            if c.g[V0][0] == 0u64 {
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                break 'b_2749d4;
+            } else {
+                'b_2749d0: {
+                    'b_274950: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x3c));
+                        let t = c.g[V0][0] == 0u64;
+                        c.g[V0][0] = 0x1;
+                        if t {
+                            break 'b_274950;
+                        } else {
+                            c.cycles += 2;
+                            let t = true;
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x40), c.g[V0][0]);
+                            if t {
+                                break 'b_2749d0;
+                            } else {
+                                break 'b_274950;
+                            }
+                        }
+                    }
+                    'b_27498c: {
+                        c.cycles += 4;
+                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                        c.g[V0][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0x1));
+                        let t = c.g[V0][0] == 0u64;
+                        c.g[S1][0] = 0u64;
+                        if t {
+                            break 'b_27498c;
+                        } else {
+                            c.cycles += 2;
+                            c.g[S2][0] = 0u64;
+                            'l_274968: loop {
+                                c.cycles += 9;
+                                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                                c.g[A0][0] =
+                                    sx((c.g[A0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                                Callee {
+                                    addr: 0x00273dc0,
+                                    f: ee::s07::InSeq_ChannelStop,
+                                }
+                                .call(c, 0x00274978)?;
+                                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                c.g[V0][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0x1));
+                                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                                let t = c.g[V0][0] != 0u64;
+                                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x3c));
+                                if t {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x00274968);
+                                    }
+                                    continue 'l_274968;
+                                } else {
+                                    break 'b_27498c;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 12;
+                    c.g[V0][0] = 0xffffffffffffffff;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x20), 0u64);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x28), 0u64);
+                    c.g[A0][0] = c.g[S0][0];
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), 0u64);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x38), 0u64);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x34), c.g[V0][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x30), c.g[V0][0]);
+                    Callee {
+                        addr: 0x00274d70,
+                        f: ee::s07::InSeq_InstanceGetListener,
+                    }
+                    .call(c, 0x002749b0)?;
+                    c.g[A2][0] = c.g[V0][0];
+                    let t = c.g[A2][0] == 0u64;
+                    c.g[A1][0] = c.g[S0][0];
+                    if t {
+                        break 'b_2749d0;
+                    } else {
+                        c.cycles += 5;
+                        c.g[V0][0] = c.lw(c.g[A2][0] as u32);
+                        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x20));
+                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x24));
+                        let t = c.g[V1][0] as u32;
+                        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, t, 0x002749d0)?;
+                        break 'b_2749d0;
+                    }
+                }
+                c.cycles += 1;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                break 'b_2749d4;
+            }
+        }
+        c.cycles += 5;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9864,6 +10458,705 @@ pub(crate) mod tests {
                         .write32(obj + 0x20, (seed / 12 + i * 2 + r.next_u32() % 3) % 6);
                 }
                 c.g[A0][0] = CHAN as u64;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::fake;
+
+    use std::sync::atomic::AtomicUsize;
+
+    pub(crate) use crate::game::ai::ai::tests::OC420_CTRL;
+    pub(crate) use crate::game::ai::ai::tests::OC420_MAGIC;
+    pub(crate) use crate::game::ai::ai::tests::OC420_RET;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w_5 as w_2;
+
+    pub(crate) use crate::game::main::gamemode::tests::oc427_vtable;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc427_base;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc427_queue;
+
+    /// A logging fake while the control word is set (its result is the word
+    /// the fixture stored for it, sign-extended), otherwise whatever was
+    /// installed before (chained through `prev`).
+    pub(crate) fn oc420_fake_gated(
+        c: &mut Cpu,
+        addr: u32,
+        ret_idx: u32,
+        prev: &AtomicUsize,
+        fallback: fn(&mut Cpu),
+    ) {
+        if c.bus.read32(OC420_CTRL) == OC420_MAGIC {
+            let ra = c.g[RA][0] as u32;
+            fake(c, addr, ra);
+            if c.pc == ra {
+                c.g[V0][0] = sx(c.bus.read32(OC420_RET + 4 * ret_idx));
+            }
+            return;
+        }
+        crate::difftest::fakes::fall_back(c, prev, fallback)
+    }
+
+    /// Stamps out a gated fake for the override slot of `$addr` and the
+    /// function `$install` that hooks it (once per process).
+    macro_rules! oc420_fake {
+        ($fake:ident, $prev:ident, $install:ident, $addr:expr, $ret:expr, $shard:ident, $slot:ident, $gen:ident) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                oc420_fake_gated(c, $addr, $ret, &$prev, ee::$shard::$gen);
+            }
+            pub(crate) fn $install() {
+                crate::difftest::fakes::hook(
+                    std::ptr::addr_of_mut!(ee::$shard::$slot),
+                    $fake,
+                    &$prev,
+                );
+            }
+        };
+    }
+
+    oc420_fake!(
+        oc420_fake_section,
+        OC420_PREV_SECTION,
+        oc420_hook_section,
+        0x0022_e0e0,
+        0,
+        s05,
+        OVERRIDE_0022E0E0,
+        f_0022e0e0__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_get_be,
+        OC420_PREV_GET_BE,
+        oc420_hook_get_be,
+        0x0014_dc80,
+        1,
+        s01,
+        OVERRIDE_0014DC80,
+        f_0014dc80__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_get_iface,
+        OC420_PREV_GET_IFACE,
+        oc420_hook_get_iface,
+        0x0014_dd58,
+        2,
+        s01,
+        OVERRIDE_0014DD58,
+        f_0014dd58__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_path_free,
+        OC420_PREV_PATH_FREE,
+        oc420_hook_path_free,
+        0x0026_af00,
+        3,
+        s07,
+        OVERRIDE_0026AF00,
+        f_0026af00__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_path_set,
+        OC420_PREV_PATH_SET,
+        oc420_hook_path_set,
+        0x0026_ad70,
+        4,
+        s07,
+        OVERRIDE_0026AD70,
+        f_0026ad70__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_init_paths,
+        OC420_PREV_INIT_PATHS,
+        oc420_hook_init_paths,
+        0x0011_2180,
+        5,
+        s00,
+        OVERRIDE_00112180,
+        f_00112180__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_rand_range,
+        OC420_PREV_RAND_RANGE,
+        oc420_hook_rand_range,
+        0x0031_7830,
+        6,
+        s10,
+        OVERRIDE_00317830,
+        f_00317830__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_luno_as_float,
+        OC420_PREV_LUNO_AS_FLOAT,
+        oc420_hook_luno_as_float,
+        0x0022_6618,
+        7,
+        s05,
+        OVERRIDE_00226618,
+        f_00226618__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_audio_instance,
+        OC420_PREV_AUDIO_INSTANCE,
+        oc420_hook_audio_instance,
+        0x0028_b180,
+        8,
+        s07,
+        OVERRIDE_0028B180,
+        f_0028b180__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_audio_stop_loop,
+        OC420_PREV_AUDIO_STOP_LOOP,
+        oc420_hook_audio_stop_loop,
+        0x0029_7eb8,
+        9,
+        s08,
+        OVERRIDE_00297EB8,
+        f_00297eb8__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_add_parent,
+        OC420_PREV_ADD_PARENT,
+        oc420_hook_add_parent,
+        0x0035_5978,
+        10,
+        s11,
+        OVERRIDE_00355978,
+        f_00355978__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_rider_script_off,
+        OC420_PREV_SCRIPT_OFF,
+        oc420_hook_script_off,
+        0x0028_03f0,
+        11,
+        s07,
+        OVERRIDE_002803F0,
+        f_002803f0__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_rider_reset,
+        OC420_PREV_RIDER_RESET,
+        oc420_hook_rider_reset,
+        0x0011_d390,
+        12,
+        s00,
+        OVERRIDE_0011D390,
+        f_0011d390__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_hide_part,
+        OC420_PREV_HIDE_PART,
+        oc420_hook_hide_part,
+        0x0030_ea80,
+        13,
+        s10,
+        OVERRIDE_0030EA80,
+        f_0030ea80__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_show_part,
+        OC420_PREV_SHOW_PART,
+        oc420_hook_show_part,
+        0x0030_e9e0,
+        14,
+        s10,
+        OVERRIDE_0030E9E0,
+        f_0030e9e0__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_bolts_db,
+        OC420_PREV_BOLTS_DB,
+        oc420_hook_bolts_db,
+        0x0014_bdb8,
+        15,
+        s01,
+        OVERRIDE_0014BDB8,
+        f_0014bdb8__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_profile,
+        OC420_PREV_PROFILE,
+        oc420_hook_profile,
+        0x0014_ad50,
+        16,
+        s01,
+        OVERRIDE_0014AD50,
+        f_0014ad50__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_get_character,
+        OC420_PREV_GET_CHARACTER,
+        oc420_hook_get_character,
+        0x0012_3128,
+        17,
+        s00,
+        OVERRIDE_00123128,
+        f_00123128__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_bolt_count,
+        OC420_PREV_BOLT_COUNT,
+        oc420_hook_bolt_count,
+        0x0014_d988,
+        18,
+        s01,
+        OVERRIDE_0014D988,
+        f_0014d988__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_bolt_list,
+        OC420_PREV_BOLT_LIST,
+        oc420_hook_bolt_list,
+        0x0014_d998,
+        19,
+        s01,
+        OVERRIDE_0014D998,
+        f_0014d998__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_stop_handle,
+        OC420_PREV_STOP_HANDLE,
+        oc420_hook_stop_handle,
+        0x002a_d5f0,
+        20,
+        s08,
+        OVERRIDE_002AD5F0,
+        f_002ad5f0__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_rider_char,
+        OC420_PREV_RIDER_CHAR,
+        oc420_hook_rider_char,
+        0x0014_ac30,
+        21,
+        s01,
+        OVERRIDE_0014AC30,
+        f_0014ac30__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_alt_char,
+        OC420_PREV_ALT_CHAR,
+        oc420_hook_alt_char,
+        0x0014_a0b0,
+        22,
+        s01,
+        OVERRIDE_0014A0B0,
+        f_0014a0b0__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_rider_profile,
+        OC420_PREV_RIDER_PROFILE,
+        oc420_hook_rider_profile,
+        0x0014_ac50,
+        23,
+        s01,
+        OVERRIDE_0014AC50,
+        f_0014ac50__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_bolt_texture,
+        OC420_PREV_BOLT_TEXTURE,
+        oc420_hook_bolt_texture,
+        0x0014_b988,
+        24,
+        s01,
+        OVERRIDE_0014B988,
+        f_0014b988__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_rider_init,
+        OC420_PREV_RIDER_INIT,
+        oc420_hook_rider_init,
+        0x0014_0738,
+        25,
+        s01,
+        OVERRIDE_00140738,
+        f_00140738__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_script_obj_rider,
+        OC420_PREV_SCRIPT_OBJ_RIDER,
+        oc420_hook_script_obj_rider,
+        0x0027_f968,
+        26,
+        s07,
+        OVERRIDE_0027F968,
+        f_0027f968__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_mem_alloc,
+        OC420_PREV_MEM_ALLOC,
+        oc420_hook_mem_alloc,
+        0x0031_7d70,
+        27,
+        s10,
+        OVERRIDE_00317D70,
+        f_00317d70__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_emitter_fx,
+        OC420_PREV_EMITTER_FX,
+        oc420_hook_emitter_fx,
+        0x002f_1850,
+        28,
+        s09,
+        OVERRIDE_002F1850,
+        f_002f1850__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_bolt_on_fx,
+        OC420_PREV_BOLT_ON_FX,
+        oc420_hook_bolt_on_fx,
+        0x002e_c9e0,
+        29,
+        s09,
+        OVERRIDE_002EC9E0,
+        f_002ec9e0__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_shadow_ctor,
+        OC420_PREV_SHADOW_CTOR,
+        oc420_hook_shadow_ctor,
+        0x0037_58f8,
+        30,
+        s12,
+        OVERRIDE_003758F8,
+        f_003758f8__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_script_register,
+        OC420_PREV_SCRIPT_REGISTER,
+        oc420_hook_script_register,
+        0x0028_3298,
+        31,
+        s07,
+        OVERRIDE_00283298,
+        f_00283298__generated
+    );
+
+    oc420_fake!(
+        oc420_fake_mem_free,
+        OC420_PREV_MEM_FREE,
+        oc420_hook_mem_free,
+        0x0031_7e98,
+        32,
+        s10,
+        OVERRIDE_00317E98,
+        f_00317e98__generated
+    );
+
+    /// Heap allocator wrapper against free lists of 0..3 blocks (fits,
+    /// splits, none), with a random `gp[0x398]` bias.
+    #[test]
+    fn in_seq_heap_new_matches() {
+        check_lohi(
+            ee::s07::f_00272488__generated,
+            in_seq_heap_new,
+            160,
+            &|c, seed| {
+                let mut r = Rng(0x2724_8800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0027_2488;
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus
+                    .write32(GAME_GP + 0x398, [0u32, 4, 8, 12][(seed / 4 % 4) as usize]);
+                let heap = DATA;
+                let blocks = [DATA + 0x100, DATA + 0x200, DATA + 0x300];
+                let n = (seed % 4) as usize;
+                c.bus.write32(heap + 8, if n == 0 { 0 } else { blocks[0] });
+                for i in 0..n {
+                    let size = [8u32, 16, 40, 100, 200, 4][r.next_u32() as usize % 6];
+                    c.bus.write32(blocks[i], size);
+                    c.bus
+                        .write32(blocks[i] + 4, if i + 1 < n { blocks[i + 1] } else { 0 });
+                }
+                let want = [1u32, 4, 8, 13, 24, 40, 90, 150][r.next_u32() as usize % 8];
+                c.g[A0][0] = sx(want);
+                c.g[A1][0] = sx(heap);
+            },
+        );
+    }
+
+    // ------------------------------------------------------- InSeq_ChannelStart
+
+    pub(crate) const OC420_THIS: u32 = DATA + 0x1000;
+
+    pub(crate) const OC420_OWNER: u32 = DATA + 0x1100;
+
+    pub(crate) const OC420_HEAP: u32 = DATA + 0x1200;
+
+    pub(crate) const OC420_HDR: u32 = DATA + 0x1400;
+
+    pub(crate) const OC420_LISTENER: u32 = DATA + 0x1800;
+
+    pub(crate) const OC420_LISTENER_VT: u32 = DATA + 0x1900;
+
+    pub(crate) const OC420_PLAYER: u32 = DATA + 0x1a00;
+
+    pub(crate) const OC420_PLAYER_VT: u32 = DATA + 0x1b00;
+
+    pub(crate) const OC420_DUMMY: u32 = DATA + 0x1c00;
+
+    pub(crate) const OC420_DUMMY_VT: u32 = DATA + 0x1d00;
+
+    pub(crate) const OC420_BLOCK: u32 = DATA + 0x4000;
+
+    /// An instance with 0..4 channel records (types 0-3 build a track
+    /// object with the real constructor; type 4 builds nothing), channel
+    /// virtuals that are fakes (non-zero) or the zero leaf, an optional
+    /// listener that hands out a player, and an optional stale player.
+    pub(crate) fn oc420_channel_start_setup(c: &mut Cpu, seed: u32, min_channels: u32) -> Rng {
+        let mut r = machine(c, seed, 0x27_3aa8, 4);
+        c.pc = 0x0027_3aa8;
+        c.g[A0][0] = OC420_THIS as u64;
+        c.bus
+            .write32(GAME_GP + 0x398, [0u32, 4][(seed % 2) as usize]);
+        c.bus.write32(OC420_THIS + 8, OC420_OWNER);
+        c.bus.write32(OC420_OWNER + 8, OC420_HEAP);
+        c.bus.write32(OC420_HEAP + 0x10, OC420_BLOCK);
+        c.bus.write32(OC420_BLOCK, 0x800);
+        c.bus.write32(OC420_BLOCK + 4, 0);
+        for k in 0..4 {
+            c.bus.write32(OC420_BLOCK + 8 + 4 * k, OC420_DUMMY);
+        }
+        c.bus.write32(OC420_DUMMY + 4, OC420_DUMMY_VT);
+        c.bus.write16(OC420_DUMMY_VT + 8, 0);
+        c.bus.write32(OC420_DUMMY_VT + 0xc, FAKE + 0xf0);
+        // The four track vtables the constructors point objects at.
+        let mut fakes_used = 0;
+        let mut vt_fn = [0u32; 4];
+        for (i, vt) in [0x0048_1a10u32, 0x0048_18f0, 0x0048_19b0, 0x0048_1950]
+            .into_iter()
+            .enumerate()
+        {
+            let f = if r.next_u32() % 4 == 0 {
+                0x0014_06c0
+            } else {
+                FAKE + 0x10 * (i as u32 + 1)
+            };
+            vt_fn[i] = f;
+            c.bus
+                .write16(vt + 8, [0u16, 0x10][(r.next_u32() % 2) as usize]);
+            c.bus.write32(vt + 0xc, f);
+        }
+        let n = min_channels + (seed / 2) % (5 - min_channels);
+        c.bus.write32(OC420_THIS + 0x1c, OC420_HDR);
+        c.bus.write16(OC420_HDR, 0x10);
+        c.bus.write8(OC420_HDR + 2, n as u8);
+        c.bus.write8(OC420_HDR + 3, r.next_u32() as u8);
+        let mut rec = OC420_HDR + 0x10;
+        for _ in 0..n {
+            let kind = r.next_u32() % 5;
+            let size = 4 * (r.next_u32() % 3);
+            c.bus.write16(rec, kind as u16);
+            c.bus.write16(rec + 2, 4 + size as u16);
+            // Fake channels: the track kinds 0 (curve), 1 (ramp), 2 (span), 3 (event).
+            let used = match kind {
+                0 => vt_fn[0],
+                1 => vt_fn[1],
+                2 => vt_fn[2],
+                3 => vt_fn[3],
+                _ => FAKE + 0xf0,
+            };
+            if used >= FAKE && used < FAKE + 0x100 {
+                fakes_used += 1;
+            }
+            rec += 4 + 4 + size;
+        }
+        // Listener (cached at +0x44 or through the owner) and player.
+        let listener = [0u32, OC420_LISTENER][(r.next_u32() % 4 != 0) as usize];
+        if r.next_u32() % 2 == 0 {
+            c.bus.write32(OC420_THIS + 0x44, listener);
+        } else {
+            c.bus.write32(OC420_THIS + 0x44, 0);
+            c.bus.write32(OC420_OWNER, listener);
+        }
+        c.bus.write32(OC420_LISTENER, OC420_LISTENER_VT);
+        c.bus.write16(
+            OC420_LISTENER_VT + 0x30,
+            [0u16, 8][(r.next_u32() % 2) as usize],
+        );
+        c.bus.write32(OC420_LISTENER_VT + 0x34, FAKE + 0xe0);
+        c.bus.write32(OC420_PLAYER, OC420_PLAYER_VT);
+        c.bus
+            .write16(OC420_PLAYER_VT + 8, [0u16, 4][(r.next_u32() % 2) as usize]);
+        c.bus.write32(OC420_PLAYER_VT + 0xc, FAKE + 0xd0);
+        c.bus.write32(
+            OC420_THIS + 0x2c,
+            [0u32, OC420_PLAYER][(r.next_u32() % 2) as usize],
+        );
+        // The listener's call is the next fake after the channel starts
+        // (only the fake-backed ones count); it hands out the player.
+        c.bus.write32(
+            crate::difftest::fakes::LOG_RESULTS + 4 * fakes_used,
+            OC420_PLAYER,
+        );
+        c.bus.write32(OC420_THIS + 0x24, 0);
+        r
+    }
+
+    #[test]
+    fn in_seq_channel_start_matches() {
+        use crate::difftest::events::{check_events, schedule};
+        covered(
+            ee::s07::f_00273aa8__generated,
+            in_seq_channel_start,
+            300,
+            &|c, seed| {
+                oc420_channel_start_setup(c, seed, 0);
+            },
+        );
+        check_events(
+            ee::s07::f_00273aa8__generated,
+            in_seq_channel_start,
+            150,
+            &|c, seed| {
+                let mut r = oc420_channel_start_setup(c, seed, 2);
+                schedule(c, &mut r, seed, 0x0027_3aa8)
+            },
+        );
+    }
+
+    #[test]
+    fn in_seq_ramp_track_start_matches() {
+        check(
+            ee::s07::f_00273530__generated,
+            in_seq_ramp_track_start,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0027_3530, 0);
+                let track = DATA;
+                let keys = DATA + 0x1000;
+                let seq = DATA + 0x200;
+                let flags = DATA + 0x500;
+                w_2(c, flags, r.next_u32());
+                // seq -> +8 -> heap object -> +8 -> heap head; free block at +0x418.
+                w_2(c, seq + 8, DATA + 0x300);
+                w_2(c, DATA + 0x308, DATA + 0x400);
+                let block = DATA + 0x2000;
+                w_2(c, DATA + 0x418, block);
+                w_2(c, block, 0x400);
+                w_2(c, block + 4, 0);
+                let count = if seed % 5 == 0 { 0 } else { 1 + seed % 3 };
+                c.bus.write16(keys, count as u16);
+                c.bus.write16(keys + 2, count.max(1) as u16);
+                for i in 0..4u32 {
+                    let key = keys + 4 + 0x18 * i;
+                    c.bus.write16(key, 0x18);
+                    c.bus.write16(key + 2, (i % count.max(1)) as u16);
+                    let stop = match (seed / 5) % 4 {
+                        0 => i == 0 && seed % 7 == 0,
+                        1 => i == 1,
+                        _ => false,
+                    };
+                    c.bus.write16(key + 4, stop as u16);
+                    w_2(c, key + 8, r.next_u32());
+                    w_2(c, key + 0xc, r.next_u32());
+                    w_2(c, key + 0x10, r.next_u32());
+                    w_2(c, key + 0x14, r.next_u32());
+                }
+                c.g[A0][0] = track as u64;
+                c.g[A1][0] = keys as u64;
+                c.g[A2][0] = seq as u64;
+                c.g[A3][0] = flags as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn in_seq_heap_delete_matches() {
+        check(
+            ee::s07::f_002724e8__generated,
+            in_seq_heap_delete,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0027_24e8, 0);
+                let header_size = 0x10u32;
+                w_2(c, GAME_GP + 0x398, header_size);
+                let heap = DATA;
+                // Empty free list; the block's size header at header - 8.
+                w_2(c, heap + 8, 0);
+                w_2(c, heap, r.next_u32());
+                let header = DATA + 0x1010;
+                w_2(c, header, heap);
+                w_2(c, header - 8, 0x30);
+                w_2(c, header - 4, 0);
+                // Every third call frees a null header.
+                c.g[A0][0] = if seed % 3 == 0 {
+                    header_size as u64
+                } else {
+                    (header + header_size) as u64
+                };
+            },
+        );
+    }
+
+    /// `InSeq_InstanceStop`: stopped, update-in-progress and running
+    /// instances with 0..3 entity players; the listener is absent or has a
+    /// vtable entry (a fake method) at +0x20.
+    #[test]
+    fn in_seq_instance_stop_matches() {
+        covered(
+            ee::s07::f_00274918__generated,
+            in_seq_instance_stop,
+            160,
+            &|c, seed| {
+                let mut r = oc427_base(c, seed, 0x274918, 6, 0x0027_4918);
+                let this = DATA + 0x1000;
+                let header = DATA + 0x2000;
+                let listener = DATA + 0x3000;
+                let vt = DATA + 0x3100;
+                c.bus.write32(this + 0x10, header);
+                c.bus.write32(this + 0x18, DATA + 0x2400);
+                c.bus
+                    .write32(this + 0x20, [0, 1, 2][r.next_u32() as usize % 3]);
+                c.bus.write32(this + 0x3c, (r.next_u32() % 3 == 0) as u32);
+                c.bus.write8(header + 1, (r.next_u32() % 4) as u8);
+                c.bus.write32(listener, vt);
+                oc427_vtable(c, vt, 0x20, (r.next_u32() as u16) & !3);
+                oc427_queue(
+                    c,
+                    0x0027_4d70,
+                    &[if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        listener as u64
+                    }],
+                );
+                c.g[A0][0] = sx(this);
             },
         );
     }

@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -230,6 +231,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0028_20b0,
         script_engine_update_processes,
         "ScriptEngine_UpdateProcesses",
+    ),
+    (
+        0x0028_2be0,
+        script_engine_get_seq_process_id,
+        "ScriptEngine_GetSeqProcessId",
     ),
 ];
 
@@ -2226,6 +2232,15 @@ pub fn script_engine_update_processes(c: &mut Cpu) {
     })
 }
 
+/// `int ScriptEngine_GetSeqProcessId(void* unused, ScriptSeq* seq)`
+/// (0x282be0): `seq->process->id` (`*(*(seq + 0xc) + 0x1c)`).
+pub fn script_engine_get_seq_process_id(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V1][0] = c.lw(r32(c, A1).wrapping_add(0xc));
+    c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x1c));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3263,6 +3278,26 @@ pub(crate) mod tests {
                     c.bus.write32(SCRIPTS + 8 * i, 0);
                 }
                 c.g[A0][0] = sx(ENGINE);
+            },
+        );
+    }
+
+    /// `ScriptEngine_GetSeqProcessId`: the two pointer loads.
+    #[test]
+    fn script_engine_get_seq_process_id_matches() {
+        check(
+            ee::s07::f_00282be0__generated,
+            script_engine_get_seq_process_id,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x5e9_0000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0028_2be0;
+                let seq = DATA + 0x1000;
+                let process = DATA + 0x2000;
+                c.g[A1][0] = sx(seq);
+                c.bus.write32(seq + 0xc, process);
+                c.bus.write32(process + 0x1c, r.next_u32());
             },
         );
     }

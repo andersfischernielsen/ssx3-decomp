@@ -291,6 +291,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_load_list_compare,
         "Rider_LoadListCompare",
     ),
+    (
+        0x0011_72e0,
+        rider_metrix_init_hudfx,
+        "RiderMetrix_InitHUDFX",
+    ),
 ];
 
 /// Direct calls (same shard; these go through the shard's override slots, so
@@ -7165,6 +7170,112 @@ pub fn rider_load_list_compare(c: &mut Cpu) {
     tail_wrapper(c, None, Target::Table(0x0041_aa88), 0x0011_b688);
 }
 
+/// `void RiderMetrix::InitHUDFX(this, Rider* rider)` (0x1172e0): remember the
+/// rider (+0x1ac); when its HUD slot (+0x870) is not negative allocate 44
+/// `cHUDFX` entries of 0x9c bytes (0x1ad0, pool tag at 0x4a1078, +0x1b0 holds
+/// the array, +0x1b4 the count), construct each and number them
+/// (`index` at +0x98).
+pub fn rider_metrix_init_hudfx(c: &mut Cpu) {
+    guest(c, |c| {
+        ssx3_ee_rt::prof::enter(c, 0x001172e0);
+        'b_117390: {
+            c.cycles += 13;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[S1][0] = c.g[A0][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x1ac), c.g[A1][0]);
+            c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x870));
+            let t = (c.g[V0][0] as i64) < 0;
+            c.g[V0][0] = 0x2c;
+            if t {
+                break 'b_117390;
+            } else {
+                c.cycles += 13;
+                c.g[A1][0] = 0x4a0000;
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x1b4), c.g[V0][0]);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1078));
+                c.g[A0][0] = 0x1ad0;
+                c.g[A2][0] = 0u64;
+                c.g[A3][0] = 0u64;
+                c.g[S5][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1b0));
+                call_ptr(c, 0x00317e30, 0x00117334)?;
+                c.g[S2][0] = 0x2b;
+                c.g[S3][0] = c.g[V0][0];
+                c.g[S4][0] = 0xffffffffffffffff;
+                c.g[S0][0] = c.g[S3][0];
+                'l_117348: loop {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    Callee {
+                        addr: 0x00116fa8,
+                        f: ee::s00::cHUDFX_ctor,
+                    }
+                    .call(c, 0x00117354)?;
+                    let t = c.g[S2][0] != c.g[S4][0];
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x9c));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00117348);
+                        }
+                        continue 'l_117348;
+                    } else {
+                        c.cycles += 4;
+                        c.sw(c.g[S5][0] as u32, c.g[S3][0]);
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1b4));
+                        let t = (c.g[V0][0] as i64) <= 0;
+                        c.g[V1][0] = 0u64;
+                        if t {
+                            break 'b_117390;
+                        } else {
+                            c.cycles += 1;
+                            c.g[A0][0] = 0u64;
+                            'l_117370: loop {
+                                c.cycles += 8;
+                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1b0));
+                                c.g[V0][0] =
+                                    sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                c.sw((c.g[V0][0] as u32).wrapping_add(0x98), c.g[V1][0]);
+                                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1b4));
+                                c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                                let t = c.g[V0][0] != 0u64;
+                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x9c));
+                                if t {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x00117370);
+                                    }
+                                    continue 'l_117370;
+                                } else {
+                                    break 'b_117390;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        c.cycles += 9;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9505,6 +9616,35 @@ pub(crate) mod tests {
                 c.bus.write8(b + 8, 0);
                 c.g[A0][0] = sx(a);
                 c.g[A1][0] = sx(b);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc427_base;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc427_queue;
+
+    /// `RiderMetrix_InitHUDFX`: a rider with a negative or valid HUD slot;
+    /// the allocation returns a clean block, the 44 constructors are faked
+    /// (one of the 46 calls may unwind).
+    #[test]
+    fn rider_metrix_init_hudfx_matches() {
+        covered(
+            ee::s00::f_001172e0__generated,
+            rider_metrix_init_hudfx,
+            100,
+            &|c, seed| {
+                let mut r = oc427_base(c, seed, 0x1172e0, 46, 0x0011_72e0);
+                let this = DATA + 0x1000;
+                let rider = DATA + 0x2000;
+                let slot = if seed % 3 == 0 {
+                    0xffff_fff0 | (r.next_u32() % 8)
+                } else {
+                    r.next_u32() % 100
+                };
+                c.bus.write32(rider + 0x870, slot);
+                oc427_queue(c, 0x0031_7e30, &[(DATA + 0x1_0000) as u64]);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(rider);
             },
         );
     }
