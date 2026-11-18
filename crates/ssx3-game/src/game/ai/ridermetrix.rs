@@ -301,6 +301,51 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_metrix_award_bonus_points,
         "RiderMetrix_AwardBonusPoints",
     ),
+    (
+        0x0011_95a8,
+        rider_metrix_show_hud_msg_2a,
+        "RiderMetrix_ShowHUDMsg2A",
+    ),
+    (
+        0x0011_95d8,
+        rider_metrix_show_hud_msg_2b,
+        "RiderMetrix_ShowHUDMsg2B",
+    ),
+    (
+        0x0011_9918,
+        oc436_rider_metrix_set_grind_orientation,
+        "RiderMetrix_SetGrindOrientation",
+    ),
+    (
+        0x0011_9938,
+        rider_metrix_start_uber_grind,
+        "RiderMetrix_StartUberGrind",
+    ),
+    (
+        0x0011_9c38,
+        rider_metrix_finish_handplant_2,
+        "RiderMetrix_FinishHandplant",
+    ),
+    (
+        0x0011_9ef8,
+        rider_metrix_award_points,
+        "RiderMetrix_AwardPoints",
+    ),
+    (
+        0x0011_a088,
+        rider_metrix_show_wrong_way,
+        "RiderMetrix_ShowWrongWay",
+    ),
+    (
+        0x0011_a0e0,
+        rider_metrix_show_hud_msg_1a,
+        "RiderMetrix_ShowHUDMsg1A",
+    ),
+    (
+        0x0011_b2c0,
+        rider_tuning_fill_table_4a6310,
+        "RiderTuning_FillTable4a6310",
+    ),
 ];
 
 /// Direct calls (same shard; these go through the shard's override slots, so
@@ -7402,11 +7447,488 @@ pub fn rider_metrix_award_bonus_points(c: &mut Cpu) {
     })
 }
 
+/// `RiderMetrix.grindOrientation` (+0x20).
+pub(crate) const OC436_RM_GRIND_ORIENTATION: u32 = 0x20;
+
+/// `void RiderMetrix_SetGrindOrientation(RiderMetrix* m, int o)` (0x119918):
+/// store `o` at +0x20, then `RiderMetrix_SetSpinAmount(m, ...)` (a1 is left
+/// as it is).
+pub fn oc436_rider_metrix_set_grind_orientation(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.sw(
+            (c.g[A0][0] as u32).wrapping_add(OC436_RM_GRIND_ORIENTATION),
+            c.g[A1][0],
+        );
+        call_ptr(c, 0x0011_9898, 0x0011_9928)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// -- Callees ----------------------------------------------------------------
+
+/// `RiderMetrix_ShowHUDNumber(self, kind, value, arg, duration)` (0x117b88).
+pub(crate) const OC439_SHOW_HUD_NUMBER: Callee = Callee {
+    addr: 0x0011_7b88,
+    f: ee::s00::RiderMetrix_ShowHUDNumber,
+};
+
+/// `RiderMetrix_ShowHUDText(self, type, text, repeat, scale)` (0x117ae8).
+pub(crate) const OC439_SHOW_HUD_TEXT: Callee = Callee {
+    addr: 0x0011_7ae8,
+    f: ee::s00::RiderMetrix_ShowHUDText,
+};
+
+/// `RiderMetrix_FinishTrick(...)` (0x11a228).
+pub(crate) const OC439_FINISH_TRICK: Callee = Callee {
+    addr: 0x0011_a228,
+    f: ee::s00::RiderMetrix_FinishTrick,
+};
+
+/// `RiderMetrix_ResetTrick(self)` (0x117838).
+pub(crate) const OC439_RESET_TRICK: Callee = Callee {
+    addr: 0x0011_7838,
+    f: ee::s00::RiderMetrix_ResetTrick,
+};
+
+/// `void RiderMetrix_StartUberGrind(RiderMetrix* self, int a, int b)`
+/// (0x119938): clear the grind progress float (+0x6c), start the grind
+/// (+0x5c = 1) and record `b` at +0x20 / +0xc and `a` at +0x70. Leaves the
+/// cleared float in f0 and 1 in v0.
+pub fn rider_metrix_start_uber_grind(c: &mut Cpu) {
+    c.cycles += 8;
+    let this = c.g[A0][0] as u32;
+    c.sw(this.wrapping_add(0x6c), 0);
+    c.g[V0][0] = 1;
+    c.sw(this.wrapping_add(0x20), c.g[A2][0]);
+    c.lwc1(0, this.wrapping_add(0x6c));
+    c.sw(this.wrapping_add(0x70), c.g[A1][0]);
+    c.sw(this.wrapping_add(0x5c), c.g[V0][0]);
+    c.sw(this.wrapping_add(0xc), c.g[A2][0]);
+    ret(c);
+}
+
+// -- HUD message wrappers -------------------------------------------------------
+
+/// The 0x10-byte-frame HUD wrappers: `RiderMetrix_ShowHUDNumber(self, kind,
+/// value, 0, scale)` with the scale in f12 (its bits go through `at`),
+/// returning 0.0f. `value` is the wrapper's second argument (`a1`), or 0.
+pub(crate) fn oc439_show_hud_number_msg(
+    c: &mut Cpu,
+    scale: u32,
+    kind: u32,
+    value_from_a1: bool,
+    ret_addr: u32,
+) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        c.g[A2][0] = if value_from_a1 { c.g[A1][0] } else { 0 };
+        c.g[AT][0] = scale as u64;
+        c.mtc1(1, 12);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = kind as u64;
+        c.g[A3][0] = 0;
+        OC439_SHOW_HUD_NUMBER.call(c, ret_addr)?;
+        c.mtc1(0, 0);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `float RiderMetrix_ShowHUDMsg2A(RiderMetrix* self, int value)` (0x1195a8,
+/// the split-time event): show HUD number 0x2a with `value`, 5.0 scale.
+pub fn rider_metrix_show_hud_msg_2a(c: &mut Cpu) {
+    oc439_show_hud_number_msg(c, 0x40a0_0000, 0x2a, true, 0x0011_95c8);
+}
+
+/// `float RiderMetrix_ShowHUDMsg2B(RiderMetrix* self, int value)` (0x1195d8):
+/// as 2A with number 0x2b.
+pub fn rider_metrix_show_hud_msg_2b(c: &mut Cpu) {
+    oc439_show_hud_number_msg(c, 0x40a0_0000, 0x2b, true, 0x0011_95f8);
+}
+
+/// `float RiderMetrix_ShowHUDMsg1A(RiderMetrix* self)` (0x11a0e0, the
+/// mission-start event): show HUD number 0x1a with value 0, 1.0 scale.
+pub fn rider_metrix_show_hud_msg_1a(c: &mut Cpu) {
+    oc439_show_hud_number_msg(c, 0x3f80_0000, 0x1a, false, 0x0011_a100);
+}
+
+/// `float RiderMetrix_ShowWrongWay(RiderMetrix* self)` (0x11a088): show the
+/// "wrong way" text (string at 0x457888) as HUD type 0x33 at 1.5 scale.
+pub fn rider_metrix_show_wrong_way(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        c.g[AT][0] = 0x3fc0_0000;
+        c.mtc1(1, 12);
+        c.g[A2][0] = 0x45_0000;
+        frame.save_ra(c, 0);
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x7888));
+        c.g[A1][0] = 0x33;
+        c.g[A3][0] = 0;
+        OC439_SHOW_HUD_TEXT.call(c, 0x0011_a0ac)?;
+        c.mtc1(0, 0);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `RiderMetrix_FinishHandplant(RiderMetrix* self)` (0x119c38): count the
+/// handplant (+0x80), finish the running trick, reset the trick state and
+/// clear +0x30. Returns the float the finish left in f20 (restored after).
+pub fn rider_metrix_finish_handplant_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x30);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 20, 0x20);
+        c.g[A3][0] = 0;
+        c.g[T0][0] = 0;
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x80));
+        c.g[T1][0] = 1;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x80), c.g[V0][0]);
+        OC439_FINISH_TRICK.call(c, 0x0011_9c70)?;
+        c.mov_s(20, 0);
+        c.g[A0][0] = c.g[S0][0];
+        OC439_RESET_TRICK.call(c, 0x0011_9c7c)?;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x30), 0);
+        c.mov_s(0, 20);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// -- RiderMetrix_AwardPoints ---------------------------------------------------------
+
+/// The jump table of `RiderMetrix_AwardPoints`' award kind (5 entries).
+#[cfg(test)]
+pub(crate) const OC439_AWARD_TABLE: u32 = 0x0045_7870;
+
+/// `float RiderMetrix_AwardPoints(RiderMetrix* self, int kind, int cash)`
+/// (0x119ef8, the `evAddCash` event): unless `cash` is 0 or the game's
+/// player count (`*(*(world+0x84)+0x28)`) is 1..9, credit `cash` to the
+/// rider's character profile through the BE, show HUD number 0x18, and then
+/// by `kind` (0..4) show the cash-source HUD number (0x31 / 0x2e / 0x2f /
+/// 0x30 or none).
+pub fn rider_metrix_award_points(c: &mut Cpu) {
+    // A resume entry inside the generated frame: its dispatcher continues it
+    // (at install this becomes `f_00119ef8__generated`).
+    if c.pc != 0x0011_9ef8 {
+        return ee::s00::f_00119ef8__generated(c);
+    }
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        'done: {
+            if c.g[S1][0] == 0 {
+                break 'done;
+            }
+            'players: {
+                c.cycles += 6;
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+                c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x28));
+                c.g[A0][0] = c.lw(c.g[A0][0] as u32);
+                c.g[A1][0] = 0;
+                if c.g[A0][0] == 0 {
+                    break 'players;
+                }
+                c.cycles += 1;
+                c.g[A1][0] = ((c.g[A0][0] as i64) < 10) as u64;
+            }
+            c.cycles += 2;
+            if c.g[A1][0] != 0 {
+                break 'done;
+            }
+            c.cycles += 36;
+            // be = BE_GetBE(); stats = BE_GetStats(be, 13)
+            call_ptr(c, 0x0014_dc80, 0x0011_9f4c)?;
+            c.g[A1][0] = 0xd;
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x0014_dd58, 0x0011_9f58)?;
+            c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x1ac));
+            c.g[S0][0] = c.g[V0][0];
+            // id = self->rider->vcall_38()
+            oc439_award_rider_vcall(c, 0x0011_9f78)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S1][0];
+            call_ptr(c, 0x001e_3760, 0x0011_9f84)?;
+            c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x1ac));
+            oc439_award_rider_vcall(c, 0x0011_9fa0)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = c.g[S1][0];
+            call_ptr(c, 0x0015_97b0, 0x0011_9fb0)?;
+            c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(0x79fc));
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = 0x18;
+            c.g[A2][0] = c.g[S1][0];
+            c.g[A3][0] = 0;
+            OC439_SHOW_HUD_NUMBER.call(c, 0x0011_9fc8)?;
+            c.g[V1][0] = (c.g[S3][0] < 5) as u64;
+            c.g[V0][0] = 0x45_0000;
+            if c.g[V1][0] == 0 {
+                break 'done;
+            }
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[S3][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7870));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+            let case = c.g[A0][0] as u32;
+            // The compiled `switch`: the table's entries are code addresses.
+            match case {
+                0x0011_9fec => {
+                    c.cycles += 9;
+                    c.g[A2][0] = c.g[S1][0];
+                    c.g[AT][0] = 0x3fc0_0000;
+                    c.mtc1(1, 12);
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A1][0] = 0x31;
+                    c.g[A3][0] = c.g[A2][0];
+                    OC439_SHOW_HUD_NUMBER.call(c, 0x0011_a008)?;
+                }
+                0x0011_a010 | 0x0011_a028 => {
+                    if case == 0x0011_a010 {
+                        c.cycles += 6;
+                        c.g[A1][0] = 0x2e;
+                    } else {
+                        c.cycles += 5;
+                        c.g[A1][0] = 0x2f;
+                    }
+                    c.g[AT][0] = 0x4020_0000;
+                    c.mtc1(1, 12);
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A2][0] = c.g[S1][0];
+                    c.cycles += 4;
+                    c.g[A3][0] = 0;
+                    OC439_SHOW_HUD_NUMBER.call(c, 0x0011_a044)?;
+                }
+                0x0011_a04c => {
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[AT][0] = 0x4020_0000;
+                    c.mtc1(1, 12);
+                    c.g[A3][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x9c));
+                    c.g[A2][0] = c.g[S1][0];
+                    c.g[A1][0] = 0x30;
+                    OC439_SHOW_HUD_NUMBER.call(c, 0x0011_a068)?;
+                }
+                0x0011_a068 => {}
+                _ => {
+                    c.jump_out(case, 0x0011_9ef8, 0x0011_a088);
+                    return Ok(());
+                }
+            }
+        }
+        c.cycles += 8;
+        c.mtc1(0, 0);
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `a0 += 0x6c0` object's virtual call (slot +0x38): `a0 = rider->sub + delta`,
+/// `v0 = (*sub->vtable[+0x3c])(a0)`.
+pub(crate) fn oc439_award_rider_vcall(c: &mut Cpu, ret: u32) -> Flow {
+    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x6c0));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6c0));
+    c.g[A1][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x38));
+    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x3c));
+    let target = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    call_ptr(c, target, ret)
+}
+
+// -- RiderTuning_FillTable4a6310 --------------------------------------------------------
+
+/// The float table `RiderTuning_FillTable4a6310` fills (0x4a6310).
+#[cfg(test)]
+pub(crate) const OC439_TUNING_TABLE: u32 = 0x004a_6310;
+
+/// `void RiderTuning_FillTable4a6310()` (0x11b2c0): fill the 2 x 3 x 4 x 2
+/// float table at 0x4a6310 (row stride 0x60 bytes, then 0x20, 8 and 4) with
+/// `120.0 - score`, where the integer score is a sum of per-axis weights: 5
+/// for the first outer index (0 for the second), 0x14 / 0xb / 0 for the
+/// middle one (0 and 1 / 2), 0x14 / 0xf / 0xa / 0 for the inner one and 5
+/// for the first innermost element. All loops keep the original's registers
+/// and event checks.
+pub fn rider_tuning_fill_table_4a6310(c: &mut Cpu) {
+    c.cycles += 18;
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x50));
+    c.g[V0][0] = 0x4a_0000;
+    c.sq(16, sp(c).wrapping_add(0x40));
+    c.g[V1][0] = 0;
+    c.sq(17, sp(c).wrapping_add(0x30));
+    c.g[T8][0] = 5;
+    c.sq(18, sp(c).wrapping_add(0x20));
+    c.g[S1][0] = 1;
+    c.sq(19, sp(c).wrapping_add(0x10));
+    c.g[S2][0] = 0xb;
+    c.sq(20, sp(c));
+    c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6310));
+    c.g[AT][0] = 0x42f0_0000;
+    c.mtc1(1, 1);
+    c.g[S0][0] = 0xa;
+    c.g[S4][0] = 0x60;
+    c.mult(0, 15, 3, 20);
+    'outer: loop {
+        c.cycles += 6;
+        c.g[T3][0] = c.g[T8][0];
+        if c.g[V1][0] != 0 {
+            c.g[T3][0] = 0;
+        }
+        c.g[T0][0] = 0;
+        c.g[T9][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+        c.g[A2][0] = 0;
+        'middle: loop {
+            c.cycles += 4;
+            c.g[T6][0] = sx((c.g[T0][0] as u32).wrapping_add(1));
+            c.g[T4][0] = c.g[T0][0] ^ 1;
+            c.g[T5][0] = sx((c.g[T0][0] as u32) << 5);
+            c.g[V0][0] = sx((c.g[A2][0] as u32) << 3);
+            'row: loop {
+                c.cycles += 6;
+                c.g[A3][0] = 0;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T5][0] as u32));
+                c.g[T2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T7][0] as u32));
+                c.g[T1][0] = c.g[A2][0] ^ 2;
+                c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                'cell: loop {
+                    // Middle weight: 0x14 for index 0, 0xb for 1, 0 for 2.
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[S2][0];
+                    if c.g[T0][0] == 0 {
+                        c.cycles += 1;
+                        c.g[V0][0] = 0x14;
+                    } else {
+                        c.cycles += 2;
+                        if c.g[T4][0] != 0 {
+                            c.g[V0][0] = 0;
+                        }
+                    }
+                    // Inner weight: 0x14 / 0xf / 0xa / 0 for 0 / 1 / 2 / 3.
+                    c.cycles += 2;
+                    c.g[A0][0] = 0x14;
+                    if c.g[A2][0] != 0 {
+                        c.cycles += 2;
+                        c.g[A0][0] = c.g[S0][0];
+                        if c.g[A2][0] == c.g[S1][0] {
+                            c.cycles += 1;
+                            c.g[A0][0] = 0xf;
+                        } else {
+                            c.cycles += 2;
+                            if c.g[T1][0] != 0 {
+                                c.g[A0][0] = 0;
+                            }
+                        }
+                    }
+                    c.cycles += 13;
+                    c.g[V1][0] = sx((c.g[T3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = c.g[T8][0];
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    if c.g[A3][0] != 0 {
+                        c.g[V0][0] = 0;
+                    }
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+                    c.mtc1(3, 0);
+                    c.cvt_s_w(0, 0);
+                    c.g[V0][0] = ((c.g[A3][0] as i64) < 2) as u64;
+                    c.sub_s(0, 1, 0);
+                    c.swc1(0, c.g[A1][0] as u32);
+                    let more_cells = c.g[V0][0] != 0;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(4));
+                    if more_cells {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0011_b348);
+                        }
+                        continue 'cell;
+                    }
+                    break 'cell;
+                }
+                c.cycles += 4;
+                c.g[A2][0] = c.g[T2][0];
+                c.g[V0][0] = ((c.g[A2][0] as i64) < 4) as u64;
+                let more_rows = c.g[V0][0] != 0;
+                c.g[V0][0] = sx((c.g[A2][0] as u32) << 3);
+                if more_rows {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0011_b330);
+                    }
+                    continue 'row;
+                }
+                break 'row;
+            }
+            c.cycles += 4;
+            c.g[T0][0] = c.g[T6][0];
+            c.g[V0][0] = ((c.g[T0][0] as i64) < 3) as u64;
+            if c.g[V0][0] != 0 {
+                c.g[A2][0] = 0;
+                if event_due(c) {
+                    deliver_event_here(c, 0x0011_b320);
+                }
+                continue 'middle;
+            }
+            break 'middle;
+        }
+        c.cycles += 4;
+        c.g[V1][0] = c.g[T9][0];
+        c.g[V0][0] = ((c.g[V1][0] as i64) < 2) as u64;
+        if c.g[V0][0] != 0 {
+            c.mult(0, 15, 3, 20);
+            if event_due(c) {
+                deliver_event_here(c, 0x0011_b308);
+            }
+            continue 'outer;
+        }
+        break 'outer;
+    }
+    c.cycles += 7;
+    c.lq(16, sp(c).wrapping_add(0x40));
+    c.lq(17, sp(c).wrapping_add(0x30));
+    c.lq(18, sp(c).wrapping_add(0x20));
+    c.lq(19, sp(c).wrapping_add(0x10));
+    c.lq(20, sp(c));
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x50));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::game::ai::computer::tests::oc439_install_fakes;
 
     use crate::difftest::elf_image;
 
@@ -9811,6 +10333,237 @@ pub(crate) mod tests {
                 oc434_w(c, world + 0x84, x);
                 oc434_w(c, x + 0x28, y);
                 oc434_w(c, y, 5);
+            },
+        );
+    }
+
+    use crate::difftest::put_words;
+
+    /// Gate of this module's callee fakes (other tests' machines fall back).
+    pub(crate) const OC439_CTRL: u32 = DATA + 0xf_e000;
+
+    pub(crate) const OC439_MAGIC: u32 = 0x0c43_9a11;
+
+    /// Scripted value a "scripted" fake method returns in v0.
+    pub(crate) const OC439_SCRIPTED: u32 = OC439_CTRL + 0x40;
+
+    /// The stream-read fake's scripted words (id, id, word, word) and its counter.
+    pub(crate) const OC439_READS: u32 = OC439_CTRL + 0x20;
+
+    pub(crate) const OC439_READ_COUNT: u32 = OC439_CTRL + 0x30;
+
+    /// Fake method addresses (below the first translated function).
+    pub(crate) const OC439_FAKE_PLAIN: u32 = FAKE;
+
+    pub(crate) const OC439_FAKE_SCRIPTED: u32 = FAKE + 0x10;
+
+    pub(crate) const OC439_FAKE_READ: u32 = FAKE + 0x20;
+
+    /// Calls into the fake method area: logged like every fake; the scripted
+    /// method answers with the fixture's word, the stream-read method fills
+    /// 4-byte buffers from the fixture's script.
+    pub(crate) fn oc439_miss(c: &mut Cpu, target: u32) {
+        let ra = c.g[RA][0] as u32;
+        let (buf, len) = (c.g[A1][0] as u32, c.g[A2][0] as u32);
+        fakes::fake(c, target, ra);
+        if c.pc != ra {
+            return;
+        }
+        if target == OC439_FAKE_SCRIPTED {
+            let v = c.bus.read32(OC439_SCRIPTED);
+            c.g[V0][0] = sx(v);
+        } else if target == OC439_FAKE_READ && len == 4 {
+            let n = c.bus.read32(OC439_READ_COUNT);
+            c.bus.write32(OC439_READ_COUNT, n + 1);
+            let v = c.bus.read32(OC439_READS + 4 * (n & 3));
+            c.bus.write32(buf, v);
+        }
+    }
+
+    /// A scrambled machine with the fakes on, gp set, `pc` at the entry.
+    pub(crate) fn oc439_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32, entry: u32) -> Rng {
+        oc439_install_fakes();
+        let r = machine(c, seed, salt, calls);
+        c.bus.write32(OC439_CTRL, OC439_MAGIC);
+        c.hooks.miss = oc439_miss;
+        c.pc = entry;
+        r
+    }
+
+    /// `RiderMetrix_StartUberGrind`: seven stores and f0 (a1/a2 random).
+    #[test]
+    fn rider_metrix_start_uber_grind_matches() {
+        check(
+            ee::s00::f_00119938__generated,
+            rider_metrix_start_uber_grind,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x1199_3800 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0011_9938;
+                let this = DATA + 0x800 * (seed % 4);
+                c.g[A0][0] = sx(this);
+                fill(c, &mut r, this, 0x40);
+            },
+        );
+    }
+
+    // -- HUD wrappers ------------------------------------------------------------
+
+    /// `RiderMetrix_ShowHUDMsg2A`: HUD number 0x2a with the argument as value
+    /// (the HUD number call is faked; it unwinds on some seeds).
+    #[test]
+    fn rider_metrix_show_hud_msg_2a_matches() {
+        covered(
+            ee::s00::f_001195a8__generated,
+            rider_metrix_show_hud_msg_2a,
+            60,
+            &|c, seed| {
+                let mut r = oc439_machine(c, seed, 0x1195a8, 1, 0x0011_95a8);
+                c.g[A0][0] = sx(DATA + 0x100);
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// `RiderMetrix_ShowHUDMsg2B`: as 2A with number 0x2b.
+    #[test]
+    fn rider_metrix_show_hud_msg_2b_matches() {
+        covered(
+            ee::s00::f_001195d8__generated,
+            rider_metrix_show_hud_msg_2b,
+            60,
+            &|c, seed| {
+                let mut r = oc439_machine(c, seed, 0x1195d8, 1, 0x0011_95d8);
+                c.g[A0][0] = sx(DATA + 0x100);
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// `RiderMetrix_ShowHUDMsg1A`: HUD number 0x1a, value 0.
+    #[test]
+    fn rider_metrix_show_hud_msg_1a_matches() {
+        covered(
+            ee::s00::f_0011a0e0__generated,
+            rider_metrix_show_hud_msg_1a,
+            60,
+            &|c, seed| {
+                let _ = oc439_machine(c, seed, 0x11a0e0, 1, 0x0011_a0e0);
+                c.g[A0][0] = sx(DATA + 0x100);
+            },
+        );
+    }
+
+    /// `RiderMetrix_ShowWrongWay`: the HUD text call (faked, unwinding on
+    /// some seeds).
+    #[test]
+    fn rider_metrix_show_wrong_way_matches() {
+        covered(
+            ee::s00::f_0011a088__generated,
+            rider_metrix_show_wrong_way,
+            60,
+            &|c, seed| {
+                let _ = oc439_machine(c, seed, 0x11a088, 1, 0x0011_a088);
+                c.g[A0][0] = sx(DATA + 0x100);
+            },
+        );
+    }
+
+    /// `RiderMetrix_FinishHandplant`: the handplant counter (+0x80, wrapping
+    /// through 0x7fffffff), the finish and reset calls (faked; one of them
+    /// unwinds on some seeds) and the +0x30 clear.
+    #[test]
+    fn rider_metrix_finish_handplant_matches() {
+        covered(
+            ee::s00::f_00119c38__generated,
+            rider_metrix_finish_handplant_2,
+            80,
+            &|c, seed| {
+                let mut r = oc439_machine(c, seed, 0x119c38, 2, 0x0011_9c38);
+                let this = DATA + 0x100;
+                c.g[A0][0] = sx(this);
+                let count = if seed % 5 == 0 {
+                    0x7fff_ffff
+                } else {
+                    r.next_u32()
+                };
+                c.bus.write32(this + 0x80, count);
+                c.bus.write32(this + 0x30, r.next_u32());
+            },
+        );
+    }
+
+    // -- RiderMetrix_AwardPoints -------------------------------------------------------
+
+    /// `RiderMetrix_AwardPoints`: no cash, few players (1..9, skipped), many
+    /// players or none; every award kind 0..6 (kinds 5 and 6 are past the
+    /// switch table), a corrupt table entry (the jump-out), unwinds in the
+    /// BE and rider calls; the unported `0x1e3760` / `0x1597b0` run for real
+    /// over faked BE pointers.
+    #[test]
+    fn rider_metrix_award_points_matches() {
+        covered(
+            ee::s00::f_00119ef8__generated,
+            rider_metrix_award_points,
+            160,
+            &|c, seed| {
+                let mut r = oc439_machine(c, seed, 0x119ef8, 7, 0x0011_9ef8);
+                let (this, rider, vt) = (DATA + 0x100, DATA + 0x400, DATA + 0x800);
+                let (world, w84, players) = (DATA + 0x1000, DATA + 0x1100, DATA + 0x1200);
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, w84);
+                c.bus.write32(w84 + 0x28, players);
+                let count = match seed % 4 {
+                    0 => 0,
+                    1 => 1 + r.next_u32() % 9,
+                    _ => 10 + r.next_u32() % 5,
+                };
+                c.bus.write32(players, count);
+                c.bus.write32(GAME_GP - 0x1e90, 0);
+                c.bus.write32(this + 0x1ac, rider);
+                c.bus.write32(rider + 0x6c0, vt);
+                c.bus.write16(vt + 0x38, ((r.next_u32() % 16) * 4) as u16);
+                c.bus.write32(vt + 0x3c, OC439_FAKE_PLAIN);
+                c.bus.write32(this + 0x9c, r.next_u32());
+                let kind = seed / 4 % 7;
+                let mut table = [
+                    0x0011_9fec,
+                    0x0011_a010,
+                    0x0011_a028,
+                    0x0011_a04c,
+                    0x0011_a068,
+                ];
+                if seed % 29 == 11 && kind < 5 {
+                    table[kind as usize] = 0x0011_9ff0;
+                }
+                put_words(c, OC439_AWARD_TABLE, &table);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = kind as u64;
+                c.g[A2][0] = if seed % 11 == 3 {
+                    0
+                } else {
+                    (1 + r.next_u32() % 5000) as u64
+                };
+            },
+        );
+    }
+
+    // -- RiderTuning_FillTable4a6310 -----------------------------------------------------
+
+    /// `RiderTuning_FillTable4a6310`: pure table fill over scrambled registers
+    /// and stale table contents.
+    #[test]
+    fn rider_tuning_fill_table_4a6310_matches() {
+        check(
+            ee::s00::f_0011b2c0__generated,
+            rider_tuning_fill_table_4a6310,
+            12,
+            &|c, seed| {
+                let mut r = Rng(0x11b2_c000 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0011_b2c0;
+                fill(c, &mut r, OC439_TUNING_TABLE, 0x60);
             },
         );
     }

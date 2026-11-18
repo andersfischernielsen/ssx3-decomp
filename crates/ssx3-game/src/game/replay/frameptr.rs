@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -126,6 +127,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0026_f4a8, replay_update, "Replay_Update"),
     (0x0026_f228, replay_reset, "Replay_Reset"),
     (0x0026_efb8, replay_ctor, "Replay_ctor"),
+    (
+        0x0026_f498,
+        replay_empty_reset_hook,
+        "Replay_EmptyResetHook",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2205,6 +2211,12 @@ pub fn replay_ctor(c: &mut Cpu) {
     })
 }
 
+/// `Replay_EmptyResetHook(void)` (0x26f498): empty.
+pub fn replay_empty_reset_hook(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3019,6 +3031,19 @@ pub(crate) mod tests {
             &|c, seed| {
                 let _ = oc434_setup(c, seed, 0x26efb8, 21, 0x0026_efb8);
                 c.g[A0][0] = (DATA + 0x100) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn replay_empty_reset_hook_matches() {
+        check(
+            ee::s07::f_0026f498__generated,
+            replay_empty_reset_hook,
+            20,
+            &|c, seed| {
+                machine(c, seed, 0x26f498, 0);
+                c.pc = 0x0026_f498;
             },
         );
     }

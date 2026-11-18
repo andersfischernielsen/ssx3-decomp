@@ -6,9 +6,11 @@ use crate::abi::r32;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::fe::feasyncfile::at as at_2;
@@ -59,6 +61,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_d050,
         chase_cam_controller_set_algorithm_immediate,
         "ChaseCamController_SetAlgorithmImmediate",
+    ),
+    (
+        0x0015_cc70,
+        oc436_cam_controller_reset_for_rider,
+        "CamController_ResetForRider",
+    ),
+    (
+        0x0015_cd60,
+        cam_controller_clear_algorithms,
+        "CamController_ClearAlgorithms",
     ),
 ];
 
@@ -438,6 +450,93 @@ pub fn manual_cam_controller_ctor(c: &mut Cpu) {
     })
 }
 
+/// `CamController.cameras`: the list head word at +8 (its first word is the
+/// first list node).
+pub(crate) const OC436_CAMCTRL_LIST: u32 = 0x8;
+
+/// `CamController.camera` (the game camera at +0x10).
+pub(crate) const OC436_CAMCTRL_CAMERA: u32 = 0x10;
+
+/// List node: the object (+0) and the next node (+0x14).
+pub(crate) const OC436_NODE_NEXT: u32 = 0x14;
+
+/// Object vtable (+0x10) slot at +0x18 (`this` adjustment, halfword) and
+/// +0x1c (method).
+pub(crate) const OC436_OBJ_VTABLE: u32 = 0x10;
+
+pub(crate) const OC436_VT_ADJUST: u32 = 0x18;
+
+pub(crate) const OC436_VT_METHOD: u32 = 0x1c;
+
+/// `void CamController_ResetForRider(CamController* self, int rider)`
+/// (0x15cc70): call the virtual reset method (vtable +0x1c, with the
+/// `this` adjustment at +0x18) of every object in the controller's list with
+/// `rider`, then `GameCamera_ResetDefaultChase(self->camera)` and the world
+/// helper at 0x2f41a8 with the same camera.
+pub fn oc436_cam_controller_reset_for_rider(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x30);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(OC436_CAMCTRL_LIST));
+        c.g[S0][0] = c.lw(c.g[V0][0] as u32);
+        let empty = c.g[S0][0] == 0;
+        c.g[S2][0] = c.g[A1][0];
+        if !empty {
+            c.cycles += 2;
+            c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+            loop {
+                c.cycles += 9;
+                c.g[A1][0] = c.g[S2][0];
+                c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(OC436_OBJ_VTABLE));
+                c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(OC436_VT_ADJUST));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(OC436_VT_METHOD));
+                let method = c.g[V1][0] as u32;
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, method, 0x0015_ccb8)?;
+                c.g[S0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(OC436_NODE_NEXT));
+                if c.g[S0][0] != 0 {
+                    c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0015_cca0);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        c.cycles += 10;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(OC436_CAMCTRL_CAMERA));
+        call_ptr(c, 0x0015_e030, 0x0015_cccc)?;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(OC436_CAMCTRL_CAMERA));
+        call_ptr(c, 0x002f_41a8, 0x0015_ccd4)?;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `CamController_ClearAlgorithms(ctl)` (0x15cd60):
+/// `AlgorithmList_Clear(ctl->algorithms(+8))`.
+pub fn cam_controller_clear_algorithms(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        Some(8),
+        Target::Direct(Callee {
+            addr: 0x0015_cb08,
+            f: ee::s01::AlgorithmList_Clear,
+        }),
+        0x0015_cd70,
+    )
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -720,6 +819,88 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(DATA + 0x800);
             },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    use crate::difftest::fakes::ptr;
+
+    pub(crate) use crate::game::ai::rider::tests::oc436_machine;
+
+    pub(crate) use crate::game::camera::camera::tests::SEEDS_5 as SEEDS_7;
+
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::oc437_setup;
+
+    /// `CamController_ResetForRider`: a list of 0-3 nodes whose objects have
+    /// a vtable method (a logged fake, with a `this` adjustment); the
+    /// controller's camera is then reset (a fake) and the world helper at
+    /// 0x2f41a8 runs for real on a world with no sections.
+    #[test]
+    fn oc436_cam_controller_reset_for_rider_matches() {
+        covered(
+            ee::s01::f_0015cc70__generated,
+            oc436_cam_controller_reset_for_rider,
+            SEEDS_7,
+            &|c, seed| {
+                let mut r = oc436_machine(c, seed, 0x15cc70, 6);
+                // The world has no sections: the helper at 0x2f41a8 returns
+                // at once.
+                let world = DATA + 0x6000;
+                c.bus.write32(GAME_GP - 0x848, world);
+                let ctrl = DATA + 0x1000;
+                let list = DATA + 0x1100;
+                let cam = DATA + 0x1200;
+                c.g[A0][0] = sx(ctrl);
+                c.g[A1][0] = sx(r.next_u32());
+                c.bus.write32(ctrl + OC436_CAMCTRL_LIST, list);
+                c.bus.write32(ctrl + OC436_CAMCTRL_CAMERA, cam);
+                let n = seed % 4;
+                let mut next = 0;
+                for i in (0..n).rev() {
+                    let node = DATA + 0x1400 + 0x40 * i;
+                    let obj = DATA + 0x1800 + 0x40 * i;
+                    // The vtable: `this` adjustment (a random halfword) and
+                    // a method that is a fake address.
+                    let vt = DATA + 0x2000 + 0x40 * i;
+                    let adjust = (r.next_u32() as i16 as i32 & !3) as u32;
+                    c.bus.write16(vt + OC436_VT_ADJUST, adjust as u16);
+                    c.bus.write32(vt + OC436_VT_METHOD, FAKE + 0x10 * i);
+                    c.bus.write32(obj + OC436_OBJ_VTABLE, vt);
+                    c.bus.write32(node, obj);
+                    c.bus.write32(node + OC436_NODE_NEXT, next);
+                    next = node;
+                }
+                c.bus.write32(list, next);
+            },
+        );
+    }
+
+    /// Like [`oc437_covered`] but only `check`: for callees whose gated fake is
+    /// not reached through the override slot; the real callee runs on the
+    /// fixture, which keeps it short (zeroed list heads, negative counts).
+    pub(crate) fn oc437_checked(
+        generated: fn(&mut Cpu),
+        hand: fn(&mut Cpu),
+        entry: u32,
+        init: &dyn Fn(&mut Cpu, &mut crate::difftest::Rng, u32),
+    ) {
+        check(generated, hand, 300, &|c, seed| {
+            let mut r = oc437_setup(c, seed, entry, 0);
+            let obj = ptr(&mut r);
+            c.g[A0][0] = obj as u64;
+            crate::difftest::fill(c, &mut r, obj, 0x300 / 4);
+            init(c, &mut r, seed);
+        });
+    }
+
+    #[test]
+    fn cam_controller_clear_algorithms_matches() {
+        oc437_checked(
+            ee::s01::f_0015cd60__generated,
+            cam_controller_clear_algorithms,
+            0x0015_cd60,
+            &|_, _, _| {},
         );
     }
 }

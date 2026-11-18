@@ -7,8 +7,10 @@ use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::call::Unwound;
 use crate::call::VSlot;
 use crate::events::deliver_event_here;
@@ -254,6 +256,36 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0028_1f30,
         script_engine_create_script_database,
         "ScriptEngine_CreateScriptDatabase",
+    ),
+    (
+        0x0028_2bb0,
+        oc436_script_engine_get_seq_process_script,
+        "ScriptEngine_GetSeqProcessScript",
+    ),
+    (
+        0x0028_2c18,
+        script_engine_get_seq_instance,
+        "ScriptEngine_GetSeqInstance",
+    ),
+    (
+        0x0028_2da8,
+        c_transition_man_script_set_owner,
+        "cTransitionMan_ScriptSetOwner",
+    ),
+    (
+        0x0028_2db0,
+        ctransition_man_stop_transition,
+        "cTransitionMan_StopTransition",
+    ),
+    (
+        0x0028_2f80,
+        script_binding_is_bound,
+        "ScriptBinding_IsBound",
+    ),
+    (
+        0x0028_3180,
+        oc436_script_cam_binding_unbind,
+        "ScriptCamBinding_Unbind",
     ),
 ];
 
@@ -2635,6 +2667,94 @@ pub fn script_engine_create_script_database(c: &mut Cpu) {
     })
 }
 
+/// `ScriptCamBinding.state` (+0xc): 9 once unbound.
+pub(crate) const OC436_BINDING_STATE: u32 = 0xc;
+
+/// `void ScriptCamBinding_Unbind(ScriptCamBinding* b)` (0x283180):
+/// `ScriptBinding_Unbind(b)`, then state (+0xc) = 9.
+pub fn oc436_script_cam_binding_unbind(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0028_3000, 0x0028_3194)?;
+        c.g[V0][0] = 9;
+        frame.restore_ra(c, 0);
+        c.sw(
+            (c.g[S0][0] as u32).wrapping_add(OC436_BINDING_STATE),
+            c.g[V0][0],
+        );
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `Script* ScriptEngine_GetSeqProcessScript(?, SeqProcess* p)` (0x282bb0):
+/// `p->owner(+0xc)->script(+0xc)`.
+pub fn oc436_script_engine_get_seq_process_script(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc));
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+    c.pc = t;
+}
+
+/// `cTransitionMan_StopTransition(self)` (0x282db0): calls
+/// `cTransitionMan_StartTransition(self, a1, a2, self->field_0x28)` with the
+/// caller's `a1`/`a2` untouched.
+pub fn ctransition_man_stop_transition(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A3][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x28)).lw(c);
+        Callee {
+            addr: 0x0028_2dd0,
+            f: ee::s07::cTransitionMan_StartTransition,
+        }
+        .call(c, 0x0028_2dc0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ScriptEngine_GetSeqInstance(engine)` (0x282c18):
+/// `InSeq_GetInstance(engine->seq(+0x2b8))`.
+pub fn script_engine_get_seq_instance(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        Some(0x2b8),
+        Target::Direct(Callee {
+            addr: 0x0027_2cc0,
+            f: ee::s07::InSeq_GetInstance,
+        }),
+        0x0028_2c28,
+    )
+}
+
+/// `bool ScriptBinding_IsBound(ScriptBinding* b)` (0x282f80): `b->id (+8) != 0`.
+pub fn script_binding_is_bound(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x8)).lw(c);
+    c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
+    ret(c);
+}
+
+/// `void cTransitionMan_ScriptSetOwner(cTransitionMan* m, int owner)`
+/// (0x282da8): `m->owner (+0x10) = owner`.
+pub fn c_transition_man_script_set_owner(c: &mut Cpu) {
+    c.cycles += 2;
+    {
+        let v = c.g[A1][0];
+        Addr((c.g[A0][0] as u32).wrapping_add(0x10)).sw(c, v);
+    }
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3849,6 +3969,73 @@ pub(crate) mod tests {
                 c.g[A2][0] = (1 + seed / 5 % 3) as u64;
                 c.g[A3][0] = [0x4000, 0x8000][(seed / 3 % 2) as usize];
             },
+        );
+    }
+
+    pub(crate) use crate::game::animation::gameanimmap::tests::oc438_leaf;
+    pub(crate) use crate::game::camera::camera::tests::SEEDS_5 as SEEDS_10;
+    pub(crate) use crate::game::camera::cameracontroller::tests::oc437_checked;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::oc437_covered;
+
+    pub(crate) use crate::game::replay::replaycache::tests::oc436_word;
+
+    /// `ScriptEngine_GetSeqProcessScript`: `p->owner->script` through two
+    /// pointers.
+    #[test]
+    fn oc436_script_engine_get_seq_process_script_matches() {
+        check(
+            ee::s07::f_00282bb0__generated,
+            oc436_script_engine_get_seq_process_script,
+            SEEDS_10,
+            &|c, seed| {
+                let mut r = Rng(0x2825_b0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                let (p, owner) = (DATA + 0x100, DATA + 0x200);
+                c.g[A1][0] = sx(p);
+                c.bus.write32(p + 0xc, owner);
+                let w = oc436_word(&mut r);
+                c.bus.write32(owner + 0xc, w);
+            },
+        );
+    }
+
+    #[test]
+    fn ctransition_man_stop_transition_matches() {
+        oc437_covered(
+            ee::s07::f_00282db0__generated,
+            ctransition_man_stop_transition,
+            0x0028_2db0,
+            1,
+            &|_, _, _| {},
+        );
+    }
+
+    #[test]
+    fn script_engine_get_seq_instance_matches() {
+        oc437_checked(
+            ee::s07::f_00282c18__generated,
+            script_engine_get_seq_instance,
+            0x0028_2c18,
+            &|_, _, _| {},
+        );
+    }
+
+    /// `ScriptBinding_IsBound`: `+8` zero, one, negative or random.
+    #[test]
+    fn script_binding_is_bound_matches() {
+        oc438_leaf(
+            ee::s07::f_00282f80__generated,
+            script_binding_is_bound,
+            0x0028_2f80,
+        );
+    }
+
+    #[test]
+    fn c_transition_man_script_set_owner_matches() {
+        oc438_leaf(
+            ee::s07::f_00282da8__generated,
+            c_transition_man_script_set_owner,
+            0x0028_2da8,
         );
     }
 }

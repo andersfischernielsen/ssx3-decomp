@@ -50,6 +50,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         camera_trigger_man_parse,
         "CameraTriggerMan_Parse",
     ),
+    (
+        0x0016_bf20,
+        oc436_camera_trigger_man_clear_data,
+        "CameraTriggerMan_ClearData",
+    ),
+    (
+        0x0016_c3a8,
+        camera_trigger_man_read_version,
+        "CameraTriggerMan_ReadVersion",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -550,6 +560,40 @@ pub fn camera_trigger_man_free_triggers(c: &mut Cpu) {
     })
 }
 
+/// `CameraTriggerMan* CameraTriggerMan_ClearData(CameraTriggerMan* m)`
+/// (0x16bf20): zero the first word, then `CameraTriggerMan_ResetHeader(m)`;
+/// v0 holds `m` before the call (the callee's result replaces it).
+pub fn oc436_camera_trigger_man_clear_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.sw(c.g[V0][0] as u32, 0);
+        call_ptr(c, 0x0016_c390, 0x0016_bf34)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void CameraTriggerMan_ReadVersion(CameraTriggerList* list, Stream* s)`
+/// (0x16c3a8): `Serialize_ReadU32_2(s, &list->version (+0xc))`.
+pub fn camera_trigger_man_read_version(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xc));
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002d_2558, 0x0016_c3c0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::ee;
@@ -887,6 +931,27 @@ pub(crate) mod tests {
                         c.bus.write32(this + 0x200 + i * 0x40 + off, v);
                     }
                 }
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::camera::trigger::cameratriggerman::tests::oc438_install_fakes;
+    pub(crate) use crate::game::camera::trigger::cameratriggerman::tests::oc438_machine;
+
+    /// `CameraTriggerMan_ReadVersion`: `Serialize_ReadU32_2(s, &list->version)`.
+    #[test]
+    fn camera_trigger_man_read_version_matches() {
+        oc438_install_fakes();
+        covered(
+            ee::s02::f_0016c3a8__generated,
+            camera_trigger_man_read_version,
+            200,
+            &|c, seed| {
+                let mut r = oc438_machine(c, seed, 0x0016_c3a8, 1);
+                c.g[A0][0] = r.next_u32() as u64;
+                c.g[A1][0] = r.next_u32() as u64;
             },
         );
     }

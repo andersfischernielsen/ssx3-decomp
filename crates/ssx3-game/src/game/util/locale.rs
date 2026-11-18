@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -72,6 +73,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cfe_state_audio_options_transition_in,
         "cFEStateAudioOptions_TransitionIn",
     ),
+    (0x001d_cc40, fe_locale_init_flags, "FELocale_InitFlags"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -857,6 +859,20 @@ pub fn c_fe_state_audio_options_init(c: &mut Cpu) {
     });
 }
 
+/// `tAttrLocale* FELocale_InitFlags(tAttrLocale* p)` (0x1dcc40): keeps only
+/// the top three bits (0xe0) of the flag byte at `p`; returns `p`.
+pub fn fe_locale_init_flags(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[V1][0] = Addr(c.g[A0][0] as u32).lbu(c);
+    c.g[V0][0] = c.g[A0][0];
+    c.g[V1][0] &= 0xe0;
+    {
+        let v = c.g[V1][0];
+        Addr(c.g[A0][0] as u32).sb(c, v);
+    }
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1169,6 +1185,18 @@ pub(crate) mod tests {
                 w(c, DATA + 0x2004, r.next_u32());
                 w(c, DATA + 0x80, r.next_u32());
             },
+        );
+    }
+
+    pub(crate) use crate::game::animation::gameanimmap::tests::oc438_leaf;
+
+    /// `FELocale_InitFlags`: the byte at `p` is random (word is random).
+    #[test]
+    fn fe_locale_init_flags_matches() {
+        oc438_leaf(
+            ee::s04::f_001dcc40__generated,
+            fe_locale_init_flags,
+            0x001d_cc40,
         );
     }
 }

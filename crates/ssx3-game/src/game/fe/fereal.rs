@@ -11,6 +11,7 @@ use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::oc437_dtor_flag_delete;
 pub(crate) use crate::game::fe::feasyncfile::at_2 as at;
 pub(crate) use crate::game::fe::feasyncfile::lh_r;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
@@ -52,6 +53,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x001a_2e20, feui_sound_ctor, "FEUISound_ctor"),
     (0x001a_2f38, ovui_sound_ctor, "OVUISound_ctor"),
     (0x001a_2208, fe_module_render, "FEModule_Render"),
+    (0x001d_cc78, feui_custom_dtor, "FEUICustom_dtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -992,6 +994,11 @@ pub(crate) fn fe_render_epilogue(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
+/// `FEUICustom_dtor(this, flags)` (0x1dcc78): vtable at +4, delete if `flags & 1`.
+pub fn feui_custom_dtor(c: &mut Cpu) {
+    oc437_dtor_flag_delete(c, 0x47_0000, 0x22d8, 0x4, 0x001d_cc9c)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1469,6 +1476,20 @@ pub(crate) mod tests {
                     c.bus.write32(LOG_RESULTS + 12, 1 + r.next_u32() % 1024);
                 }
             },
+        );
+    }
+
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::oc437_covered;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::oc437_dtor_flags;
+
+    #[test]
+    fn feui_custom_dtor_matches() {
+        oc437_covered(
+            ee::s04::f_001dcc78__generated,
+            feui_custom_dtor,
+            0x001d_cc78,
+            1,
+            &oc437_dtor_flags,
         );
     }
 }

@@ -693,6 +693,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         script_view_obj_activate_2,
         "ScriptViewObj_Activate",
     ),
+    (
+        0x0027_8710,
+        script_engine_clear_skip_delay_on_enter,
+        "ScriptEngine_ClearSkipDelayOnEnter",
+    ),
+    (
+        0x0027_9888,
+        oc436_script_engine_unload_script_bank,
+        "ScriptEngine_UnloadScriptBank",
+    ),
+    (
+        0x0027_d680,
+        script_obj_cam_set_owner,
+        "ScriptObjCam_SetOwner",
+    ),
+    (
+        0x0028_1160,
+        script_view_obj_set_view_index,
+        "ScriptViewObj_SetViewIndex",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -13218,6 +13238,66 @@ pub fn script_engine_find_anim_bank(c: &mut Cpu) {
     })
 }
 
+/// `void ScriptEngine_UnloadScriptBank(int id)` (0x279888): find the bank
+/// slot of `id` (`FindBankSlotById(id, ?, 2)`); when it is found (>= 0),
+/// `ScriptEngine_UnloadBank(id, slot)`.
+pub fn oc436_script_engine_unload_script_bank(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        c.g[A2][0] = 2;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0027_b578, 0x0027_98a0)?;
+        let not_found = (c.g[V0][0] as i64) < 0;
+        c.g[A0][0] = c.g[S0][0];
+        if !not_found {
+            c.cycles += 2;
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, 0x0027_b410, 0x0027_98b0)?;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void ScriptViewObj_SetViewIndex(ScriptViewObj* o, int i)` (0x281160):
+/// `o->view_index (+0xf8) = i`.
+pub fn script_view_obj_set_view_index(c: &mut Cpu) {
+    c.cycles += 2;
+    {
+        let v = c.g[A1][0];
+        Addr((c.g[A0][0] as u32).wrapping_add(0xf8)).sw(c, v);
+    }
+    ret(c);
+}
+
+/// `void ScriptObjCam_SetOwner(ScriptObjCam* o, int owner)` (0x27d680):
+/// `o->owner (+0x10) = owner`.
+pub fn script_obj_cam_set_owner(c: &mut Cpu) {
+    c.cycles += 2;
+    {
+        let v = c.g[A1][0];
+        Addr((c.g[A0][0] as u32).wrapping_add(0x10)).sw(c, v);
+    }
+    ret(c);
+}
+
+// -- Trivial leaves -----------------------------------------------------------
+
+/// `void ScriptEngine_ClearSkipDelayOnEnter(ScriptEngine* self)` (0x278710):
+/// `self->skip_delay_on_enter = 0` (+0x554).
+pub fn script_engine_clear_skip_delay_on_enter(c: &mut Cpu) {
+    c.cycles += 2;
+    let this = c.g[A0][0] as u32;
+    c.sw(this.wrapping_add(0x554), 0);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
@@ -18303,6 +18383,72 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = engine as u64;
                 c.g[A1][0] = [0u64, 2, 4, 5, 9][seed as usize % 5];
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::rider::tests::oc436_machine;
+    pub(crate) use crate::game::ai::rider::tests::OC436_BANK_RESULT;
+
+    pub(crate) use crate::game::animation::gameanimmap::tests::oc438_leaf;
+    pub(crate) use crate::game::camera::camera::tests::SEEDS_5 as SEEDS_17;
+    pub(crate) use crate::game::replay::replaycache::tests::oc436_word;
+
+    /// `ScriptEngine_UnloadScriptBank`: the bank slot found (>= 0), not found
+    /// (-1 or any negative) and a fake that unwinds.
+    #[test]
+    fn oc436_script_engine_unload_script_bank_matches() {
+        covered(
+            ee::s07::f_00279888__generated,
+            oc436_script_engine_unload_script_bank,
+            SEEDS_17,
+            &|c, seed| {
+                let mut r = oc436_machine(c, seed, 0x279888, 2);
+                let slot = match seed % 3 {
+                    0 => 0xffff_ffff,
+                    1 => 0x8000_0000 | r.next_u32(),
+                    _ => r.next_u32() & 0x7fff_ffff,
+                };
+                c.bus.write32(OC436_BANK_RESULT, slot);
+                c.g[A0][0] = sx(oc436_word(&mut r));
+            },
+        );
+    }
+
+    #[test]
+    fn script_view_obj_set_view_index_matches() {
+        oc438_leaf(
+            ee::s07::f_00281160__generated,
+            script_view_obj_set_view_index,
+            0x0028_1160,
+        );
+    }
+
+    #[test]
+    fn script_obj_cam_set_owner_matches() {
+        oc438_leaf(
+            ee::s07::f_0027d680__generated,
+            script_obj_cam_set_owner,
+            0x0027_d680,
+        );
+    }
+
+    // -- trivial leaves ----------------------------------------------------------
+
+    /// `ScriptEngine_ClearSkipDelayOnEnter`: clears +0x554 whatever it held.
+    #[test]
+    fn script_engine_clear_skip_delay_on_enter_matches() {
+        check(
+            ee::s07::f_00278710__generated,
+            script_engine_clear_skip_delay_on_enter,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x2787_1000 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0027_8710;
+                let this = DATA + 0x100 * (seed % 8);
+                c.g[A0][0] = sx(this);
+                fill(c, &mut r, this + 0x550, 4);
             },
         );
     }

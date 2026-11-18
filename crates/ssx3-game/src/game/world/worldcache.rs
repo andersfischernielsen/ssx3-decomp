@@ -203,6 +203,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cworld_cache_streamer_attach_sdb,
         "cWorldCache_StreamerAttachSdb",
     ),
+    (0x003a_7dd0, oc436_cworld_cache_ctor, "cWorldCache_ctor"),
+    (
+        0x003a_8f80,
+        cworld_cache_streamer_ctor,
+        "cWorldCache_StreamerCtor",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4096,6 +4102,66 @@ pub fn world_cache_free(c: &mut Cpu) {
     })
 }
 
+/// `cWorldCache::cWorldCache(this)` (0x3a7dd0): construct the streamer view
+/// at +0x10 (`cWorldCache_StreamerCtor`) and the stream manager at +0x300
+/// (`cStreamMan_ctor`), clear +0, +4, +8, +0xc, +0x3e8, +0x3ec and store
+/// `(int)(float(*(int*)(*(gp+0x2a74) + 0x10)) * *(float*)(gp-0x23c4))` at
+/// +0x1bf0; returns `this`.
+pub fn oc436_cworld_cache_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+        call_ptr(c, 0x003a_8f80, 0x003a_7de8)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x300));
+        call_ptr(c, 0x003a_6d50, 0x003a_7df0)?;
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2a74));
+        c.g[V0][0] = c.g[S0][0];
+        let this = c.g[S0][0] as u32;
+        for off in [0x0, 0x3ec, 0x3e8, 0xc, 0x4, 0x8] {
+            c.sw(this.wrapping_add(off), 0);
+        }
+        c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x23c4));
+        c.lwc1(0, (c.g[V1][0] as u32).wrapping_add(0x10));
+        c.cvt_s_w(0, 0);
+        frame.restore_ra(c, 0);
+        c.mul_s(0, 0, 1);
+        c.cvt_w_s(1, 0);
+        c.swc1(1, this.wrapping_add(0x1bf0));
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cWorldCache* cWorldCache_StreamerCtor(self)` (0x3a8f80): resets the
+/// streamer (`cWorldCache_StreamerReset(self)`) and returns `self`.
+pub fn cworld_cache_streamer_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = 1;
+        frame.save(c, S0, 0x10);
+        c.g[V1][0] = u64::MAX;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = c.g[S0][0];
+        Callee {
+            addr: 0x003a_9188,
+            f: ee::s13::cWorldCache_StreamerReset,
+        }
+        .call(c, 0x003a_8fa0)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5733,6 +5799,57 @@ pub(crate) mod tests {
                 oc434_w(c, table + 8, 0);
                 oc434_w(c, OC434_UNLOADED, (seed / 8) % 8);
             },
+        );
+    }
+
+    pub(crate) use crate::game::ai::rider::tests::oc436_machine;
+
+    pub(crate) use crate::game::camera::camera::tests::SEEDS_5 as SEEDS_10;
+    pub(crate) use crate::game::camera::cameracontroller::tests::oc437_checked;
+
+    /// `cWorldCache_ctor`: random object contents, the streamer reset and
+    /// stream-manager constructors are fakes (the streamer constructor runs
+    /// for real around its reset); the frame-count word at `*(gp+0x2a74) +
+    /// 0x10` and the scale at gp-0x23c4 give the stored int.
+    #[test]
+    fn oc436_cworld_cache_ctor_matches() {
+        covered(
+            ee::s13::f_003a7dd0__generated,
+            oc436_cworld_cache_ctor,
+            SEEDS_10,
+            &|c, seed| {
+                let mut r = oc436_machine(c, seed, 0x3a7dd0, 3);
+                let this = DATA + 0x1000;
+                for k in 0..8u32 {
+                    let v = r.next_u32();
+                    c.bus.write32(this + 4 * k, v);
+                }
+                c.g[A0][0] = sx(this);
+                let cfg = DATA + 0x8000;
+                c.bus.write32(GAME_GP + 0x2a74, cfg);
+                let count = if seed % 4 == 0 {
+                    0xffff_fff0
+                } else {
+                    r.next_u32() % 1000
+                };
+                c.bus.write32(cfg + 0x10, count);
+                let scale = if seed % 5 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(4.0)
+                };
+                c.bus.write32(GAME_GP - 0x23c4, scale);
+            },
+        );
+    }
+
+    #[test]
+    fn cworld_cache_streamer_ctor_matches() {
+        oc437_checked(
+            ee::s13::f_003a8f80__generated,
+            cworld_cache_streamer_ctor,
+            0x003a_8f80,
+            &|_, _, _| {},
         );
     }
 }

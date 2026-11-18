@@ -600,6 +600,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_wipeout_sub_play_final_anim,
         "RiderWipeoutSub_PlayFinalAnim",
     ),
+    (
+        0x0012_89f0,
+        oc436_ai_reset_riders_default,
+        "AI_ResetRidersDefault",
+    ),
 ];
 
 /// `gp`-relative globals used here.
@@ -20742,6 +20747,20 @@ pub fn ai_load_anim_data_sources(c: &mut Cpu) {
         frame.restore(c, S1, 0x30);
         frame.restore(c, S2, 0x20);
         frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AI_ResetRidersDefault(ai)` (0x1289f0): `AI_ResetRiders(ai, 0)`.
+pub fn oc436_ai_reset_riders_default(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0012_97c8, 0x0012_8a00)?;
+        frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
     })

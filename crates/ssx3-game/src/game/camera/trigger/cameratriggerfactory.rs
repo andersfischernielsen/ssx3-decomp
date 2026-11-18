@@ -394,6 +394,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         default_3_chase_camera_algorithm_dtor,
         "Default_3ChaseCameraAlgorithm_dtor",
     ),
+    (
+        0x0017_6368,
+        manual_script_camera_algo_dtor,
+        "ManualScriptCameraAlgo_dtor",
+    ),
+    (
+        0x0017_6398,
+        target_script_camera_algo_dtor,
+        "TargetScriptCameraAlgo_dtor",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6487,6 +6497,49 @@ pub fn default_3_chase_camera_algorithm_dtor(c: &mut Cpu) {
     })
 }
 
+/// The delete helper called by scalar-deleting destructors (0x317e50).
+pub(crate) const OC437_OPERATOR_DELETE: u32 = 0x0031_7e50;
+
+/// A scalar-deleting destructor: sets the vtable pointer
+/// (`vtable_hi - vtable_lo`) at `this + vtable_field`, and when `flags & 1`
+/// calls the delete helper (0x317e50) on `this`.
+pub(crate) fn oc437_dtor_flag_delete(
+    c: &mut Cpu,
+    vtable_hi: u32,
+    vtable_lo: u32,
+    vtable_field: u32,
+    ret_to: u32,
+) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = vtable_hi as u64;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(vtable_hi.wrapping_sub(vtable_lo));
+        c.g[A1][0] &= 1;
+        let skip = c.g[A1][0] == 0;
+        c.sw((c.g[A0][0] as u32).wrapping_add(vtable_field), c.g[V0][0]);
+        if !skip {
+            c.cycles += 2;
+            call_ptr(c, OC437_OPERATOR_DELETE, ret_to)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `TargetScriptCameraAlgo_dtor(this, flags)` (0x176398): vtable at +0x10, delete if `flags & 1`.
+pub fn target_script_camera_algo_dtor(c: &mut Cpu) {
+    oc437_dtor_flag_delete(c, 0x46_0000, 0x4220, 0x10, 0x0017_63bc)
+}
+
+/// `ManualScriptCameraAlgo_dtor(this, flags)` (0x176368): vtable at +0x10, delete if `flags & 1`.
+pub fn manual_script_camera_algo_dtor(c: &mut Cpu) {
+    oc437_dtor_flag_delete(c, 0x46_0000, 0x4220, 0x10, 0x0017_638c)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -8795,6 +8848,129 @@ pub(crate) mod tests {
                 let mut r = Rng(0x176450 ^ seed as u64);
                 scramble(c, &mut r);
             },
+        );
+    }
+
+    use crate::difftest::fakes::ptr;
+
+    /// Gate for this module's callee fakes (outside the pool and the log).
+    pub(crate) const OC437_GATE: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC437_MAGIC: u32 = 0x0c43_7001;
+
+    pub(crate) fn oc437_noop(_c: &mut Cpu) {}
+
+    /// A gated fake for the callee behind override slot `$slot`: with the gate
+    /// set it logs the call (`fakes::fake_call`, which may unwind); otherwise it
+    /// runs what the slot held.
+    macro_rules! oc437_fake {
+        ($name:ident) => {
+            pub(crate) fn $name(c: &mut Cpu) {
+                if c.bus.read32(OC437_GATE) != OC437_MAGIC {
+                    return fakes::fall_back(c, fakes::prev_cell($name), oc437_noop);
+                }
+                let target = c.pc;
+                fakes::fake_call(c, target)
+            }
+        };
+    }
+
+    oc437_fake!(oc437_fake_a);
+
+    oc437_fake!(oc437_fake_b);
+
+    oc437_fake!(oc437_fake_c);
+
+    oc437_fake!(oc437_fake_d);
+
+    oc437_fake!(oc437_fake_e);
+
+    oc437_fake!(oc437_fake_f);
+
+    oc437_fake!(oc437_fake_g);
+
+    oc437_fake!(oc437_fake_h);
+
+    oc437_fake!(oc437_fake_i);
+
+    oc437_fake!(oc437_fake_j);
+
+    pub(crate) fn oc437_install_fakes() {
+        use std::ptr::addr_of_mut;
+        let slots: [(*mut fn(&mut Cpu), fn(&mut Cpu)); 10] = [
+            (addr_of_mut!(ee::s10::OVERRIDE_00317D70), oc437_fake_a),
+            (addr_of_mut!(ee::s07::OVERRIDE_00282DD0), oc437_fake_b),
+            (addr_of_mut!(ee::s07::OVERRIDE_00272CC0), oc437_fake_c),
+            (addr_of_mut!(ee::s07::OVERRIDE_002724E8), oc437_fake_d),
+            (addr_of_mut!(ee::s01::OVERRIDE_0015CB08), oc437_fake_e),
+            (addr_of_mut!(ee::s07::OVERRIDE_002776E0), oc437_fake_f),
+            (addr_of_mut!(ee::s07::OVERRIDE_00277838), oc437_fake_g),
+            (addr_of_mut!(ee::s13::OVERRIDE_003A9188), oc437_fake_h),
+            (addr_of_mut!(ee::s13::OVERRIDE_0039E390), oc437_fake_i),
+            (addr_of_mut!(ee::s10::OVERRIDE_00317E50), oc437_fake_j),
+        ];
+        for (slot, fake) in slots {
+            fakes::hook(slot, fake, fakes::prev_cell(fake));
+        }
+    }
+
+    /// Fixture start: fakes hooked and gated on, `c.pc` at the entry.
+    pub(crate) fn oc437_setup(
+        c: &mut Cpu,
+        seed: u32,
+        entry: u32,
+        calls: u32,
+    ) -> crate::difftest::Rng {
+        oc437_install_fakes();
+        let r = machine(c, seed, entry as u64, calls);
+        c.pc = entry;
+        c.bus.write32(OC437_GATE, OC437_MAGIC);
+        r
+    }
+
+    /// Runs `check`/`covered` for a call-making function.
+    pub(crate) fn oc437_covered(
+        generated: fn(&mut Cpu),
+        hand: fn(&mut Cpu),
+        entry: u32,
+        calls: u32,
+        init: &dyn Fn(&mut Cpu, &mut crate::difftest::Rng, u32),
+    ) {
+        covered(generated, hand, 300, &|c, seed| {
+            let mut r = oc437_setup(c, seed, entry, calls);
+            let obj = ptr(&mut r);
+            c.g[A0][0] = obj as u64;
+            crate::difftest::fill(c, &mut r, obj, 0x300 / 4);
+            init(c, &mut r, seed);
+        });
+    }
+
+    /// `flags & 1` clear (no delete) and set (delete call, may unwind).
+    pub(crate) fn oc437_dtor_flags(c: &mut Cpu, r: &mut crate::difftest::Rng, seed: u32) {
+        let hi = (r.next_u32() as u64) << 32;
+        let low = (seed % 2) as u64;
+        c.g[A1][0] = hi | low | (r.next_u32() & 0xe) as u64;
+    }
+
+    #[test]
+    fn target_script_camera_algo_dtor_matches() {
+        oc437_covered(
+            ee::s02::f_00176398__generated,
+            target_script_camera_algo_dtor,
+            0x0017_6398,
+            1,
+            &oc437_dtor_flags,
+        );
+    }
+
+    #[test]
+    fn manual_script_camera_algo_dtor_matches() {
+        oc437_covered(
+            ee::s02::f_00176368__generated,
+            manual_script_camera_algo_dtor,
+            0x0017_6368,
+            1,
+            &oc437_dtor_flags,
         );
     }
 }

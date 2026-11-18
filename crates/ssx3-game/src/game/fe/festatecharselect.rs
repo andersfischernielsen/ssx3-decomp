@@ -71,6 +71,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cfe_state_char_setup_ctor,
         "cFEStateCharSetup_ctor",
     ),
+    (
+        0x001d_d840,
+        fe_state_char_select_dtor,
+        "cFEStateCharSelect_dtor",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -616,6 +621,28 @@ pub fn cfe_state_char_select_handle_input(c: &mut Cpu) {
     })
 }
 
+/// `void cFEStateCharSelect::~cFEStateCharSelect(this)` (0x1dd840): installs
+/// the state's vtable (0x46d0d0) at `this+8`, then runs the `UIState`
+/// destructor (0x39e390).
+pub fn fe_state_char_select_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x47_0000;
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2f30));
+        {
+            let v = c.g[V0][0];
+            Addr((c.g[V1][0] as u32).wrapping_add(0x8)).sw(c, v);
+        }
+        call_ptr(c, 0x0039_e390, 0x001d_d85c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -903,5 +930,26 @@ pub(crate) mod tests {
         for hz in [120, 240] {
             assert!((run(hz) - 11.5).abs() < 1e-4, "{hz} Hz");
         }
+    }
+
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::camera::trigger::cameratriggerman::tests::oc438_install_fakes;
+    pub(crate) use crate::game::camera::trigger::cameratriggerman::tests::oc438_machine;
+
+    /// `cFEStateCharSelect_dtor`: stores the vtable at `this+8`, calls the
+    /// `UIState` dtor (faked, sometimes unwinding).
+    #[test]
+    fn fe_state_char_select_dtor_matches() {
+        oc438_install_fakes();
+        covered(
+            ee::s04::f_001dd840__generated,
+            fe_state_char_select_dtor,
+            200,
+            &|c, seed| {
+                let mut r = oc438_machine(c, seed, 0x001d_d840, 1);
+                c.g[A0][0] = (DATA + (r.next_u32() & 0xff0)) as u64;
+            },
+        );
     }
 }

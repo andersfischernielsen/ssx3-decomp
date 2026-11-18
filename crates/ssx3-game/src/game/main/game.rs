@@ -133,6 +133,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0022_d088, section_man_load_event, "SectionMan_LoadEvent"),
     (0x0022_cd40, section_man_init, "SectionMan_Init"),
     (0x0022_de98, section_man_apply_sky, "SectionMan_ApplySky"),
+    (
+        0x0022_d668,
+        oc436_section_man_advance_event_switch_sync,
+        "SectionMan_AdvanceEventSwitchSync",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2767,6 +2772,88 @@ pub fn section_man_apply_sky(c: &mut Cpu) {
     })
 }
 
+/// `SectionMan.eventSwitchState` (+0x1b4) and `.eventSwitchArg` (+0x1b8).
+pub(crate) const OC436_SM_SWITCH_STATE: u32 = 0x1b4;
+
+pub(crate) const OC436_SM_SWITCH_ARG: u32 = 0x1b8;
+
+/// The original's jump table (states 0..4).
+#[cfg(test)]
+pub(crate) const OC436_SM_SWITCH_TABLE: u32 = 0x0047_b430;
+
+/// `void SectionMan_AdvanceEventSwitchSync(SectionMan* s, int arg)`
+/// (0x22d668): when `arg != 0` and the switch state (+0x1b4) is below 5, a
+/// jump table steps the state machine: state 0 stores `arg` (+0x1b8) and goes
+/// to 3, state 1 goes to 3 (and returns at once), state 2 goes to 4, states
+/// 3 and 4 stay. Other entries go to the generated `__entries` twin.
+pub fn oc436_section_man_advance_event_switch_sync(c: &mut Cpu) {
+    if c.pc != 0x0022_d668 {
+        return oc436_section_man_advance_resume_2(c);
+    }
+    c.cycles += 2;
+    let skip = c.g[A1][0] == 0;
+    c.g[A2][0] = c.g[A0][0];
+    if !skip {
+        c.cycles += 4;
+        c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(OC436_SM_SWITCH_STATE));
+        c.g[V0][0] = (c.g[V1][0] < 5) as u64;
+        let out_of_range = c.g[V0][0] == 0;
+        c.g[V0][0] = 0x48_0000;
+        if !out_of_range {
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4bd0));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+            let target = c.g[A0][0] as u32;
+            let this = c.g[A2][0] as u32;
+            match target {
+                0x0022_d698 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = 3;
+                    c.sw(this.wrapping_add(OC436_SM_SWITCH_ARG), c.g[A1][0]);
+                    let t = c.g[RA][0] as u32;
+                    c.sw(this.wrapping_add(OC436_SM_SWITCH_STATE), c.g[V0][0]);
+                    c.pc = t;
+                    return;
+                }
+                0x0022_d6a8 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 3;
+                    let t = c.g[RA][0] as u32;
+                    c.sw(this.wrapping_add(OC436_SM_SWITCH_STATE), c.g[V0][0]);
+                    c.pc = t;
+                    return;
+                }
+                0x0022_d6b4 => {
+                    c.cycles += 2;
+                    c.g[V0][0] = 4;
+                    c.sw(this.wrapping_add(OC436_SM_SWITCH_STATE), c.g[V0][0]);
+                }
+                0x0022_d6bc => {}
+                _ => {
+                    c.jump_out(target, 0x0022_d668, 0x0022_d6c4);
+                    return;
+                }
+            }
+        }
+    }
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.pc = t;
+}
+
+#[cfg(not(feature = "ee-unwind"))]
+pub(crate) fn oc436_section_man_advance_resume_2(c: &mut Cpu) {
+    ee::s05::f_0022d668__entries(c)
+}
+
+// At install the orchestrator switches this to the generated twin.
+#[cfg(feature = "ee-unwind")]
+pub(crate) fn oc436_section_man_advance_resume_2(c: &mut Cpu) {
+    ee::s05::f_0022d668__generated(c)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -4302,6 +4389,48 @@ pub(crate) mod tests {
         in_child(
             "input_parser_parse_all_matches",
             input_parser_parse_all_checked,
+        );
+    }
+
+    use crate::difftest::put_words;
+    pub(crate) use crate::game::camera::camera::tests::SEEDS_5 as SEEDS_3;
+
+    /// `SectionMan_AdvanceEventSwitchSync`: `arg` zero or not, states 0..4
+    /// (every jump-table case) and states out of range (5, 6, large,
+    /// negative).
+    #[test]
+    fn oc436_section_man_advance_event_switch_sync_matches() {
+        check(
+            ee::s05::f_0022d668__generated,
+            oc436_section_man_advance_event_switch_sync,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = Rng(0x22d6_68 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0022_d668;
+                let table = [
+                    0x0022_d698,
+                    0x0022_d6a8,
+                    0x0022_d6b4,
+                    0x0022_d6bc,
+                    0x0022_d6bc,
+                ];
+                put_words(c, OC436_SM_SWITCH_TABLE, &table);
+                let sm = DATA + 0x100;
+                c.g[A0][0] = sx(sm);
+                let arg = if seed % 5 == 0 { 0 } else { r.next_u32() | 1 };
+                c.g[A1][0] = sx(arg);
+                let state = match seed % 9 {
+                    0..=4 => seed % 9,
+                    5 => 5,
+                    6 => 6,
+                    7 => 0x8000_0000 | seed,
+                    _ => r.next_u32() % 3,
+                };
+                c.bus.write32(sm + OC436_SM_SWITCH_STATE, state);
+                let old = r.next_u32();
+                c.bus.write32(sm + OC436_SM_SWITCH_ARG, old);
+            },
         );
     }
 }

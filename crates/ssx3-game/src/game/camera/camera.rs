@@ -418,6 +418,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0015_dc70, game_camera_ctor_2, "GameCamera_ctor"),
     (0x0015_de60, game_camera_init, "GameCamera_Init"),
+    (0x0015_fff0, oc436_camera_wobble_init, "CameraWobble_Init"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -10207,6 +10208,42 @@ pub fn game_camera_ctor_2(c: &mut Cpu) {
     })
 }
 
+/// `CameraWobble* CameraWobble_Init(CameraWobble* w)` (0x15fff0): zero the
+/// six words at +0..+0x14, set +0x28 and +0x2c to the float at gp-0x6c2c and
+/// +0x20 and +0x24 to the float at gp-0x6c28; returns `w`. Other entries go
+/// to the generated `__entries` twin.
+pub fn oc436_camera_wobble_init(c: &mut Cpu) {
+    if c.pc != 0x0015_fff0 {
+        return oc436_camera_wobble_init_resume_2(c);
+    }
+    c.cycles += 14;
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x6c2c));
+    c.g[V0][0] = c.g[A0][0];
+    c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x6c28));
+    let w = c.g[A0][0] as u32;
+    c.swc1(0, w.wrapping_add(0x2c));
+    c.swc1(1, w.wrapping_add(0x24));
+    c.swc1(0, w.wrapping_add(0x28));
+    for off in [0x0, 0x4, 0x8, 0xc, 0x10, 0x14] {
+        c.sw(w.wrapping_add(off), 0);
+    }
+    let t = c.g[RA][0] as u32;
+    c.swc1(1, w.wrapping_add(0x20));
+    c.pc = t;
+}
+
+#[cfg(not(feature = "ee-unwind"))]
+pub(crate) fn oc436_camera_wobble_init_resume_2(c: &mut Cpu) {
+    ee::s01::f_0015fff0__entries(c)
+}
+
+// At install the orchestrator switches this to the generated twin; until
+// then the unwind form (not built for staging) has no name for it.
+#[cfg(feature = "ee-unwind")]
+pub(crate) fn oc436_camera_wobble_init_resume_2(c: &mut Cpu) {
+    ee::s01::f_0015fff0__generated(c)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -13287,6 +13324,34 @@ pub(crate) mod tests {
             &|c, r, _seed| {
                 c.g[A0][0] = sx(OC433_FIX + 0x2000);
                 c.g[A1][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    pub(crate) const SEEDS_5: u32 = 200;
+
+    /// `CameraWobble_Init`: the two literals at gp-0x6c2c / gp-0x6c28 are
+    /// copied into the object, the rest cleared.
+    #[test]
+    fn oc436_camera_wobble_init_matches() {
+        check(
+            ee::s01::f_0015fff0__generated,
+            oc436_camera_wobble_init,
+            SEEDS_5,
+            &|c, seed| {
+                let mut r = Rng(0x15ff_f0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0015_fff0;
+                c.g[GP][0] = GAME_GP as u64;
+                let w = DATA + 0x100;
+                c.g[A0][0] = sx(w);
+                for k in 0..12 {
+                    let v = r.next_u32();
+                    c.bus.write32(w + 4 * k, v);
+                }
+                let (a, b) = (r.edge_f32(), r.edge_f32());
+                c.bus.write32(GAME_GP - 0x6c2c, a);
+                c.bus.write32(GAME_GP - 0x6c28, b);
             },
         );
     }

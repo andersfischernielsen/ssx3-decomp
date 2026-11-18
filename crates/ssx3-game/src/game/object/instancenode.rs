@@ -67,6 +67,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_obj_build_matrices_2,
         "WorldObj_BuildMatrices",
     ),
+    (
+        0x0034_fe00,
+        oc436_mod_obj_run_script_event_19b8,
+        "ModObj_RunScriptEvent19b8",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1127,6 +1132,23 @@ pub fn world_obj_build_matrices_2(c: &mut Cpu) {
     c.cycles += 2;
     c.g[SP][0] = sx(sp.wrapping_add(0xf0));
     abi::ret(c);
+}
+
+/// `void ModObj_RunScriptEvent19b8(?, obj, a, b)` (0x34fe00): shift the
+/// arguments down and call `WScriptMan_ObjTriggerHook(obj, a, b)`.
+pub fn oc436_mod_obj_run_script_event_19b8(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        c.g[A0][0] = c.g[A1][0];
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = c.g[A3][0];
+        call_ptr(c, 0x002d_19b8, 0x0034_fe18)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 #[cfg(test)]

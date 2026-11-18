@@ -4,6 +4,7 @@
 use crate::abi;
 use crate::abi::r32;
 use crate::abi::reg;
+use crate::abi::ret;
 use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -382,6 +383,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0036_29b8, defer_man_init, "DeferMan_Init"),
     (0x0036_5e40, vram_heap_init, "VramHeap_Init"),
+    (0x0036_1f60, intc_table_clear_slots, "IntcTable_ClearSlots"),
+    (0x0036_6fe0, tex_man_set_alloc_flags, "TexMan_SetAllocFlags"),
 ];
 
 /// The matrix record table of `DeferMan_InternMatrixRecord`.
@@ -7348,6 +7351,38 @@ pub fn defer_man_init(c: &mut Cpu) {
     })
 }
 
+/// `IntcTable_ClearSlots(table)` (0x361f60): zeroes three 8-byte slots at
+/// `table + 0x80 .. 0x98` (two words each).
+pub fn intc_table_clear_slots(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x84));
+    c.g[V0][0] = 2;
+    loop {
+        c.cycles += 7;
+        c.sw((c.g[A0][0] as u32).wrapping_sub(4), 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+        c.sw(c.g[A0][0] as u32, 0);
+        let more = (c.g[V0][0] as i64) >= 0;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(8));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x0036_1f68);
+            }
+            continue;
+        }
+        c.cycles += 2;
+        ret(c);
+        return;
+    }
+}
+
+/// `TexMan_SetAllocFlags(texman, flags)` (0x366fe0): `texman->allocFlags(+0x1f58) = flags`.
+pub fn tex_man_set_alloc_flags(c: &mut Cpu) {
+    c.cycles += 2;
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x1f58), c.g[A1][0]);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10318,6 +10353,44 @@ pub(crate) mod tests {
                 fill(c, &mut r, 0x0050_1420, 5);
                 c.bus.write32(this + 0x5_1480, r.next_u32() % 8);
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    use crate::difftest::events::Events;
+    use crate::difftest::fakes::ptr;
+
+    /// The three-iteration clearing loop, with and without events at the back edges.
+    #[test]
+    fn intc_table_clear_slots_matches() {
+        check_events(
+            ee::s12::f_00361f60__generated,
+            intc_table_clear_slots,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x361f60, 0);
+                let table = ptr(&mut r);
+                c.g[A0][0] = table as u64;
+                crate::difftest::fill(c, &mut r, table, 0x40);
+                let mode = schedule(c, &mut r, seed, 0x0036_1f60);
+                if mode != Events::Off {
+                    c.next_event = c.cycles;
+                }
+                mode
+            },
+        );
+    }
+
+    #[test]
+    fn tex_man_set_alloc_flags_matches() {
+        check(
+            ee::s12::f_00366fe0__generated,
+            tex_man_set_alloc_flags,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x366fe0, 0);
+                c.pc = 0x0036_6fe0;
+                c.g[A0][0] = ptr(&mut r) as u64;
             },
         );
     }

@@ -7,8 +7,10 @@ use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -149,6 +151,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "WScriptMan_RunMissionSetupScripts",
     ),
     (0x0030_87d0, w_script_man_ctor, "WScriptMan_ctor"),
+    (
+        0x0030_8b58,
+        oc436_wscript_man_create_local_table_thunk,
+        "WScriptMan_CreateLocalTableThunk",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2771,6 +2778,12 @@ pub fn w_script_man_ctor(c: &mut Cpu) {
     })
 }
 
+/// `void WScriptMan_CreateLocalTableThunk(...)` (0x308b58): tail call of
+/// `WScriptMan_CreateLocalTable` with the same arguments.
+pub fn oc436_wscript_man_create_local_table_thunk(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x0030_8b78), 0x0030_8b68)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3898,5 +3911,88 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(OC433_FIX + 0x1000);
             },
         );
+    }
+
+    pub(crate) use crate::game::ai::ai::oc436_ai_reset_riders_default;
+
+    pub(crate) use crate::game::ai::rider::tests::oc436_machine;
+
+    pub(crate) use crate::game::ai::ridermetrix::oc436_rider_metrix_set_grind_orientation;
+    pub(crate) use crate::game::animation::animmodel::oc436_cadf_data_source_ctor;
+    pub(crate) use crate::game::camera::camera::tests::SEEDS_5 as SEEDS_6;
+    pub(crate) use crate::game::camera::trigger::cameratriggerlist::oc436_camera_trigger_man_clear_data;
+    pub(crate) use crate::game::intersect::worldsphtree::oc436_boost_v01;
+    pub(crate) use crate::game::object::instancenode::oc436_mod_obj_run_script_event_19b8;
+    pub(crate) use crate::game::replay::replaycache::oc436_in_seq_heap_new_array;
+    pub(crate) use crate::game::replay::replaycache::tests::oc436_word;
+    pub(crate) use crate::game::scripter::bxscriptengine::oc436_script_cam_binding_unbind;
+
+    /// The wrappers with one call each: the thunks, `AI_ResetRidersDefault`,
+    /// `Boost_v01`, `ModObj_RunScriptEvent19b8`, `CameraTriggerMan_ClearData`,
+    /// `cAdfDataSource_ctor`, `ScriptCamBinding_Unbind` and
+    /// `RiderMetrix_SetGrindOrientation`: random registers, the object in
+    /// a0 (or a1), the callee a gated logged fake that may unwind.
+    #[test]
+    fn oc436_one_call_wrappers_match() {
+        type Fns = (GuestFn, GuestFn, u64);
+        let all: [Fns; 9] = [
+            (
+                ee::s10::f_00308b58__generated,
+                oc436_wscript_man_create_local_table_thunk,
+                0x308b58,
+            ),
+            (
+                ee::s07::f_002724c8__generated,
+                oc436_in_seq_heap_new_array,
+                0x2724c8,
+            ),
+            (
+                ee::s00::f_001289f0__generated,
+                oc436_ai_reset_riders_default,
+                0x1289f0,
+            ),
+            (ee::s11::f_003415a8__generated, oc436_boost_v01, 0x3415a8),
+            (
+                ee::s11::f_0034fe00__generated,
+                oc436_mod_obj_run_script_event_19b8,
+                0x34fe00,
+            ),
+            (
+                ee::s02::f_0016bf20__generated,
+                oc436_camera_trigger_man_clear_data,
+                0x16bf20,
+            ),
+            (
+                ee::s10::f_00311220__generated,
+                oc436_cadf_data_source_ctor,
+                0x311220,
+            ),
+            (
+                ee::s07::f_00283180__generated,
+                oc436_script_cam_binding_unbind,
+                0x283180,
+            ),
+            (
+                ee::s00::f_00119918__generated,
+                oc436_rider_metrix_set_grind_orientation,
+                0x119918,
+            ),
+        ];
+        for (gen, hand, salt) in all {
+            covered(gen, hand, SEEDS_6, &|c, seed| {
+                let mut r = oc436_machine(c, seed, salt, 1);
+                let obj = DATA + 0x1000 + (r.next_u32() & 0xff0);
+                for reg in [A0, A1, A2, A3] {
+                    c.g[reg][0] = sx(oc436_word(&mut r));
+                }
+                c.g[A0][0] = sx(obj);
+                if salt == 0x34fe00 {
+                    // `a1` is the object here.
+                    c.g[A1][0] = sx(obj);
+                }
+                let old = r.next_u32();
+                c.bus.write32(obj, old);
+            });
+        }
     }
 }

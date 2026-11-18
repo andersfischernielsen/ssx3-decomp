@@ -333,6 +333,18 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Rider_CreateRiderMetrix",
     ),
     (0x0012_5c70, player_ctor, "Player_ctor"),
+    (0x0011_b978, rider_dtor, "Rider_dtor"),
+    (0x0011_c230, oc436_rider_load, "Rider_Load"),
+    (
+        0x0011_fef8,
+        rider_get_sub_state_name,
+        "Rider_GetSubStateName",
+    ),
+    (
+        0x0011_ff18,
+        rider_get_control_input,
+        "Rider_GetControlInput",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -20999,6 +21011,286 @@ pub fn rider_create_rider_metrix(c: &mut Cpu) {
     })
 }
 
+/// `Rider.loadState` (+0x880): 7 when the rider is fully loaded.
+pub(crate) const OC436_RIDER_LOAD_STATE: u32 = 0x880;
+
+pub(crate) const OC436_RIDER_LOADED: u64 = 7;
+
+/// `void Rider_Load(Rider* r, int immediate)` (0x11c230): with `immediate`
+/// one `Rider_LoadStep`; otherwise step until the load state reaches 7,
+/// yielding one tick (`THREAD_yieldticks(1)`) between steps.
+pub fn oc436_rider_load(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        let immediate = c.g[A1][0] != 0;
+        frame.save_ra(c, 0);
+        if immediate {
+            c.cycles += 4;
+            call_ptr(c, 0x0011_c298, 0x0011_c250)?;
+            frame.restore(c, S0, 0x20);
+        } else {
+            c.cycles += 4;
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(OC436_RIDER_LOAD_STATE));
+            c.g[V0][0] = OC436_RIDER_LOADED;
+            c.g[S1][0] = OC436_RIDER_LOADED;
+            if c.g[V1][0] != c.g[V0][0] {
+                loop {
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x0011_c298, 0x0011_c270)?;
+                    c.g[A0][0] = 1;
+                    call_ptr(c, 0x003e_52b0, 0x0011_c278)?;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(OC436_RIDER_LOAD_STATE));
+                    if c.g[V0][0] != c.g[S1][0] {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0011_c268);
+                        }
+                        continue;
+                    }
+                    break;
+                }
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `RiderBase_GetSubStateName(sub_state)` (0x111860).
+pub(crate) const OC439_GET_SUB_STATE_NAME: Callee = Callee {
+    addr: 0x0011_1860,
+    f: ee::s00::RiderBase_GetSubStateName,
+};
+
+// -- Rider wrappers -------------------------------------------------------------
+
+/// `const char* Rider_GetSubStateName(Rider* self)` (0x11fef8): the rider
+/// base's sub-state name for the sub state at +0x77c.
+pub fn rider_get_sub_state_name(c: &mut Cpu) {
+    // A resume entry inside the generated frame: its dispatcher continues it
+    // (at install this becomes `f_0011fef8__generated`).
+    if c.pc != 0x0011_fef8 {
+        return ee::s00::f_0011fef8__generated(c);
+    }
+    tail_wrapper(
+        c,
+        Some(0x77c),
+        Target::Direct(OC439_GET_SUB_STATE_NAME),
+        0x0011_ff08,
+    );
+}
+
+/// `int Rider_GetControlInput(Rider* self)` (0x11ff18): virtual call on the
+/// control object at `self->sub + 0xde8` (vtable slot +8 / +0xc).
+pub fn rider_get_control_input(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A2][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x77c));
+        c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0xde8));
+        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x8));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+        let target = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0011_ff38)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// -- Rider_dtor ------------------------------------------------------------------------------
+
+/// `RiderMetrix_dtor(metrix, flags)` (0x117290).
+pub(crate) const OC439_RIDER_METRIX_DTOR: Callee = Callee {
+    addr: 0x0011_7290,
+    f: ee::s00::RiderMetrix_dtor,
+};
+
+/// `Rider_dtorFree(object, flags)` (0x113170).
+pub(crate) const OC439_RIDER_DTOR_FREE: Callee = Callee {
+    addr: 0x0011_3170,
+    f: ee::s00::Rider_dtorFree,
+};
+
+/// `FocusMan_RemoveFocusBox(box)` (0x1033f8).
+pub(crate) const OC439_REMOVE_FOCUS_BOX: Callee = Callee {
+    addr: 0x0010_33f8,
+    f: ee::s00::FocusMan_RemoveFocusBox,
+};
+
+/// `operator delete` (0x317e50).
+pub(crate) const OC439_DELETE: u32 = 0x0031_7e50;
+
+/// `a1 = 3` virtual-destructor call `(*obj->vtable[slot])(obj + delta, 3)`
+/// of a sub-object: `v0 = lw(obj + vt_off)` is its vtable, slot at +8 / +0xc.
+pub(crate) fn oc439_dtor_vcall(c: &mut Cpu, vt_off: u32, ret: u32) -> Flow {
+    c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(vt_off));
+    c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x8));
+    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+    let target = c.g[V1][0] as u32;
+    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, ret)
+}
+
+/// `void Rider_dtor(Rider* self, int flags)` (0x11b978): reset the rider's
+/// vtables to the base class's, destroy its parts (anim, sound handles, air
+/// predictor, focus box, metrics, controllers, sound emitters ...) and, when
+/// `flags & 1`, delete the rider itself.
+pub fn rider_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = 0x46_0000;
+        frame.save(c, S0, 0x30);
+        c.g[V1][0] = 0x46_0000;
+        c.g[A2][0] = 0x46_0000;
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x20);
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x63e8));
+        frame.save(c, S2, 0x10);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6470));
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x6430));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x6c0), c.g[A2][0]);
+        c.g[S2][0] = c.g[A1][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x6d0), c.g[V1][0]);
+        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x6dc));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x6e8), c.g[V0][0]);
+        call_ptr(c, 0x0028_b180, 0x0011_b9c0)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S0][0];
+        call_ptr(c, 0x0028_9af8, 0x0011_b9cc)?;
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, 0x0028_32d8, 0x0011_b9d4)?;
+        // The anim object (+0x784): virtual destructor (slot +0x58).
+        c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x784));
+        c.g[A1][0] = 3;
+        if c.g[A2][0] != 0 {
+            c.cycles += 5;
+            oc439_dtor_vcall(c, 0x58, 0x0011_b9f4)?;
+        }
+        // The script/sound objects (+0x780, +0xaa0).
+        c.cycles += 3;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x780));
+        if c.g[A0][0] == 0 {
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xaa0));
+        } else {
+            c.cycles += 3;
+            c.g[A1][0] = 3;
+            call_ptr(c, 0x0030_d540, 0x0011_ba08)?;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xaa0));
+        }
+        c.cycles += 2;
+        if c.g[A0][0] != 0 {
+            c.cycles += 2;
+            c.g[A1][0] = 3;
+            call_ptr(c, 0x0032_9970, 0x0011_ba1c)?;
+        }
+        c.cycles += 7;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xac0));
+        call_ptr(c, OC439_DELETE, 0x0011_ba24)?;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xabc));
+        call_ptr(c, OC439_DELETE, 0x0011_ba2c)?;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x788));
+        if c.g[A0][0] == 0 {
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x78c));
+        } else {
+            c.cycles += 3;
+            c.g[A1][0] = 3;
+            OC439_RIDER_DTOR_FREE.call(c, 0x0011_ba40)?;
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x78c));
+        }
+        // The focus box (+0x78c): remove it from the focus manager.
+        c.cycles += 2;
+        let no_focus_box = c.g[A1][0] == 0;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        if !no_focus_box {
+            c.cycles += 4;
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+            c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+            c.g[A0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0xa4));
+            OC439_REMOVE_FOCUS_BOX.call(c, 0x0011_ba5c)?;
+        }
+        c.cycles += 5;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x78c));
+        call_ptr(c, OC439_DELETE, 0x0011_ba64)?;
+        // The metrics (+0x790).
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x790));
+        if c.g[A0][0] != 0 {
+            c.cycles += 2;
+            c.g[A1][0] = 3;
+            OC439_RIDER_METRIX_DTOR.call(c, 0x0011_ba78)?;
+        }
+        c.cycles += 9;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x860));
+        call_ptr(c, OC439_DELETE, 0x0011_ba80)?;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x868));
+        call_ptr(c, OC439_DELETE, 0x0011_ba88)?;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x864));
+        call_ptr(c, OC439_DELETE, 0x0011_ba90)?;
+        // The controller objects (+0x890, +0x88c): virtual destructors.
+        c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x890));
+        c.g[A1][0] = 3;
+        if c.g[A2][0] != 0 {
+            c.cycles += 5;
+            oc439_dtor_vcall(c, 0xc4, 0x0011_bab0)?;
+        }
+        c.cycles += 3;
+        c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x88c));
+        c.g[A1][0] = 3;
+        if c.g[A2][0] != 0 {
+            c.cycles += 5;
+            oc439_dtor_vcall(c, 0xa4, 0x0011_bad0)?;
+        }
+        c.cycles += 3;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xaa8));
+        c.g[V0][0] = 0x48_0000;
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = 3;
+            call_ptr(c, 0x0037_5918, 0x0011_bae4)?;
+            c.g[V0][0] = 0x48_0000;
+        }
+        // Back to the base class's vtables, destroy the part at +0x6dc.
+        c.cycles += 13;
+        c.g[V1][0] = 0x48_0000;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2018));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1fd8));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x6e8), c.g[V0][0]);
+        c.g[A0][0] = c.g[S1][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x6d0), c.g[V1][0]);
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0028_3228, 0x0011_bb08)?;
+        c.g[V0][0] = 0x46_0000;
+        c.g[V1][0] = c.g[S2][0] & 1;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x6338));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x6c0), c.g[V0][0]);
+        if c.g[V1][0] != 0 {
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, OC439_DELETE, 0x0011_bb24)?;
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
@@ -27423,6 +27715,455 @@ pub(crate) mod tests {
                 let _ = oc431_machine(c, seed, 0x11bb98, 3, 0x0011_bb98);
                 c.g[A0][0] = (OC431_BASE + 0x100) as u64;
                 c.bus.write32(LOG_RESULTS, OC431_BASE + 0x1000);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ridermetrix::tests::oc439_machine;
+
+    pub(crate) use crate::game::ai::ridermetrix::tests::OC439_FAKE_PLAIN;
+
+    pub(crate) use crate::game::camera::camera::tests::SEEDS_5 as SEEDS_7;
+
+    /// The gate of this module's callee fakes (a word in the test machine's
+    /// RAM): with it off, the slots run what they held before.
+    pub(crate) const OC436_CTRL: u32 = DATA + 0xf_fe00;
+
+    pub(crate) const OC436_MAGIC: u32 = 0x6f63_3436;
+
+    /// What the `FindBankSlotById` fake returns (sign-extended).
+    pub(crate) const OC436_BANK_RESULT: u32 = DATA + 0xf_fe10;
+
+    /// A gated logging fake for the callee at `$addr` (`$gen`: its body).
+    macro_rules! oc436_gated {
+        ($name:ident, $prev:ident, $addr:expr, $gen:path) => {
+            pub(crate) static $prev: AtomicUsize = AtomicUsize::new(0);
+            pub(crate) fn $name(c: &mut Cpu) {
+                if c.bus.read32(OC436_CTRL) == OC436_MAGIC {
+                    let ra = c.g[RA][0] as u32;
+                    return fake(c, $addr, ra);
+                }
+                fall_back(c, &$prev, $gen)
+            }
+        };
+    }
+
+    oc436_gated!(
+        oc436_fake_unload,
+        OC436_PREV_UNLOAD,
+        0x0016_c9b0,
+        ee::s02::f_0016c9b0__generated
+    );
+
+    oc436_gated!(
+        oc436_fake_parse,
+        OC436_PREV_PARSE,
+        0x0016_c228,
+        ee::s02::f_0016c228__generated
+    );
+
+    oc436_gated!(
+        oc436_fake_update_triggers,
+        OC436_PREV_UPDATE_TRIGGERS,
+        0x0016_cf48,
+        ee::s02::f_0016cf48__generated
+    );
+
+    oc436_gated!(
+        oc436_fake_reset_chase,
+        OC436_PREV_RESET_CHASE,
+        0x0015_e030,
+        ee::s01::f_0015e030__generated
+    );
+
+    oc436_gated!(
+        oc436_fake_unload_bank,
+        OC436_PREV_UNLOAD_BANK,
+        0x0027_b410,
+        ee::s07::f_0027b410__generated
+    );
+
+    oc436_gated!(
+        oc436_fake_stream_man_ctor,
+        OC436_PREV_STREAM_MAN_CTOR,
+        0x003a_6d50,
+        ee::s13::f_003a6d50__generated
+    );
+
+    oc436_gated!(
+        oc436_fake_streamer_reset,
+        OC436_PREV_STREAMER_RESET,
+        0x003a_9188,
+        ee::s13::f_003a9188__generated
+    );
+
+    oc436_gated!(
+        oc436_fake_set_data,
+        OC436_PREV_SET_DATA,
+        0x0031_1290,
+        ee::s10::f_00311290__generated
+    );
+
+    oc436_gated!(
+        oc436_fake_binding_unbind,
+        OC436_PREV_BINDING_UNBIND,
+        0x0028_3000,
+        ee::s07::f_00283000__generated
+    );
+
+    oc436_gated!(
+        oc436_fake_heap_new,
+        OC436_PREV_HEAP_NEW,
+        0x0027_2488,
+        ee::s07::f_00272488__generated
+    );
+
+    oc436_gated!(
+        oc436_fake_reset_riders,
+        OC436_PREV_RESET_RIDERS,
+        0x0012_97c8,
+        ee::s00::f_001297c8__generated
+    );
+
+    oc436_gated!(
+        oc436_fake_world_obj_dtor,
+        OC436_PREV_WORLD_OBJ_DTOR,
+        0x0034_fbf0,
+        ee::s11::f_0034fbf0__generated
+    );
+
+    oc436_gated!(
+        oc436_fake_obj_trigger_hook,
+        OC436_PREV_OBJ_TRIGGER_HOOK,
+        0x002d_19b8,
+        ee::s09::f_002d19b8__generated
+    );
+
+    oc436_gated!(
+        oc436_fake_reset_header,
+        OC436_PREV_RESET_HEADER,
+        0x0016_c390,
+        ee::s02::f_0016c390__generated
+    );
+
+    oc436_gated!(
+        oc436_fake_create_local_table,
+        OC436_PREV_CREATE_LOCAL_TABLE,
+        0x0030_8b78,
+        ee::s10::f_00308b78__generated
+    );
+
+    oc436_gated!(
+        oc436_fake_set_spin_amount,
+        OC436_PREV_SET_SPIN_AMOUNT,
+        0x0011_9898,
+        ee::s00::f_00119898__generated
+    );
+
+    pub(crate) static OC436_PREV_FIND_BANK: AtomicUsize = AtomicUsize::new(0);
+
+    /// `FindBankSlotById`: a logged fake whose result the test forces
+    /// (negative included).
+    pub(crate) fn oc436_fake_find_bank(c: &mut Cpu) {
+        if c.bus.read32(OC436_CTRL) == OC436_MAGIC {
+            let ra = c.g[RA][0] as u32;
+            fake(c, 0x0027_b578, ra);
+            c.g[V0][0] = sx(c.bus.read32(OC436_BANK_RESULT));
+            return;
+        }
+        fall_back(c, &OC436_PREV_FIND_BANK, ee::s07::f_0027b578__generated)
+    }
+
+    /// Test-private rider field: `Rider_LoadStep` calls left before the
+    /// fake sets the load state to 7.
+    pub(crate) const OC436_RIDER_STEPS: u32 = 0x884;
+
+    pub(crate) static OC436_PREV_LOAD_STEP: AtomicUsize = AtomicUsize::new(0);
+
+    /// `Rider_LoadStep`: a logged fake that finishes the load after the
+    /// rider's step counter runs out.
+    pub(crate) fn oc436_fake_load_step(c: &mut Cpu) {
+        if c.bus.read32(OC436_CTRL) == OC436_MAGIC {
+            let rider = c.g[A0][0] as u32;
+            let steps = c.bus.read32(rider + OC436_RIDER_STEPS);
+            if steps > 0 {
+                c.bus.write32(rider + OC436_RIDER_STEPS, steps - 1);
+                if steps == 1 {
+                    c.bus.write32(rider + OC436_RIDER_LOAD_STATE, 7);
+                }
+            }
+            let ra = c.g[RA][0] as u32;
+            return fake(c, 0x0011_c298, ra);
+        }
+        fall_back(c, &OC436_PREV_LOAD_STEP, ee::s00::f_0011c298__generated)
+    }
+
+    #[allow(unused_unsafe)]
+    pub(crate) fn oc436_install_fakes() {
+        use std::ptr::addr_of_mut;
+        unsafe {
+            hook(
+                addr_of_mut!(ee::s02::OVERRIDE_0016C9B0),
+                oc436_fake_unload,
+                &OC436_PREV_UNLOAD,
+            );
+            hook(
+                addr_of_mut!(ee::s02::OVERRIDE_0016C228),
+                oc436_fake_parse,
+                &OC436_PREV_PARSE,
+            );
+            hook(
+                addr_of_mut!(ee::s02::OVERRIDE_0016CF48),
+                oc436_fake_update_triggers,
+                &OC436_PREV_UPDATE_TRIGGERS,
+            );
+            hook(
+                addr_of_mut!(ee::s01::OVERRIDE_0015E030),
+                oc436_fake_reset_chase,
+                &OC436_PREV_RESET_CHASE,
+            );
+            hook(
+                addr_of_mut!(ee::s07::OVERRIDE_0027B578),
+                oc436_fake_find_bank,
+                &OC436_PREV_FIND_BANK,
+            );
+            hook(
+                addr_of_mut!(ee::s07::OVERRIDE_0027B410),
+                oc436_fake_unload_bank,
+                &OC436_PREV_UNLOAD_BANK,
+            );
+            hook(
+                addr_of_mut!(ee::s13::OVERRIDE_003A6D50),
+                oc436_fake_stream_man_ctor,
+                &OC436_PREV_STREAM_MAN_CTOR,
+            );
+            hook(
+                addr_of_mut!(ee::s13::OVERRIDE_003A9188),
+                oc436_fake_streamer_reset,
+                &OC436_PREV_STREAMER_RESET,
+            );
+            hook(
+                addr_of_mut!(ee::s00::OVERRIDE_0011C298),
+                oc436_fake_load_step,
+                &OC436_PREV_LOAD_STEP,
+            );
+            hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00311290),
+                oc436_fake_set_data,
+                &OC436_PREV_SET_DATA,
+            );
+            hook(
+                addr_of_mut!(ee::s07::OVERRIDE_00283000),
+                oc436_fake_binding_unbind,
+                &OC436_PREV_BINDING_UNBIND,
+            );
+            hook(
+                addr_of_mut!(ee::s07::OVERRIDE_00272488),
+                oc436_fake_heap_new,
+                &OC436_PREV_HEAP_NEW,
+            );
+            hook(
+                addr_of_mut!(ee::s00::OVERRIDE_001297C8),
+                oc436_fake_reset_riders,
+                &OC436_PREV_RESET_RIDERS,
+            );
+            hook(
+                addr_of_mut!(ee::s11::OVERRIDE_0034FBF0),
+                oc436_fake_world_obj_dtor,
+                &OC436_PREV_WORLD_OBJ_DTOR,
+            );
+            hook(
+                addr_of_mut!(ee::s09::OVERRIDE_002D19B8),
+                oc436_fake_obj_trigger_hook,
+                &OC436_PREV_OBJ_TRIGGER_HOOK,
+            );
+            hook(
+                addr_of_mut!(ee::s02::OVERRIDE_0016C390),
+                oc436_fake_reset_header,
+                &OC436_PREV_RESET_HEADER,
+            );
+            hook(
+                addr_of_mut!(ee::s10::OVERRIDE_00308B78),
+                oc436_fake_create_local_table,
+                &OC436_PREV_CREATE_LOCAL_TABLE,
+            );
+            hook(
+                addr_of_mut!(ee::s00::OVERRIDE_00119898),
+                oc436_fake_set_spin_amount,
+                &OC436_PREV_SET_SPIN_AMOUNT,
+            );
+        }
+    }
+
+    /// A machine with scrambled registers, the fake hooks, a game-like gp,
+    /// the callee fakes switched on and an unwind at a random call below
+    /// `calls`.
+    pub(crate) fn oc436_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        oc436_install_fakes();
+        let r = machine(c, seed, salt, calls);
+        c.bus.write32(OC436_CTRL, OC436_MAGIC);
+        r
+    }
+
+    /// `Rider_Load`: immediate (one step), already loaded (state 7: no
+    /// loop) and 1-3 steps through the yield loop (`Rider_LoadStep` is a fake
+    /// that sets the state to 7 when the rider's step counter runs out;
+    /// `THREAD_yieldticks` runs for real over the fake syscalls).
+    #[test]
+    fn oc436_rider_load_matches() {
+        covered(
+            ee::s00::f_0011c230__generated,
+            oc436_rider_load,
+            SEEDS_7,
+            &|c, seed| {
+                let mut r = oc436_machine(c, seed, 0x11c230, 6);
+                let rider = DATA + 0x2000;
+                c.g[A0][0] = sx(rider);
+                let immediate = seed % 3 == 0;
+                c.g[A1][0] = if immediate { sx(r.next_u32() | 1) } else { 0 };
+                let state = if seed % 3 == 1 { 7 } else { r.next_u32() % 7 };
+                c.bus.write32(rider + OC436_RIDER_LOAD_STATE, state);
+                c.bus
+                    .write32(rider + OC436_RIDER_STEPS, 1 + r.next_u32() % 3);
+            },
+        );
+    }
+
+    /// An object at `addr` whose vtable record (at `vt`) has delta `delta` at
+    /// +8 and the fake `method` at +0xc; `vt_slot` is where the object keeps
+    /// the vtable pointer.
+    pub(crate) fn oc439_vobject(
+        c: &mut Cpu,
+        addr: u32,
+        vt_slot: u32,
+        vt: u32,
+        vt_off: u32,
+        method: u32,
+        delta: u32,
+    ) {
+        c.bus.write32(addr + vt_slot, vt);
+        c.bus.write16(vt + vt_off, delta as u16);
+        c.bus.write32(vt + vt_off + 4, method);
+    }
+
+    // -- Rider wrappers ------------------------------------------------------------
+
+    /// `Rider_GetSubStateName`: the base class call with `+0x77c` (faked).
+    #[test]
+    fn rider_get_sub_state_name_matches() {
+        covered(
+            ee::s00::f_0011fef8__generated,
+            rider_get_sub_state_name,
+            60,
+            &|c, seed| {
+                let mut r = oc439_machine(c, seed, 0x11fef8, 1, 0x0011_fef8);
+                c.g[A0][0] = sx(DATA + 0x100);
+                c.bus.write32(DATA + 0x100 + 0x77c, r.next_u32());
+            },
+        );
+    }
+
+    /// `Rider_GetControlInput`: the virtual call on the control object
+    /// (`rider->+0x77c->+0xde8`), through a fake method with a random delta.
+    #[test]
+    fn rider_get_control_input_matches() {
+        covered(
+            ee::s00::f_0011ff18__generated,
+            rider_get_control_input,
+            80,
+            &|c, seed| {
+                let mut r = oc439_machine(c, seed, 0x11ff18, 1, 0x0011_ff18);
+                let (rider, sub, obj) = (DATA + 0x100, DATA + 0x1000, DATA + 0x2000);
+                c.g[A0][0] = sx(rider);
+                c.bus.write32(rider + 0x77c, sub);
+                c.bus.write32(sub + 0xde8, obj);
+                let delta = (r.next_u32() % 64) & !3;
+                let neg = if seed % 3 == 0 {
+                    0u32.wrapping_sub(delta)
+                } else {
+                    delta
+                };
+                c.bus.write16(obj + 8, neg as u16);
+                c.bus.write32(obj + 0xc, OC439_FAKE_PLAIN);
+            },
+        );
+    }
+
+    // -- Rider_dtor -------------------------------------------------------------------------
+
+    /// `Rider_dtor`: every optional part present or absent (sound objects,
+    /// anim, air predictor, focus box, metrics, controllers, emitters), the
+    /// `flags & 1` delete, unwinds in any of the ~25 calls. All callees are
+    /// faked except `RiderMetrix_dtor` and `0x289af8` (real, over zeroed
+    /// parts).
+    #[test]
+    fn rider_dtor_matches() {
+        covered(
+            ee::s00::f_0011b978__generated,
+            rider_dtor,
+            160,
+            &|c, seed| {
+                let mut r = oc439_machine(c, seed, 0x11b978, 28, 0x0011_b978);
+                let this = DATA + 0x1000;
+                let vts = DATA + 0x6000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = r.next_u32() as u64;
+                // An optional object per field: absent when its bit is clear.
+                let present = |bit: u32| (seed >> bit) & 1 == 1 || seed % 13 == 0;
+                let obj = |slot: u32| DATA + 0x2000 + 0x100 * slot;
+                for (slot, off) in [
+                    0x780u32, 0xaa0, 0xac0, 0xabc, 0x788, 0x860, 0x864, 0x868, 0xaa8,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let v = if present(slot as u32 % 6) {
+                        obj(slot as u32)
+                    } else {
+                        0
+                    };
+                    c.bus.write32(this + off, v);
+                }
+                // Objects destroyed through a virtual destructor: (field, vtable slot, bit).
+                for (n, (field, vt_off, bit)) in [
+                    (0x784u32, 0x58u32, 0u32),
+                    (0x890, 0xc4, 1),
+                    (0x88c, 0xa4, 2),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let o = DATA + 0x3000 + 0x200 * n as u32;
+                    if present(bit) {
+                        c.bus.write32(this + field, o);
+                        oc439_vobject(
+                            c,
+                            o,
+                            vt_off,
+                            vts + 0x40 * n as u32,
+                            8,
+                            OC439_FAKE_PLAIN,
+                            (r.next_u32() % 32) & !3,
+                        );
+                    } else {
+                        c.bus.write32(this + field, 0);
+                    }
+                }
+                // The focus box (+0x78c): the focus manager is found through the world.
+                let focus = if present(3) { DATA + 0x2900 } else { 0 };
+                c.bus.write32(this + 0x78c, focus);
+                let (world, w84, w0c) = (DATA + 0x4000, DATA + 0x4100, DATA + 0x4200);
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, w84);
+                c.bus.write32(w84 + 0xc, w0c);
+                c.bus.write32(w0c + 0xa4, DATA + 0x4300);
+                // The metrics (+0x790): its own HUD table decides a call.
+                let metrix = if present(4) { DATA + 0x4400 } else { 0 };
+                c.bus.write32(this + 0x790, metrix);
+                c.bus.write32(
+                    DATA + 0x4400 + 0x1b0,
+                    if seed % 3 == 0 { DATA + 0x4500 } else { 0 },
+                );
             },
         );
     }

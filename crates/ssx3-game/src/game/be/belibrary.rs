@@ -175,6 +175,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_bolt_int_restore_all_equip_flags_2,
         "BEBoltInt_RestoreAllEquipFlags",
     ),
+    (0x0014_bd78, bolts_load_global_db, "Bolts_LoadGlobalDB"),
+    (0x0014_bd98, bolts_prepare_game_db, "Bolts_PrepareGameDB"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4180,6 +4182,44 @@ pub fn be_bolt_int_restore_all_equip_flags_2(c: &mut Cpu) {
     }
 }
 
+/// `void Bolts_PrepareGameDB(void)` (0x14bd98): `Bolts_PrepareForGame(0x4a6750)`.
+pub fn bolts_prepare_game_db(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 0x4a_0000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6750));
+        Callee {
+            addr: 0x0014_d068,
+            f: ee::s01::Bolts_PrepareForGame,
+        }
+        .call(c, 0x0014_bdac)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Bolts_LoadGlobalDB(void)` (0x14bd78): `Bolts_LoadDB(0x4a6750)`.
+pub fn bolts_load_global_db(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 0x4a_0000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6750));
+        Callee {
+            addr: 0x0014_c6a0,
+            f: ee::s01::Bolts_LoadDB,
+        }
+        .call(c, 0x0014_bd8c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6162,6 +6202,37 @@ pub(crate) mod tests {
                         }
                     }
                 }
+            },
+        );
+    }
+
+    pub(crate) use crate::game::camera::trigger::cameratriggerman::tests::oc438_install_fakes;
+    pub(crate) use crate::game::camera::trigger::cameratriggerman::tests::oc438_machine;
+
+    /// `Bolts_PrepareGameDB`: forwards to `Bolts_PrepareForGame` (faked).
+    #[test]
+    fn bolts_prepare_game_db_matches() {
+        oc438_install_fakes();
+        covered(
+            ee::s01::f_0014bd98__generated,
+            bolts_prepare_game_db,
+            200,
+            &|c, seed| {
+                oc438_machine(c, seed, 0x0014_bd98, 1);
+            },
+        );
+    }
+
+    /// `Bolts_LoadGlobalDB`: forwards to `Bolts_LoadDB` (faked).
+    #[test]
+    fn bolts_load_global_db_matches() {
+        oc438_install_fakes();
+        covered(
+            ee::s01::f_0014bd78__generated,
+            bolts_load_global_db,
+            200,
+            &|c, seed| {
+                oc438_machine(c, seed, 0x0014_bd78, 1);
             },
         );
     }

@@ -3,6 +3,7 @@
 
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::Frame;
 pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::sp_2 as sp;
 pub(crate) use crate::game::main::gamemode::sw_r;
@@ -15,8 +16,14 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] =
-    &[(0x0024_3838, game_module_dtor, "GameModule_dtor")];
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (0x0024_3838, game_module_dtor, "GameModule_dtor"),
+    (
+        0x0024_2d10,
+        generic_stream_pause_create,
+        "GenericStreamPause_Create",
+    ),
+];
 
 // ---------------------------------------------------------------------------
 // Intra-shard callees the generator called by name (`jal`), plus the
@@ -62,6 +69,33 @@ pub fn game_module_dtor(c: &mut Cpu) {
     })
 }
 
+/// `operator_new`-style allocator (`EA_MemAllocNamed`, 0x317d70).
+pub(crate) const OC437_MEM_ALLOC_NAMED: u32 = 0x0031_7d70;
+
+/// `cStreamPause* GenericStreamPause_Create(void)` (0x242d10): allocates a
+/// 4-byte object (`EA_MemAllocNamed(4, name, 0x20000000, 0)`) and stores its
+/// vtable pointer in it. Returns the allocation in `v0`.
+pub fn generic_stream_pause_create(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = 0x48_0000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 4;
+        c.g[A1][0] = sx(0x48_0000u32.wrapping_sub(0x3ae0));
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        call_ptr(c, OC437_MEM_ALLOC_NAMED, 0x0024_2d30)?;
+        c.g[V1][0] = 0x48_0000;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[V1][0] = sx(0x48_0000u32.wrapping_sub(0x2f18));
+        frame.restore_ra(c, 0);
+        c.sw(c.g[A0][0] as u32, c.g[V1][0]);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -87,6 +121,19 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
             },
+        );
+    }
+
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::oc437_covered;
+
+    #[test]
+    fn generic_stream_pause_create_matches() {
+        oc437_covered(
+            ee::s06::f_00242d10__generated,
+            generic_stream_pause_create,
+            0x0024_2d10,
+            1,
+            &|_, _, _| {},
         );
     }
 }

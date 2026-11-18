@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -171,6 +172,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0027_8210,
         script_engine_load_master,
         "ScriptEngine_LoadMaster",
+    ),
+    (
+        0x0027_72b8,
+        script_list_get_field_b0,
+        "ScriptList_GetFieldB0",
+    ),
+    (
+        0x0027_7800,
+        script_list_try_advance,
+        "ScriptList_TryAdvance",
     ),
 ];
 
@@ -4296,6 +4307,51 @@ pub fn data_instance_man_remove_data(c: &mut Cpu) {
     })
 }
 
+/// `ScriptList.pending` (non-zero: an entry is already being processed).
+pub(crate) const OC437_SCRIPT_LIST_PENDING: u32 = 0xa8;
+
+/// `ScriptList_TryAdvance(list)` (0x277800): `ScriptList_CheckNextReady(list)`;
+/// if `list->pending` (+0xa8) is zero, `ScriptList_NextEntry(list)`.
+pub fn script_list_try_advance(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x0027_76e0,
+            f: ee::s07::ScriptList_CheckNextReady,
+        }
+        .call(c, 0x0027_7814)?;
+        c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(OC437_SCRIPT_LIST_PENDING)).lw(c);
+        if c.g[V0][0] != 0 {
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x0027_7838,
+                f: ee::s07::ScriptList_NextEntry,
+            }
+            .call(c, 0x0027_7828)?;
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int ScriptList_GetFieldB0(ScriptList* self)` (0x2772b8): the word at +0xb0.
+pub fn script_list_get_field_b0(c: &mut Cpu) {
+    c.cycles += 2;
+    let this = c.g[A0][0] as u32;
+    c.g[V0][0] = c.lw(this.wrapping_add(0xb0));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::game::main::gamestate::tests::{fake_script_list_stop, PREV_SCRIPT_LIST_STOP};
@@ -5874,6 +5930,46 @@ pub(crate) mod tests {
                         oc434_w(c, node(i) + f, r.next_u32());
                     }
                 }
+            },
+        );
+    }
+
+    pub(crate) use crate::game::camera::cameracontroller::tests::oc437_checked;
+
+    /// `pending` non-zero (no `NextEntry`). The real `CheckNextReady` takes its
+    /// early exit with the current index (+0xbc) negative. The `NextEntry`
+    /// branch is not tested: its real callee chain (`PopEntries`, `Stop`, ...)
+    /// runs away on fixture data and the gated fake is not reached.
+    #[test]
+    fn script_list_try_advance_matches() {
+        oc437_checked(
+            ee::s07::f_00277800__generated,
+            script_list_try_advance,
+            0x0027_7800,
+            &|c, r, _seed| {
+                let obj = c.g[A0][0] as u32;
+                c.bus
+                    .write32(obj + OC437_SCRIPT_LIST_PENDING, r.next_u32() | 1);
+                c.bus
+                    .write32(obj + 0xbc, 0xffff_fff0 | (r.next_u32() & 0xf));
+            },
+        );
+    }
+
+    /// `ScriptList_GetFieldB0`: loads the +0xb0 word sign-extended.
+    #[test]
+    fn script_list_get_field_b0_matches() {
+        check(
+            ee::s07::f_002772b8__generated,
+            script_list_get_field_b0,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x2772_b800 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0027_72b8;
+                let this = DATA + 0x100 * (seed % 8);
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + 0xb0, r.next_u32());
             },
         );
     }
