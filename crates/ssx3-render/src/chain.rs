@@ -21,6 +21,12 @@ pub trait Mem {
     fn unchanged(&self, _a: u32, _b: u32, _since: u64) -> bool {
         false
     }
+
+    /// The 4 KiB RAM page holding `addr` in one piece, when this memory
+    /// has it (none: read it with [`Mem::qword`]).
+    fn page(&self, _addr: u32) -> Option<&[u8]> {
+        None
+    }
 }
 
 /// Where a walk stopped.
