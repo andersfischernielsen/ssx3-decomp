@@ -250,6 +250,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cTransitionMan_StartTransition",
     ),
     (0x0028_2f60, script_binding_ctor, "ScriptBinding_ctor"),
+    (
+        0x0028_1f30,
+        script_engine_create_script_database,
+        "ScriptEngine_CreateScriptDatabase",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2536,6 +2541,100 @@ pub fn c_transition_man_start_transition(c: &mut Cpu) {
     })
 }
 
+/// `void ScriptEngine_CreateScriptDatabase(ScriptEngine* self, int count, int maxAnimPlayers, int size)`
+/// (0x281f30): allocates the InSeq heap (`size` bytes, `+0x2bc`) and the InSeq (`+0x2b8`),
+/// stores `count` (`+0x2b4`) and allocates and clears the `count` 8-byte script slots
+/// (`+0x2b0`).
+pub fn script_engine_create_script_database(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_282004: {
+            c.cycles += 41;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S1][0] = c.g[A1][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[S0][0] = c.g[A3][0];
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S2][0] = c.g[A2][0];
+            c.g[S3][0] = c.g[A0][0];
+            c.g[A1][0] = 0x480000;
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1f48));
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = 0u64;
+            c.g[A3][0] = 0u64;
+            call_ptr(c, 0x00317e30, 0x00281f70)?;
+            c.g[A1][0] = 0x4a0000;
+            c.g[A0][0] = 0x20;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x34f0));
+            c.g[A2][0] = 0u64;
+            c.g[A3][0] = 0u64;
+            c.sw((c.g[S3][0] as u32).wrapping_add(0x2bc), c.g[V0][0]);
+            call_ptr(c, 0x00317d70, 0x00281f8c)?;
+            c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x2bc));
+            c.g[T0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x2ac));
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A2][0] = c.g[S0][0];
+            c.g[A3][0] = c.g[S2][0];
+            Callee {
+                addr: 0x00272788,
+                f: ee::s07::InSeq_ctor,
+            }
+            .call(c, 0x00281fa4)?;
+            c.sw((c.g[S3][0] as u32).wrapping_add(0x2b4), c.g[S1][0]);
+            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1f58));
+            c.sw((c.g[S3][0] as u32).wrapping_add(0x2b8), c.g[V0][0]);
+            c.g[A0][0] = sx((c.g[S1][0] as u32) << 3);
+            c.g[A2][0] = 0u64;
+            c.g[A3][0] = 0u64;
+            call_ptr(c, 0x00317e30, 0x00281fc4)?;
+            c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x2b4));
+            c.g[A1][0] = 0u64;
+            let t = (c.g[V1][0] as i64) <= 0;
+            c.sw((c.g[S3][0] as u32).wrapping_add(0x2b0), c.g[V0][0]);
+            if t {
+                break 'b_282004;
+            } else {
+                c.cycles += 1;
+                c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x2b0));
+                'l_281fd8: loop {
+                    c.cycles += 11;
+                    c.g[A0][0] = sx((c.g[A1][0] as u32) << 3);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw(c.g[V1][0] as u32, 0u64);
+                    c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x2b0));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sh((c.g[A0][0] as u32).wrapping_add(0x4), 0u64);
+                    c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x2b4));
+                    c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] != 0u64 {
+                        c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x2b0));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00281fd8);
+                        }
+                        continue 'l_281fd8;
+                    } else {
+                        break 'b_282004;
+                    }
+                }
+            }
+        }
+        c.cycles += 7;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3729,6 +3828,26 @@ pub(crate) mod tests {
                         r.f32(4.0)
                     };
                 }
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ai::tests::oc434_setup;
+
+    /// `ScriptEngine_CreateScriptDatabase`: 0..4 script slots, a few player counts and
+    /// heap sizes (the real `InSeq_ctor` builds the sequence heap on the bump allocation).
+    #[test]
+    fn script_engine_create_script_database_matches() {
+        fakes::covered(
+            ee::s07::f_00281f30__generated,
+            script_engine_create_script_database,
+            24,
+            &|c, seed| {
+                let _ = oc434_setup(c, seed, 0x281f30, 4, 0x0028_1f30);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = (seed % 5) as u64;
+                c.g[A2][0] = (1 + seed / 5 % 3) as u64;
+                c.g[A3][0] = [0x4000, 0x8000][(seed / 3 % 2) as usize];
             },
         );
     }

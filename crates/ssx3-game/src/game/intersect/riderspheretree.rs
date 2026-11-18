@@ -7800,7 +7800,7 @@ pub(crate) mod tests {
     macro_rules! oc430_fakes {
         ($(($name:ident, $addr:expr, $shard:ident, $slot:ident, $gen:ident)),* $(,)?) => {
             $(
-                fn $name(c: &mut Cpu) {
+                pub(crate) fn $name(c: &mut Cpu) {
                     if c.bus.read32(OC430_CTRL) != OC430_MAGIC {
                         return fakes::fall_back(c, fakes::prev_cell($name), ee::$shard::$gen);
                     }

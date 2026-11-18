@@ -296,6 +296,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_metrix_init_hudfx,
         "RiderMetrix_InitHUDFX",
     ),
+    (
+        0x0011_9608,
+        rider_metrix_award_bonus_points,
+        "RiderMetrix_AwardBonusPoints",
+    ),
 ];
 
 /// Direct calls (same shard; these go through the shard's override slots, so
@@ -7276,6 +7281,127 @@ pub fn rider_metrix_init_hudfx(c: &mut Cpu) {
     })
 }
 
+/// `float RiderMetrix_AwardBonusPoints(RiderMetrix* self, int pts)` (0x119608): turns
+/// `pts` into points (`pts * *(float*)(self + 0x1c4) + 0.5`), then either shows the
+/// two HUD number effects (35 and 0x18) or, in career mode (event kind 4, game type
+/// 0), awards points / 500 (at most 20) as cash. Adds the points to `self + 0x198`
+/// and returns 0.0.
+pub fn rider_metrix_award_bonus_points(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_119674: {
+            c.cycles += 25;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+            c.mtc1(5, 0);
+            c.cvt_s_w(0, 0);
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[S1][0] = c.g[A0][0];
+            c.g[AT][0] = 0x3f000000;
+            c.mtc1(1, 2);
+            c.lwc1(1, (c.g[S1][0] as u32).wrapping_add(0x1c4));
+            c.mul_s(0, 0, 1);
+            c.add_s(0, 0, 2);
+            c.cvt_w_s(1, 0);
+            c.mfc1(16, 1);
+            call_ptr(c, 0x0014dc80, 0x00119648)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0u64;
+            call_ptr(c, 0x0014dd58, 0x00119654)?;
+            c.g[V1][0] = 0x530000;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x5bc8));
+            c.g[A0][0] = 0x4;
+            c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0x48));
+            let t = c.g[V0][0] != c.g[A0][0];
+            c.g[A1][0] = 0u64;
+            if t {
+                break 'b_119674;
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0x49));
+                c.g[A1][0] = (c.g[V0][0] < 0x1u64) as u64;
+                break 'b_119674;
+            }
+        }
+        'b_1196e4: {
+            'b_1196b8: {
+                c.cycles += 2;
+                let t = c.g[A1][0] != 0u64;
+                c.g[V0][0] = 0x1f4;
+                if t {
+                    break 'b_1196b8;
+                } else {
+                    c.cycles += 15;
+                    c.g[AT][0] = 0x40200000;
+                    c.mtc1(1, 12);
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A1][0] = 0x23;
+                    c.g[A2][0] = c.g[S0][0];
+                    c.g[A3][0] = 0u64;
+                    Callee {
+                        addr: 0x00117b88,
+                        f: ee::s00::RiderMetrix_ShowHUDNumber,
+                    }
+                    .call(c, 0x00119698)?;
+                    c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(0x7a20));
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A1][0] = 0x18;
+                    c.g[A2][0] = c.g[S0][0];
+                    c.g[A3][0] = 0u64;
+                    Callee {
+                        addr: 0x00117b88,
+                        f: ee::s00::RiderMetrix_ShowHUDNumber,
+                    }
+                    .call(c, 0x001196b0)?;
+                    let t = true;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x198));
+                    if t {
+                        break 'b_1196e4;
+                    } else {
+                        break 'b_1196b8;
+                    }
+                }
+            }
+            'b_1196c8: {
+                c.cycles += 4;
+                c.g[V1][0] = 0x14;
+                c.div(0, 16, 2);
+                if c.g[V0][0] == 0u64 {
+                    break 'b_1196c8;
+                } else {
+                    break 'b_1196c8;
+                }
+            }
+            c.cycles += 7;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 0x1;
+            c.g[A2][0] = c.lo[0];
+            c.g[V0][0] = ((c.g[A2][0] as i64) < 21i64) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[A2][0] = c.g[V1][0];
+            }
+            Callee {
+                addr: 0x00119ef8,
+                f: ee::s00::RiderMetrix_AwardPoints,
+            }
+            .call(c, 0x001196e0)?;
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x198));
+            break 'b_1196e4;
+        }
+        c.cycles += 8;
+        c.mtc1(0, 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x198), c.g[V0][0]);
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9645,6 +9771,46 @@ pub(crate) mod tests {
                 oc427_queue(c, 0x0031_7e30, &[(DATA + 0x1_0000) as u64]);
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(rider);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::ai::ai::tests::oc434_setup;
+    pub(crate) use crate::game::ai::ai::tests::oc434_w;
+
+    /// `RiderMetrix_AwardBonusPoints`: HUD numbers (not career, or career with game type
+    /// 1), or cash (career: amount 0, small, capped at 20 with the busy world so the
+    /// real `RiderMetrix_AwardPoints` returns at once).
+    #[test]
+    fn rider_metrix_award_bonus_points_matches() {
+        fakes::covered(
+            ee::s00::f_00119608__generated,
+            rider_metrix_award_bonus_points,
+            48,
+            &|c, seed| {
+                let _ = oc434_setup(c, seed, 0x119608, 4, 0x0011_9608);
+                let this = DATA + 0x100;
+                let pts: [u32; 8] = [0, 100, 499, 500, 10_000, 10_500, 50_000, 123_456];
+                let scale: [u32; 4] = [0x3f80_0000, 0x3f00_0000, 0x4040_0000, 0];
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = pts[(seed / 4 % 8) as usize] as u64;
+                oc434_w(c, this + 0x1c4, scale[(seed / 3 % 4) as usize]);
+                oc434_w(c, this + 0x198, seed.wrapping_mul(7919));
+                let (kind, game) = match seed % 4 {
+                    0 => (0, 0),
+                    1 | 3 => (4, 0),
+                    _ => (4, 1),
+                };
+                c.bus.write8(0x0053_5bc8 + 0x48, kind);
+                c.bus.write8(0x0053_5bc8 + 0x49, game);
+                // The busy world: `AwardPoints` does nothing.
+                let (world, x, y) = (DATA + 0x2000, DATA + 0x2100, DATA + 0x2200);
+                oc434_w(c, GAME_GP.wrapping_sub(0x848), world);
+                oc434_w(c, world + 0x84, x);
+                oc434_w(c, x + 0x28, y);
+                oc434_w(c, y, 5);
             },
         );
     }

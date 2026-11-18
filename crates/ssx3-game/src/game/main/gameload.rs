@@ -127,6 +127,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_module_create_section_script_table,
         "GameModule_CreateSectionScriptTable",
     ),
+    (0x0023_0050, game_module_enter_2, "GameModule_Enter"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4423,6 +4424,60 @@ pub fn game_module_create_section_script_table(c: &mut Cpu) {
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
         c.pc = t;
+        Ok(())
+    })
+}
+
+/// `int GameModule_Enter(GameModule *self)` (0x230050): the per-event
+/// enter hook: starts the world's bolt/anim managers (0x195d50), clears
+/// `gp - 0x9e4`, runs 0x1f30d8 on `self->+0x94`, 0x278710, two virtual calls
+/// on the object at `gp + 0x1158` (slots at `+0x88`/`+0x8c` and
+/// `+0x20`/`+0x24` of its vtable), then 0x369ff8, 0x3a67e0 (`self->+0x10`),
+/// 0x2b68d0 and 0x2867e8, and sets the three "entered" flags (`gp + 0x12d8`,
+/// `0x1234`, `0x14e8`) to 1. Frame 0x20 (s0).
+pub fn game_module_enter_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 40;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x8c)).lw(c);
+        call_ptr(c, 0x0019_5d50, 0x0023_006c)?;
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0x94)).lw(c);
+        Addr(r32(c, GP).wrapping_sub(0x9e4)).sw(c, 0);
+        call_ptr(c, 0x001f_30d8, 0x0023_0078)?;
+        c.g[A0][0] = Addr(r32(c, GP).wrapping_sub(0x84c)).lw(c);
+        call_ptr(c, 0x0027_8710, 0x0023_0080)?;
+        // Two virtual calls on the object at gp + 0x1158 (vtable at +4: a
+        // halfword `this` delta and the function).
+        for (delta_off, slot_off, ret_addr) in
+            [(0x88, 0x8c, 0x0023_0098), (0x20, 0x24, 0x0023_00b0)]
+        {
+            c.g[A1][0] = Addr(r32(c, GP).wrapping_add(0x1158)).lw(c);
+            c.g[V0][0] = Addr(r32(c, A1).wrapping_add(4)).lw(c);
+            c.g[A0][0] = Addr(r32(c, V0).wrapping_add(delta_off)).lh(c);
+            c.g[V1][0] = Addr(r32(c, V0).wrapping_add(slot_off)).lw(c);
+            let target = r32(c, V1);
+            c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+            call_ptr(c, target, ret_addr)?;
+        }
+        c.g[A0][0] = Addr(r32(c, GP).wrapping_sub(0x854)).lw(c);
+        call_ptr(c, 0x0036_9ff8, 0x0023_00b8)?;
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0x10)).lw(c);
+        call_ptr(c, 0x003a_67e0, 0x0023_00c0)?;
+        c.g[A0][0] = Addr(r32(c, GP).wrapping_add(0x21e4)).lw(c);
+        call_ptr(c, 0x002b_68d0, 0x0023_00c8)?;
+        c.g[A0][0] = Addr(r32(c, GP).wrapping_add(0x410)).lw(c);
+        call_ptr(c, 0x0028_67e8, 0x0023_00d0)?;
+        c.g[V0][0] = 1;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        Addr(r32(c, GP).wrapping_add(0x12d8)).sw(c, c.g[V0][0]);
+        Addr(r32(c, GP).wrapping_add(0x1234)).sw(c, c.g[V0][0]);
+        Addr(r32(c, GP).wrapping_add(0x14e8)).sw(c, c.g[V0][0]);
+        frame.close(c);
         Ok(())
     })
 }

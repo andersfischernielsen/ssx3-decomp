@@ -35,6 +35,7 @@ pub(crate) use crate::game::misc::PAD_PORT_SIZE;
 pub(crate) use crate::game::misc::PAD_SLOT_SIZE;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2;
 pub(crate) use crate::game::visualfx::worldlightman::deleting_dtor;
+pub(crate) use crate::game::world::world::oc435_callee;
 pub(crate) use crate::game::world::worldview::p_2 as p_3;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
@@ -207,6 +208,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         input_preproc_process_file,
         "InputPreproc_ProcessFile",
     ),
+    (0x0032_3098, input_parser_parse_all, "InputParser_ParseAll"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8873,6 +8875,45 @@ pub fn input_preproc_process_file(c: &mut Cpu) {
                 return Ok(());
             }
         }
+    })
+}
+
+/// `void InputParser_ParseAll(InputParser *p)` (0x323098): reads the first
+/// token, then parses statements until the parser's token kind (`+0x98`)
+/// is 0 (end of input). Frame 0x20 (s0).
+pub fn input_parser_parse_all(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        oc435_callee!(0x0032_1af0, ee::s10::InputParser_NextToken).call(c, 0x0032_30ac)?;
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(0x98)).lw(c);
+        if c.g[V0][0] == 0 {
+            frame.restore(c, S0, 0x10);
+        } else {
+            loop {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S0][0];
+                oc435_callee!(0x0032_30e0, ee::s10::InputParser_ParseStatement)
+                    .call(c, 0x0032_30c0)?;
+                c.g[V0][0] = Addr(r32(c, S0).wrapping_add(0x98)).lw(c);
+                if c.g[V0][0] != 0 {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0032_30b8);
+                    }
+                    continue;
+                }
+                c.cycles += 1;
+                frame.restore(c, S0, 0x10);
+                break;
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
     })
 }
 

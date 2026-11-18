@@ -25,6 +25,7 @@ pub(crate) use crate::game::misc::lit;
 pub(crate) use crate::game::movie::movieplayer::add32;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::render::particle::at;
+pub(crate) use crate::game::world::world::oc435_callee;
 pub(crate) use crate::game::wscript::wscriptman::p;
 use crate::guest::Addr;
 use ssx3_ee as ee;
@@ -136,6 +137,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         modifier_block_clear_transform_finished,
         "ModifierBlock_ClearTransformFinished",
     ),
+    (0x0035_3cf0, sky_box_set_section_2, "SkyBox_SetSection"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect(c, addr)`.
@@ -1716,6 +1718,73 @@ pub fn modifier_block_clear_transform_finished(c: &mut Cpu) {
             frame.restore_ra(c, 0);
         }
         c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SkyBox_SetSection(SkyBox *self, int section)` (0x353cf0): stores the
+/// section at `+0x10`; a negative one clears the box (`SkyBox_Clear`), else
+/// looks the section's world mesh up (via 0x2d1bd8 -> manager, entry `section *
+/// 0x58`) and, when it has meshes (`+0x26 > 0`) and the table entry
+/// `table[section & 0xff]` exists, stores `(entry->+0x1c->word >> 8) * 4` (or
+/// 0) at `+0x14`. Frame 0x30 (s0, s1).
+pub fn sky_box_set_section_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        let non_negative = (c.g[S0][0] as i64) >= 0;
+        Addr(r32(c, S1).wrapping_add(0x10)).sw(c, c.g[S0][0]);
+        if !non_negative {
+            c.cycles += 4;
+            oc435_callee!(0x0035_3d98, ee::s11::SkyBox_Clear).call(c, 0x0035_3d18)?;
+            frame.restore(c, S0, 0x20);
+        } else {
+            c.cycles += 11;
+            call_ptr(c, 0x002d_1bd8, 0x0035_3d28)?;
+            c.g[A2][0] = Addr(r32(c, V0)).lw(c);
+            c.g[V0][0] = 0x58;
+            c.g[V1][0] = Addr(r32(c, A2)).lw(c);
+            c.mult(0, 2, 16, 2);
+            c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x14)).lw(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+            c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x26)).lh(c);
+            let no_meshes = (c.g[V1][0] as i64) <= 0;
+            c.g[A1][0] = c.g[S0][0] & 0xff;
+            if !no_meshes {
+                c.cycles += 6;
+                c.g[V1][0] = Addr(r32(c, A2).wrapping_add(8)).lw(c);
+                c.g[V0][0] = sx(r32(c, A1) << 2);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                c.g[V0][0] = Addr(r32(c, V0)).lw(c);
+                if c.g[V0][0] == 0 {
+                    c.g[V0][0] = 0;
+                } else {
+                    c.cycles += 5;
+                    c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x1c)).lw(c);
+                    c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+                    c.g[V0][0] = sx(r32(c, V0) >> 8);
+                    let nonzero = c.g[V0][0] != 0;
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    if !nonzero {
+                        c.cycles += 1;
+                        c.g[V0][0] = 0;
+                    }
+                }
+                c.cycles += 1;
+                Addr(r32(c, S1).wrapping_add(0x14)).sw(c, c.g[V0][0]);
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
     })

@@ -379,6 +379,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         camera_bound_obj_get_scale,
         "CameraBoundObj_GetScale",
     ),
+    (
+        0x0017_6448,
+        camera_bound_obj_get_rot_x,
+        "CameraBoundObj_GetRotX",
+    ),
+    (
+        0x0017_6450,
+        camera_bound_obj_get_rot_y,
+        "CameraBoundObj_GetRotY",
+    ),
+    (
+        0x0017_6da8,
+        default_3_chase_camera_algorithm_dtor,
+        "Default_3ChaseCameraAlgorithm_dtor",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3672,6 +3687,7 @@ macro_rules! child_case {
         }
     }};
 }
+use crate::abi::ret;
 pub(crate) use crate::game::camera::camera::vu0_dot3;
 pub(crate) use crate::game::camera::camera::vu0_length;
 pub(crate) use crate::game::seg::seg_1fbe38::oc417_add;
@@ -6436,6 +6452,41 @@ pub fn camera_bound_obj_get_field14(c: &mut Cpu) {
     c.pc = ra;
 }
 
+/// `float& cCTObject::heading()` / `CameraBoundObj_GetRotX` (0x176448):
+/// returns `this + 0xc`.
+pub fn camera_bound_obj_get_rot_x(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = sx(r32(c, A0).wrapping_add(0xc));
+    ret(c);
+}
+
+/// `float& cCTObject::pitch()` / `CameraBoundObj_GetRotY` (0x176450):
+/// returns `this + 0x10`.
+pub fn camera_bound_obj_get_rot_y(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = sx(r32(c, A0).wrapping_add(0x10));
+    ret(c);
+}
+
+/// `void Default_3ChaseCameraAlgorithm_dtor(self)` (0x176da8): sets the
+/// vtable (0x45ca38) at `+0x10`, then runs the base destructor
+/// (`ChaseCameraAlgorithm_dtor`, 0x162458).
+pub fn default_3_chase_camera_algorithm_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x46_0000;
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x35c8));
+        Addr(r32(c, V1).wrapping_add(0x10)).sw(c, c.g[V0][0]);
+        call_ptr(c, 0x0016_2458, 0x0017_6dc4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -8721,6 +8772,28 @@ pub(crate) mod tests {
             &|c, seed| {
                 let _ = machine(c, seed, 0x176458, 0);
                 c.pc = 0x0017_6458;
+            },
+        );
+    }
+
+    #[test]
+    fn camera_bound_obj_get_rot_matches() {
+        check(
+            ee::s02::f_00176448__generated,
+            camera_bound_obj_get_rot_x,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x176448 ^ seed as u64);
+                scramble(c, &mut r);
+            },
+        );
+        check(
+            ee::s02::f_00176450__generated,
+            camera_bound_obj_get_rot_y,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x176450 ^ seed as u64);
+                scramble(c, &mut r);
             },
         );
     }

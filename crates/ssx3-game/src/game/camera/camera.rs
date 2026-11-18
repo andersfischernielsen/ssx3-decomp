@@ -416,6 +416,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         chase_camera_algorithm_dtor,
         "ChaseCameraAlgorithm_dtor",
     ),
+    (0x0015_dc70, game_camera_ctor_2, "GameCamera_ctor"),
+    (0x0015_de60, game_camera_init, "GameCamera_Init"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -9970,6 +9972,241 @@ pub fn chase_camera_algorithm_dtor(c: &mut Cpu) {
     })
 }
 
+/// `void GameCamera_Init(GameCamera* self, int riderIndex, float view, float nearPlane, float farPlane)`
+/// (0x15de60): store the view parameters and the rider index, point the manual
+/// controller (`+0xa4`) at viewport 0 and select algorithm 81, point the chase
+/// controller (`+0xa8`) at the rider's viewport, allocate a rider-camera target
+/// (vtable `0x45b7a8`, the rider from the world's rider table), hand it to the
+/// chase controller and the rider-camera algorithm, snap to the default chase
+/// camera, clear the roll/shake words and set the script camera's viewport
+/// according to the rider index (0 or 1; other indices leave `+0xb0` alone).
+#[allow(unreachable_code)]
+pub fn game_camera_init(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_15df6c: {
+            'b_15df68: {
+                'b_15df64: {
+                    c.cycles += 60;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+                    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S2][0] = c.g[A0][0];
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.g[S3][0] = c.g[A1][0];
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.g[A1][0] = 0x51;
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[S1][0] = sx((c.g[S3][0] as u32) << 2);
+                    c.swc1(13, (c.g[S2][0] as u32).wrapping_add(0x10));
+                    c.swc1(14, (c.g[S2][0] as u32).wrapping_add(0x14));
+                    c.swc1(12, (c.g[S2][0] as u32).wrapping_add(0xc));
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x18), c.g[S3][0]);
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x460), 0u64);
+                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xa4));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xb0));
+                    c.sw((c.g[A0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xa4));
+                    Callee {
+                        addr: 0x0015cf80,
+                        f: ee::s01::ManualCamController_SelectAlgorithm,
+                    }
+                    .call(c, 0x0015deb4)?;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                    c.g[A1][0] = 0x460000;
+                    c.g[T0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xa8));
+                    c.g[A3][0] = 0u64;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.g[A2][0] = 0u64;
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xb0));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4870));
+                    c.g[A0][0] = 0x8;
+                    c.sw((c.g[T0][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+                    call_ptr(c, 0x00317d70, 0x0015dee0)?;
+                    c.g[V1][0] = 0x460000;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x4858));
+                    c.sw(c.g[S0][0] as u32, c.g[V1][0]);
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x84));
+                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xa8));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                    Callee {
+                        addr: 0x00161a60,
+                        f: ee::s01::ChaseCamController_SetTarget,
+                    }
+                    .call(c, 0x0015df14)?;
+                    c.g[AT][0] = 0x3f800000;
+                    c.mtc1(1, 12);
+                    c.g[A2][0] = 0u64;
+                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xa8));
+                    c.g[A1][0] = 0x4c;
+                    Callee {
+                        addr: 0x00162060,
+                        f: ee::s01::ChaseCamController_SetOverrideAlgorithm,
+                    }
+                    .call(c, 0x0015df2c)?;
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0xc0));
+                    Callee {
+                        addr: 0x00162310,
+                        f: ee::s01::RiderCameraAlgorithm_SetTarget,
+                    }
+                    .call(c, 0x0015df38)?;
+                    c.g[A0][0] = c.g[S2][0];
+                    Callee {
+                        addr: 0x0015e030,
+                        f: ee::s01::GameCamera_ResetDefaultChase,
+                    }
+                    .call(c, 0x0015df40)?;
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x454), 0u64);
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x458), 0u64);
+                    let t = c.g[S3][0] == 0u64;
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x45c), 0u64);
+                    if t {
+                        break 'b_15df64;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = 0x1;
+                        if c.g[S3][0] == c.g[V0][0] {
+                            c.sw((c.g[S2][0] as u32).wrapping_add(0xb0), c.g[S3][0]);
+                            break 'b_15df68;
+                        } else {
+                            c.cycles += 2;
+                            let t = true;
+                            c.sw((c.g[S2][0] as u32).wrapping_add(0xb4), 0u64);
+                            if t {
+                                break 'b_15df6c;
+                            } else {
+                                break 'b_15df64;
+                            }
+                        }
+                    }
+                }
+                c.cycles += 1;
+                c.sw((c.g[S2][0] as u32).wrapping_add(0xb0), 0u64);
+                break 'b_15df68;
+            }
+            c.cycles += 1;
+            c.sw((c.g[S2][0] as u32).wrapping_add(0xb4), 0u64);
+            break 'b_15df6c;
+        }
+        c.cycles += 11;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xac));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xb0));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.sw((c.g[A0][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        return Ok(());
+        Ok(())
+    })
+}
+
+/// `GameCamera* GameCamera_ctor(GameCamera* self, int a1)` (0x15dc70): construct the
+/// camera base, then allocate and construct the manual (`+0xa4`), chase (`+0xa8`)
+/// and script (`+0xac`) controllers and clear the camera state; returns `self`.
+#[allow(unreachable_code)]
+pub fn game_camera_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 69;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S0][0] = c.g[A0][0];
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S1][0] = c.g[A1][0];
+        Callee {
+            addr: 0x0015d698,
+            f: ee::s01::CameraBase_ctor,
+        }
+        .call(c, 0x0015dc8c)?;
+        c.g[V1][0] = 0x460000;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc0));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x4778));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x90), c.g[V1][0]);
+        call_ptr(c, 0x00176d68, 0x0015dca0)?;
+        c.g[A1][0] = 0x460000;
+        c.g[A2][0] = 0u64;
+        c.g[A3][0] = 0u64;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x48b8));
+        c.g[A0][0] = 0x20;
+        call_ptr(c, 0x00317d70, 0x0015dcb8)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0];
+        Callee {
+            addr: 0x0015cd80,
+            f: ee::s01::ManualCamController_ctor,
+        }
+        .call(c, 0x0015dcc4)?;
+        c.g[A1][0] = 0x460000;
+        c.g[A3][0] = 0u64;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xa4), c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x48a0));
+        c.g[A0][0] = 0x44;
+        c.g[A2][0] = 0u64;
+        call_ptr(c, 0x00317d70, 0x0015dce0)?;
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0];
+        Callee {
+            addr: 0x001619a8,
+            f: ee::s01::ChaseCamController_ctor,
+        }
+        .call(c, 0x0015dcf0)?;
+        c.g[A1][0] = 0x460000;
+        c.g[A3][0] = 0u64;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xa8), c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4888));
+        c.g[A0][0] = 0x20;
+        c.g[A2][0] = 0u64;
+        call_ptr(c, 0x00317d70, 0x0015dd0c)?;
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x00168fe8, 0x0015dd1c)?;
+        c.g[V1][0] = 0xffffffffffffffff;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xac), c.g[V0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xb0), c.g[V1][0]);
+        c.g[A0][0] = 0x500000;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xb4), 0u64);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xea0));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x454), 0u64);
+        c.g[A1][0] = 0x500000;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x458), 0u64);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xed0));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x45c), 0u64);
+        c.g[A2][0] = 0x1;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x450), 0u64);
+        c.g[V0][0] = c.g[S0][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x460), 0u64);
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.lq(3, c.g[A0][0] as u32);
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.sq(3, (c.g[S0][0] as u32).wrapping_add(0x470));
+        c.lq(4, c.g[A1][0] as u32);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4a4), c.g[A2][0]);
+        c.sq(4, (c.g[S0][0] as u32).wrapping_add(0x490));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4a0), 0u64);
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        return Ok(());
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -12991,6 +13228,64 @@ pub(crate) mod tests {
                 c.bus.write32(OC430_CTRL, OC430_MAGIC);
                 c.pc = 0x0016_2458;
                 c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[A1][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_gp;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_run;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_w;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC433_FIX;
+
+    /// `GameCamera_Init` against the generated body: rider index 0, 1 and 2
+    /// (the switch has cases 0 and 1 only), random view parameters; the
+    /// controllers are fakes.
+    #[test]
+    fn game_camera_init_matches() {
+        oc433_run(
+            ee::s01::f_0015de60__generated,
+            game_camera_init,
+            0x0015_de60,
+            6,
+            90,
+            &|c, r, seed| {
+                let (app, world, riders, this) = (
+                    OC433_FIX + 0x1000,
+                    OC433_FIX + 0x1200,
+                    OC433_FIX + 0x1400,
+                    OC433_FIX + 0x2000,
+                );
+                oc433_gp(c, -0x848, app);
+                oc433_w(c, app + 0x84, world);
+                oc433_w(c, world + 0xc, riders);
+                fill(c, r, app + 0xb0, 4);
+                fill(c, r, riders + 0x28, 4);
+                oc433_w(c, this + 0xa4, OC433_FIX + 0x2800);
+                oc433_w(c, this + 0xa8, OC433_FIX + 0x2a00);
+                oc433_w(c, this + 0xac, OC433_FIX + 0x2c00);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = (seed % 3) as u64;
+                for k in 12..15 {
+                    c.f[k] = r.edge_f32();
+                }
+            },
+        );
+    }
+
+    /// `GameCamera_ctor` against the generated body (constructors and
+    /// allocator are fakes).
+    #[test]
+    fn game_camera_ctor_matches_2() {
+        oc433_run(
+            ee::s01::f_0015dc70__generated,
+            game_camera_ctor_2,
+            0x0015_dc70,
+            8,
+            60,
+            &|c, r, _seed| {
+                c.g[A0][0] = sx(OC433_FIX + 0x2000);
                 c.g[A1][0] = sx(r.next_u32());
             },
         );

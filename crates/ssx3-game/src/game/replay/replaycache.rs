@@ -403,6 +403,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         in_seq_instance_release,
         "InSeq_InstanceRelease",
     ),
+    (0x0027_2788, in_seq_ctor, "InSeq_ctor"),
 ];
 
 /// `void WorldStateStream_Reset(WorldStateStream *stream)` (0x26d628):
@@ -7781,6 +7782,143 @@ pub fn in_seq_instance_release(c: &mut Cpu) {
     })
 }
 
+/// `InSeq* InSeq_ctor(self, pHeap, heapSize, count, tag)` (0x272788): sets up
+/// an instance pool. Initialises the heap (`self + 8`), stores `tag` (+0) and
+/// `count` (+4), clears +0x14/+0x18, allocates `count * 0x58 + 0x10` bytes
+/// (the first word holds the count, the items start at +0x10), constructs
+/// every item (`InSeq_Instance_ctor(item + 8)`), stores the items at +0x14,
+/// links them in a free list (`item[i].index = i`, `item[i].next = &item[i +
+/// 1]`, `item[i].prev = &item[i - 1]`), terminates both ends (the first item's
+/// prev and the last one's next = 0), clears the used list (+0x1c) and points
+/// the free list (+0x18) at the first item. Returns `self`. Frame 0x70 (s0-s5).
+pub fn in_seq_ctor(c: &mut Cpu) {
+    const HEAP_INIT: Callee = Callee {
+        addr: 0x0027_22e0,
+        f: ee::s07::f_002722e0,
+    };
+    const HEAP_NEW_ARRAY: Callee = Callee {
+        addr: 0x0027_24c8,
+        f: ee::s07::f_002724c8,
+    };
+    const INSTANCE_CTOR: Callee = Callee {
+        addr: 0x0027_4518,
+        f: ee::s07::f_00274518,
+    };
+    guest(c, |c| {
+        c.cycles += 29;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S3, 0x30);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S2, 0x40);
+        frame.save(c, S0, 0x60);
+        let this = r32(c, S3);
+        c.g[S2][0] = sx(this.wrapping_add(8));
+        frame.save(c, S1, 0x50);
+        c.g[S0][0] = c.g[A3][0];
+        c.g[S1][0] = c.g[T0][0];
+        c.g[A0][0] = c.g[S2][0];
+        frame.save(c, S4, 0x20);
+        frame.save(c, S5, 0x10);
+        c.g[S4][0] = sx(r32(c, S0).wrapping_sub(1));
+        frame.save_ra(c, 0);
+        c.g[S5][0] = sx(this.wrapping_add(0x14));
+        HEAP_INIT.call(c, 0x0027_27c8)?;
+        c.g[A0][0] = 0x58;
+        c.sw(this, c.g[S1][0]);
+        c.mult(0, A0, S0, A0);
+        c.sw(this.wrapping_add(4), c.g[S0][0]);
+        c.sw(this.wrapping_add(0x14), 0);
+        c.g[A1][0] = c.g[S2][0];
+        c.sw(this.wrapping_add(0x18), 0);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x10));
+        HEAP_NEW_ARRAY.call(c, 0x0027_27ec)?;
+        c.g[S2][0] = sx(r32(c, V0).wrapping_add(0x10));
+        c.sw(r32(c, V0), c.g[S0][0]);
+        let empty = c.g[S0][0] == 0;
+        c.g[S1][0] = c.g[S2][0];
+        // Construct the items.
+        if !empty {
+            c.cycles += 1;
+            c.g[S0][0] = u64::MAX;
+            loop {
+                c.cycles += 5;
+                c.g[A0][0] = sx(r32(c, S1).wrapping_add(8));
+                c.g[S4][0] = sx(r32(c, S4).wrapping_sub(1));
+                INSTANCE_CTOR.call(c, 0x0027_280c)?;
+                let more = c.g[S4][0] != c.g[S0][0];
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(0x58));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_2800);
+                }
+            }
+        }
+        // Link the items: index, next (+0x50), prev (+0x54).
+        c.cycles += 4;
+        c.sw(r32(c, S5), c.g[S2][0]);
+        c.g[V0][0] = c.lw(this.wrapping_add(4));
+        let none = c.g[V0][0] == 0;
+        c.g[A0][0] = 0;
+        if !none {
+            c.cycles += 3;
+            c.g[A3][0] = 0xffff_ffff_ffff_ffa8;
+            c.g[A2][0] = 0x58;
+            c.g[A1][0] = 0;
+            loop {
+                c.cycles += 18;
+                c.g[V0][0] = c.lw(this.wrapping_add(0x14));
+                c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                c.sw(r32(c, V0).wrapping_add(4), c.g[A0][0]);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                c.g[V0][0] = c.lw(this.wrapping_add(0x14));
+                c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, A2)));
+                c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x58));
+                c.sw(r32(c, V0).wrapping_add(0x50), c.g[V1][0]);
+                c.g[V0][0] = c.lw(this.wrapping_add(0x14));
+                c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, A3)));
+                c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                c.g[A3][0] = sx(r32(c, A3).wrapping_add(0x58));
+                c.sw(r32(c, V0).wrapping_add(0x54), c.g[V1][0]);
+                c.g[V0][0] = c.lw(this.wrapping_add(4));
+                c.g[V0][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x58));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_2830);
+                }
+            }
+        }
+        c.cycles += 21;
+        c.g[A0][0] = c.lw(this.wrapping_add(0x14));
+        c.g[A1][0] = 0x58;
+        c.g[V0][0] = c.g[S3][0];
+        frame.restore(c, S0, 0x60);
+        c.sw(r32(c, A0).wrapping_add(0x54), 0);
+        frame.restore(c, S1, 0x50);
+        c.g[V1][0] = c.lw(this.wrapping_add(4));
+        c.g[A0][0] = c.lw(this.wrapping_add(0x14));
+        c.mult(0, V1, V1, A1);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+        c.sw(r32(c, V1).wrapping_sub(8), 0);
+        c.sw(this.wrapping_add(0x1c), 0);
+        c.g[V1][0] = c.lw(this.wrapping_add(0x14));
+        c.sw(this.wrapping_add(0x18), c.g[V1][0]);
+        frame.restore(c, S3, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11505,6 +11643,68 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA + 0x1000);
                 c.g[RA][0] = SENTINEL as u64;
                 mode
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ai::tests::oc432_fake;
+    pub(crate) use crate::game::ai::ai::tests::OC432_CTRL;
+    pub(crate) use crate::game::ai::ai::tests::OC432_MAGIC;
+    use std::ptr::addr_of_mut;
+
+    oc432_fake!(
+        fake_in_seq_heap_init,
+        PREV_IN_SEQ_HEAP_INIT,
+        ee::s07::f_002722e0__generated,
+        0x0027_22e0
+    );
+
+    oc432_fake!(
+        fake_in_seq_heap_new,
+        PREV_IN_SEQ_HEAP_NEW,
+        ee::s07::f_00272488__generated,
+        0x0027_2488,
+        |c: &mut Cpu| {
+            c.g[V0][0] = (DATA + 0x5_8000) as u64;
+        }
+    );
+
+    oc432_fake!(
+        fake_in_seq_instance_ctor,
+        PREV_IN_SEQ_INSTANCE_CTOR,
+        ee::s07::f_00274518__generated,
+        0x0027_4518
+    );
+
+    /// `InSeq_ctor`: 0..4 items (including the empty pool); the heap init,
+    /// the array allocation and the item constructor are fakes.
+    #[test]
+    fn in_seq_ctor_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_002722E0),
+            fake_in_seq_heap_init,
+            &PREV_IN_SEQ_HEAP_INIT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00272488),
+            fake_in_seq_heap_new,
+            &PREV_IN_SEQ_HEAP_NEW,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00274518),
+            fake_in_seq_instance_ctor,
+            &PREV_IN_SEQ_INSTANCE_CTOR,
+        );
+        fakes::covered(
+            ee::s07::f_00272788__generated,
+            in_seq_ctor,
+            160,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x272788, 6);
+                c.bus.write32(OC432_CTRL, OC432_MAGIC);
+                c.g[A0][0] = (DATA + 0x5_0000) as u64;
+                c.g[A3][0] = (r.next_u32() % 5) as u64;
+                let _ = seed;
             },
         );
     }

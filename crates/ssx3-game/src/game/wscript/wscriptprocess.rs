@@ -148,6 +148,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         w_script_man_run_mission_setup_scripts,
         "WScriptMan_RunMissionSetupScripts",
     ),
+    (0x0030_87d0, w_script_man_ctor, "WScriptMan_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2650,6 +2651,126 @@ pub fn wscript_man_spawn_missions(c: &mut Cpu) {
     })
 }
 
+/// `WScriptMan* WScriptMan_ctor(WScriptMan* self)` (0x3087d0): construct the command
+/// queue, the three process lists and the collect sets (the inner 0x40-word tables
+/// filled with -1), register `self` in the global, clear the 200-byte block at
+/// `+0x3cc` and `WScriptMan_Reset(self)`; returns `self`.
+#[allow(unreachable_code)]
+pub fn w_script_man_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+        c.g[V0][0] = 0xffffffffffff0000;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[V0][0] = c.g[V0][0] | 0xffff;
+        c.g[S0][0] = c.g[A0][0];
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1c4));
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S3][0] = 0xffffffffffff0000;
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S5][0] = sx((c.g[S0][0] as u32).wrapping_add(0x3cc));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S3][0] = c.g[S3][0] | 0xffff;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S4][0] = 0xffffffffffffffff;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), c.g[V0][0]);
+        Callee {
+            addr: 0x0030c738,
+            f: ee::s10::WScriptMan_CmdQueueCtor,
+        }
+        .call(c, 0x00308818)?;
+        c.g[V0][0] = 0x490000;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2b4));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x6400));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x494), c.g[V0][0]);
+        Callee {
+            addr: 0x0030b058,
+            f: ee::s10::WScriptProcessList_ctor,
+        }
+        .call(c, 0x0030882c)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2b8));
+        Callee {
+            addr: 0x0030b058,
+            f: ee::s10::WScriptProcessList_ctor,
+        }
+        .call(c, 0x00308834)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2bc));
+        Callee {
+            addr: 0x0030b058,
+            f: ee::s10::WScriptProcessList_ctor,
+        }
+        .call(c, 0x0030883c)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2c0));
+        c.g[V0][0] = 0u64;
+        'l_308848: loop {
+            c.cycles += 4;
+            c.g[S2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+            c.g[S1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10c));
+            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xc));
+            c.g[V1][0] = 0x3f;
+            'l_308858: loop {
+                c.cycles += 7;
+                c.sw(c.g[V0][0] as u32, c.g[S3][0]);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                let t = c.g[V1][0] != c.g[S4][0];
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x00308858);
+                    }
+                    continue 'l_308858;
+                } else {
+                    c.cycles += 5;
+                    Callee {
+                        addr: 0x0030c390,
+                        f: ee::s10::WScriptMan_ResetCollectSet,
+                    }
+                    .call(c, 0x0030887c)?;
+                    c.g[V0][0] = c.g[S2][0];
+                    let t = c.g[V0][0] != c.g[S4][0];
+                    c.g[A0][0] = c.g[S1][0];
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00308848);
+                        }
+                        continue 'l_308848;
+                    } else {
+                        c.cycles += 19;
+                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x16c8));
+                        c.g[A0][0] = c.g[S5][0];
+                        c.sw((c.g[GP][0] as u32).wrapping_add(0xce8), c.g[S0][0]);
+                        c.g[A1][0] = 0u64;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x28c), c.g[V0][0]);
+                        c.g[A2][0] = 0xc8;
+                        call_ptr(c, 0x003e6448, 0x003088a4)?;
+                        c.g[A0][0] = c.g[S0][0];
+                        Callee {
+                            addr: 0x00308988,
+                            f: ee::s10::WScriptMan_Reset,
+                        }
+                        .call(c, 0x003088ac)?;
+                        c.g[V0][0] = c.g[S0][0];
+                        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+                        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+                        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                        let t = c.g[RA][0] as u32;
+                        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+                        c.pc = t;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3753,6 +3874,28 @@ pub(crate) mod tests {
                 oc429_force(c, 0x003a_6c68, &counts);
                 oc429_force(c, 0x0015_4278, &[(seed % 3) as u64]);
                 c.g[A0][0] = this as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_gp;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_run;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC433_FIX;
+
+    /// `WScriptMan_ctor` against the generated body (the sub-object
+    /// constructors, memset and reset are fakes).
+    #[test]
+    fn w_script_man_ctor_matches() {
+        oc433_run(
+            ee::s10::f_003087d0__generated,
+            w_script_man_ctor,
+            0x0030_87d0,
+            7,
+            60,
+            &|c, r, _seed| {
+                oc433_gp(c, 0x16c8, r.next_u32());
+                c.g[A0][0] = sx(OC433_FIX + 0x1000);
             },
         );
     }

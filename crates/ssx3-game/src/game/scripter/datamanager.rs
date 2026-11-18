@@ -34,6 +34,7 @@ pub(crate) use crate::game::fe::festatetrophyroom::r;
 pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::main::gamestate::gw;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
+pub(crate) use crate::game::main::gamestate::oc432_gp_minus;
 pub(crate) use crate::game::main::ssxapp::oc429_at;
 pub(crate) use crate::game::movie::movieplayer::at as at_3;
 pub(crate) use crate::game::movie::movieplayer::word;
@@ -154,6 +155,23 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0027_5ed0, script_list_add_choice, "ScriptList_AddChoice"),
     (0x0027_6868, script_list_stop, "ScriptList_Stop"),
     (0x0027_7f20, script_engine_ctor, "ScriptEngine_ctor"),
+    (
+        0x0027_5a20,
+        data_instance_man_remove_data,
+        "DataInstanceMan_RemoveData",
+    ),
+    (0x0027_6270, script_list_prepare, "ScriptList_Prepare"),
+    (
+        0x0027_6f48,
+        script_list_skip_current,
+        "ScriptList_SkipCurrent",
+    ),
+    (0x0027_7838, script_list_next_entry, "ScriptList_NextEntry"),
+    (
+        0x0027_8210,
+        script_engine_load_master,
+        "ScriptEngine_LoadMaster",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3480,8 +3498,807 @@ pub fn script_engine_ctor(c: &mut Cpu) {
     })
 }
 
+/// `void ScriptList_NextEntry(self)` (0x277838): advances the script list.
+/// With a pending entry (`self + 0xbc > 0`) it pops the list entries, clears
+/// the pending slot, takes the next command (`ScriptCmdQueue_At(self + 0xc,
+/// 0)`) and starts it (a movie via `ScriptMovie_Start(engine + 0x500)`, else
+/// `ScriptEngine_PlayScriptInstance` plus the engine's virtual method 6),
+/// marks `self + 0xac` when `self + 0xb0` is set and prepares the next entry
+/// into `self + 0xbc`. Without one it stops the list and, when `self + 4` is
+/// set, fades via the game's transition manager (the remaining time of the
+/// running transition when `self + 0xb0` was set, else 0.5s). Frame 0x30.
+pub fn script_list_next_entry(c: &mut Cpu) {
+    const POP_ENTRIES: Callee = Callee {
+        addr: 0x0027_7598,
+        f: ee::s07::f_00277598,
+    };
+    const CMD_QUEUE_AT: Callee = Callee {
+        addr: 0x0028_3d70,
+        f: ee::s07::f_00283d70,
+    };
+    const IS_MOVIE_ENTRY: Callee = Callee {
+        addr: 0x0027_7dd8,
+        f: ee::s07::f_00277dd8,
+    };
+    const PLAY_SCRIPT_INSTANCE: Callee = Callee {
+        addr: 0x0027_9720,
+        f: ee::s07::f_00279720,
+    };
+    const MOVIE_START: Callee = Callee {
+        addr: 0x0028_39a8,
+        f: ee::s07::f_002839a8,
+    };
+    const PREPARE_ENTRY: Callee = Callee {
+        addr: 0x0027_7450,
+        f: ee::s07::f_00277450,
+    };
+    const LIST_STOP: Callee = Callee {
+        addr: 0x0027_6868,
+        f: ee::s07::f_00276868,
+    };
+    const PENDING: u32 = 0xbc;
+    const ENABLED: u32 = 0xb0;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let this = r32(c, S0);
+        c.g[A1][0] = c.lw(this.wrapping_add(PENDING));
+        'ret: {
+            'end: {
+                if (c.g[A1][0] as i64) > 0 {
+                    c.cycles += 14;
+                    c.sw(this.wrapping_add(0xc8), 0);
+                    POP_ENTRIES.call(c, 0x0027_7860)?;
+                    c.g[V0][0] = u64::MAX;
+                    c.sw(this.wrapping_add(0xc0), 0);
+                    c.g[A0][0] = sx(this.wrapping_add(0xc));
+                    c.g[A1][0] = 0;
+                    c.sw(this.wrapping_add(PENDING), c.g[V0][0]);
+                    CMD_QUEUE_AT.call(c, 0x0027_7878)?;
+                    c.g[S1][0] = c.g[V0][0];
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[S1][0];
+                    IS_MOVIE_ENTRY.call(c, 0x0027_7888)?;
+                    let movie = c.g[V0][0] != 0;
+                    c.g[A0][0] = c.lw(this);
+                    if !movie {
+                        let cmd = r32(c, S1);
+                        c.cycles += 16;
+                        c.g[T0][0] = c.lw(cmd.wrapping_add(8));
+                        c.g[A3][0] = 0;
+                        c.g[T0][0] = sx(((c.g[T0][0] as u32) as i32 >> 3) as u32);
+                        c.g[A1][0] = c.lw(this.wrapping_add(8));
+                        c.g[A2][0] = c.lw(cmd.wrapping_add(0xc));
+                        c.g[T0][0] &= 1;
+                        PLAY_SCRIPT_INSTANCE.call(c, 0x0027_78ac)?;
+                        c.g[A2][0] = c.lw(this);
+                        c.g[A1][0] = c.lw(cmd.wrapping_add(0xc));
+                        c.g[V1][0] = c.lw(r32(c, A2).wrapping_add(0x2a8));
+                        c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x30));
+                        c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x34));
+                        let method = r32(c, V0);
+                        c.g[A0][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
+                        call_ptr(c, method, 0x0027_78c8)?;
+                        c.g[V0][0] = c.lw(this.wrapping_add(ENABLED));
+                    } else {
+                        c.cycles += 3;
+                        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x500));
+                        MOVIE_START.call(c, 0x0027_78d8)?;
+                        c.g[V0][0] = c.lw(this.wrapping_add(ENABLED));
+                    }
+                    c.cycles += 2;
+                    let off = c.g[V0][0] == 0;
+                    c.g[V0][0] = 1;
+                    if !off {
+                        c.cycles += 1;
+                        c.sw(this.wrapping_add(0xac), c.g[V0][0]);
+                    }
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = 1;
+                    c.g[A2][0] = 0;
+                    PREPARE_ENTRY.call(c, 0x0027_78f8)?;
+                    c.sw(this.wrapping_add(PENDING), c.g[V0][0]);
+                    break 'end;
+                }
+                // Nothing pending: stop the list and fade out.
+                c.g[S1][0] = c.lw(this.wrapping_add(ENABLED));
+                c.cycles += 6;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0;
+                LIST_STOP.call(c, 0x0027_790c)?;
+                c.g[V0][0] = c.lw(this.wrapping_add(4));
+                let no_fade = c.g[V0][0] == 0;
+                c.g[V0][0] = c.lw(oc432_gp_minus(c, 0x848));
+                if no_fade {
+                    break 'end;
+                }
+                'fade_half: {
+                    c.cycles += 6;
+                    c.g[A1][0] = 0;
+                    c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(0x84));
+                    c.g[S0][0] = c.lw(r32(c, A0).wrapping_add(0x64));
+                    call_ptr(c, 0x0023_0698, 0x0027_7928)?;
+                    let was_off = c.g[S1][0] == 0;
+                    c.g[A0][0] = c.g[V0][0];
+                    if was_off {
+                        break 'fade_half;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(0x44));
+                    if c.g[V0][0] == 0 {
+                        break 'fade_half;
+                    }
+                    c.cycles += 7;
+                    call_ptr(c, 0x002e_4678, 0x0027_7944)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.mov_s(12, 0);
+                    call_ptr(c, 0x002e_a780, 0x0027_7950)?;
+                    frame.restore(c, S0, 0x20);
+                    break 'ret;
+                }
+                c.cycles += 4;
+                c.g[AT][0] = 0x3f00_0000;
+                c.mtc1(AT, 12);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x002e_a780, 0x0027_7968)?;
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int ScriptList_Prepare(ScriptList* self, int playOnReady)` (0x276270): when the
+/// list is idle and has queued entries, prepare the first entry and set the
+/// state (1: loading, 2: ready) from the entry's process state; returns the
+/// state.
+#[allow(unreachable_code)]
+pub fn script_list_prepare(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2762a8: {
+            c.cycles += 11;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[S0][0] = c.g[A0][0];
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[S3][0] = 0x1;
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa4));
+            let t = c.g[V0][0] != c.g[S3][0];
+            c.g[S1][0] = c.g[A1][0];
+            if t {
+                break 'b_2762a8;
+            } else {
+                c.cycles += 3;
+                Callee {
+                    addr: 0x00277778,
+                    f: ee::s07::ScriptList_PollLoading,
+                }
+                .call(c, 0x002762a4)?;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa4));
+                break 'b_2762a8;
+            }
+        }
+        'b_276370: {
+            c.cycles += 2;
+            if c.g[V0][0] != 0u64 {
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                break 'b_276370;
+            } else {
+                'b_27636c: {
+                    'b_2762d0: {
+                        c.cycles += 6;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0xb4), c.g[S1][0]);
+                        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc));
+                        c.g[A0][0] = c.g[S1][0];
+                        Callee {
+                            addr: 0x00283d28,
+                            f: ee::s07::ScriptCmdQueue_Count,
+                        }
+                        .call(c, 0x002762c0)?;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[A0][0] = c.g[S0][0];
+                        if t {
+                            break 'b_2762d0;
+                        } else {
+                            c.cycles += 2;
+                            let t = true;
+                            c.g[V0][0] = 0u64;
+                            if t {
+                                break 'b_27636c;
+                            } else {
+                                break 'b_2762d0;
+                            }
+                        }
+                    }
+                    'b_2762f8: {
+                        c.cycles += 6;
+                        c.g[A1][0] = 0u64;
+                        c.g[A2][0] = 0u64;
+                        Callee {
+                            addr: 0x00277450,
+                            f: ee::s07::ScriptList_PrepareEntry,
+                        }
+                        .call(c, 0x002762dc)?;
+                        c.g[S2][0] = c.g[V0][0];
+                        let t = (c.g[S2][0] as i64) >= 0;
+                        c.g[A0][0] = c.g[S0][0];
+                        if t {
+                            break 'b_2762f8;
+                        } else {
+                            c.cycles += 4;
+                            c.g[A1][0] = 0x1;
+                            Callee {
+                                addr: 0x00276868,
+                                f: ee::s07::ScriptList_Stop,
+                            }
+                            .call(c, 0x002762f0)?;
+                            let t = true;
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa4));
+                            if t {
+                                break 'b_27636c;
+                            } else {
+                                break 'b_2762f8;
+                            }
+                        }
+                    }
+                    'b_276354: {
+                        'b_276350: {
+                            'b_276348: {
+                                'b_276340: {
+                                    c.cycles += 11;
+                                    c.g[A1][0] = c.g[S2][0];
+                                    Callee {
+                                        addr: 0x00277598,
+                                        f: ee::s07::ScriptList_PopEntries,
+                                    }
+                                    .call(c, 0x00276300)?;
+                                    c.g[A0][0] = c.g[S1][0];
+                                    c.g[A1][0] = 0u64;
+                                    Callee {
+                                        addr: 0x00283d70,
+                                        f: ee::s07::ScriptCmdQueue_At,
+                                    }
+                                    .call(c, 0x0027630c)?;
+                                    c.g[S1][0] = c.g[V0][0];
+                                    c.g[A0][0] = c.g[S0][0];
+                                    c.g[A1][0] = c.g[S1][0];
+                                    Callee {
+                                        addr: 0x00277dd8,
+                                        f: ee::s07::ScriptList_IsMovieEntry,
+                                    }
+                                    .call(c, 0x0027631c)?;
+                                    if c.g[V0][0] != 0u64 {
+                                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                        break 'b_276340;
+                                    } else {
+                                        c.cycles += 5;
+                                        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                        c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                                        Callee {
+                                            addr: 0x00282798,
+                                            f: ee::s07::ScriptEngine_GetProcessState,
+                                        }
+                                        .call(c, 0x00276330)?;
+                                        let t = c.g[V0][0] == c.g[S3][0];
+                                        c.g[V0][0] = 0x2;
+                                        if t {
+                                            break 'b_276348;
+                                        } else {
+                                            c.cycles += 2;
+                                            let t = true;
+                                            c.sw(
+                                                (c.g[S0][0] as u32).wrapping_add(0xa4),
+                                                c.g[V0][0],
+                                            );
+                                            if t {
+                                                break 'b_276354;
+                                            } else {
+                                                break 'b_276340;
+                                            }
+                                        }
+                                    }
+                                }
+                                c.cycles += 2;
+                                let t = (c.g[V0][0] as i64) >= 0;
+                                c.g[V0][0] = 0x2;
+                                if t {
+                                    break 'b_276350;
+                                } else {
+                                    break 'b_276348;
+                                }
+                            }
+                            c.cycles += 2;
+                            let t = true;
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0xa4), c.g[S3][0]);
+                            if t {
+                                break 'b_276354;
+                            } else {
+                                break 'b_276350;
+                            }
+                        }
+                        c.cycles += 1;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0xa4), c.g[V0][0]);
+                        break 'b_276354;
+                    }
+                    c.cycles += 6;
+                    c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A2][0] = 0u64;
+                    Callee {
+                        addr: 0x00277450,
+                        f: ee::s07::ScriptList_PrepareEntry,
+                    }
+                    .call(c, 0x00276364)?;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0xbc), c.g[V0][0]);
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa4));
+                    break 'b_27636c;
+                }
+                c.cycles += 1;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                break 'b_276370;
+            }
+        }
+        c.cycles += 6;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        return Ok(());
+        Ok(())
+    })
+}
+
+/// `void ScriptList_SkipCurrent(ScriptList* self)` (0x276f48): when the playing
+/// entry is skippable (`flags & 1`), mark the skip (`+0xc8`), re-prepare the next
+/// entry (killing or stopping the pending one) and advance the list.
+#[allow(unreachable_code)]
+pub fn script_list_skip_current(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_27704c: {
+            'b_277048: {
+                c.cycles += 10;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                c.g[V1][0] = 0x3;
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.g[S1][0] = c.g[A0][0];
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xa4));
+                let t = c.g[V0][0] != c.g[V1][0];
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                if t {
+                    break 'b_277048;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc8));
+                    if c.g[V0][0] != 0u64 {
+                        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        break 'b_27704c;
+                    } else {
+                        c.cycles += 9;
+                        c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
+                        c.g[A1][0] = 0u64;
+                        c.g[A0][0] = c.g[S0][0];
+                        Callee {
+                            addr: 0x00283d70,
+                            f: ee::s07::ScriptCmdQueue_At,
+                        }
+                        .call(c, 0x00276f8c)?;
+                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8));
+                        c.g[V1][0] = c.g[V1][0] ^ 0x1;
+                        c.g[V1][0] = c.g[V1][0] & 0x1;
+                        if c.g[V1][0] != 0u64 {
+                            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                            break 'b_277048;
+                        } else {
+                            'b_276fc8: {
+                                c.cycles += 4;
+                                c.g[V0][0] = 0x1;
+                                c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xbc));
+                                let t = (c.g[A1][0] as i64) >= 0;
+                                c.sw((c.g[S1][0] as u32).wrapping_add(0xc8), c.g[V0][0]);
+                                if t {
+                                    break 'b_276fc8;
+                                } else {
+                                    c.cycles += 6;
+                                    c.g[A0][0] = c.g[S1][0];
+                                    c.g[A1][0] = 0x1;
+                                    c.g[A2][0] = 0x1;
+                                    Callee {
+                                        addr: 0x00277450,
+                                        f: ee::s07::ScriptList_PrepareEntry,
+                                    }
+                                    .call(c, 0x00276fc0)?;
+                                    let t = true;
+                                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                                    if t {
+                                        break 'b_277048;
+                                    } else {
+                                        break 'b_276fc8;
+                                    }
+                                }
+                            }
+                            'b_277034: {
+                                c.cycles += 7;
+                                c.g[A0][0] = c.g[S1][0];
+                                c.g[A2][0] = 0x1;
+                                Callee {
+                                    addr: 0x00277450,
+                                    f: ee::s07::ScriptList_PrepareEntry,
+                                }
+                                .call(c, 0x00276fd4)?;
+                                c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xbc));
+                                c.g[S2][0] = c.g[V0][0];
+                                let t = c.g[S2][0] == c.g[A1][0];
+
+                                if t {
+                                    break 'b_277034;
+                                } else {
+                                    'b_277030: {
+                                        'b_27701c: {
+                                            c.cycles += 8;
+                                            c.g[A0][0] = c.g[S0][0];
+                                            Callee {
+                                                addr: 0x00283d70,
+                                                f: ee::s07::ScriptCmdQueue_At,
+                                            }
+                                            .call(c, 0x00276fec)?;
+                                            c.g[S0][0] = c.g[V0][0];
+                                            c.g[A0][0] = c.g[S1][0];
+                                            c.g[A1][0] = c.g[S0][0];
+                                            Callee {
+                                                addr: 0x00277dd8,
+                                                f: ee::s07::ScriptList_IsMovieEntry,
+                                            }
+                                            .call(c, 0x00276ffc)?;
+                                            if c.g[V0][0] != 0u64 {
+                                                c.g[V0][0] =
+                                                    c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                break 'b_27701c;
+                                            } else {
+                                                c.cycles += 6;
+                                                c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                                c.g[A1][0] =
+                                                    c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                                                Callee {
+                                                    addr: 0x00282540,
+                                                    f: ee::s07::ScriptEngine_KillProcess,
+                                                }
+                                                .call(c, 0x00277010)?;
+                                                c.g[V1][0] = 0xffffffffffffffff;
+                                                let t = true;
+                                                c.sw(
+                                                    (c.g[S0][0] as u32).wrapping_add(0xc),
+                                                    c.g[V1][0],
+                                                );
+                                                if t {
+                                                    break 'b_277030;
+                                                } else {
+                                                    break 'b_27701c;
+                                                }
+                                            }
+                                        }
+                                        c.cycles += 2;
+                                        if (c.g[V0][0] as i64) < 0 {
+                                            c.sw(
+                                                (c.g[S1][0] as u32).wrapping_add(0xbc),
+                                                c.g[S2][0],
+                                            );
+                                            break 'b_277034;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                                            c.g[A0][0] =
+                                                sx((c.g[A0][0] as u32).wrapping_add(0x500));
+                                            Callee {
+                                                addr: 0x00283818,
+                                                f: ee::s07::ScriptMovie_Stop,
+                                            }
+                                            .call(c, 0x00277030)?;
+                                            break 'b_277030;
+                                        }
+                                    }
+                                    c.cycles += 1;
+                                    c.sw((c.g[S1][0] as u32).wrapping_add(0xbc), c.g[S2][0]);
+                                    break 'b_277034;
+                                }
+                            }
+                            c.cycles += 2;
+                            let t = (c.g[S2][0] as i64) < 0;
+                            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                            if t {
+                                break 'b_277048;
+                            } else {
+                                c.cycles += 3;
+                                c.g[A0][0] = c.g[S1][0];
+                                Callee {
+                                    addr: 0x00277800,
+                                    f: ee::s07::ScriptList_TryAdvance,
+                                }
+                                .call(c, 0x00277044)?;
+                                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                                break 'b_277048;
+                            }
+                        }
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+            break 'b_27704c;
+        }
+        c.cycles += 4;
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        return Ok(());
+        Ok(())
+    })
+}
+
+/// `void ScriptEngine_LoadMaster(ScriptEngine* self)` (0x278210): loads the script master
+/// table (file names at `gp + 0x3a4` and `gp + 0x3a8`): `+0x52c` header, `+0x530`
+/// script entries (0xc bytes each, offset at +8), `+0x534` the debug base. Offsets are
+/// rebased on the debug file, or cleared without one. Then sets up the BX engine
+/// (`ScriptEngine_CreateScriptDatabase(self, count, 10, 0x4000)`).
+pub fn script_engine_load_master(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2782d8: {
+            'b_2782d4: {
+                'b_278298: {
+                    c.cycles += 15;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+                    c.g[A1][0] = 0u64;
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S0][0] = c.g[A0][0];
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x3a4));
+                    call_ptr(c, 0x003e1908, 0x0027822c)?;
+                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x3a8));
+                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x52c), c.g[V0][0]);
+                    c.g[A1][0] = 0u64;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x530), c.g[V1][0]);
+                    call_ptr(c, 0x003e1908, 0x00278244)?;
+                    let t = c.g[V0][0] == 0u64;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x534), c.g[V0][0]);
+                    if t {
+                        break 'b_278298;
+                    } else {
+                        c.cycles += 4;
+                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x52c));
+                        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                        let t = (c.g[V0][0] as i64) <= 0;
+                        c.g[A1][0] = 0u64;
+                        if t {
+                            break 'b_2782d4;
+                        } else {
+                            c.cycles += 1;
+                            c.g[A2][0] = 0u64;
+                            'l_278260: loop {
+                                c.cycles += 12;
+                                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x530));
+                                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x534));
+                                c.g[A0][0] =
+                                    sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                c.sw((c.g[A0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x52c));
+                                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                                c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                                let t = c.g[V0][0] != 0u64;
+                                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0xc));
+                                if t {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x00278260);
+                                    }
+                                    continue 'l_278260;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = true;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x52c));
+                                    if t {
+                                        break 'b_2782d8;
+                                    } else {
+                                        break 'b_278298;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                c.cycles += 4;
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x52c));
+                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                let t = (c.g[V0][0] as i64) <= 0;
+                c.g[A0][0] = 0u64;
+                if t {
+                    break 'b_2782d4;
+                } else {
+                    c.cycles += 2;
+                    c.g[A1][0] = 0u64;
+                    'l_2782b0: loop {
+                        c.cycles += 9;
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x530));
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.sw((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
+                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x52c));
+                        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                        c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xc));
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x002782b0);
+                            }
+                            continue 'l_2782b0;
+                        } else {
+                            break 'b_2782d4;
+                        }
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x52c));
+            break 'b_2782d8;
+        }
+        c.cycles += 11;
+        c.g[A0][0] = c.g[S0][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x554), 0u64);
+        c.g[A2][0] = 0xa;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x620), 0u64);
+        c.g[A3][0] = 0x4000;
+        c.g[A1][0] = c.lw(c.g[V0][0] as u32);
+        Callee {
+            addr: 0x00281f30,
+            f: ee::s07::ScriptEngine_CreateScriptDatabase,
+        }
+        .call(c, 0x002782f4)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `int DataInstanceMan_RemoveData(DataInstanceMan* self, Node* entry)` (0x275a20): removes
+/// an entry and its chain of linked nodes (`+0x14`): each is passed to the manager's
+/// virtual `remove` (vtable slot at `+0x1c` or `+0x2c` of the manager's vtable) and
+/// returned to the free list (`DataInstanceMan_FreeInfo`). Returns the key of the
+/// last node (`+0x8`).
+pub fn data_instance_man_remove_data(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_275adc: {
+            'b_275ab4: {
+                c.cycles += 10;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.g[S3][0] = c.g[A1][0];
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x14));
+                let t = c.g[A1][0] == 0u64;
+                c.g[S2][0] = c.g[A0][0];
+                if t {
+                    break 'b_275ab4;
+                } else {
+                    c.cycles += 2;
+                    c.g[S1][0] = c.g[A1][0];
+                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                    'l_275a50: loop {
+                        c.cycles += 15;
+                        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x18));
+                        c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                        c.g[A3][0] = c.lw(c.g[S1][0] as u32);
+                        c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+                        let t = c.g[V1][0] as u32;
+                        c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                        call_ptr(c, t, 0x00275a74)?;
+                        c.g[A1][0] = c.g[S1][0];
+                        c.g[A0][0] = c.g[S2][0];
+                        Callee {
+                            addr: 0x00275cd0,
+                            f: ee::s07::DataInstanceMan_FreeInfo,
+                        }
+                        .call(c, 0x00275a80)?;
+                        c.g[S1][0] = c.g[S0][0];
+                        let t = c.g[S1][0] != 0u64;
+                        c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00275a50);
+                            }
+                            continue 'l_275a50;
+                        } else {
+                            c.cycles += 10;
+                            c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+                            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x28));
+                            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x2c));
+                            c.g[A2][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
+                            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                            c.g[A3][0] = c.lw(c.g[S3][0] as u32);
+                            let t = c.g[V1][0] as u32;
+                            c.g[T0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+                            call_ptr(c, t, 0x00275aac)?;
+                            let t = true;
+                            c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+                            if t {
+                                break 'b_275adc;
+                            } else {
+                                break 'b_275ab4;
+                            }
+                        }
+                    }
+                }
+            }
+            c.cycles += 10;
+            c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+            c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x18));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
+            c.g[A2][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
+            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[A3][0] = c.lw(c.g[S3][0] as u32);
+            let t = c.g[V1][0] as u32;
+            c.g[T0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+            call_ptr(c, t, 0x00275ad8)?;
+            c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+            break 'b_275adc;
+        }
+        c.cycles += 11;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[S3][0];
+        Callee {
+            addr: 0x00275cd0,
+            f: ee::s07::DataInstanceMan_FreeInfo,
+        }
+        .call(c, 0x00275ae8)?;
+        c.g[V0][0] = c.g[S0][0];
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
+    use crate::game::main::gamestate::tests::{fake_script_list_stop, PREV_SCRIPT_LIST_STOP};
     use crate::game::scripter::ssxscriptengine::tests::oc428_install_fakes;
 
     use super::*;
@@ -4739,6 +5556,324 @@ pub(crate) mod tests {
                 let mut r = oc431_machine(c, seed, 0x277f20, 40, 0x0027_7f20);
                 c.g[A0][0] = (OC431_BASE + 0x100) as u64;
                 fill(c, &mut r, OC431_BASE + 0x100, 0x2c0);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ai::tests::oc432_fake;
+    pub(crate) use crate::game::ai::ai::tests::oc434_setup;
+    pub(crate) use crate::game::ai::ai::tests::oc434_w;
+    pub(crate) use crate::game::ai::ai::tests::OC432_CTRL;
+    pub(crate) use crate::game::ai::ai::tests::OC432_MAGIC;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_force;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_run;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_w;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC433_FIX;
+
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    oc432_fake!(
+        fake_script_pop_entries,
+        PREV_SCRIPT_POP_ENTRIES,
+        ee::s07::f_00277598__generated,
+        0x0027_7598
+    );
+
+    oc432_fake!(
+        fake_script_cmd_queue_at,
+        PREV_SCRIPT_CMD_QUEUE_AT,
+        ee::s07::f_00283d70__generated,
+        0x0028_3d70
+    );
+
+    oc432_fake!(
+        fake_script_is_movie_entry,
+        PREV_SCRIPT_IS_MOVIE_ENTRY,
+        ee::s07::f_00277dd8__generated,
+        0x0027_7dd8,
+        |c: &mut Cpu| {
+            c.g[V0][0] = c.bus.read32(OC432_CTRL + 0x20) as u64;
+        }
+    );
+
+    oc432_fake!(
+        fake_script_play_instance,
+        PREV_SCRIPT_PLAY_INSTANCE,
+        ee::s07::f_00279720__generated,
+        0x0027_9720
+    );
+
+    oc432_fake!(
+        fake_script_prepare_entry,
+        PREV_SCRIPT_PREPARE_ENTRY,
+        ee::s07::f_00277450__generated,
+        0x0027_7450
+    );
+
+    oc432_fake!(
+        fake_get_transition_man,
+        PREV_GET_TRANSITION_MAN,
+        ee::s06::f_00230698__generated,
+        0x0023_0698,
+        |c: &mut Cpu| {
+            c.g[V0][0] = (DATA + 0x5_6000) as u64;
+        }
+    );
+
+    oc432_fake!(
+        fake_transition_time_remaining,
+        PREV_TRANSITION_TIME_REMAINING,
+        ee::s09::f_002e4678__generated,
+        0x002e_4678
+    );
+
+    oc432_fake!(
+        fake_transition_start_out,
+        PREV_TRANSITION_START_OUT,
+        ee::s09::f_002ea780__generated,
+        0x002e_a780
+    );
+
+    /// `ScriptList_NextEntry`: pending entry (> 0 or not), movie or script
+    /// command (the movie start runs real and returns early on a null
+    /// movie), `self + 0xb0` on/off, fade on/off, transition running or not.
+    #[test]
+    fn script_list_next_entry_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00277598),
+            fake_script_pop_entries,
+            &PREV_SCRIPT_POP_ENTRIES,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00283D70),
+            fake_script_cmd_queue_at,
+            &PREV_SCRIPT_CMD_QUEUE_AT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00277DD8),
+            fake_script_is_movie_entry,
+            &PREV_SCRIPT_IS_MOVIE_ENTRY,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00279720),
+            fake_script_play_instance,
+            &PREV_SCRIPT_PLAY_INSTANCE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00277450),
+            fake_script_prepare_entry,
+            &PREV_SCRIPT_PREPARE_ENTRY,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00276868),
+            fake_script_list_stop,
+            &PREV_SCRIPT_LIST_STOP,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_00230698),
+            fake_get_transition_man,
+            &PREV_GET_TRANSITION_MAN,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002E4678),
+            fake_transition_time_remaining,
+            &PREV_TRANSITION_TIME_REMAINING,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002EA780),
+            fake_transition_start_out,
+            &PREV_TRANSITION_START_OUT,
+        );
+        fakes::covered(
+            ee::s07::f_00277838__generated,
+            script_list_next_entry,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x277838, 9);
+                c.bus.write32(OC432_CTRL, OC432_MAGIC);
+                c.bus
+                    .write32(OC432_CTRL + 0x20, (r.next_u32() % 3 == 0) as u32);
+                let this = DATA + 0x5_0000;
+                let engine = DATA + 0x5_1000;
+                let vt = DATA + 0x5_2000;
+                let world = DATA + 0x5_3000;
+                let game = DATA + 0x5_4000;
+                let fade = DATA + 0x5_5000;
+                let tm = DATA + 0x5_6000;
+                c.g[A0][0] = this as u64;
+                c.bus.write32(this, engine);
+                c.bus.write32(engine + 0x2a8, vt);
+                c.bus.write16(vt + 0x30, (r.next_u32() % 32) as u16);
+                c.bus.write32(vt + 0x34, fakes::FAKE);
+                c.bus.write32(
+                    this + 0xbc,
+                    [0xffff_ffffu32, 0, 1, 5][(r.next_u32() % 4) as usize],
+                );
+                c.bus.write32(this + 0xb0, (r.next_u32() % 2) as u32);
+                c.bus.write32(this + 0x4, (r.next_u32() % 3 != 0) as u32);
+                c.bus
+                    .write32(crate::difftest::GAME_GP.wrapping_sub(0x848), world);
+                c.bus.write32(world + 0x84, game);
+                c.bus.write32(game + 0x64, fade);
+                c.bus.write32(tm + 0x44, (r.next_u32() % 2) as u32);
+            },
+        );
+    }
+
+    /// `ScriptList_Prepare` against the generated body: list state 0, 1 or 2;
+    /// empty or filled queue; the first and second entry preparation failing
+    /// or not; movie and script entries (loading or ready).
+    #[test]
+    fn script_list_prepare_matches() {
+        oc433_run(
+            ee::s07::f_00276270__generated,
+            script_list_prepare,
+            0x0027_6270,
+            9,
+            240,
+            &|c, r, seed| {
+                let f = OC433_FIX;
+                let (this, engine, entry) = (f + 0x1000, f + 0x1100, f + 0x1800);
+                oc433_w(c, this, engine);
+                oc433_w(c, this + 0xa4, [0u32, 0, 0, 0, 1, 2][(seed % 6) as usize]);
+                oc433_w(
+                    c,
+                    entry + 0xc,
+                    if (seed / 6) % 3 == 0 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % 9
+                    },
+                );
+                oc433_force(c, 0x0028_3d28, &[((seed / 6) % 5 != 1) as i32]);
+                oc433_force(
+                    c,
+                    0x0027_7450,
+                    &[
+                        if (seed / 30) % 4 == 0 { -1 } else { 3 },
+                        if (seed / 7) % 2 == 0 { -1 } else { 4 },
+                    ],
+                );
+                oc433_force(c, 0x0028_3d70, &[entry as i32]);
+                oc433_force(c, 0x0027_7dd8, &[(seed / 2 % 2) as i32]);
+                oc433_force(c, 0x0028_2798, &[(seed / 3 % 2) as i32]);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    /// `ScriptList_SkipCurrent` against the generated body: list state 3 or
+    /// not, skip already requested or not, the playing entry skippable or not,
+    /// no / same / different pending entry, movie and script pending entries.
+    #[test]
+    fn script_list_skip_current_matches() {
+        oc433_run(
+            ee::s07::f_00276f48__generated,
+            script_list_skip_current,
+            0x0027_6f48,
+            6,
+            240,
+            &|c, r, seed| {
+                let f = OC433_FIX;
+                let (this, engine, e1, e2) = (f + 0x1000, f + 0x1100, f + 0x1800, f + 0x1900);
+                oc433_w(c, this, engine);
+                oc433_w(c, this + 0xa4, if seed % 11 == 0 { 2 } else { 3 });
+                oc433_w(c, this + 0xc8, (seed % 13 == 0) as u32);
+                oc433_w(c, this + 0xa8, 1);
+                let pending = [u32::MAX, 0, 2, 5][(seed / 3 % 4) as usize];
+                oc433_w(c, this + 0xbc, pending);
+                oc433_w(
+                    c,
+                    e1 + 8,
+                    if seed % 7 == 0 {
+                        0
+                    } else {
+                        1 | (r.next_u32() & 0xe)
+                    },
+                );
+                oc433_w(
+                    c,
+                    e2 + 0xc,
+                    if (seed / 5) % 3 == 0 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % 9
+                    },
+                );
+                oc433_force(c, 0x0028_3d70, &[e1 as i32, e2 as i32]);
+                let prepared = match (seed / 12) % 4 {
+                    0 => pending as i32,
+                    1 => -1,
+                    _ => 4,
+                };
+                oc433_force(c, 0x0027_7450, &[prepared]);
+                oc433_force(c, 0x0027_7dd8, &[(seed / 2 % 2) as i32]);
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    /// `ScriptEngine_LoadMaster`: the master table file fails to load (the file queue
+    /// fake returns 0), so the header is the words at address 0: its count of script
+    /// entries (0..3) is cleared (no debug base), then the real
+    /// `ScriptEngine_CreateScriptDatabase` runs.
+    #[test]
+    fn script_engine_load_master_matches() {
+        fakes::covered(
+            ee::s07::f_00278210__generated,
+            script_engine_load_master,
+            16,
+            &|c, seed| {
+                let _ = oc434_setup(c, seed, 0x278210, 8, 0x0027_8210);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                oc434_w(c, GAME_GP.wrapping_add(0x3a4), DATA + 0x2000);
+                oc434_w(c, GAME_GP.wrapping_add(0x3a8), DATA + 0x2100);
+                oc434_w(c, 0, seed % 4);
+                for i in 0..4 {
+                    oc434_w(c, 4 + 12 * i + 8, 0x1111_1111);
+                }
+            },
+        );
+    }
+
+    /// `DataInstanceMan_RemoveData`: an entry alone, or with a chain of 1..3 linked nodes.
+    #[test]
+    fn data_instance_man_remove_data_matches() {
+        fakes::covered(
+            ee::s07::f_00275a20__generated,
+            data_instance_man_remove_data,
+            32,
+            &|c, seed| {
+                let mut r = oc434_setup(c, seed, 0x275a20, 10, 0x0027_5a20);
+                let (this, entry, vt) = (DATA + 0x100, DATA + 0x200, DATA + 0x300);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = entry as u64;
+                oc434_w(c, this + 0xc, vt);
+                c.bus.write16(vt + 0x18, 0x20);
+                oc434_w(c, vt + 0x1c, FAKE);
+                c.bus.write16(vt + 0x28, 0x30);
+                oc434_w(c, vt + 0x2c, FAKE + 0x10);
+                let chain = seed % 4;
+                let node = |i: u32| DATA + 0x400 + 0x20 * i;
+                oc434_w(c, entry + 0x14, if chain > 0 { node(0) } else { 0 });
+                for i in 0..chain {
+                    oc434_w(
+                        c,
+                        node(i) + 0x14,
+                        if i + 1 < chain { node(i + 1) } else { 0 },
+                    );
+                }
+                for f in [0, 4, 8, 0xc] {
+                    oc434_w(c, entry + f, r.next_u32());
+                    for i in 0..3 {
+                        oc434_w(c, node(i) + f, r.next_u32());
+                    }
+                }
             },
         );
     }

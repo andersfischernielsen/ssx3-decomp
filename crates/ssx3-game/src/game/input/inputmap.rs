@@ -54,6 +54,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "InputMap_CompileEntry",
     ),
     (0x0032_1428, input_parser_ctor, "InputParser_ctor"),
+    (
+        0x0032_0db0,
+        input_map_create_parser_2,
+        "InputMap_CreateParser",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -901,6 +906,51 @@ pub fn input_parser_ctor(c: &mut Cpu) {
     })
 }
 
+/// `void InputMap_CreateParser(InputMap* self, char* mem, int len)` (0x320db0): allocates the
+/// 0x109ec-byte input parser (256-aligned) and constructs it over `mem` / `len`; the
+/// parser goes to `self + 0x8`.
+pub fn input_map_create_parser_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+        c.g[A3][0] = 0u64;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.g[A1][0];
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S2][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A2][0];
+        c.g[A1][0] = 0x490000;
+        c.g[A0][0] = 0x10000;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x22f0));
+        c.g[A0][0] = c.g[A0][0] | 0x9ec;
+        c.g[A2][0] = 0x100;
+        Callee {
+            addr: 0x00317d70,
+            f: ee::s10::EA_MemAllocNamed,
+        }
+        .call(c, 0x00320dec)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[V0][0];
+        Callee {
+            addr: 0x00321428,
+            f: ee::s10::InputParser_ctor,
+        }
+        .call(c, 0x00320dfc)?;
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1297,6 +1347,26 @@ pub(crate) mod tests {
                 c.g[A0][0] = (OC431_BASE + 0x1_0000) as u64;
                 c.g[A1][0] = (OC431_BASE + 0x100) as u64;
                 c.g[A2][0] = (r.next_u32() % 0x1000) as u64;
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::ai::ai::tests::oc434_setup;
+
+    /// `InputMap_CreateParser`: allocation and parser constructor are fakes.
+    #[test]
+    fn input_map_create_parser_matches() {
+        fakes::covered(
+            ee::s10::f_00320db0__generated,
+            input_map_create_parser_2,
+            12,
+            &|c, seed| {
+                let mut r = oc434_setup(c, seed, 0x320db0, 2, 0x0032_0db0);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = (DATA + 0x2000) as u64;
+                c.g[A2][0] = r.next_u32() as u64;
             },
         );
     }

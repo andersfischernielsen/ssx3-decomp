@@ -8,6 +8,8 @@ use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 pub(crate) use crate::game::fe::festaterewards::r;
 pub(crate) use crate::game::sound::soundsys::gp_4 as gp;
 pub(crate) use crate::game::sound::soundsys::p;
@@ -341,6 +343,177 @@ pub(crate) fn reset_interface(
     c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
     crate::call::call_ptr(c, f, vt_ret)?;
     Ok(())
+}
+
+/// `BELibrary* BELibrary_ctor(self)` (0x149860): loads the character DB
+/// (`BELibrary_LoadCharDB`), copies the 0xa28-byte default block at 0x43fb28
+/// to 0x535c18 (8-byte aligned: the aligned 32-byte copy loop always runs; 81
+/// iterations plus 8 bytes) and creates every interface singleton, in order
+/// (race, player, char DB, char, option, save, BAGT, network, score, bolt,
+/// mission, econ, aggression, reward). Returns `self`. Frame 0x20 (s0).
+///
+/// NOT installed: no test. `BELibrary_LoadCharDB` is a direct callee with no
+/// override slot, and its own callees (`RewardsFile_Load`, the async file
+/// open) cannot be bounded on test data.
+pub fn be_library_ctor(c: &mut Cpu) {
+    const LOAD_CHAR_DB: Callee = Callee {
+        addr: 0x0014_9bb8,
+        f: ee::s01::f_00149bb8,
+    };
+    const INSTANCES: [(Callee, u32); 14] = [
+        (
+            Callee {
+                addr: 0x0014_48d8,
+                f: ee::s01::f_001448d8,
+            },
+            0x0014_9928,
+        ),
+        (
+            Callee {
+                addr: 0x0014_5970,
+                f: ee::s01::f_00145970,
+            },
+            0x0014_9930,
+        ),
+        (
+            Callee {
+                addr: 0x0014_edd8,
+                f: ee::s01::f_0014edd8,
+            },
+            0x0014_9938,
+        ),
+        (
+            Callee {
+                addr: 0x0014_7f78,
+                f: ee::s01::f_00147f78,
+            },
+            0x0014_9940,
+        ),
+        (
+            Callee {
+                addr: 0x0014_f250,
+                f: ee::s01::f_0014f250,
+            },
+            0x0014_9948,
+        ),
+        (
+            Callee {
+                addr: 0x0015_2638,
+                f: ee::s01::f_00152638,
+            },
+            0x0014_9950,
+        ),
+        (
+            Callee {
+                addr: 0x0014_f900,
+                f: ee::s01::f_0014f900,
+            },
+            0x0014_9958,
+        ),
+        (
+            Callee {
+                addr: 0x0014_e0e0,
+                f: ee::s01::f_0014e0e0,
+            },
+            0x0014_9960,
+        ),
+        (
+            Callee {
+                addr: 0x0015_4948,
+                f: ee::s01::f_00154948,
+            },
+            0x0014_9968,
+        ),
+        (
+            Callee {
+                addr: 0x0014_abe0,
+                f: ee::s01::f_0014abe0,
+            },
+            0x0014_9970,
+        ),
+        (
+            Callee {
+                addr: 0x0015_32a0,
+                f: ee::s01::f_001532a0,
+            },
+            0x0014_9978,
+        ),
+        (
+            Callee {
+                addr: 0x0015_08d8,
+                f: ee::s01::f_001508d8,
+            },
+            0x0014_9980,
+        ),
+        (
+            Callee {
+                addr: 0x0015_5a50,
+                f: ee::s01::f_00155a50,
+            },
+            0x0014_9988,
+        ),
+        (
+            Callee {
+                addr: 0x0015_69c0,
+                f: ee::s01::f_001569c0,
+            },
+            0x0014_9990,
+        ),
+    ];
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        LOAD_CHAR_DB.call(c, 0x0014_9874)?;
+        c.g[V0][0] = 0x53_0000;
+        c.g[V1][0] = 0x44_0000;
+        c.g[A0][0] = sx(r32(c, V0).wrapping_add(0x5c18));
+        c.g[V1][0] = sx(r32(c, V1).wrapping_sub(0x4d8));
+        c.g[V0][0] = c.g[V1][0] | c.g[A0][0];
+        c.g[V0][0] &= 7;
+        let unaligned = c.g[V0][0] != 0;
+        c.g[V0][0] = sx(r32(c, V1).wrapping_add(0xa20));
+        debug_assert!(!unaligned, "0x43fb28 and 0x535c18 are 8-byte aligned");
+        loop {
+            c.cycles += 11;
+            let src = r32(c, V1);
+            let dst = r32(c, A0);
+            c.g[A1][0] = c.ld(src);
+            c.g[A2][0] = c.ld(src.wrapping_add(8));
+            c.g[A3][0] = c.ld(src.wrapping_add(0x10));
+            c.g[T0][0] = c.ld(src.wrapping_add(0x18));
+            c.sd(dst, c.g[A1][0]);
+            c.sd(dst.wrapping_add(8), c.g[A2][0]);
+            c.sd(dst.wrapping_add(0x10), c.g[A3][0]);
+            c.sd(dst.wrapping_add(0x18), c.g[T0][0]);
+            c.g[V1][0] = sx(src.wrapping_add(0x20));
+            let more = c.g[V1][0] != c.g[V0][0];
+            c.g[A0][0] = sx(dst.wrapping_add(0x20));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0014_98e8);
+            }
+        }
+        c.cycles += 36;
+        let src = r32(c, V1);
+        let dst = r32(c, A0);
+        c.ldl(V0, src.wrapping_add(7));
+        c.ldr(V0, src);
+        c.sdl(V0, dst.wrapping_add(7));
+        c.sdr(V0, dst);
+        for (callee, ret) in INSTANCES {
+            callee.call(c, ret)?;
+        }
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 #[cfg(test)]

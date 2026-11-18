@@ -7,6 +7,8 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::events::back_edge_unwinds;
+use crate::events::event_due;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::r;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
@@ -56,6 +58,28 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x003a_6c98,
         world_get_section_missions,
         "World_GetSectionMissions",
+    ),
+    (0x003a_6800, world_reset_sections, "World_ResetSections"),
+    (0x003a_6ae0, world_load_2, "World_Load"),
+    (
+        0x003a_6ba8,
+        world_get_section_shutdown_func_count,
+        "World_GetSectionShutdownFuncCount",
+    ),
+    (
+        0x003a_6bd8,
+        world_get_section_shutdown_funcs,
+        "World_GetSectionShutdownFuncs",
+    ),
+    (
+        0x003a_6c08,
+        world_get_section_process_count,
+        "World_GetSectionProcessCount",
+    ),
+    (
+        0x003a_6c38,
+        world_get_section_processes,
+        "World_GetSectionProcesses",
     ),
 ];
 
@@ -424,6 +448,350 @@ pub fn world_get_section_mission_count(c: &mut Cpu) {
     oc420_section_entry(c, OC420_GET_MISSION_COUNT, 0x003a_6c88);
 }
 
+/// `void World_ResetSections(World* self)` (0x3a6800): for every resident
+/// streamed section, walk its sub-entries and mark the matching table entries
+/// (`word8 = word8 & 0xffff0000 | (word8 >> 16) | 2`). Dispatcher-shaped like
+/// the original: its loop heads 0x3a6828 and 0x3a6878 are resume entries
+/// after a delivered event.
+#[allow(unreachable_code)]
+pub fn world_reset_sections(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x003a6800 => {
+                    c.cycles += 10;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S0][0] = 0xffffffffffff0000;
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S0][0] = c.g[S0][0] | 0xffff;
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[S2][0] = c.g[A0][0];
+                    let t = true;
+                    c.g[S1][0] = 0u64;
+                    if t {
+                        pc = 0x003a68f8;
+                        continue;
+                    }
+                    pc = 0x003a6828;
+                    continue;
+                }
+                0x003a6828 => {
+                    c.cycles += 5;
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
+                    Callee {
+                        addr: 0x003a9858,
+                        f: ee::s13::cWorldCache_StreamerIsSectionResident,
+                    }
+                    .call(c, 0x003a6834)?;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[T2][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    if t {
+                        pc = 0x003a68f4;
+                        continue;
+                    }
+                    pc = 0x003a683c;
+                    continue;
+                }
+                0x003a683c => {
+                    c.cycles += 13;
+                    c.g[A0][0] = c.lw(c.g[S2][0] as u32);
+                    c.g[V1][0] = 0x58;
+                    c.g[V0][0] = 0xffffffffffffff00;
+                    c.mult(0, 3, 17, 3);
+                    c.g[A1][0] = c.lw(c.g[A0][0] as u32);
+                    c.g[S0][0] = c.g[S0][0] & c.g[V0][0];
+                    c.g[A2][0] = c.g[S1][0] & 0xff;
+                    c.g[A3][0] = 0u64;
+                    c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x14));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[T1][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x26));
+                    let t = (c.g[T1][0] as i64) <= 0;
+                    c.g[S0][0] = c.g[S0][0] | c.g[A2][0];
+                    if t {
+                        pc = 0x003a68f4;
+                        continue;
+                    }
+                    pc = 0x003a6870;
+                    continue;
+                }
+                0x003a6870 => {
+                    c.cycles += 2;
+                    c.g[T3][0] = 0xffffffffffff0000;
+                    c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+                    pc = 0x003a6878;
+                    continue;
+                }
+                0x003a6878 => {
+                    c.cycles += 13;
+                    c.g[V1][0] = c.g[S0][0] & 0xff;
+                    c.g[A1][0] = sx((c.g[A3][0] as u32) << 8);
+                    c.g[A0][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[A2][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8));
+                    c.g[S0][0] = c.g[V1][0] | c.g[A1][0];
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32) >> 8);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[T0][0] = ((c.g[A3][0] as i64) < (c.g[T1][0] as i64)) as u64;
+                    c.g[A0][0] = c.lw(c.g[A0][0] as u32);
+                    c.g[V1][0] = sx((c.g[V0][0] as u32) << 2);
+                    let t = c.g[A0][0] == 0u64;
+                    c.g[A1][0] = 0u64;
+                    if t {
+                        pc = 0x003a68cc;
+                        continue;
+                    }
+                    pc = 0x003a68ac;
+                    continue;
+                }
+                0x003a68ac => {
+                    c.cycles += 6;
+                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1c));
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                    c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A0][0] = 0u64;
+                    if t {
+                        pc = 0x003a68c8;
+                        continue;
+                    }
+                    pc = 0x003a68c4;
+                    continue;
+                }
+                0x003a68c4 => {
+                    c.cycles += 1;
+                    c.g[A0][0] = sx((c.g[V0][0] as u32) << 2);
+                    pc = 0x003a68c8;
+                    continue;
+                }
+                0x003a68c8 => {
+                    c.cycles += 1;
+                    c.g[A1][0] = c.g[A0][0];
+                    pc = 0x003a68cc;
+                    continue;
+                }
+                0x003a68cc => {
+                    c.cycles += 2;
+                    let t = c.g[A1][0] == 0u64;
+
+                    if t {
+                        pc = 0x003a68ec;
+                        continue;
+                    }
+                    pc = 0x003a68d4;
+                    continue;
+                }
+                0x003a68d4 => {
+                    c.cycles += 6;
+                    c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = c.g[V0][0] & c.g[T3][0];
+                    c.g[V1][0] = sx(((c.g[V0][0] as u32) as i32 >> 16) as u32);
+                    c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
+                    c.g[V0][0] = c.g[V0][0] | 0x2;
+                    c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                    pc = 0x003a68ec;
+                    continue;
+                }
+                0x003a68ec => {
+                    c.cycles += 2;
+
+                    if c.g[T0][0] != 0u64 {
+                        c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+                        if event_due(c) && back_edge_unwinds(c, 0x003a6878) {
+                            return Ok(());
+                        }
+                        pc = 0x003a6878;
+                        continue;
+                    }
+                    pc = 0x003a68f4;
+                    continue;
+                }
+                0x003a68f4 => {
+                    c.cycles += 1;
+                    c.g[S1][0] = c.g[T2][0];
+                    pc = 0x003a68f8;
+                    continue;
+                }
+                0x003a68f8 => {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.lw(c.g[S2][0] as u32);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
+                    Callee {
+                        addr: 0x003a9800,
+                        f: ee::s13::cWorldCache_StreamerGetSectionCount,
+                    }
+                    .call(c, 0x003a6904)?;
+                    c.g[V0][0] = (c.g[S1][0] < c.g[V0][0]) as u64;
+
+                    if c.g[V0][0] != 0u64 {
+                        c.g[A0][0] = c.lw(c.g[S2][0] as u32);
+                        if event_due(c) && back_edge_unwinds(c, 0x003a6828) {
+                            return Ok(());
+                        }
+                        pc = 0x003a6828;
+                        continue;
+                    }
+                    pc = 0x003a6910;
+                    continue;
+                }
+                0x003a6910 => {
+                    c.cycles += 6;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x003a6800, 0x003a6928);
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
+    })
+}
+
+/// `int World_GetSectionShutdownFuncs(World* self, int i)` (0x3a6bd8): the global scripts of
+/// the world script cache's entry `i` (entries 0xc bytes each, at `+4` of the cache at
+/// `self + 4`).
+pub fn world_get_section_shutdown_funcs(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.g[V0][0] = 0xc;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.mult(0, 5, 5, 2);
+        c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
+        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        Callee {
+            addr: 0x003adcb0,
+            f: ee::s13::tWScriptCache_GetGlobals,
+        }
+        .call(c, 0x003a6bf8)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `Callee` for a named generated function (direct call through its alias).
+macro_rules! oc435_callee {
+    ($addr:expr, $f:path) => {
+        Callee { addr: $addr, f: $f }
+    };
+}
+pub(crate) use oc435_callee;
+
+/// Shared body of the three `World_GetSection*` wrappers (frame 0x10 and the
+/// `mult` that scales the section index by the 12-byte entry size):
+/// `callee(world->cache(+4)->sections(+4) + index * 12)`.
+pub(crate) fn world_section_call(c: &mut Cpu, callee: Callee, ret_addr: u32) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0xc;
+        frame.save_ra(c, 0);
+        c.mult(0, 5, 5, 2);
+        c.g[V1][0] = Addr(r32(c, A0).wrapping_add(4)).lw(c);
+        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(4)).lw(c);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A1)));
+        callee.call(c, ret_addr)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `World_GetSectionProcesses(world, section)` (0x3a6c38):
+/// `tWScriptCache_GetProcesses(section entry)`.
+pub fn world_get_section_processes(c: &mut Cpu) {
+    world_section_call(
+        c,
+        oc435_callee!(0x003a_dd10, ee::s13::tWScriptCache_GetProcesses),
+        0x003a_6c58,
+    )
+}
+
+/// `World_GetSectionProcessCount(world, section)` (0x3a6c08):
+/// `tWScriptCache_GetProcessCount(section entry)`.
+pub fn world_get_section_process_count(c: &mut Cpu) {
+    world_section_call(
+        c,
+        oc435_callee!(0x003a_dce0, ee::s13::tWScriptCache_GetProcessCount),
+        0x003a_6c28,
+    )
+}
+
+/// `World_GetSectionShutdownFuncCount(world, section)` (0x3a6ba8):
+/// `tWScriptCache_GetGlobalCount(section entry)`.
+pub fn world_get_section_shutdown_func_count(c: &mut Cpu) {
+    world_section_call(
+        c,
+        oc435_callee!(0x003a_dc80, ee::s13::tWScriptCache_GetGlobalCount),
+        0x003a_6bc8,
+    )
+}
+
+/// `void World_Load(World *w, a1, a2)` (0x3a6ae0): resets and loads the world
+/// cache (`w->+0`), sizes the script caches by the streamer's section count
+/// (`cWScriptCache_Alloc(w->+4, n)`, 0x2bb1d0 on `w->+8`), bracketed by a
+/// 0x3182d8 / 0x318260 pair on a stack record. Frame 0x50 (s0..s2).
+pub fn world_load_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 37;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = c.g[SP][0];
+        c.g[S2][0] = c.g[A2][0];
+        call_ptr(c, 0x0031_82d8, 0x003a_6b08)?;
+        c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+        oc435_callee!(0x003a_7f90, ee::s13::cWorldCache_Reset).call(c, 0x003a_6b10)?;
+        c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A2][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[S1][0];
+        oc435_callee!(0x003a_7fc0, ee::s13::cWorldCache_Load).call(c, 0x003a_6b20)?;
+        c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x10));
+        oc435_callee!(0x003a_9800, ee::s13::cWorldCache_StreamerGetSectionCount)
+            .call(c, 0x003a_6b2c)?;
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(4)).lw(c);
+        c.g[A1][0] = c.g[V0][0];
+        oc435_callee!(0x003a_c800, ee::s13::cWScriptCache_Alloc).call(c, 0x003a_6b38)?;
+        c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x10));
+        oc435_callee!(0x003a_9800, ee::s13::cWorldCache_StreamerGetSectionCount)
+            .call(c, 0x003a_6b44)?;
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(8)).lw(c);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x002b_b1d0, 0x003a_6b50)?;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = 2;
+        call_ptr(c, 0x0031_8260, 0x003a_6b5c)?;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -734,5 +1102,160 @@ pub(crate) mod tests {
             40,
             &|c, seed| oc420_section_fixture(c, seed, 0x003a_6c68),
         );
+    }
+
+    pub(crate) use crate::game::ai::ai::tests::oc434_setup;
+    pub(crate) use crate::game::ai::ai::tests::oc434_w;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_force;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_run;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc433_w;
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::OC433_FIX;
+
+    /// `World_ResetSections` against the generated body: 0..3 sections (some
+    /// resident), each with 0..3 sub-entries pointing at table entries that
+    /// are sometimes missing. Dispatcher-shaped: entered at its start.
+    #[test]
+    fn world_reset_sections_matches() {
+        oc433_run(
+            ee::s13::f_003a6800__generated,
+            world_reset_sections,
+            0x003a_6800,
+            7,
+            120,
+            &|c, r, seed| {
+                let f = OC433_FIX;
+                let (this, a, b, tbl, secs) =
+                    (f + 0x1000, f + 0x1100, f + 0x1200, f + 0x1300, f + 0x2000);
+                oc433_w(c, this, a);
+                oc433_w(c, a, b);
+                oc433_w(c, a + 8, tbl);
+                oc433_w(c, b + 0x14, secs);
+                let count = seed % 4;
+                let mut resident = Vec::new();
+                for i in 0..3u32 {
+                    let sub = (r.next_u32() % 4) as u16;
+                    c.bus.write16(secs + 0x58 * i + 0x26, sub);
+                    resident.push(((seed >> (2 + i)) & 1) as i32 | (i == 0) as i32);
+                    let p = if r.next_u32() % 4 == 0 {
+                        0
+                    } else {
+                        f + 0x3000 + 0x100 * i
+                    };
+                    oc433_w(c, tbl + 4 * i, p);
+                    oc433_w(c, f + 0x3000 + 0x100 * i + 0x1c, f + 0x4000 + 0x100 * i);
+                    for s in 0..3u32 {
+                        let ptr = f + 0x5000 + 0x40 * (i * 3 + s);
+                        let x = if r.next_u32() % 4 == 0 {
+                            0
+                        } else {
+                            (ptr >> 2) << 8
+                        };
+                        oc433_w(c, f + 0x4000 + 0x100 * i + 4 * s, x);
+                        oc433_w(c, ptr + 8, r.next_u32());
+                    }
+                }
+                oc433_force(c, 0x003a_9800, &[count as i32]);
+                oc433_force(c, 0x003a_9858, &resident);
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    /// `World_GetSectionShutdownFuncs`: entry `i` of the script cache (the real
+    /// `tWScriptCache_GetGlobals` decides).
+    #[test]
+    fn world_get_section_shutdown_funcs_matches() {
+        check(
+            ee::s13::f_003a6bd8__generated,
+            world_get_section_shutdown_funcs,
+            24,
+            &|c, seed| {
+                let mut r = oc434_setup(c, seed, 0x3a6bd8, 0, 0x003a_6bd8);
+                let (this, cache, entries, data) =
+                    (DATA + 0x100, DATA + 0x200, DATA + 0x300, DATA + 0x500);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (seed % 3) as u64;
+                oc434_w(c, this + 4, cache);
+                oc434_w(c, cache + 4, entries);
+                for i in 0..3u32 {
+                    let e = entries + 0xc * i;
+                    c.bus
+                        .write16(e, if (seed / 3 + i) % 3 == 0 { 2 } else { 3 });
+                    oc434_w(
+                        c,
+                        e + 8,
+                        if (seed / 5 + i) % 4 == 1 {
+                            0
+                        } else {
+                            data + 0x20 * i
+                        },
+                    );
+                    oc434_w(c, data + 0x20 * i + 0x14, r.next_u32());
+                }
+            },
+        );
+    }
+
+    pub(crate) const SEEDS_4: u32 = 200;
+
+    /// Fixture objects live above the area the fakes' default results point
+    /// into (`DATA..DATA + 0x40000`).
+    pub(crate) const BASE_2: u32 = DATA + 0x4_0000;
+
+    pub(crate) fn w_2(c: &mut Cpu, addr: u32, v: u32) {
+        c.bus.write32(addr, v);
+    }
+
+    /// The `World_GetSection*` fixture: world -> cache -> entry table of 12
+    /// byte entries (kind halfword, data pointer at `+8`), the data blocks
+    /// random. The callees (the `tWScriptCache_*` leaves) run for real.
+    pub(crate) fn world_section_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 0);
+        let (world, cache, table) = (BASE_2 + 0x100, BASE_2 + 0x200, BASE_2 + 0x300);
+        w_2(c, world + 4, cache);
+        w_2(c, cache + 4, table);
+        for i in 0..4u32 {
+            let entry = table + 12 * i;
+            let data = BASE_2 + 0x1000 + 0x100 * i;
+            c.bus
+                .write16(entry, if (seed + i) % 5 == 4 { 1 } else { 3 });
+            w_2(c, entry + 8, if (seed + i) % 7 == 3 { 0 } else { data });
+            for k in 0..0x20u32 {
+                w_2(c, data + 4 * k, r.next_u32());
+            }
+        }
+        c.g[A0][0] = world as u64;
+        c.g[A1][0] = (seed % 4) as u64;
+    }
+
+    /// `World_GetSectionProcesses`, `World_GetSectionProcessCount` and
+    /// `World_GetSectionShutdownFuncCount`: the section's cache entry passed
+    /// to the matching `tWScriptCache_*` getter.
+    #[test]
+    fn world_get_section_wrappers_match() {
+        for (n, (gen, hand)) in [
+            (
+                ee::s13::f_003a6c38__generated as fn(&mut Cpu),
+                world_get_section_processes as fn(&mut Cpu),
+            ),
+            (
+                ee::s13::f_003a6c08__generated,
+                world_get_section_process_count,
+            ),
+            (
+                ee::s13::f_003a6ba8__generated,
+                world_get_section_shutdown_func_count,
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            check(gen, hand, SEEDS_4, &|c, seed| {
+                world_section_setup(c, seed, 0x3a6000 + n as u64)
+            });
+        }
     }
 }

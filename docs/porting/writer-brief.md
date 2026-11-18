@@ -246,6 +246,10 @@ every difference a parameter.
 - Test helpers made by a macro or helper fn in your module (`xx_install`,
   hooks, layout structs with private fields) are used by tests that the reorg
   moves to other unit files: make them `pub(crate)`, fields included.
+- Fake and `PREV_*` names must be unique per module (`oc434_get_be`,
+  `OC434_PREV_GET_BE`): the reorg moves tests into units that already have
+  old fakes with the same name, and a fake paired with another module's
+  `PREV_*` cell makes the hook chain loop.
 - A big driver whose callees are mostly unported cannot be faked per slot: a
   child-process test with a private function table works (`oc421`'s
   `GameModule_Load`); if even that fails, drop the entry and test and keep the

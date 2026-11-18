@@ -62,6 +62,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         script_anim_bank_man_add_bank,
         "ScriptAnimBankMan_AddBank",
     ),
+    (
+        0x0027_53b8,
+        script_anim_bank_man_ctor_2,
+        "ScriptAnimBankMan_ctor",
+    ),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -583,6 +588,91 @@ pub fn script_anim_bank_man_add_bank(c: &mut Cpu) {
     })
 }
 
+/// `ScriptAnimBankMan* ScriptAnimBankMan_ctor(ScriptAnimBankMan* self, int flags, int count, int base)`
+/// (0x2753b8): stores `flags` (`+0`), `count` (`+4`) and the vtable (`0x4825d8`, `+0xc`),
+/// allocates `count` 0x14-byte bank records (`+8`) and initialises them (id -1, index
+/// `base + i`, the rest 0). Returns `self`.
+pub fn script_anim_bank_man_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_27547c: {
+            c.cycles += 25;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+            c.g[T0][0] = c.g[A2][0];
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[V1][0] = c.g[A1][0];
+            c.g[S1][0] = c.g[A0][0];
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[A0][0] = 0x14;
+            c.g[V0][0] = 0x480000;
+            c.mult(0, 0, 8, 4);
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x25d8));
+            c.g[S0][0] = c.g[A3][0];
+            c.g[A1][0] = 0x480000;
+            c.g[A2][0] = c.g[V1][0];
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1a80));
+            c.sw(c.g[S1][0] as u32, c.g[V1][0]);
+            c.g[A0][0] = c.lo[0];
+            c.sw((c.g[S1][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+            c.g[A3][0] = 0u64;
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[T0][0]);
+            call_ptr(c, 0x00317e30, 0x0027540c)?;
+            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+            c.g[A1][0] = 0u64;
+            let t = (c.g[V1][0] as i64) <= 0;
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+            if t {
+                break 'b_27547c;
+            } else {
+                c.cycles += 3;
+                c.g[A2][0] = 0xffffffffffffffff;
+                c.g[A0][0] = 0u64;
+                'l_275428: loop {
+                    c.cycles += 21;
+                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw(c.g[V1][0] as u32, c.g[A2][0]);
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[S0][0]);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
+                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw((c.g[V1][0] as u32).wrapping_add(0xc), 0u64);
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x10), 0u64);
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x14));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00275428);
+                        }
+                        continue 'l_275428;
+                    } else {
+                        break 'b_27547c;
+                    }
+                }
+            }
+        }
+        c.cycles += 6;
+        c.g[V0][0] = c.g[S1][0];
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -826,6 +916,27 @@ pub(crate) mod tests {
                 c.g[A0][0] = this as u64;
                 c.g[A1][0] = r.next_u32() as u64;
                 c.g[A2][0] = hdr as u64;
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::ai::ai::tests::oc434_setup;
+
+    /// `ScriptAnimBankMan_ctor`: 0..4 bank records.
+    #[test]
+    fn script_anim_bank_man_ctor_matches() {
+        fakes::covered(
+            ee::s07::f_002753b8__generated,
+            script_anim_bank_man_ctor_2,
+            20,
+            &|c, seed| {
+                let mut r = oc434_setup(c, seed, 0x2753b8, 2, 0x0027_53b8);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = (seed % 5) as u64;
+                c.g[A3][0] = (r.next_u32() % 100) as u64;
             },
         );
     }

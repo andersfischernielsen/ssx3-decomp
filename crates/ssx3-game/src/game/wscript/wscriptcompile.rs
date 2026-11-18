@@ -26,6 +26,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "InstancesMan_AllocByHandle",
     ),
     (0x0035_1260, instances_man_free, "InstancesMan_Free"),
+    (0x0035_1030, instances_man_ctor, "InstancesMan_ctor"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect(c, addr)`.
@@ -183,6 +184,114 @@ pub fn instances_man_alloc_by_handle(c: &mut Cpu) {
     }
 }
 
+/// `InstancesMan* InstancesMan_ctor(InstancesMan* self, int sectionId, int count)`
+/// (0x351030): allocates `count` 0xb0-byte instance records, resets their keyword fields
+/// (`+0x78` -1, `+0x7c` 0, `+0x7d` 0xff, `+0x7e` -1), and chains them into the free list
+/// (`self + 0x8`) through their first word. Returns `self`.
+pub fn instances_man_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_3510b4: {
+            c.cycles += 21;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+            c.g[A3][0] = 0u64;
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[S1][0] = c.g[A0][0];
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[S0][0] = c.g[A2][0];
+            c.g[A0][0] = 0xb0;
+            c.mult(0, 0, 16, 4);
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[A2][0] = 0x20000000;
+            c.sw(c.g[S1][0] as u32, c.g[A1][0]);
+            c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[S0][0]);
+            c.g[A1][0] = 0x490000;
+            c.g[A0][0] = c.lo[0];
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1740));
+            call_ptr(c, 0x00317e30, 0x00351078)?;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+            let t = c.g[S0][0] == 0u64;
+            c.g[V1][0] = c.g[V0][0];
+            if t {
+                break 'b_3510b4;
+            } else {
+                c.cycles += 5;
+                c.g[A1][0] = 0xffffffffffff0000;
+                c.g[T0][0] = 0xff;
+                c.g[A1][0] = c.g[A1][0] | 0xffff;
+                c.g[A3][0] = 0xffffffffffffffff;
+                c.g[A2][0] = 0xffffffffffffffff;
+                'l_351098: loop {
+                    c.cycles += 7;
+                    c.sw((c.g[V1][0] as u32).wrapping_add(0x78), c.g[A1][0]);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+                    c.sb((c.g[V1][0] as u32).wrapping_add(0x7c), 0u64);
+                    c.sb((c.g[V1][0] as u32).wrapping_add(0x7d), c.g[T0][0]);
+                    c.sh((c.g[V1][0] as u32).wrapping_add(0x7e), c.g[A3][0]);
+                    let t = c.g[A0][0] != c.g[A2][0];
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xb0));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00351098);
+                        }
+                        continue 'l_351098;
+                    } else {
+                        break 'b_3510b4;
+                    }
+                }
+            }
+        }
+        'b_351100: {
+            c.cycles += 5;
+            c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0u64);
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+            let t = (c.g[V0][0] as i64) <= 0;
+            c.g[A2][0] = 0u64;
+            if t {
+                break 'b_351100;
+            } else {
+                c.cycles += 2;
+                c.g[A1][0] = 0u64;
+                'l_3510d0: loop {
+                    c.cycles += 12;
+                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw(c.g[V1][0] as u32, c.g[A0][0]);
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                    c.g[V1][0] = ((c.g[A2][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    let t = c.g[V1][0] != 0u64;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xb0));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003510d0);
+                        }
+                        continue 'l_3510d0;
+                    } else {
+                        break 'b_351100;
+                    }
+                }
+            }
+        }
+        c.cycles += 7;
+        c.g[V0][0] = c.g[S1][0];
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -306,6 +415,26 @@ pub(crate) mod tests {
                     }
                 }
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::ai::ai::tests::oc434_setup;
+
+    /// `InstancesMan_ctor`: 0..4 instance records.
+    #[test]
+    fn instances_man_ctor_matches() {
+        fakes::covered(
+            ee::s11::f_00351030__generated,
+            instances_man_ctor,
+            20,
+            &|c, seed| {
+                let _ = oc434_setup(c, seed, 0x351030, 2, 0x0035_1030);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                c.g[A1][0] = (seed.wrapping_mul(31) % 1000) as u64;
+                c.g[A2][0] = (seed % 5) as u64;
             },
         );
     }

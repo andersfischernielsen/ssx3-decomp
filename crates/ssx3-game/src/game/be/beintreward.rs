@@ -439,6 +439,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_reward_int_get_next_mission_threshold,
         "BERewardInt_GetNextMissionThreshold",
     ),
+    (
+        0x0015_8e30,
+        be_reward_int_begin_reward_tracking,
+        "BERewardInt_BeginRewardTracking",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3978,6 +3983,122 @@ pub fn be_reward_int_get_next_collectible_threshold(c: &mut Cpu) {
     })
 }
 
+/// `int BERewardInt_BeginRewardTracking(BERewardInt* self)` (0x158e30): clears the new
+/// rewards, looks up the first rider's character and stores the next earnings threshold
+/// (`gp - 0x1e90`), the three collectible thresholds (`0x440f48`) and the three mission
+/// thresholds (`0x440f58`), then resets the reward interface's counters
+/// (`+0x10` = 0, `+0x14` = -1). Leaves v0 = -1.
+pub fn be_reward_int_begin_reward_tracking(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S3][0] = c.g[A0][0];
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[A0][0] = 0x4c0000;
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x3ef0));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S1][0] = 0u64;
+        Callee {
+            addr: 0x0015a510,
+            f: ee::s01::BERewardInt_ClearNewRewards,
+        }
+        .call(c, 0x00158e5c)?;
+        c.g[A0][0] = 0u64;
+        Callee {
+            addr: 0x0014a130,
+            f: ee::s01::BE_FindRiderByProfile,
+        }
+        .call(c, 0x00158e64)?;
+        c.g[A0][0] = c.g[V0][0];
+        Callee {
+            addr: 0x0014a080,
+            f: ee::s01::BE_GetRiderCharacter,
+        }
+        .call(c, 0x00158e6c)?;
+        c.g[S2][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = 0u64;
+        c.g[A2][0] = c.g[S2][0];
+        Callee {
+            addr: 0x00158be0,
+            f: ee::s01::BERewardInt_GetNextPointsThreshold,
+        }
+        .call(c, 0x00158e80)?;
+        c.sw((c.g[GP][0] as u32).wrapping_sub(0x1e90), c.g[V0][0]);
+        c.g[V0][0] = 0x440000;
+        c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xf48));
+        'l_158e90: loop {
+            c.cycles += 10;
+            c.g[A3][0] = c.g[S1][0];
+            c.g[A0][0] = c.g[S3][0];
+            c.g[A1][0] = 0u64;
+            c.g[A2][0] = c.g[S2][0];
+            Callee {
+                addr: 0x00158c80,
+                f: ee::s01::BERewardInt_GetNextCollectibleThreshold,
+            }
+            .call(c, 0x00158ea4)?;
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+            c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+            c.g[V0][0] = ((c.g[S1][0] as i64) < 3i64) as u64;
+            let t = c.g[V0][0] != 0u64;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x00158e90);
+                }
+                continue 'l_158e90;
+            } else {
+                c.cycles += 4;
+                c.g[V0][0] = 0x440000;
+                c.g[S0][0] = 0u64;
+                c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(0xf58));
+                'l_158ec8: loop {
+                    c.cycles += 10;
+                    c.g[A3][0] = c.g[S0][0];
+                    c.g[A0][0] = c.g[S3][0];
+                    c.g[A1][0] = 0u64;
+                    c.g[A2][0] = c.g[S2][0];
+                    Callee {
+                        addr: 0x00158d58,
+                        f: ee::s01::BERewardInt_GetNextMissionThreshold,
+                    }
+                    .call(c, 0x00158edc)?;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < 3i64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00158ec8);
+                        }
+                        continue 'l_158ec8;
+                    } else {
+                        c.cycles += 11;
+                        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1e8c));
+                        c.g[V0][0] = 0xffffffffffffffff;
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x10), 0u64);
+                        let t = c.g[RA][0] as u32;
+                        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+                        c.pc = t;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5470,6 +5591,26 @@ pub(crate) mod tests {
             be_reward_int_get_next_collectible_threshold,
             120,
             &|c, seed| oc429_threshold_setup(c, seed, 0x158c80, 0x0015_8c80, 0x0045_afe8),
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::ai::ai::tests::oc434_setup;
+    pub(crate) use crate::game::ai::ai::tests::oc434_w;
+
+    /// `BERewardInt_BeginRewardTracking`: all callees are fakes (ten calls).
+    #[test]
+    fn be_reward_int_begin_reward_tracking_matches() {
+        fakes::covered(
+            ee::s01::f_00158e30__generated,
+            be_reward_int_begin_reward_tracking,
+            24,
+            &|c, seed| {
+                let _ = oc434_setup(c, seed, 0x158e30, 10, 0x0015_8e30);
+                c.g[A0][0] = (DATA + 0x100) as u64;
+                oc434_w(c, GAME_GP.wrapping_sub(0x1e8c), DATA + 0x800);
+            },
         );
     }
 }

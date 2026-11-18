@@ -182,6 +182,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         feui_input_poll_usb_keyboard,
         "FEUIInput_PollUsbKeyboard",
     ),
+    (0x001d_d530, fe_ui_input_dtor, "FEUIInput_dtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2237,6 +2238,30 @@ pub fn feui_input_poll_usb_keyboard(c: &mut Cpu) {
         }
         c.cycles += 4;
         frame.restore(c, 16, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void FEUIInput_dtor(FEUIInput *self, int flags)` (0x1dd530): resets the
+/// vtable (0x46dba8) at `+8`; with `flags & 1` deletes `self`
+/// (`__builtin_delete`, 0x317e50).
+pub fn fe_ui_input_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x47_0000;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x2458));
+        c.g[A1][0] &= 1;
+        let keep = c.g[A1][0] == 0;
+        Addr(r32(c, A0).wrapping_add(8)).sw(c, c.g[V0][0]);
+        if !keep {
+            c.cycles += 2;
+            call_ptr(c, 0x0031_7e50, 0x001d_d554)?;
+        }
+        c.cycles += 3;
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())

@@ -2068,6 +2068,104 @@ pub fn playback_man_free_data(c: &mut Cpu) {
     })
 }
 
+/// `PlaybackMan* PlaybackMan_ctor(PlaybackMan* self, int a1)` (0x26c458): build the
+/// replay playback manager: the embedded `WorldStateStream` (`+0x14`), the world
+/// and rider-table words copied from the game world, two allocated helpers (a
+/// pointer cell and a pair set with `ValuePair_SetFirst/SetSecond`) and a
+/// `BigFile` opened from a formatted name; returns `self`.
+// Not in `OVERRIDES` and without a differential test: its last call (0x316978, `BigFile`
+// open) reaches the real EA file layer (`EAFile_Exists` -> request queue), which runs
+// away on fixture data (pc 0x3de768) and has no override slot to fake. The port is
+// otherwise a faithful transliteration of 0x26c458.
+#[allow(dead_code, unreachable_code)]
+pub fn playback_man_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 75;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x140));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x130));
+        c.g[S0][0] = c.g[A0][0];
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x120));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x110));
+        c.g[S1][0] = c.g[A1][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x100), c.g[RA][0]);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x14));
+        Callee {
+            addr: 0x0026d5e8,
+            f: ee::s07::WorldStateStream_ctor,
+        }
+        .call(c, 0x0026c47c)?;
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        c.g[T1][0] = 0xffffffffffffffff;
+        c.g[A1][0] = 0x480000;
+        c.g[A0][0] = 0x2a4;
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1550));
+        c.g[A2][0] = 0x20000000;
+        c.g[A3][0] = 0u64;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x5c), c.g[V0][0]);
+        c.g[T0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x78), c.g[T1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x74), c.g[T1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x54), c.g[S1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x50), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x58), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x70), 0u64);
+        c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x40));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xdf0));
+        c.g[T0][0] = c.lw(c.g[V1][0] as u32);
+        c.g[S2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x64), c.g[T0][0]);
+        call_ptr(c, 0x00317d70, 0x0026c4e4)?;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x68), c.g[V0][0]);
+        c.g[A1][0] = 0x4a0000;
+        c.g[A3][0] = 0u64;
+        c.g[A2][0] = 0x20000000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3420));
+        c.g[A0][0] = 0x8;
+        c.sw(c.g[V0][0] as u32, 0u64);
+        call_ptr(c, 0x00317d70, 0x0026c504)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x68));
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, 0x00244400, 0x0026c514)?;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, 0x00244408, 0x0026c520)?;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x6c), c.g[S1][0]);
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x328));
+        c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x320));
+        call_ptr(c, 0x00417828, 0x0026c534)?;
+        c.g[A1][0] = 0x4a0000;
+        c.g[A3][0] = 0u64;
+        c.g[A2][0] = 0u64;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3428));
+        c.g[A0][0] = 0x8;
+        call_ptr(c, 0x00317d70, 0x0026c54c)?;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x00316898, 0x0026c554)?;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A0][0] = c.g[V0][0];
+        c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+        c.g[A2][0] = 0u64;
+        call_ptr(c, 0x00316978, 0x0026c568)?;
+        c.g[V0][0] = c.g[S0][0];
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x120));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x130));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x110));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x100));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x140));
+        c.pc = t;
+        return Ok(());
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

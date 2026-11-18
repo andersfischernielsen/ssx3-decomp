@@ -63,6 +63,7 @@ pub(crate) use crate::game::render::particle::p as p_2;
 pub(crate) use crate::game::scripter::ssxscriptengine::low;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2 as p;
 pub(crate) use crate::game::scripter::ssxscriptengine::sw_at;
+pub(crate) use crate::game::world::world::oc435_callee;
 use crate::guest::Addr;
 use crate::ps2f::vu0_scratch;
 use crate::ps2f::FpuF32;
@@ -327,6 +328,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0035_7ae8,
         multi_particle_man_add_instance,
         "MultiParticleMan_AddInstance",
+    ),
+    (
+        0x0035_7b10,
+        multi_particle_man_remove_instance,
+        "MultiParticleMan_RemoveInstance",
     ),
 ];
 
@@ -5370,6 +5376,24 @@ pub fn mod_obj_add_multi_spline_modifier_2(c: &mut Cpu) {
     })
 }
 
+/// `void MultiParticleMan_RemoveInstance(MultiParticleMan *m, int index, int
+/// key)` (0x357b10): `MultiParticle_RemoveInstance(m->particles[index], key)`.
+pub fn multi_particle_man_remove_instance(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = sx(r32(c, A1) << 2);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A1)));
+        c.g[A1][0] = c.g[A2][0];
+        c.g[A0][0] = Addr(r32(c, A0)).lw(c);
+        oc435_callee!(0x0035_81f0, ee::s11::MultiParticle_RemoveInstance).call(c, 0x0035_7b2c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8573,6 +8597,42 @@ pub(crate) mod tests {
                 c.bus.write32(node + 0x18, r.next_u32());
                 c.g[A0][0] = sx(node);
                 c.g[A1][0] = sx(DATA + 0x2000 + (r.next_u32() & 0xff0));
+            },
+        );
+    }
+
+    pub(crate) use crate::game::world::world::tests::w_2 as w_5;
+    pub(crate) use crate::game::world::world::tests::BASE_2 as BASE;
+    pub(crate) use crate::game::world::world::tests::SEEDS_4 as SEEDS_7;
+
+    /// `MultiParticleMan_RemoveInstance`: `MultiParticle_RemoveInstance` on
+    /// the manager's particle `index` (instance array at `+0xc`, count `+4`).
+    #[test]
+    fn multi_particle_man_remove_instance_matches() {
+        check(
+            ee::s11::f_00357b10__generated,
+            multi_particle_man_remove_instance,
+            SEEDS_7,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x357b10, 0);
+                let man = BASE + 0x100;
+                let index = seed % 3;
+                let particle = BASE + 0x1000;
+                let entries = BASE + 0x2000;
+                let count = seed % 5;
+                w_5(c, man + 4 * index, particle);
+                w_5(c, particle + 4, count);
+                w_5(c, particle + 0xc, entries);
+                for i in 0..5u32 {
+                    w_5(c, entries + 4 * i, if i < count { r.next_u32() } else { 0 });
+                }
+                c.g[A0][0] = man as u64;
+                c.g[A1][0] = index as u64;
+                c.g[A2][0] = if seed % 2 == 0 && count > 0 {
+                    c.bus.read32(entries + 4 * (seed % count)) as u64
+                } else {
+                    r.next_u32() as u64
+                };
             },
         );
     }

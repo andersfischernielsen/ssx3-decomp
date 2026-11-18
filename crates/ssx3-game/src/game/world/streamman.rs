@@ -48,6 +48,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cstreamman_parse_chunks,
         "cStreamMan_ParseChunks",
     ),
+    (0x003a_6d50, c_stream_man_ctor, "cStreamMan_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1071,6 +1072,76 @@ pub fn cstreamman_parse_chunks(c: &mut Cpu) {
     })
 }
 
+/// `cStreamMan* cStreamMan_ctor(cStreamMan* self)` (0x3a6d50): sets the BX chunk resource id
+/// (`+0xbc`) to -1, sizes and allocates the stream buffer (`+0x84`, at most 0x80000 bytes),
+/// creates the stream (`+0x88`), clears `+0x9c`, allocates the decompress buffer (`+0x8c`,
+/// 0x14000 bytes) and resets the manager. Returns `self`.
+pub fn c_stream_man_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 52;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+        c.g[V0][0] = 0xffffffffffff0000;
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = c.g[V0][0] | 0xffff;
+        c.g[S1][0] = c.g[A0][0];
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A0][0] = 0x2;
+        c.g[A1][0] = 0x1;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0xbc), c.g[V0][0]);
+        c.g[A2][0] = 0x1;
+        call_ptr(c, 0x003e06b0, 0x003a6d80)?;
+        c.g[V1][0] = 0x10000;
+        c.g[A1][0] = 0x50000;
+        c.g[V1][0] = c.g[V1][0] | 0x8000;
+        c.g[A0][0] = 0x80000;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.g[A2][0] = 0u64;
+        c.g[A0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        c.g[A1][0] = 0x490000;
+        if c.g[A0][0] == 0 {
+            c.g[S0][0] = c.g[V0][0];
+        }
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4d90));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A3][0] = 0u64;
+        call_ptr(c, 0x00317e30, 0x003a6dbc)?;
+        c.g[T0][0] = c.g[S0][0];
+        c.g[A1][0] = 0x1;
+        c.g[A3][0] = c.g[V0][0];
+        c.g[A0][0] = 0x2;
+        c.g[A2][0] = 0x1;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x84), c.g[V0][0]);
+        call_ptr(c, 0x003e06d8, 0x003a6dd8)?;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x9c), 0u64);
+        c.g[A1][0] = 0x490000;
+        c.g[A0][0] = 0x10000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4da8));
+        c.g[A2][0] = 0u64;
+        c.g[A3][0] = 0u64;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x88), c.g[V0][0]);
+        c.g[A0][0] = c.g[A0][0] | 0x4000;
+        call_ptr(c, 0x00317e30, 0x003a6dfc)?;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x8c), c.g[V0][0]);
+        c.g[A0][0] = c.g[S1][0];
+        Callee {
+            addr: 0x003a6ed8,
+            f: ee::s13::cStreamMan_Reset,
+        }
+        .call(c, 0x003a6e08)?;
+        c.g[V0][0] = c.g[S1][0];
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1465,6 +1536,23 @@ pub(crate) mod tests {
                     _ => DATA + 0x9000,
                 };
                 oc371_script(c, 0x003a_8a90, space);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ai::ai::tests::oc434_setup;
+
+    /// `cStreamMan_ctor`: the real `StreamFile_CalcMemSize` / `StreamFile_Create`, the
+    /// allocations and the reset are fakes.
+    #[test]
+    fn c_stream_man_ctor_matches() {
+        fakes::covered(
+            ee::s13::f_003a6d50__generated,
+            c_stream_man_ctor,
+            12,
+            &|c, seed| {
+                let _ = oc434_setup(c, seed, 0x3a6d50, 6, 0x003a_6d50);
+                c.g[A0][0] = (DATA + 0x100) as u64;
             },
         );
     }

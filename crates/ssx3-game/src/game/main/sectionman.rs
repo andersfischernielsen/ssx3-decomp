@@ -3,11 +3,13 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -34,6 +36,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0022_e298,
         section_man_queue_section,
         "SectionMan_QueueSection",
+    ),
+    (
+        0x0022_e180,
+        section_man_select_peak_lighting,
+        "SectionMan_SelectPeakLighting",
     ),
 ];
 
@@ -188,6 +195,60 @@ pub fn section_man_queue_section(c: &mut Cpu) {
         c.sw((c.g[S1][0] as u32).wrapping_add(0x1a0), c.g[V0][0]);
         c.lq(17, frame.at(c, 0x30));
         c.lq(19, frame.at(c, 0x10));
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SectionMan_SelectPeakLighting(SectionMan *self, int sky)` (0x22e180):
+/// picks the irradiance name for the sky (0x4a2a20..0x4a2a40; skies 1/11/18,
+/// 2/9/12/19, 3/6/15/20, 4/7/10/13/16/21 get their own, the rest the
+/// default) through a `jr` table at 0x47b4e0 and stores
+/// `cIrradianceDataBase_GetIDByName(0x5047f8, name)` (0x38ac50) at
+/// `gp + 0x12d4`. Has an `__entries` twin: other entries go to it.
+pub fn section_man_select_peak_lighting(c: &mut Cpu) {
+    if c.pc != 0x0022_e180 {
+        return ee::s05::f_0022e180__generated(c);
+    }
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = (c.g[A1][0] < 0x16) as u64;
+        let out_of_range = c.g[V0][0] == 0;
+        frame.save_ra(c, 0);
+        // The name offset (from 0x4a0000) of the arm taken; `cycles` is the
+        // block charge (5 for a table arm, 4 for the default).
+        let (cycles, name_off) = if out_of_range {
+            (4, 0x2a20)
+        } else {
+            c.cycles += 7;
+            c.g[V0][0] = 0x48_0000;
+            c.g[V1][0] = sx(r32(c, A1) << 2);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x4b20));
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+            c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+            let target = r32(c, A0);
+            match target {
+                0x0022_e1ac => (5, 0x2a28),
+                0x0022_e1c0 => (5, 0x2a30),
+                0x0022_e1d4 => (5, 0x2a38),
+                0x0022_e1e8 => (5, 0x2a40),
+                0x0022_e1fc => (4, 0x2a20),
+                _ => {
+                    c.jump_out(target, 0x0022_e180, 0x0022_e224);
+                    return Ok(());
+                }
+            }
+        };
+        c.cycles += cycles;
+        c.g[A0][0] = 0x50_0000;
+        c.g[A1][0] = 0x4a_0000;
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x47f8));
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(name_off));
+        c.cycles += 6;
+        call_ptr(c, 0x0038_ac50, 0x0022_e214)?;
+        Addr(r32(c, GP).wrapping_add(0x12d4)).sw(c, c.g[V0][0]);
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
