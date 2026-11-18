@@ -53,6 +53,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         input_map_compile_entry,
         "InputMap_CompileEntry",
     ),
+    (0x0032_1428, input_parser_ctor, "InputParser_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -815,6 +816,91 @@ pub fn input_map_compile_entry(c: &mut Cpu) {
     })
 }
 
+/// `InputParser* InputParser_ctor(InputParser* self, char* file, int length)`: sets the source and length, builds the free-id stack (63..1) and the 0x800-node free list (the loop at 0x321480 is `ids[n++] = i`), and parses the whole file.
+/// (`InputParser_ctor`, 0x00321428)
+pub fn input_parser_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+        c.g[V0][0] = 0x8000;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[V1][0] = 0x10000;
+        c.g[S0][0] = c.g[A0][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[A2][0]);
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[A1][0]);
+        c.g[A0][0] = 0x1;
+        c.sw(c.g[S0][0] as u32, c.g[A1][0]);
+        c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw((c.g[V0][0] as u32).wrapping_add(0xe4), 0u64);
+        c.g[A1][0] = c.g[V1][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x90), c.g[A0][0]);
+        c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8ec));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x8c), c.g[A0][0]);
+        c.sb((c.g[S0][0] as u32).wrapping_add(0xc), 0u64);
+        c.g[A0][0] = 0x3f;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x94), 0u64);
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x9e8), 0u64);
+        'l_321480: loop {
+            c.cycles += 8;
+            c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x9e8));
+            c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+            c.sw(c.g[V0][0] as u32, c.g[A0][0]);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+            let t = (c.g[A0][0] as i64) > 0;
+            c.sw((c.g[A1][0] as u32).wrapping_add(0x9e8), c.g[V1][0]);
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x00321480);
+                }
+                continue 'l_321480;
+            } else {
+                c.cycles += 6;
+                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xe4));
+                c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0xe8));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xe0), c.g[V0][0]);
+                c.g[A0][0] = 0x7fe;
+                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xf4));
+                'l_3214b8: loop {
+                    c.cycles += 7;
+                    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
+                    let t = (c.g[A0][0] as i64) >= 0;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003214b8);
+                        }
+                        continue 'l_3214b8;
+                    } else {
+                        c.cycles += 10;
+                        c.g[V0][0] = 0x8000;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.sw((c.g[V0][0] as u32).wrapping_add(0xd8), 0u64);
+                        Callee {
+                            addr: 0x00323098,
+                            f: ee::s10::InputParser_ParseAll,
+                        }
+                        .call(c, 0x003214e8)?;
+                        c.g[V0][0] = c.g[S0][0];
+                        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        let t = c.g[RA][0] as u32;
+                        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.pc = t;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1183,6 +1269,34 @@ pub(crate) mod tests {
                 );
                 c.bus.write32(oc410_result(1), DATA + 0x6000);
                 c.bus.write32(oc410_result(4), r.next_u32() % 40);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::be::belibrary::tests::oc431_install;
+    pub(crate) use crate::game::be::belibrary::tests::oc431_machine;
+
+    pub(crate) use crate::game::be::belibrary::tests::OC431_BASE;
+    pub(crate) use crate::game::be::belibrary::tests::OC431_CTRL;
+
+    /// `InputParser_ctor`: the free-id stack and the node free list are
+    /// built; `ParseAll` (real) runs `NextToken` and, while the parser has
+    /// input, `ParseStatement` (fakes).
+    #[test]
+    fn input_parser_ctor_matches() {
+        oc431_install();
+        covered(
+            ee::s10::f_00321428__generated,
+            input_parser_ctor,
+            100,
+            &|c, seed| {
+                let mut r = oc431_machine(c, seed, 0x321428, 2, 0x0032_1428);
+                c.bus.write32(OC431_CTRL + 4, seed % 2);
+                c.g[A0][0] = (OC431_BASE + 0x1_0000) as u64;
+                c.g[A1][0] = (OC431_BASE + 0x100) as u64;
+                c.g[A2][0] = (r.next_u32() % 0x1000) as u64;
             },
         );
     }

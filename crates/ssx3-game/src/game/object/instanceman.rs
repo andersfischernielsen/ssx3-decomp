@@ -16,6 +16,7 @@ pub(crate) use crate::game::fe::feasyncfile::lh_r;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
 pub(crate) use crate::game::intersect::worldsphtree::save_field_block;
+pub(crate) use crate::game::main::ssxapp::oc429_at;
 pub(crate) use crate::game::render::lightman::gp;
 pub(crate) use crate::game::render::lightman::off;
 pub(crate) use crate::game::render::lightman::Oc49Mem;
@@ -91,6 +92,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "MeshAnim_RandomizeNodes",
     ),
     (0x0035_2208, mesh_anim_v01, "MeshAnim_v01"),
+    (
+        0x0035_1270,
+        instances_man_copy_instance,
+        "InstancesMan_CopyInstance",
+    ),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -2308,6 +2314,35 @@ pub fn mesh_anim_v01(c: &mut Cpu) {
     })
 }
 
+/// `void InstancesMan_CopyInstance(InstancesMan* self, Instance* dst, Instance*
+/// src)` (0x351270): copy the 0xa0-byte instance (`EA_MemCopy(dst, src,
+/// 0xa0)`) but keep `dst`'s own `+0x78` field, and flag the copy (`+8 |=
+/// 0x2000`).
+pub fn instances_man_copy_instance(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        frame.save(c, S1, 0x10);
+        c.g[A1][0] = c.g[A2][0];
+        c.g[S1][0] = c.lw(oc429_at(c.g[S0][0], 0x78));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xa0;
+        call_ptr(c, 0x003e_6574, 0x0035_1298)?; // EA_MemCopy
+        c.g[V0][0] = c.lw(oc429_at(c.g[S0][0], 0x8));
+        c.sw(oc429_at(c.g[S0][0], 0x78), c.g[S1][0]);
+        c.g[V0][0] |= 0x2000;
+        frame.restore(c, S1, 0x10);
+        c.sw(oc429_at(c.g[S0][0], 0x8), c.g[V0][0]);
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3134,6 +3169,30 @@ pub(crate) mod tests {
                 c.pc = 0x0035_2208;
                 c.g[GP][0] = GAME_GP as u64;
                 oc339_world_obj(c, &mut r, seed, DATA);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_machine;
+
+    pub(crate) use crate::game::main::ssxapp::tests::OC429_FX;
+
+    /// `InstancesMan_CopyInstance` (the 0xa0-byte copy runs for real).
+    #[test]
+    fn instances_man_copy_instance_matches() {
+        check(
+            ee::s11::f_00351270__generated,
+            instances_man_copy_instance,
+            40,
+            &|c, seed| {
+                let mut r = oc429_machine(c, seed, 0x351270, 0, 0x0035_1270);
+                let dst = OC429_FX + 0x400;
+                let src = OC429_FX + 0x800;
+                fill(c, &mut r, dst, 0x28);
+                fill(c, &mut r, src, 0x28);
+                c.g[A0][0] = r.next_u32() as u64;
+                c.g[A1][0] = dst as u64;
+                c.g[A2][0] = src as u64;
             },
         );
     }

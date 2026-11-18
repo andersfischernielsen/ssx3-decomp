@@ -29,6 +29,7 @@ pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::sp_2;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
 pub(crate) use crate::game::main::gamestate::p_2 as p;
+pub(crate) use crate::game::main::ssxapp::oc429_at;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw;
@@ -428,6 +429,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0015_a778, rewards_file_ctor, "RewardsFile_ctor"),
     (0x0015_a7d0, rewards_file_dtor, "RewardsFile_dtor"),
     (0x0015_a818, rewards_file_parse, "RewardsFile_Parse"),
+    (
+        0x0015_8c80,
+        be_reward_int_get_next_collectible_threshold,
+        "BERewardInt_GetNextCollectibleThreshold",
+    ),
+    (
+        0x0015_8d58,
+        be_reward_int_get_next_mission_threshold,
+        "BERewardInt_GetNextMissionThreshold",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3837,6 +3848,136 @@ pub fn rewards_file_parse(c: &mut Cpu) {
     ret(c);
 }
 
+/// Shared body of the two `BERewardInt_GetNext*Threshold` functions (they
+/// differ in the tier callee, the threshold table and their return
+/// addresses): the lowest threshold of `kind` (`a3`, table rows of 4 ints,
+/// 16 bytes apart at `0x460000 - table_off`) whose place is better than the
+/// player's current one (`IsBetterPlace(self, tier, i)`), 0 when none.
+/// `tier_call`/`tier_ret`: the tier getter (called with the caller's a0..a3)
+/// and where it returns; `better_ret`: the `IsBetterPlace` return address;
+/// `loop_pc`: the loop head the event check resumes at.
+pub(crate) fn oc429_next_threshold(
+    c: &mut Cpu,
+    tier_call: u32,
+    tier_ret: u32,
+    better_ret: u32,
+    loop_pc: u32,
+    table_off: u32,
+) -> crate::call::Flow {
+    c.cycles += 22;
+    let frame = Frame::open(c, 0x90);
+    frame.save(c, S4, 0x40);
+    frame.save(c, S5, 0x30);
+    c.g[S4][0] = c.g[A3][0];
+    c.g[S5][0] = c.g[A0][0];
+    frame.save(c, S0, 0x80);
+    frame.save(c, S1, 0x70);
+    frame.save(c, S2, 0x60);
+    frame.save(c, S3, 0x50);
+    c.g[S2][0] = 0;
+    frame.save(c, 22, 0x20);
+    c.g[S0][0] = 0;
+    frame.save(c, S7, 0x10);
+    frame.save_ra(c, 0);
+    c.g[S3][0] = 0;
+    call_ptr(c, tier_call, tier_ret)?;
+    c.g[S7][0] = c.g[V0][0];
+    c.g[V1][0] = sx((c.g[S4][0] as u32) << 4);
+    c.g[V0][0] = 0x46_0000;
+    c.g[S6][0] = sx(oc429_at(c.g[V0][0], 0u32.wrapping_sub(table_off)));
+    c.g[S1][0] = sx(oc429_at(c.g[V1][0], c.g[S6][0] as u32));
+    loop {
+        'next: {
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S5][0];
+            c.g[A1][0] = c.g[S7][0];
+            c.g[A2][0] = c.g[S0][0];
+            call_ptr(c, 0x0015_6a60, better_ret)?; // BERewardInt_IsBetterPlace
+            if c.g[V0][0] == 0 {
+                c.g[S0][0] = sx(oc429_at(c.g[S0][0], 1));
+                break 'next;
+            }
+            'take: {
+                c.cycles += 2;
+                let none_yet = c.g[S2][0] == 0;
+                c.g[V1][0] = sx((c.g[S4][0] as u32) << 4);
+                if !none_yet {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[S2][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[S0][0] = sx(oc429_at(c.g[S0][0], 1));
+                        break 'next;
+                    }
+                }
+                break 'take;
+            }
+            c.cycles += 4;
+            c.g[V0][0] = sx(oc429_at(c.g[S3][0], c.g[V1][0] as u32));
+            c.g[V0][0] = sx(oc429_at(c.g[V0][0], c.g[S6][0] as u32));
+            c.g[S2][0] = c.lw(c.g[V0][0] as u32);
+            c.g[S0][0] = sx(oc429_at(c.g[S0][0], 1));
+        }
+        c.cycles += 4;
+        c.g[S3][0] = sx(oc429_at(c.g[S3][0], 4));
+        c.g[V0][0] = ((c.g[S0][0] as i64) < 4) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[S1][0] = sx(oc429_at(c.g[S1][0], 4));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, loop_pc);
+            }
+            continue;
+        }
+        break;
+    }
+    c.cycles += 12;
+    c.g[V0][0] = c.g[S2][0];
+    frame.restore(c, S0, 0x80);
+    frame.restore(c, S1, 0x70);
+    frame.restore(c, S2, 0x60);
+    frame.restore(c, S3, 0x50);
+    frame.restore(c, S4, 0x40);
+    frame.restore(c, S5, 0x30);
+    frame.restore(c, 22, 0x20);
+    frame.restore(c, S7, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `int BERewardInt_GetNextMissionThreshold(BEReward* self, int profile, int
+/// character, int kind)` (0x158d58): the next mission-medal threshold to aim
+/// for (table at `0x45b018`), see [`oc429_next_threshold`].
+pub fn be_reward_int_get_next_mission_threshold(c: &mut Cpu) {
+    guest(c, |c| {
+        oc429_next_threshold(
+            c,
+            0x0015_8a50,
+            0x0015_8d98,
+            0x0015_8dc0,
+            0x0015_8db0,
+            0x4fe8,
+        )
+    })
+}
+
+/// `int BERewardInt_GetNextCollectibleThreshold(BEReward* self, int profile,
+/// int character, int kind)` (0x158c80): the next collectible-medal
+/// threshold (table at `0x45afe8`), see [`oc429_next_threshold`].
+pub fn be_reward_int_get_next_collectible_threshold(c: &mut Cpu) {
+    guest(c, |c| {
+        oc429_next_threshold(
+            c,
+            0x0015_89b0,
+            0x0015_8cc0,
+            0x0015_8ce8,
+            0x0015_8cd8,
+            0x5018,
+        )
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5282,6 +5423,53 @@ pub(crate) mod tests {
                 c.g[RA][0] = SENTINEL as u64;
                 mode
             },
+        );
+    }
+
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_force;
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_machine;
+
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_w;
+
+    /// Setup of the two `BERewardInt_GetNext*Threshold` tests: the table (4
+    /// rows of 4 thresholds), the tier getter and `IsBetterPlace` as fakes
+    /// with forced answers.
+    pub(crate) fn oc429_threshold_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32, table: u32) {
+        let mut r = oc429_machine(c, seed, salt, 5, entry);
+        for i in 0..16u32 {
+            // Positive thresholds; a few zero ones.
+            let v = if r.next_u32() % 6 == 0 {
+                0
+            } else {
+                r.next_u32() % 500
+            };
+            oc429_w(c, table + 4 * i, v);
+        }
+        let better: Vec<u64> = (0..4).map(|_| (r.next_u32() & 1) as u64).collect();
+        oc429_force(c, 0x0015_6a60, &better);
+        c.g[A0][0] = r.next_u32() as u64;
+        c.g[A1][0] = r.next_u32() as u64;
+        c.g[A2][0] = r.next_u32() as u64;
+        c.g[A3][0] = (r.next_u32() % 4) as u64;
+    }
+
+    #[test]
+    fn be_reward_int_get_next_mission_threshold_matches() {
+        covered(
+            ee::s01::f_00158d58__generated,
+            be_reward_int_get_next_mission_threshold,
+            120,
+            &|c, seed| oc429_threshold_setup(c, seed, 0x158d58, 0x0015_8d58, 0x0045_b018),
+        );
+    }
+
+    #[test]
+    fn be_reward_int_get_next_collectible_threshold_matches() {
+        covered(
+            ee::s01::f_00158c80__generated,
+            be_reward_int_get_next_collectible_threshold,
+            120,
+            &|c, seed| oc429_threshold_setup(c, seed, 0x158c80, 0x0015_8c80, 0x0045_afe8),
         );
     }
 }

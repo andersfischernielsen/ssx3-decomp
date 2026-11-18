@@ -6,8 +6,11 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::sd;
 pub(crate) use crate::game::ai::rider::world;
 pub(crate) use crate::game::be::beintplayer::lh;
@@ -38,6 +41,7 @@ pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::gp_2 as gp;
 pub(crate) use crate::game::world::worldview::p_2 as p_3;
 use crate::guest::Addr;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -153,6 +157,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cGameLoadScreen_Update",
     ),
     (0x0023_2ae0, start_screen_ctor, "StartScreen_ctor"),
+    (0x0023_2e20, c_game_load_screen_load, "cGameLoadScreen_Load"),
+    (
+        0x0023_32c8,
+        c_game_load_screen_try_exit,
+        "cGameLoadScreen_TryExit",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1175,10 +1185,403 @@ pub fn start_screen_ctor(c: &mut Cpu) {
     })
 }
 
+/// `AppModule_TryExitWhenLoaded`.
+pub(crate) const OC428_APP_MODULE_TRY_EXIT_WHEN_LOADED: Callee = Callee {
+    addr: 0x0023_1c70,
+    f: ee::s06::AppModule_TryExitWhenLoaded,
+};
+
+/// `bool cGameLoadScreen_TryExit(cGameLoadScreen* self)` (0x2332c8):
+/// `AppModule_TryExitWhenLoaded(self) != 0`.
+pub fn c_game_load_screen_try_exit(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        OC428_APP_MODULE_TRY_EXIT_WHEN_LOADED.call(c, 0x0023_32d8)?;
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = (0 < c.g[V0][0]) as u64;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cGameLoadScreen_LoadPictures(cGameLoadScreen* self, int)` (0x233048):
+/// loads the load screen's textures from a BigFile. Rider race (the byte at
+/// `0x535c11` is 2): the two characters' pictures (`sprintf` of the character
+/// ids of both players into the name, `FILE_loadpackz`, then a
+/// texture load through the graphics manager's vtable `+0x170` into
+/// `self + 0x10 + 4 * i`). Otherwise: the course picture of the location id
+/// (0 when above 16) into `self + 0x10`. The BigFile is closed with flag 2.
+///
+/// NOT registered: `cBigFile` open and `FILE_loadpackz` are real, unslotted
+/// callees that read the disc, so no bounded differential fixture exists.
+pub fn c_game_load_screen_load_pictures(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x110);
+        frame.save(c, S2, 0xe0);
+        frame.save(c, S0, 0x100);
+        frame.save(c, S3, 0xd0);
+        frame.save(c, S1, 0xf0);
+        frame.save(c, S4, 0xc0);
+        frame.save(c, S5, 0xb0);
+        frame.save(c, S6, 0xa0);
+        frame.save(c, S7, 0x90);
+        frame.save_ra(c, 0x80);
+        c.g[S2][0] = c.g[A0][0];
+        call_ptr(c, 0x0014_dc80, 0x0023_3078)?; // cBE_getBE
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 1;
+        call_ptr(c, 0x0014_dd58, 0x0023_3084)?; // cBE_getInterface(1): players
+        c.g[S3][0] = c.g[V0][0];
+        call_ptr(c, 0x0014_dc80, 0x0023_308c)?; // cBE_getBE
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0014_dd58, 0x0023_3098)?; // cBE_getInterface(0): race
+        c.g[S0][0] = c.g[V0][0];
+        c.g[V1][0] = 2;
+        c.g[V0][0] = 0x53_0000;
+        c.g[A0][0] = c.lb((c.g[V0][0] as u32).wrapping_add(0x5c11));
+        let course = c.g[A0][0] != c.g[V1][0];
+        c.g[S1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+        if !course {
+            c.cycles += 12;
+            c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+            c.g[A1][0] = 0x48_0000;
+            c.g[S7][0] = c.g[A0][0];
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4288));
+            c.g[A2][0] = 0x100;
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x10));
+            call_ptr(c, 0x0031_68b0, 0x0023_30cc)?; // cBigFile open
+            c.g[S1][0] = 0;
+            c.g[V0][0] = 0x44_0000;
+            c.g[S5][0] = 0x48_0000;
+            c.g[S6][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2928));
+            c.g[S4][0] = 0x48_0000;
+            loop {
+                c.cycles += 29;
+                c.g[A0][0] = c.g[S3][0];
+                c.g[A1][0] = (0 < c.g[S1][0]) as u64;
+                call_ptr(c, 0x0014_7488, 0x0023_30ec)?; // getPlayerCharID
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[A3][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x5b4));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S6][0] as u32));
+                c.g[A0][0] = c.g[SP][0];
+                c.g[A2][0] = c.lw(c.g[V0][0] as u32);
+                c.g[A1][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x4270));
+                call_ptr(c, 0x0041_7828, 0x0023_3108)?; // sprintf
+                c.g[A1][0] = 0x300_0000;
+                c.g[A0][0] = c.g[SP][0];
+                c.g[A1][0] |= 0x100;
+                call_ptr(c, 0x003e_2190, 0x0023_3118)?; // FILE_loadpackz
+                c.g[T2][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                c.g[A2][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x4260));
+                c.g[V1][0] = c.lw((c.g[T2][0] as u32).wrapping_add(0x10d8));
+                c.g[A3][0] = 0;
+                c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                c.g[T0][0] = 1;
+                c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x170));
+                c.g[T1][0] = 0xffff_ffff_ffff_ffff;
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x174));
+                let target = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0023_314c)?; // loadTex
+                let no_data = c.g[S0][0] == 0;
+                c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+                if !no_data {
+                    c.cycles += 2;
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x0031_7e98, 0x0023_315c)?; // EA_MemFree
+                }
+                c.cycles += 4;
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                c.g[V0][0] = ((c.g[S1][0] as i64) < 2) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(4));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0023_30e0);
+                    }
+                    continue;
+                }
+                break;
+            }
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S7][0];
+            c.g[A1][0] = 2;
+            call_ptr(c, 0x0031_68e8, 0x0023_3178)?; // cBigFile close
+            frame.restore(c, S0, 0x100);
+        } else {
+            c.cycles += 40;
+            c.g[A1][0] = 0x48_0000;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4250));
+            c.g[A2][0] = 0x100;
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0031_68b0, 0x0023_3194)?; // cBigFile open
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x0014_4be0, 0x0023_319c)?; // getLocationID
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
+            c.g[A2][0] = 0x44_0000;
+            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2950));
+            c.g[V1][0] = ((c.g[V0][0] as i64) < 17) as u64;
+            c.g[A1][0] = 0x4a_0000;
+            if c.g[V1][0] == 0 {
+                c.g[V0][0] = 0;
+            }
+            c.g[A0][0] = c.g[SP][0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c30));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+            c.g[A2][0] = c.lw(c.g[V0][0] as u32);
+            call_ptr(c, 0x0041_7828, 0x0023_31d0)?; // sprintf
+            c.g[A1][0] = 0x300_0000;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A1][0] |= 0x100;
+            call_ptr(c, 0x003e_2190, 0x0023_31e0)?; // FILE_loadpackz
+            c.g[T2][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+            c.g[A2][0] = 0x48_0000;
+            c.g[V1][0] = c.lw((c.g[T2][0] as u32).wrapping_add(0x10d8));
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x4238));
+            c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.g[A3][0] = 0;
+            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x170));
+            c.g[T0][0] = 1;
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x174));
+            c.g[T1][0] = 0xffff_ffff_ffff_ffff;
+            let target = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0023_3218)?; // loadTex
+            let no_data = c.g[S0][0] == 0;
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+            if !no_data {
+                c.cycles += 2;
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0031_7e98, 0x0023_3228)?; // EA_MemFree
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 2;
+            call_ptr(c, 0x0031_68e8, 0x0023_3234)?; // cBigFile close
+            frame.restore(c, S0, 0x100);
+        }
+        c.cycles += 10;
+        frame.restore(c, S1, 0xf0);
+        frame.restore(c, S2, 0xe0);
+        frame.restore(c, S3, 0xd0);
+        frame.restore(c, S4, 0xc0);
+        frame.restore(c, S5, 0xb0);
+        frame.restore(c, S6, 0xa0);
+        frame.restore(c, S7, 0x90);
+        frame.restore_ra(c, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cGameLoadScreen_Load(cGameLoadScreen* self)` (0x232e20): builds the
+/// load screen UI ("data/ui/gl"). Asks the graphics manager (vtable `+0x160`,
+/// argument 0x100) to prepare, allocates the 0x70-byte UI engine (`+0xc`) and
+/// loads the file into it, hands it the world's fonts and locale (`+0x88`,
+/// `+0x8c`), gives it a fresh 0x1c-byte input node, and pushes the first load
+/// state: the lodge state (0x48 bytes) when the lodge flag (`gp - 0x1718`) is
+/// set, or the race has no path and the mode is 5 or 6; the conquer state
+/// (0x48 bytes, clears `gp - 0x1714`) when there is no path and the mode is
+/// not 5/6; otherwise the 0x4c-byte picture state, which loads the pictures
+/// (`cGameLoadScreen_LoadPictures`).
+pub fn c_game_load_screen_load(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 56;
+        let frame = Frame::open(c, 0x40);
+        c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+        frame.save(c, S2, 0x10);
+        c.g[A1][0] = 0x100;
+        frame.save(c, S0, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x20);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x10d8));
+        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x160));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x164));
+        let target = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0023_2e54)?; // graphics manager vtable call
+        call_ptr(c, 0x0014_dc80, 0x0023_2e5c)?; // cBE_getBE
+        c.g[A1][0] = 0;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x0014_dd58, 0x0023_2e68)?; // cBE_getInterface(0)
+        c.g[A1][0] = 0x48_0000;
+        c.g[A2][0] = 0x100;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4968));
+        c.g[A3][0] = 0;
+        c.g[A0][0] = 0x70;
+        call_ptr(c, 0x0031_7d70, 0x0023_2e80)?; // cMemMan_alloc (UIEngine)
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x0039_7b08, 0x0023_2e88)?; // UIEngine ctor
+        c.g[A1][0] = 0x48_0000;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x42d8));
+        c.sw((c.g[S2][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+        call_ptr(c, 0x0039_7c40, 0x0023_2e9c)?; // UIEngine_loadFile("data/ui/gl")
+        c.g[T0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        c.g[A1][0] = 0x48_0000;
+        c.g[T1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+        c.g[A0][0] = 0x1c;
+        c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x88));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4610));
+        c.g[A2][0] = 0x100;
+        c.g[A3][0] = 0;
+        c.sw((c.g[T1][0] as u32).wrapping_add(8), c.g[V0][0]);
+        c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x8c));
+        c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
+        call_ptr(c, 0x0031_7d70, 0x0023_2ed0)?; // cMemMan_alloc (input node)
+        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+        c.g[V1][0] = 0x47_0000;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x2e30));
+        c.sb((c.g[V0][0] as u32).wrapping_add(4), 0);
+        c.sw((c.g[V0][0] as u32).wrapping_add(8), c.g[V1][0]);
+        let node = c.g[V0][0] as u32;
+        for off in [0x18u32, 0xc, 0x10, 0x14] {
+            c.sw(node.wrapping_add(off), 0);
+        }
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1718));
+        let lodge_flag = c.g[V1][0] != 0;
+        c.sw((c.g[A0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+        // 0: lodge state, 1: conquer state, 2: picture state
+        let state;
+        if lodge_flag {
+            state = 0;
+        } else {
+            c.cycles += 6;
+            c.g[V1][0] = 0x53_0000;
+            c.g[A0][0] = c.g[V1][0];
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x5bc8));
+            c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0x49));
+            if c.g[V0][0] != 0 {
+                c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5bc8));
+                state = 3;
+            } else {
+                c.cycles += 4;
+                c.g[V1][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0x48));
+                c.g[V0][0] = 5;
+                let mode5 = c.g[V1][0] == c.g[V0][0];
+                c.g[V0][0] = 6;
+                if mode5 {
+                    state = 0;
+                } else {
+                    c.cycles += 2;
+                    let not6 = c.g[V1][0] != c.g[V0][0];
+                    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5bc8));
+                    state = if not6 { 3 } else { 0 };
+                }
+            }
+        }
+        let mut state = state;
+        if state == 3 {
+            // other: conquer state unless a path is set or the mode is 5/6
+            c.cycles += 3;
+            c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0x49));
+            let path = c.g[V0][0] != 0;
+            c.g[A0][0] = 0;
+            if !path {
+                c.cycles += 4;
+                c.g[V1][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0x48));
+                c.g[V0][0] = c.g[V1][0] ^ 5;
+                let mode5 = c.g[V0][0] == 0;
+                c.g[V0][0] = c.g[V1][0] ^ 6;
+                if !mode5 {
+                    c.cycles += 1;
+                    c.g[A0][0] = (0 < c.g[V0][0]) as u64;
+                }
+            }
+            c.cycles += 2;
+            c.g[A1][0] = 0x48_0000;
+            state = if c.g[A0][0] != 0 { 1 } else { 2 };
+        }
+        match state {
+            0 => {
+                c.cycles += 16;
+                c.g[A1][0] = 0x48_0000;
+                c.g[A0][0] = 0x48;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x42c8));
+                c.g[A2][0] = 0;
+                c.g[A3][0] = 0;
+                call_ptr(c, 0x0031_7d70, 0x0023_2f48)?; // cMemMan_alloc (lodge state)
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                c.g[A0][0] = c.g[S0][0];
+                c.g[S1][0] = c.g[S0][0];
+                call_ptr(c, 0x0039_e2a0, 0x0023_2f5c)?; // load item ctor
+                c.g[V1][0] = 0x48_0000;
+                c.sw((c.g[GP][0] as u32).wrapping_sub(0x1718), 0);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x3788));
+                c.sw((c.g[S0][0] as u32).wrapping_add(8), c.g[V1][0]);
+            }
+            1 => {
+                c.cycles += 15;
+                c.g[A0][0] = 0x48;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x42b0));
+                c.g[A2][0] = 0;
+                c.g[A3][0] = 0;
+                call_ptr(c, 0x0031_7d70, 0x0023_2fac)?; // cMemMan_alloc (conquer state)
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                c.g[A0][0] = c.g[S0][0];
+                c.g[S1][0] = c.g[S0][0];
+                call_ptr(c, 0x0039_e2a0, 0x0023_2fc0)?; // load item ctor
+                c.g[V1][0] = 0x48_0000;
+                c.sw((c.g[GP][0] as u32).wrapping_sub(0x1714), 0);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x3858));
+                c.sw((c.g[S0][0] as u32).wrapping_add(8), c.g[V1][0]);
+            }
+            _ => {
+                c.cycles += 19;
+                c.g[A1][0] = 0x48_0000;
+                c.g[A0][0] = 0x4c;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4298));
+                c.g[A2][0] = 0;
+                c.g[A3][0] = 0;
+                call_ptr(c, 0x0031_7d70, 0x0023_2fec)?; // cMemMan_alloc (picture state)
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+                c.g[A0][0] = c.g[S0][0];
+                c.g[S1][0] = c.g[S0][0];
+                call_ptr(c, 0x0039_e2a0, 0x0023_3000)?; // load item ctor
+                c.g[V1][0] = 0x48_0000;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), 0);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x36b8));
+                c.g[A0][0] = c.g[S2][0];
+                c.sw((c.g[S0][0] as u32).wrapping_add(8), c.g[V1][0]);
+                c.g[A1][0] = 0;
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x48), c.g[S2][0]);
+                call_ptr(c, 0x0023_3048, 0x0023_3020)?; // cGameLoadScreen_LoadPictures
+            }
+        }
+        c.cycles += 10;
+        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
+        call_ptr(c, 0x0039_f400, 0x0023_3030)?; // UIStateStack_push
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
 
     use crate::difftest::fakes;
     use crate::difftest::fakes::machine;
@@ -1734,6 +2137,78 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(r.next_u32() & 0xffff);
                 c.bus.write32(GAME_GP - 0x51b8, r.next_u32());
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::intersect::riderspheretree::tests::OC430_CTRL;
+    pub(crate) use crate::game::intersect::riderspheretree::tests::OC430_MAGIC;
+    pub(crate) use crate::game::luno::lunovm::tests::oc428_w;
+
+    /// The BELibrary dummy (`gp - 0x1f04`): without it a library lookup in a
+    /// real callee loads from disc forever.
+    pub(crate) fn oc428_belib(c: &mut Cpu) {
+        oc428_w(c, GAME_GP - 0x1f04, DATA + 0x8000);
+    }
+
+    /// `cGameLoadScreen_TryExit` against the generated body: the progress
+    /// global at 100% (the exit request runs) or not.
+    #[test]
+    fn c_game_load_screen_try_exit_matches() {
+        crate::difftest::check(
+            ee::s06::f_002332c8__generated,
+            c_game_load_screen_try_exit,
+            60,
+            &|c, seed| {
+                machine(c, seed, 0x2332c8, 1);
+                oc428_belib(c);
+                c.g[A0][0] = DATA as u64;
+                oc428_w(c, GAME_GP + 0x2a74, DATA + 0x100);
+                let progress: f32 = if seed % 2 == 0 { 100.0 } else { 1.0 };
+                oc428_w(c, DATA + 0x100 + 0x38, progress.to_bits());
+            },
+        );
+    }
+
+    /// Fixture for `cGameLoadScreen_Load`: the graphics manager (`gp - 0x854`)
+    /// with a vtable whose slot `+0x160` is a fake, the world (`gp - 0x848`),
+    /// the lodge flag (`gp - 0x1718`) and the race setup (no path, mode 0..7).
+    /// The picture state (which runs the real `LoadPictures`) is never chosen:
+    /// that needs a path set without the lodge flag.
+    pub(crate) fn oc430_load_screen_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        let gp = c.g[GP][0] as u32;
+        let (grman, vt, world) = (DATA + 0x1000, DATA + 0x3000, DATA + 0x4000);
+        c.bus.write32(gp - 0x854, grman);
+        c.bus.write32(grman + 0x10d8, vt);
+        c.bus.write16(vt + 0x160, (r.next_u32() as i16 & !3) as u16);
+        c.bus.write32(vt + 0x164, fakes::FAKE);
+        c.bus.write32(gp - 0x848, world);
+        c.bus.write32(world + 0x88, r.next_u32());
+        c.bus.write32(world + 0x8c, r.next_u32());
+        c.bus
+            .write32(gp - 0x1718, if seed % 3 == 0 { 1 } else { 0 });
+        c.bus.write8(0x0053_5bc8 + 0x49, 0);
+        c.bus.write8(0x0053_5bc8 + 0x48, (r.next_u32() % 8) as u8);
+        c.g[A0][0] = sx(DATA + 0x5000);
+    }
+
+    /// `cGameLoadScreen_Load`: the lodge state (flag, or mode 5/6) and the
+    /// conquer state (other modes); the allocator, constructors, the file load,
+    /// the UI push and the graphics manager's method are fakes.
+    #[test]
+    fn c_game_load_screen_load_matches() {
+        oc430_install_fakes();
+        covered(
+            ee::s06::f_00232e20__generated,
+            c_game_load_screen_load,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0023_2e20, 10);
+                c.bus.write32(OC430_CTRL, OC430_MAGIC);
+                c.pc = 0x0023_2e20;
+                oc430_load_screen_fixture(c, &mut r, seed);
             },
         );
     }

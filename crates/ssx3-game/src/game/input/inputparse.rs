@@ -202,6 +202,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         input_parser_parse_function1,
         "InputParser_ParseFunction1",
     ),
+    (
+        0x0032_6078,
+        input_preproc_process_file,
+        "InputPreproc_ProcessFile",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8773,6 +8778,104 @@ pub fn input_parser_parse_function1(c: &mut Cpu) {
     })
 }
 
+/// `void InputPreproc_ProcessFile(InputPreProcessor* self, char* path, char* name)`: formats the file name, loads the file, emits the first line marker, preprocesses it text chunk by chunk and frees the buffer.
+/// (`InputPreproc_ProcessFile`, 0x00326078)
+pub fn input_preproc_process_file(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 34;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x110));
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0xd0));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0xf0));
+        c.g[S3][0] = c.g[A1][0];
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0xe0));
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S2][0] = c.g[A2][0];
+        c.g[A1][0] = 0x4a0000;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x100));
+        c.g[A0][0] = c.g[SP][0];
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.g[A3][0] = c.g[S2][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0xb0), c.g[RA][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3fa0));
+        c.g[A2][0] = c.g[S3][0];
+        call_ptr(c, 0x00417828, 0x003260b8)?;
+        c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa4));
+        c.g[A2][0] = 0u64;
+        call_ptr(c, 0x003e1a10, 0x003260cc)?;
+        c.g[S4][0] = c.g[S0][0];
+        c.g[V1][0] = 0x1;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S0][0];
+        c.sw((c.g[SP][0] as u32).wrapping_add(0xa8), c.g[V0][0]);
+        c.sw((c.g[SP][0] as u32).wrapping_add(0xac), c.g[V1][0]);
+        c.sw((c.g[SP][0] as u32).wrapping_add(0xa0), c.g[V0][0]);
+        Callee {
+            addr: 0x00326478,
+            f: ee::s10::InputPreproc_NextChar,
+        }
+        .call(c, 0x003260ec)?;
+        c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xac));
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[SP][0];
+        Callee {
+            addr: 0x00326430,
+            f: ee::s10::InputPreproc_EmitLineMarker,
+        }
+        .call(c, 0x003260fc)?;
+        c.g[A0][0] = c.g[S1][0];
+        'l_326100: loop {
+            c.cycles += 6;
+            c.g[A1][0] = c.g[S4][0];
+            c.g[A2][0] = c.g[S3][0];
+            c.g[A3][0] = c.g[S2][0];
+            Callee {
+                addr: 0x00326150,
+                f: ee::s10::InputPreproc_ProcessText,
+            }
+            .call(c, 0x00326110)?;
+            let t = c.g[V0][0] != 0u64;
+            c.g[A0][0] = c.g[S1][0];
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x00326100);
+                }
+                continue 'l_326100;
+            } else {
+                'b_326130: {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xa0));
+                    let t = c.g[A0][0] == 0u64;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x100));
+                    if t {
+                        break 'b_326130;
+                    } else {
+                        c.cycles += 3;
+                        Callee {
+                            addr: 0x00317e98,
+                            f: ee::s10::EA_MemFree,
+                        }
+                        .call(c, 0x0032612c)?;
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x100));
+                        break 'b_326130;
+                    }
+                }
+                c.cycles += 7;
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0xf0));
+                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0xe0));
+                c.lq(19, (c.g[SP][0] as u32).wrapping_add(0xd0));
+                c.lq(20, (c.g[SP][0] as u32).wrapping_add(0xc0));
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0xb0));
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x110));
+                c.pc = t;
+                return Ok(());
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11055,6 +11158,38 @@ pub(crate) mod tests {
                 };
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(op);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::be::belibrary::tests::oc431_force;
+    pub(crate) use crate::game::be::belibrary::tests::oc431_install;
+    pub(crate) use crate::game::be::belibrary::tests::oc431_machine;
+
+    pub(crate) use crate::game::be::belibrary::tests::OC431_BASE;
+
+    /// `InputPreproc_ProcessFile`: the name is formatted (fake `sprintf`), the
+    /// file size query finds no file (queue fakes), then `ProcessText` (fake)
+    /// returns nonzero 0 to 2 times and then 0.
+    #[test]
+    fn input_preproc_process_file_matches() {
+        oc431_install();
+        covered(
+            ee::s10::f_00326078__generated,
+            input_preproc_process_file,
+            100,
+            &|c, seed| {
+                let _ = oc431_machine(c, seed, 0x326078, 8, 0x0032_6078);
+                c.g[A0][0] = (OC431_BASE + 0x100) as u64;
+                c.g[A1][0] = (OC431_BASE + 0x200) as u64;
+                c.g[A2][0] = (OC431_BASE + 0x300) as u64;
+                // Fake calls: 0 sprintf, 1 queue open, 2 service queue, 3 next
+                // char, 4 line marker, 5.. process text.
+                let more = seed % 3;
+                for k in 0..more {
+                    oc431_force(c, 5 + k, 1);
+                }
+                oc431_force(c, 5 + more, 0);
             },
         );
     }

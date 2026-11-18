@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -20,6 +21,7 @@ pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw;
 pub(crate) use crate::game::render::lightman::off;
 pub(crate) use crate::game::render::lightman::Oc49Mem;
+pub(crate) use crate::game::scripter::ssxscriptengine::oc428_at;
 pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw;
 use crate::guest::Addr;
 use ssx3_ee as ee;
@@ -67,6 +69,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0022_27d0, luno_vm_execute, "LunoVM_Execute"),
     (0x0022_5338, c_luno_table_set, "cLunoTable_Set"),
     (0x0022_4e50, cluno_table_alloc, "cLunoTable_Alloc"),
+    (0x0022_5248, c_luno_table_find, "cLunoTable_Find"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4873,6 +4876,134 @@ pub fn cluno_table_alloc(c: &mut Cpu) {
     })
 }
 
+pub(crate) const LUNO_NODE_KEY_TYPE: u32 = 0x8;
+
+/// `cLunoValue* cLunoTable_Find(cLunoVM* self, cLunoKey* key)` (0x225248):
+/// hash lookup. The bucket is `nodes[key.word0 % modulus]`; if its value is
+/// non-nil, walk the chain for a node whose key matches (same type and
+/// word; an int key matches a float node by value and a float key an int
+/// node after truncation). Returns the node's value slot or `luno_gLunoNil`.
+pub fn c_luno_table_find(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[A2][0] = c.lw(c.g[A0][0] as u32);
+    c.g[A0][0] = c.lw(c.g[A1][0] as u32);
+    c.g[V0][0] = c.lw(oc428_at(c.g[A2][0], LUNO_TABLE_MODULUS));
+    c.divu(0, A0, V0);
+    'nil: {
+        c.cycles += 7;
+        c.g[A0][0] = c.lw(oc428_at(c.g[A2][0], LUNO_TABLE_NODES));
+        c.g[V1][0] = c.hi[0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 5);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[V0][0] = c.lw(oc428_at(c.g[A0][0], LUNO_NODE_VALUE_TYPE));
+        let empty = c.g[V0][0] == 0;
+        c.g[T0][0] = 2;
+        if empty {
+            break 'nil;
+        }
+        c.cycles += 5;
+        c.g[A2][0] = c.lw(oc428_at(c.g[A1][0], LUNO_NODE_KEY_TYPE));
+        c.g[A3][0] = 1;
+        c.g[T1][0] = 3;
+        c.g[V0][0] = c.lw(oc428_at(c.g[A0][0], LUNO_NODE_KEY_TYPE));
+        'walk: loop {
+            // `v0` = this node's key type, `a2` the key's, `a3` = 1, `t0` = 2,
+            // `t1` = 3. The comparison leaves a result in `v0`: 1 = match.
+            'matched: {
+                'xor_words: {
+                    'same_type: {
+                        c.cycles += 2;
+                        if c.g[A2][0] == c.g[V0][0] {
+                            c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                            break 'same_type;
+                        }
+                        'int_key_float_node: {
+                            c.cycles += 2;
+                            if c.g[V0][0] != c.g[T0][0] {
+                                break 'int_key_float_node;
+                            }
+                            c.cycles += 2;
+                            if c.g[A2][0] != c.g[A3][0] {
+                                break 'int_key_float_node;
+                            }
+                            // Float node, int key: compare as floats.
+                            c.cycles += 7;
+                            c.lwc1(1, c.g[A1][0] as u32);
+                            c.cvt_s_w(1, 1);
+                            c.lwc1(0, c.g[A0][0] as u32);
+                            c.c_eq_s(0, 1);
+                            let eq = c.fcc();
+                            c.g[V0][0] = 1;
+                            if eq {
+                                break 'matched;
+                            }
+                            c.cycles += 2;
+                            c.g[V0][0] = 0;
+                            break 'matched;
+                        }
+                        'float_key_int_node: {
+                            c.cycles += 2;
+                            if c.g[V0][0] != c.g[A3][0] {
+                                break 'float_key_int_node;
+                            }
+                            c.cycles += 2;
+                            if c.g[A2][0] != c.g[T0][0] {
+                                break 'float_key_int_node;
+                            }
+                            // Int node, float key: truncate the key.
+                            c.cycles += 5;
+                            c.lwc1(0, c.g[A1][0] as u32);
+                            c.cvt_w_s(1, 0);
+                            c.mfc1(V1, 1);
+                            c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                            break 'xor_words;
+                        }
+                        c.cycles += 2;
+                        if c.g[V0][0] != c.g[T1][0] {
+                            c.g[V0][0] = 0;
+                            break 'matched;
+                        }
+                        c.cycles += 2;
+                        if c.g[A2][0] != c.g[A3][0] {
+                            c.g[V0][0] = 0;
+                            break 'matched;
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                    }
+                    // Same key type: compare the words.
+                    c.cycles += 1;
+                    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+                }
+                c.cycles += 2;
+                c.g[V0][0] ^= c.g[V1][0];
+                c.g[V0][0] = (c.g[V0][0] < 1) as u64;
+            }
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                c.g[V0][0] = sx(oc428_at(c.g[A0][0], LUNO_NODE_VALUE));
+                ret(c);
+                return;
+            }
+            c.g[A0][0] = c.lw(oc428_at(c.g[A0][0], LUNO_NODE_NEXT));
+            c.cycles += 2;
+            if c.g[A0][0] == 0 {
+                break 'nil;
+            }
+            c.g[V0][0] = c.lw(oc428_at(c.g[A0][0], LUNO_NODE_KEY_TYPE));
+            if event_due(c) {
+                deliver_event_here(c, 0x0022_5290);
+            }
+            continue 'walk;
+        }
+    }
+    c.cycles += 3;
+    c.g[V0][0] = 0x4d_0000;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x6f68));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5786,6 +5917,74 @@ pub(crate) mod tests {
                 c.g[A0][0] = (DATA + 0x100) as u64;
                 c.g[A1][0] = [0u64, 1, 2, 3, 6][(seed % 5) as usize];
             },
+        );
+    }
+
+    use crate::difftest::scramble;
+
+    /// A 32-bit word of test data.
+    pub(crate) fn oc428_w(c: &mut Cpu, a: u32, v: u32) {
+        c.bus.write32(a, v);
+    }
+
+    /// One `cLunoTable_Find` fixture: a table of `m` buckets in `DATA +
+    /// 0x1000`, each with a chain of up to 3 nodes; keys of every type pair
+    /// (equal types, int key / float node, float key / int node, type 3,
+    /// others), some matching in value, some not; some empty buckets.
+    pub(crate) fn oc428_luno_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x225248 ^ (seed as u64) << 4);
+        scramble(c, &mut r);
+        let (vm, table, nodes, key) = (DATA + 0x100, DATA + 0x200, DATA + 0x1000, DATA + 0x300);
+        let m = 1 + r.next_u32() % 4;
+        c.g[A0][0] = sx(vm);
+        c.g[A1][0] = sx(key);
+        oc428_w(c, vm, table);
+        oc428_w(c, table + LUNO_TABLE_MODULUS, m);
+        oc428_w(c, table + LUNO_TABLE_NODES, nodes);
+        let key_type = [1u32, 2, 3, 1, 2, 0, 5][(r.next_u32() % 7) as usize];
+        let small = r.next_u32() % 6;
+        let key_word = if key_type == 2 {
+            (small as f32).to_bits().wrapping_add(r.next_u32() % 2)
+        } else {
+            small
+        };
+        oc428_w(c, key, key_word);
+        oc428_w(c, key + 8, key_type);
+        let bucket = key_word % m;
+        // Chain: the bucket node, then up to two spare nodes.
+        let mut node = nodes + bucket * 0x20;
+        let len = 1 + r.next_u32() % 3;
+        for i in 0..len {
+            let node_type = [1u32, 2, 3, 1, 2, 0, 5][(r.next_u32() % 7) as usize];
+            let word = match r.next_u32() % 4 {
+                0 => small,
+                1 => (small as f32).to_bits(),
+                2 => key_word,
+                _ => r.next_u32(),
+            };
+            let value_type = if seed % 9 == 0 && i == 0 {
+                0
+            } else {
+                1 + r.next_u32() % 4
+            };
+            oc428_w(c, node, word);
+            oc428_w(c, node + LUNO_NODE_KEY_TYPE, node_type);
+            oc428_w(c, node + LUNO_NODE_VALUE, r.next_u32());
+            oc428_w(c, node + LUNO_NODE_VALUE_TYPE, value_type);
+            let next = nodes + (m + i) * 0x20;
+            oc428_w(c, node + LUNO_NODE_NEXT, if i + 1 < len { next } else { 0 });
+            node = next;
+        }
+    }
+
+    /// `cLunoTable_Find` against the generated body.
+    #[test]
+    fn c_luno_table_find_matches() {
+        check(
+            ee::s05::f_00225248__generated,
+            c_luno_table_find,
+            600,
+            &oc428_luno_setup,
         );
     }
 }

@@ -51,6 +51,7 @@ pub(crate) use crate::game::main::gamemode::low as low_2;
 pub(crate) use crate::game::main::gamemode::lw_r;
 pub(crate) use crate::game::main::gamemode::sp_2;
 pub(crate) use crate::game::main::gamemode::sw_r;
+pub(crate) use crate::game::main::ssxapp::oc429_at;
 pub(crate) use crate::game::movie::movieplayer::add32;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::object::deadfadenode::ctor_with_vtable;
@@ -317,6 +318,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ParentModifier_UpdateTransform",
     ),
     (0x0035_7538, magnet_modifier_v21, "MagnetModifier_v21"),
+    (
+        0x0035_5b30,
+        mod_obj_add_multi_spline_modifier_2,
+        "ModObj_AddMultiSplineModifier",
+    ),
+    (
+        0x0035_7ae8,
+        multi_particle_man_add_instance,
+        "MultiParticleMan_AddInstance",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5299,10 +5310,71 @@ pub fn magnet_modifier_v21(c: &mut Cpu) {
     })
 }
 
+/// `void MultiParticleMan_AddInstance(MultiParticleMan* self, int idx, int
+/// arg)` (0x357ae8): forward to `MultiParticle_AddInstance(self->particles[idx],
+/// arg)`.
+pub fn multi_particle_man_add_instance(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(oc429_at(c.g[A0][0], c.g[A1][0] as u32));
+        c.g[A1][0] = c.g[A2][0];
+        c.g[A0][0] = c.lw(c.g[A0][0] as u32);
+        call_ptr(c, 0x0035_81b8, 0x0035_7b04)?; // MultiParticle_AddInstance
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// Ported but not registered (no bounded differential fixture; see each doc):
+// 0x00325f48 InputPreproc_Run (input_preproc_run), 0x002355c0
+// GameStateReset_Enter (game_state_reset_enter), 0x00233048
+// cGameLoadScreen_LoadPictures (c_game_load_screen_load_pictures), 0x0022d6c8
+// SectionMan_OnEventTrigger (section_man_on_event_trigger), 0x00226900
+// SSXApp_Init (ssx_app_init).
+
+/// `void ModObj_AddMultiSplineModifier(cMoveNode* self, void* desc)` (0x355b30):
+/// allocates an 0x58-byte `MultiSplineModifier` (tag string at 0x48e9e8, flags
+/// 0x20000000), constructs it from `desc` and the node's instance (`self+0x18`),
+/// and installs it as the node's transform modifier.
+pub fn mod_obj_add_multi_spline_modifier_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x30);
+        c.g[A3][0] = 0;
+        frame.save(c, S1, 0x10);
+        c.g[A2][0] = 0x2000_0000;
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A1][0] = 0x49_0000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x58;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1618));
+        call_ptr(c, 0x0031_7d70, 0x0035_5b60)?; // cMemMan_alloc
+        c.g[A2][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x18)).lw(c);
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x0035_9f88, 0x0035_5b70)?; // MultiSplineModifier_ctor
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x0035_54b0, 0x0035_5b7c)?; // ModObj_SetTransformModifier
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
 
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
@@ -8452,6 +8524,55 @@ pub(crate) mod tests {
                 }
                 let quad = [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()];
                 crate::difftest::put_vec(c, MAGNET_CONTACT_INIT_QUAD, quad);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::intersect::riderspheretree::tests::OC430_CTRL;
+    pub(crate) use crate::game::intersect::riderspheretree::tests::OC430_MAGIC;
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_machine;
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_w;
+
+    pub(crate) use crate::game::main::ssxapp::tests::OC429_FX;
+
+    /// `MultiParticleMan_AddInstance`: the callee is a fake (any call can unwind).
+    #[test]
+    fn multi_particle_man_add_instance_matches() {
+        covered(
+            ee::s11::f_00357ae8__generated,
+            multi_particle_man_add_instance,
+            40,
+            &|c, seed| {
+                let mut r = oc429_machine(c, seed, 0x357ae8, 1, 0x0035_7ae8);
+                let this = OC429_FX + 0x400;
+                for i in 0..8u32 {
+                    oc429_w(c, this + 4 * i, r.next_u32());
+                }
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (r.next_u32() % 8) as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// `ModObj_AddMultiSplineModifier` against the generated body; the
+    /// allocator, the constructor and the setter are gated fakes (every call's
+    /// registers are logged and compared, some calls unwind).
+    #[test]
+    fn mod_obj_add_multi_spline_modifier_matches() {
+        oc430_install_fakes();
+        covered(
+            ee::s11::f_00355b30__generated,
+            mod_obj_add_multi_spline_modifier_2,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_5b30, 3);
+                c.bus.write32(OC430_CTRL, OC430_MAGIC);
+                c.pc = 0x0035_5b30;
+                let node = DATA + 0x1000;
+                c.bus.write32(node + 0x18, r.next_u32());
+                c.g[A0][0] = sx(node);
+                c.g[A1][0] = sx(DATA + 0x2000 + (r.next_u32() & 0xff0));
             },
         );
     }

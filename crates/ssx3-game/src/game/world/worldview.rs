@@ -22,6 +22,7 @@ pub(crate) use crate::game::fe::festatetrophyroom::r;
 pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::input::inputparse::o406_lw;
 pub(crate) use crate::game::input::inputparse::o406_sw;
+pub(crate) use crate::game::main::ssxapp::oc429_at;
 pub(crate) use crate::game::object::splinemodifier::lwc1_r;
 pub(crate) use crate::game::object::splinemodifier::swc1_r;
 pub(crate) use crate::game::render::particle::add32;
@@ -166,6 +167,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x003a_bfc0,
         c_ps2_chunk_resolve_relocate_mesh_dma_part,
         "cPS2ChunkResolve_RelocateMeshDmaPart",
+    ),
+    (
+        0x003a_98c8,
+        world_cache_streamer_request_section,
+        "cWorldCache_StreamerRequestSection",
     ),
 ];
 
@@ -4110,6 +4116,92 @@ pub fn c_ps2_chunk_resolve_relocate_mesh_dma_part(c: &mut Cpu) {
     })
 }
 
+/// `bool cWorldCache::StreamerRequestSection(cWorldCache* self, uint idx,
+/// float value)` (0x3a98c8, `a1 = idx`, `f12 = value`): record `value` for
+/// section `idx` (entries of 8 bytes at `self + 0x14`: state, value) when
+/// the section table (`self + 4`, count at `+8`) has the index, and advance
+/// the state through the jump table at `0x494f10`: 0 -> 1, 3 -> 5, 4 -> not
+/// accepted (returns 0), the other states unchanged. Returns 1 otherwise.
+/// A leaf with resume entries (the generated `__entries` body).
+pub fn world_cache_streamer_request_section(c: &mut Cpu) {
+    if c.pc != 0x003a_98c8 {
+        return ee::s13::f_003a98c8__generated(c);
+    }
+    'accepted: {
+        c.cycles += 4;
+        c.g[A2][0] = c.g[A0][0];
+        c.g[V0][0] = c.lw(oc429_at(c.g[A2][0], 0x4));
+        if c.g[V0][0] == 0 {
+            break 'accepted;
+        }
+        c.cycles += 4;
+        c.g[V0][0] = c.lw(oc429_at(c.g[V0][0], 0x8));
+        c.g[V0][0] = (c.g[A1][0] < c.g[V0][0]) as u64;
+        let out_of_range = c.g[V0][0] == 0;
+        c.g[A0][0] = sx((c.g[A1][0] as u32) << 3);
+        if out_of_range {
+            break 'accepted;
+        }
+        c.cycles += 9;
+        c.g[V1][0] = sx(oc429_at(c.g[A2][0], 0x14));
+        c.g[V0][0] = sx(oc429_at(c.g[A2][0], c.g[A0][0] as u32));
+        c.g[A1][0] = c.g[V1][0];
+        c.swc1(12, oc429_at(c.g[V0][0], 0x18));
+        c.g[V1][0] = sx(oc429_at(c.g[V1][0], c.g[A0][0] as u32));
+        c.g[V1][0] = c.lw(c.g[V1][0] as u32);
+        c.g[V0][0] = (c.g[V1][0] < 7) as u64;
+        let bad_state = c.g[V0][0] == 0;
+        c.g[A3][0] = c.g[A0][0];
+        if bad_state {
+            break 'accepted;
+        }
+        c.cycles += 7;
+        c.g[V0][0] = 0x49_0000;
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V0][0] = sx(oc429_at(c.g[V0][0], 0x4f10));
+        c.g[V1][0] = sx(oc429_at(c.g[V1][0], c.g[V0][0] as u32));
+        c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+        let target = c.g[A0][0] as u32;
+        match target {
+            // state 0: becomes 1.
+            0x003a_9928 => {
+                c.cycles += 4;
+                c.g[V1][0] = sx(oc429_at(c.g[A1][0], c.g[A3][0] as u32));
+                c.g[V0][0] = 1;
+                let ra = c.g[RA][0] as u32;
+                c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                c.pc = ra;
+                return;
+            }
+            // state 3: becomes 5.
+            0x003a_9938 => {
+                c.cycles += 4;
+                c.g[V1][0] = sx(oc429_at(c.g[A1][0], c.g[A3][0] as u32));
+                c.g[V0][0] = 5;
+                c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                break 'accepted;
+            }
+            // state 4: refused.
+            0x003a_9948 => {
+                c.cycles += 2;
+                let ra = c.g[RA][0] as u32;
+                c.g[V0][0] = 0;
+                c.pc = ra;
+                return;
+            }
+            0x003a_9950 => break 'accepted,
+            _ => {
+                c.jump_out(target, 0x003a_98c8, 0x003a_9958);
+                return;
+            }
+        }
+    }
+    c.cycles += 2;
+    let ra = c.g[RA][0] as u32;
+    c.g[V0][0] = 1;
+    c.pc = ra;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6029,6 +6121,55 @@ pub(crate) mod tests {
             c_ps2_chunk_resolve_relocate_mesh_dma_part,
             300,
             &|c, seed| chunk_resolve_setup(c, seed, 0x003a_bfc0, 0x003a_bfc0),
+        );
+    }
+
+    pub(crate) use crate::game::main::ssxapp::tests::OC429_FX;
+
+    /// `cWorldCache_StreamerRequestSection`: no section table, index out of
+    /// range (including an index with garbage in the upper half), every
+    /// state 0..8 (the jump table at `0x494f10` is written as in the game).
+    #[test]
+    fn world_cache_streamer_request_section_matches() {
+        check(
+            ee::s13::f_003a98c8__generated,
+            world_cache_streamer_request_section,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3a98_c800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003a_98c8;
+                for (i, t) in [
+                    0x003a_9928u32,
+                    0x003a_9950,
+                    0x003a_9950,
+                    0x003a_9938,
+                    0x003a_9948,
+                    0x003a_9950,
+                    0x003a_9950,
+                ]
+                .iter()
+                .enumerate()
+                {
+                    c.bus.write32(0x0049_4f10 + 4 * i as u32, *t);
+                }
+                let this = OC429_FX + 0x400;
+                let info = OC429_FX + 0x500;
+                c.bus
+                    .write32(this + 4, if seed % 9 == 0 { 0 } else { info });
+                c.bus.write32(info + 8, 4);
+                for i in 0..5u32 {
+                    c.bus.write32(this + 0x14 + 8 * i, (seed / 3 + i) % 9);
+                    c.bus.write32(this + 0x18 + 8 * i, r.next_u32());
+                }
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = match seed % 7 {
+                    0 => 0xffff_ffff_0000_0001,
+                    6 => 4 + (r.next_u32() % 4) as u64,
+                    n => (n % 4) as u64,
+                };
+                c.f[12] = r.next_u32();
+            },
         );
     }
 }

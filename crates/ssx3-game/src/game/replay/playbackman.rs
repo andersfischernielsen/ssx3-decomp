@@ -110,6 +110,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0026_d760, replay_record_snapshot, "Replay_RecordSnapshot"),
     (0x0026_d818, world_state_write, "WorldState_Write"),
+    (0x0026_c898, playback_man_free_data, "PlaybackMan_FreeData"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1960,10 +1961,118 @@ pub fn world_state_write(c: &mut Cpu) {
     })
 }
 
+/// `void PlaybackMan_FreeData(PlaybackMan* self)` (0x26c898): cancels the
+/// pending async read (`+0x78`, `-1` = none), frees the per-entry buffers
+/// (`+0x58`, `+0x50` entries of 12 bytes: words at `+4` freed and cleared,
+/// `+8` cleared), the entry table, the block at `+0x4c`, and the data block
+/// at `+4` (`delete`); clears the sizes and pointers.
+pub fn playback_man_free_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = 0xffff_ffff_ffff_ffff;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x78));
+        if c.g[A0][0] == c.g[S1][0] {
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x58));
+        } else {
+            c.cycles += 4;
+            call_ptr(c, 0x003d_faf0, 0x0026_c8c8)?; // AsyncFile_Cancel
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x78), c.g[S1][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x58));
+        }
+        c.cycles += 2;
+        if c.g[V0][0] == 0 {
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4c));
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x50));
+            let none = (c.g[V0][0] as i64) <= 0;
+            c.g[S2][0] = 0;
+            if !none {
+                c.cycles += 1;
+                c.g[S1][0] = 0;
+                loop {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x58));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(4));
+                    if c.g[A0][0] == 0 {
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x58));
+                    } else {
+                        c.cycles += 6;
+                        call_ptr(c, 0x0031_7e98, 0x0026_c904)?; // EA_MemFree
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x58));
+                        c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.sw((c.g[V0][0] as u32).wrapping_add(4), 0);
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x58));
+                    }
+                    c.cycles += 7;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sw((c.g[V0][0] as u32).wrapping_add(8), 0);
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x50));
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0026_c8e8);
+                        }
+                        continue;
+                    }
+                    break;
+                }
+            }
+            c.cycles += 3;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x58));
+            if c.g[A0][0] == 0 {
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x58), 0);
+            } else {
+                c.cycles += 3;
+                call_ptr(c, 0x0031_7e98, 0x0026_c944)?; // EA_MemFree
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x58), 0);
+            }
+            c.cycles += 1;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4c));
+        }
+        c.cycles += 2;
+        if c.g[A0][0] == 0 {
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(4));
+        } else {
+            c.cycles += 4;
+            call_ptr(c, 0x0031_7e98, 0x0026_c95c)?; // EA_MemFree
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), 0);
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(4));
+        }
+        c.cycles += 2;
+        let no_data = c.g[A0][0] == 0;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0);
+        if !no_data {
+            c.cycles += 3;
+            call_ptr(c, 0x0031_7e50, 0x0026_c974)?; // operator_delete
+            c.sw((c.g[S0][0] as u32).wrapping_add(4), 0);
+        }
+        c.cycles += 7;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x70), 0);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
 
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
@@ -2913,6 +3022,107 @@ pub(crate) mod tests {
                     c.bus.write32(gp + g, r.next_u32());
                 }
                 c.bus.write32(gp.wrapping_sub(WSW_CAMERA_MAN), r.next_u32());
+            },
+        );
+    }
+
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::schedule;
+
+    use crate::difftest::RA as SENTINEL;
+    pub(crate) use crate::game::intersect::riderspheretree::tests::OC430_CTRL;
+    pub(crate) use crate::game::intersect::riderspheretree::tests::OC430_MAGIC;
+
+    /// Fixture for `PlaybackMan_FreeData`: the manager at `DATA + 0x1000` with
+    /// 0..3 entries of 12 bytes (buffer words zero or not), an entry table,
+    /// a `+0x4c` block and a data block, each present or not. The async
+    /// handle at `+0x78` is `-1` unless `cancel`.
+    pub(crate) fn oc430_playback_fixture(c: &mut Cpu, r: &mut Rng, seed: u32, cancel: bool) {
+        let this = DATA + 0x1000;
+        for k in 0..0x30 {
+            c.bus.write32(this + 4 * k, r.next_u32());
+        }
+        c.bus.write32(
+            this + 0x78,
+            if cancel {
+                r.next_u32() & 0xffff
+            } else {
+                u32::MAX
+            },
+        );
+        let n = (r.next_u32() % 4) as i32 - if seed % 5 == 0 { 2 } else { 0 };
+        c.bus.write32(this + 0x50, n as u32);
+        let table = DATA + 0x2000;
+        c.bus
+            .write32(this + 0x58, if seed % 4 == 0 { 0 } else { table });
+        for k in 0..4 {
+            let blk = if r.next_u32() % 3 == 0 {
+                0
+            } else {
+                r.next_u32()
+            };
+            c.bus.write32(table + 12 * k + 4, blk);
+            c.bus.write32(table + 12 * k + 8, r.next_u32());
+        }
+        c.bus
+            .write32(this + 0x4c, if seed % 3 == 0 { 0 } else { r.next_u32() });
+        c.bus
+            .write32(this + 4, if seed % 7 == 0 { 0 } else { r.next_u32() });
+        c.g[A0][0] = sx(this);
+    }
+
+    /// `PlaybackMan_FreeData` without a pending async read: entry tables of
+    /// 0 / 1..3 entries (or a negative count), the three optional blocks.
+    #[test]
+    fn playback_man_free_data_matches() {
+        oc430_install_fakes();
+        covered(
+            ee::s07::f_0026c898__generated,
+            playback_man_free_data,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0026_c898, 8);
+                c.bus.write32(OC430_CTRL, OC430_MAGIC);
+                c.pc = 0x0026_c898;
+                oc430_playback_fixture(c, &mut r, seed, false);
+            },
+        );
+    }
+
+    /// The same with event delivery at the entry loop's back edge.
+    #[test]
+    fn playback_man_free_data_events_match() {
+        oc430_install_fakes();
+        check_events(
+            ee::s07::f_0026c898__generated,
+            playback_man_free_data,
+            150,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0026_c899, 0);
+                c.bus.write32(OC430_CTRL, OC430_MAGIC);
+                oc430_playback_fixture(c, &mut r, seed | 1, false);
+                let mode = schedule(c, &mut r, seed, 0x0026_c898);
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[RA][0] = SENTINEL as u64;
+                mode
+            },
+        );
+    }
+
+    /// With a pending async read the real `AsyncFile_Cancel` runs (no slot to
+    /// fake): its handle lookup finds nothing in the zeroed tables.
+    #[test]
+    fn playback_man_free_data_cancel_matches() {
+        oc430_install_fakes();
+        check(
+            ee::s07::f_0026c898__generated,
+            playback_man_free_data,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0026_c89a, 0);
+                c.bus.write32(OC430_CTRL, OC430_MAGIC);
+                c.pc = 0x0026_c898;
+                oc430_playback_fixture(c, &mut r, seed, true);
             },
         );
     }

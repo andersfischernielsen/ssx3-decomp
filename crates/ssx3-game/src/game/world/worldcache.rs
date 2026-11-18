@@ -185,6 +185,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         section_allocator_alloc,
         "SectionAllocator_Alloc",
     ),
+    (0x003a_7fc0, world_cache_load, "cWorldCache_Load"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3207,6 +3208,201 @@ pub fn section_allocator_alloc(c: &mut Cpu) {
     })
 }
 
+/// `int cWorldCache_Load(cWorldCache* self, char* name)`: allocates the world memory manager and the shared/section cache tables, loads `<dir>/<name>.sdb`, builds the chunk resolver, then initialises the stream manager and the world view (returns 0 when either fails) and the page map.
+/// (`cWorldCache_Load`, 0x003a7fc0)
+pub fn world_cache_load(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_3a811c: {
+            c.cycles += 76;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xa0));
+            c.g[A3][0] = 0u64;
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[S4][0] = c.g[A1][0];
+            c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S3][0] = c.g[A0][0];
+            c.g[S5][0] = c.g[A2][0];
+            c.g[A1][0] = 0x490000;
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+            c.g[A2][0] = 0u64;
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4e30));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+            c.g[A0][0] = 0x13c;
+            call_ptr(c, 0x00317d70, 0x003a8004)?;
+            c.g[A0][0] = c.g[V0][0];
+            Callee {
+                addr: 0x003a7a20,
+                f: ee::s13::WorldMemman_ctor,
+            }
+            .call(c, 0x003a800c)?;
+            c.g[S2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[S0][0] = 0x4a0000;
+            c.g[S1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x47c0));
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = c.g[S4][0];
+            c.sw((c.g[S3][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+            call_ptr(c, 0x003182d8, 0x003a802c)?;
+            c.g[A2][0] = c.g[S2][0];
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x003186d0, 0x003a803c)?;
+            c.g[A2][0] = 0x4a0000;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x47c8));
+            c.g[A1][0] = c.g[S1][0];
+            call_ptr(c, 0x00318630, 0x003a8050)?;
+            c.g[A0][0] = c.lw(c.g[SP][0] as u32);
+            c.g[A1][0] = 0x2000000;
+            call_ptr(c, 0x003e18c8, 0x003a805c)?;
+            c.g[A0][0] = c.g[SP][0];
+            c.sw(c.g[S3][0] as u32, c.g[V0][0]);
+            c.g[A1][0] = 0x2;
+            call_ptr(c, 0x00318260, 0x003a806c)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 0x2;
+            call_ptr(c, 0x00318260, 0x003a8078)?;
+            c.g[A1][0] = 0x2;
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, 0x00318260, 0x003a8084)?;
+            c.g[V1][0] = c.lw(c.g[S3][0] as u32);
+            c.g[A1][0] = 0x490000;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4e40));
+            c.g[A2][0] = 0u64;
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x50));
+            c.g[A3][0] = 0u64;
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+            c.g[A0][0] = 0xe8;
+            call_ptr(c, 0x00317d70, 0x003a80a8)?;
+            c.g[A1][0] = c.lw(c.g[S3][0] as u32);
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x18));
+            Callee {
+                addr: 0x003a7c88,
+                f: ee::s13::SectionTable_ctor,
+            }
+            .call(c, 0x003a80b8)?;
+            c.sw((c.g[S3][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+            c.g[A1][0] = 0x490000;
+            c.g[V0][0] = c.lw(c.g[S3][0] as u32);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4e50));
+            c.g[A2][0] = 0u64;
+            c.g[A3][0] = 0u64;
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8));
+            c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+            call_ptr(c, 0x00317e30, 0x003a80dc)?;
+            c.sw((c.g[S3][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+            c.g[V0][0] = c.lw(c.g[S3][0] as u32);
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8));
+            let t = c.g[V1][0] == 0u64;
+            c.g[A0][0] = 0u64;
+            if t {
+                break 'b_3a811c;
+            } else {
+                c.cycles += 2;
+                c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+                'l_3a80f8: loop {
+                    c.cycles += 9;
+                    c.g[V0][0] = sx((c.g[A0][0] as u32) << 2);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw(c.g[V0][0] as u32, 0u64);
+                    c.g[V1][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
+                    if c.g[V0][0] != 0u64 {
+                        c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003a80f8);
+                        }
+                        continue 'l_3a80f8;
+                    } else {
+                        break 'b_3a811c;
+                    }
+                }
+            }
+        }
+        'b_3a8184: {
+            'b_3a8180: {
+                c.cycles += 15;
+                Callee {
+                    addr: 0x003aad98,
+                    f: ee::s13::cPS2ChunkResolve_Create,
+                }
+                .call(c, 0x003a8124)?;
+                c.sw((c.g[S3][0] as u32).wrapping_add(0x3e8), c.g[V0][0]);
+                c.g[A1][0] = c.g[S5][0];
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
+                c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+                let t = c.g[A2][0] as u32;
+                c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, t, 0x003a8140)?;
+                c.g[A1][0] = c.g[S4][0];
+                c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x300));
+                c.g[A2][0] = c.g[S3][0];
+                Callee {
+                    addr: 0x003a6e98,
+                    f: ee::s13::cStreamMan_Init,
+                }
+                .call(c, 0x003a8150)?;
+                let t = c.g[V0][0] == 0u64;
+                c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x10));
+                if t {
+                    break 'b_3a8180;
+                } else {
+                    c.cycles += 6;
+                    c.g[A1][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[A2][0] = c.g[S3][0];
+                    Callee {
+                        addr: 0x003a9000,
+                        f: ee::s13::cWorldCache_StreamerAttachSdb,
+                    }
+                    .call(c, 0x003a8164)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    let t = c.g[S0][0] == 0u64;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        break 'b_3a8184;
+                    } else {
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[S3][0];
+                        Callee {
+                            addr: 0x003a82c8,
+                            f: ee::s13::cWorldCache_InitHullSlots,
+                        }
+                        .call(c, 0x003a8178)?;
+                        let t = true;
+                        c.g[V0][0] = c.g[S0][0];
+                        if t {
+                            break 'b_3a8184;
+                        } else {
+                            break 'b_3a8180;
+                        }
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0u64;
+            break 'b_3a8184;
+        }
+        c.cycles += 9;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4638,6 +4834,57 @@ pub(crate) mod tests {
                         c.g[V1][0] = c.g[T1][0] + size as u64;
                     }
                 }
+            },
+        );
+    }
+
+    pub(crate) use crate::game::be::belibrary::tests::oc431_force;
+    pub(crate) use crate::game::be::belibrary::tests::oc431_install;
+    pub(crate) use crate::game::be::belibrary::tests::oc431_machine;
+
+    pub(crate) use crate::game::be::belibrary::tests::OC431_BASE;
+
+    pub(crate) use crate::game::be::belibrary::tests::OC431_PATH;
+
+    /// `cWorldCache_Load`: the allocations and constructors are fakes, the
+    /// file load returns 0 so the header is address 0 (its counts are written
+    /// to the low words), the chunk resolver comes from a forced pointer with
+    /// a vtable, the stream manager init and the sdb attach decide the result
+    /// (0 or the attach's).
+    #[test]
+    fn world_cache_load_matches() {
+        oc431_install();
+        covered(
+            ee::s13::f_003a7fc0__generated,
+            world_cache_load,
+            100,
+            &|c, seed| {
+                let mut r = oc431_machine(c, seed, 0x3a7fc0, 20, 0x003a_7fc0);
+                let (this, nash, table, resolver, rvt) = (
+                    OC431_BASE + 0x100,
+                    OC431_BASE + 0x400,
+                    OC431_BASE + 0x1000,
+                    OC431_BASE + 0x1400,
+                    OC431_BASE + 0x1500,
+                );
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = OC431_PATH as u64;
+                c.g[A2][0] = nash as u64;
+                // Header words at address 0: the section count (8) and the next count (0xc).
+                c.bus.write32(8, r.next_u32() % 3);
+                c.bus.write32(0xc, 0);
+                // Fake calls: 0 alloc, 1 memman ctor, 2-4 strings, 5 queue open,
+                // 6 service queue, 7-9 string dtors, 10 alloc, 11 table ctor,
+                // 12 section table allocation, 13 chunk resolver, 14 its vtable
+                // call, 15 stream init, 16.. hull slots.
+                oc431_force(c, 12, table);
+                oc431_force(c, 13, resolver);
+                c.bus.write32(resolver + 8, rvt);
+                c.bus.write16(rvt + 0x10, (r.next_u32() & 0xfc) as u16);
+                c.bus.write32(rvt + 0x14, FAKE);
+                let init_ok = r.next_u32() % 4 != 0;
+                oc431_force(c, 15, init_ok as u32);
+                oc431_force(c, 16, r.next_u32() % 2);
             },
         );
     }

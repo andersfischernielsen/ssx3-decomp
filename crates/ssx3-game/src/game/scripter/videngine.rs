@@ -3,10 +3,12 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Frame;
 pub(crate) use crate::game::dirtysock::tagsunk::arg;
+pub(crate) use crate::game::scripter::ssxscriptengine::oc428_at;
 pub(crate) use crate::game::sound::bankmonitor::p;
 pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw;
 pub(crate) use crate::game::wscript::wscriptman::sw;
@@ -47,6 +49,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ScriptMovie_TogglePause",
     ),
     (0x0028_3aa0, script_movie_update, "ScriptMovie_Update"),
+    (
+        0x0028_3c58,
+        script_cmd_queue_is_full,
+        "ScriptCmdQueue_IsFull",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -600,6 +607,17 @@ pub fn script_movie_update(c: &mut Cpu) {
     })
 }
 
+/// `ScriptCmdQueue` full-flag offset.
+pub(crate) const SCRIPT_CMD_QUEUE_FULL: u32 = 0x94;
+
+/// `int ScriptCmdQueue_IsFull(ScriptCmdQueue* self)` (0x283c58): the word at
+/// `+0x94`.
+pub fn script_cmd_queue_is_full(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw(oc428_at(c.g[A0][0], SCRIPT_CMD_QUEUE_FULL));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -879,6 +897,19 @@ pub(crate) mod tests {
                     .write32(player, if done { 0 } else { r.next_u32() | 1 });
                 c.g[A0][0] = sx(movie);
             },
+        );
+    }
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::oc428_getter_test;
+
+    /// `ScriptCmdQueue_IsFull` reads `+0x94`.
+    #[test]
+    fn script_cmd_queue_is_full_matches() {
+        oc428_getter_test(
+            ee::s07::f_00283c58__generated,
+            script_cmd_queue_is_full,
+            0x283c58,
+            SCRIPT_CMD_QUEUE_FULL,
         );
     }
 }

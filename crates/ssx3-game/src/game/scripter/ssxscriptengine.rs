@@ -606,6 +606,35 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         script_view_obj_cut_to_shot,
         "ScriptViewObj_CutToShot",
     ),
+    (
+        0x0027_8358,
+        script_engine_load_main_scripts,
+        "ScriptEngine_LoadMainScripts",
+    ),
+    (
+        0x0027_a4a0,
+        script_engine_get_transition_target,
+        "ScriptEngine_GetTransitionTarget",
+    ),
+    (
+        0x0027_b0c0,
+        script_engine_choose_script,
+        "ScriptEngine_ChooseScript",
+    ),
+    (0x0027_c070, script_data_get_info, "ScriptData_GetInfo"),
+    (
+        0x0027_c098,
+        script_cam_get_manual_params,
+        "ScriptCam_GetManualParams",
+    ),
+    (0x0027_c888, script_view_get_params, "ScriptView_GetParams"),
+    (0x0028_1018, script_view_obj_ctor, "ScriptViewObj_ctor"),
+    (
+        0x0028_1400,
+        script_view_obj_deactivate,
+        "ScriptViewObj_Deactivate",
+    ),
+    (0x0028_14f8, script_view_obj_apply, "ScriptViewObj_Apply"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -11289,8 +11318,1218 @@ pub fn script_view_obj_cut_to_shot(c: &mut Cpu) {
     })
 }
 
+/// `base + off` as a 32-bit guest address.
+#[inline(always)]
+pub(crate) fn oc428_at(base: u64, off: u32) -> u32 {
+    (base as u32).wrapping_add(off)
+}
+
+/// `ScriptData::info` offset.
+pub(crate) const SCRIPT_DATA_INFO: u32 = 0x14;
+
+/// `ScriptData* ScriptData_GetInfo(ScriptData* self)` (0x27c070): the word at
+/// `+0x14`.
+pub fn script_data_get_info(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw(oc428_at(c.g[A0][0], SCRIPT_DATA_INFO));
+    ret(c);
+}
+
+/// `ScriptView` parameter block offset.
+pub(crate) const SCRIPT_VIEW_PARAMS: u32 = 0x20;
+
+/// `void* ScriptView_GetParams(ScriptView* self)` (0x27c888): the word at
+/// `+0x20`.
+pub fn script_view_get_params(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw(oc428_at(c.g[A0][0], SCRIPT_VIEW_PARAMS));
+    ret(c);
+}
+
+/// `ScriptCam` manual-camera parameter block offset.
+pub(crate) const SCRIPT_CAM_MANUAL_PARAMS: u32 = 0x20;
+
+/// `void* ScriptCam_GetManualParams(ScriptCam* self)` (0x27c098): the word at
+/// `+0x20`.
+pub fn script_cam_get_manual_params(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw(oc428_at(c.g[A0][0], SCRIPT_CAM_MANUAL_PARAMS));
+    ret(c);
+}
+
+/// `void ScriptViewObj_Apply(ScriptViewObj* self, ScriptView* view, int
+/// flags, int currFrame)` (0x2814f8): apply a script view node. Flags bit 2/3
+/// (0xc): read the view's fields. Bit 2: cut to the shot (`CutToShot`),
+/// unless a type-8 node makes it wait (`+0xec` set, if `+0xf0` is clear and
+/// the view has parameters). Bit 3: with no shot, stop the fade and unbind
+/// both camera slots; otherwise do the pending cut and unbind the slots whose
+/// bit is not in the shots' mask.
+#[allow(unreachable_code)]
+pub fn script_view_obj_apply(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_281688: {
+            'b_281684: {
+                c.cycles += 12;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.g[S2][0] = c.g[A3][0];
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.g[S0][0] = c.g[A1][0];
+                c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.g[S1][0] = c.g[A0][0];
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+                c.g[V0][0] = c.g[S2][0] & 0xc;
+                let t = c.g[V0][0] == 0u64;
+                c.mov_s(20, 12);
+                if t {
+                    break 'b_281684;
+                } else {
+                    'b_2815a0: {
+                        c.cycles += 6;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A1][0] = c.g[SP][0];
+                        Callee {
+                            addr: 0x0027c8e0,
+                            f: ee::s07::ScriptView_ReadFields,
+                        }
+                        .call(c, 0x00281534)?;
+                        c.g[V0][0] = c.g[S2][0] & 0x4;
+                        let t = c.g[V0][0] == 0u64;
+                        c.g[V0][0] = c.g[S2][0] & 0x8;
+                        if t {
+                            break 'b_2815a0;
+                        } else {
+                            'b_281588: {
+                                c.cycles += 5;
+                                c.g[A0][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x0027c888,
+                                    f: ee::s07::ScriptView_GetParams,
+                                }
+                                .call(c, 0x00281548)?;
+                                c.g[V1][0] = c.lb(c.g[V0][0] as u32);
+                                let t = c.g[V1][0] == 0u64;
+                                c.g[S0][0] = 0x1;
+                                if t {
+                                    break 'b_281588;
+                                } else {
+                                    c.cycles += 4;
+                                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+                                    c.g[V0][0] = ((c.g[V0][0] as i64) < 2i64) as u64;
+                                    let t = c.g[V0][0] != 0u64;
+                                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                    if t {
+                                        break 'b_281588;
+                                    } else {
+                                        c.cycles += 3;
+                                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xf0));
+                                        let t = c.g[V0][0] != 0u64;
+                                        c.g[A0][0] = 0x8;
+                                        if t {
+                                            break 'b_281588;
+                                        } else {
+                                            c.cycles += 4;
+                                            c.g[V0][0] =
+                                                c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+                                            c.g[V1][0] = c.lb(c.g[V0][0] as u32);
+                                            let t = c.g[V1][0] != c.g[A0][0];
+
+                                            if t {
+                                                break 'b_281588;
+                                            } else {
+                                                c.cycles += 2;
+                                                c.sw(
+                                                    (c.g[S1][0] as u32).wrapping_add(0xec),
+                                                    c.g[S0][0],
+                                                );
+                                                c.g[S0][0] = 0u64;
+                                                break 'b_281588;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            'b_28159c: {
+                                c.cycles += 2;
+                                let t = c.g[S0][0] == 0u64;
+                                c.g[A0][0] = c.g[S1][0];
+                                if t {
+                                    break 'b_28159c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[A1][0] = c.g[SP][0];
+                                    c.mov_s(12, 20);
+                                    Callee {
+                                        addr: 0x00281c68,
+                                        f: ee::s07::ScriptViewObj_CutToShot,
+                                    }
+                                    .call(c, 0x0028159c)?;
+                                    break 'b_28159c;
+                                }
+                            }
+                            c.cycles += 1;
+                            c.g[V0][0] = c.g[S2][0] & 0x8;
+                            break 'b_2815a0;
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+                    if t {
+                        break 'b_281684;
+                    } else {
+                        'b_281604: {
+                            c.cycles += 2;
+                            if c.g[V0][0] != 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xec));
+                                break 'b_281604;
+                            } else {
+                                'b_2815d4: {
+                                    c.cycles += 3;
+                                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xd8));
+                                    let t = c.g[A0][0] == 0u64;
+                                    c.g[A1][0] = 0xffffffffffffffff;
+                                    if t {
+                                        break 'b_2815d4;
+                                    } else {
+                                        c.cycles += 6;
+                                        c.mtc1(0, 12);
+                                        c.g[A2][0] = 0x9;
+                                        c.mov_s(13, 12);
+                                        c.mov_s(14, 12);
+                                        c.mov_s(15, 12);
+                                        Callee {
+                                            addr: 0x00282db0,
+                                            f: ee::s07::cTransitionMan_StopTransition,
+                                        }
+                                        .call(c, 0x002815d4)?;
+                                        break 'b_2815d4;
+                                    }
+                                }
+                                c.cycles += 3;
+                                c.g[S0][0] = 0u64;
+                                c.g[A1][0] = c.g[S0][0];
+                                'l_2815e0: loop {
+                                    c.cycles += 7;
+                                    c.g[A0][0] = c.g[S1][0];
+                                    c.g[A2][0] = 0x9;
+                                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                                    Callee {
+                                        addr: 0x00281ac8,
+                                        f: ee::s07::ScriptViewObj_BindCamSlot,
+                                    }
+                                    .call(c, 0x002815f0)?;
+                                    c.g[V0][0] = ((c.g[S0][0] as i64) < 2i64) as u64;
+                                    let t = c.g[V0][0] != 0u64;
+                                    c.g[A1][0] = c.g[S0][0];
+                                    if t {
+                                        if event_due(c) {
+                                            deliver_event_here(c, 0x002815e0);
+                                        }
+                                        continue 'l_2815e0;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = true;
+                                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                                        if t {
+                                            break 'b_281688;
+                                        } else {
+                                            break 'b_281604;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        'b_28161c: {
+                            c.cycles += 2;
+                            let t = c.g[V0][0] == 0u64;
+                            c.mov_s(12, 20);
+                            if t {
+                                break 'b_28161c;
+                            } else {
+                                c.cycles += 4;
+                                c.g[A0][0] = c.g[S1][0];
+                                c.g[A1][0] = c.g[SP][0];
+                                Callee {
+                                    addr: 0x00281c68,
+                                    f: ee::s07::ScriptViewObj_CutToShot,
+                                }
+                                .call(c, 0x00281618)?;
+                                c.sw((c.g[S1][0] as u32).wrapping_add(0xec), 0u64);
+                                break 'b_28161c;
+                            }
+                        }
+                        'b_28164c: {
+                            c.cycles += 3;
+                            c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                            let t = c.g[V1][0] == 0u64;
+                            c.g[S2][0] = 0u64;
+                            if t {
+                                break 'b_28164c;
+                            } else {
+                                c.cycles += 2;
+                                c.g[A0][0] = 0x1;
+                                'l_281630: loop {
+                                    c.cycles += 7;
+                                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                                    c.g[V1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
+                                    c.g[V0][0] =
+                                        sx((c.g[A0][0] as u32) << ((c.g[V0][0] as u32) & 31));
+                                    let t = c.g[V1][0] != 0u64;
+                                    c.g[S2][0] = c.g[S2][0] | c.g[V0][0];
+                                    if t {
+                                        if event_due(c) {
+                                            deliver_event_here(c, 0x00281630);
+                                        }
+                                        continue 'l_281630;
+                                    } else {
+                                        break 'b_28164c;
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 3;
+                        c.g[S0][0] = 0u64;
+                        c.g[V0][0] =
+                            sx(((c.g[S2][0] as u32) as i32 >> ((c.g[S0][0] as u32) & 31)) as u32);
+                        'l_281658: loop {
+                            'b_281678: {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.g[V0][0] & 0x1;
+                                if c.g[V0][0] != 0u64 {
+                                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                                    break 'b_281678;
+                                } else {
+                                    c.cycles += 5;
+                                    c.g[A0][0] = c.g[S1][0];
+                                    c.g[A1][0] = c.g[S0][0];
+                                    c.g[A2][0] = 0x9;
+                                    Callee {
+                                        addr: 0x00281ac8,
+                                        f: ee::s07::ScriptViewObj_BindCamSlot,
+                                    }
+                                    .call(c, 0x00281674)?;
+                                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                                    break 'b_281678;
+                                }
+                            }
+                            c.cycles += 3;
+                            c.g[V0][0] = ((c.g[S0][0] as i64) < 2i64) as u64;
+                            let t = c.g[V0][0] != 0u64;
+                            c.g[V0][0] = sx(((c.g[S2][0] as u32) as i32
+                                >> ((c.g[S0][0] as u32) & 31))
+                                as u32);
+                            if t {
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x00281658);
+                                }
+                                continue 'l_281658;
+                            } else {
+                                break 'b_281684;
+                            }
+                        }
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+            break 'b_281688;
+        }
+        c.cycles += 6;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// Copy 16 bytes from `src` to `dst` with two unaligned doubleword pairs
+/// (`ldl/ldr` into `lo` and `hi`, then `sdl/sdr`).
+#[inline(always)]
+pub(crate) fn oc428_copy16(c: &mut Cpu, src: u32, dst: u32, lo: usize, hi: usize) {
+    c.ldl(lo, src.wrapping_add(0x7));
+    c.ldr(lo, src);
+    c.ldl(hi, src.wrapping_add(0xf));
+    c.ldr(hi, src.wrapping_add(0x8));
+    c.sdl(lo, dst.wrapping_add(0x7));
+    c.sdr(lo, dst);
+    c.sdl(hi, dst.wrapping_add(0xf));
+    c.sdr(hi, dst.wrapping_add(0x8));
+}
+
+/// `ScriptEngine_GetTransitionTarget` jump-table entries (the code
+/// addresses the table at 0x481df0 holds for the transition types).
+pub(crate) const TRANSITION_FADE: u32 = 0x0027_a51c;
+
+pub(crate) const TRANSITION_WIPE_LEFT: u32 = 0x0027_a550;
+
+pub(crate) const TRANSITION_WIPE_RIGHT: u32 = 0x0027_a568;
+
+pub(crate) const TRANSITION_WIPE_UP: u32 = 0x0027_a58c;
+
+pub(crate) const TRANSITION_WIPE_DOWN: u32 = 0x0027_a5b0;
+
+pub(crate) const TRANSITION_WIPE_RANDOM: u32 = 0x0027_a5d4;
+
+pub(crate) const TRANSITION_WHITE_FADE: u32 = 0x0027_a5f0;
+
+pub(crate) const TRANSITION_NONE: u32 = 0x0027_a654;
+
+/// `TransitionEffect* ScriptEngine_GetTransitionTarget(ScriptEngine*, int
+/// type, int mode)` (0x27a4a0): build a transition effect object for the
+/// script's transition `type` (0 and 8: none, 1: fade, 2-5: wipes in four
+/// directions, 6: random wipe, 7: white fade). The colour is red
+/// (1,0,0,0) for `mode` 0, white (1,1,1,1) for `mode` 1, and the stack's
+/// previous contents otherwise. The type is dispatched through the jump
+/// table at 0x481df0 (read from RAM like the original: an unknown target
+/// leaves the function through `jump_out`).
+pub fn script_engine_get_transition_target(c: &mut Cpu) {
+    if c.pc != 0x0027_a4a0 {
+        return ee::s07::f_0027a4a0__generated(c);
+    }
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        let mode_zero = c.g[A2][0] == 0;
+        frame.save_ra(c, 0x20);
+        // The colour lives at sp .. sp + 0x10; the effect gets a copy at sp + 0x10.
+        let color = frame.at(c, 0);
+        if mode_zero {
+            // Red: (1, 0, 0, 0).
+            c.cycles += 7;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 0);
+            c.sw(color + 4, 0);
+            c.swc1(0, color);
+            c.sw(color + 8, 0);
+            c.sw(color + 0xc, 0);
+            c.cycles += 1;
+            c.g[V0][0] = (c.g[A1][0] < 9) as u64;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 1;
+            let white = c.g[A2][0] == c.g[V0][0];
+            c.g[V0][0] = (c.g[A1][0] < 9) as u64;
+            if white {
+                // White: (1, 1, 1, 1).
+                c.cycles += 6;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(1, 0);
+                c.swc1(0, color + 0xc);
+                c.swc1(0, color);
+                c.swc1(0, color + 4);
+                c.swc1(0, color + 8);
+                c.cycles += 1;
+                c.g[V0][0] = (c.g[A1][0] < 9) as u64;
+            } else {
+                c.cycles += 2;
+            }
+        }
+        // `done` (0x27a65c): the result is in v0 and s0 restored. `tail`
+        // (0x27a658) adds one cycle and restores s0; `none` returns 0.
+        'done: {
+            'tail: {
+                'none: {
+                    c.cycles += 2;
+                    let known = c.g[V0][0] != 0;
+                    c.g[V0][0] = 0x48_0000;
+                    if !known {
+                        break 'none;
+                    }
+                    c.cycles += 6;
+                    c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1df0));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                    let target = c.g[A0][0] as u32;
+                    match target {
+                        TRANSITION_FADE | TRANSITION_WHITE_FADE => {
+                            if target == TRANSITION_FADE {
+                                c.cycles += 13;
+                                c.g[A0][0] = 0x14;
+                                call_ptr(c, 0x002e_4ce8, 0x0027_a524)?;
+                                c.g[S0][0] = c.g[V0][0];
+                                oc428_copy16(c, color, color + 0x10, V0, V1);
+                                c.g[A0][0] = c.g[S0][0];
+                            } else {
+                                c.cycles += 10;
+                                c.g[A0][0] = 0x14;
+                                call_ptr(c, 0x002e_4ce8, 0x0027_a5f8)?;
+                                c.g[AT][0] = 0x3f80_0000;
+                                c.mtc1(1, 0);
+                                c.g[S0][0] = c.g[V0][0];
+                                c.g[A0][0] = c.g[S0][0];
+                                c.swc1(0, color + 0x1c);
+                                c.swc1(0, color + 0x10);
+                                c.swc1(0, color + 0x14);
+                                c.swc1(0, color + 0x18);
+                            }
+                            // The fade effect: constructor, vtable, colour.
+                            c.cycles += 15;
+                            call_ptr(c, 0x002e_4d70, 0x0027_a620)?;
+                            c.g[V1][0] = 0x49_0000;
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x7f40));
+                            c.sw(c.g[S0][0] as u32, c.g[V1][0]);
+                            let s0 = c.g[S0][0] as u32;
+                            oc428_copy16(c, color + 0x10, s0 + 4, 6, V1);
+                            c.g[V0][0] = c.g[S0][0];
+                            break 'tail;
+                        }
+                        TRANSITION_WIPE_LEFT | TRANSITION_WIPE_RIGHT => {
+                            let (alloc_ret, dir) = if target == TRANSITION_WIPE_LEFT {
+                                c.cycles += 6;
+                                (0x0027_a558, u64::MAX)
+                            } else {
+                                c.cycles += 5;
+                                (0x0027_a570, 1)
+                            };
+                            c.g[A0][0] = 0x1c;
+                            call_ptr(c, 0x002e_4ce8, alloc_ret)?;
+                            c.g[A0][0] = c.g[V0][0];
+                            c.g[A1][0] = c.g[SP][0];
+                            c.g[A2][0] = dir;
+                            // Horizontal wipe: (dir, 0).
+                            c.cycles += 4;
+                            c.g[A3][0] = 0;
+                            call_ptr(c, 0x002e_bba8, 0x0027_a584)?;
+                            frame.restore(c, S0, 0x30);
+                            break 'done;
+                        }
+                        TRANSITION_WIPE_UP | TRANSITION_WIPE_DOWN => {
+                            let (alloc_ret, wipe_ret, dir) = if target == TRANSITION_WIPE_UP {
+                                (0x0027_a594, 0x0027_a5a8, u64::MAX)
+                            } else {
+                                (0x0027_a5b8, 0x0027_a5cc, 1)
+                            };
+                            // Vertical wipe: (0, dir).
+                            c.cycles += 9;
+                            c.g[A0][0] = 0x1c;
+                            call_ptr(c, 0x002e_4ce8, alloc_ret)?;
+                            c.g[A0][0] = c.g[V0][0];
+                            c.g[A1][0] = c.g[SP][0];
+                            c.g[A2][0] = 0;
+                            c.g[A3][0] = dir;
+                            call_ptr(c, 0x002e_bba8, wipe_ret)?;
+                            frame.restore(c, S0, 0x30);
+                            break 'done;
+                        }
+                        TRANSITION_WIPE_RANDOM => {
+                            c.cycles += 7;
+                            c.g[A0][0] = 0x1c;
+                            call_ptr(c, 0x002e_4ce8, 0x0027_a5dc)?;
+                            c.g[A0][0] = c.g[V0][0];
+                            c.g[A1][0] = c.g[SP][0];
+                            call_ptr(c, 0x002e_be20, 0x0027_a5e8)?;
+                            frame.restore(c, S0, 0x30);
+                            break 'done;
+                        }
+                        TRANSITION_NONE => break 'none,
+                        _ => {
+                            c.jump_out(target, 0x0027_a4a0, 0x0027_a668);
+                            return Ok(());
+                        }
+                    }
+                }
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ScriptEngine_ChooseScript` offsets: the category filter table header
+/// (`+0x53c`), its table of (count, scripts) pairs (`+0x540`) and the master
+/// table of 0xc-byte entries whose first word is the priority (`+0x530`).
+pub(crate) const SCRIPT_ENGINE_FILTER_HEADER: u32 = 0x53c;
+
+pub(crate) const SCRIPT_ENGINE_FILTER_TABLE: u32 = 0x540;
+
+pub(crate) const SCRIPT_ENGINE_MASTER_TABLE: u32 = 0x530;
+
+/// `Script* ScriptEngine_ChooseScript(ScriptEngine* self, int category)`
+/// (0x27b0c0): pick a script of a category for the current game state.
+/// Evaluates the 21 choice flags (`ScriptEngine_EvalChoiceParams`), then
+/// scans the category's scripts (0x30 bytes: id, then 21 halfword masks at
+/// `+4`): a script qualifies when every non-zero mask has a bit set in the
+/// matching flag word; only the best (lowest) priority of the master table is
+/// kept (a new best resets the list, ties append). The winner is one of the
+/// candidates, chosen with `Rand_NextMain() % n`, or 0. The candidate list
+/// (100 pointers) is a temporary named allocation.
+///
+/// The generated body is a `pc` dispatcher whose loop heads (0x27b160,
+/// 0x27b190, 0x27b194) are resume points: entered anywhere else, this
+/// runs the generated body.
+pub fn script_engine_choose_script(c: &mut Cpu) {
+    if c.pc != 0x0027_b0c0 {
+        return ee::s07::f_0027b0c0__generated(c);
+    }
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0xc0);
+        frame.save(c, S1, 0xa0);
+        frame.save(c, S0, 0xb0);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x90);
+        frame.save(c, S3, 0x80);
+        frame.save(c, S4, 0x70);
+        frame.save_ra(c, 0x60);
+        c.g[V0][0] = c.lw(oc428_at(c.g[S1][0], SCRIPT_ENGINE_FILTER_HEADER));
+        let no_filter = c.g[V0][0] == 0;
+        c.g[S3][0] = sx((c.g[A1][0] as u32) << 3);
+        'epilogue: {
+            'no_script: {
+                if no_filter {
+                    break 'no_script;
+                }
+                c.cycles += 5;
+                c.g[V0][0] = c.lw(oc428_at(c.g[S1][0], SCRIPT_ENGINE_FILTER_TABLE));
+                c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                c.g[A1][0] = c.g[SP][0];
+                if c.g[V1][0] == 0 {
+                    break 'no_script;
+                }
+                // The 21 choice flags go to sp[0..21].
+                c.cycles += 17;
+                c.g[A0][0] = c.g[S1][0];
+                Callee {
+                    addr: 0x0027_bdb8,
+                    f: ee::s07::ScriptEngine_EvalChoiceParams,
+                }
+                .call(c, 0x0027_b110)?;
+                c.g[S4][0] = 0xffff; // best priority so far
+                c.g[A1][0] = 0x48_0000;
+                c.g[A0][0] = 0x190;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1ea0));
+                c.g[A2][0] = 0x100;
+                c.g[A3][0] = 0;
+                c.g[S0][0] = 0; // candidates
+                call_ptr(c, 0x0031_7e30, 0x0027_b130)?;
+                c.g[S2][0] = c.g[V0][0]; // candidate list
+                c.g[V1][0] = 0;
+                c.g[V0][0] = c.lw(oc428_at(c.g[S1][0], SCRIPT_ENGINE_FILTER_TABLE));
+                c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A1][0] = c.lw(c.g[V0][0] as u32); // script count
+                let empty = (c.g[A1][0] as i64) <= 0;
+                c.g[T4][0] = c.lw(oc428_at(c.g[V0][0], 4)); // scripts
+                if !empty {
+                    c.cycles += 5;
+                    c.g[T7][0] = c.lw(oc428_at(c.g[S1][0], SCRIPT_ENGINE_MASTER_TABLE));
+                    c.g[T6][0] = 0x30;
+                    c.g[T5][0] = 0xc;
+                    c.mult(0, V0, V1, T6);
+                    'scripts: loop {
+                        c.cycles += 9;
+                        c.g[T3][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+                        c.g[T1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T4][0] as u32));
+                        c.g[V0][0] = c.lw(c.g[T1][0] as u32); // script id
+                        c.mult(0, V1, V0, T5);
+                        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T7][0] as u32));
+                        c.g[T0][0] = c.lw(c.g[V0][0] as u32); // priority
+                        let worse = (c.g[S4][0] as i64) < (c.g[T0][0] as i64);
+                        c.g[V1][0] = c.g[T3][0];
+                        if !worse {
+                            c.cycles += 3;
+                            c.g[T2][0] = 0;
+                            c.g[A3][0] = 0;
+                            // The 21 masks against the flags.
+                            'masks: loop {
+                                c.cycles += 3;
+                                c.g[V0][0] = ((c.g[A3][0] as i64) < 21) as u64;
+                                let all_pass = c.g[V0][0] == 0;
+                                c.g[V0][0] = sx((c.g[A3][0] as u32) << 1);
+                                if all_pass {
+                                    break 'masks;
+                                }
+                                c.cycles += 4;
+                                c.g[V0][0] =
+                                    sx((c.g[T1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                c.g[A2][0] = c.lh(oc428_at(c.g[V0][0], 4));
+                                let no_mask = c.g[A2][0] == 0;
+                                c.g[V0][0] = sx((c.g[A3][0] as u32) << 2);
+                                if no_mask {
+                                    if event_due(c) && back_edge_unwinds(c, 0x0027_b190) {
+                                        return Ok(());
+                                    }
+                                    c.cycles += 1;
+                                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+                                    continue 'masks;
+                                }
+                                c.cycles += 5;
+                                c.g[A0][0] =
+                                    sx((c.g[SP][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                c.g[V1][0] = c.lw(c.g[A0][0] as u32);
+                                c.g[V1][0] &= c.g[A2][0];
+                                if c.g[V1][0] != 0 {
+                                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+                                    if back_edge_unwinds(c, 0x0027_b194) {
+                                        return Ok(());
+                                    }
+                                    continue 'masks;
+                                }
+                                c.cycles += 1;
+                                c.g[T2][0] = 1; // this script fails
+                                break 'masks;
+                            }
+                            c.cycles += 2;
+                            let failed = c.g[T2][0] != 0;
+                            c.g[V1][0] = c.g[T3][0];
+                            if !failed {
+                                c.cycles += 3;
+                                c.g[V0][0] = ((c.g[T0][0] as i64) < (c.g[S4][0] as i64)) as u64;
+                                let not_better = c.g[V0][0] == 0;
+                                c.g[V0][0] = sx((c.g[S0][0] as u32) << 2);
+                                if !not_better {
+                                    // A better priority: restart the candidate list.
+                                    c.cycles += 3;
+                                    c.g[S4][0] = c.g[T0][0];
+                                    c.g[S0][0] = 0;
+                                    c.g[V0][0] = sx((c.g[S0][0] as u32) << 2);
+                                }
+                                c.cycles += 4;
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                                c.sw(c.g[V0][0] as u32, c.g[T1][0]);
+                                c.g[V1][0] = c.g[T3][0];
+                            }
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                        let more = c.g[V0][0] != 0;
+                        c.mult(0, V0, V1, T6);
+                        if more {
+                            if event_due(c) && back_edge_unwinds(c, 0x0027_b160) {
+                                return Ok(());
+                            }
+                            continue 'scripts;
+                        }
+                        break 'scripts;
+                    }
+                }
+                // Pick one of the candidates at random.
+                c.cycles += 2;
+                if c.g[S0][0] == 0 {
+                    c.g[S0][0] = 0;
+                } else {
+                    c.cycles += 5;
+                    call_ptr(c, 0x0031_77f0, 0x0027_b214)?;
+                    c.divu(0, V0, S0);
+                    c.cycles += 4;
+                    c.g[V1][0] = c.hi[0];
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                    c.g[S0][0] = c.lw(c.g[V1][0] as u32);
+                }
+                c.cycles += 2;
+                let no_list = c.g[S2][0] == 0;
+                c.g[V0][0] = c.g[S0][0];
+                if !no_list {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.g[S2][0];
+                    call_ptr(c, 0x0031_7e98, 0x0027_b240)?;
+                    c.g[V0][0] = c.g[S0][0];
+                }
+                break 'epilogue;
+            }
+            // 0x27b100: nothing to choose from.
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        }
+        // 0x27b244: epilogue.
+        c.cycles += 8;
+        frame.restore(c, S0, 0xb0);
+        frame.restore(c, S1, 0xa0);
+        frame.restore(c, S2, 0x90);
+        frame.restore(c, S3, 0x80);
+        frame.restore(c, S4, 0x70);
+        frame.restore_ra(c, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void ScriptEngine_LoadMainScripts(ScriptEngine* self)` (0x278358): sets up
+/// the script engine's pools. Allocates the 200-byte link pool (`+0x544`: ten
+/// 20-byte links, four `-1` ids and a `next` pointer to the following link),
+/// keeps the first link as the free link (`+0x548`), loads script bank 0 synchronously
+/// (`ScriptEngine_LoadBankSync`), registers the four script objects (`+0x6d0`,
+/// two of 0x120 bytes, `+0x91c`, `+0x938`), allocates the two-element
+/// `ScriptList` arrays of 0x1a8 bytes (stored at `+0x54c` and `+0x624`, each
+/// element pointing back to `self`; the second one with its index).
+pub fn script_engine_load_main_scripts(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x90);
+        c.g[A1][0] = 0x48_0000;
+        frame.save(c, S1, 0x70);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1bd8));
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A2][0] = 0;
+        c.g[A0][0] = 0xc8;
+        frame.save(c, S0, 0x80);
+        frame.save(c, S2, 0x60);
+        frame.save(c, S3, 0x50);
+        frame.save(c, S4, 0x40);
+        frame.save(c, S5, 0x30);
+        frame.save(c, S6, 0x20);
+        frame.save(c, S7, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A3][0] = 0;
+        call_ptr(c, 0x0031_7e30, 0x0027_839c)?; // operator_new_named
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x544), c.g[V0][0]);
+        c.g[A1][0] = 0xffff_ffff_ffff_ffff;
+        c.g[A3][0] = 0x14;
+        c.g[A0][0] = 0;
+        c.g[A2][0] = 9;
+        // the ten links
+        loop {
+            c.cycles += 20;
+            let pool = (c.g[S1][0] as u32).wrapping_add(0x544);
+            c.g[V1][0] = c.lw(pool);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(1));
+            c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.sw(c.g[V1][0] as u32, c.g[A1][0]);
+            c.g[V0][0] = c.lw(pool);
+            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw((c.g[V0][0] as u32).wrapping_add(4), c.g[A1][0]);
+            c.g[V1][0] = c.lw(pool);
+            c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.sw((c.g[V1][0] as u32).wrapping_add(8), c.g[A1][0]);
+            c.g[V0][0] = c.lw(pool);
+            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw((c.g[V0][0] as u32).wrapping_add(0xc), c.g[A1][0]);
+            c.g[V1][0] = c.lw(pool);
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+            c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x14));
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+            let more = (c.g[A2][0] as i64) >= 0;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x14));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_83b0);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 18;
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x544));
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x3ac));
+        c.g[A1][0] = 0;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0xc4), 0);
+        c.g[A3][0] = 0;
+        c.g[T0][0] = 0xffff_ffff_ffff_ffff;
+        c.g[T1][0] = 0;
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x544));
+        c.g[T2][0] = 0;
+        c.g[S3][0] = sx((c.g[S1][0] as u32).wrapping_add(0x91c));
+        c.g[S4][0] = sx((c.g[S1][0] as u32).wrapping_add(0x938));
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x548), c.g[V0][0]);
+        c.g[S6][0] = sx((c.g[S1][0] as u32).wrapping_add(0x54c));
+        call_ptr(c, 0x0027_b268, 0x0027_843c)?; // ScriptEngine_LoadBankSync
+        c.g[S7][0] = sx((c.g[S1][0] as u32).wrapping_add(0x624));
+        c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x6d0));
+        c.g[S2][0] = 1;
+        // the two rig script objects, then the two single ones
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(1));
+            call_ptr(c, 0x0028_3298, 0x0027_8454)?; // ScriptObj_Register
+            let more = (c.g[S2][0] as i64) >= 0;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x120));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_8448);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 17;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[S2][0] = 1;
+        call_ptr(c, 0x0028_3298, 0x0027_8468)?; // ScriptObj_Register
+        c.g[S5][0] = 0xffff_ffff_ffff_ffff;
+        c.g[A0][0] = c.g[S4][0];
+        call_ptr(c, 0x0028_3298, 0x0027_8474)?; // ScriptObj_Register
+                                                // objsA: two ScriptLists
+        c.g[A1][0] = 0x48_0000;
+        c.g[A0][0] = 0x1a8;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1be8));
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        call_ptr(c, 0x0031_7e30, 0x0027_848c)?; // operator_new_named
+        c.g[V1][0] = 2;
+        c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
+        c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+        c.g[S0][0] = c.g[S3][0];
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(1));
+            call_ptr(c, 0x0027_5d10, 0x0027_84ac)?; // ScriptList_ctor
+            let more = c.g[S2][0] != c.g[S5][0];
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xcc));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_84a0);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 3;
+        c.sw(c.g[S6][0] as u32, c.g[S3][0]);
+        c.g[V1][0] = 0;
+        c.g[S0][0] = 1;
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x54c));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw(c.g[V0][0] as u32, c.g[S1][0]);
+            let more = (c.g[S0][0] as i64) >= 0;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xcc));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_84c0);
+                }
+                continue;
+            }
+            break;
+        }
+        // objsB: two ScriptLists
+        c.cycles += 13;
+        c.g[A1][0] = 0x48_0000;
+        c.g[A0][0] = 0x1a8;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1bf8));
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[S0][0] = 2;
+        call_ptr(c, 0x0031_7e30, 0x0027_84f8)?; // operator_new_named
+        c.g[S2][0] = 1;
+        c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
+        c.sw(c.g[V0][0] as u32, c.g[S0][0]);
+        c.g[S0][0] = c.g[S3][0];
+        c.g[S4][0] = 0xffff_ffff_ffff_ffff;
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(1));
+            call_ptr(c, 0x0027_5d10, 0x0027_851c)?; // ScriptList_ctor
+            let more = c.g[S2][0] != c.g[S4][0];
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xcc));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_8510);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 3;
+        c.sw(c.g[S7][0] as u32, c.g[S3][0]);
+        c.g[S0][0] = 0;
+        c.g[A0][0] = 0;
+        loop {
+            c.cycles += 13;
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x624));
+            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw(c.g[V0][0] as u32, c.g[S1][0]);
+            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x624));
+            c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.sw((c.g[V1][0] as u32).wrapping_add(4), 0);
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x624));
+            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sw((c.g[V0][0] as u32).wrapping_add(8), c.g[S0][0]);
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+            c.g[V0][0] = ((c.g[S0][0] as i64) < 2) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xcc));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_8530);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 11;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore(c, S6, 0x20);
+        frame.restore(c, S7, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void ScriptViewObj_Deactivate(ScriptViewObj* self, int player)`: clears the engine's binding filter, releases the (up to two) camera bindings, stops the fade transition, removes the focus box, resets the view object and deactivates it as a script object.
+/// (`ScriptViewObj_Deactivate`, 0x00281400)
+pub fn script_view_obj_deactivate(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S1][0] = c.g[A0][0];
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[S5][0] = c.g[A1][0];
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(0xdc));
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S2][0] = 0x1;
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S3][0] = sx((c.g[S1][0] as u32).wrapping_add(0xd0));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S4][0] = 0xffffffffffffffff;
+        Callee {
+            addr: 0x0027d2e8,
+            f: ee::s07::ScriptEngine_GetInstance,
+        }
+        .call(c, 0x0028143c)?;
+        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+        c.g[A0][0] = c.g[V0][0];
+        Callee {
+            addr: 0x0027d170,
+            f: ee::s07::ScriptEngine_ClearObjBindingFilter,
+        }
+        .call(c, 0x00281448)?;
+        'l_281448: loop {
+            'b_281468: {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                let t = (c.g[V0][0] as i64) < 0;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                if t {
+                    break 'b_281468;
+                } else {
+                    c.cycles += 5;
+                    c.g[A1][0] = 0u64;
+                    c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                    Callee {
+                        addr: 0x0027d688,
+                        f: ee::s07::ScriptObjCam_SetBinding,
+                    }
+                    .call(c, 0x00281464)?;
+                    c.sw(c.g[S0][0] as u32, c.g[S4][0]);
+                    break 'b_281468;
+                }
+            }
+            c.cycles += 3;
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+            let t = (c.g[S2][0] as i64) >= 0;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x00281448);
+                }
+                continue 'l_281448;
+            } else {
+                'b_281498: {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xd8));
+                    let t = c.g[A0][0] == 0u64;
+                    c.g[A1][0] = 0xffffffffffffffff;
+                    if t {
+                        break 'b_281498;
+                    } else {
+                        c.cycles += 6;
+                        c.mtc1(0, 12);
+                        c.g[A2][0] = 0x9;
+                        c.mov_s(13, 12);
+                        c.mov_s(14, 12);
+                        c.mov_s(15, 12);
+                        Callee {
+                            addr: 0x00282db0,
+                            f: ee::s07::cTransitionMan_StopTransition,
+                        }
+                        .call(c, 0x00281498)?;
+                        break 'b_281498;
+                    }
+                }
+                'b_2814bc: {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x110));
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                    if t {
+                        break 'b_2814bc;
+                    } else {
+                        c.cycles += 6;
+                        c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x100));
+                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+                        c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                        c.g[A0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0xa4));
+                        call_ptr(c, 0x001033f8, 0x002814b8)?;
+                        c.sw((c.g[S1][0] as u32).wrapping_add(0x110), 0u64);
+                        break 'b_2814bc;
+                    }
+                }
+                c.cycles += 14;
+                c.g[A0][0] = c.g[S1][0];
+                Callee {
+                    addr: 0x00281a50,
+                    f: ee::s07::ScriptViewObj_Reset,
+                }
+                .call(c, 0x002814c4)?;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = c.g[S5][0];
+                Callee {
+                    addr: 0x00283440,
+                    f: ee::s07::ScriptObj_Deactivate,
+                }
+                .call(c, 0x002814d0)?;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+                c.pc = t;
+                return Ok(());
+            }
+        }
+    })
+}
+
+/// `ScriptViewObj* ScriptViewObj_ctor(ScriptViewObj* self)`: the script object base, the binding at +0x10, nine camera bindings (0x14 bytes each from +0x1c), the vtables (+0xc, +0x10), zeroes the two camera words at +0xd0/+0xd4, points every binding's owner at `self`, clears the fade (+0xd8), sets the focus id (+0xf8) to -1 and resets the object. Returns `self`.
+/// (`ScriptViewObj_ctor`, 0x00281018)
+pub fn script_view_obj_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+        c.g[A1][0] = 0u64;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S0][0] = c.g[A0][0];
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1c));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S2][0] = 0x8;
+        Callee {
+            addr: 0x00283200,
+            f: ee::s07::ScriptObj_ctor,
+        }
+        .call(c, 0x00281044)?;
+        c.g[S3][0] = 0xffffffffffffffff;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+        Callee {
+            addr: 0x00282f60,
+            f: ee::s07::ScriptBinding_ctor,
+        }
+        .call(c, 0x00281050)?;
+        c.g[V1][0] = 0x480000;
+        c.g[V0][0] = 0x480000;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2360));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2398));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+        'l_281068: loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+            Callee {
+                addr: 0x00283088,
+                f: ee::s07::ScriptCamBinding_ctor,
+            }
+            .call(c, 0x00281074)?;
+            let t = c.g[S2][0] != c.g[S3][0];
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x14));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x00281068);
+                }
+                continue 'l_281068;
+            } else {
+                c.cycles += 3;
+                c.g[V1][0] = 0x1;
+                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xd4));
+                'l_281088: loop {
+                    c.cycles += 7;
+                    c.sw(c.g[V0][0] as u32, 0u64);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                    let t = (c.g[V1][0] as i64) >= 0;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00281088);
+                        }
+                        continue 'l_281088;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1c));
+                        c.g[V1][0] = 0x8;
+                        'l_2810b0: loop {
+                            c.cycles += 7;
+                            c.sw((c.g[V0][0] as u32).wrapping_add(0x10), c.g[S0][0]);
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                            let t = (c.g[V1][0] as i64) >= 0;
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x14));
+                            if t {
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x002810b0);
+                                }
+                                continue 'l_2810b0;
+                            } else {
+                                c.cycles += 13;
+                                c.g[V0][0] = 0xffffffffffffffff;
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0xd8), 0u64);
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0xf8), c.g[V0][0]);
+                                c.g[A0][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00281a50,
+                                    f: ee::s07::ScriptViewObj_Reset,
+                                }
+                                .call(c, 0x002810e0)?;
+                                c.g[V0][0] = c.g[S0][0];
+                                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                                c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                                let t = c.g[RA][0] as u32;
+                                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+                                c.pc = t;
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
+    use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
 
     use crate::game::animation::animmodel::tests::oc427_install_fakes;
 
@@ -15275,6 +16514,587 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(info);
                 c.f[12] = r.f32(100.0);
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    use crate::difftest::RA as SENTINEL;
+
+    pub(crate) use crate::game::be::belibrary::tests::oc431_install;
+    pub(crate) use crate::game::be::belibrary::tests::oc431_machine;
+
+    pub(crate) use crate::game::be::belibrary::tests::OC431_BASE;
+
+    pub(crate) use crate::game::intersect::riderspheretree::tests::OC430_CTRL;
+    pub(crate) use crate::game::intersect::riderspheretree::tests::OC430_MAGIC;
+    pub(crate) use crate::game::main::gameload::game_module_load_world;
+    use ssx3_ee_rt::funcs::register_functions;
+    use ssx3_ee_rt::funcs::FnEntry;
+
+    /// The one-word getters read a field of `a0`.
+    pub(crate) fn oc428_getter_test(generated: GuestFn, hand: GuestFn, salt: u64, off: u32) {
+        check(generated, hand, 40, &|c, seed| {
+            let mut r = Rng(salt ^ seed as u64);
+            scramble(c, &mut r);
+            c.g[A0][0] = sx(DATA + 0x100);
+            c.bus.write32(DATA + 0x100 + off, r.next_u32());
+        });
+    }
+
+    /// `ScriptData_GetInfo` reads `+0x14`.
+    #[test]
+    fn script_data_get_info_matches() {
+        oc428_getter_test(
+            ee::s07::f_0027c070__generated,
+            script_data_get_info,
+            0x27c070,
+            SCRIPT_DATA_INFO,
+        );
+    }
+
+    /// `ScriptView_GetParams` reads `+0x20`.
+    #[test]
+    fn script_view_get_params_matches() {
+        oc428_getter_test(
+            ee::s07::f_0027c888__generated,
+            script_view_get_params,
+            0x27c888,
+            SCRIPT_VIEW_PARAMS,
+        );
+    }
+
+    /// `ScriptCam_GetManualParams` reads `+0x20`.
+    #[test]
+    fn script_cam_get_manual_params_matches() {
+        oc428_getter_test(
+            ee::s07::f_0027c098__generated,
+            script_cam_get_manual_params,
+            0x27c098,
+            SCRIPT_CAM_MANUAL_PARAMS,
+        );
+    }
+
+    /// Fixture controls (above the fakes' log, `DATA + 0x200000`).
+    pub(crate) const OC428_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC428_MAGIC: u32 = 0x0c42_8c42;
+
+    /// Forced results of fake callees, keyed by callee address.
+    pub(crate) const OC428_FORCE: u32 = OC428_CTRL + 0x100;
+
+    /// Scratch words the fakes' side effects read (`ReadFields` results...).
+    pub(crate) const OC428_AUX: u32 = OC428_CTRL + 0x8000;
+
+    /// Switch the gated fakes on for this machine.
+    pub(crate) fn oc428_gate(c: &mut Cpu) {
+        c.bus.write32(OC428_CTRL, OC428_MAGIC);
+    }
+
+    /// A fake callee: log (`fakes::fake`), then the forced result, then
+    /// the callee-specific side effects.
+    pub(crate) fn oc428_fake_call(c: &mut Cpu, addr: u32, ra: u32) {
+        let (a0, a1) = (c.g[A0][0] as u32, c.g[A1][0] as u32);
+        fakes::fake(c, addr, ra);
+        if c.pc != ra {
+            return;
+        }
+        let slot = OC428_FORCE + ((addr >> 2) % 0x7ff) * 8;
+        if c.bus.read32(slot) != 0 {
+            c.g[V0][0] = c.bus.read32(slot + 4) as u64;
+        }
+        match addr {
+            // ScriptView_ReadFields(view, info): info = { count, first node }.
+            0x0027_c8e0 => {
+                let count = c.bus.read32(OC428_AUX);
+                let first = c.bus.read32(OC428_AUX + 4);
+                c.bus.write32(a1, count);
+                c.bus.write32(a1 + 4, first);
+            }
+            // BELibrary_GetInterface(lib, n): the fixture's interface objects.
+            0x0014_dd58 => {
+                let w = if a1 == 0 {
+                    OC428_AUX + 0x10
+                } else {
+                    OC428_AUX + 0x14
+                };
+                c.g[V0][0] = c.bus.read32(w) as u64;
+            }
+            // ComputerActorRider_ctor: a new object whose +0x18 is its rider.
+            0x0010_8c80 => {
+                let obj = c.g[V0][0] as u32;
+                if obj != 0 {
+                    c.bus.write32(obj + 0x18, OC428_AUX + 0x8000);
+                }
+            }
+            // Rider_LoadStep(rider): the rider is loaded (state 7).
+            0x0011_c298 => c.bus.write32(a0 + 0x880, 7),
+            _ => {}
+        }
+    }
+
+    macro_rules! oc428_fakes {
+        ($(($name:ident, $addr:expr, $shard:ident, $slot:ident, $gen:ident)),* $(,)?) => {
+            $(
+                fn $name(c: &mut Cpu) {
+                    if c.bus.read32(OC428_CTRL) != OC428_MAGIC {
+                        return fakes::fall_back(c, fakes::prev_cell($name), ee::$shard::$gen);
+                    }
+                    let ra = c.g[RA][0] as u32;
+                    oc428_fake_call(c, $addr, ra);
+                }
+            )*
+
+            /// Hooks the gated fakes into the callees' override slots (once
+            /// per process; with the gate off they run what the slots held).
+            pub(crate) fn oc428_install_fakes() {
+                $( fakes::hook(addr_of_mut!(ee::$shard::$slot), $name, fakes::prev_cell($name)); )*
+            }
+        };
+    }
+
+    oc428_fakes! {
+        (oc428_fake_00224da0, 0x0022_4da0, s05, OVERRIDE_00224DA0, f_00224da0__generated),
+        (oc428_fake_00224df0, 0x0022_4df0, s05, OVERRIDE_00224DF0, f_00224df0__generated),
+        (oc428_fake_00317d70, 0x0031_7d70, s10, OVERRIDE_00317D70, f_00317d70__generated),
+        (oc428_fake_003660a8, 0x0036_60a8, s12, OVERRIDE_003660A8, f_003660a8__generated),
+        (oc428_fake_00362cc8, 0x0036_2cc8, s12, OVERRIDE_00362CC8, f_00362cc8__generated),
+        (oc428_fake_00230698, 0x0023_0698, s06, OVERRIDE_00230698, f_00230698__generated),
+        (oc428_fake_002e4578, 0x002e_4578, s09, OVERRIDE_002E4578, f_002e4578__generated),
+        (oc428_fake_002ea820, 0x002e_a820, s09, OVERRIDE_002EA820, f_002ea820__generated),
+        (oc428_fake_00317670, 0x0031_7670, s10, OVERRIDE_00317670, f_00317670__generated),
+        (oc428_fake_0039f9d8, 0x0039_f9d8, s13, OVERRIDE_0039F9D8, f_0039f9d8__generated),
+        (oc428_fake_00277598, 0x0027_7598, s07, OVERRIDE_00277598, f_00277598__generated),
+        (oc428_fake_002e4ce8, 0x002e_4ce8, s09, OVERRIDE_002E4CE8, f_002e4ce8__generated),
+        (oc428_fake_002e4d70, 0x002e_4d70, s09, OVERRIDE_002E4D70, f_002e4d70__generated),
+        (oc428_fake_002ebba8, 0x002e_bba8, s09, OVERRIDE_002EBBA8, f_002ebba8__generated),
+        (oc428_fake_002ebe20, 0x002e_be20, s09, OVERRIDE_002EBE20, f_002ebe20__generated),
+        (oc428_fake_0027c8e0, 0x0027_c8e0, s07, OVERRIDE_0027C8E0, f_0027c8e0__generated),
+        (oc428_fake_00281ac8, 0x0028_1ac8, s07, OVERRIDE_00281AC8, f_00281ac8__generated),
+        (oc428_fake_00281c68, 0x0028_1c68, s07, OVERRIDE_00281C68, f_00281c68__generated),
+        (oc428_fake_003177f0, 0x0031_77f0, s10, OVERRIDE_003177F0, f_003177f0__generated),
+        (oc428_fake_00317e30, 0x0031_7e30, s10, OVERRIDE_00317E30, f_00317e30__generated),
+        (oc428_fake_00317e98, 0x0031_7e98, s10, OVERRIDE_00317E98, f_00317e98__generated),
+        (oc428_fake_0030bac8, 0x0030_bac8, s10, OVERRIDE_0030BAC8, f_0030bac8__generated),
+        (oc428_fake_002224a8, 0x0022_24a8, s05, OVERRIDE_002224A8, f_002224a8__generated),
+        (oc428_fake_002224b8, 0x0022_24b8, s05, OVERRIDE_002224B8, f_002224b8__generated),
+        (oc428_fake_00225b90, 0x0022_5b90, s05, OVERRIDE_00225B90, f_00225b90__generated),
+        (oc428_fake_00226600, 0x0022_6600, s05, OVERRIDE_00226600, f_00226600__generated),
+        (oc428_fake_003a6c68, 0x003a_6c68, s13, OVERRIDE_003A6C68, f_003a6c68__generated),
+        (oc428_fake_003a6c98, 0x003a_6c98, s13, OVERRIDE_003A6C98, f_003a6c98__generated),
+        (oc428_fake_003a9800, 0x003a_9800, s13, OVERRIDE_003A9800, f_003a9800__generated),
+        (oc428_fake_00309b70, 0x0030_9b70, s10, OVERRIDE_00309B70, f_00309b70__generated),
+        (oc428_fake_00144d70, 0x0014_4d70, s01, OVERRIDE_00144D70, f_00144d70__generated),
+        (oc428_fake_00147220, 0x0014_7220, s01, OVERRIDE_00147220, f_00147220__generated),
+        (oc428_fake_00147338, 0x0014_7338, s01, OVERRIDE_00147338, f_00147338__generated),
+        (oc428_fake_00147398, 0x0014_7398, s01, OVERRIDE_00147398, f_00147398__generated),
+        (oc428_fake_0014dc80, 0x0014_dc80, s01, OVERRIDE_0014DC80, f_0014dc80__generated),
+        (oc428_fake_0014dd58, 0x0014_dd58, s01, OVERRIDE_0014DD58, f_0014dd58__generated),
+        (oc428_fake_00108c80, 0x0010_8c80, s00, OVERRIDE_00108C80, f_00108c80__generated),
+        (oc428_fake_0010c758, 0x0010_c758, s00, OVERRIDE_0010C758, f_0010c758__generated),
+        (oc428_fake_0010c9a8, 0x0010_c9a8, s00, OVERRIDE_0010C9A8, f_0010c9a8__generated),
+        (oc428_fake_0012b698, 0x0012_b698, s00, OVERRIDE_0012B698, f_0012b698__generated),
+        (oc428_fake_00147290, 0x0014_7290, s01, OVERRIDE_00147290, f_00147290__generated),
+        (oc428_fake_00147618, 0x0014_7618, s01, OVERRIDE_00147618, f_00147618__generated),
+        (oc428_fake_0011bb40, 0x0011_bb40, s00, OVERRIDE_0011BB40, f_0011bb40__generated),
+        (oc428_fake_00144bc0, 0x0014_4bc0, s01, OVERRIDE_00144BC0, f_00144bc0__generated),
+        (oc428_fake_0022cce8, 0x0022_cce8, s05, OVERRIDE_0022CCE8, f_0022cce8__generated),
+        (oc428_fake_0022d278, 0x0022_d278, s05, OVERRIDE_0022D278, f_0022d278__generated),
+        (oc428_fake_0022d8d8, 0x0022_d8d8, s05, OVERRIDE_0022D8D8, f_0022d8d8__generated),
+        (oc428_fake_002b6aa0, 0x002b_6aa0, s08, OVERRIDE_002B6AA0, f_002b6aa0__generated),
+        (oc428_fake_002dbf80, 0x002d_bf80, s09, OVERRIDE_002DBF80, f_002dbf80__generated),
+        (oc428_fake_00318260, 0x0031_8260, s10, OVERRIDE_00318260, f_00318260__generated),
+        (oc428_fake_003182d8, 0x0031_82d8, s10, OVERRIDE_003182D8, f_003182d8__generated),
+        (oc428_fake_00318448, 0x0031_8448, s10, OVERRIDE_00318448, f_00318448__generated),
+        (oc428_fake_00318630, 0x0031_8630, s10, OVERRIDE_00318630, f_00318630__generated),
+        (oc428_fake_003186d0, 0x0031_86d0, s10, OVERRIDE_003186D0, f_003186d0__generated),
+        (oc428_fake_00334800, 0x0033_4800, s11, OVERRIDE_00334800, f_00334800__generated),
+        (oc428_fake_00353ac0, 0x0035_3ac0, s11, OVERRIDE_00353AC0, f_00353ac0__generated),
+        (oc428_fake_003a6928, 0x003a_6928, s13, OVERRIDE_003A6928, f_003a6928__generated),
+        (oc428_fake_003e5398, 0x003e_5398, s14, OVERRIDE_003E5398, f_003e5398__generated),
+        (oc428_fake_00117540, 0x0011_7540, s00, OVERRIDE_00117540, f_00117540__generated),
+        (oc428_fake_001172e0, 0x0011_72e0, s00, OVERRIDE_001172E0, f_001172e0__generated),
+        (oc428_fake_0011b698, 0x0011_b698, s00, OVERRIDE_0011B698, f_0011b698__generated),
+        (oc428_fake_0010fcd8, 0x0010_fcd8, s00, OVERRIDE_0010FCD8, f_0010fcd8__generated),
+        (oc428_fake_00270070, 0x0027_0070, s07, OVERRIDE_00270070, f_00270070__generated),
+        (oc428_fake_0014f7a8, 0x0014_f7a8, s01, OVERRIDE_0014F7A8, f_0014f7a8__generated),
+        (oc428_fake_00117520, 0x0011_7520, s00, OVERRIDE_00117520, f_00117520__generated),
+        (oc428_fake_00120d58, 0x0012_0d58, s00, OVERRIDE_00120D58, f_00120d58__generated),
+        (oc428_fake_00125958, 0x0012_5958, s00, OVERRIDE_00125958, f_00125958__generated),
+        (oc428_fake_0011c298, 0x0011_c298, s00, OVERRIDE_0011C298, f_0011c298__generated),
+    }
+
+    /// `ScriptViewObj_Apply` against the generated body: every flag
+    /// combination of bits 2 and 3, views with and without parameters, a
+    /// node list with the type-8 head, shot counts 0-3, a fade object (the
+    /// real `cTransitionMan_StopTransition` calls its vtable) or none; the
+    /// field reader, slot binder and shot cutter are fakes.
+    #[test]
+    fn script_view_obj_apply_matches() {
+        oc428_install_fakes();
+        fakes::covered(
+            ee::s07::f_002814f8__generated,
+            script_view_obj_apply,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2814f8, 6);
+                oc428_gate(c);
+                let (this, view, params) = (DATA + 0x1000, DATA + 0x1100, DATA + 0x1200);
+                let (nodes, kind, fade, fade_vt) =
+                    (DATA + 0x4000, DATA + 0x4800, DATA + 0x5000, DATA + 0x5100);
+                fill(c, &mut r, this, 0x80);
+                c.bus.write32(this + 0xec, r.next_u32() % 2);
+                c.bus.write32(this + 0xf0, (seed % 5 == 0) as u32);
+                let has_fade = seed % 3 != 0;
+                c.bus.write32(this + 0xd8, if has_fade { fade } else { 0 });
+                c.bus.write32(view + 0x20, params);
+                c.bus.write8(params, (seed % 7 != 0) as u8);
+                // Shots: count and a chain of 0-3 nodes (bit, kind pointer, next).
+                let count = [0u32, 1, 2, 3, 2, 1][((seed / 3) % 6) as usize];
+                let len = (r.next_u32() % 4).min(3);
+                for k in 0..3u32 {
+                    let n = nodes + 0x100 * k;
+                    c.bus.write32(n + 4, r.next_u32() % 3);
+                    c.bus.write32(n + 0x14, kind + 4 * k);
+                    c.bus.write8(
+                        kind + 4 * k,
+                        if k == 0 && seed % 2 == 0 {
+                            8
+                        } else {
+                            r.next_u32() as u8
+                        },
+                    );
+                    c.bus.write32(
+                        n + 0x18,
+                        if k + 1 < len {
+                            nodes + 0x100 * (k + 1)
+                        } else {
+                            0
+                        },
+                    );
+                }
+                c.bus.write32(OC428_AUX, count);
+                c.bus
+                    .write32(OC428_AUX + 4, if len == 0 { 0 } else { nodes });
+                // The fade object: its transition state and virtual calls.
+                fill(c, &mut r, fade, 0x20);
+                c.bus
+                    .write32(fade + 0x18, if seed % 4 == 0 { 9 } else { 0 });
+                c.bus.write32(fade + 0xc, fade_vt);
+                c.bus.write16(fade_vt + 0x28, (r.next_u32() & 0xfc) as u16);
+                c.bus.write32(fade_vt + 0x2c, FAKE + 0x30);
+                c.bus.write16(fade_vt + 0x20, (r.next_u32() & 0xfc) as u16);
+                c.bus.write32(fade_vt + 0x24, FAKE + 0x40);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(view);
+                let flags = [0u32, 4, 8, 12][(seed % 4) as usize] | (r.next_u32() & 0xf0);
+                c.g[A3][0] = sx(flags);
+            },
+        );
+    }
+
+    /// `ScriptEngine_GetTransitionTarget` against the generated body: every
+    /// transition type 0-10 (0/8/9/10: none) in the three colour modes, the
+    /// jump table written to RAM (with an unknown target for a few seeds:
+    /// the generated `jump_out`); the allocator, the effect constructors and
+    /// the wipe constructors are fakes.
+    #[test]
+    fn script_engine_get_transition_target_matches() {
+        oc428_install_fakes();
+        fakes::covered(
+            ee::s07::f_0027a4a0__generated,
+            script_engine_get_transition_target,
+            264,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x27a4a0, 3);
+                oc428_gate(c);
+                c.pc = 0x0027_a4a0;
+                let kind = seed % 11;
+                let mode = (seed / 11) % 3;
+                let table = [
+                    TRANSITION_NONE,
+                    TRANSITION_FADE,
+                    TRANSITION_WIPE_LEFT,
+                    TRANSITION_WIPE_RIGHT,
+                    TRANSITION_WIPE_UP,
+                    TRANSITION_WIPE_DOWN,
+                    TRANSITION_WIPE_RANDOM,
+                    TRANSITION_WHITE_FADE,
+                    TRANSITION_NONE,
+                ];
+                for (i, t) in table.iter().enumerate() {
+                    c.bus.write32(0x0048_1df0 + 4 * i as u32, *t);
+                }
+                if seed % 37 == 5 && kind < 9 {
+                    c.bus.write32(0x0048_1df0 + 4 * kind, 0x0027_a999);
+                }
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = kind as u64;
+                c.g[A2][0] = mode as u64;
+            },
+        );
+    }
+
+    /// `ScriptEngine_ChooseScript` against the generated body: no filter
+    /// table, an empty category, and categories of 1-4 scripts with random
+    /// priorities (ties and improvements) and masks (single-bit masks
+    /// against the stack's flag words; `ScriptEngine_EvalChoiceParams` runs for
+    /// real and leaves through its `jump_out` on the empty jump table); the
+    /// list allocation, `Rand_NextMain` and the free are fakes.
+    #[test]
+    fn script_engine_choose_script_matches() {
+        oc428_install_fakes();
+        fakes::covered(
+            ee::s07::f_0027b0c0__generated,
+            script_engine_choose_script,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x27b0c0, 4);
+                oc428_gate(c);
+                c.pc = 0x0027_b0c0;
+                let (engine, table, master, scripts) = (
+                    DATA + 0x5_1000,
+                    DATA + 0x5_2000,
+                    DATA + 0x5_3000,
+                    DATA + 0x5_4000,
+                );
+                fill(c, &mut r, engine + 0x520, 0x20);
+                c.bus.write32(
+                    engine + SCRIPT_ENGINE_FILTER_HEADER,
+                    (seed % 11 != 0) as u32,
+                );
+                c.bus.write32(engine + SCRIPT_ENGINE_FILTER_TABLE, table);
+                c.bus.write32(engine + SCRIPT_ENGINE_MASTER_TABLE, master);
+                let category = seed % 3;
+                let count = if seed % 7 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 4
+                };
+                c.bus.write32(table + 8 * category, count);
+                c.bus.write32(table + 8 * category + 4, scripts);
+                for k in 0..4u32 {
+                    c.bus.write32(master + 0xc * k, r.next_u32() % 3);
+                    let s = scripts + 0x30 * k;
+                    c.bus.write32(s, r.next_u32() % 4);
+                    for j in 0..21u32 {
+                        let mask = if r.next_u32() % 6 == 0 {
+                            1u16 << (r.next_u32() % 16)
+                        } else {
+                            0
+                        };
+                        c.bus.write16(s + 4 + 2 * j, mask);
+                    }
+                }
+                c.g[A0][0] = sx(engine);
+                c.g[A1][0] = category as u64;
+            },
+        );
+    }
+
+    /// `cGame_loadTrack` makes about 40 calls, most unported. Like
+    /// `cGame_load`'s test it runs in a child process (this test binary, this
+    /// one test, `--exact`) whose function table holds only the stub below:
+    /// every other callee misses the table and lands in the logging fake. A
+    /// table swap in the shared test process would race with the other tests.
+    pub(crate) const OC428_CHILD_ENV: &str = "SSX3_OC428_LOADWORLD_CHILD";
+
+    /// `SectionMan_IsEventLoaded`: 0 for the first `n` calls (`n` at
+    /// `CTRL + 0x20`), then the fake's non-zero pointer.
+    pub(crate) fn oc428_stub_event_loaded(c: &mut Cpu) {
+        let ret = c.g[RA][0] as u32;
+        let n = c.bus.read32(OC428_CTRL + 0x24);
+        c.bus.write32(OC428_CTRL + 0x24, n + 1);
+        fakes::fake(c, 0x0022_d278, ret);
+        if c.pc == ret && n < c.bus.read32(OC428_CTRL + 0x20) {
+            c.g[V0][0] = 0;
+        }
+    }
+
+    pub(crate) static OC428_STUBS: [FnEntry; 1] = [FnEntry {
+        start: 0x0022_d278,
+        end: 0x0022_d27c,
+        f: oc428_stub_event_loaded,
+    }];
+
+    /// The fixture for one seed: the game object (world, big file, section
+    /// manager fields), the replay switch, the wait loop's length (0-2 extra
+    /// rounds).
+    pub(crate) fn oc428_load_world_setup(c: &mut Cpu, seed: u32) {
+        if std::env::var_os(OC428_CHILD_ENV).is_some() {
+            register_functions(&OC428_STUBS);
+        }
+        let mut r = machine(c, seed, 0x22f6b0, 44);
+        c.pc = 0x0022_f6b0;
+        let (this, world, world_data) = (DATA + 0x6_0000, DATA + 0x6_1000, DATA + 0x6_2000);
+        fill(c, &mut r, this, 0x40);
+        c.bus.write32(this + 0x10, world);
+        c.bus.write32(world, world_data);
+        c.bus.write32(GAME_GP - 0x1f38, (seed % 2) as u32);
+        c.bus.write32(GAME_GP + 0xda0, r.next_u32());
+        c.bus.write32(OC428_CTRL + 0x20, (seed / 2) % 3);
+        c.g[A0][0] = sx(this);
+    }
+
+    pub(crate) fn oc428_load_world_checked() {
+        fakes::covered(
+            ee::s06::f_0022f6b0__generated,
+            game_module_load_world,
+            90,
+            &oc428_load_world_setup,
+        );
+    }
+
+    /// `cGame_loadTrack` against the generated body (strict: the arguments
+    /// of all calls): replay and race location names, the section wait loop
+    /// of 0-2 rounds, unwinds at random call indices.
+    #[test]
+    fn game_module_load_world_matches() {
+        if std::env::var_os(OC428_CHILD_ENV).is_some() {
+            return oc428_load_world_checked();
+        }
+        let name = format!(
+            "{}::game_module_load_world_matches",
+            module_path!().split_once("::").map_or("", |p| p.1)
+        );
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([name.as_str(), "--exact", "--test-threads=1", "--nocapture"])
+            .env(OC428_CHILD_ENV, "1")
+            .output()
+            .unwrap();
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            out.status.success() && text.contains("1 passed"),
+            "child run of {name}:\n{text}"
+        );
+    }
+
+    // The events test for `BEAggressionInt_DecayAll` was dropped: its loop never reaches a scheduled event on any bounded fixture.
+
+    /// `ScriptEngine_LoadMainScripts`: the engine at `DATA + 0x1000` with bank 0
+    /// already loaded (so the real `LoadBankSync` returns at once); the
+    /// allocator hands out distinct pool blocks (see `oc430_result`).
+    pub(crate) fn oc430_script_engine_fixture(c: &mut Cpu, r: &mut Rng) {
+        let this = DATA + 0x1000;
+        c.bus.write32(this + 0x628, r.next_u32() | 1);
+        c.g[A0][0] = sx(this);
+    }
+
+    #[test]
+    fn script_engine_load_main_scripts_matches() {
+        oc430_install_fakes();
+        covered(
+            ee::s07::f_00278358__generated,
+            script_engine_load_main_scripts,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0027_8358, 11);
+                c.bus.write32(OC430_CTRL, OC430_MAGIC);
+                c.pc = 0x0027_8358;
+                oc430_script_engine_fixture(c, &mut r);
+            },
+        );
+    }
+
+    /// The same with event delivery at the six loops' back edges.
+    #[test]
+    fn script_engine_load_main_scripts_events_match() {
+        oc430_install_fakes();
+        check_events(
+            ee::s07::f_00278358__generated,
+            script_engine_load_main_scripts,
+            90,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0027_8359, 0);
+                c.bus.write32(OC430_CTRL, OC430_MAGIC);
+                oc430_script_engine_fixture(c, &mut r);
+                let mode = schedule(c, &mut r, seed, 0x0027_8358);
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[RA][0] = SENTINEL as u64;
+                mode
+            },
+        );
+    }
+
+    /// `ScriptViewObj_ctor`: the base object, the +0x10 binding (real
+    /// `ScriptBinding_ctor`), nine camera bindings and the reset (fakes).
+    #[test]
+    fn script_view_obj_ctor_matches() {
+        oc431_install();
+        covered(
+            ee::s07::f_00281018__generated,
+            script_view_obj_ctor,
+            100,
+            &|c, seed| {
+                let mut r = oc431_machine(c, seed, 0x281018, 11, 0x0028_1018);
+                c.g[A0][0] = (OC431_BASE + 0x100) as u64;
+                fill(c, &mut r, OC431_BASE + 0x100, 0x48);
+            },
+        );
+    }
+
+    /// `ScriptViewObj_Deactivate`: camera slots (-1 and bound), the fade
+    /// object (absent, already the "none" state, or stopped through its
+    /// vtable by the real `cTransitionMan_StopTransition`), the pending focus
+    /// box (removed through a fake) and the reset/deactivate calls.
+    #[test]
+    fn script_view_obj_deactivate_matches() {
+        oc431_install();
+        covered(
+            ee::s07::f_00281400__generated,
+            script_view_obj_deactivate,
+            200,
+            &|c, seed| {
+                let mut r = oc431_machine(c, seed, 0x281400, 10, 0x0028_1400);
+                let (this, fade, vt, world, focus1, focus2) = (
+                    OC431_BASE + 0x100,
+                    OC431_BASE + 0x1000,
+                    OC431_BASE + 0x1100,
+                    OC431_BASE + 0x2000,
+                    OC431_BASE + 0x2100,
+                    OC431_BASE + 0x2200,
+                );
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                fill(c, &mut r, this, 0x50);
+                c.bus.write32(this + 4, r.next_u32());
+                for k in 0..2 {
+                    let slot = [u32::MAX, 0, 1, 2][(r.next_u32() % 4) as usize];
+                    c.bus.write32(this + 0xdc + 4 * k, slot);
+                }
+                // The fade object and its vtable (stop: +0x28/+0x2c, set: +0x20/+0x24).
+                let has_fade = r.next_u32() % 3 != 0;
+                c.bus.write32(this + 0xd8, if has_fade { fade } else { 0 });
+                c.bus.write32(
+                    fade + 0x18,
+                    if r.next_u32() & 1 == 0 {
+                        9
+                    } else {
+                        r.next_u32() % 9
+                    },
+                );
+                c.bus.write32(fade + 0xc, vt);
+                for off in [0x20u32, 0x28] {
+                    c.bus.write16(vt + off, (r.next_u32() & 0xfc) as u16);
+                    c.bus.write32(vt + off + 4, FAKE);
+                }
+                c.bus.write32(GAME_GP - 0x4778, 1.0f32.to_bits());
+                // The pending focus box: world -> +0x84 -> +0xc -> +0xa4.
+                let pending = if r.next_u32() % 3 == 0 {
+                    0
+                } else {
+                    r.next_u32() | 1
+                };
+                c.bus.write32(this + 0x110, pending);
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, focus1);
+                c.bus.write32(focus1 + 0xc, focus2);
+                c.bus.write32(focus2 + 0xa4, r.next_u32());
             },
         );
     }

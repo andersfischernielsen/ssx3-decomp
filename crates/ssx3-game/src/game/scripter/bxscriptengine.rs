@@ -30,10 +30,12 @@ pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
 pub(crate) use crate::game::main::gamestate::lw_at_3;
 pub(crate) use crate::game::main::gamestate::vslot;
+pub(crate) use crate::game::main::ssxapp::oc429_at;
 pub(crate) use crate::game::movie::movieplayer::at as at_3;
 pub(crate) use crate::game::movie::movieplayer::lw_at;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2;
+pub(crate) use crate::game::scripter::ssxscriptengine::oc428_at;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2;
 pub(crate) use crate::game::sound::bankmonitor::add32;
 pub(crate) use crate::game::sound::bankmonitor::p;
@@ -237,6 +239,17 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         script_engine_get_seq_process_id,
         "ScriptEngine_GetSeqProcessId",
     ),
+    (
+        0x0028_2540,
+        script_engine_kill_process,
+        "ScriptEngine_KillProcess",
+    ),
+    (
+        0x0028_2dd0,
+        c_transition_man_start_transition,
+        "cTransitionMan_StartTransition",
+    ),
+    (0x0028_2f60, script_binding_ctor, "ScriptBinding_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2241,6 +2254,288 @@ pub fn script_engine_get_seq_process_id(c: &mut Cpu) {
     ret(c);
 }
 
+/// `ScriptBinding* ScriptBinding_ctor(ScriptBinding* self)` (0x282f60): the
+/// vtable `0x482418`, an id of -1 and a zero third word; returns `self`.
+pub fn script_binding_ctor(c: &mut Cpu) {
+    c.cycles += 8;
+    c.g[V0][0] = 0x48_0000;
+    c.g[V1][0] = u64::MAX;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2418));
+    c.sw(oc428_at(c.g[A0][0], 4), c.g[V1][0]);
+    c.sw(c.g[A0][0] as u32, c.g[V0][0]);
+    c.g[V0][0] = c.g[A0][0];
+    ret(c);
+    c.sw(oc428_at(c.g[A0][0], 8), 0);
+}
+
+/// `int ScriptEngine_KillProcess(ScriptEngine* self, int id)` (0x282540):
+/// tear down script process `id` (always returns 6). Nothing for a missing
+/// or inactive process; otherwise by process type (jump table at
+/// `0x481f90`): type 1 releases its table entry through vtable `+0x40`
+/// unless the entry is set, types 3..5 stop the process' sequence
+/// (`StopProcessSeq`), others nothing; then `vtbl +0x60(id, proc->+0xc)`, its
+/// sequence object (`InSeq_InstanceSetUserData(obj, 0)`, `InSeq_FreeSequence`),
+/// the table refcount (`vtbl +0x48` when it drops to 0), mark the slot type 7
+/// and `ClearProcess`. Resume entries go to the generated `__entries`.
+pub fn script_engine_kill_process(c: &mut Cpu) {
+    if c.pc != 0x0028_2540 {
+        return ee::s07::f_00282540__generated(c);
+    }
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x30);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A1][0];
+        call_ptr(c, 0x0028_2cb0, 0x0028_2560)?; // ScriptEngine_GetProcess
+        c.g[S0][0] = c.g[V0][0];
+        let missing = c.g[S0][0] == 0;
+        c.g[V0][0] = 6;
+        'done: {
+            if missing {
+                break 'done;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(oc429_at(c.g[S0][0], 0x20));
+            let inactive = c.g[V0][0] == 0;
+            c.g[V0][0] = 6;
+            if inactive {
+                break 'done;
+            }
+            'release: {
+                'by_type: {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw(oc429_at(c.g[S0][0], 0x4));
+                    c.g[V0][0] = (c.g[V1][0] < 7) as u64;
+                    let bad_type = c.g[V0][0] == 0;
+                    c.sh(oc429_at(c.g[S0][0], 0x10), 0);
+                    if bad_type {
+                        break 'by_type;
+                    }
+                    'stop_seq: {
+                        c.cycles += 7;
+                        c.g[V0][0] = 0x48_0000;
+                        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                        c.g[V0][0] = sx(oc429_at(c.g[V0][0], 0x1f90));
+                        c.g[V1][0] = sx(oc429_at(c.g[V1][0], c.g[V0][0] as u32));
+                        c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                        let target = c.g[A0][0] as u32;
+                        match target {
+                            // Type 1: release the table entry unless it is set.
+                            0x0028_25a4 => {
+                                c.cycles += 7;
+                                c.g[A1][0] = c.lw(oc429_at(c.g[S0][0], 0x14));
+                                c.g[V0][0] = c.lw(oc429_at(c.g[S1][0], 0x2b0));
+                                c.g[V1][0] = sx((c.g[A1][0] as u32) << 3);
+                                c.g[V0][0] = sx(oc429_at(c.g[V0][0], c.g[V1][0] as u32));
+                                c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                                let set = c.g[A0][0] != 0;
+                                c.g[V0][0] = c.lw(oc429_at(c.g[S1][0], 0x2a8));
+                                if set {
+                                    break 'release;
+                                }
+                                c.cycles += 6;
+                                c.g[A0][0] = c.lh(oc429_at(c.g[V0][0], 0x40));
+                                c.g[V1][0] = c.lw(oc429_at(c.g[V0][0], 0x44));
+                                let method = c.g[V1][0] as u32;
+                                c.g[A0][0] = sx(oc429_at(c.g[S1][0], c.g[A0][0] as u32));
+                                call_ptr(c, method, 0x0028_25d0)?;
+                                c.g[V0][0] = c.lw(oc429_at(c.g[S1][0], 0x2a8));
+                                break 'release;
+                            }
+                            // Types 3, 4, 5: stop the process' sequence.
+                            0x0028_25d8 => break 'stop_seq,
+                            // Types 0, 2, 6: nothing.
+                            0x0028_25e4 => break 'by_type,
+                            _ => {
+                                c.jump_out(target, 0x0028_2540, 0x0028_2698);
+                                return Ok(());
+                            }
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A1][0] = c.g[S2][0];
+                    call_ptr(c, 0x0028_2338, 0x0028_25e4)?; // ScriptEngine_StopProcessSeq
+                }
+                c.cycles += 1;
+                c.g[V0][0] = c.lw(oc429_at(c.g[S1][0], 0x2a8));
+            }
+            // vtbl +0x60: the process is going away.
+            'seq: {
+                c.cycles += 9;
+                c.g[A1][0] = c.g[S2][0];
+                c.g[A2][0] = c.lw(oc429_at(c.g[S0][0], 0xc));
+                c.g[A0][0] = c.lh(oc429_at(c.g[V0][0], 0x60));
+                c.g[V1][0] = c.lw(oc429_at(c.g[V0][0], 0x64));
+                let method = c.g[V1][0] as u32;
+                c.g[A0][0] = sx(oc429_at(c.g[S1][0], c.g[A0][0] as u32));
+                call_ptr(c, method, 0x0028_2600)?;
+                c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                if c.g[A0][0] == 0 {
+                    c.g[A0][0] = c.lw(oc429_at(c.g[S0][0], 0x8));
+                    break 'seq;
+                }
+                c.cycles += 7;
+                c.g[A1][0] = 0;
+                call_ptr(c, 0x0027_4c10, 0x0028_2614)?; // InSeq_InstanceSetUserData
+                c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                c.g[A0][0] = c.lw(oc429_at(c.g[S1][0], 0x2b8));
+                c.g[A1][0] = c.lw(c.g[V1][0] as u32);
+                call_ptr(c, 0x0027_29a8, 0x0028_2624)?; // InSeq_FreeSequence
+                c.g[A0][0] = c.lw(oc429_at(c.g[S0][0], 0x8));
+            }
+            'mark: {
+                'unref: {
+                    c.cycles += 2;
+                    let no_entry = (c.g[A0][0] as i64) < 0;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32) << 3);
+                    if no_entry {
+                        break 'unref;
+                    }
+                    c.cycles += 8;
+                    c.g[V0][0] = c.lw(oc429_at(c.g[S1][0], 0x2b0));
+                    c.g[V0][0] = sx(oc429_at(c.g[V0][0], c.g[A0][0] as u32));
+                    c.g[V1][0] = c.lhu(oc429_at(c.g[V0][0], 0x4));
+                    c.g[V1][0] = sx(oc429_at(c.g[V1][0], 0u32.wrapping_sub(1)));
+                    c.sh(oc429_at(c.g[V0][0], 0x4), c.g[V1][0]);
+                    c.g[V1][0] &= 0xffff;
+                    let still_used = c.g[V1][0] != 0;
+                    c.g[V0][0] = 7;
+                    if still_used {
+                        break 'mark;
+                    }
+                    c.cycles += 6;
+                    c.g[V0][0] = c.lw(oc429_at(c.g[S1][0], 0x2a8));
+                    c.g[A1][0] = c.lw(oc429_at(c.g[S0][0], 0x8));
+                    c.g[A0][0] = c.lh(oc429_at(c.g[V0][0], 0x48));
+                    c.g[V1][0] = c.lw(oc429_at(c.g[V0][0], 0x4c));
+                    let method = c.g[V1][0] as u32;
+                    c.g[A0][0] = sx(oc429_at(c.g[S1][0], c.g[A0][0] as u32));
+                    call_ptr(c, method, 0x0028_2668)?;
+                }
+                c.cycles += 1;
+                c.g[V0][0] = 7;
+            }
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S1][0];
+            c.sw(oc429_at(c.g[S0][0], 0x4), c.g[V0][0]);
+            c.g[A1][0] = c.g[S0][0];
+            call_ptr(c, 0x0028_2c88, 0x0028_267c)?; // ScriptEngine_ClearProcess
+            c.g[V0][0] = 6;
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cTransitionMan_StartTransition(cTransitionMan* self, int a1, int kind,
+/// int a3, float t, float x, float y, float z)` (0x282dd0): ends the running
+/// transition (a virtual call through `self+0xc`, slot `0x28`/`0x2c`) unless
+/// the state at `+0x18` is 9 (idle). Then either resets to idle (`kind == 9`
+/// or `x + y + z <= t`), or records the new transition (`+0x14 = a1`,
+/// `+0x18 = kind`, `+0x28 = a3`, the vector scaled by the constant at
+/// `gp - 0x4778` into `+0x1c..+0x24`) and starts it (virtual slot `0x20`/`0x24`).
+pub fn c_transition_man_start_transition(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = 9;
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S4, 0x10);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save_fpr(c, 23, 0x78);
+        c.g[S4][0] = c.g[A3][0];
+        frame.save_fpr(c, 22, 0x70);
+        c.mov_s(23, 12);
+        frame.save_fpr(c, 21, 0x68);
+        c.mov_s(22, 15);
+        frame.save_fpr(c, 20, 0x60);
+        c.mov_s(21, 14);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+        let idle = c.g[V0][0] == c.g[S1][0];
+        c.mov_s(20, 13);
+        if !idle {
+            // end the running transition
+            c.cycles += 6;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x28));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x2c));
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0028_2e40)?;
+        }
+        c.cycles += 2;
+        let to_idle = c.g[S2][0] == c.g[S1][0];
+        c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        let mut start = false;
+        if !to_idle {
+            c.cycles += 6;
+            c.add_s(0, 21, 22);
+            c.add_s(0, 0, 20);
+            c.c_le_s(0, 23);
+            start = !c.fcc();
+            c.g[A1][0] = c.g[S3][0];
+        }
+        if start {
+            c.cycles += 16;
+            c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x4778));
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x18), c.g[S2][0]);
+            c.mul_s(2, 20, 0);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[S4][0]);
+            c.mul_s(1, 21, 0);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), 0);
+            c.mul_s(0, 22, 0);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[S3][0]);
+            c.swc1(2, (c.g[S0][0] as u32).wrapping_add(0x24));
+            c.swc1(1, (c.g[S0][0] as u32).wrapping_add(0x1c));
+            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x20));
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x20));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x24));
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0028_2ebc)?;
+        } else {
+            c.cycles += 7;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x18), c.g[S1][0]);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), 0);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), 0);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x20), 0);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x24), 0);
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 23, 0x78);
+        frame.restore_fpr(c, 22, 0x70);
+        frame.restore_fpr(c, 21, 0x68);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3298,6 +3593,142 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(seq);
                 c.bus.write32(seq + 0xc, process);
                 c.bus.write32(process + 0x1c, r.next_u32());
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_force;
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_machine;
+
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_w;
+
+    pub(crate) use crate::game::main::ssxapp::tests::OC429_FX;
+
+    /// `ScriptBinding_ctor` writes the vtable, -1 and 0 into the object.
+    #[test]
+    fn script_binding_ctor_matches() {
+        check(
+            ee::s07::f_00282f60__generated,
+            script_binding_ctor,
+            20,
+            &|c, seed| {
+                let mut r = Rng(0x282f60 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = sx(DATA + 0x100);
+                for k in 0..4 {
+                    c.bus.write32(DATA + 0x100 + 4 * k, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// `ScriptEngine_KillProcess`: missing / inactive process, every process
+    /// type 0..8 (jump table at `0x481f90`, written as in the game), table
+    /// entry set or not, refcount reaching 0 or not, a sequence object or
+    /// none, unwinds in every call.
+    #[test]
+    fn script_engine_kill_process_matches() {
+        covered(
+            ee::s07::f_00282540__generated,
+            script_engine_kill_process,
+            200,
+            &|c, seed| {
+                let mut r = oc429_machine(c, seed, 0x282540, 8, 0x0028_2540);
+                for (i, t) in [
+                    0x0028_25e4u32,
+                    0x0028_25a4,
+                    0x0028_25e4,
+                    0x0028_25d8,
+                    0x0028_25d8,
+                    0x0028_25d8,
+                    0x0028_25e4,
+                ]
+                .iter()
+                .enumerate()
+                {
+                    c.bus.write32(0x0048_1f90 + 4 * i as u32, *t);
+                }
+                let this = OC429_FX + 0x400;
+                let vt = OC429_FX + 0x600;
+                let table = OC429_FX + 0x800;
+                let proc_ = OC429_FX + 0xa00;
+                let obj = OC429_FX + 0xb00;
+                oc429_w(c, this + 0x2a8, vt);
+                oc429_w(c, this + 0x2b0, table);
+                oc429_w(c, this + 0x2b8, OC429_FX + 0xc00);
+                for (slot, fk) in [(0x40u32, 0u32), (0x60, 1), (0x48, 2)] {
+                    c.bus.write16(vt + slot, (r.next_u32() as u16) & !3);
+                    oc429_w(c, vt + slot + 4, fakes::FAKE + 0x10 * fk);
+                }
+                // Table entries: [+0 flag, +4 refcount (u16)].
+                for i in 0..4u32 {
+                    oc429_w(c, table + 8 * i, if r.next_u32() & 1 == 0 { 0 } else { 1 });
+                    c.bus
+                        .write16(table + 8 * i + 4, 1 + (r.next_u32() % 2) as u16);
+                }
+                oc429_w(c, proc_ + 0x20, if seed % 9 == 1 { 0 } else { 1 });
+                oc429_w(c, proc_ + 4, seed % 9);
+                oc429_w(c, proc_ + 0xc, r.next_u32());
+                oc429_w(c, proc_ + 0x14, r.next_u32() % 4);
+                oc429_w(c, proc_, if r.next_u32() & 1 == 0 { 0 } else { obj });
+                oc429_w(
+                    c,
+                    proc_ + 8,
+                    if r.next_u32() % 3 == 0 {
+                        0xffff_ffff
+                    } else {
+                        r.next_u32() % 4
+                    },
+                );
+                oc429_w(c, obj, OC429_FX + 0xd00);
+                oc429_w(c, OC429_FX + 0xd00, r.next_u32());
+                oc429_force(
+                    c,
+                    0x0028_2cb0,
+                    &[if seed % 11 == 0 { 0 } else { proc_ as u64 }],
+                );
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// `cTransitionMan_StartTransition`: idle / running transition (end call),
+    /// `kind == 9` and the `x + y + z <= t` reset, and the start path; both
+    /// virtual calls go to fake methods (some unwind).
+    #[test]
+    fn c_transition_man_start_transition_matches() {
+        covered(
+            ee::s07::f_00282dd0__generated,
+            c_transition_man_start_transition,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0028_2dd0, 2);
+                c.pc = 0x0028_2dd0;
+                let this = DATA + 0x1000;
+                for k in 0..0x10 {
+                    c.bus.write32(this + 4 * k, r.next_u32());
+                }
+                let vt = fakes::vtable(c, &mut r, &[0x28, 0x20]);
+                c.bus.write32(this + 0xc, vt);
+                c.bus.write32(
+                    this + 0x18,
+                    if seed % 3 == 0 { 9 } else { r.next_u32() % 9 },
+                );
+                c.bus.write32(c.g[GP][0] as u32 - 0x4778, r.f32(2.0));
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(r.next_u32());
+                c.g[A2][0] = sx(if seed % 4 == 1 { 9 } else { r.next_u32() % 12 });
+                c.g[A3][0] = sx(r.next_u32());
+                for f in 12..16 {
+                    c.f[f] = if seed % 5 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(4.0)
+                    };
+                }
             },
         );
     }

@@ -364,6 +364,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         camera_trigger_read_box_trigger_data_2,
         "CameraTrigger_ReadBoxTriggerData",
     ),
+    (
+        0x0017_6440,
+        camera_bound_obj_get_position,
+        "CameraBoundObj_GetPosition",
+    ),
+    (
+        0x0017_6458,
+        camera_bound_obj_get_field14,
+        "CameraBoundObj_GetField14",
+    ),
+    (
+        0x0017_6460,
+        camera_bound_obj_get_scale,
+        "CameraBoundObj_GetScale",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6393,6 +6408,34 @@ pub fn camera_trigger_read_box_trigger_data_2(c: &mut Cpu) {
     })
 }
 
+/// `t3Vector& CameraBoundObj_GetPosition(CameraBoundObj* self)` (0x176440,
+/// `cCTObject::pos`): the position vector is the object's first member, so
+/// it returns `self`.
+pub fn camera_bound_obj_get_position(c: &mut Cpu) {
+    c.cycles += 2;
+    let ra = c.g[RA][0] as u32;
+    c.g[V0][0] = c.g[A0][0];
+    c.pc = ra;
+}
+
+/// `void* CameraBoundObj_GetScale(CameraBoundObj* self)` (0x00176460):
+/// the address of the scale field (`self + 0x18`).
+pub fn camera_bound_obj_get_scale(c: &mut Cpu) {
+    c.cycles += 2;
+    let ra = c.g[RA][0] as u32;
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
+    c.pc = ra;
+}
+
+/// `void* CameraBoundObj_GetField14(CameraBoundObj* self)` (0x00176458):
+/// the address of the field at `self + 0x14`.
+pub fn camera_bound_obj_get_field14(c: &mut Cpu) {
+    c.cycles += 2;
+    let ra = c.g[RA][0] as u32;
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x14));
+    c.pc = ra;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -8637,6 +8680,47 @@ pub(crate) mod tests {
                 c.bus.write32(obj + 0x28, r.next_u32());
                 c.g[A0][0] = sx(reader);
                 c.g[A1][0] = sx(obj);
+            },
+        );
+    }
+
+    /// `CameraBoundObj_GetPosition` returns its argument.
+    #[test]
+    fn camera_bound_obj_get_position_matches() {
+        check(
+            ee::s02::f_00176440__generated,
+            camera_bound_obj_get_position,
+            20,
+            &|c, seed| {
+                let mut r = Rng(0x17_6440 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0017_6440;
+            },
+        );
+    }
+
+    #[test]
+    fn camera_bound_obj_get_scale_matches() {
+        check(
+            ee::s02::f_00176460__generated,
+            camera_bound_obj_get_scale,
+            100,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x176460, 0);
+                c.pc = 0x0017_6460;
+            },
+        );
+    }
+
+    #[test]
+    fn camera_bound_obj_get_field14_matches() {
+        check(
+            ee::s02::f_00176458__generated,
+            camera_bound_obj_get_field14,
+            100,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x176458, 0);
+                c.pc = 0x0017_6458;
             },
         );
     }

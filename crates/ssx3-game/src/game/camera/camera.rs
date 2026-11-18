@@ -411,6 +411,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_camera_snap_to_default_chase_view,
         "GameCamera_SnapToDefaultChaseView",
     ),
+    (
+        0x0016_2458,
+        chase_camera_algorithm_dtor,
+        "ChaseCameraAlgorithm_dtor",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -9917,10 +9922,59 @@ pub fn game_camera_snap_to_default_chase_view(c: &mut Cpu) {
     })
 }
 
+/// `void ChaseCameraAlgorithm_dtor(ChaseCameraAlgorithm* self, int flags)`
+/// (0x162458): resets the vtable to the base-class one while destroying the five
+/// `cCSICubicSpline` members at `+0x334 .. +0x304` (stride 0xc, flag 2), sets
+/// the final vtable (0x45bde0) and frees `self` (`delete`) when bit 0 of
+/// `flags` is set.
+pub fn chase_camera_algorithm_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 29;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x46_0000;
+        frame.save(c, S0, 0x20);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4440));
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+        // (member offset, return address) of the five spline destructor calls
+        for (off, ret) in [
+            (0x334u32, 0x0016_2488u32),
+            (0x328, 0x0016_2494),
+            (0x31c, 0x0016_24a0),
+            (0x310, 0x0016_24ac),
+            (0x304, 0x0016_24b8),
+        ] {
+            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(off));
+            c.g[A1][0] = 2;
+            call_ptr(c, 0x0031_d618, ret)?; // cCSICubicSpline_dtor
+        }
+        c.g[V0][0] = 0x46_0000;
+        c.g[S0][0] &= 1;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4220));
+        let keep = c.g[S0][0] == 0;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+        if !keep {
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0031_7e50, 0x0016_24d4)?; // operator_delete
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
 
     use crate::difftest::elf_image;
 
@@ -12916,6 +12970,28 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(DATA + 0x2000);
                 c.g[A2][0] = sx(DATA + 0x2010);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::intersect::riderspheretree::tests::OC430_CTRL;
+    pub(crate) use crate::game::intersect::riderspheretree::tests::OC430_MAGIC;
+
+    /// `ChaseCameraAlgorithm_dtor`: the five member destructors and the
+    /// optional `delete` (bit 0 of the flags) are gated fakes.
+    #[test]
+    fn chase_camera_algorithm_dtor_matches() {
+        oc430_install_fakes();
+        covered(
+            ee::s01::f_00162458__generated,
+            chase_camera_algorithm_dtor,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0016_2458, 6);
+                c.bus.write32(OC430_CTRL, OC430_MAGIC);
+                c.pc = 0x0016_2458;
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[A1][0] = sx(r.next_u32());
             },
         );
     }

@@ -233,6 +233,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_sphere_tree_translate,
         "RiderSphereTree_Translate",
     ),
+    (
+        0x0032_dc10,
+        world_init_sphere_tree_cache,
+        "World_InitSphereTreeCache",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5707,6 +5712,305 @@ pub fn rider_sphere_tree_translate(c: &mut Cpu) {
     ret(c);
 }
 
+/// `char* InputPreproc_Run(InputPreproc* self, const char* path, int* size)`
+/// (0x325f48, `cInputPreProcessor::loadFileSize`): resets the preprocessor
+/// (size 0, capacity 0x800, a 0x800-byte output buffer), splits `path` at its
+/// last `/` into the directory (kept at `sp+0`, empty when there is no `/`)
+/// and the file name (`sp+0x80`), runs `InputPreproc_ProcessFile` over it, copies
+/// the output to a fresh buffer of exactly its length, frees the work buffer,
+/// stores the length in `*size` and returns the copy.
+///
+/// Resume entries: when registering, add the `c.pc != entry` fallback to the
+/// generated twin (`__entries`, `__generated` in the unwind form); the generated
+/// body has resume points, this port does not handle them.
+///
+/// NOT registered: `InputPreproc_ProcessFile` (not in the override list) runs the
+/// whole file reader, so no bounded differential fixture exists.
+pub fn input_preproc_run(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 27;
+        let frame = Frame::open(c, 0x110);
+        c.g[V0][0] = 0x800;
+        frame.save(c, S3, 0xd0);
+        c.g[A3][0] = 0;
+        frame.save(c, S4, 0xc0);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S2, 0xe0);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S5, 0xb0);
+        c.g[A1][0] = 0x49_0000;
+        frame.save(c, S0, 0x100);
+        c.g[S5][0] = c.g[A2][0];
+        frame.save(c, S1, 0xf0);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1c48));
+        frame.save_ra(c, 0xa0);
+        c.g[A0][0] = 0x800;
+        c.sw(c.g[S3][0] as u32, 0);
+        c.g[A2][0] = 0;
+        c.sw((c.g[S3][0] as u32).wrapping_add(4), c.g[V0][0]);
+        call_ptr(c, 0x0031_7e30, 0x0032_5f98)?; // operator_new_named
+        c.sw((c.g[S3][0] as u32).wrapping_add(8), c.g[V0][0]);
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = 0x2f;
+        call_ptr(c, 0x0041_acc0, 0x0032_5fa8)?; // strrchr
+        c.g[S2][0] = c.g[V0][0];
+        let no_slash = c.g[S2][0] == 0;
+        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+        if !no_slash {
+            c.cycles += 13;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[S4][0] as u32));
+            c.g[A1][0] = c.g[S4][0];
+            c.g[A2][0] = c.g[S0][0];
+            call_ptr(c, 0x0041_6ce0, 0x0032_5fc8)?; // strncpy (directory)
+            c.g[S1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+            c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[S0][0] as u32));
+            c.sb(c.g[V1][0] as u32, 0);
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0041_66f4, 0x0032_5fe0)?; // strcpy (file name)
+            c.g[A2][0] = c.g[S1][0];
+        } else {
+            c.cycles += 6;
+            c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+            c.sb(c.g[SP][0] as u32, 0);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S4][0];
+            call_ptr(c, 0x0041_66f4, 0x0032_5ffc)?; // strcpy (file name)
+            c.g[A2][0] = c.g[S0][0];
+        }
+        c.cycles += 16;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A0][0] = c.g[S3][0];
+        call_ptr(c, 0x0032_6078, 0x0032_600c)?; // InputPreproc_ProcessFile
+        c.g[A0][0] = c.lw(c.g[S3][0] as u32);
+        c.g[A1][0] = c.g[S4][0];
+        c.g[A2][0] = 0x100;
+        c.g[A3][0] = 0;
+        call_ptr(c, 0x0031_7e30, 0x0032_6020)?; // operator_new_named
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(8));
+        c.g[A2][0] = c.lw(c.g[S3][0] as u32);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0041_605c, 0x0032_6034)?; // memcpy
+        c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(8));
+        if c.g[A0][0] == 0 {
+            c.g[V1][0] = c.lw(c.g[S3][0] as u32);
+        } else {
+            c.cycles += 3;
+            call_ptr(c, 0x0031_7e98, 0x0032_6048)?; // EA_MemFree
+            c.g[V1][0] = c.lw(c.g[S3][0] as u32);
+        }
+        c.cycles += 11;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S0, 0x100);
+        c.sw(c.g[S5][0] as u32, c.g[V1][0]);
+        frame.restore(c, S1, 0xf0);
+        frame.restore(c, S2, 0xe0);
+        frame.restore(c, S3, 0xd0);
+        frame.restore(c, S4, 0xc0);
+        frame.restore(c, S5, 0xb0);
+        frame.restore_ra(c, 0xa0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// One of the allocation calls of `World_InitSphereTreeCache`:
+/// `operator_new_named(size, tag, 0, 0)` returning to `ret`.
+pub(crate) fn world_sphere_tree_new(c: &mut Cpu, size: u64, tag: u64, ret: u32) -> Flow {
+    c.g[A0][0] = size;
+    c.g[A1][0] = tag;
+    c.g[A2][0] = 0;
+    c.g[A3][0] = 0;
+    call_ptr(c, 0x0031_7e30, ret)
+}
+
+/// `void World_InitSphereTreeCache(int nSmall, int smallDepth, int nBig, int
+/// bigDepth)` (0x32dc10): sets up the sphere-tree buffer cache. A tree of depth
+/// `d` has `1 + 8 + ... + 8^d` nodes; the cache gets `nSmall` buffers of the
+/// `smallDepth` tree size and `nBig` of the `bigDepth` size (`bigDepth` is also
+/// kept at `gp + 0xef8`), each with an id slot set to -1, in the pointer/id
+/// arrays at `gp + 0xed8/0xedc` (small) and `gp + 0xee8/0xeec` (big). Counts
+/// go to `gp + 0xee0/0xef0`, the cursors (`+0xee4`, `+0xef4`) to 0.
+pub fn world_init_sphere_tree_cache(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0xa0);
+        let gp = c.g[GP][0] as u32;
+        c.sw(gp.wrapping_add(0xef8), c.g[A3][0]);
+        frame.save(c, S3, 0x60);
+        c.g[V0][0] = 1;
+        frame.save(c, S4, 0x50);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, S5, 0x40);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, FP, 0x10);
+        c.g[S5][0] = 0;
+        frame.save(c, S0, 0x90);
+        c.g[FP][0] = 0;
+        frame.save(c, S1, 0x80);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        let negative = (c.g[A1][0] as i64) < 0;
+        frame.save_ra(c, 0);
+        // smallSize = 1 + 8 + ... (smallDepth + 1 terms), in s5
+        if !negative {
+            c.cycles += 2;
+            c.g[S2][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+            loop {
+                c.cycles += 7;
+                c.g[S5][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(1));
+                let more = c.g[S2][0] != 0;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0032_dc60);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        // bigSize, in fp
+        c.cycles += 3;
+        c.g[V1][0] = c.lw(gp.wrapping_add(0xef8));
+        let negative = (c.g[V1][0] as i64) < 0;
+        c.g[V0][0] = 1;
+        if !negative {
+            c.cycles += 2;
+            c.g[S2][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+            loop {
+                c.cycles += 7;
+                c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(1));
+                let more = c.g[S2][0] != 0;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0032_dc90);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        c.cycles += 5;
+        for off in [0xed8u32, 0xedc, 0xee8] {
+            c.sw(gp.wrapping_add(off), 0);
+        }
+        let no_small = c.g[S4][0] == 0;
+        c.sw(gp.wrapping_add(0xeec), 0);
+        if !no_small {
+            c.cycles += 15;
+            c.g[S0][0] = 0x49_0000;
+            c.g[S1][0] = sx((c.g[S4][0] as u32) << 2);
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1ac0));
+            let (size, tag) = (c.g[S1][0], c.g[S0][0]);
+            world_sphere_tree_new(c, size, tag, 0x0032_dce0)?; // pointers
+            c.sw(gp.wrapping_add(0xed8), c.g[V0][0]);
+            let (size, tag) = (c.g[S1][0], c.g[S0][0]);
+            world_sphere_tree_new(c, size, tag, 0x0032_dcf8)?; // ids
+            c.sw(gp.wrapping_add(0xedc), c.g[V0][0]);
+        }
+        c.cycles += 2;
+        let no_big = c.g[S3][0] == 0;
+        c.g[S0][0] = 0x49_0000;
+        if !no_big {
+            c.cycles += 14;
+            c.g[S1][0] = sx((c.g[S3][0] as u32) << 2);
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1ac0));
+            let (size, tag) = (c.g[S1][0], c.g[S0][0]);
+            world_sphere_tree_new(c, size, tag, 0x0032_dd20)?; // pointers
+            c.sw(gp.wrapping_add(0xee8), c.g[V0][0]);
+            let (size, tag) = (c.g[S1][0], c.g[S0][0]);
+            world_sphere_tree_new(c, size, tag, 0x0032_dd38)?; // ids
+            c.sw(gp.wrapping_add(0xeec), c.g[V0][0]);
+        }
+        c.cycles += 2;
+        let none = (c.g[S4][0] as i64) <= 0;
+        c.g[S2][0] = 0;
+        if !none {
+            c.cycles += 3;
+            c.g[S7][0] = 0x49_0000;
+            c.g[S6][0] = 0xffff_ffff_ffff_ffff;
+            loop {
+                c.cycles += 15;
+                c.g[S0][0] = c.lw(gp.wrapping_add(0xed8));
+                c.g[S1][0] = sx((c.g[S2][0] as u32) << 2);
+                c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                let size = c.g[S5][0];
+                let tag = sx((c.g[S7][0] as u32).wrapping_sub(0x1ac0));
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                world_sphere_tree_new(c, size, tag, 0x0032_dd74)?; // small buffer
+                c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+                c.g[V1][0] = ((c.g[S2][0] as i64) < (c.g[S4][0] as i64)) as u64;
+                c.g[V0][0] = c.lw(gp.wrapping_add(0xedc));
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                let more = c.g[V1][0] != 0;
+                c.sw(c.g[S1][0] as u32, c.g[S6][0]);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0032_dd50);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        c.cycles += 2;
+        let none = (c.g[S3][0] as i64) <= 0;
+        c.g[S2][0] = 0;
+        if !none {
+            c.cycles += 3;
+            c.g[S6][0] = 0x49_0000;
+            c.g[S5][0] = 0xffff_ffff_ffff_ffff;
+            loop {
+                c.cycles += 15;
+                c.g[S0][0] = c.lw(gp.wrapping_add(0xee8));
+                c.g[S1][0] = sx((c.g[S2][0] as u32) << 2);
+                c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                let size = c.g[FP][0];
+                let tag = sx((c.g[S6][0] as u32).wrapping_sub(0x1ac0));
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                world_sphere_tree_new(c, size, tag, 0x0032_ddc4)?; // big buffer
+                c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+                c.g[V1][0] = ((c.g[S2][0] as i64) < (c.g[S3][0] as i64)) as u64;
+                c.g[V0][0] = c.lw(gp.wrapping_add(0xeec));
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                let more = c.g[V1][0] != 0;
+                c.sw(c.g[S1][0] as u32, c.g[S5][0]);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0032_dda0);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        c.cycles += 16;
+        c.sw(gp.wrapping_add(0xee0), c.g[S4][0]);
+        c.sw(gp.wrapping_add(0xef0), c.g[S3][0]);
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        c.sw(gp.wrapping_add(0xee4), 0);
+        c.sw(gp.wrapping_add(0xef4), 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7452,6 +7756,181 @@ pub(crate) mod tests {
                     v,
                     [r.f32(100.0), r.f32(100.0), r.f32(100.0), r.edge_f32()],
                 );
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    use crate::difftest::RA as SENTINEL_m2;
+    pub(crate) use crate::game::be::beintaggression::be_aggression_step;
+    use std::ptr::addr_of_mut;
+
+    /// Fakes are live only in machines that hold `OC430_MAGIC` at `OC430_CTRL`.
+    pub(crate) const OC430_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC430_MAGIC: u32 = 0x4f43_4330;
+
+    /// Result a fake callee returns instead of the hashed pointer, where the
+    /// function under test needs a usable value (call index `n`, `a0` as set by
+    /// the caller).
+    pub(crate) fn oc430_result(addr: u32, a0: u64, n: u32) -> Option<u64> {
+        match addr {
+            0x0031_7d70 => Some((DATA + 0x1_0000 + 0x1000 * (n & 15)) as u64),
+            0x0031_7e30 => Some((DATA + 0x6000 + 0x800 * (n & 7)) as u64),
+            0x0039_7b08 => Some(a0),
+            0x0014_a0e0 => Some(a0 % 3),
+            0x0014_a080 => Some((a0 * 3 + 1) % 10),
+            _ => None,
+        }
+    }
+
+    /// One logged fake call (`fakes::fake`), with `oc430_result` applied.
+    pub(crate) fn oc430_fake_call(c: &mut Cpu, addr: u32) {
+        let ra = c.g[RA][0] as u32;
+        let a0 = c.g[A0][0];
+        let n = c.bus.read32(fakes::LOG_COUNT);
+        fakes::fake(c, addr, ra);
+        if c.pc == ra {
+            if let Some(v) = oc430_result(addr, a0, n) {
+                c.g[V0][0] = v;
+            }
+        }
+    }
+
+    macro_rules! oc430_fakes {
+        ($(($name:ident, $addr:expr, $shard:ident, $slot:ident, $gen:ident)),* $(,)?) => {
+            $(
+                fn $name(c: &mut Cpu) {
+                    if c.bus.read32(OC430_CTRL) != OC430_MAGIC {
+                        return fakes::fall_back(c, fakes::prev_cell($name), ee::$shard::$gen);
+                    }
+                    oc430_fake_call(c, $addr);
+                }
+            )*
+
+            /// Hooks the gated fakes into the callees' override slots (once per
+            /// process; with the gate off they run what the slots held).
+            pub(crate) fn oc430_install_fakes() {
+                $( fakes::hook(addr_of_mut!(ee::$shard::$slot), $name, fakes::prev_cell($name)); )*
+            }
+        };
+    }
+
+    oc430_fakes! {
+        (oc430_fake_317d70, 0x0031_7d70, s10, OVERRIDE_00317D70, f_00317d70__generated),
+        (oc430_fake_3554b0, 0x0035_54b0, s11, OVERRIDE_003554B0, f_003554b0__generated),
+        (oc430_fake_359f88, 0x0035_9f88, s11, OVERRIDE_00359F88, f_00359f88__generated),
+        (oc430_fake_31d790, 0x0031_d790, s10, OVERRIDE_0031D790, f_0031d790__generated),
+        (oc430_fake_317e50, 0x0031_7e50, s10, OVERRIDE_00317E50, f_00317e50__generated),
+        (oc430_fake_317e98, 0x0031_7e98, s10, OVERRIDE_00317E98, f_00317e98__generated),
+        (oc430_fake_274918, 0x0027_4918, s07, OVERRIDE_00274918, f_00274918__generated),
+        (oc430_fake_273a00, 0x0027_3a00, s07, OVERRIDE_00273A00, f_00273a00__generated),
+        (oc430_fake_273970, 0x0027_3970, s07, OVERRIDE_00273970, f_00273970__generated),
+        (oc430_fake_2724e8, 0x0027_24e8, s07, OVERRIDE_002724E8, f_002724e8__generated),
+        (oc430_fake_152ba8, 0x0015_2ba8, s01, OVERRIDE_00152BA8, f_00152ba8__generated),
+        (oc430_fake_416ce0, 0x0041_6ce0, s15, OVERRIDE_00416CE0, f_00416ce0__generated),
+        (oc430_fake_145970, 0x0014_5970, s01, OVERRIDE_00145970, f_00145970__generated),
+        (oc430_fake_147f78, 0x0014_7f78, s01, OVERRIDE_00147F78, f_00147f78__generated),
+        (oc430_fake_14f900, 0x0014_f900, s01, OVERRIDE_0014F900, f_0014f900__generated),
+        (oc430_fake_1515b8, 0x0015_15b8, s01, OVERRIDE_001515B8, f_001515b8__generated),
+        (oc430_fake_14a0e0, 0x0014_a0e0, s01, OVERRIDE_0014A0E0, f_0014a0e0__generated),
+        (oc430_fake_14a080, 0x0014_a080, s01, OVERRIDE_0014A080, f_0014a080__generated),
+        (oc430_fake_317e30, 0x0031_7e30, s10, OVERRIDE_00317E30, f_00317e30__generated),
+        (oc430_fake_283298, 0x0028_3298, s07, OVERRIDE_00283298, f_00283298__generated),
+        (oc430_fake_275d10, 0x0027_5d10, s07, OVERRIDE_00275D10, f_00275d10__generated),
+        (oc430_fake_120d58, 0x0012_0d58, s00, OVERRIDE_00120D58, f_00120d58__generated),
+        (oc430_fake_125958, 0x0012_5958, s00, OVERRIDE_00125958, f_00125958__generated),
+        (oc430_fake_14f7a8, 0x0014_f7a8, s01, OVERRIDE_0014F7A8, f_0014f7a8__generated),
+        (oc430_fake_14dd58, 0x0014_dd58, s01, OVERRIDE_0014DD58, f_0014dd58__generated),
+        (oc430_fake_117520, 0x0011_7520, s00, OVERRIDE_00117520, f_00117520__generated),
+        (oc430_fake_397b08, 0x0039_7b08, s13, OVERRIDE_00397B08, f_00397b08__generated),
+        (oc430_fake_397c40, 0x0039_7c40, s13, OVERRIDE_00397C40, f_00397c40__generated),
+        (oc430_fake_39e2a0, 0x0039_e2a0, s13, OVERRIDE_0039E2A0, f_0039e2a0__generated),
+        (oc430_fake_39f400, 0x0039_f400, s13, OVERRIDE_0039F400, f_0039f400__generated),
+        (oc430_fake_14dc80, 0x0014_dc80, s01, OVERRIDE_0014DC80, f_0014dc80__generated),
+        (oc430_fake_231cd0, 0x0023_1cd0, s06, OVERRIDE_00231CD0, f_00231cd0__generated),
+        (oc430_fake_233c10, 0x0023_3c10, s06, OVERRIDE_00233C10, f_00233c10__generated),
+        (oc430_fake_234188, 0x0023_4188, s06, OVERRIDE_00234188, f_00234188__generated),
+        (oc430_fake_234ef8, 0x0023_4ef8, s06, OVERRIDE_00234EF8, f_00234ef8__generated),
+        (oc430_fake_236208, 0x0023_6208, s06, OVERRIDE_00236208, f_00236208__generated),
+        (oc430_fake_236868, 0x0023_6868, s06, OVERRIDE_00236868, f_00236868__generated),
+        (oc430_fake_244240, 0x0024_4240, s06, OVERRIDE_00244240, f_00244240__generated),
+        (oc430_fake_10fcd8, 0x0010_fcd8, s00, OVERRIDE_0010FCD8, f_0010fcd8__generated),
+        (oc430_fake_11b698, 0x0011_b698, s00, OVERRIDE_0011B698, f_0011b698__generated),
+        (oc430_fake_270070, 0x0027_0070, s07, OVERRIDE_00270070, f_00270070__generated),
+        (oc430_fake_26afb8, 0x0026_afb8, s07, OVERRIDE_0026AFB8, f_0026afb8__generated),
+        (oc430_fake_26a428, 0x0026_a428, s07, OVERRIDE_0026A428, f_0026a428__generated),
+        (oc430_fake_26ac48, 0x0026_ac48, s07, OVERRIDE_0026AC48, f_0026ac48__generated),
+        (oc430_fake_269f18, 0x0026_9f18, s07, OVERRIDE_00269F18, f_00269f18__generated),
+        (oc430_fake_26a638, 0x0026_a638, s07, OVERRIDE_0026A638, f_0026a638__generated),
+    }
+
+    /// The aggression state machine against a plain restatement of the
+    /// C++ switch (state / level / points transitions).
+    #[test]
+    fn be_aggression_step_matches_switch() {
+        for st in -2..6i64 {
+            for lvl in 0..8i64 {
+                let (_, s, l, p) = be_aggression_step(st, lvl, 7);
+                let (mut es, mut el, mut ep) = (st, lvl, 7u64);
+                match st {
+                    0 if lvl >= 3 => (el, ep) = (2, 10),
+                    1 if lvl >= 4 => (el, ep, es) = (2, 10, 3),
+                    2 if lvl <= 0 => el = 1,
+                    2 if lvl >= 4 => (el, ep) = (3, 15),
+                    3 if lvl == 0 => (es, el, ep) = (1, 3, 15),
+                    3 if lvl >= 5 => (el, ep) = (4, 20),
+                    _ => {}
+                }
+                assert_eq!((s, l, p), (es, el, ep), "st {st} lvl {lvl}");
+            }
+        }
+    }
+
+    /// `World_InitSphereTreeCache`: 0..3 small and big buffers, depths -1..3
+    /// (a negative depth leaves the size 0); the allocator is a gated fake.
+    #[test]
+    fn world_init_sphere_tree_cache_matches() {
+        oc430_install_fakes();
+        covered(
+            ee::s11::f_0032dc10__generated,
+            world_init_sphere_tree_cache,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0032_dc10, 10);
+                c.bus.write32(OC430_CTRL, OC430_MAGIC);
+                c.pc = 0x0032_dc10;
+                c.g[A0][0] = sx(r.next_u32() % 4);
+                c.g[A1][0] = sx((r.next_u32() % 5).wrapping_sub(1));
+                c.g[A2][0] = sx(r.next_u32() % 4);
+                c.g[A3][0] = sx((r.next_u32() % 5).wrapping_sub(1));
+            },
+        );
+    }
+
+    /// The same with event delivery at the four loop back edges.
+    #[test]
+    fn world_init_sphere_tree_cache_events_match() {
+        oc430_install_fakes();
+        check_events(
+            ee::s11::f_0032dc10__generated,
+            world_init_sphere_tree_cache,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0032_dc11, 0);
+                c.bus.write32(OC430_CTRL, OC430_MAGIC);
+                let args = [
+                    r.next_u32() % 4,
+                    (r.next_u32() % 5).wrapping_sub(1),
+                    r.next_u32() % 4,
+                    (r.next_u32() % 5).wrapping_sub(1),
+                ];
+                let mode = schedule(c, &mut r, seed, 0x0032_dc10);
+                for (i, a) in args.into_iter().enumerate() {
+                    c.g[A0 + i][0] = sx(a);
+                }
+                c.g[RA][0] = SENTINEL_m2 as u64;
+                mode
             },
         );
     }

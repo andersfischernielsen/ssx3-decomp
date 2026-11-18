@@ -16,6 +16,7 @@ pub(crate) use crate::game::dirtysock::tagsunk::p_2 as p;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::p as p_2;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
+pub(crate) use crate::game::main::ssxapp::oc429_at;
 pub(crate) use crate::game::scripter::ssxscriptengine::p as p_3;
 pub(crate) use crate::game::sound::soundsys::p as p_4;
 use crate::guest::Addr;
@@ -55,6 +56,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0027_57f0,
         script_anim_bank_man_find_free_entry,
         "ScriptAnimBankMan_FindFreeEntry",
+    ),
+    (
+        0x0027_5500,
+        script_anim_bank_man_add_bank,
+        "ScriptAnimBankMan_AddBank",
     ),
 ];
 
@@ -426,6 +432,157 @@ pub fn script_anim_bank_man_ctor(c: &mut Cpu) {
     })
 }
 
+/// `int ScriptAnimBankMan_AddBank(Man* self, int id, void* data)` (0x275500,
+/// `cScriptAnimBankManager::LinkBank`): returns the slot of the bank `id`.
+/// A bank not yet linked takes a free entry, loads the bank object
+/// (`cAdfDataSource` alloc + `0x311220(mem, data)`), counts its non-empty
+/// items (`+0xc`), builds the item map `pTableAnimID` for them (`+0x10`) and
+/// registers the bank in the global anim database table (`gp + 0xd08`, by
+/// the entry's slot byte `+4`).
+pub fn script_anim_bank_man_add_bank(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S3, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S2, 0x20);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A2][0];
+        call_ptr(c, 0x0027_5718, 0x0027_5528)?; // ScriptAnimBankMan_FindBank
+        c.g[S0][0] = c.g[V0][0];
+        if c.g[S0][0] != 0 {
+            c.g[V0][0] = c.lw(oc429_at(c.g[S0][0], 0x4));
+        } else {
+            'items: {
+                c.cycles += 19;
+                c.g[A0][0] = c.g[S3][0];
+                call_ptr(c, 0x0027_57f0, 0x0027_553c)?; // ScriptAnimBankMan_FindFreeEntry
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = 0x48_0000;
+                c.sw(c.g[S0][0] as u32, c.g[S1][0]);
+                c.g[A1][0] = sx(oc429_at(c.g[A1][0], 0x1a98));
+                c.sw(oc429_at(c.g[S0][0], 0x8), c.g[S2][0]);
+                c.g[A0][0] = 0x18;
+                c.g[A3][0] = 0;
+                c.g[A2][0] = c.lw(c.g[S3][0] as u32);
+                call_ptr(c, 0x0031_7d70, 0x0027_5560)?; // EA_MemAllocNamed
+                c.g[A1][0] = c.lw(oc429_at(c.g[S0][0], 0x8));
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x0031_1220, 0x0027_556c)?;
+                c.g[S2][0] = c.g[V0][0];
+                c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], 0x4));
+                c.g[S1][0] = c.lh(oc429_at(c.g[V0][0], 0x2));
+                let empty = (c.g[S1][0] as i64) <= 0;
+                c.sw(oc429_at(c.g[S0][0], 0xc), 0);
+                if empty {
+                    break 'items;
+                }
+                // Count the non-empty items.
+                c.cycles += 2;
+                c.g[A1][0] = 0;
+                c.g[A0][0] = c.g[S1][0];
+                loop {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], 0x8));
+                    c.g[V0][0] = sx(oc429_at(c.g[A1][0], c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                    let skip = c.g[V1][0] == 0;
+                    c.g[A0][0] = sx(oc429_at(c.g[A0][0], 0u32.wrapping_sub(1)));
+                    if !skip {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(oc429_at(c.g[S0][0], 0xc));
+                        c.g[V0][0] = sx(oc429_at(c.g[V0][0], 1));
+                        c.sw(oc429_at(c.g[S0][0], 0xc), c.g[V0][0]);
+                    }
+                    c.cycles += 2;
+                    let more = c.g[A0][0] != 0;
+                    c.g[A1][0] = sx(oc429_at(c.g[A1][0], 0x14));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0027_5588);
+                        }
+                        continue;
+                    }
+                    break;
+                }
+            }
+            'slot: {
+                c.cycles += 3;
+                c.g[A0][0] = c.lw(oc429_at(c.g[S0][0], 0xc));
+                if c.g[A0][0] == 0 {
+                    c.g[V0][0] = c.lbu(oc429_at(c.g[S0][0], 0x4));
+                    break 'slot;
+                }
+                'map: {
+                    c.cycles += 10;
+                    c.g[A2][0] = c.lw(c.g[S3][0] as u32);
+                    c.g[A1][0] = 0x48_0000;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+                    c.g[A1][0] = sx(oc429_at(c.g[A1][0], 0x1aa8));
+                    c.g[A3][0] = 0;
+                    call_ptr(c, 0x0031_7e30, 0x0027_55d4)?; // operator_new_named
+                    c.sw(oc429_at(c.g[S0][0], 0x10), c.g[V0][0]);
+                    c.g[A2][0] = 0;
+                    let empty = (c.g[S1][0] as i64) <= 0;
+                    c.g[A0][0] = 0;
+                    if empty {
+                        break 'map;
+                    }
+                    // map[k++] = i for each non-empty item i.
+                    c.cycles += 1;
+                    c.g[A1][0] = 0;
+                    loop {
+                        c.cycles += 5;
+                        c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], 0x8));
+                        c.g[V0][0] = sx(oc429_at(c.g[A1][0], c.g[V0][0] as u32));
+                        c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                        let skip = c.g[V1][0] == 0;
+                        c.g[V0][0] = sx((c.g[A2][0] as u32) << 2);
+                        if !skip {
+                            c.cycles += 4;
+                            c.g[V1][0] = c.lw(oc429_at(c.g[S0][0], 0x10));
+                            c.g[A2][0] = sx(oc429_at(c.g[A2][0], 1));
+                            c.g[V0][0] = sx(oc429_at(c.g[V0][0], c.g[V1][0] as u32));
+                            c.sw(c.g[V0][0] as u32, c.g[A0][0]);
+                        }
+                        c.cycles += 4;
+                        c.g[A0][0] = sx(oc429_at(c.g[A0][0], 1));
+                        c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                        let more = c.g[V0][0] != 0;
+                        c.g[A1][0] = sx(oc429_at(c.g[A1][0], 0x14));
+                        if more {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0027_55e8);
+                            }
+                            continue;
+                        }
+                        break;
+                    }
+                }
+                c.cycles += 1;
+                c.g[V0][0] = c.lbu(oc429_at(c.g[S0][0], 0x4));
+            }
+            c.cycles += 5;
+            c.g[V1][0] = c.lw(oc429_at(c.g[GP][0], 0xd08));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V1][0] = sx(oc429_at(c.g[V1][0], c.g[V0][0] as u32));
+            c.sw(c.g[V1][0] as u32, c.g[S2][0]);
+            c.g[V0][0] = c.lw(oc429_at(c.g[S0][0], 0x4));
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -608,6 +765,67 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA);
                 c.g[A1][0] = sx(DATA + 0x2000);
                 let _ = r.next_u32();
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_force;
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_gp;
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_machine;
+
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_w;
+
+    pub(crate) use crate::game::main::ssxapp::tests::OC429_FX;
+
+    /// `ScriptAnimBankMan_AddBank`: bank already linked, and a new bank with
+    /// 0..4 items (some empty), with and without any non-empty item.
+    #[test]
+    fn script_anim_bank_man_add_bank_matches() {
+        covered(
+            ee::s07::f_00275500__generated,
+            script_anim_bank_man_add_bank,
+            160,
+            &|c, seed| {
+                let mut r = oc429_machine(c, seed, 0x275500, 6, 0x0027_5500);
+                let this = OC429_FX + 0x400;
+                let entry = OC429_FX + 0x800;
+                let bank = OC429_FX + 0x900;
+                let hdr = OC429_FX + 0xa00;
+                let items = hdr + 0x10;
+                let table = OC429_FX + 0xd00;
+                oc429_w(c, this, r.next_u32());
+                oc429_w(c, oc429_gp(0xd08), table);
+                oc429_w(c, entry + 4, r.next_u32() % 4);
+                oc429_w(c, entry + 0xc, r.next_u32());
+                // The bank object is built from `data` (= a2 = `hdr`) by the
+                // real `cAdfDataSource_ctor` / `SetData`: header at `hdr`
+                // (count at +2), items 0x14 apart from `hdr + 0x10`.
+                let n = seed % 5;
+                c.bus.write16(hdr + 2, n as u16);
+                let mut any = false;
+                for i in 0..4u32 {
+                    let present = (seed / 5 + i) % 3 != 0;
+                    any |= present && i < n;
+                    oc429_w(
+                        c,
+                        items + 0x14 * i,
+                        if present { OC429_FX + 0xe00 } else { 0 },
+                    );
+                }
+                let _ = any;
+                oc429_force(
+                    c,
+                    0x0027_5718,
+                    &[if seed % 6 == 0 { entry as u64 } else { 0 }],
+                );
+                oc429_force(c, 0x0027_57f0, &[entry as u64]);
+                oc429_force(c, 0x0031_7d70, &[bank as u64]);
+                oc429_force(c, 0x0031_7e30, &[(OC429_FX + 0xc00) as u64]);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = hdr as u64;
             },
         );
     }

@@ -130,6 +130,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_model_add_model_ref,
         "RiderModel_AddModelRef",
     ),
+    (
+        0x0031_1110,
+        anim_data_base_free_chan_caches,
+        "AnimDataBase_FreeChanCaches",
+    ),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -7118,11 +7123,127 @@ pub fn rider_model_add_model_ref(c: &mut Cpu) {
     return;
 }
 
+/// `void AnimDataBase_FreeChanCaches(void*)` (0x311110): releases the 48
+/// channel caches. Entry `i` of the table at 0x4fe7a0 (`cache`) holds a
+/// pointer to 20 records of 0x24 bytes; for each record the byte at `+5` of
+/// the record's first pointer is set to 0xff and the block at `+4` is freed;
+/// then the table block itself is freed and the entry and its twin in the table
+/// at 0x4fe860 are cleared.
+pub fn anim_data_base_free_chan_caches(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = 0x50_0000;
+        frame.save(c, S6, 0x30);
+        c.g[V1][0] = 0x50_0000;
+        frame.save(c, S7, 0x20);
+        c.g[S6][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1860));
+        frame.save(c, FP, 0x10);
+        c.g[S7][0] = c.g[S6][0];
+        frame.save(c, S0, 0x90);
+        c.g[FP][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x17a0));
+        frame.save(c, S1, 0x80);
+        c.g[A0][0] = 0;
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
+        loop {
+            c.cycles += 5;
+            c.g[S3][0] = c.g[V1][0];
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S6][0] as u32));
+            c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+            let empty = c.g[V0][0] == 0;
+            c.g[S5][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+            if !empty {
+                c.cycles += 5;
+                c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                c.g[S4][0] = 0xff;
+                c.g[S1][0] = 0;
+                c.g[S2][0] = 0x13;
+                c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                loop {
+                    c.cycles += 4;
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V0][0] as u32);
+                    let none = c.g[V0][0] == 0;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(1));
+                    if !none {
+                        c.cycles += 1;
+                        c.sb((c.g[V0][0] as u32).wrapping_add(5), c.g[S4][0]);
+                    }
+                    c.cycles += 6;
+                    c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(4));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x24));
+                    let no_block = c.g[V0][0] == 0;
+                    c.g[A0][0] = c.g[V0][0];
+                    if !no_block {
+                        c.cycles += 2;
+                        call_ptr(c, 0x0031_7e98, 0x0031_11b4)?; // EA_MemFree
+                    }
+                    c.cycles += 2;
+                    if (c.g[S2][0] as i64) >= 0 {
+                        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_1180);
+                        }
+                        continue;
+                    }
+                    c.cycles += 4;
+                    c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S6][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                    let no_table = c.g[A0][0] == 0;
+                    c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[FP][0] as u32));
+                    if !no_table {
+                        c.cycles += 3;
+                        call_ptr(c, 0x0031_7e98, 0x0031_11d4)?; // EA_MemFree
+                        c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[FP][0] as u32));
+                    }
+                    c.cycles += 2;
+                    c.sw(c.g[S0][0] as u32, 0);
+                    c.sw(c.g[V0][0] as u32, 0);
+                    break;
+                }
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S5][0];
+            c.g[V0][0] = ((c.g[A0][0] as i64) < 48) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_1158);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
 
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
@@ -8534,6 +8655,83 @@ pub(crate) mod tests {
                 c.bus.write32(this + 0x60, r.next_u32() % 8);
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::schedule;
+    use crate::difftest::RA as SENTINEL;
+    pub(crate) use crate::game::intersect::riderspheretree::tests::OC430_CTRL;
+    pub(crate) use crate::game::intersect::riderspheretree::tests::OC430_MAGIC;
+
+    /// Channel-cache tables (0x4fe7a0 / 0x4fe860) for `AnimDataBase_FreeChanCaches`:
+    /// a few of the 48 entries point at 20 records of 0x24 bytes whose object
+    /// and block pointers are zero or non-zero.
+    pub(crate) fn oc430_chan_caches(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        for i in 0..48u32 {
+            let live = if seed % 4 == 0 {
+                i < 2
+            } else {
+                r.next_u32() % 12 == 0
+            };
+            let base = DATA + 0x1000 + i * 0x300;
+            c.bus
+                .write32(0x004f_e7a0 + 4 * i, if live { base } else { 0 });
+            c.bus.write32(0x004f_e860 + 4 * i, r.next_u32());
+            if live {
+                for j in 0..20u32 {
+                    let rec = base + 0x24 * j;
+                    let obj = if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        DATA + 0x20000 + 0x40 * (i * 20 + j)
+                    };
+                    c.bus.write32(rec, obj);
+                    let blk = if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        r.next_u32()
+                    };
+                    c.bus.write32(rec + 4, blk);
+                }
+            }
+        }
+    }
+
+    /// `AnimDataBase_FreeChanCaches`: empty and live entries, records with
+    /// and without object / block pointers; the frees are gated fakes.
+    #[test]
+    fn anim_data_base_free_chan_caches_matches() {
+        oc430_install_fakes();
+        covered(
+            ee::s10::f_00311110__generated,
+            anim_data_base_free_chan_caches,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_1110, 30);
+                c.bus.write32(OC430_CTRL, OC430_MAGIC);
+                c.pc = 0x0031_1110;
+                oc430_chan_caches(c, &mut r, seed);
+            },
+        );
+    }
+
+    /// The same with event delivery at the loop back edges.
+    #[test]
+    fn anim_data_base_free_chan_caches_events_match() {
+        oc430_install_fakes();
+        check_events(
+            ee::s10::f_00311110__generated,
+            anim_data_base_free_chan_caches,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_1111, 0);
+                c.bus.write32(OC430_CTRL, OC430_MAGIC);
+                oc430_chan_caches(c, &mut r, seed);
+                let mode = schedule(c, &mut r, seed, 0x0031_1110);
+                c.g[RA][0] = SENTINEL as u64;
+                mode
             },
         );
     }

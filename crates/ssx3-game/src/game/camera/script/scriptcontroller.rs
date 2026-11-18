@@ -27,6 +27,7 @@ pub(crate) use crate::game::fe::fereal::close;
 pub(crate) use crate::game::fe::fereal::open;
 pub(crate) use crate::game::fe::festateload::at;
 pub(crate) use crate::game::fe::festaterewards::r;
+pub(crate) use crate::game::main::ssxapp::oc429_at;
 pub(crate) use crate::game::scripter::ssxscriptengine::p;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
@@ -167,6 +168,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0016_9368,
         script_cam_controller_update_2,
         "ScriptCamController_Update",
+    ),
+    (
+        0x0016_9190,
+        script_cam_controller_start_script_camera,
+        "ScriptCamController_StartScriptCamera",
     ),
 ];
 
@@ -1733,6 +1739,147 @@ pub fn script_cam_controller_update_2(c: &mut Cpu) {
     })
 }
 
+/// One camera-algorithm allocation of `ScriptCamController_StartScriptCamera`:
+/// `ctor(operator_new(size, name, 0x20000000, 0))`. `cycles` is the block's
+/// charge (10, 9 for the last kind), `name_off` the string's offset below
+/// `0x460000`, `alloc_ret` / `ctor_ret` the return addresses.
+pub(crate) fn oc429_script_cam_new(
+    c: &mut Cpu,
+    cycles: u64,
+    size: u64,
+    name_off: u32,
+    ctor: u32,
+    alloc_ret: u32,
+    ctor_ret: u32,
+) -> crate::call::Flow {
+    c.cycles += cycles;
+    c.g[A1][0] = 0x46_0000;
+    c.g[A0][0] = size;
+    c.g[A1][0] = sx(oc429_at(c.g[A1][0], 0u32.wrapping_sub(name_off)));
+    c.g[A2][0] = 0x2000_0000;
+    c.g[A3][0] = 0;
+    call_ptr(c, 0x0031_7d70, alloc_ret)?; // EA_MemAllocNamed
+    c.g[A0][0] = c.g[V0][0];
+    call_ptr(c, ctor, ctor_ret)?;
+    c.g[S0][0] = c.g[V0][0];
+    Ok(())
+}
+
+/// `void ScriptCamController_StartScriptCamera(ScriptCamController* self,
+/// ScriptCam* cam)` (0x169190): build the camera algorithm for the script
+/// camera's kind (`GetBlockPayload(cam->+0x14->+8)`: 0 manual, 1 target, 2
+/// subject, 3 algorithmic; other kinds do nothing), hand it the camera
+/// (`SetScriptObj`), store it at `cam + 0x1c`, push it on the controller
+/// (`PushAlgorithm(self, algo, 1)`) and set `self + 0x18 = 1`.
+pub fn script_cam_controller_start_script_camera(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S0, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw(oc429_at(c.g[S1][0], 0x14));
+        c.g[A0][0] = c.lw(oc429_at(c.g[V0][0], 0x8));
+        call_ptr(c, 0x0027_43c8, 0x0016_91b8)?; // InSeq_ChannelGetId
+        c.g[V1][0] = c.g[V0][0];
+        c.g[V0][0] = 1;
+        let is1 = c.g[V1][0] == c.g[V0][0];
+        c.g[V0][0] = ((c.g[V1][0] as i64) < 2) as u64;
+        // The kind: 0 manual, 1 target, 2 subject, 3 algorithmic.
+        let kind: Option<u32> = if is1 {
+            Some(1)
+        } else {
+            c.cycles += 2;
+            if c.g[V0][0] == 0 {
+                c.g[V0][0] = 2;
+                c.cycles += 2;
+                let is2 = c.g[V1][0] == c.g[V0][0];
+                c.g[V0][0] = 3;
+                if is2 {
+                    Some(2)
+                } else {
+                    c.cycles += 2;
+                    let is3 = c.g[V1][0] == c.g[V0][0];
+                    frame.restore(c, S0, 0x30);
+                    if is3 {
+                        Some(3)
+                    } else {
+                        c.cycles += 2;
+                        frame.restore(c, S1, 0x20);
+                        None
+                    }
+                }
+            } else {
+                c.cycles += 2;
+                let is0 = c.g[V1][0] == 0;
+                frame.restore(c, S0, 0x30);
+                if is0 {
+                    Some(0)
+                } else {
+                    c.cycles += 2;
+                    frame.restore(c, S1, 0x20);
+                    None
+                }
+            }
+        };
+        if let Some(kind) = kind {
+            match kind {
+                0 => oc429_script_cam_new(
+                    c,
+                    10,
+                    0xb0,
+                    0x4150,
+                    0x0016_94b8,
+                    0x0016_9210,
+                    0x0016_9218,
+                )?,
+                1 => oc429_script_cam_new(
+                    c,
+                    10,
+                    0xb0,
+                    0x4130,
+                    0x0016_9cf8,
+                    0x0016_9238,
+                    0x0016_9240,
+                )?,
+                2 => oc429_script_cam_new(
+                    c,
+                    10,
+                    0xa0,
+                    0x4110,
+                    0x0016_a458,
+                    0x0016_9260,
+                    0x0016_9268,
+                )?,
+                _ => {
+                    oc429_script_cam_new(c, 9, 0xa0, 0x40f0, 0x0016_ad38, 0x0016_9288, 0x0016_9290)?
+                }
+            }
+            c.cycles += 12;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S1][0];
+            call_ptr(c, 0x0016_94a8, 0x0016_92a0)?; // ScriptCameraAlgo_SetScriptObj
+            c.sw(oc429_at(c.g[S1][0], 0x1c), c.g[S0][0]);
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A2][0] = 1;
+            call_ptr(c, 0x0016_9340, 0x0016_92b4)?; // ScriptCamController_PushAlgorithm
+            c.g[V0][0] = 1;
+            c.sw(oc429_at(c.g[S2][0], 0x18), c.g[V0][0]);
+            frame.restore(c, S0, 0x30);
+            frame.restore(c, S1, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2393,6 +2540,35 @@ pub(crate) mod tests {
                     r.edge_f32()
                 };
                 c.bus.write32(SCAM_SCRIPT_OBJ + 0x18, progress);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_force;
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_machine;
+
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_w;
+
+    pub(crate) use crate::game::main::ssxapp::tests::OC429_FX;
+
+    /// `ScriptCamController_StartScriptCamera`: every script camera kind 0..3
+    /// and the kinds that do nothing (negative, 4+); unwinds in each call.
+    #[test]
+    fn script_cam_controller_start_script_camera_matches() {
+        covered(
+            ee::s02::f_00169190__generated,
+            script_cam_controller_start_script_camera,
+            140,
+            &|c, seed| {
+                let mut r = oc429_machine(c, seed, 0x169190, 5, 0x0016_9190);
+                let this = OC429_FX + 0x400;
+                let cam = OC429_FX + 0x800;
+                oc429_w(c, cam + 0x14, OC429_FX + 0x900);
+                oc429_w(c, OC429_FX + 0x900 + 8, r.next_u32());
+                let kind: u64 = [0, 1, 2, 3, 4, u64::MAX, 7, 0xffff_ffff][(seed % 8) as usize];
+                oc429_force(c, 0x0027_43c8, &[kind]);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = cam as u64;
             },
         );
     }

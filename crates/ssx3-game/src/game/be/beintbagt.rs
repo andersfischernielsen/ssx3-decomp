@@ -6,6 +6,7 @@ use crate::abi::r32;
 use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
@@ -16,6 +17,7 @@ pub(crate) use crate::game::be::beintmission::EA_MEM_ALLOC_NAMED;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
+pub(crate) use crate::game::main::ssxapp::oc429_at;
 pub(crate) use crate::game::scripter::ssxscriptengine::p;
 use crate::guest::Addr;
 use ssx3_ee as ee;
@@ -116,6 +118,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         bebagt_int_init_default_tricks,
         "BEBAGTInt_InitDefaultTricks",
     ),
+    (0x0014_fad0, beb_bagt_int_reset, "BEBAGTInt_Reset"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1304,6 +1307,163 @@ pub fn bebagt_int_init_default_tricks(c: &mut Cpu) {
     });
 }
 
+/// `void BEBAGTInt_Reset(void)` (0x14fad0): copy the 3 x 10 table of 0x1fe-byte
+/// records at `0x4a788e` (stride 0xf88 per record, 0x9b50 per row, so the
+/// source is not 8-aligned) into the packed table at `0x530ec0` (stride
+/// 0x1fe, row stride 0x13ec). Each record is copied in 0x20-byte chunks (with
+/// `ld`/`sd` when source and destination are both 8-aligned, else with
+/// `ldl`/`ldr`/`sdl`/`sdr`), then a 0x1e-byte tail. A leaf; reproduces the
+/// scratch registers and the multiplier results exactly.
+pub fn beb_bagt_int_reset(c: &mut Cpu) {
+    c.cycles += 14;
+    c.g[SP][0] = sx(oc429_at(c.g[SP][0], 0u32.wrapping_sub(0x20)));
+    c.g[V0][0] = 0x53_0000;
+    c.g[V1][0] = 0x4a_0000;
+    let sp0 = sp(c);
+    c.sq(S0, oc429_at(c.g[SP][0], 0x10));
+    c.sq(S1, sp0);
+    c.g[T3][0] = sx(oc429_at(c.g[V0][0], 0xec0));
+    c.g[T2][0] = sx(oc429_at(c.g[V1][0], 0x788e));
+    c.g[A0][0] = 0;
+    c.g[T5][0] = 0x13ec;
+    c.g[T1][0] = 0x1fe;
+    c.g[T4][0] = 0x9b50;
+    c.g[T0][0] = 0xf88;
+    c.mult(0, A2, A0, T4);
+    // Rows (a0 = i).
+    loop {
+        c.cycles += 4;
+        c.mult(0, T8, A0, T5);
+        c.g[A1][0] = 0;
+        c.g[A3][0] = sx(oc429_at(c.g[A0][0], 1));
+        c.mult(0, V1, A1, T1);
+        // Records of the row (a1 = j).
+        loop {
+            'record: {
+                'aligned: {
+                    c.cycles += 9;
+                    c.mult(0, A0, A1, T0);
+                    c.g[V0][0] = sx(oc429_at(c.g[V1][0], c.g[T8][0] as u32));
+                    c.g[V1][0] = sx(oc429_at(c.g[A0][0], c.g[A2][0] as u32));
+                    c.g[A0][0] = sx(oc429_at(c.g[V0][0], c.g[T3][0] as u32));
+                    c.g[V1][0] = sx(oc429_at(c.g[V1][0], c.g[T2][0] as u32));
+                    c.g[V0][0] = c.g[V1][0] | c.g[A0][0];
+                    c.g[V0][0] &= 0x7;
+                    let is_aligned = c.g[V0][0] == 0;
+                    c.g[V0][0] = sx(oc429_at(c.g[A1][0], 1));
+                    if is_aligned {
+                        break 'aligned;
+                    }
+                    c.cycles += 1;
+                    c.g[A1][0] = sx(oc429_at(c.g[V1][0], 0x1e0));
+                    loop {
+                        c.cycles += 19;
+                        c.ldl(T6, oc429_at(c.g[V1][0], 0x7));
+                        c.ldr(T6, oc429_at(c.g[V1][0], 0));
+                        c.ldl(T7, oc429_at(c.g[V1][0], 0xf));
+                        c.ldr(T7, oc429_at(c.g[V1][0], 0x8));
+                        c.ldl(S0, oc429_at(c.g[V1][0], 0x17));
+                        c.ldr(S0, oc429_at(c.g[V1][0], 0x10));
+                        c.ldl(S1, oc429_at(c.g[V1][0], 0x1f));
+                        c.ldr(S1, oc429_at(c.g[V1][0], 0x18));
+                        c.sdl(T6, oc429_at(c.g[A0][0], 0x7));
+                        c.sdr(T6, oc429_at(c.g[A0][0], 0));
+                        c.sdl(T7, oc429_at(c.g[A0][0], 0xf));
+                        c.sdr(T7, oc429_at(c.g[A0][0], 0x8));
+                        c.sdl(S0, oc429_at(c.g[A0][0], 0x17));
+                        c.sdr(S0, oc429_at(c.g[A0][0], 0x10));
+                        c.sdl(S1, oc429_at(c.g[A0][0], 0x1f));
+                        c.sdr(S1, oc429_at(c.g[A0][0], 0x18));
+                        c.g[V1][0] = sx(oc429_at(c.g[V1][0], 0x20));
+                        let more = c.g[V1][0] != c.g[A1][0];
+                        c.g[A0][0] = sx(oc429_at(c.g[A0][0], 0x20));
+                        if more {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0014_fb40);
+                            }
+                            continue;
+                        }
+                        c.cycles += 2;
+                        c.g[A1][0] = c.g[V0][0];
+                        break 'record;
+                    }
+                }
+                c.cycles += 1;
+                c.g[A1][0] = sx(oc429_at(c.g[V1][0], 0x1e0));
+                loop {
+                    c.cycles += 11;
+                    c.g[T6][0] = c.ld(oc429_at(c.g[V1][0], 0));
+                    c.g[T7][0] = c.ld(oc429_at(c.g[V1][0], 0x8));
+                    c.g[S0][0] = c.ld(oc429_at(c.g[V1][0], 0x10));
+                    c.g[S1][0] = c.ld(oc429_at(c.g[V1][0], 0x18));
+                    c.sd(oc429_at(c.g[A0][0], 0), c.g[T6][0]);
+                    c.sd(oc429_at(c.g[A0][0], 0x8), c.g[T7][0]);
+                    c.sd(oc429_at(c.g[A0][0], 0x10), c.g[S0][0]);
+                    c.sd(oc429_at(c.g[A0][0], 0x18), c.g[S1][0]);
+                    c.g[V1][0] = sx(oc429_at(c.g[V1][0], 0x20));
+                    let more = c.g[V1][0] != c.g[A1][0];
+                    c.g[A0][0] = sx(oc429_at(c.g[A0][0], 0x20));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0014_fb98);
+                        }
+                        continue;
+                    }
+                    c.cycles += 1;
+                    c.g[A1][0] = c.g[V0][0];
+                    break 'record;
+                }
+            }
+            // The 0x1e-byte tail of the record.
+            c.cycles += 21;
+            c.ldl(V0, oc429_at(c.g[V1][0], 0x7));
+            c.ldr(V0, oc429_at(c.g[V1][0], 0));
+            c.ldl(T6, oc429_at(c.g[V1][0], 0xf));
+            c.ldr(T6, oc429_at(c.g[V1][0], 0x8));
+            c.ldl(T7, oc429_at(c.g[V1][0], 0x17));
+            c.ldr(T7, oc429_at(c.g[V1][0], 0x10));
+            c.lwl(S0, oc429_at(c.g[V1][0], 0x1b));
+            c.lwr(S0, oc429_at(c.g[V1][0], 0x18));
+            c.sdl(V0, oc429_at(c.g[A0][0], 0x7));
+            c.sdr(V0, oc429_at(c.g[A0][0], 0));
+            c.sdl(T6, oc429_at(c.g[A0][0], 0xf));
+            c.sdr(T6, oc429_at(c.g[A0][0], 0x8));
+            c.sdl(T7, oc429_at(c.g[A0][0], 0x17));
+            c.sdr(T7, oc429_at(c.g[A0][0], 0x10));
+            c.swl(S0, oc429_at(c.g[A0][0], 0x1b));
+            c.swr(S0, oc429_at(c.g[A0][0], 0x18));
+            c.g[V0][0] = c.lh(oc429_at(c.g[V1][0], 0x1c));
+            c.sh(oc429_at(c.g[A0][0], 0x1c), c.g[V0][0]);
+            c.g[V0][0] = ((c.g[A1][0] as i64) < 10) as u64;
+            if c.g[V0][0] != 0 {
+                c.mult(0, V1, A1, T1);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0014_fb18);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 4;
+        c.g[A0][0] = c.g[A3][0];
+        c.g[V0][0] = ((c.g[A0][0] as i64) < 3) as u64;
+        if c.g[V0][0] != 0 {
+            c.mult(0, A2, A0, T4);
+            if event_due(c) {
+                deliver_event_here(c, 0x0014_fb08);
+            }
+            continue;
+        }
+        break;
+    }
+    c.cycles += 4;
+    c.lq(S0, oc429_at(c.g[SP][0], 0x10));
+    c.lq(S1, sp(c));
+    let ra = c.g[RA][0] as u32;
+    c.g[SP][0] = sx(oc429_at(c.g[SP][0], 0x20));
+    c.pc = ra;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1720,6 +1880,28 @@ pub(crate) mod tests {
                 for k in 0..0x60u32 {
                     c.bus.write8(DATA + 0x100 + k, r.next_u32() as u8);
                 }
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    /// `BEBAGTInt_Reset`: copy 30 unaligned records (the source table sits at
+    /// `0x4a788e`, 6 mod 8, so the 8-aligned `ld`/`sd` loop is dead code in the
+    /// game: no input reaches it). LO/HI are compared too.
+    #[test]
+    fn beb_bagt_int_reset_matches() {
+        check_lohi(
+            ee::s01::f_0014fad0__generated,
+            beb_bagt_int_reset,
+            6,
+            &|c, seed| {
+                let mut r = Rng(0x14fa_d000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0014_fad0;
+                fill(c, &mut r, 0x004a_7888, 0x7400);
+                // Dirty destination (not all of it is written).
+                fill(c, &mut r, 0x0053_0ec0, 0xc00);
             },
         );
     }

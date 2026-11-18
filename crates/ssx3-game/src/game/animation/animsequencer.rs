@@ -91,6 +91,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0031_4668, anim_seq_list_clear, "AnimSeqList_Clear"),
     (0x0031_4a18, mdf_file_set_data, "MdfFile_SetData"),
+    (
+        0x0031_4a40,
+        mdf_file_set_borrowed_data,
+        "MdfFile_SetBorrowedData",
+    ),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -1359,6 +1364,28 @@ pub fn mdf_file_set_data(c: &mut Cpu) {
     })
 }
 
+/// `void MdfFile_SetBorrowedData(MdfFile* self, ...)`: clears the first word (the owned-buffer pointer) and parses the header from the borrowed data.
+/// (`MdfFile_SetBorrowedData`, 0x00314a40)
+pub fn mdf_file_set_borrowed_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.g[V0][0] = c.g[A0][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.sw(c.g[V0][0] as u32, 0u64);
+        Callee {
+            addr: 0x00314aa0,
+            f: ee::s10::MdfFile_ParseHeader,
+        }
+        .call(c, 0x00314a54)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2220,6 +2247,30 @@ pub(crate) mod tests {
                 c.bus.write16(data + 6, (seed % 0x40) as u16);
                 c.g[A0][0] = file as u64;
                 c.g[A1][0] = data as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::be::belibrary::tests::oc431_install;
+    pub(crate) use crate::game::be::belibrary::tests::oc431_machine;
+
+    pub(crate) use crate::game::be::belibrary::tests::OC431_BASE;
+
+    // -----------------------------------------------------------------------
+    // Constructors and small drivers over fake callees.
+
+    /// `MdfFile_ParseHeader` is a fake; the owned-data word is cleared first.
+    #[test]
+    fn mdf_file_set_borrowed_data_matches() {
+        oc431_install();
+        covered(
+            ee::s10::f_00314a40__generated,
+            mdf_file_set_borrowed_data,
+            100,
+            &|c, seed| {
+                let mut r = oc431_machine(c, seed, 0x314a40, 1, 0x0031_4a40);
+                c.g[A0][0] = (OC431_BASE + 0x100) as u64;
+                c.bus.write32(OC431_BASE + 0x100, r.next_u32() | 1);
             },
         );
     }

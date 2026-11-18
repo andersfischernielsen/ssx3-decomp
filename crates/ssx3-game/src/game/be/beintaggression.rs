@@ -41,6 +41,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_aggression_int_save_state,
         "BEAggressionInt_SaveState",
     ),
+    (
+        0x0015_5e58,
+        be_aggression_int_decay_all,
+        "BEAggressionInt_DecayAll",
+    ),
 ];
 
 /// `void BEAggressionInt_DestroyInstance(void)` (0x15c7e0).
@@ -514,6 +519,180 @@ pub(crate) fn aggression_level_up(c: &mut Cpu) -> Result<AggressionExit, crate::
     Ok(Store)
 }
 
+/// The aggression state machine of `BEAggressionInt_DecayAll`: given the
+/// state `st` (v[0]), the level `lvl` (points / 5) and the points `pts` of one
+/// aggression slot, returns `(cycles of the compiled compare chain, st, lvl,
+/// pts)`. State 0 caps the level at 2 (10 points), 1 sends level >= 4 to state 3
+/// (level 2, 10 points), 2 raises level 0 to 1 and caps level >= 4 at 3 (15
+/// points), 3 turns level 0 into state 1 (level 3, 15 points) and caps level >= 5
+/// at 4 (20 points); other states stay as they are. The cycle counts are the
+/// generated block charges of the compiled if-chain.
+pub(crate) fn be_aggression_step(st: i64, lvl: i64, pts: u64) -> (u64, i64, i64, u64) {
+    match st {
+        1 if lvl >= 4 => (11, 3, 2, 10),
+        1 => (7, st, lvl, pts),
+        0 if lvl < 3 => (10, st, lvl, pts),
+        0 => (15, st, 2, 10),
+        2 if lvl <= 0 => (13, st, 1, pts),
+        2 if lvl < 4 => (12, st, lvl, pts),
+        2 => (17, st, 3, 15),
+        3 if lvl == 0 => (17, 1, 3, 15),
+        3 if lvl < 5 => (14, st, lvl, pts),
+        3 => (17, st, 4, 20),
+        _ if st < 0 => (9, st, lvl, pts),
+        _ => (11, st, lvl, pts),
+    }
+}
+
+/// `void BEAggressionInt_DecayAll(BEAggressionInt* self)` (0x155e58): for every
+/// player of the race (count at `0x5305e0 + 0x30`) and each of the ten
+/// aggression slots of the rider's character profile (3 bytes per slot at
+/// `0x4a7869 + profile * 0x9b50 + char * 0xf88`: state, level, points), reduces
+/// the points by 3 (not below 0), tells the HUD (`func_001E2A08(slot, points)`,
+/// unless the race's byte at `+0x49` is set), then applies
+/// [`be_aggression_step`] and writes state, points and level back.
+pub fn be_aggression_int_decay_all(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0xb0);
+        c.g[V1][0] = 0x53_0000;
+        frame.save(c, S4, 0x60);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x5b0));
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S1, 0x90);
+        frame.save(c, S2, 0x80);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S6, 0x40);
+        frame.save(c, S7, 0x30);
+        frame.save(c, FP, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x30));
+        let none = (c.g[V0][0] as i64) <= 0;
+        c.g[S4][0] = 0;
+        if !none {
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S4][0];
+            'players: loop {
+                c.cycles += 8;
+                c.g[S6][0] = 0;
+                call_ptr(c, 0x0014_a0e0, 0x0015_5ea8)?; // BE_GetRiderProfile
+                c.g[FP][0] = 0;
+                c.g[A0][0] = 0x9b50;
+                c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add(1));
+                c.mult(0, S5, V0, A0);
+                let slot = frame.at(c, 0);
+                c.sw(slot, c.g[V1][0]);
+                c.g[S7][0] = 0;
+                loop {
+                    c.cycles += 8;
+                    c.g[A0][0] = c.g[S4][0];
+                    call_ptr(c, 0x0014_a080, 0x0015_5ec8)?; // BE_GetRiderCharacter
+                    c.g[S3][0] = c.g[V0][0];
+                    c.g[V1][0] = 0xf88;
+                    c.mult(0, V1, S3, V1);
+                    c.g[A0][0] = 5;
+                    c.cycles += 22;
+                    c.g[A1][0] = 0xffff_ffff_ffff_ffff;
+                    c.g[A0][0] = 0x4a_0000;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x786b));
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                    c.g[V1][0] = 0x53_0000;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S5][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x5b0));
+                    c.g[A2][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0x49));
+                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[A0][0] = 0x4a_0000;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x7869));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[A0][0] = c.lb(c.g[V1][0] as u32);
+                    c.g[V1][0] = 5;
+                    c.g[S2][0] = c.lb(c.g[V0][0] as u32);
+                    c.g[S1][0] = sx((c.g[A0][0] as u32).wrapping_sub(3));
+                    c.g[A1][0] = ((c.g[A1][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                    if c.g[A1][0] == 0 {
+                        c.g[S1][0] = 0;
+                    }
+                    c.div(0, S1, V1);
+                    c.g[V0][0] = c.lo[0];
+                    let hud_off = c.g[A2][0] != 0;
+                    c.g[S0][0] = c.g[V0][0];
+                    if !hud_off {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[S6][0];
+                        c.g[A1][0] = c.g[S1][0];
+                        call_ptr(c, 0x001e_2a08, 0x0015_5f44)?; // HUD aggression update
+                    }
+                    let (cyc, st, lvl, pts) =
+                        be_aggression_step(c.g[S2][0] as i64, c.g[S0][0] as i64, c.g[S1][0]);
+                    c.cycles += cyc;
+                    c.g[S2][0] = st as u64;
+                    c.g[S0][0] = lvl as u64;
+                    c.g[S1][0] = pts;
+                    c.g[V1][0] = 0xf88;
+                    c.g[A0][0] = 0x4a_0000;
+                    c.cycles += 19;
+                    c.mult(0, V1, S3, V1);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x7869));
+                    c.g[A2][0] = 0x4a_0000;
+                    c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_add(1));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x786b));
+                    c.g[S7][0] = sx((c.g[S7][0] as u32).wrapping_add(3));
+                    c.g[A1][0] = ((c.g[S6][0] as i64) < 10) as u64;
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[FP][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S5][0] as u32));
+                    c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_add(3));
+                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.sb(c.g[V1][0] as u32, c.g[S2][0]);
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[V1][0] = 0x4a_0000;
+                    c.sb(c.g[A0][0] as u32, c.g[S1][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x786a));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    let more_slots = c.g[A1][0] != 0;
+                    c.sb(c.g[V0][0] as u32, c.g[S0][0]);
+                    if more_slots {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0015_5ec0);
+                        }
+                        continue;
+                    }
+                    break;
+                }
+                c.cycles += 7;
+                c.g[A0][0] = 0x53_0000;
+                let slot = frame.at(c, 0);
+                c.g[S4][0] = c.lw(slot);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5b0));
+                c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x30));
+                c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more_players = c.g[V0][0] != 0;
+                c.g[A0][0] = c.g[S4][0];
+                if more_players {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0015_5ea0);
+                    }
+                    continue 'players;
+                }
+                break;
+            }
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -523,6 +702,7 @@ pub(crate) mod tests {
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
+    use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
 
     #[test]
     fn be_aggression_int_get_rival_state_matches() {
@@ -642,6 +822,54 @@ pub(crate) mod tests {
                 c.g[A3][0] = sx(pick(&mut r, &[-1, 0, 1, 2, 3, 4]) as u32);
                 c.g[RA][0] = SENTINEL as u64;
                 c.pc = 0x0015_5bf0;
+            },
+        );
+    }
+
+    use crate::difftest::check_lohi;
+
+    pub(crate) use crate::game::intersect::riderspheretree::tests::OC430_CTRL;
+    pub(crate) use crate::game::intersect::riderspheretree::tests::OC430_MAGIC;
+
+    /// Fixture for `BEAggressionInt_DecayAll`: 1..3 players, profile and
+    /// character lookups return small indices (see `oc430_result`), every
+    /// aggression cell (state in -1..4, points 0..40) random, the HUD call
+    /// on or off (the real HUD function returns early on the fixture world).
+    pub(crate) fn oc430_aggression_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        c.bus.write32(0x0053_05e0 + 0x30, 1 + seed % 3);
+        c.bus.write8(0x0053_05b0 + 0x49, (seed % 4 == 0) as u8);
+        for p in 0..3u32 {
+            for ca in 0..10u32 {
+                for j in 0..10u32 {
+                    let cell = 0x004a_7869 + p * 0x9b50 + ca * 0xf88 + 3 * j;
+                    c.bus
+                        .write8(cell, ((r.next_u32() % 6) as u8).wrapping_sub(1));
+                    c.bus.write8(cell + 1, r.next_u32() as u8);
+                    c.bus.write8(cell + 2, (r.next_u32() % 41) as u8);
+                }
+            }
+        }
+        let world = DATA + 0x5000;
+        c.bus.write32(c.g[GP][0] as u32 - 0x848, world);
+        c.bus.write32(world + 0x84, DATA + 0x5100);
+        c.bus.write32(DATA + 0x5100 + 0x28, DATA + 0x5200);
+        c.bus.write32(DATA + 0x5200, 5);
+    }
+
+    /// `BEAggressionInt_DecayAll`: every state/level combination, with and
+    /// without the HUD call (LO/HI of the index multiplies too).
+    #[test]
+    fn be_aggression_int_decay_all_matches() {
+        oc430_install_fakes();
+        check_lohi(
+            ee::s01::f_00155e58__generated,
+            be_aggression_int_decay_all,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0015_5e58, 20);
+                c.bus.write32(OC430_CTRL, OC430_MAGIC);
+                c.pc = 0x0015_5e58;
+                oc430_aggression_fixture(c, &mut r, seed);
             },
         );
     }

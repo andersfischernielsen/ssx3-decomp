@@ -2,6 +2,7 @@
 
 use ssx3_ee_rt::funcs::GuestFn;
 
+pub mod all_in_one_main;
 pub mod debugmenu;
 pub mod game;
 pub mod gameload;
@@ -18,6 +19,7 @@ pub mod streampause;
 /// Every replacement in this directory.
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v = Vec::new();
+    v.extend_from_slice(all_in_one_main::OVERRIDES);
     v.extend_from_slice(debugmenu::OVERRIDES);
     v.extend_from_slice(game::OVERRIDES);
     v.extend_from_slice(gameload::OVERRIDES);

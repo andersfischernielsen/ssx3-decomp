@@ -3095,6 +3095,199 @@ pub fn game_state_countdown_save_state(c: &mut Cpu) {
     );
 }
 
+/// `void GameStateReset_Enter(GameStateReset* self)` (0x2355c0): enters the
+/// "reset" game state. Records whether the script engine is in a transport
+/// sequence (`+0x1c`), clears the user awards, reads the race setup
+/// (`0x535bc8`: byte `+0x49` game path, byte `+0x48` game mode), picks the
+/// state (`+0x0`, `+0x4`: path set: 1/0; no path and the section id (`+0x1bc`
+/// of the section manager) in 0xe..0x10: 1/1; otherwise 4/0), switches the AI
+/// to state 3 in mode 4, resets the BE state, re-initialises the missions and
+/// runs the global scripts, enters the hub when the location type is 1, hides
+/// the load indicator and starts the NIS lists (path set) or the idle list
+/// (`+0x14`), then re-enables the audio engine.
+///
+/// NOT registered: `0x158e30` (reward bookkeeping) and `0x309f18` (global
+/// script reset) are real, unslotted callees with their own loops, so no bounded
+/// differential fixture exists.
+pub fn game_state_reset_enter(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S1, 0x50);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x60);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S4, 0x20);
+        frame.save(c, S5, 0x10);
+        frame.save_ra(c, 0);
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x1c), 0);
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x84c));
+        call_ptr(c, 0x0027_aa80, 0x0023_55f0)?; // IsInTransportSequence
+        let not_transport = c.g[V0][0] == 0;
+        c.g[V0][0] = 1;
+        if !not_transport {
+            c.cycles += 1;
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+        }
+        c.cycles += 17;
+        call_ptr(c, 0x0014_dc80, 0x0023_5604)?; // cBE_getBE
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0014_dd58, 0x0023_5610)?; // cBE_getInterface(0)
+        c.g[S2][0] = c.g[V0][0];
+        call_ptr(c, 0x0014_dc80, 0x0023_5618)?; // cBE_getBE
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0xd;
+        call_ptr(c, 0x0014_dd58, 0x0023_5624)?; // cBE_getInterface(13)
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x0015_8e30, 0x0023_562c)?; // clear user awards
+        c.g[V0][0] = 0x53_0000;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5bc8));
+        c.g[S3][0] = c.lb((c.g[V0][0] as u32).wrapping_add(0x49));
+        let has_path = c.g[S3][0] != 0;
+        c.g[S4][0] = c.lb((c.g[V0][0] as u32).wrapping_add(0x48));
+        let mut in_range = false;
+        if !has_path {
+            c.cycles += 8;
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+            c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x78));
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1bc));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xe));
+            c.g[V0][0] = (c.g[V0][0] < 3) as u64;
+            in_range = c.g[V0][0] != 0;
+            c.g[V0][0] = 1;
+        } else {
+            c.cycles += 1;
+            c.g[V0][0] = 1;
+        }
+        if has_path || in_range {
+            c.cycles += 4;
+            c.g[V1][0] = (c.g[S3][0] < 1) as u64;
+            c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+            c.sw((c.g[S1][0] as u32).wrapping_add(4), c.g[V1][0]);
+            c.g[V0][0] = 4;
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = 4;
+            c.sw((c.g[S1][0] as u32).wrapping_add(4), 0);
+            c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+        }
+        c.cycles += 2;
+        if c.g[S4][0] != c.g[V0][0] {
+            c.g[A0][0] = 0;
+        } else {
+            c.cycles += 5;
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x488));
+            c.g[A1][0] = 3;
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+            call_ptr(c, 0x0011_3b10, 0x0023_569c)?; // cAI_setAIState
+            c.g[A0][0] = 0;
+        }
+        c.cycles += 13;
+        c.g[S5][0] = 1;
+        call_ptr(c, 0x0014_de68, 0x0023_56a8)?; // cBE_setState(0)
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xce8));
+        call_ptr(c, 0x0030_9030, 0x0023_56b0)?; // WScriptMan_initMissions
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xce8));
+        call_ptr(c, 0x0030_9f18, 0x0023_56b8)?; // WScriptMan_runGlobalScripts
+        c.g[A0][0] = c.g[S2][0];
+        call_ptr(c, 0x0014_4be0, 0x0023_56c0)?; // getLocationID
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S2][0];
+        call_ptr(c, 0x0014_4cc0, 0x0023_56cc)?; // getLocationType
+        let not_hub = c.g[V0][0] != c.g[S5][0];
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x488));
+        if !not_hub {
+            c.cycles += 18;
+            call_ptr(c, 0x0014_dc80, 0x0023_56dc)?; // cBE_getBE
+            c.g[A1][0] = 1;
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x0014_dd58, 0x0023_56e8)?; // cBE_getInterface(1)
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, 0x0014_4be0, 0x0023_56f4)?; // getLocationID
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x0014_6e10, 0x0023_5704)?; // setLastHub
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(8));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0023_5718)?; // player->onHub()
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x488));
+        }
+        c.cycles += 11;
+        c.g[V1][0] = c.g[S4][0] ^ 4;
+        c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        c.g[V1][0] = (c.g[V1][0] != 0) as u64;
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+        c.g[A1][0] = 0;
+        c.sw((c.g[A0][0] as u32).wrapping_add(0x14), c.g[V1][0]);
+        c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x84));
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x94));
+        call_ptr(c, 0x001f_36d8, 0x0023_5740)?; // cBXLoadIndicator_Hide
+        if !has_path {
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+            c.cycles += 2;
+            let idle = c.g[V0][0] == 0;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x84c));
+            if !idle {
+                c.cycles += 4;
+                c.g[A1][0] = 1;
+                c.g[A2][0] = 1;
+                c.g[A3][0] = 0;
+                call_ptr(c, 0x0027_8f68, 0x0023_57b0)?; // PlayNISList(1, 1, 0)
+            }
+        } else {
+            c.cycles += 7;
+            c.sw(c.g[S1][0] as u32, c.g[S5][0]);
+            c.sw((c.g[S1][0] as u32).wrapping_add(4), 0);
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x84c));
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x550));
+            c.g[V0][0] ^= 2;
+            let not_mode2 = c.g[V0][0] != 0;
+            c.g[A1][0] = 1;
+            if !not_mode2 {
+                c.cycles += 8;
+                c.g[A2][0] = 0;
+                c.g[A3][0] = 1;
+                call_ptr(c, 0x0027_8f68, 0x0023_5770)?; // PlayNISList(1, 0, 1)
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x84c));
+                c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x550));
+                c.g[V0][0] ^= 2;
+                let not_mode2 = c.g[V0][0] != 0;
+                c.g[A1][0] = 0;
+                if !not_mode2 {
+                    c.cycles += 5;
+                    c.g[A2][0] = 0;
+                    c.g[A3][0] = 1;
+                    call_ptr(c, 0x0027_8f68, 0x0023_5790)?; // PlayNISList(0, 0, 1)
+                }
+            }
+        }
+        c.cycles += 17;
+        call_ptr(c, 0x0028_b180, 0x0023_57b8)?; // cAudioInterface_bxAudio
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x118));
+        call_ptr(c, 0x002b_3a98, 0x0023_57c0)?; // audio func
+        call_ptr(c, 0x0028_b180, 0x0023_57c8)?; // cAudioInterface_bxAudio
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x002a_4b68, 0x0023_57d0)?; // audio func
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

@@ -19,6 +19,7 @@ pub(crate) use crate::game::be::beprepoststate::ea;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
+pub(crate) use crate::game::camera::trigger::cameratriggerman::OC429_DELETE;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
 pub(crate) use crate::game::fe::feasyncfile::lw_3 as lw_2;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
@@ -28,6 +29,7 @@ pub(crate) use crate::game::fe::feasyncfile::sw_r;
 pub(crate) use crate::game::fe::festateload::at;
 pub(crate) use crate::game::intersect::worldsphtree::forward_to_arg_vtable;
 pub(crate) use crate::game::main::gamemode::sp_2;
+pub(crate) use crate::game::main::ssxapp::oc429_at;
 pub(crate) use crate::game::movie::movieplayer::add32;
 pub(crate) use crate::game::movie::movieplayer::at as at_2;
 pub(crate) use crate::game::movie::movieplayer::word;
@@ -369,6 +371,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         wscript_man_collect_set_add_items,
         "WScriptMan_CollectSetAddItems",
     ),
+    (0x0030_d540, rider_model_dtor, "RiderModel_dtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5086,6 +5089,306 @@ pub fn wscript_man_collect_set_add_items(c: &mut Cpu) {
     })
 }
 
+/// `EA_MemFree(void*)`.
+pub(crate) const OC429_MEM_FREE: u32 = 0x0031_7e98;
+
+/// `if (a0 != 0) EA_MemFree(a0)`: the compiled null check on `a0` (2 cycles,
+/// 3 more with the call), returning to `ret`.
+#[inline(always)]
+pub(crate) fn oc429_free_a0(c: &mut Cpu, ret: u32) -> crate::call::Flow {
+    c.cycles += 2;
+    if c.g[A0][0] != 0 {
+        c.cycles += 3;
+        call_ptr(c, OC429_MEM_FREE, ret)?;
+    }
+    Ok(())
+}
+
+/// `cAnimModel` (RiderModel) field offsets used by the destructor.
+pub(crate) const RIDERMODEL_NUM_VARIANTS: u32 = 0x4;
+
+pub(crate) const RIDERMODEL_NUM_GROUPS: u32 = 0x8;
+
+pub(crate) const RIDERMODEL_GROUPS: u32 = 0xc;
+
+pub(crate) const RIDERMODEL_TEX_COUNT: u32 = 0x12c;
+
+pub(crate) const RIDERMODEL_TEX_LIST: u32 = 0x130;
+
+/// `void RiderModel_dtor(RiderModel* self, int flags)` (0x30d540,
+/// `cAnimModel::~cAnimModel`): free the model's allocations (`+0x38`, the four
+/// slot blocks at `+0x44 + 8 * k`, per group/variant buffers, the texture
+/// list entries via the graphics manager's vtable `+0x380` / `+0x190`, then
+/// the plain buffers) and `__builtin_delete(self)` when `flags & 1`.
+pub fn rider_model_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S2, 0x80);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, 22, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x90);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S4, 0x60);
+        frame.save(c, S5, 0x50);
+        frame.save(c, 23, 0x30);
+        frame.save(c, 30, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = c.lw(oc429_at(c.g[S2][0], 0x38));
+        let t = c.g[A0][0] == 0;
+        c.g[S6][0] = c.lw(oc429_at(c.g[GP][0], 0x2a90));
+        if !t {
+            c.cycles += 2;
+            call_ptr(c, OC429_MEM_FREE, 0x0030_d588)?;
+        }
+
+        'slots: {
+            c.cycles += 4;
+            c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_GROUPS));
+            c.g[S0][0] &= 0x1;
+            let t = c.g[V0][0] == 0;
+            c.sw(oc429_at(c.g[SP][0], 4), c.g[S0][0]);
+            if t {
+                break 'slots;
+            }
+            c.cycles += 4;
+            c.g[V0][0] = sx(oc429_at(c.g[S2][0], 0x44));
+            c.g[S0][0] = 0;
+            c.sw(sp(c), c.g[V0][0]);
+            c.g[V0][0] = sx((c.g[S0][0] as u32) << 3);
+            // k = 0..3 (slot blocks).
+            loop {
+                c.cycles += 6;
+                c.g[V1][0] = c.lw(sp(c));
+                c.g[S5][0] = c.g[V0][0];
+                c.g[V0][0] = sx(oc429_at(c.g[V1][0], c.g[V0][0] as u32));
+                c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                if c.g[A0][0] != 0 {
+                    c.cycles += 3;
+                    call_ptr(c, OC429_MEM_FREE, 0x0030_d5c8)?;
+                }
+                c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_NUM_GROUPS));
+                'groups: {
+                    c.cycles += 4;
+                    c.g[S0][0] = sx(oc429_at(c.g[S0][0], 1));
+                    c.sw(oc429_at(c.g[SP][0], 8), c.g[S0][0]);
+                    let t = (c.g[V0][0] as i64) <= 0;
+                    c.g[S3][0] = 0;
+                    if t {
+                        break 'groups;
+                    }
+                    c.cycles += 3;
+                    c.g[FP][0] = 0x58;
+                    c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_NUM_VARIANTS));
+                    // j = 0..num_groups.
+                    loop {
+                        'variants: {
+                            c.cycles += 3;
+                            c.g[S1][0] = 0;
+                            let t = (c.g[V0][0] as i64) <= 0;
+                            c.g[S7][0] = sx(oc429_at(c.g[S3][0], 1));
+                            if t {
+                                break 'variants;
+                            }
+                            c.cycles += 3;
+                            c.mult(0, S4, S3, FP);
+                            c.g[V1][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_GROUPS));
+                            // variant = 0..num_variants.
+                            loop {
+                                c.cycles += 8;
+                                c.g[S0][0] = sx((c.g[S1][0] as u32) << 4);
+                                c.g[V1][0] = sx(oc429_at(c.g[S4][0], c.g[V1][0] as u32));
+                                c.g[V1][0] = sx(oc429_at(c.g[V1][0], c.g[S5][0] as u32));
+                                c.g[V0][0] = c.lw(oc429_at(c.g[V1][0], 0x1c));
+                                c.g[V0][0] = sx(oc429_at(c.g[S0][0], c.g[V0][0] as u32));
+                                c.g[A0][0] = c.lw(oc429_at(c.g[V0][0], 0xc));
+                                if c.g[A0][0] != 0 {
+                                    c.cycles += 3;
+                                    call_ptr(c, OC429_MEM_FREE, 0x0030_d628)?;
+                                }
+                                c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_GROUPS));
+                                // gfx->vtbl[0x380](gfx, entry->f0)
+                                c.cycles += 18;
+                                c.g[A1][0] = c.lw(oc429_at(c.g[S6][0], 0x10d8));
+                                c.g[V0][0] = sx(oc429_at(c.g[S4][0], c.g[V0][0] as u32));
+                                c.g[V0][0] = sx(oc429_at(c.g[V0][0], c.g[S5][0] as u32));
+                                c.g[A0][0] = c.lh(oc429_at(c.g[A1][0], 0x380));
+                                c.g[V1][0] = c.lw(oc429_at(c.g[V0][0], 0x1c));
+                                c.g[A2][0] = c.lw(oc429_at(c.g[A1][0], 0x384));
+                                c.g[A0][0] = sx(oc429_at(c.g[S6][0], c.g[A0][0] as u32));
+                                c.g[V1][0] = sx(oc429_at(c.g[S0][0], c.g[V1][0] as u32));
+                                let target = c.g[A2][0] as u32;
+                                c.g[A1][0] = c.lw(c.g[V1][0] as u32);
+                                call_ptr(c, target, 0x0030_d654)?;
+                                c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_GROUPS));
+                                c.g[V0][0] = sx(oc429_at(c.g[S4][0], c.g[V0][0] as u32));
+                                c.g[V0][0] = sx(oc429_at(c.g[V0][0], c.g[S5][0] as u32));
+                                c.g[V1][0] = c.lw(oc429_at(c.g[V0][0], 0x1c));
+                                c.g[V1][0] = sx(oc429_at(c.g[S0][0], c.g[V1][0] as u32));
+                                c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                                if c.g[A0][0] != 0 {
+                                    c.cycles += 3;
+                                    call_ptr(c, OC429_MEM_FREE, 0x0030_d67c)?;
+                                }
+                                c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_NUM_VARIANTS));
+                                c.cycles += 4;
+                                c.g[S1][0] = sx(oc429_at(c.g[S1][0], 1));
+                                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                                if c.g[V0][0] != 0 {
+                                    c.g[V1][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_GROUPS));
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x0030_d600);
+                                    }
+                                    continue;
+                                }
+                                break;
+                            }
+                        }
+                        // Free the group's variant array.
+                        c.cycles += 7;
+                        c.mult(0, V0, S3, FP);
+                        c.g[V1][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_GROUPS));
+                        c.g[V0][0] = sx(oc429_at(c.g[V0][0], c.g[V1][0] as u32));
+                        c.g[V0][0] = sx(oc429_at(c.g[V0][0], c.g[S5][0] as u32));
+                        c.g[A0][0] = c.lw(oc429_at(c.g[V0][0], 0x1c));
+                        if c.g[A0][0] != 0 {
+                            c.cycles += 3;
+                            call_ptr(c, OC429_MEM_FREE, 0x0030_d6b4)?;
+                        }
+                        c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_NUM_GROUPS));
+                        c.cycles += 4;
+                        c.g[S3][0] = c.g[S7][0];
+                        c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] != 0 {
+                            c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_NUM_VARIANTS));
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0030_d5e8);
+                            }
+                            continue;
+                        }
+                        break;
+                    }
+                }
+                c.cycles += 4;
+                c.g[S0][0] = c.lw(oc429_at(c.g[SP][0], 8));
+                c.g[V0][0] = ((c.g[S0][0] as i64) < 4) as u64;
+                let t = c.g[V0][0] != 0;
+                c.g[V0][0] = sx((c.g[S0][0] as u32) << 3);
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0030_d5a8);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+
+        // Texture list: release each entry with id >= 0 through the gfx
+        // vtable `+0x190`.
+        'tex: {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_TEX_LIST));
+            if c.g[V0][0] == 0 {
+                c.g[A0][0] = c.lw(oc429_at(c.g[S2][0], 0x30));
+                break 'tex;
+            }
+            'texdone: {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_TEX_COUNT));
+                let t = (c.g[V0][0] as i64) <= 0;
+                c.g[S0][0] = 0;
+                if t {
+                    break 'texdone;
+                }
+                c.cycles += 2;
+                c.g[S1][0] = 0;
+                loop {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_TEX_LIST));
+                    c.g[V0][0] = sx(oc429_at(c.g[S1][0], c.g[V0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[V0][0] as u32);
+                    if (c.g[A1][0] as i64) < 0 {
+                        c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_TEX_COUNT));
+                    } else {
+                        c.cycles += 6;
+                        c.g[V0][0] = c.lw(oc429_at(c.g[S6][0], 0x10d8));
+                        c.g[A0][0] = c.lh(oc429_at(c.g[V0][0], 0x190));
+                        c.g[V1][0] = c.lw(oc429_at(c.g[V0][0], 0x194));
+                        let target = c.g[V1][0] as u32;
+                        c.g[A0][0] = sx(oc429_at(c.g[S6][0], c.g[A0][0] as u32));
+                        call_ptr(c, target, 0x0030_d720)?;
+                        c.g[V0][0] = c.lw(oc429_at(c.g[S2][0], RIDERMODEL_TEX_COUNT));
+                    }
+                    c.cycles += 4;
+                    c.g[S0][0] = sx(oc429_at(c.g[S0][0], 1));
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[S1][0] = sx(oc429_at(c.g[S1][0], 0xc));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0030_d6f8);
+                        }
+                        continue;
+                    }
+                    break;
+                }
+            }
+            c.cycles += 1;
+            c.g[A0][0] = c.lw(oc429_at(c.g[S2][0], 0x30));
+        }
+
+        // The plain buffers, each freed if non-null.
+        for (next, ret) in [
+            (0x34u32, 0x0030_d748u32),
+            (0x2c, 0x0030_d75c),
+            (0xc, 0x0030_d770),
+            (0x1c, 0x0030_d784),
+            (0x3c, 0x0030_d798),
+            (0x130, 0x0030_d7ac),
+            (0x24, 0x0030_d7c0),
+            (0x28, 0x0030_d7d4),
+            (0x20, 0x0030_d7e8),
+        ] {
+            oc429_free_a0(c, ret)?;
+            c.g[A0][0] = c.lw(oc429_at(c.g[S2][0], next));
+        }
+        // Last buffer (the next load is `flags & 1` from the frame).
+        c.cycles += 2;
+        let t = c.g[A0][0] == 0;
+        c.g[V0][0] = c.lw(oc429_at(c.g[SP][0], 4));
+        if !t {
+            c.cycles += 3;
+            call_ptr(c, OC429_MEM_FREE, 0x0030_d7fc)?;
+            c.g[V0][0] = c.lw(oc429_at(c.g[SP][0], 4));
+        }
+        // flags & 1: delete the object itself.
+        c.cycles += 2;
+        let t = c.g[V0][0] == 0;
+        frame.restore(c, S0, 0xa0);
+        if !t {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, OC429_DELETE, 0x0030_d810)?;
+            frame.restore(c, S0, 0xa0);
+        }
+        c.cycles += 11;
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, 22, 0x40);
+        frame.restore(c, 23, 0x30);
+        frame.restore(c, 30, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7479,5 +7782,318 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(size);
             },
         );
+    }
+
+    pub(crate) use crate::game::main::ssxapp::ssx_load_net_modules;
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_gp;
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_machine;
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_queue_base;
+    pub(crate) use crate::game::main::ssxapp::tests::oc429_w;
+
+    pub(crate) use crate::game::main::ssxapp::tests::OC429_CTRL;
+    pub(crate) use crate::game::main::ssxapp::tests::OC429_FX;
+    pub(crate) use crate::game::main::ssxapp::tests::OC429_MAGIC;
+
+    use ssx3_ee_rt::funcs::register_functions;
+    use ssx3_ee_rt::funcs::FnEntry;
+    use std::ptr::addr_of_mut;
+
+    pub(crate) fn oc429_pop(c: &mut Cpu, addr: u32) -> Option<u64> {
+        let q = oc429_queue_base(addr);
+        let head = c.bus.read32(q);
+        if head < c.bus.read32(q + 4) {
+            c.bus.write32(q, head + 1);
+            Some(c.bus.read64(q + 8 + 8 * head))
+        } else {
+            None
+        }
+    }
+
+    /// A gated callee fake: logs the call like `fakes::fake`, then returns the
+    /// next queued value (if any) in v0.
+    pub(crate) fn oc429_fake_call(c: &mut Cpu, addr: u32, ra: u32) {
+        fakes::fake(c, addr, ra);
+        if c.pc != ra {
+            return;
+        }
+        if let Some(v) = oc429_pop(c, addr) {
+            c.g[V0][0] = v;
+        }
+    }
+
+    macro_rules! oc429_fakes {
+        ($(($name:ident, $addr:expr, $shard:ident, $slot:ident, $gen:ident)),* $(,)?) => {
+            $(
+                fn $name(c: &mut Cpu) {
+                    if c.bus.read32(OC429_CTRL) != OC429_MAGIC {
+                        return fakes::fall_back(c, fakes::prev_cell($name), ee::$shard::$gen);
+                    }
+                    let ra = c.g[RA][0] as u32;
+                    oc429_fake_call(c, $addr, ra);
+                }
+            )*
+
+            /// Hooks the gated fakes into the callees' override slots (once
+            /// per process; with the gate off they run what the slots held).
+            pub(crate) fn oc429_install_fakes() {
+                $( fakes::hook(addr_of_mut!(ee::$shard::$slot), $name, fakes::prev_cell($name)); )*
+            }
+        };
+    }
+
+    oc429_fakes! {
+        (oc429_fake_0010f1c0, 0x0010_f1c0, s00, OVERRIDE_0010F1C0, f_0010f1c0__generated),
+        (oc429_fake_00144bc0, 0x0014_4bc0, s01, OVERRIDE_00144BC0, f_00144bc0__generated),
+        (oc429_fake_0014dc80, 0x0014_dc80, s01, OVERRIDE_0014DC80, f_0014dc80__generated),
+        (oc429_fake_0014dd58, 0x0014_dd58, s01, OVERRIDE_0014DD58, f_0014dd58__generated),
+        (oc429_fake_00154278, 0x0015_4278, s01, OVERRIDE_00154278, f_00154278__generated),
+        (oc429_fake_00154588, 0x0015_4588, s01, OVERRIDE_00154588, f_00154588__generated),
+        (oc429_fake_00156a60, 0x0015_6a60, s01, OVERRIDE_00156A60, f_00156a60__generated),
+        (oc429_fake_001589b0, 0x0015_89b0, s01, OVERRIDE_001589B0, f_001589b0__generated),
+        (oc429_fake_00158a50, 0x0015_8a50, s01, OVERRIDE_00158A50, f_00158a50__generated),
+        (oc429_fake_00169340, 0x0016_9340, s02, OVERRIDE_00169340, f_00169340__generated),
+        (oc429_fake_001694a8, 0x0016_94a8, s02, OVERRIDE_001694A8, f_001694a8__generated),
+        (oc429_fake_001694b8, 0x0016_94b8, s02, OVERRIDE_001694B8, f_001694b8__generated),
+        (oc429_fake_00169cf8, 0x0016_9cf8, s02, OVERRIDE_00169CF8, f_00169cf8__generated),
+        (oc429_fake_0016a458, 0x0016_a458, s02, OVERRIDE_0016A458, f_0016a458__generated),
+        (oc429_fake_0016ad38, 0x0016_ad38, s02, OVERRIDE_0016AD38, f_0016ad38__generated),
+        (oc429_fake_0026d628, 0x0026_d628, s07, OVERRIDE_0026D628, f_0026d628__generated),
+        (oc429_fake_0026e950, 0x0026_e950, s07, OVERRIDE_0026E950, f_0026e950__generated),
+        (oc429_fake_00272488, 0x0027_2488, s07, OVERRIDE_00272488, f_00272488__generated),
+        (oc429_fake_002729a8, 0x0027_29a8, s07, OVERRIDE_002729A8, f_002729a8__generated),
+        (oc429_fake_00273938, 0x0027_3938, s07, OVERRIDE_00273938, f_00273938__generated),
+        (oc429_fake_002739b8, 0x0027_39b8, s07, OVERRIDE_002739B8, f_002739b8__generated),
+        (oc429_fake_002743c8, 0x0027_43c8, s07, OVERRIDE_002743C8, f_002743c8__generated),
+        (oc429_fake_00275718, 0x0027_5718, s07, OVERRIDE_00275718, f_00275718__generated),
+        (oc429_fake_002757f0, 0x0027_57f0, s07, OVERRIDE_002757F0, f_002757f0__generated),
+        (oc429_fake_00275b98, 0x0027_5b98, s07, OVERRIDE_00275B98, f_00275b98__generated),
+        (oc429_fake_00275cf8, 0x0027_5cf8, s07, OVERRIDE_00275CF8, f_00275cf8__generated),
+        (oc429_fake_00277450, 0x0027_7450, s07, OVERRIDE_00277450, f_00277450__generated),
+        (oc429_fake_002776e0, 0x0027_76e0, s07, OVERRIDE_002776E0, f_002776e0__generated),
+        (oc429_fake_00277dd8, 0x0027_7dd8, s07, OVERRIDE_00277DD8, f_00277dd8__generated),
+        (oc429_fake_002797a0, 0x0027_97a0, s07, OVERRIDE_002797A0, f_002797a0__generated),
+        (oc429_fake_00282338, 0x0028_2338, s07, OVERRIDE_00282338, f_00282338__generated),
+        (oc429_fake_00282bf0, 0x0028_2bf0, s07, OVERRIDE_00282BF0, f_00282bf0__generated),
+        (oc429_fake_00282c88, 0x0028_2c88, s07, OVERRIDE_00282C88, f_00282c88__generated),
+        (oc429_fake_00282cb0, 0x0028_2cb0, s07, OVERRIDE_00282CB0, f_00282cb0__generated),
+        (oc429_fake_00283bb8, 0x0028_3bb8, s07, OVERRIDE_00283BB8, f_00283bb8__generated),
+        (oc429_fake_00283d28, 0x0028_3d28, s07, OVERRIDE_00283D28, f_00283d28__generated),
+        (oc429_fake_00283d70, 0x0028_3d70, s07, OVERRIDE_00283D70, f_00283d70__generated),
+        (oc429_fake_00309568, 0x0030_9568, s10, OVERRIDE_00309568, f_00309568__generated),
+        (oc429_fake_00317d70, 0x0031_7d70, s10, OVERRIDE_00317D70, f_00317d70__generated),
+        (oc429_fake_00317e30, 0x0031_7e30, s10, OVERRIDE_00317E30, f_00317e30__generated),
+        (oc429_fake_00317e50, 0x0031_7e50, s10, OVERRIDE_00317E50, f_00317e50__generated),
+        (oc429_fake_00317e98, 0x0031_7e98, s10, OVERRIDE_00317E98, f_00317e98__generated),
+        (oc429_fake_00318260, 0x0031_8260, s10, OVERRIDE_00318260, f_00318260__generated),
+        (oc429_fake_003182d8, 0x0031_82d8, s10, OVERRIDE_003182D8, f_003182d8__generated),
+        (oc429_fake_00318448, 0x0031_8448, s10, OVERRIDE_00318448, f_00318448__generated),
+        (oc429_fake_003184e8, 0x0031_84e8, s10, OVERRIDE_003184E8, f_003184e8__generated),
+        (oc429_fake_00319028, 0x0031_9028, s10, OVERRIDE_00319028, f_00319028__generated),
+        (oc429_fake_003190a8, 0x0031_90a8, s10, OVERRIDE_003190A8, f_003190a8__generated),
+        (oc429_fake_003284b8, 0x0032_84b8, s10, OVERRIDE_003284B8, f_003284b8__generated),
+        (oc429_fake_00328c20, 0x0032_8c20, s10, OVERRIDE_00328C20, f_00328c20__generated),
+        (oc429_fake_00328f28, 0x0032_8f28, s10, OVERRIDE_00328F28, f_00328f28__generated),
+        (oc429_fake_003581b8, 0x0035_81b8, s11, OVERRIDE_003581B8, f_003581b8__generated),
+        (oc429_fake_003a6c68, 0x003a_6c68, s13, OVERRIDE_003A6C68, f_003a6c68__generated),
+        (oc429_fake_003a6c98, 0x003a_6c98, s13, OVERRIDE_003A6C98, f_003a6c98__generated),
+        (oc429_fake_003a9800, 0x003a_9800, s13, OVERRIDE_003A9800, f_003a9800__generated),
+        (oc429_fake_003e2580, 0x003e_2580, s14, OVERRIDE_003E2580, f_003e2580__generated),
+        (oc429_fake_003e6448, 0x003e_6448, s14, OVERRIDE_003E6448, f_003e6448__generated),
+        (oc429_fake_004166f4, 0x0041_66f4, s15, OVERRIDE_004166F4, f_004166f4__generated),
+        (oc429_fake_0041aa88, 0x0041_aa88, s15, OVERRIDE_0041AA88, f_0041aa88__generated),
+    }
+
+    /// `RiderModel_dtor`: null and non-null buffers, 0..3 groups x variants,
+    /// textures with negative and valid ids, `flags & 1`, unwinds in any call.
+    #[test]
+    fn rider_model_dtor_matches() {
+        covered(
+            ee::s10::f_0030d540__generated,
+            rider_model_dtor,
+            120,
+            &|c, seed| {
+                let mut r = oc429_machine(c, seed, 0x30d540, 80, 0x0030_d540);
+                let this = OC429_FX + 0x400;
+                let gfx = OC429_FX + 0x800;
+                let gfx_vt = OC429_FX + 0x900;
+                let groups = OC429_FX + 0x2000;
+                let tex = OC429_FX + 0x6000;
+                oc429_w(c, GAME_GP + 0x2a90, gfx);
+                oc429_w(c, gfx + 0x10d8, gfx_vt);
+                c.bus.write16(gfx_vt + 0x380, (r.next_u32() as u16) & !3);
+                oc429_w(c, gfx_vt + 0x384, fakes::FAKE);
+                c.bus.write16(gfx_vt + 0x190, (r.next_u32() as u16) & !3);
+                oc429_w(c, gfx_vt + 0x194, fakes::FAKE + 0x10);
+                let nv = seed % 3;
+                let ng = (seed / 3) % 3;
+                // Plain buffers: each present or absent by seed bit.
+                for (i, off) in [0x1cu32, 0x20, 0x24, 0x28, 0x2c, 0x30, 0x34, 0x38, 0x3c]
+                    .iter()
+                    .enumerate()
+                {
+                    let present = (r.next_u32() >> i) & 1 == 1 || seed % 7 == 0;
+                    oc429_w(
+                        c,
+                        this + off,
+                        if present {
+                            OC429_FX + 0x100 + 0x10 * i as u32
+                        } else {
+                            0
+                        },
+                    );
+                }
+                oc429_w(c, this + RIDERMODEL_NUM_VARIANTS, nv);
+                oc429_w(c, this + RIDERMODEL_NUM_GROUPS, ng);
+                let has_groups = seed % 5 != 0;
+                oc429_w(
+                    c,
+                    this + RIDERMODEL_GROUPS,
+                    if has_groups { groups } else { 0 },
+                );
+                for k in 0..4u32 {
+                    let nonnull = r.next_u32() & 1;
+                    oc429_w(
+                        c,
+                        this + 0x44 + 8 * k,
+                        nonnull * (OC429_FX + 0x180 + 0x10 * k),
+                    );
+                }
+                // Per group j, slot k: variant array at +0x1c; entries 0x10 apart.
+                for j in 0..3u32 {
+                    for k in 0..4u32 {
+                        let arr = OC429_FX + 0x3000 + (j * 4 + k) * 0x40;
+                        let slot = groups + j * 0x58 + k * 8;
+                        oc429_w(c, slot + 0x1c, if r.next_u32() & 3 == 0 { 0 } else { arr });
+                        for v in 0..3u32 {
+                            oc429_w(
+                                c,
+                                arr + 0x10 * v,
+                                if r.next_u32() & 1 == 0 {
+                                    0
+                                } else {
+                                    OC429_FX + 0x500
+                                },
+                            );
+                            oc429_w(
+                                c,
+                                arr + 0x10 * v + 0xc,
+                                if r.next_u32() & 1 == 0 {
+                                    0
+                                } else {
+                                    OC429_FX + 0x540
+                                },
+                            );
+                        }
+                    }
+                }
+                let ntex = (seed / 2) % 4;
+                oc429_w(c, this + RIDERMODEL_TEX_COUNT, ntex);
+                oc429_w(
+                    c,
+                    this + RIDERMODEL_TEX_LIST,
+                    if seed % 4 == 1 { 0 } else { tex },
+                );
+                for i in 0..4u32 {
+                    let id = if r.next_u32() & 1 == 0 {
+                        r.next_u32() | 0x8000_0000
+                    } else {
+                        r.next_u32() & 0x7fff
+                    };
+                    oc429_w(c, tex + 0xc * i, id);
+                }
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (r.next_u32() & 0xffff_fffe | (seed & 1)) as u64;
+            },
+        );
+    }
+
+    /// Set in the child process of the tests that need an empty function
+    /// table (every callee then lands in the logging fake).
+    pub(crate) const OC429_CHILD_ENV: &str = "SSX3_OC429_CHILD";
+
+    /// Result queue of the module-loader stub: `[head, len, values: u64 ...]`.
+    pub(crate) const OC429_LOAD_Q: u32 = DATA + 0x20_1000;
+
+    /// `0x319718` (the IOP module loader): logs the call, then returns the
+    /// next queued result (negative = load failed).
+    pub(crate) fn oc429_stub_load(c: &mut Cpu) {
+        let ret = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0031_9718, ret);
+        if c.pc != ret {
+            return;
+        }
+        let head = c.bus.read32(OC429_LOAD_Q);
+        if head < c.bus.read32(OC429_LOAD_Q + 4) {
+            c.bus.write32(OC429_LOAD_Q, head + 1);
+            c.g[V0][0] = c.bus.read64(OC429_LOAD_Q + 8 + 8 * head);
+        }
+    }
+
+    pub(crate) static OC429_STUBS: [FnEntry; 1] = [FnEntry {
+        start: 0x0031_9718,
+        end: 0x0031_971c,
+        f: oc429_stub_load,
+    }];
+
+    /// Run test `name` of this module in a child process (the same test
+    /// binary, `--exact`) where `body` runs against the stub function table:
+    /// a table swap in the shared test process would race with the other
+    /// tests' `fresh()`.
+    pub(crate) fn oc429_in_child(name: &str, body: fn()) {
+        if std::env::var_os(OC429_CHILD_ENV).is_some() {
+            return body();
+        }
+        let path = format!(
+            "{}::{name}",
+            module_path!().split_once("::").map_or("", |p| p.1)
+        );
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([path.as_str(), "--exact", "--test-threads=1", "--nocapture"])
+            .env(OC429_CHILD_ENV, "1")
+            .output()
+            .unwrap();
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            out.status.success() && text.contains("1 passed"),
+            "child failed:\n{text}"
+        );
+    }
+
+    /// Queue `n` loader results, each failing (-1) with the given chance.
+    pub(crate) fn oc429_load_results(c: &mut Cpu, r: &mut Rng, n: u32) {
+        c.bus.write32(OC429_LOAD_Q, 0);
+        c.bus.write32(OC429_LOAD_Q + 4, n);
+        for i in 0..n {
+            let v: u64 = if r.next_u32() % 3 == 0 { u64::MAX } else { 5 };
+            c.bus.write64(OC429_LOAD_Q + 8 + 8 * i, v);
+        }
+    }
+
+    pub(crate) fn oc429_lnm_checked() {
+        covered(
+            ee::s05::f_00228ee0__generated,
+            ssx_load_net_modules,
+            100,
+            &|c, seed| {
+                register_functions(&OC429_STUBS);
+                let mut r = machine(c, seed, 0x228ee0, 30);
+                c.pc = 0x0022_8ee0;
+                oc429_w(c, oc429_gp(0xda4), r.next_u32());
+                oc429_load_results(c, &mut r, 20);
+            },
+        );
+    }
+
+    /// `ssx_LoadNetModules`: every combination of failing SMAP / SPDUART
+    /// loads (PPPOE, the voice modules and their start/stop), unwinds in any
+    /// of the ~25 calls. Runs in a child process whose function table holds
+    /// only the loader stub (all other callees are unported).
+    #[test]
+    fn ssx_load_net_modules_matches() {
+        oc429_in_child("ssx_load_net_modules_matches", oc429_lnm_checked);
     }
 }
