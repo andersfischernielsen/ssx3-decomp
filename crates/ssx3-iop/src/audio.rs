@@ -73,7 +73,8 @@ pub enum Output {
     Off,
     /// The front end pulls the samples ([`pull`]): interleaved stereo i16
     /// at [`RATE`], at most ~200 ms queued (newer samples are dropped while
-    /// the queue is full).
+    /// the queue is full). The queue counts from the start: the ring plus
+    /// what the front end reported holding ([`report_buffered`]).
     Pull,
 }
 
@@ -99,17 +100,16 @@ pub fn output() -> Output {
 static PULLED: Mutex<Option<Ring>> = Mutex::new(None);
 
 /// [`Output::Pull`]: stereo frames the front end holds beyond the ring
-/// ([`report_buffered`]); negative until it reports.
+/// ([`report_buffered`]); negative until it reports (reads as 0).
 static FRONT_BUFFERED: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(-1);
 
 /// [`Output::Pull`]: how many stereo frames the front end has buffered but
-/// not played yet (its own queue, a device buffer it can see). Once
-/// reported, [`Sink::queued_frames`] counts the ring plus this, so the
-/// real-time mixer keeps the front end's stream fed when the game catches
-/// up; report again whenever it changes. Unreported, a front end that pulls
-/// once per presented image is not topped up (it may drain the ring every
-/// frame). [`pull_into`] reports 0 the first time it is called: a front end
-/// pulling from its audio callback holds nothing beyond the ring.
+/// not played yet (its own queue, a device buffer it can see).
+/// [`Sink::queued_frames`] counts the ring plus this, so the real-time
+/// mixer keeps the front end's stream fed when the game catches up; report
+/// again whenever it changes. [`pull_into`] reports 0 the first time it is
+/// called: a front end pulling from its audio callback holds nothing
+/// beyond the ring.
 pub fn report_buffered(frames: usize) {
     FRONT_BUFFERED.store(
         frames.min(i64::MAX as usize) as i64,
@@ -120,6 +120,12 @@ pub fn report_buffered(frames: usize) {
 fn front_buffered() -> Option<usize> {
     let v = FRONT_BUFFERED.load(std::sync::atomic::Ordering::Relaxed);
     (v >= 0).then_some(v as usize)
+}
+
+/// Stereo frames the front end last reported holding beyond the ring
+/// ([`report_buffered`]); 0 until it reports.
+pub fn front_buffered_frames() -> usize {
+    front_buffered().unwrap_or(0)
 }
 
 /// [`Output::Pull`]: append the samples produced since the last call to
@@ -285,14 +291,18 @@ impl Sink {
         }
     }
 
-    /// Stereo frames waiting for the output device (`None` without one, and
-    /// when the front end pulls the samples without [`report_buffered`]: it
-    /// may drain them every frame; with it, the ring plus what it reported).
+    /// Stereo frames waiting for the output device (`None` without one or
+    /// while suspended; for a pulled sink, the ring plus what the front
+    /// end reported holding, from the start).
     pub fn queued_frames(&self) -> Option<usize> {
         if suspended() {
             return None;
         }
-        let front = if self.pulled { front_buffered()? } else { 0 };
+        let front = if self.pulled {
+            front_buffered().unwrap_or(0)
+        } else {
+            0
+        };
         self.ring
             .as_ref()
             .map(|r| r.lock().map_or(0, |q| q.len() / 2) + front)
@@ -480,10 +490,15 @@ mod tests {
         if ssx3_core::config::var_os("SSX3_AUDIO").is_some() {
             return;
         }
+        // This test owns the process-wide pull-audio state.
         set_output(Output::Pull);
         let mut sink = Sink::from_env();
-        assert_eq!(sink.queued_frames(), None);
+        assert_eq!(front_buffered_frames(), 0);
+        // The queue counts from the start: an empty ring reads as 0.
+        assert_eq!(sink.queued_frames(), Some(0));
         sink.push(&[1, 2, 3, 4]);
+        // …and the ring alone counts, with no report at all.
+        assert_eq!(sink.queued_frames(), Some(2));
         let mut out = Vec::new();
         assert_eq!(pull(&mut out), 2);
         assert_eq!(out, [1, 2, 3, 4]);
@@ -497,11 +512,15 @@ mod tests {
         sink.push(&[1, 2, 3, 4, 5, 6]);
         assert_eq!(sink.queued_frames(), Some(3));
         report_buffered(100);
+        assert_eq!(front_buffered_frames(), 100);
         assert_eq!(sink.queued_frames(), Some(103));
         suspend();
         assert_eq!(sink.queued_frames(), None);
         resume();
         assert_eq!(sink.queued_frames(), Some(100), "suspend drops the queue");
+        report_buffered(60);
+        assert_eq!(front_buffered_frames(), 60);
+        assert_eq!(sink.queued_frames(), Some(60));
         set_output(Output::Off);
         assert!(Sink::from_env().ring.is_none());
     }
