@@ -70,7 +70,7 @@ the replay for the gate and the scenarios.
 
 ## Porting workflow
 
-`tools/pick_wave.py` (hot functions from a `callprof` profile),
+`tools/pick_wave.py` (hot functions from a `callprof` profile, optionally one area: `SSX3_FOCUS`),
 `tools/refsrc.py` / `refbody.py` / `refdossier2.py` (the matching C++
 decompilation, `../devvydont-ssx3`, by address),
 `tools/integrate_wave.py` (wire, regenerate, test, build, gate). Profile:

@@ -14,6 +14,11 @@ or any `oc*.rs` OVERRIDES) and functions assigned to an earlier `wave*.txt` are
 skipped. Output: `OUTDIR/waveN-<module>.txt`, 50 per module, hottest first;
 once the profiled functions run out, unprofiled ones follow in address order.
 
+`SSX3_FOCUS` limits the wave to one area, still hottest first: a group of the
+progress chart (`game`, `presentation`, `engine`) or source directories
+(`ai,camera`; the C++ reference's top directory, as `progress.py` classifies).
+Unset: the hottest functions of the whole game.
+
 The dossiers (reference C++) are made separately with `refdossier2.py`; for
 functions with no C++ body the dossier says "asm only" and the generated Rust
 is the source to port from.
@@ -25,6 +30,27 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from refsrc import load_symbols  # noqa: E402
+import progress  # noqa: E402
+
+GROUPS = {'game': progress.GAME, 'presentation': progress.PRESENTATION,
+          'engine': progress.ENGINE}
+
+
+def focus_filter(name):
+    """`SSX3_FOCUS` -> predicate on an address, or None for the whole game."""
+    focus = os.environ.get('SSX3_FOCUS', '').strip()
+    if not focus:
+        return None
+    ref, rust = progress.ref_dirs(), progress.rust_dirs()
+    if focus in GROUPS:
+        group = GROUPS[focus]
+        return lambda a: progress.classify(name.get(a, ''), ref.get(a), rust.get(a)) == group
+    dirs = set(focus.split(','))
+    unknown = dirs - set(progress.DIRS)
+    if unknown:
+        sys.exit(f'SSX3_FOCUS: unknown {", ".join(sorted(unknown))} '
+                 f'(groups: {", ".join(GROUPS)}; directories: {" ".join(sorted(progress.DIRS))})')
+    return lambda a: (ref.get(a) or rust.get(a)) in dirs
 
 
 def installed():
@@ -70,6 +96,9 @@ def main(argv):
         size[a] = max(e - a, 4)
         name[a] = p[2].strip() if len(p) > 2 else ''
     syms = load_symbols()
+    keep = focus_filter(name)
+    if keep:
+        assigned |= {a for a in size if not keep(a)}
 
     calls = {}
     frames = 0
