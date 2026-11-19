@@ -41,6 +41,7 @@
 use super::super::raster::Pages;
 use super::super::swizzle::{self, Surface};
 use super::{surf_words, Cmd, GpuContext, GpuGs, SLOT};
+use crate::gpu_wait::{self, Site};
 
 /// Submit before queueing a run past this many in one submission.
 const MAX_RUNS_PER_SUBMIT: usize = 32;
@@ -1223,7 +1224,9 @@ impl GpuGs {
         self.ctx.queue.submit(std::iter::once(enc.finish()));
         let slice = buf.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
-        let _ = dev.poll(wgpu::PollType::wait_indefinitely());
+        gpu_wait::wait(Site::GsReadTargets, || {
+            let _ = dev.poll(wgpu::PollType::wait_indefinitely());
+        });
         let v = slice.get_mapped_range().expect("map");
         let word = |o: usize| u32::from_le_bytes([v[o], v[o + 1], v[o + 2], v[o + 3]]);
         let mut c = Vec::with_capacity((w * h) as usize);
@@ -1285,7 +1288,9 @@ impl GpuGs {
             self.ctx.queue.submit(std::iter::once(enc.finish()));
             let slice = buf.slice(..);
             slice.map_async(wgpu::MapMode::Read, |_| {});
-            let _ = dev.poll(wgpu::PollType::wait_indefinitely());
+            gpu_wait::wait(Site::GsHiresSnapshot, || {
+                let _ = dev.poll(wgpu::PollType::wait_indefinitely());
+            });
             let v = slice.get_mapped_range().expect("map");
             // Only the buffer's width (FBW × 64 × N).
             let bw = (key.bw * 64 * h.scale).min(w);
