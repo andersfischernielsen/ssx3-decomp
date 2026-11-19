@@ -394,7 +394,9 @@ impl Engine {
             }
             return Pace::Wait(self.pacer.wait(now, period));
         }
-        ssx3_ps2::machine::set_audio_lead_frames((self.pacer.audio_lead() * 48000.0) as u32);
+        let front_frames = ssx3_iop::audio::front_buffered_frames();
+        let audio_lead = audio_lead_secs(self.pacer.audio_lead(), front_frames);
+        ssx3_ps2::machine::set_audio_lead_frames((audio_lead * 48000.0) as u32);
         tick::set_updates_per_vsync(plan.updates_per_vsync);
         Pace::Run(plan.vsyncs)
     }
@@ -488,10 +490,10 @@ impl Engine {
         ssx3_iop::audio::pull(out)
     }
 
-    /// [`Audio::Pull`]: the stereo frames the front end has buffered but not
-    /// played yet, so the game mixes ahead to keep its stream fed when it
-    /// catches up ([`ssx3_iop::audio::report_buffered`]; a front end pulling
-    /// from its audio callback with `pull_into` is counted without this).
+    /// [`Audio::Pull`]: report the stereo frames the front end is holding
+    /// downstream ([`ssx3_iop::audio::report_buffered`]). Catch-up counts
+    /// these frames in both the queued audio and the target lead, so the
+    /// engine aims to keep the same amount ready in its ring.
     pub fn audio_buffered(&mut self, frames: usize) {
         ssx3_iop::audio::report_buffered(frames)
     }
@@ -603,5 +605,29 @@ impl Engine {
     /// `SSX3_SHADOWS`, `SSX3_BLOOM`, `SSX3_SNOW`).
     pub fn gfx_options(&self) -> ssx3_gfx::Options {
         render::gfx_options(&*self.settings)
+    }
+}
+
+/// The mixer's lead in seconds is the pacer's lead plus the reported
+/// downstream buffer. The queue counts the same report, so the pacer's
+/// lead remains the target for the ring itself.
+fn audio_lead_secs(pacer: f64, front_frames: usize) -> f64 {
+    pacer + front_frames as f64 / f64::from(ssx3_iop::audio::RATE)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::audio_lead_secs;
+
+    #[test]
+    fn audio_lead_tracks_the_latest_report() {
+        assert_eq!(audio_lead_secs(0.06, 0), 0.06);
+        assert_eq!(audio_lead_secs(0.18, 0), 0.18);
+
+        let lead = audio_lead_secs(0.06, 4032); // 84 ms at 48 kHz
+        assert!((lead - 0.144).abs() < 1e-12, "lead {lead}");
+
+        let lead = audio_lead_secs(0.06, 960); // 20 ms at 48 kHz
+        assert!((lead - 0.080).abs() < 1e-12, "lead {lead}");
     }
 }
