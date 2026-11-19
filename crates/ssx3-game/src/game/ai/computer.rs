@@ -17801,7 +17801,7 @@ pub(crate) mod tests {
             rider_base_update_main_state,
             200,
             &|c, seed| {
-                rider_state_table_test(c, seed, 0x0011_1408, 0xde0, 0x0045_6b50, 0x0011_1494);
+                rider_state_table_test(c, seed, 0x0011_1408, 0xde0, 0x0045_6b50, 0);
             },
         );
     }
@@ -17813,7 +17813,7 @@ pub(crate) mod tests {
             rider_base_post_update_main_state,
             200,
             &|c, seed| {
-                rider_state_table_test(c, seed, 0x0011_14a0, 0xde0, 0x0045_6b70, 0x0011_152c);
+                rider_state_table_test(c, seed, 0x0011_14a0, 0xde0, 0x0045_6b70, 0);
             },
         );
     }
@@ -17825,35 +17825,33 @@ pub(crate) mod tests {
             rider_base_handle_sub_state_input,
             200,
             &|c, seed| {
-                rider_state_table_test(c, seed, 0x0011_1728, 0xde4, 0x0045_6c10, 0x0011_1824);
+                rider_state_table_test(c, seed, 0x0011_1728, 0xde4, 0x0045_6c10, 0x0011_175c);
             },
         );
     }
 
     /// The shared setup of the three state tables: a rider whose state
-    /// selects a table entry, and a table that either stays inside the
-    /// function (its tail / epilogue block) or is empty (an indirect jump
-    /// out, answered by the fake jump hook).
+    /// selects a table entry, and a table that either holds a real case
+    /// entry (both sides dispatch into the function) or is empty (an
+    /// indirect jump out, answered by the fake jump hook). Tail and
+    /// epilogue block addresses are not usable here: the unwind-form
+    /// generated body accepts every block label while the hand match only
+    /// lists the case entries. Real case handlers that run away on
+    /// fixture data are not usable either: `hit` is 0 for those tables.
     pub(crate) fn rider_state_table_test(
         c: &mut Cpu,
         seed: u32,
         salt: u64,
         state_off: u32,
         table: u32,
-        tail: u32,
+        hit: u32,
     ) {
         machine(c, seed, salt, 0);
         let rider = DATA;
         let states = [0u32, 1, 2, 3, 4, 5, 6, 13, 14, 0xffff_ffff];
         c.bus
             .write32(rider + state_off, states[(seed as usize) % states.len()]);
-        let case = if seed % 3 == 0 {
-            0
-        } else if seed % 3 == 1 {
-            tail
-        } else {
-            tail + 4
-        };
+        let case = if seed % 3 == 0 { 0 } else { hit };
         put_words(c, table, &[case; 14]);
         c.pc = salt as u32;
         c.g[A0][0] = sx(rider);

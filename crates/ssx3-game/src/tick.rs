@@ -1266,7 +1266,7 @@ mod tests {
 
     #[test]
     fn natural_air_charge_decay_follows_the_rate() {
-        use crate::difftest::{fresh, DATA, GAME_GP, RA};
+        use crate::difftest::{fresh, run_generated, DATA, GAME_GP, RA};
         use ssx3_ee_rt::cpu::reg::{A0, GP};
         for initial in [-0.8f32, -0.01, 0.01, 0.8] {
             let mut expected = None;
@@ -1281,7 +1281,7 @@ mod tests {
                 patch_per_tick(&mut c, hz);
                 c.g[A0][0] = sub as u64;
                 // Zero launch axes take the real entry's no-atan path.
-                ssx3_ee::s00::f_0012f620(&mut c);
+                run_generated(&mut c, ssx3_ee::s00::f_0012f620);
                 assert_eq!(c.pc, RA);
                 for offset in [0x2a4, 0x2b0] {
                     let param = rider + offset;
@@ -1303,7 +1303,7 @@ mod tests {
 
     #[test]
     fn prewind_carve_return_follows_the_rate() {
-        use crate::difftest::{fresh, DATA, GAME_GP, RA};
+        use crate::difftest::{fresh, run_generated, DATA, GAME_GP, RA};
         use ssx3_ee_rt::cpu::reg::{A0, GP};
         for initial in [-0.8f32, -0.01, 0.01, 0.8] {
             let mut expected = None;
@@ -1323,7 +1323,7 @@ mod tests {
                 c.bus.write32(0x0049_b95c, 0x3d08_8889);
                 patch_per_tick(&mut c, hz);
                 c.g[A0][0] = sub as u64;
-                ssx3_ee::s00::f_0012e980(&mut c);
+                run_generated(&mut c, ssx3_ee::s00::f_0012e980);
                 assert_eq!(c.pc, RA);
                 let param = rider + 0x1fc;
                 c.bus.write32(param, initial.to_bits());
