@@ -1,0 +1,56 @@
+name: Progress chart
+
+# Refreshes docs/images/progress.svg after merges that move the numbers, so
+# nobody has to run tools/progress.py by hand. The chart reads only committed
+# files (generated/functions.tsv, crates/ssx3-game/overrides.txt,
+# generated/purpose.tsv, the ported sources): no reference checkout, no extra
+# clone. When the C++ reference moves, regenerate the map by hand
+# (tools/purpose_map.py header) and let this job refresh the SVG.
+on:
+  push:
+    branches: [main]
+    # The SVG itself is excluded: the job's own commit touches only it, so a
+    # refresh never retriggers the job.
+    paths:
+      - crates/ssx3-game/overrides.txt
+      - crates/ssx3-game/src/game/**
+      - generated/functions.tsv
+      - generated/purpose.tsv
+      - tools/progress.py
+      - tools/purpose_map.py
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The refresh pushes with a deploy key (secret PROGRESS_DEPLOY_KEY) that the
+# main ruleset lets bypass the pull-request rule; a separate ruleset with no
+# bypass still blocks force-pushes and deletion for everyone, the key included.
+permissions:
+  contents: read
+
+jobs:
+  progress:
+    name: Refresh progress.svg
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ssh-key: ${{ secrets.PROGRESS_DEPLOY_KEY }}
+
+      - name: Refresh the progress chart
+        run: python3 tools/progress.py
+
+      - name: Commit the chart when it changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/images/progress.svg
+          if git diff --cached --quiet; then
+            echo "progress.svg unchanged"
+          else
+            git commit -m "Update the progress chart"
+            git push
+          fi

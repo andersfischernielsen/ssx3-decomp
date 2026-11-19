@@ -8,9 +8,11 @@ against `generated/functions.tsv` (every function of the game), overall and
 split by purpose, and writes the progress bars `docs/images/progress.svg`
 (shown in the README). Run it after installing ported functions.
 
-A function's purpose comes from its source directory: the C++ reference's
-(`tools/.refindex.json`, `refindex.py`) or, for a ported function, its
-`crates/ssx3-game/src/game/<dir>`; functions in neither go by name prefix.
+A function's purpose comes from `generated/purpose.tsv` (address -> group,
+frozen by `tools/purpose_map.py` from the C++ reference); functions missing
+from the map classify from their ported `crates/ssx3-game/src/game/<dir>` or,
+failing that, by name prefix. Same tree = same SVG, every run: no reference
+checkout needed.
 """
 import glob
 import json
@@ -61,8 +63,15 @@ def classify(name, ref_dir, rust_dir):
     return ENGINE
 
 
+SHORT = {"game": GAME, "presentation": PRESENTATION, "engine": ENGINE}
+
+
 def ref_dirs():
-    """Address -> top source directory of the reference, if available."""
+    """Address -> top source directory of the reference, if available.
+
+    The chart path (`counts`) no longer uses this; it is kept for
+    `pick_wave.py`'s `SSX3_FOCUS` group filter.
+    """
     try:
         from refsrc import REF, load_symbols
 
@@ -76,6 +85,23 @@ def ref_dirs():
         if entry:
             rel = os.path.relpath(entry[1], os.path.join(REF, "src"))
             out[addr] = rel.split("/")[0].removesuffix(".cpp").removesuffix(".c")
+    return out
+
+
+def purpose_groups():
+    """Address -> purpose group from `generated/purpose.tsv` (frozen by
+    `tools/purpose_map.py`); {} entries fall back to the ported source
+    directory or the name prefix in `classify`."""
+    out = {}
+    for line in open(os.path.join(ROOT, "generated/purpose.tsv")):
+        if line.startswith("#") or not line.strip():
+            continue
+        addr, group = line.split()
+        if group in SHORT:
+            try:
+                out[int(addr, 16)] = SHORT[group]
+            except ValueError:
+                pass
     return out
 
 
@@ -100,7 +126,7 @@ def counts():
                 ported.add(int(word[0], 16))
             except ValueError:
                 pass
-    ref, rust = ref_dirs(), rust_dirs()
+    mapped, rust = purpose_groups(), rust_dirs()
     # [functions done, functions, bytes done, bytes] overall and per group
     stats = {g: [0, 0, 0, 0] for g in ["All"] + GROUPS}
     for line in open(os.path.join(ROOT, "generated/functions.tsv")):
@@ -108,7 +134,7 @@ def counts():
         start, end = int(cols[0], 16), int(cols[1], 16)
         name = cols[2] if len(cols) > 2 else ""
         done = start in ported
-        for g in ("All", classify(name, ref.get(start), rust.get(start))):
+        for g in ("All", mapped.get(start) or classify(name, None, rust.get(start))):
             s = stats[g]
             s[1] += 1
             s[3] += end - start
