@@ -55,6 +55,9 @@ the replay for the gate and the scenarios.
   with boost and tricks, random menu input, ...) with the ports in `LIST`
   installed and skipped, and compares the RAM; `tools/bisect_overrides.py`
   finds the port behind a difference.
+- **Mutation testing:** `tools/mutants.py` makes small changes to a PR's
+  hand-written bodies and reruns their tests; a change no test fails on marks
+  a line the tests do not check (`porting/mutation-testing.md`).
 - **`SSX3_DIFF_STRICT=args`** (unit tests): also compare the arguments of
   every call the function makes (the `calltrace` feature records them);
   `SSX3_DIFF_STRICT=1`: also every scratch register and the call sequence.
