@@ -83,12 +83,6 @@ pub mod audio_system;
 pub mod graphics;
 #[cfg(feature = "streaming")]
 pub mod native_files;
-#[cfg(feature = "oc1100")]
-pub mod oc1100;
-#[cfg(feature = "oc1101")]
-pub mod oc1101;
-#[cfg(feature = "oc1102")]
-pub mod oc1102;
 #[cfg(feature = "rider_logic")]
 pub mod rider_logic;
 #[cfg(feature = "snd_lib")]
@@ -114,12 +108,6 @@ const CORE: &[(u32, GuestFn, &str)] = &[(
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v: Vec<(u32, GuestFn, &'static str)> = CORE.to_vec();
     v.extend(game::overrides());
-    #[cfg(feature = "oc1100")]
-    v.extend_from_slice(oc1100::OVERRIDES);
-    #[cfg(feature = "oc1101")]
-    v.extend_from_slice(oc1101::OVERRIDES);
-    #[cfg(feature = "oc1102")]
-    v.extend_from_slice(oc1102::OVERRIDES);
     v.extend_from_slice(movie::overrides());
     #[cfg(feature = "math")]
     v.extend_from_slice(math::OVERRIDES);
