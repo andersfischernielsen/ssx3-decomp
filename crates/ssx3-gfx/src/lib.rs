@@ -37,6 +37,7 @@ use ssx3_core::hash::HashMap;
 use std::sync::{Arc, Mutex};
 
 use ssx3_ps2::frame_sink::Depth;
+use ssx3_ps2::gpu_wait::{self, Site};
 use ssx3_render::chain::Mem;
 use ssx3_render::frame::{self, Built, Material, Owner};
 use ssx3_render::vif::Event;
@@ -271,27 +272,13 @@ fn map_depth(
     mapped
 }
 
-/// Blocking device waits (`poll` with `Wait`) by thread: the game's (or
-/// any other), the frame build's, the render thread's, the depth
-/// thread's (per frame in `timing_report`). wgpu holds the device's
-/// resource lock for the whole wait, and a present needs it exclusively:
-/// a present on another thread waits until the GPU is done, and with it
-/// every wgpu call queued behind it (the render thread's next frame).
-static GPU_WAITS: [std::sync::atomic::AtomicU64; 4] =
-    [const { std::sync::atomic::AtomicU64::new(0) }; 4];
-
-/// Wait for the device (`idx`, or all work submitted), counted.
-fn wait_gpu(dev: &wgpu::Device, idx: Option<wgpu::SubmissionIndex>) {
-    let k = match std::thread::current().name() {
-        Some("ssx3-frame-build") => 1,
-        Some("ssx3-gfx") => 2,
-        Some("ssx3-gfx-depth") => 3,
-        _ => 0,
-    };
-    GPU_WAITS[k].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let _ = dev.poll(wgpu::PollType::Wait {
-        submission_index: idx,
-        timeout: None,
+/// Wait for the device (`idx`, or all work submitted).
+fn wait_gpu(site: Site, dev: &wgpu::Device, idx: Option<wgpu::SubmissionIndex>) {
+    gpu_wait::wait(site, || {
+        let _ = dev.poll(wgpu::PollType::Wait {
+            submission_index: idx,
+            timeout: None,
+        });
     });
 }
 
@@ -335,7 +322,7 @@ fn spawn_depth_thread(
                         mapped,
                         frame,
                     } => {
-                        // Not a device wait (`GPU_WAITS`): the map is
+                        // Not a device wait (`gpu_wait`): the map is
                         // done when a submit or this thread's poll sees
                         // the copy finished, and its callback wakes us.
                         // While the game waits for this depth, polled
@@ -398,12 +385,14 @@ impl Shared {
                 t.unpark();
             }
         }
-        let (mut q, _) = (self.depth_ready)
-            .wait_timeout_while(q, wait, |q| {
-                q.retain(|d| d.0 >= frame);
-                q.is_empty()
-            })
-            .unwrap();
+        let (mut q, _) = gpu_wait::wait(Site::GfxTakeDepth, || {
+            (self.depth_ready)
+                .wait_timeout_while(q, wait, |q| {
+                    q.retain(|d| d.0 >= frame);
+                    q.is_empty()
+                })
+                .unwrap()
+        });
         self.depth_wanted
             .store(0, std::sync::atomic::Ordering::Relaxed);
         if q.front().is_some_and(|d| d.0 == frame) {
@@ -587,11 +576,13 @@ impl Renderer {
     /// Wait until every frame handed over is rendered (and every frame
     /// published is handed over: the frame sink's build thread).
     pub fn flush(&self) {
-        ssx3_ps2::frame_sink::wait_built();
-        let mut p = self.1.pending.lock().unwrap();
-        while *p > 0 {
-            p = self.1.idle.wait(p).unwrap();
-        }
+        gpu_wait::wait(Site::GfxFlush, || {
+            ssx3_ps2::frame_sink::wait_built();
+            let mut p = self.1.pending.lock().unwrap();
+            while *p > 0 {
+                p = self.1.idle.wait(p).unwrap();
+            }
+        });
     }
 
     /// The image on screen as RGBA8 (GS alpha), read back (after the
@@ -701,7 +692,7 @@ impl ssx3_ps2::frame_sink::FrameSink for Renderer {
         match tx {
             Some(tx) => {
                 *self.1.pending.lock().unwrap() += 1;
-                if tx.send(f).is_err() {
+                if gpu_wait::wait(Site::GfxRenderQueue, || tx.send(f)).is_err() {
                     *self.1.pending.lock().unwrap() -= 1;
                 }
             }
@@ -1092,9 +1083,8 @@ impl Inner {
         self.timing = (0, [0.0; 4]);
         self.depth_parts = [0.0; 3];
         self.pass_counts = [0; 6];
-        for c in GPU_WAITS.iter().chain([&DEPTH_POLLS]) {
-            c.store(0, std::sync::atomic::Ordering::Relaxed);
-        }
+        DEPTH_POLLS.store(0, std::sync::atomic::Ordering::Relaxed);
+        gpu_wait::reset();
     }
 
     /// Mean time per frame in each stage of `render` (ms).
@@ -1110,14 +1100,11 @@ impl Inner {
             self.pass_counts[0] as f64 / n, self.pass_counts[1] as f64 / n,
             self.pass_counts[2] as f64 / n, self.pass_counts[3] as f64 / n,
             self.pass_counts[4] as f64 / n, self.pass_counts[5] as f64 / n
-        ) + &{
-            let w = |k: usize| GPU_WAITS[k].load(std::sync::atomic::Ordering::Relaxed) as f64 / n;
-            format!(
-                "; blocking GPU waits per frame: game {:.2}, frame build {:.2}, render {:.2}, depth {:.2} (depth polls {:.1})",
-                w(0), w(1), w(2), w(3),
-                DEPTH_POLLS.load(std::sync::atomic::Ordering::Relaxed) as f64 / n
-            )
-        }
+        ) + &format!(
+            "; GPU waits per frame (calls x ms): {}; depth polls {:.1}",
+            gpu_wait::report(n),
+            DEPTH_POLLS.load(std::sync::atomic::Ordering::Relaxed) as f64 / n
+        )
     }
 
     /// With a [`VuOffload`] and no render thread (the browser): start this
@@ -2704,7 +2691,7 @@ impl Inner {
                 if cfg!(target_arch = "wasm32") {
                     let _ = this.dev.poll(wgpu::PollType::Poll);
                 } else {
-                    wait_gpu(&this.dev, Some(prev_idx));
+                    wait_gpu(Site::GfxDepthSync, &this.dev, Some(prev_idx));
                 }
                 let t_copy = web_time::Instant::now();
                 this.depth_parts[0] += (t_copy - t_wait).as_secs_f64() * 1e3;
@@ -2746,7 +2733,7 @@ impl Inner {
         if let Some(pb) = probe_buf {
             let slice = pb.slice(..);
             slice.map_async(wgpu::MapMode::Read, |_| {});
-            wait_gpu(&self.dev, None);
+            wait_gpu(Site::GfxProbe, &self.dev, None);
             if let Ok(v) = slice.get_mapped_range() {
                 let mut last = u32::MAX;
                 for (k, d) in probed.iter().enumerate() {
@@ -2828,7 +2815,7 @@ impl Inner {
         self.queue.submit(std::iter::once(enc.finish()));
         let slice = buf.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
-        wait_gpu(&self.dev, None);
+        wait_gpu(Site::GfxReadTexture, &self.dev, None);
         let Ok(v) = slice.get_mapped_range() else {
             return (w, h, Vec::new());
         };
@@ -3601,7 +3588,7 @@ mod tests {
         // Frames' depth handed over in order with no device wait on the
         // depth thread: one holds wgpu's resource lock until the GPU is
         // done, and a present on another thread then waits as long
-        // (`GPU_WAITS`).
+        // (see `gpu_wait`).
         let (dev, queue) = wgpu::Device::noop(&Default::default());
         let shared = Arc::new(Shared::default());
         let tx = spawn_depth_thread(dev.clone(), shared.clone());
@@ -3636,7 +3623,7 @@ mod tests {
             let d = shared.take_depth(frame, Duration::from_secs(10));
             assert_eq!(d.map(|d| d.w), Some(2));
         }
-        assert_eq!(GPU_WAITS[3].load(std::sync::atomic::Ordering::Relaxed), 0);
+        assert_eq!(gpu_wait::device_waits(), 0);
     }
 
     #[test]
