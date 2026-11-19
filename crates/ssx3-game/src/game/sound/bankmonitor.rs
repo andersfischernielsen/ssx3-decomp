@@ -12069,6 +12069,8 @@ pub(crate) mod tests {
             spch_notify_part_callback,
             46,
             &|c, seed, r| {
+                // Enter at the real entry: an unset pc takes the jump-out arm.
+                c.pc = 0x003d_b040;
                 c.g[SP][0] = (STACK - 0x100) as u64;
                 c.g[A0][0] = (DATA + 0x200) as u64;
                 c.g[A1][0] = DATA as u64;

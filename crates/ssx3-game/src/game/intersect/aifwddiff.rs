@@ -3771,6 +3771,8 @@ pub(crate) mod tests {
             SEEDS_3,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x3291, 0);
+                // Enter at the real entry: an unset pc takes the jump-out arm.
+                c.pc = 0x0032_91e0;
                 let (hash, obj_node, old_box, new_box) =
                     (DATA, DATA + 0x3000, DATA + 0x100, DATA + 0x140);
                 c.bus.write32(gp_at(-0x2df8), f(1.0e-6));
