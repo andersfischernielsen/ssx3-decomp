@@ -6044,7 +6044,7 @@ pub(crate) mod tests {
         check(
             ee::s04::f_001d8700__generated,
             mem_card_state_base_on_child_event,
-            260,
+            624,
             &|c, seed| {
                 let mut r = memcard_t_setup(c, seed, 0x1d_8700, 8);
                 // The fixture's vtable has slots 0x140/0x148; add slot 0x168.
@@ -6089,14 +6089,19 @@ pub(crate) mod tests {
                 c.bus.write32(MEMCARD_T_ENGINE + MEMCARD_UI_STATE_MGR, 0);
                 c.g[A0][0] = sx(MEMCARD_T_FE);
                 c.g[A1][0] = r.next_u32() as u64;
-                let button = [0xf, 0x10, 0x11, 0x16, 0x9][(seed % 5) as usize];
+                let button = [0xf, 0x10, 0x11, 0x12, 0x16, 0x9][(seed % 6) as usize];
                 c.g[A2][0] = button as u64;
                 // Messages 1..=0x18, plus 0 and 0x19 out of range.
-                let msg = (seed / 5) % 26;
+                let msg = (seed / 6) % 26;
                 c.bus.write32(MEMCARD_T_FE + MEMCARD_FE_MESSAGE, msg);
+                // A set popup flag on half the seeds: clearing it (or not)
+                // is observable. On its own digit, so every button/message
+                // pair sees both values.
+                c.bus
+                    .write32(MEMCARD_T_FE + MEMCARD_FE_POPUP_OPEN, (seed / 312) % 2);
                 // Both values of the pause-menu flag and the pending-reply
                 // word, derived from the seed so every arm sees both.
-                let flag = (seed / 130) % 2;
+                let flag = (seed / 156) % 2;
                 c.bus
                     .write32(MEMCARD_T_FE + MEMCARD_FE_LOAD_FROM_PAUSE, flag);
                 c.bus
