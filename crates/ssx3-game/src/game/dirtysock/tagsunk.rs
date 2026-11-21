@@ -34161,17 +34161,19 @@ pub(crate) mod tests {
     }
 
     /// `seed % 2`: entry 0 (alice, permanent: nothing to do) or 1 (BOB,
-    /// temporary); `seed / 2 % 3`: messages none from BOB / one / "bob" and
-    /// "BOB" around a null slot; `seed / 6 % 3`: challenges none from BOB /
-    /// BOB's last / BOB's first of two (the vector is closed up).
+    /// temporary); `seed / 2 % 4`: one message from BOB / two without BOB /
+    /// three with BOB / four ("bob", alice, empty, BOB); `seed / 6 % 3`:
+    /// challenges none from BOB / BOB's last / BOB's first of two (the vector
+    /// is closed up).
     #[test]
     fn buddy_man_remove_temp_entry_at_matches() {
         const PATHS: &[u64] = &[69, 626, 1054, 1236, 2870, 3298, 3480, 2654, 3082, 3264];
         let setup = |c: &mut Cpu, seed: u32| {
             buddy_fixture(c, seed, 0x0026_2ec0);
-            match seed / 2 % 3 {
-                0 => buddy_messages(c, &["alice", "carol"], 2),
-                1 => buddy_messages(c, &["alice", "BOB", "carol"], 3),
+            match seed / 2 % 4 {
+                0 => buddy_messages(c, &["BOB"], 1),
+                1 => buddy_messages(c, &["alice", "carol"], 2),
+                2 => buddy_messages(c, &["alice", "BOB", "carol"], 3),
                 _ => buddy_messages(c, &["bob", "alice", "", "BOB"], 4),
             }
             match seed / 6 % 3 {
@@ -35086,21 +35088,22 @@ pub(crate) mod tests {
         c.bus.write32(prev.wrapping_add(4), head);
     }
 
-    /// `LobbyMan_CancelChallenge`: state `[0, 0x15, 0x16, 0x18, 0x19, 1][seed % 6]`
-    /// (down, the three teardown states, the lock state, any other), crossed
-    /// with notify `seed / 6 % 2` and abort `seed / 12 % 2`.
+    /// `LobbyMan_CancelChallenge`: state `[0, 0x15, 0x16, 0x17, 0x18, 0x19,
+    /// 1][seed % 7]` (down, the challenge states, the teardown states, the
+    /// lock state, any other), crossed with notify `seed / 7 % 2` and abort
+    /// `seed / 14 % 2`.
     pub(crate) fn cancel_challenge_fixture(c: &mut Cpu, seed: u32) {
         let _r = machine(c, seed, 0x25f628, 3);
         allocator(c);
         let self_ = DATA + 0x100;
-        let state = [0u32, 0x15, 0x16, 0x18, 0x19, 1][(seed % 6) as usize];
+        let state = [0u32, 0x15, 0x16, 0x17, 0x18, 0x19, 1][(seed % 7) as usize];
         c.bus.write32(self_, state);
         c.bus.write32(self_.wrapping_add(LOBBY_API), DATA + 0x400);
         c.bus.write32(self_.wrapping_add(LOBBY_REQUEST), 0x2a);
         msg_list(c, self_);
         c.g[A0][0] = sx(self_);
-        c.g[A1][0] = (seed / 6 % 2) as u64;
-        c.g[A2][0] = (seed / 12 % 2) as u64;
+        c.g[A1][0] = (seed / 7 % 2) as u64;
+        c.g[A2][0] = (seed / 14 % 2) as u64;
         c.pc = 0x0025_f628;
     }
 
@@ -35188,10 +35191,11 @@ pub(crate) mod tests {
         c.bus.write32(self_, if seed % 3 == 0 { 0 } else { 1 });
         c.bus
             .write32(self_.wrapping_add(LOBBY_RANK_INDEX), seed % 4);
-        let list = DATA + 0x2000;
-        c.bus.write32(list.wrapping_add(0x18), seed % 5);
+        // Distinct list per slot (own count word): the slot index matters.
         for i in 0..4u32 {
-            let entry = if (seed / 4) % 2 == 0 { 0 } else { list };
+            let li = DATA + 0x2000 + 0x100 * i;
+            c.bus.write32(li.wrapping_add(0x18), (seed + i) % 5);
+            let entry = if (seed / 4) % 2 == 0 { 0 } else { li };
             c.bus.write32(self_.wrapping_add(RANK_TABLE + 4 * i), entry);
         }
         c.g[A0][0] = sx(self_);
@@ -35578,14 +35582,33 @@ pub(crate) mod tests {
         );
     }
 
+    /// A zeroed `size`-byte block from `EA_MEM_ALLOC_NAMED_2` (name, heap
+    /// `0x480000`, flags, zero): the arena `LobbyApi_DestroyList` frees
+    /// through `EA_MEM_FREE`, not the `heap_alloc` MEM heap.
+    pub(crate) fn ea_alloc(c: &mut Cpu, size: u32) -> u32 {
+        let body = run_2(
+            c,
+            callee::EA_MEM_ALLOC_NAMED_2,
+            ee::s10::f_00317d70,
+            &[size as u64, 0x480000, 0x20000000, 0],
+        ) as u32;
+        for k in (0..size).step_by(4) {
+            c.bus.write32(body + k, 0);
+        }
+        body
+    }
+
     /// Inactive (seed % 4 == 0); previous slot (seed / 4) % 2; new slot
     /// (seed / 8) % 3; (seed / 24) % 2: the slot's limit above the rank count
-    /// (snapshot) or 0 (rank list changed).
+    /// (snapshot) or 0 (rank list changed); (seed / 48) % 2: the requested
+    /// slot's previous list handle 0 (destroy skipped) vs a heap handle
+    /// (stale-handle destroy).
     #[test]
     fn lobby_man_request_stats_page_matches() {
         let setup = |c: &mut Cpu, seed: u32| {
             lobby_setup(c, seed, 0x0025_e348);
             let slot = seed / 8 % 3;
+            let heap_slot = seed / 48 % 2 == 1;
             c.g[A1][0] = slot as u64;
             c.bus.write32(DATA, if seed % 4 == 0 { 0 } else { 1 });
             c.bus.write32(DATA + 0xf8, seed / 4 % 2);
@@ -35593,18 +35616,36 @@ pub(crate) mod tests {
                 DATA + 0x104 + 4 * slot,
                 if seed / 24 % 2 == 0 { 0x10000 } else { 0 },
             );
-            // No live list handle: a non-zero handle would make the
-            // generated LobbyApi_DestroyList free list nodes out of the
-            // zeroed session object and run away in the heap consolidate.
-            c.bus.write32(DATA + 0x1ec + 4 * slot, 0);
+            // Distinct heap list handles per slot (allocated blocks free
+            // cleanly, unlike static words): the slot arithmetic selects
+            // which handle is destroyed. The requested slot keeps handle 0
+            // on half the seeds, so the no-previous-list arm still runs.
+            // Those totals moved from the old all-null run (15271/15293/486
+            // → 15252/15274/493): only the requested slot's handle is read,
+            // but the other two slots' heap blocks are present on every seed
+            // now, shifting the callees' heap walk.
+            for i in 0..3u32 {
+                let body = if i == slot && !heap_slot {
+                    0
+                } else {
+                    ea_alloc(c, 0x40)
+                };
+                c.bus.write32(DATA + 0x1ec + 4 * i, body);
+            }
+            // `run_2` clobbers the argument registers: restore them.
+            c.g[A0][0] = sx(DATA);
+            c.g[A1][0] = slot as u64;
         };
-        // 15: inactive; 15271 / 15293: snapshot requested (slot 0 / slots 1-2);
-        // 486: rank list changed.
+        // 15: inactive; 15252 / 15274: snapshot requested (slot 0 /
+        // slots 1-2, no previous list); 493: rank list changed (no
+        // previous list); 15571 / 15593: snapshot requested (slot 0 /
+        // slots 1-2, with the stale-handle destroy); 500: rank list
+        // changed (with the stale-handle destroy).
         check_paths(
             ee::s06::f_0025e348__generated,
             lobby_man_request_stats_page,
-            48,
-            &[15, 15271, 15293, 486],
+            96,
+            &[15, 15252, 15274, 493, 15571, 15593, 500],
             &setup,
         );
     }
@@ -36232,8 +36273,10 @@ pub(crate) mod tests {
         b"pat,sam,lee,kim",
     ];
 
-    /// SPAM values (two flag bytes, 'Y' = set).
-    pub(crate) const LOGIN_SPAM: [&[u8]; 4] = [b"YY", b"YN", b"NY", b"NN"];
+    /// SPAM values (two flag bytes, 'Y' = set; 'NN' is what the server
+    /// sends, 'XX' decodes both flags clear like 'NN', while exercising
+    /// the `0x58` boundary).
+    pub(crate) const LOGIN_SPAM: [&[u8]; 5] = [b"YY", b"YN", b"NY", b"NN", b"XX"];
 
     /// LobbyMan_OnLoginReply: `kind` 0 success, 1 "lock" (the word
     /// 0x6c6f636b), 2 another error. The tag text at msg+0xc carries
@@ -36290,7 +36333,7 @@ pub(crate) mod tests {
     }
 
     /// `seed % 3`: kind; `seed / 3 % 8`: [`LOGIN_LISTS`]; `seed / 24 % 2`:
-    /// CPAT present; `seed / 48 % 4`: [`LOGIN_SPAM`].
+    /// CPAT present; `seed / 48 % 5`: [`LOGIN_SPAM`].
     pub(crate) fn login_reply_seed(c: &mut Cpu, seed: u32) {
         login_reply_fixture(
             c,
@@ -36298,7 +36341,7 @@ pub(crate) mod tests {
             seed % 3,
             LOGIN_LISTS[(seed / 3 % 8) as usize],
             seed / 24 % 2 == 1,
-            LOGIN_SPAM[(seed / 48 % 4) as usize],
+            LOGIN_SPAM[(seed / 48 % 5) as usize],
         );
     }
 
@@ -36315,7 +36358,7 @@ pub(crate) mod tests {
         check_paths(
             ee::s06::f_0025c8a8__generated,
             lobby_man_on_login_reply,
-            192,
+            240,
             PATHS,
             &login_reply_seed,
         );
@@ -37412,7 +37455,17 @@ pub(crate) mod tests {
         onmsg_fake_on_challenge,
         ONMSG_PREV_ON_CHALLENGE,
         R_ON_CHALLENGE,
-        ee::s07::f_00262af0__generated
+        ee::s07::f_00262af0__generated,
+        |c: &mut Cpu, _: u32| {
+            c.bus.write32(ONMSG_ARGS, c.g[A0][0] as u32);
+            c.bus.write32(ONMSG_ARGS + 4, c.g[A1][0] as u32);
+            c.bus.write32(ONMSG_ARGS + 8, c.g[A2][0] as u32);
+            c.bus.write32(ONMSG_ARGS + 12, c.g[A3][0] as u32);
+            c.bus.write32(ONMSG_ARGS + 16, c.g[T0][0] as u32);
+            c.bus.write32(ONMSG_ARGS + 20, c.g[T1][0] as u32);
+            c.bus.write32(ONMSG_ARGS + 24, c.g[T2][0] as u32);
+            c.bus.write32(ONMSG_ARGS + 28, c.g[T3][0] as u32);
+        }
     );
 
     onmsg_gated!(
@@ -37538,6 +37591,11 @@ pub(crate) mod tests {
 
     /// The string the faked `cBXString_OpPlusStrCStr` leaves in `*a0`.
     pub(crate) const ONMSG_CAST_TEXT: u32 = DATA + 0x6800;
+
+    /// Log words for the args `BuddyMan_OnChallengeReceived` gets
+    /// (a0-a3, t0-t3): the fake drops them, so without this the t1/t2/t3
+    /// setup (`<` vs `==`/`>`/`<=`) is unobservable downstream.
+    pub(crate) const ONMSG_ARGS: u32 = DATA + 0x7400;
 
     pub(crate) fn onmsg_results(c: &mut Cpu, cell: u32, results: &[u32]) {
         c.bus.write32(cell + 4, u32::MAX);
@@ -38336,8 +38394,9 @@ pub(crate) mod tests {
         [Some("14"), Some("16"), Some("13"), Some("17"), None];
 
     /// OnGameStart: kind by `seed % 6`, event by `seed / 6 % 5`, state
-    /// 0x18/0x14/9 by `seed / 30 % 3`, the AI flag by `seed / 90 % 2`, and
-    /// SELF == HOST (we host) by `seed / 180 % 2`. The game image supplies
+    /// 0x18/0x14/9 by `seed / 30 % 3`, the AI flag by `seed / 90 % 2`,
+    /// SELF == HOST (we host) by `seed / 180 % 2`, and the option word
+    /// (0 vs `0xffff`) by `seed / 360 % 2`. The game image supplies
     /// the tag names, the case-fold table and the empty string; self starts
     /// non-zero except the fields the code reads.
     pub(crate) fn game_start_fixture(c: &mut Cpu, seed: u32) {
@@ -38391,6 +38450,12 @@ pub(crate) mod tests {
         c.bus.write32(R_BE, DATA + 0x9000);
         c.bus.write32(R_IFACE, ri);
         c.bus.write32(GAME_START_AI_FLAG, ai);
+        // A set option word on half the seeds (the `+0x18` address and the
+        // `| 0x1c0` bits matter); the all-clear case runs on the rest.
+        c.bus.write32(
+            BE_OPTION_STATE + 0x18,
+            if seed / 360 % 2 == 0 { 0 } else { 0xffff },
+        );
         c.g[A0][0] = LOBBY_SELF as u64;
         c.g[A1][0] = GAME_START_MSG as u64;
     }
@@ -38431,17 +38496,56 @@ pub(crate) mod tests {
         check_paths(
             ee::s06::f_0025a1d0__generated,
             lobby_man_on_game_start,
-            360,
+            720,
             GAME_START_PATHS,
             &game_start_fixture,
         );
-        // The post block runs to the end (the kind-0xEF node is linked) on
-        // every state-0x18/0x14 seed.
-        for seed in (0..360).filter(|s| s / 30 % 3 != 2) {
+    }
+
+    /// The post block runs to the end (the kind-0xEF node is linked) on
+    /// every state-0x18/0x14 seed.
+    #[test]
+    fn lobby_man_on_game_start_posts_to_end_matches() {
+        for seed in (0..720).filter(|s| s / 30 % 3 != 2) {
             let mut c = crate::difftest::fresh();
             game_start_fixture(&mut c, seed);
             crate::difftest::run_generated(&mut c, ee::s06::f_0025a1d0__generated);
             assert!(game_start_posted(&mut c), "seed {seed}: no 0xEF event");
         }
+    }
+
+    /// `STRCMP(SELF, HOST) == +1`: with HOST one apart ("heqo"), the `< 1`
+    /// boundary is tried (the fixture's own names only give 0 or far below).
+    /// Seeds 180/181: the first hosting pair (kind 0/1, event 14,
+    /// state 0x18, no AI riders).
+    #[test]
+    fn lobby_man_on_game_start_host_name_plus_one_matches() {
+        crate::difftest::check(
+            ee::s06::f_0025a1d0__generated,
+            lobby_man_on_game_start,
+            2,
+            &|c, seed| {
+                game_start_fixture(c, [180, 181][seed as usize]);
+                // The STRCMP result is only observed down the configured
+                // path: force the option word set (the fixture leaves it
+                // clear on these seeds).
+                c.bus.write32(BE_OPTION_STATE + 0x18, 0xffff);
+                // Patch the HOST= value ("hero") to "heqo" by searching the
+                // record instead of trusting a fixed offset.
+                let record = GAME_START_RECORD;
+                let mut off = 0u32;
+                while !(c.bus.read8(record + off) == b'H'
+                    && c.bus.read8(record + off + 1) == b'O'
+                    && c.bus.read8(record + off + 2) == b'S'
+                    && c.bus.read8(record + off + 3) == b'T'
+                    && c.bus.read8(record + off + 4) == b'=')
+                {
+                    off += 1;
+                    assert!(off < 64, "HOST= not found");
+                }
+                assert_eq!(c.bus.read8(record + off + 7), b'r');
+                c.bus.write8(record + off + 7, b'q');
+            },
+        );
     }
 }

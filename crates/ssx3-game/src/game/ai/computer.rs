@@ -20842,6 +20842,14 @@ pub(crate) mod tests {
         ] {
             c.bus.write32(vt + off + 4, target);
         }
+        // Non-zero notify halfwords on sparse seeds: the `+0x40`/`+0x88`
+        // address arithmetic feeds the strict call-argument check.
+        // (Seeded sparsely so the pinned require-path costs, which use
+        // seeds 8, 9, 16, 142 and 74, are untouched.)
+        if case % 16 == 7 {
+            c.bus.write16(vt + 0x40, 1);
+            c.bus.write16(vt + 0x88, 1);
+        }
         c.g[A0][0] = sx(rider);
         c.g[A1][0] = (case % 2) as u64;
         c.g[A2][0] = (case % 3) as u64;

@@ -769,6 +769,11 @@ pub(crate) mod tests {
         }
         c.bus.write32(DATA + 0x5c, 1.0f32.to_bits());
         c.bus.write32(DATA + 0x60, 5000.0f32.to_bits());
+        // The sweep's starting value: seed 7 runs the loop from 100.0, so
+        // the +0x98 address (not just its zeroed state) matters.
+        if case == 7 {
+            c.bus.write32(DATA + 0x98, 100.0f32.to_bits());
+        }
         c.bus.write32(
             DATA + 0x68,
             if case % 2 == 0 { 600.0f32 } else { -600.0f32 }.to_bits(),

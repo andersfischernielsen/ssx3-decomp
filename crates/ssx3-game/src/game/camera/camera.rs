@@ -11977,6 +11977,37 @@ pub(crate) mod tests {
         );
     }
 
+    /// A fast steep forward with a stationary rider: the gatherer reports
+    /// no motion, so the fallback path runs and keeps the steep vector;
+    /// the horizontal projection then zeroes word 2 (non-zero here). The
+    /// shared fixture's forwards are all flat, so the zeroing never
+    /// changes anything, and its riders never stand still.
+    #[test]
+    fn relative_chase_camera_algorithm_update_steep_matches() {
+        use crate::difftest::{put_vec, SP};
+        covered(
+            ee::s01::f_00160bf8__generated,
+            relative_chase_camera_algorithm_update,
+            24,
+            &|c, seed| {
+                relative_update_setup(c, seed);
+                put_vec(c, SP - 0xc0, [25.0f32.to_bits(), 0, 5.0f32.to_bits(), 0]);
+                // No motion anywhere, so the fallback path runs and keeps the
+                // steep vector: exact zeros on even seeds, sub-threshold drift
+                // on odd seeds (a gatherer that holds its heading on zero
+                // still reports the drift as flat).
+                let v = if seed % 2 == 0 {
+                    [0u32, 0, 0, 0]
+                } else {
+                    [0.0005f32.to_bits(), 0, 0, 0]
+                };
+                put_vec(c, SP - 0x250, v);
+                put_vec(c, DATA + 0x1b0, v);
+                put_vec(c, DATA + 0x100, v);
+            },
+        );
+    }
+
     #[test]
     fn relative_chase_camera_algorithm_reset_for_rider_matches() {
         // The camera's rider vtable: the original compares the id returned by
