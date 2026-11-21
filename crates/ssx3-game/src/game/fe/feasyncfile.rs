@@ -38,6 +38,8 @@ pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_4;
 pub(crate) use crate::game::fe::festatetrophyroom::r;
 pub(crate) use crate::game::fe::ovstates::at as at_6;
 pub(crate) use crate::game::fe::ovstates::close;
+use crate::game::lib::eafile::EA_BSS_HI;
+use crate::game::lib::eafile::EA_DATA_HI;
 pub(crate) use crate::game::main::gamemode::gpo;
 pub(crate) use crate::game::main::gamemode::low as low_3;
 pub(crate) use crate::game::main::gamemode::sp_2;
@@ -3515,6 +3517,7 @@ pub(crate) mod callee {
     pub(crate) use crate::game::lib::eafile::callee::ASYNC_FILE_FINISH;
     pub(crate) use crate::game::lib::eafile::callee::ASYNC_FILE_FREE;
     pub(crate) use crate::game::lib::eafile::callee::ASYNC_FILE_POOL_PUSH;
+    pub(crate) use crate::game::lib::eafile::callee::EA_FILE_CANCEL_REQUEST;
     pub(crate) use crate::game::lib::eafile::callee::EA_FILE_QUEUE_CLOSE;
     pub(crate) use crate::game::lib::eafile::callee::EA_FILE_QUEUE_GET_SIZE;
     pub(crate) use crate::game::lib::eafile::callee::EA_FILE_QUEUE_OPEN;
@@ -3524,16 +3527,31 @@ pub(crate) mod callee {
     pub(crate) use crate::game::lib::eafile::callee::EA_FILE_WAIT_REQUEST;
     pub(crate) use crate::game::lib::eafile::callee::EA_MUTEX_LOCK;
     pub(crate) use crate::game::lib::eafile::callee::EA_MUTEX_UNLOCK;
-    pub(crate) use crate::game::misc::callee::ASYNC_FILE_ASSIGN_SERIAL;
-    pub(crate) use crate::game::misc::callee::ASYNC_FILE_CANCEL;
-    pub(crate) use crate::game::misc::callee::ASYNC_FILE_FROM_HANDLE;
-    pub(crate) use crate::game::misc::callee::ASYNC_FILE_POOL_POP;
-    pub(crate) use crate::game::misc::callee::EA_FILE_CANCEL_REQUEST;
-    pub(crate) use crate::game::misc::callee::EA_MUTEX_DESTROY;
-    pub(crate) use crate::game::misc::callee::EA_MUTEX_INIT;
-    pub(crate) use crate::game::misc::callee::EA_THREAD_IS_CURRENT;
-    pub(crate) use crate::game::misc::callee::EA_THREAD_YIELD;
-    pub(crate) use crate::game::misc::callee::EA_TIMER_SERVICE_CALLBACKS;
+    pub(crate) use crate::game::lib::eafile::callee::EA_THREAD_IS_CURRENT;
+    pub(crate) use crate::game::lib::eafile::callee::EA_THREAD_YIELD;
+    pub(crate) use crate::game::lib::eafile::callee::EA_TIMER_SERVICE_CALLBACKS;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::EA_MUTEX_DESTROY;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::EA_MUTEX_INIT;
+
+    pub(crate) const ASYNC_FILE_ASSIGN_SERIAL: Callee = Callee {
+        addr: 0x003d_ef40,
+        f: ee::s14::AsyncFile_AssignSerial,
+    };
+
+    pub(crate) const ASYNC_FILE_FROM_HANDLE: Callee = Callee {
+        addr: 0x003d_ef70,
+        f: ee::s14::AsyncFile_FromHandle,
+    };
+
+    pub(crate) const ASYNC_FILE_POOL_POP: Callee = Callee {
+        addr: 0x003d_eed8,
+        f: ee::s14::AsyncFile_PoolPop,
+    };
+
+    pub(crate) const ASYNC_FILE_CANCEL: Callee = Callee {
+        addr: 0x003d_faf0,
+        f: ee::s14::AsyncFile_Cancel,
+    };
 }
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -18414,15 +18432,15 @@ pub fn fe_async_manager_load_slot(c: &mut Cpu) {
     })
 }
 
-/// `void AsyncFile_PoolPush(pool, node)` (0x3dee70): links `node` at the
-/// head of the async pool under its mutex.
+/// `void AsyncFile_PoolPush(pool, node)` (0x3dee70): appends `node` at the
+/// tail of the pool's list (`pool` = head, tail) under the pool mutex.
 pub fn async_file_pool_push(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 13;
         let frame = Frame::open(c, 0x40);
         frame.save(c, S0, 0x30);
         frame.save(c, S1, 0x20);
-        c.g[S0][0] = 0x520000;
+        c.g[S0][0] = EA_BSS_HI;
         frame.save(c, S2, 0x10);
         c.g[S1][0] = c.g[A0][0];
         frame.save_ra(c, 0);
@@ -18462,7 +18480,7 @@ pub fn async_file_pool_pop(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 13;
         let frame = Frame::open(c, 0x40);
-        c.g[V0][0] = 0x520000;
+        c.g[V0][0] = EA_BSS_HI;
         frame.save(c, S1, 0x20);
         frame.save(c, S2, 0x10);
         c.g[S1][0] = c.g[A0][0];
@@ -18515,7 +18533,7 @@ pub fn async_file_free(c: &mut Cpu) {
                 c.g[V0][0] = c.lbu(c.g[S0][0] as u32);
             } else {
                 c.cycles += 5;
-                c.g[V1][0] = 0x450000;
+                c.g[V1][0] = EA_DATA_HI;
                 c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc18));
                 let free_cb = c.g[V0][0] as u32;
                 c.g[RA][0] = sx(0x003d_effc);
@@ -18525,7 +18543,7 @@ pub fn async_file_free(c: &mut Cpu) {
             }
         }
         c.cycles += 10;
-        c.g[A0][0] = 0x520000;
+        c.g[A0][0] = EA_BSS_HI;
         c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), 0);
         c.g[A1][0] = c.g[S0][0];
         c.sw(c.g[S0][0] as u32, c.g[V0][0]);
@@ -18547,7 +18565,7 @@ pub fn async_file_finish(c: &mut Cpu) {
         let frame = Frame::open(c, 0x50);
         frame.save(c, S0, 0x40);
         frame.save(c, S1, 0x30);
-        c.g[S0][0] = 0x520000;
+        c.g[S0][0] = EA_BSS_HI;
         c.g[S1][0] = c.g[A0][0];
         c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x63f8));
         frame.save(c, S2, 0x20);
@@ -18753,7 +18771,7 @@ pub fn async_file_on_size(c: &mut Cpu) {
         } else {
             c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x28));
             c.cycles += 22;
-            c.g[V1][0] = 0x450000;
+            c.g[V1][0] = EA_DATA_HI;
             c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[A1][0]);
             c.g[A0][0] = 0x490000;
             c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc14));
@@ -18820,8 +18838,9 @@ pub fn async_file_on_open(c: &mut Cpu) {
             callee::ASYNC_FILE_FINISH.call(c, 0x003d_f2f0)?;
             frame.restore(c, S0, 0x10);
         } else {
-            // Only the double-skip (empty and unchained) reaches the size
-            // query; the close/read arms break straight to the epilogue.
+            // Only an unflagged, chained block reaches the size query; the
+            // close and read arms go straight to the epilogue whatever
+            // their queue result (generated `break 'b_3df3b4`).
             let mut done = false;
             c.cycles += 3;
             c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
@@ -18834,18 +18853,16 @@ pub fn async_file_on_open(c: &mut Cpu) {
                 callee::EA_FILE_QUEUE_CLOSE.call(c, 0x003d_f30c)?;
                 c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
                 c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
-                if c.g[V0][0] == 0 {
-                    frame.restore(c, S0, 0x10);
-                } else {
+                if c.g[V0][0] != 0 {
                     c.cycles += 6;
                     c.g[A1][0] = 0x3e0000;
                     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
                     c.g[RA][0] = sx(0x003d_f32c);
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xf48));
                     callee::EA_FILE_SET_REQUEST_CALLBACK.call(c, 0x003d_f32c)?;
-                    frame.restore(c, S0, 0x10);
-                    done = true;
                 }
+                frame.restore(c, S0, 0x10);
+                done = true;
             } else {
                 c.cycles += 3;
                 c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
@@ -18866,18 +18883,16 @@ pub fn async_file_on_open(c: &mut Cpu) {
                     callee::EA_FILE_QUEUE_READ.call(c, 0x003d_f360)?;
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
-                    if c.g[V0][0] == 0 {
-                        frame.restore(c, S0, 0x10);
-                    } else {
+                    if c.g[V0][0] != 0 {
                         c.cycles += 6;
                         c.g[A1][0] = 0x3e0000;
                         c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
                         c.g[RA][0] = sx(0x003d_f380);
                         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xf10));
                         callee::EA_FILE_SET_REQUEST_CALLBACK.call(c, 0x003d_f380)?;
-                        frame.restore(c, S0, 0x10);
-                        done = true;
                     }
+                    frame.restore(c, S0, 0x10);
+                    done = true;
                 }
             }
             // Chain the size query after the open steps.
@@ -18988,14 +19003,16 @@ pub fn async_file_on_read_range_chunk(c: &mut Cpu) {
     })
 }
 
-/// `u32 AsyncFile_Init(pool_words, handle_count)` (0x3df488): zeroes the
-/// async pool and mutex when the settings allow handles at all.
+/// `void AsyncFile_Init(count, alloc_arg)` (0x3df488): unless already
+/// initialized, allocates `count` (at most 256) 0x30-byte blocks through
+/// the allocator hook (`alloc_arg` its third argument), links them into the
+/// free pool and initializes the pool mutex.
 pub fn async_file_init(c: &mut Cpu) {
     guest(c, |c| {
         const HEAD: u32 = 0x003d_f520;
         c.cycles += 11;
         let frame = Frame::open(c, 0x40);
-        c.g[V0][0] = 0x450000;
+        c.g[V0][0] = EA_DATA_HI;
         frame.save(c, S1, 0x20);
         c.g[A2][0] = c.g[A1][0];
         frame.save(c, S2, 0x10);
@@ -19012,9 +19029,9 @@ pub fn async_file_init(c: &mut Cpu) {
             c.g[S0][0] = 0x30;
             if !skip {
                 c.cycles += 21;
-                c.g[V1][0] = 0x450000;
+                c.g[V1][0] = EA_DATA_HI;
                 c.mult(0, 16, 17, 16);
-                c.g[A1][0] = 0x520000;
+                c.g[A1][0] = EA_BSS_HI;
                 c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc14));
                 c.g[A0][0] = 0x490000;
                 c.sw((c.g[A1][0] as u32).wrapping_sub(0x6410), c.g[S1][0]);
@@ -19024,12 +19041,12 @@ pub fn async_file_init(c: &mut Cpu) {
                 c.g[A1][0] = c.g[S0][0];
                 c.pc = alloc;
                 call_ptr(c, alloc, 0x003d_f4e4)?;
-                c.g[A1][0] = 0x520000;
+                c.g[A1][0] = EA_BSS_HI;
                 c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x30));
                 c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                 c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x6408));
                 c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[S0][0]);
-                c.g[A0][0] = 0x520000;
+                c.g[A0][0] = EA_BSS_HI;
                 c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x63f8));
                 c.sw((c.g[A1][0] as u32).wrapping_sub(0x6408), c.g[V0][0]);
                 c.g[RA][0] = sx(0x003d_f50c);
@@ -19079,10 +19096,10 @@ pub fn async_file_init(c: &mut Cpu) {
     })
 }
 
-/// `void AsyncFile_Shutdown()` (0x3df570): cancels every async block,
-/// waits for the pool to drain and tears the pool down. Only the
-/// already-idle early exit is unit-testable (the drain loop needs another
-/// thread to make progress); the rest is covered by the replay gates.
+/// `void AsyncFile_Shutdown()` (0x3df570): cancels every async block, then,
+/// while any block still has a live request, services the timer callbacks
+/// (on the current thread) and yields; then frees the pool and destroys its
+/// mutex. Does nothing without a pool.
 pub fn async_file_shutdown(c: &mut Cpu) {
     guest(c, |c| {
         const HEAD_CANCEL: u32 = 0x003d_f5b8;
@@ -19090,7 +19107,7 @@ pub fn async_file_shutdown(c: &mut Cpu) {
         const HEAD_INNER: u32 = 0x003d_f600;
         c.cycles += 11;
         let frame = Frame::open(c, 0x60);
-        c.g[V1][0] = 0x450000;
+        c.g[V1][0] = EA_DATA_HI;
         frame.save(c, S3, 0x20);
         c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc34));
         c.g[S3][0] = c.g[V1][0];
@@ -19102,7 +19119,7 @@ pub fn async_file_shutdown(c: &mut Cpu) {
         let idle = c.g[V0][0] == 0;
         if !idle {
             c.cycles += 5;
-            c.g[V1][0] = 0x520000;
+            c.g[V1][0] = EA_BSS_HI;
             c.g[S0][0] = 0;
             c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x6410));
             let empty = (c.g[V0][0] as i64) <= 0;
@@ -19133,54 +19150,55 @@ pub fn async_file_shutdown(c: &mut Cpu) {
                 }
             }
             c.cycles += 3;
-            c.g[S4][0] = 0x520000;
-            c.g[S1][0] = 0x450000;
+            c.g[S4][0] = EA_BSS_HI;
+            c.g[S1][0] = EA_DATA_HI;
             c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_sub(0x6410));
             loop {
                 c.cycles += 2;
                 let drained = (c.g[V0][0] as i64) <= 0;
                 c.g[A0][0] = 0;
-                if drained {
-                    break;
-                }
-                c.cycles += 4;
-                c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc34));
-                c.g[A1][0] = 0x1;
-                c.g[S0][0] = c.lw((c.g[S2][0] as u32).wrapping_sub(0x6410));
-                'l_3df600: loop {
-                    c.cycles += 7;
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
-                    let more = c.g[S0][0] != 0;
-                    if c.g[V0][0] != 0 {
-                        c.g[A0][0] = c.g[V1][0];
-                    }
-                    if more {
-                        if event_due(c) {
-                            deliver_event_here(c, HEAD_INNER);
+                if !drained {
+                    // Scan the blocks: A0 = 1 while any request is live.
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc34));
+                    c.g[A1][0] = 0x1;
+                    c.g[S0][0] = c.lw((c.g[S2][0] as u32).wrapping_sub(0x6410));
+                    'l_3df600: loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
+                        let more = c.g[S0][0] != 0;
+                        if c.g[V0][0] != 0 {
+                            c.g[A0][0] = c.g[A1][0];
                         }
-                        continue 'l_3df600;
+                        if more {
+                            if event_due(c) {
+                                deliver_event_here(c, HEAD_INNER);
+                            }
+                            continue 'l_3df600;
+                        }
+                        break;
                     }
-                    break;
                 }
                 c.cycles += 2;
-                let waiting = c.g[A0][0] == 0;
-                c.g[V1][0] = 0x450000;
-                if !waiting {
+                let idle = c.g[A0][0] == 0;
+                c.g[V1][0] = EA_DATA_HI;
+                if idle {
                     break;
                 }
+                // Busy: service the timers when on the current thread, then
+                // yield and look again.
                 c.cycles += 4;
                 c.g[RA][0] = sx(0x003d_f62c);
                 c.g[A0][0] = 0;
                 callee::EA_THREAD_IS_CURRENT.call(c, 0x003d_f62c)?;
-                if c.g[V0][0] == 0 {
-                    break;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 2;
+                    c.g[RA][0] = sx(0x003d_f63c);
+                    c.g[A0][0] = 0;
+                    callee::EA_TIMER_SERVICE_CALLBACKS.call(c, 0x003d_f63c)?;
                 }
-                c.cycles += 2;
-                c.g[RA][0] = sx(0x003d_f63c);
-                c.g[A0][0] = 0;
-                callee::EA_TIMER_SERVICE_CALLBACKS.call(c, 0x003d_f63c)?;
                 c.cycles += 4;
                 c.g[RA][0] = sx(0x003d_f644);
                 c.g[A0][0] = 0;
@@ -19191,14 +19209,14 @@ pub fn async_file_shutdown(c: &mut Cpu) {
                 }
             }
             c.cycles += 8;
-            c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc10));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xc10));
             c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
             let free_cb = c.g[V0][0] as u32;
             c.g[RA][0] = sx(0x003d_f65c);
             c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc34));
             c.pc = free_cb;
             call_ptr(c, free_cb, 0x003d_f65c)?;
-            c.g[A0][0] = 0x520000;
+            c.g[A0][0] = EA_BSS_HI;
             c.g[RA][0] = sx(0x003d_f668);
             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x63f8));
             callee::EA_MUTEX_DESTROY.call(c, 0x003d_f668)?;
@@ -19216,8 +19234,10 @@ pub fn async_file_shutdown(c: &mut Cpu) {
     })
 }
 
-/// `u32 AsyncFile_Load(path, size)` (0x3df690): pops a pool block,
-/// assigns it and queues an open; 0 when the pool is empty.
+/// `u32 AsyncFile_Load(path, a1)` (0x3df690): pops a pool block, assigns
+/// it a serial and queues the open of a load into an allocated buffer
+/// (`a1` in `+0x28`); returns the block's handle, or 0 when the pool is
+/// empty or the open cannot be queued.
 pub fn async_file_load(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 13;
@@ -19225,7 +19245,7 @@ pub fn async_file_load(c: &mut Cpu) {
         frame.save(c, S2, 0x10);
         c.g[S2][0] = c.g[A0][0];
         frame.save(c, S1, 0x20);
-        c.g[A0][0] = 0x520000;
+        c.g[A0][0] = EA_BSS_HI;
         frame.save(c, S0, 0x30);
         frame.save_ra(c, 0);
         c.g[S1][0] = c.g[A1][0];
@@ -19281,8 +19301,9 @@ pub fn async_file_load(c: &mut Cpu) {
     })
 }
 
-/// `u32 AsyncFile_LoadInto(path, size, result)` (0x3df748): like Load
-/// but records the caller's result word; 0 when the pool is empty.
+/// `u32 AsyncFile_LoadInto(path, buffer, size)` (0x3df748): like Load but
+/// into the caller's `buffer` (`+0x2c`) of `size` bytes (`+0x28`); returns
+/// the block's handle, or 0.
 pub fn async_file_load_into(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 15;
@@ -19291,7 +19312,7 @@ pub fn async_file_load_into(c: &mut Cpu) {
         c.g[S3][0] = c.g[A0][0];
         frame.save(c, S1, 0x30);
         frame.save(c, S2, 0x20);
-        c.g[A0][0] = 0x520000;
+        c.g[A0][0] = EA_BSS_HI;
         frame.save(c, S0, 0x40);
         c.g[S2][0] = c.g[A1][0];
         frame.save_ra(c, 0);
@@ -19348,8 +19369,10 @@ pub fn async_file_load_into(c: &mut Cpu) {
     })
 }
 
-/// `u32 AsyncFile_ReadRange(handle, size, offset, length)` (0x3df808):
-/// pops a block, assigns it and queues a range read; 0 when empty.
+/// `u32 AsyncFile_ReadRange(file, offset, buffer, length)` (0x3df808):
+/// pops a block, assigns it and queues the first read (at most 0x8000
+/// bytes) of `length` bytes at `offset` into `buffer`; returns the block's
+/// handle, or 0 when the pool is empty or the read cannot be queued.
 pub fn async_file_read_range(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 17;
@@ -19358,7 +19381,7 @@ pub fn async_file_read_range(c: &mut Cpu) {
         c.g[S2][0] = c.g[A0][0];
         frame.save(c, S1, 0x40);
         frame.save(c, S3, 0x20);
-        c.g[A0][0] = 0x520000;
+        c.g[A0][0] = EA_BSS_HI;
         frame.save(c, S0, 0x50);
         frame.save(c, S4, 0x10);
         c.g[S3][0] = c.g[A1][0];
@@ -19425,8 +19448,9 @@ pub fn async_file_read_range(c: &mut Cpu) {
     })
 }
 
-/// `void AsyncFile_SetCallback(handle, kind, fn)` (0x3df8e8): stores a
-/// completion callback on a live handle under the pool mutex.
+/// `void AsyncFile_SetCallback(handle, fn)` (0x3df8e8): gives a block
+/// without one the done callback `fn` (under the pool mutex) and calls
+/// `fn(handle)` at once when no request is pending.
 pub fn async_file_set_callback(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 13;
@@ -19455,7 +19479,7 @@ pub fn async_file_set_callback(c: &mut Cpu) {
                 direct = true;
             } else {
                 c.cycles += 11;
-                c.g[S0][0] = 0x520000;
+                c.g[S0][0] = EA_BSS_HI;
                 c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x63f8));
                 c.g[RA][0] = sx(0x003d_f938);
                 c.g[A0][0] = c.g[S0][0];
@@ -19493,15 +19517,18 @@ pub fn async_file_set_callback(c: &mut Cpu) {
     })
 }
 
-/// `void AsyncFile_GetResult(handle, ...)` (0x3df9d8): waits for a
-/// queued request and reports its outcome.
+/// `int AsyncFile_GetResult(handle, data_out, size_out)` (0x3df9d8): for
+/// a block not cancelled (`+0x10` clear), waits while its request is live,
+/// then reports the loaded data's start and size through the non-null out
+/// pointers and frees the block (1); a block cancelled meanwhile gets zeroed
+/// outs and is freed (-1). -1 too for an unknown or cancelled handle.
 pub fn async_file_get_result(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 19;
         let frame = Frame::open(c, 0x60);
         frame.save(c, S0, 0x50);
         frame.save(c, S1, 0x40);
-        c.g[S0][0] = 0x520000;
+        c.g[S0][0] = EA_BSS_HI;
         frame.save(c, S2, 0x30);
         c.g[S1][0] = c.g[A0][0];
         frame.save(c, S3, 0x20);
@@ -19628,7 +19655,7 @@ pub fn async_file_cancel(c: &mut Cpu) {
         frame.save(c, S0, 0x50);
         frame.save(c, S1, 0x40);
         c.g[S0][0] = c.g[A0][0];
-        c.g[S1][0] = 0x520000;
+        c.g[S1][0] = EA_BSS_HI;
         frame.save(c, S2, 0x30);
         frame.save(c, S3, 0x20);
         c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x63f8));
@@ -19728,6 +19755,10 @@ pub(crate) mod tests {
     use crate::difftest::check_lohi;
     use crate::difftest::compare;
     use crate::difftest::elf_image;
+    pub(crate) use crate::game::lib::eafile::tests::ea_fixed_results;
+    pub(crate) use crate::game::lib::eafile::tests::ea_install_fakes;
+    pub(crate) use crate::game::lib::eafile::tests::ea_set_type_rets;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_RET_FH;
 
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
@@ -19824,18 +19855,18 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS_4;
 
+    use crate::difftest::check_paths;
+    use crate::difftest::events::check_events;
     use crate::difftest::events::driven;
-    pub(crate) use crate::game::lib::eafile::tests::ea_fake_mutex_lock;
-    pub(crate) use crate::game::lib::eafile::tests::ea_fake_mutex_unlock;
-    pub(crate) use crate::game::lib::eafile::tests::ea_install_queue_fakes_2;
+    use crate::difftest::events::schedule;
     pub(crate) use crate::game::lib::eafile::tests::put_ascii;
     pub(crate) use crate::game::lib::eafile::tests::EAF_CTRL;
     pub(crate) use crate::game::lib::eafile::tests::EAF_MAGIC;
     pub(crate) use crate::game::lib::eafile::tests::EAF_REQ;
-    pub(crate) use crate::game::lib::eafile::tests::EAF_RET_ALLOC;
+    use crate::game::lib::eafile::tests::EAF_RET_QCLOSE;
+    use crate::game::lib::eafile::tests::EAF_RET_QREAD;
+    use crate::game::lib::eafile::tests::EAF_RET_RELEASE;
     pub(crate) use crate::game::lib::eafile::tests::EAF_RET_SETCB;
-    pub(crate) use crate::game::lib::eafile::tests::EAF_RET_TYPE;
-    pub(crate) use crate::game::lib::eafile::tests::EAF_RET_VALID;
     use ssx3_ee as ee;
     use ssx3_ee_rt::funcs::GuestFn;
 
@@ -27091,26 +27122,29 @@ pub(crate) mod tests {
     /// done callbacks (unmapped targets miss identically both sides).
     #[test]
     fn async_file_finish_matches() {
-        check(
+        crate::difftest::check_paths(
             gen_async_file_finish,
             hand_async_file_finish,
             96,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3d_f028, 0);
-                ea_install_queue_fakes_2();
-                let base = DATA + 0x600;
-                pool_fixture(c, base, 0);
-                let blk = base + 0x80;
-                c.bus.write32(blk, 0x50 + seed % 2);
-                c.bus.write32(blk + 0x10, [0u32, 1][seed as usize / 2 % 2]);
-                c.bus.write32(blk + 0xc, [0u32, 1][seed as usize / 4 % 2]);
-                c.bus
-                    .write32(blk + 0x18, if seed / 8 % 3 == 0 { 0 } else { 0x00c0_0000 });
-                c.bus.write32(0x0045_0c18, 0);
-                c.g[A0][0] = blk as u64;
-                c.pc = 0x003d_f028;
-            },
+            &[96, 43, 40, 50],
+            &async_file_finish_matches_setup,
         );
+    }
+
+    fn async_file_finish_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_f028, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_fixture(c, base, 0);
+        let blk = base + 0x80;
+        c.bus.write32(blk, 0x50 + seed % 2);
+        c.bus.write32(blk + 0x10, [0u32, 1][seed as usize / 2 % 2]);
+        c.bus.write32(blk + 0xc, [0u32, 1][seed as usize / 4 % 2]);
+        c.bus
+            .write32(blk + 0x18, if seed / 8 % 3 == 0 { 0 } else { 0x00c0_0000 });
+        c.bus.write32(0x0045_0c18, 0);
+        c.g[A0][0] = blk as u64;
+        c.pc = 0x003d_f028;
     }
 
     driven!(gen_async_file_free, ee::s14::f_003defc0__generated);
@@ -27121,24 +27155,32 @@ pub(crate) mod tests {
     /// free callbacks (unmapped targets miss identically both sides).
     #[test]
     fn async_file_free_matches() {
-        check(gen_async_file_free, hand_async_file_free, 96, &|c, seed| {
-            let _r = machine(c, seed, 0x3d_efc0, 0);
-            ea_install_queue_fakes_2();
-            let base = DATA + 0x600;
-            pool_fixture(c, base, 0);
-            let blk = base + 0x80;
-            c.bus.write32(blk, 0x40 + seed % 4);
-            c.bus
-                .write32(blk + 0x10, [0u32, 1, 2][seed as usize / 4 % 3]);
-            c.bus
-                .write32(blk + 0x14, [0u32, 1, 2, 3][seed as usize / 12 % 4]);
-            c.bus.write32(
-                0x0045_0c18,
-                if seed / 48 % 2 == 0 { 0 } else { 0x00c0_0000 },
-            );
-            c.g[A0][0] = blk as u64;
-            c.pc = 0x003d_efc0;
-        });
+        crate::difftest::check_paths(
+            gen_async_file_free,
+            hand_async_file_free,
+            96,
+            &[48, 59, 70],
+            &async_file_free_matches_setup,
+        );
+    }
+
+    fn async_file_free_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_efc0, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_fixture(c, base, 0);
+        let blk = base + 0x80;
+        c.bus.write32(blk, 0x40 + seed % 4);
+        c.bus
+            .write32(blk + 0x10, [0u32, 1, 2][seed as usize / 4 % 3]);
+        c.bus
+            .write32(blk + 0x14, [0u32, 1, 2, 3][seed as usize / 12 % 4]);
+        c.bus.write32(
+            0x0045_0c18,
+            if seed / 48 % 2 == 0 { 0 } else { 0x00c0_0000 },
+        );
+        c.g[A0][0] = blk as u64;
+        c.pc = 0x003d_efc0;
     }
 
     driven!(gen_async_file_on_close, ee::s14::f_003df0b8__generated);
@@ -27152,65 +27194,74 @@ pub(crate) mod tests {
             gen_async_file_on_close,
             hand_async_file_on_close,
             64,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3d_f0b8, 0);
-                ea_install_queue_fakes_2();
-                let base = DATA + 0x600;
-                pool_fixture(c, base, 0);
-                let blk = base + 0x80;
-                c.bus.write32(blk, 0x60 + seed % 2);
-                c.bus.write32(blk + 0x10, [0u32, 1][seed as usize / 2 % 2]);
-                c.bus.write32(blk + 0xc, [0u32, 1][seed as usize / 4 % 2]);
-                c.bus.write32(blk + 0x18, 0);
-                c.bus.write32(blk + 0x1c, 0x70 + seed % 2);
-                c.bus.write32(
-                    EAF_RET_TYPE,
-                    if seed / 8 % 2 == 0 { 0 } else { 0x80 + seed },
-                );
-                c.g[A0][0] = 0;
-                c.g[A1][0] = 0;
-                c.g[A2][0] = blk as u64;
-                c.pc = 0x003d_f0b8;
-            },
+            &async_file_on_close_matches_setup,
         );
+    }
+
+    fn async_file_on_close_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_f0b8, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_fixture(c, base, 0);
+        let blk = base + 0x80;
+        c.bus.write32(blk, 0x60 + seed % 2);
+        c.bus.write32(blk + 0x10, [0u32, 1][seed as usize / 2 % 2]);
+        c.bus.write32(blk + 0xc, [0u32, 1][seed as usize / 4 % 2]);
+        c.bus.write32(blk + 0x18, 0);
+        c.bus.write32(blk + 0x1c, 0x70 + seed % 2);
+        ea_set_type_rets(c, if seed / 8 % 2 == 0 { 0 } else { 0x80 + seed });
+        c.g[A0][0] = 0;
+        c.g[A1][0] = 0;
+        c.g[A2][0] = blk as u64;
+        c.pc = 0x003d_f0b8;
     }
 
     driven!(gen_async_file_on_open, ee::s14::f_003df2c0__generated);
 
     driven!(hand_async_file_on_open, async_file_on_open);
 
-    /// Failed and live opens; empty and live blocks; chained and
-    /// unchained; null and live results and callbacks.
+    /// A null open result finishes the block; otherwise a flagged block
+    /// queues a close, an unflagged unchained one a read (short and
+    /// over-0x8000 sizes), each with a null result (straight to the
+    /// epilogue) or a live one (callback set), and an unflagged chained one
+    /// the size query (its result is never null: the real QueueGetSize
+    /// returns the request word with bit 22 set).
+    fn async_file_on_open_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3d_f2c0, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_fixture(c, base, 0);
+        let blk = base + 0x80;
+        c.bus.write32(blk, 0x90 + r.next_u32() % 2);
+        c.bus.write32(blk + 0x1c, 0xa0 + r.next_u32() % 2);
+        c.bus.write32(blk + 0x10, seed % 2);
+        c.bus.write32(blk + 0x14, seed / 2 % 2);
+        c.bus.write32(blk + 0x20, 0x300 + r.next_u32() % 5);
+        c.bus.write32(blk + 0x24, 0x400 + r.next_u32() % 7);
+        c.bus.write32(
+            blk + 0x28,
+            [0x100u32, 0x8000, 0x9000][seed as usize / 4 % 3],
+        );
+        c.bus.write32(blk + 0x2c, 0x600 + r.next_u32() % 3);
+        let live = |on: bool| if on { 0xb0 + seed } else { 0 };
+        c.bus.write32(EAF_RET_RELEASE, live(seed / 12 % 4 != 0));
+        c.bus.write32(EAF_RET_QCLOSE, live(seed / 48 % 2 == 1));
+        c.bus.write32(EAF_RET_QREAD, live(seed / 48 % 2 == 1));
+        c.bus.write32(EAF_RET_SETCB, r.next_u32() % 2);
+        c.g[A0][0] = 0;
+        c.g[A1][0] = 0;
+        c.g[A2][0] = blk as u64;
+        c.pc = 0x003d_f2c0;
+    }
+
     #[test]
     fn async_file_on_open_matches() {
-        check(
+        check_paths(
             gen_async_file_on_open,
             hand_async_file_on_open,
             120,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3d_f2c0, 0);
-                ea_install_queue_fakes_2();
-                let base = DATA + 0x600;
-                pool_fixture(c, base, 0);
-                let blk = base + 0x80;
-                c.bus.write32(blk, 0x90 + seed % 2);
-                c.bus.write32(blk + 0x1c, 0xa0 + seed % 2);
-                c.bus.write32(blk + 0x10, [0u32, 1][seed as usize / 2 % 2]);
-                c.bus.write32(blk + 0x14, [0u32, 1][seed as usize / 4 % 2]);
-                c.bus.write32(blk + 0x20, 0x300 + seed % 5);
-                c.bus.write32(blk + 0x24, 0x400 + seed % 7);
-                c.bus.write32(blk + 0x28, 0x500 + seed % 3);
-                c.bus.write32(blk + 0x2c, 0x600 + seed % 3);
-                c.bus.write32(
-                    EAF_RET_TYPE,
-                    if seed / 8 % 2 == 0 { 0 } else { 0xb0 + seed },
-                );
-                c.bus.write32(EAF_RET_SETCB, (seed / 16 % 2) as u32);
-                c.g[A0][0] = 0;
-                c.g[A1][0] = 0;
-                c.g[A2][0] = blk as u64;
-                c.pc = 0x003d_f2c0;
-            },
+            &PATHS_ON_OPEN,
+            &async_file_on_open_setup,
         );
     }
 
@@ -27218,39 +27269,55 @@ pub(crate) mod tests {
 
     driven!(hand_async_file_on_read_chunk, async_file_on_read_chunk);
 
-    /// Short and long chunks; clear and set flags; null and live queue
-    /// results and callbacks.
+    /// A read-chunk block: the chunk length is the released request's
+    /// result (`EAF_RET_RELEASE`: empty, short, 0x7fff, exactly 0x8000, long); a
+    /// set or clear flag; a remaining size below or above 0x8000; null or
+    /// live close/read results and callbacks.
+    fn read_chunk_block(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        let mut r = machine(c, seed, salt, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_fixture(c, base, 0);
+        let blk = base + 0x80;
+        c.bus.write32(blk, 0x70 + r.next_u32() % 2);
+        c.bus.write32(blk + 0x1c, 0x80 + r.next_u32() % 2);
+        c.bus.write32(blk + 0x2c, 0x100 * (r.next_u32() % 3));
+        c.bus.write32(blk + 0x8, 0x200 * (r.next_u32() % 3));
+        c.bus.write32(blk + 0x10, seed / 4 % 2);
+        c.bus.write32(blk + 0x20, 0x300 + r.next_u32() % 5);
+        c.bus.write32(blk + 0x24, 0x400 + r.next_u32() % 7);
+        c.bus
+            .write32(blk + 0x28, [0x9000u32, 0x2_0000][seed as usize / 8 % 2]);
+        c.bus.write32(blk + 0x14, 0x600 + r.next_u32() % 3);
+        // Seeds 64 and up: a chunk of 0x7fff, one below the long-chunk bound.
+        let chunk = if seed >= 64 {
+            0x7fff
+        } else {
+            [0u32, 0x100, 0x8000, 0x1_0000][seed as usize % 4]
+        };
+        let queued = if seed / 16 % 2 == 0 { 0 } else { 0x90 + seed };
+        c.bus.write32(EAF_RET_RELEASE, chunk);
+        c.bus.write32(EAF_RET_QCLOSE, queued);
+        c.bus.write32(EAF_RET_QREAD, queued);
+        c.bus.write32(EAF_RET_SETCB, r.next_u32() % 2);
+        c.g[A0][0] = 0;
+        c.g[A1][0] = 0;
+        c.g[A2][0] = blk as u64;
+        c.pc = entry;
+    }
+
+    fn async_file_on_read_chunk_setup(c: &mut Cpu, seed: u32) {
+        read_chunk_block(c, seed, 0x3d_f0f0, 0x003d_f0f0);
+    }
+
     #[test]
     fn async_file_on_read_chunk_matches() {
-        check(
+        check_paths(
             gen_async_file_on_read_chunk,
             hand_async_file_on_read_chunk,
-            120,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3d_f0f0, 0);
-                ea_install_queue_fakes_2();
-                let base = DATA + 0x600;
-                pool_fixture(c, base, 0);
-                let blk = base + 0x80;
-                c.bus.write32(blk, 0x70 + seed % 2);
-                c.bus.write32(blk + 0x1c, 0x80 + seed % 2);
-                c.bus.write32(blk + 0x2c, 0x100 * (seed % 3) as u32);
-                c.bus.write32(blk + 0x8, 0x200 * (seed / 3 % 3) as u32);
-                c.bus.write32(blk + 0x10, [0u32, 1][seed as usize / 9 % 2]);
-                c.bus.write32(blk + 0x20, 0x300 + seed % 5);
-                c.bus.write32(blk + 0x24, 0x400 + seed % 7);
-                c.bus.write32(blk + 0x28, 0x500 + seed % 3);
-                c.bus.write32(blk + 0x14, 0x600 + seed % 3);
-                c.bus.write32(
-                    EAF_RET_TYPE,
-                    if seed / 27 % 3 == 0 { 0 } else { 0x90 + seed },
-                );
-                c.bus.write32(EAF_RET_SETCB, (seed / 81 % 2) as u32);
-                c.g[A0][0] = 0;
-                c.g[A1][0] = [0u32, 0x100, 0x8000, 0x1_0000][seed as usize / 162 % 4] as u64;
-                c.g[A2][0] = blk as u64;
-                c.pc = 0x003d_f0f0;
-            },
+            80,
+            &PATHS_ON_READ_CHUNK,
+            &async_file_on_read_chunk_setup,
         );
     }
 
@@ -27262,35 +27329,35 @@ pub(crate) mod tests {
     /// live results and callbacks.
     #[test]
     fn async_file_on_size_matches() {
-        check(
+        crate::difftest::check_paths(
             gen_async_file_on_size,
             hand_async_file_on_size,
             120,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3d_f1e0, 0);
-                ea_install_queue_fakes_2();
-                let base = DATA + 0x600;
-                pool_fixture(c, base, 0);
-                let blk = base + 0x80;
-                c.bus.write32(blk, 0x80 + seed % 2);
-                c.bus.write32(blk + 0x1c, 0x90 + seed % 2);
-                c.bus.write32(blk + 0x10, [0u32, 1][seed as usize / 2 % 2]);
-                c.bus.write32(blk + 0x20, 0x300 + seed % 5);
-                c.bus.write32(blk + 0x24, 0x400 + seed % 7);
-                c.bus.write32(blk + 0x28, 0x100 * (seed / 4 % 3) as u32);
-                c.bus.write32(blk + 0x14, 0x600 + seed % 3);
-                c.bus.write32(0x0045_0c14, 0);
-                c.bus.write32(
-                    EAF_RET_TYPE,
-                    if seed / 12 % 3 == 0 { 0 } else { 0xa0 + seed },
-                );
-                c.bus.write32(EAF_RET_SETCB, (seed / 36 % 2) as u32);
-                c.g[A0][0] = 0;
-                c.g[A1][0] = (seed / 72 % 3) as u64;
-                c.g[A2][0] = blk as u64;
-                c.pc = 0x003d_f1e0;
-            },
+            &[30, 47, 54, 65],
+            &async_file_on_size_matches_setup,
         );
+    }
+
+    fn async_file_on_size_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_f1e0, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_fixture(c, base, 0);
+        let blk = base + 0x80;
+        c.bus.write32(blk, 0x80 + seed % 2);
+        c.bus.write32(blk + 0x1c, 0x90 + seed % 2);
+        c.bus.write32(blk + 0x10, [0u32, 1][seed as usize / 2 % 2]);
+        c.bus.write32(blk + 0x20, 0x300 + seed % 5);
+        c.bus.write32(blk + 0x24, 0x400 + seed % 7);
+        c.bus.write32(blk + 0x28, 0x100 * (seed / 4 % 3) as u32);
+        c.bus.write32(blk + 0x14, 0x600 + seed % 3);
+        c.bus.write32(0x0045_0c14, 0);
+        ea_set_type_rets(c, if seed / 12 % 3 == 0 { 0 } else { 0xa0 + seed });
+        c.bus.write32(EAF_RET_SETCB, (seed / 36 % 2) as u32);
+        c.g[A0][0] = 0;
+        c.g[A1][0] = (seed / 72 % 3) as u64;
+        c.g[A2][0] = blk as u64;
+        c.pc = 0x003d_f1e0;
     }
 
     driven!(gen_async_file_pool_pop, ee::s14::f_003deed8__generated);
@@ -27300,24 +27367,27 @@ pub(crate) mod tests {
     /// Empty, single-node and two-node pools.
     #[test]
     fn async_file_pool_pop_matches() {
-        check(
+        crate::difftest::check_paths(
             gen_async_file_pool_pop,
             hand_async_file_pool_pop,
             48,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3d_eed8, 0);
-                ea_install_queue_fakes_2();
-                let base = DATA + 0x600;
-                let node = base + 0x80;
-                let node2 = base + 0xc0;
-                let mode = seed % 3;
-                pool_fixture(c, base, if mode == 0 { 0 } else { node });
-                c.bus.write32(node + 0x4, if mode == 2 { node2 } else { 0 });
-                c.bus.write32(node2 + 0x4, 0xbeef_0000 + seed);
-                c.g[A0][0] = base as u64;
-                c.pc = 0x003d_eed8;
-            },
+            &[30, 38, 33],
+            &async_file_pool_pop_matches_setup,
         );
+    }
+
+    fn async_file_pool_pop_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_eed8, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        let node = base + 0x80;
+        let node2 = base + 0xc0;
+        let mode = seed % 3;
+        pool_fixture(c, base, if mode == 0 { 0 } else { node });
+        c.bus.write32(node + 0x4, if mode == 2 { node2 } else { 0 });
+        c.bus.write32(node2 + 0x4, 0xbeef_0000 + seed);
+        c.g[A0][0] = base as u64;
+        c.pc = 0x003d_eed8;
     }
 
     driven!(gen_async_file_pool_push, ee::s14::f_003dee70__generated);
@@ -27327,57 +27397,96 @@ pub(crate) mod tests {
     /// Empty and chained pools; nodes second or fresh.
     #[test]
     fn async_file_pool_push_matches() {
-        check(
+        crate::difftest::check_paths(
             gen_async_file_pool_push,
             hand_async_file_pool_push,
             48,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3d_ee70, 0);
-                ea_install_queue_fakes_2();
-                let base = DATA + 0x600;
-                let node = base + 0x80;
-                let node2 = base + 0xc0;
-                pool_fixture(c, base, if seed % 2 == 0 { 0 } else { node2 });
-                c.bus
-                    .write32(node2 + 0x4, if seed / 2 % 2 == 0 { 0 } else { node });
-                c.bus.write32(node + 0x4, 0xbeef_0000 + seed);
-                c.g[A0][0] = base as u64;
-                c.g[A1][0] = node as u64;
-                c.pc = 0x003d_ee70;
-            },
+            &[36, 32],
+            &async_file_pool_push_matches_setup,
         );
+    }
+
+    fn async_file_pool_push_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_ee70, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        let node = base + 0x80;
+        let node2 = base + 0xc0;
+        pool_fixture(c, base, if seed % 2 == 0 { 0 } else { node2 });
+        c.bus
+            .write32(node2 + 0x4, if seed / 2 % 2 == 0 { 0 } else { node });
+        c.bus.write32(node + 0x4, 0xbeef_0000 + seed);
+        c.g[A0][0] = base as u64;
+        c.g[A1][0] = node as u64;
+        c.pc = 0x003d_ee70;
     }
 
     driven!(gen_async_file_cancel, ee::s14::f_003dfaf0__generated);
 
     driven!(hand_async_file_cancel, async_file_cancel);
 
-    /// Missing, live, and stale handles, with and without results and
-    /// with and without a queued cancel.
+    /// The request table (`[0x519ad8]`) selecting the request record at
+    /// `DATA + 0x1000` for handles with top byte 0 and low bits `0x42`.
+    fn request_record(c: &mut Cpu) {
+        c.bus.write32(0x0051_9ad8, DATA + 0x1000);
+        for i in 0..12u32 {
+            c.bus.write32(DATA + 0x1000 + 4 * i, 0);
+        }
+        c.bus.write32(DATA + 0x1000, 0x42);
+    }
+
+    /// `check`, and both sides call the same callees in the same order
+    /// (`SSX3_DIFF_STRICT=args` alone lets a different sequence pass).
+    fn check_same_calls(
+        generated: GuestFn,
+        hand: GuestFn,
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, u32),
+    ) {
+        check(generated, hand, seeds, setup);
+        for seed in 0..seed_count(seeds) {
+            let r = compare(generated, hand, &|c| setup(c, seed));
+            let calls: Vec<&String> = r.soft.iter().filter(|m| m.starts_with("call")).collect();
+            assert!(calls.is_empty(), "seed {seed}: {calls:#?}");
+        }
+    }
+
+    /// Missing handles; blocks with a queued request (cancelled through
+    /// `EAFile_CancelRequest`, a live record in state 0 or 3), none (freed
+    /// when idle) and pending results.
+    fn async_file_cancel_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3d_faf0, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_block(c, base);
+        request_record(c);
+        let blk = base + 0x80;
+        c.bus
+            .write32(EAF_RET_FH, if seed % 4 == 0 { 0 } else { blk });
+        c.bus.write32(blk, 0xb0 + r.next_u32() % 2);
+        c.bus.write32(blk + 0x10, seed / 4 % 2);
+        c.bus.write32(blk + 0xc, seed / 8 % 2);
+        c.bus.write32(
+            blk + 0x1c,
+            [0u32, 0x42, 0x0030_0042][seed as usize / 16 % 3],
+        );
+        c.g[A0][0] = (r.next_u32() % 251) as u64;
+        c.pc = 0x003d_faf0;
+    }
+
     #[test]
     fn async_file_cancel_matches() {
-        check(
+        check_same_calls(
             gen_async_file_cancel,
             hand_async_file_cancel,
-            128,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3d_faf0, 0);
-                ea_install_oc1123_fakes();
-                let base = DATA + 0x600;
-                pool_block(c, base);
-                let blk = base + 0x80;
-                let mode = seed % 4;
-                c.bus.write32(EAF_RET_FH, if mode == 0 { 0 } else { blk });
-                c.bus.write32(blk, 0xb0 + seed % 2);
-                c.bus
-                    .write32(blk + 0x10, [0u32, 1, 2][seed as usize / 4 % 3]);
-                c.bus.write32(blk + 0xc, [0u32, 1][seed as usize / 12 % 2]);
-                c.bus
-                    .write32(blk + 0x1c, if seed / 24 % 3 == 0 { 0 } else { 0x7700_4321 });
-                c.bus.write32(EAF_RET_TYPE, (seed / 72 % 2) as u32);
-                c.g[A0][0] = (seed / 144 % 251) as u64;
-                c.pc = 0x003d_faf0;
-            },
+            96,
+            &async_file_cancel_setup,
+        );
+        crate::difftest::require_paths(
+            gen_async_file_cancel,
+            96,
+            &PATHS_CANCEL,
+            &async_file_cancel_setup,
         );
     }
 
@@ -27385,41 +27494,121 @@ pub(crate) mod tests {
 
     driven!(hand_async_file_get_result, async_file_get_result);
 
-    /// Missing handles, live and finished blocks, with and without
-    /// result/size out-words. The wait loop always sees a clear word.
+    /// The EA timer table (`EATimer_ServiceCallbacks`: 16 timers of
+    /// function, period, due tick, running flag) and the current tick.
+    const TIMERS: u32 = 0x0051_ed98;
+
+    const TIMER_NOW: u32 = 0x0045_0dd0;
+
+    /// The current-thread word `EAThread_IsCurrent(0)` compares the
+    /// GetThreadId result with.
+    const THREAD_CURRENT: u32 = 0x0045_0dfc;
+
+    /// An async block laid over the timer table so its request word
+    /// (`+0x1c`) is timer 2's due tick and its `+0x14` timer 2's function.
+    /// While the block is busy (request `0x42`, due at tick 0x42 <= now),
+    /// the first `EATimer_ServiceCallbacks` pass runs timer 2 and reschedules
+    /// it to `now + period` = 0, which clears the request word: a wait loop
+    /// then ends. Timers 1 and 3 (the other block fields) stay empty.
+    const TBLK: u32 = TIMERS + 0xc;
+
+    /// Zero the timer table and set up `TBLK`: `busy` arms timer 2 with
+    /// `callback` (a fake, or a guest function).
+    fn timer_block(c: &mut Cpu, busy: bool, callback: u32) {
+        for i in 0..0x40u32 {
+            c.bus.write32(TIMERS + 4 * i, 0);
+        }
+        c.bus.write32(TIMER_NOW, 0x100);
+        if busy {
+            c.bus.write32(TIMERS + 0x20, callback);
+            c.bus.write32(TIMERS + 0x24, 0xffff_ff00);
+            c.bus.write32(TIMERS + 0x28, 0x42);
+        }
+    }
+
+    /// Force the results of the first eight fake calls so a GetThreadId
+    /// among them reports the current thread (`EAThread_IsCurrent(0)` is 1)
+    /// from call `from` on, and another thread before it; later calls get
+    /// a hashed result, never the current id, so a wait loop yields.
+    fn current_at(c: &mut Cpu, from: Option<u32>) {
+        c.bus.write32(THREAD_CURRENT, 0x7777_0001);
+        for k in 0..8u32 {
+            let on = from.is_some_and(|n| k >= n);
+            c.bus.write32(
+                LOG_RESULTS + 4 * k,
+                if on { 0x7777_0001 } else { 0x7777_0002 },
+            );
+        }
+    }
+
+    /// Missing handles; finished (`+0x10` set) blocks; live blocks with a
+    /// clear request word, or a busy one (the wait loop: `EAFile_WaitRequest`
+    /// on the live record, whose timer pass clears the word through
+    /// `TBLK`'s timer 2, a fake callback, or `AsyncFile_Cancel`, which marks
+    /// the block done while it is waited on: the error arm); with and
+    /// without result/size out-words.
+    fn async_file_get_result_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3d_f9d8, 0);
+        get_result_fixture(c, &mut r, seed);
+    }
+
+    fn get_result_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        ea_install_fakes();
+        pool_block(c, DATA + 0x600);
+        request_record(c);
+        let mode = seed % 5;
+        let callback = if seed / 5 % 2 == 0 { FAKE } else { 0x003d_faf0 };
+        timer_block(c, mode >= 3, callback);
+        // Lock, FromHandle, Unlock, then WaitRequest's first GetThreadId.
+        current_at(c, Some(3));
+        let blk = TBLK;
+        c.bus.write32(EAF_RET_FH, if mode == 0 { 0 } else { blk });
+        c.bus.write32(blk, 0xa0 + r.next_u32() % 2);
+        c.bus.write32(blk + 0x10, (mode == 1) as u32);
+        c.bus.write32(blk + 0x8, 0x400 + r.next_u32() % 5);
+        c.bus.write32(blk + 0x2c, 0x500 + r.next_u32() % 3);
+        c.g[A0][0] = (r.next_u32() % 251) as u64;
+        c.g[A1][0] = if seed / 10 % 2 == 0 {
+            0
+        } else {
+            sx(DATA + 0x300)
+        };
+        c.g[A2][0] = if seed / 20 % 2 == 0 {
+            0
+        } else {
+            sx(DATA + 0x310)
+        };
+        // Sentinels in the out-words and at address 0, so a dropped or
+        // misdirected zero store shows.
+        c.bus.write32(DATA + 0x300, 0x5e17_0001);
+        c.bus.write32(DATA + 0x310, 0x5e17_0002);
+        c.bus.write32(0, 0x5e17_0003);
+        c.pc = 0x003d_f9d8;
+    }
+
     #[test]
     fn async_file_get_result_matches() {
-        check(
+        check_paths(
             gen_async_file_get_result,
             hand_async_file_get_result,
-            128,
+            80,
+            &PATHS_GET_RESULT,
+            &async_file_get_result_setup,
+        );
+    }
+
+    /// The same fixture with events: the wait loop's callees (WaitRequest's
+    /// and the timer pass's loops) deliver them.
+    #[test]
+    fn async_file_get_result_events() {
+        check_events(
+            gen_async_file_get_result,
+            hand_async_file_get_result,
+            120,
             &|c, seed| {
-                let _r = machine(c, seed, 0x3d_f9d8, 0);
-                ea_install_oc1123_fakes();
-                let base = DATA + 0x600;
-                pool_block(c, base);
-                let blk = base + 0x80;
-                let mode = seed % 4;
-                c.bus.write32(EAF_RET_FH, if mode == 0 { 0 } else { blk });
-                c.bus.write32(blk, 0xa0 + seed % 2);
-                c.bus
-                    .write32(blk + 0x10, [0u32, 1, 2][seed as usize / 4 % 3]);
-                c.bus.write32(blk + 0x8, 0x400 + seed % 5);
-                c.bus.write32(blk + 0x1c, 0);
-                c.bus.write32(blk + 0x2c, 0x500 + seed % 3);
-                c.bus.write32(blk + 0xc, (seed / 12 % 2) as u32);
-                c.g[A0][0] = (seed / 24 % 251) as u64;
-                c.g[A1][0] = if seed / 48 % 3 == 0 {
-                    0
-                } else {
-                    sx(DATA + 0x300)
-                };
-                c.g[A2][0] = if seed / 144 % 3 == 0 {
-                    0
-                } else {
-                    sx(DATA + 0x310)
-                };
-                c.pc = 0x003d_f9d8;
+                let mut r = machine(c, seed, 0x3d_f9d8, 0);
+                get_result_fixture(c, &mut r, seed / 3);
+                schedule(c, &mut r, seed, 0x003d_f9d8)
             },
         );
     }
@@ -27428,18 +27617,42 @@ pub(crate) mod tests {
 
     driven!(hand_async_file_init, async_file_init);
 
-    /// Uninitialized and initialized tables; small and large counts.
+    /// Uninitialized and initialized pools; counts of none, one, a few,
+    /// the 256 maximum and too many (no allocation); the allocator hook (a
+    /// fake) hands out `DATA + 0x4000`.
+    fn init_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        ea_install_fakes();
+        c.bus.write32(0x0045_0c34, seed % 2);
+        c.bus
+            .write32(0x0045_0c14, 0x7700_0000 + r.next_u32() % 0x100);
+        c.bus.write32(0x0051_9bf0, 0);
+        c.bus.write32(LOG_RESULTS, DATA + 0x4000);
+        c.g[A0][0] = [0u32, 1, 5, 0x40, 0x100, 0x101][seed as usize / 2 % 6] as u64;
+        c.g[A1][0] = r.next_u32() as u64;
+        c.pc = 0x003d_f488;
+    }
+
     #[test]
     fn async_file_init_matches() {
-        check(gen_async_file_init, hand_async_file_init, 48, &|c, seed| {
-            let _r = machine(c, seed, 0x3d_f488, 0);
-            ea_install_oc1123_fakes();
-            c.bus.write32(0x0045_0c34, (seed % 2) as u32);
-            c.bus.write32(0x0045_0c14, 0x7700_0000 + seed);
-            c.bus.write32(0x0051_9bf0, 0);
-            c.g[A0][0] = [0u32, 1, 0x40, 0x200][seed as usize / 2 % 4] as u64;
-            c.g[A1][0] = [0u32, 1, 5, 300][seed as usize / 8 % 4] as u64;
-            c.pc = 0x003d_f488;
+        check_paths(
+            gen_async_file_init,
+            hand_async_file_init,
+            48,
+            &PATHS_INIT,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d_f488, 0);
+                init_fixture(c, &mut r, seed);
+            },
+        );
+    }
+
+    /// The pool-zeroing loop with events (counts up to 256).
+    #[test]
+    fn async_file_init_events() {
+        check_events(gen_async_file_init, hand_async_file_init, 72, &|c, seed| {
+            let mut r = machine(c, seed, 0x3d_f488, 0);
+            init_fixture(c, &mut r, seed / 3);
+            schedule(c, &mut r, seed, 0x003d_f488)
         });
     }
 
@@ -27450,31 +27663,33 @@ pub(crate) mod tests {
     /// Empty and stocked pools; null and live queue results.
     #[test]
     fn async_file_load_into_matches() {
-        check(
+        crate::difftest::check_paths(
             gen_async_file_load_into,
             hand_async_file_load_into,
             64,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3d_f748, 0);
-                ea_install_oc1123_fakes();
-                let base = DATA + 0x600;
-                let node = base + 0x80;
-                pool_block(c, base);
-                let mode = seed % 3;
-                c.bus.write32(0x0051_9bf8, if mode == 0 { 0 } else { node });
-                c.bus.write32(node, 0x40 + seed % 4);
-                c.bus.write32(node + 0x4, 0);
-                c.bus
-                    .write32(EAF_RET_TYPE, if mode == 1 { EAF_REQ } else { 0 });
-                c.bus.write32(EAF_RET_SETCB, (seed / 3 % 2) as u32);
-                put_ascii(c, DATA + 0x400, "file.dat");
-                c.g[A0][0] = sx(DATA + 0x400);
-                c.g[A1][0] = sx(DATA + 0x500);
-                c.g[A2][0] = (seed / 6 % 4) as u64;
-                c.g[A3][0] = 0x1234 + seed as u64;
-                c.pc = 0x003d_f748;
-            },
+            &[64, 111, 98],
+            &async_file_load_into_matches_setup,
         );
+    }
+
+    fn async_file_load_into_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_f748, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        let node = base + 0x80;
+        pool_block(c, base);
+        let mode = seed % 3;
+        c.bus.write32(0x0051_9bf8, if mode == 0 { 0 } else { node });
+        c.bus.write32(node, 0x40 + seed % 4);
+        c.bus.write32(node + 0x4, 0);
+        ea_set_type_rets(c, if mode == 1 { EAF_REQ } else { 0 });
+        c.bus.write32(EAF_RET_SETCB, (seed / 3 % 2) as u32);
+        put_ascii(c, DATA + 0x400, "file.dat");
+        c.g[A0][0] = sx(DATA + 0x400);
+        c.g[A1][0] = sx(DATA + 0x500);
+        c.g[A2][0] = (seed / 6 % 4) as u64;
+        c.g[A3][0] = 0x1234 + seed as u64;
+        c.pc = 0x003d_f748;
     }
 
     driven!(gen_async_file_load, ee::s14::f_003df690__generated);
@@ -27484,58 +27699,48 @@ pub(crate) mod tests {
     /// Empty and stocked pools; null and live queue results.
     #[test]
     fn async_file_load_matches() {
-        check(gen_async_file_load, hand_async_file_load, 64, &|c, seed| {
-            let _r = machine(c, seed, 0x3d_f690, 0);
-            ea_install_oc1123_fakes();
-            let base = DATA + 0x600;
-            let node = base + 0x80;
-            pool_block(c, base);
-            let mode = seed % 3;
-            c.bus.write32(0x0051_9bf8, if mode == 0 { 0 } else { node });
-            c.bus.write32(node, 0x40 + seed % 4);
-            c.bus.write32(node + 0x4, 0);
-            c.bus
-                .write32(EAF_RET_TYPE, if mode == 1 { EAF_REQ } else { 0 });
-            c.bus.write32(EAF_RET_SETCB, (seed / 3 % 2) as u32);
-            put_ascii(c, DATA + 0x400, "file.dat");
-            c.g[A0][0] = sx(DATA + 0x400);
-            c.g[A1][0] = (seed / 6 % 4) as u64;
-            c.pc = 0x003d_f690;
-        });
+        crate::difftest::check_paths(
+            gen_async_file_load,
+            hand_async_file_load,
+            64,
+            &[50, 102, 89],
+            &async_file_load_matches_setup,
+        );
     }
 
-    /// Short and long chunks; clear and live flags; null and live queue
-    /// results and callbacks.
+    fn async_file_load_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_f690, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        let node = base + 0x80;
+        pool_block(c, base);
+        let mode = seed % 3;
+        c.bus.write32(0x0051_9bf8, if mode == 0 { 0 } else { node });
+        c.bus.write32(node, 0x40 + seed % 4);
+        c.bus.write32(node + 0x4, 0);
+        ea_set_type_rets(c, if mode == 1 { EAF_REQ } else { 0 });
+        c.bus.write32(EAF_RET_SETCB, (seed / 3 % 2) as u32);
+        put_ascii(c, DATA + 0x400, "file.dat");
+        c.g[A0][0] = sx(DATA + 0x400);
+        c.g[A1][0] = (seed / 6 % 4) as u64;
+        c.pc = 0x003d_f690;
+    }
+
+    /// The read-chunk block (`read_chunk_block`): short chunks and flagged
+    /// long ones finish the block, clear long ones queue the next range
+    /// read (null or live result and callback).
+    fn async_file_on_read_range_chunk_setup(c: &mut Cpu, seed: u32) {
+        read_chunk_block(c, seed, 0x3d_f3c0, 0x003d_f3c0);
+    }
+
     #[test]
     fn async_file_on_read_range_chunk_matches() {
-        check(
+        check_paths(
             gen_async_file_on_read_range_chunk,
             hand_async_file_on_read_range_chunk,
-            120,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3d_f3c0, 0);
-                ea_install_oc1123_fakes();
-                let base = DATA + 0x600;
-                pool_block(c, base);
-                let blk = base + 0x80;
-                c.bus.write32(blk, 0x70 + seed % 2);
-                c.bus.write32(blk + 0x1c, 0x80 + seed % 2);
-                c.bus.write32(blk + 0x2c, 0x100 * (seed / 2 % 3) as u32);
-                c.bus.write32(blk + 0x8, 0x200 * (seed / 6 % 3) as u32);
-                c.bus.write32(blk + 0x10, [0u32, 1][seed as usize / 18 % 2]);
-                c.bus.write32(blk + 0x20, 0x300 + seed % 5);
-                c.bus.write32(blk + 0x24, 0x400 + seed % 7);
-                c.bus.write32(blk + 0x14, 0x600 + seed % 3);
-                c.bus.write32(
-                    EAF_RET_TYPE,
-                    if seed / 54 % 3 == 0 { 0 } else { 0x90 + seed },
-                );
-                c.bus.write32(EAF_RET_SETCB, (seed / 162 % 2) as u32);
-                c.g[A0][0] = 0;
-                c.g[A1][0] = [0u32, 0x100, 0x8000, 0x1_0000][seed as usize / 324 % 4] as u64;
-                c.g[A2][0] = blk as u64;
-                c.pc = 0x003d_f3c0;
-            },
+            80,
+            &PATHS_ON_READ_RANGE_CHUNK,
+            &async_file_on_read_range_chunk_setup,
         );
     }
 
@@ -27543,33 +27748,36 @@ pub(crate) mod tests {
 
     driven!(hand_async_file_read_range, async_file_read_range);
 
-    /// Empty and stocked pools; short and long ranges; null and live
-    /// queue results and callbacks.
+    /// Empty and stocked pools; lengths below, at and above 0x8000; null
+    /// and live QueueRead results; null and live callbacks.
+    fn async_file_read_range_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3d_f808, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        let node = base + 0x80;
+        pool_block(c, base);
+        c.bus
+            .write32(0x0051_9bf8, if seed % 2 == 0 { 0 } else { node });
+        c.bus.write32(node, 0x40 + r.next_u32() % 4);
+        c.bus.write32(node + 0x4, 0);
+        c.bus
+            .write32(EAF_RET_QREAD, if seed / 2 % 2 == 0 { 0 } else { EAF_REQ });
+        c.bus.write32(EAF_RET_SETCB, seed / 4 % 2);
+        c.g[A0][0] = EAF_REQ as u64;
+        c.g[A1][0] = 0x3000 + (r.next_u32() % 0x100) as u64;
+        c.g[A2][0] = 0x40 + (r.next_u32() % 3) as u64 * 0x10;
+        c.g[A3][0] = [0x100u32, 0x8000, 0x1_0000][seed as usize / 8 % 3] as u64;
+        c.pc = 0x003d_f808;
+    }
+
     #[test]
     fn async_file_read_range_matches() {
-        check(
+        check_paths(
             gen_async_file_read_range,
             hand_async_file_read_range,
-            96,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3d_f808, 0);
-                ea_install_oc1123_fakes();
-                let base = DATA + 0x600;
-                let node = base + 0x80;
-                pool_block(c, base);
-                let mode = seed % 2;
-                c.bus.write32(0x0051_9bf8, if mode == 0 { 0 } else { node });
-                c.bus.write32(node, 0x40 + seed % 4);
-                c.bus.write32(node + 0x4, 0);
-                c.bus
-                    .write32(EAF_RET_TYPE, if mode == 1 { EAF_REQ } else { 0 });
-                c.bus.write32(EAF_RET_SETCB, (seed / 2 % 2) as u32);
-                c.g[A0][0] = EAF_REQ as u64;
-                c.g[A1][0] = 0x3000 + seed as u64;
-                c.g[A2][0] = 0x40 + (seed / 4 % 3) as u64 * 0x10;
-                c.g[A3][0] = [0u32, 0x8000, 0x1_0000][seed as usize / 12 % 3] as u64;
-                c.pc = 0x003d_f808;
-            },
+            48,
+            &PATHS_READ_RANGE,
+            &async_file_read_range_setup,
         );
     }
 
@@ -27577,32 +27785,42 @@ pub(crate) mod tests {
 
     driven!(hand_async_file_set_callback, async_file_set_callback);
 
-    /// Missing and live handles; cleared and set flags; null and live
-    /// user callbacks.
+    /// Missing handles; blocks that already have a callback (kept); blocks
+    /// without one get it, and it runs at once when no request is pending
+    /// (`+0x1c` clear) or waits for the request; callbacks at null, small and
+    /// fake addresses (unmapped targets miss identically both sides).
+    fn async_file_set_callback_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3d_f8e8, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_block(c, base);
+        let blk = base + 0x80;
+        c.bus
+            .write32(EAF_RET_FH, if seed % 4 == 0 { 0 } else { blk });
+        c.bus.write32(blk, 0x90 + r.next_u32() % 2);
+        c.bus.write32(blk + 0x18, seed / 4 % 2);
+        // Pending word: none or a live handle; seeds 48 and up exactly 1.
+        let pending = if seed >= 48 {
+            1
+        } else if seed / 8 % 2 == 0 {
+            0
+        } else {
+            0x7700_1234
+        };
+        c.bus.write32(blk + 0x1c, pending);
+        c.g[A0][0] = (r.next_u32() % 256) as u64;
+        c.g[A1][0] = [0u32, 2, FAKE][seed as usize / 16 % 3] as u64;
+        c.pc = 0x003d_f8e8;
+    }
+
     #[test]
     fn async_file_set_callback_matches() {
-        check(
+        check_paths(
             gen_async_file_set_callback,
             hand_async_file_set_callback,
-            96,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3d_f8e8, 0);
-                ea_install_oc1123_fakes();
-                let base = DATA + 0x600;
-                pool_block(c, base);
-                let blk = base + 0x80;
-                let mode = seed % 4;
-                c.bus.write32(EAF_RET_FH, if mode == 0 { 0 } else { blk });
-                c.bus.write32(blk, 0x90 + seed % 2);
-                c.bus.write32(blk + 0x18, [0u32, 1][seed as usize / 4 % 2]);
-                c.bus.write32(blk + 0x40, 0x300 + seed % 3);
-                c.bus
-                    .write32(blk + 0x174, if seed / 8 % 2 == 0 { 0 } else { 0x7700_1234 });
-                c.bus.write32(blk + 0x38, (seed / 16 % 2) as u32);
-                c.g[A0][0] = (seed / 32 % 256) as u64;
-                c.g[A1][0] = [0u32, 1, 2][seed as usize / 96 % 3] as u64;
-                c.pc = 0x003d_f8e8;
-            },
+            64,
+            &PATHS_SET_CALLBACK,
+            &async_file_set_callback_setup,
         );
     }
 
@@ -27610,21 +27828,80 @@ pub(crate) mod tests {
 
     driven!(hand_async_file_shutdown, async_file_shutdown);
 
-    /// The idle early exit (the drain loop needs another thread).
+    /// No pool; an empty pool; one or two idle blocks (cancelled, then torn
+    /// down); a busy block (`TBLK`, request word = timer 2's due tick) that
+    /// the drain loop waits on: `EAThread_IsCurrent` true at once (timer
+    /// pass, which clears it, then Yield) or false first (Yield only, then
+    /// the timer pass on the next round), with one or two blocks.
+    fn shutdown_fixture(c: &mut Cpu, seed: u32) {
+        ea_install_fakes();
+        c.bus.write32(EAF_CTRL, EAF_MAGIC);
+        c.bus.write32(EAF_RET_FH, 0);
+        let mode = seed % 7;
+        let (count, busy, current) = match mode {
+            0 | 1 => (0, false, None),
+            2 => (1, false, None),
+            3 => (2, false, None),
+            // One Cancel is Lock, FromHandle, Unlock; then GetThreadId.
+            4 => (1, true, Some(3)),
+            5 => (1, true, Some(5)),
+            _ => (2, true, Some(6)),
+        };
+        timer_block(c, busy, FAKE);
+        current_at(c, current);
+        c.bus.write32(0x0045_0c34, if mode == 0 { 0 } else { TBLK });
+        c.bus.write32(0x0051_9bf0, count);
+        c.bus.write32(0x0045_0c18, 0);
+        c.pc = 0x003d_f570;
+    }
+
     #[test]
     fn async_file_shutdown_matches() {
-        check(
+        check_paths(
             gen_async_file_shutdown,
             hand_async_file_shutdown,
-            16,
+            28,
+            &PATHS_SHUTDOWN,
             &|c, seed| {
                 let _r = machine(c, seed, 0x3d_f570, 0);
-                ea_install_oc1123_fakes();
-                c.bus.write32(0x0045_0c34, 0);
-                c.pc = 0x003d_f570;
+                shutdown_fixture(c, seed);
             },
         );
     }
+
+    /// The cancel, scan and drain loops with events.
+    #[test]
+    fn async_file_shutdown_events() {
+        check_events(
+            gen_async_file_shutdown,
+            hand_async_file_shutdown,
+            84,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d_f570, 0);
+                shutdown_fixture(c, seed / 3);
+                schedule(c, &mut r, seed, 0x003d_f570)
+            },
+        );
+    }
+
+    // Arm totals (cycles of the generated body) each fixture must reach.
+    const PATHS_ON_OPEN: [u64; 6] = [68, 31, 47, 46, 57, 85];
+
+    const PATHS_ON_READ_CHUNK: [u64; 10] = [37, 49, 41, 55, 53, 48, 64, 40, 42, 43];
+
+    const PATHS_ON_READ_RANGE_CHUNK: [u64; 11] = [72, 140, 53, 70, 66, 71, 139, 141, 142, 144, 151];
+
+    const PATHS_CANCEL: [u64; 7] = [52, 67, 107, 90, 56, 133, 68];
+
+    const PATHS_GET_RESULT: [u64; 7] = [48, 56, 130, 128, 830, 777, 787];
+
+    const PATHS_INIT: [u64; 7] = [17, 79, 90, 118, 590, 2130, 20];
+
+    const PATHS_READ_RANGE: [u64; 5] = [65, 105, 114, 122, 106];
+
+    const PATHS_SET_CALLBACK: [u64; 13] = [26, 28, 66, 63, 56, 25, 27, 30, 31, 50, 52, 54, 57];
+
+    const PATHS_SHUTDOWN: [u64; 7] = [19, 58, 135, 193, 338, 385, 405];
 
     /// A zeroed async pool block of two nodes at `base`.
     pub(crate) fn pool_fixture(c: &mut Cpu, base: u32, head: u32) {
@@ -27635,170 +27912,8 @@ pub(crate) mod tests {
         c.bus.write32(base, head);
         c.bus.write32(0x0051_9c08, 0);
         c.bus.write32(EAF_CTRL, EAF_MAGIC);
+        ea_fixed_results(c);
     }
-
-    pub(crate) fn ea_install_oc1123_fakes() {
-        use std::ptr::addr_of_mut;
-        fakes::hook(
-            addr_of_mut!(ee::s14::OVERRIDE_003DCF70),
-            ea_fake_set_request_callback,
-            fakes::prev_cell(ea_fake_set_request_callback),
-        );
-        fakes::hook(
-            addr_of_mut!(ee::s14::OVERRIDE_003DEF70),
-            ea_fake_from_handle,
-            fakes::prev_cell(ea_fake_from_handle),
-        );
-        fakes::hook(
-            addr_of_mut!(ee::s14::OVERRIDE_003DFBD0),
-            ea_fake_stream_validate,
-            fakes::prev_cell(ea_fake_stream_validate),
-        );
-        fakes::hook(
-            addr_of_mut!(ee::s14::OVERRIDE_003DFCD8),
-            ea_fake_stream_alloc,
-            fakes::prev_cell(ea_fake_stream_alloc),
-        );
-        fakes::hook(
-            addr_of_mut!(ee::s14::OVERRIDE_003DFD58),
-            ea_fake_stream_enqueue,
-            fakes::prev_cell(ea_fake_stream_enqueue),
-        );
-        fakes::hook(
-            addr_of_mut!(ee::s14::OVERRIDE_003E0270),
-            ea_fake_stream_start_next,
-            fakes::prev_cell(ea_fake_stream_start_next),
-        );
-        fakes::hook(
-            addr_of_mut!(ee::s14::OVERRIDE_003DE670),
-            ea_fake_alloc_request,
-            fakes::prev_cell(ea_fake_alloc_request),
-        );
-        fakes::hook(
-            addr_of_mut!(ee::s14::OVERRIDE_003DD4E8),
-            ea_fake_queue_open,
-            fakes::prev_cell(ea_fake_queue_open),
-        );
-        fakes::hook(
-            addr_of_mut!(ee::s14::OVERRIDE_003DD5A0),
-            ea_fake_queue_close,
-            fakes::prev_cell(ea_fake_queue_close),
-        );
-        fakes::hook(
-            addr_of_mut!(ee::s14::OVERRIDE_003DD648),
-            ea_fake_queue_read,
-            fakes::prev_cell(ea_fake_queue_read),
-        );
-        fakes::hook(
-            addr_of_mut!(ee::s14::OVERRIDE_003E5700),
-            ea_fake_mutex_lock,
-            fakes::prev_cell(ea_fake_mutex_lock),
-        );
-        fakes::hook(
-            addr_of_mut!(ee::s14::OVERRIDE_003E5760),
-            ea_fake_mutex_unlock,
-            fakes::prev_cell(ea_fake_mutex_unlock),
-        );
-    }
-
-    macro_rules! ea_fake_ret {
-        ($name:ident, $slot:expr, $gen:expr, $cell:expr, $id:expr) => {
-            pub(crate) fn $name(c: &mut Cpu) {
-                if c.bus.read32(EAF_CTRL) != EAF_MAGIC {
-                    return fakes::fall_back(c, fakes::prev_cell($name), $gen);
-                }
-                let ra = c.g[RA][0] as u32;
-                fakes::fake(c, $id, ra);
-                c.g[V0][0] = c.bus.read32($cell) as u64;
-            }
-        };
-    }
-
-    ea_fake_ret!(
-        ea_fake_set_request_callback,
-        0,
-        ee::s14::f_003dcf70__generated,
-        EAF_RET_SETCB,
-        0xeaf0_100e
-    );
-
-    ea_fake_ret!(
-        ea_fake_from_handle,
-        0,
-        ee::s14::f_003def70__generated,
-        EAF_RET_FH,
-        0xeaf0_100f
-    );
-
-    ea_fake_ret!(
-        ea_fake_stream_validate,
-        0,
-        ee::s14::f_003dfbd0__generated,
-        EAF_RET_VALID,
-        0xeaf0_1012
-    );
-
-    ea_fake_ret!(
-        ea_fake_stream_alloc,
-        0,
-        ee::s14::f_003dfcd8__generated,
-        EAF_RET_ALLOC,
-        0xeaf0_1013
-    );
-
-    ea_fake_ret!(
-        ea_fake_stream_enqueue,
-        0,
-        ee::s14::f_003dfd58__generated,
-        EAF_RET_ENQ,
-        0xeaf0_1014
-    );
-
-    ea_fake_ret!(
-        ea_fake_stream_start_next,
-        0,
-        ee::s14::f_003e0270__generated,
-        EAF_RET_NEXT,
-        0xeaf0_1015
-    );
-
-    ea_fake_ret!(
-        ea_fake_alloc_request,
-        0,
-        ee::s14::f_003de670__generated,
-        EAF_RET_ALLOC,
-        0xeaf0_1000
-    );
-
-    ea_fake_ret!(
-        ea_fake_queue_open,
-        0,
-        ee::s14::f_003dd4e8__generated,
-        EAF_RET_TYPE,
-        0xeaf0_1005
-    );
-
-    ea_fake_ret!(
-        ea_fake_queue_close,
-        0,
-        ee::s14::f_003dd5a0__generated,
-        EAF_RET_TYPE,
-        0xeaf0_1006
-    );
-
-    ea_fake_ret!(
-        ea_fake_queue_read,
-        0,
-        ee::s14::f_003dd648__generated,
-        EAF_RET_TYPE,
-        0xeaf0_1007
-    );
-
-    pub(crate) const EAF_RET_FH: u32 = DATA + 0x2_0028;
-
-    pub(crate) const EAF_RET_ENQ: u32 = DATA + 0x2_0034;
-
-    pub(crate) const EAF_RET_NEXT: u32 = DATA + 0x2_0038;
 
     /// A zeroed async pool block with a valid header word.
     pub(crate) fn pool_block(c: &mut Cpu, base: u32) {

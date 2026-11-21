@@ -617,9 +617,6 @@ pub(crate) mod callee {
     /// `strlen` (newlib), called through the function table.
     pub(crate) const STRLEN: u32 = 0x0041_6810;
 
-    /// `sprintf` (newlib), called through the function table.
-    pub(crate) const SPRINTF_2: u32 = 0x0041_7828;
-
     /// `__fixunsdfsi` (gcc), called through the function table.
     pub(crate) const FIXUNSDFSI: u32 = 0x0041_26a0;
 
@@ -6591,7 +6588,7 @@ pub fn u_str_substitute_args_wrapper(c: &mut Cpu) {
 /// `u16 *UStr_SubstituteArgs(dst, fmt, arg1, arg2)` (0x3dbef0): copy the
 /// UTF-16 `fmt` to `dst`, replacing `%1` with `arg1` and `%2` with `arg2`.
 /// Any other `%x` pair copies the `%` and re-reads `x` next round.
-/// Returns the caller's `dst`.
+/// Returns 0 (the terminating unit it stopped on).
 pub fn u_str_substitute_args(c: &mut Cpu) {
     guest(c, |c| {
         const HEAD: u32 = 0x003d_bf38;
@@ -6855,13 +6852,14 @@ pub fn u_str_format_float(c: &mut Cpu) {
     })
 }
 
-/// `u16 *UStr_FormatNumberField(dst, value, base, flags, width, prec, ...)`
-/// (0x3dc148): format one `printf`-style field. Flags bit 0x40 selects
+/// `UStr_FormatNumberField(u16 **cursor, value, base, flags, width, prec,
+/// digits)` (0x3dc148): format one `printf`-style field at `*cursor` and
+/// advance the cursor past it. Flags bit 0x40 selects
 /// floating point (`fcvt` via [`u_str_format_float`], 0x80/0x100 pick the
 /// call), otherwise 0x20 selects unsigned ([`u_str_format_u_int`] after
 /// `__fixunsdfsi`) or signed ([`u_str_format_int`] after `__fixdfsi`).
 /// Then zero padding, the sign/`0x`/space prefix, width padding and the
-/// digits are written. Returns the end of the written field.
+/// digits are written. Returns the flags word.
 pub fn u_str_format_number_field(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 23;
@@ -7298,8 +7296,8 @@ pub fn u_str_from_escaped_ascii(c: &mut Cpu) {
                             c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
                             c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
                             c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
-                            let full = (c.g[A3][0] as i64) >= (c.g[T0][0] as i64);
-                            if full {
+                            c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[T0][0] as i64)) as u64;
+                            if c.g[V0][0] == 0 {
                                 break;
                             }
                             c.cycles += 3;
@@ -7372,7 +7370,8 @@ pub fn u_str_to_escaped_ascii(c: &mut Cpu) {
             c.g[V1][0] = c.g[V0][0] & 0xffff;
             loop {
                 c.cycles += 3;
-                let wide = c.g[V1][0] >= 0x100;
+                c.g[V0][0] = (c.g[V1][0] < 0x100) as u64;
+                let wide = c.g[V0][0] == 0;
                 let mut use_sprintf = wide;
                 if !wide {
                     c.cycles += 2;
@@ -7396,8 +7395,7 @@ pub fn u_str_to_escaped_ascii(c: &mut Cpu) {
                     c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x5d18));
                     c.g[RA][0] = sx(0x003d_cb94);
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x6));
-                    c.pc = 0x0041_7828;
-                    call_ptr(c, callee::SPRINTF_2, 0x003d_cb94)?;
+                    call_ptr(c, callee::SPRINTF, 0x003d_cb94)?;
                     c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x2));
                 } else {
                     c.cycles += 3;
@@ -9670,6 +9668,13 @@ pub(crate) mod tests {
         }
     }
 
+    /// The digit table the formatters read (`0`-`9`, `a`-`f` as UTF-16
+    /// units).
+    fn put_digits(c: &mut Cpu, addr: u32) {
+        let units: Vec<u16> = "0123456789abcdef".encode_utf16().collect();
+        put_units(c, addr, &units);
+    }
+
     /// Write `s` as bytes at `addr`, NUL-terminated.
     pub(crate) fn put_ascii(c: &mut Cpu, addr: u32, s: &str) {
         for (i, &b) in s.as_bytes().iter().enumerate() {
@@ -9690,25 +9695,14 @@ pub(crate) mod tests {
             gen_u_str_format_float,
             hand_u_str_format_float,
             300,
+            &u_str_format_float_events_setup,
+        );
+        crate::difftest::require_paths(
+            gen_u_str_format_float,
+            300,
+            &[603, 690, 592, 600, 598, 594],
             &|c, seed| {
-                let mut r = machine(c, seed, 0x3d_c068, 0);
-                let bits = match seed as usize / 6 % 8 {
-                    0 => 0x0000_0000,
-                    1 => 0x3f80_0000,
-                    2 => 0xbf80_0000,
-                    3 => 0x42f6_e979,
-                    4 => 0xc2f6_e979,
-                    5 => 0x4e6e_6b28,
-                    6 => 0x3a83_126f,
-                    _ => r.edge_f32(),
-                };
-                for i in 0..48u32 {
-                    c.bus.write16(DATA + 2 * i, 0xbeef);
-                }
-                c.g[A0][0] = sx(DATA + 96);
-                c.g[A1][0] = bits as u64;
-                c.g[A2][0] = (seed % 6) as u64;
-                schedule(c, &mut r, seed, 0x003d_c068)
+                u_str_format_float_events_setup(c, seed);
             },
         );
     }
@@ -9730,6 +9724,27 @@ pub(crate) mod tests {
         );
     }
 
+    fn u_str_format_float_events_setup(c: &mut Cpu, seed: u32) -> crate::difftest::events::Events {
+        let mut r = machine(c, seed, 0x3d_c068, 0);
+        let bits = match seed as usize / 6 % 8 {
+            0 => 0x0000_0000,
+            1 => 0x3f80_0000,
+            2 => 0xbf80_0000,
+            3 => 0x42f6_e979,
+            4 => 0xc2f6_e979,
+            5 => 0x4e6e_6b28,
+            6 => 0x3a83_126f,
+            _ => r.edge_f32(),
+        };
+        for i in 0..48u32 {
+            c.bus.write16(DATA + 2 * i, 0xbeef);
+        }
+        c.g[A0][0] = sx(DATA + 96);
+        c.g[A1][0] = bits as u64;
+        c.g[A2][0] = (seed % 6) as u64;
+        schedule(c, &mut r, seed, 0x003d_c068)
+    }
+
     driven!(
         gen_u_str_format_number_field,
         ee::s14::f_003dc148__generated
@@ -9739,61 +9754,102 @@ pub(crate) mod tests {
 
     /// The flag matrix (0x40 float vs int, 0x80/0x100 float choice, 0x20
     /// unsigned, 0x10/0x8/0x2/0x1 padding and prefix) over bases 8/10/16,
-    /// widths, precisions and double magnitudes.
+    /// widths, precisions and signed double magnitudes (integer fields;
+    /// floating fields format 0.0).
     #[test]
     fn u_str_format_number_field_events() {
         check_events(
             gen_u_str_format_number_field,
             hand_u_str_format_number_field,
             400,
-            &|c, seed| {
-                let mut r = machine(c, seed, 0x3d_c148, 0);
-                let flags = [
-                    0x00u32,
-                    0x20,
-                    0x40,
-                    0x40 | 0x80,
-                    0x40 | 0x100,
-                    0x18 | 0x10,
-                    0x08 | 0x20,
-                    0x01,
-                    0x05,
-                    0x02,
-                    0x20 | 0x01,
-                    0x40 | 0x80 | 0x10,
-                ];
-                let bases = [8u32, 10, 16];
-                let doubles = [
-                    0x0000_0000_0000_0000u64,
-                    0x3ff0_0000_0000_0000,
-                    0xbff0_0000_0000_0000,
-                    0x405e_d2f1_a9fc_9722,
-                    0xc05e_d2f1_a9fc_9722,
-                    0x432d_f8b5_5818_0000,
-                    0x3fe0_0000_0000_0000,
-                    0xbff0_0000_0000_0001,
-                ];
-                let flag = flags[seed as usize % flags.len()];
-                let base = bases[seed as usize / 12 % 3];
-                let width = seed / 36 % 9;
-                let prec = seed / 324 % 7;
-                let dbl = doubles[seed as usize / 2268 % doubles.len()];
-                put_ascii(c, DATA + 0x600, "0123456789abcdef");
-                for i in 0..64u32 {
-                    c.bus.write16(DATA + 2 * i, 0xbeef);
-                }
-                c.bus.write32(DATA + 0x100, 0);
-                c.g[A0][0] = sx(DATA + 0x100);
-                c.g[A1][0] = dbl;
-                c.g[A2][0] = base as u64;
-                c.g[A3][0] = flag as u64;
-                c.g[T0][0] = width as u64;
-                c.g[T1][0] = prec as u64;
-                c.g[T2][0] = sx(DATA + 0x600);
-                c.f[12] = dbl as u32;
-                c.f[13] = (dbl >> 32) as u32;
-                schedule(c, &mut r, seed, 0x003d_c148)
-            },
+            &u_str_format_number_field_setup,
+        );
+    }
+
+    fn u_str_format_number_field_setup(c: &mut Cpu, seed: u32) -> crate::difftest::events::Events {
+        let mut r = machine(c, seed, 0x3d_c148, 0);
+        let flags = [
+            0x00u32,
+            0x20,
+            0x40,
+            0x40 | 0x80,
+            0x40 | 0x100,
+            0x18 | 0x10,
+            0x08 | 0x20,
+            0x01,
+            0x05,
+            0x02,
+            0x20 | 0x01,
+            0x40 | 0x80 | 0x10,
+            0x40 | 0x04,
+        ];
+        let bases = [8u32, 10, 16];
+        let doubles = [
+            0x0000_0000_0000_0000u64,
+            0x3ff0_0000_0000_0000,
+            0xbff0_0000_0000_0000,
+            0x405e_d2f1_a9fc_9722,
+            0xc05e_d2f1_a9fc_9722,
+            0x432d_f8b5_5818_0000,
+            0x3fe0_0000_0000_0000,
+            0xbff0_0000_0000_0001,
+        ];
+        let flag = flags[seed as usize % flags.len()];
+        let base = bases[seed as usize / 12 % 3];
+        let width = r.next_u32() % 9;
+        let prec = r.next_u32() % 7;
+        // Floating-point fields format 0.0 only: other doubles run the
+        // game's `fcvt` away on this fixture (cycle budget).
+        let dbl = if flag & 0x40 != 0 {
+            0
+        } else {
+            doubles[seed as usize / 36 % doubles.len()]
+        };
+        put_digits(c, DATA + 0x600);
+        for i in 0..64u32 {
+            c.bus.write16(DATA + 0x200 + 2 * i, 0xbeef);
+        }
+        // The write cursor: the field goes to `DATA + 0x200`.
+        c.bus.write32(DATA + 0x100, DATA + 0x200);
+        c.g[A0][0] = sx(DATA + 0x100);
+        c.g[A1][0] = dbl;
+        c.g[A2][0] = base as u64;
+        c.g[A3][0] = flag as u64;
+        c.g[T0][0] = width as u64;
+        c.g[T1][0] = prec as u64;
+        c.g[T2][0] = sx(DATA + 0x600);
+        c.f[12] = dbl as u32;
+        c.f[13] = (dbl >> 32) as u32;
+        // Nonzero doubles go through `__fixdfsi`/`__cmpdf2`, whose loops would
+        // take an unwind mid-call (the test machine cannot resume there):
+        // deliver instead.
+        let ev = if dbl != 0 && seed % 3 == 1 {
+            seed + 1
+        } else {
+            seed
+        };
+        schedule(c, &mut r, ev, 0x003d_c148)
+    }
+
+    /// The fixture reaches the sign prefixes: `-` (signed, negative) and
+    /// `+` (flag 0x1, positive).
+    #[test]
+    fn u_str_format_number_field_signs() {
+        let (mut minus, mut plus) = (0, 0);
+        for seed in 0..400u32 {
+            let mut c = crate::difftest::fresh();
+            u_str_format_number_field_setup(&mut c, seed);
+            c.next_event = crate::difftest::CYCLE_BUDGET;
+            crate::difftest::run_generated(&mut c, gen_u_str_format_number_field);
+            let units: Vec<u16> = (0..64u32)
+                .map(|i| c.bus.read16(DATA + 0x200 + 2 * i))
+                .collect();
+            minus += units.contains(&0x2d) as u32;
+            plus += units.contains(&0x2b) as u32;
+        }
+        assert!(
+            minus > 0 && plus > 0,
+            "sign prefixes: {minus} `-`, {plus} `+`"
         );
     }
 
@@ -9806,34 +9862,49 @@ pub(crate) mod tests {
     /// formatter's table.
     #[test]
     fn u_str_sprintf_events() {
-        check_events(gen_u_str_sprintf, hand_u_str_sprintf, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x3d_c9f8, 0);
-            elf_image(c);
-            let fmts = [
-                "n=%d",
-                "u=%u x=%x",
-                "s=%s c=%c",
-                "%d%d%d",
-                "plain",
-                "mix %s %d %x",
-            ];
-            let fmt = fmts[seed as usize % fmts.len()];
-            put_ascii(c, DATA + 0x400, fmt);
-            put_ascii(c, DATA + 0x800, "hi");
-            for i in 0..64u32 {
-                c.bus.write16(DATA + 2 * i, 0xbeef);
-            }
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x400);
-            c.g[A2][0] = seed as u64;
-            c.g[A3][0] = sx(DATA + 0x800);
-            c.g[T0][0] = (seed / 7) as u64;
-            c.g[T1][0] = 0x41;
-            c.g[T2][0] = (seed / 13 % 256) as u64;
-            c.g[T3][0] = 0x1234_5678;
-            c.f[12] = seed;
-            schedule(c, &mut r, seed, 0x003d_c9f8)
-        });
+        check_events(
+            gen_u_str_sprintf,
+            hand_u_str_sprintf,
+            300,
+            &u_str_sprintf_events_setup,
+        );
+        crate::difftest::require_paths(
+            gen_u_str_sprintf,
+            300,
+            &[323, 353, 333, 363],
+            &|c, seed| {
+                u_str_sprintf_events_setup(c, seed);
+            },
+        );
+    }
+
+    fn u_str_sprintf_events_setup(c: &mut Cpu, seed: u32) -> crate::difftest::events::Events {
+        let mut r = machine(c, seed, 0x3d_c9f8, 0);
+        elf_image(c);
+        let fmts = [
+            "n=%d",
+            "u=%u x=%x",
+            "s=%s c=%c",
+            "%d%d%d",
+            "plain",
+            "mix %s %d %x",
+        ];
+        let fmt = fmts[seed as usize % fmts.len()];
+        put_ascii(c, DATA + 0x400, fmt);
+        put_ascii(c, DATA + 0x800, "hi");
+        for i in 0..64u32 {
+            c.bus.write16(DATA + 2 * i, 0xbeef);
+        }
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = sx(DATA + 0x400);
+        c.g[A2][0] = seed as u64;
+        c.g[A3][0] = sx(DATA + 0x800);
+        c.g[T0][0] = (seed / 7) as u64;
+        c.g[T1][0] = 0x41;
+        c.g[T2][0] = (seed / 13 % 256) as u64;
+        c.g[T3][0] = 0x1234_5678;
+        c.f[12] = seed;
+        schedule(c, &mut r, seed, 0x003d_c9f8)
     }
 
     driven!(gen_u_str_from_escaped_ascii, ee::s14::f_003dca40__generated);
@@ -9848,34 +9919,50 @@ pub(crate) mod tests {
             gen_u_str_from_escaped_ascii,
             hand_u_str_from_escaped_ascii,
             300,
+            &u_str_from_escaped_ascii_setup,
+        );
+        // Arm totals: plain, valid escapes, lone backslash, invalid hex,
+        // empty, `\x` NUL, text then `\x` NUL, a hex run ended by `:` or `g`.
+        crate::difftest::require_paths(
+            gen_u_str_from_escaped_ascii,
+            300,
+            &[92, 186, 221, 138, 22, 29, 57, 97],
             &|c, seed| {
-                let mut r = machine(c, seed, 0x3d_ca40, 0);
-                let srcs = [
-                    "plain",
-                    "\\x41\\x42",
-                    "a\\x43b",
-                    "lone\\backslash",
-                    "bad\\xzz",
-                    "\\x41",
-                    "trail\\",
-                    "\\",
-                    "",
-                    "\\x41424344",
-                    "mix\\x41z\\x42",
-                ];
-                let mut src = srcs[seed as usize % srcs.len()].to_string();
-                if seed / 11 % 3 == 0 {
-                    src.push((b'a' + seed as u8 % 26) as char);
-                }
-                put_ascii(c, DATA + 0x400, &src);
-                for i in 0..48u32 {
-                    c.bus.write16(DATA + 2 * i, 0xbeef);
-                }
-                c.g[A0][0] = sx(DATA);
-                c.g[A1][0] = sx(DATA + 0x400);
-                schedule(c, &mut r, seed, 0x003d_ca40)
+                u_str_from_escaped_ascii_setup(c, seed);
             },
         );
+    }
+
+    fn u_str_from_escaped_ascii_setup(c: &mut Cpu, seed: u32) -> crate::difftest::events::Events {
+        let mut r = machine(c, seed, 0x3d_ca40, 0);
+        let srcs = [
+            "plain",
+            "\\x41\\x42",
+            "a\\x43b",
+            "lone\\backslash",
+            "bad\\xzz",
+            "\\x41",
+            "trail\\",
+            "\\",
+            "",
+            "\\x41424344",
+            "mix\\x41z\\x42",
+            "\\x",
+            "ab\\x",
+            "\\x3:",
+            "\\x1g",
+        ];
+        let mut src = srcs[seed as usize % srcs.len()].to_string();
+        if seed / 13 % 3 == 0 && !src.ends_with('x') {
+            src.push((b'a' + seed as u8 % 26) as char);
+        }
+        put_ascii(c, DATA + 0x400, &src);
+        for i in 0..48u32 {
+            c.bus.write16(DATA + 2 * i, 0xbeef);
+        }
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = sx(DATA + 0x400);
+        schedule(c, &mut r, seed, 0x003d_ca40)
     }
 
     driven!(gen_u_str_to_escaped_ascii, ee::s14::f_003dcb20__generated);
@@ -9890,174 +9977,225 @@ pub(crate) mod tests {
             gen_u_str_to_escaped_ascii,
             hand_u_str_to_escaped_ascii,
             300,
+            &u_str_to_escaped_ascii_events_setup,
+        );
+        crate::difftest::require_paths(
+            gen_u_str_to_escaped_ascii,
+            300,
+            &[58, 871, 878, 50, 39, 20, 1713, 889],
             &|c, seed| {
-                let mut r = machine(c, seed, 0x3d_cb20, 0);
-                elf_image(c);
-                let srcs: &[&[u16]] = &[
-                    &[0x41, 0x42, 0x43],
-                    &[0x141, 0x42],
-                    &[0x5c, 0x78, 0x41],
-                    &[0x5c, 0x41],
-                    &[0x5c],
-                    &[],
-                    &[0x20, 0x100, 0x5c, 0x78],
-                    &[0x41, 0x5c, 0x78, 0x42],
-                ];
-                let src = srcs[seed as usize % srcs.len()];
-                put_units(c, DATA + 0x400, src);
-                c.bus.write16(DATA + 0x400 + 2 * src.len() as u32, 0);
-                for i in 0..64u32 {
-                    c.bus.write8(DATA + i, 0xa5);
-                }
-                c.g[A0][0] = sx(DATA);
-                c.g[A1][0] = sx(DATA + 0x400);
-                schedule(c, &mut r, seed, 0x003d_cb20)
+                u_str_to_escaped_ascii_events_setup(c, seed);
             },
         );
     }
 
+    fn u_str_to_escaped_ascii_events_setup(
+        c: &mut Cpu,
+        seed: u32,
+    ) -> crate::difftest::events::Events {
+        let mut r = machine(c, seed, 0x3d_cb20, 0);
+        elf_image(c);
+        let srcs: &[&[u16]] = &[
+            &[0x41, 0x42, 0x43],
+            &[0x141, 0x42],
+            &[0x5c, 0x78, 0x41],
+            &[0x5c, 0x41],
+            &[0x5c],
+            &[],
+            &[0x20, 0x100, 0x5c, 0x78],
+            &[0x41, 0x5c, 0x78, 0x42],
+        ];
+        let src = srcs[seed as usize % srcs.len()];
+        put_units(c, DATA + 0x400, src);
+        c.bus.write16(DATA + 0x400 + 2 * src.len() as u32, 0);
+        for i in 0..64u32 {
+            c.bus.write8(DATA + i, 0xa5);
+        }
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = sx(DATA + 0x400);
+        schedule(c, &mut r, seed, 0x003d_cb20)
+    }
+
     /// Haystack/needle pairs: found at 0, found late, absent, empty
-    /// needle, needle longer than the haystack. Plain `check`: the call
-    /// into the dispatcher-shaped `UStr_NCmp` cannot unwind mid-call in
-    /// the test machine, so the wrapper is compared without events (its
-    /// own loop still runs every arm; `UStr_NCmp`'s event test covers
-    /// re-entry at its head).
+    /// needle, empty haystack, needle longer than the haystack. No
+    /// events: the call into the dispatcher-shaped `UStr_NCmp` cannot
+    /// unwind mid-call in the test machine, so the wrapper is compared
+    /// without events (its own loop still runs every arm; `UStr_NCmp`'s
+    /// event test covers re-entry at its head).
     #[test]
     fn u_str_find_matches() {
-        check(
+        // Arm totals: empty haystack, empty needle, found at 0, found at
+        // index 3, absent.
+        crate::difftest::check_paths(
             ee::s14::f_003dbd18__generated,
             u_str_find,
             200,
+            &[45, 42, 60, 135, 113],
+            &u_str_find_setup,
+        );
+    }
+
+    /// The scan with events due (fixture `seed / 3`, so every haystack
+    /// shape meets every event mode). Off and Deliver only: an unwind
+    /// inside `UStr_NCmp` (a dispatcher) cannot resume mid-call in the
+    /// test machine, so Unwind seeds deliver instead.
+    #[test]
+    fn u_str_find_events() {
+        check_events(
+            ee::s14::f_003dbd18__generated,
+            u_str_find,
+            240,
             &|c, seed| {
-                let mut r = machine(c, seed, 0x3d_bd18, 0);
-                let hay = DATA;
-                let ndl = DATA + 0x400;
-                let hlen = 1 + seed % 20;
-                let mut nlen = seed / 20 % 9;
-                let mode = seed / 180 % 4;
-                if mode == 3 {
-                    nlen = 0;
-                }
-                let mut needle = vec![0u16; nlen as usize];
-                for u in needle.iter_mut() {
-                    let b = r.next_u32();
-                    *u = (1 + b % 0x2ff) as u16;
-                }
-                let mut haystack = vec![0u16; hlen as usize];
-                for u in haystack.iter_mut() {
-                    let b = r.next_u32();
-                    *u = (1 + b % 0x2ff) as u16;
-                }
-                if mode == 0 && nlen <= hlen && nlen > 0 {
-                    haystack[..nlen as usize].copy_from_slice(&needle);
-                }
-                if mode == 1 && nlen <= hlen && nlen > 0 {
-                    haystack[hlen as usize - nlen as usize..].copy_from_slice(&needle);
-                }
-                put_units(c, hay, &haystack);
-                c.bus.write16(hay + 2 * hlen, 0);
-                put_units(c, ndl, &needle);
-                c.bus.write16(ndl + 2 * nlen, 0);
-                // Pre-fill past the ends so an over-read shows.
-                c.bus.write16(hay + 2 * hlen + 2, 0xbeef);
-                c.bus.write16(ndl + 2 * nlen + 2, 0xbeef);
-                c.g[A0][0] = sx(hay);
-                c.g[A1][0] = sx(ndl);
-                c.pc = 0x003d_bd18;
+                u_str_find_setup(c, seed / 3);
+                let mut r = crate::difftest::Rng(0x3d_bd18 ^ (seed as u64) << 8);
+                let ev = if seed % 3 == 1 { seed + 1 } else { seed };
+                schedule(c, &mut r, ev, 0x003d_bd18)
             },
         );
+    }
+
+    fn u_str_find_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3d_bd18, 0);
+        let hay = DATA;
+        let ndl = DATA + 0x400;
+        // Found at 0, found at the end, or (usually) absent.
+        let mode = seed % 3;
+        let hlen = seed / 3 % 21;
+        let nlen = r.next_u32() % 9;
+        let mut needle = vec![0u16; nlen as usize];
+        for u in needle.iter_mut() {
+            let b = r.next_u32();
+            *u = (1 + b % 0x2ff) as u16;
+        }
+        let mut haystack = vec![0u16; hlen as usize];
+        for u in haystack.iter_mut() {
+            let b = r.next_u32();
+            *u = (1 + b % 0x2ff) as u16;
+        }
+        if mode == 0 && nlen <= hlen && nlen > 0 {
+            haystack[..nlen as usize].copy_from_slice(&needle);
+        }
+        if mode == 1 && nlen <= hlen && nlen > 0 {
+            haystack[hlen as usize - nlen as usize..].copy_from_slice(&needle);
+        }
+        put_units(c, hay, &haystack);
+        c.bus.write16(hay + 2 * hlen, 0);
+        put_units(c, ndl, &needle);
+        c.bus.write16(ndl + 2 * nlen, 0);
+        // Pre-fill past the ends so an over-read shows.
+        c.bus.write16(hay + 2 * hlen + 2, 0xbeef);
+        c.bus.write16(ndl + 2 * nlen + 2, 0xbeef);
+        c.g[A0][0] = sx(hay);
+        c.g[A1][0] = sx(ndl);
+        c.pc = 0x003d_bd18;
     }
 
     /// Equal, early/late difference, prefix, empty strings. Plain `check`
     /// for the same dispatcher-callee reason as [`u_str_find_matches`].
     #[test]
     fn u_str_cmp_matches() {
-        check(
+        crate::difftest::check_paths(
             ee::s14::f_003dbdb0__generated,
             u_str_cmp,
             200,
-            &|c, seed| {
-                let mut r = machine(c, seed, 0x3d_bdb0, 0);
-                let len = seed % 24;
-                let mode = seed / 24 % 5;
-                let mut a = vec![0u16; len as usize];
-                for u in a.iter_mut() {
-                    *u = (1 + r.next_u32() % 0x2ff) as u16;
-                }
-                let mut b = a.clone();
-                match mode {
-                    1 => {
-                        if len > 0 {
-                            b[0] = b[0].wrapping_add(1);
-                        }
-                    }
-                    2 => {
-                        if len > 0 {
-                            b[len as usize - 1] = b[len as usize - 1].wrapping_add(1);
-                        }
-                    }
-                    3 => {
-                        b.push(0x41);
-                    }
-                    4 => {
-                        a.clear();
-                    }
-                    _ => {}
-                }
-                put_units(c, DATA, &a);
-                c.bus.write16(DATA + 2 * a.len() as u32, 0);
-                put_units(c, DATA + 0x400, &b);
-                c.bus.write16(DATA + 0x400 + 2 * b.len() as u32, 0);
-                c.g[A0][0] = sx(DATA);
-                c.g[A1][0] = sx(DATA + 0x400);
-                c.pc = 0x003d_bdb0;
-            },
+            &[18, 29, 25, 36],
+            &u_str_cmp_matches_setup,
         );
     }
 
+    fn u_str_cmp_matches_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3d_bdb0, 0);
+        let len = seed % 24;
+        let mode = seed / 24 % 5;
+        let mut a = vec![0u16; len as usize];
+        for u in a.iter_mut() {
+            *u = (1 + r.next_u32() % 0x2ff) as u16;
+        }
+        let mut b = a.clone();
+        match mode {
+            1 => {
+                if len > 0 {
+                    b[0] = b[0].wrapping_add(1);
+                }
+            }
+            2 => {
+                if len > 0 {
+                    b[len as usize - 1] = b[len as usize - 1].wrapping_add(1);
+                }
+            }
+            3 => {
+                b.push(0x41);
+            }
+            4 => {
+                a.clear();
+            }
+            _ => {}
+        }
+        put_units(c, DATA, &a);
+        c.bus.write16(DATA + 2 * a.len() as u32, 0);
+        put_units(c, DATA + 0x400, &b);
+        c.bus.write16(DATA + 0x400 + 2 * b.len() as u32, 0);
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = sx(DATA + 0x400);
+        c.pc = 0x003d_bdb0;
+    }
+
     driven!(gen_u_str_n_cmp, ee::s14::f_003dbdd0__generated);
-    driven!(hand_u_str_n_cmp, u_str_n_cmp);
+    crate::game::lib::eafile::tests::ea_counted!(counted_u_str_n_cmp, u_str_n_cmp);
+    driven!(hand_u_str_n_cmp, counted_u_str_n_cmp);
 
     /// Bounded compares: max 0, max below/above the difference point,
     /// NUL inside the window, empty inputs.
     #[test]
     fn u_str_n_cmp_events() {
-        check_events(gen_u_str_n_cmp, hand_u_str_n_cmp, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x3d_bdd0, 0);
-            let len = 1 + seed % 16;
-            let max = [0, 1, 3, 7, 100][seed as usize / 17 % 5];
-            let mode = seed / 85 % 5;
-            let mut a = vec![0u16; len as usize];
-            for u in a.iter_mut() {
-                *u = (1 + r.next_u32() % 0x2ff) as u16;
-            }
-            let mut b = a.clone();
-            match mode {
-                1 => {
-                    b[0] = b[0].wrapping_add(1);
-                }
-                2 => {
-                    let i = len as usize / 2;
-                    b[i] = b[i].wrapping_add(1);
-                }
-                3 => {
-                    a[len as usize / 2] = 0;
-                }
-                4 => {
-                    a.clear();
-                    b.clear();
-                }
-                _ => {}
-            }
-            put_units(c, DATA, &a);
-            c.bus.write16(DATA + 2 * a.len() as u32, 0);
-            put_units(c, DATA + 0x400, &b);
-            c.bus.write16(DATA + 0x400 + 2 * b.len() as u32, 0);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x400);
-            c.g[A2][0] = max;
-            schedule(c, &mut r, seed, 0x003d_bdd0)
+        check_events(
+            gen_u_str_n_cmp,
+            hand_u_str_n_cmp,
+            300,
+            &u_str_n_cmp_events_setup,
+        );
+        // The hand side itself resumes at the loop head.
+        crate::game::lib::eafile::tests::ea_assert_entered(&[0x003d_bdd0, 0x003d_bde8]);
+        crate::difftest::require_paths(gen_u_str_n_cmp, 300, &[5, 15, 17, 28, 10], &|c, seed| {
+            u_str_n_cmp_events_setup(c, seed);
         });
+    }
+
+    fn u_str_n_cmp_events_setup(c: &mut Cpu, seed: u32) -> crate::difftest::events::Events {
+        let mut r = machine(c, seed, 0x3d_bdd0, 0);
+        let len = 1 + seed % 16;
+        let max = [0, 1, 3, 7, 100][seed as usize / 17 % 5];
+        let mode = seed / 60 % 5;
+        let mut a = vec![0u16; len as usize];
+        for u in a.iter_mut() {
+            *u = (1 + r.next_u32() % 0x2ff) as u16;
+        }
+        let mut b = a.clone();
+        match mode {
+            1 => {
+                b[0] = b[0].wrapping_add(1);
+            }
+            2 => {
+                let i = len as usize / 2;
+                b[i] = b[i].wrapping_add(1);
+            }
+            3 => {
+                a[len as usize / 2] = 0;
+            }
+            4 => {
+                a.clear();
+                b.clear();
+            }
+            _ => {}
+        }
+        put_units(c, DATA, &a);
+        c.bus.write16(DATA + 2 * a.len() as u32, 0);
+        put_units(c, DATA + 0x400, &b);
+        c.bus.write16(DATA + 0x400 + 2 * b.len() as u32, 0);
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = sx(DATA + 0x400);
+        c.g[A2][0] = max;
+        schedule(c, &mut r, seed, 0x003d_bdd0)
     }
 
     driven!(gen_u_str_cpy, ee::s14::f_003dbe20__generated);
@@ -10067,54 +10205,63 @@ pub(crate) mod tests {
     /// pre-filled so a missing store shows.
     #[test]
     fn u_str_cpy_events() {
-        check_events(gen_u_str_cpy, hand_u_str_cpy, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x3d_be20, 0);
-            let len = seed % 24;
-            let mut s = vec![0u16; len as usize];
-            for u in s.iter_mut() {
-                *u = (1 + r.next_u32() % 0x2ff) as u16;
-            }
-            put_units(c, DATA + 0x400, &s);
-            c.bus.write16(DATA + 0x400 + 2 * len, 0);
-            for i in 0..32u32 {
-                c.bus.write16(DATA + 2 * i, 0xbeef);
-            }
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x400);
-            schedule(c, &mut r, seed, 0x003d_be20)
+        check_events(gen_u_str_cpy, hand_u_str_cpy, 200, &u_str_cpy_events_setup);
+        crate::difftest::require_paths(gen_u_str_cpy, 200, &[17, 27, 225], &|c, seed| {
+            u_str_cpy_events_setup(c, seed);
         });
     }
 
-    /// Max 0, truncated, exact and over-long copies; empty source.
-    /// Split: edge arms (max 0, empty) under `check`, the looping arms
-    /// under `check_events` so enough seeds reach the event check.
+    fn u_str_cpy_events_setup(c: &mut Cpu, seed: u32) -> crate::difftest::events::Events {
+        let mut r = machine(c, seed, 0x3d_be20, 0);
+        let len = seed % 24;
+        let mut s = vec![0u16; len as usize];
+        for u in s.iter_mut() {
+            *u = (1 + r.next_u32() % 0x2ff) as u16;
+        }
+        put_units(c, DATA + 0x400, &s);
+        c.bus.write16(DATA + 0x400 + 2 * len, 0);
+        for i in 0..32u32 {
+            c.bus.write16(DATA + 2 * i, 0xbeef);
+        }
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = sx(DATA + 0x400);
+        schedule(c, &mut r, seed, 0x003d_be20)
+    }
+
+    /// Max 0 (nothing copied) and max 5 with an empty source (the empty
+    /// copy) or a short one. Split: edge arms under `check`, the looping
+    /// arms under `check_events` so enough seeds reach the event check.
     #[test]
     fn u_str_n_cpy_edges() {
-        check(
+        // Arm totals: max 0, empty source, short sources.
+        crate::difftest::check_paths(
             ee::s14::f_003dbe40__generated,
             u_str_n_cpy,
             32,
-            &|c, seed| {
-                let mut r = machine(c, seed, 0x3d_be40, 0);
-                let len = 2 + seed % 6;
-                let mut s = vec![0u16; len as usize];
-                for u in s.iter_mut() {
-                    *u = (1 + r.next_u32() % 0x2ff) as u16;
-                }
-                if seed % 2 == 0 {
-                    s.clear();
-                }
-                put_units(c, DATA + 0x400, &s);
-                c.bus.write16(DATA + 0x400 + 2 * s.len() as u32, 0);
-                for i in 0..32u32 {
-                    c.bus.write16(DATA + 2 * i, 0xbeef);
-                }
-                c.g[A0][0] = sx(DATA);
-                c.g[A1][0] = sx(DATA + 0x400);
-                c.g[A2][0] = 0;
-                c.pc = 0x003d_be40;
-            },
+            &[6, 9, 52, 37],
+            &u_str_n_cpy_edges_setup,
         );
+    }
+
+    fn u_str_n_cpy_edges_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3d_be40, 0);
+        let len = 2 + seed % 6;
+        let mut s = vec![0u16; len as usize];
+        for u in s.iter_mut() {
+            *u = (1 + r.next_u32() % 0x2ff) as u16;
+        }
+        if seed % 2 == 0 {
+            s.clear();
+        }
+        put_units(c, DATA + 0x400, &s);
+        c.bus.write16(DATA + 0x400 + 2 * s.len() as u32, 0);
+        for i in 0..32u32 {
+            c.bus.write16(DATA + 2 * i, 0xbeef);
+        }
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = sx(DATA + 0x400);
+        c.g[A2][0] = [0u64, 5][seed as usize / 2 % 2];
+        c.pc = 0x003d_be40;
     }
 
     driven!(gen_u_str_n_cpy_loop, ee::s14::f_003dbe40__generated);
@@ -10128,25 +10275,35 @@ pub(crate) mod tests {
             gen_u_str_n_cpy_loop,
             hand_u_str_n_cpy_loop,
             200,
+            &u_str_n_cpy_loop_events_setup,
+        );
+        crate::difftest::require_paths(
+            gen_u_str_n_cpy_loop,
+            200,
+            &[43, 88, 82, 160],
             &|c, seed| {
-                let mut r = machine(c, seed, 0x3d_be40, 1);
-                let len = 8 + seed % 24;
-                let max = [4u32, 9, 17, 100][seed as usize / 32 % 4];
-                let mut s = vec![0u16; len as usize];
-                for u in s.iter_mut() {
-                    *u = (1 + r.next_u32() % 0x2ff) as u16;
-                }
-                put_units(c, DATA + 0x400, &s);
-                c.bus.write16(DATA + 0x400 + 2 * len, 0);
-                for i in 0..40u32 {
-                    c.bus.write16(DATA + 2 * i, 0xbeef);
-                }
-                c.g[A0][0] = sx(DATA);
-                c.g[A1][0] = sx(DATA + 0x400);
-                c.g[A2][0] = max as u64;
-                schedule(c, &mut r, seed, 0x003d_be40)
+                u_str_n_cpy_loop_events_setup(c, seed);
             },
         );
+    }
+
+    fn u_str_n_cpy_loop_events_setup(c: &mut Cpu, seed: u32) -> crate::difftest::events::Events {
+        let mut r = machine(c, seed, 0x3d_be40, 1);
+        let len = 8 + seed % 24;
+        let max = [4u32, 9, 17, 100][seed as usize / 32 % 4];
+        let mut s = vec![0u16; len as usize];
+        for u in s.iter_mut() {
+            *u = (1 + r.next_u32() % 0x2ff) as u16;
+        }
+        put_units(c, DATA + 0x400, &s);
+        c.bus.write16(DATA + 0x400 + 2 * len, 0);
+        for i in 0..40u32 {
+            c.bus.write16(DATA + 2 * i, 0xbeef);
+        }
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = sx(DATA + 0x400);
+        c.g[A2][0] = max as u64;
+        schedule(c, &mut r, seed, 0x003d_be40)
     }
 
     driven!(gen_u_str_from_ascii, ee::s14::f_003dbe90__generated);
@@ -10160,25 +10317,30 @@ pub(crate) mod tests {
             gen_u_str_from_ascii,
             hand_u_str_from_ascii,
             200,
-            &|c, seed| {
-                let mut r = machine(c, seed, 0x3d_be90, 0);
-                let len = seed % 32;
-                for i in 0..len {
-                    let b = match r.next_u32() % 4 {
-                        0 => 0x80 + r.next_u32() % 0x80,
-                        _ => 1 + r.next_u32() % 0x7e,
-                    };
-                    c.bus.write8(DATA + 0x400 + i, b as u8);
-                }
-                c.bus.write8(DATA + 0x400 + len, 0);
-                for i in 0..40u32 {
-                    c.bus.write16(DATA + 2 * i, 0xbeef);
-                }
-                c.g[A0][0] = sx(DATA);
-                c.g[A1][0] = sx(DATA + 0x400);
-                schedule(c, &mut r, seed, 0x003d_be90)
-            },
+            &u_str_from_ascii_events_setup,
         );
+        crate::difftest::require_paths(gen_u_str_from_ascii, 200, &[7, 15, 225], &|c, seed| {
+            u_str_from_ascii_events_setup(c, seed);
+        });
+    }
+
+    fn u_str_from_ascii_events_setup(c: &mut Cpu, seed: u32) -> crate::difftest::events::Events {
+        let mut r = machine(c, seed, 0x3d_be90, 0);
+        let len = seed % 32;
+        for i in 0..len {
+            let b = match r.next_u32() % 4 {
+                0 => 0x80 + r.next_u32() % 0x80,
+                _ => 1 + r.next_u32() % 0x7e,
+            };
+            c.bus.write8(DATA + 0x400 + i, b as u8);
+        }
+        c.bus.write8(DATA + 0x400 + len, 0);
+        for i in 0..40u32 {
+            c.bus.write16(DATA + 2 * i, 0xbeef);
+        }
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = sx(DATA + 0x400);
+        schedule(c, &mut r, seed, 0x003d_be90)
     }
 
     driven!(
@@ -10198,36 +10360,49 @@ pub(crate) mod tests {
             gen_u_str_substitute_args_wrapper,
             hand_u_str_substitute_args_wrapper,
             300,
+            &u_str_substitute_args_wrapper_events_setup,
+        );
+        crate::difftest::require_paths(
+            gen_u_str_substitute_args_wrapper,
+            300,
+            &[92, 166, 168, 234, 129, 44, 131],
             &|c, seed| {
-                let mut r = machine(c, seed, 0x3d_bed0, 0);
-                let fmts = [
-                    "score ",
-                    "p1=%1 ok",
-                    "%2/%1",
-                    "%1%2%1",
-                    "100%x done",
-                    "trailing %",
-                    "",
-                    "%%1",
-                ];
-                let fmt = fmts[seed as usize / 37 % fmts.len()];
-                let mut f: Vec<u16> = fmt.encode_utf16().collect();
-                if seed / 296 % 2 == 0 {
-                    f.push(b'x' as u16);
-                }
-                put_units(c, DATA + 0x400, &f);
-                c.bus.write16(DATA + 0x400 + 2 * f.len() as u32, 0);
-                put_units(c, DATA + 0x800, &[0x41, 0x42, 0]);
-                put_units(c, DATA + 0xc00, &[0x58, 0x59, 0x5a, 0]);
-                for i in 0..64u32 {
-                    c.bus.write16(DATA + 2 * i, 0xbeef);
-                }
-                c.g[A0][0] = sx(DATA);
-                c.g[A1][0] = sx(DATA + 0x400);
-                c.g[A2][0] = sx(DATA + 0x800);
-                schedule(c, &mut r, seed, 0x003d_bed0)
+                u_str_substitute_args_wrapper_events_setup(c, seed);
             },
         );
+    }
+
+    fn u_str_substitute_args_wrapper_events_setup(
+        c: &mut Cpu,
+        seed: u32,
+    ) -> crate::difftest::events::Events {
+        let mut r = machine(c, seed, 0x3d_bed0, 0);
+        let fmts = [
+            "score ",
+            "p1=%1 ok",
+            "%2/%1",
+            "%1%2%1",
+            "100%x done",
+            "trailing %",
+            "",
+            "%%1",
+        ];
+        let fmt = fmts[seed as usize / 37 % fmts.len()];
+        let mut f: Vec<u16> = fmt.encode_utf16().collect();
+        if seed / 296 % 2 == 0 {
+            f.push(b'x' as u16);
+        }
+        put_units(c, DATA + 0x400, &f);
+        c.bus.write16(DATA + 0x400 + 2 * f.len() as u32, 0);
+        put_units(c, DATA + 0x800, &[0x41, 0x42, 0]);
+        put_units(c, DATA + 0xc00, &[0x58, 0x59, 0x5a, 0]);
+        for i in 0..64u32 {
+            c.bus.write16(DATA + 2 * i, 0xbeef);
+        }
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = sx(DATA + 0x400);
+        c.g[A2][0] = sx(DATA + 0x800);
+        schedule(c, &mut r, seed, 0x003d_bed0)
     }
 
     driven!(gen_u_str_substitute_args, ee::s14::f_003dbef0__generated);
@@ -10240,34 +10415,47 @@ pub(crate) mod tests {
             gen_u_str_substitute_args,
             hand_u_str_substitute_args,
             300,
+            &u_str_substitute_args_events_setup,
+        );
+        crate::difftest::require_paths(
+            gen_u_str_substitute_args,
+            300,
+            &[77, 151, 203, 269, 114, 26, 134],
             &|c, seed| {
-                let mut r = machine(c, seed, 0x3d_bef0, 0);
-                let fmts = [
-                    "score ",
-                    "p1=%1 ok",
-                    "%2/%1",
-                    "%1%2%1",
-                    "100%x done",
-                    "trailing %",
-                    "",
-                    "%%2",
-                ];
-                let fmt = fmts[seed as usize / 37 % fmts.len()];
-                let f: Vec<u16> = fmt.encode_utf16().collect();
-                put_units(c, DATA + 0x400, &f);
-                c.bus.write16(DATA + 0x400 + 2 * f.len() as u32, 0);
-                put_units(c, DATA + 0x800, &[0x41, 0x42, 0]);
-                put_units(c, DATA + 0xc00, &[0x58, 0x59, 0x5a, 0]);
-                for i in 0..64u32 {
-                    c.bus.write16(DATA + 2 * i, 0xbeef);
-                }
-                c.g[A0][0] = sx(DATA);
-                c.g[A1][0] = sx(DATA + 0x400);
-                c.g[A2][0] = sx(DATA + 0x800);
-                c.g[A3][0] = sx(DATA + 0xc00);
-                schedule(c, &mut r, seed, 0x003d_bef0)
+                u_str_substitute_args_events_setup(c, seed);
             },
         );
+    }
+
+    fn u_str_substitute_args_events_setup(
+        c: &mut Cpu,
+        seed: u32,
+    ) -> crate::difftest::events::Events {
+        let mut r = machine(c, seed, 0x3d_bef0, 0);
+        let fmts = [
+            "score ",
+            "p1=%1 ok",
+            "%2/%1",
+            "%1%2%1",
+            "100%x done",
+            "trailing %",
+            "",
+            "%%2",
+        ];
+        let fmt = fmts[seed as usize / 37 % fmts.len()];
+        let f: Vec<u16> = fmt.encode_utf16().collect();
+        put_units(c, DATA + 0x400, &f);
+        c.bus.write16(DATA + 0x400 + 2 * f.len() as u32, 0);
+        put_units(c, DATA + 0x800, &[0x41, 0x42, 0]);
+        put_units(c, DATA + 0xc00, &[0x58, 0x59, 0x5a, 0]);
+        for i in 0..64u32 {
+            c.bus.write16(DATA + 2 * i, 0xbeef);
+        }
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = sx(DATA + 0x400);
+        c.g[A2][0] = sx(DATA + 0x800);
+        c.g[A3][0] = sx(DATA + 0xc00);
+        schedule(c, &mut r, seed, 0x003d_bef0)
     }
 
     driven!(gen_u_str_format_u_int, ee::s14::f_003dbfd8__generated);
@@ -10281,29 +10469,39 @@ pub(crate) mod tests {
             gen_u_str_format_u_int,
             hand_u_str_format_u_int,
             300,
+            &u_str_format_u_int_events_setup,
+        );
+        crate::difftest::require_paths(
+            gen_u_str_format_u_int,
+            300,
+            &[8, 20, 34, 118, 146, 160],
             &|c, seed| {
-                let mut r = machine(c, seed, 0x3d_bfd8, 0);
-                let bases = [8u32, 10, 16];
-                let base = bases[seed as usize % 3];
-                let value = match seed as usize / 3 % 6 {
-                    0 => 0,
-                    1 => seed,
-                    2 => 0xffff_ffff,
-                    3 => 0x8000_0000,
-                    4 => 123456789,
-                    _ => r.next_u32(),
-                };
-                put_ascii(c, DATA + 0x400, "0123456789abcdef");
-                for i in 0..40u32 {
-                    c.bus.write16(DATA + 2 * i, 0xbeef);
-                }
-                c.g[A0][0] = sx(DATA + 80);
-                c.g[A1][0] = value as u64;
-                c.g[A2][0] = base as u64;
-                c.g[A3][0] = sx(DATA + 0x400);
-                schedule(c, &mut r, seed, 0x003d_bfd8)
+                u_str_format_u_int_events_setup(c, seed);
             },
         );
+    }
+
+    fn u_str_format_u_int_events_setup(c: &mut Cpu, seed: u32) -> crate::difftest::events::Events {
+        let mut r = machine(c, seed, 0x3d_bfd8, 0);
+        let bases = [8u32, 10, 16];
+        let base = bases[seed as usize % 3];
+        let value = match seed as usize / 3 % 6 {
+            0 => 0,
+            1 => seed,
+            2 => 0xffff_ffff,
+            3 => 0x8000_0000,
+            4 => 123456789,
+            _ => r.next_u32(),
+        };
+        put_digits(c, DATA + 0x400);
+        for i in 0..40u32 {
+            c.bus.write16(DATA + 2 * i, 0xbeef);
+        }
+        c.g[A0][0] = sx(DATA + 80);
+        c.g[A1][0] = value as u64;
+        c.g[A2][0] = base as u64;
+        c.g[A3][0] = sx(DATA + 0x400);
+        schedule(c, &mut r, seed, 0x003d_bfd8)
     }
 
     driven!(gen_u_str_format_int, ee::s14::f_003dc038__generated);
@@ -10317,25 +10515,37 @@ pub(crate) mod tests {
             gen_u_str_format_int,
             hand_u_str_format_int,
             200,
+            &u_str_format_int_events_setup,
+        );
+        crate::difftest::require_paths(
+            gen_u_str_format_int,
+            200,
+            &[19, 31, 45, 157],
             &|c, seed| {
-                let mut r = machine(c, seed, 0x3d_c038, 0);
-                let value = match seed as usize % 5 {
-                    0 => 0,
-                    1 => seed as i32,
-                    2 => -(seed as i32),
-                    3 => i32::MIN,
-                    _ => i32::MAX,
-                };
-                put_ascii(c, DATA + 0x400, "0123456789abcdef");
-                for i in 0..40u32 {
-                    c.bus.write16(DATA + 2 * i, 0xbeef);
-                }
-                c.g[A0][0] = sx(DATA + 80);
-                c.g[A1][0] = value as u32 as u64;
-                c.g[A2][0] = 10;
-                c.g[A3][0] = sx(DATA + 0x400);
-                schedule(c, &mut r, seed, 0x003d_c038)
+                u_str_format_int_events_setup(c, seed);
             },
         );
+    }
+
+    fn u_str_format_int_events_setup(c: &mut Cpu, seed: u32) -> crate::difftest::events::Events {
+        let mut r = machine(c, seed, 0x3d_c038, 0);
+        let value = match seed as usize % 6 {
+            0 => 0,
+            1 => seed as i32,
+            2 => -(seed as i32),
+            3 => i32::MIN,
+            4 => -1,
+            _ => i32::MAX,
+        };
+        put_digits(c, DATA + 0x400);
+        for i in 0..40u32 {
+            c.bus.write16(DATA + 2 * i, 0xbeef);
+        }
+        c.g[A0][0] = sx(DATA + 80);
+        // Sign-extended, as a 32-bit value sits in a register.
+        c.g[A1][0] = value as i64 as u64;
+        c.g[A2][0] = 10;
+        c.g[A3][0] = sx(DATA + 0x400);
+        schedule(c, &mut r, seed, 0x003d_c038)
     }
 }

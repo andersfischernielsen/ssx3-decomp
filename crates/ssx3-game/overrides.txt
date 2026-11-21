@@ -7324,7 +7324,6 @@
 0x003e4648    EAFile_CdRead
 0x003e48d8    EAFile_CdGetEntry
 0x003e4968    EAFile_CdFindEntry
-0x003e4af0    EATimer_Init
 0x003e4d68    EATimer_Shutdown
 0x003e4ea8    EATimer_GetDelta
 0x003e4f08    EATimer_SetDeadline
@@ -7345,7 +7344,6 @@
 0x003e55e0    EAThread_WaitForExit
 0x003e5678    EAThread_Exit
 0x003e57d0    EATimer_ClearCallbacks
-0x003e57f8    EATimer_AddCallback
 0x003e58c8    EATimer_RemoveCallback
 0x003e5a10    EATimer_ServiceFor
 0x003e6690    EATimer_SetVideoMode

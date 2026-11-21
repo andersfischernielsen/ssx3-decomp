@@ -4,8 +4,10 @@
 use crate::abi;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
@@ -314,6 +316,8 @@ pub(crate) mod callee {
     pub(crate) use crate::game::lib::eafile::callee::BIG_FILE_GET_FOOTER;
     pub(crate) use crate::game::lib::eafile::callee::BIG_FILE_GET_TYPE;
     pub(crate) use crate::game::lib::eafile::callee::EA_FILE_BIG_FIND_ENTRY;
+    pub(crate) use crate::game::lib::eafile::callee::STRCHR;
+    pub(crate) use crate::game::lib::eafile::callee::STRCPY;
 }
 
 /// `u32 BigFile_GetFooterVersion(...)` (0x3e2740): reads the footer
@@ -335,19 +339,15 @@ pub fn big_file_get_footer_version(c: &mut Cpu) {
     })
 }
 
-/// `u32 BigFile_FindEntry(...)` (0x3e2ce0): forwards to
-/// EAFile_BigFindEntry and reports its result.
+/// `char *BigFile_FindEntry(big, name, index, out_offset, out_size)`
+/// (0x3e2ce0): forwards to `EAFile_BigFindEntry`.
 pub fn big_file_find_entry(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        c.g[RA][0] = sx(0x003e_2cf0);
-        callee::EA_FILE_BIG_FIND_ENTRY.call(c, 0x003e_2cf0)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(callee::EA_FILE_BIG_FIND_ENTRY),
+        0x003e_2cf0,
+    );
 }
 
 /// `u32 BigFile_GetEntryOffset(path, name)` (0x3e2d00): finds an entry
@@ -533,9 +533,7 @@ pub fn big_file_get_entry_data_list(c: &mut Cpu) {
                 c.g[A0][0] = c.g[S1][0];
                 c.g[RA][0] = sx(0x003e_2e8c);
                 c.g[A1][0] = 0x2c;
-                let hook = 0x0041_6404;
-                c.pc = hook;
-                call_ptr(c, hook, 0x003e_2e8c)?;
+                call_ptr(c, callee::STRCHR, 0x003e_2e8c)?;
                 c.g[S0][0] = c.g[V0][0];
                 if c.g[S0][0] != 0 {
                     c.sb(c.g[S0][0] as u32, 0);
@@ -619,21 +617,21 @@ pub fn big_file_get_entry_count(c: &mut Cpu) {
                 break 'b_3e2f54;
             }
             c.cycles += 2;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8));
             if c.g[V0][0] == 0 {
                 break 'b_3e2f54;
             }
             c.cycles += 10;
             c.g[V0][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0x8));
-            c.g[V1][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0x9));
-            c.g[A1][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0xa));
+            c.g[V1][0] = c.lbu((c.g[A0][0] as u32).wrapping_add(0x1));
+            c.g[A1][0] = c.lbu((c.g[A0][0] as u32).wrapping_add(0x2));
             c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
             c.g[V1][0] = sx((c.g[V1][0] as u32) << 16);
-            c.g[A2][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0xb));
+            c.g[A2][0] = c.lbu((c.g[A0][0] as u32).wrapping_add(0x3));
             c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
             c.g[A1][0] = sx((c.g[A1][0] as u32) << 8);
             c.g[V0][0] = c.g[V0][0] | c.g[A1][0];
             c.g[S1][0] = c.g[V0][0] | c.g[A2][0];
-            c.g[V0][0] = c.g[S1][0];
         }
         c.cycles += 6;
         c.g[V0][0] = c.g[S1][0];
@@ -645,8 +643,9 @@ pub fn big_file_get_entry_count(c: &mut Cpu) {
     })
 }
 
-/// `char *BigFile_GetEntryName(header, name, dst)` (0x3e2f70): entry
-/// path through the finder, copied to the caller buffer.
+/// `char *BigFile_GetEntryName(header, index, dst)` (0x3e2f70): copies the
+/// name of entry `index` (through BigFile_FindEntry) to `dst` and returns
+/// `dst`; a missing entry clears `dst[0]` and returns 0.
 pub fn big_file_get_entry_name(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 11;
@@ -670,11 +669,8 @@ pub fn big_file_get_entry_name(c: &mut Cpu) {
                 break 'b_3e2fb4;
             }
             c.cycles += 3;
-            c.g[RA][0] = sx(0x003e_2fb0);
             c.g[A0][0] = c.g[S0][0];
-            let hook = 0x0041_66f4;
-            c.pc = hook;
-            call_ptr(c, hook, 0x003e_2fb0)?;
+            call_ptr(c, callee::STRCPY, 0x003e_2fb0)?;
             c.g[V0][0] = c.g[S0][0];
             break 'b_3e2fb4;
         }
@@ -686,8 +682,8 @@ pub fn big_file_get_entry_name(c: &mut Cpu) {
     })
 }
 
-/// `char *BigFile_GetEntryName_2(header, name, dst)` (0x3e2fc8): same
-/// through the EAFile finder.
+/// `char *BigFile_GetEntryName_2(header, index, dst)` (0x3e2fc8): same
+/// through EAFile_BigFindEntry.
 pub fn big_file_get_entry_name_2(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 11;
@@ -703,21 +699,18 @@ pub fn big_file_get_entry_name_2(c: &mut Cpu) {
         callee::EA_FILE_BIG_FIND_ENTRY.call(c, 0x003e_2fec)?;
         let found = c.g[V0][0] != 0;
         c.g[A1][0] = c.g[V0][0];
-        'b_3e3004: {
+        'b_3e300c: {
             if !found {
                 c.cycles += 3;
                 c.sb(c.g[S0][0] as u32, 0);
                 c.g[V0][0] = 0;
-                break 'b_3e3004;
+                break 'b_3e300c;
             }
             c.cycles += 3;
-            c.g[RA][0] = sx(0x003e_3008);
             c.g[A0][0] = c.g[S0][0];
-            let hook = 0x0041_66f4;
-            c.pc = hook;
-            call_ptr(c, hook, 0x003e_3008)?;
+            call_ptr(c, callee::STRCPY, 0x003e_3008)?;
             c.g[V0][0] = c.g[S0][0];
-            break 'b_3e3004;
+            break 'b_3e300c;
         }
         c.cycles += 4;
         frame.restore(c, S0, 0x10);
@@ -732,15 +725,21 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::difftest::check_paths;
+    use crate::difftest::events::check_events;
     use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
     use crate::difftest::fakes::machine;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    pub(crate) use crate::game::lib::eafile::tests::put_ascii_2;
-    pub(crate) use crate::game::lib::eafile::tests::put_ascii_3;
+    pub(crate) use crate::game::lib::eafile::tests::ea_install_fakes;
+    pub(crate) use crate::game::lib::eafile::tests::put_ascii;
     pub(crate) use crate::game::lib::eafile::tests::stream_block;
     pub(crate) use crate::game::lib::eafile::tests::zero_block;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_CTRL;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_MAGIC;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_RET_BIGTYPE;
 
     #[test]
     fn big_file_ctor_matches() {
@@ -911,24 +910,106 @@ pub(crate) mod tests {
         );
     }
 
+    /// `EAFile_StrICmp`'s ctype table (upper-case letters flagged).
+    const CTYPE: u32 = 0x0049_9c81;
+
+    /// The entry names of the test archive (`put_big`).
+    const NAMES: [&str; 4] = ["alpha", "Beta", "gamma", "d"];
+
+    /// Where the lookup tests put the archive and the looked-up name.
+    const BIG: u32 = DATA + 0x700;
+
+    const NAME_AT: u32 = DATA + 0x400;
+
+    /// Write `v` big-endian at `at` (any alignment).
+    fn put_be(c: &mut Cpu, at: u32, v: u32, width: u32) {
+        for i in 0..width {
+            c.bus.write8(at + i, (v >> (8 * (width - 1 - i))) as u8);
+        }
+    }
+
+    /// A BIG archive at `big` holding `NAMES` (entry `i` at offset
+    /// `0x100 * (i + 1)`, size `0x10 + i`): kind 0 `BIGF` (4-byte fields,
+    /// count at +8, header size at +0xc), kind 1 `C0FB` (3-byte fields, count
+    /// at +4, header size - 4 at +2), anything else no archive (zeroed).
+    fn put_big(c: &mut Cpu, big: u32, kind: u32) {
+        for b in b'A'..=b'Z' {
+            c.bus.write8(CTYPE + b as u32, 1);
+        }
+        zero_block(c, big, 0x40);
+        let (start, width) = match kind {
+            0 => (big + 0x10, 4),
+            1 => (big + 6, 3),
+            _ => return,
+        };
+        let mut at = start;
+        for (i, name) in NAMES.iter().enumerate() {
+            put_be(c, at, 0x100 * (i as u32 + 1), width);
+            put_be(c, at + width, 0x10 + i as u32, width);
+            put_ascii(c, at + 2 * width, name);
+            at += 2 * width + name.len() as u32 + 1;
+        }
+        let header = at - big;
+        if kind == 0 {
+            put_ascii(c, big, "BIGF");
+            put_be(c, big + 8, NAMES.len() as u32, 4);
+            put_be(c, big + 0xc, header, 4);
+        } else {
+            c.bus.write8(big, 0xc0);
+            c.bus.write8(big + 1, 0xfb);
+            put_be(c, big + 2, header - 4, 2);
+            put_be(c, big + 4, NAMES.len() as u32, 2);
+        }
+    }
+
+    /// The name looked up for `digit`: an entry's (exact), another's in
+    /// swapped case, a missing one, or null.
+    fn lookup_name(c: &mut Cpu, digit: u32) -> u64 {
+        let name = match digit % 4 {
+            0 => NAMES[2].to_string(),
+            1 => NAMES[1].to_ascii_uppercase(),
+            2 => "zeta".to_string(),
+            _ => return 0,
+        };
+        put_ascii(c, NAME_AT, &name);
+        sx(NAME_AT)
+    }
+
+    /// [`check`] that also requires equal scratch registers (`STRICT=args`
+    /// alone does not compare them).
+    fn check_exact(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
+        check(generated, hand, seeds, setup);
+        for seed in 0..crate::difftest::seed_count(seeds) {
+            let r = crate::difftest::compare(generated, hand, &|c| setup(c, seed));
+            let soft: Vec<&String> = r
+                .soft
+                .iter()
+                .filter(|m| !m.starts_with("vu0 ctrl 1"))
+                .collect();
+            assert!(soft.is_empty(), "seed {seed} (soft): {soft:#?}");
+        }
+    }
+
     driven!(gen_big_file_find_entry, ee::s14::f_003e2ce0__generated);
 
     driven!(hand_big_file_find_entry, big_file_find_entry);
 
-    /// Forwards the lookup; null and present names.
+    /// Forwards the lookup: a `BIGF`, `C0FB` or no archive; a found, other
+    /// case, missing or null name with an index; real out pointers.
     #[test]
     fn big_file_find_entry_matches() {
         check(
             gen_big_file_find_entry,
             hand_big_file_find_entry,
-            32,
+            48,
             &|c, seed| {
-                let _r = machine(c, seed, 0x3e_2ce0, 0);
-                put_ascii_2(c, "entry", DATA + 0x400);
-                c.g[A0][0] = sx(DATA + 0x400);
-                c.g[A1][0] = if seed % 3 == 0 { 0 } else { sx(DATA + 0x400) };
-                c.g[A2][0] = (seed / 3 % 7) as u64;
+                let mut r = machine(c, seed, 0x3e_2ce0, 0);
+                put_big(c, BIG, seed % 3);
+                c.g[A0][0] = sx(BIG);
+                c.g[A1][0] = lookup_name(c, seed / 3);
+                c.g[A2][0] = (r.next_u32() % 6) as u64;
                 c.g[A3][0] = sx(DATA + 0x500);
+                c.g[T0][0] = sx(DATA + 0x504);
                 c.pc = 0x003e_2ce0;
             },
         );
@@ -938,118 +1019,168 @@ pub(crate) mod tests {
 
     driven!(hand_big_file_get_entry_count, big_file_get_entry_count);
 
-    /// Header magic selects the count word: C0 FB, BIGF, or neither.
+    /// The header type selects the count: `C0FB` (bytes 4-5), `BIGF`,
+    /// `BIG0` and other `BIG<c>` (bytes 8-11 for types 2-3), unknown
+    /// magic (0). Scratch registers are compared (the BIGF arm leaves
+    /// `A0 = header + 8`).
+    fn big_file_get_entry_count_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3e_2ee0, 0);
+        let block = DATA + 0x700;
+        zero_block(c, block, 16);
+        for i in 4..12u32 {
+            c.bus.write8(block + i, r.next_u32() as u8);
+        }
+        match seed % 7 {
+            0 => {
+                c.bus.write8(block, 0xc0);
+                c.bus.write8(block + 1, 0xfb);
+            }
+            1 => put_ascii(c, block, "BIGF"),
+            2 => put_ascii(c, block, "BIG0"),
+            3 => put_ascii(c, block, "BIG4"),
+            4 => put_ascii(c, block, "BIG:"),
+            5 => c.bus.write8(block, (r.next_u32() % 251) as u8 + 1),
+            // A header type of 4 or more, forced through the type fake.
+            _ => {
+                ea_install_fakes();
+                c.bus.write32(EAF_CTRL, EAF_MAGIC);
+                c.bus.write32(EAF_RET_BIGTYPE, 4 + r.next_u32() % 2);
+            }
+        }
+        c.g[A0][0] = sx(block);
+        c.pc = 0x003e_2ee0;
+    }
+
     #[test]
     fn big_file_get_entry_count_matches() {
-        check(
+        check_exact(
             gen_big_file_get_entry_count,
             hand_big_file_get_entry_count,
             48,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3e_2ee0, 0);
-                let block = DATA + 0x700;
-                zero_block(c, block, 16);
-                match seed % 3 {
-                    0 => {
-                        c.bus.write8(block, 0xc0);
-                        c.bus.write8(block + 1, 0xfb);
-                        c.bus.write8(block + 4, (seed / 3 % 5) as u8);
-                        c.bus.write8(block + 5, 0x11);
-                    }
-                    1 => {
-                        put_ascii_3(c, "BIGF", block);
-                        c.bus.write8(block + 8, (seed / 3 % 7) as u8);
-                        c.bus.write8(block + 9, 0x22);
-                        c.bus.write8(block + 10, 0x33);
-                        c.bus.write8(block + 11, 0x44);
-                    }
-                    _ => {
-                        c.bus.write8(block, (seed / 3 % 251) as u8 + 1);
-                    }
-                }
-                c.g[A0][0] = sx(block);
-                c.pc = 0x003e_2ee0;
-            },
+            &big_file_get_entry_count_setup,
+        );
+        crate::difftest::require_paths(
+            gen_big_file_get_entry_count,
+            48,
+            &PATHS_ENTRY_COUNT,
+            &big_file_get_entry_count_setup,
         );
     }
 
     driven!(hand_big_file_get_entry_data_2, big_file_get_entry_data_2);
 
     /// Same via the second offset helper.
+    fn big_file_get_entry_data_2_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3e_2e20, 0);
+        put_big(c, BIG, seed % 3);
+        c.g[A0][0] = sx(BIG);
+        c.g[A1][0] = lookup_name(c, seed / 3);
+        c.pc = 0x003e_2e20;
+    }
+
     #[test]
     fn big_file_get_entry_data_2_matches() {
-        check(
+        check_paths(
             gen_big_file_get_entry_data_2,
             hand_big_file_get_entry_data_2,
             48,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3e_2e20, 0);
-                let block = DATA + 0x700 + (seed % 3) * 0x10;
-                zero_block(c, block, 16);
-                put_ascii_3(c, "entry", DATA + 0x400);
-                c.g[A0][0] = sx(block);
-                c.g[A1][0] = if seed % 4 == 0 { 0 } else { sx(DATA + 0x400) };
-                c.pc = 0x003e_2e20;
-            },
+            &PATHS_ENTRY_DATA_2,
+            &big_file_get_entry_data_2_setup,
         );
+    }
+
+    /// Indexed lookups (in range or not) in a `BIGF`, `C0FB` or no archive.
+    fn by_index_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        let mut r = machine(c, seed, salt, 0);
+        put_big(c, BIG, seed % 3);
+        c.g[A0][0] = sx(BIG);
+        c.g[A1][0] = (seed / 3 % 6) as u64;
+        c.g[A2][0] = r.next_u32() as u64;
+        c.g[A3][0] = sx(DATA + 0x500);
+        c.pc = entry;
+    }
+
+    fn big_file_get_entry_data_by_index_2_setup(c: &mut Cpu, seed: u32) {
+        by_index_setup(c, seed, 0x3e_2da8, 0x003e_2da8);
     }
 
     /// Same via the EAFile entry point.
     #[test]
     fn big_file_get_entry_data_by_index_2_matches() {
-        check(
+        check_paths(
             gen_big_file_get_entry_data_by_index_2,
             hand_big_file_get_entry_data_by_index_2,
-            48,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3e_2da8, 0);
-                put_ascii_2(c, "entry", DATA + 0x400);
-                c.g[A0][0] = sx(DATA + 0x700 + (seed % 3) * 0x10);
-                c.g[A1][0] = (seed / 3 % 251) as u64;
-                c.g[A2][0] = (seed / 9 % 7) as u64;
-                c.g[A3][0] = sx(DATA + 0x500);
-                c.pc = 0x003e_2da8;
-            },
+            36,
+            &PATHS_BY_INDEX_2,
+            &big_file_get_entry_data_by_index_2_setup,
         );
     }
 
-    /// Indexed lookups add the base to the stored offset.
+    fn big_file_get_entry_data_by_index_setup(c: &mut Cpu, seed: u32) {
+        by_index_setup(c, seed, 0x3e_2d60, 0x003e_2d60);
+    }
+
+    /// Indexed lookups add the base to the stored offset; misses return 0.
     #[test]
     fn big_file_get_entry_data_by_index_matches() {
-        check(
+        check_paths(
             gen_big_file_get_entry_data_by_index,
             hand_big_file_get_entry_data_by_index,
-            48,
+            36,
+            &PATHS_BY_INDEX,
+            &big_file_get_entry_data_by_index_setup,
+        );
+    }
+
+    /// Comma lists of one to four names (found or missing) in a `BIGF` or
+    /// `C0FB` archive; one address per name.
+    fn data_list_fixture(c: &mut Cpu, seed: u32) {
+        put_big(c, BIG, seed % 2);
+        let names = [
+            "alpha",
+            "alpha,Beta",
+            "gamma,zz,d",
+            "x",
+            "d,GAMMA,alpha,Beta",
+        ][seed as usize / 2 % 5];
+        // Poison RAM[0]: the no-comma path must not write (a
+        // `==`-for-`!=` slip would `sb(0, 0)` here and be caught).
+        c.bus.write8(0, 0xa5);
+        put_ascii(c, DATA + 0x500, names);
+        zero_block(c, DATA + 0x600, 8);
+        c.g[A0][0] = sx(BIG);
+        c.g[A1][0] = sx(DATA + 0x500);
+        c.g[A2][0] = sx(DATA + 0x600);
+        c.pc = 0x003e_2e50;
+    }
+
+    #[test]
+    fn big_file_get_entry_data_list_matches() {
+        check_paths(
+            gen_big_file_get_entry_data_list,
+            hand_big_file_get_entry_data_list,
+            20,
+            &PATHS_DATA_LIST,
             &|c, seed| {
-                let _r = machine(c, seed, 0x3e_2d60, 0);
-                put_ascii_2(c, "entry", DATA + 0x400);
-                c.g[A0][0] = sx(DATA + 0x700 + (seed % 3) * 0x10);
-                c.g[A1][0] = (seed / 3 % 251) as u64;
-                c.g[A2][0] = (seed / 9 % 7) as u64;
-                c.g[A3][0] = sx(DATA + 0x500);
-                c.pc = 0x003e_2d60;
+                let _r = machine(c, seed, 0x3e_2e50, 0);
+                data_list_fixture(c, seed);
             },
         );
     }
 
-    /// Comma counts drive 1/multi-iteration walks; no-comma ends at once.
+    /// The comma walk with events, delivered without unwinding (schedule
+    /// modes off and deliver): an unwind would land first in the strchr or
+    /// lookup callees, which cannot resume mid-call in the test machine.
     #[test]
-    fn big_file_get_entry_data_list_matches() {
-        check(
+    fn big_file_get_entry_data_list_events() {
+        check_events(
             gen_big_file_get_entry_data_list,
             hand_big_file_get_entry_data_list,
-            48,
+            60,
             &|c, seed| {
-                let _r = machine(c, seed, 0x3e_2e50, 0);
-                let block = DATA + 0x700;
-                zero_block(c, block, 16);
-                let names = ["one", "one,two", "a,b,c", "x"][seed as usize % 4];
-                put_ascii_3(c, names, DATA + 0x500);
-                zero_block(c, DATA + 0x600, 8);
-                c.g[A0][0] = sx(block);
-                c.g[A1][0] = sx(DATA + 0x500);
-                c.g[A2][0] = sx(DATA + 0x600);
-                c.pc = 0x003e_2e50;
+                let mut r = machine(c, seed, 0x3e_2e50, 0);
+                data_list_fixture(c, seed / 2);
+                schedule(c, &mut r, seed % 2 * 2, 0x003e_2e50)
             },
         );
     }
@@ -1058,44 +1189,55 @@ pub(crate) mod tests {
 
     driven!(hand_big_file_get_entry_data, big_file_get_entry_data);
 
-    /// Missing names report zero; present ones report header+offset.
+    /// Found names report header + offset; missing and null ones 0.
+    fn big_file_get_entry_data_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3e_2df0, 0);
+        put_big(c, BIG, seed % 3);
+        c.g[A0][0] = sx(BIG);
+        c.g[A1][0] = lookup_name(c, seed / 3);
+        c.pc = 0x003e_2df0;
+    }
+
     #[test]
     fn big_file_get_entry_data_matches() {
-        check(
+        check_paths(
             gen_big_file_get_entry_data,
             hand_big_file_get_entry_data,
             48,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3e_2df0, 0);
-                let block = DATA + 0x700 + (seed % 3) * 0x10;
-                zero_block(c, block, 16);
-                put_ascii_3(c, "entry", DATA + 0x400);
-                c.g[A0][0] = sx(block);
-                c.g[A1][0] = if seed % 4 == 0 { 0 } else { sx(DATA + 0x400) };
-                c.pc = 0x003e_2df0;
-            },
+            &PATHS_ENTRY_DATA,
+            &big_file_get_entry_data_setup,
         );
+    }
+
+    /// Indexed name lookups: hits copy the name to `dst`, misses clear its
+    /// first byte.
+    fn entry_name_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        let _r = machine(c, seed, salt, 0);
+        put_big(c, BIG, seed % 3);
+        for i in 0..4u32 {
+            c.bus.write32(DATA + 0x500 + 4 * i, 0xa5a5_a5a5);
+        }
+        c.g[A0][0] = sx(BIG);
+        c.g[A1][0] = (seed / 3 % 6) as u64;
+        c.g[A2][0] = sx(DATA + 0x500);
+        c.pc = entry;
     }
 
     driven!(hand_big_file_get_entry_name_2, big_file_get_entry_name_2);
 
+    fn big_file_get_entry_name_2_setup(c: &mut Cpu, seed: u32) {
+        entry_name_setup(c, seed, 0x3e_2fc8, 0x003e_2fc8);
+    }
+
     /// Same through the EAFile finder.
     #[test]
     fn big_file_get_entry_name_2_matches() {
-        check(
+        check_paths(
             gen_big_file_get_entry_name_2,
             hand_big_file_get_entry_name_2,
-            48,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3e_2fc8, 0);
-                let block = DATA + 0x700;
-                zero_block(c, block, 16);
-                put_ascii_3(c, "entry", DATA + 0x400);
-                c.g[A0][0] = sx(block);
-                c.g[A1][0] = if seed % 3 == 0 { 0 } else { sx(DATA + 0x400) };
-                c.g[A2][0] = sx(DATA + 0x500);
-                c.pc = 0x003e_2fc8;
-            },
+            36,
+            &PATHS_ENTRY_NAME_2,
+            &big_file_get_entry_name_2_setup,
         );
     }
 
@@ -1103,59 +1245,60 @@ pub(crate) mod tests {
 
     driven!(hand_big_file_get_entry_name, big_file_get_entry_name);
 
-    /// Null lookups clear the dst word; hits copy through strcpy.
+    fn big_file_get_entry_name_setup(c: &mut Cpu, seed: u32) {
+        entry_name_setup(c, seed, 0x3e_2f70, 0x003e_2f70);
+    }
+
     #[test]
     fn big_file_get_entry_name_matches() {
-        check(
+        check_paths(
             gen_big_file_get_entry_name,
             hand_big_file_get_entry_name,
-            48,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3e_2f70, 0);
-                let block = DATA + 0x700;
-                zero_block(c, block, 16);
-                put_ascii_3(c, "entry", DATA + 0x400);
-                c.g[A0][0] = sx(block);
-                c.g[A1][0] = if seed % 3 == 0 { 0 } else { sx(DATA + 0x400) };
-                c.g[A2][0] = sx(DATA + 0x500);
-                c.pc = 0x003e_2f70;
-            },
+            36,
+            &PATHS_ENTRY_NAME,
+            &big_file_get_entry_name_setup,
         );
+    }
+
+    /// Found, other-case, missing and null names; the offset word.
+    fn offset_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        let _r = machine(c, seed, salt, 0);
+        put_big(c, BIG, seed % 3);
+        c.g[A0][0] = sx(BIG);
+        c.g[A1][0] = lookup_name(c, seed / 3);
+        c.pc = entry;
+    }
+
+    fn big_file_get_entry_offset_2_setup(c: &mut Cpu, seed: u32) {
+        offset_setup(c, seed, 0x3e_2d30, 0x003e_2d30);
     }
 
     /// Same via the EAFile entry point.
     #[test]
     fn big_file_get_entry_offset_2_matches() {
-        check(
+        check_paths(
             gen_big_file_get_entry_offset_2,
             hand_big_file_get_entry_offset_2,
             48,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3e_2d30, 0);
-                put_ascii_2(c, "entry", DATA + 0x400);
-                c.g[A0][0] = sx(DATA + 0x400);
-                c.g[A1][0] = if seed % 4 == 0 { 0 } else { sx(DATA + 0x400) };
-                c.pc = 0x003e_2d30;
-            },
+            &PATHS_OFFSET_2,
+            &big_file_get_entry_offset_2_setup,
         );
     }
 
     driven!(hand_big_file_get_entry_offset, big_file_get_entry_offset);
 
-    /// Missing names report zero; present names report the slot.
+    fn big_file_get_entry_offset_setup(c: &mut Cpu, seed: u32) {
+        offset_setup(c, seed, 0x3e_2d00, 0x003e_2d00);
+    }
+
     #[test]
     fn big_file_get_entry_offset_matches() {
-        check(
+        check_paths(
             gen_big_file_get_entry_offset,
             hand_big_file_get_entry_offset,
             48,
-            &|c, seed| {
-                let _r = machine(c, seed, 0x3e_2d00, 0);
-                put_ascii_2(c, "entry", DATA + 0x400);
-                c.g[A0][0] = sx(DATA + 0x400);
-                c.g[A1][0] = if seed % 4 == 0 { 0 } else { sx(DATA + 0x400) };
-                c.pc = 0x003e_2d00;
-            },
+            &PATHS_OFFSET,
+            &big_file_get_entry_offset_setup,
         );
     }
 
@@ -1177,6 +1320,28 @@ pub(crate) mod tests {
             },
         );
     }
+
+    // Arm totals (cycles of the generated body) each fixture must reach.
+    const PATHS_ENTRY_COUNT: [u64; 8] = [33, 53, 58, 46, 23, 25, 29, 30];
+
+    const PATHS_ENTRY_DATA_2: [u64; 6] = [564, 517, 471, 557, 20, 234];
+
+    const PATHS_BY_INDEX_2: [u64; 4] = [264, 217, 483, 227];
+
+    const PATHS_BY_INDEX: [u64; 4] = [271, 224, 490, 234];
+
+    const PATHS_DATA_LIST: [u64; 6] = [502, 455, 1037, 1907, 648, 2349];
+
+    const PATHS_ENTRY_DATA: [u64; 6] = [571, 524, 478, 564, 20, 241];
+
+    const PATHS_ENTRY_NAME_2: [u64; 4] = [313, 246, 484, 228];
+
+    const PATHS_ENTRY_NAME: [u64; 4] = [320, 253, 491, 235];
+
+    const PATHS_OFFSET_2: [u64; 6] = [552, 505, 459, 545, 8, 222];
+
+    const PATHS_OFFSET: [u64; 6] = [559, 512, 466, 552, 8, 229];
+
     driven!(
         gen_big_file_get_entry_data_2,
         ee::s14::f_003e2e20__generated
