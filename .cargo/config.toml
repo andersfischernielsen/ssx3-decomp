@@ -1,4 +1,0 @@
-# Generated EE crates produce large incremental artifacts. Disable incremental
-# compilation by default to limit disk usage; CARGO_INCREMENTAL can override it.
-[build]
-incremental = false
