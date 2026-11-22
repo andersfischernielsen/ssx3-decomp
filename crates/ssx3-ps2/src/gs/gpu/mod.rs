@@ -53,6 +53,7 @@ use super::raster::{self, Blend, Draw, FbFmt, Pages, Prim, Shape, TexKind};
 use super::region::Region;
 use super::swizzle::{self, Kind, Surface};
 use super::Vertex;
+use crate::gpu_wait::{self, Site};
 
 pub(crate) mod hires;
 mod native;
@@ -1810,7 +1811,9 @@ impl GpuGs {
         if let (Some(p), true) = (&self.prof, passes > 0) {
             let slice = p.read.slice(0..passes as u64 * 16);
             slice.map_async(wgpu::MapMode::Read, |_| {});
-            let _ = self.ctx.device.poll(wgpu::PollType::wait_indefinitely());
+            gpu_wait::wait(Site::GsProf, || {
+                let _ = self.ctx.device.poll(wgpu::PollType::wait_indefinitely());
+            });
             let period = q.get_timestamp_period() as f64;
             {
                 let v = slice.get_mapped_range().expect("timestamps");
@@ -1850,9 +1853,11 @@ impl GpuGs {
         self.inflight.push_back(idx);
         while self.inflight.len() > MAX_INFLIGHT {
             let old = self.inflight.pop_front().expect("inflight");
-            let _ = self.ctx.device.poll(wgpu::PollType::Wait {
-                submission_index: Some(old),
-                timeout: None,
+            gpu_wait::wait(Site::GsInflightCap, || {
+                let _ = self.ctx.device.poll(wgpu::PollType::Wait {
+                    submission_index: Some(old),
+                    timeout: None,
+                });
             });
         }
     }
@@ -1948,12 +1953,16 @@ impl GpuGs {
                 }
                 std::thread::yield_now();
             };
-            let _ = self.ctx.device.poll(wgpu::PollType::Wait {
-                submission_index: Some(idx),
-                timeout: None,
+            gpu_wait::wait(Site::GsLatentIdx, || {
+                let _ = self.ctx.device.poll(wgpu::PollType::Wait {
+                    submission_index: Some(idx),
+                    timeout: None,
+                });
             });
             if !self.latent.ready.load(std::sync::atomic::Ordering::Acquire) {
-                let _ = self.ctx.device.poll(wgpu::PollType::wait_indefinitely());
+                gpu_wait::wait(Site::GsLatentIdle, || {
+                    let _ = self.ctx.device.poll(wgpu::PollType::wait_indefinitely());
+                });
             }
             self.stats.readback_gpu_ns += t0.elapsed().as_nanos() as u64;
             self.stats.readback_count += 1;
@@ -1987,7 +1996,9 @@ impl GpuGs {
     /// Wait until the GPU has finished everything submitted.
     pub(crate) fn wait_idle(&mut self) {
         self.drain_submits();
-        let _ = self.ctx.device.poll(wgpu::PollType::wait_indefinitely());
+        gpu_wait::wait(Site::GsWaitIdle, || {
+            let _ = self.ctx.device.poll(wgpu::PollType::wait_indefinitely());
+        });
         self.inflight.clear();
     }
 
@@ -2002,7 +2013,9 @@ impl GpuGs {
                 eprintln!("[gs] readback map failed: {e}");
             }
         });
-        let _ = self.ctx.device.poll(wgpu::PollType::wait_indefinitely());
+        gpu_wait::wait(Site::GsReadStaging, || {
+            let _ = self.ctx.device.poll(wgpu::PollType::wait_indefinitely());
+        });
         self.inflight.clear();
         self.stats.readback_drain_ns += (t1 - t0).as_nanos() as u64;
         self.stats.readback_gpu_ns += t1.elapsed().as_nanos() as u64;

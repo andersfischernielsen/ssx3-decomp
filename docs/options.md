@@ -24,7 +24,7 @@ the recommended way to play.
 | `SSX3_MEMCARD=<path>` | Memory card file (default `saves/ssx3-mc0.ps2`, or the front end's save root; a standalone build without one uses the user's data folder, see `docs/frontends.md`). |
 | `SSX3_PACK=<path>` | Play from a data pack made by `tools/bundle.py pack` instead of the disc image. |
 | `SSX3_PAD2=1` | Plug in pad 2; a second controller drives it (Multi Play). |
-| `SSX3_AUDIO=0` | No audio output (`1`: the default device, also in headless runs, which default to off; `pull`: the front end pulls the samples, `docs/frontends.md`). |
+| `SSX3_AUDIO=0` | No audio output (`1`: the default device, also in headless runs, which default to off; `pull`: the front end pulls the samples). See [Front ends](frontends.md#audio). |
 | `SSX3_REAL_CLOCK=1` | Use the host clock for the PS2 clock's time of day and memory-card timestamps. Unset or exactly `0` keeps the fixed clock, so runs are reproducible. For compatibility, any other present value (including an empty environment value) enables the host clock. |
 | `SSX3_RTC=<unix seconds>` | Pin the clock to a timestamp; a valid nonnegative integer overrides `SSX3_REAL_CLOCK`, including `0`. Invalid values fall back to the selected clock. |
 

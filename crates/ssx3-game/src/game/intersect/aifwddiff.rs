@@ -265,7 +265,7 @@ pub fn ai_fwd_diff_cache_hash_remove(c: &mut Cpu) {
             3 => {
                 c.cycles += 2;
                 c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
-                stage = 4;
+                stage = 9;
             }
             4 => {
                 c.cycles += 2;
@@ -280,7 +280,10 @@ pub fn ai_fwd_diff_cache_hash_remove(c: &mut Cpu) {
                 c.cycles += 3;
                 c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xc)).lw(c);
                 c.sw(c.g[A0][0] as u32, c.g[V0][0]);
-                stage = 8;
+                // The unlink block returns straight to the caller; the
+                // shared exit arm's two cycles belong to the miss path.
+                abi::ret(c);
+                return;
             }
             6 => {
                 c.cycles += 3;
@@ -289,9 +292,16 @@ pub fn ai_fwd_diff_cache_hash_remove(c: &mut Cpu) {
                 c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xc));
                 stage = if last { 8 } else { 7 };
             }
+            // The reload of the later nodes' key; the bound check it shares
+            // with the first pass.
             7 => {
                 c.cycles += 1;
                 c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                stage = 9;
+            }
+            // The sort bound: the first pass enters here directly (from
+            // 0x327b70), later nodes through stage 7.
+            9 => {
                 c.cycles += 3;
                 c.g[V0][0] = (c.g[A1][0] < c.g[V0][0]) as u64;
                 if c.g[V0][0] != 0 {
@@ -3483,6 +3493,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::difftest::check_paths;
     use crate::game::camera::trigger::cameratriggerlist::tests::{
         fake_operator_new_named, PREV_OPERATOR_NEW_NAMED,
     };
@@ -3548,48 +3559,88 @@ pub(crate) mod tests {
 
     // --------------------------------------------------- assorted leaves
 
+    /// HashRemove over one bucket chain. `seed % 8` picks the chain (below)
+    /// and `seed / 8` the bucket count; the chain keys are set against the
+    /// removed key, so each arm is reached by its seed.
+    fn hash_remove_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x327b30 ^ seed as u64);
+        scramble(c, &mut r);
+        // Enter at the real entry: an unset pc exercises only the
+        // jump-out path on both sides.
+        c.pc = 0x0032_7b30;
+        let this = DATA;
+        let node = DATA + 0x100;
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = node as u64;
+        let count = seed / 8 % 4 + 1;
+        c.bus.write32(this + 0xc, count);
+        let buckets = DATA + 0x400;
+        c.bus.write32(this + 8, buckets);
+        let key = match seed % 8 {
+            // The "no key" marker.
+            0 => 0xffff_ffff,
+            _ => 0x2000 + (r.next_u32() & 0xfff),
+        };
+        c.bus.write32(node, key);
+        // The chain's keys relative to `key`. A node above it ends the
+        // scan (the chain is sorted); a node equal to it is unlinked.
+        let chain: &[i32] = match seed % 8 {
+            // The marker, and an empty bucket.
+            0 | 1 => &[],
+            // Above at the first node.
+            2 => &[1],
+            // Equal at the first node.
+            3 => &[0],
+            // Equal at the second, and at the third.
+            4 => &[-2, 0],
+            5 => &[-3, -2, 0],
+            // Above at the second node.
+            6 => &[-2, 1],
+            // Below all: the end of the chain.
+            _ => &[-2, -1],
+        };
+        let bucket = buckets + (key % count) * 4;
+        let mut cur = bucket;
+        for (i, d) in chain.iter().enumerate() {
+            let e = DATA + 0x800 + i as u32 * 0x10;
+            c.bus.write32(cur, e);
+            c.bus.write32(e, key.wrapping_add(*d as u32));
+            cur = e + 0xc;
+        }
+        c.bus.write32(cur, 0);
+    }
+
     #[test]
     fn ai_fwd_diff_cache_hash_remove_matches() {
-        check(
+        check_paths(
             ee::s10::f_00327b30,
             ai_fwd_diff_cache_hash_remove,
-            SEEDS,
-            &|c, seed| {
-                let mut r = Rng(0x327b30 ^ seed as u64);
-                scramble(c, &mut r);
-                let this = DATA;
-                let node = DATA + 0x100;
-                c.g[A0][0] = this as u64;
-                c.g[A1][0] = node as u64;
-                let count = (seed % 4) + 1;
-                c.bus.write32(this + 0xc, count);
-                let buckets = DATA + 0x400;
-                c.bus.write32(this + 8, buckets);
-                let key = if seed % 6 == 0 {
-                    0xffff_ffff
-                } else {
-                    r.next_u32()
-                };
-                c.bus.write32(node, key);
-                // A short chain in the selected bucket; one node matches `key`
-                // when seed % 3 != 0 so the removal path runs.
-                let bucket = buckets + (key % count) * 4;
-                let n = (seed % 3) + 1;
-                let mut cur = bucket;
-                for i in 0..n {
-                    let e = DATA + 0x800 + i * 0x10;
-                    c.bus.write32(cur, e);
-                    let k = if seed % 3 != 0 && i == n - 1 {
-                        key
-                    } else {
-                        r.next_u32()
-                    };
-                    c.bus.write32(e, k);
-                    cur = e + 0xc;
-                }
-                c.bus.write32(cur, 0);
-            },
+            32,
+            // Cycles of the paths (seeds 0-7, bucket count 1): the marker, an
+            // empty bucket, the bound at the first node, a first-node
+            // unlink, unlinks at the second and third node, the bound at
+            // the second node, and the end of the chain.
+            &[7, 18, 23, 26, 35, 44, 32, 37],
+            &hash_remove_fixture,
         );
+    }
+
+    crate::difftest::events::driven!(gen_hash_remove, ee::s10::f_00327b30);
+
+    crate::difftest::events::driven!(hand_hash_remove, ai_fwd_diff_cache_hash_remove);
+
+    /// HashRemove with events due at its two loop back edges: unwinding at
+    /// the first node's bound check and at later nodes, re-entered at
+    /// 0x327b78.
+    #[test]
+    fn ai_fwd_diff_cache_hash_remove_events_match() {
+        use crate::difftest::events::{check_events, schedule};
+        check_events(gen_hash_remove, hand_hash_remove, 96, &|c, seed| {
+            // The chains that pass the first node's bound check.
+            hash_remove_fixture(c, 3 + seed % 5 + seed / 5 % 4 * 8);
+            let mut r = Rng(0x327b31 ^ seed as u64);
+            schedule(c, &mut r, seed, 0x0032_7b30)
+        });
     }
 
     #[test]
@@ -3720,6 +3771,8 @@ pub(crate) mod tests {
             SEEDS_3,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x3291, 0);
+                // Enter at the real entry: an unset pc takes the jump-out arm.
+                c.pc = 0x0032_91e0;
                 let (hash, obj_node, old_box, new_box) =
                     (DATA, DATA + 0x3000, DATA + 0x100, DATA + 0x140);
                 c.bus.write32(gp_at(-0x2df8), f(1.0e-6));

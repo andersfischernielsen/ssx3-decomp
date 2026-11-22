@@ -17,6 +17,10 @@ web-time = "1"
 # Texture packs (dump and replacement images).
 png = "0.18.1"
 
+[dev-dependencies]
+# A device without a GPU (buffers and their maps only) for the tests.
+wgpu = { version = "30.0.1", features = ["noop"] }
+
 [features]
 # The emulated GS (ssx3-ps2), for tools comparing against it.
 emu-gs = ["ssx3-ps2/emu-gs"]

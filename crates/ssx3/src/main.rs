@@ -27,6 +27,7 @@ mod screenshot;
 mod settings;
 
 use present::Presenter;
+use ssx3_ps2::gpu_wait::{self, Site};
 use ssx3_ps2::Cpu;
 
 struct App {
@@ -226,7 +227,9 @@ impl ApplicationHandler for App {
         window.set_cursor_visible(false);
         let gs = ssx3_ps2::gpu::context();
         self.gpu_ctx = gs;
-        self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), gs)));
+        self.presenter = Some(gpu_wait::wait(Site::PresenterNew, || {
+            pollster::block_on(Presenter::new(window.clone(), gs))
+        }));
         let size = window.inner_size();
         let display_hz = window
             .current_monitor()

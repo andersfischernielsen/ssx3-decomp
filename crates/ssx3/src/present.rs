@@ -6,6 +6,7 @@
 //! (`Gs::display_gpu`, `render_gpu`), so frames never round-trip through
 //! the CPU.
 
+use ssx3_ps2::gpu_wait::{self, Site};
 use std::sync::Arc;
 
 use winit::window::Window;
@@ -436,8 +437,10 @@ impl Presenter {
     /// retried at the next present.
     fn configure(&mut self) -> bool {
         let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        self.surface.configure(&self.device, &self.config);
-        let err = pollster::block_on(scope.pop());
+        gpu_wait::wait(Site::PresentConfigure, || {
+            self.surface.configure(&self.device, &self.config)
+        });
+        let err = gpu_wait::wait(Site::PresentErrorScope, || pollster::block_on(scope.pop()));
         self.reconfigure = err.is_some();
         !self.reconfigure
     }
