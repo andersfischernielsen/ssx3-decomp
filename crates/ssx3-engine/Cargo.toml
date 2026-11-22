@@ -21,6 +21,7 @@ vu1-microcode = ["ssx3-ps2/vu1-microcode", "emu-gs"]
 
 [dependencies]
 ssx3-core.workspace = true
+ssx3-plugin = { path = "../ssx3-plugin" }
 ssx3-ps2 = { path = "../ssx3-ps2" }
 ssx3-gfx = { path = "../ssx3-gfx" }
 # The VU job format (`ssx3_engine::vu`).

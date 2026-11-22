@@ -27,6 +27,7 @@ extern crate ssx3_ee_unwind as ssx3_ee;
 
 mod boot;
 mod debug;
+pub mod plugins;
 mod render;
 
 use std::path::PathBuf;
@@ -39,7 +40,7 @@ pub use ssx3_gfx::Renderer;
 pub use ssx3_iop::audio::Output as Audio;
 pub use ssx3_ps2::Cpu;
 /// The crates a front end works with, at the versions the engine uses.
-pub use {ssx3_core, ssx3_game, ssx3_gfx, ssx3_iop, ssx3_ps2};
+pub use {ssx3_core, ssx3_game, ssx3_gfx, ssx3_iop, ssx3_plugin, ssx3_ps2};
 
 /// Running the renderer's VU1 work elsewhere (`docs/frontends.md`, "VU
 /// offload"): the browser's helper workers. A front end without threads
@@ -127,6 +128,9 @@ pub struct EngineConfig {
     /// samples with [`Engine::audio_pull`] ([`Audio::Pull`]). The
     /// `SSX3_AUDIO` setting overrides it (`0`, `null`, `pull`, `1`).
     pub audio: Audio,
+    /// Rust plugins linked into this front end (`ssx3 plugins build` makes
+    /// one); plugin folders are found on their own. See `ssx3-plugin`.
+    pub plugins: Vec<Box<dyn ssx3_plugin::Plugin>>,
     pub settings: Box<dyn Settings>,
 }
 
@@ -143,6 +147,7 @@ impl EngineConfig {
             skip_movies: false,
             short_memcard_screens: true,
             audio: Audio::Device,
+            plugins: Vec::new(),
             settings,
         }
     }
@@ -188,6 +193,7 @@ pub struct Engine {
     paused: bool,
     audio_interrupted: bool,
     surface: Option<(u32, u32)>,
+    plugins: ssx3_plugin::Loaded,
 }
 
 /// Renderer options among the settings ([`Engine::setting_changed`]).
@@ -232,7 +238,7 @@ impl Engine {
             .get("SSX3_SKIP_MOVIES")
             .map(|v| v != "0")
             .unwrap_or(config.skip_movies);
-        let mut cpu = boot::boot(skip);
+        let (mut cpu, plugins) = boot::boot(skip, config.plugins);
         let gfx = render::install_renderer(&mut cpu, &*settings, config.save_pipelines);
         Engine {
             cpu,
@@ -246,6 +252,7 @@ impl Engine {
             paused: false,
             audio_interrupted: false,
             surface: None,
+            plugins,
         }
     }
 
@@ -253,6 +260,11 @@ impl Engine {
 
     pub fn settings(&self) -> &dyn Settings {
         &*self.settings
+    }
+
+    /// The plugins found at boot, what they add and what became of each.
+    pub fn plugins(&self) -> &ssx3_plugin::Loaded {
+        &self.plugins
     }
 
     /// The machine (debugging, verification, front-end diagnostics).

@@ -73,7 +73,10 @@ fn vblank(c: &mut Cpu) {
 }
 
 /// Create the machine, load the disc and the executable, start the main thread.
-pub(crate) fn boot(skip_movies: bool) -> Box<Cpu> {
+pub(crate) fn boot(
+    skip_movies: bool,
+    code_plugins: Vec<Box<dyn ssx3_plugin::Plugin>>,
+) -> (Box<Cpu>, ssx3_plugin::Loaded) {
     machine::register_functions(&ssx3_ee::FUNCTIONS);
     // Hand-written replacements (crates/ssx3-game); SSX3_NO_OVERRIDES=1 runs
     // the generated code everywhere.
@@ -81,6 +84,9 @@ pub(crate) fn boot(skip_movies: bool) -> Box<Cpu> {
     if n > 0 {
         eprintln!("[ssx3-game] {n} hand-written function(s) installed");
     }
+    // Plugins: hooks wrap the overrides above; their overlays go in front of
+    // the disc (before the file layer below starts).
+    let plugins = crate::plugins::load(code_plugins);
     // The tick rate (SSX3_TICK_HZ, settings "Game rate").
     machine::set_vsync_hz(ssx3_game::tick::install());
     machine::set_vblank_hook(vblank);
@@ -127,7 +133,7 @@ pub(crate) fn boot(skip_movies: bool) -> Box<Cpu> {
     if skip_movies {
         c.bus.write32(0x004a_19cc, 0);
     }
-    c
+    (c, plugins)
 }
 
 /// The executable: `orig/SLUS_207.72`, else the one on the disc.

@@ -2456,6 +2456,7 @@ dependencies = [
  "ssx3-gfx",
  "ssx3-iop",
  "ssx3-iop-gen",
+ "ssx3-plugin",
  "ssx3-ps2",
  "ssx3-render",
 ]
@@ -2469,6 +2470,7 @@ dependencies = [
  "ssx3-ee-rt",
  "ssx3-ee-unwind",
  "ssx3-mpeg",
+ "ssx3-plugin",
  "ssx3-ps2",
  "ssx3-render",
  "ssx3-vu",
@@ -2527,6 +2529,13 @@ dependencies = [
  "ssx3-core",
  "ssx3-ee-rt",
  "toml",
+]
+
+[[package]]
+name = "ssx3-plugin-hello"
+version = "0.1.0"
+dependencies = [
+ "ssx3-plugin",
 ]
 
 [[package]]
