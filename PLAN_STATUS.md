@@ -35,7 +35,7 @@ Written by `src/core_boot.rs` (mine), `core_object.rs`, `core_race.rs`, `core_ui
 
 | edit | status |
 | --- | --- |
-| `native_files.rs`: asset roots, world texture slots, archive redirect | roots: `core_boot::configure`; archive redirect: replaced by the engine's world swap + overlay (importer names archives `TR_<CODE>_<R/F>.BIG`, `prepare_track_info` writes the name in the course record). World-texture-slot scan of the archives: NOT converted (slots stay 1500; Tricky courses need up to 1590 -> `TexMan_InitTable` wrapper exists but reads the unset value) |
+| `native_files.rs`: asset roots, world texture slots, archive redirect | roots: `core_boot::configure`; archive redirect: replaced by the engine's world swap + overlay (importer names archives `TR_<CODE>_<R/F>.BIG`, `prepare_track_info` writes the name in the course record). World texture slots: read from the importer's per-course json (`core_boot::configure`), not by scanning the archives |
 | `native_files.rs`: object-sound bank patching on reads (`custom_audio_banks`) | NOT converted: needs a file-read hook in the engine |
 | `event_boot.rs` (`SSX3_EVENT=<course>`, track info) | engine's `SSX3_EVENT=tricky/<id>` + `core_boot` chain on `FE_SetOnlineMode` |
 | `state.rs`, `beintnewrace.rs`, `belibrary.rs` (track info/name, commit, high score) | W |

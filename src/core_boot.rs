@@ -35,6 +35,22 @@ pub fn configure() {
     custom_tracks::set_assets_available(ready);
     custom_movies::set_root(ready.then(|| root.clone()));
     custom_course_rules::set_root(ready.then(|| root.clone()));
+    // The world texture slots the prepared courses need (the importer records
+    // them in each course's manifest): TexMan must size its table at boot.
+    let mut slots = 1500;
+    if let Ok(dir) = std::fs::read_dir(root.join("DATA/WORLDS/TRICKY")) {
+        for entry in dir.flatten() {
+            if entry.path().extension().is_some_and(|e| e == "json") {
+                let text = std::fs::read_to_string(entry.path()).unwrap_or_default();
+                if let Some(i) = text.find("\"world_texture_slots\":") {
+                    let n: String = text[i + 22..].chars().skip_while(|c| !c.is_ascii_digit())
+                        .take_while(char::is_ascii_digit).collect();
+                    slots = slots.max(n.parse().unwrap_or(0));
+                }
+            }
+        }
+    }
+    custom_tracks::set_world_texture_slots(slots);
     if let Ok(want) = std::env::var("SSX3_EVENT") {
         if let Some(id) = want.strip_prefix("tricky/") {
             if custom_tracks::activate(id).is_some() {
