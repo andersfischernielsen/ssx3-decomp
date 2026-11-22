@@ -76,6 +76,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         tag_field_get_date_packed,
         "TagFieldGetDatePacked",
     ),
+    (
+        0x003e_ae68,
+        tag_field_parse_decimal,
+        "TagField_ParseDecimal",
+    ),
+    (0x003e_aeb8, ds_secstotime, "ds_secstotime"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6082,11 +6088,286 @@ pub fn tag_field_get_date_packed(c: &mut Cpu) {
     })
 }
 
+/// `char* TagField_ParseDecimal(char* p /*a0*/, uint* out /*a1*/)`
+/// (0x3eae68): parse an unsigned decimal at `p`, storing the running value
+/// into `*out` after each digit. Returns the pointer just past the digits.
+pub fn tag_field_parse_decimal(c: &mut Cpu) {
+    c.cycles += 6;
+    c.sw(c.g[A1][0] as u32, 0u64);
+    c.g[V1][0] = c.lbu(c.g[A0][0] as u32);
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x30));
+    c.g[V0][0] = (c.g[V0][0] < 0xau64) as u64;
+    let t = c.g[V0][0] == 0u64;
+    c.g[A2][0] = 0xa;
+    if t {
+        c.cycles += 2;
+        let t = c.g[RA][0] as u32;
+        c.g[V0][0] = c.g[A0][0];
+        c.pc = t;
+        return;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+    'l_3eae88: loop {
+        c.cycles += 10;
+        c.g[V1][0] = c.g[V1][0] & 0xf;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+        c.mult(0, 2, 2, 6);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[A1][0] as u32, c.g[V0][0]);
+        c.g[V1][0] = c.lbu(c.g[A0][0] as u32);
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x30));
+        c.g[V0][0] = (c.g[V0][0] < 0xau64) as u64;
+        if c.g[V0][0] != 0u64 {
+            c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+            if event_due(c) {
+                deliver_event_here(c, 0x003e_ae88);
+            }
+            continue 'l_3eae88;
+        } else {
+            break 'l_3eae88;
+        }
+    }
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = c.g[A0][0];
+    c.pc = t;
+}
+
+/// `void* ds_secstotime(void* out /*a0*/, int secs /*a1*/)` (0x3eaeb8):
+/// split seconds into a date/time record: seconds, minutes, hours, the year
+/// day count walked down through the leap-year table, then the month loop.
+/// Returns `out`.
+pub fn ds_secstotime(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                0x003e_aeb8 => {
+                    c.cycles += 9;
+                    c.g[V1][0] = 0x10000;
+                    c.g[A1][0] = c.g[A1][0] << 32;
+                    c.g[A1][0] = ((c.g[A1][0] as i64) >> 32) as u64;
+                    c.g[V1][0] = c.g[V1][0] | 0x5180;
+                    c.g[A2][0] = 0x3c;
+                    c.divu(0, 5, 3);
+                    c.g[V0][0] = 0x10000;
+                    pc = 0x003e_aedc;
+                }
+                0x003e_aedc => {
+                    c.cycles += 20;
+                    c.g[V0][0] = c.g[V0][0] | 0x5180;
+                    c.g[T6][0] = c.g[A0][0];
+                    c.g[T0][0] = 0x3c;
+                    c.g[T1][0] = 0x3c;
+                    c.g[T2][0] = 0x3c;
+                    c.g[T5][0] = 0x7b2;
+                    c.g[A1][0] = c.lo[0];
+                    c.g[A3][0] = c.hi[0];
+                    c.g[T4][0] = c.g[A1][0];
+                    c.div(0, 7, 6);
+                    c.g[V1][0] = c.hi[0];
+                    c.g[V0][0] = c.lo[0];
+                    c.sw(c.g[T6][0] as u32, c.g[V1][0]);
+                    c.div(0, 2, 6);
+                    c.g[A0][0] = c.hi[0];
+                    c.g[V0][0] = c.lo[0];
+                    c.sw((c.g[T6][0] as u32).wrapping_add(0x4), c.g[A0][0]);
+                    c.sw((c.g[T6][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                    c.g[T7][0] = 0x490000;
+                    pc = 0x003e_afdc;
+                }
+                0x003e_af2c => {
+                    c.cycles += 1;
+                    pc = 0x003e_af30;
+                }
+                0x003e_af30 => {
+                    c.cycles += 10;
+                    c.g[V1][0] = 0x16e;
+                    c.g[A2][0] = sx((c.g[T5][0] as u32).wrapping_sub(0x1));
+                    c.div(0, 12, 3);
+                    c.g[T0][0] = 0x64;
+                    c.g[T1][0] = 0x190;
+                    c.g[T2][0] = 0xffffffffffffffff;
+                    c.g[V0][0] = ((c.g[T2][0] as i64) < (c.g[A2][0] as i64)) as u64;
+                    c.g[A1][0] = sx((c.g[T5][0] as u32).wrapping_add(0x2));
+                    pc = 0x003e_af58;
+                }
+                0x003e_af58 => {
+                    c.cycles += 33;
+                    if c.g[V0][0] != 0 {
+                        c.g[A1][0] = c.g[A2][0];
+                    }
+                    c.g[V0][0] = 0x64;
+                    c.g[V1][0] = 0x190;
+                    c.g[A1][0] = sx(((c.g[A1][0] as u32) as i32 >> 2) as u32);
+                    c.g[T3][0] = 0x16d;
+                    c.g[A0][0] = c.lo[0];
+                    c.div(0, 6, 8);
+                    c.g[A0][0] = sx((c.g[T5][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.g[A0][0] ^ c.g[T5][0];
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                    if c.g[V1][0] == 0 {
+                        c.g[A0][0] = c.g[V0][0];
+                    }
+                    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2));
+                    c.g[T2][0] = ((c.g[T2][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    if c.g[T2][0] != 0 {
+                        c.g[V0][0] = c.g[V1][0];
+                    }
+                    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 2) as u32);
+                    c.g[A3][0] = c.lo[0];
+                    c.div(0, 6, 9);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[A3][0] as u32));
+                    c.g[A3][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[T5][0] as u32));
+                    c.g[T5][0] = c.g[A0][0];
+                    c.g[A2][0] = c.lo[0];
+                    c.div(0, 3, 8);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[T0][0] = c.lo[0];
+                    c.div(0, 3, 9);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[T0][0] as u32));
+                    c.g[V1][0] = c.lo[0];
+                    c.mult(0, 7, 7, 11);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_sub(c.g[A3][0] as u32));
+                    c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    pc = 0x003e_afdc;
+                }
+                0x003e_afdc => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.g[T5][0] & 0x3;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[A0][0] = 0x16d;
+                    if t {
+                        pc = 0x003e_b024;
+                    } else {
+                        pc = 0x003e_afe8;
+                    }
+                }
+                0x003e_afe8 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = 0x64;
+                    c.div(0, 13, 2);
+                    pc = 0x003e_aff8;
+                }
+                0x003e_aff8 => {
+                    c.cycles += 3;
+                    c.g[V1][0] = c.hi[0];
+                    let t = c.g[V1][0] != 0u64;
+                    c.g[A0][0] = 0x16e;
+                    if t {
+                        pc = 0x003e_b024;
+                    } else {
+                        pc = 0x003e_b004;
+                    }
+                }
+                0x003e_b004 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = 0x190;
+                    c.div(0, 13, 2);
+                    pc = 0x003e_b014;
+                }
+                0x003e_b014 => {
+                    c.cycles += 3;
+                    c.g[V1][0] = c.hi[0];
+                    let t = c.g[V1][0] != 0u64;
+                    c.g[A0][0] = 0x16d;
+                    if t {
+                        pc = 0x003e_b024;
+                    } else {
+                        pc = 0x003e_b020;
+                    }
+                }
+                0x003e_b020 => {
+                    c.cycles += 1;
+                    c.g[A0][0] = 0x16e;
+                    pc = 0x003e_b024;
+                }
+                0x003e_b024 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[T4][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = 0x30;
+                    if t {
+                        if back_edge_unwinds(c, 0x003e_af30) {
+                            return Ok(());
+                        }
+                        pc = 0x003e_af30;
+                    } else {
+                        pc = 0x003e_b030;
+                    }
+                }
+                0x003e_b030 => {
+                    c.cycles += 9;
+                    c.g[A0][0] = c.g[A0][0] & 0x1;
+                    c.mult(0, 4, 4, 2);
+                    c.g[V1][0] = sx((c.g[T5][0] as u32).wrapping_sub(0x76c));
+                    c.g[V0][0] = sx((c.g[T7][0] as u32).wrapping_add(0x69e0));
+                    c.sw((c.g[T6][0] as u32).wrapping_add(0x14), c.g[V1][0]);
+                    c.sw((c.g[T6][0] as u32).wrapping_add(0x1c), c.g[T4][0]);
+                    c.sw((c.g[T6][0] as u32).wrapping_add(0x10), 0u64);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    pc = 0x003e_b068;
+                }
+                0x003e_b054 => {
+                    c.cycles += 1;
+                    pc = 0x003e_b058;
+                }
+                0x003e_b058 => {
+                    c.cycles += 4;
+                    c.g[T4][0] = sx((c.g[T4][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    c.sw((c.g[T6][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+                    pc = 0x003e_b068;
+                }
+                0x003e_b068 => {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw(c.g[A0][0] as u32);
+                    c.g[V0][0] = ((c.g[T4][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    if c.g[V0][0] == 0u64 {
+                        c.g[V0][0] = c.lw((c.g[T6][0] as u32).wrapping_add(0x10));
+                        if back_edge_unwinds(c, 0x003e_b058) {
+                            return Ok(());
+                        }
+                        pc = 0x003e_b058;
+                    } else {
+                        pc = 0x003e_b078;
+                    }
+                }
+                0x003e_b078 => {
+                    c.cycles += 5;
+                    c.g[V1][0] = sx((c.g[T4][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = c.g[T6][0];
+                    c.sw((c.g[T6][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+                    let t = c.g[RA][0] as u32;
+                    c.sw((c.g[T6][0] as u32).wrapping_add(0x20), 0u64);
+                    c.pc = t;
+                    return Ok(());
+                }
+                pc => {
+                    c.jump_out(pc, 0x003e_aeb8, 0x003e_b08c);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use crate::difftest::check_lohi;
+    use crate::difftest::elf_image;
     use crate::difftest::events::{check_events, driven, schedule, Events};
+    use crate::difftest::GAME_GP;
+    use crate::game::dirtysock::lobbyapi::tests::{
+        check_resumes, count_resume, schedule_no_unwind,
+    };
 
     use crate::difftest::fakes::machine;
 
@@ -7969,6 +8250,129 @@ pub(crate) mod tests {
                         _ => b"2020-01-02 03:04:05",
                     },
                 );
+            },
+        );
+    }
+
+    /// `tag_field_parse_decimal`: digit strings (seed % 8) with output
+    /// pre-filled non-zero. | empty/non-digit | short | long | stopped |
+    #[test]
+    fn tag_field_parse_decimal_matches() {
+        check_lohi(
+            ee::s14::f_003eae68__generated,
+            tag_field_parse_decimal,
+            32,
+            &|c, seed| {
+                let mut r = Rng(0xae68 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let text = DATA + 0x5000;
+                for w in 0..0x10u32 {
+                    c.bus.write32(text + 4 * w, 0x5858_5858);
+                }
+                match seed % 8 {
+                    0 => put_str(c, text, b""),
+                    1 => put_str(c, text, b":9"),
+                    2 => put_str(c, text, b"0"),
+                    3 => put_str(c, text, b"7"),
+                    4 => put_str(c, text, b"42"),
+                    5 => put_str(c, text, b"123456789"),
+                    6 => put_str(c, text, b"12:34"),
+                    _ => put_str(c, text, b"007"),
+                }
+                let out = DATA + 0x5100;
+                c.bus.write32(out, 0xdead_beef);
+                c.g[A0][0] = sx(text);
+                c.g[A1][0] = sx(out);
+                c.pc = 0x003e_ae68;
+            },
+        );
+    }
+
+    /// `TagField_ParseDecimal` delivers at its digit loop's back edge
+    /// (no callees: any delay inside the scan lands there).
+    #[test]
+    fn tag_field_parse_decimal_events() {
+        driven!(gen_parse, ee::s14::f_003eae68__generated);
+        driven!(hand_parse, tag_field_parse_decimal);
+        check_events(gen_parse, hand_parse, 24, &|c, seed| {
+            let mut r = Rng(0xae69 ^ seed as u64);
+            scramble(c, &mut r);
+            c.g[GP][0] = GAME_GP as u64;
+            let (text, out) = (DATA + 0x5000, DATA + 0x5100);
+            put_str(c, text, b"123456789");
+            c.bus.write32(out, 0xdead_beef);
+            let mode = schedule_no_unwind(c, &mut r, seed, 0x003e_ae68);
+            c.g[A0][0] = sx(text);
+            c.g[A1][0] = sx(out);
+            if mode != Events::Off {
+                c.next_event = c.cycles + (seed / 3 % 4 * 9) as u64;
+            }
+            mode
+        });
+    }
+
+    driven!(secstotime_gen, ee::s14::f_003eaeb8__generated);
+
+    /// `ds_secstotime`, counting its own re-entries at its loop heads.
+    fn secstotime_counted(c: &mut Cpu) {
+        count_resume(c, 0x003e_aeb8);
+        ds_secstotime(c);
+    }
+
+    driven!(secstotime_hand, secstotime_counted);
+
+    /// `ds_secstotime`: seconds (seed % 13: 0/59/3600/day/month/year/leap/
+    /// decade/negative/max, then March 1st of 1972, 2000 and 2100) with the
+    /// game image loaded (its month table), event delay (seed / 13 % 4)
+    /// landing the first unwind on the year loop 0x3eaf30 or the month loop
+    /// 0x3eb058; the hand side must resume at both.
+    #[test]
+    fn ds_secstotime_matches() {
+        let heads = [0x003e_af30, 0x003e_b058];
+        check_resumes(
+            "ds_secstotime",
+            secstotime_gen,
+            secstotime_hand,
+            104,
+            &heads,
+            &|c, seed| {
+                let mut r = Rng(0xaeb8 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                elf_image(c);
+                let secs = match seed % 13 {
+                    0 => 0,
+                    1 => 59,
+                    2 => 3600,
+                    3 => 86400,
+                    4 => 30 * 86400,
+                    5 => 365 * 86400,
+                    6 => 366 * 86400,
+                    7 => 10 * 365 * 86400 + 12345,
+                    8 => 0xffff_ffffu32,
+                    9 => 0x7fff_ffffu32,
+                    // 1972-03-01 (after a leap February), 2000-03-01 (a leap
+                    // century), 2100-03-01 (not a leap year).
+                    10 => 790 * 86400,
+                    11 => 11017 * 86400,
+                    _ => 47541 * 86400,
+                };
+                let out = DATA + 0x5000;
+                for w in 0..9u32 {
+                    c.bus.write32(out + 4 * w, 0x5858_5858);
+                }
+                c.g[A0][0] = sx(out);
+                c.g[A1][0] = sx(secs);
+                let mode = schedule(c, &mut r, seed, 0x003e_aeb8);
+                c.g[A0][0] = sx(out);
+                c.g[A1][0] = sx(secs);
+                // Steer the first event onto each head across seeds. Keep every
+                // value inside even the shortest run (the 600/6000 values used
+                // to overshoot short dates and starve the delivery count).
+                c.next_event = c.cycles + [4u64, 30, 60, 120][(seed / 13 % 4) as usize];
+                c.pc = 0x003e_aeb8;
+                mode
             },
         );
     }

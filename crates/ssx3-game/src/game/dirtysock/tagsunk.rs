@@ -1090,6 +1090,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees.
 
 pub(crate) mod callee {
+    pub(crate) use crate::game::dirtysock::lobbyapi::callee::{
+        LOBBY_API_PING, LOBBY_API_RESET, TAG_FIELD_GET_ADDRESS,
+    };
 
     pub(crate) use crate::game::main::gamestate::callee::STR_COPY;
 
@@ -1748,8 +1751,6 @@ pub(crate) mod callee {
 
     pub const REPLAY_STREAM_WRITE: u32 = 0x003e_6574;
 
-    pub const LOBBY_MAN_REQUEST_UPDATE: u32 = 0x003e_80c0;
-
     pub const LOBBY_MAN_REQUEST_FREE: u32 = 0x003e_81c8;
 
     pub const LOBBY_API_ADD_REQUEST: u32 = 0x003e_8b10;
@@ -2354,11 +2355,6 @@ pub(crate) mod callee {
     };
 
     // Lobby messages and the network manager.
-    pub const SNPRINTF: Callee = Callee {
-        addr: 0x003e_c180,
-        f: ee::s14::f_003ec180,
-    };
-
     pub const LOBBYMAN_SEND_REQUEST: Callee = Callee {
         addr: 0x0025_b608,
         f: ee::s06::LobbyMan_SendRequest,
@@ -2957,7 +2953,6 @@ pub(crate) mod callee {
     pub const C_BX_STRING_RELEASE: u32 = 0x0031_80b8;
 
     /// Lobby peer ping sender (0x3e8dc0), via `call_indirect`.
-    pub const LOBBY_API_PING: u32 = 0x003e_8dc0;
 
     /// Snapshot slot-tag lookup (0x3e8f08), via `call_indirect`.
     pub const LOBBY_API_STATUS: u32 = 0x003e_8f08;
@@ -3150,9 +3145,6 @@ pub(crate) mod callee {
 
     /// `TagFieldGetDate` (0x3edb08), via `call_indirect`.
     pub const TAG_FIELD_GET_DATE: u32 = 0x003e_db08;
-
-    /// `TagFieldGetAddress` (0x3ecff8), via `call_indirect`.
-    pub const TAG_FIELD_GET_ADDRESS: u32 = 0x003e_cff8;
 
     /// `LobbyMan_InitStringFields` (0x268890), via `call_indirect`.
     pub const LOBBY_MAN_INIT_STRING_FIELDS: u32 = 0x0026_8890;
@@ -4861,7 +4853,7 @@ pub fn lobby_man_destroy_lobby_api(c: &mut Cpu) {
             frame.restore(c, S0, 0x10);
         } else {
             c.cycles += 6;
-            call_ptr(c, callee::LOBBY_MAN_REQUEST_UPDATE, 0x0025_aac0)?;
+            call_ptr(c, callee::LOBBY_API_RESET.addr, 0x0025_aac0)?;
             c.g[A0][0] = c.lw(at_3(c, S0, 0x54));
             call_ptr(c, callee::LOBBY_MAN_REQUEST_FREE, 0x0025_aac8)?;
             sw(c, r32(c, S0), 0x54, 0);
@@ -9466,7 +9458,7 @@ pub fn lobbyman_edit_account(c: &mut Cpu) {
         c.g[A1][0] = 0x200;
         c.g[A3][0] = c.lw(this.wrapping_add(0x48));
         c.sb(buf, 0);
-        callee::SNPRINTF.call(c, 0x0025_bf50)?;
+        call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_bf50)?;
         c.g[V1][0] = c.lw(msg.wrapping_add(0x44));
         let no_title = c.g[V1][0] == 0;
         c.g[A2][0] = 0x004a_0000;
@@ -9476,13 +9468,13 @@ pub fn lobbyman_edit_account(c: &mut Cpu) {
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3040));
             c.g[A0][0] = sx(buf);
             c.g[A1][0] = 0x200;
-            callee::SNPRINTF.call(c, 0x0025_bf70)?;
+            call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_bf70)?;
             c.g[A2][0] = 0x004a_0000;
             c.g[A3][0] = c.lw(msg.wrapping_add(4));
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x30a0));
             c.g[A0][0] = sx(buf);
             c.g[A1][0] = 0x200;
-            callee::SNPRINTF.call(c, 0x0025_bf88)?;
+            call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_bf88)?;
         }
 
         // Second string: the two "selected" markers.
@@ -9513,7 +9505,7 @@ pub fn lobbyman_edit_account(c: &mut Cpu) {
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3048));
             c.g[A0][0] = sx(buf);
             c.g[A1][0] = 0x200;
-            callee::SNPRINTF.call(c, 0x0025_bfd8)?;
+            call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_bfd8)?;
         }
 
         // Third string: the account id.
@@ -9527,7 +9519,7 @@ pub fn lobbyman_edit_account(c: &mut Cpu) {
             c.g[A3][0] = c.lw(msg.wrapping_add(0xc));
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3050));
             c.g[A1][0] = 0x200;
-            callee::SNPRINTF.call(c, 0x0025_bff8)?;
+            call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_bff8)?;
         }
 
         // Send the request and queue a 0xc-byte node on self+0xf0.
@@ -21272,7 +21264,7 @@ pub fn lobby_man_ping_selected_room_user(c: &mut Cpu) {
                 c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x7278));
                 c.g[T1][0] = c.g[S1][0];
                 c.g[A3][0] = 0x1388;
-                call_ptr(c, callee::LOBBY_API_PING, 0x0025_ddc8)?;
+                call_ptr(c, callee::LOBBY_API_PING.addr, 0x0025_ddc8)?;
             }
             c.cycles += 1;
             frame.restore(c, S0, 0x20);
@@ -26078,7 +26070,7 @@ pub fn lobby_man_on_game_start(c: &mut Cpu) {
                 call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0025_a36c)?;
                 c.g[A0][0] = c.g[V0][0];
                 c.g[A1][0] = 0;
-                call_ptr(c, callee::TAG_FIELD_GET_ADDRESS, 0x0025_a378)?;
+                call_ptr(c, callee::TAG_FIELD_GET_ADDRESS.addr, 0x0025_a378)?;
                 c.g[A2][0] = c.g[V0][0];
                 c.g[A1][0] = c.g[S3][0];
                 c.g[A0][0] = c.g[S7][0];
@@ -26090,7 +26082,7 @@ pub fn lobby_man_on_game_start(c: &mut Cpu) {
                 call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0025_a39c)?;
                 c.g[A0][0] = c.g[V0][0];
                 c.g[A1][0] = 0;
-                call_ptr(c, callee::TAG_FIELD_GET_ADDRESS, 0x0025_a3a8)?;
+                call_ptr(c, callee::TAG_FIELD_GET_ADDRESS.addr, 0x0025_a3a8)?;
                 c.g[A2][0] = c.g[V0][0];
                 c.g[A0][0] = c.g[S7][0];
                 c.g[A1][0] = c.g[S4][0];
