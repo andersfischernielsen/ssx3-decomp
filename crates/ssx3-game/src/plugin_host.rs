@@ -29,6 +29,20 @@ pub fn set_catalog(c: Catalog) {
     let _ = CATALOG.set(c);
 }
 
+static OVERLAYS: OnceLock<Vec<std::path::PathBuf>> = OnceLock::new();
+
+/// The overlay folders of the loaded plugins (`<content>/overlay`), in load
+/// order. Set once, at boot, by the engine; the first call wins.
+pub fn set_overlays(v: Vec<std::path::PathBuf>) {
+    let _ = OVERLAYS.set(v);
+}
+
+/// The overlay folders of the loaded plugins; a plugin finds its derived
+/// content (the importer's files) next to its own overlay folder.
+pub fn overlays() -> &'static [std::path::PathBuf] {
+    OVERLAYS.get().map(Vec::as_slice).unwrap_or(&[])
+}
+
 /// The plugins' catalog (empty without plugins).
 pub fn catalog() -> &'static Catalog {
     CATALOG.get_or_init(Catalog::default)
