@@ -9,8 +9,9 @@ own peak on the mountain. The first user is the SSX Tricky work of
 With no plugin the game is unchanged: no plugin code runs, and the race RAM
 gate stays identical.
 
-Status (2026-11-22): proposal. Nothing here is implemented, and the spike in
-"Stages" has not been run.
+Status (2026-11-22): S0 to S3 are implemented on the branch `feat/plugins`
+(see "Stages"); S4 onwards is not started. The author guide is
+[`docs/plugins.md`](../plugins.md).
 
 ## The source games (surveyed 2026-11-22, directory listings and headers only)
 
@@ -81,12 +82,35 @@ fallback for a course that needs resources from two archives.
 
 To verify before relying on it:
 
-1. Nothing else in the load path assumes the location is `BAM`.
+1. Nothing else in the load path assumes the location is `BAM`. **Checked for
+   one event** (see "S0 result").
 2. The texture slot pools are sized once at boot (the fork reads 1,500 from the
-   archive): size them for the largest world a plugin declares.
+   archive): size them for the largest world a plugin declares. Not checked.
 3. The section and event tables in guest memory are indexed per event: the
-   catalog supplies the entries for a plugin's events.
-4. Unloading an event leaves no state behind in global tables.
+   catalog supplies the entries for a plugin's events. Not checked.
+4. Unloading an event leaves no state behind in global tables, so that two
+   events with different archives can follow each other in one run. Not checked.
+
+### S0 result (2026-11-22)
+
+`examples/plugins/world-copy`: the importer makes `DATA/WORLDS/BAX.BIG` from
+SSX 3's own `BAM.BIG` (the four world entries renamed `bam.*` to `bax.*`, the
+rest byte for byte) in the cache folder, and a hook on `cGame_loadTrack`
+(0x22f6b0) changes the location in the race record from `BAM` to `BAX`. With
+`SSX3_EVENT=ARA1` run headless for 1,300 frames:
+
+- the game opened `data/worlds/BAX.big`, `BAX.sdb` and `BAX.ssb`, served from
+  the plugin's overlay, and the log shows no `BAM` read;
+- the sequence of file reads (names with `BAX` read as `BAM`, offsets, sizes)
+  is identical to the stock run; only the first 2 KB of the archive differ (its
+  renamed directory);
+- the frames at 650 and 1,300 are byte-identical to the stock run's;
+- the game did not halt.
+
+So an event can load a world archive chosen by the plugin, through the file
+overlay, with no change to the archive's contents and nothing merged. What this
+does not show: a world with different data (it is a copy of SSX 3's own), two
+different archives in one run, and the pool and table questions above.
 
 ## What a plugin can touch
 
@@ -147,7 +171,7 @@ plugin prefers them over raw hooks. Raw hooks stay as the escape hatch.
 
 | Stage | What | Done when |
 | --- | --- | --- |
-| S0 | **Spike**: one event loads a copy of `BAM` under another location name | the event runs; the four checks above are answered |
+| S0 | **Spike**: one event loads a copy of `BAM` under another location name | done for one event; checks 2 to 4 above remain |
 | S1 | Generalise the data overlay in `native_files`; per-plugin overlays in load order | a file in the overlay shadows the ISO; unlisted paths fall back; gate identical |
 | S2 | `hookable.txt`, `Hooks::chain`, `call_prev` | two chained hooks end at the generated body; a missing slot is an error |
 | S3 | Folder discovery, `plugin.toml`, `prepare`, `ssx3 plugins build`, the built-in test plugin | the test plugin loads, hooks and serves an overlay file |

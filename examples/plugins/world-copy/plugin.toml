@@ -1,0 +1,28 @@
+# Spike for docs/plans/plugins.md (S0): can an event load a world archive
+# other than BAM? The importer makes a copy of SSX 3's own BAM.BIG named BAX.BIG
+# (from your SSX 3 disc, into the cache folder, never into git), and the hook
+# points the event at it when SSX3_WORLD_COPY=1.
+[plugin]
+id = "world-copy"
+api = "0.1"
+name = "World copy (spike)"
+
+[inputs]
+disc = { serials = ["SLUS-20772"] }
+
+[prepare]
+command = ["python3", "prepare/prepare.py"]
+
+[code]
+package = "ssx3-plugin-world-copy"
+
+[[peak]]
+id = "spike"
+name = "Peak Spike"
+
+[[event]]
+id = "copy"
+peak = "spike"
+kind = "race"
+template = "peak1-race1"
+world = "BAX"
