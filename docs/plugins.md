@@ -60,8 +60,8 @@ picture = "ui/peak.png"   # inside the content folder: relative, no '..', no ':'
 id = "garibaldi-race"
 peak = "tricky"
 kind = "race"             # or "freestyle"
-template = "peak1-race1"  # the native event whose rules and flow it takes
-world = "garibaldi"       # the location name: data/worlds/garibaldi.big
+template = "ARA1"  # the native event (`SSX3_EVENT=list`) whose rules and flow it takes
+world = "garibaldi"  # data/worlds/<world>.big; letters, digits, '_', at most 15       # the location name: data/worlds/garibaldi.big
 ```
 
 Ids are local; the engine names them `<plugin>/<id>` (`tricky/garibaldi-race`).
@@ -142,3 +142,15 @@ pub fn plugin() -> Box<dyn Plugin> { Box::new(Mine) }
   writes to the cache. The same CI check as this repository.
 - Code plugins run with the rights of the process, so the user builds them
   from source; nothing loads a binary from elsewhere.
+
+## Playing a plugin event
+
+`SSX3_EVENT=<plugin>/<event>` boots straight into a plugin's event: the game
+sets up its `template` event and, at the world load, reads `data/worlds/<world>`
+(from your overlay) in place of the template's own. The swap is undone at the
+next world load. Verified: a copy of Snow Jam's world played as `ARA1` leaves
+the race RAM identical except for the world's name.
+
+From code, `ssx3_game::event_boot::set_world(Some(name))` makes the next world
+load use `name`, `set_world(None)` goes back to the course's own; whoever starts
+a native event after a plugin event must clear it.

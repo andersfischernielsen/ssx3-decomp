@@ -19,7 +19,7 @@
 //! id = "garibaldi-race"
 //! peak = "tricky"
 //! kind = "race"
-//! template = "peak1-race1"
+//! template = "ARA1"
 //! world = "garibaldi"
 //! ```
 //!
@@ -177,7 +177,7 @@ fn id_ok(s: &str) -> bool {
 
 /// A location name becomes a file name in a guest buffer: plain, and short.
 fn world_ok(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 16 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    !s.is_empty() && s.len() <= 15 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
 impl Manifest {
@@ -262,7 +262,7 @@ impl Manifest {
             }
             if !world_ok(&ev.world) {
                 e.push(format!(
-                    "event {:?}: world {:?} (letters, digits and '_', at most 16)",
+                    "event {:?}: world {:?} (letters, digits and '_', at most 15)",
                     ev.id, ev.world
                 ));
             }
@@ -294,7 +294,7 @@ name = "Peak Tricky"
 id = "garibaldi-race"
 peak = "tricky"
 kind = "race"
-template = "peak1-race1"
+template = "ARA1"
 world = "garibaldi"
 "#;
 

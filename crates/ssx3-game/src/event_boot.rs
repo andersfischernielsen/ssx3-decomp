@@ -122,6 +122,7 @@ pub fn install() {
             .unwrap_or_else(|| panic!("SSX3_RIDER: unknown rider {r:?} (one of {RIDERS:?})"))
     });
     let _ = CONFIG.set(Config { want, rider });
+    install_world_swap();
     let installed = crate::overrides();
     let inner = std::iter::once(INIT_LOAD_SCREEN_UPDATE)
         .chain(RACE_STARTED)
@@ -166,6 +167,66 @@ fn freeride_update(c: &mut Cpu) {
 
 fn race_started() {
     let _ = PHASE.compare_exchange(LOADING, RACING, Ordering::Relaxed, Ordering::Relaxed);
+}
+
+/// The world of the plugin event being played, swapped in for the template
+/// event's location name at the next world load.
+static WORLD: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+/// The location name the swap overwrote: its address and bytes.
+static SAVED: std::sync::Mutex<Option<(u32, [u8; 16])>> = std::sync::Mutex::new(None);
+static LOAD_WORLD_PREV: ssx3_plugin::hooks::Prev = ssx3_plugin::hooks::Prev::new();
+
+const GAME_MODULE_LOAD_WORLD: u32 = 0x0022_f6b0;
+/// The race record's location name field: 16 bytes.
+const NAME_LEN: usize = 16;
+const TRACK_INDEX: u32 = 0x0053_5c08;
+
+/// Play `world` (a folder under `data/worlds`) for the next world load, or
+/// the course's own world with `None`. Native events must clear it.
+pub fn set_world(world: Option<String>) {
+    *WORLD.lock().unwrap() = world;
+}
+
+fn install_world_swap() {
+    let was = ssx3_ee::get_override(GAME_MODULE_LOAD_WORLD)
+        .or_else(|| ssx3_ee::generated_body(GAME_MODULE_LOAD_WORLD))
+        .expect("event boot: no world load to wrap");
+    LOAD_WORLD_PREV.set_for_host(was);
+    assert!(ssx3_ee::set_override(GAME_MODULE_LOAD_WORLD, load_world));
+}
+
+/// Put the original location name back, then swap the next one in. Only at
+/// the function's entry: resumes inside it go straight on.
+fn load_world(c: &mut Cpu) {
+    if c.pc == GAME_MODULE_LOAD_WORLD {
+        if let Some((addr, old)) = SAVED.lock().unwrap().take() {
+            for (i, b) in old.iter().enumerate() {
+                c.bus.write8(addr + i as u32, *b);
+            }
+        }
+        if let Some(world) = WORLD.lock().unwrap().clone() {
+            let gp = c.g[GP][0] as u32;
+            let idx = c.bus.read32(TRACK_INDEX);
+            let field = if c.bus.read32(gp.wrapping_sub(0x1f38)) == 0 {
+                0x34
+            } else {
+                0x44
+            };
+            let addr = COURSES + idx * 100 + field;
+            let mut old = [0u8; NAME_LEN];
+            for (i, b) in old.iter_mut().enumerate() {
+                *b = c.bus.read8(addr + i as u32);
+            }
+            *SAVED.lock().unwrap() = Some((addr, old));
+            let mut name = [0u8; NAME_LEN];
+            let n = world.len().min(NAME_LEN - 1);
+            name[..n].copy_from_slice(&world.as_bytes()[..n]);
+            for (i, b) in name.iter().enumerate() {
+                c.bus.write8(addr + i as u32, *b);
+            }
+        }
+    }
+    LOAD_WORLD_PREV.call(c)
 }
 
 /// Every event of the event select tables, read from guest memory.
@@ -234,7 +295,12 @@ fn init_load_screen_update(c: &mut Cpu) {
         PHASE.store(RACING, Ordering::Relaxed);
         return;
     }
-    let Some(ev) = find(&all, &cfg.want) else {
+    let plugin_event = crate::plugin_host::catalog().event(&cfg.want).cloned();
+    let want = match &plugin_event {
+        Some(pe) => pe.template.as_str(),
+        None => cfg.want.as_str(),
+    };
+    let Some(ev) = find(&all, want) else {
         eprintln!(
             "[event] SSX3_EVENT={:?}: no such event (SSX3_EVENT=list lists them)",
             cfg.want
@@ -242,6 +308,7 @@ fn init_load_screen_update(c: &mut Cpu) {
         PHASE.store(RACING, Ordering::Relaxed);
         return;
     };
+    set_world(plugin_event.map(|pe| pe.world));
     eprintln!(
         "[event] booting into {}:{} (track {}, type {}){}",
         ev.code,
