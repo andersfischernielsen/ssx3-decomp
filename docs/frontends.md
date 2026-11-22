@@ -218,14 +218,13 @@ choice (`0` off, `pull`, `null` a silent device drained in real time for
 tests, any other value the device); `SSX3_WAV=file.wav` records the sound
 whatever the output.
 
-With `Pull` and catch-up on, the game mixes ahead while the queue is short,
-so the stream stays fed when the game runs several VSyncs at once. It can
-only do that when it knows how much is queued: a front end that pulls from
-its audio callback with `pull_into` is counted automatically (the queue is
-the engine's ring), and one that keeps its own buffer reports it with
-`engine.audio_buffered(frames)` (or `ssx3_iop::audio::report_buffered`)
-whenever it changes. A front end that does neither (the browser, which
-pulls once per presented frame) is not topped up.
+With `Pull` and catch-up on, the game mixes ahead while the queue is short.
+The queue includes the ring from startup and the latest downstream buffer
+reported via `engine.audio_buffered(frames)` or `ssx3_iop::audio::report_buffered`.
+`pull_into` reports zero on its first call if there is no report yet. The
+mixer adds that same buffer to the pacer's lead when comparing the
+target with the queued count, so it aims to keep the ring itself at the
+pacer's lead. The browser leaves catch-up off and pulls once per frame.
 
 ### VU offload
 

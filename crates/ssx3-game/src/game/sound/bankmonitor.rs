@@ -4916,7 +4916,8 @@ pub fn path_plat_remove_oldest_bank(c: &mut Cpu) {
                     c.g[A1][0] = c.g[S0][0];
                     callee::PATH_PLAT_FIND_BANK_SLOT_2.call(c, 0x002a_e428)?;
                     let found = (c.g[V0][0] as i64) >= 0;
-                    abi::mult(c, c.g[A2][0] as u32, c.g[S4][0] as u32);
+                    abi::mult(c, c.g[V0][0] as u32, c.g[S4][0] as u32);
+                    c.g[V1][0] = c.lo[0];
                     if found {
                         if c.cycles >= c.next_event {
                             c.pc = 0x002a_e3f0;
@@ -10452,6 +10453,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::difftest::check_paths;
 
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
@@ -12067,6 +12069,8 @@ pub(crate) mod tests {
             spch_notify_part_callback,
             46,
             &|c, seed, r| {
+                // Enter at the real entry: an unset pc takes the jump-out arm.
+                c.pc = 0x003d_b040;
                 c.g[SP][0] = (STACK - 0x100) as u64;
                 c.g[A0][0] = (DATA + 0x200) as u64;
                 c.g[A1][0] = DATA as u64;
@@ -12549,19 +12553,82 @@ pub(crate) mod tests {
         );
     }
 
+    /// PATH_PlatRemoveOldestBank over a bank table. The scan asks for slot
+    /// ids 0, 1, 2, ... of `this` and stops at the first one it does not
+    /// find, so the slots that hold `this` carry the ids 0..n. `seed % 8`
+    /// picks n and the ages (below); `seed / 8` moves the slots around the
+    /// table, so the lookup returns indexes above 0 (the next pass reads
+    /// the age at index times the slot size).
+    fn oldest_bank_fixture(c: &mut Cpu, seed: u32) {
+        let _r = base_9(c, seed, 0x2ae3);
+        // Enter at the real entry: an unset pc exercises only the
+        // jump-out path on both sides.
+        c.pc = 0x002a_e3a8;
+        c.g[A0][0] = DATA as u64;
+        let ages: &[u32] = match seed % 8 {
+            // None: the scan leaves the "none" sentinel.
+            0 => &[],
+            // One.
+            1 => &[5],
+            // Several: the smallest age wins.
+            2 => &[30, 10, 20],
+            // A negative age is skipped.
+            3 => &[0xffff_fffd, 7],
+            // An age of 0x7ffffff or more never beats the start value.
+            4 => &[0x07ff_ffff],
+            5 => &[0x07ff_fffe, 0x07ff_ffff],
+            // Equal ages: the first wins.
+            6 => &[9, 9, 12],
+            // Falling ages: the last wins.
+            _ => &[40, 30, 20, 10],
+        };
+        let first = seed / 8 * 3;
+        let index_of = |id: usize| (first as usize + 5 * id) % 24;
+        for i in 0..24usize {
+            let slot = 0x004d_3ef8 + 0x28 * i as u32;
+            let held = (0..ages.len()).find(|&id| index_of(id) == i);
+            c.bus
+                .write32(slot, held.map_or(100 + i as u32, |id| id as u32));
+            // Held slots alternate between a live and an empty sound bank.
+            let live = held.is_some() && seed % 2 == 1;
+            c.bus.write32(slot + 4, if live { 0x10 } else { u32::MAX });
+            c.bus
+                .write32(slot + 8, if held.is_some() { DATA } else { DATA + 0x1000 });
+            c.bus
+                .write32(slot + 0x24, held.map_or(0x1000 + i as u32, |id| ages[id]));
+        }
+    }
+
     #[test]
     fn path_plat_remove_oldest_bank_matches() {
-        check(
+        check_paths(
             ee::s08::f_002ae3a8__generated,
             path_plat_remove_oldest_bank,
-            60,
-            &|c, seed| {
-                let _r = base_9(c, seed, 0x2ae3);
-                c.g[A0][0] = DATA as u64;
-                // No slot matches: the scan leaves the "none" sentinel.
-                c.bus.write32(0x004d_3ef8 + 8, DATA + 0x1000);
-            },
+            64,
+            // Cycles of the paths (seeds 0-7): no slot, one slot removed,
+            // three slots, a negative age skipped, an age too large to
+            // pick (nothing removed), two large ages, equal ages, and
+            // falling ages.
+            &[211, 323, 521, 438, 245, 398, 477, 803],
+            &oldest_bank_fixture,
         );
+    }
+
+    crate::difftest::events::driven!(gen_oldest_bank, ee::s08::f_002ae3a8__generated);
+
+    crate::difftest::events::driven!(hand_oldest_bank, path_plat_remove_oldest_bank);
+
+    /// The scan with events due at its back edge (0x2ae420, re-entered at
+    /// 0x2ae3f0).
+    #[test]
+    fn path_plat_remove_oldest_bank_events_match() {
+        use crate::difftest::events::{check_events, schedule};
+        check_events(gen_oldest_bank, hand_oldest_bank, 112, &|c, seed| {
+            // The tables with a found slot, so the back edge is taken.
+            oldest_bank_fixture(c, 1 + seed % 7 + seed / 7 % 8 * 8);
+            let mut r = crate::difftest::Rng(0x2ae3_a801 ^ seed as u64);
+            schedule(c, &mut r, seed, 0x002a_e3a8)
+        });
     }
 
     #[test]

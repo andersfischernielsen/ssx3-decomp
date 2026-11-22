@@ -1,0 +1,13 @@
+# cargo-mutants (docs/porting/mutation-testing.md). Run it through
+# tools/mutants.py, which adds --in-place, --package ssx3-game, the unit's
+# test filter and the cycle-charge exclusion.
+profile = "game"
+# The differential tests are unit tests; skip doc tests.
+additional_cargo_test_args = ["--lib"]
+additional_cargo_args = [
+    # Each mutant rebuilds ssx3-game: incremental cuts that from about 105 s
+    # to 30-45 s, for about 3.5 GB more in target/ (config.toml turns it off).
+    "--config", "build.incremental=true",
+    # Compare call arguments too, as the porting loop's verify step does.
+    "--config", 'env.SSX3_DIFF_STRICT="args"',
+]

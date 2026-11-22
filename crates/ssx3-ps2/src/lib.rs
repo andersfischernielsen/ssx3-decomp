@@ -18,6 +18,7 @@ mod clock;
 pub mod elf;
 pub mod gifstats;
 pub mod gpu;
+pub mod gpu_wait;
 pub mod gs;
 pub mod hw;
 pub mod iop_bridge;

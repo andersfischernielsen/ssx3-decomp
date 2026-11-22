@@ -6,6 +6,8 @@ pub mod buddyapi;
 pub mod dnasauth;
 pub mod gamecomm;
 pub mod lobbyapi;
+pub mod lobbyutil;
+pub mod slogin;
 pub mod tags;
 pub mod tagsunk;
 
@@ -16,6 +18,8 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(dnasauth::OVERRIDES);
     v.extend_from_slice(gamecomm::OVERRIDES);
     v.extend_from_slice(lobbyapi::OVERRIDES);
+    v.extend_from_slice(lobbyutil::OVERRIDES);
+    v.extend_from_slice(slogin::OVERRIDES);
     v.extend_from_slice(tags::OVERRIDES);
     v.extend_from_slice(tagsunk::OVERRIDES);
     v

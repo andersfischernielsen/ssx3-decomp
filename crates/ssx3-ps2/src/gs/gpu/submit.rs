@@ -11,6 +11,7 @@
 //! hands a buffer to another submitter (the presenter) first calls
 //! [`Submitter::drain`]. `SSX3_GS_SUBMIT_THREAD=0` submits on the GS thread.
 
+use crate::gpu_wait::{self, Site};
 use std::collections::VecDeque;
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::{Arc, Condvar, Mutex};
@@ -83,10 +84,12 @@ impl Submitter {
 
     /// Wait until every job handed over so far is submitted.
     pub fn drain(&self) {
-        let mut c = self.done.count.lock().unwrap();
-        while *c < self.sent {
-            c = self.done.cv.wait(c).unwrap();
-        }
+        gpu_wait::wait(Site::GsDrain, || {
+            let mut c = self.done.count.lock().unwrap();
+            while *c < self.sent {
+                c = self.done.cv.wait(c).unwrap();
+            }
+        });
     }
 
     /// A vector for the next job's uploads (reused).
@@ -151,9 +154,11 @@ fn run(rx: Receiver<Job>, dev: wgpu::Device, q: wgpu::Queue, done: Arc<Done>) {
         inflight.push_back(idx);
         while inflight.len() > MAX_INFLIGHT {
             let old = inflight.pop_front().expect("inflight");
-            let _ = dev.poll(wgpu::PollType::Wait {
-                submission_index: Some(old),
-                timeout: None,
+            gpu_wait::wait(Site::GsSubmitInflight, || {
+                let _ = dev.poll(wgpu::PollType::Wait {
+                    submission_index: Some(old),
+                    timeout: None,
+                });
             });
         }
         if let Some(mut w) = back {
@@ -168,7 +173,9 @@ fn run(rx: Receiver<Job>, dev: wgpu::Device, q: wgpu::Queue, done: Arc<Done>) {
     }
     stop.store(true, std::sync::atomic::Ordering::Relaxed);
     if let Some(b) = busy {
-        let _ = dev.poll(wgpu::PollType::wait_indefinitely());
+        gpu_wait::wait(Site::GsSubmitExit, || {
+            let _ = dev.poll(wgpu::PollType::wait_indefinitely());
+        });
         let g = b.lock().unwrap();
         eprintln!(
             "[gs-waits] GPU busy {:.1} s of {:.1} s",

@@ -2,6 +2,7 @@
 //! presenter and (in verification builds) the emulated GS's GPU backend all
 //! use the same device, so frames never leave the GPU.
 
+use crate::gpu_wait::{self, Site};
 use std::sync::OnceLock;
 
 /// The shared device and queue.
@@ -20,7 +21,9 @@ pub fn context() -> Option<&'static GpuContext> {
             if cfg!(target_arch = "wasm32") {
                 return None;
             }
-            context_or_log(pollster::block_on(create_context()))
+            context_or_log(gpu_wait::wait(Site::ContextCreate, || {
+                pollster::block_on(create_context())
+            }))
         })
         .as_ref()
 }

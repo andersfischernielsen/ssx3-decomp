@@ -37,6 +37,7 @@ use ssx3_core::hash::HashMap;
 use std::sync::{Arc, Mutex};
 
 use ssx3_ps2::frame_sink::Depth;
+use ssx3_ps2::gpu_wait::{self, Site};
 use ssx3_render::chain::Mem;
 use ssx3_render::frame::{self, Built, Material, Owner};
 use ssx3_render::vif::Event;
@@ -171,7 +172,7 @@ pub struct Inner {
         f32,
         u32,
         u32,
-        Arc<std::sync::atomic::AtomicBool>,
+        Arc<std::sync::atomic::AtomicU8>,
         u64,
     )>,
     /// This frame's number if it has no depth (handed over as none).
@@ -225,6 +226,10 @@ pub struct Shared {
     /// counted as `render_built` receives them), oldest first, until taken.
     depth: Mutex<std::collections::VecDeque<(u64, Option<Depth>)>>,
     depth_ready: std::sync::Condvar,
+    /// The frame (+ 1) whose depth the game waits for (0: none), and the
+    /// depth thread, woken for it.
+    depth_wanted: std::sync::atomic::AtomicU64,
+    depth_thread: std::sync::OnceLock<std::thread::Thread>,
     /// The latest frame's images (in-between ones first) and when they
     /// were ready.
     present: Mutex<Option<(Vec<wgpu::Texture>, web_time::Instant)>>,
@@ -235,13 +240,46 @@ enum DepthPost {
     None(u64),
     Buf {
         buf: wgpu::Buffer,
-        idx: wgpu::SubmissionIndex,
         zs: f32,
         w: u32,
         h: u32,
-        mapped: Arc<std::sync::atomic::AtomicBool>,
+        mapped: Arc<std::sync::atomic::AtomicU8>,
         frame: u64,
     },
+}
+
+/// A depth readback's map: in flight, mapped, or failed.
+const MAP_PENDING: u8 = 0;
+const MAP_OK: u8 = 1;
+const MAP_FAILED: u8 = 2;
+
+/// Map `buf` for reading; its state, `wake` woken when it is known.
+fn map_depth(
+    buf: &wgpu::Buffer,
+    wake: Option<std::thread::Thread>,
+) -> Arc<std::sync::atomic::AtomicU8> {
+    let mapped = Arc::new(std::sync::atomic::AtomicU8::new(MAP_PENDING));
+    let m = mapped.clone();
+    buf.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+        m.store(
+            if r.is_ok() { MAP_OK } else { MAP_FAILED },
+            std::sync::atomic::Ordering::Release,
+        );
+        if let Some(t) = wake {
+            t.unpark();
+        }
+    });
+    mapped
+}
+
+/// Wait for the device (`idx`, or all work submitted).
+fn wait_gpu(site: Site, dev: &wgpu::Device, idx: Option<wgpu::SubmissionIndex>) {
+    gpu_wait::wait(site, || {
+        let _ = dev.poll(wgpu::PollType::Wait {
+            submission_index: idx,
+            timeout: None,
+        });
+    });
 }
 
 /// A mapped depth readback as the light queries read it: in GS pixels (the
@@ -269,38 +307,60 @@ fn spawn_depth_thread(
     shared: Arc<Shared>,
 ) -> std::sync::mpsc::Sender<DepthPost> {
     let (tx, rx) = std::sync::mpsc::channel::<DepthPost>();
-    std::thread::Builder::new()
+    let s = shared.clone();
+    let t = std::thread::Builder::new()
         .name("ssx3-gfx-depth".into())
         .spawn(move || {
             for p in rx {
                 match p {
-                    DepthPost::None(f) => shared.post_depth(f, None),
+                    DepthPost::None(f) => s.post_depth(f, None),
                     DepthPost::Buf {
                         buf,
-                        idx,
                         zs,
                         w,
                         h,
                         mapped,
                         frame,
                     } => {
-                        let _ = dev.poll(wgpu::PollType::Wait {
-                            submission_index: Some(idx),
-                            timeout: None,
-                        });
-                        let d = mapped
-                            .load(std::sync::atomic::Ordering::Acquire)
+                        // Not a device wait (`gpu_wait`): the map is
+                        // done when a submit or this thread's poll sees
+                        // the copy finished, and its callback wakes us.
+                        // While the game waits for this depth, polled
+                        // more often.
+                        let state = || mapped.load(std::sync::atomic::Ordering::Acquire);
+                        while state() == MAP_PENDING {
+                            let _ = dev.poll(wgpu::PollType::Poll);
+                            DEPTH_POLLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            if state() != MAP_PENDING {
+                                break;
+                            }
+                            let wanted =
+                                s.depth_wanted.load(std::sync::atomic::Ordering::Relaxed) > frame;
+                            std::thread::park_timeout(if wanted {
+                                DEPTH_POLL_WANTED
+                            } else {
+                                DEPTH_POLL
+                            });
+                        }
+                        let d = (state() == MAP_OK)
                             .then(|| buf.slice(..).get_mapped_range())
                             .and_then(|r| r.ok())
                             .map(|v| depth_from(v.to_vec(), zs, w, h));
-                        shared.post_depth(frame, d);
+                        s.post_depth(frame, d);
                     }
                 }
             }
         })
         .expect("depth thread");
+    let _ = shared.depth_thread.set(t.thread().clone());
     tx
 }
+
+/// How often the depth thread looks for a readback the GPU may have
+/// finished since the last submit, and how often it did.
+const DEPTH_POLL: std::time::Duration = std::time::Duration::from_millis(1);
+const DEPTH_POLL_WANTED: std::time::Duration = std::time::Duration::from_micros(100);
+static DEPTH_POLLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 impl Shared {
     /// Hand over frame `frame`'s depth (frames in order, each once).
@@ -318,12 +378,23 @@ impl Shared {
     /// `wait` (a hung render thread) or if it is gone.
     fn take_depth(&self, frame: u64, wait: std::time::Duration) -> Option<Depth> {
         let q = self.depth.lock().unwrap();
-        let (mut q, _) = (self.depth_ready)
-            .wait_timeout_while(q, wait, |q| {
-                q.retain(|d| d.0 >= frame);
-                q.is_empty()
-            })
-            .unwrap();
+        if !q.iter().any(|d| d.0 == frame) {
+            self.depth_wanted
+                .store(frame + 1, std::sync::atomic::Ordering::Relaxed);
+            if let Some(t) = self.depth_thread.get() {
+                t.unpark();
+            }
+        }
+        let (mut q, _) = gpu_wait::wait(Site::GfxTakeDepth, || {
+            (self.depth_ready)
+                .wait_timeout_while(q, wait, |q| {
+                    q.retain(|d| d.0 >= frame);
+                    q.is_empty()
+                })
+                .unwrap()
+        });
+        self.depth_wanted
+            .store(0, std::sync::atomic::Ordering::Relaxed);
         if q.front().is_some_and(|d| d.0 == frame) {
             return q.pop_front().unwrap().1;
         }
@@ -505,11 +576,13 @@ impl Renderer {
     /// Wait until every frame handed over is rendered (and every frame
     /// published is handed over: the frame sink's build thread).
     pub fn flush(&self) {
-        ssx3_ps2::frame_sink::wait_built();
-        let mut p = self.1.pending.lock().unwrap();
-        while *p > 0 {
-            p = self.1.idle.wait(p).unwrap();
-        }
+        gpu_wait::wait(Site::GfxFlush, || {
+            ssx3_ps2::frame_sink::wait_built();
+            let mut p = self.1.pending.lock().unwrap();
+            while *p > 0 {
+                p = self.1.idle.wait(p).unwrap();
+            }
+        });
     }
 
     /// The image on screen as RGBA8 (GS alpha), read back (after the
@@ -619,7 +692,7 @@ impl ssx3_ps2::frame_sink::FrameSink for Renderer {
         match tx {
             Some(tx) => {
                 *self.1.pending.lock().unwrap() += 1;
-                if tx.send(f).is_err() {
+                if gpu_wait::wait(Site::GfxRenderQueue, || tx.send(f)).is_err() {
                     *self.1.pending.lock().unwrap() -= 1;
                 }
             }
@@ -1010,6 +1083,8 @@ impl Inner {
         self.timing = (0, [0.0; 4]);
         self.depth_parts = [0.0; 3];
         self.pass_counts = [0; 6];
+        DEPTH_POLLS.store(0, std::sync::atomic::Ordering::Relaxed);
+        gpu_wait::reset();
     }
 
     /// Mean time per frame in each stage of `render` (ms).
@@ -1025,6 +1100,10 @@ impl Inner {
             self.pass_counts[0] as f64 / n, self.pass_counts[1] as f64 / n,
             self.pass_counts[2] as f64 / n, self.pass_counts[3] as f64 / n,
             self.pass_counts[4] as f64 / n, self.pass_counts[5] as f64 / n
+        ) + &format!(
+            "; GPU waits per frame (calls x ms): {}; depth polls {:.1}",
+            gpu_wait::report(n),
+            DEPTH_POLLS.load(std::sync::atomic::Ordering::Relaxed) as f64 / n
         )
     }
 
@@ -2612,17 +2691,13 @@ impl Inner {
                 if cfg!(target_arch = "wasm32") {
                     let _ = this.dev.poll(wgpu::PollType::Poll);
                 } else {
-                    let _ = this.dev.poll(wgpu::PollType::Wait {
-                        submission_index: Some(prev_idx),
-                        timeout: None,
-                    });
+                    wait_gpu(Site::GfxDepthSync, &this.dev, Some(prev_idx));
                 }
                 let t_copy = web_time::Instant::now();
                 this.depth_parts[0] += (t_copy - t_wait).as_secs_f64() * 1e3;
                 // (Not mapped yet in the browser: the queries keep the
                 // depth before.)
-                if let Some(v) = mapped
-                    .load(std::sync::atomic::Ordering::Acquire)
+                if let Some(v) = (mapped.load(std::sync::atomic::Ordering::Acquire) == MAP_OK)
                     .then(|| slice.get_mapped_range())
                     .and_then(|r| r.ok())
                 {
@@ -2635,14 +2710,9 @@ impl Inner {
             }
         }
         if let (Some(buf), Some(tx)) = (&depth_buf, &self.depth_tx) {
-            let mapped = Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let m = mapped.clone();
-            buf.slice(..).map_async(wgpu::MapMode::Read, move |r| {
-                m.store(r.is_ok(), std::sync::atomic::Ordering::Release)
-            });
+            let mapped = map_depth(buf, self.shared.depth_thread.get().cloned());
             let _ = tx.send(DepthPost::Buf {
                 buf: buf.clone(),
-                idx: sub_idx.clone(),
                 zs: self.zscale,
                 w,
                 h,
@@ -2655,11 +2725,7 @@ impl Inner {
             // complete): the light queries see depth one frame late, and
             // the CPU does not wait for this frame's GPU work.
             finish_depth(self);
-            let mapped = Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let m = mapped.clone();
-            buf.slice(..).map_async(wgpu::MapMode::Read, move |r| {
-                m.store(r.is_ok(), std::sync::atomic::Ordering::Release)
-            });
+            let mapped = map_depth(&buf, None);
             self.pending_depth =
                 Some((buf, sub_idx, self.zscale, w, h, mapped, self.frames_in - 1));
             self.timing.1[3] += t_sub.elapsed().as_secs_f64() * 1e3;
@@ -2667,7 +2733,7 @@ impl Inner {
         if let Some(pb) = probe_buf {
             let slice = pb.slice(..);
             slice.map_async(wgpu::MapMode::Read, |_| {});
-            let _ = self.dev.poll(wgpu::PollType::wait_indefinitely());
+            wait_gpu(Site::GfxProbe, &self.dev, None);
             if let Ok(v) = slice.get_mapped_range() {
                 let mut last = u32::MAX;
                 for (k, d) in probed.iter().enumerate() {
@@ -2749,7 +2815,7 @@ impl Inner {
         self.queue.submit(std::iter::once(enc.finish()));
         let slice = buf.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
-        let _ = self.dev.poll(wgpu::PollType::wait_indefinitely());
+        wait_gpu(Site::GfxReadTexture, &self.dev, None);
         let Ok(v) = slice.get_mapped_range() else {
             return (w, h, Vec::new());
         };
@@ -3515,6 +3581,49 @@ mod tests {
         s.post_depth(5, Some(Depth { w: 5, h: 1, z }));
         s.post_depth(6, None);
         assert_eq!(s.take_depth(5, Duration::ZERO).map(|d| d.w), Some(5));
+    }
+
+    #[test]
+    fn depth_thread_without_device_waits() {
+        // Frames' depth handed over in order with no device wait on the
+        // depth thread: one holds wgpu's resource lock until the GPU is
+        // done, and a present on another thread then waits as long
+        // (see `gpu_wait`).
+        let (dev, queue) = wgpu::Device::noop(&Default::default());
+        let shared = Arc::new(Shared::default());
+        let tx = spawn_depth_thread(dev.clone(), shared.clone());
+        let usage = wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ;
+        let src = dev.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: 8,
+            usage: wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        for frame in 0..3 {
+            let buf = dev.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size: 8,
+                usage,
+                mapped_at_creation: false,
+            });
+            let mut enc = dev.create_command_encoder(&Default::default());
+            enc.copy_buffer_to_buffer(&src, 0, &buf, 0, 8);
+            queue.submit(std::iter::once(enc.finish()));
+            let mapped = map_depth(&buf, shared.depth_thread.get().cloned());
+            let (zs, w, h) = (1.0, 2, 1);
+            tx.send(DepthPost::Buf {
+                buf,
+                zs,
+                w,
+                h,
+                mapped,
+                frame,
+            })
+            .unwrap();
+            let d = shared.take_depth(frame, Duration::from_secs(10));
+            assert_eq!(d.map(|d| d.w), Some(2));
+        }
+        assert_eq!(gpu_wait::device_waits(), 0);
     }
 
     #[test]
