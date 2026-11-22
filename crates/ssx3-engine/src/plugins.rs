@@ -50,17 +50,24 @@ pub fn filter() -> Filter {
     Filter::from_setting(config::var("SSX3_PLUGINS").as_deref())
 }
 
-/// Load the plugins: after the game's own overrides (hooks wrap them), before
-/// the file layer starts (overlays go in front of the disc).
-pub(crate) fn load(code: Vec<Box<dyn Plugin>>) -> Loaded {
-    let mut slots = ssx3_game::plugin_host::GameSlots;
-    let loaded = ssx3_plugin::load(&roots(), &filter(), &code, &mut slots);
-    for line in &loaded.log {
-        eprintln!("[plugins] {line}");
-    }
+/// Phase 1: find the plugins, mount their overlays (in front of the disc, so
+/// before the file layer starts) and publish the catalog. No slot is touched.
+pub(crate) fn resolve(code: &[Box<dyn Plugin>]) -> Loaded {
+    let loaded = ssx3_plugin::resolve(&roots(), &filter(), code);
     for overlay in &loaded.overlays {
         ssx3_game::native_files::add_overlay(overlay.clone());
     }
     ssx3_game::plugin_host::set_catalog(loaded.catalog.clone());
     loaded
+}
+
+/// Phase 2: the Rust plugins' hooks. After every installer of the game itself
+/// (the file layer, the draw capture, the debug hooks), or a later installer
+/// would replace a hook.
+pub(crate) fn install_hooks(loaded: &mut Loaded, code: &[Box<dyn Plugin>]) {
+    let mut slots = ssx3_game::plugin_host::GameSlots;
+    ssx3_plugin::install_hooks(loaded, &filter(), code, &mut slots);
+    for line in &loaded.log {
+        eprintln!("[plugins] {line}");
+    }
 }

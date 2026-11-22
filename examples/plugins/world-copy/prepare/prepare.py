@@ -43,6 +43,10 @@ def main():
     dest = os.path.join(out, "overlay", "DATA", "WORLDS", "BAX.BIG")
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     with open(disc, "rb") as f:
+        # The SSX 3 image the engine runs is a plain 2048-byte-sector .iso; a
+        # raw 2352-byte .bin would be read at the wrong offsets.
+        if sectors(f, 16, 1)[1:6] != b"CD001":
+            sys.exit(f"{disc}: not a plain 2048-byte-sector ISO (raw .bin images are not supported here)")
         lba, size = find(f, "DATA/WORLDS/BAM.BIG")
         first = sectors(f, lba, 1)
         if first[:4] != b"BIGF":

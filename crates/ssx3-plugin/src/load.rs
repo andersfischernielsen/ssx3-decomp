@@ -21,15 +21,12 @@ pub struct Loaded {
     pub log: Vec<String>,
 }
 
-/// Plugins that load: the data plugins that are ready (and, when they declare
-/// Rust code, have it linked in), and the code plugins that stand alone or
-/// whose folder is ready. `code` are the plugins linked into this front end.
-pub fn load(
-    roots: &Roots,
-    filter: &Filter,
-    code: &[Box<dyn Plugin>],
-    slots: &mut dyn Slots,
-) -> Loaded {
+/// Phase 1: discover and check the plugins; collect their overlays and the
+/// catalog. Touches no override slot, so it can run before the game's own
+/// installers (overlays must exist before the file layer starts). `code` are
+/// the plugins linked into this front end: a manifest that declares Rust code
+/// needs it there.
+pub fn resolve(roots: &Roots, filter: &Filter, code: &[Box<dyn Plugin>]) -> Loaded {
     let mut found = discover(roots, filter);
     let mut log = Vec::new();
     let has_code = |id: &str| code.iter().any(|p| p.id() == id);
@@ -74,27 +71,6 @@ pub fn load(
         log.push(line);
     }
 
-    // Rust code: plugins with a folder load only when it is ready.
-    let mut owners = Owners::default();
-    for p in code {
-        let id = p.id().to_string();
-        let folder = found.iter().find(|f| f.id == id);
-        let allowed = filter.allows(&id) && folder.is_none_or(|f| f.status == Status::Ready);
-        if !allowed {
-            continue;
-        }
-        let mut hooks = Hooks::new(slots, &mut owners, &id);
-        match p.install(&mut hooks) {
-            Ok(()) => {
-                log.push(format!("plugin {id}: {} hook(s)", hooks.installed()));
-                if folder.is_none() {
-                    active.push(id);
-                }
-            }
-            Err(e) => log.push(format!("plugin {id}: hook failed: {e}")),
-        }
-    }
-
     let catalog = Catalog::from_found(
         &found
             .iter()
@@ -109,6 +85,52 @@ pub fn load(
         active,
         log,
     }
+}
+
+/// Phase 2: run the code plugins' `install`. Call it after every installer of
+/// the game itself (the file layer, the draw capture, the debug hooks): a hook
+/// wraps what is in the slot, so it must come last or a later installer would
+/// replace it. Plugins with a folder install only when it is ready.
+pub fn install_hooks(
+    loaded: &mut Loaded,
+    filter: &Filter,
+    code: &[Box<dyn Plugin>],
+    slots: &mut dyn Slots,
+) {
+    let mut owners = Owners::default();
+    for p in code {
+        let id = p.id().to_string();
+        let folder = loaded.found.iter().find(|f| f.id == id);
+        let allowed = filter.allows(&id) && folder.is_none_or(|f| f.status == Status::Ready);
+        if !allowed {
+            continue;
+        }
+        let standalone = folder.is_none();
+        let mut hooks = Hooks::new(slots, &mut owners, &id);
+        match p.install(&mut hooks) {
+            Ok(()) => {
+                loaded
+                    .log
+                    .push(format!("plugin {id}: {} hook(s)", hooks.installed()));
+                if standalone {
+                    loaded.active.push(id);
+                }
+            }
+            Err(e) => loaded.log.push(format!("plugin {id}: hook failed: {e}")),
+        }
+    }
+}
+
+/// Both phases at once, for callers that have no installers in between.
+pub fn load(
+    roots: &Roots,
+    filter: &Filter,
+    code: &[Box<dyn Plugin>],
+    slots: &mut dyn Slots,
+) -> Loaded {
+    let mut loaded = resolve(roots, filter, code);
+    install_hooks(&mut loaded, filter, code, slots);
+    loaded
 }
 
 #[cfg(test)]
@@ -238,6 +260,39 @@ mod tests {
         assert!(l.catalog.events.is_empty());
         assert!(l.overlays.is_empty());
         assert!(l.log[0].contains("ssx3 plugins build"), "{:?}", l.log);
+    }
+
+    #[test]
+    fn resolve_touches_no_slot_and_install_hooks_comes_after() {
+        let t = Tmp::new("phases");
+        plugin(&t, "alpha", "[code]\npackage = \"alpha-code\"\n", true);
+        let mut slots = Table::default();
+        slots.0.insert(0x100, original);
+        let code: Vec<Box<dyn Plugin>> = vec![Box::new(Hello("alpha", 0x100))];
+        let mut loaded = resolve(&roots(&t), &Filter::All, &code);
+        assert_eq!(loaded.active, ["alpha"]);
+        assert_eq!(
+            loaded.overlays.len(),
+            1,
+            "overlays are known before any hook"
+        );
+        assert_eq!(
+            slots.get(0x100).map(|f| f as usize),
+            Some(original as GuestFn as usize)
+        );
+        // The game's own installers run here and replace slots...
+        fn builtin(_: &mut ssx3_ee_rt::Cpu) {}
+        slots.set(0x100, builtin);
+        // ...and the plugin's hook, installed last, wraps what they left.
+        install_hooks(&mut loaded, &Filter::All, &code, &mut slots);
+        assert_eq!(
+            slots.get(0x100).map(|f| f as usize),
+            Some(hooked as GuestFn as usize)
+        );
+        assert_eq!(
+            PREV.get().map(|f| f as usize),
+            Some(builtin as GuestFn as usize)
+        );
     }
 
     #[test]

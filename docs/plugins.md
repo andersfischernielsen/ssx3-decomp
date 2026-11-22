@@ -54,7 +54,7 @@ package = "ssx3-plugin-tricky"
 [[peak]]
 id = "tricky"
 name = "Peak Tricky"
-picture = "ui/peak.png"   # relative to the content folder
+picture = "ui/peak.png"   # inside the content folder: relative, no '..', no ':'
 
 [[event]]
 id = "garibaldi-race"
@@ -122,6 +122,9 @@ pub fn plugin() -> Box<dyn Plugin> { Box::new(Mine) }
   (one `static` per hook). Hooks of several plugins on one function run in load
   order. `replace` drops what was there and is an error when another plugin
   already hooked the function.
+- Hooks are installed last, after every installer of the game itself (the file
+  layer, the draw capture, the debug hooks), so a hook wraps what those left in
+  the slot and cannot be replaced by them.
 - Only functions with an override slot can be hooked: every ported function
   (`crates/ssx3-game/overrides.txt`) and the addresses of
   `crates/ssx3-game/hookable.txt`. Add the address you need to `hookable.txt`

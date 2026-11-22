@@ -84,9 +84,10 @@ pub(crate) fn boot(
     if n > 0 {
         eprintln!("[ssx3-game] {n} hand-written function(s) installed");
     }
-    // Plugins: hooks wrap the overrides above; their overlays go in front of
-    // the disc (before the file layer below starts).
-    let plugins = crate::plugins::load(code_plugins);
+    // Plugins, phase 1: their overlays go in front of the disc (before the
+    // file layer below starts) and their catalog is published. Their hooks come
+    // last (phase 2, below), after every installer of the game itself.
+    let mut plugins = crate::plugins::resolve(&code_plugins);
     // The tick rate (SSX3_TICK_HZ, settings "Game rate").
     machine::set_vsync_hz(ssx3_game::tick::install());
     machine::set_vblank_hook(vblank);
@@ -101,6 +102,8 @@ pub(crate) fn boot(
     if ssx3_game::native_files::install() {
         eprintln!("[ssx3-game] native files on");
     }
+    // Plugins, phase 2: hooks wrap what the installers above left in the slots.
+    crate::plugins::install_hooks(&mut plugins, &code_plugins);
     // Recompiled IOP sound modules; used when SSX3_IOP=1 (see iop_bridge.rs).
     #[cfg(not(target_arch = "wasm32"))]
     ssx3_iop::register_generated(&ssx3_iop_gen::GENERATED);

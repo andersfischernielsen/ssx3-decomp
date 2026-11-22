@@ -12,7 +12,7 @@ pub mod prepare;
 pub mod workspace;
 
 pub use hooks::{HookError, Hooks, Prev, Slots};
-pub use load::{load, Loaded};
+pub use load::{install_hooks, load, resolve, Loaded};
 pub use plugin::Plugin;
 /// What a plugin's hooks work with: the machine and its registers.
 pub use ssx3_ee_rt::cpu::reg;

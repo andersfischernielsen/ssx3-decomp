@@ -156,6 +156,17 @@ pub fn api_compatible(plugin: (u32, u32)) -> bool {
     plugin == API_VERSION
 }
 
+/// A path inside the plugin's content folder: relative, no `..`, no drive or
+/// root, no backslashes or colons (the manifest must mean the same on every OS:
+/// `C:/x` is a plain name on Unix and a drive path on Windows).
+fn confined(s: &str) -> bool {
+    !s.is_empty()
+        && !s.contains(['\\', ':'])
+        && std::path::Path::new(s)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+}
+
 fn id_ok(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 32
@@ -221,6 +232,12 @@ impl Manifest {
             }
             if !peaks.insert(p.id.as_str()) {
                 e.push(format!("peak {:?}: listed twice", p.id));
+            }
+            if p.picture.as_deref().is_some_and(|pic| !confined(pic)) {
+                e.push(format!(
+                    "peak {:?}: picture {:?} must be a relative path inside the content folder (no '..', no absolute path)",
+                    p.id, p.picture
+                ));
             }
         }
         let mut events = HashSet::new();
@@ -320,6 +337,29 @@ world = "garibaldi"
         let e = parse(&bad).unwrap_err().join("\n");
         assert!(e.contains("inputs.disc.detect"), "{e}");
         assert!(e.contains("no dot"), "{e}");
+    }
+
+    #[test]
+    fn a_picture_cannot_leave_the_content_folder() {
+        let with = |pic: &str| {
+            GOOD.replace(
+                "name = \"Peak Tricky\"",
+                &format!("name = \"Peak Tricky\"\npicture = {pic:?}"),
+            )
+        };
+        assert!(parse(&with("ui/peak.png")).is_ok());
+        assert!(parse(&with("peak.png")).is_ok());
+        for bad in [
+            "../secret.png",
+            "ui/../../x",
+            "/etc/passwd",
+            "C:/x.png",
+            "ui\\peak.png",
+            "",
+        ] {
+            let e = parse(&with(bad)).unwrap_err().join("\n");
+            assert!(e.contains("inside the content folder"), "{bad:?}: {e}");
+        }
     }
 
     #[test]
