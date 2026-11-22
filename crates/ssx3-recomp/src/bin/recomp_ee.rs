@@ -38,29 +38,14 @@ fn repo_root() -> PathBuf {
 
 fn main() {
     let mut shards = 16usize;
-    // Default: structured Rust on the host-thread runtime. `--unwind` selects
-    // the original resumable block-dispatch form; `--threads` dispatch form
-    // on host threads.
-    let mut threads = true;
-    let mut structured = true;
     // `--out DIR --package-prefix NAME`: a second copy of the generated code
-    // (e.g. the unwind form for the WebAssembly build, generated/ee-unwind,
-    // packages ssx3-ee-unwind[-sNN]) next to the default one.
+    // next to the default one.
     let mut out: Option<PathBuf> = None;
     let mut prefix = String::from("ssx3-ee");
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
     while i < args.len() {
-        if args[i] == "--unwind" {
-            threads = false;
-            structured = false;
-        } else if args[i] == "--threads" {
-            threads = true;
-            structured = false;
-        } else if args[i] == "--structured" {
-            threads = true;
-            structured = true;
-        } else if args[i] == "--out" {
+        if args[i] == "--out" {
             out = Some(PathBuf::from(&args[i + 1]));
             i += 1;
         } else if args[i] == "--package-prefix" {
@@ -236,7 +221,7 @@ fn main() {
     // Cross-function branch targets must be labels where they land.
     let mut external: BTreeSet<u32> = BTreeSet::new();
     for f in &funcs {
-        let ts = targets(&img, f, threads);
+        let ts = targets(&img, f);
         for &t in &ts {
             if t < f.start || t >= f.end {
                 external.insert(t);
@@ -276,36 +261,11 @@ fn main() {
             ok.then(|| (f.start, n.clone()))
         })
         .collect();
-    // The unwind form charges cycles as the host-thread form does, which
-    // emits most functions structured: which ones.
-    let structured_set: BTreeSet<u32> = if threads {
-        BTreeSet::new()
-    } else {
-        let tctx = Ctx {
-            shard_of: &shard_of,
-            data_refs: &data_refs,
-            extra_labels: &extra,
-            threads: true,
-            names: &names,
-            structured: None,
-        };
-        let none = BTreeSet::new();
-        funcs
-            .iter()
-            .filter(|f| {
-                ssx3_recomp::structure::emit_structured(&img, f, shard_of[&f.start], &tctx, &none)
-                    .is_some()
-            })
-            .map(|f| f.start)
-            .collect()
-    };
     let ctx = Ctx {
         shard_of: &shard_of,
         data_refs: &data_refs,
         extra_labels: &extra,
-        threads,
         names: &names,
-        structured: if threads { None } else { Some(&structured_set) },
     };
     // Functions replaced by hand-written Rust (crates/ssx3-game/overrides.txt):
     // the generated body is kept as `f_X__generated`, and `f_X` calls through
@@ -368,25 +328,22 @@ fn main() {
         code.push_str("#![allow(unused_imports, unused_mut, unused_variables, unused_assignments, unreachable_code, unused_parens, non_snake_case, clippy::all)]\n");
         code.push_str("use ssx3_ee_rt::Cpu;\nuse ssx3_ee_rt::cpu::sx;\nuse ssx3_ee_rt::cpu::reg::*;\nuse ssx3_ee_rt::funcs::call_indirect;\nuse ssx3_ee_rt::vu0::{Efu, Src, W, X, Y, Z};\n\n");
         let mut emit_one = |f: &Func, code: &mut String| {
-            if structured {
-                if let Some(src) =
-                    ssx3_recomp::structure::emit_structured(&img, f, s, &ctx, &external)
-                {
-                    code.push_str(&src);
-                    structured_count += 1;
-                    if external.range(f.start + 1..f.end).next().is_some() {
-                        let twin = format!("{}__entries", fn_name(f.start));
-                        let st = emit_function_named(&img, f, s, &ctx, code, &twin);
-                        totals.invalid += st.invalid;
-                    }
-                    totals.instructions += f
-                        .runs
-                        .iter()
-                        .map(|r| ((r.1 - r.0) / 4) as usize)
-                        .sum::<usize>();
-                    code.push('\n');
-                    return;
+            if let Some(src) = ssx3_recomp::structure::emit_structured(&img, f, s, &ctx, &external)
+            {
+                code.push_str(&src);
+                structured_count += 1;
+                if external.range(f.start + 1..f.end).next().is_some() {
+                    let twin = format!("{}__entries", fn_name(f.start));
+                    let st = emit_function_named(&img, f, s, &ctx, code, &twin);
+                    totals.invalid += st.invalid;
                 }
+                totals.instructions += f
+                    .runs
+                    .iter()
+                    .map(|r| ((r.1 - r.0) / 4) as usize)
+                    .sum::<usize>();
+                code.push('\n');
+                return;
             }
             let st = emit_function(&img, f, s, &ctx, code);
             totals.instructions += st.instructions;
@@ -416,19 +373,17 @@ fn main() {
                 // computed jumps) keep those entries in the generated
                 // `__entries` twin; only entries at the start reach the slot.
                 // (The structured form keeps such entries in an `__entries`
-                // twin; the unwind form's body dispatches on `c.pc` itself,
-                // and there every return address in the function is one: a
-                // thread switch in a callee resumes the caller there.)
+                // twin.)
                 // (A function the structured emitter could not structure is
                 // emitted as a `c.pc` dispatcher with no twin: its body
                 // takes the other entries itself.)
                 let has_twin = body.contains(&format!("pub fn {name}__entries("));
-                let twin = if structured && has_twin {
+                let twin = if has_twin {
                     format!("{name}__entries")
                 } else {
                     format!("{name}__generated")
                 };
-                let mid = if !structured || external.range(f.start + 1..f.end).next().is_some() {
+                let mid = if external.range(f.start + 1..f.end).next().is_some() {
                     format!(
                         "    // Entries other than the start run the generated code.\n    if c.pc != {:#010x} {{\n        return {twin}(c);\n    }}\n",
                         f.start
@@ -524,7 +479,7 @@ fn main() {
         );
     }
     lib.push_str("        _ => return None,\n    })\n}\n");
-    let _ = writeln!(lib, "\n/// True when generated for host-thread mode (`ssx3_ps2::threads`).\npub const HOST_THREADS: bool = {threads};");
+    let _ = writeln!(lib, "\n/// True when generated for host-thread mode (`ssx3_ps2::threads`).\npub const HOST_THREADS: bool = true;");
     write_if_changed(game.join("src/lib.rs"), lib).unwrap();
 
     println!("functions    : {}", funcs.len());
@@ -536,12 +491,10 @@ fn main() {
     println!("data refs    : {}", data_refs.len());
     println!("extra entries: {}", extra.len());
     println!("shards       : {shards}");
-    if structured {
-        println!(
-            "structured   : {structured_count} of {} functions",
-            funcs.len()
-        );
-    }
+    println!(
+        "structured   : {structured_count} of {} functions",
+        funcs.len()
+    );
     println!("rust bytes   : {bytes}");
 
     // The IOP sound modules (recomp-iop) are part of the same build.

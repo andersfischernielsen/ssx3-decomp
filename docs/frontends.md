@@ -102,7 +102,6 @@ for a front end that runs the renderer's VU1 work elsewhere (below).
 | Feature | Meaning |
 | --- | --- |
 | `ee-threads` (default) | The generated EE code with host coroutines (`generated/ee`). |
-| `ee-unwind` | The single-threaded unwind form (`generated/ee-unwind`; the browser needs it). Build with `default-features = false`. |
 | `emu-gs`, `vu1-microcode` | The emulated GS and VU1 (verification renderers, `SSX3_RENDER=emu/shadow`). |
 | `callprof` | The call-graph profiler (`SSX3_CALLPROF`). |
 
@@ -228,6 +227,28 @@ mixer adds that same buffer to the pacer's lead when comparing the
 target with the queued count, so it aims to keep the ring itself at the
 pacer's lead. The browser leaves catch-up off and pulls once per frame.
 
+### Guest-thread stacks (wasm32)
+
+The game is written as EE kernel threads; each runs on a stack of its own and
+a thread switch parks one stack and resumes another (`ssx3_ps2::threads`).
+Natively these are coroutines (`corosensei`). WebAssembly has no stack
+switching Rust can use, so a `wasm32` front end supplies it
+(`ssx3_engine::ssx3_ps2::threads`):
+
+| Item | What it is |
+| --- | --- |
+| `trait StackSwitcher` | `spawn(id)`: guest thread token `id` was created (allocate its shadow stack). `switch(me, to)`: start `to` (token 0 is the frame driver) or resume it, and park the calling stack until the baton returns to `me`. |
+| `set_switcher(Rc<dyn StackSwitcher>)` | Install it before the first frame. |
+| `thread_main(id)` | The body of guest thread `id`: run it on the fresh stack when `switch` first hands it the baton. |
+
+The frame (`Engine::step`) then runs on a stack too, token 0, and returns
+whenever the guest threads have switched back to it. The browser front end
+uses WebAssembly JSPI (JavaScript Promise Integration): every stack is a
+`WebAssembly.promising` call, `switch` a `WebAssembly.Suspending` import that
+parks it on a promise, and the linear-memory shadow stack pointer
+(`__stack_pointer`) is swapped at every switch, as Rust has one for all wasm
+stacks. Stacks of finished guest threads stay parked.
+
 ### VU offload
 
 The renderer runs the game's VU1 programs as native code, in chunks. Native
@@ -267,8 +288,6 @@ git submodule add https://github.com/andersfischernielsen/ssx3-decomp ssx3
 cd ssx3
 cp /path/to/your/image.iso "SSX 3 (USA).iso"
 python3 tools/setup.py          # orig/, generated/ (ee, iop, vu)
-# or, for single-threaded targets (the browser), with the unwind form too:
-python3 tools/setup.py --unwind # also generated/ee-unwind
 ```
 
 Then depend on the engine by path from the front end's own workspace:

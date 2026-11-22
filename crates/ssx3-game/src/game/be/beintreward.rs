@@ -3631,14 +3631,8 @@ pub(crate) const REWARDS_STRINGS: u32 = 0x2c;
 #[cfg(test)]
 pub(crate) const REWARDS_JUMP_TABLE: u32 = 0x0045_ab50;
 
-#[cfg(not(feature = "ee-unwind"))]
 pub(crate) fn rewards_parse_resume_2(c: &mut Cpu) {
     ee::s01::f_0015a818__entries(c)
-}
-
-#[cfg(feature = "ee-unwind")]
-pub(crate) fn rewards_parse_resume_2(c: &mut Cpu) {
-    ee::s01::f_0015a818__generated(c)
 }
 
 /// One string-offset fixup: the word at `a0 + off`, when non-zero, becomes

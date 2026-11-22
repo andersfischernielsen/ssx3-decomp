@@ -40,20 +40,10 @@ pub mod sif;
 pub mod snd_native;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod threads;
-/// The browser runs the unwind form only (no guest-thread stacks there).
+/// Guest threads on stacks the front end provides (the browser: JSPI).
 #[cfg(target_arch = "wasm32")]
-pub mod threads {
-    use crate::cpu::Cpu;
-    pub fn my_token() -> i32 {
-        0
-    }
-    pub fn handoff(_me: i32, _to: i32) {
-        unreachable!("host-thread mode is not used in the browser build")
-    }
-    pub fn spawn(_c: &mut Cpu, _id: i32) {
-        unreachable!("host-thread mode is not used in the browser build")
-    }
-}
+#[path = "threads_switcher.rs"]
+pub mod threads;
 pub mod vif;
 /// The Vector Units live in their own crate (build times); see `ssx3-vu`.
 pub use ssx3_vu::vu;

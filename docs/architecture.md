@@ -12,8 +12,8 @@ default native mode does not use them on the frame path.
  ┌──────────────────────────────────────┐     ┌──────────────────────────────────────────────┐
  │ Ghidra: functions, names, boundaries │     │ ssx3-engine ◄ window, headless, browser      │
  │ ssx3-recomp: recomp-ee ─► generated/ │     └───────────────┬──────────────────────────────┘
- │   ee (host threads), ee-unwind       │                     │ one VBlank per frame
- │   (single thread, WebAssembly)       │                     ▼
+ │   ee (a stack per guest thread)      │                     │ one VBlank per frame
+ │                                      │                     ▼
  └──────────────────────────────────────┘     ┌──────────────────────────────────────────────┐
                                               │ EE game code (generated Rust, ssx3-ee-rt):   │
                                               │   guest RAM, PS2 float/VU0 semantics         │

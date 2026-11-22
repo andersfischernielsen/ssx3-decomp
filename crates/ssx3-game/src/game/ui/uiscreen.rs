@@ -627,7 +627,7 @@ fn set_updating(c: &mut Cpu, screen: Option<u32>) {
 /// the next update replaces it.
 pub(crate) fn updating_screen(c: &mut Cpu) -> Option<u32> {
     let vsync = crate::tick::vsync_count(c);
-    slot_screen(UPDATING.get(), cfg!(feature = "ee-unwind"), vsync)
+    slot_screen(UPDATING.get(), false, vsync)
 }
 
 /// [`updating_screen`]'s rule for a slot, in the unwind form or with host

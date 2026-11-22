@@ -2310,148 +2310,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "ssx3-ee-unwind"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
- "ssx3-ee-unwind-s00",
- "ssx3-ee-unwind-s01",
- "ssx3-ee-unwind-s02",
- "ssx3-ee-unwind-s03",
- "ssx3-ee-unwind-s04",
- "ssx3-ee-unwind-s05",
- "ssx3-ee-unwind-s06",
- "ssx3-ee-unwind-s07",
- "ssx3-ee-unwind-s08",
- "ssx3-ee-unwind-s09",
- "ssx3-ee-unwind-s10",
- "ssx3-ee-unwind-s11",
- "ssx3-ee-unwind-s12",
- "ssx3-ee-unwind-s13",
- "ssx3-ee-unwind-s14",
- "ssx3-ee-unwind-s15",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s00"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s01"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s02"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s03"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s04"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s05"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s06"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s07"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s08"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s09"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s10"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s11"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s12"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s13"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s14"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
-name = "ssx3-ee-unwind-s15"
-version = "0.1.0"
-dependencies = [
- "ssx3-ee-rt",
-]
-
-[[package]]
 name = "ssx3-engine"
 version = "0.1.0"
 dependencies = [
  "ssx3-core",
  "ssx3-ee",
  "ssx3-ee-rt",
- "ssx3-ee-unwind",
  "ssx3-game",
  "ssx3-gfx",
  "ssx3-iop",
@@ -2468,7 +2332,6 @@ dependencies = [
  "ssx3-core",
  "ssx3-ee",
  "ssx3-ee-rt",
- "ssx3-ee-unwind",
  "ssx3-mpeg",
  "ssx3-plugin",
  "ssx3-ps2",

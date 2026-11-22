@@ -84,34 +84,9 @@ pub struct Report {
     pub lohi: Vec<String>,
 }
 
-/// The entry address of a generated function (its body `f_X__generated` or
-/// its slot `f_X`), from the function table.
-fn entry_of(f: GuestFn) -> Option<(u32, u32)> {
-    use std::collections::HashMap;
-    use std::sync::OnceLock;
-    static MAP: OnceLock<HashMap<usize, (u32, u32)>> = OnceLock::new();
-    MAP.get_or_init(|| {
-        let mut m = HashMap::new();
-        for e in ssx3_ee::FUNCTIONS.iter() {
-            m.insert(e.f as usize, (e.start, e.end));
-            if let Some(g) = ssx3_ee::generated_body(e.start) {
-                m.insert(g as usize, (e.start, e.end));
-            }
-        }
-        m
-    })
-    .get(&(f as usize))
-    .copied()
-}
-
 /// Call a generated function, entering at its start unless `c.pc` is
 /// already an entry inside it (the unwind form dispatches on `pc`).
 pub fn run_generated(c: &mut Cpu, f: GuestFn) {
-    if let Some((start, end)) = entry_of(f).filter(|_| cfg!(feature = "ee-unwind")) {
-        if !(start..end).contains(&c.pc) {
-            c.pc = start;
-        }
-    }
     f(c);
 }
 
@@ -136,15 +111,6 @@ fn compare_with(
     let mut b = fresh();
     setup(&mut a);
     setup(&mut b);
-    // The unwind form's generated function dispatches on `pc` (its entry,
-    // or a resume point inside it): enter at the start unless the setup
-    // chose an entry. (The host-thread form ignores `pc` there.)
-    if let Some((start, end)) = entry_of(generated).filter(|_| cfg!(feature = "ee-unwind")) {
-        if !(start..end).contains(&a.pc) {
-            a.pc = start;
-            b.pc = start;
-        }
-    }
     let args = [a.g[4][0], a.g[5][0], a.g[6][0], a.g[7][0]];
     ssx3_ee_rt::prof::trace::start();
     generated(&mut a);

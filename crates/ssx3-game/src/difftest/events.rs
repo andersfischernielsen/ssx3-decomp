@@ -25,41 +25,6 @@ thread_local! {
         const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
 }
 
-/// The machine halted under the test (`fatal`, e.g. a jump to unmapped
-/// code from fixture zeros): stop driving, the way the trampoline returns
-/// on a halted machine. Both sides halt the same way from the same state,
-/// so the comparison still decides the test.
-fn halted(c: &mut Cpu) -> bool {
-    ssx3_ps2::platform::machine_of(&mut c.bus.plat)
-        .kernel
-        .halted
-        .is_some()
-}
-
-/// Re-enter at the cleared `pc` through the function table, the way the
-/// browser trampoline resumes. After the first unwind the hand body does
-/// not run again: resumes run the generated body itself, bypassing its
-/// override slot (the slot records a profiler entry the direct body call
-/// it stands in for would not make, and the comparison counts every
-/// recorded call). Tests never install overrides, so the slot would run
-/// the same body.
-fn resume(c: &mut Cpu) {
-    // The generated body owning `pc`, found the way `lookup` finds its
-    // function (the table is sorted by `start`); other pcs go through
-    // the table, which misses exactly where `lookup` does.
-    let table = ssx3_ee_rt::funcs::funcs();
-    let i = table.partition_point(|e| e.start <= c.pc);
-    let body = (i > 0)
-        .then(|| &table[i - 1])
-        .filter(|e| c.pc < e.end)
-        .and_then(|e| ssx3_ee::generated_body(e.start))
-        .or_else(|| ssx3_ee_rt::funcs::lookup(c.pc));
-    match body {
-        Some(g) => g(c),
-        None => (c.hooks.miss)(c, c.pc),
-    }
-}
-
 /// Run `f` the way the trampoline does: after an unwind, deliver any due
 /// event and re-enter at the (cleared) `pc` through the function table
 /// until it returns. In the unwind form the re-entry goes through the
@@ -72,33 +37,17 @@ pub fn drive(c: &mut Cpu, f: GuestFn) {
         if c.pc == RA {
             return;
         }
-        if cfg!(feature = "ee-unwind") {
-            c.pc &= !UNWIND;
-            if c.pc == RA || halted(c) {
-                return;
-            }
-            if event_due(c) && c.event() {
-                continue;
-            }
-            RESUMES.with(|r| *r.borrow_mut().entry(c.pc).or_default() += 1);
-            // The trampoline resets the host call depth before every
-            // re-entry (`machine::trampoline`); without it, unwound calls
-            // leak depth until `enter` starts refusing nested calls.
-            c.depth = 0;
-            resume(c);
-        } else {
-            assert!(
-                c.pc & UNWIND != 0,
-                "stopped at {:#x} without an unwind",
-                c.pc
-            );
-            c.pc &= !UNWIND;
-            if event_due(c) && c.event() {
-                continue;
-            }
-            RESUMES.with(|r| *r.borrow_mut().entry(c.pc).or_default() += 1);
-            f(c);
+        assert!(
+            c.pc & UNWIND != 0,
+            "stopped at {:#x} without an unwind",
+            c.pc
+        );
+        c.pc &= !UNWIND;
+        if event_due(c) && c.event() {
+            continue;
         }
+        RESUMES.with(|r| *r.borrow_mut().entry(c.pc).or_default() += 1);
+        f(c);
     }
     panic!(
         "no return after 10000 re-entries (pc {:#x}, cycles {}, next {})",
@@ -154,58 +103,6 @@ pub fn schedule(c: &mut Cpu, r: &mut Rng, seed: u32, entry: u32) -> Events {
     }
 }
 
-thread_local! {
-    static DRIVEN: std::cell::Cell<Option<GuestFn>> = const { std::cell::Cell::new(None) };
-}
-
-/// [`drive`] the hand side [`check_events`] is comparing.
-fn drive_hand(c: &mut Cpu) {
-    let f = HAND.with(|h| h.get()).expect("check_events hand target");
-    drive(c, f);
-}
-
-thread_local! {
-    static HAND: std::cell::Cell<Option<GuestFn>> = const { std::cell::Cell::new(None) };
-}
-
-/// [`drive`] the generated side [`check_events`] is checking.
-fn drive_generated(c: &mut Cpu) {
-    let f = DRIVEN.with(|d| d.get()).expect("check_events target");
-    crate::difftest::run_generated_at(c, f);
-    drive_rest(c, f);
-}
-
-/// The re-entry part of [`drive`] (after the first call). Only the
-/// generated side uses this, so the unwind form always re-enters through
-/// the function table.
-fn drive_rest(c: &mut Cpu, f: GuestFn) {
-    for _ in 0..10_000 {
-        if c.pc == RA {
-            return;
-        }
-        if cfg!(feature = "ee-unwind") {
-            c.pc &= !UNWIND;
-            if c.pc == RA || halted(c) {
-                return;
-            }
-            if event_due(c) && c.event() {
-                continue;
-            }
-            c.depth = 0;
-            resume(c);
-        } else {
-            if c.pc & UNWIND == 0 {
-                return;
-            }
-            c.pc &= !UNWIND;
-            if event_due(c) && c.event() {
-                continue;
-            }
-            f(c);
-        }
-    }
-}
-
 /// Compare the deadlines each run leaves behind to catch missed event checks.
 fn compare_schedule(a: &Cpu, b: &Cpu, hard: &mut Vec<String>) {
     let (ma, mb) = (ssx3_ps2::mr!(a), ssx3_ps2::mr!(b));
@@ -251,24 +148,7 @@ pub fn check_events(
     setup: &dyn Fn(&mut Cpu, u32) -> Events,
 ) {
     let (mut evented, mut event_seeds) = (0, 0);
-    // The generated side runs as the trampoline runs it (an unwind at a
-    // loop head is re-entered there); `drive` is a no-op without unwinds.
-    DRIVEN.with(|d| d.set(Some(generated)));
-    // The hand side runs the same way in the unwind form: a raw hand body
-    // stops at its first nested unwind, while the driven generated side
-    // runs on. Both sides re-enter through the function table, the way
-    // the browser trampoline resumes them.
-    HAND.with(|h| h.set(Some(hand)));
-    let gen_fn: GuestFn = if cfg!(feature = "ee-unwind") {
-        drive_generated
-    } else {
-        generated
-    };
-    let hand_fn: GuestFn = if cfg!(feature = "ee-unwind") {
-        drive_hand
-    } else {
-        hand
-    };
+    let (gen_fn, hand_fn) = (generated, hand);
     for seed in 0..super::seed_count(seeds) {
         let r = compare_with(
             gen_fn,
@@ -277,10 +157,7 @@ pub fn check_events(
                 setup(c, seed);
             },
             |a, b, hard| {
-                // In the unwind form, hand-written structured loops defer a finished frame.
-                if !cfg!(feature = "ee-unwind") {
-                    compare_schedule(a, b, hard);
-                }
+                compare_schedule(a, b, hard);
             },
         );
         assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);

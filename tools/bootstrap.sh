@@ -10,12 +10,6 @@ if [ ! -f generated/ee/game/Cargo.toml ]; then
   printf '[package]\nname = "ssx3-ee"\nversion = "0.1.0"\nedition = "2021"\npublish = false\n\n[dependencies]\nssx3-ee-rt = { path = "../../../crates/ssx3-ee-rt" }\n' > generated/ee/game/Cargo.toml
   printf 'pub static FUNCTIONS: [ssx3_ee_rt::funcs::FnEntry; 0] = [];\npub const HOST_THREADS: bool = false;\n' > generated/ee/game/src/lib.rs
 fi
-if [ ! -f generated/ee-unwind/game/Cargo.toml ]; then
-  # The browser build's copy (recomp-ee --unwind); only its manifest is needed here.
-  mkdir -p generated/ee-unwind/game/src
-  printf '[package]\nname = "ssx3-ee-unwind"\nversion = "0.1.0"\nedition = "2021"\npublish = false\n\n[dependencies]\nssx3-ee-rt = { path = "../../../crates/ssx3-ee-rt" }\n' > generated/ee-unwind/game/Cargo.toml
-  printf 'pub static FUNCTIONS: [ssx3_ee_rt::funcs::FnEntry; 0] = [];\npub const HOST_THREADS: bool = false;\n' > generated/ee-unwind/game/src/lib.rs
-fi
 if [ ! -f generated/iop/modules/Cargo.toml ]; then
   mkdir -p generated/iop/modules/src
   printf '[package]\nname = "ssx3-iop-gen"\nversion = "0.1.0"\nedition = "2021"\npublish = false\n\n[dependencies]\nssx3-iop = { path = "../../../crates/ssx3-iop" }\n' > generated/iop/modules/Cargo.toml
