@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use ssx3_core::iso::{Disc, SECTOR};
 
-use crate::manifest::{self, Manifest};
+use crate::image;
+use crate::manifest::{self, DiscInput, Manifest};
 
 /// `SLUS_207.72`, `slus-20772` and `SLUS-207.72` are the same serial.
 pub fn normalize_serial(s: &str) -> String {
@@ -35,15 +36,66 @@ pub fn boot_serial(disc: &mut Disc) -> Option<String> {
     (!name.is_empty()).then(|| normalize_serial(name))
 }
 
-/// The boot serial of the image at `path`, if it is a disc image.
+/// The boot serial of the image at `path`, for the formats the plugin layer
+/// reads itself (`.iso`, raw `.bin`: see [`crate::image`]).
 pub fn disc_serial(path: &Path) -> Option<String> {
-    boot_serial(&mut Disc::open(path).ok()?)
+    boot_serial(&mut image::open(path)?)
 }
 
-/// An image in `dirs` (`.iso`, `.bin`, `.img`) whose boot serial is one of
-/// `serials`.
-pub fn find_disc(dirs: &[PathBuf], serials: &[String]) -> Option<PathBuf> {
+/// The boot serial a plugin's own `detect` command prints for `path`.
+fn detected_serial(detect: &[String], dir: &Path, path: &Path) -> Option<String> {
+    let out = std::process::Command::new(detect.first()?)
+        .args(&detect[1..])
+        .arg(path)
+        .current_dir(dir)
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let first = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .next()?
+        .trim()
+        .to_string();
+    (!first.is_empty()).then(|| normalize_serial(&first))
+}
+
+/// An image in `dirs` whose boot serial is one of `serials`, for the formats
+/// the plugin layer reads itself (the SSX 3 image).
+pub fn find_disc_by_serial(dirs: &[PathBuf], serials: &[String]) -> Option<PathBuf> {
+    find(dirs, serials, &[], None)
+}
+
+/// The image a plugin's `inputs.disc` asks for: the built-in readers for
+/// `.iso` and `.bin`, and the plugin's `detect` command (run in `plugin_dir`)
+/// for any other file with one of its `extensions`.
+pub fn find_disc(dirs: &[PathBuf], input: &DiscInput, plugin_dir: &Path) -> Option<PathBuf> {
+    find(
+        dirs,
+        &input.serials,
+        &input.extensions,
+        input.detect.as_deref().map(|d| (d, plugin_dir)),
+    )
+}
+
+fn find(
+    dirs: &[PathBuf],
+    serials: &[String],
+    extra_extensions: &[String],
+    detect: Option<(&[String], &Path)>,
+) -> Option<PathBuf> {
     let want: Vec<String> = serials.iter().map(|s| normalize_serial(s)).collect();
+    let is_candidate = |p: &Path| {
+        p.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+            ["iso", "bin", "img"]
+                .iter()
+                .copied()
+                .chain(extra_extensions.iter().map(String::as_str))
+                .any(|x| e.eq_ignore_ascii_case(x))
+        })
+    };
     for dir in dirs {
         let Ok(rd) = std::fs::read_dir(dir) else {
             continue;
@@ -51,17 +103,14 @@ pub fn find_disc(dirs: &[PathBuf], serials: &[String]) -> Option<PathBuf> {
         let mut files: Vec<PathBuf> = rd
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .filter(|p| {
-                p.extension().and_then(|e| e.to_str()).is_some_and(|e| {
-                    ["iso", "bin", "img"]
-                        .iter()
-                        .any(|x| e.eq_ignore_ascii_case(x))
-                })
-            })
+            .filter(|p| is_candidate(p))
             .collect();
         files.sort();
         for f in files {
-            if disc_serial(&f).is_some_and(|s| want.contains(&s)) {
+            let serial = disc_serial(&f).or_else(|| {
+                detect.and_then(|(cmd, plugin_dir)| detected_serial(cmd, plugin_dir, &f))
+            });
+            if serial.is_some_and(|s| want.contains(&s)) {
                 return Some(f);
             }
         }
@@ -186,7 +235,7 @@ fn inspect(dir: &Path, roots: &Roots, filter: &Filter) -> Found {
         .inputs
         .disc
         .as_ref()
-        .and_then(|d| find_disc(&roots.disc_dirs, &d.serials));
+        .and_then(|d| find_disc(&roots.disc_dirs, d, dir));
     let status = if !filter.allows(&id) {
         Status::Disabled
     } else if content_ready(&m, &content) {
@@ -340,10 +389,58 @@ mod tests {
         );
         let dirs = [t.path().to_path_buf()];
         assert_eq!(
-            find_disc(&dirs, &["sles-50030".to_string()]),
+            find_disc_by_serial(&dirs, &["sles-50030".to_string()]),
             Some(t.path().join("b.bin"))
         );
-        assert_eq!(find_disc(&dirs, &["SLUS-99999".to_string()]), None);
+        assert_eq!(
+            find_disc_by_serial(&dirs, &["SLUS-99999".to_string()]),
+            None
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_plugin_reads_the_formats_the_engine_does_not() {
+        let t = Tmp::new("detect");
+        // A format nothing here reads; the plugin's detector knows it (here:
+        // the serial is the file's first line).
+        std::fs::write(t.path().join("game.chd"), "SLUS-12345\nrest of the image\n").unwrap();
+        std::fs::write(t.path().join("other.chd"), "SLUS-99999\n").unwrap();
+        std::fs::write(t.path().join("broken.chd"), "").unwrap();
+        let dirs = [t.path().to_path_buf()];
+        let input = |serial: &str, detect: bool, ext: bool| DiscInput {
+            serials: vec![serial.to_string()],
+            extensions: if ext { vec!["chd".to_string()] } else { vec![] },
+            detect: detect.then(|| {
+                vec![
+                    "sh".to_string(),
+                    "-c".to_string(),
+                    "head -1 \"$0\"".to_string(),
+                ]
+            }),
+        };
+        let here = t.path();
+        assert_eq!(
+            find_disc(&dirs, &input("SLUS-12345", true, true), here),
+            Some(t.path().join("game.chd"))
+        );
+        assert_eq!(
+            find_disc(&dirs, &input("slus_123.45", true, true), here),
+            Some(t.path().join("game.chd"))
+        );
+        assert_eq!(
+            find_disc(&dirs, &input("SLUS-00000", true, true), here),
+            None
+        );
+        // Without the command, or without the extension, the file is not looked at.
+        assert_eq!(
+            find_disc(&dirs, &input("SLUS-12345", false, true), here),
+            None
+        );
+        assert_eq!(
+            find_disc(&dirs, &input("SLUS-12345", true, false), here),
+            None
+        );
     }
 
     #[test]

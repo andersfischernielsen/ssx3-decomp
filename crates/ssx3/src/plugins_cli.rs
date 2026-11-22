@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use ssx3_engine::plugins::{filter, roots};
-use ssx3_engine::ssx3_plugin::discover::{discover, find_disc, Found, Status};
+use ssx3_engine::ssx3_plugin::discover::{discover, find_disc_by_serial, Found, Status};
 use ssx3_engine::ssx3_plugin::{prepare, workspace, Plugin};
 
 const USAGE: &str = "usage: ssx3 plugins list | prepare [id] | build\n\
@@ -72,7 +72,7 @@ fn list(linked: &[Box<dyn Plugin>]) -> i32 {
 }
 
 fn base_disc() -> Option<PathBuf> {
-    find_disc(&roots().disc_dirs, &["SLUS-20772".to_string()])
+    find_disc_by_serial(&roots().disc_dirs, &["SLUS-20772".to_string()])
 }
 
 fn prepare_cmd(only: Option<&str>) -> i32 {

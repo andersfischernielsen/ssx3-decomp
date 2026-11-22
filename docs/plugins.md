@@ -67,6 +67,20 @@ world = "garibaldi"       # the location name: data/worlds/garibaldi.big
 Ids are local; the engine names them `<plugin>/<id>` (`tricky/garibaldi-race`).
 `ssx3 plugins list` shows every problem a manifest has.
 
+**Disc images.** To find the disc a plugin needs, the engine reads `.iso` and
+raw single-track `.bin` images and matches the boot serial in `SYSTEM.CNF`.
+Any other format (a multi-track `.cue`, `.chd`, `.nrg`, ...) is the plugin's to
+read: name the program in `detect` and the file extensions in `extensions`:
+
+```toml
+disc = { serials = ["SLES-50030"], extensions = ["chd"], detect = ["python3", "prepare/detect.py"] }
+```
+
+`detect` runs in the plugin folder with an image's path appended, prints the
+boot serial on its first line and exits 0, or exits non-zero for a file it does
+not understand. The importer reads the image itself (`SSX3_PLUGIN_DISC`), in
+whatever format, so the engine never needs to know the format.
+
 **The importer** runs in the plugin folder with no shell and these variables:
 `SSX3_PLUGIN_ID`, `SSX3_PLUGIN_DISC` (the disc image that matched `serials`),
 `SSX3_BASE_DISC` (the SSX 3 image) and `SSX3_PLUGIN_OUT` (where to write). It

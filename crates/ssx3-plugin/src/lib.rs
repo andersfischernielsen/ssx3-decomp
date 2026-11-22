@@ -4,6 +4,7 @@
 pub mod catalog;
 pub mod discover;
 pub mod hooks;
+pub mod image;
 pub mod load;
 pub mod manifest;
 pub mod plugin;

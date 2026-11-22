@@ -71,6 +71,16 @@ pub struct DiscInput {
     /// Boot serials that are accepted, such as `SLUS-20326` (any region of the
     /// game will do if listed).
     pub serials: Vec<String>,
+    /// More file extensions to try (lower case, no dot) besides `iso`, `bin`
+    /// and `img`.
+    #[serde(default)]
+    pub extensions: Vec<String>,
+    /// For image formats the engine does not read (a multi-track `.cue`,
+    /// `.chd`, `.nrg`, ...): a program and arguments, run in the plugin folder
+    /// with an image's path appended. It prints the image's boot serial on its
+    /// first line and exits 0, or exits non-zero when the file is not a disc
+    /// it understands. Keep it quick: it is tried on every candidate file.
+    pub detect: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -184,6 +194,19 @@ impl Manifest {
             if d.serials.is_empty() {
                 e.push("inputs.disc.serials: at least one serial".to_string());
             }
+            if d.detect.as_ref().is_some_and(|c| c.is_empty()) {
+                e.push("inputs.disc.detect: a program".to_string());
+            }
+            for x in &d.extensions {
+                if x.is_empty()
+                    || x.starts_with('.')
+                    || x.chars().any(|c| !c.is_ascii_alphanumeric())
+                {
+                    e.push(format!(
+                        "inputs.disc.extensions {x:?}: letters and digits, no dot"
+                    ));
+                }
+            }
         }
         if self.prepare.as_ref().is_some_and(|p| p.command.is_empty()) {
             e.push("prepare.command: a program".to_string());
@@ -279,6 +302,24 @@ world = "garibaldi"
         assert!(e.contains("plugin api 0.9"), "{e}");
         assert!(e.contains("peak \"nowhere\" is not listed"), "{e}");
         assert!(e.contains("world \"../x\""), "{e}");
+    }
+
+    #[test]
+    fn the_disc_input_can_name_its_own_detector_and_extensions() {
+        let ok = GOOD.replace(
+            "disc = { serials = [\"SLUS-20326\"] }",
+            "disc = { serials = [\"SLUS-20326\"], extensions = [\"chd\"], detect = [\"python3\", \"prepare/detect.py\"] }",
+        );
+        let d = parse(&ok).unwrap().inputs.disc.unwrap();
+        assert_eq!(d.extensions, ["chd"]);
+        assert_eq!(d.detect.unwrap()[1], "prepare/detect.py");
+        let bad = GOOD.replace(
+            "disc = { serials = [\"SLUS-20326\"] }",
+            "disc = { serials = [\"SLUS-20326\"], extensions = [\".chd\"], detect = [] }",
+        );
+        let e = parse(&bad).unwrap_err().join("\n");
+        assert!(e.contains("inputs.disc.detect"), "{e}");
+        assert!(e.contains("no dot"), "{e}");
     }
 
     #[test]

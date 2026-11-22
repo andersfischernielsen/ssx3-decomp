@@ -35,6 +35,10 @@ Consequences:
 - The movie containers differ (`MPCh` against `SCHl`); a plugin that wants its
   movies needs a reader.
 - A disc check accepts a list of serials: the original SSX image here is PAL.
+- Formats: the engine reads only plain `.iso` (the SSX 3 image) in its core; the
+  plugin layer also reads raw single-track `.bin` to match a boot serial. Any
+  other image format is the plugin's: its manifest names a `detect` command and
+  the extensions to try, and its importer reads the image itself.
 
 ## A plugin is a folder
 
