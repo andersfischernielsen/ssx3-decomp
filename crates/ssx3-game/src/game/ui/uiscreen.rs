@@ -38,6 +38,11 @@ pub(crate) use crate::game::sound::bankmonitor::p;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
 pub(crate) use crate::game::ui::uiengine::UI_LIST_FIRST;
 pub(crate) use crate::game::ui::uiengine::UI_LIST_NODE_IS_SENTINEL;
+pub(crate) use crate::game::ui::uitext::oc445_add;
+pub(crate) use crate::game::ui::uitext::oc445_addu;
+pub(crate) use crate::game::ui::uitext::oc445_lhu;
+pub(crate) use crate::game::ui::uitext::oc445_lw;
+pub(crate) use crate::game::ui::uitext::oc445_vcall;
 use crate::guest::Addr;
 use callee::*;
 use ssx3_ee as ee;
@@ -129,6 +134,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "UIScreen_CreateObject",
     ),
     (0x0039_e510, ui_state_update, "UIState_Update"),
+    (
+        0x0039_ced0,
+        ui_screen_create_objects,
+        "UIScreen_CreateObjects",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2603,6 +2613,146 @@ pub fn ui_screen_create_object(c: &mut Cpu) {
     frame.close(c);
 }
 
+pub(crate) mod oc445_callee {
+
+    pub(crate) use crate::game::ui::uitext::oc445_callee::UI_LIST_PUSH_BACK;
+
+    pub(crate) use crate::game::ui::uitext::oc445_callee::UI_SCREEN_CREATE_OBJECT;
+}
+
+// ---------------------------------------------------------------------------
+// UIScreen_CreateObjects.
+
+/// `void UIScreen_CreateObjects(UIScreen *screen)` (0x39ced0): build every
+/// object of the screen's object block (`+0x38`: a count word, then
+/// variable-size records, size in the halfword at +2). The pointer array
+/// (`+0x3c`, `count * 4` bytes) is allocated and cleared; each record goes
+/// through `UIScreen_CreateObject`, the new object gets the record's id
+/// (`obj+0x38 = rec+4`) and is appended to the root list (`+0xb4`). A second
+/// pass calls the screen manager's vtable slot 0x90 (`+0xd0`) for every
+/// created object.
+pub fn ui_screen_create_objects(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, 16, 0x40);
+        frame.save(c, 17, 0x30);
+        frame.save(c, 18, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, 19, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = oc445_lw(c, S1, 0x38);
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+        let empty = c.g[A0][0] == 0;
+        c.g[S0][0] = oc445_add(c, V0, 0x4);
+        if !empty {
+            c.cycles += 13;
+            c.g[A1][0] = 0x490000;
+            c.g[A2][0] = 0x20000000;
+            c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+            c.g[A1][0] = oc445_add(c, A1, 0x3ef0);
+            c.g[A3][0] = 0;
+            // operator new(count * 4, "UIScreenObjs", 0x20000000, 0)
+            call_ptr(c, 0x0031_7e30, 0x0039_cf14)?;
+            c.g[V1][0] = oc445_lw(c, S1, 0x38);
+            c.g[A0][0] = c.g[V0][0];
+            Addr(oc445_add(c, S1, 0x3c) as u32).sw(c, c.g[V0][0]);
+            c.g[A1][0] = 0;
+            c.g[A2][0] = Addr(c.g[V1][0] as u32).lw(c);
+            c.g[A2][0] = sx((c.g[A2][0] as u32) << 2);
+            // MEM_fill(array, 0, count * 4)
+            call_ptr(c, 0x003e_6448, 0x0039_cf30)?;
+        }
+        c.cycles += 6;
+        c.g[V1][0] = oc445_lw(c, S1, 0x38);
+        c.g[S3][0] = 0;
+        c.g[S2][0] = oc445_lw(c, S1, 0x3c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+        let none = c.g[V0][0] == 0;
+        c.g[A1][0] = c.g[V1][0];
+        if !none {
+            loop {
+                c.cycles += 6;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = c.g[S0][0];
+                oc445_callee::UI_SCREEN_CREATE_OBJECT.call(c, 0x0039_cf54)?;
+                c.g[V1][0] = c.g[V0][0];
+                let failed = c.g[V1][0] == 0;
+                c.g[A1][0] = c.g[V1][0];
+                if !failed {
+                    c.cycles += 6;
+                    Addr(c.g[S2][0] as u32).sw(c, c.g[V1][0]);
+                    c.g[S2][0] = oc445_add(c, S2, 0x4);
+                    c.g[A0][0] = oc445_add(c, S1, 0xb4);
+                    c.g[V0][0] = oc445_lw(c, S0, 0x4);
+                    Addr(oc445_add(c, V1, 0x38) as u32).sw(c, c.g[V0][0]);
+                    oc445_callee::UI_LIST_PUSH_BACK.call(c, 0x0039_cf78)?;
+                }
+                c.cycles += 8;
+                c.g[V0][0] = oc445_lw(c, S1, 0x38);
+                c.g[S3][0] = oc445_add(c, S3, 0x1);
+                c.g[A0][0] = oc445_lhu(c, S0, 0x2);
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.g[A1][0] = c.g[V0][0];
+                c.g[V1][0] = (c.g[S3][0] < c.g[V1][0]) as u64;
+                let more = c.g[V1][0] != 0;
+                c.g[S0][0] = oc445_addu(c, S0, A0);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0039_cf48);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
+        let no_objects = c.g[V0][0] == 0;
+        c.g[S0][0] = 0;
+        if !no_objects {
+            c.cycles += 1;
+            c.g[V1][0] = oc445_lw(c, S1, 0x3c);
+            loop {
+                c.cycles += 5;
+                c.g[V0][0] = sx((c.g[S0][0] as u32) << 2);
+                c.g[V0][0] = oc445_addu(c, V0, V1);
+                c.g[A1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                if c.g[A1][0] == 0 {
+                    c.g[V1][0] = oc445_lw(c, S1, 0x38);
+                } else {
+                    c.cycles += 7;
+                    c.g[A2][0] = oc445_lw(c, S1, 0xd0);
+                    c.g[V0][0] = oc445_lw(c, A2, 0x8);
+                    // Screen manager vtable slot 0x90: object created.
+                    oc445_vcall(c, V0, A2, 0x90, V1, 0x0039_cfd4)?;
+                    c.g[V1][0] = oc445_lw(c, S1, 0x38);
+                }
+                c.cycles += 5;
+                c.g[S0][0] = oc445_add(c, S0, 0x1);
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                c.g[V0][0] = (c.g[S0][0] < c.g[V0][0]) as u64;
+                if c.g[V0][0] != 0 {
+                    c.g[V1][0] = oc445_lw(c, S1, 0x3c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0039_cfa8);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, 16, 0x40);
+        frame.restore(c, 17, 0x30);
+        frame.restore(c, 18, 0x20);
+        frame.restore(c, 19, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4353,6 +4503,56 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(UCS_SCREEN);
                 c.g[A1][0] = sx(UCS_REC);
                 c.pc = 0x0039_d078;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ealib::seg_2dcae8::tests::OC445_RESULTS;
+    pub(crate) use crate::game::ui::uiengine::tests::OC445_OBJ2;
+    pub(crate) use crate::game::ui::uimenu::tests::OC445_MGR;
+    pub(crate) use crate::game::ui::uitext::tests::oc445_gate;
+    pub(crate) use crate::game::ui::uitext::tests::oc445_vtable;
+
+    pub(crate) use crate::game::ui::uitext::tests::OC445_OBJ;
+
+    pub(crate) use crate::game::ui::uitext::tests::OC445_VT;
+
+    pub(crate) const OC445_NEW_OBJECTS: u32 = DATA + 0xa_0000;
+
+    /// `UIScreen_CreateObjects`: 0..4 records (some creations fail), the
+    /// pointer array is built and every created object is announced.
+    #[test]
+    fn ui_screen_create_objects_matches() {
+        fakes::covered(
+            ee::s13::f_0039ced0__generated,
+            ui_screen_create_objects,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x39ced0, 12);
+                oc445_gate(c);
+                oc445_vtable(c, &mut r, OC445_VT, &[0x90]);
+                c.bus.write32(OC445_MGR + 8, OC445_VT);
+                c.bus.write32(OC445_OBJ + 0xd0, OC445_MGR);
+                let n = seed % 5;
+                let rec_size: u32 = if seed % 2 == 0 { 0x10 } else { 0x18 };
+                c.bus.write32(OC445_OBJ + 0x38, OC445_OBJ2);
+                c.bus.write32(OC445_OBJ + 0x3c, r.next_u32());
+                c.bus.write32(OC445_OBJ2, n);
+                for i in 0..n {
+                    let rec = OC445_OBJ2 + 4 + rec_size * i;
+                    c.bus.write16(rec + 2, rec_size as u16);
+                    c.bus.write32(rec + 4, r.next_u32());
+                }
+                for i in 0..16u32 {
+                    let obj = if r.next_u32() % 4 == 0 {
+                        0
+                    } else {
+                        OC445_NEW_OBJECTS + 0x100 * i
+                    };
+                    c.bus.write32(OC445_RESULTS + 4 * i, obj);
+                }
+                c.g[A0][0] = sx(OC445_OBJ);
+                c.pc = 0x0039_ced0;
             },
         );
     }

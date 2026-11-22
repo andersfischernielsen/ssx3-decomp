@@ -27,6 +27,11 @@ pub(crate) use crate::game::fe::festaterewards::lw_3 as lw;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
 pub(crate) use crate::game::main::gamestate::p_2 as p;
 pub(crate) use crate::game::main::gamestate::vslot;
+pub(crate) use crate::game::ui::uiengine::oc445_lbu;
+pub(crate) use crate::game::ui::uitext::oc445_add;
+pub(crate) use crate::game::ui::uitext::oc445_addu;
+pub(crate) use crate::game::ui::uitext::oc445_lw;
+pub(crate) use crate::game::ui::uitext::oc445_vcall;
 use crate::guest::Addr;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -59,6 +64,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_ui_progress_update_anim,
         "cUIProgress_UpdateAnim",
     ),
+    (0x0039_b960, ui_menu_set_selection, "UIMenu_SetSelection"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1084,6 +1090,130 @@ pub fn ui_pair_set_focus(c: &mut Cpu) {
     return;
 }
 
+pub(crate) mod oc445_callee {
+
+    pub(crate) use crate::game::ui::uitext::oc445_callee::UI_LIST_GET_AT;
+
+    pub(crate) use crate::game::ui::uitext::oc445_callee::UI_MENU_SET_CURRENT_ITEM;
+}
+
+// ---------------------------------------------------------------------------
+// UIMenu_SetSelection.
+
+/// `void UIMenu_SetSelection(UIMenu *menu, uint8 index)` (0x39b960): select
+/// item `index`. When the menu does not scroll (attribute bit 4 clear, or
+/// the screen manager's flag word bit 5 clear) only the stored index
+/// (`+0xa4`) is set. Otherwise the current index (`+0x95`) is set, the
+/// scroll window (`+0x98` offset, `+0x97` visible count) is moved to keep it
+/// in view (notifying the manager's vtable slot 0xa0 with events 3/4 when
+/// scrolling down, 2/4 when scrolling up), and the list item at
+/// `index - offset` becomes the current item.
+pub fn ui_menu_set_selection(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, 16, 0x20);
+        frame.save(c, 17, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = oc445_lw(c, S0, 0x14);
+        c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 4) as u32);
+        c.g[V0][0] &= 1;
+        let attr_clear = c.g[V0][0] == 0;
+        c.g[S1][0] = c.g[A1][0] & 0xff;
+        let mut scrolls = false;
+        if !attr_clear {
+            c.cycles += 7;
+            c.g[A3][0] = oc445_lw(c, S0, 0x5c);
+            c.g[V1][0] = oc445_lw(c, A3, 0xd0);
+            c.g[V0][0] = oc445_lw(c, V1, 0x1c);
+            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 5) as u32);
+            c.g[V0][0] &= 1;
+            if c.g[V0][0] != 0 {
+                c.g[A0][0] = oc445_lbu(c, S0, 0x98);
+                scrolls = true;
+            }
+        }
+        if !scrolls {
+            c.cycles += 2;
+            Addr(oc445_add(c, S0, 0xa4) as u32).sb(c, c.g[S1][0]);
+        } else {
+            'tail: {
+                'above: {
+                    c.cycles += 5;
+                    c.g[V1][0] = oc445_lbu(c, S0, 0x97);
+                    c.g[V0][0] = oc445_addu(c, A0, V1);
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let inside_bottom = c.g[V0][0] != 0;
+                    Addr(oc445_add(c, S0, 0x95) as u32).sb(c, c.g[S1][0]);
+                    if inside_bottom {
+                        break 'above;
+                    }
+                    // Below the window: scroll down so the item is the last
+                    // visible one.
+                    c.cycles += 24;
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[V0][0] = oc445_add(c, V0, 0x1);
+                    c.g[A2][0] = 0x3;
+                    Addr(oc445_add(c, S0, 0x98) as u32).sb(c, c.g[V0][0]);
+                    c.g[T0][0] = oc445_lw(c, A3, 0xd0);
+                    c.g[A3][0] = c.g[V0][0] & 0xff;
+                    c.g[V1][0] = oc445_lw(c, T0, 0x8);
+                    oc445_vcall(c, V1, T0, 0xa0, V0, 0x0039_b9f0)?;
+                    c.g[A0][0] = oc445_lw(c, S0, 0x5c);
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A3][0] = oc445_lbu(c, S0, 0x98);
+                    c.g[A2][0] = 0x4;
+                    c.g[T0][0] = oc445_lw(c, A0, 0xd0);
+                    c.g[V1][0] = oc445_lw(c, T0, 0x8);
+                    oc445_vcall(c, V1, T0, 0xa0, V0, 0x0039_ba18)?;
+                    c.g[A1][0] = oc445_lbu(c, S0, 0x98);
+                    break 'tail;
+                }
+                // The item is not below the window: scroll up when it is
+                // above the offset.
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[S1][0] < c.g[A0][0]) as u64;
+                let not_above = c.g[V0][0] == 0;
+                c.g[A2][0] = 0x2;
+                if !not_above {
+                    c.cycles += 19;
+                    Addr(oc445_add(c, S0, 0x98) as u32).sb(c, c.g[S1][0]);
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[T0][0] = oc445_lw(c, A3, 0xd0);
+                    c.g[A3][0] = c.g[S1][0] & 0xff;
+                    c.g[V1][0] = oc445_lw(c, T0, 0x8);
+                    oc445_vcall(c, V1, T0, 0xa0, V0, 0x0039_ba50)?;
+                    c.g[A0][0] = oc445_lw(c, S0, 0x5c);
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A3][0] = oc445_lbu(c, S0, 0x98);
+                    c.g[A2][0] = 0x4;
+                    c.g[T0][0] = oc445_lw(c, A0, 0xd0);
+                    c.g[V1][0] = oc445_lw(c, T0, 0x8);
+                    oc445_vcall(c, V1, T0, 0xa0, V0, 0x0039_ba78)?;
+                }
+                c.cycles += 1;
+                c.g[A1][0] = oc445_lbu(c, S0, 0x98);
+            }
+            c.cycles += 7;
+            c.g[A0][0] = oc445_add(c, S0, 0x74);
+            c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+            oc445_callee::UI_LIST_GET_AT.call(c, 0x0039_ba88)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A2][0] = 0x1;
+            oc445_callee::UI_MENU_SET_CURRENT_ITEM.call(c, 0x0039_ba98)?;
+        }
+        c.cycles += 5;
+        frame.restore(c, 16, 0x20);
+        frame.restore(c, 17, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1585,6 +1715,66 @@ pub(crate) mod tests {
                         c.bus.write32(PAIR_A + 8, vt3);
                     }
                 }
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ealib::seg_2dcae8::tests::OC445_GET_AT;
+    pub(crate) use crate::game::ui::uiengine::tests::OC445_OBJ2;
+    pub(crate) use crate::game::ui::uitext::tests::oc445_gate;
+    pub(crate) use crate::game::ui::uitext::tests::oc445_vtable;
+
+    pub(crate) use crate::game::ui::uitext::tests::OC445_OBJ;
+
+    pub(crate) use crate::game::ui::uitext::tests::OC445_VT;
+
+    pub(crate) const OC445_MGR: u32 = DATA + 0x3000;
+
+    pub(crate) const OC445_ITEM: u32 = DATA + 0x5000;
+
+    pub(crate) const OC445_VT_ITEM: u32 = DATA + 0x5800;
+
+    pub(crate) const OC445_CUR: u32 = DATA + 0x6000;
+
+    /// `UIMenu_SetSelection`: non-scrolling menus (attribute or manager
+    /// flag clear), selections inside the window, below it and above it.
+    #[test]
+    fn ui_menu_set_selection_matches() {
+        fakes::covered(
+            ee::s13::f_0039b960__generated,
+            ui_menu_set_selection,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x39b960, 8);
+                oc445_gate(c);
+                oc445_vtable(c, &mut r, OC445_VT, &[0x98, 0xa0]);
+                oc445_vtable(c, &mut r, OC445_VT_ITEM, &[0x38]);
+                c.bus.write32(OC445_OBJ2 + 0xd0, OC445_MGR);
+                c.bus.write32(OC445_MGR + 8, OC445_VT);
+                // Manager flag word bit 5 (the menu scrolls).
+                let mgr_flag = if seed % 7 == 0 { 0 } else { 1 << 5 };
+                c.bus
+                    .write32(OC445_MGR + 0x1c, mgr_flag | (r.next_u32() & !(1 << 5)));
+                // Menu attribute bit 4.
+                let attr = if seed % 5 == 0 { 0 } else { 1 << 4 };
+                c.bus
+                    .write32(OC445_OBJ + 0x14, attr | (r.next_u32() & !(1 << 4)));
+                c.bus.write32(OC445_OBJ + 0x5c, OC445_OBJ2);
+                c.bus.write8(OC445_OBJ + 0x95, r.next_u32() as u8);
+                c.bus.write8(OC445_OBJ + 0x97, 1 + (r.next_u32() % 5) as u8);
+                c.bus.write8(OC445_OBJ + 0x98, (r.next_u32() % 6) as u8);
+                // The current item (0 or a real object).
+                let cur = if seed % 3 == 0 { OC445_CUR } else { 0 };
+                c.bus.write32(OC445_OBJ + 0xa0, cur);
+                c.bus.write32(OC445_CUR + 8, OC445_VT_ITEM);
+                c.bus.write32(OC445_CUR + 0x14, r.next_u32());
+                c.bus.write32(OC445_ITEM + 8, OC445_VT_ITEM);
+                c.bus.write32(OC445_GET_AT, OC445_ITEM);
+                c.g[A0][0] = sx(OC445_OBJ);
+                let idx = r.next_u32() % 14;
+                c.g[A1][0] =
+                    (r.next_u32() as u64) << 32 | (r.next_u32() as u64 & !0xff) | idx as u64;
+                c.pc = 0x0039_b960;
             },
         );
     }

@@ -18269,6 +18269,100 @@ pub fn fe_async_manager_update(c: &mut Cpu) {
     })
 }
 
+/// `FEAsyncManager_LoadSlot` (0x001a3cd8): Starts loading the texture file of async slot `idx` (slot stride 0x11c, buffer 0x109a0 bytes from the FE async pool): synchronous slots are loaded at once (state 3), asynchronous ones get a load handle (state 2). `(self, idx)`.
+/// NOT INSTALLED (no OVERRIDES entry, no test): EAFile/AsyncFile request layer (pc 0x3de768) has no override slot and spins on test data.
+#[allow(
+    unused_labels,
+    unused_assignments,
+    unused_variables,
+    unreachable_code,
+    unused_mut
+)]
+pub fn fe_async_manager_load_slot(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_1a3da8: {
+            'b_1a3d88: {
+                c.cycles += 34;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
+                c.g[V0][0] = 0x11c;
+                c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[A3][0] = 0u64;
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.g[S4][0] = c.g[A1][0];
+                c.mult(0, 17, 20, 2);
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.g[S0][0] = c.g[A0][0];
+                c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10c));
+                c.g[V0][0] = 0x10000;
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x100));
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                c.g[S3][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                c.g[V0][0] = c.g[V0][0] | 0x9a0;
+                c.g[A1][0] = 0x460000;
+                c.g[A0][0] = 0x10000;
+                c.g[S2][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1430));
+                c.g[A0][0] = c.g[A0][0] | 0x9a0;
+                c.g[A2][0] = 0x25000000;
+                c.sw(c.g[S3][0] as u32, c.g[V0][0]);
+                call_ptr(c, 0x00317e30, 0x001a3d3c)?; // call_indirect
+                c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[S4][0];
+                c.g[A2][0] = 0x2;
+                call_ptr(c, 0x001a39d8, 0x001a3d50)?; // FEAsyncManager_SetState
+                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x108));
+                let t = c.g[V1][0] == 0u64;
+                c.g[A1][0] = c.g[S4][0];
+                if t {
+                    break 'b_1a3d88;
+                } else {
+                    c.cycles += 10;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A2][0] = 0x2;
+                    call_ptr(c, 0x001a39d8, 0x001a3d6c)?; // FEAsyncManager_SetState
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[S3][0] as u32);
+                    call_ptr(c, 0x003df748, 0x001a3d7c)?; // call_indirect
+                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    let t = true;
+                    c.sw((c.g[V1][0] as u32).wrapping_add(0x104), c.g[V0][0]);
+                    if t {
+                        break 'b_1a3da8;
+                    } else {
+                        break 'b_1a3d88;
+                    }
+                }
+            }
+            c.cycles += 8;
+            c.g[A1][0] = c.lw(c.g[S2][0] as u32);
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+            c.g[A2][0] = c.lw(c.g[S3][0] as u32);
+            call_ptr(c, 0x003e1bb8, 0x001a3d98)?; // call_indirect
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S4][0];
+            c.g[A2][0] = 0x3;
+            call_ptr(c, 0x001a39d8, 0x001a3da8)?; // FEAsyncManager_SetState
+            break 'b_1a3da8;
+        }
+        c.cycles += 8;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

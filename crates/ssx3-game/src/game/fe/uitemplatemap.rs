@@ -105,6 +105,23 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         event_select_set_map_tab_mode,
         "EventSelect_SetMapTabMode",
     ),
+    (
+        0x0020_09d0,
+        event_select_on_widget_created,
+        "EventSelect_OnWidgetCreated",
+    ),
+    (0x0020_2828, event_select_update, "EventSelect_Update"),
+    (
+        0x0020_2ad8,
+        event_select_update_mode_panels,
+        "EventSelect_UpdateModePanels",
+    ),
+    (0x0020_30a0, event_select_set_mode, "EventSelect_SetMode"),
+    (
+        0x0020_3d40,
+        event_select_refresh_peak_list,
+        "EventSelect_RefreshPeakList",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2160,6 +2177,3106 @@ pub fn event_select_load_map_image(c: &mut Cpu) {
     })
 }
 
+/// `cUIState_hideObjSafe(state, name)`.
+pub(crate) const ES_HIDE_OBJECT: u32 = 0x0039_e8b8;
+
+/// `cUIState_showObjSafe(state, name)`.
+pub(crate) const ES_SHOW_OBJECT: u32 = 0x0039_e948;
+
+/// `GetHashValue32(str)`.
+pub(crate) const ES_STR_HASH: u32 = 0x0031_7670;
+
+/// `UIScreen_FindObject(screen, hash)`.
+pub(crate) const ES_FIND_OBJECT: u32 = 0x0039_d860;
+
+/// `UIText_SetTextId(text, id)`.
+pub(crate) const ES_SET_TEXT_ID: u32 = 0x003a_1000;
+
+/// `sprintf(buf, fmt, ...)`.
+pub(crate) const ES_SPRINTF: u32 = 0x0041_7828;
+
+/// `EventSelect_RefreshEventList(self)` (location info of the event list).
+pub(crate) const ES_REFRESH_EVENT_LIST: u32 = 0x0020_7430;
+
+/// Panel owner fields (the event-select screen object, `s1`).
+pub(crate) const ES_HAS_FOCUS: u32 = 0x0;
+
+pub(crate) const ES_LOCKS_FLAG: u32 = 0x2cc;
+
+pub(crate) const ES_SCREEN: u32 = 0x2e8;
+
+pub(crate) const ES_UI_STATE: u32 = 0x2ec;
+
+/// Selected-list state byte of a list-menu object.
+pub(crate) const ES_LIST_STATE: u32 = 0x95;
+
+/// gp-relative map globals: state (0 peaks, 1 peak goals, 2 events), selected
+/// event kind, peak number, and map style.
+pub(crate) const ES_GP_MAP_STATE: u32 = 0xb54;
+
+pub(crate) const ES_GP_SELECTED_EVENT: u32 = 0xb50;
+
+pub(crate) const ES_GP_PEAK: u32 = 0xb4c;
+
+pub(crate) const ES_GP_MAP_STYLE: u32 = 0xb5c;
+
+/// An address in the string table the code builds with `lui 0x47`.
+#[inline]
+pub(crate) fn es_str47(off: u32) -> u64 {
+    sx(0x0047_0000u32.wrapping_add(off))
+}
+
+/// An address in the string table the code builds with `lui 0x4a`.
+#[inline]
+pub(crate) fn es_str4a(off: u32) -> u64 {
+    sx(0x004a_0000u32.wrapping_add(off))
+}
+
+/// `a0 = self->uiState` (the screen's `cUIState`, read again before each call).
+#[inline]
+pub(crate) fn es_load_ui_state(c: &mut Cpu) {
+    let s1 = c.g[S1][0] as u32;
+    c.g[A0][0] = c.lw(s1.wrapping_add(ES_UI_STATE));
+}
+
+/// `showObjSafe(a0, a1)` returning to `ret`.
+#[inline]
+pub(crate) fn es_show(c: &mut Cpu, a1: u64, ret: u32) -> Flow {
+    c.g[A1][0] = a1;
+    call_ptr(c, ES_SHOW_OBJECT, ret)
+}
+
+/// `hideObjSafe(a0, a1)` returning to `ret`.
+#[inline]
+pub(crate) fn es_hide(c: &mut Cpu, a1: u64, ret: u32) -> Flow {
+    c.g[A1][0] = a1;
+    call_ptr(c, ES_HIDE_OBJECT, ret)
+}
+
+/// `a1 = GetHashValue32(a0)`; `UIText_SetTextId(title (s0), a1)`: set the
+/// sub-title text from the string id named by `a0`.
+#[inline]
+pub(crate) fn es_set_title(c: &mut Cpu, hash_ret: u32, text_ret: u32) -> Flow {
+    call_ptr(c, ES_STR_HASH, hash_ret)?;
+    c.g[A1][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S0][0];
+    call_ptr(c, ES_SET_TEXT_ID, text_ret)
+}
+
+/// `v0 = UIScreen_FindObject(self->screen, GetHashValue32(a0))`.
+#[inline]
+pub(crate) fn es_find_object(c: &mut Cpu, hash_ret: u32, find_ret: u32) -> Flow {
+    call_ptr(c, ES_STR_HASH, hash_ret)?;
+    let s1 = c.g[S1][0] as u32;
+    c.g[A0][0] = c.lw(s1.wrapping_add(ES_SCREEN));
+    c.g[A1][0] = c.g[V0][0];
+    call_ptr(c, ES_FIND_OBJECT, find_ret)
+}
+
+/// The six pda map-tab objects, hidden (`hide = true`) or shown. The hide
+/// form is entered with `a0` already loaded; the show form loads it first.
+pub(crate) fn es_map_tab_objects(c: &mut Cpu, hide: bool) -> Flow {
+    let names: [u64; 6] = [
+        es_str4a(0x25b0),
+        es_str47(0x808),
+        es_str47(0x818),
+        es_str4a(0x2618),
+        es_str4a(0x2620),
+        es_str4a(0x2628),
+    ];
+    let rets: [u32; 6] = if hide {
+        [
+            0x0020_2e14,
+            0x0020_2e24,
+            0x0020_2e34,
+            0x0020_2e44,
+            0x0020_2e54,
+            0x0020_2e64,
+        ]
+    } else {
+        [
+            0x0020_2e88,
+            0x0020_2e98,
+            0x0020_2ea8,
+            0x0020_2eb8,
+            0x0020_2ec8,
+            0x0020_2ed8,
+        ]
+    };
+    for i in 0..6 {
+        if i > 0 {
+            es_load_ui_state(c);
+        }
+        if hide {
+            es_hide(c, names[i], rets[i])?;
+        } else {
+            es_show(c, names[i], rets[i])?;
+        }
+    }
+    Ok(())
+}
+
+/// Hide the map tab objects (entered with `a0` loaded), restore `s0`.
+pub(crate) fn es_hide_section(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 25;
+    es_map_tab_objects(c, true)?;
+    frame.restore(c, S0, 0xd0);
+    Ok(())
+}
+
+/// Hide section entered after one cycle and a reload of `a0`.
+pub(crate) fn es_hide_section_reload(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 1;
+    es_load_ui_state(c);
+    es_hide_section(c, frame)
+}
+
+/// Show the map tab objects when `v0` (map style `< 2`) is 0, then restore
+/// `s0`: the tail shared by the peak and goal screens.
+pub(crate) fn es_show_section(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 2;
+    let skip = c.g[V0][0] != 0;
+    frame.restore(c, S0, 0xd0);
+    if !skip {
+        c.cycles += 26;
+        es_load_ui_state(c);
+        es_map_tab_objects(c, false)?;
+        frame.restore(c, S0, 0xd0);
+    }
+    Ok(())
+}
+
+/// `v0 = map style` on entry: `v0 = (style < 2)`, then the show section.
+pub(crate) fn es_style_section(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 1;
+    c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+    es_show_section(c, frame)
+}
+
+/// Map state 0: "Select Peak".
+pub(crate) fn es_state_peaks(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 25;
+    c.g[A0][0] = es_str47(0x7c0);
+    es_set_title(c, 0x0020_2b5c, 0x0020_2b68)?;
+    es_load_ui_state(c);
+    es_show(c, es_str47(0x7d8), 0x0020_2b78)?;
+    c.g[V0][0] = 0x4a0000;
+    es_load_ui_state(c);
+    c.g[S2][0] = es_str4a(0x2608);
+    let a1 = c.g[S2][0];
+    es_hide(c, a1, 0x0020_2b8c)?;
+    es_load_ui_state(c);
+    es_hide(c, es_str47(0x7e8), 0x0020_2b9c)?;
+    es_load_ui_state(c);
+    es_hide(c, es_str47(0x7f8), 0x0020_2bac)?;
+    let s1 = c.g[S1][0] as u32;
+    c.g[V0][0] = c.lw(s1.wrapping_add(ES_LOCKS_FLAG));
+    let locked = c.g[V0][0] != 0;
+    es_load_ui_state(c);
+    if !locked {
+        c.cycles += 4;
+        es_show(c, es_str4a(0x2610), 0x0020_2bc4)?;
+        es_load_ui_state(c);
+    }
+    c.cycles += 15;
+    c.g[S0][0] = 0;
+    es_hide(c, es_str47(0x7a0), 0x0020_2bd8)?;
+    es_load_ui_state(c);
+    let a1 = c.g[S2][0];
+    es_hide(c, a1, 0x0020_2be4)?;
+    c.g[A0][0] = es_str47(0x600);
+    call_ptr(c, ES_STR_HASH, 0x0020_2bf0)?;
+    let s1 = c.g[S1][0] as u32;
+    c.g[A0][0] = c.lw(s1.wrapping_add(ES_SCREEN));
+    c.g[A1][0] = c.g[V0][0];
+    call_ptr(c, ES_FIND_OBJECT, 0x0020_2bfc)?;
+    if c.g[V0][0] != 0 {
+        let list = c.g[V0][0] as u32;
+        c.g[S0][0] = c.lbu(list.wrapping_add(ES_LIST_STATE));
+    }
+    c.cycles += 3;
+    let s1 = c.g[S1][0] as u32;
+    c.g[V0][0] = c.lw(s1.wrapping_add(ES_HAS_FOCUS));
+    let no_focus = c.g[V0][0] == 0;
+    c.g[V0][0] = 3;
+    if !no_focus {
+        c.cycles += 2;
+        let is_earnings = c.g[S0][0] == c.g[V0][0];
+        es_load_ui_state(c);
+        if is_earnings {
+            return es_hide_section(c, frame);
+        }
+        c.cycles += 2;
+        let a1 = c.g[S2][0];
+        es_show(c, a1, 0x0020_2c20)?;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = 3;
+    let is_earnings = c.g[S0][0] == c.g[V0][0];
+    let s_gp = c.g[GP][0] as u32;
+    c.g[V0][0] = c.lw(s_gp.wrapping_sub(ES_GP_MAP_STYLE));
+    if is_earnings {
+        return es_hide_section_reload(c, frame);
+    }
+    c.cycles += 2;
+    c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+    es_show_section(c, frame)
+}
+
+/// Map state 1: "Select Peak Goal".
+pub(crate) fn es_state_goals(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 81;
+    c.g[S2][0] = 0;
+    c.g[A0][0] = es_str47(0x828);
+    es_set_title(c, 0x0020_2c44, 0x0020_2c50)?;
+    es_load_ui_state(c);
+    es_hide(c, es_str47(0x7d8), 0x0020_2c60)?;
+    es_load_ui_state(c);
+    es_show(c, es_str47(0x7e8), 0x0020_2c70)?;
+    es_load_ui_state(c);
+    es_hide(c, es_str47(0x7f8), 0x0020_2c80)?;
+    es_load_ui_state(c);
+    es_hide(c, es_str4a(0x2610), 0x0020_2c90)?;
+    es_load_ui_state(c);
+    es_show(c, es_str47(0x7a0), 0x0020_2ca0)?;
+    es_load_ui_state(c);
+    es_hide(c, es_str47(0x840), 0x0020_2cb0)?;
+    es_load_ui_state(c);
+    es_hide(c, es_str47(0x850), 0x0020_2cc0)?;
+    es_load_ui_state(c);
+    es_hide(c, es_str47(0x860), 0x0020_2cd0)?;
+    // sprintf(name, "peak%d indicators", mPeak)
+    let gp = c.g[GP][0] as u32;
+    c.g[A2][0] = c.lw(gp.wrapping_sub(ES_GP_PEAK));
+    c.g[A1][0] = es_str47(0x870);
+    c.g[A0][0] = c.g[SP][0];
+    call_ptr(c, ES_SPRINTF, 0x0020_2ce4)?;
+    es_load_ui_state(c);
+    let name = c.g[SP][0];
+    es_show(c, name, 0x0020_2cf0)?;
+    c.g[V0][0] = 0x470000;
+    es_load_ui_state(c);
+    c.g[S6][0] = es_str47(0x888);
+    let a1 = c.g[S6][0];
+    es_hide(c, a1, 0x0020_2d04)?;
+    c.g[V0][0] = 0x470000;
+    es_load_ui_state(c);
+    c.g[S5][0] = es_str47(0x8a0);
+    let a1 = c.g[S5][0];
+    es_hide(c, a1, 0x0020_2d18)?;
+    c.g[V0][0] = 0x470000;
+    es_load_ui_state(c);
+    c.g[S4][0] = es_str47(0x8b8);
+    let a1 = c.g[S4][0];
+    es_hide(c, a1, 0x0020_2d2c)?;
+    c.g[V0][0] = 0x470000;
+    es_load_ui_state(c);
+    c.g[S3][0] = es_str47(0x8d0);
+    let a1 = c.g[S3][0];
+    es_hide(c, a1, 0x0020_2d40)?;
+    // sprintf(next, "SPG_Peak%d_Goals", mPeak + 1); find its list menu
+    let gp = c.g[GP][0] as u32;
+    c.g[A2][0] = c.lw(gp.wrapping_sub(ES_GP_PEAK));
+    c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+    c.g[A1][0] = es_str47(0x6d8);
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+    call_ptr(c, ES_SPRINTF, 0x0020_2d5c)?;
+    c.g[A0][0] = c.g[S0][0];
+    es_find_object(c, 0x0020_2d64, 0x0020_2d70)?;
+    if c.g[V0][0] != 0 {
+        let list = c.g[V0][0] as u32;
+        c.g[S2][0] = c.lbu(list.wrapping_add(ES_LIST_STATE));
+    }
+    // Info back panel and the per-state goal panel.
+    c.cycles += 3;
+    let s1 = c.g[S1][0] as u32;
+    c.g[V0][0] = c.lw(s1.wrapping_add(ES_HAS_FOCUS));
+    if c.g[V0][0] != 0 {
+        es_load_ui_state(c);
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = 3;
+        let not_earnings = c.g[S2][0] != c.g[V0][0];
+        let gp = c.g[GP][0] as u32;
+        c.g[V0][0] = c.lw(gp.wrapping_sub(ES_GP_MAP_STYLE));
+        if not_earnings {
+            return es_style_section(c, frame);
+        }
+        c.cycles += 1;
+        es_load_ui_state(c);
+    }
+    c.cycles += 5;
+    let a1 = c.g[S3][0];
+    es_show(c, a1, 0x0020_2d9c)?;
+    c.g[V0][0] = 2;
+    let is_freeride = c.g[S2][0] == c.g[V0][0];
+    c.g[V0][0] = ((c.g[S2][0] as i64) < 3) as u64;
+    if is_freeride {
+        c.cycles += 5;
+        es_load_ui_state(c);
+        let a1 = c.g[S5][0];
+        es_show(c, a1, 0x0020_2de8)?;
+        c.g[V0][0] = 3;
+    } else {
+        c.cycles += 2;
+        let below_3 = c.g[V0][0] != 0;
+        c.g[V0][0] = 3;
+        if below_3 {
+            c.cycles += 2;
+            if (c.g[S2][0] as i64) >= 0 {
+                c.cycles += 5;
+                es_load_ui_state(c);
+                let a1 = c.g[S6][0];
+                es_show(c, a1, 0x0020_2dd4)?;
+                c.g[V0][0] = 3;
+            }
+        } else {
+            c.cycles += 2;
+            if c.g[S2][0] == c.g[V0][0] {
+                es_load_ui_state(c);
+                c.cycles += 3;
+                let a1 = c.g[S4][0];
+                es_show(c, a1, 0x0020_2df8)?;
+                c.g[V0][0] = 3;
+            } else {
+                c.cycles += 2;
+            }
+        }
+    }
+    c.cycles += 2;
+    let not_earnings = c.g[S2][0] != c.g[V0][0];
+    let gp = c.g[GP][0] as u32;
+    c.g[V0][0] = c.lw(gp.wrapping_sub(ES_GP_MAP_STYLE));
+    if not_earnings {
+        es_style_section(c, frame)
+    } else {
+        es_hide_section_reload(c, frame)
+    }
+}
+
+/// Map state 2: "Select Event". Enters with `v0` = selected event kind and
+/// `a0` = 1 (left by the dispatch).
+pub(crate) fn es_state_events(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 2;
+    let not_race = c.g[V0][0] != 0;
+    // Title string for race (0), free-style (1) or free-ride (other) events.
+    if !not_race {
+        c.cycles += 6;
+        es_load_ui_state(c);
+        es_hide(c, es_str4a(0x2610), 0x0020_2ef4)?;
+        c.cycles += 7;
+        c.g[A0][0] = es_str47(0x8e0);
+        es_set_title(c, 0x0020_2f24, 0x0020_2f30)?;
+    } else {
+        c.cycles += 2;
+        let not_fs = c.g[V0][0] != c.g[A0][0];
+        es_load_ui_state(c);
+        if !not_fs {
+            c.cycles += 5;
+            es_hide(c, es_str4a(0x2610), 0x0020_2f14)?;
+            c.g[A0][0] = es_str47(0x8f8);
+            c.cycles += 7;
+            es_set_title(c, 0x0020_2f24, 0x0020_2f30)?;
+        } else {
+            c.cycles += 10;
+            es_hide(c, es_str4a(0x2610), 0x0020_2f44)?;
+            c.g[A0][0] = es_str47(0x908);
+            es_set_title(c, 0x0020_2f50, 0x0020_2f5c)?;
+        }
+    }
+    es_load_ui_state(c);
+    c.cycles += 47;
+    es_hide(c, es_str47(0x7d8), 0x0020_2f6c)?;
+    es_load_ui_state(c);
+    es_hide(c, es_str47(0x7e8), 0x0020_2f7c)?;
+    es_load_ui_state(c);
+    es_show(c, es_str47(0x7f8), 0x0020_2f8c)?;
+    es_load_ui_state(c);
+    es_show(c, es_str47(0x7a0), 0x0020_2f9c)?;
+    c.g[V0][0] = 0x470000;
+    es_load_ui_state(c);
+    c.g[S5][0] = es_str47(0x840);
+    let a1 = c.g[S5][0];
+    es_hide(c, a1, 0x0020_2fb0)?;
+    c.g[V0][0] = 0x470000;
+    es_load_ui_state(c);
+    c.g[S4][0] = es_str47(0x850);
+    let a1 = c.g[S4][0];
+    es_hide(c, a1, 0x0020_2fc4)?;
+    c.g[V0][0] = 0x470000;
+    es_load_ui_state(c);
+    c.g[S3][0] = es_str47(0x860);
+    let a1 = c.g[S3][0];
+    es_hide(c, a1, 0x0020_2fd8)?;
+    c.g[V0][0] = 0x470000;
+    let gp = c.g[GP][0] as u32;
+    c.g[A2][0] = c.lw(gp.wrapping_sub(ES_GP_PEAK));
+    c.g[S2][0] = es_str47(0x870);
+    c.g[A0][0] = c.g[SP][0];
+    c.g[A1][0] = c.g[S2][0];
+    call_ptr(c, ES_SPRINTF, 0x0020_2ff0)?;
+    es_load_ui_state(c);
+    let name = c.g[SP][0];
+    es_show(c, name, 0x0020_2ffc)?;
+    c.g[V0][0] = 0x4a0000;
+    es_load_ui_state(c);
+    c.g[S0][0] = es_str4a(0x2630);
+    let a1 = c.g[S0][0];
+    es_hide(c, a1, 0x0020_3010)?;
+    let s1 = c.g[S1][0] as u32;
+    c.g[V0][0] = c.lw(s1.wrapping_add(ES_HAS_FOCUS));
+    if c.g[V0][0] != 0 {
+        c.cycles += 3;
+        es_load_ui_state(c);
+        let a1 = c.g[S0][0];
+        es_show(c, a1, 0x0020_3028)?;
+    }
+    c.cycles += 20;
+    c.g[A0][0] = c.g[S1][0];
+    call_ptr(c, ES_REFRESH_EVENT_LIST, 0x0020_3030)?;
+    es_load_ui_state(c);
+    let a1 = c.g[S5][0];
+    es_hide(c, a1, 0x0020_303c)?;
+    es_load_ui_state(c);
+    let a1 = c.g[S4][0];
+    es_hide(c, a1, 0x0020_3048)?;
+    es_load_ui_state(c);
+    let a1 = c.g[S3][0];
+    es_hide(c, a1, 0x0020_3054)?;
+    c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+    let gp = c.g[GP][0] as u32;
+    c.g[A2][0] = c.lw(gp.wrapping_sub(ES_GP_PEAK));
+    c.g[A1][0] = c.g[S2][0];
+    c.g[A0][0] = c.g[S0][0];
+    call_ptr(c, ES_SPRINTF, 0x0020_3068)?;
+    es_load_ui_state(c);
+    let a1 = c.g[S0][0];
+    es_show(c, a1, 0x0020_3074)?;
+    frame.restore(c, S0, 0xd0);
+    Ok(())
+}
+
+/// `void EventSelect_UpdateModePanels(EventSelect* self)` (0x202ad8): show and
+/// hide the panels of the map screen by the map state (`gp-0xb54`): 0 select
+/// a peak, 1 select a peak goal, 2 select an event. Sets the sub-title text,
+/// toggles the objects of the screen's UI state by name, builds the
+/// "peakN indicators" names with sprintf, and, for the event list, refreshes
+/// the event list.
+pub fn event_select_update_mode_panels(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xe0);
+        frame.save(c, S1, 0xc0);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0xd0);
+        frame.save(c, S2, 0xb0);
+        frame.save(c, S3, 0xa0);
+        frame.save(c, S4, 0x90);
+        frame.save(c, S5, 0x80);
+        frame.save(c, S6, 0x70);
+        frame.save_ra(c, 0x60);
+        c.g[A0][0] = sx(0x0047_0000u32.wrapping_sub(0x620));
+        // title = FindObject(self->screen, GetHashValue32("SubTitle"))
+        es_find_object(c, 0x0020_2b0c, 0x0020_2b18)?;
+        let gp = c.g[GP][0] as u32;
+        c.g[V1][0] = c.lw(gp.wrapping_sub(ES_GP_MAP_STATE));
+        c.g[A0][0] = 1;
+        c.g[S0][0] = c.g[V0][0];
+        let state = c.g[V1][0];
+        if state == 1 {
+            es_state_goals(c, frame)?;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = ((state as i64) < 2) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[V0][0] = 2;
+                c.cycles += 2;
+                let is_events = state == c.g[V0][0];
+                c.g[V0][0] = c.lw(gp.wrapping_sub(ES_GP_SELECTED_EVENT));
+                if is_events {
+                    es_state_events(c, frame)?;
+                } else {
+                    c.cycles += 2;
+                    frame.restore(c, S0, 0xd0);
+                }
+            } else {
+                c.cycles += 2;
+                let is_peaks = state == 0;
+                c.g[A0][0] = 0x470000;
+                if is_peaks {
+                    es_state_peaks(c, frame)?;
+                } else {
+                    c.cycles += 2;
+                    frame.restore(c, S0, 0xd0);
+                }
+            }
+        }
+        // Epilogue.
+        c.cycles += 9;
+        frame.restore(c, S1, 0xc0);
+        frame.restore(c, S2, 0xb0);
+        frame.restore(c, S3, 0xa0);
+        frame.restore(c, S4, 0x90);
+        frame.restore(c, S5, 0x80);
+        frame.restore(c, S6, 0x70);
+        frame.restore_ra(c, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `EventSelect_SetMapTabMode`, `EventSelect_RefreshPeakList`,
+/// `EventSelect_RefreshPeakGoals` (direct calls through their generated path).
+pub(crate) const ES_SETMODE_SET_MAP_TAB_MODE: Callee = Callee {
+    addr: 0x0020_3cb8,
+    f: ee::s05::f_00203cb8,
+};
+
+pub(crate) const ES_SETMODE_REFRESH_PEAK_LIST: Callee = Callee {
+    addr: 0x0020_3d40,
+    f: ee::s05::f_00203d40,
+};
+
+pub(crate) const ES_SETMODE_REFRESH_PEAK_GOALS: Callee = Callee {
+    addr: 0x0020_5098,
+    f: ee::s05::f_00205098,
+};
+
+/// `StrHash`, `UIScreen_FindObject`, `UIState_HideObject` (hideObjSafe),
+/// `UIText_SetTextID` (0x3a1000).
+pub(crate) const ES_SETMODE_STR_HASH: u32 = 0x0031_7670;
+
+pub(crate) const ES_SETMODE_FIND_OBJECT: u32 = 0x0039_d860;
+
+pub(crate) const ES_SETMODE_HIDE_OBJ_SAFE: u32 = 0x0039_e8b8;
+
+pub(crate) const ES_SETMODE_SET_TEXT_ID: u32 = 0x003a_1000;
+
+/// Base of the screen's name strings (`str_*` at 0x470000 + offset).
+pub(crate) const ES_SETMODE_STR_BASE: u32 = 0x0047_0000;
+
+/// `EventSelect` fields.
+pub(crate) const ES_SETMODE_POPUP: u32 = 0x2cc;
+
+pub(crate) const ES_SETMODE_NO_SELECTED: u32 = 0x2d0;
+
+pub(crate) const ES_SETMODE_SCREEN: u32 = 0x2e8;
+
+pub(crate) const ES_SETMODE_STATE: u32 = 0x2ec;
+
+/// Widget vtable slots (`{delta: i16, pad, fn: u32}` at `8 * index`): v07
+/// (set visible) at 0x38, v08 at 0x40, v09 at 0x48.
+pub(crate) const ES_SETMODE_V07: u32 = 0x38;
+
+pub(crate) const ES_SETMODE_V08: u32 = 0x40;
+
+pub(crate) const ES_SETMODE_V09: u32 = 0x48;
+
+/// `gp`-relative globals: map state (panel), selected tab, peak, flow.
+pub(crate) const ES_SETMODE_G_MAP_STATE: u32 = 0xb54;
+
+pub(crate) const ES_SETMODE_G_FLOW: u32 = 0xb5c;
+
+pub(crate) const ES_SETMODE_G_PEAK: u32 = 0xb4c;
+
+pub(crate) const ES_SETMODE_G_EVENT: u32 = 0xb50;
+
+/// `gp - off`.
+#[inline(always)]
+pub(crate) fn es_setmode_gp(c: &Cpu, off: u32) -> Addr {
+    Addr((c.g[GP][0] as u32).wrapping_sub(off))
+}
+
+/// `sp + off`.
+#[inline(always)]
+pub(crate) fn es_setmode_sp(c: &Cpu, off: u32) -> Addr {
+    Addr(sp(c).wrapping_add(off))
+}
+
+/// Which panel `EventSelect_SetMode` configures.
+#[derive(Clone, Copy)]
+pub(crate) enum EsSetModePanel {
+    Peaks,
+    Goals,
+    Events,
+}
+
+/// `obj->vtbl[slot](a1)`: `a0 = obj + vt[slot].delta`, target `vt[slot].fn`.
+/// The compiled code keeps the vtable pointer in `vt_reg` and the target in
+/// `fn_reg` (v0/v1 in either order).
+pub(crate) fn es_setmode_vcall(
+    c: &mut Cpu,
+    obj: u32,
+    vt_reg: usize,
+    fn_reg: usize,
+    slot: u32,
+    ret: u32,
+) -> Flow {
+    let vt = Addr(obj).off(8).lw(c);
+    c.g[vt_reg][0] = vt;
+    c.g[A0][0] = Addr(vt as u32).off(slot).lh(c);
+    c.g[fn_reg][0] = Addr(vt as u32).off(slot + 4).lw(c);
+    let target = c.g[fn_reg][0] as u32;
+    c.g[A0][0] = sx(obj.wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, ret)
+}
+
+/// `hash = StrHash(str_base + name); obj = UIScreen_FindObject(self->screen,
+/// hash)` (returns in v0). `ra` is the first call's return address, the
+/// second returns 12 bytes later.
+pub(crate) fn es_setmode_find_widget(c: &mut Cpu, name: u32, ra: u32) -> Flow {
+    c.g[A0][0] = sx(ES_SETMODE_STR_BASE + name);
+    call_ptr(c, ES_SETMODE_STR_HASH, ra)?;
+    let this = c.g[S2][0] as u32;
+    c.g[A0][0] = Addr(this).off(ES_SETMODE_SCREEN).lw(c);
+    c.g[A1][0] = c.g[V0][0];
+    call_ptr(c, ES_SETMODE_FIND_OBJECT, ra + 0xc)
+}
+
+/// `hideObj(self, name)` with the widget kept in the saved register `dest`:
+/// find the widget; if it exists, `v07(0)` and `v09(0)`. `pre` are the block's
+/// own cycles (the first widget's are in the prologue).
+pub(crate) fn es_setmode_hide_reg(c: &mut Cpu, pre: u64, ra: u32, name: u32, dest: usize) -> Flow {
+    c.cycles += pre;
+    es_setmode_find_widget(c, name, ra)?;
+    c.g[dest][0] = c.g[V0][0];
+    c.g[A1][0] = 0;
+    if c.g[dest][0] != 0 {
+        c.cycles += 11;
+        let obj = c.g[dest][0] as u32;
+        es_setmode_vcall(c, obj, V0, V1, ES_SETMODE_V07, ra + 0x2c)?;
+        let obj = c.g[dest][0] as u32;
+        c.g[A1][0] = 0;
+        es_setmode_vcall(c, obj, V0, V1, ES_SETMODE_V09, ra + 0x44)?;
+    }
+    Ok(())
+}
+
+/// As [`es_setmode_hide_reg`] with the widget spilled to `sp + slot` (the
+/// compiled code reloads it from there for every use, leaving it in v0).
+pub(crate) fn es_setmode_hide_stack(c: &mut Cpu, ra: u32, name: u32, slot: u32) -> Flow {
+    c.cycles += 8;
+    es_setmode_find_widget(c, name, ra)?;
+    let found = c.g[V0][0];
+    es_setmode_sp(c, slot).sw(c, found);
+    if found != 0 {
+        c.cycles += 15;
+        let vt = Addr(found as u32).off(8).lw(c);
+        c.g[V0][0] = vt;
+        c.g[A1][0] = 0;
+        c.g[A0][0] = Addr(vt as u32).off(ES_SETMODE_V07).lh(c);
+        c.g[V1][0] = Addr(vt as u32).off(ES_SETMODE_V07 + 4).lw(c);
+        let obj = es_setmode_sp(c, slot).lw(c);
+        c.g[V0][0] = obj;
+        let target = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((obj as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, ra + 0x30)?;
+        let obj = es_setmode_sp(c, slot).lw(c);
+        c.g[V1][0] = obj;
+        c.g[A1][0] = 0;
+        let vt = Addr(obj as u32).off(8).lw(c);
+        c.g[V0][0] = vt;
+        c.g[A0][0] = Addr(vt as u32).off(ES_SETMODE_V09).lh(c);
+        c.g[V1][0] = Addr(vt as u32).off(ES_SETMODE_V09 + 4).lw(c);
+        let obj = es_setmode_sp(c, slot).lw(c);
+        c.g[V0][0] = obj;
+        let target = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((obj as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, ra + 0x50)?;
+    }
+    Ok(())
+}
+
+/// Show the widget in saved register `obj_reg`: set bit 0 of its flags word
+/// (`+0x14`), then call the vtable slots `first` and `second` with a1 = 1
+/// (the callers' delay slot already loaded a1 = 1).
+pub(crate) fn es_setmode_show_widget(
+    c: &mut Cpu,
+    obj_reg: usize,
+    first: u32,
+    second: u32,
+    rets: [u32; 2],
+) -> Flow {
+    let obj = c.g[obj_reg][0] as u32;
+    c.g[V0][0] = Addr(obj).off(0x14).lw(c);
+    c.g[V1][0] = Addr(obj).off(8).lw(c);
+    c.g[V0][0] |= 1;
+    let flags = c.g[V0][0];
+    Addr(obj).off(0x14).sw(c, flags);
+    es_setmode_vcall(c, obj, V1, V0, first, rets[0])?;
+    let obj = c.g[obj_reg][0] as u32;
+    c.g[A1][0] = 1;
+    es_setmode_vcall(c, obj, V1, V0, second, rets[1])
+}
+
+/// `s0 = UIScreen_FindObject(screen, StrHash("title_title"))`; the title
+/// widget name is at `str_base + 0x518`.
+pub(crate) fn es_setmode_find_title(c: &mut Cpu, ra: u32) -> Flow {
+    es_setmode_find_widget(c, 0x518, ra)?;
+    c.g[A0][0] = 0x0047_0000;
+    c.g[S0][0] = c.g[V0][0];
+    Ok(())
+}
+
+/// `title->setTextID(StrHash(str_base + text))` (0x3a1000).
+pub(crate) fn es_setmode_set_title(c: &mut Cpu, text: u32, ra_hash: u32, ra_set: u32) -> Flow {
+    c.g[A0][0] = sx(ES_SETMODE_STR_BASE + text);
+    call_ptr(c, ES_SETMODE_STR_HASH, ra_hash)?;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = c.g[V0][0];
+    call_ptr(c, ES_SETMODE_SET_TEXT_ID, ra_set)
+}
+
+/// `void EventSelect_SetMode(EventSelect* self, int focus)` (0x2030a0):
+/// `cUITemplate_MAP_setupMenuFocus`. Sets the map tab (`SetMapTabMode(self,
+/// 0)`), stores `focus` as the panel (`gp-0xb54`), hides the 14 panel widgets
+/// (peak list, three goal lists, nine event lists, the confirm popup) and then
+///
+/// - with the confirm popup open (`self+0x2cc`): hides the "Locks" objects
+///   through the UI state, shows the popup and highlights its "no" or "yes"
+///   button by `self+0x2d0`;
+/// - else by panel: 0 refreshes the peak list and shows the peak list, 1
+///   refreshes the peak goals and shows the selected peak's goal list, 2 shows
+///   the event list of the selected peak and tab; panels 0 to 2 also set the
+///   screen title unless the flow (`gp-0xb5c`) is 2 or more.
+///
+/// The widgets live in saved registers (peak list, goals, last three event
+/// lists, popup) and in stack slots `sp+0..0x14` (the other event lists), as
+/// the compiled code spilled them; the scratch registers it leaves on each
+/// path (a1, v0/v1, a0) are reproduced.
+pub fn event_select_set_mode(c: &mut Cpu) {
+    guest(c, |c| {
+        // Prologue: 0xc0 frame, ra at 0x20, s0..s7 and fp saved.
+        c.cycles += 25;
+        let frame = Frame::open(c, 0xc0);
+        frame.save(c, S0, 0xb0);
+        frame.save(c, S2, 0x90);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, FP, 0x30);
+        frame.save(c, S1, 0xa0);
+        frame.save(c, S3, 0x80);
+        frame.save(c, S4, 0x70);
+        frame.save(c, S5, 0x60);
+        frame.save(c, S6, 0x50);
+        frame.save(c, S7, 0x40);
+        frame.save_ra(c, 0x20);
+
+        // SetMapTabMode(self, 0); mMapState = focus.
+        c.g[A1][0] = 0;
+        ES_SETMODE_SET_MAP_TAB_MODE.call(c, 0x0020_30dc)?;
+        c.g[A0][0] = 0x0047_0000;
+        let focus = c.g[S0][0];
+        es_setmode_gp(c, ES_SETMODE_G_MAP_STATE).sw(c, focus);
+
+        // Hide the widgets: peak list (fp), goal lists (s7, s6, s4), event
+        // lists (stack, stack, stack, stack, stack, stack, s5, s3, s1), popup
+        // (s0).
+        es_setmode_hide_reg(c, 0, 0x0020_30ec, 0x600, FP)?;
+        es_setmode_hide_reg(c, 9, 0x0020_313c, 0x918, S7)?;
+        es_setmode_hide_reg(c, 9, 0x0020_318c, 0x928, S6)?;
+        es_setmode_hide_reg(c, 9, 0x0020_31dc, 0x938, S4)?;
+        es_setmode_hide_stack(c, 0x0020_322c, 0x948, 0x00)?;
+        es_setmode_hide_stack(c, 0x0020_3288, 0x960, 0x04)?;
+        es_setmode_hide_stack(c, 0x0020_32e4, 0x978, 0x08)?;
+        es_setmode_hide_stack(c, 0x0020_3340, 0x990, 0x0c)?;
+        es_setmode_hide_stack(c, 0x0020_339c, 0x9a8, 0x10)?;
+        es_setmode_hide_stack(c, 0x0020_33f8, 0x9c0, 0x14)?;
+        es_setmode_hide_reg(c, 9, 0x0020_3454, 0x9d8, S5)?;
+        es_setmode_hide_reg(c, 9, 0x0020_34a4, 0x9f0, S3)?;
+        es_setmode_hide_reg(c, 9, 0x0020_34f4, 0xa08, S1)?;
+        es_setmode_hide_reg(c, 9, 0x0020_3544, 0xa20, S0)?;
+
+        'epilogue: {
+            'restored_s0: {
+                // The confirm popup.
+                c.cycles += 3;
+                let this = c.g[S2][0] as u32;
+                c.g[V0][0] = Addr(this).off(ES_SETMODE_POPUP).lw(c);
+                c.g[A1][0] = 0x004a_0000;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 18;
+                    let state = Addr(this).off(ES_SETMODE_STATE).lw(c);
+                    c.g[A0][0] = state;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2610));
+                    call_ptr(c, ES_SETMODE_HIDE_OBJ_SAFE, 0x0020_35a0)?;
+                    // popup->v07(1); popup->v09(1).
+                    let popup = c.g[S0][0] as u32;
+                    c.g[A1][0] = 1;
+                    es_setmode_vcall(c, popup, V0, V1, ES_SETMODE_V07, 0x0020_35b8)?;
+                    let popup = c.g[S0][0] as u32;
+                    c.g[A1][0] = 1;
+                    es_setmode_vcall(c, popup, V0, V1, ES_SETMODE_V09, 0x0020_35d0)?;
+                    c.g[V0][0] = Addr(this).off(ES_SETMODE_NO_SELECTED).lw(c);
+                    let no_selected = c.g[V0][0] != 0;
+                    c.g[A0][0] = 0x0047_0000;
+                    if !no_selected {
+                        // "No" button: v09(1), then v08(0).
+                        c.cycles += 15;
+                        es_setmode_find_widget(c, 0x6c8, 0x0020_35e4)?;
+                        c.g[S0][0] = c.g[V0][0];
+                        c.g[A1][0] = 1;
+                        let no = c.g[S0][0] as u32;
+                        es_setmode_vcall(c, no, V0, V1, ES_SETMODE_V09, 0x0020_360c)?;
+                        let no = c.g[S0][0] as u32;
+                        c.g[V0][0] = Addr(no).off(8).lw(c);
+                        c.g[A1][0] = 0;
+                    } else {
+                        // "No" button: v09(0), then v08(1).
+                        c.cycles += 14;
+                        es_setmode_find_widget(c, 0x6c8, 0x0020_3620)?;
+                        c.g[S0][0] = c.g[V0][0];
+                        c.g[A1][0] = 0;
+                        let no = c.g[S0][0] as u32;
+                        es_setmode_vcall(c, no, V0, V1, ES_SETMODE_V09, 0x0020_3648)?;
+                        let no = c.g[S0][0] as u32;
+                        c.g[V0][0] = Addr(no).off(8).lw(c);
+                        c.g[A1][0] = 1;
+                    }
+                    c.cycles += 6;
+                    let no = c.g[S0][0] as u32;
+                    es_setmode_vcall(c, no, V0, V1, ES_SETMODE_V08, 0x0020_3660)?;
+                    frame.restore(c, S0, 0xb0);
+                    break 'restored_s0;
+                }
+
+                // The panel switch.
+                'panel_done: {
+                    c.cycles += 4;
+                    c.g[V1][0] = es_setmode_gp(c, ES_SETMODE_G_MAP_STATE).lw(c);
+                    c.g[A0][0] = 1;
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < 2) as u64;
+                    let panel = if c.g[V1][0] == c.g[A0][0] {
+                        EsSetModePanel::Goals
+                    } else {
+                        c.cycles += 2;
+                        if c.g[V0][0] == 0 {
+                            // 2 or more: only 2 is a panel.
+                            c.g[V0][0] = 2;
+                            c.cycles += 2;
+                            let is_events = c.g[V1][0] == c.g[V0][0];
+                            frame.restore(c, S0, 0xb0);
+                            if !is_events {
+                                c.cycles += 2;
+                                frame.restore(c, S1, 0xa0);
+                                break 'epilogue;
+                            }
+                            EsSetModePanel::Events
+                        } else {
+                            // Below 2: 0 is the peak panel, negative none.
+                            c.cycles += 2;
+                            let is_peaks = c.g[V1][0] == 0;
+                            frame.restore(c, S0, 0xb0);
+                            if !is_peaks {
+                                c.cycles += 2;
+                                frame.restore(c, S1, 0xa0);
+                                break 'epilogue;
+                            }
+                            EsSetModePanel::Peaks
+                        }
+                    };
+
+                    match panel {
+                        EsSetModePanel::Peaks => {
+                            // Refresh the peak list and show it.
+                            c.cycles += 4;
+                            c.g[A0][0] = c.g[S2][0];
+                            ES_SETMODE_REFRESH_PEAK_LIST.call(c, 0x0020_36a8)?;
+                            c.g[A1][0] = 1;
+                            if c.g[FP][0] != 0 {
+                                c.cycles += 14;
+                                es_setmode_show_widget(
+                                    c,
+                                    FP,
+                                    ES_SETMODE_V07,
+                                    ES_SETMODE_V09,
+                                    [0x0020_36d0, 0x0020_36e8],
+                                )?;
+                            }
+                            c.cycles += 4;
+                            c.g[V0][0] = es_setmode_gp(c, ES_SETMODE_G_FLOW).lw(c);
+                            c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+                            c.g[A0][0] = 0x0047_0000;
+                            if c.g[V0][0] == 0 {
+                                break 'panel_done;
+                            }
+                            c.cycles += 9;
+                            es_setmode_find_title(c, 0x0020_3700)?;
+                            c.cycles += 7;
+                            es_setmode_set_title(c, 0x7c0, 0x0020_3844, 0x0020_3850)?;
+                            frame.restore(c, S0, 0xb0);
+                            break 'restored_s0;
+                        }
+                        EsSetModePanel::Goals => {
+                            // Refresh the goals and show the selected peak's.
+                            c.cycles += 5;
+                            c.g[A0][0] = c.g[S2][0];
+                            ES_SETMODE_REFRESH_PEAK_GOALS.call(c, 0x0020_3724)?;
+                            es_setmode_show_goals(c)?;
+                            c.cycles += 3;
+                            c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+                            c.g[A0][0] = 0x0047_0000;
+                            if c.g[V0][0] == 0 {
+                                break 'panel_done;
+                            }
+                            c.cycles += 8;
+                            es_setmode_find_title(c, 0x0020_3824)?;
+                            c.cycles += 7;
+                            es_setmode_set_title(c, 0xa30, 0x0020_3844, 0x0020_3850)?;
+                            frame.restore(c, S0, 0xb0);
+                            break 'restored_s0;
+                        }
+                        EsSetModePanel::Events => {
+                            // Show the selected peak's and tab's event list.
+                            es_setmode_select_event(c);
+                            c.cycles += 2;
+                            c.g[A1][0] = 1;
+                            if c.g[S0][0] != 0 {
+                                c.cycles += 14;
+                                es_setmode_show_widget(
+                                    c,
+                                    S0,
+                                    ES_SETMODE_V09,
+                                    ES_SETMODE_V07,
+                                    [0x0020_3904, 0x0020_391c],
+                                )?;
+                            }
+                            c.cycles += 4;
+                            c.g[V0][0] = es_setmode_gp(c, ES_SETMODE_G_FLOW).lw(c);
+                            c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+                            c.g[A0][0] = 0x0047_0000;
+                            if c.g[V0][0] == 0 {
+                                break 'panel_done;
+                            }
+                            c.cycles += 12;
+                            es_setmode_find_title(c, 0x0020_3934)?;
+                            es_setmode_set_title(c, 0xa48, 0x0020_3950, 0x0020_395c)?;
+                        }
+                    }
+                }
+                c.cycles += 1;
+                frame.restore(c, S0, 0xb0);
+            }
+            c.cycles += 1;
+            frame.restore(c, S1, 0xa0);
+        }
+
+        // Epilogue.
+        c.cycles += 10;
+        frame.restore(c, S2, 0x90);
+        frame.restore(c, S3, 0x80);
+        frame.restore(c, S4, 0x70);
+        frame.restore(c, S5, 0x60);
+        frame.restore(c, S6, 0x50);
+        frame.restore(c, S7, 0x40);
+        frame.restore(c, FP, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Panel 1: show the goal list of the selected peak (`gp-0xb4c`: 0 is s7, 1 is
+/// s6, anything else s4; a missing list falls through to the next). Leaves
+/// v0 = the flow (`gp-0xb5c`).
+pub(crate) fn es_setmode_show_goals(c: &mut Cpu) -> Flow {
+    c.g[V0][0] = es_setmode_gp(c, ES_SETMODE_G_PEAK).lw(c);
+    c.g[V1][0] = es_setmode_gp(c, ES_SETMODE_G_PEAK).lw(c);
+    'shown: {
+        'goal_two: {
+            if c.g[V0][0] == 0 {
+                c.cycles += 2;
+                c.g[A1][0] = 1;
+                if c.g[S7][0] != 0 {
+                    c.cycles += 16;
+                    es_setmode_show_widget(
+                        c,
+                        S7,
+                        ES_SETMODE_V09,
+                        ES_SETMODE_V07,
+                        [0x0020_3758, 0x0020_3770],
+                    )?;
+                    c.g[V0][0] = es_setmode_gp(c, ES_SETMODE_G_FLOW).lw(c);
+                    break 'shown;
+                }
+            }
+            c.cycles += 3;
+            c.g[V0][0] = 1;
+            if c.g[V1][0] != c.g[V0][0] {
+                break 'goal_two;
+            }
+            c.cycles += 2;
+            c.g[A1][0] = 1;
+            if c.g[S6][0] == 0 {
+                break 'goal_two;
+            }
+            c.cycles += 16;
+            es_setmode_show_widget(
+                c,
+                S6,
+                ES_SETMODE_V09,
+                ES_SETMODE_V07,
+                [0x0020_37ac, 0x0020_37c4],
+            )?;
+            c.g[V0][0] = es_setmode_gp(c, ES_SETMODE_G_FLOW).lw(c);
+            break 'shown;
+        }
+        c.cycles += 2;
+        c.g[A1][0] = 1;
+        if c.g[S4][0] != 0 {
+            c.cycles += 14;
+            es_setmode_show_widget(
+                c,
+                S4,
+                ES_SETMODE_V09,
+                ES_SETMODE_V07,
+                [0x0020_37f4, 0x0020_380c],
+            )?;
+        }
+        c.cycles += 1;
+        c.g[V0][0] = es_setmode_gp(c, ES_SETMODE_G_FLOW).lw(c);
+    }
+    Ok(())
+}
+
+/// Panel 2: pick the event list widget for the selected peak (`gp-0xb4c`) and
+/// tab (`gp-0xb50`) into s0 (null for anything out of range): peak 0 and
+/// tab 0, 1, 2 are the first three stack slots, peak 1 the next three, peak 2
+/// is s5, s3, s1. Leaves v0/a0 as the compiled branches do.
+pub(crate) fn es_setmode_select_event(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = es_setmode_gp(c, ES_SETMODE_G_PEAK).lw(c);
+    c.g[S0][0] = 0;
+    let state = c.g[V1][0];
+    'chosen: {
+        'tail: {
+            'peak_not_zero: {
+                if c.g[V0][0] != 0 {
+                    break 'peak_not_zero;
+                }
+                // Peak 0: slots 0 (tab 0), 4 (tab 1), 8 (tab 2).
+                c.cycles += 3;
+                c.g[V0][0] = es_setmode_gp(c, ES_SETMODE_G_EVENT).lw(c);
+                c.g[S0][0] = es_setmode_sp(c, 0).lw(c);
+                if c.g[V0][0] == 0 {
+                    break 'chosen;
+                }
+                c.cycles += 2;
+                c.g[S0][0] = es_setmode_sp(c, 8).lw(c);
+                if c.g[V0][0] == c.g[A0][0] {
+                    c.cycles += 2;
+                    c.g[S0][0] = es_setmode_sp(c, 4).lw(c);
+                    break 'chosen;
+                }
+                c.cycles += 2;
+                c.g[V0][0] ^= 2;
+                break 'tail;
+            }
+            'peak_not_one: {
+                c.cycles += 2;
+                if c.g[V0][0] != c.g[A0][0] {
+                    break 'peak_not_one;
+                }
+                // Peak 1: slots 0xc, 0x10, 0x14.
+                c.cycles += 3;
+                c.g[V0][0] = es_setmode_gp(c, ES_SETMODE_G_EVENT).lw(c);
+                c.g[S0][0] = es_setmode_sp(c, 0xc).lw(c);
+                if c.g[V0][0] == 0 {
+                    break 'chosen;
+                }
+                c.cycles += 2;
+                c.g[S0][0] = es_setmode_sp(c, 0x14).lw(c);
+                if c.g[V0][0] == c.g[A0][0] {
+                    c.cycles += 2;
+                    c.g[S0][0] = es_setmode_sp(c, 0x10).lw(c);
+                    break 'chosen;
+                }
+                c.cycles += 2;
+                c.g[V0][0] ^= 2;
+                break 'tail;
+            }
+            // Peak 2: s5, s3, s1 (v1 is the panel, 2).
+            c.cycles += 2;
+            let not_two = c.g[V0][0] != state;
+            c.g[V0][0] = es_setmode_gp(c, ES_SETMODE_G_EVENT).lw(c);
+            if not_two {
+                break 'chosen;
+            }
+            c.cycles += 2;
+            c.g[S0][0] = c.g[S5][0];
+            if c.g[V0][0] == 0 {
+                break 'chosen;
+            }
+            c.cycles += 2;
+            let not_one = c.g[V0][0] != c.g[A0][0];
+            c.g[V0][0] ^= 2;
+            if !not_one {
+                c.cycles += 2;
+                c.g[S0][0] = c.g[S3][0];
+                break 'chosen;
+            }
+            c.cycles += 1;
+            c.g[S0][0] = c.g[S1][0];
+        }
+        // Tab 2 (v0 = tab ^ 2 is zero) keeps the slot, any other tab clears it.
+        c.cycles += 1;
+        if c.g[V0][0] != 0 {
+            c.g[S0][0] = 0;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// EventSelect_RefreshPeakList (`cUITemplate_MAP_setupPeakInfo`).
+
+/// `self` (the map template, `s3`) field offsets: unlocked flags of the three
+/// peaks (`+4 + 4 * peak`), popup flag, screen and the state owner.
+pub(crate) const PK_UNLOCKED: u32 = 0x4;
+
+pub(crate) const PK_POPUP: u32 = 0x2cc;
+
+pub(crate) const PK_SCREEN: u32 = 0x2e8;
+
+pub(crate) const PK_OWNER: u32 = 0x2ec;
+
+/// Peak selection object: the selected peak at `+0x18`; the list object keeps
+/// it at `+0xa0`.
+pub(crate) const PK_SEL_PEAK: u32 = 0x18;
+
+pub(crate) const PK_LIST_SEL: u32 = 0xa0;
+
+/// Stack frame of the function (`sp` relative).
+pub(crate) const PK_FRAME: u32 = 0x3b0;
+
+/// `name1`/`name2` string buffers (`sp+0`, `sp+0x20`), the wide/ascii text
+/// buffer (`sp+0x40`), the copied goal records (`sp+0x1d0`, `sp+0x240`; 0x6c
+/// bytes each: word 0 is the track, word 2 the goal kind).
+pub(crate) const PK_NAME2: u32 = 0x20;
+
+pub(crate) const PK_BUF: u32 = 0x40;
+
+pub(crate) const PK_GOAL_A: u32 = 0x1d0;
+
+pub(crate) const PK_GOAL_B: u32 = 0x240;
+
+/// Spill slots: the mission, economy and score interfaces, goal count, done
+/// count, the next peak, the goal-B pointer and `t1`.
+pub(crate) const PK_MIS: u32 = 0x2b0;
+
+pub(crate) const PK_ECON: u32 = 0x2b4;
+
+pub(crate) const PK_SCORE: u32 = 0x2b8;
+
+pub(crate) const PK_CNT: u32 = 0x2bc;
+
+pub(crate) const PK_DONE: u32 = 0x2c0;
+
+pub(crate) const PK_NEXT: u32 = 0x2c4;
+
+pub(crate) const PK_GOAL_B_PTR: u32 = 0x2c8;
+
+pub(crate) const PK_SPILL_T1: u32 = 0x2d0;
+
+pub(crate) const PK_HIDE: u32 = 0x0039_e8b8;
+
+pub(crate) const PK_SHOW: u32 = 0x0039_e948;
+
+pub(crate) const PK_HASH: u32 = 0x0031_7670;
+
+pub(crate) const PK_FIND: u32 = 0x0039_d860;
+
+pub(crate) const PK_SET_TEXT_ID: u32 = 0x003a_1000;
+
+pub(crate) const PK_SET_STRING: u32 = 0x003a_0c50;
+
+pub(crate) const PK_SET_WIDE: u32 = 0x003a_0e90;
+
+pub(crate) const PK_SPRINTF: u32 = 0x0041_7828;
+
+pub(crate) const PK_SPRINTF1: u32 = 0x002c_26d0;
+
+pub(crate) const PK_TRACK_MEDAL: u32 = 0x0015_8910;
+
+pub(crate) const PK_TROPHY: u32 = 0x0015_7bf0;
+
+/// `s3` (self); callee-saved, read from the register each time.
+#[inline(always)]
+pub(crate) fn pk_this(c: &Cpu) -> u32 {
+    c.g[S3][0] as u32
+}
+
+/// `a0 = self->owner`.
+#[inline(always)]
+pub(crate) fn pk_owner_a0(c: &mut Cpu) {
+    let a = pk_this(c).wrapping_add(PK_OWNER);
+    c.g[A0][0] = c.lw(a);
+}
+
+/// `a0 = self->screen`.
+#[inline(always)]
+pub(crate) fn pk_screen_a0(c: &mut Cpu) {
+    let a = pk_this(c).wrapping_add(PK_SCREEN);
+    c.g[A0][0] = c.lw(a);
+}
+
+#[inline(always)]
+pub(crate) fn pk_lw_sp(c: &mut Cpu, off: u32) -> u64 {
+    let a = sp(c).wrapping_add(off);
+    c.lw(a)
+}
+
+#[inline(always)]
+pub(crate) fn pk_sw_sp(c: &mut Cpu, off: u32, v: u64) {
+    let a = sp(c).wrapping_add(off);
+    c.sw(a, v)
+}
+
+/// `sw reg, off(sp)`.
+#[inline(always)]
+pub(crate) fn pk_sw_sp_reg(c: &mut Cpu, off: u32, reg: usize) {
+    let a = sp(c).wrapping_add(off);
+    let v = c.g[reg][0];
+    c.sw(a, v)
+}
+
+/// `lw (gp - off)`.
+#[inline(always)]
+pub(crate) fn pk_lw_gp(c: &mut Cpu, off: u32) -> u64 {
+    let a = (c.g[GP][0] as u32).wrapping_sub(off);
+    c.lw(a)
+}
+
+/// `a0 = sp + off`-style address register value.
+#[inline(always)]
+pub(crate) fn pk_sp_addr(c: &Cpu, off: u32) -> u64 {
+    sx(sp(c).wrapping_add(off))
+}
+
+/// Call of a guest function through the function table.
+#[inline(always)]
+pub(crate) fn pk_call(c: &mut Cpu, target: u32, ret: u32) -> Flow {
+    call_ptr(c, target, ret)
+}
+
+/// `obj->vtable[slot](obj, ...)`: `v0 = *(obj+8)`, `a0 = lh(v0+slot)`,
+/// `v1 = lw(v0+slot+4)`, `a0 = obj + a0`, call `v1` (a1 is set by the caller).
+pub(crate) fn pk_vcall(c: &mut Cpu, obj: usize, slot: u32, ret: u32) -> Flow {
+    let o = c.g[obj][0] as u32;
+    c.g[V0][0] = c.lw(o.wrapping_add(8));
+    c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(slot));
+    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(slot + 4));
+    let t = c.g[V1][0] as u32;
+    c.g[A0][0] = sx(o.wrapping_add(c.g[A0][0] as u32));
+    pk_call(c, t, ret)
+}
+
+/// The inlined copy of one 0x6c-byte goal record from `v1` to `a0`: 0x60 bytes
+/// in 32-byte strides (`v0` is the end address of the strides), either with
+/// aligned doublewords (`ld`/`sd`, 11 cycles a stride) or unaligned (`ldl`/
+/// `ldr`, 19 cycles a stride and 2 more cycles at the exit). `regs` are the
+/// four registers carrying the doublewords. The last 12 bytes follow in the
+/// caller ([`pk_goal_tail`]).
+pub(crate) fn pk_goal_strides(c: &mut Cpu, aligned: bool, regs: [usize; 4], head: u32) {
+    loop {
+        let src = c.g[V1][0] as u32;
+        let dst = c.g[A0][0] as u32;
+        if aligned {
+            c.cycles += 11;
+            for (i, r) in regs.iter().enumerate() {
+                c.g[*r][0] = c.ld(src.wrapping_add(8 * i as u32));
+            }
+            for (i, r) in regs.iter().enumerate() {
+                let v = c.g[*r][0];
+                c.sd(dst.wrapping_add(8 * i as u32), v);
+            }
+        } else {
+            c.cycles += 19;
+            for (i, r) in regs.iter().enumerate() {
+                let o = 8 * i as u32;
+                c.ldl(*r, src.wrapping_add(o + 7));
+                c.ldr(*r, src.wrapping_add(o));
+            }
+            for (i, r) in regs.iter().enumerate() {
+                let o = 8 * i as u32;
+                c.sdl(*r, dst.wrapping_add(o + 7));
+                c.sdr(*r, dst.wrapping_add(o));
+            }
+        }
+        c.g[V1][0] = sx(src.wrapping_add(0x20));
+        let more = c.g[V1][0] != c.g[V0][0];
+        c.g[A0][0] = sx(dst.wrapping_add(0x20));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+    if !aligned {
+        c.cycles += 2;
+    }
+}
+
+/// The last 12 bytes of a goal copy: a doubleword through `ldl`/`ldr` in
+/// `r_dw`, then a word into `r_w` (stored with `sw`).
+pub(crate) fn pk_goal_tail(c: &mut Cpu, r_dw: usize, r_w: usize) {
+    let src = c.g[V1][0] as u32;
+    c.ldl(r_dw, src.wrapping_add(7));
+    c.ldr(r_dw, src);
+    c.g[r_w][0] = c.lw(src.wrapping_add(8));
+    let dst = c.g[A0][0] as u32;
+    c.sdl(r_dw, dst.wrapping_add(7));
+    c.sdr(r_dw, dst);
+    let w = c.g[r_w][0];
+    c.sw(dst.wrapping_add(8), w);
+}
+
+#[cfg(not(feature = "ee-unwind"))]
+pub(crate) fn pk_resume_2(c: &mut Cpu) {
+    ee::s05::f_00203d40__entries(c)
+}
+
+#[cfg(feature = "ee-unwind")]
+pub(crate) fn pk_resume_2(c: &mut Cpu) {
+    ee::s05::f_00203d40__generated(c)
+}
+
+/// Epilogue: reload the callee-saved registers (`s0` first, as the early
+/// exits do), `ra` and the float registers, and return.
+pub(crate) fn pk_epilogue(c: &mut Cpu, frame: Frame) {
+    c.cycles += 17;
+    for (r, off) in [
+        (S1, 0x360),
+        (S2, 0x350),
+        (S3, 0x340),
+        (S4, 0x330),
+        (S5, 0x320),
+        (S6, 0x310),
+        (S7, 0x300),
+        (FP, 0x2f0),
+    ] {
+        frame.restore(c, r, off);
+    }
+    frame.restore_ra(c, 0x2e0);
+    for (f, off) in [
+        (25, 0x3a8),
+        (24, 0x3a0),
+        (23, 0x398),
+        (22, 0x390),
+        (21, 0x388),
+        (20, 0x380),
+    ] {
+        frame.restore_fpr(c, f, off);
+    }
+    frame.close(c);
+}
+
+/// `lq s0` (the early exits reload `s0` in a branch delay slot) and leave.
+pub(crate) fn pk_leave(c: &mut Cpu, frame: Frame) {
+    frame.restore(c, S0, 0x370);
+    pk_epilogue(c, frame);
+}
+
+/// `void EventSelect_RefreshPeakList(MapTemplate* self)` (0x203d40;
+/// `cUITemplate_MAP_setupPeakInfo`): refresh the peak panel of the map screen.
+/// Shows/hides the popup frame, the three trophy marks and the per-peak
+/// "unlocked" markers (by map style and state), then looks at the selected
+/// peak. For peaks 0..2 it sets the help text and, on map style >= 2, the goal
+/// counters (slopestyle/race medal goals found, challenges and collectibles,
+/// earnings) with their check marks. For the overall entry (peak >= 3) it
+/// counts goals, gold medals, missions, collectibles and highlights and shows
+/// the completion percentage.
+///
+/// Everything lives in registers across the calls (the generated body is
+/// resumable at its call returns), so the loop counters stay in `s0`..`s7`.
+pub fn event_select_refresh_peak_list(c: &mut Cpu) {
+    if c.pc != 0x0020_3d40 {
+        return pk_resume_2(c);
+    }
+    guest(c, pk_refresh_body)
+}
+
+pub(crate) fn pk_refresh_body(c: &mut Cpu) -> Flow {
+    c.cycles += 44;
+    let frame = Frame::open(c, PK_FRAME);
+    frame.save(c, S3, 0x340);
+    frame.save(c, S5, 0x320);
+    c.g[S3][0] = c.g[A0][0];
+    frame.save(c, S7, 0x300);
+    frame.save(c, S0, 0x370);
+    frame.save(c, S1, 0x360);
+    frame.save(c, S2, 0x350);
+    frame.save(c, S4, 0x330);
+    frame.save(c, S6, 0x310);
+    frame.save(c, FP, 0x2f0);
+    frame.save_ra(c, 0x2e0);
+    for (f, off) in [
+        (25, 0x3a8),
+        (24, 0x3a0),
+        (23, 0x398),
+        (22, 0x390),
+        (21, 0x388),
+        (20, 0x380),
+    ] {
+        frame.save_fpr(c, f, off);
+    }
+
+    // The back-end interfaces: reward (s5), mission, economy, score; and the
+    // rider character (s7).
+    pk_call(c, 0x0014_dc80, 0x0020_3d8c)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 0xd;
+    pk_call(c, 0x0014_dd58, 0x0020_3d98)?;
+    c.g[S5][0] = c.g[V0][0];
+    pk_call(c, 0x0014_dc80, 0x0020_3da0)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 0xa;
+    pk_call(c, 0x0014_dd58, 0x0020_3dac)?;
+    pk_sw_sp_reg(c, PK_MIS, V0);
+    pk_call(c, 0x0014_dc80, 0x0020_3db4)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 0xb;
+    pk_call(c, 0x0014_dd58, 0x0020_3dc0)?;
+    pk_sw_sp_reg(c, PK_ECON, V0);
+    pk_call(c, 0x0014_dc80, 0x0020_3dc8)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 0x8;
+    pk_call(c, 0x0014_dd58, 0x0020_3dd4)?;
+    pk_sw_sp_reg(c, PK_SCORE, V0);
+    c.g[A0][0] = 0;
+    pk_call(c, 0x0014_a080, 0x0020_3de0)?;
+    c.g[S7][0] = c.g[V0][0];
+
+    // Popup frame: hidden while the popup flag is set, else shown.
+    let popup = pk_this(c).wrapping_add(PK_POPUP);
+    c.g[V0][0] = c.lw(popup);
+    let show_frame = c.g[V0][0] == 0;
+    pk_owner_a0(c);
+    if !show_frame {
+        c.cycles += 13;
+        c.g[A1][0] = 0x0047_0ae8;
+        pk_call(c, PK_HIDE, 0x0020_3dfc)?;
+        pk_owner_a0(c);
+        c.g[A1][0] = 0x004a_2648;
+        pk_call(c, PK_HIDE, 0x0020_3e0c)?;
+        c.g[A1][0] = 0x004a_0000;
+        pk_owner_a0(c);
+        c.g[A1][0] = 0x004a_2610;
+        pk_call(c, PK_HIDE, 0x0020_3e1c)?;
+        pk_owner_a0(c);
+    } else {
+        c.cycles += 12;
+        c.g[A1][0] = 0x0047_0ae8;
+        pk_call(c, PK_SHOW, 0x0020_3e30)?;
+        pk_owner_a0(c);
+        c.g[A1][0] = 0x004a_2648;
+        pk_call(c, PK_SHOW, 0x0020_3e40)?;
+        c.g[A1][0] = 0x004a_0000;
+        pk_owner_a0(c);
+        c.g[A1][0] = 0x004a_2610;
+        pk_call(c, PK_SHOW, 0x0020_3e50)?;
+        pk_owner_a0(c);
+    }
+
+    c.cycles += 17;
+    c.g[A1][0] = 0x0047_0af8;
+    c.g[S0][0] = 0;
+    pk_call(c, PK_HIDE, 0x0020_3e64)?;
+    c.g[S2][0] = 0x0047_0000;
+    pk_owner_a0(c);
+    c.g[A1][0] = 0x0047_0b08;
+    c.g[FP][0] = 0x0047_0000;
+    pk_call(c, PK_HIDE, 0x0020_3e7c)?;
+    c.g[A1][0] = 0x004a_0000;
+    pk_owner_a0(c);
+    c.g[A1][0] = 0x004a_2650;
+    pk_call(c, PK_HIDE, 0x0020_3e8c)?;
+    c.g[S4][0] = pk_sp_addr(c, PK_NAME2);
+    c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+
+    // Trophy marks 1..3: shown when all four trophies of the peak are owned.
+    loop {
+        c.cycles += 12;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[S1][0] = c.g[A2][0];
+        c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_add(0xb20));
+        pk_call(c, PK_SPRINTF, 0x0020_3ea8)?;
+        // `isTrophyOwned(rew, 0, ch, peak, i)` for i = 0..3. `None`: one of
+        // the first three failed, `Some(false)`: the fourth failed.
+        let mut owned: Option<bool> = None;
+        'trophies: {
+            c.g[A0][0] = c.g[S5][0];
+            c.g[A1][0] = 0;
+            c.g[A2][0] = c.g[S7][0];
+            c.g[A3][0] = c.g[S0][0];
+            c.g[T0][0] = 0;
+            pk_call(c, PK_TROPHY, 0x0020_3ec0)?;
+            let ok = c.g[V0][0] != 0;
+            c.g[A0][0] = c.g[S5][0];
+            if !ok {
+                break 'trophies;
+            }
+            c.cycles += 7;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = c.g[S7][0];
+            c.g[A3][0] = c.g[S0][0];
+            c.g[T0][0] = 1;
+            pk_call(c, PK_TROPHY, 0x0020_3edc)?;
+            let ok = c.g[V0][0] != 0;
+            c.g[A0][0] = c.g[S5][0];
+            if !ok {
+                break 'trophies;
+            }
+            c.cycles += 7;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = c.g[S7][0];
+            c.g[A3][0] = c.g[S0][0];
+            c.g[T0][0] = 2;
+            pk_call(c, PK_TROPHY, 0x0020_3ef8)?;
+            let ok = c.g[V0][0] != 0;
+            c.g[A3][0] = c.g[S0][0];
+            if !ok {
+                break 'trophies;
+            }
+            c.cycles += 7;
+            c.g[A0][0] = c.g[S5][0];
+            c.g[A1][0] = 0;
+            c.g[A2][0] = c.g[S7][0];
+            c.g[T0][0] = 3;
+            pk_call(c, PK_TROPHY, 0x0020_3f14)?;
+            let ok = c.g[V0][0] != 0;
+            pk_owner_a0(c);
+            owned = Some(ok);
+        }
+        match owned {
+            Some(true) => {
+                c.cycles += 4;
+                c.g[A1][0] = c.g[SP][0];
+                pk_call(c, PK_SHOW, 0x0020_3f24)?;
+                c.g[S0][0] = c.g[S1][0];
+            }
+            other => {
+                if other.is_none() {
+                    c.cycles += 1;
+                    pk_owner_a0(c);
+                }
+                c.cycles += 3;
+                c.g[A1][0] = c.g[SP][0];
+                pk_call(c, PK_HIDE, 0x0020_3f38)?;
+                c.g[S0][0] = c.g[S1][0];
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[S0][0] as i64) < 3) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0020_3e98);
+        }
+    }
+
+    // Map style < 2: the "Mountain" object is made static and invisible.
+    c.cycles += 4;
+    c.g[V0][0] = pk_lw_gp(c, 0xb5c);
+    c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+    let low_style = c.g[V0][0] != 0;
+    c.g[A0][0] = 0x0047_0000;
+    if low_style {
+        c.cycles += 18;
+        c.g[A0][0] = 0x0047_0610;
+        pk_call(c, PK_HASH, 0x0020_3f60)?;
+        pk_screen_a0(c);
+        c.g[A1][0] = c.g[V0][0];
+        pk_call(c, PK_FIND, 0x0020_3f6c)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A1][0] = 1;
+        pk_vcall(c, S0, 0x40, 0x0020_3f88)?;
+        c.g[A1][0] = 0;
+        pk_vcall(c, S0, 0x48, 0x0020_3fa0)?;
+    }
+
+    c.cycles += 16;
+    pk_owner_a0(c);
+    c.g[A1][0] = 0x004a_25d8;
+    c.g[S1][0] = 0;
+    pk_call(c, PK_HIDE, 0x0020_3fb4)?;
+    c.g[S6][0] = sx(pk_this(c).wrapping_add(PK_UNLOCKED));
+    pk_owner_a0(c);
+    c.g[A1][0] = 0x0047_0548;
+    pk_call(c, PK_HIDE, 0x0020_3fc8)?;
+    c.g[A1][0] = 0x0047_0000;
+    pk_owner_a0(c);
+    c.g[A1][0] = 0x0047_0558;
+    pk_call(c, PK_HIDE, 0x0020_3fd8)?;
+    c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+
+    // The per-peak markers "PEAKn" (name1) and "...n" (name2).
+    loop {
+        c.cycles += 13;
+        c.g[V0][0] = 0x004a_0000;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2658));
+        c.g[A2][0] = c.g[S0][0];
+        c.g[S2][0] = c.g[S0][0];
+        pk_call(c, PK_SPRINTF, 0x0020_3ff8)?;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = sx((c.g[FP][0] as u32).wrapping_add(0xb38));
+        c.g[A2][0] = c.g[S0][0];
+        pk_call(c, PK_SPRINTF, 0x0020_4008)?;
+        c.g[V1][0] = pk_lw_gp(c, 0xb54);
+        let state_set = c.g[V1][0] != 0;
+        pk_owner_a0(c);
+        let mut hide_name2_only = false;
+        if !state_set {
+            c.cycles += 5;
+            c.g[V0][0] = sx((c.g[S1][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+            if c.g[V1][0] == 0 {
+                c.cycles += 4;
+                c.g[A1][0] = c.g[S4][0];
+                pk_call(c, PK_HIDE, 0x0020_4030)?;
+                c.g[S1][0] = c.g[S2][0];
+                hide_name2_only = true;
+            }
+        }
+        if !hide_name2_only {
+            c.cycles += 6;
+            c.g[A1][0] = c.g[SP][0];
+            pk_call(c, PK_HIDE, 0x0020_4040)?;
+            c.g[V0][0] = pk_lw_gp(c, 0xb5c);
+            c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+            let high_style = c.g[V0][0] == 0;
+            c.g[S1][0] = c.g[S2][0];
+            if !high_style {
+                c.cycles += 4;
+                pk_owner_a0(c);
+                c.g[A1][0] = c.g[S4][0];
+                pk_call(c, PK_HIDE, 0x0020_405c)?;
+                c.g[S1][0] = c.g[S2][0];
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[S1][0] as i64) < 3) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0020_3fe0);
+        }
+    }
+
+    // Help text object hidden; then the peak list and its selection.
+    c.cycles += 21;
+    c.g[A0][0] = 0x0047_0578;
+    pk_call(c, PK_HASH, 0x0020_4078)?;
+    pk_screen_a0(c);
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_FIND, 0x0020_4084)?;
+    c.g[S1][0] = c.g[V0][0];
+    c.g[A1][0] = 0;
+    pk_vcall(c, S1, 0x48, 0x0020_40a0)?;
+    c.g[A0][0] = 0x0047_0600;
+    pk_call(c, PK_HASH, 0x0020_40ac)?;
+    pk_screen_a0(c);
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_FIND, 0x0020_40b8)?;
+    let no_list = c.g[V0][0] == 0;
+    frame.restore(c, S0, 0x370);
+    if no_list {
+        pk_epilogue(c, frame);
+        return Ok(());
+    }
+    c.cycles += 3;
+    c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(PK_LIST_SEL));
+    if c.g[S0][0] == 0 {
+        pk_leave(c, frame);
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(PK_SEL_PEAK));
+    c.g[V0][0] = ((c.g[V0][0] as i64) < 3) as u64;
+    let single_peak = c.g[V0][0] != 0;
+    pk_owner_a0(c);
+    if single_peak {
+        pk_peak_info(c, frame)
+    } else {
+        pk_total_info(c, frame)
+    }
+}
+
+/// The panel of one peak (0..2): help text, then (map style >= 2) the goal
+/// counters of that peak.
+pub(crate) fn pk_peak_info(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 15;
+    c.g[A1][0] = 0x0047_0568;
+    pk_call(c, PK_HIDE, 0x0020_40e8)?;
+    c.g[A1][0] = 1;
+    c.g[FP][0] = c.lw((c.g[S0][0] as u32).wrapping_add(PK_SEL_PEAK));
+    pk_vcall(c, S1, 0x48, 0x0020_4104)?;
+    c.g[V0][0] = sx((c.g[FP][0] as u32) << 2);
+    c.g[V0][0] = sx(pk_this(c).wrapping_add(c.g[V0][0] as u32));
+    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(PK_UNLOCKED));
+    let locked = c.g[V1][0] == 0;
+    c.g[V0][0] = pk_lw_gp(c, 0xb5c);
+    // Which help string, as the original's block ladder: `Some(string)` with
+    // the cycles of the string choice, then `SetTextId(title, hash(string))`
+    // charging `set_cycles`.
+    let set_cycles;
+    if !locked {
+        c.cycles += 3;
+        c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+        if c.g[V0][0] == 0 {
+            c.g[A0][0] = 0x0047_0000;
+            c.cycles += 2;
+            c.g[A0][0] = 0x0047_0b68;
+        } else {
+            c.cycles += 3;
+            c.g[A0][0] = 0x0047_0b50;
+        }
+        set_cycles = 7;
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = 1;
+        let not_one = c.g[FP][0] != c.g[V0][0];
+        c.g[V0][0] = pk_lw_gp(c, 0xb5c);
+        if !not_one {
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[A0][0] = 0x0047_0000;
+                c.cycles += 2;
+                c.g[A0][0] = 0x0047_0b98;
+            } else {
+                c.cycles += 3;
+                c.g[A0][0] = 0x0047_0b80;
+            }
+            set_cycles = 7;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+            c.g[A0][0] = 0x0047_0000;
+            if c.g[V0][0] == 0 {
+                c.g[A0][0] = 0x0047_0bc8;
+                set_cycles = 6;
+            } else {
+                c.cycles += 2;
+                c.g[A0][0] = 0x0047_0bb0;
+                set_cycles = 7;
+            }
+        }
+    }
+    c.cycles += set_cycles;
+    pk_call(
+        c,
+        PK_HASH,
+        if set_cycles == 7 {
+            0x0020_4180
+        } else {
+            0x0020_419c
+        },
+    )?;
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(
+        c,
+        PK_SET_TEXT_ID,
+        if set_cycles == 7 {
+            0x0020_418c
+        } else {
+            0x0020_41a8
+        },
+    )?;
+    c.g[V0][0] = pk_lw_gp(c, 0xb5c);
+
+    c.cycles += 3;
+    c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+    if c.g[V0][0] != 0 {
+        pk_leave(c, frame);
+        return Ok(());
+    }
+
+    // Map style >= 2: goal counters of the peak.
+    c.cycles += 41;
+    c.g[V1][0] = 4;
+    c.g[A0][0] = 0x0047_0be0;
+    pk_sw_sp_reg(c, PK_CNT, V1);
+    pk_call(c, PK_HASH, 0x0020_41cc)?;
+    c.g[S4][0] = 0;
+    pk_screen_a0(c);
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_FIND, 0x0020_41dc)?;
+    c.g[V1][0] = pk_lw_gp(c, 0x848);
+    c.g[S2][0] = c.g[V0][0];
+    c.g[A0][0] = 0x0047_0000;
+    c.g[S0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8c));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xbf8));
+    c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(4));
+    c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
+    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    pk_call(c, PK_HASH, 0x0020_4200)?;
+    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+    c.g[A0][0] = c.g[S0][0];
+    let t = c.g[V1][0] as u32;
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, t, 0x0020_4210)?;
+    c.g[S0][0] = pk_sp_addr(c, PK_BUF);
+    c.g[A1][0] = c.g[V0][0];
+    c.g[A2][0] = sx((c.g[FP][0] as u32).wrapping_add(1));
+    c.g[A0][0] = c.g[S0][0];
+    pk_call(c, PK_SPRINTF1, 0x0020_4224)?;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = c.g[S0][0];
+    pk_call(c, PK_SET_WIDE, 0x0020_4230)?;
+    c.g[A1][0] = pk_lw_sp(c, PK_CNT);
+    c.g[V1][0] = 3;
+    c.g[V0][0] = c.g[FP][0] ^ 2;
+    c.g[A0][0] = pk_sp_addr(c, PK_GOAL_B);
+    if c.g[V0][0] == 0 {
+        c.g[A1][0] = c.g[V1][0];
+    }
+    c.g[S6][0] = pk_sp_addr(c, PK_GOAL_A);
+    pk_sw_sp_reg(c, PK_CNT, A1);
+    pk_sw_sp_reg(c, PK_GOAL_B_PTR, A0);
+    c.g[A2][0] = pk_lw_sp(c, PK_CNT);
+    let no_goals = c.g[A2][0] == 0;
+    c.g[A1][0] = 0;
+    if !no_goals {
+        // Goal records of the first table (0x4781d0, 0x1b0 a peak, 0x6c a
+        // goal): count the medals found.
+        c.cycles += 3;
+        c.g[V0][0] = 0x1b0;
+        c.mult(0, S2, FP, V0);
+        c.g[V0][0] = 0x6c;
+        loop {
+            c.cycles += 8;
+            c.g[A2][0] = 0x0048_0000;
+            c.mult(0, V0, A1, V0);
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x7e30));
+            c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+            c.g[V0][0] = c.g[V1][0] & 7;
+            let aligned = c.g[V0][0] == 0;
+            c.g[A0][0] = c.g[S6][0];
+            c.cycles += 3;
+            c.g[S1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x60));
+            c.g[S0][0] = sx((c.g[S4][0] as u32).wrapping_add(1));
+            if aligned {
+                pk_goal_strides(c, true, [A3, T0, A1, A2], 0x0020_42f4);
+            } else {
+                pk_goal_strides(c, false, [A3, T0, A1, A2], 0x0020_4294);
+            }
+            c.cycles += 19;
+            pk_goal_tail(c, A3, T0);
+            c.g[A2][0] = c.g[S7][0];
+            c.g[A3][0] = pk_lw_sp(c, PK_GOAL_A + 8);
+            c.g[A1][0] = 0;
+            c.g[T0][0] = pk_lw_sp(c, PK_GOAL_A);
+            c.g[A0][0] = c.g[S5][0];
+            pk_call(c, PK_TRACK_MEDAL, 0x0020_4350)?;
+            c.g[V0][0] = !(0u64 | c.g[V0][0]);
+            c.g[A2][0] = pk_lw_sp(c, PK_CNT);
+            c.g[A1][0] = c.g[S1][0];
+            if c.g[V0][0] != 0 {
+                c.g[S4][0] = c.g[S0][0];
+            }
+            c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[A2][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V0][0] = 0x6c;
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0020_4268);
+            }
+        }
+    }
+
+    // The medal-goal count for this peak: shown with its "x of n" text.
+    c.cycles += 20;
+    c.g[A0][0] = 0x0047_0c10;
+    pk_call(c, PK_HASH, 0x0020_4378)?;
+    pk_screen_a0(c);
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_FIND, 0x0020_4384)?;
+    c.g[A3][0] = 0x004a_0000;
+    c.g[S2][0] = c.g[V0][0];
+    c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(0x2398));
+    c.g[A0][0] = c.g[S6][0];
+    c.g[A3][0] = pk_lw_sp(c, PK_CNT);
+    c.g[A2][0] = c.g[S4][0];
+    pk_call(c, PK_SPRINTF, 0x0020_43a0)?;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = c.g[S6][0];
+    pk_call(c, PK_SET_STRING, 0x0020_43ac)?;
+    c.g[T0][0] = pk_lw_sp(c, PK_CNT);
+    c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[T0][0] as i64)) as u64;
+    let short = c.g[V0][0] != 0;
+    c.g[V1][0] = 0x0047_0000;
+    if short {
+        c.cycles += 4;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xc20));
+        pk_call(c, PK_HIDE, 0x0020_43e0)?;
+    } else {
+        c.cycles += 6;
+        c.g[V0][0] = 0x0047_0000;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(0xc20));
+        pk_call(c, PK_SHOW, 0x0020_43cc)?;
+    }
+    c.g[V0][0] = 0x21c;
+
+    // Goal records of the second table (0x4786e0, 0x21c a peak): count.
+    c.cycles += 5;
+    c.g[S4][0] = 0;
+    c.mult(0, S2, FP, V0);
+    c.g[A1][0] = 0;
+    c.g[V0][0] = 0x6c;
+    loop {
+        c.cycles += 8;
+        c.g[A2][0] = 0x0048_0000;
+        c.mult(0, V0, A1, V0);
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x7920));
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+        c.g[V0][0] = c.g[V1][0] & 7;
+        let aligned = c.g[V0][0] == 0;
+        c.g[A0][0] = pk_lw_sp(c, PK_GOAL_B_PTR);
+        c.cycles += 3;
+        c.g[S1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x60));
+        c.g[S0][0] = sx((c.g[S4][0] as u32).wrapping_add(1));
+        if aligned {
+            pk_goal_strides(c, true, [A3, T0, A1, A2], 0x0020_4484);
+        } else {
+            pk_goal_strides(c, false, [A3, T0, A1, A2], 0x0020_4424);
+        }
+        c.cycles += 18;
+        pk_goal_tail(c, A3, T0);
+        c.g[A2][0] = c.g[S7][0];
+        c.g[A3][0] = pk_lw_sp(c, PK_GOAL_B + 8);
+        c.g[A1][0] = 0;
+        c.g[T0][0] = pk_lw_sp(c, PK_GOAL_B);
+        c.g[A0][0] = c.g[S5][0];
+        pk_call(c, PK_TRACK_MEDAL, 0x0020_44e0)?;
+        c.g[V0][0] = !(0u64 | c.g[V0][0]);
+        c.g[A1][0] = c.g[S1][0];
+        if c.g[V0][0] != 0 {
+            c.g[S4][0] = c.g[S0][0];
+        }
+        c.g[V0][0] = ((c.g[A1][0] as i64) < 5) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[V0][0] = 0x6c;
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0020_43f8);
+        }
+    }
+
+    c.cycles += 18;
+    c.g[A0][0] = 0x0047_0c30;
+    pk_call(c, PK_HASH, 0x0020_4504)?;
+    pk_screen_a0(c);
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_FIND, 0x0020_4510)?;
+    c.g[A1][0] = 0x004a_0000;
+    c.g[S2][0] = c.g[V0][0];
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2660));
+    c.g[A0][0] = c.g[S6][0];
+    c.g[A2][0] = c.g[S4][0];
+    pk_call(c, PK_SPRINTF, 0x0020_4528)?;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = c.g[S6][0];
+    pk_call(c, PK_SET_STRING, 0x0020_4534)?;
+    c.g[V0][0] = ((c.g[S4][0] as i64) < 5) as u64;
+    let short = c.g[V0][0] != 0;
+    c.g[A3][0] = 0x0047_0000;
+    if short {
+        c.cycles += 4;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(0xc48));
+        pk_call(c, PK_HIDE, 0x0020_4564)?;
+    } else {
+        c.cycles += 6;
+        c.g[A2][0] = 0x0047_0000;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(0xc48));
+        pk_call(c, PK_SHOW, 0x0020_4550)?;
+    }
+    c.g[A0][0] = pk_lw_sp(c, PK_MIS);
+
+    // Challenges and collectibles: two medals at most.
+    c.cycles += 39;
+    c.g[A1][0] = c.g[FP][0];
+    pk_call(c, 0x0015_43e0, 0x0020_4570)?;
+    c.g[S1][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S5][0];
+    c.g[A1][0] = c.g[FP][0];
+    c.g[A2][0] = 3;
+    pk_call(c, 0x0015_8890, 0x0020_4584)?;
+    c.g[A0][0] = pk_lw_sp(c, PK_MIS);
+    c.g[S1][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+    c.g[S1][0] ^= 1;
+    c.g[A1][0] = 0;
+    c.g[A2][0] = c.g[FP][0];
+    pk_call(c, 0x0015_35c0, 0x0020_459c)?;
+    c.g[A2][0] = 3;
+    c.g[A1][0] = c.g[FP][0];
+    c.g[A0][0] = c.g[S5][0];
+    c.g[S0][0] = c.g[V0][0];
+    pk_call(c, 0x0015_8870, 0x0020_45b0)?;
+    c.g[S0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+    c.g[A0][0] = 0x0047_0000;
+    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xc60));
+    if c.g[S0][0] == 0 {
+        c.g[S1][0] = c.g[V0][0];
+    }
+    pk_call(c, PK_HASH, 0x0020_45c8)?;
+    pk_screen_a0(c);
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_FIND, 0x0020_45d4)?;
+    c.g[A1][0] = 0x004a_0000;
+    c.g[A2][0] = c.g[S1][0];
+    c.g[S2][0] = c.g[V0][0];
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2668));
+    c.g[A0][0] = c.g[S6][0];
+    pk_call(c, PK_SPRINTF, 0x0020_45ec)?;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = c.g[S6][0];
+    pk_call(c, PK_SET_STRING, 0x0020_45f8)?;
+    c.g[S1][0] = ((c.g[S1][0] as i64) < 2) as u64;
+    let few = c.g[S1][0] != 0;
+    c.g[V0][0] = 0x0047_0000;
+    if few {
+        c.cycles += 4;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(0xc70));
+        pk_call(c, PK_HIDE, 0x0020_4628)?;
+    } else {
+        c.cycles += 6;
+        c.g[T0][0] = 0x0047_0000;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[T0][0] as u32).wrapping_add(0xc70));
+        pk_call(c, PK_SHOW, 0x0020_4614)?;
+    }
+    c.g[A0][0] = pk_lw_sp(c, PK_ECON);
+
+    // Earnings: total money earned against the peak's target.
+    c.cycles += 24;
+    c.g[A1][0] = 0;
+    pk_call(c, 0x0015_09f8, 0x0020_4634)?;
+    c.g[A1][0] = c.g[FP][0];
+    c.g[A0][0] = c.g[S5][0];
+    c.g[S0][0] = c.g[V0][0];
+    pk_call(c, 0x0015_88b0, 0x0020_4644)?;
+    c.g[A0][0] = 0x0047_0000;
+    c.g[S1][0] = (c.g[V0][0] < c.g[S0][0]) as u64;
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xc88));
+    pk_call(c, PK_HASH, 0x0020_4654)?;
+    pk_screen_a0(c);
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_FIND, 0x0020_4660)?;
+    c.g[A1][0] = 0x004a_0000;
+    c.g[S2][0] = c.g[V0][0];
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2670));
+    c.g[A0][0] = c.g[S6][0];
+    c.g[A2][0] = c.g[S1][0];
+    pk_call(c, PK_SPRINTF, 0x0020_4678)?;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = c.g[S6][0];
+    pk_call(c, PK_SET_STRING, 0x0020_4684)?;
+    let not_met = (c.g[S1][0] as i64) <= 0;
+    c.g[V1][0] = 0x0047_0000;
+    if not_met {
+        c.cycles += 6;
+        c.g[A2][0] = 0x0047_0000;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(0xc98));
+        pk_call(c, PK_HIDE, 0x0020_46b0)?;
+    } else {
+        c.cycles += 5;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xc98));
+        pk_call(c, PK_SHOW, 0x0020_4698)?;
+    }
+    pk_leave(c, frame);
+    Ok(())
+}
+
+/// The overall entry of the peak list (peak >= 3): the game-wide completion
+/// panel. Counts the goals done over all peaks, the gold medals, the missions
+/// and collectibles and the highlight levels, shows each with its check mark
+/// and ends with the completion percentage.
+pub(crate) fn pk_total_info(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 24;
+    c.g[A1][0] = 0x0047_0568;
+    pk_sw_sp(c, PK_DONE, 0);
+    pk_call(c, PK_SHOW, 0x0020_46c8)?;
+    c.g[S6][0] = 0;
+    pk_owner_a0(c);
+    c.g[A1][0] = 0x004a_2608;
+    pk_call(c, PK_HIDE, 0x0020_46dc)?;
+    c.g[A0][0] = 0x0047_0cb0;
+    pk_call(c, PK_HASH, 0x0020_46e8)?;
+    pk_screen_a0(c);
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_FIND, 0x0020_46f4)?;
+    c.g[A0][0] = 0x0047_0000;
+    c.g[S1][0] = c.g[V0][0];
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xcc8));
+    pk_call(c, PK_HASH, 0x0020_4704)?;
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_SET_TEXT_ID, 0x0020_4710)?;
+    c.g[FP][0] = pk_sp_addr(c, PK_BUF);
+    c.g[S1][0] = 4;
+
+    // Goals done over the three peaks (s6): table A (4 goals, 3 on the last
+    // peak) and table B (5 goals), skipping the medal-only kinds.
+    loop {
+        c.cycles += 7;
+        c.g[V1][0] = 3;
+        c.g[V0][0] = c.g[S6][0] ^ 2;
+        c.g[A3][0] = sx((c.g[S6][0] as u32).wrapping_add(1));
+        c.g[A1][0] = 0;
+        if c.g[V0][0] == 0 {
+            c.g[S1][0] = c.g[V1][0];
+        }
+        let skip = c.g[S1][0] == 0;
+        pk_sw_sp_reg(c, PK_NEXT, A3);
+        if !skip {
+            c.cycles += 7;
+            c.g[V0][0] = 0x1b0;
+            c.g[V1][0] = 0x0048_0000;
+            c.mult(0, S4, S6, V0);
+            c.g[T1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x7e30));
+            c.g[S2][0] = 1;
+            c.g[V0][0] = 0x6c;
+            loop {
+                c.cycles += 6;
+                c.mult(0, V0, A1, V0);
+                c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T1][0] as u32));
+                c.g[V0][0] = c.g[V1][0] & 7;
+                let aligned = c.g[V0][0] == 0;
+                c.g[A0][0] = c.g[FP][0];
+                c.cycles += 2;
+                c.g[S0][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x60));
+                if aligned {
+                    pk_goal_strides(c, true, [A1, A2, A3, T0], 0x0020_47cc);
+                } else {
+                    pk_goal_strides(c, false, [A1, A2, A3, T0], 0x0020_4770);
+                }
+                c.cycles += 10;
+                pk_goal_tail(c, V0, A1);
+                c.g[V1][0] = pk_lw_sp(c, PK_BUF + 8);
+                c.g[V0][0] = c.g[V1][0] ^ 4;
+                let t = c.g[V0][0] == 0;
+                c.g[A1][0] = 0;
+                if !t {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.g[V1][0] ^ 6;
+                    let t = c.g[V0][0] == 0;
+                    c.g[A0][0] = c.g[V1][0];
+                    if !t {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.g[A0][0] ^ 7;
+                        let t = c.g[V0][0] == 0;
+                        c.g[V0][0] = c.g[A0][0] ^ 8;
+                        if !t {
+                            c.cycles += 1;
+                            if c.g[V0][0] != 0 {
+                                c.g[A1][0] = c.g[S2][0];
+                            }
+                        }
+                    }
+                }
+                c.cycles += 2;
+                let skip_goal = c.g[A1][0] == 0;
+                c.g[T0][0] = pk_lw_sp(c, PK_BUF);
+                if !skip_goal {
+                    c.cycles += 12;
+                    c.g[A0][0] = c.g[S5][0];
+                    c.g[A3][0] = pk_lw_sp(c, PK_BUF + 8);
+                    c.g[A1][0] = 0;
+                    frame.save(c, T1, PK_SPILL_T1);
+                    c.g[A2][0] = c.g[S7][0];
+                    pk_call(c, PK_TRACK_MEDAL, 0x0020_485c)?;
+                    c.g[T0][0] = pk_lw_sp(c, PK_DONE);
+                    c.g[V0][0] = (c.g[S2][0] < c.g[V0][0]) as u64;
+                    frame.restore(c, T1, PK_SPILL_T1);
+                    c.g[V1][0] = sx((c.g[T0][0] as u32).wrapping_add(1));
+                    if c.g[V0][0] == 0 {
+                        c.g[T0][0] = c.g[V1][0];
+                    }
+                    pk_sw_sp_reg(c, PK_DONE, T0);
+                }
+                c.cycles += 4;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V0][0] = 0x6c;
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0020_4750);
+                }
+            }
+        }
+        c.cycles += 7;
+        c.g[V0][0] = 0x21c;
+        c.g[V1][0] = 0x0048_0000;
+        c.mult(0, S2, S6, V0);
+        c.g[S4][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x7920));
+        c.g[A1][0] = 0;
+        c.g[S1][0] = 1;
+        c.g[V0][0] = 0x6c;
+        loop {
+            c.cycles += 6;
+            c.mult(0, V0, A1, V0);
+            c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S4][0] as u32));
+            c.g[V0][0] = c.g[V1][0] & 7;
+            let aligned = c.g[V0][0] == 0;
+            c.g[A0][0] = c.g[FP][0];
+            c.cycles += 2;
+            c.g[S0][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x60));
+            if aligned {
+                pk_goal_strides(c, true, [A1, A2, A3, T0], 0x0020_491c);
+            } else {
+                pk_goal_strides(c, false, [A1, A2, A3, T0], 0x0020_48c0);
+            }
+            c.cycles += 10;
+            pk_goal_tail(c, V0, A1);
+            c.g[V1][0] = pk_lw_sp(c, PK_BUF + 8);
+            c.g[V0][0] = c.g[V1][0] ^ 5;
+            let t = c.g[V0][0] == 0;
+            c.g[A1][0] = 0;
+            if !t {
+                c.cycles += 3;
+                c.g[V0][0] = c.g[V1][0] ^ 9;
+                let t = c.g[V0][0] == 0;
+                c.g[A0][0] = c.g[V1][0];
+                if !t {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.g[A0][0] ^ 0xa;
+                    let t = c.g[V0][0] == 0;
+                    c.g[V0][0] = c.g[A0][0] ^ 0xb;
+                    if !t {
+                        c.cycles += 1;
+                        if c.g[V0][0] != 0 {
+                            c.g[A1][0] = c.g[S1][0];
+                        }
+                    }
+                }
+            }
+            c.cycles += 2;
+            let skip_goal = c.g[A1][0] == 0;
+            c.g[T0][0] = pk_lw_sp(c, PK_BUF);
+            if !skip_goal {
+                c.cycles += 10;
+                c.g[A0][0] = c.g[S5][0];
+                c.g[A3][0] = pk_lw_sp(c, PK_BUF + 8);
+                c.g[A1][0] = 0;
+                c.g[A2][0] = c.g[S7][0];
+                pk_call(c, PK_TRACK_MEDAL, 0x0020_49a8)?;
+                c.g[T0][0] = pk_lw_sp(c, PK_DONE);
+                c.g[V0][0] = (c.g[S1][0] < c.g[V0][0]) as u64;
+                c.g[V1][0] = sx((c.g[T0][0] as u32).wrapping_add(1));
+                if c.g[V0][0] == 0 {
+                    c.g[T0][0] = c.g[V1][0];
+                }
+                pk_sw_sp_reg(c, PK_DONE, T0);
+            }
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[V0][0] = ((c.g[A1][0] as i64) < 5) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V0][0] = 0x6c;
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0020_48a0);
+            }
+        }
+        c.cycles += 4;
+        c.g[S6][0] = pk_lw_sp(c, PK_NEXT);
+        c.g[V0][0] = ((c.g[S6][0] as i64) < 3) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[S1][0] = 4;
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0020_4718);
+        }
+    }
+
+    // "done / 14" and its check mark.
+    c.cycles += 19;
+    c.g[A0][0] = 0x0047_0cd8;
+    pk_call(c, PK_HASH, 0x0020_49e8)?;
+    pk_screen_a0(c);
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_FIND, 0x0020_49f4)?;
+    c.g[A2][0] = pk_lw_sp(c, PK_DONE);
+    c.g[A1][0] = 0x004a_0000;
+    c.g[S1][0] = c.g[V0][0];
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2678));
+    c.g[A0][0] = c.g[FP][0];
+    pk_call(c, PK_SPRINTF, 0x0020_4a0c)?;
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[FP][0];
+    pk_call(c, PK_SET_STRING, 0x0020_4a18)?;
+    c.g[V1][0] = pk_lw_sp(c, PK_DONE);
+    c.g[V0][0] = ((c.g[V1][0] as i64) < 14) as u64;
+    let short = c.g[V0][0] != 0;
+    c.g[A3][0] = 0x0047_0000;
+    if short {
+        c.cycles += 4;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(0xce8));
+        pk_call(c, PK_HIDE, 0x0020_4a4c)?;
+    } else {
+        c.cycles += 6;
+        c.g[A2][0] = 0x0047_0000;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(0xce8));
+        pk_call(c, PK_SHOW, 0x0020_4a38)?;
+    }
+    c.g[A0][0] = 0x0047_0000;
+
+    // Gold medals: twelve track medals (kind, track), "gold / 12".
+    c.cycles += 124;
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xd00));
+    pk_call(c, PK_HASH, 0x0020_4a58)?;
+    pk_screen_a0(c);
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_FIND, 0x0020_4a64)?;
+    c.g[S1][0] = c.g[V0][0];
+    const GOLD: [(u64, u64, u32); 12] = [
+        (4, 0xe, 0x0020_4a80),
+        (6, 0xe, 0x0020_4aa0),
+        (5, 0xe, 0x0020_4ac4),
+        (9, 0xe, 0x0020_4ae8),
+        (4, 0xf, 0x0020_4b0c),
+        (7, 0xf, 0x0020_4b30),
+        (5, 0xf, 0x0020_4b54),
+        (0xa, 0xf, 0x0020_4b78),
+        (4, 0x10, 0x0020_4b9c),
+        (8, 0x10, 0x0020_4bc0),
+        (5, 0x10, 0x0020_4be4),
+        (0xb, 0x10, 0x0020_4c08),
+    ];
+    for (i, (a3, t0, ret)) in GOLD.into_iter().enumerate() {
+        c.g[A0][0] = c.g[S5][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = c.g[S7][0];
+        c.g[A3][0] = a3;
+        c.g[T0][0] = t0;
+        pk_call(c, PK_TRACK_MEDAL, ret)?;
+        if i == 0 {
+            c.g[V0][0] = !(0u64 | c.g[V0][0]);
+            c.g[S0][0] = (0u64 < c.g[V0][0]) as u64;
+        } else {
+            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+            c.g[V0][0] = !(0u64 | c.g[V0][0]);
+            if c.g[V0][0] != 0 {
+                c.g[S0][0] = c.g[V1][0];
+            }
+        }
+    }
+    c.g[A1][0] = 0x004a_0000;
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2680));
+    c.g[A0][0] = c.g[FP][0];
+    c.g[A2][0] = c.g[S0][0];
+    pk_call(c, PK_SPRINTF, 0x0020_4c28)?;
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[FP][0];
+    pk_call(c, PK_SET_STRING, 0x0020_4c34)?;
+    c.g[V0][0] = ((c.g[S0][0] as i64) < 12) as u64;
+    let short = c.g[V0][0] != 0;
+    c.g[V0][0] = 0x0047_0000;
+    if short {
+        c.cycles += 4;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(0xd10));
+        pk_call(c, PK_HIDE, 0x0020_4c64)?;
+    } else {
+        c.cycles += 6;
+        c.g[T0][0] = 0x0047_0000;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[T0][0] as u32).wrapping_add(0xd10));
+        pk_call(c, PK_SHOW, 0x0020_4c50)?;
+    }
+    c.g[A0][0] = 0x0047_0000;
+
+    // Missions done / total over the three peaks.
+    c.cycles += 20;
+    c.lwc1(24, sp(c).wrapping_add(PK_DONE));
+    c.cvt_s_w(24, 24);
+    c.mtc1(S0, 25);
+    c.cvt_s_w(25, 25);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xd28));
+    pk_call(c, PK_HASH, 0x0020_4c80)?;
+    c.g[S2][0] = 0;
+    pk_screen_a0(c);
+    c.g[A1][0] = c.g[V0][0];
+    c.g[S4][0] = 0;
+    c.g[S0][0] = 0;
+    pk_call(c, PK_FIND, 0x0020_4c98)?;
+    c.g[A0][0] = 0x0047_0000;
+    c.g[S1][0] = c.g[V0][0];
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xd40));
+    pk_call(c, PK_HASH, 0x0020_4ca8)?;
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_SET_TEXT_ID, 0x0020_4cb4)?;
+    c.g[A0][0] = pk_lw_sp(c, PK_MIS);
+    loop {
+        c.cycles += 11;
+        c.g[A1][0] = c.g[S0][0];
+        pk_call(c, 0x0015_43e0, 0x0020_4cc0)?;
+        c.g[A0][0] = pk_lw_sp(c, PK_MIS);
+        c.g[A1][0] = c.g[S0][0];
+        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+        pk_call(c, 0x0015_4368, 0x0020_4cd4)?;
+        c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V0][0] = ((c.g[S0][0] as i64) < 3) as u64;
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        c.g[A0][0] = pk_lw_sp(c, PK_MIS);
+        if event_due(c) {
+            deliver_event_here(c, 0x0020_4cb8);
+        }
+    }
+    c.cycles += 19;
+    c.g[A0][0] = 0x0047_0d58;
+    pk_call(c, PK_HASH, 0x0020_4cf0)?;
+    pk_screen_a0(c);
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_FIND, 0x0020_4cfc)?;
+    c.g[V1][0] = 0x004a_0000;
+    c.g[S1][0] = c.g[V0][0];
+    c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2398));
+    c.g[A0][0] = c.g[FP][0];
+    c.g[A2][0] = c.g[S2][0];
+    c.g[A3][0] = c.g[S4][0];
+    pk_call(c, PK_SPRINTF, 0x0020_4d18)?;
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[FP][0];
+    pk_call(c, PK_SET_STRING, 0x0020_4d24)?;
+    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[S4][0] as i64)) as u64;
+    let short = c.g[V0][0] != 0;
+    c.g[A3][0] = 0x0047_0000;
+    if short {
+        c.cycles += 3;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(0xd68));
+        pk_call(c, PK_HIDE, 0x0020_4d54)?;
+    } else {
+        c.cycles += 6;
+        c.g[A2][0] = 0x0047_0000;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(0xd68));
+        pk_call(c, PK_SHOW, 0x0020_4d40)?;
+    }
+
+    // Collectibles found / total.
+    c.cycles += 9;
+    c.mtc1(S2, 23);
+    c.cvt_s_w(23, 23);
+    c.g[S0][0] = 0;
+    c.mtc1(S4, 22);
+    c.cvt_s_w(22, 22);
+    c.g[S2][0] = 0;
+    c.g[S4][0] = 0;
+    c.g[A0][0] = pk_lw_sp(c, PK_MIS);
+    loop {
+        c.cycles += 12;
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        pk_call(c, 0x0015_35c0, 0x0020_4d84)?;
+        c.g[A0][0] = pk_lw_sp(c, PK_MIS);
+        c.g[A1][0] = c.g[S0][0];
+        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+        pk_call(c, 0x0015_3390, 0x0020_4d98)?;
+        c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V0][0] = ((c.g[S0][0] as i64) < 3) as u64;
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        c.g[A0][0] = pk_lw_sp(c, PK_MIS);
+        if event_due(c) {
+            deliver_event_here(c, 0x0020_4d78);
+        }
+    }
+    c.cycles += 19;
+    c.g[A0][0] = 0x0047_0d80;
+    pk_call(c, PK_HASH, 0x0020_4db4)?;
+    pk_screen_a0(c);
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_FIND, 0x0020_4dc0)?;
+    c.g[T0][0] = 0x004a_0000;
+    c.g[S1][0] = c.g[V0][0];
+    c.g[A1][0] = sx((c.g[T0][0] as u32).wrapping_add(0x2398));
+    c.g[A0][0] = c.g[FP][0];
+    c.g[A2][0] = c.g[S2][0];
+    c.g[A3][0] = c.g[S4][0];
+    pk_call(c, PK_SPRINTF, 0x0020_4ddc)?;
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[FP][0];
+    pk_call(c, PK_SET_STRING, 0x0020_4de8)?;
+    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[S4][0] as i64)) as u64;
+    let short = c.g[V0][0] != 0;
+    c.g[V1][0] = 0x0047_0000;
+    if short {
+        c.cycles += 4;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xd90));
+        pk_call(c, PK_HIDE, 0x0020_4e18)?;
+    } else {
+        c.cycles += 6;
+        c.g[V0][0] = 0x0047_0000;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(0xd90));
+        pk_call(c, PK_SHOW, 0x0020_4e04)?;
+    }
+    c.g[A0][0] = 0x0047_0000;
+
+    // Highlight levels (8 slots), "highlights / 24".
+    c.cycles += 19;
+    c.mtc1(S2, 21);
+    c.cvt_s_w(21, 21);
+    c.mtc1(S4, 20);
+    c.cvt_s_w(20, 20);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xda8));
+    pk_call(c, PK_HASH, 0x0020_4e34)?;
+    c.g[S2][0] = 0;
+    pk_screen_a0(c);
+    c.g[A1][0] = c.g[V0][0];
+    c.g[S0][0] = 0;
+    pk_call(c, PK_FIND, 0x0020_4e48)?;
+    c.g[A0][0] = 0x0047_0000;
+    c.g[S1][0] = c.g[V0][0];
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xdc0));
+    pk_call(c, PK_HASH, 0x0020_4e58)?;
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_SET_TEXT_ID, 0x0020_4e64)?;
+    c.g[A0][0] = pk_lw_sp(c, PK_SCORE);
+    loop {
+        c.cycles += 7;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+        pk_call(c, 0x0015_52b0, 0x0020_4e74)?;
+        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V0][0] = ((c.g[S0][0] as i64) < 8) as u64;
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        c.g[A0][0] = pk_lw_sp(c, PK_SCORE);
+        if event_due(c) {
+            deliver_event_here(c, 0x0020_4e68);
+        }
+    }
+    c.cycles += 17;
+    c.g[A1][0] = 0x004a_0000;
+    c.g[A2][0] = c.g[S2][0];
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2688));
+    c.g[A0][0] = c.g[FP][0];
+    pk_call(c, PK_SPRINTF, 0x0020_4e98)?;
+    c.g[A0][0] = 0x0047_0dd8;
+    pk_call(c, PK_HASH, 0x0020_4ea4)?;
+    pk_screen_a0(c);
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_FIND, 0x0020_4eb0)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = c.g[FP][0];
+    pk_call(c, PK_SET_STRING, 0x0020_4ebc)?;
+    c.g[V0][0] = ((c.g[S2][0] as i64) < 24) as u64;
+    let short = c.g[V0][0] != 0;
+    c.g[A3][0] = 0x0047_0000;
+    if short {
+        c.cycles += 3;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(0xde8));
+        pk_call(c, PK_HIDE, 0x0020_4eec)?;
+    } else {
+        c.cycles += 6;
+        c.g[A2][0] = 0x0047_0000;
+        pk_owner_a0(c);
+        c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(0xde8));
+        pk_call(c, PK_SHOW, 0x0020_4ed8)?;
+    }
+
+    // Completion percentage: (done/14 + gold/12 + missions + collectibles +
+    // highlights/24) * 20, 100 only when exactly 100.0, else at most 99.
+    c.cycles += 23;
+    let a = (c.g[GP][0] as u32).wrapping_sub(0x552c);
+    c.lwc1(0, a);
+    c.div_s(7, 23, 22);
+    c.lwc1(2, a.wrapping_add(4));
+    c.div_s(6, 21, 20);
+    c.mul_s(0, 24, 0);
+    c.lwc1(3, a.wrapping_add(8));
+    c.mul_s(2, 25, 2);
+    c.g[AT][0] = 0x41a0_0000;
+    c.mtc1(AT, 5);
+    c.mtc1(S2, 1);
+    c.cvt_s_w(1, 1);
+    c.g[AT][0] = 0x42c8_0000;
+    c.mtc1(AT, 4);
+    c.add_s(0, 0, 2);
+    c.mul_s(1, 1, 3);
+    c.add_s(0, 0, 7);
+    c.add_s(0, 0, 6);
+    c.add_s(0, 0, 1);
+    c.mul_s(1, 0, 5);
+    c.c_eq_s(1, 4);
+    let exactly_100 = c.fcc();
+    c.g[S0][0] = 0x64;
+    if !exactly_100 {
+        c.cycles += 8;
+        c.g[AT][0] = 0x42c6_0000;
+        c.mtc1(AT, 0);
+        c.cvt_w_s(2, 1);
+        c.mfc1(S0, 2);
+        c.c_le_s(0, 1);
+        if c.fcc() {
+            c.g[S0][0] = 0x63;
+        }
+    }
+    c.cycles += 16;
+    c.g[A0][0] = 0x0047_0e00;
+    pk_call(c, PK_HASH, 0x0020_4f74)?;
+    c.g[A0][0] = c.lw((pk_this(c)).wrapping_add(PK_SCREEN));
+    c.g[A1][0] = c.g[V0][0];
+    pk_call(c, PK_FIND, 0x0020_4f80)?;
+    c.g[A1][0] = 0x004a_0000;
+    c.g[S1][0] = c.g[V0][0];
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2690));
+    c.g[A0][0] = c.g[FP][0];
+    c.g[A2][0] = c.g[S0][0];
+    pk_call(c, PK_SPRINTF, 0x0020_4f98)?;
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = c.g[FP][0];
+    pk_call(c, PK_SET_STRING, 0x0020_4fa4)?;
+    pk_leave(c, frame);
+    Ok(())
+}
+
+/// `EventSelect_OnWidgetCreated` (0x002009d0): Widget-created hook of the event-select map: when the widget's label is the peak list, selects menu entry 2 (map style < 2) or `2 - location.peak`. `(self, menu)`.
+#[allow(
+    unused_labels,
+    unused_assignments,
+    unused_variables,
+    unreachable_code,
+    unused_mut
+)]
+pub fn event_select_on_widget_created(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_200a58: {
+            c.cycles += 17;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[S1][0] = c.g[A1][0];
+            call_ptr(c, 0x0014dc80, 0x002009ec)?; // call_indirect
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0u64;
+            call_ptr(c, 0x0014dd58, 0x002009f8)?; // call_indirect
+            c.g[A0][0] = 0x470000;
+            c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x38));
+            c.g[S2][0] = c.g[V0][0];
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x600));
+            call_ptr(c, 0x00317670, 0x00200a0c)?; // call_indirect
+            let t = c.g[S0][0] != c.g[V0][0];
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+            if t {
+                break 'b_200a58;
+            } else {
+                'b_200a34: {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xb5c));
+                    c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A0][0] = c.g[S1][0];
+                    if t {
+                        break 'b_200a34;
+                    } else {
+                        c.cycles += 4;
+                        c.g[A1][0] = 0x2;
+                        call_ptr(c, 0x0039b960, 0x00200a2c)?; // call_indirect
+                        let t = true;
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                        if t {
+                            break 'b_200a58;
+                        } else {
+                            break 'b_200a34;
+                        }
+                    }
+                }
+                c.cycles += 9;
+                c.g[A0][0] = c.g[S2][0];
+                call_ptr(c, 0x00144bc0, 0x00200a3c)?; // call_indirect
+                c.g[V1][0] = c.lbu((c.g[V0][0] as u32).wrapping_add(0x54));
+                c.g[A1][0] = 0x2;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                c.g[A1][0] = c.g[A1][0] & 0xff;
+                call_ptr(c, 0x0039b960, 0x00200a54)?; // call_indirect
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                break 'b_200a58;
+            }
+        }
+        c.cycles += 5;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `EventSelect_Update` (0x00202828): Per-frame update of the event-select map widget: fades the map picture in, shows or hides the peak outlines / indicators and the "you are here" markers, and applies the async-loaded map texture once its slot is loaded. `(self)`.
+#[allow(
+    unused_labels,
+    unused_assignments,
+    unused_variables,
+    unreachable_code,
+    unused_mut
+)]
+pub fn event_select_update(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2029bc: {
+            'b_20294c: {
+                c.cycles += 17;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xa0));
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+                c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+                c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+                c.g[S0][0] = c.g[A0][0];
+                call_ptr(c, 0x0014dc80, 0x00202850)?; // call_indirect
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 0u64;
+                call_ptr(c, 0x0014dd58, 0x0020285c)?; // call_indirect
+                c.g[S5][0] = c.g[V0][0];
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2dc));
+                if c.g[V0][0] == 0u64 {
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x2e0), 0u64);
+                    break 'b_20294c;
+                } else {
+                    'b_202898: {
+                        c.cycles += 7;
+                        c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0x2e0));
+                        c.g[AT][0] = 0x3f800000;
+                        c.mtc1(1, 0);
+                        c.c_lt_s(1, 0);
+                        if !c.fcc() {
+                            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2e4));
+                            break 'b_202898;
+                        } else {
+                            c.cycles += 4;
+                            c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x5530));
+                            c.add_s(0, 1, 0);
+                            c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x2e0));
+                            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2e4));
+                            break 'b_202898;
+                        }
+                    }
+                    'b_202938: {
+                        c.cycles += 26;
+                        c.g[A1][0] = c.g[SP][0];
+                        c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0x2e0));
+                        c.ldl(2, (c.g[A0][0] as u32).wrapping_add(0x23));
+                        c.ldr(2, (c.g[A0][0] as u32).wrapping_add(0x1c));
+                        c.ldl(3, (c.g[A0][0] as u32).wrapping_add(0x2b));
+                        c.ldr(3, (c.g[A0][0] as u32).wrapping_add(0x24));
+                        c.sdl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
+                        c.sdr(2, c.g[SP][0] as u32);
+                        c.sdl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
+                        c.sdr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
+                        c.swc1(0, c.g[SP][0] as u32);
+                        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+                        c.g[V1][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x58));
+                        c.g[A2][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x5c));
+                        let t = c.g[A2][0] as u32;
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                        call_ptr(c, t, 0x002028d8)?; // call_indirect
+                        c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2e4));
+                        c.g[A1][0] = 0x1;
+                        c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x8));
+                        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
+                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
+                        let t = c.g[V1][0] as u32;
+                        c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, t, 0x002028f4)?; // call_indirect
+                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xb54));
+                        if c.g[V0][0] != 0u64 {
+                            c.g[A1][0] = 0x470000;
+                            break 'b_202938;
+                        } else {
+                            c.cycles += 14;
+                            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2ec));
+                            c.g[A1][0] = 0x470000;
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x588));
+                            call_ptr(c, 0x0039e948, 0x00202910)?; // call_indirect
+                            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2ec));
+                            c.g[A1][0] = 0x470000;
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x598));
+                            call_ptr(c, 0x0039e948, 0x00202920)?; // call_indirect
+                            c.g[A1][0] = 0x470000;
+                            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2ec));
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x5a8));
+                            call_ptr(c, 0x0039e948, 0x00202930)?; // call_indirect
+                            let t = true;
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2f0));
+                            if t {
+                                break 'b_2029bc;
+                            } else {
+                                break 'b_202938;
+                            }
+                        }
+                    }
+                    c.cycles += 5;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2ec));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7a0));
+                    call_ptr(c, 0x0039e948, 0x00202944)?; // call_indirect
+                    let t = true;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2f0));
+                    if t {
+                        break 'b_2029bc;
+                    } else {
+                        break 'b_20294c;
+                    }
+                }
+            }
+            'b_2029ac: {
+                c.cycles += 10;
+                c.g[A1][0] = 0u64;
+                c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2e4));
+                c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
+                let t = c.g[V1][0] as u32;
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, t, 0x00202968)?; // call_indirect
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xb54));
+                if c.g[V0][0] != 0u64 {
+                    c.g[A1][0] = 0x470000;
+                    break 'b_2029ac;
+                } else {
+                    c.cycles += 14;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2ec));
+                    c.g[A1][0] = 0x470000;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x588));
+                    call_ptr(c, 0x0039e8b8, 0x00202984)?; // call_indirect
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2ec));
+                    c.g[A1][0] = 0x470000;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x598));
+                    call_ptr(c, 0x0039e8b8, 0x00202994)?; // call_indirect
+                    c.g[A1][0] = 0x470000;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2ec));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x5a8));
+                    call_ptr(c, 0x0039e8b8, 0x002029a4)?; // call_indirect
+                    let t = true;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2f0));
+                    if t {
+                        break 'b_2029bc;
+                    } else {
+                        break 'b_2029ac;
+                    }
+                }
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2ec));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7a0));
+            call_ptr(c, 0x0039e8b8, 0x002029b8)?; // call_indirect
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2f0));
+            break 'b_2029bc;
+        }
+        'b_202ab8: {
+            c.cycles += 2;
+            if c.g[V0][0] != 0u64 {
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+                break 'b_202ab8;
+            } else {
+                c.cycles += 5;
+                c.g[S1][0] = 0u64;
+                c.g[S2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[S4][0] = 0x470000;
+                c.g[A2][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                'l_2029d8: loop {
+                    'b_202a4c: {
+                        'b_202a40: {
+                            'b_202a3c: {
+                                c.cycles += 7;
+                                c.g[A0][0] = c.g[S2][0];
+                                c.g[S3][0] = c.g[A2][0];
+                                c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_add(0x7b0));
+                                call_ptr(c, 0x00417828, 0x002029e8)?; // call_indirect
+                                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2dc));
+                                let t = c.g[V1][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xb54));
+                                if t {
+                                    break 'b_202a3c;
+                                } else {
+                                    c.cycles += 2;
+                                    if c.g[V0][0] != 0u64 {
+                                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2ec));
+                                        break 'b_202a40;
+                                    } else {
+                                        c.cycles += 5;
+                                        c.g[A0][0] = c.g[S5][0];
+                                        call_ptr(c, 0x00144bc0, 0x00202a04)?; // call_indirect
+                                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x54));
+                                        if c.g[S1][0] != c.g[V1][0] {
+                                            c.g[A0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x2ec));
+                                            break 'b_202a40;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                                            let t = c.g[V0][0] != 0u64;
+                                            c.g[A0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x2ec));
+                                            if t {
+                                                break 'b_202a40;
+                                            } else {
+                                                c.cycles += 4;
+                                                c.g[V0][0] =
+                                                    c.lw((c.g[GP][0] as u32).wrapping_sub(0xb5c));
+                                                c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
+                                                let t = c.g[V0][0] != 0u64;
+
+                                                if t {
+                                                    break 'b_202a40;
+                                                } else {
+                                                    c.cycles += 4;
+                                                    c.g[A1][0] = c.g[S2][0];
+                                                    call_ptr(c, 0x0039e948, 0x00202a34)?; // call_indirect
+                                                    let t = true;
+                                                    c.g[S1][0] = c.g[S3][0];
+                                                    if t {
+                                                        break 'b_202a4c;
+                                                    } else {
+                                                        break 'b_202a3c;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            c.cycles += 1;
+                            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2ec));
+                            break 'b_202a40;
+                        }
+                        c.cycles += 3;
+                        c.g[A1][0] = c.g[S2][0];
+                        call_ptr(c, 0x0039e8b8, 0x00202a48)?; // call_indirect
+                        c.g[S1][0] = c.g[S3][0];
+                        break 'b_202a4c;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < 3i64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[A2][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002029d8);
+                        }
+                        continue 'l_2029d8;
+                    } else {
+                        c.cycles += 8;
+                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2d8));
+                        c.g[S1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x11c));
+                        c.g[A0][0] = c.g[S1][0];
+                        call_ptr(c, 0x001a39c0, 0x00202a6c)?; // call_indirect
+                        c.g[V1][0] = 0x3;
+                        if c.g[V0][0] != c.g[V1][0] {
+                            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+                            break 'b_202ab8;
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2dc));
+                            if c.g[V0][0] != 0u64 {
+                                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+                                break 'b_202ab8;
+                            } else {
+                                'b_202ab4: {
+                                    c.cycles += 3;
+                                    c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2e4));
+                                    let t = c.g[A2][0] == 0u64;
+                                    c.g[V1][0] = 0x11c;
+                                    if t {
+                                        break 'b_202ab4;
+                                    } else {
+                                        c.cycles += 9;
+                                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2d8));
+                                        c.g[A1][0] = 0x1;
+                                        c.mult(0, 4, 2, 3);
+                                        c.g[V0][0] =
+                                            sx((c.g[A0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                                        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x110));
+                                        c.sw((c.g[A2][0] as u32).wrapping_add(0x7c), 0u64);
+                                        c.sw((c.g[A2][0] as u32).wrapping_add(0x78), c.g[A0][0]);
+                                        c.sw((c.g[S0][0] as u32).wrapping_add(0x2dc), c.g[A1][0]);
+                                        c.sw((c.g[S0][0] as u32).wrapping_add(0x2e0), 0u64);
+                                        break 'b_202ab4;
+                                    }
+                                }
+                                c.cycles += 1;
+                                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+                                break 'b_202ab8;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        c.cycles += 8;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2791,6 +5908,595 @@ pub(crate) mod tests {
                 c.bus.write32(DATA + 0x2d8, seed as u32);
                 c.bus.write32(DATA + 0x2dc, 0);
                 c.bus.write32(W + 0x11c, DATA + 0x3000);
+            },
+        );
+    }
+
+    use crate::difftest::elf_image;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::FAKE;
+
+    pub(crate) use crate::game::fe::festateloadscreen::tests::oc444_run;
+
+    pub(crate) use crate::game::fe::festateloadscreen::tests::OC444_ASYNC;
+
+    pub(crate) use crate::game::fe::festateloadscreen::tests::OC444_L1;
+
+    pub(crate) use crate::game::fe::festateloadscreen::tests::OC444_OBJ;
+    pub(crate) use crate::game::fe::festateloadscreen::tests::OC444_OBJ2;
+
+    use std::ptr::addr_of_mut;
+
+    /// The owner screen object, its UI state (empty object list: the real
+    /// show/hide callees return at once), the widget screen with one list-menu
+    /// object, and that object's vtable.
+    pub(crate) const OC440_SELF: u32 = DATA + 0x400;
+
+    pub(crate) const OC440_UI_STATE: u32 = DATA + 0x2000;
+
+    pub(crate) const OC440_SCREEN: u32 = DATA + 0x3000;
+
+    pub(crate) const OC440_COUNT: u32 = DATA + 0x3100;
+
+    pub(crate) const OC440_OBJECTS: u32 = DATA + 0x3200;
+
+    pub(crate) const OC440_OBJ: u32 = DATA + 0x4000;
+
+    pub(crate) const OC440_VTABLE: u32 = DATA + 0x4200;
+
+    /// `GetHashValue32(addr)` as the game computes it (every string of the
+    /// test RAM is empty, so all names hash alike and the one object matches
+    /// every lookup).
+    pub(crate) fn oc440_hash(c: &mut Cpu, s: u32) -> u32 {
+        const BACK: u32 = 0x0012_3450;
+        c.g[RA][0] = BACK as u64;
+        c.g[A0][0] = sx(s);
+        c.pc = ES_STR_HASH;
+        ssx3_ee_rt::funcs::call_indirect(c, ES_STR_HASH);
+        assert_eq!(c.pc, BACK, "GetHashValue32 did not return");
+        c.g[V0][0] as u32
+    }
+
+    pub(crate) fn oc440_fixture(c: &mut Cpu, seed: u32, state: u32) {
+        let mut r: Rng = machine(c, seed, 0x20_2ad8, 0);
+        let gp = GAME_GP;
+        c.bus.write32(gp - ES_GP_MAP_STATE, state);
+        c.bus
+            .write32(gp - ES_GP_SELECTED_EVENT, [0, 1, 2, 5][seed as usize % 4]);
+        c.bus.write32(gp - ES_GP_PEAK, r.next_u32() % 4);
+        c.bus.write32(gp - ES_GP_MAP_STYLE, r.next_u32() % 4);
+        c.bus
+            .write32(OC440_SELF + ES_HAS_FOCUS, (seed % 3 != 0) as u32);
+        c.bus
+            .write32(OC440_SELF + ES_LOCKS_FLAG, (seed % 5 < 2) as u32);
+        c.bus.write32(OC440_SELF + ES_SCREEN, OC440_SCREEN);
+        c.bus.write32(OC440_SELF + ES_UI_STATE, OC440_UI_STATE);
+        // A list-menu object found by every name (its text-id slot at +0xb0
+        // and a vtable whose virtual calls land in the fake).
+        let h = oc440_hash(c, DATA + 0x100);
+        c.bus.write32(OC440_OBJ + 0x38, h);
+        c.bus
+            .write8(OC440_OBJ + ES_LIST_STATE, (r.next_u32() % 5) as u8);
+        c.bus.write32(OC440_OBJ + 8, OC440_VTABLE);
+        for off in [0x28u32, 0x48] {
+            c.bus.write16(OC440_VTABLE + off, 0);
+            c.bus.write32(OC440_VTABLE + off + 4, FAKE);
+        }
+        c.bus.write32(OC440_COUNT, 1);
+        c.bus.write32(OC440_OBJECTS, OC440_OBJ);
+        c.bus.write32(OC440_SCREEN + 0x38, OC440_COUNT);
+        // Every seventh seed has no objects: all lookups return null.
+        c.bus.write32(
+            OC440_SCREEN + 0x3c,
+            if seed % 7 == 0 { 0 } else { OC440_OBJECTS },
+        );
+        c.g[A0][0] = sx(OC440_SELF);
+        c.pc = 0x0020_2ad8;
+    }
+
+    /// Map states 0 (peaks) and 1 (peak goals), plus the states that only
+    /// restore and return (negative, 3): focus, lock flag, list state 0..4,
+    /// map style, peak number all vary.
+    #[test]
+    fn event_select_update_mode_panels_matches() {
+        check(
+            ee::s05::f_00202ad8__generated,
+            event_select_update_mode_panels,
+            210,
+            &|c, seed| {
+                let state = [0u32, 1, 0, 1, 0xffff_ffff, 3, 1][seed as usize % 7];
+                oc440_fixture(c, seed, state);
+            },
+        );
+    }
+
+    /// Map state 2 (events): runs the real `EventSelect_RefreshEventList` on
+    /// the fixture, so it needs the back-end library singleton.
+    #[test]
+    fn event_select_update_mode_panels_events_matches() {
+        check(
+            ee::s05::f_00202ad8__generated,
+            event_select_update_mode_panels,
+            24,
+            &|c, seed| {
+                oc440_fixture(c, seed, 2);
+                c.bus.write32(GAME_GP - 0x1f04, DATA + 0x20_0000);
+            },
+        );
+    }
+
+    /// `EventSelect_SetMode` test fixture addresses (above the fake-call log
+    /// and below the heap).
+    pub(crate) const T_SM_SELF: u32 = DATA + 0x100;
+
+    pub(crate) const T_SM_STATE: u32 = DATA + 0x1000;
+
+    pub(crate) const T_SM_SCREEN: u32 = DATA + 0x2000;
+
+    pub(crate) const T_SM_COUNT: u32 = DATA + 0x2100;
+
+    pub(crate) const T_SM_LIST: u32 = DATA + 0x2200;
+
+    pub(crate) const T_SM_VT: u32 = DATA + 0x2800;
+
+    pub(crate) const T_SM_OBJS: u32 = DATA + 0x4000;
+
+    /// Name offsets (from `0x470000`) of the 14 panel widgets in hide order,
+    /// then the confirm "No" button, the title and the tab label.
+    pub(crate) const T_SM_NAMES: [u32; 17] = [
+        0x600, 0x918, 0x928, 0x938, 0x948, 0x960, 0x978, 0x990, 0x9a8, 0x9c0, 0x9d8, 0x9f0, 0xa08,
+        0xa20, 0x6c8, 0x518, 0xab8,
+    ];
+
+    /// `StrHash(string at addr)` through the real function.
+    pub(crate) fn t_sm_hash(c: &mut Cpu, addr: u32) -> u32 {
+        const RET: u32 = 0x0012_3450;
+        c.g[A0][0] = sx(addr);
+        c.g[RA][0] = RET as u64;
+        c.pc = 0x0031_7670;
+        ssx3_ee_rt::funcs::call_indirect(c, 0x0031_7670);
+        assert_eq!(c.pc, RET, "StrHash did not return");
+        c.g[V0][0] as u32
+    }
+
+    /// A screen holding the widgets named in `T_SM_NAMES` (the first 14 of
+    /// them only where `absent` has no bit set), every widget with the same
+    /// all-fake vtable, and the event-select object `T_SM_SELF` pointing at
+    /// it and at an empty UI state.
+    pub(crate) fn t_sm_screen(c: &mut Cpu, r: &mut Rng, absent: u32, with_screen: bool) {
+        for (i, off) in [0x38u32, 0x48, 0x40, 0x28].into_iter().enumerate() {
+            let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+            c.bus.write16(T_SM_VT + off, delta as u16);
+            c.bus.write32(T_SM_VT + off + 4, FAKE + 0x10 * i as u32);
+        }
+        let mut count = 0;
+        for (k, off) in T_SM_NAMES.into_iter().enumerate() {
+            let name = 0x0047_0000 + off;
+            c.bus.write8(name, b'A' + k as u8);
+            c.bus.write8(name + 1, b'x');
+            c.bus.write8(name + 2, 0);
+            if k < 14 && (absent >> k) & 1 != 0 {
+                continue;
+            }
+            let hash = t_sm_hash(c, name);
+            let obj = T_SM_OBJS + 0x100 * k as u32;
+            c.bus.write32(obj + 8, T_SM_VT);
+            c.bus.write32(obj + 0x14, r.next_u32());
+            c.bus.write32(obj + 0x38, hash);
+            c.bus.write32(T_SM_LIST + 4 * count, obj);
+            count += 1;
+        }
+        c.bus.write32(T_SM_COUNT, count);
+        c.bus.write32(T_SM_SCREEN + 0x38, T_SM_COUNT);
+        c.bus.write32(T_SM_SCREEN + 0x3c, T_SM_LIST);
+        c.bus.write32(
+            T_SM_SELF + ES_SETMODE_SCREEN,
+            if with_screen { T_SM_SCREEN } else { 0 },
+        );
+        c.bus.write32(T_SM_SELF + ES_SETMODE_STATE, T_SM_STATE);
+    }
+
+    /// The `gp`-relative globals the function reads.
+    pub(crate) fn t_sm_globals(c: &mut Cpu, flow: u32, peak: u32, event: u32) {
+        c.bus.write32(GAME_GP - ES_SETMODE_G_FLOW, flow);
+        c.bus.write32(GAME_GP - ES_SETMODE_G_PEAK, peak);
+        c.bus.write32(GAME_GP - ES_SETMODE_G_EVENT, event);
+    }
+
+    /// `EventSelect_SetMode` against the generated body: the confirm popup
+    /// (with every focus: no panel code runs), the event panel (focus 2) for
+    /// every peak, tab and flow, and focus values with no panel (negative,
+    /// 3, 9); widgets present or missing, the screen null in some setups.
+    /// The real callees take their short paths: the UI state has an empty
+    /// widget list, every widget's vtable ends in fakes. (Panels 0 and 1 call
+    /// the not yet ported `RefreshPeakList`/`RefreshPeakGoals`: see
+    /// `event_select_set_mode_peak_panels_match`.)
+    #[test]
+    fn event_select_set_mode_matches() {
+        check(
+            ee::s05::f_002030a0__generated,
+            event_select_set_mode,
+            160,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0020_30a0, 24);
+                let confirm = seed % 4 == 0;
+                let focus: i32 = if confirm {
+                    [0, 1, 2, 3, -1][(r.next_u32() % 5) as usize]
+                } else {
+                    [2, 2, 2, 2, 3, -1, 9][(r.next_u32() % 7) as usize]
+                };
+                let absent = if seed % 3 == 0 {
+                    r.next_u32() & 0x3fff
+                } else {
+                    0
+                };
+                let with_screen = seed % 9 != 5;
+                t_sm_screen(c, &mut r, absent, with_screen);
+                t_sm_globals(c, r.next_u32() % 4, r.next_u32() % 4, r.next_u32() % 4);
+                c.bus.write32(T_SM_SELF + ES_SETMODE_POPUP, confirm as u32);
+                c.bus
+                    .write32(T_SM_SELF + ES_SETMODE_NO_SELECTED, r.next_u32() % 2);
+                c.bus.write32(T_SM_SELF, r.next_u32());
+                c.g[A0][0] = sx(T_SM_SELF);
+                c.g[A1][0] = sx(focus as u32);
+            },
+        );
+    }
+
+    /// `EventSelect_SetMode` on panels 0 and 1, which call the real
+    /// `RefreshPeakList`/`RefreshPeakGoals`: one screen widget that every name
+    /// finds (names hash to 0 in zeroed RAM), the BELibrary dummy and a world,
+    /// every peak and flow, the screen null in some setups.
+    #[test]
+    fn event_select_set_mode_peak_panels_match() {
+        const T_BELIB: u32 = 0x008b_8000;
+        const T_WORLD: u32 = 0x008a_6000;
+        const T_OBJ: u32 = 0x008a_4000;
+        const T_OVT: u32 = 0x008a_5000;
+        check(
+            ee::s05::f_002030a0__generated,
+            event_select_set_mode,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0020_30a1, 40);
+                let g = |off: i32| GAME_GP.wrapping_add(off as u32);
+                c.bus.write32(g(-0x1f04), T_BELIB);
+                c.bus.write32(g(-0x848), T_WORLD);
+                c.bus.write32(T_WORLD + 0x78, T_BELIB);
+                c.bus.write32(
+                    0x004a_7774,
+                    [0, 1 << 15, 1 << 16, 3 << 15][(seed % 4) as usize],
+                );
+                c.bus.write32(T_SM_SCREEN + 0x38, T_SM_COUNT);
+                c.bus.write32(T_SM_SCREEN + 0x3c, T_SM_LIST);
+                c.bus.write32(T_SM_COUNT, 1);
+                c.bus.write32(T_SM_LIST, T_OBJ);
+                c.bus.write32(T_OBJ + 8, T_OVT);
+                c.bus.write32(T_OBJ + 0x14, r.next_u32());
+                for slot in (0..0x100).step_by(8) {
+                    c.bus.write32(T_OVT + slot + 4, FAKE + 0x20);
+                }
+                c.bus.write32(
+                    T_SM_SELF + ES_SETMODE_SCREEN,
+                    if seed % 5 == 3 { 0 } else { T_SM_SCREEN },
+                );
+                c.bus.write32(T_SM_SELF + ES_SETMODE_STATE, T_SM_STATE);
+                c.bus.write32(T_SM_SELF + ES_SETMODE_POPUP, 0);
+                t_sm_globals(c, r.next_u32() % 4, r.next_u32() % 4, r.next_u32() % 4);
+                c.g[A0][0] = sx(T_SM_SELF);
+                c.g[A1][0] = (seed % 2) as u64;
+            },
+        );
+    }
+
+    /// Gate of the fakes (magic word in the machine's RAM) and the knobs the
+    /// setup writes for them.
+    pub(crate) const OC442_CTRL: u32 = DATA + 0x8000;
+
+    pub(crate) const OC442_MAGIC: u32 = 0x4f43_3434;
+
+    pub(crate) const OC442_SELF: u32 = DATA + 0x1000;
+
+    pub(crate) const OC442_SCREEN: u32 = DATA + 0x2000;
+
+    pub(crate) const OC442_OWNER: u32 = DATA + 0x3000;
+
+    pub(crate) const OC442_NODE1: u32 = DATA + 0x3100;
+
+    pub(crate) const OC442_NODE2: u32 = DATA + 0x3200;
+
+    /// The one object every `UIScreen_FindObject(screen, ..)` returns (list,
+    /// text, mountain: its vtable has a fake method in every slot).
+    pub(crate) const OC442_OBJ: u32 = DATA + 0x4000;
+
+    pub(crate) const OC442_VT: u32 = DATA + 0x5000;
+
+    pub(crate) const OC442_SEL: u32 = DATA + 0x6000;
+
+    pub(crate) const OC442_WORLD: u32 = DATA + 0x7000;
+
+    pub(crate) const OC442_LOC: u32 = DATA + 0x7100;
+
+    pub(crate) const OC442_LOCVT: u32 = DATA + 0x7200;
+
+    /// A fake callee: logs the call (all registers, cycles) through
+    /// `fakes::fake`, then sets the result the callee would return from a
+    /// seeded hash and the knobs in the control block.
+    pub(crate) fn oc442_fake_call(c: &mut Cpu, addr: u32) {
+        let ra = c.g[RA][0] as u32;
+        let a0 = c.g[A0][0] as u32;
+        let n = c.bus.read32(fakes::LOG_COUNT);
+        fakes::fake(c, addr, ra);
+        if c.pc != ra {
+            return;
+        }
+        let seed = c.bus.read32(OC442_CTRL + 4) as u64;
+        let trophy_pct = c.bus.read32(OC442_CTRL + 8) as u64;
+        let medal_pct = c.bus.read32(OC442_CTRL + 0xc) as u64;
+        let h = fakes::mix((seed << 32) ^ ((addr as u64) << 8) ^ n as u64 ^ 0x9e37_79b9);
+        let v = match addr {
+            // The rider character.
+            0x0014_a080 => Some(h % 6),
+            // isTrophyOwned.
+            0x0015_7bf0 => Some((h % 100 < trophy_pct) as u64),
+            // getTrackMedal: -1 (none) or a medal 0..3.
+            0x0015_8910 => Some(if h % 100 < medal_pct {
+                (h >> 8) % 4
+            } else {
+                u64::MAX
+            }),
+            // Mission, collectible, medal-target and money counters.
+            0x0015_43e0 | 0x0015_4368 | 0x0015_35c0 | 0x0015_3390 | 0x0015_8890 | 0x0015_8870
+            | 0x0015_09f8 => Some((h >> 8) % 5),
+            // FindObject: the screen's objects (one lookup may fail), nothing
+            // in the state owner's list nodes.
+            0x0039_d860 => {
+                if a0 == OC442_SCREEN {
+                    let k = c.bus.read32(OC442_CTRL + 0x10);
+                    c.bus.write32(OC442_CTRL + 0x10, k + 1);
+                    let zero_at = c.bus.read32(OC442_CTRL + 0x14);
+                    Some(if k == zero_at { 0 } else { OC442_OBJ as u64 })
+                } else {
+                    Some(0)
+                }
+            }
+            _ => None,
+        };
+        if let Some(v) = v {
+            c.g[V0][0] = v;
+        }
+    }
+
+    macro_rules! oc442_fakes {
+        ($(($fake:ident, $addr:expr, $gen:path, $slot:path)),* $(,)?) => {
+            $(
+                pub(crate) fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC442_CTRL) != OC442_MAGIC {
+                        return fakes::fall_back(c, fakes::prev_cell($fake), $gen);
+                    }
+                    oc442_fake_call(c, $addr)
+                }
+            )*
+
+            /// Hooks the fakes into the callees' override slots (once per
+            /// process; with the gate clear they run what the slots held).
+            pub(crate) fn oc442_install_fakes() {
+                $( fakes::hook(addr_of_mut!($slot), $fake, fakes::prev_cell($fake)); )*
+            }
+        };
+    }
+
+    oc442_fakes! {
+        (oc442_fake_be, 0x0014_dc80, ee::s01::f_0014dc80__generated, ee::s01::OVERRIDE_0014DC80),
+        (oc442_fake_interface, 0x0014_dd58, ee::s01::f_0014dd58__generated, ee::s01::OVERRIDE_0014DD58),
+        (oc442_fake_rider_char, 0x0014_a080, ee::s01::f_0014a080__generated, ee::s01::OVERRIDE_0014A080),
+        (oc442_fake_show, 0x0039_e948, ee::s13::f_0039e948__generated, ee::s13::OVERRIDE_0039E948),
+        (oc442_fake_trophy, 0x0015_7bf0, ee::s01::f_00157bf0__generated, ee::s01::OVERRIDE_00157BF0),
+        (oc442_fake_find, 0x0039_d860, ee::s13::f_0039d860__generated, ee::s13::OVERRIDE_0039D860),
+        (oc442_fake_set_wide, 0x003a_0e90, ee::s13::f_003a0e90__generated, ee::s13::OVERRIDE_003A0E90),
+        (oc442_fake_set_ascii, 0x003a_0c70, ee::s13::f_003a0c70__generated, ee::s13::OVERRIDE_003A0C70),
+        (oc442_fake_medal, 0x0015_8910, ee::s01::f_00158910__generated, ee::s01::OVERRIDE_00158910),
+        (oc442_fake_done_missions, 0x0015_43e0, ee::s01::f_001543e0__generated, ee::s01::OVERRIDE_001543E0),
+        (oc442_fake_challenge_target, 0x0015_8890, ee::s01::f_00158890__generated, ee::s01::OVERRIDE_00158890),
+        (oc442_fake_collect, 0x0015_35c0, ee::s01::f_001535c0__generated, ee::s01::OVERRIDE_001535C0),
+        (oc442_fake_collect_target, 0x0015_8870, ee::s01::f_00158870__generated, ee::s01::OVERRIDE_00158870),
+        (oc442_fake_money, 0x0015_09f8, ee::s01::f_001509f8__generated, ee::s01::OVERRIDE_001509F8),
+        (oc442_fake_num_missions, 0x0015_4368, ee::s01::f_00154368__generated, ee::s01::OVERRIDE_00154368),
+        (oc442_fake_total_collect, 0x0015_3390, ee::s01::f_00153390__generated, ee::s01::OVERRIDE_00153390),
+    }
+
+    /// One seed of `EventSelect_RefreshPeakList`: map style 0..3, map state,
+    /// popup flag, unlocked peaks, the selected peak 0..4 (the overall entry
+    /// from 3), missing list/selection, and the counters the fakes return
+    /// (trophies, medals, missions) from a seeded hash. Random goal records
+    /// (kinds and tracks, both 4-aligned and 8-aligned copies), earnings
+    /// targets and highlight levels in RAM; the strings and format strings
+    /// come from the executable image. Real callees: hash, sprintf, hide,
+    /// SetTextId, SetString (the text vtable slots are fake methods), the
+    /// earnings and highlight accessors.
+    pub(crate) fn oc442_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0020_3d40, 200);
+        elf_image(c);
+        c.pc = 0x0020_3d40;
+        c.g[A0][0] = sx(OC442_SELF);
+
+        let style = seed % 4;
+        let state = (seed / 4) % 2;
+        let popup = (seed / 8) % 2;
+        let peak = r.next_u32() % 5;
+        c.bus.write32(GAME_GP - 0xb5c, style);
+        c.bus.write32(GAME_GP - 0xb54, state);
+        c.bus.write32(GAME_GP - 0x848, OC442_WORLD);
+
+        // The map template.
+        c.bus.write32(OC442_SELF + PK_SCREEN, OC442_SCREEN);
+        c.bus.write32(OC442_SELF + PK_OWNER, OC442_OWNER);
+        c.bus.write32(OC442_SELF + PK_POPUP, popup);
+        for i in 0..3 {
+            c.bus
+                .write32(OC442_SELF + PK_UNLOCKED + 4 * i, r.next_u32() % 2);
+        }
+        // The state owner's object list: two nodes, so `UIState_HideObject`
+        // looks the object up twice.
+        c.bus.write32(OC442_OWNER + 0x28, OC442_NODE1);
+        c.bus.write32(OC442_NODE1 + 4, OC442_NODE2);
+        // The text/list object and its vtable: a fake method in every slot.
+        c.bus.write32(OC442_OBJ + 8, OC442_VT);
+        let no_sel = r.next_u32() % 8 == 0;
+        c.bus
+            .write32(OC442_OBJ + PK_LIST_SEL, if no_sel { 0 } else { OC442_SEL });
+        c.bus.write32(OC442_SEL + PK_SEL_PEAK, peak);
+        for off in (0..0x200).step_by(8) {
+            c.bus.write16(OC442_VT + off, 0);
+            c.bus
+                .write32(OC442_VT + off + 4, fakes::FAKE + 0x10 * (off / 8));
+        }
+        // The localisation lookup through the world (`world+0x8c`).
+        c.bus.write32(OC442_WORLD + 0x8c, OC442_LOC);
+        c.bus.write32(OC442_LOC + 4, OC442_LOCVT);
+        c.bus.write16(OC442_LOCVT + 0x20, 0);
+        c.bus.write32(OC442_LOCVT + 0x24, fakes::FAKE + 0x1000);
+
+        // Goal records: table A (3 peaks x 4 goals, 0x6c each; 0x1b0 a peak)
+        // and table B (3 x 5; 0x21c a peak): random track and kind.
+        for (base, stride, n) in [(0x0047_81d0u32, 0x1b0u32, 4u32), (0x0047_86e0, 0x21c, 5)] {
+            for p in 0..3 {
+                for k in 0..n {
+                    let at = base + p * stride + k * 0x6c;
+                    for w in 0..27 {
+                        c.bus.write32(at + 4 * w, r.next_u32());
+                    }
+                    c.bus.write32(at, r.next_u32() % 20);
+                    c.bus.write32(at + 8, r.next_u32() % 14);
+                }
+            }
+        }
+        // Earnings targets and highlight levels.
+        for p in 0..6 {
+            c.bus.write32(0x0045_b048 + 4 * p, r.next_u32() % 5);
+        }
+        let fill = r.next_u32() % 3;
+        for o in 0..0x5d60u32 {
+            let b = match fill {
+                0 => 0,
+                1 => 3,
+                _ => r.next_u32() % 4,
+            };
+            c.bus.write8(0x004a_7860 + o, b as u8);
+        }
+
+        // The fakes' gate and answers.
+        let trophy_pct = [0, 60, 100, 95][(r.next_u32() % 4) as usize];
+        let medal_pct = [0, 30, 80, 100][(r.next_u32() % 4) as usize];
+        c.bus.write32(OC442_CTRL, OC442_MAGIC);
+        c.bus.write32(OC442_CTRL + 4, seed);
+        c.bus.write32(OC442_CTRL + 8, trophy_pct);
+        c.bus.write32(OC442_CTRL + 0xc, medal_pct);
+        c.bus.write32(OC442_CTRL + 0x10, 0);
+        // The k-th screen lookup that fails: the list lookup in 1 of 8 seeds
+        // (third lookup with map style < 2, else the second).
+        let list_lookup = if style < 2 { 2 } else { 1 };
+        c.bus.write32(
+            OC442_CTRL + 0x14,
+            if r.next_u32() % 8 == 0 {
+                list_lookup
+            } else {
+                u32::MAX
+            },
+        );
+    }
+
+    /// `EventSelect_RefreshPeakList` (0x203d40) against the generated body:
+    /// map styles 0..3 and both map states, popup on/off, locked and unlocked
+    /// peaks, trophies and medals (every combination of found and missing),
+    /// the selected peak 0..2 (help text; goal counters on style >= 2) and the
+    /// overall entry (peaks 3 and 4: done/gold/missions/collectibles/highlight
+    /// counters and the percentage), a missing list or selection, and thread
+    /// unwinds in the callees. The back-end accessors and the screen lookups
+    /// are fakes; the formatting, hashing and state hide/show run real.
+    #[test]
+    fn event_select_refresh_peak_list_matches() {
+        oc442_install_fakes();
+        covered(
+            ee::s05::f_00203d40__generated,
+            event_select_refresh_peak_list,
+            300,
+            &oc442_setup,
+        );
+    }
+
+    // ----------------------------------------- FEAsyncManager_LoadSlot.
+
+    // --------------------------------------- EventSelect (event map UI).
+
+    /// The hash the game computes for the `"SP_PeakList"` label.
+    pub(crate) fn oc444_str_hash(addr: u32) -> u32 {
+        use std::collections::HashMap;
+        use std::sync::Mutex;
+        static CACHE: Mutex<Option<HashMap<u32, u32>>> = Mutex::new(None);
+        let mut cache = CACHE.lock().unwrap_or_else(|p| p.into_inner());
+        *cache
+            .get_or_insert_with(HashMap::new)
+            .entry(addr)
+            .or_insert_with(|| {
+                let mut c = crate::difftest::fresh();
+                elf_image(&mut c);
+                c.g[A0][0] = addr as u64;
+                c.g[RA][0] = crate::difftest::RA as u64;
+                c.pc = 0x0031_7670;
+                let f = ssx3_ee_rt::funcs::lookup(0x0031_7670).expect("StrHash");
+                f(&mut c);
+                c.g[V0][0] as u32
+            })
+    }
+
+    /// `EventSelect_OnWidgetCreated(self, menu)`: only a menu labelled
+    /// `SP_PeakList` selects an entry, by map style.
+    #[test]
+    fn event_select_on_widget_created_matches() {
+        oc444_run(
+            ee::s05::f_002009d0__generated,
+            event_select_on_widget_created,
+            0x0020_09d0,
+            0x20_09d0,
+            80,
+            &|c, r, seed| {
+                c.g[A0][0] = OC444_OBJ as u64;
+                c.g[A1][0] = (OC444_OBJ2 + 0x100) as u64;
+                let label = if seed % 4 == 0 {
+                    r.next_u32() % 6
+                } else {
+                    oc444_str_hash(0x0047_0600)
+                };
+                c.bus.write32(OC444_OBJ2 + 0x100 + 0x38, label);
+            },
+        );
+    }
+
+    /// `EventSelect_Update(self)`: fade in or hide the map, the peak
+    /// outlines (map state 0) or indicators, the "you are here" labels and the
+    /// async-loaded texture.
+    #[test]
+    fn event_select_update_matches() {
+        oc444_run(
+            ee::s05::f_00202828__generated,
+            event_select_update,
+            0x0020_2828,
+            0x20_2828,
+            120,
+            &|c, r, seed| {
+                let slot = r.next_u32() % 3;
+                c.g[A0][0] = OC444_OBJ as u64;
+                c.bus.write32(OC444_OBJ, (seed % 5 == 0) as u32);
+                c.bus.write32(OC444_OBJ + 0x2d8, slot);
+                c.bus.write32(OC444_OBJ + 0x2dc, (seed % 2) as u32);
+                let fade = [0u32, 0x3dcc_cccd, 0x3f66_6666, 0x3f80_0000][r.next_u32() as usize % 4];
+                c.bus.write32(OC444_OBJ + 0x2e0, fade);
+                c.bus.write32(OC444_OBJ + 0x2e4, OC444_L1 + 0x1000);
+                c.bus.write32(OC444_OBJ + 0x2ec, OC444_L1 + 0x1400);
+                c.bus.write32(OC444_OBJ + 0x2f0, (seed % 3 == 0) as u32);
+                let state = if seed % 4 < 2 { 3 } else { r.next_u32() % 3 };
+                c.bus.write32(OC444_ASYNC + 0x114 + 0x11c * slot, state);
             },
         );
     }

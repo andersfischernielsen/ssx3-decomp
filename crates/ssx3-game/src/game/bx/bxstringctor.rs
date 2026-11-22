@@ -347,6 +347,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         path_data_find_near_track_paths,
         "PathData_FindNearTrackPaths",
     ),
+    (0x0026_a180, path_read, "Path_Read"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3470,6 +3471,188 @@ pub fn path_data_find_near_ai_paths(c: &mut Cpu) {
     })
 }
 
+/// `Path_Read` (0x0026a180): Reads a path from a big-endian data stream: item blocks through the path's virtual `+0x18`/`+0x20` slots, two counts, three vectors, then the segment and event arrays. Returns the bytes consumed. `(path, data)`.
+#[allow(
+    unused_labels,
+    unused_assignments,
+    unused_variables,
+    unreachable_code,
+    unused_mut
+)]
+pub fn path_read(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_26a238: {
+            c.cycles += 23;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.g[S0][0] = c.g[A1][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S1][0] = 0u64;
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[S2][0] = c.g[A0][0];
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+            c.g[S4][0] = c.g[S0][0];
+            c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x34));
+            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x18));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+            let t = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x0026a1c0)?; // call_indirect
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A0][0] = c.g[SP][0];
+            call_ptr(c, 0x0026ba68, 0x0026a1cc)?; // PathData_ReadInt
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+            let t = (c.g[V0][0] as i64) <= 0;
+            c.g[S3][0] = sx((c.g[SP][0] as u32).wrapping_add(0xc));
+            if t {
+                break 'b_26a238;
+            } else {
+                c.cycles += 1;
+                'l_26a1e0: loop {
+                    c.cycles += 22;
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x4));
+                    c.g[A1][0] = c.g[S0][0];
+                    call_ptr(c, 0x0026ba68, 0x0026a1ec)?; // PathData_ReadInt
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x8));
+                    c.g[A1][0] = c.g[S0][0];
+                    call_ptr(c, 0x0026ba68, 0x0026a1fc)?; // PathData_ReadInt
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x34));
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x20));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
+                    c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                    let t = c.g[V0][0] as u32;
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, t, 0x0026a224)?; // call_indirect
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0026a1e0);
+                        }
+                        continue 'l_26a1e0;
+                    } else {
+                        break 'b_26a238;
+                    }
+                }
+            }
+        }
+        'b_26a2d4: {
+            c.cycles += 28;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A0][0] = c.g[S3][0];
+            call_ptr(c, 0x0026ba68, 0x0026a244)?; // PathData_ReadInt
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A0][0] = c.g[S3][0];
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+            c.g[S1][0] = 0u64;
+            call_ptr(c, 0x0026ba68, 0x0026a264)?; // PathData_ReadInt
+            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0xc));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc));
+            c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+            call_ptr(c, 0x0026ba48, 0x0026a27c)?; // PathData_ReadVec3
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1c));
+            call_ptr(c, 0x0026ba48, 0x0026a288)?; // PathData_ReadVec3
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x28));
+            call_ptr(c, 0x0026ba48, 0x0026a298)?; // PathData_ReadVec3
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+            let t = (c.g[V0][0] as i64) <= 0;
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x18), c.g[S0][0]);
+            if t {
+                break 'b_26a2d4;
+            } else {
+                'l_26a2a8: loop {
+                    c.cycles += 11;
+                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x18));
+                    c.g[A2][0] = sx((c.g[S1][0] as u32) << 4);
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    call_ptr(c, 0x0026a338, 0x0026a2c4)?; // Path_ReadSegment
+                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0026a2a8);
+                        }
+                        continue 'l_26a2a8;
+                    } else {
+                        break 'b_26a2d4;
+                    }
+                }
+            }
+        }
+        'b_26a314: {
+            c.cycles += 4;
+            c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+            c.g[S1][0] = 0u64;
+            let t = (c.g[V0][0] as i64) <= 0;
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x4), c.g[S0][0]);
+            if t {
+                break 'b_26a314;
+            } else {
+                c.cycles += 1;
+                'l_26a2e8: loop {
+                    c.cycles += 11;
+                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
+                    c.g[A2][0] = sx((c.g[S1][0] as u32) << 4);
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    call_ptr(c, 0x0026a378, 0x0026a304)?; // Path_ReadEvent
+                    c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0026a2e8);
+                        }
+                        continue 'l_26a2e8;
+                    } else {
+                        break 'b_26a314;
+                    }
+                }
+            }
+        }
+        c.cycles += 9;
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[S4][0] as u32));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5268,5 +5451,60 @@ pub(crate) mod tests {
                 c.g[T0][0] = (seed % 2) as u64;
             },
         );
+    }
+
+    pub(crate) use crate::game::fe::festateloadscreen::tests::oc444_run;
+
+    pub(crate) use crate::game::fe::festateloadscreen::tests::OC444_OBJ;
+    pub(crate) use crate::game::fe::festateloadscreen::tests::OC444_OBJ2;
+
+    // ------------------------------------------------------------ Path_Read.
+
+    /// `Path_Read(path, data)`: reads a path from a stream of big-endian
+    /// items: n item blocks, two counts, three vectors, then the segment and
+    /// event lists.
+    #[test]
+    fn path_read_matches() {
+        oc444_run(
+            ee::s07::f_0026a180__generated,
+            path_read,
+            0x0026_a180,
+            0x26_a180,
+            100,
+            &|c, r, seed| {
+                let path = OC444_OBJ;
+                let vt = oc444_vtable(c, r);
+                c.bus.write32(path + 0x34, vt);
+                c.g[A0][0] = path as u64;
+                let data = OC444_OBJ2;
+                c.g[A1][0] = data as u64;
+                let n = seed % 3;
+                let mut at = data;
+                let mut put = |c: &mut Cpu, v: u32| {
+                    c.bus.write32(at, v);
+                    at += 4;
+                };
+                put(c, n);
+                for _ in 0..n {
+                    put(c, r.next_u32() % 5);
+                    put(c, 8);
+                    put(c, 1);
+                    put(c, 2);
+                }
+                put(c, r.next_u32() % 3);
+                put(c, r.next_u32() % 3);
+            },
+        );
+    }
+
+    /// A vtable with fake methods in slots 3 and 4 (delta 0).
+    pub(crate) fn oc444_vtable(c: &mut Cpu, r: &mut Rng) -> u32 {
+        let vt = OC444_OBJ2 + 0x800;
+        for (i, slot) in [3u32, 4].into_iter().enumerate() {
+            let delta = (r.next_u32() % 4) * 4;
+            c.bus.write16(vt + 8 * slot, delta as u16);
+            c.bus.write32(vt + 8 * slot + 4, FAKE + 0x10 * i as u32);
+        }
+        vt
     }
 }

@@ -4482,6 +4482,107 @@ pub fn game_module_enter_2(c: &mut Cpu) {
     })
 }
 
+/// `GameModule_QuitToLoadScreen` (0x00230488): Leaves the race: stops the auto replay, requests game state 6, quits the network race and then makes the pre-game (`to_pregame != 0`) or pre-front-end load screen the next module. `(game, to_pregame)`.
+/// NOT INSTALLED (no OVERRIDES entry, no test): a real unported callee frees fixture memory (DLHeap_Consolidate runaway); needs a faithful object graph.
+#[allow(
+    unused_labels,
+    unused_assignments,
+    unused_variables,
+    unreachable_code,
+    unused_mut
+)]
+pub fn game_module_quit_to_load_screen(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2304d4: {
+            c.cycles += 16;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S0][0] = c.g[A0][0];
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[S1][0] = c.g[A1][0];
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x28));
+            call_ptr(c, 0x002706f0, 0x002304a8)?; // call_indirect
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0x6;
+            c.g[A2][0] = 0u64;
+            c.g[A3][0] = 0u64;
+            call_ptr(c, 0x00231250, 0x002304bc)?; // GameModule_RequestState
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x204));
+            if c.g[A0][0] == 0u64 {
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x304));
+                break 'b_2304d4;
+            } else {
+                c.cycles += 3;
+                call_ptr(c, 0x00258ae0, 0x002304d0)?; // cGameComm_QuitRace
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x304));
+                break 'b_2304d4;
+            }
+        }
+        'b_2304e4: {
+            c.cycles += 2;
+            let t = c.g[A0][0] == 0u64;
+
+            if t {
+                break 'b_2304e4;
+            } else {
+                c.cycles += 2;
+                call_ptr(c, 0x00266df8, 0x002304e4)?; // call_indirect
+                break 'b_2304e4;
+            }
+        }
+        'b_230548: {
+            'b_23051c: {
+                c.cycles += 2;
+                let t = c.g[S1][0] == 0u64;
+                c.g[A2][0] = 0x100;
+                if t {
+                    break 'b_23051c;
+                } else {
+                    c.cycles += 12;
+                    c.g[A1][0] = 0x480000;
+                    c.g[A0][0] = 0x8;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4890));
+                    c.g[A3][0] = 0u64;
+                    call_ptr(c, 0x00317d70, 0x00230500)?; // call_indirect
+                    c.g[A0][0] = c.g[V0][0];
+                    call_ptr(c, 0x00232720, 0x00230508)?; // cPreGameLoadScreen_ctor
+                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, 0x00316ef8, 0x00230514)?; // call_indirect
+                    let t = true;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    if t {
+                        break 'b_230548;
+                    } else {
+                        break 'b_23051c;
+                    }
+                }
+            }
+            c.cycles += 11;
+            c.g[A1][0] = 0x480000;
+            c.g[A0][0] = 0x8;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4878));
+            c.g[A3][0] = 0u64;
+            call_ptr(c, 0x00317d70, 0x00230530)?; // call_indirect
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x00232738, 0x00230538)?; // cPreFELoadScreen_ctor
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, 0x00316ef8, 0x00230544)?; // call_indirect
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            break 'b_230548;
+        }
+        c.cycles += 4;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

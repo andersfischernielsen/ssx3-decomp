@@ -112,6 +112,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003a_32f0, ui_vector_dtor, "UIVector_dtor"),
     (0x003a_3398, ui_vector_set_color, "UIVector_SetColor"),
     (0x003a_05e8, ui_text_render, "UIText_Render"),
+    (
+        0x003a_0eb0,
+        ui_text_set_wide_string_internal,
+        "UIText_SetWideStringInternal",
+    ),
+    (0x003a_1000, ui_text_set_text_id, "UIText_SetTextId"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1770,11 +1776,287 @@ pub(crate) fn ui_text_render_print(c: &mut Cpu, p: u32, text: usize, ret: u32) -
     call_ptr(c, UI_TEXT_RENDER_FONT_PRINT, ret)
 }
 
+pub(crate) mod oc445_callee {
+    use super::*;
+
+    /// `UIText_FreeStrings(UIText *)`.
+    pub(crate) const UI_TEXT_FREE_STRINGS: Callee = Callee {
+        addr: 0x003a_0b38,
+        f: ee::s13::f_003a0b38,
+    };
+
+    /// `UIText_CountLines(UIText *)`.
+    pub(crate) const UI_TEXT_COUNT_LINES: Callee = Callee {
+        addr: 0x003a_0b90,
+        f: ee::s13::f_003a0b90,
+    };
+
+    /// `UIScreen_CreateObject(screen, rec)`.
+    pub(crate) const UI_SCREEN_CREATE_OBJECT: Callee = Callee {
+        addr: 0x0039_d078,
+        f: ee::s13::f_0039d078,
+    };
+
+    /// `UIList_PushBack(list, node)`.
+    pub(crate) const UI_LIST_PUSH_BACK: Callee = Callee {
+        addr: 0x0039_7910,
+        f: ee::s13::f_00397910,
+    };
+
+    /// `UIList_GetAt(list, index)`.
+    pub(crate) const UI_LIST_GET_AT: Callee = Callee {
+        addr: 0x0039_7870,
+        f: ee::s13::f_00397870,
+    };
+
+    /// `UIMenu_SetCurrentItem(menu, item, flag)`.
+    pub(crate) const UI_MENU_SET_CURRENT_ITEM: Callee = Callee {
+        addr: 0x0039_ad38,
+        f: ee::s13::f_0039ad38,
+    };
+
+    /// `EATimer_SetVideoMode(mode)`.
+    pub(crate) const EA_TIMER_SET_VIDEO_MODE: Callee = Callee {
+        addr: 0x003e_6690,
+        f: ee::s14::f_003e6690,
+    };
+
+    /// `EA_AddShutdownHandler(fn)`.
+    pub(crate) const EA_ADD_SHUTDOWN_HANDLER: Callee = Callee {
+        addr: 0x003e_4a30,
+        f: ee::s14::f_003e4a30,
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Local helpers (register-relative loads, vtable calls).
+
+/// `lw off(reg)`.
+#[inline]
+pub(crate) fn oc445_lw(c: &mut Cpu, base: usize, off: u32) -> u64 {
+    Addr((c.g[base][0] as u32).wrapping_add(off)).lw(c)
+}
+
+/// `lh off(reg)`.
+#[inline]
+pub(crate) fn oc445_lh(c: &mut Cpu, base: usize, off: u32) -> u64 {
+    Addr((c.g[base][0] as u32).wrapping_add(off)).lh(c)
+}
+
+/// `lhu off(reg)`.
+#[inline]
+pub(crate) fn oc445_lhu(c: &mut Cpu, base: usize, off: u32) -> u64 {
+    Addr((c.g[base][0] as u32).wrapping_add(off)).lhu(c)
+}
+
+/// `addiu`-style 32-bit add of a constant to a register, sign-extended.
+#[inline]
+pub(crate) fn oc445_add(c: &Cpu, reg: usize, k: u32) -> u64 {
+    sx((c.g[reg][0] as u32).wrapping_add(k))
+}
+
+/// `addu a, b` of two registers, sign-extended.
+#[inline]
+pub(crate) fn oc445_addu(c: &Cpu, a: usize, b: usize) -> u64 {
+    sx((c.g[a][0] as u32).wrapping_add(c.g[b][0] as u32))
+}
+
+/// A gcc 2.9x virtual call: `A0 = lh off(vt)`, `func = lw off+4(vt)`,
+/// `A0 = obj + A0`, `jalr func` returning to `ret`. `vt`, `obj` and `func`
+/// name registers.
+pub(crate) fn oc445_vcall(
+    c: &mut Cpu,
+    vt: usize,
+    obj: usize,
+    off: u32,
+    func: usize,
+    ret: u32,
+) -> Flow {
+    c.g[A0][0] = oc445_lh(c, vt, off);
+    c.g[func][0] = oc445_lw(c, vt, off + 4);
+    let target = c.g[func][0] as u32;
+    c.g[A0][0] = oc445_addu(c, obj, A0);
+    call_ptr(c, target, ret)
+}
+
+// ---------------------------------------------------------------------------
+// UIText_SetWideStringInternal / UIText_SetTextId.
+
+/// `void UIText_SetWideStringInternal(UIText *text, const u16 *str)`
+/// (0x3a0eb0): replace the text. Calls vtable slots 0x28 and 0xc0 with 1,
+/// frees the old strings, and when `str` has at most 800 units copies it
+/// into a new buffer (`+0xb4`, size in units at `+0xb8`). When it holds
+/// several lines (`+0xa8` count, from `UIText_CountLines`) a line-pointer
+/// array (`+0xac`, size `+0xba`) is built: a pair of backslashes or a CR
+/// ends a line with a zero unit and the next line starts after it.
+pub fn ui_text_set_wide_string_internal(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, 16, 0x20);
+        frame.save(c, 17, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[A1][0] = 0x1;
+        c.g[V0][0] = oc445_lw(c, S0, 0x8);
+        oc445_vcall(c, V0, S0, 0x28, V1, 0x003a_0ee0)?;
+        c.g[V0][0] = oc445_lw(c, S0, 0x8);
+        c.g[A1][0] = 0x1;
+        oc445_vcall(c, V0, S0, 0xc0, V1, 0x003a_0ef8)?;
+        c.g[A0][0] = c.g[S0][0];
+        oc445_callee::UI_TEXT_FREE_STRINGS.call(c, 0x003a_0f00)?;
+        c.g[A0][0] = c.g[S1][0];
+        // USTR_length(str)
+        call_ptr(c, 0x003d_bca0, 0x003a_0f08)?;
+        c.g[V1][0] = c.g[V0][0];
+        c.g[V0][0] = ((c.g[V1][0] as i64) < 801) as u64;
+        let too_long = c.g[V0][0] == 0;
+        c.g[V0][0] = oc445_add(c, V1, 0x1);
+        'copy: {
+            if too_long {
+                break 'copy;
+            }
+            c.cycles += 17;
+            c.g[A1][0] = 0x490000;
+            c.g[A2][0] = 0x100;
+            c.g[A3][0] = 0;
+            c.g[A0][0] = sx((c.g[V0][0] as u32) << 1);
+            c.g[A1][0] = oc445_add(c, A1, 0x4088);
+            Addr(oc445_add(c, S0, 0xb8) as u32).sh(c, c.g[V0][0]);
+            // operator new((len + 1) * 2, "UITextUStr", 0x100, 0)
+            call_ptr(c, 0x0031_7e30, 0x003a_0f34)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S1][0];
+            Addr(oc445_add(c, S0, 0xb4) as u32).sw(c, c.g[V0][0]);
+            // USTR_copy(dst, src)
+            call_ptr(c, 0x003d_be20, 0x003a_0f44)?;
+            c.g[A0][0] = c.g[S0][0];
+            oc445_callee::UI_TEXT_COUNT_LINES.call(c, 0x003a_0f4c)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[V0][0] = ((c.g[A0][0] as i64) < 2) as u64;
+            let single_line = c.g[V0][0] != 0;
+            Addr(oc445_add(c, S0, 0xa8) as u32).sw(c, c.g[A0][0]);
+            if single_line {
+                break 'copy;
+            }
+            c.cycles += 16;
+            c.g[A1][0] = 0x490000;
+            c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+            c.g[A1][0] = oc445_add(c, A1, 0x4098);
+            c.g[A2][0] = 0x100;
+            c.g[A3][0] = 0;
+            // operator new(lines * 4, "UITextLine", 0x100, 0)
+            call_ptr(c, 0x0031_7e30, 0x003a_0f74)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[V1][0] = oc445_lw(c, S0, 0xb4);
+            c.g[V0][0] = oc445_lhu(c, S0, 0xa8);
+            Addr(oc445_add(c, S0, 0xac) as u32).sw(c, c.g[A1][0]);
+            c.g[A0][0] = c.g[V1][0];
+            Addr(oc445_add(c, S0, 0xba) as u32).sh(c, c.g[V0][0]);
+            Addr(c.g[A1][0] as u32).sw(c, c.g[V1][0]);
+            c.g[V0][0] = Addr(c.g[A0][0] as u32).lhu(c);
+            let empty = c.g[V0][0] == 0;
+            frame.restore(c, 16, 0x20);
+            if empty {
+                // Straight to the epilogue: the `lq s0` was the delay slot,
+                // the "+1 cycle, lq s0" of the common exit is skipped.
+                c.cycles += 4;
+                frame.restore(c, 17, 0x10);
+                frame.restore_ra(c, 0);
+                frame.close(c);
+                return Ok(());
+            }
+            c.cycles += 3;
+            c.g[A2][0] = oc445_add(c, A1, 0x4);
+            c.g[A3][0] = 0xd;
+            c.g[V1][0] = Addr(c.g[A0][0] as u32).lhu(c);
+            loop {
+                c.cycles += 3;
+                c.g[V0][0] = oc445_lhu(c, GP, 0x16b8);
+                let not_backslash = c.g[V1][0] != c.g[V0][0];
+                c.g[A1][0] = oc445_lhu(c, A0, 0x2);
+                // A line ends here and the next one is recorded (`record`),
+                // or the unit just advances (`skip`).
+                let mut record = false;
+                let mut skip = false;
+                if !not_backslash {
+                    c.cycles += 2;
+                    let lone = c.g[A1][0] != c.g[V1][0];
+                    if !lone {
+                        // Two backslashes: end the line, skip both.
+                        c.cycles += 3;
+                        Addr(c.g[A0][0] as u32).sh(c, 0);
+                        c.g[A0][0] = oc445_add(c, A0, 0x4);
+                        record = true;
+                    }
+                }
+                if !record {
+                    c.cycles += 2;
+                    if c.g[V1][0] != c.g[A3][0] {
+                        c.g[A0][0] = oc445_add(c, A0, 0x2);
+                        skip = true;
+                    } else {
+                        // CR: end the line.
+                        c.cycles += 2;
+                        Addr(c.g[A0][0] as u32).sh(c, 0);
+                        c.g[A0][0] = oc445_add(c, A0, 0x2);
+                    }
+                }
+                if !skip {
+                    c.cycles += 2;
+                    Addr(c.g[A2][0] as u32).sw(c, c.g[A0][0]);
+                    c.g[A2][0] = oc445_add(c, A2, 0x4);
+                }
+                c.cycles += 3;
+                c.g[V0][0] = Addr(c.g[A0][0] as u32).lhu(c);
+                if c.g[V0][0] != 0 {
+                    c.g[V1][0] = Addr(c.g[A0][0] as u32).lhu(c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003a_0fa8);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        c.cycles += 1;
+        frame.restore(c, 16, 0x20);
+        c.cycles += 4;
+        frame.restore(c, 17, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void UIText_SetTextId(UIText *text, int id)` (0x3a1000): remember the
+/// text id (`+0xb0`) and call the text's vtable slot 0x28 with `a1 = 0`.
+pub fn ui_text_set_text_id(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        Addr(oc445_add(c, A0, 0xb0) as u32).sw(c, c.g[A1][0]);
+        c.g[V0][0] = oc445_lw(c, A0, 0x8);
+        c.g[A1][0] = 0;
+        c.g[V1][0] = oc445_lh(c, V0, 0x28);
+        c.g[A2][0] = oc445_lw(c, V0, 0x2c);
+        let target = c.g[A2][0] as u32;
+        c.g[A0][0] = oc445_addu(c, A0, V1);
+        call_ptr(c, target, 0x003a_1024)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::game::ealib::seg_2dcae8::tests::oc445_install_fakes;
 
     use crate::difftest::fakes;
 
@@ -2542,6 +2824,102 @@ pub(crate) mod tests {
                     .write32(GAME_GP + UI_TEXT_RENDER_SHADOW_OFS_GP, r.next_u32());
                 c.bus
                     .write32(GAME_GP + UI_TEXT_RENDER_SHADOW_OFS_GP + 4, r.next_u32());
+            },
+        );
+    }
+
+    /// Gate word for this module's fakes (its own machine's RAM).
+    pub(crate) const OC445_CTRL: u32 = DATA + 0xf_0000;
+
+    pub(crate) const OC445_MAGIC: u32 = 0x0445_c0de;
+
+    /// Count of `new` calls so far.
+    pub(crate) const OC445_NEW_COUNT: u32 = OC445_CTRL + 4;
+
+    /// Index of the next `UIScreen_CreateObject` result.
+    pub(crate) const OC445_RESULT_NEXT: u32 = OC445_CTRL + 8;
+
+    /// Open this test's fakes (both machines of a comparison get the gate).
+    pub(crate) fn oc445_gate(c: &mut Cpu) {
+        oc445_install_fakes();
+        c.bus.write32(OC445_CTRL, OC445_MAGIC);
+        c.bus.write32(OC445_NEW_COUNT, 0);
+        c.bus.write32(OC445_RESULT_NEXT, 0);
+    }
+
+    /// A vtable with fake methods in the given slots, random deltas.
+    pub(crate) fn oc445_vtable(c: &mut Cpu, r: &mut Rng, vt: u32, slots: &[u32]) {
+        for (i, &off) in slots.iter().enumerate() {
+            let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+            c.bus.write16(vt + off, delta as u16);
+            c.bus.write32(vt + off + 4, fakes::FAKE + 0x10 * i as u32);
+        }
+    }
+
+    pub(crate) const OC445_OBJ: u32 = DATA + 0x1000;
+
+    pub(crate) const OC445_VT: u32 = DATA + 0x4000;
+
+    pub(crate) const OC445_STR: u32 = DATA + 0x7000;
+
+    /// `UIText_SetTextId`: stores the id, calls vtable slot 0x28.
+    #[test]
+    fn ui_text_set_text_id_matches() {
+        fakes::covered(
+            ee::s13::f_003a1000__generated,
+            ui_text_set_text_id,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3a1000, 1);
+                oc445_vtable(c, &mut r, OC445_VT, &[0x28]);
+                c.bus.write32(OC445_OBJ + 8, OC445_VT);
+                c.g[A0][0] = sx(OC445_OBJ);
+                c.pc = 0x003a_1000;
+            },
+        );
+    }
+
+    /// `UIText_SetWideStringInternal`: empty, single-line, multi-line
+    /// (double backslash and CR separators, lone backslashes), exactly 800
+    /// units and too long (801) strings.
+    #[test]
+    fn ui_text_set_wide_string_internal_matches() {
+        fakes::covered(
+            ee::s13::f_003a0eb0__generated,
+            ui_text_set_wide_string_internal,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3a0eb0, 5);
+                oc445_gate(c);
+                oc445_vtable(c, &mut r, OC445_VT, &[0x28, 0xc0]);
+                c.bus.write32(OC445_OBJ + 8, OC445_VT);
+                c.bus.write32(OC445_OBJ + 0xb4, r.next_u32());
+                // The line separator the game keeps at gp+0x16b8.
+                c.bus.write16(GAME_GP + 0x16b8, 0x5c);
+                let alphabet: [u16; 5] = [0x61, 0x5c, 0x5c, 13, 0x62];
+                let units: Vec<u16> = match seed % 9 {
+                    0 => vec![],
+                    1 => vec![0x61, 0x62, 0x63],
+                    2 => vec![0x61, 0x5c, 0x5c, 0x62],
+                    3 => vec![0x61, 13, 0x62, 13, 13, 0x63],
+                    4 => vec![0x61, 0x5c, 0x78, 0x62],
+                    5 => vec![0x61; 801],
+                    6 => {
+                        let mut v = vec![0x61; 796];
+                        v.extend([0x5c, 0x5c, 0x62, 13]);
+                        v
+                    }
+                    _ => (0..1 + r.next_u32() % 30)
+                        .map(|_| alphabet[(r.next_u32() % 5) as usize])
+                        .collect(),
+                };
+                for (i, &u) in units.iter().enumerate() {
+                    c.bus.write16(OC445_STR + 2 * i as u32, u);
+                }
+                c.bus.write16(OC445_STR + 2 * units.len() as u32, 0);
+                c.g[A0][0] = sx(OC445_OBJ);
+                c.g[A1][0] = sx(OC445_STR);
+                c.pc = 0x003a_0eb0;
             },
         );
     }

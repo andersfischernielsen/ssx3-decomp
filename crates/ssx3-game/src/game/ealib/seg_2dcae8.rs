@@ -11,6 +11,10 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::misc::add32;
+pub(crate) use crate::game::ui::uitext::oc445_add;
+pub(crate) use crate::game::ui::uitext::oc445_addu;
+pub(crate) use crate::game::ui::uitext::oc445_lhu;
+pub(crate) use crate::game::ui::uitext::oc445_lw;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -31,6 +35,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003e_0118, stream_file_on_close, "StreamFile_OnClose"),
     (0x003e_03d0, streamfile_issue_read, "StreamFile_IssueRead"),
     (0x003e_5398, ea_thread_yield, "EAThread_Yield"),
+    (0x003e_4af0, eatimer_init, "EATimer_Init"),
+    (0x003e_57f8, eatimer_add_callback, "EATimer_AddCallback"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1328,6 +1334,369 @@ pub fn ea_thread_yield(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod oc445_callee {
+
+    pub(crate) use crate::game::ui::uitext::oc445_callee::EA_ADD_SHUTDOWN_HANDLER;
+    pub(crate) use crate::game::ui::uitext::oc445_callee::EA_TIMER_SET_VIDEO_MODE;
+}
+
+// ---------------------------------------------------------------------------
+// EATimer_Init / EATimer_AddCallback.
+
+/// `0x450ddc`: the timer 1 interrupt handler id (non-zero once started).
+#[cfg(test)]
+pub(crate) const EA_TIMER_READY: u32 = 0x0045_0ddc;
+
+/// `0x450dc8`: ticks per interrupt (EATimer_Init's result).
+#[cfg(test)]
+pub(crate) const EA_TIMER_TICKS_PER_IRQ: u32 = 0x0045_0dc8;
+
+/// `0x450da0`: the known video mode constant (0: not measured yet).
+#[cfg(test)]
+pub(crate) const EA_TIMER_VIDEO_MODE: u32 = 0x0045_0da0;
+
+/// `0x450dcc`: the interrupt count (advanced by the timer handler).
+#[cfg(test)]
+pub(crate) const EA_TIMER_IRQ_COUNT: u32 = 0x0045_0dcc;
+
+/// `int EATimer_Init(int hz)` (0x3e4af0): start the EE timer 1 interrupt
+/// (compare, mode, `AddIntcHandler(10, Rcnt1Handler)`, `EnableIntc(10)`) at
+/// `hz` (0 means 100) and return the ticks per interrupt (`0x450dc8`). A
+/// second call just returns that value. The prescaler (`mode` 0/1/2 for
+/// hz >= 3150 / >= 196 / lower) divides the bus clock. Unless the video
+/// mode is already known (`0x450da0`) it then measures a frame with
+/// timer 0 (spinning on the interrupt count `0x450dcc`) to choose the
+/// video mode via `EATimer_SetVideoMode`. Registers `EATimer_Shutdown` as
+/// shutdown handler last.
+pub fn eatimer_init(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        c.g[V1][0] = 0x450000;
+        frame.save(c, 18, 0x10);
+        c.g[A3][0] = c.g[A0][0];
+        c.g[V0][0] = oc445_lw(c, V1, 0xddc);
+        c.g[S2][0] = c.g[V1][0];
+        frame.save(c, 16, 0x30);
+        frame.save(c, 17, 0x20);
+        let uninitialised = c.g[V0][0] == 0;
+        frame.save_ra(c, 0);
+        'done: {
+            if !uninitialised {
+                c.cycles += 3;
+                c.g[V1][0] = 0x450000;
+                c.g[V0][0] = oc445_lw(c, V1, 0xdc8);
+                break 'done;
+            }
+            // hz -> compare value (+0xde0) and ticks per interrupt (+0xdc8).
+            c.cycles += 5;
+            c.g[V0][0] = 0x64;
+            if c.g[A3][0] == 0 {
+                c.g[A3][0] = c.g[V0][0];
+            }
+            c.g[V1][0] = ((c.g[A3][0] as i64) < 3150) as u64;
+            let fast = c.g[V1][0] == 0;
+            c.g[V0][0] = ((c.g[A3][0] as i64) < 196) as u64;
+            if fast {
+                // hz >= 3150: prescaler 0.
+                c.cycles += 5;
+                c.g[V1][0] = sx((c.g[A3][0] as u32) >> 31);
+                c.g[A1][0] = 0x8ca0000;
+                c.g[V1][0] = oc445_addu(c, A3, V1);
+                c.cycles += 14;
+                c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 1) as u32);
+                c.g[A0][0] = 0x450000;
+                c.g[V1][0] = oc445_addu(c, V1, A1);
+                c.g[A2][0] = 0x450000;
+                c.div(0, V1, A3);
+                c.g[S1][0] = c.g[A2][0];
+                c.g[T0][0] = c.g[A0][0];
+                c.g[A3][0] = 0;
+                c.g[V1][0] = c.lo[0];
+                Addr(oc445_add(c, A0, 0xde0) as u32).sh(c, c.g[V1][0]);
+                c.g[V0][0] = c.g[V1][0] & 0xffff;
+                c.div(0, A1, V0);
+                c.g[A1][0] = c.lo[0];
+                Addr(oc445_add(c, A2, 0xdc8) as u32).sw(c, c.g[A1][0]);
+            } else {
+                c.cycles += 2;
+                let slow = c.g[V0][0] != 0;
+                c.g[V1][0] = sx((c.g[A3][0] as u32) >> 31);
+                if !slow {
+                    // 196 <= hz < 3150: prescaler 1.
+                    c.cycles += 6;
+                    c.g[A0][0] = 0x8c0000;
+                    c.g[V1][0] = oc445_addu(c, A3, V1);
+                    c.g[A0][0] |= 0xa000;
+                    c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 1) as u32);
+                    c.cycles += 7;
+                    c.g[V1][0] = oc445_addu(c, V1, A0);
+                    c.g[A1][0] = 0x450000;
+                    c.div(0, V1, A3);
+                    c.g[A2][0] = 0x450000;
+                    c.g[S1][0] = c.g[A2][0];
+                    c.g[T0][0] = c.g[A1][0];
+                    c.g[A3][0] = 0x1;
+                } else {
+                    // hz < 196: prescaler 2.
+                    c.cycles += 6;
+                    c.g[A0][0] = 0x80000;
+                    c.g[V1][0] = oc445_addu(c, A3, V1);
+                    c.g[A0][0] |= 0xca00;
+                    c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 1) as u32);
+                    c.cycles += 8;
+                    c.g[V1][0] = oc445_addu(c, V1, A0);
+                    c.g[A1][0] = 0x450000;
+                    c.div(0, V1, A3);
+                    c.g[A2][0] = 0x450000;
+                    c.g[S1][0] = c.g[A2][0];
+                    c.g[T0][0] = c.g[A1][0];
+                    c.g[A3][0] = 0x2;
+                }
+                c.cycles += 7;
+                c.g[V1][0] = c.lo[0];
+                Addr(oc445_add(c, A1, 0xde0) as u32).sh(c, c.g[V1][0]);
+                c.g[V0][0] = c.g[V1][0] & 0xffff;
+                c.div(0, A0, V0);
+                c.g[A0][0] = c.lo[0];
+                Addr(oc445_add(c, A2, 0xdc8) as u32).sw(c, c.g[A0][0]);
+            }
+            // Program timer 1: count 0, compare, mode | 0x180.
+            c.cycles += 24;
+            c.g[V0][0] = 0x10000000;
+            c.g[A2][0] = 0x10000000;
+            c.g[V0][0] |= 0x800;
+            c.g[A2][0] |= 0x820;
+            Addr(c.g[V0][0] as u32).sw(c, 0);
+            c.g[V1][0] = 0x10000000;
+            c.g[V1][0] |= 0x810;
+            c.g[A3][0] |= 0x180;
+            c.g[V0][0] = oc445_lhu(c, T0, 0xde0);
+            c.g[A1][0] = 0x3e0000;
+            c.g[A1][0] = oc445_add(c, A1, 0x4db8);
+            c.g[A0][0] = 0xa;
+            Addr(c.g[A2][0] as u32).sw(c, c.g[V0][0]);
+            c.g[S0][0] = 0x3e0000;
+            Addr(c.g[V1][0] as u32).sw(c, c.g[A3][0]);
+            c.g[A2][0] = 0;
+            // AddIntcHandler(10, EATimer_Rcnt1Handler, 0)
+            call_ptr(c, 0x0042_3a80, 0x003e_4c58)?;
+            Addr(oc445_add(c, S2, 0xddc) as u32).sw(c, c.g[V0][0]);
+            c.g[A0][0] = 0xa;
+            // EnableIntc(10)
+            call_ptr(c, 0x0042_48e8, 0x003e_4c64)?;
+            c.g[V1][0] = 0x450000;
+            c.g[V0][0] = oc445_lw(c, V1, 0xda0);
+            let known = c.g[V0][0] != 0;
+            c.g[V1][0] = 0x10000000;
+            if !known {
+                // Measure the frame length with timer 0 over one `ticks
+                // per interrupt` wait on the interrupt count.
+                c.cycles += 14;
+                c.g[V0][0] = 0x10000000;
+                c.g[A2][0] = Addr(c.g[V1][0] as u32).lw(c);
+                c.g[V0][0] |= 0x10;
+                c.g[A3][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.g[V1][0] = 0x83;
+                Addr(c.g[V0][0] as u32).sw(c, c.g[V1][0]);
+                c.g[A1][0] = 0x450000;
+                c.g[A0][0] = oc445_lw(c, A1, 0xdcc);
+                c.g[V1][0] = oc445_lw(c, S1, 0xdc8);
+                c.g[V0][0] = oc445_lw(c, A1, 0xdcc);
+                c.g[A0][0] = oc445_addu(c, A0, V1);
+                c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                let wait = c.g[V0][0] != 0;
+                c.g[V1][0] = c.g[A1][0];
+                if wait {
+                    c.cycles += 1;
+                    loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = oc445_lw(c, V1, 0xdcc);
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                        let again = c.g[V0][0] != 0;
+                        if again {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x003e_4cb0);
+                            }
+                            continue;
+                        }
+                        break;
+                    }
+                }
+                c.cycles += 7;
+                c.g[V0][0] = 0x10000000;
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                Addr(c.g[V0][0] as u32).sw(c, c.g[A2][0]);
+                Addr(c.g[V0][0] as u32).sw(c, c.g[A3][0]);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[A2][0] as u32));
+                let nonneg = (c.g[V1][0] as i64) >= 0;
+                c.g[V0][0] = oc445_add(c, V1, 0u32.wrapping_sub(0x3d55));
+                if !nonneg {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x10000;
+                    c.g[V1][0] = oc445_addu(c, V1, V0);
+                    c.g[V0][0] = oc445_add(c, V1, 0u32.wrapping_sub(0x3d55));
+                }
+                // d - 15701 < 99: mode 1; d - 15576 < 99: mode 2;
+                // d - 28801 < 3199: mode 3.
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[V0][0] < 0x63) as u64;
+                let not1 = c.g[V0][0] == 0;
+                c.g[V0][0] = oc445_add(c, V1, 0u32.wrapping_sub(0x3cd8));
+                if !not1 {
+                    c.cycles += 4;
+                    c.g[A0][0] = 0x1;
+                    oc445_callee::EA_TIMER_SET_VIDEO_MODE.call(c, 0x003e_4d08)?;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[V0][0] < 0x63) as u64;
+                    let not2 = c.g[V0][0] == 0;
+                    c.g[V0][0] = oc445_add(c, V1, 0u32.wrapping_sub(0x7081));
+                    if !not2 {
+                        c.cycles += 4;
+                        c.g[A0][0] = 0x2;
+                        oc445_callee::EA_TIMER_SET_VIDEO_MODE.call(c, 0x003e_4d24)?;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = (c.g[V0][0] < 0xc7f) as u64;
+                        let not3 = c.g[V0][0] == 0;
+                        if !not3 {
+                            c.cycles += 2;
+                            c.g[A0][0] = 0x3;
+                            oc445_callee::EA_TIMER_SET_VIDEO_MODE.call(c, 0x003e_4d40)?;
+                        }
+                    }
+                }
+            }
+            c.cycles += 3;
+            c.g[A0][0] = oc445_add(c, S0, 0x4d68);
+            // EA_AddShutdownHandler(EATimer_Shutdown)
+            oc445_callee::EA_ADD_SHUTDOWN_HANDLER.call(c, 0x003e_4d48)?;
+            c.g[V0][0] = oc445_lw(c, S1, 0xdc8);
+        }
+        c.cycles += 6;
+        frame.restore(c, 16, 0x30);
+        frame.restore(c, 17, 0x20);
+        frame.restore(c, 18, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Callback table: 16 records `{ fn, mode, due, f_c }` at `0x51ed98`.
+#[cfg(test)]
+pub(crate) const EA_TIMER_CALLBACKS: u32 = 0x0052_0000 - 0x1268;
+
+/// Number of adds in progress (`+0xe00`).
+#[cfg(test)]
+pub(crate) const EA_TIMER_ADDING: u32 = 0x0045_0e00;
+
+/// Current tick (`+0xdd0`).
+#[cfg(test)]
+pub(crate) const EA_TIMER_TICK: u32 = 0x0045_0dd0;
+
+/// `void EATimer_AddCallback(void (*fn)(), int mode, int delay)` (0x3e57f8,
+/// `SYNCTASK_add`): put `fn` into the 16-entry callback table, due `delay`
+/// ticks from now. `mode` -1 is stored as 0, 0 as 1. An entry already
+/// holding `fn` is replaced; otherwise the first free entry, after skipping
+/// as many free entries as there are adds in progress (`+0xe00`, so a
+/// nested add from a callback does not take the entry an outer add is
+/// about to use). No room: nothing is added.
+pub fn eatimer_add_callback(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[T1][0] = c.g[A0][0];
+    c.g[T0][0] = c.g[A1][0];
+    c.g[A0][0] = u64::MAX;
+    let mode_given = c.g[T0][0] != c.g[A0][0];
+    c.g[T4][0] = c.g[A2][0];
+    c.cycles += 2;
+    if mode_given {
+        c.g[V0][0] = 0x1;
+        if c.g[T0][0] == 0 {
+            c.g[T0][0] = c.g[V0][0];
+        }
+    } else {
+        c.g[T0][0] = 0;
+    }
+    c.cycles += 9;
+    c.g[V0][0] = 0x450000;
+    c.g[T3][0] = 0x520000;
+    c.g[A1][0] = oc445_lw(c, V0, 0xe00);
+    c.g[T5][0] = c.g[V0][0];
+    c.g[A2][0] = 0;
+    c.g[T2][0] = u64::MAX;
+    c.g[V1][0] = oc445_add(c, A1, 0x1);
+    c.g[A3][0] = oc445_add(c, T3, 0u32.wrapping_sub(0x1268));
+    Addr(oc445_add(c, V0, 0xe00) as u32).sw(c, c.g[V1][0]);
+    loop {
+        c.cycles += 3;
+        c.g[V0][0] = Addr(c.g[A3][0] as u32).lw(c);
+        if c.g[V0][0] == c.g[T1][0] {
+            // The entry already holds this function.
+            c.g[A0][0] = c.g[A2][0];
+            c.cycles += 1;
+            c.g[A2][0] = oc445_add(c, A2, 0x1);
+        } else {
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                c.g[A2][0] = oc445_add(c, A2, 0x1);
+            } else {
+                c.cycles += 2;
+                if c.g[A0][0] != c.g[T2][0] {
+                    c.g[A2][0] = oc445_add(c, A2, 0x1);
+                } else {
+                    c.cycles += 2;
+                    if c.g[A1][0] == 0 {
+                        c.g[A0][0] = c.g[A2][0];
+                    } else {
+                        c.cycles += 1;
+                        c.g[A1][0] = oc445_add(c, A1, 0xffff_ffff);
+                    }
+                    c.cycles += 1;
+                    c.g[A2][0] = oc445_add(c, A2, 0x1);
+                }
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[A2][0] as i64) < 16) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[A3][0] = oc445_add(c, A3, 0x10);
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x003e_5840);
+            }
+            continue;
+        }
+        break;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = u64::MAX;
+    let no_room = c.g[A0][0] == c.g[V0][0];
+    c.g[V1][0] = oc445_add(c, T3, 0u32.wrapping_sub(0x1268));
+    if !no_room {
+        c.cycles += 12;
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 4);
+        c.g[A1][0] = 0x450000;
+        c.g[A2][0] = oc445_addu(c, A0, V1);
+        c.g[V0][0] = oc445_lw(c, A1, 0xdd0);
+        c.g[A3][0] = oc445_addu(c, V1, A0);
+        Addr(c.g[A2][0] as u32).sw(c, c.g[T1][0]);
+        c.g[A1][0] = c.g[A3][0];
+        Addr(oc445_add(c, A3, 0x4) as u32).sw(c, c.g[T0][0]);
+        c.g[V0][0] = oc445_addu(c, V0, T4);
+        Addr(oc445_add(c, A1, 0x8) as u32).sw(c, c.g[V0][0]);
+        c.g[V1][0] = c.g[A1][0];
+        Addr(oc445_add(c, V1, 0xc) as u32).sw(c, 0);
+    }
+    c.cycles += 4;
+    c.g[V0][0] = oc445_lw(c, T5, 0xe00);
+    c.g[V0][0] = oc445_add(c, V0, 0xffff_ffff);
+    let ra = c.g[RA][0] as u32;
+    Addr(oc445_add(c, T5, 0xe00) as u32).sw(c, c.g[V0][0]);
+    c.pc = ra;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1762,6 +2131,188 @@ pub(crate) mod tests {
                 );
                 c.bus.write32(EATHREAD_IN_INTERRUPT, (seed / 16) % 2);
                 c.bus.write32(0x0045_0da0, r.next_u32() % 2000);
+            },
+        );
+    }
+
+    use crate::difftest::check_lohi;
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::ui::uitext::tests::OC445_CTRL;
+    pub(crate) use crate::game::ui::uitext::tests::OC445_MAGIC;
+    pub(crate) use crate::game::ui::uitext::tests::OC445_NEW_COUNT;
+    pub(crate) use crate::game::ui::uitext::tests::OC445_RESULT_NEXT;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    /// What `UIList_GetAt` returns.
+    pub(crate) const OC445_GET_AT: u32 = OC445_CTRL + 0xc;
+
+    /// `UIScreen_CreateObject` results (16 words).
+    pub(crate) const OC445_RESULTS: u32 = OC445_CTRL + 0x10;
+
+    /// Where the fake `operator new` puts its blocks (0x1000 apart).
+    pub(crate) const OC445_NEW_AREA: u32 = DATA + 0x8_0000;
+
+    pub(crate) const OC445_K_PLAIN: u32 = 0;
+
+    pub(crate) const OC445_K_NEW: u32 = 1;
+
+    pub(crate) const OC445_K_RESULT: u32 = 2;
+
+    pub(crate) const OC445_K_GET_AT: u32 = 3;
+
+    /// The logging fake, then a result by kind.
+    pub(crate) fn oc445_fake(c: &mut Cpu, addr: u32, kind: u32) {
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, addr, ra);
+        if c.pc != ra {
+            return;
+        }
+        match kind {
+            OC445_K_NEW => {
+                let n = c.bus.read32(OC445_NEW_COUNT);
+                c.bus.write32(OC445_NEW_COUNT, n + 1);
+                c.g[V0][0] = sx(OC445_NEW_AREA + 0x1000 * (n & 7));
+            }
+            OC445_K_RESULT => {
+                let i = c.bus.read32(OC445_RESULT_NEXT);
+                c.bus.write32(OC445_RESULT_NEXT, i + 1);
+                let r = c.bus.read32(OC445_RESULTS + 4 * (i & 0xf));
+                c.g[V0][0] = sx(r);
+            }
+            OC445_K_GET_AT => {
+                let r = c.bus.read32(OC445_GET_AT);
+                c.g[V0][0] = sx(r);
+            }
+            _ => {}
+        }
+    }
+
+    macro_rules! oc445_fakes {
+        ($($name:ident $prev:ident $addr:literal $shard:ident $slot:ident $gen:ident $kind:expr;)*) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $name(c: &mut Cpu) {
+                    if c.bus.read32(OC445_CTRL) != OC445_MAGIC {
+                        return fakes::fall_back(c, &$prev, ee::$shard::$gen);
+                    }
+                    oc445_fake(c, $addr, $kind)
+                }
+            )*
+            pub(crate) fn oc445_install_fakes() {
+                $(
+                    fakes::hook(addr_of_mut!(ee::$shard::$slot), $name, &$prev);
+                )*
+            }
+        };
+    }
+
+    oc445_fakes! {
+        oc445_f_sprintf OC445_P_SPRINTF 0x0041_7828 s15 OVERRIDE_00417828 f_00417828__generated OC445_K_PLAIN;
+        oc445_f_new OC445_P_NEW 0x0031_7e30 s10 OVERRIDE_00317E30 f_00317e30__generated OC445_K_NEW;
+        oc445_f_memset OC445_P_MEMSET 0x0041_6210 s15 OVERRIDE_00416210 f_00416210__generated OC445_K_PLAIN;
+        oc445_f_free OC445_P_FREE 0x0025_23a8 s06 OVERRIDE_002523A8 f_002523a8__generated OC445_K_PLAIN;
+        oc445_f_fill OC445_P_FILL 0x003e_6448 s14 OVERRIDE_003E6448 f_003e6448__generated OC445_K_PLAIN;
+        oc445_f_free_strings OC445_P_FREE_STRINGS 0x003a_0b38 s13 OVERRIDE_003A0B38 f_003a0b38__generated OC445_K_PLAIN;
+        oc445_f_create_object OC445_P_CREATE_OBJECT 0x0039_d078 s13 OVERRIDE_0039D078 f_0039d078__generated OC445_K_RESULT;
+        oc445_f_push_back OC445_P_PUSH_BACK 0x0039_7910 s13 OVERRIDE_00397910 f_00397910__generated OC445_K_PLAIN;
+        oc445_f_get_at OC445_P_GET_AT 0x0039_7870 s13 OVERRIDE_00397870 f_00397870__generated OC445_K_GET_AT;
+    }
+
+    /// `EATimer_Init`: already started, every prescaler, hz 0, and the
+    /// measured-video-mode path (only with hz values whose wait count is
+    /// below the compare, so the interrupt-count spin loop is not entered).
+    #[test]
+    fn eatimer_init_matches() {
+        check_lohi(
+            ee::s14::f_003e4af0__generated,
+            eatimer_init,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e4af0, 0);
+                // hz values; the last two give a zero compare value (the wait
+                // loop is skipped for them), the others need a known video mode.
+                let hzs: [i32; 14] = [
+                    0,
+                    1,
+                    50,
+                    100,
+                    195,
+                    196,
+                    197,
+                    3000,
+                    3149,
+                    3150,
+                    5000,
+                    1_000_000,
+                    i32::MIN,
+                    0x7fff_ffff,
+                ];
+                let hz = hzs[(seed % 14) as usize];
+                let zero_compare = hz == i32::MIN || hz == 0x7fff_ffff;
+                c.bus
+                    .write32(EA_TIMER_READY, if seed % 5 == 0 { 0x1234 } else { 0 });
+                c.bus.write32(EA_TIMER_TICKS_PER_IRQ, r.next_u32());
+                c.bus.write32(
+                    EA_TIMER_VIDEO_MODE,
+                    if zero_compare && seed % 2 == 0 {
+                        0
+                    } else {
+                        0x3d09
+                    },
+                );
+                c.bus.write32(EA_TIMER_IRQ_COUNT, r.next_u32() >> 1);
+                c.g[A0][0] = sx(hz as u32);
+                c.pc = 0x003e_4af0;
+            },
+        );
+    }
+
+    /// `EATimer_AddCallback`: matching entries, free entries behind the
+    /// skip count, a full table and the -1/0 mode conversions.
+    #[test]
+    fn eatimer_add_callback_matches() {
+        check(
+            ee::s14::f_003e57f8__generated,
+            eatimer_add_callback,
+            400,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e57f8, 0);
+                let fns: [u32; 4] = [0, 0x0012_3450, 0x0012_3460, 0x0012_3470];
+                for i in 0..16u32 {
+                    let f = match r.next_u32() % 4 {
+                        0 | 1 => 0,
+                        k => fns[k as usize],
+                    };
+                    c.bus.write32(EA_TIMER_CALLBACKS + 0x10 * i, f);
+                    c.bus
+                        .write32(EA_TIMER_CALLBACKS + 0x10 * i + 4, r.next_u32());
+                    c.bus
+                        .write32(EA_TIMER_CALLBACKS + 0x10 * i + 8, r.next_u32());
+                    c.bus
+                        .write32(EA_TIMER_CALLBACKS + 0x10 * i + 0xc, r.next_u32());
+                }
+                if seed % 11 == 0 {
+                    // A full table.
+                    for i in 0..16u32 {
+                        c.bus
+                            .write32(EA_TIMER_CALLBACKS + 0x10 * i, 0x0012_3480 + 4 * i);
+                    }
+                }
+                c.bus.write32(
+                    EA_TIMER_ADDING,
+                    [0, 0, 1, 2, 5, 20][(r.next_u32() % 6) as usize],
+                );
+                c.bus.write32(EA_TIMER_TICK, r.next_u32());
+                c.g[A0][0] = sx(fns[(r.next_u32() % 4) as usize]);
+                c.g[A1][0] = match r.next_u32() % 4 {
+                    0 => u64::MAX,
+                    1 => 0,
+                    2 => 1,
+                    _ => sx(r.next_u32() % 7),
+                };
+                c.g[A2][0] = sx(r.next_u32());
             },
         );
     }

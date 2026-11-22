@@ -36,6 +36,10 @@ pub(crate) use crate::game::movie::movieplayer::at as at_2;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::object::instancenode::ui_vector_lw;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
+pub(crate) use crate::game::ui::uitext::oc445_add;
+pub(crate) use crate::game::ui::uitext::oc445_addu;
+pub(crate) use crate::game::ui::uitext::oc445_lw;
+pub(crate) use crate::game::ui::uitext::oc445_vcall;
 pub(crate) use crate::game::wscript::wscriptman::p;
 use crate::guest::Addr;
 use ssx3_ee as ee;
@@ -2851,6 +2855,225 @@ pub(crate) fn ui_list_box_render_draw(c: &mut Cpu, slot: u32, ret: u32) -> crate
     call_ptr(c, func, ret)
 }
 
+/// `lbu off(reg)`.
+#[inline]
+pub(crate) fn oc445_lbu(c: &mut Cpu, base: usize, off: u32) -> u64 {
+    Addr((c.g[base][0] as u32).wrapping_add(off)).lbu(c)
+}
+
+// ---------------------------------------------------------------------------
+// UIEngine_LoadTextures.
+
+/// `void UIEngine_LoadTextures(UITextureBank *bank, int id, UITexData *data)`
+/// (0x398138): load the screen's `<id>.ssh` pack (`FILE_loadpack`), upload
+/// every shape through the UI engine (vtable slot 0x170) into a fresh id
+/// array (`bank+4`, `count` at `bank+8`), then build the bank's 32-byte
+/// element records (`bank+0xc`, `count` at `bank+0x10`) from `data` (a
+/// count and 24-byte source records that name a texture index).
+///
+/// No `OVERRIDES` entry: `FILE_loadpack` reaches `EAFile_CallWithPriority`,
+/// which a fixture cannot bound, so only the prologue up to the first call
+/// is differentially tested. Transcribed from the generated body.
+pub fn ui_engine_load_textures(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 38;
+        let frame = Frame::open(c, 0xe0);
+        c.g[V0][0] = 0x490000;
+        frame.save(c, 20, 0x90);
+        frame.save(c, 17, 0xc0);
+        c.g[S4][0] = c.g[A2][0];
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A2][0] = c.g[A1][0];
+        frame.save(c, 16, 0xd0);
+        c.g[A0][0] = c.g[SP][0];
+        frame.save(c, 19, 0xa0);
+        c.g[A1][0] = oc445_add(c, V0, 0x3d90);
+        frame.save(c, 18, 0xb0);
+        frame.save(c, 21, 0x80);
+        frame.save_ra(c, 0x70);
+        c.g[S0][0] = 0;
+        // sprintf(name, "%s.ssh"-style format, id)
+        call_ptr(c, 0x0041_7828, 0x0039_8178)?;
+        c.g[A1][0] = 0x3000000;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] |= 0x100;
+        // FILE_loadpack(name, 0x3000100)
+        call_ptr(c, 0x003e_22f0, 0x0039_8188)?;
+        c.g[S3][0] = c.g[V0][0];
+        c.g[A1][0] = 0x490000;
+        c.g[V0][0] = oc445_lw(c, S3, 0x8);
+        c.g[A2][0] = 0;
+        c.g[A1][0] = oc445_add(c, A1, 0x3da0);
+        c.g[A3][0] = 0;
+        c.g[A0][0] = sx((c.g[V0][0] as u32) << 2);
+        Addr(oc445_add(c, S1, 0x8) as u32).sw(c, c.g[V0][0]);
+        // operator new(count * 4, "UITextureIDs", 0, 0)
+        call_ptr(c, 0x0031_7e30, 0x0039_81ac)?;
+        c.g[A2][0] = oc445_lw(c, S1, 0x8);
+        c.g[A0][0] = c.g[V0][0];
+        Addr(oc445_add(c, S1, 0x4) as u32).sw(c, c.g[V0][0]);
+        c.g[A1][0] = 0xff;
+        c.g[A2][0] = sx((c.g[A2][0] as u32) << 2);
+        // memset(ids, 0xff, count * 4)
+        call_ptr(c, 0x0041_6210, 0x0039_81c4)?;
+        c.g[V1][0] = oc445_lw(c, S1, 0x8);
+        let no_shapes = (c.g[V1][0] as i64) <= 0;
+        c.g[S2][0] = oc445_add(c, S3, 0x14);
+        if !no_shapes {
+            c.cycles += 2;
+            c.g[S5][0] = 0x4a0000;
+            loop {
+                c.cycles += 4;
+                c.g[V0][0] = Addr(c.g[S2][0] as u32).lw(c);
+                c.g[A1][0] = oc445_addu(c, S3, V0);
+                let skip = c.g[A1][0] == 0;
+                c.g[T2][0] = oc445_lw(c, GP, 0u32.wrapping_sub(0x854));
+                if !skip {
+                    c.cycles += 13;
+                    c.g[A2][0] = oc445_add(c, S5, 0x4778);
+                    c.g[A3][0] = 0;
+                    c.g[T0][0] = 0x1;
+                    c.g[V1][0] = oc445_lw(c, T2, 0x10d8);
+                    c.g[T1][0] = u64::MAX;
+                    // UIEngine vtable slot 0x170: load one shape into a page.
+                    oc445_vcall(c, V1, T2, 0x170, V0, 0x0039_820c)?;
+                    c.g[A0][0] = oc445_lw(c, S1, 0x4);
+                    c.g[V1][0] = sx((c.g[S0][0] as u32) << 2);
+                    c.g[V1][0] = oc445_addu(c, V1, A0);
+                    Addr(c.g[V1][0] as u32).sw(c, c.g[V0][0]);
+                }
+                c.cycles += 5;
+                c.g[V0][0] = oc445_lw(c, S1, 0x8);
+                c.g[S0][0] = oc445_add(c, S0, 0x1);
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S2][0] = oc445_add(c, S2, 0x8);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0039_81d8);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        c.cycles += 16;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[S2][0] = oc445_add(c, S4, 0x4);
+        // MEM_free(fsh)
+        call_ptr(c, 0x0025_23a8, 0x0039_823c)?;
+        c.g[S3][0] = oc445_add(c, S1, 0xc);
+        Addr(c.g[S1][0] as u32).sw(c, c.g[S4][0]);
+        c.g[A1][0] = 0x490000;
+        c.g[A1][0] = oc445_add(c, A1, 0x3db0);
+        c.g[A2][0] = 0;
+        c.g[S0][0] = Addr(c.g[S4][0] as u32).lw(c);
+        c.g[A3][0] = 0;
+        Addr(oc445_add(c, S1, 0x10) as u32).sw(c, c.g[S0][0]);
+        c.g[A0][0] = sx((c.g[S0][0] as u32) << 5);
+        // operator new(count * 32, "UITextureELs", 0, 0)
+        call_ptr(c, 0x0031_7e30, 0x0039_8264)?;
+        c.g[A0][0] = oc445_add(c, S0, 0xffff_ffff);
+        let no_elems = c.g[S0][0] == 0;
+        c.g[V1][0] = c.g[V0][0];
+        if !no_elems {
+            c.cycles += 4;
+            c.g[AT][0] = 0x3f800000;
+            c.mtc1(1, 0);
+            c.g[A1][0] = u64::MAX;
+            // Initialise every record: id -1, 1.0 scales, zero offsets.
+            loop {
+                c.cycles += 10;
+                Addr(c.g[V1][0] as u32).sw(c, c.g[A1][0]);
+                c.g[A0][0] = oc445_add(c, A0, 0xffff_ffff);
+                c.swc1(0, oc445_add(c, V1, 0x4) as u32);
+                c.swc1(0, oc445_add(c, V1, 0x8) as u32);
+                Addr(oc445_add(c, V1, 0xc) as u32).sw(c, 0);
+                Addr(oc445_add(c, V1, 0x10) as u32).sw(c, 0);
+                c.swc1(0, oc445_add(c, V1, 0x14) as u32);
+                c.swc1(0, oc445_add(c, V1, 0x18) as u32);
+                let more = c.g[A0][0] != c.g[A1][0];
+                c.g[V1][0] = oc445_add(c, V1, 0x20);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0039_8280);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        c.cycles += 9;
+        Addr(c.g[S3][0] as u32).sw(c, c.g[V0][0]);
+        c.g[A1][0] = 0xff;
+        c.g[A2][0] = oc445_lw(c, S1, 0x10);
+        c.g[A0][0] = oc445_lw(c, S1, 0xc);
+        c.g[A2][0] = sx((c.g[A2][0] as u32) << 2);
+        // memset(elems, 0xff, count * 4)
+        call_ptr(c, 0x0041_6210, 0x0039_82c0)?;
+        c.g[V1][0] = oc445_lw(c, S1, 0x10);
+        let no_copy = (c.g[V1][0] as i64) <= 0;
+        c.g[A3][0] = 0;
+        if !no_copy {
+            c.cycles += 1;
+            loop {
+                c.cycles += 34;
+                c.g[V1][0] = oc445_lw(c, S1, 0xc);
+                c.g[A1][0] = sx((c.g[A3][0] as u32) << 5);
+                c.lwc1(0, oc445_add(c, S2, 0xc) as u32);
+                c.g[A3][0] = oc445_add(c, A3, 0x1);
+                c.g[V1][0] = oc445_addu(c, A1, V1);
+                c.swc1(0, oc445_add(c, V1, 0xc) as u32);
+                c.g[V0][0] = oc445_lw(c, S1, 0xc);
+                c.lwc1(0, oc445_add(c, S2, 0x8) as u32);
+                c.g[V0][0] = oc445_addu(c, A1, V0);
+                c.swc1(0, oc445_add(c, V0, 0x10) as u32);
+                c.g[V1][0] = oc445_lw(c, S1, 0xc);
+                c.lwc1(0, oc445_add(c, S2, 0x14) as u32);
+                c.g[V1][0] = oc445_addu(c, A1, V1);
+                c.swc1(0, oc445_add(c, V1, 0x18) as u32);
+                c.g[V0][0] = oc445_lw(c, S1, 0xc);
+                c.lwc1(0, oc445_add(c, S2, 0x10) as u32);
+                c.g[V0][0] = oc445_addu(c, A1, V0);
+                c.swc1(0, oc445_add(c, V0, 0x14) as u32);
+                c.g[V1][0] = oc445_lw(c, S1, 0xc);
+                c.g[A0][0] = Addr(c.g[S2][0] as u32).lw(c);
+                c.g[V1][0] = oc445_addu(c, A1, V1);
+                Addr(oc445_add(c, V1, 0x1c) as u32).sw(c, c.g[A0][0]);
+                c.g[V0][0] = oc445_lbu(c, S2, 0x5);
+                c.g[A2][0] = oc445_lw(c, S1, 0x4);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[A0][0] = oc445_lw(c, S1, 0xc);
+                c.g[V0][0] = oc445_addu(c, V0, A2);
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.g[A1][0] = oc445_addu(c, A1, A0);
+                Addr(c.g[A1][0] as u32).sw(c, c.g[V1][0]);
+                c.g[V0][0] = oc445_lw(c, S1, 0x10);
+                c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S2][0] = oc445_add(c, S2, 0x18);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0039_82d0);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        c.cycles += 9;
+        frame.restore(c, 16, 0xd0);
+        frame.restore(c, 17, 0xc0);
+        frame.restore(c, 18, 0xb0);
+        frame.restore(c, 19, 0xa0);
+        frame.restore(c, 20, 0x90);
+        frame.restore(c, 21, 0x80);
+        frame.restore_ra(c, 0x70);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3831,6 +4054,32 @@ pub(crate) mod tests {
                 c.bus.write32(state + 8, r.next_u32());
                 c.bus.write32(GAME_GP.wrapping_sub(0x854), renderer);
                 c.bus.write32(GAME_GP + 0x2a90, renderer);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    pub(crate) use crate::game::ui::uitext::tests::oc445_gate;
+
+    pub(crate) use crate::game::ui::uitext::tests::OC445_OBJ;
+
+    pub(crate) const OC445_OBJ2: u32 = DATA + 0x2000;
+
+    /// `UIEngine_LoadTextures` up to its first call: the frame, the saved
+    /// registers and the `sprintf` arguments (the fake unwinds there).
+    #[test]
+    fn ui_engine_load_textures_prologue_matches() {
+        check(
+            ee::s13::f_00398138,
+            ui_engine_load_textures,
+            60,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x398138, 1);
+                oc445_gate(c);
+                c.bus.write32(fakes::LOG_UNWIND_AT, 0);
+                c.g[A0][0] = sx(OC445_OBJ);
+                c.g[A2][0] = sx(OC445_OBJ2);
+                c.pc = 0x0039_8138;
             },
         );
     }

@@ -385,6 +385,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0036_5e40, vram_heap_init, "VramHeap_Init"),
     (0x0036_1f60, intc_table_clear_slots, "IntcTable_ClearSlots"),
     (0x0036_6fe0, tex_man_set_alloc_flags, "TexMan_SetAllocFlags"),
+    (
+        0x0036_6e90,
+        tex_man_copy_to_temp_tex,
+        "TexMan_CopyToTempTex",
+    ),
 ];
 
 /// The matrix record table of `DeferMan_InternMatrixRecord`.
@@ -7383,6 +7388,137 @@ pub fn tex_man_set_alloc_flags(c: &mut Cpu) {
     ret(c);
 }
 
+/// `TexMan_CopyToTempTex` (0x00366e90): Copies a texture into a temporary buffer one mip level at a time and swizzles each level (8-bit) into its place, then frees the buffer and sets the texture state to 10. `(self, tex)`.
+#[allow(
+    unused_labels,
+    unused_assignments,
+    unused_variables,
+    unreachable_code,
+    unused_mut
+)]
+pub fn tex_man_copy_to_temp_tex(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_366f98: {
+            c.cycles += 38;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xa0));
+            c.g[A3][0] = 0u64;
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S4][0] = c.g[A1][0];
+            c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[A1][0] = 0x4a0000;
+            c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4060));
+            c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S7][0] = c.g[A0][0];
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+            c.g[S6][0] = 0u64;
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[A2][0] = c.lw((c.g[S7][0] as u32).wrapping_add(0x1f58));
+            c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x10));
+            c.g[A2][0] = c.g[A2][0] ^ 0x100;
+            call_ptr(c, 0x00317e30, 0x00366ee4)?; // call_indirect
+            c.g[S5][0] = c.g[V0][0];
+            c.g[A0][0] = 0x1;
+            c.g[V0][0] = c.ld((c.g[S4][0] as u32).wrapping_add(0x38));
+            c.g[A1][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x24));
+            c.g[V1][0] = c.g[V0][0] >> 30;
+            c.g[FP][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x18));
+            c.g[V0][0] = c.g[V0][0] >> 26;
+            c.g[V1][0] = c.g[V1][0] & 0xf;
+            c.g[V0][0] = c.g[V0][0] & 0xf;
+            c.g[V1][0] = c.g[V1][0] << 32;
+            c.g[V1][0] = ((c.g[V1][0] as i64) >> 32) as u64;
+            c.g[V0][0] = c.g[V0][0] << 32;
+            c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
+            c.g[S3][0] = sx((c.g[A0][0] as u32) << ((c.g[V1][0] as u32) & 31));
+            c.g[S2][0] = sx((c.g[A0][0] as u32) << ((c.g[V0][0] as u32) & 31));
+            let t = (c.g[A1][0] as i64) < 0;
+            c.g[S1][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x1c));
+            if t {
+                break 'b_366f98;
+            } else {
+                'l_366f28: loop {
+                    c.cycles += 28;
+                    c.mult(0, 3, 18, 19);
+                    c.g[A2][0] = 0xffffffffffffffff;
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[A0][0] = c.g[S5][0];
+                    c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_add(0x1));
+                    c.mult(0, 3, 3, 30);
+                    c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x7));
+                    if c.g[V0][0] != 0 {
+                        c.g[S0][0] = c.g[V1][0];
+                    }
+                    c.g[A2][0] = 0x100;
+                    c.g[S0][0] = sx(((c.g[S0][0] as u32) as i32 >> 3) as u32);
+                    c.g[V1][0] = 0xff;
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[S0][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[S0][0] = c.g[A2][0];
+                    }
+                    c.g[A2][0] = c.g[S0][0];
+                    call_ptr(c, 0x003e6574, 0x00366f68)?; // call_indirect
+                    c.g[A1][0] = c.g[S2][0];
+                    c.g[A2][0] = c.g[S3][0];
+                    c.g[T0][0] = c.g[S1][0];
+                    c.g[A0][0] = c.g[S7][0];
+                    c.g[A3][0] = c.g[S5][0];
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    call_ptr(c, 0x00390198, 0x00366f84)?; // TexMan_SwizzleT8
+                    c.g[S2][0] = sx(((c.g[S2][0] as u32) as i32 >> 1) as u32);
+                    c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x24));
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[S6][0] as i64)) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[S3][0] = sx(((c.g[S3][0] as u32) as i32 >> 1) as u32);
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00366f28);
+                        }
+                        continue 'l_366f28;
+                    } else {
+                        break 'b_366f98;
+                    }
+                }
+            }
+        }
+        'b_366fac: {
+            c.cycles += 2;
+            let t = c.g[S5][0] == 0u64;
+            c.g[V0][0] = 0xa;
+            if t {
+                break 'b_366fac;
+            } else {
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S5][0];
+                call_ptr(c, 0x00317e98, 0x00366fa8)?; // call_indirect
+                c.g[V0][0] = 0xa;
+                break 'b_366fac;
+            }
+        }
+        c.cycles += 13;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.sw((c.g[S4][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.pc = t;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10391,6 +10527,46 @@ pub(crate) mod tests {
                 let mut r = machine(c, seed, 0x366fe0, 0);
                 c.pc = 0x0036_6fe0;
                 c.g[A0][0] = ptr(&mut r) as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::festateloadscreen::tests::oc444_allocator;
+
+    pub(crate) use crate::game::fe::festateloadscreen::tests::oc444_run;
+
+    pub(crate) use crate::game::fe::festateloadscreen::tests::OC444_OBJ;
+    pub(crate) use crate::game::fe::festateloadscreen::tests::OC444_OBJ2;
+
+    // ------------------------------------------------------- FXLoader_ctor.
+
+    // ------------------------------------------------ TexMan_CopyToTempTex.
+
+    /// `TexMan_CopyToTempTex(self, tex)`: copies and swizzles every mip level
+    /// of a small texture.
+    #[test]
+    fn tex_man_copy_to_temp_tex_matches() {
+        oc444_run(
+            ee::s12::f_00366e90__generated,
+            tex_man_copy_to_temp_tex,
+            0x0036_6e90,
+            0x36_6e90,
+            60,
+            &|c, r, seed| {
+                oc444_allocator(c);
+                let this = DATA + 0xe800;
+                c.g[A0][0] = this as u64;
+                let tex = OC444_OBJ;
+                c.g[A1][0] = tex as u64;
+                c.bus.write32(this + 0x1f58, r.next_u32() % 4);
+                c.bus.write32(tex + 0x10, 0x400);
+                let (tw, th) = (2 + r.next_u32() % 3, 2 + r.next_u32() % 3);
+                c.bus
+                    .write64(tex + 0x38, (tw as u64) << 26 | (th as u64) << 30);
+                c.bus.write32(tex + 0x18, [8u32, 32][seed as usize % 2]);
+                c.bus.write32(tex + 0x1c, OC444_OBJ2);
+                c.bus
+                    .write32(tex + 0x24, (r.next_u32() % 4).wrapping_sub(1));
             },
         );
     }
