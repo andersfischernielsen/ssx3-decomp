@@ -38,9 +38,6 @@ fn repo_root() -> PathBuf {
 
 fn main() {
     let mut shards = 16usize;
-    // Default: structured Rust; `--threads` the block-dispatch form for all
-    // functions.
-    let mut structured = true;
     // `--out DIR --package-prefix NAME`: a second copy of the generated code
     // next to the default one.
     let mut out: Option<PathBuf> = None;
@@ -48,11 +45,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
     while i < args.len() {
-        if args[i] == "--threads" {
-            structured = false;
-        } else if args[i] == "--structured" {
-            structured = true;
-        } else if args[i] == "--out" {
+        if args[i] == "--out" {
             out = Some(PathBuf::from(&args[i + 1]));
             i += 1;
         } else if args[i] == "--package-prefix" {
@@ -335,25 +328,22 @@ fn main() {
         code.push_str("#![allow(unused_imports, unused_mut, unused_variables, unused_assignments, unreachable_code, unused_parens, non_snake_case, clippy::all)]\n");
         code.push_str("use ssx3_ee_rt::Cpu;\nuse ssx3_ee_rt::cpu::sx;\nuse ssx3_ee_rt::cpu::reg::*;\nuse ssx3_ee_rt::funcs::call_indirect;\nuse ssx3_ee_rt::vu0::{Efu, Src, W, X, Y, Z};\n\n");
         let mut emit_one = |f: &Func, code: &mut String| {
-            if structured {
-                if let Some(src) =
-                    ssx3_recomp::structure::emit_structured(&img, f, s, &ctx, &external)
-                {
-                    code.push_str(&src);
-                    structured_count += 1;
-                    if external.range(f.start + 1..f.end).next().is_some() {
-                        let twin = format!("{}__entries", fn_name(f.start));
-                        let st = emit_function_named(&img, f, s, &ctx, code, &twin);
-                        totals.invalid += st.invalid;
-                    }
-                    totals.instructions += f
-                        .runs
-                        .iter()
-                        .map(|r| ((r.1 - r.0) / 4) as usize)
-                        .sum::<usize>();
-                    code.push('\n');
-                    return;
+            if let Some(src) = ssx3_recomp::structure::emit_structured(&img, f, s, &ctx, &external)
+            {
+                code.push_str(&src);
+                structured_count += 1;
+                if external.range(f.start + 1..f.end).next().is_some() {
+                    let twin = format!("{}__entries", fn_name(f.start));
+                    let st = emit_function_named(&img, f, s, &ctx, code, &twin);
+                    totals.invalid += st.invalid;
                 }
+                totals.instructions += f
+                    .runs
+                    .iter()
+                    .map(|r| ((r.1 - r.0) / 4) as usize)
+                    .sum::<usize>();
+                code.push('\n');
+                return;
             }
             let st = emit_function(&img, f, s, &ctx, code);
             totals.instructions += st.instructions;
@@ -383,19 +373,17 @@ fn main() {
                 // computed jumps) keep those entries in the generated
                 // `__entries` twin; only entries at the start reach the slot.
                 // (The structured form keeps such entries in an `__entries`
-                // twin; the unwind form's body dispatches on `c.pc` itself,
-                // and there every return address in the function is one: a
-                // thread switch in a callee resumes the caller there.)
+                // twin.)
                 // (A function the structured emitter could not structure is
                 // emitted as a `c.pc` dispatcher with no twin: its body
                 // takes the other entries itself.)
                 let has_twin = body.contains(&format!("pub fn {name}__entries("));
-                let twin = if structured && has_twin {
+                let twin = if has_twin {
                     format!("{name}__entries")
                 } else {
                     format!("{name}__generated")
                 };
-                let mid = if !structured || external.range(f.start + 1..f.end).next().is_some() {
+                let mid = if external.range(f.start + 1..f.end).next().is_some() {
                     format!(
                         "    // Entries other than the start run the generated code.\n    if c.pc != {:#010x} {{\n        return {twin}(c);\n    }}\n",
                         f.start
@@ -503,12 +491,10 @@ fn main() {
     println!("data refs    : {}", data_refs.len());
     println!("extra entries: {}", extra.len());
     println!("shards       : {shards}");
-    if structured {
-        println!(
-            "structured   : {structured_count} of {} functions",
-            funcs.len()
-        );
-    }
+    println!(
+        "structured   : {structured_count} of {} functions",
+        funcs.len()
+    );
     println!("rust bytes   : {bytes}");
 
     // The IOP sound modules (recomp-iop) are part of the same build.
