@@ -6311,7 +6311,9 @@ pub(crate) mod tests {
                     0 => 0,
                     1 => 1,
                     2 => 0xffff_ffff,
-                    _ => (seed * 2654435761) as u64,
+                    // wrapping: the game profile wraps, the dev profile
+                    // (overflow checks on) panicked here.
+                    _ => seed.wrapping_mul(2654435761) as u64,
                 };
             },
         );
@@ -6530,33 +6532,71 @@ pub(crate) mod tests {
     // 0x3eb1e0 TagFieldSetRaw.
     #[test]
     fn tag_field_set_raw_matches() {
+        // One digit per steering value: seed%6 term, seed/6%13 record,
+        // seed/78%2 null term, seed/156%2 null record (312 seeds, the full
+        // 6x13x2x2 cross). The record classes pick a printable record end, a
+        // length exactly on it (and one past it), spaces around the field, a
+        // record whose head is class 1 ('=', a name mismatch, so the scan
+        // reaches the append arm), an empty record, the field second, and the
+        // base's buffer shorter than its record (len 8 on the 11-byte one).
+        const SEEDS: u32 = 312;
+        assert_eq!(
+            SEEDS,
+            6 * 13 * 2 * 2,
+            "term x record x null term x null record"
+        );
         check(
             ee::s14::f_003eb1e0__generated,
             tag_field_set_raw,
-            96,
+            SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x3eb1e0, 0);
                 tables(c);
                 c.pc = 0x003eb1e0;
                 let rec = DATA;
-                let len = if seed % 8 == 1 { 8 } else { 0x200 };
-                c.g[A0][0] = if seed % 8 == 0 { 0 } else { sx(rec) };
+                let class = (seed / 6) % 13;
+                let len = match class {
+                    2 => 6,
+                    3 => 5,
+                    12 => 8,
+                    _ => 0x200,
+                };
+                c.g[A0][0] = if (seed / 156) % 2 == 0 { 0 } else { sx(rec) };
                 c.g[A1][0] = len as u64;
                 let tmp = DATA + 0x400;
-                if seed % 5 == 0 {
+                if (seed / 78) % 2 == 0 {
                     c.g[A2][0] = 0;
                 } else {
                     c.g[A2][0] = sx(tmp);
-                    let name = match seed % 4 {
+                    let name = match seed % 6 {
                         0 => "abc",
                         1 => "x y",
                         2 => "",
+                        3 => "=abc",
+                        4 => ":abc",
                         _ => "k",
                     };
                     put_str(c, tmp, name.as_bytes());
                 }
-                // A record: a couple of "name=value" fields.
-                put_str(c, rec, b"abc=1\nxy=2\n");
+                put_str(
+                    c,
+                    rec,
+                    match class {
+                        0 => b"abc=1\nxy=2\n",
+                        1 => b" abc=1\nxy=2\n",
+                        2 => b"abc=1",
+                        3 => b"abc=1",
+                        4 => b"abc=1\n",
+                        5 => b"abc =1\n",
+                        6 => b"abc=1 \n",
+                        7 => b"abc=1\n x=2\n",
+                        8 => b"=abc=1\nx=2\n",
+                        9 => b"",
+                        10 => b"=1\n",
+                        11 => b"xy=2\nabc=1\n",
+                        _ => b"abc=1\nxy=2\n",
+                    },
+                );
             },
         );
     }
@@ -6660,19 +6700,41 @@ pub(crate) mod tests {
     // 0x3eb6d8 TagFieldFind.
     #[test]
     fn tag_field_find_matches() {
+        // One digit per steering value: seed%4 name, seed/4%8 record,
+        // seed/32%2 null record, seed/64%2 null name (128 seeds, the full
+        // 4x8x2x2 cross). The arms the record classes pick: a space before
+        // the name, a space or a NUL right after '=', a '!' before '=',
+        // an uppercase record (the fold), a 0xe0 byte, and a record with no
+        // trailing newline (the at-record-end match attempt).
+        const SEEDS: u32 = 128;
+        assert_eq!(SEEDS, 4 * 8 * 2 * 2, "one seed per name x record x nulls");
         check(
             ee::s14::f_003eb6d8__generated,
             tag_field_find,
-            96,
+            SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x3eb6d8, 0);
                 tables(c);
                 c.pc = 0x003eb6d8;
                 let rec = DATA;
                 let name = DATA + 0x200;
-                c.g[A0][0] = if seed % 7 == 0 { 0 } else { sx(rec) };
-                c.g[A1][0] = if seed % 11 == 0 { 0 } else { sx(name) };
-                put_str(c, rec, b"alpha=1\nbeta=2\n");
+                let class = (seed / 4) % 8;
+                c.g[A0][0] = if (seed / 32) % 2 == 0 { 0 } else { sx(rec) };
+                c.g[A1][0] = if (seed / 64) % 2 == 0 { 0 } else { sx(name) };
+                put_str(
+                    c,
+                    rec,
+                    match class {
+                        0 => b"alpha=1\nbeta=2\n",
+                        1 => b" alpha=1\nbeta=2\n",
+                        2 => b"alpha= 1\nbeta=2\n",
+                        3 => b"alpha=\nbeta=2\n",
+                        4 => b"alpha!=\nbeta=2\n",
+                        5 => b"ALPHA=1\nbeta=2\n",
+                        6 => b"\xe0alpha=1\n",
+                        _ => b"alpha=1",
+                    },
+                );
                 put_str(
                     c,
                     name,
@@ -6836,10 +6898,16 @@ pub(crate) mod tests {
     // 0x3eb918 TagFieldDelete.
     #[test]
     fn tag_field_delete_matches() {
+        // One digit per steering value: seed%6 record, seed/6%3 name
+        // (18 seeds = the full 6x3 cross). A '!' inside the matched name is
+        // the only way the walk stops on 0x21 (Find accepts a name whose head
+        // it can match), and a space inside the value is what 2454 needs.
+        const SEEDS: u32 = 18;
+        assert_eq!(SEEDS, 6 * 3, "record x name");
         check(
             ee::s14::f_003eb918__generated,
             tag_field_delete,
-            64,
+            SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x3eb918, 0);
                 tables(c);
@@ -6848,14 +6916,28 @@ pub(crate) mod tests {
                 let name = DATA + 0x200;
                 c.g[A0][0] = sx(rec);
                 c.g[A1][0] = sx(name);
-                put_str(c, rec, b"aa=1\nbb=2\n");
+                // The walk and value loops break on `!` (0x21) and on a
+                // space, and one record puts a '!' before the field: `< 0x21`
+                // and `< 0x20` differ only at those two bytes.
+                put_str(
+                    c,
+                    rec,
+                    match seed % 6 {
+                        1 => b"a!a=1\nbb=2\n",
+                        2 => b"aa=1 x\nbb=2\n",
+                        3 => b"aa=1\n !bb=2\n",
+                        4 => b" aa=1\nbb=2\n",
+                        5 => b"aa = 1\nbb=2\n",
+                        _ => b"aa=1\nbb=2\n",
+                    },
+                );
                 put_str(
                     c,
                     name,
-                    match seed % 3 {
+                    match (seed / 6) % 3 {
                         0 => b"aa",
                         1 => b"bb",
-                        _ => b"cc",
+                        _ => b"a!a",
                     },
                 );
             },
@@ -6935,10 +7017,16 @@ pub(crate) mod tests {
     // 0x3eb9e8 TagFieldRename.
     #[test]
     fn tag_field_rename_matches() {
+        // One digit per steering value: seed%9 record, seed/9%3 name,
+        // seed/27%2 length argument, seed/54%2 new name (108 seeds = the full
+        // 9x3x2x2 cross). Record 6 puts a '!' inside the matched name (Find
+        // accepts it, so the walk sees 0x21), record 7 a space after '='.
+        const SEEDS: u32 = 108;
+        assert_eq!(SEEDS, 9 * 3 * 2 * 2, "record x name x length x new name");
         check(
             ee::s14::f_003eb9e8__generated,
             tag_field_rename,
-            64,
+            SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x3eb9e8, 0);
                 tables(c);
@@ -6947,12 +7035,53 @@ pub(crate) mod tests {
                 let name = DATA + 0x200;
                 let val = DATA + 0x400;
                 c.g[A0][0] = sx(rec);
-                c.g[A1][0] = if seed % 3 == 1 { 4 } else { 0x100 };
+                c.g[A1][0] = if (seed / 27) % 2 == 0 { 0x100 } else { 4 };
                 c.g[A2][0] = sx(name);
                 c.g[A3][0] = sx(val);
-                put_str(c, rec, b"aa=1\nbb=2\n");
-                put_str(c, name, if seed % 3 == 0 { b"zz" } else { b"aa" });
-                put_str(c, val, b"hello");
+                // A space, a '!' or an uppercase letter before the field, a
+                // space after '=' or inside the value, a new name shorter than
+                // the old one (the shrink arm) and an old name ending the
+                // record (the only shrink the body terminates on).
+                put_str(
+                    c,
+                    rec,
+                    match seed % 9 {
+                        1 => b" aa=1\nbb=2\n",
+                        2 => b"Aaa=1\nbb=2\n",
+                        3 => b"bb=2\naa",
+                        4 => b"aaa=1\nbb=2\n",
+                        5 => b"aa=1\n bb=2\n",
+                        6 => b"a!a=1\nbb=2\n",
+                        7 => b"aa= 1\nbb=2\n",
+                        8 => b"aa=1 x\nbb=2\n",
+                        _ => b"aa=1\nbb=2\n",
+                    },
+                );
+                put_str(
+                    c,
+                    name,
+                    match (seed / 9) % 3 {
+                        0 => b"aa",
+                        1 => b"zz",
+                        _ => b"a!a",
+                    },
+                );
+                // A shorter new name on any field but the record-ending one
+                // loops forever in the reference body (0x3eba88), so the
+                // short name is only paired with that record; the other value
+                // of the digit is a longer name.
+                let shorter = seed % 9 == 3 && (seed / 54) % 2 == 1;
+                put_str(
+                    c,
+                    val,
+                    if shorter {
+                        b"z"
+                    } else if (seed / 54) % 2 == 0 {
+                        b"hello"
+                    } else {
+                        b"helloo"
+                    },
+                );
             },
         );
     }
@@ -6971,7 +7100,8 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA);
                 c.g[A1][0] = 0x100;
                 c.g[A2][0] = sx(DATA + 0x200);
-                c.g[A3][0] = [0u64, 0x7f000001, 0xffffffff, 0x0a00000a][seed as usize % 4];
+                c.g[A3][0] =
+                    [0u64, 0x7f000001, 0xffffffff, 0x7f000064, 0x0a00000a][seed as usize % 5];
                 put_str(c, DATA + 0x200, b"ip");
                 put_str(c, DATA, b"");
             },
@@ -6981,26 +7111,35 @@ pub(crate) mod tests {
     // 0x3ec180 TagFieldSetString.
     #[test]
     fn tag_field_set_string_matches() {
+        // One digit per steering value: seed%5 value, seed/5%2 null default,
+        // seed/10%2 length argument (20 seeds = the full 5x2x2 cross).
+        const SEEDS: u32 = 20;
+        assert_eq!(SEEDS, 5 * 2 * 2, "value x null default x length");
         check(
             ee::s14::f_003ec180__generated,
             tag_field_set_string,
-            48,
+            SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x3ec180, 0);
                 tables(c);
                 c.pc = 0x003ec180;
                 c.g[A0][0] = sx(DATA);
-                c.g[A1][0] = if seed % 6 == 1 { 8 } else { 0x200 };
+                c.g[A1][0] = if (seed / 10) % 2 == 0 { 0x200 } else { 8 };
                 c.g[A2][0] = sx(DATA + 0x200);
-                c.g[A3][0] = if seed % 5 == 0 { 0 } else { sx(DATA + 0x400) };
+                c.g[A3][0] = if (seed / 5) % 2 == 0 {
+                    0
+                } else {
+                    sx(DATA + 0x400)
+                };
                 put_str(c, DATA + 0x200, b"key");
                 put_str(
                     c,
                     DATA + 0x400,
-                    match seed % 4 {
+                    match seed % 5 {
                         0 => b"plain",
                         1 => b"two words",
                         2 => b"%41%42",
+                        3 => b"plain\x7f",
                         _ => b"",
                     },
                 );
@@ -7012,10 +7151,15 @@ pub(crate) mod tests {
     // 0x3ec3c0 TagFieldSetStructure.
     #[test]
     fn tag_field_set_structure_matches() {
+        // One digit per steering value: seed%7 template, seed/7%3 data size
+        // (21 seeds = the full 7x3 cross). The extra templates are a ':'
+        // after a count digit and a count-less trailing letter.
+        const SEEDS: u32 = 21;
+        assert_eq!(SEEDS, 7 * 3, "template x data size");
         check(
             ee::s14::f_003ec3c0__generated,
             tag_field_set_structure,
-            32,
+            SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x3ec3c0, 0);
                 tables(c);
@@ -7024,17 +7168,20 @@ pub(crate) mod tests {
                 c.g[A1][0] = 0x200;
                 c.g[A2][0] = sx(DATA + 0x200);
                 c.g[A3][0] = sx(DATA + 0x400);
-                c.g[T0][0] = 0x40;
+                c.g[T0][0] = [0x40u64, 0x100, 0x200][(seed / 7) as usize % 3];
                 c.g[T1][0] = sx(DATA + 0x600);
                 put_str(c, DATA + 0x200, b"struct");
                 put_str(
                     c,
                     DATA + 0x600,
-                    match seed % 4 {
+                    match seed % 7 {
                         0 => b"#4b4s4",
                         1 => b"#2w2l4",
                         2 => b"#1s8",
-                        _ => b"4b4s4",
+                        3 => b"4b4s4",
+                        4 => b"4b4s4:",
+                        5 => b"4b4s4s",
+                        _ => b"4b4s4 ",
                     },
                 );
                 put_str(c, DATA, b"");
@@ -7045,10 +7192,14 @@ pub(crate) mod tests {
     // 0x3ec6d0 TagFieldSetEncoded.
     #[test]
     fn tag_field_set_encoded_matches() {
+        // One digit per steering value: seed%2 null key, seed/2%4 plaintext
+        // (8 seeds = the full 2x4 cross).
+        const SEEDS: u32 = 8;
+        assert_eq!(SEEDS, 2 * 4, "key x plaintext");
         check(
             ee::s14::f_003ec6d0__generated,
             tag_field_set_encoded,
-            32,
+            SEEDS,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x3ec6d0, 0);
                 tables(c);
@@ -7056,9 +7207,21 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA);
                 c.g[A1][0] = 0x200;
                 c.g[A2][0] = sx(DATA + 0x200);
-                c.g[A3][0] = if seed % 4 == 0 { 0 } else { sx(DATA + 0x400) };
-                c.g[T0][0] = (1 + seed % 6) as u64;
+                c.g[A3][0] = if seed % 2 == 0 { 0 } else { sx(DATA + 0x400) };
+                // The plaintext is the fifth argument: a real string, not a
+                // small integer, so the cipher loop actually runs.
+                c.g[T0][0] = sx(DATA + 0x600);
                 put_str(c, DATA + 0x200, b"crypt");
+                put_str(
+                    c,
+                    DATA + 0x600,
+                    match (seed / 2) % 4 {
+                        0 => b"plaintext",
+                        1 => b"a",
+                        2 => b"two words",
+                        _ => b"",
+                    },
+                );
                 for i in 0..6u32 {
                     c.bus
                         .write8(DATA + 0x400 + i, (b'a' + (r.next_u32() % 26) as u8) as u8);
@@ -7141,10 +7304,15 @@ pub(crate) mod tests {
     // 0x3eca88 TagFieldCopyField.
     #[test]
     fn tag_field_copy_field_matches() {
+        // One digit per steering value: seed%2 name, seed/2%4 record
+        // (8 seeds = the full 2x4 cross; seed 1 is the base pair, "key" on
+        // the first record).
+        const SEEDS: u32 = 8;
+        assert_eq!(SEEDS, 2 * 4, "name x record");
         check(
             ee::s14::f_003eca88__generated,
             tag_field_copy_field,
-            48,
+            SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x3eca88, 0);
                 tables(c);
@@ -7154,7 +7322,16 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(DATA + 0x200);
                 c.g[A3][0] = sx(DATA + 0x400);
                 put_str(c, DATA + 0x200, if seed % 2 == 0 { b"zz" } else { b"key" });
-                put_str(c, DATA + 0x400, b"key=value\nother=x\n");
+                put_str(
+                    c,
+                    DATA + 0x400,
+                    match (seed / 2) % 4 {
+                        0 => b"key=value\nother=x\n",
+                        1 => b"other=x key=v\n",
+                        2 => b"x\nkey=v\n",
+                        _ => b"pad key=v\n",
+                    },
+                );
                 put_str(c, DATA, b"");
             },
         );
@@ -7163,25 +7340,34 @@ pub(crate) mod tests {
     // 0x3ecbd8 TagFieldPrintf.
     #[test]
     fn tag_field_printf_matches() {
+        // One digit per steering value: seed%5 length argument (0x400 is the
+        // base one), seed/5%6 format (30 seeds = the full 5x6 cross).
+        const SEEDS: u32 = 30;
+        assert_eq!(SEEDS, 5 * 6, "length x format");
         check(
             ee::s14::f_003ecbd8__generated,
             tag_field_printf,
-            24,
+            SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x3ecbd8, 0);
                 tables(c);
                 c.pc = 0x003ecbd8;
                 c.g[A0][0] = sx(DATA);
-                c.g[A1][0] = 0x400;
+                c.g[A1][0] = [0x400u64, 0, 2, 0x21, 0x22][seed as usize % 5];
+                // The format digit: 0x400 pairs with every format (base had
+                // "a b" at 0x400).
                 c.g[A2][0] = sx(DATA + 0x200);
                 c.g[A3][0] = sx(DATA + 0x400);
                 put_str(
                     c,
                     DATA + 0x200,
-                    match seed % 3 {
+                    match (seed / 5) % 6 {
                         0 => b"%s=%d",
                         1 => b"a b",
-                        _ => b"x%sy",
+                        2 => b"x%sy",
+                        3 => b"a!b",
+                        4 => b"!",
+                        _ => b"%s",
                     },
                 );
                 put_str(c, DATA + 0x400, b"v");
@@ -7253,21 +7439,53 @@ pub(crate) mod tests {
     // 0x3ed0f8 TagFieldGetDelim.
     #[test]
     fn tag_field_get_delim_matches() {
+        const SEEDS: u32 = 576;
+        assert_eq!(
+            SEEDS,
+            12 * 4 * 3 * 2 * 2,
+            "value x group x index x two nulls"
+        );
         check(
             ee::s14::f_003ed0f8__generated,
             tag_field_get_delim,
-            48,
+            SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x3ed0f8, 0);
                 tables(c);
                 c.pc = 0x003ed0f8;
-                c.g[A0][0] = if seed % 6 == 0 { 0 } else { sx(DATA) };
-                c.g[A1][0] = if seed % 7 == 0 { 0 } else { sx(DATA + 0x200) };
-                c.g[A2][0] = 0x40;
-                c.g[A3][0] = if seed % 4 == 0 { 0 } else { sx(DATA + 0x400) };
-                c.g[T0][0] = (seed % 3) as u64;
+                // One digit per steering value: seed%12 the value bytes,
+                // seed/12%4 the group (null buffer = measure only, the
+                // lengths 0/1/6), seed/48%3 the field index, seed/144%2 a
+                // null record, seed/288%2 a null default (576 seeds, the
+                // full cross). The parser's
+                // own arms turn on a space, a control byte, a high byte, an
+                // empty value, a leading delimiter and a '%xx' escape.
+                let group = (seed / 12) as usize % 4;
+                c.g[A0][0] = if (seed / 144) % 2 == 0 { 0 } else { sx(DATA) };
+                c.g[A1][0] = if group == 0 { 0 } else { sx(DATA + 0x200) };
+                c.g[A2][0] = [0x40u64, 0, 1, 6][group];
+                c.g[A3][0] = if (seed / 288) % 2 == 0 {
+                    0
+                } else {
+                    sx(DATA + 0x400)
+                };
+                c.g[T0][0] = ((seed / 48) % 3) as u64;
                 c.g[T1][0] = b',' as u64;
-                put_str(c, DATA, b"a,b,c");
+                let sample: &[u8] = match seed % 12 {
+                    0 => b"a,b,c",
+                    1 => b" ab,c",
+                    2 => b",b,c",
+                    3 => b"",
+                    4 => b"\x1fb,c",
+                    5 => b"\xe0b,c",
+                    6 => b"%41,b",
+                    7 => b"%\x1f\x20b",
+                    8 => b"%\xe0\xe0b",
+                    9 => b"a b,c",
+                    10 => b"a\x1fb,c",
+                    _ => b"\"q,b\",c",
+                };
+                put_str(c, DATA, sample);
                 put_str(c, DATA + 0x400, b"default");
             },
         );
@@ -7340,25 +7558,47 @@ pub(crate) mod tests {
     // 0x3ed378 TagFieldGetString.
     #[test]
     fn tag_field_get_string_matches() {
+        // One digit per steering value: seed%12 sample, seed/12%4 length
+        // argument, seed/48%2 null data, seed/96%2 null buffer, seed/192%2
+        // null default (384 seeds, the full 12x4x2x2x2 cross).
+        const SEEDS: u32 = 384;
+        assert_eq!(SEEDS, 12 * 4 * 2 * 2 * 2, "sample x length x three nulls");
         check(
             ee::s14::f_003ed378__generated,
             tag_field_get_string,
-            48,
+            SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x3ed378, 0);
                 tables(c);
                 c.pc = 0x003ed378;
-                c.g[A0][0] = if seed % 6 == 0 { 0 } else { sx(DATA) };
-                c.g[A1][0] = if seed % 5 == 0 { 0 } else { sx(DATA + 0x200) };
-                c.g[A2][0] = [0, 1, 8, 0x40][seed as usize % 4] as u64;
-                c.g[A3][0] = if seed % 7 == 0 { 0 } else { sx(DATA + 0x400) };
+                let sample = seed % 12;
+                c.g[A0][0] = if (seed / 48) % 2 == 0 { 0 } else { sx(DATA) };
+                c.g[A1][0] = if (seed / 96) % 2 == 0 {
+                    0
+                } else {
+                    sx(DATA + 0x200)
+                };
+                c.g[A2][0] = [0, 1, 8, 0x40][(seed / 12) as usize % 4] as u64;
+                c.g[A3][0] = if (seed / 192) % 2 == 0 {
+                    0
+                } else {
+                    sx(DATA + 0x400)
+                };
                 put_str(
                     c,
                     DATA,
-                    match seed % 4 {
+                    match sample {
                         0 => b"plain",
                         1 => b"\"quoted\"",
                         2 => b"ab%43d",
+                        3 => b" sp",
+                        4 => b"\x1fsp",
+                        5 => b"\xe0sp",
+                        6 => b"%\x1f\x20",
+                        7 => b"%\xe0\xe0",
+                        8 => b"a sp",
+                        9 => b"a\x1fsp",
+                        10 => b"ab%41cd",
                         _ => b"",
                     },
                 );
@@ -7411,28 +7651,59 @@ pub(crate) mod tests {
     // 0x3ed678 TagFieldGetBinary.
     #[test]
     fn tag_field_get_binary_matches() {
+        // One digit per steering value: seed%6 value, seed/6%7 format,
+        // seed/42%4 size argument, seed/168%2 null buffer, seed/336%2 null
+        // data (672 seeds, the full 6x7x4x2x2 cross). Formats: the two
+        // baseline ones, empty, ':' after a count, a four-stage one, a
+        // five-stage one (the stage==5 arm), and an 's' first.
+        const SEEDS: u32 = 672;
+        assert_eq!(
+            SEEDS,
+            6 * 7 * 4 * 2 * 2,
+            "value x format x size x two nulls"
+        );
         check(
             ee::s14::f_003ed678__generated,
             tag_field_get_binary,
-            48,
+            SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x3ed678, 0);
                 tables(c);
                 c.pc = 0x003ed678;
-                c.g[A0][0] = if seed % 5 == 0 { 0 } else { sx(DATA) };
-                c.g[A1][0] = if seed % 4 == 0 { 0 } else { sx(DATA + 0x400) };
-                c.g[A2][0] = [0, 1, 4, -1][seed as usize % 4] as i64 as u64;
+                let fmt = (seed / 6) % 7;
+                c.g[A0][0] = if (seed / 336) % 2 == 0 { 0 } else { sx(DATA) };
+                c.g[A1][0] = if (seed / 168) % 2 == 0 {
+                    0
+                } else {
+                    sx(DATA + 0x400)
+                };
+                c.g[A2][0] = [0, 1, 4, -1][(seed / 42) as usize % 4] as i64 as u64;
                 c.g[A3][0] = sx(DATA + 0x200);
                 put_str(
                     c,
                     DATA + 0x200,
-                    match seed % 3 {
+                    match fmt {
                         0 => b"b2w2l4",
                         1 => b"l1w1",
-                        _ => b"",
+                        2 => b"",
+                        3 => b"b:2w1",
+                        4 => b"b1w1l1s4",
+                        5 => b"b1w1l1b1",
+                        _ => b"s4b1",
                     },
                 );
-                put_str(c, DATA, b"$4142");
+                put_str(
+                    c,
+                    DATA,
+                    match seed % 6 {
+                        0 => b"$4142",
+                        1 => b"-12",
+                        2 => b"0",
+                        3 => b"4142,4344",
+                        4 => b"",
+                        _ => b"$0a0b",
+                    },
+                );
             },
         );
     }
@@ -7478,26 +7749,48 @@ pub(crate) mod tests {
     // 0x3ed970 TagFieldGetEncoded.
     #[test]
     fn tag_field_get_encoded_matches() {
+        // One digit per steering value: seed%8 value, seed/8%2 null record,
+        // seed/16%2 null buffer, seed/32%2 null key, seed/64%2 null default
+        // (128 seeds = the full 8x2x2x2x2 cross).
+        const SEEDS: u32 = 128;
+        assert_eq!(SEEDS, 8 * 2 * 2 * 2 * 2, "value x four nulls");
         check(
             ee::s14::f_003ed970__generated,
             tag_field_get_encoded,
-            48,
+            SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x3ed970, 0);
                 tables(c);
                 c.pc = 0x003ed970;
-                c.g[A0][0] = if seed % 5 == 0 { 0 } else { sx(DATA) };
-                c.g[A1][0] = if seed % 4 == 0 { 0 } else { sx(DATA + 0x200) };
+                c.g[A0][0] = if (seed / 8) % 2 == 0 { 0 } else { sx(DATA) };
+                c.g[A1][0] = if (seed / 16) % 2 == 0 {
+                    0
+                } else {
+                    sx(DATA + 0x200)
+                };
                 c.g[A2][0] = 0x40;
-                c.g[A3][0] = if seed % 3 == 0 { 0 } else { sx(DATA + 0x400) };
-                c.g[T0][0] = if seed % 6 == 0 { 0 } else { sx(DATA + 0x600) };
+                c.g[A3][0] = if (seed / 32) % 2 == 0 {
+                    0
+                } else {
+                    sx(DATA + 0x400)
+                };
+                c.g[T0][0] = if (seed / 64) % 2 == 0 {
+                    0
+                } else {
+                    sx(DATA + 0x600)
+                };
                 put_str(
                     c,
                     DATA,
-                    match seed % 3 {
+                    match seed % 8 {
                         0 => b"$4142",
                         1 => b"plain",
-                        _ => b"",
+                        2 => b"",
+                        3 => b"$0a0b",
+                        4 => b"$4",
+                        5 => b"$",
+                        6 => b"$4142b",
+                        _ => b"$0",
                     },
                 );
                 put_str(c, DATA + 0x400, b"key");
@@ -7547,23 +7840,40 @@ pub(crate) mod tests {
     // 0x3edb08 TagFieldGetDate.
     #[test]
     fn tag_field_get_date_matches() {
+        const SEEDS: u32 = 128;
+        assert_eq!(SEEDS, 16 * 4 * 2, "input x format argument x null record");
         check(
             ee::s14::f_003edb08__generated,
             tag_field_get_date,
-            32,
+            SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x3edb08, 0);
                 tables(c);
                 c.pc = 0x003edb08;
-                c.g[A0][0] = if seed % 6 == 0 { 0 } else { sx(DATA) };
-                c.g[A1][0] = [0u64, 1, 1000, 0xffffffff][seed as usize % 4];
+                c.g[A0][0] = if (seed / 64) % 2 == 0 { 0 } else { sx(DATA) };
+                c.g[A1][0] = [0u64, 1, 1000, 0xffffffff][(seed / 16) as usize % 4];
+                // Every validity boundary the parser tests: the year, month,
+                // day, hour, minute and second limits, the '.' separator,
+                // a '$' hex letter, a ':' head and a '!' terminator.
                 put_str(
                     c,
                     DATA,
-                    match seed % 4 {
-                        0 => b"$00bcd000",
-                        1 => b"1000000",
-                        2 => b"2020-01-02 03:04:05",
+                    match seed % 16 {
+                        0 => b"2020-01-02 03:04:05",
+                        1 => b"2020.01.02 03:04:05",
+                        2 => b"2100-01-01 00:00:00",
+                        3 => b"2020-13-01 00:00:00",
+                        4 => b"2020-01-32 00:00:00",
+                        5 => b"2020-01-02 24:00:00",
+                        6 => b"2020-01-02 03:00:05",
+                        7 => b"2020-01-02 03:60:05",
+                        8 => b"2020-01-02 03:04:00",
+                        9 => b"2020-01-02 03:04:62",
+                        10 => b"$ab12",
+                        11 => b":123",
+                        12 => b"1000000",
+                        13 => b"123!x",
+                        14 => b"$00bcd000",
                         _ => b"",
                     },
                 );
@@ -7574,23 +7884,49 @@ pub(crate) mod tests {
     // 0x3edd70 TagFieldGetDateYMDHMS.
     #[test]
     fn tag_field_get_date_ymdhms_matches() {
+        // One digit per steering value: seed%4 value, seed/4%2 null y,
+        // seed/8%2 null month, seed/16%2 null day (32 seeds = the full
+        // 4x2x2x2 cross); the offset is seed % 3600.
+        const SEEDS: u32 = 32;
+        assert_eq!(SEEDS, 4 * 2 * 2 * 2, "value x three null outputs");
         check(
             ee::s14::f_003edd70__generated,
             tag_field_get_date_ymdhms,
-            24,
+            SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x3edd70, 0);
                 tables(c);
                 c.pc = 0x003edd70;
                 c.g[A0][0] = sx(DATA);
-                c.g[A1][0] = if seed % 2 == 0 { 0 } else { sx(DATA + 0x200) };
-                c.g[A2][0] = if seed % 3 == 0 { 0 } else { sx(DATA + 0x210) };
-                c.g[A3][0] = if seed % 4 == 0 { 0 } else { sx(DATA + 0x220) };
+                c.g[A1][0] = if (seed / 4) % 2 == 0 {
+                    0
+                } else {
+                    sx(DATA + 0x200)
+                };
+                c.g[A2][0] = if (seed / 8) % 2 == 0 {
+                    0
+                } else {
+                    sx(DATA + 0x210)
+                };
+                c.g[A3][0] = if (seed / 16) % 2 == 0 {
+                    0
+                } else {
+                    sx(DATA + 0x220)
+                };
                 c.g[T0][0] = 0;
                 c.g[T1][0] = 0;
                 c.g[T2][0] = 0;
                 c.g[T3][0] = (seed % 3600) as u64;
-                put_str(c, DATA, b"1000000");
+                put_str(
+                    c,
+                    DATA,
+                    match seed % 4 {
+                        0 => b"1000000",
+                        1 => b"1970-01-01 00:00:02",
+                        2 => b"1970-01-01 00:00:00",
+                        _ => b"2020-01-02 03:04:05",
+                    },
+                );
             },
         );
     }
@@ -7598,19 +7934,41 @@ pub(crate) mod tests {
     // 0x3ede80 TagFieldGetDatePacked.
     #[test]
     fn tag_field_get_date_packed_matches() {
+        // One digit per steering value: seed%4 value, seed/4%2 null date,
+        // seed/8%2 null time (16 seeds = the full 4x2x2 cross); the offset is
+        // seed % 3600.
+        const SEEDS: u32 = 16;
+        assert_eq!(SEEDS, 4 * 2 * 2, "value x two null outputs");
         check(
             ee::s14::f_003ede80__generated,
             tag_field_get_date_packed,
-            24,
+            SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x3ede80, 0);
                 tables(c);
                 c.pc = 0x003ede80;
                 c.g[A0][0] = sx(DATA);
-                c.g[A1][0] = if seed % 2 == 0 { 0 } else { sx(DATA + 0x200) };
-                c.g[A2][0] = if seed % 3 == 0 { 0 } else { sx(DATA + 0x210) };
+                c.g[A1][0] = if (seed / 4) % 2 == 0 {
+                    0
+                } else {
+                    sx(DATA + 0x200)
+                };
+                c.g[A2][0] = if (seed / 8) % 2 == 0 {
+                    0
+                } else {
+                    sx(DATA + 0x210)
+                };
                 c.g[A3][0] = (seed % 3600) as u64;
-                put_str(c, DATA, b"1000000");
+                put_str(
+                    c,
+                    DATA,
+                    match seed % 4 {
+                        0 => b"1000000",
+                        1 => b"1970-01-01 00:00:02",
+                        2 => b"1970-01-01 00:00:00",
+                        _ => b"2020-01-02 03:04:05",
+                    },
+                );
             },
         );
     }

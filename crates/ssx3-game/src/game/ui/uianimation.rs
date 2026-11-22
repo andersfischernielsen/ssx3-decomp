@@ -1264,8 +1264,14 @@ pub(crate) mod tests {
     /// `+0x44`) goes 0 to 100 over frames 0-10, on a target whose setter is
     /// `UIObject_SetAnimParam`. Returns (anim, target).
     fn apply_fixture(c: &mut Cpu, start: u16) -> (u32, u32) {
-        let (anim, data, chans, chan) = (DATA + 0x100, DATA + 0x200, DATA + 0x300, DATA + 0x400);
-        let (target, vt) = (DATA + 0x500, DATA + 0x600);
+        apply_fixture_at(c, start, DATA)
+    }
+
+    /// Same fixture at another base address, so tests that blend several
+    /// animations do not share `BLENDED` entries with each other.
+    fn apply_fixture_at(c: &mut Cpu, start: u16, base: u32) -> (u32, u32) {
+        let (anim, data, chans, chan) = (base + 0x100, base + 0x200, base + 0x300, base + 0x400);
+        let (target, vt) = (base + 0x500, base + 0x600);
         c.bus.write32(anim, data);
         c.bus.write32(anim + 4, chans);
         c.bus.write16(anim + 0x8, 0xffff);
@@ -1334,13 +1340,10 @@ pub(crate) mod tests {
     /// setter).
     #[test]
     fn ui_anim_apply_sets_each_channel_once_per_tick() {
-        use crate::difftest::fakes::{fake_call, FAKE, LOG_COUNT, LOG_UNWIND_AT};
+        use crate::difftest::fakes::LOG_COUNT;
         let mut c = crate::difftest::fresh();
         crate::tick::set_for_test(&mut c, 120);
-        let (anim, target) = apply_fixture(&mut c, 0xffff);
-        c.bus.write32(DATA + 0x600 + 0x64, FAKE);
-        c.hooks.miss = fake_call;
-        c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+        let (anim, target) = counting_fixture(&mut c, DATA);
         for t in 0..16u32 {
             c.bus.write32(LOG_COUNT, 0);
             apply(&mut c, anim, target, 1, 0);
@@ -1350,6 +1353,52 @@ pub(crate) mod tests {
             c.g[RA][0] = sx(0x0010_0000);
             ui_anim_advance(&mut c);
         }
+    }
+
+    /// Advance the animation in the tests below.
+    fn advance(c: &mut Cpu, anim: u32) {
+        c.g[A0][0] = anim as u64;
+        c.g[A1][0] = 1;
+        c.g[RA][0] = sx(0x0010_0000);
+        ui_anim_advance(c);
+    }
+
+    /// A counting setter behind `apply_fixture_at`.
+    fn counting_fixture(c: &mut Cpu, base: u32) -> (u32, u32) {
+        use crate::difftest::fakes::{fake_call, FAKE, LOG_COUNT, LOG_UNWIND_AT};
+        let (anim, target) = apply_fixture_at(c, 0xffff, base);
+        c.bus.write32(base + 0x600 + 0x64, FAKE);
+        c.hooks.miss = fake_call;
+        c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+        c.bus.write32(LOG_COUNT, 0);
+        (anim, target)
+    }
+
+    /// Dropping from 120 to 60 on a blended frame applies nothing: the
+    /// early return keeps the blended values (and the blend entry). The
+    /// third apply is the first blend (the 120 Hz clock grants every other
+    /// tick), so the drop lands on a blended frame.
+    #[test]
+    fn ui_anim_apply_returns_early_below_60() {
+        use crate::difftest::fakes::LOG_COUNT;
+        let mut c = crate::difftest::fresh();
+        crate::difftest::elf_image(&mut c);
+        crate::tick::set_for_test(&mut c, 120);
+        BLENDED.with(|b| b.borrow_mut().clear());
+        let (anim, target) = counting_fixture(&mut c, DATA + 0x3000);
+        apply(&mut c, anim, target, 1, 0);
+        advance(&mut c, anim);
+        apply(&mut c, anim, target, 1, 0);
+        advance(&mut c, anim);
+        apply(&mut c, anim, target, 1, 0);
+        crate::tick::set_for_test(&mut c, 60);
+        c.bus.write32(LOG_COUNT, 0);
+        apply(&mut c, anim, target, 1, 0);
+        assert_eq!(c.bus.read32(LOG_COUNT), 0, "60 Hz apply: setter calls");
+        assert!(
+            BLENDED.with(|b| b.borrow().contains_key(&anim)),
+            "60 Hz apply: blend entry kept"
+        );
     }
 
     /// The blend is off the guest's clock: on a blended tick no event is
@@ -1573,5 +1622,176 @@ pub(crate) mod tests {
                 );
             }
         }
+    }
+
+    /// Two animations blending at once keep both blend entries: the
+    /// 4096-entry cap only clears the map when it is actually overfull.
+    /// (Two bases so the fixtures do not overlap.)
+    #[test]
+    fn ui_anim_apply_blend_keeps_both_entries() {
+        let mut c = crate::difftest::fresh();
+        crate::tick::set_for_test(&mut c, 120);
+        BLENDED.with(|b| b.borrow_mut().clear());
+        let (anim1, target1) = counting_fixture(&mut c, DATA);
+        let (anim2, target2) = counting_fixture(&mut c, DATA + 0x3000);
+        for (anim, target) in [(anim1, target1), (anim2, target2)] {
+            apply(&mut c, anim, target, 1, 0);
+            advance(&mut c, anim);
+            apply(&mut c, anim, target, 1, 0);
+            advance(&mut c, anim);
+            apply(&mut c, anim, target, 1, 0);
+        }
+        assert_eq!(BLENDED.with(|b| b.borrow().len()), 2, "both blends kept");
+    }
+
+    /// A timeline stopped right after a blend restores the frame's own
+    /// values on the next apply: blend once, stop the thread (`+0xe` back
+    /// to `+0xc`, so it no longer runs), apply again at the same clock and
+    /// the setter runs once with the held frame (a counting fake setter).
+    #[test]
+    fn ui_anim_apply_restores_stopped_timeline_frame() {
+        use crate::difftest::fakes::{fake_call, FAKE, LOG_COUNT, LOG_UNWIND_AT};
+        let mut c = crate::difftest::fresh();
+        crate::difftest::elf_image(&mut c);
+        crate::tick::set_for_test(&mut c, 120);
+        let (anim, target) = apply_fixture(&mut c, 0);
+        let (screen, thread, sentinel) = (DATA + 0x800, DATA + 0x900, DATA + 0xa00);
+        c.bus.write32(screen + 0x1c, thread);
+        c.bus.write32(thread, screen + 0x18);
+        c.bus.write32(thread + 4, sentinel);
+        c.bus.write32(sentinel + 4, sentinel);
+        c.bus.write32(thread + 0x10, 1 << 25);
+        c.bus.write16(thread + 0xc, 0);
+        c.bus.write16(thread + 0xe, 0xffff);
+        c.bus.write16(thread + 0x10, 6);
+        c.bus.write8(thread + 0x12, 1);
+        c.bus.write32(DATA + 0x600 + 0x64, FAKE);
+        c.hooks.miss = fake_call;
+        c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+        for _ in 0..8u32 {
+            let f = c.bus.read16(thread + 0xc) as u32;
+            if c.bus.read16(thread + 0xe) as u32 != f && crate::tick::frame60_due(&mut c, thread, f)
+            {
+                c.bus.write16(thread + 0xe, f as u16);
+                let next = if f < 6 { f + 1 } else { f };
+                c.bus.write16(thread + 0xc, next as u16);
+                crate::tick::frame60_ran(&mut c, thread, next);
+            }
+            let clock = c.bus.read16(thread + 0xc) as u32;
+            crate::game::ui::uiscreen::with_updating_screen(&mut c, screen, |c| {
+                apply(c, anim, target, 0, clock);
+            });
+            if BLENDED.with(|b| b.borrow().contains_key(&anim)) {
+                break;
+            }
+        }
+        assert!(
+            BLENDED.with(|b| b.borrow().contains_key(&anim)),
+            "no blend happened"
+        );
+        // Stop the timeline at the blended frame and apply again.
+        let f = c.bus.read16(thread + 0xc);
+        c.bus.write16(thread + 0xe, f);
+        c.bus.write32(LOG_COUNT, 0);
+        crate::game::ui::uiscreen::with_updating_screen(&mut c, screen, |c| {
+            apply(c, anim, target, 0, f as u32);
+        });
+        assert_eq!(c.bus.read32(LOG_COUNT), 1, "stopped apply: setter calls");
+        // Shrink the frame count to the blended frame and stop again: with
+        // `applied == count` the guard still holds but the original takes
+        // the `Ok` arm (no setter call), while `<` → `<=` calls the setter
+        // again. (Re-pump the blend first: the stopped apply above consumed
+        // the entry.)
+        c.bus.write16(thread + 0xc, 0);
+        c.bus.write16(thread + 0xe, 0xffff);
+        for _ in 0..10u32 {
+            let f = c.bus.read16(thread + 0xc) as u32;
+            if c.bus.read16(thread + 0xe) as u32 != f && crate::tick::frame60_due(&mut c, thread, f)
+            {
+                c.bus.write16(thread + 0xe, f as u16);
+                let next = if f < 6 { f + 1 } else { f };
+                c.bus.write16(thread + 0xc, next as u16);
+                crate::tick::frame60_ran(&mut c, thread, next);
+            }
+            let clock = c.bus.read16(thread + 0xc) as u32;
+            crate::game::ui::uiscreen::with_updating_screen(&mut c, screen, |c| {
+                apply(c, anim, target, 0, clock);
+            });
+            if BLENDED.with(|b| b.borrow().contains_key(&anim)) {
+                break;
+            }
+        }
+        assert!(
+            BLENDED.with(|b| b.borrow().contains_key(&anim)),
+            "no re-blend happened"
+        );
+        let data = c.bus.read32(anim);
+        let applied = c.bus.read16(anim + 0x8);
+        c.bus.write16(data + 2, applied);
+        let f = c.bus.read16(thread + 0xc);
+        c.bus.write16(thread + 0xe, f);
+        c.bus.write32(LOG_COUNT, 0);
+        crate::game::ui::uiscreen::with_updating_screen(&mut c, screen, |c| {
+            apply(c, anim, target, 0, f as u32);
+        });
+        assert_eq!(
+            c.bus.read32(LOG_COUNT),
+            0,
+            "shrunk-count apply: setter calls"
+        );
+    }
+
+    /// The same restore on a thread with no end (`+0x10` 0xffff): the
+    /// widget blends from frame f toward f+1 on the off tick, the script
+    /// stops the thread at f, and the next apply puts the frame's own
+    /// values back (a counting fake setter).
+    #[test]
+    fn ui_anim_apply_restores_stopped_endless_timeline_frame() {
+        use crate::difftest::fakes::{fake_call, FAKE, LOG_COUNT, LOG_UNWIND_AT};
+        let mut c = crate::difftest::fresh();
+        crate::difftest::elf_image(&mut c);
+        crate::tick::set_for_test(&mut c, 120);
+        let (anim, target) = apply_fixture(&mut c, 0);
+        let (screen, thread, sentinel) = (DATA + 0x800, DATA + 0x900, DATA + 0xa00);
+        c.bus.write32(screen + 0x1c, thread);
+        c.bus.write32(thread, screen + 0x18);
+        c.bus.write32(thread + 4, sentinel);
+        c.bus.write32(sentinel + 4, sentinel);
+        c.bus.write32(thread + 0x10, 1 << 25);
+        c.bus.write16(thread + 0xc, 0);
+        c.bus.write16(thread + 0xe, 0xffff);
+        c.bus.write16(thread + 0x10, 0xffff);
+        c.bus.write8(thread + 0x12, 1);
+        c.bus.write32(DATA + 0x600 + 0x64, FAKE);
+        c.hooks.miss = fake_call;
+        c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+        for _ in 0..10u32 {
+            let f = c.bus.read16(thread + 0xc) as u32;
+            if c.bus.read16(thread + 0xe) as u32 != f && crate::tick::frame60_due(&mut c, thread, f)
+            {
+                c.bus.write16(thread + 0xe, f as u16);
+                c.bus.write16(thread + 0xc, (f + 1) as u16);
+                crate::tick::frame60_ran(&mut c, thread, f + 1);
+            }
+            let clock = c.bus.read16(thread + 0xc) as u32;
+            crate::game::ui::uiscreen::with_updating_screen(&mut c, screen, |c| {
+                apply(c, anim, target, 0, clock);
+            });
+            if BLENDED.with(|b| b.borrow().contains_key(&anim)) {
+                break;
+            }
+        }
+        assert!(
+            BLENDED.with(|b| b.borrow().contains_key(&anim)),
+            "no blend happened"
+        );
+        // Stop the thread at the blended frame and apply again.
+        let f = c.bus.read16(thread + 0xc);
+        c.bus.write16(thread + 0xe, f);
+        c.bus.write32(LOG_COUNT, 0);
+        crate::game::ui::uiscreen::with_updating_screen(&mut c, screen, |c| {
+            apply(c, anim, target, 0, f as u32);
+        });
+        assert_eq!(c.bus.read32(LOG_COUNT), 1, "stopped apply: setter calls");
     }
 }

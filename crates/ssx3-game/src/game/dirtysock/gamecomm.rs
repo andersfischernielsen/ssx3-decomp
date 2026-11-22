@@ -414,7 +414,14 @@ pub(crate) mod tests {
             .write32(GAME_GP + GP_TRAY_OPENED as u32, (seed % 11 == 0) as u32);
         c.bus.write32(
             DATA + RESUME_GRACE,
-            if seed % 7 == 0 { 1 } else { u32::MAX },
+            if seed % 7 == 0 {
+                1
+            } else if seed % 7 == 1 {
+                // Just expired: the grace check flips to the late path.
+                0
+            } else {
+                u32::MAX
+            },
         );
         // Counter values either side of each limit, in step across counters.
         let case = (seed / FLAG_COMBINATIONS) as usize;
