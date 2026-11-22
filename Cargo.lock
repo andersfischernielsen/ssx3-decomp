@@ -2520,6 +2520,16 @@ name = "ssx3-mpeg"
 version = "0.1.0"
 
 [[package]]
+name = "ssx3-plugin"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "ssx3-core",
+ "ssx3-ee-rt",
+ "toml",
+]
+
+[[package]]
 name = "ssx3-ps2"
 version = "0.1.0"
 dependencies = [

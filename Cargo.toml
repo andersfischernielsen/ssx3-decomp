@@ -15,6 +15,7 @@ members = [
     "crates/ssx3-mc",
     "crates/ssx3-mpeg",
     "crates/ssx3-engine",
+    "crates/ssx3-plugin",
     "crates/ssx3",
     "crates/ssx3-game",
     "generated/ee/*",
