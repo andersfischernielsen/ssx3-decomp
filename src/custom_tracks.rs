@@ -90,6 +90,14 @@ static TRACK_INFO: AtomicU32 = AtomicU32::new(0);
 static MENU_ACTION_FRAME: AtomicU32 = AtomicU32::new(u32::MAX);
 static MENU_PREVIEW: AtomicUsize = AtomicUsize::new(0);
 
+/// Where the opt-in diagnostics write (`SSX3_TRICKY_DIAG`, else
+/// `.cache/diagnostics` in the working directory).
+pub fn diagnostics_dir() -> std::path::PathBuf {
+    std::env::var_os("SSX3_TRICKY_DIAG")
+        .map(Into::into)
+        .unwrap_or_else(|| std::path::PathBuf::from(".cache/diagnostics"))
+}
+
 pub fn preview_logo() { MENU_PREVIEW.store(1, Ordering::Release); }
 pub fn clear_preview() { MENU_PREVIEW.store(0, Ordering::Release); }
 pub fn preview_track(track: &'static CustomTrack) {

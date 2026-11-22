@@ -98,6 +98,8 @@ pub mod custom_camera_stream;
 pub mod custom_section_alloc;
 pub mod custom_text_id_string;
 
+pub mod core_boot;
+
 /// A hook that wraps the function in the slot (`Hooks::chain`): it runs the
 /// previous function through `prev`.
 pub struct Chain {
@@ -198,6 +200,13 @@ fn prev_of(addr: u32) -> Option<&'static ssx3_plugin::Prev> {
     }
 }
 
+/// The wrapping hooks of the core-function conversions.
+fn all_chains() -> Vec<&'static Chain> {
+    let mut v: Vec<&'static Chain> = Vec::new();
+    v.extend(core_boot::CHAINS);
+    v
+}
+
 struct Tricky;
 
 impl Plugin for Tricky {
@@ -206,7 +215,15 @@ impl Plugin for Tricky {
     }
 
     fn install(&self, hooks: &mut Hooks<'_>) -> Result<(), HookError> {
+        core_boot::configure();
         let mut missing = Vec::new();
+        for chain in all_chains() {
+            if hooks.has_slot(chain.addr) {
+                hooks.chain(chain.addr, chain.f, chain.prev)?;
+            } else {
+                missing.push(format!("{:#010x} {}", chain.addr, chain.name));
+            }
+        }
         for table in tables() {
             for &(addr, f, name) in table {
                 if !hooks.has_slot(addr) {

@@ -78,8 +78,7 @@ impl Trace {
     fn write(&mut self, line: &str) {
         if !self.opened {
             self.opened = true;
-            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../.cache/diagnostics");
+            let root = crate::custom_tracks::diagnostics_dir();
             let stamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |time| time.as_secs());

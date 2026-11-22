@@ -53,8 +53,7 @@ fn output_dir() -> Option<&'static PathBuf> {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis())
             .unwrap_or(0);
-        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../.cache/diagnostics")
+        let dir = crate::custom_tracks::diagnostics_dir()
             .join(format!("heap-{}-{epoch}", std::process::id()));
         std::fs::create_dir_all(&dir).ok()?;
         eprintln!("[heap trace] observations: {}", dir.display());
