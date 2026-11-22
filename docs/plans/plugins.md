@@ -84,16 +84,19 @@ cannot disturb each other. The Tricky fork instead writes a modified copy of
 next-free texture and lightmap IDs, 788 and 623 on the USA disc), so it stays a
 fallback for a course that needs resources from two archives.
 
-To verify before relying on it:
+The four things to verify before relying on it, with what was found
+(2026-11-22; "S0 result" below has the run, "What a world needs" the code reading):
 
-1. Nothing else in the load path assumes the location is `BAM`. **Checked for
-   one event** (see "S0 result").
-2. The texture slot pools are sized once at boot (the fork reads 1,500 from the
-   archive): size them for the largest world a plugin declares. Not checked.
-3. The section and event tables in guest memory are indexed per event: the
-   catalog supplies the entries for a plugin's events. Not checked.
-4. Unloading an event leaves no state behind in global tables, so that two
-   events with different archives can follow each other in one run. Not checked.
+1. Nothing else in the load path assumes the location is `BAM`. **Checked** for
+   a renamed copy of `BAM`.
+2. The texture slot pools are sized once at boot. **Read in the code**: a
+   world with more than 1,500 textures needs a boot-time setting.
+3. The section and event tables in guest memory are indexed per event.
+   **Read in the code**: a world with the same section names as the template
+   event works as it is; one with a different layout needs the tables patched.
+4. Unloading an event leaves no state behind, so that two events with
+   different archives can follow each other in one run. **Checked** for
+   `BAM` then `BAX` in one process.
 
 ### S0 result (2026-11-22)
 
@@ -112,9 +115,62 @@ rest byte for byte) in the cache folder, and a hook on `cGame_loadTrack`
 - the game did not halt.
 
 So an event can load a world archive chosen by the plugin, through the file
-overlay, with no change to the archive's contents and nothing merged. What this
-does not show: a world with different data (it is a copy of SSX 3's own), two
-different archives in one run, and the pool and table questions above.
+overlay, with no change to the archive's contents and nothing merged.
+
+**Two archives in one run.** The hook counts world loads (`SSX3_WORLD_COPY=2`:
+swap from the second load on). The run: the Alaska-start event `ARA1` from
+`SSX3_EVENT`, the pause menu (Start, Down x5), Quit Game (Up, X), which goes
+back to the title and destroys the world, then the menu route of
+`tools/scenarios.py` for a second event (`p1_race_snow_jam`, shifted to start
+at the title). The log shows `world load #1` (`BAM.big`) and `world load #2`
+(`BAX.big`), the second race is under way at frame 5,750 (4th of 6, 25
+seconds in), its frames at 5,500 and 5,750 are byte-identical to the same run
+without the plugin, and the game did not halt. (The pause menu's Restart
+does not reload the world: the archive is opened once.) With
+`SSX3_WORLD_COPY=3` the hook renamed the record's location in place and never
+put `BAM` back, so both loads opened `BAX` (frames again identical): `BAX`
+then `BAM` is not tested, and a hook that renames must restore the name.
+
+What none of this shows: a world with different data (it is a copy of SSX 3's
+own).
+
+### What a world needs (read from the code, 2026-11-22; not yet run)
+
+**Texture pool.** `TexMan` is a fixed table of 2,000 entries. Ids 0 to 1,499
+are "bound" (caller-chosen: world textures, `SDB` shared images at +0x2A and
+lightmaps at +0x2C, 788 + 623 = 1,411 in retail) and 1,500 to 1,999 are a
+free list for dynamic ones. The 1,500 is written into `TexMan_InitTable`
+(0x3670e0, ported in `railmodifier.rs`), `TexMan_FreeNBTexInfo` (0x3671c8) and
+`TEX_FIRST_NB` in `TexMan_FreeTexture` (0x367bc0); nothing sizes it from the
+archive. A world with more than 1,500 textures would collide with live dynamic
+ones and corrupt the free list; ids of 2,000 or more overwrite the head of the
+free list. The Tricky fork reads the counts from `BAM.BIG` before boot and
+moves the boundary in the first two functions. For the plugin API: a manifest
+field `world-textures = N`; the engine takes the maximum of 1,500 and the
+values of the enabled plugins (and rejects 1,999 or more) as a host value
+read by those three functions, before the guest starts. Worlds of SSX 3's own
+size need nothing.
+
+**Section and event tables.** `SectionMan_Init` (0x22cd40) builds the logical
+section table at 0x44216c (50 entries of 16 bytes) at run time: for each slot it
+takes a name from the event interface and matches it by string against the
+section names in the world's `SDB` (from +80, 88 bytes each); the first match
+is the slot's world section. The event table at 0x442488 (rows of 0x28 bytes,
+indexed by event or track id) is static data in the executable: +4 the number
+of sections (up to 6), +8 the sky slot, +0xc the shared slot, +0x10 the
+logical slot ids. Nothing in the game writes it. So a renamed copy of `BAM`
+works because its section names are the same. A world with another layout
+needs the slot-to-section mapping and the template event's row changed for
+the event, and put back when it ends. This is what the fork does: it keeps a
+native event as the template, overwrites one logical slot with its world's
+section index, edits the template's row in place, restores both on exit, and
+makes `SectionMan_IsEventLoaded` accept a missing sky or shared section. For
+the plugin API: per event, `template` plus the world's section names (at most
+6, optional `sky` and `shared`), applied by a typed hook after
+`SectionMan_Init`, with the restore on unload and the `IsEventLoaded`
+tolerance built in, so a plugin states data and does not patch tables. This is
+inferred from reading the fork and the ported functions; it needs the ports
+of S4 and a run with a world of another layout to confirm.
 
 ## What a plugin can touch
 
@@ -175,10 +231,10 @@ plugin prefers them over raw hooks. Raw hooks stay as the escape hatch.
 
 | Stage | What | Done when |
 | --- | --- | --- |
-| S0 | **Spike**: one event loads a copy of `BAM` under another location name | done for one event; checks 2 to 4 above remain |
-| S1 | Generalise the data overlay in `native_files`; per-plugin overlays in load order | a file in the overlay shadows the ISO; unlisted paths fall back; gate identical |
-| S2 | `hookable.txt`, `Hooks::chain`, `call_prev` | two chained hooks end at the generated body; a missing slot is an error |
-| S3 | Folder discovery, `plugin.toml`, `prepare`, `ssx3 plugins build`, the built-in test plugin | the test plugin loads, hooks and serves an overlay file |
+| S0 | **Spike**: one event loads a copy of `BAM` under another location name | done: one event, and `BAM` then `BAX` in one run; checks 2 and 3 are read from the code only |
+| S1 | Generalise the data overlay in `native_files`; per-plugin overlays in load order | **done** (#67): a file in the overlay shadows the ISO; unlisted paths fall back; gate identical |
+| S2 | `hookable.txt`, `Hooks::chain`, `call_prev` | **done** (#67): two chained hooks end at the generated body; a missing slot is an error |
+| S3 | Folder discovery, `plugin.toml`, `prepare`, `ssx3 plugins build`, the built-in test plugin | **done** (#67): the test plugin loads, hooks and serves an overlay file |
 | S4 | Port the front-end and game-state functions the Tricky fork overrides and are still generated (32 at 2026-11-22: `EventSelect_*`, `GameStatePreRaceLoad_*`, `GameStateFinish_Update`, `GameStateResults_Enter`, `GameModeMan_OnRiderFinished`, UI text and screen creation, `BEScoreInt_SubmitRaceResult`, ...) | each has a differential test |
 | S5 | `Catalog`; the Peak and event lists read it | the test plugin adds a peak with one event to the menu |
 | S6 | Tricky as the first real plugin, with its author | the 19 events start, run and finish |
