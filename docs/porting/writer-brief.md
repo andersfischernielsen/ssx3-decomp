@@ -68,8 +68,7 @@ after each wave.
   not from a Rust copy taken before the call: a misbehaving callee can change
   it.
 - Loops with back-edge event checks: `events::event_due` +
-  `deliver_event_here`, never `c.event()` with the result ignored (the
-  browser/unwind build halts otherwise).
+  `deliver_event_here`, never `c.event()` with the result ignored.
 - VU0: issue the original's `c.vu0()`/`lqc2`/`sqc2` macro ops; do not
   recompute with `VuF32`. FPU: `ps2f::FpuF32` operations as the guide says,
   never native `f32` maths.
@@ -232,8 +231,7 @@ every difference a parameter.
   generated `c.pc = t; return;`): a script that turns it into a bare
   `return Ok(())` leaves `pc` at the last block head.
 - A function with resume entries (`if c.pc != ENTRY { return ..__entries }`)
-  falls back to `ee::sNN::f_XXXXXXXX__generated(c)`, which exists in both the
-  normal and the unwind form; `__entries` exists only in the normal one.
+  falls back to `ee::sNN::f_XXXXXXXX__generated(c)`, which exists next to `__entries`.
 - Constants used only by tests: `#[cfg(test)]`, or the game build warns.
 - `f_XXXXXXXX__generated` exists only once the function is in `overrides.txt`
   (after the orchestrator's `prep` + `regen`); a staging module cannot name

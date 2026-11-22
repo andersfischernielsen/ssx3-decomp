@@ -1965,10 +1965,7 @@ pub fn section_man_request_activate(c: &mut Cpu) {
         // The other entries (resume points after a callee unwound): the
         // structured form's `__entries` twin; the unwind form's body
         // dispatches on `c.pc` itself.
-        #[cfg(not(feature = "ee-unwind"))]
         return ee::s05::f_0022d478__entries(c);
-        #[cfg(feature = "ee-unwind")]
-        return ee::s05::f_0022d478__generated(c);
     }
     guest(c, |c| {
         c.cycles += 13;
@@ -2843,16 +2840,11 @@ pub fn oc436_section_man_advance_event_switch_sync(c: &mut Cpu) {
     c.pc = t;
 }
 
-#[cfg(not(feature = "ee-unwind"))]
 pub(crate) fn oc436_section_man_advance_resume_2(c: &mut Cpu) {
     ee::s05::f_0022d668__entries(c)
 }
 
 // At install the orchestrator switches this to the generated twin.
-#[cfg(feature = "ee-unwind")]
-pub(crate) fn oc436_section_man_advance_resume_2(c: &mut Cpu) {
-    ee::s05::f_0022d668__generated(c)
-}
 
 #[cfg(test)]
 pub(crate) mod tests {

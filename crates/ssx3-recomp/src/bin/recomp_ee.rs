@@ -38,23 +38,18 @@ fn repo_root() -> PathBuf {
 
 fn main() {
     let mut shards = 16usize;
-    // Default: structured Rust on the host-thread runtime. `--unwind` selects
-    // the original resumable block-dispatch form; `--threads` dispatch form
-    // on host threads.
+    // Default: structured Rust on the host-thread runtime; `--threads` the
+    // block-dispatch form on host threads.
     let mut threads = true;
     let mut structured = true;
     // `--out DIR --package-prefix NAME`: a second copy of the generated code
-    // (e.g. the unwind form for the WebAssembly build, generated/ee-unwind,
-    // packages ssx3-ee-unwind[-sNN]) next to the default one.
+    // next to the default one.
     let mut out: Option<PathBuf> = None;
     let mut prefix = String::from("ssx3-ee");
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
     while i < args.len() {
-        if args[i] == "--unwind" {
-            threads = false;
-            structured = false;
-        } else if args[i] == "--threads" {
+        if args[i] == "--threads" {
             threads = true;
             structured = false;
         } else if args[i] == "--structured" {

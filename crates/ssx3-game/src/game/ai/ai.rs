@@ -20580,15 +20580,10 @@ pub fn ai_ctor(c: &mut Cpu) {
     })
 }
 
-#[cfg(not(feature = "ee-unwind"))]
 pub(crate) fn rider_wipeout_sub_switch_to_anim_set_b_resume_2(c: &mut Cpu) {
     ee::s00::f_0012dcb0__entries(c)
 }
 
-#[cfg(feature = "ee-unwind")]
-pub(crate) fn rider_wipeout_sub_switch_to_anim_set_b_resume_2(c: &mut Cpu) {
-    ee::s00::f_0012dcb0__generated(c)
-}
 
 /// `RiderWipeoutSub` set-B switch: the original's jump table lives at `0x458030` (index
 /// `cur - 362`, 26 entries); its targets `0x12dd10 + 8 * k` select set-B animation `0x175 + k`.

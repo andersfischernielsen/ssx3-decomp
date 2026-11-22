@@ -9572,15 +9572,10 @@ pub fn script_engine_get_target_object(c: &mut Cpu) {
     })
 }
 
-#[cfg(not(feature = "ee-unwind"))]
 pub(crate) fn oc420_get_target_object_resume_2(c: &mut Cpu) {
     ee::s07::f_00279f18__entries(c)
 }
 
-#[cfg(feature = "ee-unwind")]
-pub(crate) fn oc420_get_target_object_resume_2(c: &mut Cpu) {
-    ee::s07::f_00279f18__generated(c)
-}
 
 /// Call targets of this module's ports.
 pub(crate) const OC423_GET_SCRIPT_OBJ: Callee = Callee {

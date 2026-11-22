@@ -2923,15 +2923,10 @@ pub(crate) const OC423_BE_GET_RIDER_PROFILE: Callee = Callee {
     f: ee::s01::BE_GetRiderProfile,
 };
 
-#[cfg(not(feature = "ee-unwind"))]
 pub(crate) fn event_type_flag_resume_2(c: &mut Cpu) {
     ee::s01::f_00146a70__entries(c)
 }
 
-#[cfg(feature = "ee-unwind")]
-pub(crate) fn event_type_flag_resume_2(c: &mut Cpu) {
-    ee::s01::f_00146a70__generated(c)
-}
 
 /// `bool BENewPlayerInt_GetEventTypeFlag(this, int rider, int character, int
 /// kind)` (0x146a70): the profile's event flag `kind` (6..11) of `character`:

@@ -26,16 +26,11 @@ struct Form {
     regenerate: &'static str,
 }
 
-const FORMS: [Form; 2] = [
+const FORMS: [Form; 1] = [
     Form {
         feature_env: "CARGO_FEATURE_EE_THREADS",
         tree: "generated/ee",
         regenerate: "python3 tools/setup.py (or cargo run --release -p ssx3-recomp --bin recomp-ee)",
-    },
-    Form {
-        feature_env: "CARGO_FEATURE_EE_UNWIND",
-        tree: "generated/ee-unwind",
-        regenerate: "cargo run --release -p ssx3-recomp --bin recomp-ee -- --unwind --out generated/ee-unwind --package-prefix ssx3-ee-unwind",
     },
 ];
 

@@ -16,14 +16,10 @@
 //!    [`Engine::audio_suspend`] / [`Engine::audio_resume`] (audio focus
 //!    lost), [`Engine::set_surface_size`] (resized).
 //!
-//! The generated EE code comes in one of two forms (features `ee-threads`,
-//! the default, or `ee-unwind`, single-threaded, which the browser needs).
 
-// The generated EE code in the chosen form (features `ee-threads` / `ee-unwind`).
-#[cfg(all(feature = "ee-threads", not(feature = "ee-unwind")))]
+// The generated EE code.
+#[cfg(feature = "ee-threads")]
 extern crate ssx3_ee_threads as ssx3_ee;
-#[cfg(feature = "ee-unwind")]
-extern crate ssx3_ee_unwind as ssx3_ee;
 
 mod boot;
 mod debug;

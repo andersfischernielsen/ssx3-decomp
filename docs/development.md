@@ -5,10 +5,7 @@
 ```sh
 tools/bootstrap.sh                                   # fresh checkout: translate EE, VU, IOP into generated/
 ./target/release/recomp-ee                           # regenerate generated/ee (host-thread form)
-./target/release/recomp-ee --unwind --out generated/ee-unwind --package-prefix ssx3-ee-unwind   # browser form
 cargo build --profile game -p ssx3                   # window + headless
-CARGO_TARGET_DIR=target-unwind cargo build --profile game -p ssx3 --bin ssx3-headless \
-  --no-default-features --features ee-unwind         # the browser's code form, natively
 ```
 
 Regenerate after editing `crates/ssx3-game/overrides.txt` (a new override

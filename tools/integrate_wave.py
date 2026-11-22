@@ -79,11 +79,6 @@ def regen():
     if shutil.which("cargo") is None:
         sys.exit("cargo not found")
     run(["cargo", "run", "--release", "-p", "ssx3-recomp", "--bin", "recomp-ee"])
-    run([
-        "cargo", "run", "--release", "-p", "ssx3-recomp", "--bin", "recomp-ee",
-        "--", "--unwind", "--out", "generated/ee-unwind",
-        "--package-prefix", "ssx3-ee-unwind",
-    ])
     # The names CI builds the hand-written crates against (commit it).
     run([sys.executable, "tools/ee_skeleton.py", "dump"])
 
