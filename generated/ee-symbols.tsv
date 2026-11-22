@@ -6026,7 +6026,7 @@ s07	002828b8	00282908	o	ScriptEngine_ResetProcessTable
 s07	00282908	002829cc	o	ScriptEngine_LaunchPendingProcess
 s07	002829d0	00282a18	o	ScriptEngine_SeqListenerOnStart
 s07	00282a18	00282a7c	o	ScriptEngine_SeqListenerOnStop
-s07	00282a80	00282b3c	-	ScriptEngine_FindCommandHandler
+s07	00282a80	00282b3c	o	ScriptEngine_FindCommandHandler
 s07	00282b40	00282b88	o	ScriptEngine_SeqListenerOnCreate
 s07	00282b88	00282bac	o	ScriptEngine_SeqListenerOnDestroy
 s07	00282bb0	00282bbc	o	ScriptEngine_GetSeqProcessScript

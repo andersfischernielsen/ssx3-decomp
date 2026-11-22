@@ -111,6 +111,9 @@ def write():
     g.append("\npub fn set_override(addr: u32, f: fn(&mut ssx3_ee_rt::Cpu)) -> bool {\n    match addr {\n")
     g += [f"        0x{a} => unsafe {{ ssx3_ee_{s}::OVERRIDE_{a.upper()} = f }},\n" for s, a, _, _, _ in slots]
     g.append("        _ => return false,\n    }\n    true\n}\n\n"
+             "pub fn get_override(addr: u32) -> Option<fn(&mut ssx3_ee_rt::Cpu)> {\n    Some(match addr {\n")
+    g += [f"        0x{a} => unsafe {{ ssx3_ee_{s}::OVERRIDE_{a.upper()} }},\n" for s, a, _, _, _ in slots]
+    g.append("        _ => return None,\n    })\n}\n\n"
              "pub fn generated_body(addr: u32) -> Option<fn(&mut ssx3_ee_rt::Cpu)> {\n    Some(match addr {\n")
     g += [f"        0x{a} => ssx3_ee_{s}::f_{a}__generated,\n" for s, a, _, _, _ in slots]
     g.append("        _ => return None,\n    })\n}\n\npub const HOST_THREADS: bool = true;\n")

@@ -1,0 +1,7 @@
+# Functions that get an override slot without a hand-written replacement, so
+# that plugins (`ssx3-plugin`) can hook them. One address per line, then the
+# name and a note. Ported functions always have a slot (overrides.txt); list
+# here only code that is still generated. A plugin that needs another address
+# adds it here in its pull request; its CI checks that its addresses are listed.
+# Run `python3 tools/integrate_wave.py regen` after changing this file.
+0x00282a80    ScriptEngine_FindCommandHandler    # script command lookup; first hookable example
