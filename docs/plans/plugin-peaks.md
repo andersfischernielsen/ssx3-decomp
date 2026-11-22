@@ -1,8 +1,8 @@
 # Plugin peaks and events on the Select Peak screen
 
 Status: design, 2026-11-22. Nothing here is implemented. "(verified)" means read in this
-repository's code or in the fork; "(unverified)" means inferred and needing a run (Ghidra was
-not reachable while writing this).
+repository's code, in the fork or in Ghidra (`SLUS_207.72`, second pass the same night); "(unverified)"
+means inferred and needing a run.
 
 Goal: a plugin's `plugin.toml` (`[[peak]]` id/name/picture, `[[event]]` id/peak/kind/template/world,
 `crates/ssx3-plugin/src/catalog.rs`) is enough to get its peaks onto the Select Peak screen and its
@@ -48,7 +48,20 @@ Fork reference: `ssx3-decomp-more` (SSX Tricky fork), called "the fork" below.
   count u16 at +14) of layout records with the same name hash at +4 and y (s16) at +18, width/height at
   +34/+38. `UIScreen_CreateObjects` (0x39ced0, `cUIScreen_createAllObjects`) walks the widget records
   in file order and creates each with `UIScreen_CreateObject` (0x39d078); menu children are attached by
-  hash from the objects already created, so a child must precede its menu.
+  hash from the objects already created, so a child must precede its menu. (Ghidra, verified:
+  `UIScreen_CreateObject` switches on the record's class u16: 0x10 group (u32 child count at +0x20,
+  child hashes from +0x24), 0x13 UIMenu (u8 child count at +0x20, hashes from +0x24; ctor sets selected
+  `+0x95`, total `+0x96`, visible `+0x97`, first visible `+0x98`, scroll object `+0x9c`, current item
+  `+0xa0` = all 0), 0x17 UIText, 0x18 UIVector, 0x12 list box, 0x11/0x15/0x16/0x19/0x20/0x21 icon, pair,
+  slider, progress, text scroll, scroll. A missing child hash is skipped silently.) The decoded screen
+  header holds the object block at `+4` (count u32, records) and a second block at `+8`
+  (`screen+0x34`): a table of `(key u32, size u32, value u16, ...)` entries read by
+  `UIScreen_LookupValue` 0x39c778 (many front-end states look values up in it),
+  `UIScreen_FindKeyframe` 0x39c728 and `UIScreen_RunThreadFrame` 0x39c978: it is the screen's script,
+  keyframe and value data, not widget layout. `UIObject_Load` (0x39fe00) takes name (+4), flags (+8) and
+  a pointer to the record's data (+0xc) from the object record. The fork's patcher clones the matching
+  rows of that second block per new widget (and sets y/width/height there); how a widget's initial
+  position gets from that block (a thread command, presumably) is still not traced.
 
 ### Who sets what
 
@@ -93,7 +106,10 @@ Fork reference: `ssx3-decomp-more` (SSX Tricky fork), called "the fork" below.
 1. LUI has exactly the widgets above; nothing creates rows at run time.
 2. `this+0x20` and `+0x140` are `[3][3][8]`; peak 3 would write into the next array (the completed flags)
    and peak 4+ into `+0x260` (the record copy), `+0x2cc` (popup) and beyond (verified from offsets).
-3. `es_accept_peak` rejects `id >= 3`; SetMode/UpdateModePanels/RefreshPeakList choose widgets by
+3. `es_accept_peak` rejects `id >= 3` (Ghidra: `2 < id || this[id+1] == 0` denies); highlight and unlocked-colour
+   (actions 1, 2) read `this[id+1]` (peaks), `this[id+4]` (tabs) and `this[peak*0x18 + tab*8 + id + 8]`
+   (events), so a plugin row with an id of 4 or more would read other fields: plugin rows must be
+   intercepted before these (verified);  SetMode/UpdateModePanels/RefreshPeakList choose widgets by
    `peak` with branches or fixed names.
 4. The three event tables and `GetEventRecord` index `peak` in 0..2; the 17-entry `TrackInfo` array
    (`0x43d950`, 100 bytes each) is the only course list (the engine never indexes it by plugin ids).
@@ -156,9 +172,14 @@ enum Label { Key(u32 /* hash of name_key */), Ascii(String) }
   handled before it). Goal rows 0/1, event rows `j`. Ids are written in `EventSelect_OnWidgetCreated`.
 - Limits: the screen is 640x480 and the peak list sits next to the picture. Constants, enforced at
   catalog load with a log line, never a crash: at most 4 plugin peaks on screen (the list grows from 120
-  by 25 per row; Mountain stays last); more peaks are dropped (log) until scrolling is checked (see
-  risks: `UIMenu` has visible-count and first-visible fields, `+0x97/+0x98`, and `SetSelection` scrolls,
-  so a taller list with a fixed visible count probably works); at most 12 events per (peak, kind) (rows
+  by 25 per row; Mountain stays last); more peaks are dropped (log). Resolved in Ghidra: there is no
+  scrolling to lean on. `UIMenu_Load` (0x39aac0) sets the visible count `+0x97` and total `+0x96` to the
+  child count, `UIMenu_ResetScroll` (0x39b760, the only thing that sets another visible count) has no
+  caller in the event-select code (its callers are the rule-select, char-equip, chat, lobby, reward-list
+  and similar states), and `UIMenu_SetSelection` (0x39b960) scrolls only when the index leaves
+  `[first, first+visible)`, which never happens. So the list is as tall as its children and more than
+  about 5 rows runs off the 480-line screen; a larger set of plugin peaks needs paging done by the host
+  (a "More" row that swaps the shown names) and is left out of the first version; at most 12 events per (peak, kind) (rows
   22 high); names are cut to 31 ASCII characters. Peaks are listed in plugin-id order, so several plugins
   coexist as separate rows (a community map pack and Tricky together simply add rows). A plugin with more
   than one peak is fine; one peak per plugin is the expected case for map packs.
@@ -208,7 +229,7 @@ when `MenuPlan` is non-empty)
 | --- | --- | --- |
 | 0x2009d0 | `EventSelect_OnWidgetCreated` | Before the stock body: if the widget's name hash is in the plan's map, write its id at `+0x18` and set its text (3.5). Child index selection stays native. |
 | 0x2018a8 | `EventSelect_OnWidgetAction` | For a plugin row and flow < 2, handle the action in `pluginmenu` and return without running the stock body: 1 and 2 colour as unlocked (call `SetHighlightColor` 0x2083d8 / `SetUnlockedColor` 0x208438), set the picture preview; 5 accept: sound, then peak row sets `selected_plugin_peak = Some(p)`, `gp-0xb4c = 0`, `SetMode(1)` + panel refresh (`es_pick_peak`'s sequence); goal row sets the tab (0 race, 1 freestyle; a kind with no events is denied), `SetMode(2)`; event row starts the event (3.6). Action 6 (back) and 7 stay stock (they only change modes). A one-frame accept guard, as the fork has, because newly enabled menus come later in the input traversal. Stock code stays reachable for the three retail peaks and the Mountain. |
-| 0x2030a0 | `EventSelect_SetMode` | Mode 0: `selected_plugin_peak = None`. After the stock body: hide every plugin panel, and when a plugin peak is selected hide the stock panel the stock code chose for `peak 0` (`SPG_Peak1Goals` or `Peak1{Race,Freestyle}Locations`) and show the plugin's goals (mode 1) or location list for the tab (mode 2). Visibility through `UIState_ShowObject/HideObject` by name (the fork used the object vtable; both exist, the UI state one is what the stock code uses (verified)). Preserve the caller's registers (the fork's `refresh_catalog_panels` saves and restores `c.g`/`c.f`). |
+| 0x2030a0 | `EventSelect_SetMode` | Mode 0: `selected_plugin_peak = None`. After the stock body: hide every plugin panel, and when a plugin peak is selected hide the stock panel the stock code chose for `peak 0` (`SPG_Peak1Goals` or `Peak1{Race,Freestyle}Locations`) and show the plugin's goals (mode 1) or location list for the tab (mode 2). Visibility is through the object's own vtable, as the stock SetMode does (Ghidra, verified: hide = vtable `+0x3c(0)` and `+0x4c(0)`; show = flags `+0x14 |= 1`, `+0x4c(1)`, `+0x3c(1)`), not `UIState_ShowObject` (that is used for the confirm popup, the "Locks" objects and `phl`). Stock SetMode mode 1 shows `SPG_Peak1Goals` for peak 0, Peak2's for 1 and Peak3's for any other value, mode 2 picks one of the nine lists by (peak, tab) (peak not 0-2 or tab not 0-2 shows nothing), and mode 0 and 2 set the sub-title object (hash at 0x470518) to `kT_240SelectPeak` / the string at 0x470a48 when flow < 2; with a plugin peak stored as peak 0 the hook hides the Peak1 panel afterwards. Preserve the caller's registers (the fork's `refresh_catalog_panels` saves and restores `c.g`/`c.f`). |
 | 0x202ad8 | `EventSelect_UpdateModePanels` | After the stock body, when a plugin peak is selected: set `PEAKno`/`SubTitle`/`title_title` to the peak name (mode 0/1) and "Race"/"Freestyle" (mode 2), hide `SP_Info`, `SP_GameInfo`, `SE_Info`, `Indicators`, `peak{1,2,3}outline` (names verified from the fork). |
 | 0x203d40 | `EventSelect_RefreshPeakList` | When the highlighted row is a plugin peak (menu `+0xa0` object, `+0x18` id >= 4): the stock body already takes the Mountain (totals) path for `id >= 3`; after it, hide the info panels above and place `phl` under the row. The totals shown by the stock path are the game's, so they are hidden, not edited. |
 | 0x203990 / 0x202828 | `EventSelect_LoadMapImage` / `EventSelect_Update` | When a plugin peak or event is highlighted, request the plugin picture into the slot instead (3.7), set the variant latch `+0x2d4` to `0x100 + p`, clear `+0x2dc`; stock `Update` then binds the finished slot (fork says Update is independent of the peak index, to be confirmed). |
@@ -220,31 +241,40 @@ the few lines (they are short and already documented) or the function is made `p
 
 ### 3.5 Text and locale
 
-- Peak name: the catalog's `name`, set as ASCII with `UIText_SetAsciiString` (0x3a0c50) then
-  `UIText_RefreshText` (0x3a0528) on the row widget (the stock `SetupPeakTexts` does the same for rows
-  that carry a name). Language independent, no `CMNAMER.LOC` patch (the fork's LOC patch would need one
+- Peak name: the catalog's `name`, set with `UIText_SetString` (0x3a0c50; Ghidra, verified: zeroes the
+  locale id at `+0xb0`, then `UIText_SetAsciiString` 0x3a0c70: shows the object, converts to wide with
+  `UI_AsciiToWide`, `UIText_SetWideStringInternal`; strings of 511 characters or more are silently
+  ignored). `UIText_RefreshText` (0x3a0528) does nothing when the locale id is 0, so it is neither needed
+  nor able to undo the text; the stock `SetupPeakTexts` uses `UIText_SetAsciiString` for rows that
+  carry a name. Language independent, no `CMNAMER.LOC` patch (the fork's LOC patch would need one
   per language file).
 - Event name: if the manifest gives `name_key`, set `UIText_SetTextId(hash(name_key))` (a key of the
   game's own locale table, so a plugin can use stock strings); else `name` as ASCII; else the id.
 - Headings use the peak name. Help text for the highlighted event: none (the info panels are hidden).
-- Risks: ASCII text is dropped by a locale reload; the screen is rebuilt on each entry so it is set again
-  by the creation hook. UIText stores the wide string in a heap buffer with a capacity field (+0xb8); the
-  fork re-ported `SetWideStringInternal` for long strings (reason unverified): names are capped at 31
-  characters to stay below any suspected limit.
+- Risks: text with locale id 0 survives `RefreshText`; the screen is rebuilt on each entry and the
+  creation hook sets it again. The fork re-ported `SetWideStringInternal` for long strings (reason
+  unverified, probably irrelevant for short names): names are capped at 31 characters.
 
 ### 3.6 Starting an event (reusing `event_boot`)
 
 On accept of plugin event `e` (catalog `Event`, tab matches `kind`):
 
 1. `template = event_boot::find(&event_boot::events(c), &e.template)`; if missing, deny with sound 4.
-2. Write the 3-word record `{track, kind, event}` where the stock code would have called
-   `GetEventRecord` (the fork does the same at `sp`) and run the stock `es_start_event` tail. Because the
-   hook replaces the action handler, the tail is re-implemented in `pluginmenu::start_event` using the
-   same calls as `event_boot::start` after "Event select confirm": `gp-0x1f38 = 1`, `0x535c08 = track`
-   (`TRACK_INDEX`), `BENewRaceInt_SetEventType/SetEvent` (0x144df0 / 0x1451e8), `Commit` (0x144928), then
-   `GameModule_RequestState` as `es_event_confirm`'s front-end branch does, not the boot's direct
-   pre-game load screen (the menu flow also pushes the loading-screen stack entries; reuse by calling
-   the stock confirm path with `this+0x260` set to the record is the simplest, see risks).
+2. Write the 3-word record `{track, kind, event}` where the stock code calls `GetEventRecord`. Ghidra
+   verified the front-end tail (flow < 2, event row unlocked) of `EventSelect_OnWidgetAction`:
+   `GetEventRecord(&rec, peak, row, tab)`; `0x535c08 = rec.track`; `gp-0x1f38 = 1`;
+   `BENewRaceInt_SetEventType(race, rec.kind)`; `SetEvent(race, rec.event)`; the interface's commit
+   (vtable `+0xc`, adjust from `+8`); and only for flow 1: if the event-type byte at `0x535c10` changed,
+   `EA_MemSet(0x5308b8, 0, 0x20)`, then `GameModule_QuitToLoadScreen(world->0x84, 1)`; finally
+   `HideMapPic` and return 1 (the screen is left and the calling front-end state continues to the rules
+   screen and the load). It is the same sequence as `event_boot::start`'s "Event select confirm" step and
+   as `es_start_event` in `uitemplatemap.rs`; there is no `GameModule_RequestState`, loading-screen stack
+   or `this+0x260` here: those belong to the confirm-popup path of flows 2 and above
+   (`this+0x260` = the copied record, `GameModule_RequestState(.., 0xe, 1, 0)`, `0x5366e8`/`0x4428f0`),
+   which plugin events do not use (they are front-end only). So `pluginmenu::start_event` is a short
+   native function (no stack bookkeeping), or simply the stock `es_start_event` entered with the record
+   already built (`es_start_event` is private; make it `pub(crate)` and give it the record by a host
+   override of its `GET_EVENT_RECORD` call: one `if` at that one call site, as the fork did).
 3. `event_boot::set_world(Some(e.world))`. Every native event start must clear it: hook the same entry
    (`OnWidgetAction` with a retail event row) and `EventSelect_Shutdown` leaving by back, or clear it in
    `SetMode(0)`. `set_world` already restores the original location name at the next world load.
@@ -345,24 +375,24 @@ installed, and a unit test where stated. One heavy process at a time.
 
 ## 5. Risks and unknowns
 
-- **UIMenu scrolling and the visible count** for more than about 5 rows: the fields exist
-  (`+0x95` selected, `+0x97` visible count, `+0x98` first visible, `+0xa4` pending selection), the source
-  of the visible count (LUI or height/row pitch) is not known. The fork grew the height. Needs a run.
-- **Second LUI table** (property/layout records) and the `UIScreen_CreateObject` class table: the fork's
-  patcher shows what to clone, but class ids and any per-class extra bytes were not re-derived here;
-  cloning whole records of the same class avoids needing them. A change in row count could also move
-  alignment-sensitive data (the fork pads to 16).
+- ~~UIMenu scrolling~~ settled (3.2): none; cap the list, page in the host later.
+- **Second LUI block** (script/keyframe/value table at header `+8`): consumers identified
+  (`LookupValue`, `FindKeyframe`, `RunThreadFrame`) but not its record format, nor how a cloned widget's
+  position and fade-in come out of it. The fork cloned per-widget rows there and set y/width/height at
+  `+18/+34/+38`; step 3 must reproduce that on the real screen and step 4 look at the frame. The object
+  block classes are now known (3.3), so cloning whole records of the same class is safe. Alignment:
+  the fork pads to 16 and the screen buffer is a fresh allocation from `EAC_GetUnpackedSize`
+  (`UIScreen_SetData` 0x39c688, verified), so growth is not otherwise constrained.
 - **Whether the fork's re-ports** (`UIScreen_CreateObject(s)`, `UIMenu_SetSelection`, `UIText_*`,
   `UpdateModePanels`, `RefreshPeakList`, `Update`) are needed with a longer menu, or only documentation
   and bug fixes. I read their headers, not the diffs against the stock bodies. If a stock function does
   index by list position (for example selection by child index when the list has an extra row), the
   generic design needs the same fix in-tree; step 4/6 would show it as wrong rows highlighted.
-- **Starting through the stock tail**: `es_event_confirm`/`es_start_event` use `this+0x260`, the
-  loading-screen stack (`gp-0x69c`, `0x5366e8`) and `GameModule_RequestState`; re-implementing them in
-  `pluginmenu` may drift from the guest. Safer: let the stock `es_accept_event` run with a record written
-  where `GetEventRecord` returns it (hook `GetEventRecord` 0x200388, generated, so it needs `hookable.txt`
-  or a port first: it is a simple table copy and a good S4-style port with a differential test, which
-  would also let the template event stand in for any `(peak, tab, row)`).
+- **Starting**: resolved (3.6): the front-end tail is short and verified. Remaining choice: native
+  `start_event` versus a `pub(crate) es_start_event` with the record supplied; `GetEventRecord` 0x200388
+  is generated and unbounded (any `peak` indexes past the tables; kind other than 0-2 returns race
+  `[0][0]`, per the C++), so it must never see a plugin peak. A port of it with a differential test is a
+  nice-to-have, not a prerequisite.
 - **Gate with a plugin installed**: widget allocations change guest heap addresses, so RAM identity is
   only promised with no plugin. Frame-level equality is the check with plugins.
 - **Picture format** (the CLUT swizzle and the retail member's envelope) is taken from the fork's Python
@@ -370,10 +400,12 @@ installed, and a unit test where stated. One heavy process at a time.
 - **Template events** carry rules (rider count, medals, scripts, sections). Community worlds with another
   section layout need the S4/S6 section-table work before their events run; the menu itself does not
   depend on it.
-- **ASCII text persistence** across language change and the 800-character wide-string limit (the fork's
-  re-port suggests a hazard): names are short; verify by switching language in a headless run.
+- **Text**: ASCII strings are limited to 511 characters by `UIText_SetAsciiString` (verified); names are
+  capped far below. Whether the fork's `SetWideStringInternal` re-port fixed a real bug stays unverified.
 - **Two plugins and one `world`/picture name**: validated at catalog build (to add); the MAPGFX member
   names use the peak index, so they cannot clash.
-- Ghidra was not reachable, so addresses come from `generated/ee-symbols.tsv`, the Rust ports, the C++
-  reference (`devvydont-ssx3` `uitemplatemap.cpp`, `ovstaterewardslist.cpp`, `feasyncfile.cpp`) and the
-  fork; anything that only Ghidra could confirm is marked above.
+- Ghidra (second pass) settled: UIMenu scroll fields, the object classes, the second block's role,
+  stock SetMode visibility and branches, the id checks in `EventSelect_OnWidgetAction`, the front-end
+  start tail, `UIText_SetString`/`RefreshText`. Not settled by Ghidra (needs data or a run): the second
+  block's record format and the real FE.LUI contents, whether the fork's re-ports are needed, the
+  picture CLUT swizzle, the async picture slot behaviour with a long name.
