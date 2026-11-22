@@ -6,6 +6,10 @@ edition.workspace = true
 license.workspace = true
 build = "build.rs"
 
+[lib]
+name = "ssx3"
+path = "src/lib.rs"
+
 [[bin]]
 name = "ssx3"
 path = "src/main.rs"

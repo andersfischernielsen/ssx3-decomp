@@ -1,5 +1,9 @@
 //! SSX 3 (USA) — native recompilation, windowed front end.
 //!
+//! [`run`] is the whole program: the `ssx3` binary calls it with no plugins,
+//! and a build made by `ssx3 plugins build` calls it with the Rust plugins
+//! it links in (`docs/plans/plugins.md`).
+//!
 //! Runs the game (`ssx3-engine`) in a winit window: the engine's pacing,
 //! the renderer's image presented with `wgpu`, keyboard and controller
 //! input, the settings file and overlay (F10).
@@ -20,7 +24,9 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Fullscreen, Window, WindowId};
 
+mod headless;
 mod icon;
+mod plugins_cli;
 mod png;
 mod present;
 mod screenshot;
@@ -622,14 +628,24 @@ fn display_aspect(cpu: &Cpu) -> f32 {
     })
 }
 
-fn main() {
+pub use headless::run as run_headless;
+
+/// The windowed front end. `plugins` are the Rust plugins linked into this
+/// build; plugin folders are found on their own. `ssx3 plugins ...` runs the
+/// plugin commands instead of the game.
+pub fn run(plugins: Vec<Box<dyn ssx3_engine::ssx3_plugin::Plugin>>) {
     // A standalone build finds its data first (it chooses the settings file).
     ssx3_engine::init_paths(None, None, true);
     // Then: the settings file fills in the environment.
     settings::load();
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("plugins") {
+        std::process::exit(plugins_cli::run(&args[2..], &plugins));
+    }
     env_logger::init();
     let engine = Engine::boot(EngineConfig {
         find_pack: true,
+        plugins,
         ..EngineConfig::new(Box::new(settings::Desktop))
     });
     let event_loop = EventLoop::new().expect("event loop");

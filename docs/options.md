@@ -105,6 +105,10 @@ emulated PS2 path for comparison:
 | --- | --- |
 | `SSX3_SND=iop` | The recompiled IOP sound driver instead of the native mixer (`ssx3-snd`). |
 | `SSX3_NATIVE_FILES=0` | The emulated CD instead of reading game files through `std::fs` (from the ISO, or an extracted `DATA/` folder with `SSX3_DATA_DIR=<dir>`). |
+| `SSX3_DATA_OVERLAY_DIR=<dir>` | Files served before the disc's (`<dir>/DATA/WORLDS/FOO.BIG` replaces or adds the disc's `DATA/WORLDS/FOO.BIG`, any case). Plugins add their own overlays after this one. |
+| `SSX3_PLUGINS=0` | Plugins off (`docs/plugins.md`). A comma-separated list loads only those ids. |
+| `SSX3_PLUGIN_DIR=<dir>` | A folder of plugin folders, searched before `plugins/` in the data folder. |
+| `SSX3_DISC_DIR=<dir>` | Where plugins look for disc images (other games), before the folder of the SSX 3 image and the data folder. |
 | `SSX3_IOP_SIO2=1` | The recompiled IOP controller and memory-card modules (SIO2MAN, PADMAN, MCMAN, MCSERV) on a modelled card, instead of the native padman server and memory card (`ssx3-mc`). |
 | `SSX3_VU1=emu` | The translated VU1 microcode instead of the native Rust programs (only used outside native rendering). |
 | `SSX3_TICK_HZ=120` | Game rate (settings: "Game rate"): the game updates N times a second, one image per update (no interpolation needed). Every 1/60 step the game loads follows the rate; per-tick code the conversion pass has not reached yet may still run fast. See [`plans/configurable-tick-rate.md`](plans/configurable-tick-rate.md). |

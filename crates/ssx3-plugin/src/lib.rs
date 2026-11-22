@@ -8,10 +8,14 @@ pub mod load;
 pub mod manifest;
 pub mod plugin;
 pub mod prepare;
+pub mod workspace;
 
 pub use hooks::{HookError, Hooks, Prev, Slots};
 pub use load::{load, Loaded};
 pub use plugin::Plugin;
+/// What a plugin's hooks work with: the machine and its registers.
+pub use ssx3_ee_rt::cpu::reg;
+pub use ssx3_ee_rt::Cpu;
 
 /// The plugin API version, `major.minor`. Before 1.0 a plugin names the exact
 /// version.

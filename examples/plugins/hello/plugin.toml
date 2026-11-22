@@ -1,0 +1,21 @@
+# The smallest plugin with everything: a peak, an event, a file in the overlay,
+# and Rust code that wraps one game function. See docs/plugins.md.
+[plugin]
+id = "hello"
+api = "0.1"
+name = "Hello"
+
+[code]
+package = "ssx3-plugin-hello"
+
+[[peak]]
+id = "hello"
+name = "Peak Hello"
+
+[[event]]
+id = "hello-race"
+name = "Hello Race"
+peak = "hello"
+kind = "race"
+template = "peak1-race1"
+world = "hello"

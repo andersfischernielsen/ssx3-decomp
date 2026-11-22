@@ -4,15 +4,19 @@
 //! ```sh
 //! cargo run --profile game -p ssx3 --bin ssx3-headless -- 600 --shot-every 60
 //! ```
+//!
+//! [`run`] is the whole program, so that a build with plugins linked in
+//! (`ssx3 plugins build`) can call it with them.
 
 use std::time::Instant;
 
 use ssx3_engine::{Audio, Engine, EngineConfig, EnvSettings};
 
-#[path = "../png.rs"]
-mod png;
+use crate::png;
 
-fn main() {
+/// Run the game without a window; `plugins` are the Rust plugins linked into
+/// this build.
+pub fn run(plugins: Vec<Box<dyn ssx3_engine::ssx3_plugin::Plugin>>) {
     ssx3_engine::init_paths(None, None, true);
     let args: Vec<String> = std::env::args().collect();
     let frames: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(300);
@@ -58,6 +62,7 @@ fn main() {
         skip_movies: true,
         short_memcard_screens: false,
         audio: Audio::Off,
+        plugins,
         ..EngineConfig::new(Box::new(EnvSettings))
     });
     let gfx = engine.renderer().cloned();
