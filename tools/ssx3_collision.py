@@ -24,7 +24,7 @@ def _split_mesh(mesh: dict) -> list[dict]:
             result.append({"vertices": vertices, "triangles": triangles, "normals": normals})
         remap, vertices, triangles, normals = {}, [], [], []
 
-    for triangle, normal in zip(mesh["triangles"], mesh["normals"], strict=True):
+    for triangle, normal in zip(mesh["triangles"], mesh["normals"]):
         new_indices = set(triangle) - remap.keys()
         if len(remap) + len(new_indices) > 256:
             flush()

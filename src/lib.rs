@@ -98,6 +98,15 @@ pub mod custom_camera_stream;
 pub mod custom_section_alloc;
 pub mod custom_text_id_string;
 
+/// A hook that wraps the function in the slot (`Hooks::chain`): it runs the
+/// previous function through `prev`.
+pub struct Chain {
+    pub addr: u32,
+    pub f: GuestFn,
+    pub prev: &'static ssx3_plugin::Prev,
+    pub name: &'static str,
+}
+
 /// A direct call to the guest function at `A` through its slot (what the
 /// fork's `ssx3_ee::sNN::f_X` paths did): the call stays valid when the
 /// function is hooked.

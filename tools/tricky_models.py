@@ -76,7 +76,7 @@ def _object_animation(data: bytes, start: int, end: int) -> dict:
     _extent(data, start, 36, end)
     base = struct.unpack_from("<6f3I", data, start)
     mask, count, table = base[6:]
-    if mask & ~0x3f or count != mask.bit_count():
+    if mask & ~0x3f or count != bin(mask).count("1"):
         raise FormatError("Tricky animation channel mask/count disagree")
     _extent(data, start + table, count * 4, end)
     channels = []
