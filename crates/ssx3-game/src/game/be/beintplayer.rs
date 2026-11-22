@@ -2927,7 +2927,6 @@ pub(crate) fn event_type_flag_resume_2(c: &mut Cpu) {
     ee::s01::f_00146a70__entries(c)
 }
 
-
 /// `bool BENewPlayerInt_GetEventTypeFlag(this, int rider, int character, int
 /// kind)` (0x146a70): the profile's event flag `kind` (6..11) of `character`:
 /// bit `kind + 8` of the 64-bit word at `+0x278` of the profile record

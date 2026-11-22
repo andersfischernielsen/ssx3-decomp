@@ -230,7 +230,6 @@ pub(crate) fn set_algo_resume_2(c: &mut Cpu) {
     ee::s01::f_0015d078__entries(c)
 }
 
-
 /// `void ChaseCamController_SetAlgorithm(Controller* self, int kind, Ctx* ctx,
 /// float blend)` (0x15d078; the reference calls it
 /// `createChaseAlgorithmBlend`): build the chase camera algorithm of `kind`

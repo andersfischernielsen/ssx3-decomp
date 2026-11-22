@@ -26,13 +26,11 @@ struct Form {
     regenerate: &'static str,
 }
 
-const FORMS: [Form; 1] = [
-    Form {
-        feature_env: "CARGO_FEATURE_EE_THREADS",
-        tree: "generated/ee",
-        regenerate: "python3 tools/setup.py (or cargo run --release -p ssx3-recomp --bin recomp-ee)",
-    },
-];
+const FORMS: [Form; 1] = [Form {
+    feature_env: "CARGO_FEATURE_EE_THREADS",
+    tree: "generated/ee",
+    regenerate: "python3 tools/setup.py (or cargo run --release -p ssx3-recomp --bin recomp-ee)",
+}];
 
 /// The entries of `overrides.txt`, by address.
 fn overrides(text: &str) -> BTreeMap<u32, &str> {

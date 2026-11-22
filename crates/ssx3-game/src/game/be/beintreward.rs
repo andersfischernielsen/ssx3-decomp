@@ -3635,7 +3635,6 @@ pub(crate) fn rewards_parse_resume_2(c: &mut Cpu) {
     ee::s01::f_0015a818__entries(c)
 }
 
-
 /// One string-offset fixup: the word at `a0 + off`, when non-zero, becomes
 /// `strings + word - 1`. `pre` is the cycle charge of the block head.
 pub(crate) fn rewards_fixup_word(c: &mut Cpu, off: u32, pre: u64) {

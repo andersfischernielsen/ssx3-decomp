@@ -9576,7 +9576,6 @@ pub(crate) fn oc420_get_target_object_resume_2(c: &mut Cpu) {
     ee::s07::f_00279f18__entries(c)
 }
 
-
 /// Call targets of this module's ports.
 pub(crate) const OC423_GET_SCRIPT_OBJ: Callee = Callee {
     addr: 0x0027_d320,
