@@ -3532,14 +3532,8 @@ pub(crate) fn pk_goal_tail(c: &mut Cpu, r_dw: usize, r_w: usize) {
     c.sw(dst.wrapping_add(8), w);
 }
 
-#[cfg(not(feature = "ee-unwind"))]
 pub(crate) fn pk_resume_2(c: &mut Cpu) {
     ee::s05::f_00203d40__entries(c)
-}
-
-#[cfg(feature = "ee-unwind")]
-pub(crate) fn pk_resume_2(c: &mut Cpu) {
-    ee::s05::f_00203d40__generated(c)
 }
 
 /// Epilogue: reload the callee-saved registers (`s0` first, as the early
