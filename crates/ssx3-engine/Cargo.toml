@@ -9,10 +9,9 @@ license.workspace = true
 default = ["ee-threads"]
 # Dynamic call graph of the EE code (SSX3_CALLPROF=<out>:<from>:<to>).
 callprof = ["ssx3-ee-rt/callprof"]
-# The generated EE code: host threads (native default) or unwind form
-# (generated/ee-unwind; single-threaded, as the browser build needs).
+# The generated EE code (guest threads on host stacks: coroutines natively,
+# front-end supplied stacks on wasm32, `ssx3_ps2::threads`).
 ee-threads = ["dep:ssx3-ee-threads", "ssx3-game/ee-threads"]
-ee-unwind = ["dep:ssx3-ee-unwind", "ssx3-game/ee-unwind"]
 # The emulated GS (verification renderers SSX3_RENDER=emu/shadow, GS
 # captures and VRAM dumps); the game itself renders natively.
 emu-gs = ["ssx3-ps2/emu-gs"]
@@ -28,7 +27,6 @@ ssx3-gfx = { path = "../ssx3-gfx" }
 ssx3-render = { path = "../ssx3-render" }
 ssx3-ee-rt = { path = "../ssx3-ee-rt" }
 ssx3-ee-threads = { path = "../../generated/ee/game", package = "ssx3-ee", optional = true }
-ssx3-ee-unwind = { path = "../../generated/ee-unwind/game", package = "ssx3-ee-unwind", optional = true }
 ssx3-game = { path = "../ssx3-game", default-features = false, features = ["packages"] }
 ssx3-iop = { path = "../ssx3-iop" }
 

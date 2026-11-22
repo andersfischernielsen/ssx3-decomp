@@ -11106,10 +11106,7 @@ pub fn script_engine_eval_choice_params(c: &mut Cpu) {
         // The other entries (resume points after a callee unwound): the
         // structured form's `__entries` twin; the unwind form's body
         // dispatches on `c.pc` itself. Not installed yet: once it is, call `f_0027bdb8__generated`.
-        #[cfg(not(feature = "ee-unwind"))]
         return ee::s07::f_0027bdb8__entries(c);
-        #[cfg(feature = "ee-unwind")]
-        return ee::s07::f_0027bdb8(c);
     }
     guest(c, |c| {
         c.cycles += 22;

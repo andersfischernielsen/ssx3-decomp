@@ -310,25 +310,20 @@ fn wm(c: &mut Cpu, a: u32, m: &vu0::M) {
 }
 
 /// Call a guest function from a native draw function: `args` in a0..t3,
-/// `ret` the return address the generated caller uses; its v0. A native
-/// caller cannot be resumed after an unwind, so the callee runs with
-/// `Cpu::no_unwind`.
+/// `ret` the return address the generated caller uses; its v0.
 pub(crate) fn guest_call(c: &mut Cpu, target: u32, args: &[u32], ret: u32) -> u32 {
     const R: [usize; 8] = [A0, A1, A2, A3, T0, T1, T2, T3];
     let ra = c.g[RA];
     for (i, &a) in args.iter().enumerate() {
         c.g[R[i]][0] = a as i32 as i64 as u64;
     }
-    // (Host threads block in a thread switch and resume here; the unwind
-    // form keeps the switch for the generated caller's next check. The
-    // host call depth starts over: a callee at the depth cap would unwind
-    // to the trampoline, which a native caller cannot follow; native draw
-    // functions are shallow, so the host stack has room.)
-    let no_unwind = std::mem::replace(&mut c.no_unwind, true);
+    // (Host threads block in a thread switch and resume here. The host call
+    // depth starts over: a callee at the depth cap would unwind to the
+    // trampoline, which a native caller cannot follow; native draw functions
+    // are shallow, so the host stack has room.)
     let depth = std::mem::replace(&mut c.depth, 0);
     guest(c, |c| call_ptr(c, target, ret));
     c.depth = depth;
-    c.no_unwind = no_unwind;
     if c.pc != ret {
         static ONCE: std::sync::Once = std::sync::Once::new();
         ONCE.call_once(|| {

@@ -10232,17 +10232,12 @@ pub fn oc436_camera_wobble_init(c: &mut Cpu) {
     c.pc = t;
 }
 
-#[cfg(not(feature = "ee-unwind"))]
 pub(crate) fn oc436_camera_wobble_init_resume_2(c: &mut Cpu) {
     ee::s01::f_0015fff0__entries(c)
 }
 
 // At install the orchestrator switches this to the generated twin; until
 // then the unwind form (not built for staging) has no name for it.
-#[cfg(feature = "ee-unwind")]
-pub(crate) fn oc436_camera_wobble_init_resume_2(c: &mut Cpu) {
-    ee::s01::f_0015fff0__generated(c)
-}
 
 #[cfg(test)]
 pub(crate) mod tests {

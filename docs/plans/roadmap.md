@@ -77,12 +77,10 @@ for verification until then).
 
 ## Optional: browser (WebAssembly) 🟡
 
-The browser front end (its own repository, [`../frontends.md`](../frontends.md)): the unwind form of
-the EE code in a Web Worker, the disc image read with `FileReaderSync`, ssx3-gfx drawing with
-WebGPU. Lowest-priority target: keep the unwind form working
-(`ssx3-headless --features ee-unwind` checks it natively) and avoid new
-blocking GPU readbacks. The unwind form exists only because of the game's
-threads; it goes away with them (final state below).
+The browser front end (its own repository, [`../frontends.md`](../frontends.md)): the game in a Web
+Worker with its guest threads on WebAssembly JSPI stacks (`ssx3_ps2::threads::StackSwitcher`),
+the disc image read with `FileReaderSync`, ssx3-gfx drawing with WebGPU. Lowest-priority
+target: avoid new blocking GPU readbacks. The unwind form is gone (2026-11-22).
 
 ## Final task (required before the project is called done) ⬜
 
@@ -99,12 +97,9 @@ The EE has one core, but the game is written as kernel threads (8 in a race:
 `CreateThread`, semaphores, `SleepThread`/`iWakeupThread`, alarms), one
 running at a time. Recompiled, a guest call is a host call, so a thread that
 blocks deep in a call chain holds host stack frames. Keeping that working
-costs two mechanisms today: a host stack per guest thread (coroutines,
-`ssx3-ps2/src/threads.rs`, the default form) and, for single-threaded
-targets, a second form of the generated code that unwinds to a trampoline
-and re-enters at the saved `pc` (`recomp-ee --unwind`, feature `ee-unwind`,
-resume labels, `__entries` twins, `Cpu::no_unwind`, the browser build's
-form). Neither is the game; both are there because its threads are.
+costs a host stack per guest thread (coroutines in `ssx3-ps2/src/threads.rs`;
+JSPI stacks in the browser, `threads_switcher.rs`). That is not the game; it is
+there because its threads are.
 
 The way out is to remove the threads from the game itself: once everything
 on each thread's paths is hand-written, what a thread does becomes a call
@@ -115,16 +110,14 @@ RAM-identical at each step under the gate.
 Done when:
 - no guest thread is created; the kernel's thread, semaphore and alarm
   services are unused by the game;
-- the coroutine layer (`threads.rs`, `corosensei`) and the unwind form
-  (`recomp-ee --unwind`, the `ee-unwind` feature and everything that exists
-  only for it) are deleted;
+- the coroutine layer (`threads.rs`, `corosensei`, the `StackSwitcher`) and
+  the trampoline and dispatch-form code that only the thread-free game needs
+  are deleted;
 - every front end, the browser included, runs the same code with no stack
   switching.
 
-Until then, the browser could run the default form instead of the unwind
-form with WebAssembly JavaScript Promise Integration (JSPI: one wasm stack
-per guest thread, in Chrome/Edge 137+, Firefox 153+, Safari 27); that would
-retire the unwind form earlier. Investigated 2026-11-17, not prototyped.
+The browser needs JSPI until then (one wasm stack per guest thread: Chrome/Edge
+137+, Firefox 153+, Safari 27).
 
 ## Verification (applies to every phase)
 

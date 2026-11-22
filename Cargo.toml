@@ -20,7 +20,6 @@ members = [
     "crates/ssx3",
     "crates/ssx3-game",
     "generated/ee/*",
-    "generated/ee-unwind/*",
     "generated/iop/*",
 ]
 

@@ -107,9 +107,8 @@ emulated reference paths: [`docs/options.md`](docs/options.md).
 
 The game's threads run as coroutines (one stack each, `corosensei`) on the host thread that
 drives frames, so a thread switch is a stack switch and a guest call is a plain Rust call.
-`recomp-ee --unwind` generates the single-thread resumable form for the browser, using the
-unwind/trampoline model from [ps2-web-recomp](https://github.com/snuri00/ps2-web-recomp)
-(MIT). More in [`docs/architecture.md`](docs/architecture.md).
+In the browser the same stacks are WebAssembly JSPI stacks, supplied by the front end
+(`docs/frontends.md`, "Guest-thread stacks"). More in [`docs/architecture.md`](docs/architecture.md).
 
 Front ends for other platforms live in their own repositories and use this one as a git
 submodule (the generated code is made locally by `tools/setup.py`): the engine API and

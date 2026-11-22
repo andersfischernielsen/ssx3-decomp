@@ -2469,10 +2469,7 @@ pub fn rider_anim_update_seq_type0b(c: &mut Cpu) {
     if c.pc != 0x0010_43f8 {
         // The other entries: the structured form's `__entries` twin; the
         // unwind form's body dispatches on `c.pc` itself.
-        #[cfg(not(feature = "ee-unwind"))]
         return ee::s00::f_001043f8__entries(c);
-        #[cfg(feature = "ee-unwind")]
-        return ee::s00::f_001043f8__generated(c);
     }
     guest(c, |c| {
         c.cycles += 17;

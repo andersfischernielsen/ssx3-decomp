@@ -16556,10 +16556,7 @@ pub fn nash_probe_vertical(c: &mut Cpu) {
         // The other entries (resume points after a callee unwound): the
         // structured form's `__entries` twin; the unwind form's body
         // dispatches on `c.pc` itself.
-        #[cfg(not(feature = "ee-unwind"))]
         return ee::s11::f_003369d8__entries(c);
-        #[cfg(feature = "ee-unwind")]
-        return ee::s11::f_003369d8__generated(c);
     }
     guest(c, |c| {
         'b_336a5c: {

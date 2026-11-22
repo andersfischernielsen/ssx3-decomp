@@ -596,10 +596,6 @@ pub fn ui_anim_apply(c: &mut Cpu) {
     }
     // Leave the registers as the original does.
     let (g, f, hi, lo, fcr31) = (c.g, c.f, c.hi, c.lo, c.fcr31);
-    // The blend's calls (the setter may check events) must not unwind:
-    // nothing would resume this code. A thread switch or a finished frame
-    // waits for the next check, as in `deliver_event_here`.
-    let outer = std::mem::replace(&mut c.no_unwind, cfg!(feature = "ee-unwind"));
     let was = BLENDED.with(|b| b.borrow_mut().remove(&anim));
     let applied = c.bus.read16(anim.wrapping_add(0x8)) as u32;
     let flow = off_the_clock(c, |c| match blend_frames(c, anim, mode, clock) {
@@ -626,7 +622,6 @@ pub fn ui_anim_apply(c: &mut Cpu) {
         }
         None => Ok(()),
     });
-    c.no_unwind = outer;
     if flow.is_err() {
         // (Only a call-depth unwind gets here.)
         return;

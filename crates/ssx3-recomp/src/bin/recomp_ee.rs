@@ -38,27 +38,19 @@ fn repo_root() -> PathBuf {
 
 fn main() {
     let mut shards = 16usize;
-    // Default: structured Rust on the host-thread runtime. `--unwind` selects
-    // the original resumable block-dispatch form; `--threads` dispatch form
-    // on host threads.
-    let mut threads = true;
+    // Default: structured Rust; `--threads` the block-dispatch form for all
+    // functions.
     let mut structured = true;
     // `--out DIR --package-prefix NAME`: a second copy of the generated code
-    // (e.g. the unwind form for the WebAssembly build, generated/ee-unwind,
-    // packages ssx3-ee-unwind[-sNN]) next to the default one.
+    // next to the default one.
     let mut out: Option<PathBuf> = None;
     let mut prefix = String::from("ssx3-ee");
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
     while i < args.len() {
-        if args[i] == "--unwind" {
-            threads = false;
-            structured = false;
-        } else if args[i] == "--threads" {
-            threads = true;
+        if args[i] == "--threads" {
             structured = false;
         } else if args[i] == "--structured" {
-            threads = true;
             structured = true;
         } else if args[i] == "--out" {
             out = Some(PathBuf::from(&args[i + 1]));
@@ -236,7 +228,7 @@ fn main() {
     // Cross-function branch targets must be labels where they land.
     let mut external: BTreeSet<u32> = BTreeSet::new();
     for f in &funcs {
-        let ts = targets(&img, f, threads);
+        let ts = targets(&img, f);
         for &t in &ts {
             if t < f.start || t >= f.end {
                 external.insert(t);
@@ -276,36 +268,11 @@ fn main() {
             ok.then(|| (f.start, n.clone()))
         })
         .collect();
-    // The unwind form charges cycles as the host-thread form does, which
-    // emits most functions structured: which ones.
-    let structured_set: BTreeSet<u32> = if threads {
-        BTreeSet::new()
-    } else {
-        let tctx = Ctx {
-            shard_of: &shard_of,
-            data_refs: &data_refs,
-            extra_labels: &extra,
-            threads: true,
-            names: &names,
-            structured: None,
-        };
-        let none = BTreeSet::new();
-        funcs
-            .iter()
-            .filter(|f| {
-                ssx3_recomp::structure::emit_structured(&img, f, shard_of[&f.start], &tctx, &none)
-                    .is_some()
-            })
-            .map(|f| f.start)
-            .collect()
-    };
     let ctx = Ctx {
         shard_of: &shard_of,
         data_refs: &data_refs,
         extra_labels: &extra,
-        threads,
         names: &names,
-        structured: if threads { None } else { Some(&structured_set) },
     };
     // Functions replaced by hand-written Rust (crates/ssx3-game/overrides.txt):
     // the generated body is kept as `f_X__generated`, and `f_X` calls through
@@ -524,7 +491,7 @@ fn main() {
         );
     }
     lib.push_str("        _ => return None,\n    })\n}\n");
-    let _ = writeln!(lib, "\n/// True when generated for host-thread mode (`ssx3_ps2::threads`).\npub const HOST_THREADS: bool = {threads};");
+    let _ = writeln!(lib, "\n/// True when generated for host-thread mode (`ssx3_ps2::threads`).\npub const HOST_THREADS: bool = true;");
     write_if_changed(game.join("src/lib.rs"), lib).unwrap();
 
     println!("functions    : {}", funcs.len());

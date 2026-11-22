@@ -226,14 +226,8 @@ pub(crate) fn set_algo_relative_fixed(c: &mut Cpu, cycles: u64, alloc_ret: u32, 
     set_algo_relative_tail(c)
 }
 
-#[cfg(not(feature = "ee-unwind"))]
 pub(crate) fn set_algo_resume_2(c: &mut Cpu) {
     ee::s01::f_0015d078__entries(c)
-}
-
-#[cfg(feature = "ee-unwind")]
-pub(crate) fn set_algo_resume_2(c: &mut Cpu) {
-    ee::s01::f_0015d078__generated(c)
 }
 
 /// `void ChaseCamController_SetAlgorithm(Controller* self, int kind, Ctx* ctx,
