@@ -1,0 +1,80 @@
+name: Release
+
+# Every push to main becomes a patch release: the next vMAJOR.MINOR.PATCH after
+# the latest existing semver tag (PATCH + 1; the first one counts up from the
+# workspace version in Cargo.toml). Source only: no artifacts, no builds (the
+# game's builds need disc data that never goes into CI). Nothing is committed
+# back; the tag is created by `gh release create` on the pushed commit.
+# Put `[skip release]` in a commit message to skip its release.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One release at a time, in push order: never cancel a queued or running one.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Tag and release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      !contains(github.event.head_commit.message, '[skip release]')
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute the next version
+        id: version
+        run: |
+          set -euo pipefail
+          semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          latest="$(git tag --list 'v*' | grep -E "$semver" | sort -V | tail -n 1 || true)"
+          if [ -z "$latest" ]; then
+            base="$(awk '/^\[/ { in_pkg = ($0 == "[workspace.package]") } in_pkg && /^version *=/ { gsub(/[^0-9.]/, "", $0); print; exit }' Cargo.toml)"
+            if ! printf '%s' "$base" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::no v* tag and no workspace version in Cargo.toml"
+              exit 1
+            fi
+            echo "No release tag yet; counting up from workspace version $base"
+          else
+            base="${latest#v}"
+          fi
+          major="${base%%.*}"
+          rest="${base#*.}"
+          minor="${rest%%.*}"
+          patch="${rest#*.}"
+          tag="v${major}.${minor}.$((patch + 1))"
+          # Race guard: the tag must not exist locally or on the remote.
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null ||
+             [ -n "$(git ls-remote --tags origin "refs/tags/$tag")" ]; then
+            echo "::error::tag $tag already exists"
+            exit 1
+          fi
+          echo "Next release: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SHA" \
+            --title "$TAG" \
+            --generate-notes \
+            --latest
