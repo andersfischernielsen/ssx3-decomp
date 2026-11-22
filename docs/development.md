@@ -93,6 +93,12 @@ needs `--features vu1-microcode` (which brings `emu-gs`):
 `cargo build --profile game -p ssx3 --features vu1-microcode`,
 `cargo test -p ssx3-ps2 --features emu-gs`.
 
+## Releases
+
+Every push to `main` becomes a source-only patch release (`.github/workflows/release.yml`):
+the next `vMAJOR.MINOR.PATCH` after the latest `v*` tag, with generated notes and no artifacts.
+Add `[skip release]` to a commit message to skip it.
+
 ## Native-path switches
 
 | Variable | Effect |
