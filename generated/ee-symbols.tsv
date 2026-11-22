@@ -1150,8 +1150,8 @@ s01	001549a8	001549dc	o	BEScoreInt_ctor
 s01	001549e0	001549e8	-	BEScoreInt_Commit
 s01	001549e8	00154a54	o	BEScoreInt_v02
 s01	00154a58	00154ab8	o	BEScoreInt_UpdateBestStats
-s01	00154ab8	00154ee4	-	BEScoreInt_SubmitRaceResult
-s01	00154ee8	001550e8	-	BEScoreInt_SubmitPlacement
+s01	00154ab8	00154ee4	o	BEScoreInt_SubmitRaceResult
+s01	00154ee8	001550e8	o	BEScoreInt_SubmitPlacement
 s01	001550e8	00155130	o	BEScoreInt_GetHighScoreFor
 s01	00155130	00155190	o	BEScoreInt_GetHighScore
 s01	00155190	00155204	o	BEScoreInt_GetHighScoreOwner
@@ -3886,7 +3886,7 @@ s05	00200288	00200384	-	OVScreenRewardsListPopup_OnWidgetAction
 s05	00200388	002006b8	-	EventSelect_GetEventRecord
 s05	002006b8	002006fc	o	EventSelect_ctor
 s05	00200700	002009d0	-	EventSelect_Init
-s05	002009d0	00200a6c	-	EventSelect_OnWidgetCreated
+s05	002009d0	00200a6c	o	EventSelect_OnWidgetCreated
 s05	00200a70	00200abc	-	EventSelect_TransitionIn
 s05	00200ac0	00200af0	o	EventSelect_OnActivate
 s05	00200af0	00200b50	o	EventSelect_Shutdown
@@ -3900,13 +3900,13 @@ s05	002018a8	00202734	oe	EventSelect_OnWidgetAction
 s05	00202738	00202764	o	EventSelect_OnWidgetNotify
 s05	00202768	00202770	-	EventSelect_HandleInput
 s05	00202770	00202824	-	EventSelect_PostInput
-s05	00202828	00202ad8	-	EventSelect_Update
-s05	00202ad8	0020309c	-	EventSelect_UpdateModePanels
-s05	002030a0	0020398c	-	EventSelect_SetMode
+s05	00202828	00202ad8	o	EventSelect_Update
+s05	00202ad8	0020309c	o	EventSelect_UpdateModePanels
+s05	002030a0	0020398c	o	EventSelect_SetMode
 s05	00203990	00203a58	o	EventSelect_LoadMapImage
 s05	00203a58	00203cb8	e	EventSelect_UpdateConfirmPopup
 s05	00203cb8	00203d40	o	EventSelect_SetMapTabMode
-s05	00203d40	00204fec	e	EventSelect_RefreshPeakList
+s05	00203d40	00204fec	oe	EventSelect_RefreshPeakList
 s05	00204ff0	00205094	o	EventSelect_GetMedalText
 s05	00205098	0020668c	e	EventSelect_RefreshPeakGoals
 s05	00206690	00207430	-	EventSelect_ShowEventPaths
@@ -3950,7 +3950,7 @@ s05	0020a6a8	0020a6ec	o	cOVStateOverlay_OnWidgetAction
 s05	0020a6f0	0020a778	o	cOVStateOverlay_PlayObjectAnim
 s05	0020a778	0020a8ac	-	OVScreenPDATemplate_Init
 s05	0020a8b0	0020a8f4	o	GameUI_GetResultsScreenId
-s05	0020a8f8	0020ab4c	-	GameUI_OpenScreenForState
+s05	0020a8f8	0020ab4c	o	GameUI_OpenScreenForState
 s05	0020ab50	0020bab8	-	GameUI_OpenScreen
 s05	0020bab8	0020ca10	-	GameUI_PushPopupScreen
 s05	0020ca10	0020cb54	-	GameUI_OpenPauseMenu
@@ -4388,13 +4388,13 @@ s06	00233bd0	00233bec	o	GameStateIdle_SaveState
 s06	00233bf0	00233c0c	-	GameStateIdle_LoadState
 s06	00233c10	00233c50	o	GameStateFinish_ctor
 s06	00233c50	00233cd4	o	GameStateFinish_Enter
-s06	00233cd8	00234008	-	GameStateFinish_Update
+s06	00233cd8	00234008	o	GameStateFinish_Update
 s06	00234008	002340b4	o	GameStateFinish_Exit
 s06	002340b8	00234120	o	GameStateFinish_SaveState
 s06	00234120	00234188	o	GameStateFinish_LoadState
 s06	00234188	002341d0	o	GameStatePreRaceLoad_ctor
-s06	002341d0	002343b0	-	GameStatePreRaceLoad_Enter
-s06	002343b0	00234750	e	GameStatePreRaceLoad_Update
+s06	002341d0	002343b0	o	GameStatePreRaceLoad_Enter
+s06	002343b0	00234750	oe	GameStatePreRaceLoad_Update
 s06	00234750	00234910	-	GameStatePreRaceLoad_Exit
 s06	00234910	00234990	o	GameStatePreRaceLoad_CheckIntroScript
 s06	00234990	00234a30	o	GameStatePreRaceLoad_SaveState
@@ -4446,7 +4446,7 @@ s06	00236c88	00236cd8	o	GameStatePreRaceMenu_Exit
 s06	00236cd8	00236d5c	o	GameStatePreRaceMenu_ResumeRace
 s06	00236d60	00236d7c	o	GameStatePreRaceMenu_SaveState
 s06	00236d80	00236d9c	-	GameStatePreRaceMenu_LoadState
-s06	00236da0	00236e5c	-	GameStateResults_Enter
+s06	00236da0	00236e5c	o	GameStateResults_Enter
 s06	00236e60	00236e9c	o	GameStateResults_Update
 s06	00236ea0	00236ec4	o	GameStateResults_Exit
 s06	00236ec8	00236ee4	o	GameStateResults_SaveState
@@ -4477,7 +4477,7 @@ s06	002380e8	00238160	o	GameModeMan_Destroy
 s06	00238160	002382b8	o	GameModeMan_StartMode
 s06	002382d8	00238348	o	GameModeMan_ResetMode
 s06	00238348	00238354	-	OVScreenYNDialog_CopyDefaultChoice
-s06	00238358	00238510	-	GameModeMan_OnRiderFinished
+s06	00238358	00238510	o	GameModeMan_OnRiderFinished
 s06	00238510	00238550	o	GameModeMan_HandlerV06
 s06	00238550	00238590	o	GameModeMan_HandlerV07
 s06	00238590	002385d0	o	GameModeMan_HandlerV09
@@ -5428,7 +5428,7 @@ s07	0026a070	0026a090	o	Path_ReadTrackField
 s07	0026a090	0026a0b4	o	Path_QueryEventsReversed
 s07	0026a0b8	0026a134	o	Path_HasEventInRangeReversed
 s07	0026a138	0026a180	-	Path_GetFirstEventType1Start
-s07	0026a180	0026a338	-	Path_Read
+s07	0026a180	0026a338	o	Path_Read
 s07	0026a338	0026a378	o	Path_ReadSegment
 s07	0026a378	0026a428	o	Path_ReadEvent
 s07	0026a428	0026a638	o	Path_GetClosestPoint
@@ -5889,7 +5889,7 @@ s07	0027a860	0027a9f0	-	ScriptEngine_QueueFinishScripts
 s07	0027a9f0	0027aa7c	e	ScriptEngine_SkipFinishScript
 s07	0027aa80	0027aaf4	o	ScriptEngine_IsFinishScriptActive
 s07	0027aaf8	0027ac60	o	ScriptEngine_QueueIntroScripts
-s07	0027ac60	0027b0bc	-	ScriptEngine_QueueRaceCutscene
+s07	0027ac60	0027b0bc	o	ScriptEngine_QueueRaceCutscene
 s07	0027b0c0	0027b264	o	ScriptEngine_ChooseScript
 s07	0027b268	0027b36c	o	ScriptEngine_LoadBankSync
 s07	0027b370	0027b40c	o	ScriptEngine_LoadBankAsync
@@ -7284,7 +7284,7 @@ s08	002c2d30	002c2d64	-	ISTR_Alloc
 s08	002c2d68	002c2d88	-	ISTR_Free
 s08	002c2d88	002c2db0	-	ISTR_MemCopy
 s08	002c2db0	002c2e40	-	ISTR_Realloc
-s08	002c2f18	002c3fa0	-	SurfPropCache_InitDefaults
+s08	002c2f18	002c3fa0	o	SurfPropCache_InitDefaults
 s08	002c3fa0	002c3fa8	-	GameModule_UnloadStub
 s08	002c3fa8	002c3fdc	o	cPS2MemCard_ctor
 s08	002c3fe0	002c404c	o	cPS2MemCard_dtor
@@ -9833,7 +9833,7 @@ s12	003668f8	003669f0	o	VramHeap_EvictCheapestBlock
 s12	003669f0	00366ce0	-	VramHeap_EvictRange
 s12	00366ce0	00366dd8	o	VramHeap_Alloc
 s12	00366e30	00366e90	-	VramHeap_FreeTextureBlocks
-s12	00366e90	00366fe0	-	TexMan_CopyToTempTex
+s12	00366e90	00366fe0	o	TexMan_CopyToTempTex
 s12	00366fe0	00366fe8	o	TexMan_SetAllocFlags
 s12	00366fe8	00367074	o	TexMan_ctor
 s12	00367078	003670dc	o	TexMan_ResetVram
@@ -10456,7 +10456,7 @@ s13	0039b6a0	0039b75c	o	UIMenu_Render
 s13	0039b760	0039b7a4	o	UIMenu_ResetScroll
 s13	0039b7b0	0039b878	o	UIMenu_FindFirstSelectable
 s13	0039b878	0039b95c	-	UIMenu_FindLastSelectable
-s13	0039b960	0039baac	-	UIMenu_SetSelection
+s13	0039b960	0039baac	o	UIMenu_SetSelection
 s13	0039bab0	0039bacc	-	UIPair_Load
 s13	0039bad0	0039bb50	o	UIPair_v04
 s13	0039bb50	0039bbd4	o	UIPair_SetVisible
@@ -10494,7 +10494,7 @@ s13	0039ce20	0039ce44	o	UIScreen_CmdEndTransitionIn
 s13	0039ce48	0039ce90	o	UIScreen_CmdBeginTransitionOut
 s13	0039ce90	0039ce98	-	UIScreen_ThreadNopC
 s13	0039ce98	0039ced0	o	UIScreen_CmdEndTransitionOut
-s13	0039ced0	0039d008	-	UIScreen_CreateObjects
+s13	0039ced0	0039d008	o	UIScreen_CreateObjects
 s13	0039d008	0039d078	-	UIScreen_CreateObjectById
 s13	0039d078	0039d758	oe	UIScreen_CreateObject
 s13	0039d758	0039d774	-	UIScreen_HandleInput
@@ -10593,8 +10593,8 @@ s13	003a0c50	003a0c70	-	UIText_SetString
 s13	003a0c70	003a0cfc	o	UIText_SetAsciiString
 s13	003a0d00	003a0e90	-	UIText_SetWrappedWideString
 s13	003a0e90	003a0eb0	o	UIText_SetWideString
-s13	003a0eb0	003a1000	-	UIText_SetWideStringInternal
-s13	003a1000	003a1030	-	UIText_SetTextId
+s13	003a0eb0	003a1000	o	UIText_SetWideStringInternal
+s13	003a1000	003a1030	o	UIText_SetTextId
 s13	003a1030	003a10f0	o	UIText_GetTextSize
 s13	003a10f0	003a1148	-	UIText_GetCachedSize
 s13	003a1148	003a11b8	o	cUITextScroll_ctor
@@ -11915,7 +11915,7 @@ s14	003e4968	003e49b8	-	EAFile_CdFindEntry
 s14	003e49b8	003e4a0c	-	EA_RunFatalHandlers
 s14	003e4a10	003e4a30	-	EA_Abort
 s14	003e4a30	003e4aa0	-	EA_AddShutdownHandler
-s14	003e4af0	003e4d64	-	EATimer_Init
+s14	003e4af0	003e4d64	o	EATimer_Init
 s14	003e4d68	003e4db8	-	EATimer_Shutdown
 s14	003e4db8	003e4e94	o	EATimer_Rcnt1Handler
 s14	003e4e98	003e4ea8	o	EATimer_GetTicks
@@ -11944,7 +11944,7 @@ s14	003e56e0	003e56fc	-	EAMutex_Destroy
 s14	003e5700	003e5760	o	EAMutex_Lock
 s14	003e5760	003e57cc	o	EAMutex_Unlock
 s14	003e57d0	003e57f8	-	EATimer_ClearCallbacks
-s14	003e57f8	003e58c4	-	EATimer_AddCallback
+s14	003e57f8	003e58c4	o	EATimer_AddCallback
 s14	003e58c8	003e5928	-	EATimer_RemoveCallback
 s14	003e5928	003e5a10	o	EATimer_ServiceCallbacks
 s14	003e5a10	003e5a74	-	EATimer_ServiceFor

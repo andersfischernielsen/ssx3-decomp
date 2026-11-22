@@ -7573,6 +7573,30 @@
 0x0011b978    Rider_dtor
 0x0011fef8    Rider_GetSubStateName
 0x0011ff18    Rider_GetControlInput
+# Phase 2 wave: oc440, oc441, oc442, oc443, oc444, oc445
+0x00202ad8    EventSelect_UpdateModePanels
+0x002030a0    EventSelect_SetMode
+0x00203d40    EventSelect_RefreshPeakList
+0x002c2f18    SurfPropCache_InitDefaults
+0x00154ab8    BEScoreInt_SubmitRaceResult
+0x00154ee8    BEScoreInt_SubmitPlacement
+0x002009d0    EventSelect_OnWidgetCreated
+0x00202828    EventSelect_Update
+0x0020a8f8    GameUI_OpenScreenForState
+0x00233cd8    GameStateFinish_Update
+0x002341d0    GameStatePreRaceLoad_Enter
+0x002343b0    GameStatePreRaceLoad_Update
+0x00236da0    GameStateResults_Enter
+0x00238358    GameModeMan_OnRiderFinished
+0x0026a180    Path_Read
+0x0027ac60    ScriptEngine_QueueRaceCutscene
+0x00366e90    TexMan_CopyToTempTex
+0x0039b960    UIMenu_SetSelection
+0x0039ced0    UIScreen_CreateObjects
+0x003a0eb0    UIText_SetWideStringInternal
+0x003a1000    UIText_SetTextId
+0x003e4af0    EATimer_Init
+0x003e57f8    EATimer_AddCallback
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
