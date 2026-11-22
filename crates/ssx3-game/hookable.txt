@@ -14,3 +14,4 @@
 0x00398138    cUITextureBank_setData         # SSX Tricky plugin: UI texture banks and image mappings
 0x003adc48    cPS2ChunkResolve_v08           # SSX Tricky plugin: mesh-group traversal
 0x002dbd10    FXLoader_ctor                  # SSX Tricky plugin: shared FX texture-bank loading
+0x00200388    EventSelect_GetEventRecord     # SSX Tricky plugin: template event record for a plugin course
