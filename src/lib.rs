@@ -99,6 +99,9 @@ pub mod custom_section_alloc;
 pub mod custom_text_id_string;
 
 pub mod core_boot;
+mod core_object;
+mod core_race;
+mod core_ui;
 
 /// A hook that wraps the function in the slot (`Hooks::chain`): it runs the
 /// previous function through `prev`.
@@ -121,6 +124,9 @@ pub fn thunk<const A: u32>(c: &mut Cpu) {
 /// Every replacement this plugin installs: `(address, function, name)`.
 fn tables() -> Vec<&'static [(u32, GuestFn, &'static str)]> {
     vec![
+        core_object::OVERRIDES,
+        core_race::OVERRIDES,
+        core_ui::OVERRIDES,
         bonus_menu_mode::OVERRIDES,
         custom_rail_diagnostics::OBSERVERS,
         custom_sky_render::OVERRIDES,
@@ -204,6 +210,9 @@ fn prev_of(addr: u32) -> Option<&'static ssx3_plugin::Prev> {
 fn all_chains() -> Vec<&'static Chain> {
     let mut v: Vec<&'static Chain> = Vec::new();
     v.extend(core_boot::CHAINS);
+    v.extend(core_object::CHAINS);
+    v.extend(core_race::CHAINS);
+    v.extend(core_ui::CHAINS);
     v
 }
 

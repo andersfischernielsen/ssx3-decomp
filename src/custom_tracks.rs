@@ -152,6 +152,15 @@ pub fn prepare_track_info(c: &mut Cpu, back: u32) -> ssx3_game::call::Flow {
             let value = c.bus.read8(template + offset);
             c.bus.write8(pointer + offset, value);
         }
+        // The location the game loads (`data/worlds/<name>.big`): the plugin
+        // importer names every course archive after its event's `world`.
+        let gp = c.g[GP][0] as u32;
+        let field = if c.bus.read32(gp.wrapping_sub(0x1f38)) == 0 { 0x34 } else { 0x44 };
+        let world = world_name(track);
+        for offset in 0..16u32 {
+            let b = world.as_bytes().get(offset as usize).copied().unwrap_or(0);
+            c.bus.write8(pointer + field + offset, b);
+        }
         // TrackInfo contains a display name, whereas UIText uses locale IDs.
         let name = track.name.as_bytes();
         for offset in 0..48 {
@@ -163,6 +172,12 @@ pub fn prepare_track_info(c: &mut Cpu, back: u32) -> ssx3_game::call::Flow {
         TRACK_INFO.store(pointer, Ordering::Release);
     }
     Ok(())
+}
+
+/// The plugin event's `world` (plugin.toml): `TR_<CODE>_<R|F>`.
+pub fn world_name(track: &CustomTrack) -> String {
+    let mode = if track.event == EventKind::Race { 'R' } else { 'F' };
+    format!("TR_{}_{mode}", track.world_location)
 }
 
 fn template_course_index(c: &mut Cpu, track: &CustomTrack) -> u32 {
