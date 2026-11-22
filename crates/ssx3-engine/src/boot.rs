@@ -73,7 +73,10 @@ fn vblank(c: &mut Cpu) {
 }
 
 /// Create the machine, load the disc and the executable, start the main thread.
-pub(crate) fn boot(skip_movies: bool) -> Box<Cpu> {
+pub(crate) fn boot(
+    skip_movies: bool,
+    code_plugins: Vec<Box<dyn ssx3_plugin::Plugin>>,
+) -> (Box<Cpu>, ssx3_plugin::Loaded) {
     machine::register_functions(&ssx3_ee::FUNCTIONS);
     // Hand-written replacements (crates/ssx3-game); SSX3_NO_OVERRIDES=1 runs
     // the generated code everywhere.
@@ -81,6 +84,10 @@ pub(crate) fn boot(skip_movies: bool) -> Box<Cpu> {
     if n > 0 {
         eprintln!("[ssx3-game] {n} hand-written function(s) installed");
     }
+    // Plugins, phase 1: their overlays go in front of the disc (before the
+    // file layer below starts) and their catalog is published. Their hooks come
+    // last (phase 2, below), after every installer of the game itself.
+    let mut plugins = crate::plugins::resolve(&code_plugins);
     // The tick rate (SSX3_TICK_HZ, settings "Game rate").
     machine::set_vsync_hz(ssx3_game::tick::install());
     machine::set_vblank_hook(vblank);
@@ -95,6 +102,8 @@ pub(crate) fn boot(skip_movies: bool) -> Box<Cpu> {
     if ssx3_game::native_files::install() {
         eprintln!("[ssx3-game] native files on");
     }
+    // Plugins, phase 2: hooks wrap what the installers above left in the slots.
+    crate::plugins::install_hooks(&mut plugins, &code_plugins);
     // Recompiled IOP sound modules; used when SSX3_IOP=1 (see iop_bridge.rs).
     #[cfg(not(target_arch = "wasm32"))]
     ssx3_iop::register_generated(&ssx3_iop_gen::GENERATED);
@@ -127,7 +136,7 @@ pub(crate) fn boot(skip_movies: bool) -> Box<Cpu> {
     if skip_movies {
         c.bus.write32(0x004a_19cc, 0);
     }
-    c
+    (c, plugins)
 }
 
 /// The executable: `orig/SLUS_207.72`, else the one on the disc.

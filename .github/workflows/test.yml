@@ -43,6 +43,7 @@ jobs:
           cargo test
           -p ssx3-ee-rt -p ssx3-recomp -p ssx3-vu -p ssx3-ps2 -p ssx3-iop -p ssx3-core
           -p ssx3-mc -p ssx3-mpeg -p ssx3-snd -p ssx3-gfx
+          -p ssx3-plugin -p ssx3-plugin-hello
 
   hand-written:
     name: Hand-written crates (skeleton build)
@@ -72,4 +73,4 @@ jobs:
       # Unit tests of the frontend that run no game code (the skeleton's
       # bodies panic).
       - name: Frontend tests
-        run: cargo test -p ssx3 --bin ssx3 screenshot::tests
+        run: cargo test -p ssx3 --lib screenshot::tests

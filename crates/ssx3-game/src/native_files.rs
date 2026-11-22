@@ -88,6 +88,9 @@ enum Loc {
 
 struct State {
     src: Source,
+    /// Directories whose files replace or extend the disc's, by path (the
+    /// first that has a file wins); see [`add_overlay`].
+    overlays: Vec<PathBuf>,
     files: Vec<Option<OpenFile>>,
     /// Name lookups (upper-case path -> disc entry), cached.
     found: HashMap<String, Option<(u32, u32)>>,
@@ -103,6 +106,16 @@ struct State {
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 static LOG: Mutex<Option<File>> = Mutex::new(None);
+static OVERLAYS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+/// Serve files from `dir` before the disc's: `DATA/WORLDS/FOO.BIG` on the disc
+/// is replaced by (or added as) `dir/DATA/WORLDS/FOO.BIG`, any case. Call
+/// before [`install`]; directories are searched in the order they are added,
+/// after `SSX3_DATA_OVERLAY_DIR`. This is how plugins bring their data
+/// (`ssx3-plugin`).
+pub fn add_overlay(dir: PathBuf) {
+    OVERLAYS.lock().unwrap().push(dir);
+}
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -158,8 +171,25 @@ pub fn install() -> bool {
             }
         }
     };
+    let mut overlays: Vec<PathBuf> = Vec::new();
+    if let Some(d) = ssx3_core::config::var_os("SSX3_DATA_OVERLAY_DIR") {
+        let d = PathBuf::from(d);
+        if d.is_dir() {
+            overlays.push(d);
+        } else {
+            eprintln!(
+                "native files: SSX3_DATA_OVERLAY_DIR {} is not a directory; ignored",
+                d.display()
+            );
+        }
+    }
+    overlays.extend(OVERLAYS.lock().unwrap().iter().cloned());
+    for d in &overlays {
+        eprintln!("[native files] overlay {}", d.display());
+    }
     *STATE.lock().unwrap() = Some(State {
         src,
+        overlays,
         files: Vec::new(),
         found: HashMap::new(),
         pending: None,
@@ -220,6 +250,19 @@ fn cd_name(full: &str) -> String {
 
 impl State {
     fn open(&mut self, name: &str) -> Option<OpenFile> {
+        for dir in &self.overlays {
+            if let Some(path) = find_ci(dir, name) {
+                if let Some(f) = File::open(&path).ok().and_then(|f| {
+                    let size = f.metadata().ok()?.len() as u32;
+                    Some(OpenFile {
+                        size,
+                        loc: Loc::Host(f),
+                    })
+                }) {
+                    return Some(f);
+                }
+            }
+        }
         match &mut self.src {
             Source::Iso(disc) => {
                 let hit = *self.found.entry(name.to_string()).or_insert_with(|| {
@@ -473,4 +516,78 @@ pub fn complete_request_logged(c: &mut Cpu) {
         }
     }
     ssx3_ee::s14::f_003de420__generated(c)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let p =
+            std::env::temp_dir().join(format!("ssx3-native-files-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    fn put(root: &Path, name: &str, data: &str) {
+        let p = root.join(name);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, data).unwrap();
+    }
+
+    fn state(base: &Path, overlays: Vec<PathBuf>) -> State {
+        State {
+            src: Source::Dir(base.to_path_buf()),
+            overlays,
+            files: Vec::new(),
+            found: HashMap::new(),
+            pending: None,
+            stranded: None,
+            busy: false,
+        }
+    }
+
+    fn contents(st: &mut State, name: &str) -> Option<String> {
+        let f = st.open(name)?;
+        let mut buf = vec![0u8; f.size as usize];
+        st.files.push(Some(f));
+        let idx = st.files.len() - 1;
+        assert!(st.read(idx, 0, &mut buf));
+        Some(String::from_utf8(buf).unwrap())
+    }
+
+    #[test]
+    fn overlay_files_shadow_the_disc_and_everything_else_falls_back() {
+        let (base, first, second) = (scratch("base"), scratch("first"), scratch("second"));
+        put(&base, "DATA/A.BIG", "disc a");
+        put(&base, "DATA/B.BIG", "disc b");
+        put(&first, "data/a.big", "first overlay a");
+        put(&first, "DATA/NEW.BIG", "new");
+        put(&second, "DATA/A.BIG", "second overlay a");
+        put(&second, "DATA/ONLY2.BIG", "only second");
+        let mut st = state(&base, vec![first.clone(), second.clone()]);
+        // Names come upper-case from the game's path resolution; any case on disk.
+        assert_eq!(
+            contents(&mut st, "DATA/A.BIG").as_deref(),
+            Some("first overlay a")
+        );
+        assert_eq!(contents(&mut st, "DATA/NEW.BIG").as_deref(), Some("new"));
+        assert_eq!(
+            contents(&mut st, "DATA/ONLY2.BIG").as_deref(),
+            Some("only second")
+        );
+        assert_eq!(contents(&mut st, "DATA/B.BIG").as_deref(), Some("disc b"));
+        assert_eq!(contents(&mut st, "DATA/MISSING.BIG"), None);
+        // No overlays: the disc alone.
+        let mut plain = state(&base, Vec::new());
+        assert_eq!(
+            contents(&mut plain, "DATA/A.BIG").as_deref(),
+            Some("disc a")
+        );
+        assert_eq!(contents(&mut plain, "DATA/NEW.BIG"), None);
+        for d in [base, first, second] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
 }

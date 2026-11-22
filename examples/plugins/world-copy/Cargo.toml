@@ -1,0 +1,14 @@
+# Not a workspace member: it needs the engine's generated-code form, which only
+# `ssx3 plugins build` selects.
+[package]
+name = "ssx3-plugin-world-copy"
+description = "Spike for docs/plans/plugins.md (S0): an event loads a copy of the world archive under another name."
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+ssx3-game = { path = "../../../crates/ssx3-game", default-features = false, features = ["packages"] }
+ssx3-plugin = { path = "../../../crates/ssx3-plugin" }

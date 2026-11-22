@@ -52,7 +52,7 @@ fn overrides(text: &str) -> BTreeMap<u32, &str> {
 
 /// The addresses of the `set_override` match arms (lines like
 /// `        0x0011e098 => unsafe {`), or `None` without the function. The scan
-/// runs to the end of the file: no other generated match arm has `unsafe {`.
+/// runs to the end of the file; `get_override`'s arms name the same addresses.
 fn generated_slots(lib: &str) -> Option<BTreeSet<u32>> {
     let (_, table) = lib.split_once("fn set_override(")?;
     Some(
@@ -104,7 +104,12 @@ fn main() {
     let overrides_path = package.join("overrides.txt");
     println!("cargo:rerun-if-changed=overrides.txt");
     let overrides_text = fs::read_to_string(&overrides_path).expect("read overrides.txt");
-    let overrides = overrides(&overrides_text);
+    // `hookable.txt`: functions that get a slot without a hand-written
+    // replacement (plugin hooks); the generated code must have those slots too.
+    println!("cargo:rerun-if-changed=hookable.txt");
+    let hookable_text = fs::read_to_string(package.join("hookable.txt")).unwrap_or_default();
+    let mut overrides = overrides(&overrides_text);
+    overrides.extend(self::overrides(&hookable_text));
     let root = package.join("../..");
     for form in FORMS
         .iter()

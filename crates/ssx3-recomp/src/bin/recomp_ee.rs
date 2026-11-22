@@ -310,14 +310,20 @@ fn main() {
     // Functions replaced by hand-written Rust (crates/ssx3-game/overrides.txt):
     // the generated body is kept as `f_X__generated`, and `f_X` calls through
     // a slot that the game crate fills in at boot (default: the generated body).
-    let overrides: BTreeSet<u32> = fs::read_to_string(root.join("crates/ssx3-game/overrides.txt"))
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|l| {
-            let w = l.split('#').next()?.split_whitespace().next()?;
-            u32::from_str_radix(w.trim_start_matches("0x"), 16).ok()
-        })
-        .collect();
+    // `hookable.txt` lists more functions that get a slot, for plugin hooks
+    // (`ssx3-plugin`) on code that is not ported yet.
+    let listed = |file: &str| -> BTreeSet<u32> {
+        fs::read_to_string(root.join(file))
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|l| {
+                let w = l.split('#').next()?.split_whitespace().next()?;
+                u32::from_str_radix(w.trim_start_matches("0x"), 16).ok()
+            })
+            .collect()
+    };
+    let mut overrides: BTreeSet<u32> = listed("crates/ssx3-game/overrides.txt");
+    overrides.extend(listed("crates/ssx3-game/hookable.txt"));
     for a in &overrides {
         assert!(
             funcs.iter().any(|f| f.start == *a),
@@ -497,6 +503,16 @@ fn main() {
         );
     }
     lib.push_str("        _ => return false,\n    }\n    true\n}\n");
+    // The function in a slot, so that a plugin's hook can wrap it.
+    lib.push_str("\n/// The function in the override slot of the function at `addr`: its generated\n/// body, a hand-written replacement or a plugin's hook. `None` without a slot.\npub fn get_override(addr: u32) -> Option<fn(&mut ssx3_ee_rt::Cpu)> {\n    Some(match addr {\n");
+    for a in &overrides {
+        let _ = writeln!(
+            lib,
+            "        {a:#010x} => unsafe {{ ssx3_ee_s{:02}::OVERRIDE_{a:08X} }},",
+            shard_of[a]
+        );
+    }
+    lib.push_str("        _ => return None,\n    })\n}\n");
     // (Runtime A/B checks of a replacement, `ssx3-game`'s shadow mode, run
     // the generated body by address.)
     lib.push_str("\n/// The generated body of the function at `addr` when it has an override\n/// slot (whatever is installed in the slot).\npub fn generated_body(addr: u32) -> Option<fn(&mut ssx3_ee_rt::Cpu)> {\n    Some(match addr {\n");

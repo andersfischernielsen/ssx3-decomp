@@ -1,0 +1,12 @@
+[package]
+name = "ssx3-plugin"
+description = "Plugins for ssx3-decomp: folder plugins (manifest, content, importer) and Rust code plugins (hooks) that add content to SSX 3."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+ssx3-core.workspace = true
+ssx3-ee-rt = { path = "../ssx3-ee-rt" }
+toml = "1"

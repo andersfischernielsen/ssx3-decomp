@@ -1,0 +1,10 @@
+[package]
+name = "ssx3-plugin-hello"
+description = "The example plugin of docs/plugins.md."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+ssx3-plugin = { path = "../../../crates/ssx3-plugin" }
