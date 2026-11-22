@@ -1,3 +1,5 @@
+[![Listed on PlayPorted](https://playported.com/badge.svg)](https://playported.com/ports/433-ssx-3/)
+
 # SSX 3, decompiled
 
 [![SSX 3 running natively: title screen, mode select, race start and three moments of a Snow Jam race](docs/images/screenshots.jpg)](docs/ssx3.mp4)
