@@ -1,7 +1,7 @@
 //! Native traversal of the mesh groups within one model part.
 
-use crate::call::{call_ptr, guest, Frame};
-use crate::events::{deliver_event_here, event_due};
+use ssx3_game::call::{call_ptr, guest, Frame};
+use ssx3_game::events::{deliver_event_here, event_due};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -46,7 +46,7 @@ pub fn relocate_model_dma(c: &mut Cpu) {
 pub fn accept_model_group(c: &mut Cpu) {
     c.cycles += 2;
     c.g[V0][0] = 1;
-    crate::abi::ret(c);
+    ssx3_game::abi::ret(c);
 }
 
 /// Relocate each group from the part's count (+0x1c) and pointer table (+0x20).

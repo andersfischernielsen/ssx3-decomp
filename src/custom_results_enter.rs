@@ -1,11 +1,14 @@
 //! Native transition from the finish presentation to the results UI.
 
-use crate::call::{call_ptr, guest, Frame};
-use crate::events::{deliver_event_here, event_due};
+use ssx3_game::call::{call_ptr, guest, Frame};
+use ssx3_game::events::{deliver_event_here, event_due};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 use std::sync::Mutex;
+
+/// What was in the slot before this hook (chained in `install`).
+pub static PREV_OPEN: ssx3_plugin::Prev = ssx3_plugin::Prev::new();
 
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0023_6da0, enter, "GameStateResults_Enter"),
@@ -66,7 +69,7 @@ fn open_screen_for_state(c: &mut Cpu) {
     if r(c, A0) == 7 && r(c, RA) == 0x0023_6e40 {
         remember_rejected_screen(c, r(c, S3));
     }
-    ssx3_ee::s05::f_0020a8f8__generated(c);
+    PREV_OPEN.call(c);
 }
 
 /// Results_Update consumes only a request rejected before screen creation.

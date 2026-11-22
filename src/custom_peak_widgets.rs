@@ -1,7 +1,7 @@
 //! Native default selection for the Single Event peak widget.
 
-use crate::call::{call_ptr, guest, Frame};
-use crate::guest::Addr;
+use ssx3_game::call::{call_ptr, guest, Frame};
+use ssx3_game::guest::Addr;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -30,7 +30,7 @@ pub fn event_select_on_widget_created(c: &mut Cpu) {
         let widget = c.g[A1][0] as u32;
         if widget != 0 {
             let name = c.bus.read32(widget + OBJECT_NAME);
-            let hash = crate::game::hashvalue::str_hash;
+            let hash = ssx3_game::game::hashvalue::str_hash;
             if name == hash(b"Peak4") {
                 c.bus.write32(widget + 0x18, 3);
             } else if name == hash(b"BonusRace") {

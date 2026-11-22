@@ -61,7 +61,6 @@ pub fn set_root(root: Option<PathBuf>) {
     };
 }
 pub fn restart() {
-    ssx3_render::diagnostics::restart();
     crate::custom_finish_trace::restart();
     crate::custom_results_enter::restart();
     crate::custom_rail_diagnostics::restart();
@@ -242,7 +241,7 @@ fn seed_timer(c: &mut Cpu, rules: &mut Rules) {
     if !matches!(c.bus.read32(ai), 4 | 5) {
         return;
     }
-    let ticks = (u64::from(hundredths) * u64::from(crate::tick::rate(c)) / 100) as u32;
+    let ticks = (u64::from(hundredths) * u64::from(ssx3_game::tick::rate(c)) / 100) as u32;
     c.bus.write32(entity + 0x78, ticks);
     c.bus.write32(entity + 0x88, u32::from(hundredths != 0));
     rules.timer_seeded = true;
@@ -361,8 +360,8 @@ fn update_loaded(c: &mut Cpu, address: u32, rules: &mut Rules) -> Option<BoostUp
     rider.previous = Some(position);
     let mut velocity = vec(c, address + 0x1e0);
     let mut changed = false;
-    let dt = 1. / crate::tick::rate(c) as f32;
-    let now = crate::tick::vsync_count(c);
+    let dt = 1. / ssx3_game::tick::rate(c) as f32;
+    let now = ssx3_game::tick::vsync_count(c);
     for (index, volume) in volumes.iter().enumerate() {
         let f = &volume.f;
         let inside = crosses_box(previous, position, &f[8..11], &f[12..15]);
@@ -508,7 +507,7 @@ fn path_event_loaded(
             if seconds != 0 && seconds <= 600 && rider.time_gates.insert(group) {
                 if let Some((entity, _)) = event_entity(c) {
                     if c.bus.read32(entity + 0x88) != 0 {
-                        let ticks = seconds.saturating_mul(crate::tick::rate(c));
+                        let ticks = seconds.saturating_mul(ssx3_game::tick::rate(c));
                         let limit = c.bus.read32(entity + 0x78);
                         c.bus.write32(entity + 0x78, limit.saturating_add(ticks));
                         eprintln!("[tricky] SOP checkpoint {group}: +{seconds}s (rider {rider_address:#x})");
@@ -522,132 +521,10 @@ fn path_event_loaded(
         return false;
     }
     if kind == 5 && entering && !lap_volume {
-        count_pass(rider, rider_address, crate::tick::vsync_count(c), 180);
+        count_pass(rider, rider_address, ssx3_game::tick::vsync_count(c), 180);
     } else if kind == 5 && !active && !lap_volume {
         rider.lap_ready = true;
     }
     kind == 1 && rider.remaining > 0
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::custom_tracks::EventKind;
-
-    const RIDER: u32 = 0x0080_0000;
-    const APPMAN: u32 = 0x0081_0000;
-    const EVENT: u32 = 0x0082_0000;
-    const ENTITY: u32 = 0x0083_0000;
-
-    fn fixture(event: EventKind, passes: u32, circuit: bool) -> (Box<Cpu>, Rules) {
-        let mut c = crate::difftest::fresh();
-        c.bus.write32(crate::tick::APPMAN_PTR, APPMAN);
-        c.bus.write32(APPMAN + crate::tick::APPMAN_RATE, 60);
-        put(&mut c, RIDER + 0x470, -1.);
-        c.bus.write32(RIDER + 0x874, 1); // Human rider.
-        let mut data = Vec::new();
-        data.extend_from_slice(b"TFX2");
-        for word in [passes, if circuit { 2 } else { 0 }, 9000, 1, 0] {
-            data.extend_from_slice(&word.to_le_bytes());
-        }
-        if circuit {
-            for kind in [15u32, 18] {
-                let mut f = [0f32; 32];
-                f[0] = 60.;
-                f[1] = 20.;
-                f[3] = 2.;
-                f[6] = 1.;
-                f[8..11].copy_from_slice(&[-1., -1., if kind == 15 { -1. } else { 8. }]);
-                f[12..15].copy_from_slice(&[1., 1., if kind == 15 { 1. } else { 10. }]);
-                f[19] = 10.;
-                for word in [0, kind, 1, 0] {
-                    data.extend_from_slice(&word.to_le_bytes());
-                }
-                for value in f {
-                    data.extend_from_slice(&value.to_le_bytes());
-                }
-            }
-        }
-        let mut rules = Rules {
-            event: Some(event),
-            ..Rules::default()
-        };
-        assert!(load_data(&mut rules, &data));
-        (c, rules)
-    }
-
-    fn step(c: &mut Cpu, rules: &mut Rules, position: [f32; 3], tick: u32) {
-        c.bus.write32(APPMAN + crate::tick::APPMAN_VSYNC, tick);
-        for (axis, value) in position.into_iter().enumerate() {
-            put(c, RIDER + 0x110 + axis as u32 * 4, value);
-        }
-        update_loaded(c, RIDER, rules);
-    }
-
-    #[test]
-    fn tokyo_freestyle_finishes_after_initial_ascent_and_three_laps() {
-        for mode in [EventKind::Freestyle, EventKind::Race] {
-            let (mut c, mut rules) = fixture(mode, 4, true);
-            // Initial tube ascent, then three complete circuits. The finish
-            // remains suppressed until the fourth mouth entry; no final lift.
-            for pass in 0..4 {
-                let tick = 600 + pass * 600;
-                put(&mut c, RIDER + 0x1e8, 0.);
-                step(&mut c, &mut rules, [0.; 3], tick);
-                assert_eq!(rules.riders[&RIDER].remaining, 3 - pass);
-                assert_eq!(rules.riders[&RIDER].contacts[0].serviced, pass != 3);
-                assert_eq!(float(&mut c, RIDER + 0x1e8) > 0., pass != 3);
-                assert_eq!(
-                    path_event_loaded(&mut c, &mut rules, RIDER, EVENT, 1, true, true),
-                    pass != 3
-                );
-                // Staying in the mouth cannot consume another pass.
-                step(&mut c, &mut rules, [0.; 3], tick + 200);
-                assert_eq!(rules.riders[&RIDER].remaining, 3 - pass);
-                if pass != 3 {
-                    step(&mut c, &mut rules, [0., 0., 9.], tick + 201);
-                    assert!(rules.riders[&RIDER].lap_ready);
-                    // Leave both volumes, including their swept contacts.
-                    step(&mut c, &mut rules, [20., 0., 20.], tick + 202);
-                    step(&mut c, &mut rules, [20., 0., 20.], tick + 203);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn freestyle_time_awards_work_on_finite_circuits_and_linear_courses() {
-        for (passes, circuit) in [(4, true), (1, false)] {
-            let (mut c, mut rules) = fixture(EventKind::Freestyle, passes, circuit);
-            let app = 0x0084_0000;
-            let module = 0x0085_0000;
-            let ai = 0x0086_0000;
-            c.bus.write32(0x004a_28a8, app);
-            c.bus.write32(app + 0x84, module);
-            c.bus.write32(app + 0xc0, ENTITY);
-            c.bus.write32(module + 0xc, ai);
-            c.bus.write32(ENTITY + 0x88, 1);
-            c.bus.write32(ENTITY + 0x78, 5400);
-            c.bus.write32(EVENT + 4, (15 << 16) | 7);
-            for _ in 0..2 {
-                assert!(path_event_loaded(
-                    &mut c, &mut rules, RIDER, EVENT, 5, true, true
-                ));
-                assert_eq!(c.bus.read32(ENTITY + 0x78), 6300);
-                assert_eq!(rules.riders[&RIDER].remaining, passes);
-            }
-            if circuit {
-                step(&mut c, &mut rules, [0.; 3], 600);
-                step(&mut c, &mut rules, [0., 0., 9.], 601);
-                assert!(path_event_loaded(
-                    &mut c, &mut rules, RIDER, EVENT, 5, true, true
-                ));
-                assert_eq!(c.bus.read32(ENTITY + 0x78), 7200);
-            } else {
-                assert!(!path_event_loaded(
-                    &mut c, &mut rules, RIDER, EVENT, 1, true, true
-                ));
-            }
-        }
-    }
-}

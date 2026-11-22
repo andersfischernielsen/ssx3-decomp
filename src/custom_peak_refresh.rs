@@ -4,8 +4,8 @@
 //! per-peak arrays use UIObject.id rather than the child's list position.
 //! Reordering the peak list therefore does not change this contract.
 
-use crate::call::{call_ptr, guest};
-use crate::events;
+use ssx3_game::call::{call_ptr, guest};
+use ssx3_game::events;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;

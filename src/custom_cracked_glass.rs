@@ -40,7 +40,7 @@ pub fn restart() { *STATE.lock().unwrap() = State::default(); }
 
 pub fn begin_update(c: &mut Cpu) {
     let mut state = STATE.lock().unwrap();
-    if sync(&mut state) { state.time += 1. / crate::tick::rate(c).max(1) as f64; }
+    if sync(&mut state) { state.time += 1. / ssx3_game::tick::rate(c).max(1) as f64; }
 }
 
 fn valid(at: u32, size: u32) -> bool {

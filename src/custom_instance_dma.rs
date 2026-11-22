@@ -1,7 +1,7 @@
 //! Relocation of the model/colour DMA pairs stored in a world instance.
 
-use crate::call::Frame;
-use crate::events::{deliver_event_here, event_due};
+use ssx3_game::call::Frame;
+use ssx3_game::events::{deliver_event_here, event_due};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;

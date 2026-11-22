@@ -193,7 +193,7 @@ pub fn register(c: &mut Cpu) {
 pub fn begin_update(c: &mut Cpu) {
     let mut state = STATE.lock().unwrap();
     if !sync(&mut state) { return }
-    state.time += 1. / crate::tick::rate(c).max(1) as f64;
+    state.time += 1. / ssx3_game::tick::rate(c).max(1) as f64;
     state.screens.retain(|&node, screen| installed(c, node, screen));
     if state.screens.is_empty() { state.playing = false; }
 }

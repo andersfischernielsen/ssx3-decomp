@@ -4,9 +4,9 @@
 //! update semantics and tick-rate rules stay intact; imported-body ownership
 //! and lifetime policy belong to that entry's caller-side guard.
 
-use crate::call::{call_ptr, guest, Frame};
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
+use ssx3_game::call::{call_ptr, guest, Frame};
+use ssx3_game::guest::Addr;
+use ssx3_game::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
@@ -282,7 +282,7 @@ fn prepare_body(c: &mut Cpu) -> bool {
 
     // avg = avg * 0.95 + energy * 0.05 (per tick).
     c.cycles += 12;
-    let hz = crate::tick::rate(c);
+    let hz = ssx3_game::tick::rate(c);
     let kept = if hz == 60 {
         None
     } else {

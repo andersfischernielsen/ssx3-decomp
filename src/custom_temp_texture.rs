@@ -1,7 +1,7 @@
 //! Native in-place conversion of an owned linear indexed texture to format 10.
 
-use crate::call::{call_ptr, guest, Callee, Frame};
-use crate::events::{deliver_event_here, event_due};
+use ssx3_game::call::{call_ptr, guest, Callee, Frame};
+use ssx3_game::events::{deliver_event_here, event_due};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -14,7 +14,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
 
 const SWIZZLE_T8: Callee = Callee {
     addr: 0x0039_0198,
-    f: ssx3_ee::s12::TexMan_SwizzleT8,
+    f: crate::thunk::<0x0039_0198>,
 };
 
 fn r(c: &Cpu, register: usize) -> u32 {

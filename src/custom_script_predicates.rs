@@ -3,7 +3,7 @@
 //! Random conditions use SSX 3's game RNG. A failed condition branches to
 //! its graph's compiler label; native VM control flow owns the actual exit.
 
-use crate::call::{call_ptr, Flow};
+use ssx3_game::call::{call_ptr, Flow};
 use ssx3_ee_rt::cpu::reg::{A0, A1, A2, S4, SP};
 use ssx3_ee_rt::Cpu;
 

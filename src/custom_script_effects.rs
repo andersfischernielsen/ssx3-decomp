@@ -3,8 +3,8 @@
 //! These use unused builtin IDs, not new VM instructions. Rider placement,
 //! state transitions, camera and projection stay in the SSX 3 engine.
 
-use crate::call::{call_ptr, Flow};
-use crate::ps2f::FpuF32;
+use ssx3_game::call::{call_ptr, Flow};
+use ssx3_game::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::Cpu;
 

@@ -1,6 +1,6 @@
 //! Native streaming-view request and camera readiness calculation.
 
-use crate::call::{call_ptr, guest, Frame};
+use ssx3_game::call::{call_ptr, guest, Frame};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;

@@ -67,7 +67,7 @@ pub fn begin_update(c: &mut Cpu) {
     crate::custom_rail_rules::update(c);
     let mut queue = QUEUE.lock().unwrap();
     if !sync(&mut queue) { return }
-    queue.time += 1. / crate::tick::rate(c).max(1) as f64;
+    queue.time += 1. / ssx3_game::tick::rate(c).max(1) as f64;
     queue.epoch += 1;
 }
 
@@ -103,7 +103,7 @@ pub fn schedule(c: &mut Cpu) {
     let b = if detached { 0 } else { c.bus.read32(manager + 0x294) };
     let contact_a = (a != 0).then(|| std::array::from_fn(|i| c.bus.read32(a + i as u32 * 4)));
     let contact_b = (b != 0).then(|| std::array::from_fn(|i| c.bus.read32(b + i as u32 * 4)));
-    let hz = crate::tick::rate(c).max(1) as f32;
+    let hz = ssx3_game::tick::rate(c).max(1) as f32;
     // Multiply in source float precision before quantizing to native ticks;
     // e.g. an authored 0.033333335 seconds is two ticks at 60, not three.
     let seconds = (delay * hz).ceil() as f64 / hz as f64;

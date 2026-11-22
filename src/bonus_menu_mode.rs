@@ -1,7 +1,7 @@
 //! Native Event Select panel switching, including host catalog panels.
 
-use crate::call::{call_ptr, guest, Flow, Frame};
-use crate::guest::Addr;
+use ssx3_game::call::{call_ptr, guest, Flow, Frame};
+use ssx3_game::guest::Addr;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -130,10 +130,10 @@ pub fn refresh_catalog_panels(c: &mut Cpu, this: u32, mode: u32, back: u32) -> F
 }
 
 fn catalog_object(c: &mut Cpu, this: u32, name: &[u8], back: u32)
-    -> Result<u32, crate::call::Unwound>
+    -> Result<u32, ssx3_game::call::Unwound>
 {
     c.g[A0][0] = sx(c.bus.read32(this.wrapping_add(SCREEN)));
-    c.g[A1][0] = sx(crate::game::hashvalue::str_hash(name));
+    c.g[A1][0] = sx(ssx3_game::game::hashvalue::str_hash(name));
     call_ptr(c, FIND_OBJECT, back)?;
     Ok(c.g[V0][0] as u32)
 }
@@ -238,9 +238,9 @@ pub fn refresh_catalog_preview(c: &mut Cpu, this: u32, back: u32) -> Flow {
     // PEAKno is the visible caption above the image. SubTitle is a
     // separate instruction widget; changing it does not update this label.
     let subtitle = if mode != 2 {
-        crate::game::hashvalue::str_hash(b"kT_BonusPeakName")
+        ssx3_game::game::hashvalue::str_hash(b"kT_BonusPeakName")
     } else if tab == 1 {
-        crate::game::hashvalue::str_hash(b"kT_TrickyFreestyle")
+        ssx3_game::game::hashvalue::str_hash(b"kT_TrickyFreestyle")
     } else { 0x032d_0353 };
     set_catalog_text(c, this, b"PEAKno", subtitle, back)?;
     c.g = saved;
@@ -262,7 +262,7 @@ fn sync_catalog_panels(c: &mut Cpu, this: u32, mode: u32, back: u32) -> Flow {
         catalog_panel(c, this, name, visible, back)?;
     }
     if !selected || !(mode == 1 || mode == 2) { return Ok(()); }
-    let hash = crate::game::hashvalue::str_hash;
+    let hash = ssx3_game::game::hashvalue::str_hash;
     let original: &[u8] = if mode == 1 { b"SPG_Peak1Goals" }
         else if tab == 1 { b"Peak1FreestyleLocations" } else { b"Peak1RaceLocations" };
     catalog_panel(c, this, original, false, back)?;
@@ -473,7 +473,7 @@ fn confirmation(c: &mut Cpu) -> Flow {
 }
 
 /// Returns whether the title tail already restored s0.
-fn peak_mode(c: &mut Cpu) -> Result<bool, crate::call::Unwound> {
+fn peak_mode(c: &mut Cpu) -> Result<bool, ssx3_game::call::Unwound> {
     c.cycles += 4;
     c.g[A0][0] = c.g[S2][0];
     call_ptr(c, REFRESH_PEAK_LIST, 0x0020_36a8)?;
@@ -510,7 +510,7 @@ fn peak_mode(c: &mut Cpu) -> Result<bool, crate::call::Unwound> {
     Ok(true)
 }
 
-fn goals_mode(c: &mut Cpu) -> Result<bool, crate::call::Unwound> {
+fn goals_mode(c: &mut Cpu) -> Result<bool, ssx3_game::call::Unwound> {
     c.cycles += 5;
     c.g[A0][0] = c.g[S2][0];
     call_ptr(c, REFRESH_PEAK_GOALS, 0x0020_3724)?;

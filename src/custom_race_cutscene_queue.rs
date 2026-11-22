@@ -1,7 +1,7 @@
 //! Native race-end presentation selection, excluded for additional courses.
 
-use crate::call::{call_ptr, guest, Flow, Frame};
-use crate::events::{deliver_event_here, event_due};
+use ssx3_game::call::{call_ptr, guest, Flow, Frame};
+use ssx3_game::events::{deliver_event_here, event_due};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -246,7 +246,7 @@ fn copy_track_info(c: &mut Cpu) {
 
 /// Queue first-time presentation choices and mark their profile flag. The
 /// additional-course guard excludes these persistent writes as well.
-fn queue_first_time(c: &mut Cpu, frame: Frame) -> Result<Restore, crate::call::Unwound> {
+fn queue_first_time(c: &mut Cpu, frame: Frame) -> Result<Restore, ssx3_game::call::Unwound> {
     c.cycles += 12;
     call_ptr(c, 0x0014_dc80, 0x0027_aeac)?;
     c.g[A0][0] = c.g[V0][0];
@@ -367,7 +367,7 @@ fn queue_first_time(c: &mut Cpu, frame: Frame) -> Result<Restore, crate::call::U
 /// does not consume a return value; the native function is void.
 pub fn queue_race_cutscene(c: &mut Cpu) {
     if crate::custom_tracks::active().is_some() {
-        crate::abi::ret(c);
+        ssx3_game::abi::ret(c);
         return;
     }
     guest(c, |c| {

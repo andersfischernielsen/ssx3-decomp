@@ -3,8 +3,8 @@
 //! The type names are not encoded here. Each record has a 0x90-byte scalar
 //! portion and a 0x20-byte curve copied from the game's initialized globals.
 
-use crate::call::{call_ptr, guest, Frame};
-use crate::events::{deliver_event_here, event_due};
+use ssx3_game::call::{call_ptr, guest, Frame};
+use ssx3_game::events::{deliver_event_here, event_due};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;

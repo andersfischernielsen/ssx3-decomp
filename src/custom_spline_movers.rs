@@ -1,6 +1,6 @@
 //! Detached Tricky copies driven by native Object/MultiSplineModifier actors.
 
-use crate::call::{call_ptr, Flow};
+use ssx3_game::call::{call_ptr, Flow};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::Cpu;
 use std::collections::HashMap;

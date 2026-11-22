@@ -5,7 +5,7 @@
 //! instead requests0.5s after every contact. Keep the source value only for
 //! explicitly registered imported animation owners at that call boundary.
 
-use crate::call::{call_ptr, Flow};
+use ssx3_game::call::{call_ptr, Flow};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::Cpu;
 use std::collections::HashMap;

@@ -1,6 +1,6 @@
 //! Native rider-hull queries for the lifetime of imported shared force nodes.
 
-use crate::call::{call_ptr, Flow};
+use ssx3_game::call::{call_ptr, Flow};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::Cpu;
 use std::collections::HashMap;

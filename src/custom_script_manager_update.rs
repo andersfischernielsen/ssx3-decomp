@@ -3,8 +3,8 @@
 //! No tests, builds or replays were added or run: the user has disabled
 //! automated validation. Native process/command ordering is retained.
 
-use crate::call::{call_ptr, guest, Frame};
-use crate::events::back_edge_unwinds;
+use ssx3_game::call::{call_ptr, guest, Frame};
+use ssx3_game::events::back_edge_unwinds;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -97,7 +97,7 @@ pub fn wscript_man_update(c: &mut Cpu) {
                     if c.g[S0][0] != 0 {
                         c.g[A0][0] = sx(at(c, S2, 0x2b4));
                         if back_edge_unwinds(c, 0x0030_92b8) {
-                            return Err(crate::call::Unwound);
+                            return Err(ssx3_game::call::Unwound);
                         }
                         pc = 0x0030_92b8;
                     } else {
@@ -136,7 +136,7 @@ pub fn wscript_man_update(c: &mut Cpu) {
                     c.g[A0][0] = sx(at(c, A0, 0x20));
                     if more {
                         if back_edge_unwinds(c, 0x0030_92f4) {
-                            return Err(crate::call::Unwound);
+                            return Err(ssx3_game::call::Unwound);
                         }
                     } else {
                         c.cycles += 2;
@@ -156,7 +156,7 @@ pub fn wscript_man_update(c: &mut Cpu) {
                     c.g[A0][0] = sx(at(c, A0, 0x20));
                     if more {
                         if back_edge_unwinds(c, 0x0030_934c) {
-                            return Err(crate::call::Unwound);
+                            return Err(ssx3_game::call::Unwound);
                         }
                     } else {
                         pc = 0x0030_9378;
@@ -263,7 +263,7 @@ pub fn wscript_man_update(c: &mut Cpu) {
                     if c.g[S0][0] != 0 {
                         c.g[S1][0] = c.g[S0][0];
                         if back_edge_unwinds(c, 0x0030_9418) {
-                            return Err(crate::call::Unwound);
+                            return Err(ssx3_game::call::Unwound);
                         }
                         pc = 0x0030_9418;
                     } else {
@@ -280,7 +280,7 @@ pub fn wscript_man_update(c: &mut Cpu) {
                     c.sw(at(c, S2, CURRENT_PROCESS), 0);
                     if more {
                         if back_edge_unwinds(c, 0x0030_9398) {
-                            return Err(crate::call::Unwound);
+                            return Err(ssx3_game::call::Unwound);
                         }
                         pc = 0x0030_9398;
                     } else {
@@ -312,7 +312,7 @@ pub fn wscript_man_update(c: &mut Cpu) {
                     c.g[V0][0] = c.g[S0][0];
                     if more {
                         if back_edge_unwinds(c, 0x0030_9480) {
-                            return Err(crate::call::Unwound);
+                            return Err(ssx3_game::call::Unwound);
                         }
                         pc = 0x0030_9480;
                     } else {

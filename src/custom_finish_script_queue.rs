@@ -1,6 +1,6 @@
 //! Native finish-presentation lists, excluded for additional-course worlds.
 
-use crate::call::{call_ptr, guest, Flow, Frame};
+use ssx3_game::call::{call_ptr, guest, Flow, Frame};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -47,7 +47,7 @@ fn one_player(c: &mut Cpu) -> bool {
 /// so they keep this list empty and use the native result-screen fallback.
 pub fn queue_finish_scripts(c: &mut Cpu) {
     if crate::custom_tracks::active().is_some() {
-        crate::abi::ret(c);
+        ssx3_game::abi::ret(c);
         return;
     }
 

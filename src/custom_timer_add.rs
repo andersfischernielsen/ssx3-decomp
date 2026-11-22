@@ -1,7 +1,7 @@
 //! Native registration of polled EA timer callbacks.
 
-use crate::abi;
-use crate::events::{deliver_event_here, event_due};
+use ssx3_game::abi;
+use ssx3_game::events::{deliver_event_here, event_due};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;

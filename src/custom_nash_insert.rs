@@ -1,7 +1,7 @@
 //! Native spatial-hash insertion into one of a cell's three primitive lists.
 
-use crate::call::{call_ptr, guest, Frame};
-use crate::events::{deliver_event_here, event_due};
+use ssx3_game::call::{call_ptr, guest, Frame};
+use ssx3_game::events::{deliver_event_here, event_due};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -286,107 +286,3 @@ pub fn insert(c: &mut Cpu) {
     });
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::{check, DATA, GAME_GP, RA as TEST_RA};
-    use crate::game::fe::feasyncfile::tests::{globals_12, heap_init_12};
-
-    /// A far-away finite collider can require 31 ancestors and another 31
-    /// descendants. Keep the real allocation/insert callees bounded without
-    /// exhausting the usual eight-node test pools.
-    fn pools(c: &mut Cpu) {
-        const CLASSES: [(u32, u32); 7] = [
-            (0x2a70, 0x800),
-            (0x2a60, 0x2000),
-            (0x2a6c, 0x6000),
-            (0x2a7c, 0x32000),
-            (0x2a84, 0x25800),
-            (0x2a78, 0x20000),
-            (0x2a68, 0x20000),
-        ];
-        c.bus.write32(GAME_GP + 0xdd8, 1);
-        for (index, (slot, head)) in CLASSES.into_iter().enumerate() {
-            let index = index as u32;
-            let pool = DATA + 0x40_0000 + index * 0x4_0000;
-            let base = DATA + 0x80_0000 + index * 0x4_0000;
-            for n in 0..128 {
-                c.bus.write32(
-                    base + n * 0x400,
-                    if n == 127 { 0 } else { base + (n + 1) * 0x400 },
-                );
-            }
-            c.bus.write32(pool + head, base);
-            c.bus.write32(GAME_GP + slot, pool);
-        }
-    }
-
-    #[test]
-    fn spatial_hash_insert_matches() {
-        check(
-            ssx3_ee::s10::f_00328c20__generated,
-            insert,
-            33,
-            &|c, seed| {
-                machine(c, seed, 0x328c_20, 0);
-                globals_12(c);
-                heap_init_12(c);
-                pools(c);
-                let (root, cell, primitive, old_head) =
-                    (DATA + 0x100, DATA + 0x1000, DATA + 0x3000, DATA + 0x4000);
-                // Vary alignment too: the original copies keys with LDL/LDR.
-                let target = DATA + 0x200 + seed % 4;
-                let kind = seed / 11;
-                let (old_level, old_xyz, new_level, new_xyz): (u32, [i32; 3], u32, [i32; 3]) =
-                    match seed % 11 {
-                        0 => (11, [0, 0, 0], 11, [0, 0, 0]), // empty root
-                        1 => (11, [1, 2, 3], 11, [1, 2, 3]), // exact existing key
-                        2 => (11, [0, 0, 0], 11, [1, 0, 0]),
-                        3 => (11, [-1, -1, -1], 11, [-2, -1, -1]),
-                        4 => (11, [1, 0, 0], 11, [3, 0, 0]),
-                        5 => (11, [0, 0, 0], 11, [0, 2, 0]),
-                        6 => (11, [0, 0, 0], 11, [0, 0, 1]),
-                        7 => (11, [9, 9, 9], 14, [1, 1, 1]), // coarser requested key
-                        8 => (14, [-1, -1, -1], 11, [-7, -3, -1]), // contained descendant
-                        9 if kind % 2 == 0 => (11, [0, 0, 0], 11, [i32::MAX; 3]),
-                        9 => (11, [-1, -1, -1], 11, [i32::MIN; 3]),
-                        _ => (11, [1, 2, 3], 11, [1, 2, 3]), // duplicate insertion
-                    };
-                c.bus.write32(root, old_level);
-                c.bus.write32(target, new_level);
-                for axis in 0..3 {
-                    c.bus
-                        .write32(root + 4 + axis * 4, old_xyz[axis as usize] as u32);
-                    c.bus
-                        .write32(target + 4 + axis * 4, new_xyz[axis as usize] as u32);
-                }
-                let populated = seed % 11 != 0;
-                c.bus.write32(root + 0x10, if populated { cell } else { 0 });
-                if populated {
-                    // Child slots start empty; the selected primitive list may
-                    // contain a distinct head whose previous link is updated.
-                    // Inserting an already-linked primitive is invalid input,
-                    // but both implementations must still perform the original
-                    // stores (which make next=self); deduplication belongs to
-                    // the caller's remove/move protocol, not this leaf.
-                    c.bus.write32(
-                        cell + 0x20 + kind * 4,
-                        if seed % 11 == 10 { primitive } else { old_head },
-                    );
-                }
-                c.bus.write32(old_head, 0);
-                c.bus.write32(old_head + 4, 0);
-                c.bus.write32(primitive, 0);
-                c.bus.write32(primitive + 4, 0);
-                c.bus.write32(primitive + 8, 0x2225);
-                c.g[A0][0] = sx(root);
-                c.g[A1][0] = kind as u64;
-                c.g[A2][0] = sx(primitive);
-                c.g[A3][0] = sx(target);
-                c.g[RA][0] = sx(TEST_RA);
-                c.pc = 0x0032_8c20;
-            },
-        );
-    }
-}

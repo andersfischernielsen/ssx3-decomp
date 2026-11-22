@@ -1,8 +1,8 @@
 //! Native TrackPath array loading for WorldAIP resources.
 
-use crate::call::{call_ptr, guest, Callee, Frame};
-use crate::events::{deliver_event_here, event_due};
-use crate::guest::Addr;
+use ssx3_game::call::{call_ptr, guest, Callee, Frame};
+use ssx3_game::events::{deliver_event_here, event_due};
+use ssx3_game::guest::Addr;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -13,11 +13,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 const PATH_DATA_READ_INT: Callee = Callee {
     addr: 0x0026_ba68,
-    f: ssx3_ee::s07::f_0026ba68,
+    f: crate::thunk::<0x0026_ba68>,
 };
 const PATH_READ: Callee = Callee {
     addr: 0x0026_a180,
-    f: ssx3_ee::s07::f_0026a180,
+    f: crate::thunk::<0x0026_a180>,
 };
 const ALLOC_ARRAY: u32 = 0x0031_7e30;
 const TRACK_PATH_BYTES: u32 = 0x3c;

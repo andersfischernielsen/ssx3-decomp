@@ -1,6 +1,6 @@
 //! Native result placement, with additional courses excluded from career writes.
 
-use crate::call::{call_ptr, guest, Frame, Unwound};
+use ssx3_game::call::{call_ptr, guest, Frame, Unwound};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;

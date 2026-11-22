@@ -2,12 +2,15 @@
 //! Retail courses keep the generated body. Automated tests/replays are
 //! disabled by the user's development instructions.
 
-use crate::call::{call_ptr, guest, Frame};
-use crate::events::{deliver_event_here, event_due};
+use ssx3_game::call::{call_ptr, guest, Frame};
+use ssx3_game::events::{deliver_event_here, event_due};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::{Src, W, Y, Z};
 use ssx3_ee_rt::Cpu;
+
+/// What was in the slot before this hook (chained in `install`).
+pub static PREV: ssx3_plugin::Prev = ssx3_plugin::Prev::new();
 
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
     0x0011_2d58, rider_snap_to_nearest_ai_path, "Rider_SnapToNearestAIPath",
@@ -56,7 +59,7 @@ fn squared_distance(c: &mut Cpu, vector: u32, register: usize, fpr: usize) {
 /// wrapper does not read the serialized respawnable word itself.
 pub fn rider_snap_to_nearest_ai_path(c: &mut Cpu) {
     if crate::custom_tracks::active().is_none() {
-        ssx3_ee::s00::f_00112d58__generated(c);
+        PREV.call(c);
         return;
     }
     guest(c, |c| {

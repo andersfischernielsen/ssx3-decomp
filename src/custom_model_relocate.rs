@@ -1,7 +1,7 @@
 //! Native model DMA reference relocation and shared setup insertion.
 
-use crate::call::Frame;
-use crate::events::{deliver_event_here, event_due};
+use ssx3_game::call::Frame;
+use ssx3_game::events::{deliver_event_here, event_due};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;

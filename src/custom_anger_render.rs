@@ -1,8 +1,8 @@
 //! Native rider anger billboard, using GraphicsMan's retail anger texture.
 
-use crate::abi;
-use crate::call::{call_ptr, guest, Frame};
-use crate::ps2f::FpuF32;
+use ssx3_game::abi;
+use ssx3_game::call::{call_ptr, guest, Frame};
+use ssx3_game::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};

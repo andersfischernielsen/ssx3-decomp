@@ -4,7 +4,7 @@
 //! source148900 caps live effects per rider. Native modifiers own their
 //! lifetime, rendering, list membership and focus cleanup.
 
-use crate::call::{call_ptr, Flow};
+use ssx3_game::call::{call_ptr, Flow};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
 use ssx3_ee_rt::Cpu;

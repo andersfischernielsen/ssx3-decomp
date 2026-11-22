@@ -1,6 +1,6 @@
 //! Imported wind flags, constructed and animated by the native Flag manager.
 
-use crate::call::{call_ptr, Flow};
+use ssx3_game::call::{call_ptr, Flow};
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;
 

@@ -37,7 +37,7 @@ pub fn restart() { *STATE.lock().unwrap() = State::default(); }
 
 pub fn begin_update(c: &mut Cpu) {
     let mut state = STATE.lock().unwrap();
-    if sync(&mut state) { state.time += 1. / crate::tick::rate(c).max(1) as f64; }
+    if sync(&mut state) { state.time += 1. / ssx3_game::tick::rate(c).max(1) as f64; }
 }
 
 fn slot(kind: u32) -> Option<u32> {
@@ -91,7 +91,7 @@ pub fn register(c: &mut Cpu) {
     state.properties.remove(&(owner, kind));
     if length <= 0. { return }
     let Some((node, block, modifier)) = installed(c, owner, kind) else { return };
-    let hz = crate::tick::rate(c).max(1) as f32;
+    let hz = ssx3_game::tick::rate(c).max(1) as f32;
     let deadline = state.time + (length * hz).ceil() as f64 / hz as f64;
     state.properties.insert((owner, kind), Property { node, block, modifier, deadline });
     trace("start", owner, kind, state.time, Some(length));

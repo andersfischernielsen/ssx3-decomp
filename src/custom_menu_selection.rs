@@ -1,6 +1,6 @@
 //! Native UIMenu selection by child index, including scroll notifications.
 
-use crate::call::{call_ptr, guest, Flow, Frame};
+use ssx3_game::call::{call_ptr, guest, Flow, Frame};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;

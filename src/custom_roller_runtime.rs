@@ -4,8 +4,8 @@
 //! launch13dd40 and update13e8a8. Geometry, integration, collision and draw
 //! matrices remain owned by SSX 3. No shared sphere/material data is changed.
 
-use crate::call::{call_ptr, Flow};
-use crate::ps2f::FpuF32;
+use ssx3_game::call::{call_ptr, Flow};
+use ssx3_game::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
 use ssx3_ee_rt::Cpu;

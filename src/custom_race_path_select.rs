@@ -1,7 +1,7 @@
 //! Geometric selection of the native rider's current race path.
 
-use crate::call::{call_ptr, guest, Flow, Frame, Unwound};
-use crate::events::back_edge_unwinds;
+use ssx3_game::call::{call_ptr, guest, Flow, Frame, Unwound};
+use ssx3_game::events::back_edge_unwinds;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};

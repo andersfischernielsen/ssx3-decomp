@@ -3,10 +3,10 @@
 //! No automated tests or replays were added or run.
 //! Generated EE is the authority for the guest ABI and operation order.
 
-use crate::abi;
-use crate::call::{call_ptr, guest, Callee, Frame};
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
+use ssx3_game::abi;
+use ssx3_game::call::{call_ptr, guest, Callee, Frame};
+use ssx3_game::guest::Addr;
+use ssx3_game::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -16,11 +16,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] =
 
 const BASE_CTOR: Callee = Callee {
     addr: 0x0034_d9b0,
-    f: ssx3_ee::s11::f_0034d9b0,
+    f: crate::thunk::<0x0034_d9b0>,
 };
 const GET_DURATION: Callee = Callee {
     addr: 0x0035_1508,
-    f: ssx3_ee::s11::f_00351508,
+    f: crate::thunk::<0x0035_1508>,
 };
 
 const MODE: u32 = 0;

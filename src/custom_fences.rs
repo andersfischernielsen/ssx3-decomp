@@ -1,6 +1,6 @@
 //! Imported fence creation and authored adjacency; native Fence owns motion.
 
-use crate::call::{call_ptr, Flow};
+use ssx3_game::call::{call_ptr, Flow};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
 use ssx3_ee_rt::Cpu;

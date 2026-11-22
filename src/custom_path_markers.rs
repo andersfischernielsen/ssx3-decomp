@@ -1,7 +1,7 @@
 //! Native WorldAIP marker loading and path-pointer relocation.
 
-use crate::call::{guest, Callee, Frame};
-use crate::events::{deliver_event_here, event_due};
+use ssx3_game::call::{guest, Callee, Frame};
+use ssx3_game::events::{deliver_event_here, event_due};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -11,11 +11,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] =
 
 const READ_INT: Callee = Callee {
     addr: 0x0026_ba68,
-    f: ssx3_ee::s07::f_0026ba68,
+    f: crate::thunk::<0x0026_ba68>,
 };
 const READ_VEC3: Callee = Callee {
     addr: 0x0026_ba48,
-    f: ssx3_ee::s07::f_0026ba48,
+    f: crate::thunk::<0x0026_ba48>,
 };
 const MARKER_BYTES: u32 = 0x28;
 const TYPE_KEYS: u32 = 0x0044_5428;

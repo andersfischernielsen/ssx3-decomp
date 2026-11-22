@@ -3,9 +3,9 @@
 //! The result-screen snapshot belongs to BEScoreInt; high-score tables and
 //! character profiles are separate writes later in the submission path.
 
-use crate::call::{call_ptr, guest, Flow, Frame};
-use crate::events::{deliver_event_here, event_due};
-use crate::guest::Addr;
+use ssx3_game::call::{call_ptr, guest, Flow, Frame};
+use ssx3_game::events::{deliver_event_here, event_due};
+use ssx3_game::guest::Addr;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;

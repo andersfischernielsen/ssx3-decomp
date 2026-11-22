@@ -61,7 +61,7 @@ pub fn menu_tracks(tab: u32) -> impl Iterator<Item = &'static CustomTrack> {
 /// UIMenu initialization can assign its own child IDs after widget creation.
 /// Restore the bounded retail IDs and the host catalog's row IDs at dispatch.
 pub fn widget_row_id(name: u32) -> Option<u32> {
-    let hash = crate::game::hashvalue::str_hash;
+    let hash = ssx3_game::game::hashvalue::str_hash;
     for (label, id) in [(b"Peak4".as_slice(), 3),
                        (b"BonusRace", 0), (b"BonusFreestyle", 1)] {
         if name == hash(label) { return Some(id); }
@@ -115,7 +115,7 @@ pub fn menu_text_id(original: u32) -> u32 {
     }
     let Some(track) = preview_course() else { return original; };
     let mode = if track.event == EventKind::Race { "Race" } else { "Freestyle" };
-    crate::game::hashvalue::str_hash(format!("kT_TrickyHelp{mode}_{}", track.world_location).as_bytes())
+    ssx3_game::game::hashvalue::str_hash(format!("kT_TrickyHelp{mode}_{}", track.world_location).as_bytes())
 }
 // The template's native loading code consumes one fixed 40-byte residency
 // row. Lease it while the custom event is active and restore it on return.
@@ -126,7 +126,7 @@ const TEMPLATE_RESIDENCY: u32 = 0x0044_2488;
 
 /// Build a separate metadata record so loading screens and results can use
 /// the custom name without changing the retail TrackInfo array.
-pub fn prepare_track_info(c: &mut Cpu, back: u32) -> crate::call::Flow {
+pub fn prepare_track_info(c: &mut Cpu, back: u32) -> ssx3_game::call::Flow {
     let Some(track) = active() else { return Ok(()); };
     use ssx3_ee_rt::cpu::{reg::*, sx};
     let template = 0x0043_d950 + template_course_index(c, track) * 100;
@@ -136,7 +136,7 @@ pub fn prepare_track_info(c: &mut Cpu, back: u32) -> crate::call::Flow {
         c.g[A1][0] = sx(template + 4);
         c.g[A2][0] = 0x100;
         c.g[A3][0] = 0;
-        crate::call::call_ptr(c, 0x0031_7d70, back)?;
+        ssx3_game::call::call_ptr(c, 0x0031_7d70, back)?;
         pointer = c.g[V0][0] as u32;
     }
     if pointer != 0 {
@@ -246,7 +246,7 @@ pub fn bonus_peak_selected() -> bool {
 /// Newly enabled menus occur later in the screen's input traversal. Consume
 /// the current press once so it cannot also accept Race and Garibaldi.
 pub fn accept_menu_step(c: &mut Cpu) -> bool {
-    let frame = crate::tick::vsync_count(c);
+    let frame = ssx3_game::tick::vsync_count(c);
     MENU_ACTION_FRAME.swap(frame, Ordering::AcqRel) != frame
 }
 
@@ -271,7 +271,6 @@ pub fn activate(id: &str) -> Option<&'static CustomTrack> {
     ACTIVE_WORLD_SECTION.store(u32::MAX, Ordering::Release);
     TEMPLATE_WORLD_SECTION.store(u32::MAX, Ordering::Release);
     ACTIVE.store(index + 1, Ordering::Release);
-    ssx3_render::diagnostics::set_course(Some(TRACKS[index].id));
     TRACKS.get(index)
 }
 
@@ -304,7 +303,6 @@ pub fn deactivate(c: &mut Cpu) {
     }
     BONUS_SELECTED.store(false, Ordering::Release);
     ACTIVE.store(0, Ordering::Release);
-    ssx3_render::diagnostics::set_course(None);
     ACTIVE_WORLD_SECTION.store(u32::MAX, Ordering::Release);
     TEMPLATE_WORLD_SECTION.store(u32::MAX, Ordering::Release);
 }
@@ -411,6 +409,7 @@ pub fn event_world_section(original: u32) -> u32 {
         original
     }
 }
+
 
 #[cfg(test)]
 mod tests {

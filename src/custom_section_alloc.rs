@@ -1,7 +1,7 @@
 //! Section-local allocation from the world's fixed-size geometry blocks.
 
-use crate::call::{call_ptr, guest, Flow, Frame, Unwound};
-use crate::events::back_edge_unwinds;
+use ssx3_game::call::{call_ptr, guest, Flow, Frame, Unwound};
+use ssx3_game::events::back_edge_unwinds;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;

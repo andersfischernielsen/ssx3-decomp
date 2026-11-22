@@ -1,0 +1,173 @@
+# SSX Tricky courses in SSX 3. The events are generated from the catalog in
+# src/tricky_catalog.rs (tools/generate_tricky_catalog.py); `world` is the
+# location name the importer gives each course archive (prepare/prepare.py,
+# tools/prepare_tricky_tracks.py `world_name`).
+[plugin]
+id = "tricky"
+api = "0.1"
+name = "SSX Tricky courses"
+
+[inputs]
+disc = { serials = ["SLUS-20326"] }
+
+[prepare]
+command = ["python3", "prepare/prepare.py"]
+
+[code]
+package = "ssx3-plugin-tricky"
+
+[[peak]]
+id = "tricky"
+name = "Peak Tricky"
+
+[[event]]
+id = "garibaldi"
+name = "Garibaldi"
+peak = "tricky"
+kind = "race"
+template = "ARA1"
+world = "TR_GARI_R"
+
+[[event]]
+id = "garibaldi-freestyle"
+name = "Garibaldi (Freestyle)"
+peak = "tricky"
+kind = "freestyle"
+template = "ASS1"
+world = "TR_GARI_F"
+
+[[event]]
+id = "snowdream"
+name = "Snowdream"
+peak = "tricky"
+kind = "race"
+template = "ARA1"
+world = "TR_SNOW_R"
+
+[[event]]
+id = "snowdream-freestyle"
+name = "Snowdream (Freestyle)"
+peak = "tricky"
+kind = "freestyle"
+template = "ASS1"
+world = "TR_SNOW_F"
+
+[[event]]
+id = "elysium-alps"
+name = "Elysium Alps"
+peak = "tricky"
+kind = "race"
+template = "ARA1"
+world = "TR_ELYSIUM_R"
+
+[[event]]
+id = "elysium-alps-freestyle"
+name = "Elysium Alps (Freestyle)"
+peak = "tricky"
+kind = "freestyle"
+template = "ASS1"
+world = "TR_ELYSIUM_F"
+
+[[event]]
+id = "mesablanca"
+name = "Mesablanca"
+peak = "tricky"
+kind = "race"
+template = "ARA1"
+world = "TR_MESA_R"
+
+[[event]]
+id = "mesablanca-freestyle"
+name = "Mesablanca (Freestyle)"
+peak = "tricky"
+kind = "freestyle"
+template = "ASS1"
+world = "TR_MESA_F"
+
+[[event]]
+id = "merqury-city"
+name = "Merqury City Meltdown"
+peak = "tricky"
+kind = "race"
+template = "ARA1"
+world = "TR_MERQUER_R"
+
+[[event]]
+id = "merqury-city-freestyle"
+name = "Merqury City Meltdown (Freestyle)"
+peak = "tricky"
+kind = "freestyle"
+template = "ASS1"
+world = "TR_MERQUER_F"
+
+[[event]]
+id = "tokyo-megaplex"
+name = "Tokyo Megaplex"
+peak = "tricky"
+kind = "race"
+template = "ARA1"
+world = "TR_MEGAPLE_R"
+
+[[event]]
+id = "tokyo-megaplex-freestyle"
+name = "Tokyo Megaplex (Freestyle)"
+peak = "tricky"
+kind = "freestyle"
+template = "ASS1"
+world = "TR_MEGAPLE_F"
+
+[[event]]
+id = "aloha-ice-jam"
+name = "Aloha Ice Jam"
+peak = "tricky"
+kind = "race"
+template = "ARA1"
+world = "TR_ALOHA_R"
+
+[[event]]
+id = "aloha-ice-jam-freestyle"
+name = "Aloha Ice Jam (Freestyle)"
+peak = "tricky"
+kind = "freestyle"
+template = "ASS1"
+world = "TR_ALOHA_F"
+
+[[event]]
+id = "alaska"
+name = "Alaska"
+peak = "tricky"
+kind = "race"
+template = "ARA1"
+world = "TR_ALASKA_R"
+
+[[event]]
+id = "alaska-freestyle"
+name = "Alaska (Freestyle)"
+peak = "tricky"
+kind = "freestyle"
+template = "ASS1"
+world = "TR_ALASKA_F"
+
+[[event]]
+id = "untracked"
+name = "Untracked"
+peak = "tricky"
+kind = "race"
+template = "ARA1"
+world = "TR_UNTRACK_R"
+
+[[event]]
+id = "pipedream"
+name = "Pipedream (Freestyle)"
+peak = "tricky"
+kind = "freestyle"
+template = "ASS1"
+world = "TR_PIPE_F"
+
+[[event]]
+id = "trick-tutorial"
+name = "Trick Tutorial (Freestyle)"
+peak = "tricky"
+kind = "freestyle"
+template = "ASS1"
+world = "TR_TRICK_F"

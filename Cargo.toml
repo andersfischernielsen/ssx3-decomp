@@ -1,0 +1,16 @@
+[package]
+name = "ssx3-plugin-tricky"
+description = "SSX Tricky courses in SSX 3, as a plugin of ssx3-decomp."
+version = "0.2.0"
+edition = "2021"
+publish = false
+
+# Not a workspace member of anything: `ssx3 plugins build` of ssx3-decomp
+# compiles it into one front end. Put this folder at `plugins/tricky` inside
+# the ssx3-decomp checkout, so that the paths below resolve.
+[workspace]
+
+[dependencies]
+ssx3-game = { path = "../../crates/ssx3-game", default-features = false, features = ["packages"] }
+ssx3-plugin = { path = "../../crates/ssx3-plugin" }
+ssx3-ee-rt = { path = "../../crates/ssx3-ee-rt" }

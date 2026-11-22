@@ -10,6 +10,9 @@ use ssx3_ee_rt::cpu::reg::{A0, A1, RA, SP, V0};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
+/// What was in the slot before this hook (chained in `install`).
+pub static PREV: ssx3_plugin::Prev = ssx3_plugin::Prev::new();
+
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0010_86b8, probe_rail, "Rider_ProbeRail_TrickyContact"),
 ];
@@ -87,7 +90,7 @@ fn probe_rail(c: &mut Cpu) {
         c.g[A0][0] as u32, c.g[A1][0] as u32,
         c.g[RA][0] as u32, c.g[SP][0] as u32,
     );
-    ssx3_ee::s00::f_001086b8__generated(c);
+    PREV.call(c);
     if c.pc == ret && c.g[SP][0] as u32 == stack && c.g[V0][0] == 0
         && ret == 0x0010_8c10 && crate::custom_tracks::active().is_some()
         && source_box_contains(c, rider, hit)

@@ -43,6 +43,9 @@ static TRACE: LazyLock<Mutex<Trace>> = LazyLock::new(|| Mutex::new(Trace::defaul
 
 /// Observations wrap the unchanged generated body. The retained typed
 /// TryStartRailslide is deliberately not installed for diagnostic purposes.
+/// What was in the slot before this hook (chained in `install`).
+pub static PREV: ssx3_plugin::Prev = ssx3_plugin::Prev::new();
+
 pub const OBSERVERS: &[(u32, GuestFn, &str)] = &[
     (0x0010_6848, try_start_railslide, "Rider_TryStartRailslide_Observe"),
 ];
@@ -50,7 +53,7 @@ pub const OBSERVERS: &[(u32, GuestFn, &str)] = &[
 fn try_start_railslide(c: &mut Cpu) {
     use ssx3_ee_rt::cpu::reg::{A0, RA, SP, V0};
     let (rider, ret, stack) = (c.g[A0][0] as u32, c.g[RA][0] as u32, c.g[SP][0] as u32);
-    ssx3_ee::s00::f_00106848__generated(c);
+    PREV.call(c);
     if c.pc == ret && c.g[SP][0] as u32 == stack {
         // The native frame is0x140 bytes; its RailHit at SP+0 remains in
         // RAM through the leaf epilogue. Read it only on a successful return.
@@ -202,7 +205,7 @@ pub fn observe(c: &mut Cpu, rider: u32) {
         return;
     };
     let proximity = proximity(distance.sqrt());
-    let near = Near { rail: index, proximity, cycles: c.cycles, vsync: crate::tick::vsync_count(c) };
+    let near = Near { rail: index, proximity, cycles: c.cycles, vsync: ssx3_game::tick::vsync_count(c) };
     trace.nearest.insert(rider, near);
     let mut matching = 0;
     let mut types = [0u32; 4];
@@ -238,7 +241,7 @@ fn attempt(c: &mut Cpu, rider: u32, contact: u32, found: bool) {
     trace.sync(track.id);
     if trace.attempts.len() >= 512 { return }
     let Some(near) = trace.nearest.get(&rider).copied() else { return };
-    let age = crate::tick::vsync_count(c).wrapping_sub(near.vsync);
+    let age = ssx3_game::tick::vsync_count(c).wrapping_sub(near.vsync);
     if age > 6 || (near.proximity > 2 && !found) { return }
     let owner = c.bus.read32(rider + 0x77c);
     if !valid(owner, 0xde4) { return }

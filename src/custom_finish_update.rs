@@ -1,7 +1,7 @@
 //! Native post-finish slowdown, overlay and optional cinematic sequencing.
 
-use crate::call::{call_ptr, guest, Flow, Frame, Unwound};
-use crate::events::{deliver_event_here, event_due};
+use ssx3_game::call::{call_ptr, guest, Flow, Frame, Unwound};
+use ssx3_game::events::{deliver_event_here, event_due};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::{Src, W, Y, Z};

@@ -202,7 +202,7 @@ pub fn begin_update(c: &mut Cpu) {
     let mut state = STATE.lock().unwrap();
     if !sync(&mut state) { return }
     // Source updates once every5 ticks at60Hz, independently of frame rate.
-    state.remainder += 12. / crate::tick::rate(c).max(1) as f64;
+    state.remainder += 12. / ssx3_game::tick::rate(c).max(1) as f64;
     let steps = (state.remainder + 1e-9).floor() as u32;
     state.remainder -= steps as f64;
     if steps == 0 { return }

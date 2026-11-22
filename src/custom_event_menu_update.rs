@@ -1,7 +1,7 @@
 //! Native asynchronous map-picture binding and fade for Event Select.
 
-use crate::call::{call_ptr, guest, Flow, Frame};
-use crate::events::{deliver_event_here, event_due};
+use ssx3_game::call::{call_ptr, guest, Flow, Frame};
+use ssx3_game::events::{deliver_event_here, event_due};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;

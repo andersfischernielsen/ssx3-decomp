@@ -5,10 +5,10 @@
 //! The return sites remain explicit so a native call or event may suspend
 //! and resume the VM with exactly the retail register and stack state.
 
-use crate::abi;
-use crate::call::{call_ptr, guest, Frame};
-use crate::events::back_edge_unwinds;
-use crate::ps2f::FpuF32;
+use ssx3_game::abi;
+use ssx3_game::call::{call_ptr, guest, Frame};
+use ssx3_game::events::back_edge_unwinds;
+use ssx3_game::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -124,7 +124,7 @@ pub fn luno_vm_execute(c: &mut Cpu) {
                     c.g[V0][0] = sx(r(c, V0).wrapping_add(0x10));
                     if t {
                         if back_edge_unwinds(c, 0x00222880) {
-                            return Err(crate::call::Unwound);
+                            return Err(ssx3_game::call::Unwound);
                         }
                         pc = 0x00222880;
                         continue;
@@ -6144,7 +6144,7 @@ pub fn luno_vm_execute(c: &mut Cpu) {
                     c.g[A3][0] = c.lw(r(c, SP).wrapping_add(0x74));
                     if t {
                         if back_edge_unwinds(c, 0x002228b8) {
-                            return Err(crate::call::Unwound);
+                            return Err(ssx3_game::call::Unwound);
                         }
                         pc = 0x002228b8;
                         continue;
@@ -6200,7 +6200,7 @@ pub fn luno_vm_execute(c: &mut Cpu) {
                     c.g[S0][0] = sx(r(c, S0).wrapping_sub(0x10));
                     if t {
                         if back_edge_unwinds(c, 0x00224b60) {
-                            return Err(crate::call::Unwound);
+                            return Err(ssx3_game::call::Unwound);
                         }
                         pc = 0x00224b60;
                         continue;
@@ -6259,7 +6259,7 @@ pub fn luno_vm_execute(c: &mut Cpu) {
                     c.g[S0][0] = sx(r(c, S0).wrapping_sub(0xc));
                     if t {
                         if back_edge_unwinds(c, 0x00224ba8) {
-                            return Err(crate::call::Unwound);
+                            return Err(ssx3_game::call::Unwound);
                         }
                         pc = 0x00224ba8;
                         continue;
