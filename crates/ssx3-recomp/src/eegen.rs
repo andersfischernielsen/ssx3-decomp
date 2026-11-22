@@ -559,14 +559,8 @@ pub struct Ctx<'a> {
     pub data_refs: &'a BTreeSet<u32>,
     /// Extra entry points discovered at run time (`generated/entries.txt`).
     pub extra_labels: &'a BTreeSet<u32>,
-    /// Host-thread mode (`ssx3_ps2::threads`): no unwinding, so calls and
-    /// syscalls continue inline and return points are not labels.
-    pub threads: bool,
     /// Recovered, globally unique symbol names usable as Rust identifiers.
     pub names: &'a BTreeMap<u32, String>,
-    /// (Unwind form) functions the host-thread form emits structured: their
-    /// cycle charges are reproduced block for block.
-    pub structured: Option<&'a BTreeSet<u32>>,
 }
 
 /// Statistics for one emitted function.
@@ -619,22 +613,10 @@ pub fn emit_function_named(
     // Labels.
     let mut labels: BTreeSet<u32> = BTreeSet::new();
     labels.insert(f.start);
-    // Return points of calls and syscalls (unwind form): their cycles are
-    // charged with the call's block, as the host-thread form charges them
-    // (a call does not end a basic block there), unless something else
-    // also makes them a label.
-    let mut cont_labels: BTreeSet<u32> = BTreeSet::new();
-    // How the host-thread form emitted this function (its block starts are
-    // where its cycle charges split): structured (`structure.rs`) or this
-    // emitter's dispatch form.
-    let as_structured = ctx.structured.is_some_and(|s| s.contains(&f.start));
-    let has_switch = insns
-        .iter()
-        .any(|&(pc, w)| matches!(classify(pc, w), Ctl::JumpReg { rs } if rs != 31));
     for &(pc, w) in &insns {
         match classify(pc, w) {
-            Ctl::Branch { target, link, .. } => {
-                if inside(target) && !(as_structured && link) {
+            Ctl::Branch { target, .. } => {
+                if inside(target) {
                     labels.insert(target);
                 }
                 if inside(pc + 8) {
@@ -644,16 +626,6 @@ pub fn emit_function_named(
             Ctl::Jump { target } => {
                 if inside(target) {
                     labels.insert(target);
-                }
-            }
-            Ctl::Call { .. } | Ctl::CallReg { .. } if !ctx.threads => {
-                if inside(pc + 8) {
-                    cont_labels.insert(pc + 8);
-                }
-            }
-            Ctl::Syscall if !ctx.threads => {
-                if inside(pc + 4) {
-                    cont_labels.insert(pc + 4);
                 }
             }
             _ => {}
@@ -667,17 +639,13 @@ pub fn emit_function_named(
         .copied()
         .filter(|a| inside(*a))
         .collect();
-    if !as_structured || has_switch {
-        labels.extend(refs.iter().copied());
-    }
-    if !as_structured {
-        labels.extend(
-            ctx.extra_labels
-                .range(f.start..f.end)
-                .copied()
-                .filter(|a| inside(*a) && !cont_labels.contains(a)),
-        );
-    }
+    labels.extend(refs.iter().copied());
+    labels.extend(
+        ctx.extra_labels
+            .range(f.start..f.end)
+            .copied()
+            .filter(|a| inside(*a)),
+    );
     // Extra entries (resume points, entries from elsewhere) and other data
     // references of a structured function: labels its main body does not
     // split its cycle charge at (its `__entries` twin charges an entry from
@@ -687,11 +655,9 @@ pub fn emit_function_named(
         .range(f.start..f.end)
         .copied()
         .chain(refs.iter().copied())
-        .filter(|a| inside(*a) && !labels.contains(a) && !cont_labels.contains(a))
+        .filter(|a| inside(*a) && !labels.contains(a))
         .collect();
-    let cont_only: BTreeSet<u32> = cont_labels.difference(&labels).copied().collect();
-    let pass: BTreeSet<u32> = cont_only.union(&extra_only).copied().collect();
-    labels.extend(cont_labels.iter().copied());
+    let pass: BTreeSet<u32> = extra_only.clone();
     labels.extend(extra_only.iter().copied());
     st.labels = labels.len();
     let mut raw_count: BTreeMap<u32, usize> = BTreeMap::new();
@@ -800,7 +766,7 @@ pub fn emit_function_named(
                     tail(target, shard, ctx)
                 }
             };
-            if ctx.threads && matches!(ctl, Ctl::Call { .. } | Ctl::CallReg { .. } | Ctl::Syscall) {
+            if matches!(ctl, Ctl::Call { .. } | Ctl::CallReg { .. } | Ctl::Syscall) {
                 let ret = if ctl == Ctl::Syscall { pc + 4 } else { pc + 8 };
                 match ctl {
                     Ctl::Call { target } => {
@@ -887,22 +853,6 @@ pub fn emit_function_named(
                     let _ = writeln!(body, "                {ds}");
                     let _ = writeln!(body, "                {}", goto(target, false));
                 }
-                Ctl::Call { target } => {
-                    let ds = delay_code(&mut st);
-                    let _ = writeln!(body, "                c.g[31][0] = sx({:#010x});", pc + 8);
-                    let _ = writeln!(body, "                {ds}");
-                    let _ = writeln!(
-                        body,
-                        "                {}",
-                        call_code(target, pc + 8, shard, ctx, &labels, f)
-                    );
-                    if inside(pc + 8) {
-                        cont_edge.insert(l, pc + 8);
-                        let _ = writeln!(body, "                pc = {:#010x}; continue;", pc + 8);
-                    } else {
-                        let _ = writeln!(body, "                return;");
-                    }
-                }
                 Ctl::JumpReg { rs } => {
                     let ds = delay_code(&mut st);
                     let _ = writeln!(body, "                let t = c.g[{rs}][0] as u32;");
@@ -914,44 +864,8 @@ pub fn emit_function_named(
                         let _ = writeln!(body, "                pc = t; continue;");
                     }
                 }
-                Ctl::CallReg { rd, rs } => {
-                    let ds = delay_code(&mut st);
-                    let _ = writeln!(body, "                let t = c.g[{rs}][0] as u32;");
-                    if rd != 0 {
-                        let _ =
-                            writeln!(body, "                c.g[{rd}][0] = sx({:#010x});", pc + 8);
-                    }
-                    let _ = writeln!(body, "                {ds}");
-                    let _ = writeln!(
-                        body,
-                        "                if !c.enter(t) {{ return; }} call_indirect(c, t); c.leave(); if c.pc != {:#010x} {{ return; }}",
-                        pc + 8
-                    );
-                    if inside(pc + 8) {
-                        cont_edge.insert(l, pc + 8);
-                        let _ = writeln!(body, "                pc = {:#010x}; continue;", pc + 8);
-                    } else {
-                        let _ = writeln!(body, "                return;");
-                    }
-                }
-                Ctl::Syscall => {
-                    let _ = writeln!(
-                        body,
-                        "                c.pc = {:#010x}; c.syscall({pc:#010x}); if c.pc != {:#010x} {{ return; }}",
-                        pc + 4,
-                        pc + 4
-                    );
-                    let _ = writeln!(
-                        body,
-                        "                if c.cycles >= c.next_event && c.event() {{ return; }}"
-                    );
-                    if inside(pc + 4) {
-                        cont_edge.insert(l, pc + 4);
-                        let _ = writeln!(body, "                pc = {:#010x}; continue;", pc + 4);
-                    } else {
-                        let _ = writeln!(body, "                return;");
-                    }
-                }
+                // Calls and syscalls continue inline (above).
+                Ctl::Call { .. } | Ctl::CallReg { .. } | Ctl::Syscall => unreachable!(),
                 Ctl::Stop => {
                     if (w >> 26) == 0x10 {
                         let _ = writeln!(body, "                c.pc = c.cop0[14]; return;");
@@ -1000,7 +914,7 @@ pub fn emit_function_named(
     let mut entry = String::new();
     for &e in &extra_only {
         if let Some(&n) = raw_count.get(&e) {
-            let charge = n + cont_edge.get(&e).map_or(0, |&y| chain(y, &cont_only));
+            let charge = n + cont_edge.get(&e).map_or(0, |&y| chain(y, &BTreeSet::new()));
             if charge > 0 {
                 let _ = writeln!(entry, "        {e:#010x} => c.cycles += {charge},");
             }
@@ -1045,10 +959,7 @@ fn simple_straight(_insns: &[(u32, u32)]) -> bool {
 /// Code for a tail jump to `target` outside the current function.
 fn tail(target: u32, shard: usize, ctx: &Ctx) -> String {
     let callee = direct_callee(target, shard, ctx);
-    if ctx.threads {
-        return format!("c.pc = {target:#010x}; {callee}; return;");
-    }
-    format!("if !c.enter({target:#010x}) {{ return; }} {callee}; c.leave(); return;")
+    format!("c.pc = {target:#010x}; {callee}; return;")
 }
 
 fn direct_callee(target: u32, shard: usize, ctx: &Ctx) -> String {
@@ -1071,12 +982,7 @@ fn call_code(
     _f: &Func,
 ) -> String {
     let callee = direct_callee(target, shard, ctx);
-    if ctx.threads {
-        return format!("c.pc = {target:#010x}; {callee}; if c.pc != {ret:#010x} {{ return; }}");
-    }
-    format!(
-        "if !c.enter({target:#010x}) {{ return; }} {callee}; c.leave(); if c.pc != {ret:#010x} {{ return; }}"
-    )
+    format!("c.pc = {target:#010x}; {callee}; if c.pc != {ret:#010x} {{ return; }}")
 }
 
 /// Extend a function's instruction runs by recursive descent.
@@ -1169,7 +1075,7 @@ pub fn extend_runs(img: &dyn Image, f: &mut Func, limit: u32, seeds: &BTreeSet<u
 /// Every static control-flow target in `f`: branch and jump targets and
 /// return points. Used to make cross-function targets labels of whichever
 /// function contains them.
-pub fn targets(img: &dyn Image, f: &Func, threads: bool) -> Vec<u32> {
+pub fn targets(img: &dyn Image, f: &Func) -> Vec<u32> {
     let mut out = Vec::new();
     for &(lo, hi) in &f.runs {
         let mut a = lo;
@@ -1186,12 +1092,7 @@ pub fn targets(img: &dyn Image, f: &Func, threads: bool) -> Vec<u32> {
                     }
                     Ctl::Call { target } => {
                         out.push(target);
-                        if !threads {
-                            out.push(a + 8);
-                        }
                     }
-                    Ctl::CallReg { .. } if !threads => out.push(a + 8),
-                    Ctl::Syscall if !threads => out.push(a + 4),
                     _ => {}
                 }
             }
