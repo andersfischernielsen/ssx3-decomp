@@ -39,12 +39,14 @@ pub struct EngineConfig {
     pub skip_movies: bool,          // default; SSX3_SKIP_MOVIES overrides
     pub short_memcard_screens: bool, // default true; SSX3_SHORT_MEMCARD_SCREENS overrides
     pub audio: Audio,               // Device (default) | Off | Pull; SSX3_AUDIO overrides
+    pub plugins: Vec<Box<dyn Plugin>>, // Rust plugins linked into this front end (docs/plugins.md)
     pub settings: Box<dyn Settings>,
 }
 impl EngineConfig { pub fn new(settings: Box<dyn Settings>) -> Self; }
 
 impl Engine {
     pub fn boot(config: EngineConfig) -> Engine;
+    pub fn plugins(&self) -> &Loaded;              // plugin folders found at boot, what they add
 
     // input (applied at the next step)
     pub fn set_pad(&mut self, port: usize, buttons: u16);
