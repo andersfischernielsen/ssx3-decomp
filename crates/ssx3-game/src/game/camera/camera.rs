@@ -5536,9 +5536,9 @@ pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
     frame.save_fpr(c, 20, SAVED_F20);
     frame.save(c, S1, SAVED_WORLD_BASE);
     frame.save_ra(c, SAVED_RA);
-    c.g[RA][0] = sx(0x00160c38);
+    c.g[RA][0] = sx(0x0016_0c38);
     c.g[S0][0] = c.g[A0][0];
-    if call_ptr(c, 0x00162568, 0x00160c38).is_err() {
+    if call_ptr(c, 0x0016_2568, 0x0016_0c38).is_err() {
         return;
     }
     c.lwc1(20, r32(c, GP).wrapping_sub(GP_MIN_DIRECTION_COMPONENT));
@@ -5569,9 +5569,9 @@ pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
         c.g[A1][0] = Addr(r32(c, V0).wrapping_add(GET_FORWARD)).lh(c);
         c.g[V1][0] = Addr(r32(c, V0).wrapping_add(GET_FORWARD + 4)).lw(c);
         let target_method = r32(c, V1);
-        c.g[RA][0] = sx(0x00160c8c);
+        c.g[RA][0] = sx(0x0016_0c8c);
         c.g[A1][0] = sx(r32(c, A2).wrapping_add(r32(c, A1)));
-        if call_ptr(c, target_method, 0x00160c8c).is_err() {
+        if call_ptr(c, target_method, 0x0016_0c8c).is_err() {
             return;
         }
         c.lq(2, frame.at(c, SIDE_OR_FORWARD));
@@ -5585,7 +5585,7 @@ pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
             c.cycles += 5;
             c.abs_s(0, 0);
             c.c_lt_s(0, 20);
-            c.g[V0][0] = 0x500000;
+            c.g[V0][0] = 0x0050_0000;
             if c.fcc() {
                 c.cycles += 3;
                 // 0x4ff140: global fallback direction.
@@ -5598,7 +5598,7 @@ pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
     // Normalize the horizontal direction and its perpendicular, then get the focus.
     c.cycles += 68;
     c.sw(frame.at(c, DIRECTION + 8), 0u64);
-    c.g[S1][0] = 0x500000;
+    c.g[S1][0] = 0x0050_0000;
     // 0x4ff160: world up.
     c.lqc2(4, r32(c, S1).wrapping_sub(0xea0));
     c.lqc2(5, frame.at(c, DIRECTION));
@@ -5648,9 +5648,9 @@ pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
     c.g[A1][0] = Addr(r32(c, V0).wrapping_add(GET_FOCUS)).lh(c);
     c.g[V1][0] = Addr(r32(c, V0).wrapping_add(GET_FOCUS + 4)).lw(c);
     let target_method = r32(c, V1);
-    c.g[RA][0] = sx(0x00160d98);
+    c.g[RA][0] = sx(0x0016_0d98);
     c.g[A1][0] = sx(r32(c, A2).wrapping_add(r32(c, A1)));
-    if call_ptr(c, target_method, 0x00160d98).is_err() {
+    if call_ptr(c, target_method, 0x0016_0d98).is_err() {
         return;
     }
     c.mtc1(0, 0);
@@ -5703,9 +5703,9 @@ pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
     c.lq(2, r32(c, S0).wrapping_add(FOCUS));
     c.lwc1(12, r32(c, S0).wrapping_add(ORBIT_ANGLE));
     c.lwc1(20, r32(c, GP).wrapping_sub(GP_ORBIT_RADIUS));
-    c.g[RA][0] = sx(0x00160e4c);
+    c.g[RA][0] = sx(0x0016_0e4c);
     c.sq(2, r32(c, S0).wrapping_add(PREVIOUS_FOCUS));
-    if call_ptr(c, 0x0031c040, 0x00160e4c).is_err() {
+    if call_ptr(c, 0x0031_c040, 0x0016_0e4c).is_err() {
         return;
     }
     c.mul_s(0, 0, 20);
@@ -5722,9 +5722,9 @@ pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
     c.sqc2(5, frame.at(c, 0xd0));
     c.lq(2, frame.at(c, 0xd0));
     c.lwc1(12, r32(c, S0).wrapping_add(ORBIT_ANGLE));
-    c.g[RA][0] = sx(0x00160e8c);
+    c.g[RA][0] = sx(0x0016_0e8c);
     c.sq(2, frame.at(c, 0xb0));
-    if call_ptr(c, 0x0031bf60, 0x00160e8c).is_err() {
+    if call_ptr(c, 0x0031_bf60, 0x0016_0e8c).is_err() {
         return;
     }
     c.mul_s(0, 0, 20);
@@ -11886,23 +11886,28 @@ pub(crate) mod tests {
     /// to that input, isolating this recurrence from the other camera slews.
     #[test]
     fn relative_chase_camera_eye_follows_the_rate() {
+        const KEEP: u32 = 0x0049_c578;
+        const ADD: u32 = 0x0049_c57c;
+        /// The executable's shares: 0.97 kept, 0.03 added.
+        const KEEP_STOCK: u32 = 0x3f78_51ec;
+        const ADD_STOCK: u32 = 0x3cf5_c280;
         let sample = |hz: u32| {
             let mut c = crate::difftest::fresh();
             relative_update_setup(&mut c, 0);
             elf_image(&mut c);
             crate::tick::set_for_test(&mut c, hz);
-            let keep = crate::tick::per_tick_at(hz, 0x0049_c578, 0x3f78_51ec);
+            let keep = crate::tick::per_tick_at(hz, KEEP, KEEP_STOCK);
             let add = crate::tick::per_tick_values(hz)
                 .into_iter()
-                .find(|x| x.0 == 0x0049_c57c)
+                .find(|x| x.0 == ADD)
                 .map(|x| x.1)
-                .unwrap_or(0x3cf5_c280);
+                .unwrap_or(ADD_STOCK);
             if hz == 60 {
-                assert_eq!(keep, 0x3f78_51ec);
-                assert_eq!(add, 0x3cf5_c280);
+                assert_eq!(keep, KEEP_STOCK);
+                assert_eq!(add, ADD_STOCK);
             }
-            c.bus.write32(0x0049_c578, keep);
-            c.bus.write32(0x0049_c57c, add);
+            c.bus.write32(KEEP, keep);
+            c.bus.write32(ADD, add);
             c.bus.write32(DATA + 0x390, 0);
             c.bus.write32(DATA + 0x394, 0);
             put_vec(&mut c, DATA + 0x3b0, [0; 4]);

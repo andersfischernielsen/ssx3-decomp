@@ -129,6 +129,20 @@ mod comm_system {
     pub const NET_CONN_CONNECT: u32 = 0x003f_3c50;
 }
 
+pub(crate) mod callee {
+    use super::Callee;
+
+    pub(crate) const C_COMM_SYSTEM_SET_ERROR: Callee = Callee {
+        addr: 0x0025_5fe8,
+        f: ssx3_ee::s06::cCommSystem_SetError,
+    };
+
+    pub(crate) const C_COMM_SYSTEM_GET_LOCAL_ADDR: Callee = Callee {
+        addr: 0x0025_6038,
+        f: ssx3_ee::s06::cCommSystem_GetLocalAddr,
+    };
+}
+
 /// `void cCommSystem_Update(cCommSystem *self)` (0x255a20): advance the
 /// connection handshake, discover the local address, service its channel,
 /// and report an error when the connect timeout expires.
@@ -139,14 +153,6 @@ pub fn c_comm_system_update(c: &mut Cpu) {
     const SAVED_CHANNEL_INDEX: u32 = 0x20;
     const SAVED_SELF: u32 = 0x30;
     const SAVED_CHANNEL: u32 = 0x40;
-    const SET_ERROR: Callee = Callee {
-        addr: 0x0025_5fe8,
-        f: ssx3_ee::s06::cCommSystem_SetError,
-    };
-    const GET_LOCAL_ADDRESS: Callee = Callee {
-        addr: 0x0025_6038,
-        f: ssx3_ee::s06::cCommSystem_GetLocalAddr,
-    };
     guest(c, |c| {
         c.cycles += 11;
         let frame = Frame::open(c, 0x50);
@@ -242,7 +248,7 @@ pub fn c_comm_system_update(c: &mut Cpu) {
                     } else {
                         c.cycles += 4;
                         c.g[A0][0] = c.g[S1][0];
-                        SET_ERROR.call(c, 0x0025_5b54)?;
+                        callee::C_COMM_SYSTEM_SET_ERROR.call(c, 0x0025_5b54)?;
                         comm.off(CONNECT_TIMER).sw(c, 0);
                     }
                 }
@@ -251,7 +257,7 @@ pub fn c_comm_system_update(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[A0][0] = c.g[S1][0];
                     c.g[A1][0] = c.g[SP][0];
-                    GET_LOCAL_ADDRESS.call(c, 0x0025_5b68)?;
+                    callee::C_COMM_SYSTEM_GET_LOCAL_ADDR.call(c, 0x0025_5b68)?;
                     c.g[V0][0] = Addr(frame.at(c, LOCAL_ADDRESS)).lw(c);
                     let has_address = c.g[V0][0] != 0;
                     c.g[V0][0] = STATE_CONNECTED;
@@ -315,7 +321,7 @@ pub fn c_comm_system_update(c: &mut Cpu) {
                 c.cycles += 5;
                 c.g[A1][0] = ERROR_TIMEOUT as u64;
                 c.g[A0][0] = c.g[S1][0];
-                SET_ERROR.call(c, 0x0025_5bd8)?;
+                callee::C_COMM_SYSTEM_SET_ERROR.call(c, 0x0025_5bd8)?;
                 comm.off(CONNECT_TIMER).sw(c, 0);
             }
         }

@@ -6173,6 +6173,10 @@ pub fn mc_manager_update_states(c: &mut Cpu) {
     })
 }
 
+/// The `lui` page of the ASCII format strings (0x4a2c80..0x4a2c98) the save
+/// and free-space texts widen.
+const MC_STRINGS_PAGE: u64 = 0x004a_0000;
+
 /// `MCManager *MCManager_GetInstance(void)` (0x23c808): the manager singleton
 /// at `gp-0x47c`, creating it through `MCManager_ctor` on first use.
 pub fn mc_manager_get_instance(c: &mut Cpu) {
@@ -6672,7 +6676,7 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
             c.cycles += 3;
             c.g[V1][0] = Addr(dev).off(0x34c).lw(c);
             let missing = c.g[V1][0] == 0;
-            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = MC_STRINGS_PAGE;
             if missing {
                 tail = 6;
                 break 'checks;
@@ -6683,7 +6687,7 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c90));
             callee::USTR_FROM_ASCII_2.call(c, 0x0024_198c)?;
             c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x200));
-            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = MC_STRINGS_PAGE;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c98));
             c.g[A0][0] = c.g[S0][0];
             callee::USTR_FROM_ASCII_2.call(c, 0x0024_19a0)?;
@@ -7406,7 +7410,7 @@ pub fn mc_manager_begin_save(c: &mut Cpu) {
             }
         }
         c.cycles += 24;
-        c.g[A1][0] = 0x4a0000;
+        c.g[A1][0] = MC_STRINGS_PAGE;
         c.g[A0][0] = c.g[S0][0];
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c80));
         callee::USTR_FROM_ASCII_2.call(c, 0x0023_cbcc)?;
@@ -7510,7 +7514,7 @@ pub fn mc_manager_begin_load(c: &mut Cpu) {
             }
         }
         c.cycles += 24;
-        c.g[A1][0] = 0x4a0000;
+        c.g[A1][0] = MC_STRINGS_PAGE;
         c.g[A0][0] = c.g[S0][0];
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c80));
         callee::USTR_FROM_ASCII_2.call(c, 0x0023_c9d8)?;
@@ -7561,7 +7565,7 @@ pub fn mc_manager_format_save_desc(c: &mut Cpu) {
         if mode_is_one {
             c.cycles += 16;
             c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x100));
-            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = MC_STRINGS_PAGE;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c88));
             c.g[A0][0] = c.g[S0][0];
             callee::USTR_FROM_ASCII_2.call(c, 0x0023_cd6c)?;
@@ -7617,7 +7621,7 @@ pub fn mc_manager_format_save_desc(c: &mut Cpu) {
                 if mode_is_zero {
                     c.cycles += 17;
                     c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x100));
-                    c.g[A1][0] = 0x4a0000;
+                    c.g[A1][0] = MC_STRINGS_PAGE;
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2c88));
                     c.g[A0][0] = c.g[S0][0];
                     callee::USTR_FROM_ASCII_2.call(c, 0x0023_cce8)?;

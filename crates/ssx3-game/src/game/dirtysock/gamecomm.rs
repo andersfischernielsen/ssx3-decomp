@@ -114,6 +114,20 @@ mod game_comm {
     pub const AI_RACE_MANAGER: u32 = 0xc;
 }
 
+pub(crate) mod callee {
+    use super::Callee;
+
+    pub(crate) const C_GAME_COMM_LATCH_RESULT_FLAGS: Callee = Callee {
+        addr: 0x0025_7678,
+        f: ssx3_ee::s06::cGameComm_LatchResultFlags,
+    };
+
+    pub(crate) const C_GAME_COMM_END_SESSION: Callee = Callee {
+        addr: 0x0025_78f8,
+        f: ssx3_ee::s06::cGameComm_EndSession,
+    };
+}
+
 /// `void cGameComm_UpdateMaxLatency(cGameComm *self)` (0x258330): keep the
 /// running maximum of the two latency samples, clamped to the world's target
 /// latency.
@@ -187,14 +201,6 @@ pub fn c_game_comm_check_peer_timeout(c: &mut Cpu) {
     use game_comm::*;
     const SAVED_RA: u32 = 0;
     const SAVED_SELF: u32 = 0x10;
-    const LATCH_RESULTS: Callee = Callee {
-        addr: 0x0025_7678,
-        f: ssx3_ee::s06::cGameComm_LatchResultFlags,
-    };
-    const END_SESSION: Callee = Callee {
-        addr: 0x0025_78f8,
-        f: ssx3_ee::s06::cGameComm_EndSession,
-    };
     guest(c, |c| {
         c.cycles += 7;
         let frame = Frame::open(c, 0x20);
@@ -320,9 +326,9 @@ pub fn c_game_comm_check_peer_timeout(c: &mut Cpu) {
                     }
                     if end_session {
                         c.cycles += 6;
-                        LATCH_RESULTS.call(c, 0x0025_7ba4)?;
+                        callee::C_GAME_COMM_LATCH_RESULT_FLAGS.call(c, 0x0025_7ba4)?;
                         c.g[A0][0] = c.g[S0][0];
-                        END_SESSION.call(c, 0x0025_7bac)?;
+                        callee::C_GAME_COMM_END_SESSION.call(c, 0x0025_7bac)?;
                         frame.restore(c, S0, SAVED_SELF);
                         break 'session;
                     }
@@ -337,7 +343,7 @@ pub fn c_game_comm_check_peer_timeout(c: &mut Cpu) {
                 c.cycles += 3;
                 c.g[A0][0] = c.g[S0][0];
                 comm.off(ABORT_REASON).sw(c, c.g[V0][0]);
-                END_SESSION.call(c, 0x0025_7bc8)?;
+                callee::C_GAME_COMM_END_SESSION.call(c, 0x0025_7bc8)?;
             }
             c.cycles += 1;
             frame.restore(c, S0, SAVED_SELF);

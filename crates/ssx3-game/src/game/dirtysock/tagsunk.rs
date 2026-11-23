@@ -69,6 +69,14 @@ use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
+/// `lui` page of the read-only data the lobby, buddy and setup ports load:
+/// allocation tags, vtables and debug format strings.
+const RODATA_PAGE: u64 = 0x0048_0000;
+
+/// `lui` page of the lobby's tag-field names and message text
+/// (`EMPTY_TEXT`, `MSG_TYPE_C`, `PRESENCE_LANG` live here).
+const LOBBY_STRINGS_PAGE: u64 = 0x004a_0000;
+
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (
@@ -10116,7 +10124,7 @@ pub fn lobby_man_send_decline(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 8;
         let frame = Frame::open(c, 0x10);
-        c.g[A2][0] = 0x4a0000;
+        c.g[A2][0] = LOBBY_STRINGS_PAGE;
         frame.save_ra(c, 0);
         c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x3270));
         call_ptr(c, 0x0025_fb80, 0x0025_fc3c)?;
@@ -10181,7 +10189,7 @@ pub fn lobby_man_send_abort_chal(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 9;
         let frame = Frame::open(c, 0x10);
-        c.g[A2][0] = 0x480000;
+        c.g[A2][0] = RODATA_PAGE;
         frame.save_ra(c, 0);
         c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x7f8));
         c.g[A1][0] = Addr(r32(c, A0)).off(0x98).lw(c);
@@ -10286,7 +10294,7 @@ pub fn lobby_man_create(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 14;
         let frame = Frame::open(c, 0x10);
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         frame.save_ra(c, 0);
         c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x838));
         c.g[A2][0] = 0x2000_0000;
@@ -10368,7 +10376,7 @@ pub fn c_shared_login_man_create(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 14;
         let frame = Frame::open(c, 0x10);
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         frame.save_ra(c, 0);
         c.g[A1][0] = sx(r32(c, A1).wrapping_add(0xf30));
         c.g[A2][0] = 0x2000_0000;
@@ -10417,7 +10425,7 @@ pub fn c_usb_keyboard_create(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 14;
         let frame = Frame::open(c, 0x10);
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         frame.save_ra(c, 0);
         c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x1090));
         c.g[A2][0] = 0x2000_0000;
@@ -11406,7 +11414,7 @@ pub fn lobby_man_send_race_report(c: &mut Cpu) {
                     c.sw(c.g[S0][0] as u32, c.g[S1][0]);
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                     c.sw(frame.at(c, 0x810), c.g[V1][0]);
-                    c.g[A1][0] = 0x480000;
+                    c.g[A1][0] = RODATA_PAGE;
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                     c.g[A0][0] = 0xc;
                     c.g[A2][0] = 0x20000000;
@@ -13524,7 +13532,7 @@ pub fn c_setup_man_update(c: &mut Cpu) {
                         c.g[V0][0] = 0x7;
                         if t {
                             c.cycles += 26;
-                            c.g[A1][0] = 0x0048_0000;
+                            c.g[A1][0] = RODATA_PAGE;
                             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
                             c.g[S0][0] = c.lw(gp_8(c, LOBBY_INSTANCE_GP));
                             c.g[A0][0] = 0x8;
@@ -13534,10 +13542,10 @@ pub fn c_setup_man_update(c: &mut Cpu) {
                             call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_4364)?;
                             c.g[S2][0] = c.g[V0][0];
                             c.g[V1][0] = 0xf6;
-                            c.g[V0][0] = 0x0048_0000;
+                            c.g[V0][0] = RODATA_PAGE;
                             c.sw(c.g[S2][0] as u32, c.g[V1][0]);
                             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
-                            c.g[A1][0] = 0x0048_0000;
+                            c.g[A1][0] = RODATA_PAGE;
                             c.sw((c.g[S2][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                             c.g[A0][0] = 0xc;
@@ -14316,18 +14324,18 @@ pub fn c_setup_man_send_brag_msg8(c: &mut Cpu) {
             c.g[A2][0] = 0x14;
             Addr(sp(c).wrapping_add(8)).sw(c, c.g[S2][0]);
             callee::CSETUP_MAN_SEND_PACKET.call(c, 0x0026_55d8)?;
-            c.g[A1][0] = 0x0048_0000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A0][0] = 0x14;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xf18));
             c.g[A2][0] = 0x2000_0000;
             c.g[A3][0] = 0;
             call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_55f0)?;
             c.g[S0][0] = c.g[V0][0];
-            c.g[V1][0] = 0x0048_0000;
+            c.g[V1][0] = RODATA_PAGE;
             c.g[V0][0] = 0xfc;
             c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1130));
             Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
-            c.g[A1][0] = 0x0048_0000;
+            c.g[A1][0] = RODATA_PAGE;
             Addr(c.g[S0][0] as u32).off(4).sw(c, c.g[V1][0]);
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
             Addr(c.g[S0][0] as u32).off(0xc).sw(c, c.g[S1][0]);
@@ -14406,18 +14414,18 @@ pub fn c_setup_man_send_brag_msg6(c: &mut Cpu) {
             Addr(sp(c).wrapping_add(8)).sw(c, c.g[V0][0]);
             Addr(sp(c).wrapping_add(4)).sw(c, c.g[S1][0]);
             callee::CSETUP_MAN_SEND_PACKET.call(c, 0x0026_54c4)?;
-            c.g[A1][0] = 0x0048_0000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A0][0] = 0x10;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xf18));
             c.g[A2][0] = 0x2000_0000;
             c.g[A3][0] = 0;
             call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_54dc)?;
-            c.g[V1][0] = 0x0048_0000;
+            c.g[V1][0] = RODATA_PAGE;
             c.g[S0][0] = c.g[V0][0];
             c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1150));
             c.g[V0][0] = 0xfb;
             Addr(c.g[S0][0] as u32).off(4).sw(c, c.g[V1][0]);
-            c.g[A1][0] = 0x0048_0000;
+            c.g[A1][0] = RODATA_PAGE;
             Addr(c.g[S0][0] as u32).sw(c, c.g[V0][0]);
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
             Addr(c.g[S0][0] as u32).off(0xc).sw(c, c.g[S1][0]);
@@ -14485,7 +14493,7 @@ pub fn c_setup_man_host_recv_select(c: &mut Cpu) {
         c.g[A3][0] = Addr(c.g[A0][0] as u32).lw(c);
         c.g[A1][0] = 0x1;
         callee::SETUP_MAN_SEND_CHARACTER_MSG.call(c, 0x0026_51f0)?;
-        c.g[A1][0] = 0x0048_0000;
+        c.g[A1][0] = RODATA_PAGE;
         c.g[S0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0xc8)).lw(c);
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
         c.g[A0][0] = 0x8;
@@ -14493,8 +14501,8 @@ pub fn c_setup_man_host_recv_select(c: &mut Cpu) {
         c.g[A3][0] = 0;
         call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_520c)?;
         c.g[S2][0] = c.g[V0][0];
-        c.g[A1][0] = 0x0048_0000;
-        c.g[V0][0] = 0x0048_0000;
+        c.g[A1][0] = RODATA_PAGE;
+        c.g[V0][0] = RODATA_PAGE;
         Addr(c.g[S2][0] as u32).sw(c, c.g[S1][0]);
         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
@@ -14574,7 +14582,7 @@ pub fn c_setup_man_host_recv_confirm(c: &mut Cpu) {
         c.g[A3][0] = Addr(c.g[A0][0] as u32).lw(c);
         c.g[A1][0] = 0x3;
         callee::SETUP_MAN_SEND_CHARACTER_MSG.call(c, 0x0026_52fc)?;
-        c.g[A1][0] = 0x0048_0000;
+        c.g[A1][0] = RODATA_PAGE;
         c.g[S0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0xc8)).lw(c);
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
         c.g[A0][0] = 0x8;
@@ -14582,8 +14590,8 @@ pub fn c_setup_man_host_recv_confirm(c: &mut Cpu) {
         c.g[A3][0] = 0;
         call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_5318)?;
         c.g[S2][0] = c.g[V0][0];
-        c.g[A1][0] = 0x0048_0000;
-        c.g[V0][0] = 0x0048_0000;
+        c.g[A1][0] = RODATA_PAGE;
+        c.g[V0][0] = RODATA_PAGE;
         Addr(c.g[S2][0] as u32).sw(c, c.g[S1][0]);
         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
@@ -14667,7 +14675,7 @@ pub fn c_setup_man_confirm_character(c: &mut Cpu) {
             c.g[A3][0] = Addr(c.g[A0][0] as u32).lw(c);
             c.g[A1][0] = 0x2;
             callee::SETUP_MAN_SEND_CHARACTER_MSG.call(c, 0x0026_5088)?;
-            c.g[A1][0] = 0x0048_0000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[S0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0xc8)).lw(c);
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
             c.g[A0][0] = 0x8;
@@ -14675,8 +14683,8 @@ pub fn c_setup_man_confirm_character(c: &mut Cpu) {
             c.g[A3][0] = 0;
             call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_50a4)?;
             c.g[S2][0] = c.g[V0][0];
-            c.g[A1][0] = 0x0048_0000;
-            c.g[V0][0] = 0x0048_0000;
+            c.g[A1][0] = RODATA_PAGE;
+            c.g[V0][0] = RODATA_PAGE;
             Addr(c.g[S2][0] as u32).sw(c, c.g[S1][0]);
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
@@ -15442,7 +15450,7 @@ pub fn net_update_game_setup(c: &mut Cpu) {
                 c.g[V0][0] = c.lw(r32(c, V1));
                 c.g[V0][0] = c.g[V0][0] ^ 0xb;
                 let is_b = c.g[V0][0] == 0u64;
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
                 if !is_b {
                     c.cycles += 24;
                     c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
@@ -15453,10 +15461,10 @@ pub fn net_update_game_setup(c: &mut Cpu) {
                     callee::EA_MEM_ALLOC_NAMED.call(c, 0x0026_3e34)?;
                     c.g[S1][0] = c.g[V0][0];
                     c.g[V1][0] = 0x113;
-                    c.g[V0][0] = 0x480000;
+                    c.g[V0][0] = RODATA_PAGE;
                     c.sw(r32(c, S1), c.g[V1][0]);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
-                    c.g[A1][0] = 0x480000;
+                    c.g[A1][0] = RODATA_PAGE;
                     c.sw((r32(c, S1)).wrapping_add(0x4), c.g[V0][0]);
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                     c.g[A0][0] = 0xc;
@@ -15592,7 +15600,7 @@ pub fn net_update_game_setup(c: &mut Cpu) {
         c.cycles += 14;
         c.g[A0][0] = c.lw((r32(c, S2)).wrapping_add(0x4));
         call_ptr(c, callee::C_GAME_COMM_CREATE, 0x0026_3fe4)?;
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         c.g[A2][0] = 0x100;
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xef0));
         c.g[A3][0] = 0u64;
@@ -15699,7 +15707,7 @@ pub fn net_abort_game_setup(c: &mut Cpu) {
             frame.restore(c, S0, 0x40);
             if !queued {
                 c.cycles += 9;
-                c.g[A1][0] = 0x0048_0000;
+                c.g[A1][0] = RODATA_PAGE;
                 c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
                 c.g[A0][0] = 0x8;
@@ -15712,7 +15720,7 @@ pub fn net_abort_game_setup(c: &mut Cpu) {
             }
         } else {
             c.cycles += 10;
-            c.g[A1][0] = 0x0048_0000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
             c.g[A0][0] = 0x8;
@@ -15804,7 +15812,7 @@ pub fn net_start_game_setup(c: &mut Cpu) {
         start_iface_call(c, c.g[S0][0], 0x0026_3ae0)?;
         start_iface_call(c, c.g[S0][0], 0x0026_3af4)?;
         c.sw((r32(c, S5)).wrapping_add(0x8), c.g[S2][0]);
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         c.g[A3][0] = sx((r32(c, S4)) >> 16);
         c.g[T0][0] = sx((r32(c, S4)) >> 8);
         c.g[A0][0] = c.g[SP][0];
@@ -15910,7 +15918,7 @@ pub fn net_disconnect_all(c: &mut Cpu) {
             c.cycles += 4;
             call_ptr(c, callee::C_COMM_SYSTEM_DISCONNECT, 0x0026_3778)?;
             let no_arg = c.g[S2][0] == 0u64;
-            c.g[A1][0] = 0x0048_0000;
+            c.g[A1][0] = RODATA_PAGE;
             if !no_arg {
                 c.cycles += 25;
                 c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
@@ -15920,11 +15928,11 @@ pub fn net_disconnect_all(c: &mut Cpu) {
                 c.g[A3][0] = 0u64;
                 callee::EA_MEM_ALLOC_NAMED.call(c, 0x0026_3798)?;
                 c.g[S1][0] = c.g[V0][0];
-                c.g[V1][0] = 0x0048_0000;
+                c.g[V1][0] = RODATA_PAGE;
                 c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1250));
                 c.g[V0][0] = 0x116;
                 c.sw(r32(c, S1), c.g[V0][0]);
-                c.g[A1][0] = 0x0048_0000;
+                c.g[A1][0] = RODATA_PAGE;
                 c.sw((r32(c, S1)).wrapping_add(4), c.g[V1][0]);
                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                 c.sw((r32(c, S1)).wrapping_add(8), c.g[S2][0]);
@@ -17444,7 +17452,7 @@ pub fn buddy_man_on_challenge_received(c: &mut Cpu) {
                     c.g[V1][0] = Addr(sp(c).wrapping_add(0x20)).lw(c);
                     let not_full = c.g[V1][0] != 2;
                     c.g[V0][0] = 2;
-                    c.g[A1][0] = 0x480000;
+                    c.g[A1][0] = RODATA_PAGE;
                     pc = if not_full { 0x0026_2ca0 } else { 0x0026_2bb0 };
                 }
                 0x0026_2bb0 => {
@@ -17547,7 +17555,7 @@ pub fn buddy_man_on_challenge_received(c: &mut Cpu) {
                 }
                 0x0026_2c9c => {
                     c.cycles += 1;
-                    c.g[A1][0] = 0x480000;
+                    c.g[A1][0] = RODATA_PAGE;
                     pc = 0x0026_2ca0;
                 }
                 0x0026_2ca0 => {
@@ -17725,7 +17733,7 @@ pub fn buddy_man_add_message(c: &mut Cpu) {
                     c.g[A1][0] = c.g[S5][0];
                     call_ptr(c, callee::BUDDY_MAN_IS_BLOCKED, 0x0026_1d24)?;
                     let blocked = c.g[V0][0] != 0;
-                    c.g[V0][0] = 0x480000;
+                    c.g[V0][0] = RODATA_PAGE;
                     pc = if blocked { 0x0026_1e48 } else { 0x0026_1d2c };
                 }
                 0x0026_1d2c => {
@@ -17734,7 +17742,7 @@ pub fn buddy_man_add_message(c: &mut Cpu) {
                     c.g[A1][0] = c.g[S5][0];
                     call_ptr(c, callee::BUDDY_MAN_IS_TEMP.addr, 0x0026_1d38)?;
                     let temp = c.g[V0][0] != 0;
-                    c.g[V0][0] = 0x480000;
+                    c.g[V0][0] = RODATA_PAGE;
                     pc = if temp { 0x0026_1e48 } else { 0x0026_1d40 };
                 }
                 0x0026_1d40 => {
@@ -17748,15 +17756,15 @@ pub fn buddy_man_add_message(c: &mut Cpu) {
                     callee::BUDDY_MAN_ADD_ROSTER_ENTRY.call(c, 0x0026_1d5c)?;
                     c.g[V1][0] = Addr(sp(c).wrapping_add(0x20)).lw(c);
                     let failed = c.g[V1][0] != 2;
-                    c.g[V0][0] = 0x480000;
+                    c.g[V0][0] = RODATA_PAGE;
                     pc = if failed { 0x0026_1e48 } else { 0x0026_1d6c };
                 }
                 0x0026_1d6c => {
                     c.cycles += 5;
                     c.g[S0][0] = 0;
-                    c.g[S1][0] = 0x480000;
-                    c.g[S6][0] = 0x480000;
-                    c.g[S7][0] = 0x480000;
+                    c.g[S1][0] = RODATA_PAGE;
+                    c.g[S6][0] = RODATA_PAGE;
+                    c.g[S7][0] = RODATA_PAGE;
                     pc = 0x0026_1d84;
                 }
                 0x0026_1d80 => {
@@ -17795,7 +17803,7 @@ pub fn buddy_man_add_message(c: &mut Cpu) {
                     pc = 0x0026_1db0;
                 }
                 0x0026_1db0 => {
-                    // s1/s6/s7 hold 0x480000 (set at 0x261d6c).
+                    // s1/s6/s7 hold `RODATA_PAGE` (set at 0x261d6c).
                     c.cycles += 28;
                     c.g[A3][0] = c.g[S3][0];
                     c.g[T0][0] = 0;
@@ -17843,7 +17851,7 @@ pub fn buddy_man_add_message(c: &mut Cpu) {
                 }
                 0x0026_1e44 => {
                     c.cycles += 1;
-                    c.g[V0][0] = 0x480000;
+                    c.g[V0][0] = RODATA_PAGE;
                     pc = 0x0026_1e48;
                 }
                 0x0026_1e48 => {
@@ -17939,10 +17947,10 @@ pub fn buddy_man_on_roster_remove_reply(c: &mut Cpu) {
         call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_199c)?;
         c.g[S1][0] = c.g[V0][0];
         c.g[V1][0] = 0x10b;
-        c.g[V0][0] = 0x480000;
+        c.g[V0][0] = RODATA_PAGE;
         Addr(r32(c, S1)).sw(c, c.g[V1][0]);
         c.g[V0][0] = sx(NET_EVENT_VTABLE);
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         Addr(r32(c, S1).wrapping_add(4)).sw(c, c.g[V0][0]);
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
         c.g[A0][0] = 0xc;
@@ -18005,7 +18013,7 @@ pub fn buddy_man_on_roster_event(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[V0][0] = Addr(r32(c, S0).wrapping_add(0xe8)).lw(c);
                     let roster_built = c.g[V0][0] != 0;
-                    c.g[A1][0] = 0x480000;
+                    c.g[A1][0] = RODATA_PAGE;
                     if roster_built {
                         break 'post106;
                     }
@@ -18013,7 +18021,7 @@ pub fn buddy_man_on_roster_event(c: &mut Cpu) {
                     c.g[S1][0] = 0x107;
                     callee::BUDDY_MAN_ADD_MESSAGE_SENDERS_TO_ROSTER.call(c, 0x0026_17ac)?;
                     c.g[V0][0] = 1;
-                    c.g[A1][0] = 0x480000;
+                    c.g[A1][0] = RODATA_PAGE;
                     Addr(r32(c, S0).wrapping_add(0xe8)).sw(c, c.g[V0][0]);
                     c.g[A1][0] = sx(NET_EVENT_TAG);
                     c.g[S0][0] = Addr(gp_8(c, LOBBY_INSTANCE_GP)).lw(c);
@@ -18022,8 +18030,8 @@ pub fn buddy_man_on_roster_event(c: &mut Cpu) {
                     c.g[A3][0] = 0;
                     call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_17d0)?;
                     c.g[S2][0] = c.g[V0][0];
-                    c.g[A1][0] = 0x480000;
-                    c.g[V0][0] = 0x480000;
+                    c.g[A1][0] = RODATA_PAGE;
+                    c.g[V0][0] = RODATA_PAGE;
                     Addr(r32(c, S2)).sw(c, c.g[S1][0]);
                     c.g[V0][0] = sx(NET_EVENT_VTABLE);
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
@@ -18046,7 +18054,7 @@ pub fn buddy_man_on_roster_event(c: &mut Cpu) {
                     break 'epilogue;
                 }
                 c.cycles += 1;
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
             }
             c.cycles += 24;
             c.g[S0][0] = Addr(gp_8(c, LOBBY_INSTANCE_GP)).lw(c);
@@ -18057,10 +18065,10 @@ pub fn buddy_man_on_roster_event(c: &mut Cpu) {
             call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_1838)?;
             c.g[S1][0] = c.g[V0][0];
             c.g[V1][0] = 0x106;
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             Addr(r32(c, S1)).sw(c, c.g[V1][0]);
             c.g[V0][0] = sx(NET_EVENT_VTABLE);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             Addr(r32(c, S1).wrapping_add(4)).sw(c, c.g[V0][0]);
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
             c.g[A0][0] = 0xc;
@@ -18206,7 +18214,7 @@ pub fn buddy_man_on_connect_event(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[V0][0] = Addr(r32(c, S3).wrapping_add(8)).lw(c);
                     let msg2_nonzero = c.g[V0][0] != 0;
-                    c.g[A1][0] = 0x480000;
+                    c.g[A1][0] = RODATA_PAGE;
                     if msg2_nonzero {
                         break 'auth_body;
                     }
@@ -18243,10 +18251,10 @@ pub fn buddy_man_on_connect_event(c: &mut Cpu) {
                     call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_16d8)?;
                     c.g[S2][0] = c.g[V0][0];
                     c.g[V1][0] = 0x104;
-                    c.g[V0][0] = 0x480000;
+                    c.g[V0][0] = RODATA_PAGE;
                     Addr(r32(c, S2)).sw(c, c.g[V1][0]);
                     c.g[V0][0] = sx(NET_EVENT_VTABLE);
-                    c.g[A1][0] = 0x480000;
+                    c.g[A1][0] = RODATA_PAGE;
                     Addr(r32(c, S2).wrapping_add(4)).sw(c, c.g[V0][0]);
                     c.g[A2][0] = 0x2000_0000;
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
@@ -18427,7 +18435,7 @@ pub fn lobby_man_clear_challenge_lock(c: &mut Cpu) {
                 c.cycles += 3;
                 c.g[V0][0] = 0x19;
                 let not_locked = c.g[V1][0] != c.g[V0][0];
-                c.g[A2][0] = 0x4a0000;
+                c.g[A2][0] = LOBBY_STRINGS_PAGE;
                 if not_locked {
                     break 'cleared;
                 }
@@ -18452,7 +18460,7 @@ pub fn lobby_man_clear_challenge_lock(c: &mut Cpu) {
             }
             c.cycles += 2;
             let no_type = c.g[S2][0] == 0;
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             if no_type {
                 break 'done;
             }
@@ -18465,10 +18473,10 @@ pub fn lobby_man_clear_challenge_lock(c: &mut Cpu) {
                 call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_f7d8)?;
                 c.g[S0][0] = c.g[V0][0];
                 c.g[V1][0] = Addr(r32(c, S1).wrapping_add(0xf0)).lw(c);
-                c.g[V0][0] = 0x480000;
+                c.g[V0][0] = RODATA_PAGE;
                 Addr(r32(c, S0)).sw(c, c.g[S2][0]);
                 c.g[V0][0] = sx(NET_EVENT_VTABLE);
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
                 Addr(r32(c, S0).wrapping_add(4)).sw(c, c.g[V0][0]);
                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                 Addr(frame.at(c, 0x10)).sw(c, c.g[V1][0]);
@@ -18538,14 +18546,14 @@ pub fn lobby_man_on_rank_reply(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[V0][0] = 0x7261_6e6b;
                     let not_rank = c.g[V1][0] != c.g[V0][0];
-                    c.g[V0][0] = 0x480000;
+                    c.g[V0][0] = RODATA_PAGE;
                     if not_rank {
                         return lobby_man_on_rank_reply_err_splice(c, frame);
                     }
                     c.cycles += 4;
                     c.g[V1][0] = Addr(0x0053_4b34).lw(c);
                     let flag_set = c.g[V1][0] != 0;
-                    c.g[V0][0] = 0x480000;
+                    c.g[V0][0] = RODATA_PAGE;
                     if flag_set {
                         return lobby_man_on_rank_reply_err_splice(c, frame);
                     }
@@ -18560,10 +18568,10 @@ pub fn lobby_man_on_rank_reply(c: &mut Cpu) {
                 call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_0ce4)?;
                 c.g[S1][0] = c.g[V0][0];
                 c.g[V1][0] = Addr(r32(c, S2).wrapping_add(0xf0)).lw(c);
-                c.g[V0][0] = 0x480000;
+                c.g[V0][0] = RODATA_PAGE;
                 Addr(r32(c, S1)).sw(c, c.g[S0][0]);
                 c.g[V0][0] = sx(NET_EVENT_VTABLE);
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
                 Addr(r32(c, S1).wrapping_add(4)).sw(c, c.g[V0][0]);
                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                 Addr(frame.at(c, 0x10)).sw(c, c.g[V1][0]);
@@ -18740,12 +18748,12 @@ pub fn lobby_man_on_chal_reply(c: &mut Cpu) {
                         call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_f924)?;
                         c.g[S1][0] = c.g[V0][0];
                         c.g[A0][0] = Addr(r32(c, S2).wrapping_add(8)).lw(c);
-                        c.g[V0][0] = 0x480000;
+                        c.g[V0][0] = RODATA_PAGE;
                         c.g[A2][0] = Addr(r32(c, S0).wrapping_add(0xf0)).lw(c);
                         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1290));
                         c.g[V1][0] = 0x102;
                         Addr(r32(c, S1).wrapping_add(8)).sw(c, c.g[A0][0]);
-                        c.g[A1][0] = 0x480000;
+                        c.g[A1][0] = RODATA_PAGE;
                         Addr(r32(c, S1)).sw(c, c.g[V1][0]);
                         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                         Addr(r32(c, S1).wrapping_add(4)).sw(c, c.g[V0][0]);
@@ -18778,7 +18786,7 @@ pub fn lobby_man_on_chal_reply(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     call_ptr(c, callee::STRCMP, 0x0025_f9ac)?;
                     if c.g[V0][0] != 0 {
-                        c.g[A1][0] = 0x4a0000;
+                        c.g[A1][0] = LOBBY_STRINGS_PAGE;
                         break 'cmp1;
                     }
                     c.cycles += 4;
@@ -18865,7 +18873,7 @@ pub fn buddy_man_on_message_received(c: &mut Cpu) {
             frame.save_ra(c, 0x11a0);
             c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0xc)).lw(c);
             call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0026_1a68)?;
-            c.g[V1][0] = 0x480000;
+            c.g[V1][0] = RODATA_PAGE;
             c.g[A1][0] = sx(frame.at(c, 0x1150));
             c.g[S4][0] = sx(0x0048_0e68);
             c.g[A2][0] = 2;
@@ -18891,16 +18899,16 @@ pub fn buddy_man_on_message_received(c: &mut Cpu) {
                 c.cycles += 60;
                 c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0xc)).lw(c);
                 c.g[A1][0] = sx(0x004a_3368);
-                c.g[S6][0] = 0x480000;
+                c.g[S6][0] = RODATA_PAGE;
                 call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0026_1ad4)?;
-                c.g[S7][0] = 0x480000;
+                c.g[S7][0] = RODATA_PAGE;
                 c.g[S1][0] = sx(frame.at(c, 0x800));
                 c.g[A3][0] = sx(0x004a_2ed0);
                 c.g[A2][0] = 0x8cf;
                 c.g[A1][0] = c.g[S1][0];
                 c.g[A0][0] = c.g[V0][0];
                 call_ptr(c, callee::TAG_FIELD_GET_STRING.addr, 0x0026_1af4)?;
-                c.g[S5][0] = 0x480000;
+                c.g[S5][0] = RODATA_PAGE;
                 c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0xc)).lw(c);
                 c.g[A1][0] = sx(0x004a_3370);
                 call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0026_1b08)?;
@@ -19389,10 +19397,10 @@ pub fn buddy_man_on_roster_add_reply(c: &mut Cpu) {
         call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_18ec)?;
         c.g[S1][0] = c.g[V0][0];
         c.g[V1][0] = 0x10a;
-        c.g[V0][0] = 0x480000;
+        c.g[V0][0] = RODATA_PAGE;
         Addr(r32(c, S1)).sw(c, c.g[V1][0]);
         c.g[V0][0] = sx(NET_EVENT_VTABLE);
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         Addr(r32(c, S1).wrapping_add(4)).sw(c, c.g[V0][0]);
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
         c.g[A0][0] = 0xc;
@@ -19537,7 +19545,7 @@ pub fn lobby_man_cancel_challenge(c: &mut Cpu) {
                 c.g[A0][0] = c.g[S1][0];
             }
             c.cycles += 2;
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             if c.g[S0][0] != 0 {
                 c.cycles += 23;
                 c.g[A0][0] = 8;
@@ -19902,7 +19910,7 @@ pub fn lobby_man_cancel_quick_play(c: &mut Cpu) {
                 c.cycles += 2;
                 c.g[V0][0] = 1;
                 c.cycles += 2;
-                c.g[A2][0] = 0x4a0000;
+                c.g[A2][0] = LOBBY_STRINGS_PAGE;
                 c.cycles += 1;
                 c.g[V0][0] = 1;
             } else {
@@ -20164,7 +20172,7 @@ pub fn lobby_man_on_user_stats_reply(c: &mut Cpu) {
         } else {
             c.cycles += 4;
             c.g[V0][0] = 0x7575_7372;
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             if reply_type != 0x7575_7372 {
                 c.cycles += 24;
                 c.g[A0][0] = 0xc;
@@ -20602,7 +20610,7 @@ pub fn lobby_man_on_snapshot_reply(c: &mut Cpu) {
             c.g[A0][0] = c.g[V0][0];
             call_ptr(c, callee::TAG_FIELD_GET_NUMBER.addr, 0x0025_e5d4)?;
             c.g[A0][0] = c.lw(msg.wrapping_add(0xc));
-            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = LOBBY_STRINGS_PAGE;
             c.g[S1][0] = c.g[V0][0];
             c.g[A1][0] = sx(tag::SEQN);
             call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0025_e5e8)?;
@@ -20610,7 +20618,7 @@ pub fn lobby_man_on_snapshot_reply(c: &mut Cpu) {
             c.g[A0][0] = c.g[V0][0];
             call_ptr(c, callee::TAG_FIELD_GET_NUMBER.addr, 0x0025_e5f4)?;
             c.g[A0][0] = c.lw(msg.wrapping_add(0xc));
-            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = LOBBY_STRINGS_PAGE;
             c.g[S0][0] = c.g[V0][0];
             c.g[A1][0] = sx(tag::RANGE);
             call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0025_e608)?;
@@ -20631,7 +20639,7 @@ pub fn lobby_man_on_snapshot_reply(c: &mut Cpu) {
             return Ok(());
         }
         c.cycles += 25;
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         c.g[A3][0] = 0;
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
         c.g[A0][0] = 0xc;
@@ -20639,13 +20647,13 @@ pub fn lobby_man_on_snapshot_reply(c: &mut Cpu) {
         call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_e640)?;
         c.g[S1][0] = c.g[V0][0];
         c.g[A3][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xf0));
-        c.g[V0][0] = 0x480000;
+        c.g[V0][0] = RODATA_PAGE;
         c.g[V1][0] = 0x102;
         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1290));
         c.sw(c.g[S1][0] as u32, c.g[V1][0]);
         c.sw((c.g[S1][0] as u32).wrapping_add(4), c.g[V0][0]);
         c.sw((c.g[S1][0] as u32).wrapping_add(8), c.g[S2][0]);
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
         c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[A3][0]);
         c.g[A0][0] = 0xc;
@@ -20884,7 +20892,7 @@ pub fn lobby_man_on_news_reply(c: &mut Cpu) {
         c.g[V0][0] = 0x6e650000;
         if !not_news_text {
             c.cycles += 21;
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A2][0] = 0x20000000;
             c.g[A3][0] = 0;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
@@ -20892,7 +20900,7 @@ pub fn lobby_man_on_news_reply(c: &mut Cpu) {
             call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_e190)?;
             c.g[S0][0] = c.g[V0][0];
             c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.g[V1][0] = 0xe2;
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1210));
             c.sw(c.g[S0][0] as u32, c.g[V1][0]);
@@ -20900,7 +20908,7 @@ pub fn lobby_man_on_news_reply(c: &mut Cpu) {
             c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
             call_ptr(c, callee::C_BX_STRING_CTOR_CSTR.addr, 0x0025_e1b4)?;
             c.g[V1][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0xf0));
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
             c.g[A0][0] = 0xc;
             c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V1][0]);
@@ -20924,42 +20932,42 @@ pub fn lobby_man_on_news_reply(c: &mut Cpu) {
             c.sw((c.g[S4][0] as u32).wrapping_add(0xc), c.g[A2][0]);
             callee::BUDDY_MAN_IS_CONNECTED.call(c, 0x0025_e1e4)?;
             if c.g[V0][0] != 0 {
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
             } else {
                 c.cycles += 47;
                 let msg = c.g[S3][0] as u32;
                 c.g[A0][0] = c.lw(msg.wrapping_add(0xc));
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x890));
                 call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0025_e1fc)?;
                 c.g[S2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
-                c.g[A3][0] = 0x4a0000;
+                c.g[A3][0] = LOBBY_STRINGS_PAGE;
                 c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x2f40));
                 c.g[A2][0] = 0x100;
                 c.g[A1][0] = c.g[S2][0];
                 c.g[A0][0] = c.g[V0][0];
                 call_ptr(c, callee::TAG_FIELD_GET_STRING.addr, 0x0025_e218)?;
                 c.g[A0][0] = c.lw(msg.wrapping_add(0xc));
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8a0));
                 call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0025_e228)?;
                 c.g[A1][0] = 0x34c1;
                 c.g[A0][0] = c.g[V0][0];
                 call_ptr(c, callee::TAG_FIELD_GET_NUMBER.addr, 0x0025_e234)?;
                 c.g[A0][0] = c.lw(msg.wrapping_add(0xc));
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
                 c.g[S1][0] = c.g[V0][0];
                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8b0));
                 call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0025_e248)?;
                 c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x120));
-                c.g[A3][0] = 0x480000;
+                c.g[A3][0] = RODATA_PAGE;
                 c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x13a0));
                 c.g[A2][0] = 0x100;
                 c.g[A1][0] = c.g[S0][0];
                 c.g[A0][0] = c.g[V0][0];
                 call_ptr(c, callee::TAG_FIELD_GET_STRING.addr, 0x0025_e264)?;
                 c.g[A0][0] = c.lw(msg.wrapping_add(0xc));
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8c0));
                 call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0025_e274)?;
                 c.g[A1][0] = 0xd0000;
@@ -20974,7 +20982,7 @@ pub fn lobby_man_on_news_reply(c: &mut Cpu) {
                 c.g[A3][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x80));
                 c.g[T0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x4c));
                 callee::BUDDY_MAN_CONNECT.call(c, 0x0025_e2a4)?;
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
             }
             c.cycles += 16;
             c.g[A2][0] = 0x20000000;
@@ -20984,12 +20992,12 @@ pub fn lobby_man_on_news_reply(c: &mut Cpu) {
             call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_e2bc)?;
             c.g[S0][0] = c.g[V0][0];
             c.g[A2][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0xf0));
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.g[V1][0] = 0x111;
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
             c.sw(c.g[S0][0] as u32, c.g[V1][0]);
             c.sw((c.g[S0][0] as u32).wrapping_add(4), c.g[V0][0]);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[A2][0]);
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
             c.g[A0][0] = 0xc;
@@ -21032,7 +21040,7 @@ pub fn lobby_man_on_report_user_reply(c: &mut Cpu) {
         c.sw(c.g[S2][0] as u32, c.g[V0][0]);
         c.g[S1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
         let is_error = c.g[S1][0] != 0;
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         if !is_error {
             c.cycles += 23;
             c.g[A0][0] = 0x8;
@@ -21043,10 +21051,10 @@ pub fn lobby_man_on_report_user_reply(c: &mut Cpu) {
             call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_dfdc)?;
             c.g[S1][0] = c.g[V0][0];
             c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xf0));
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.sw(c.g[S1][0] as u32, c.g[S0][0]);
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.sw((c.g[S1][0] as u32).wrapping_add(4), c.g[V0][0]);
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
             c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V1][0]);
@@ -21072,12 +21080,12 @@ pub fn lobby_man_on_report_user_reply(c: &mut Cpu) {
             call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_e03c)?;
             c.g[S0][0] = c.g[V0][0];
             c.g[A3][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xf0));
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.g[V1][0] = 0x102;
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1290));
             c.sw(c.g[S0][0] as u32, c.g[V1][0]);
             c.sw((c.g[S0][0] as u32).wrapping_add(4), c.g[V0][0]);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.sw((c.g[S0][0] as u32).wrapping_add(8), c.g[S1][0]);
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
             c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[A3][0]);
@@ -21116,7 +21124,7 @@ pub fn lobby_man_report_user(c: &mut Cpu) {
         c.g[S1][0] = c.g[A0][0];
         let name = c.g[A1][0];
         c.g[V0][0] = c.lw(c.g[S1][0] as u32);
-        c.g[A2][0] = 0x4a0000;
+        c.g[A2][0] = LOBBY_STRINGS_PAGE;
         if c.g[V0][0] != 0 {
             c.cycles += 24;
             c.g[A3][0] = name;
@@ -21125,7 +21133,7 @@ pub fn lobby_man_report_user(c: &mut Cpu) {
             Addr(c.g[SP][0] as u32).sb(c, 0);
             c.g[A1][0] = 0x100;
             call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_df38)?;
-            c.g[S0][0] = 0x4a0000;
+            c.g[S0][0] = LOBBY_STRINGS_PAGE;
             c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2fe0));
             callee::LOBBY_MAN_GET_LANGUAGE.call(c, 0x0025_df44)?;
             c.g[A2][0] = c.g[S0][0];
@@ -21170,7 +21178,7 @@ pub fn lobby_man_on_ping_reply(c: &mut Cpu) {
         c.g[A1][0] = sx(tag::NAME);
         c.g[A0][0] = c.lw(msg.wrapping_add(0xc));
         call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0025_de0c)?;
-        c.g[A3][0] = 0x4a0000;
+        c.g[A3][0] = LOBBY_STRINGS_PAGE;
         c.g[A0][0] = c.g[V0][0];
         c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x2f40));
         c.g[A1][0] = c.g[SP][0];
@@ -21190,14 +21198,14 @@ pub fn lobby_man_on_ping_reply(c: &mut Cpu) {
             c.g[S1][0] = c.g[V0][0];
         }
         c.cycles += 28;
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         c.g[A2][0] = 0x20000000;
         c.g[A3][0] = 0;
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
         c.g[A0][0] = 0x10;
         call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_de68)?;
         c.g[S0][0] = c.g[V0][0];
-        c.g[V1][0] = 0x480000;
+        c.g[V1][0] = RODATA_PAGE;
         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1170));
         c.g[V0][0] = 0xe5;
         c.g[A1][0] = c.g[SP][0];
@@ -21206,7 +21214,7 @@ pub fn lobby_man_on_ping_reply(c: &mut Cpu) {
         c.sw(c.g[S0][0] as u32, c.g[V0][0]);
         call_ptr(c, callee::C_BX_STRING_CTOR_CSTR.addr, 0x0025_de8c)?;
         c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xf0));
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[S1][0]);
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
         c.sw((c.g[SP][0] as u32).wrapping_add(0x30), c.g[V1][0]);
@@ -21300,7 +21308,7 @@ pub fn lobby_man_on_create_room_reply(c: &mut Cpu) {
             c.g[S0][0] = 0xe4;
             c.g[A1][0] = sx(tag::NAME);
             call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0025_dbc0)?;
-            c.g[A3][0] = 0x4a0000;
+            c.g[A3][0] = LOBBY_STRINGS_PAGE;
             c.g[A1][0] = c.g[SP][0];
             c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x2f40));
             c.g[A2][0] = 0x100;
@@ -21309,7 +21317,7 @@ pub fn lobby_man_on_create_room_reply(c: &mut Cpu) {
             c.g[A1][0] = c.g[SP][0];
             c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x84));
             call_ptr(c, callee::C_BX_STRING_ASSIGN_CSTR.addr, 0x0025_dbe4)?;
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A0][0] = 0x8;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
             c.g[A2][0] = 0x20000000;
@@ -21317,10 +21325,10 @@ pub fn lobby_man_on_create_room_reply(c: &mut Cpu) {
             call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_dbfc)?;
             c.g[S1][0] = c.g[V0][0];
             c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xf0));
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.sw(c.g[S1][0] as u32, c.g[S0][0]);
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.sw((c.g[S1][0] as u32).wrapping_add(4), c.g[V0][0]);
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
             c.sw((c.g[SP][0] as u32).wrapping_add(0x110), c.g[V1][0]);
@@ -21336,7 +21344,7 @@ pub fn lobby_man_on_create_room_reply(c: &mut Cpu) {
             c.cycles += 10;
             msg_list_insert_splice(c, 0x110, 0x100);
         } else {
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.cycles += 24;
             c.g[A3][0] = 0;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
@@ -21345,12 +21353,12 @@ pub fn lobby_man_on_create_room_reply(c: &mut Cpu) {
             call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_dc7c)?;
             c.g[S0][0] = c.g[V0][0];
             c.g[A3][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xf0));
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.g[V1][0] = 0x102;
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1290));
             c.sw(c.g[S0][0] as u32, c.g[V1][0]);
             c.sw((c.g[S0][0] as u32).wrapping_add(4), c.g[V0][0]);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.sw((c.g[S0][0] as u32).wrapping_add(8), c.g[S1][0]);
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
             c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[A3][0]);
@@ -21393,14 +21401,14 @@ pub fn lobby_man_on_move_to_room_reply(c: &mut Cpu) {
         c.sw(c.g[S2][0] as u32, c.g[V0][0]);
         c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
         let is_error = c.g[V0][0] != 0;
-        c.g[A1][0] = 0x4a0000;
+        c.g[A1][0] = LOBBY_STRINGS_PAGE;
         if !is_error {
             c.cycles += 36;
             let msg = c.g[S0][0] as u32;
             c.g[A0][0] = c.lw(msg.wrapping_add(0xc));
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2f58));
             call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0025_d934)?;
-            c.g[A3][0] = 0x4a0000;
+            c.g[A3][0] = LOBBY_STRINGS_PAGE;
             c.g[A1][0] = c.g[SP][0];
             c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x2f40));
             c.g[A2][0] = 0x100;
@@ -21409,7 +21417,7 @@ pub fn lobby_man_on_move_to_room_reply(c: &mut Cpu) {
             c.g[A1][0] = c.g[SP][0];
             c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x84));
             call_ptr(c, callee::C_BX_STRING_ASSIGN_CSTR.addr, 0x0025_d958)?;
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A2][0] = 0x20000000;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
             c.g[A0][0] = 0x8;
@@ -21417,12 +21425,12 @@ pub fn lobby_man_on_move_to_room_reply(c: &mut Cpu) {
             call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_d970)?;
             c.g[S0][0] = c.g[V0][0];
             c.g[A2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xf0));
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.g[V1][0] = 0xdc;
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
             c.sw(c.g[S0][0] as u32, c.g[V1][0]);
             c.sw((c.g[S0][0] as u32).wrapping_add(4), c.g[V0][0]);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.sw((c.g[SP][0] as u32).wrapping_add(0x110), c.g[A2][0]);
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
             c.g[A0][0] = 0xc;
@@ -21440,7 +21448,7 @@ pub fn lobby_man_on_move_to_room_reply(c: &mut Cpu) {
             c.cycles += 28;
             c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x84));
             call_ptr(c, callee::C_BX_STRING_RELEASE, 0x0025_d9e8)?;
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A0][0] = 0xc;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
             c.g[A2][0] = 0x20000000;
@@ -21448,12 +21456,12 @@ pub fn lobby_man_on_move_to_room_reply(c: &mut Cpu) {
             call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_da00)?;
             c.g[S1][0] = c.g[V0][0];
             c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.g[A2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xf0));
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1290));
             c.g[V1][0] = 0x102;
             c.sw((c.g[S1][0] as u32).wrapping_add(8), c.g[A0][0]);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.sw(c.g[S1][0] as u32, c.g[V1][0]);
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
             c.sw((c.g[S1][0] as u32).wrapping_add(4), c.g[V0][0]);
@@ -21497,7 +21505,7 @@ pub fn lobby_man_move_to_room(c: &mut Cpu) {
         c.g[S0][0] = c.g[A2][0];
         if !no_net {
             c.cycles += 9;
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A3][0] = c.g[A1][0];
             c.g[A2][0] = sx(tag::NAME);
             Addr(sp(c)).sb(c, 0);
@@ -21505,7 +21513,7 @@ pub fn lobby_man_move_to_room(c: &mut Cpu) {
             c.g[A1][0] = 0x100;
             call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_d89c)?;
             let has_name = c.g[S0][0] != 0;
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             if has_name {
                 c.cycles += 5;
                 c.g[A3][0] = c.g[S0][0];
@@ -21541,7 +21549,7 @@ pub fn lobby_man_on_user_list_changed(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 29;
         let frame = Frame::open(c, 0x50);
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         frame.save(c, S0, 0x40);
         c.g[A1][0] = sx(NET_EVENT_TAG);
         c.g[S0][0] = c.g[A0][0];
@@ -21553,12 +21561,12 @@ pub fn lobby_man_on_user_list_changed(c: &mut Cpu) {
         callee::EA_MEM_ALLOC.call(c, 0x0025_d6ec)?;
         c.g[S1][0] = c.g[V0][0];
         c.g[A0][0] = Addr(r32(c, S0).wrapping_add(LOBBY_MSG_LIST)).lw(c);
-        c.g[V0][0] = 0x480000;
+        c.g[V0][0] = RODATA_PAGE;
         c.g[V1][0] = 0xdf;
         c.g[V0][0] = sx(NET_EVENT_VTABLE);
         Addr(r32(c, S1)).sw(c, c.g[V1][0]);
         Addr(r32(c, S1).wrapping_add(4)).sw(c, c.g[V0][0]);
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         Addr(frame.at(c, 0x10)).sw(c, c.g[A0][0]);
         c.g[A1][0] = sx(STL_BLOCK_TAG);
         c.g[A0][0] = 0xc;
@@ -21607,7 +21615,7 @@ pub fn lobby_man_on_delete_persona_reply(c: &mut Cpu) {
         Addr(r32(c, S3)).sw(c, c.g[V0][0]);
         c.g[V0][0] = Addr(r32(c, S1).wrapping_add(8)).lw(c);
         let failed = c.g[V0][0] != 0;
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         if !failed {
             c.cycles += 7;
             c.g[V0][0] = Addr(r32(c, S3).wrapping_add(0x6c)).lw(c);
@@ -21642,7 +21650,7 @@ pub fn lobby_man_on_delete_persona_reply(c: &mut Cpu) {
                         continue;
                     }
                     c.cycles += 1;
-                    c.g[A1][0] = 0x480000;
+                    c.g[A1][0] = RODATA_PAGE;
                     break;
                 }
             }
@@ -21654,12 +21662,12 @@ pub fn lobby_man_on_delete_persona_reply(c: &mut Cpu) {
             callee::EA_MEM_ALLOC.call(c, 0x0025_d5dc)?;
             c.g[S0][0] = c.g[V0][0];
             c.g[A2][0] = Addr(r32(c, S4).wrapping_add(4)).lw(c);
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.g[V1][0] = 0xd8;
             c.g[V0][0] = sx(NET_EVENT_VTABLE);
             Addr(r32(c, S0)).sw(c, c.g[V1][0]);
             Addr(r32(c, S0).wrapping_add(4)).sw(c, c.g[V0][0]);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             Addr(frame.at(c, 0x10)).sw(c, c.g[A2][0]);
             c.g[A1][0] = sx(STL_BLOCK_TAG);
             c.g[A0][0] = 0xc;
@@ -21674,12 +21682,12 @@ pub fn lobby_man_on_delete_persona_reply(c: &mut Cpu) {
             callee::EA_MEM_ALLOC.call(c, 0x0025_d628)?;
             c.g[S0][0] = c.g[V0][0];
             c.g[A0][0] = Addr(r32(c, S1).wrapping_add(8)).lw(c);
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.g[A2][0] = Addr(r32(c, S3).wrapping_add(LOBBY_MSG_LIST)).lw(c);
             c.g[V0][0] = sx(0x0048_1290);
             c.g[V1][0] = 0x102;
             Addr(r32(c, S0).wrapping_add(8)).sw(c, c.g[A0][0]);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             Addr(r32(c, S0)).sw(c, c.g[V1][0]);
             c.g[A1][0] = sx(STL_BLOCK_TAG);
             Addr(r32(c, S0).wrapping_add(4)).sw(c, c.g[V0][0]);
@@ -21737,7 +21745,7 @@ pub fn lobby_man_delete_persona(c: &mut Cpu) {
             Addr(sp(c)).sb(c, 0);
             c.g[V0][0] = sx(r32(c, S1) << 2);
             c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S2)));
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A3][0] = Addr(r32(c, V0).wrapping_add(0x70)).lw(c);
             c.g[A0][0] = c.g[SP][0];
             c.g[A2][0] = sx(0x004a_3108);
@@ -21755,7 +21763,7 @@ pub fn lobby_man_delete_persona(c: &mut Cpu) {
             c.g[A2][0] = c.g[A2][0] | 0x6572;
             callee::LOBBY_MAN_SEND_REQUEST.call(c, 0x0025_d49c)?;
             Addr(r32(c, S2).wrapping_add(0x50)).sw(c, c.g[S1][0]);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A1][0] = sx(NET_EVENT_TAG);
             c.g[A0][0] = 0x8;
             c.g[A2][0] = 0x20000000;
@@ -21763,10 +21771,10 @@ pub fn lobby_man_delete_persona(c: &mut Cpu) {
             callee::EA_MEM_ALLOC.call(c, 0x0025_d4b8)?;
             c.g[S1][0] = c.g[V0][0];
             c.g[V1][0] = Addr(r32(c, S2).wrapping_add(LOBBY_MSG_LIST)).lw(c);
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             Addr(r32(c, S1)).sw(c, c.g[S0][0]);
             c.g[V0][0] = sx(NET_EVENT_VTABLE);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             Addr(r32(c, S1).wrapping_add(4)).sw(c, c.g[V0][0]);
             c.g[A1][0] = sx(STL_BLOCK_TAG);
             Addr(frame.at(c, 0x210)).sw(c, c.g[V1][0]);
@@ -21821,7 +21829,7 @@ pub fn lobby_man_on_create_persona_reply(c: &mut Cpu) {
         if !failed {
             c.cycles += 23;
             c.g[V0][0] = Addr(r32(c, S2).wrapping_add(0x6c)).lw(c);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A1][0] = sx(NET_EVENT_TAG);
             c.g[A2][0] = 0x20000000;
             c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
@@ -21831,12 +21839,12 @@ pub fn lobby_man_on_create_persona_reply(c: &mut Cpu) {
             callee::EA_MEM_ALLOC.call(c, 0x0025_d32c)?;
             c.g[S0][0] = c.g[V0][0];
             c.g[A2][0] = Addr(r32(c, S2).wrapping_add(LOBBY_MSG_LIST)).lw(c);
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.g[V1][0] = 0xd6;
             c.g[V0][0] = sx(NET_EVENT_VTABLE);
             Addr(r32(c, S0)).sw(c, c.g[V1][0]);
             Addr(r32(c, S0).wrapping_add(4)).sw(c, c.g[V0][0]);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             Addr(frame.at(c, 0x10)).sw(c, c.g[A2][0]);
             c.g[A1][0] = sx(STL_BLOCK_TAG);
             c.g[A0][0] = 0xc;
@@ -21846,13 +21854,13 @@ pub fn lobby_man_on_create_persona_reply(c: &mut Cpu) {
             c.cycles += 3;
             c.g[V0][0] = c.g[V0][0] | 0x706c;
             let is_dupl = c.g[V1][0] == c.g[V0][0];
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             if is_dupl {
                 c.cycles += 4;
                 c.g[A0][0] = c.g[S2][0];
                 c.g[A1][0] = c.g[S1][0];
                 callee::LOBBY_MAN_PARSE_NAME_SUGGESTIONS.call(c, 0x0025_d37c)?;
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
             }
             c.cycles += 20;
             c.g[A0][0] = 0xc;
@@ -21862,12 +21870,12 @@ pub fn lobby_man_on_create_persona_reply(c: &mut Cpu) {
             callee::EA_MEM_ALLOC.call(c, 0x0025_d394)?;
             c.g[S0][0] = c.g[V0][0];
             c.g[A0][0] = Addr(r32(c, S1).wrapping_add(8)).lw(c);
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.g[A2][0] = Addr(r32(c, S2).wrapping_add(LOBBY_MSG_LIST)).lw(c);
             c.g[V0][0] = sx(0x0048_1290);
             c.g[V1][0] = 0x102;
             Addr(r32(c, S0).wrapping_add(8)).sw(c, c.g[A0][0]);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             Addr(r32(c, S0)).sw(c, c.g[V1][0]);
             c.g[A1][0] = sx(STL_BLOCK_TAG);
             Addr(r32(c, S0).wrapping_add(4)).sw(c, c.g[V0][0]);
@@ -21920,7 +21928,7 @@ pub fn lobby_man_create_persona(c: &mut Cpu) {
         c.g[S1][0] = c.g[A1][0];
         if !no_net {
             c.cycles += 47;
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A0][0] = c.g[SP][0];
             Addr(sp(c)).sb(c, 0);
             c.g[A3][0] = c.g[S1][0];
@@ -21944,7 +21952,7 @@ pub fn lobby_man_create_persona(c: &mut Cpu) {
             c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x70));
             c.g[A0][0] = sx(r32(c, S2).wrapping_add(r32(c, A0)));
             callee::C_BX_STRING_ASSIGN_CSTR.call(c, 0x0025_d23c)?;
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A0][0] = 0x8;
             c.g[A1][0] = sx(NET_EVENT_TAG);
             c.g[A2][0] = 0x20000000;
@@ -21952,10 +21960,10 @@ pub fn lobby_man_create_persona(c: &mut Cpu) {
             callee::EA_MEM_ALLOC.call(c, 0x0025_d254)?;
             c.g[S1][0] = c.g[V0][0];
             c.g[V1][0] = Addr(r32(c, S2).wrapping_add(LOBBY_MSG_LIST)).lw(c);
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             Addr(r32(c, S1)).sw(c, c.g[S0][0]);
             c.g[V0][0] = sx(NET_EVENT_VTABLE);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             Addr(r32(c, S1).wrapping_add(4)).sw(c, c.g[V0][0]);
             c.g[A1][0] = sx(STL_BLOCK_TAG);
             Addr(frame.at(c, 0x210)).sw(c, c.g[V1][0]);
@@ -22008,27 +22016,27 @@ pub fn lobby_man_on_own_stats_reply(c: &mut Cpu) {
         Addr(r32(c, S0)).sw(c, c.g[V0][0]);
         c.g[V0][0] = Addr(r32(c, S2).wrapping_add(8)).lw(c);
         let failed = c.g[V0][0] != 0;
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         if !failed {
             c.cycles += 40;
             c.g[A0][0] = Addr(r32(c, S2).wrapping_add(0xc)).lw(c);
-            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = LOBBY_STRINGS_PAGE;
             c.g[A1][0] = sx(0x004a_3128);
             callee::TAG_FIELD_FIND.call(c, 0x0025_d088)?;
-            c.g[A3][0] = 0x4a0000;
+            c.g[A3][0] = LOBBY_STRINGS_PAGE;
             c.g[A1][0] = c.g[SP][0];
             c.g[A3][0] = sx(0x004a_2f40);
             c.g[A0][0] = c.g[V0][0];
             c.g[A2][0] = 0x100;
             callee::TAG_FIELD_GET_STRING.call(c, 0x0025_d0a0)?;
-            c.g[A3][0] = 0x4a0000;
+            c.g[A3][0] = LOBBY_STRINGS_PAGE;
             c.g[A0][0] = c.g[SP][0];
             c.g[A1][0] = sx(sp(c).wrapping_add(0x100));
             c.g[A2][0] = 0x40;
             c.g[A3][0] = sx(0x004a_2f30);
             callee::TAG_FIELD_GET_BINARY.call(c, 0x0025_d0b8)?;
             c.g[A2][0] = Addr(sp(c).wrapping_add(0x108)).lw(c);
-            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = LOBBY_STRINGS_PAGE;
             c.g[V0][0] = Addr(sp(c).wrapping_add(0x10c)).lw(c);
             c.g[A1][0] = sx(0x004a_3130);
             c.g[V1][0] = Addr(sp(c).wrapping_add(0x110)).lw(c);
@@ -22059,12 +22067,12 @@ pub fn lobby_man_on_own_stats_reply(c: &mut Cpu) {
             callee::EA_MEM_ALLOC.call(c, 0x0025_d12c)?;
             c.g[S1][0] = c.g[V0][0];
             c.g[A0][0] = Addr(r32(c, S2).wrapping_add(8)).lw(c);
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.g[A2][0] = Addr(r32(c, S0).wrapping_add(LOBBY_MSG_LIST)).lw(c);
             c.g[V0][0] = sx(0x0048_1290);
             c.g[V1][0] = 0x102;
             Addr(r32(c, S1).wrapping_add(8)).sw(c, c.g[A0][0]);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             Addr(r32(c, S1)).sw(c, c.g[V1][0]);
             c.g[A1][0] = sx(STL_BLOCK_TAG);
             Addr(r32(c, S1).wrapping_add(4)).sw(c, c.g[V0][0]);
@@ -22116,11 +22124,11 @@ pub fn lobby_man_on_select_persona_reply(c: &mut Cpu) {
         Addr(r32(c, S1)).sw(c, c.g[V0][0]);
         c.g[V0][0] = Addr(r32(c, S2).wrapping_add(8)).lw(c);
         let failed = c.g[V0][0] != 0;
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         if !failed {
             c.cycles += 22;
             callee::LOBBY_MAN_QUERY_OWN_STATS.call(c, 0x0025_cee8)?;
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A2][0] = 0x20000000;
             c.g[A1][0] = sx(NET_EVENT_TAG);
             c.g[A0][0] = 0x8;
@@ -22128,12 +22136,12 @@ pub fn lobby_man_on_select_persona_reply(c: &mut Cpu) {
             callee::EA_MEM_ALLOC.call(c, 0x0025_cf00)?;
             c.g[S0][0] = c.g[V0][0];
             c.g[A2][0] = Addr(r32(c, S1).wrapping_add(LOBBY_MSG_LIST)).lw(c);
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.g[V1][0] = 0xda;
             c.g[V0][0] = sx(NET_EVENT_VTABLE);
             Addr(r32(c, S0)).sw(c, c.g[V1][0]);
             Addr(r32(c, S0).wrapping_add(4)).sw(c, c.g[V0][0]);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             Addr(frame.at(c, 0x10)).sw(c, c.g[A2][0]);
             c.g[A1][0] = sx(STL_BLOCK_TAG);
             c.g[A0][0] = 0xc;
@@ -22148,12 +22156,12 @@ pub fn lobby_man_on_select_persona_reply(c: &mut Cpu) {
             callee::EA_MEM_ALLOC.call(c, 0x0025_cf4c)?;
             c.g[S0][0] = c.g[V0][0];
             c.g[A0][0] = Addr(r32(c, S2).wrapping_add(8)).lw(c);
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.g[A2][0] = Addr(r32(c, S1).wrapping_add(LOBBY_MSG_LIST)).lw(c);
             c.g[V0][0] = sx(0x0048_1290);
             c.g[V1][0] = 0x102;
             Addr(r32(c, S0).wrapping_add(8)).sw(c, c.g[A0][0]);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             Addr(r32(c, S0)).sw(c, c.g[V1][0]);
             c.g[A1][0] = sx(STL_BLOCK_TAG);
             Addr(r32(c, S0).wrapping_add(4)).sw(c, c.g[V0][0]);
@@ -22204,14 +22212,14 @@ pub fn lobby_man_select_persona(c: &mut Cpu) {
         frame.save_ra(c, 0x220);
         c.g[A0][0] = sx(r32(c, S2).wrapping_add(0x80));
         callee::C_BX_STRING_ASSIGN_CSTR.call(c, 0x0025_cd74)?;
-        c.g[A2][0] = 0x4a0000;
+        c.g[A2][0] = LOBBY_STRINGS_PAGE;
         c.g[A0][0] = c.g[SP][0];
         c.g[A3][0] = c.g[S0][0];
         Addr(sp(c)).sb(c, 0);
         c.g[A2][0] = sx(0x004a_3108);
         c.g[A1][0] = 0x200;
         call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_cd90)?;
-        c.g[S0][0] = 0x4a0000;
+        c.g[S0][0] = LOBBY_STRINGS_PAGE;
         c.g[S0][0] = sx(0x004a_30c8);
         callee::NET_CONN_MAC.call(c, 0x0025_cd9c)?;
         c.g[A2][0] = c.g[S0][0];
@@ -22219,8 +22227,8 @@ pub fn lobby_man_select_persona(c: &mut Cpu) {
         c.g[A0][0] = c.g[SP][0];
         c.g[A1][0] = 0x200;
         call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_cdb0)?;
-        c.g[A2][0] = 0x4a0000;
-        c.g[A3][0] = 0x480000;
+        c.g[A2][0] = LOBBY_STRINGS_PAGE;
+        c.g[A3][0] = RODATA_PAGE;
         c.g[A2][0] = sx(0x004a_30d0);
         c.g[A3][0] = sx(0x0048_13a0);
         c.g[A0][0] = c.g[SP][0];
@@ -22231,7 +22239,7 @@ pub fn lobby_man_select_persona(c: &mut Cpu) {
         c.g[A0][0] = c.g[SP][0];
         if has_flag {
             c.cycles += 5;
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A2][0] = sx(0x004a_3110);
             c.g[A1][0] = 0x200;
             c.g[A3][0] = sx(r32(c, S2).wrapping_add(0x1c));
@@ -22249,7 +22257,7 @@ pub fn lobby_man_select_persona(c: &mut Cpu) {
         c.g[A2][0] = c.g[A2][0] | 0x7273;
         callee::LOBBY_MAN_SEND_REQUEST.call(c, 0x0025_ce14)?;
         c.g[S0][0] = 0xd9;
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         c.g[A0][0] = 0x8;
         c.g[A1][0] = sx(NET_EVENT_TAG);
         c.g[A2][0] = 0x20000000;
@@ -22257,10 +22265,10 @@ pub fn lobby_man_select_persona(c: &mut Cpu) {
         callee::EA_MEM_ALLOC.call(c, 0x0025_ce30)?;
         c.g[S1][0] = c.g[V0][0];
         c.g[V1][0] = Addr(r32(c, S2).wrapping_add(LOBBY_MSG_LIST)).lw(c);
-        c.g[V0][0] = 0x480000;
+        c.g[V0][0] = RODATA_PAGE;
         Addr(r32(c, S1)).sw(c, c.g[S0][0]);
         c.g[V0][0] = sx(NET_EVENT_VTABLE);
-        c.g[A1][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
         Addr(r32(c, S1).wrapping_add(4)).sw(c, c.g[V0][0]);
         c.g[A1][0] = sx(STL_BLOCK_TAG);
         Addr(frame.at(c, 0x210)).sw(c, c.g[V1][0]);
@@ -22325,9 +22333,9 @@ pub fn lobby_man_on_login_reply(c: &mut Cpu) {
             // --- success: persona list -------------------------------------
             c.cycles += 27;
             c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0xc)).lw(c);
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A1][0] = sx(0x0048_0880);
-            c.g[S0][0] = 0x4a0000;
+            c.g[S0][0] = LOBBY_STRINGS_PAGE;
             callee::TAG_FIELD_FIND.call(c, 0x0025_c904)?;
             c.g[S6][0] = sx(r32(c, S2).wrapping_add(0x2bc));
             c.g[A3][0] = sx(0x004a_2f40);
@@ -22444,8 +22452,8 @@ pub fn lobby_man_on_login_reply(c: &mut Cpu) {
             }
             // --- account fields --------------------------------------------
             c.cycles += 45;
-            c.g[V0][0] = 0x4a0000;
-            c.g[A1][0] = 0x4a0000;
+            c.g[V0][0] = LOBBY_STRINGS_PAGE;
+            c.g[A1][0] = LOBBY_STRINGS_PAGE;
             c.g[S3][0] = sx(0x004a_2f40);
             c.g[A1][0] = sx(0x004a_3050);
             callee::TAG_FIELD_FIND.call(c, 0x0025_c9f8)?;
@@ -22458,7 +22466,7 @@ pub fn lobby_man_on_login_reply(c: &mut Cpu) {
             c.g[A0][0] = c.g[S6][0];
             callee::C_BX_STRING_ASSIGN_CSTR.call(c, 0x0025_ca18)?;
             c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0xc)).lw(c);
-            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = LOBBY_STRINGS_PAGE;
             c.g[A1][0] = sx(0x004a_3048);
             callee::TAG_FIELD_FIND.call(c, 0x0025_ca28)?;
             c.g[A1][0] = Addr(frame.at(c, 0x31c)).lw(c);
@@ -22484,7 +22492,7 @@ pub fn lobby_man_on_login_reply(c: &mut Cpu) {
             c.g[A1][0] = c.g[S5][0];
             callee::C_BX_STRING_ASSIGN.call(c, 0x0025_ca80)?;
             c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0xc)).lw(c);
-            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = LOBBY_STRINGS_PAGE;
             c.g[A1][0] = sx(0x004a_30f0);
             callee::TAG_FIELD_FIND.call(c, 0x0025_ca90)?;
             let no_persona = c.g[V0][0] == 0;
@@ -22512,7 +22520,7 @@ pub fn lobby_man_on_login_reply(c: &mut Cpu) {
             }
             // --- post 0xd4 --------------------------------------------------
             c.cycles += 26;
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A1][0] = sx(NET_EVENT_TAG);
             c.g[A2][0] = 0x20000000;
             c.g[A0][0] = 0x8;
@@ -22521,8 +22529,8 @@ pub fn lobby_man_on_login_reply(c: &mut Cpu) {
             callee::EA_MEM_ALLOC.call(c, 0x0025_caf8)?;
             c.g[V1][0] = Addr(frame.at(c, 0x318)).lw(c);
             c.g[S0][0] = c.g[V0][0];
-            c.g[V0][0] = 0x480000;
-            c.g[A1][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A2][0] = Addr(r32(c, V1).wrapping_add(4)).lw(c);
             c.g[V0][0] = sx(NET_EVENT_VTABLE);
             c.g[V1][0] = 0xd4;
@@ -22557,10 +22565,10 @@ pub fn lobby_man_on_login_reply(c: &mut Cpu) {
             if is_lock {
                 c.cycles += 52;
                 c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0xc)).lw(c);
-                c.g[A1][0] = 0x4a0000;
+                c.g[A1][0] = LOBBY_STRINGS_PAGE;
                 c.g[A1][0] = sx(0x004a_30f8);
                 callee::TAG_FIELD_FIND.call(c, 0x0025_cb88)?;
-                c.g[S0][0] = 0x4a0000;
+                c.g[S0][0] = LOBBY_STRINGS_PAGE;
                 c.g[A1][0] = c.g[SP][0];
                 c.g[S0][0] = sx(0x004a_2f40);
                 c.g[A2][0] = 0x100;
@@ -22568,7 +22576,7 @@ pub fn lobby_man_on_login_reply(c: &mut Cpu) {
                 c.g[A0][0] = c.g[V0][0];
                 callee::TAG_FIELD_GET_STRING.call(c, 0x0025_cba4)?;
                 c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0xc)).lw(c);
-                c.g[A1][0] = 0x4a0000;
+                c.g[A1][0] = LOBBY_STRINGS_PAGE;
                 c.g[A1][0] = sx(0x004a_3100);
                 callee::TAG_FIELD_FIND.call(c, 0x0025_cbb4)?;
                 c.g[S1][0] = sx(sp(c).wrapping_add(0x100));
@@ -22577,14 +22585,14 @@ pub fn lobby_man_on_login_reply(c: &mut Cpu) {
                 c.g[A0][0] = c.g[V0][0];
                 c.g[A2][0] = 0x100;
                 callee::TAG_FIELD_GET_STRING.call(c, 0x0025_cbcc)?;
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
                 c.g[A2][0] = 0x20000000;
                 c.g[A3][0] = 0;
                 c.g[A1][0] = sx(NET_EVENT_TAG);
                 c.g[A0][0] = 0x14;
                 callee::EA_MEM_ALLOC.call(c, 0x0025_cbe4)?;
                 c.g[S0][0] = c.g[V0][0];
-                c.g[V1][0] = 0x480000;
+                c.g[V1][0] = RODATA_PAGE;
                 c.g[V1][0] = sx(0x0048_11d0);
                 c.g[V0][0] = 0x102;
                 c.g[A1][0] = c.g[SP][0];
@@ -22597,7 +22605,7 @@ pub fn lobby_man_on_login_reply(c: &mut Cpu) {
                 c.g[A0][0] = sx(r32(c, S0).wrapping_add(0x10));
                 callee::C_BX_STRING_CTOR_CSTR.call(c, 0x0025_cc18)?;
                 c.g[V1][0] = Addr(r32(c, S2).wrapping_add(LOBBY_MSG_LIST)).lw(c);
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
                 c.g[A1][0] = sx(STL_BLOCK_TAG);
                 c.g[A0][0] = 0xc;
                 Addr(frame.at(c, 0x210)).sw(c, c.g[V1][0]);
@@ -22620,7 +22628,7 @@ pub fn lobby_man_on_login_reply(c: &mut Cpu) {
                 Addr(r32(c, V0).wrapping_add(4)).sw(c, c.g[A1][0]);
                 Addr(frame.at(c, 0x200)).sw(c, c.g[A1][0]);
             } else {
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
                 c.cycles += 25;
                 c.g[A0][0] = 0xc;
                 c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x488));
@@ -22629,12 +22637,12 @@ pub fn lobby_man_on_login_reply(c: &mut Cpu) {
                 callee::EA_MEM_ALLOC.call(c, 0x0025_cc84)?;
                 c.g[S0][0] = c.g[V0][0];
                 c.g[A0][0] = Addr(r32(c, S1).wrapping_add(8)).lw(c);
-                c.g[V0][0] = 0x480000;
+                c.g[V0][0] = RODATA_PAGE;
                 c.g[A2][0] = Addr(r32(c, S2).wrapping_add(LOBBY_MSG_LIST)).lw(c);
                 c.g[V0][0] = sx(0x0048_1290);
                 c.g[V1][0] = 0x102;
                 Addr(r32(c, S0).wrapping_add(8)).sw(c, c.g[A0][0]);
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
                 Addr(r32(c, S0)).sw(c, c.g[V1][0]);
                 c.g[A1][0] = sx(STL_BLOCK_TAG);
                 Addr(r32(c, S0).wrapping_add(4)).sw(c, c.g[V0][0]);
@@ -22778,7 +22786,7 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                 c.sw(r32(c, S2).wrapping_add(LOBBY_DISCONNECT_PENDING), 0u64);
                                 c.g[A0][0] = c.g[S2][0];
                                 callee::LOBBY_MAN_DISCONNECT.call(c, 0x0025_acb0)?;
-                                c.g[A1][0] = 0x480000;
+                                c.g[A1][0] = RODATA_PAGE;
                                 c.g[A2][0] = 0x20000000;
                                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
                                 c.g[A0][0] = 0x8;
@@ -22786,7 +22794,7 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                 call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_acc8)?;
                                 c.g[S0][0] = c.g[V0][0];
                                 c.g[A2][0] = c.lw(r32(c, S2).wrapping_add(LOBBY_MSG_LIST));
-                                c.g[V0][0] = 0x480000;
+                                c.g[V0][0] = RODATA_PAGE;
                                 c.g[V1][0] = 0x115;
                                 lobby_man_update_post_tail(c)?;
                                 break 'b_25b4b4;
@@ -22835,7 +22843,7 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                         c.cycles += 29;
                                         c.g[A0][0] = c.g[S2][0];
                                         callee::LOBBY_MAN_DISCONNECT.call(c, 0x0025_ad58)?;
-                                        c.g[A1][0] = 0x480000;
+                                        c.g[A1][0] = RODATA_PAGE;
                                         c.g[A2][0] = 0x20000000;
                                         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
                                         c.g[A3][0] = 0u64;
@@ -22843,14 +22851,14 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                         call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_ad70)?;
                                         c.g[S0][0] = c.g[V0][0];
                                         c.g[A2][0] = 0x646e0000;
-                                        c.g[V0][0] = 0x480000;
+                                        c.g[V0][0] = RODATA_PAGE;
                                         c.g[A3][0] = c.lw(r32(c, S2).wrapping_add(LOBBY_MSG_LIST));
                                         c.g[A2][0] = c.g[A2][0] | 0x7366;
                                         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1290));
                                         c.g[V1][0] = 0x102;
                                         c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[A2][0]);
                                         c.sw(r32(c, S0), c.g[V1][0]);
-                                        c.g[A1][0] = 0x480000;
+                                        c.g[A1][0] = RODATA_PAGE;
                                         c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                                         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                                         c.sw(sp(c).wrapping_add(0x10), c.g[A3][0]);
@@ -22911,7 +22919,7 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                     c.cycles += 29;
                                     c.g[A0][0] = c.g[S2][0];
                                     callee::LOBBY_MAN_DISCONNECT.call(c, 0x0025_aef4)?;
-                                    c.g[A1][0] = 0x480000;
+                                    c.g[A1][0] = RODATA_PAGE;
                                     c.g[A2][0] = 0x20000000;
                                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
                                     c.g[A3][0] = 0u64;
@@ -22919,14 +22927,14 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                     call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_af0c)?;
                                     c.g[S0][0] = c.g[V0][0];
                                     c.g[A2][0] = 0x74690000;
-                                    c.g[V0][0] = 0x480000;
+                                    c.g[V0][0] = RODATA_PAGE;
                                     c.g[A3][0] = c.lw(r32(c, S2).wrapping_add(LOBBY_MSG_LIST));
                                     c.g[A2][0] = c.g[A2][0] | 0x6d65;
                                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1290));
                                     c.g[V1][0] = 0x102;
                                     c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[A2][0]);
                                     c.sw(r32(c, S0), c.g[V1][0]);
-                                    c.g[A1][0] = 0x480000;
+                                    c.g[A1][0] = RODATA_PAGE;
                                     c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                                     c.sw(sp(c).wrapping_add(0x10), c.g[A3][0]);
@@ -22957,7 +22965,7 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                 c.g[A1][0] = 0x646f0000;
                                 c.g[A1][0] = c.g[A1][0] | 0x776e;
                                 call_ptr(c, callee::LOBBY_API_GET_RECORD, 0x0025_ae1c)?;
-                                c.g[A1][0] = 0x480000;
+                                c.g[A1][0] = RODATA_PAGE;
                                 c.g[A2][0] = 0x20000000;
                                 c.g[A3][0] = 0u64;
                                 c.g[A0][0] = 0x10;
@@ -22967,7 +22975,7 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                 c.g[S1][0] = c.g[V0][0];
                                 c.g[A0][0] = 0x102;
                                 c.g[V0][0] = 0x646f0000;
-                                c.g[V1][0] = 0x480000;
+                                c.g[V1][0] = RODATA_PAGE;
                                 c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x11b0));
                                 c.g[V0][0] = c.g[V0][0] | 0x776e;
                                 c.sw(r32(c, S1), c.g[A0][0]);
@@ -22977,7 +22985,7 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                 c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                                 call_ptr(c, callee::C_BX_STRING_CTOR_CSTR.addr, 0x0025_ae68)?;
                                 c.g[V1][0] = c.lw(r32(c, S2).wrapping_add(LOBBY_MSG_LIST));
-                                c.g[A1][0] = 0x480000;
+                                c.g[A1][0] = RODATA_PAGE;
                                 c.g[A2][0] = 0x20000000;
                                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                                 c.g[A0][0] = 0xc;
@@ -23015,7 +23023,7 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                 if c.g[V0][0] != 0u64 {
                                     c.cycles += 22;
                                     callee::BUDDY_MAN_DISCONNECT.call(c, 0x0025_afa8)?;
-                                    c.g[A1][0] = 0x480000;
+                                    c.g[A1][0] = RODATA_PAGE;
                                     c.g[A2][0] = 0x20000000;
                                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
                                     c.g[A3][0] = 0u64;
@@ -23023,14 +23031,14 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                     call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_afc0)?;
                                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
                                     c.g[S0][0] = c.g[V0][0];
-                                    c.g[V0][0] = 0x480000;
+                                    c.g[V0][0] = RODATA_PAGE;
                                     c.g[A3][0] = c.lw(r32(c, S2).wrapping_add(LOBBY_MSG_LIST));
                                     c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xd0));
                                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1270));
                                     c.g[V1][0] = 0x103;
                                     c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                                     c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[A2][0]);
-                                    c.g[A1][0] = 0x480000;
+                                    c.g[A1][0] = RODATA_PAGE;
                                     c.sw(r32(c, S0), c.g[V1][0]);
                                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                                     c.sw(sp(c).wrapping_add(0x10), c.g[A3][0]);
@@ -23045,7 +23053,7 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                     break 'b_25b4b4;
                                 }
                                 c.cycles += 11;
-                                c.g[A1][0] = 0x480000;
+                                c.g[A1][0] = RODATA_PAGE;
                                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
                                 c.g[A2][0] = 0x20000000;
                                 c.g[A0][0] = 0x8;
@@ -23054,7 +23062,7 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                 call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_b024)?;
                                 c.g[S0][0] = c.g[V0][0];
                                 c.g[A2][0] = c.lw(r32(c, S2).wrapping_add(LOBBY_MSG_LIST));
-                                c.g[V0][0] = 0x480000;
+                                c.g[V0][0] = RODATA_PAGE;
                                 c.g[V1][0] = 0xda;
                                 lobby_man_update_post_tail(c)?;
                                 break 'b_25b4b4;
@@ -23162,7 +23170,7 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                 }
                                 // Post 0x112 and go to state 1.
                                 c.cycles += 24;
-                                c.g[A1][0] = 0x480000;
+                                c.g[A1][0] = RODATA_PAGE;
                                 c.g[A0][0] = 0x8;
                                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
                                 c.g[A2][0] = 0x20000000;
@@ -23171,10 +23179,10 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                 call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_b19c)?;
                                 c.g[S1][0] = c.g[V0][0];
                                 c.g[V1][0] = c.lw(r32(c, S2).wrapping_add(LOBBY_MSG_LIST));
-                                c.g[V0][0] = 0x480000;
+                                c.g[V0][0] = RODATA_PAGE;
                                 c.sw(r32(c, S1), c.g[S0][0]);
                                 c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
-                                c.g[A1][0] = 0x480000;
+                                c.g[A1][0] = RODATA_PAGE;
                                 c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                                 c.g[A2][0] = 0x20000000;
                                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
@@ -23227,7 +23235,7 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                 }
                                 c.cycles += 2;
                                 let lobby_man_update_notneg18 = c.g[V0][0] == 0u64;
-                                c.g[A1][0] = 0x480000;
+                                c.g[A1][0] = RODATA_PAGE;
                                 if lobby_man_update_notneg18 {
                                     break 'b_25b4b4;
                                 }
@@ -23240,10 +23248,10 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                 call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_b274)?;
                                 c.g[S1][0] = c.g[V0][0];
                                 c.g[V1][0] = c.lw(r32(c, S2).wrapping_add(LOBBY_MSG_LIST));
-                                c.g[V0][0] = 0x480000;
+                                c.g[V0][0] = RODATA_PAGE;
                                 c.sw(r32(c, S1), c.g[S0][0]);
                                 c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
-                                c.g[A1][0] = 0x480000;
+                                c.g[A1][0] = RODATA_PAGE;
                                 c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                                 c.sw(sp(c).wrapping_add(0x10), c.g[V1][0]);
@@ -23291,7 +23299,7 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                 }
                                 c.cycles += 2;
                                 let lobby_man_update_notneg14 = c.g[V0][0] == 0u64;
-                                c.g[A1][0] = 0x480000;
+                                c.g[A1][0] = RODATA_PAGE;
                                 if lobby_man_update_notneg14 {
                                     break 'b_25b4b4;
                                 }
@@ -23303,12 +23311,12 @@ pub fn lobby_man_update(c: &mut Cpu) {
                                 call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_b334)?;
                                 c.g[S0][0] = c.g[V0][0];
                                 c.g[A2][0] = c.lw(r32(c, S2).wrapping_add(LOBBY_MSG_LIST));
-                                c.g[V0][0] = 0x480000;
+                                c.g[V0][0] = RODATA_PAGE;
                                 c.g[V1][0] = 0xe6;
                                 c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
                                 c.sw(r32(c, S0), c.g[V1][0]);
                                 c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
-                                c.g[A1][0] = 0x480000;
+                                c.g[A1][0] = RODATA_PAGE;
                                 c.sw(sp(c).wrapping_add(0x10), c.g[A2][0]);
                                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                                 c.g[A2][0] = 0x20000000;
@@ -23379,7 +23387,7 @@ pub fn lobby_man_update(c: &mut Cpu) {
                             c.cycles += 29;
                             c.g[A0][0] = c.g[S2][0];
                             callee::LOBBY_MAN_DISCONNECT.call(c, 0x0025_b404)?;
-                            c.g[A1][0] = 0x480000;
+                            c.g[A1][0] = RODATA_PAGE;
                             c.g[A2][0] = 0x20000000;
                             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
                             c.g[A3][0] = 0u64;
@@ -23387,14 +23395,14 @@ pub fn lobby_man_update(c: &mut Cpu) {
                             call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_b41c)?;
                             c.g[S0][0] = c.g[V0][0];
                             c.g[A2][0] = 0x74690000;
-                            c.g[V0][0] = 0x480000;
+                            c.g[V0][0] = RODATA_PAGE;
                             c.g[A3][0] = c.lw(r32(c, S2).wrapping_add(LOBBY_MSG_LIST));
                             c.g[A2][0] = c.g[A2][0] | 0x6d65;
                             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1290));
                             c.g[V1][0] = 0x102;
                             c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[A2][0]);
                             c.sw(r32(c, S0), c.g[V1][0]);
-                            c.g[A1][0] = 0x480000;
+                            c.g[A1][0] = RODATA_PAGE;
                             c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                             c.sw(sp(c).wrapping_add(0x10), c.g[A3][0]);
@@ -23656,9 +23664,9 @@ pub fn lobby_man_create_lobby_api(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 84;
         let frame = Frame::open(c, 0x180);
-        c.g[A2][0] = 0x4a0000;
+        c.g[A2][0] = LOBBY_STRINGS_PAGE;
         frame.save(c, S1, 0x160);
-        c.g[A3][0] = 0x480000;
+        c.g[A3][0] = RODATA_PAGE;
         frame.save(c, S2, 0x150);
         c.g[S1][0] = c.g[A0][0];
         c.g[S2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
@@ -23670,23 +23678,23 @@ pub fn lobby_man_create_lobby_api(c: &mut Cpu) {
         c.g[A0][0] = c.g[S2][0];
         c.g[A1][0] = 0x100;
         call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_a984)?;
-        c.g[A1][0] = 0x480000;
-        c.g[A2][0] = 0x4a0000;
-        c.g[A3][0] = 0x480000;
-        c.g[T0][0] = 0x480000;
+        c.g[A1][0] = RODATA_PAGE;
+        c.g[A2][0] = LOBBY_STRINGS_PAGE;
+        c.g[A3][0] = RODATA_PAGE;
+        c.g[T0][0] = RODATA_PAGE;
         c.g[A0][0] = c.g[SP][0];
         c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x828));
         c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2fd0));
         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x818));
         c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x13b0));
         callee::SPRINTF_6.call(c, 0x0025_a9ac)?;
-        c.g[A2][0] = 0x4a0000;
+        c.g[A2][0] = LOBBY_STRINGS_PAGE;
         c.g[A3][0] = c.g[SP][0];
         c.g[A0][0] = c.g[S2][0];
         c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2fd8));
         c.g[A1][0] = 0x100;
         call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_a9c4)?;
-        c.g[S0][0] = 0x4a0000;
+        c.g[S0][0] = LOBBY_STRINGS_PAGE;
         c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2fe0));
         callee::LOBBY_MAN_GET_LANGUAGE.call(c, 0x0025_a9d0)?;
         c.g[A2][0] = c.g[S0][0];
@@ -23694,8 +23702,8 @@ pub fn lobby_man_create_lobby_api(c: &mut Cpu) {
         c.g[A0][0] = c.g[S2][0];
         c.g[A1][0] = 0x100;
         call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_a9e4)?;
-        c.g[A2][0] = 0x4a0000;
-        c.g[A3][0] = 0x480000;
+        c.g[A2][0] = LOBBY_STRINGS_PAGE;
+        c.g[A3][0] = RODATA_PAGE;
         c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1390));
         c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2fe8));
         c.g[A0][0] = c.g[S2][0];
@@ -23757,7 +23765,7 @@ pub fn lobby_man_post_chat_event(c: &mut Cpu) {
             frame.save(c, S2, 0x60);
             c.g[S1][0] = c.g[A2][0];
             c.g[S2][0] = c.g[A0][0];
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             frame.save(c, S3, 0x50);
             c.g[A2][0] = 0x2000_0000;
             frame.save_ra(c, 0x40);
@@ -23772,7 +23780,7 @@ pub fn lobby_man_post_chat_event(c: &mut Cpu) {
             c.g[A1][0] = c.g[S1][0];
             c.g[A0][0] = c.g[S0][0];
             callee::C_BX_STRING_CTOR_CSTR.call(c, 0x0025_ab9c)?;
-            c.g[V1][0] = 0x480000;
+            c.g[V1][0] = RODATA_PAGE;
             c.g[V0][0] = 0xde;
             c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1230));
             c.g[A1][0] = c.g[SP][0];
@@ -23790,7 +23798,7 @@ pub fn lobby_man_post_chat_event(c: &mut Cpu) {
             c.g[A0][0] = c.g[S0][0];
             call_ptr(c, callee::C_BX_STRING_DTOR, 0x0025_abe0)?;
             c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(LOBBY_MSG_LIST));
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
             c.g[A0][0] = 0xc;
             c.sw((c.g[SP][0] as u32).wrapping_add(0x30), c.g[V0][0]);
@@ -23873,7 +23881,7 @@ pub fn lobby_man_connect(c: &mut Cpu) {
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V1][0]);
                     c.g[T0][0] = c.g[S1][0];
                     callee::LOBBY_API_CONNECT.call(c, 0x0025_b744)?;
-                    c.g[A1][0] = 0x480000;
+                    c.g[A1][0] = RODATA_PAGE;
                     break 'connected;
                 }
                 c.cycles += 7;
@@ -23883,7 +23891,7 @@ pub fn lobby_man_connect(c: &mut Cpu) {
                 c.g[A1][0] = 0;
                 callee::SOCKET_LOOKUP.call(c, 0x0025_b760)?;
                 c.sw((c.g[S1][0] as u32).wrapping_add(0x58), c.g[V0][0]);
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
                 break 'connected;
             }
             'posted: {
@@ -23896,10 +23904,10 @@ pub fn lobby_man_connect(c: &mut Cpu) {
                 callee::EA_MEM_ALLOC.call(c, 0x0025_b780)?;
                 c.g[S2][0] = c.g[V0][0];
                 c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(LOBBY_MSG_LIST));
-                c.g[V0][0] = 0x480000;
+                c.g[V0][0] = RODATA_PAGE;
                 c.sw(c.g[S2][0] as u32, c.g[S0][0]);
                 c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
                 c.sw((c.g[S2][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                 c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V1][0]);
@@ -23956,21 +23964,21 @@ pub fn lobby_man_on_connect_reply(c: &mut Cpu) {
                 c.sw(c.g[S2][0] as u32, c.g[S3][0]);
                 c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                 let failed = c.g[V0][0] != 0;
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
                 if failed {
                     break 'have_status;
                 }
                 'ok: {
                     c.cycles += 32;
                     c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(LOBBY_API));
-                    c.g[A2][0] = 0x480000;
+                    c.g[A2][0] = RODATA_PAGE;
                     c.g[A1][0] = 0x7365_0000;
                     c.g[T0][0] = 0;
                     c.g[A1][0] |= 0x6c65;
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x848));
                     c.g[A3][0] = 0;
                     call_ptr(c, callee::LOBBY_API_SEND, 0x0025_b89c)?;
-                    c.g[A1][0] = 0x480000;
+                    c.g[A1][0] = RODATA_PAGE;
                     c.g[A2][0] = 0x2000_0000;
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
                     c.g[A0][0] = 0x8;
@@ -23978,12 +23986,12 @@ pub fn lobby_man_on_connect_reply(c: &mut Cpu) {
                     callee::EA_MEM_ALLOC.call(c, 0x0025_b8b4)?;
                     c.g[S0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(LOBBY_MSG_LIST));
-                    c.g[V0][0] = 0x480000;
+                    c.g[V0][0] = RODATA_PAGE;
                     c.g[V1][0] = 0xc9;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
                     c.sw(c.g[S0][0] as u32, c.g[V1][0]);
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
-                    c.g[A1][0] = 0x480000;
+                    c.g[A1][0] = RODATA_PAGE;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[A2][0]);
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                     c.g[A0][0] = 0xc;
@@ -24017,12 +24025,12 @@ pub fn lobby_man_on_connect_reply(c: &mut Cpu) {
                 callee::EA_MEM_ALLOC.call(c, 0x0025_b934)?;
                 c.g[S0][0] = c.g[V0][0];
                 c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                c.g[V0][0] = 0x480000;
+                c.g[V0][0] = RODATA_PAGE;
                 c.g[A2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(LOBBY_MSG_LIST));
                 c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1290));
                 c.g[V1][0] = 0x102;
                 c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[A0][0]);
-                c.g[A1][0] = 0x480000;
+                c.g[A1][0] = RODATA_PAGE;
                 c.sw(c.g[S0][0] as u32, c.g[V1][0]);
                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                 c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
@@ -24079,7 +24087,7 @@ pub fn lobby_man_create_account(c: &mut Cpu) {
             frame.save(c, S2, 0x280);
             c.g[S1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x200));
             frame.save(c, S3, 0x270);
-            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = LOBBY_STRINGS_PAGE;
             frame.save(c, S4, 0x260);
             c.g[A3][0] = 0x4e;
             frame.save_ra(c, 0x250);
@@ -24098,7 +24106,7 @@ pub fn lobby_man_create_account(c: &mut Cpu) {
             c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x34));
             c.g[S3][0] = sx((c.g[SP][0] as u32).wrapping_add(0x210));
             c.g[V0][0] = 0x4d;
-            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = LOBBY_STRINGS_PAGE;
             c.g[A2][0] = 0x46;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3038));
             if c.g[V1][0] == 0 {
@@ -24109,32 +24117,32 @@ pub fn lobby_man_create_account(c: &mut Cpu) {
             c.g[S2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x220));
             c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2c));
             c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x30));
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x28));
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x870));
             c.g[A0][0] = c.g[S2][0];
             callee::SPRINTF_6.call(c, 0x0025_ba60)?;
             c.g[A3][0] = c.lw(c.g[S0][0] as u32);
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A0][0] = c.g[SP][0];
             c.sb(c.g[SP][0] as u32, 0);
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2f58));
             c.g[A1][0] = 0x200;
             call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_ba7c)?;
             c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A0][0] = c.g[SP][0];
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3040));
             c.g[A1][0] = 0x200;
             call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_ba94)?;
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A0][0] = c.g[SP][0];
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3048));
             c.g[A3][0] = c.g[S1][0];
             c.g[A1][0] = 0x200;
             call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_baac)?;
             c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3050));
             c.g[A0][0] = c.g[SP][0];
             c.g[A1][0] = 0x200;
@@ -24147,7 +24155,7 @@ pub fn lobby_man_create_account(c: &mut Cpu) {
                 break 'sent;
             }
             c.cycles += 4;
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3058));
             c.g[A1][0] = 0x200;
             call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_bae4)?;
@@ -24155,38 +24163,38 @@ pub fn lobby_man_create_account(c: &mut Cpu) {
         }
         'posted: {
             c.cycles += 72;
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A0][0] = c.g[SP][0];
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3060));
             c.g[A3][0] = c.g[S3][0];
             c.g[A1][0] = 0x200;
             c.g[S1][0] = 0xca;
             call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_bb00)?;
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A0][0] = c.g[SP][0];
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3068));
             c.g[A3][0] = c.g[S2][0];
             c.g[A1][0] = 0x200;
             call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_bb18)?;
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A0][0] = c.g[SP][0];
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3070));
             c.g[A1][0] = 0x200;
             c.g[A3][0] = 0;
             callee::TAG_FIELD_SET_NUMBER.call(c, 0x0025_bb30)?;
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A0][0] = c.g[SP][0];
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3078));
             c.g[A1][0] = 0x200;
             c.g[A3][0] = 0x4;
             callee::TAG_FIELD_SET_NUMBER.call(c, 0x0025_bb48)?;
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A0][0] = c.g[SP][0];
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3080));
             c.g[A1][0] = 0x200;
             c.g[A3][0] = 0xd;
             callee::TAG_FIELD_SET_NUMBER.call(c, 0x0025_bb60)?;
-            c.g[S0][0] = 0x4a0000;
+            c.g[S0][0] = LOBBY_STRINGS_PAGE;
             c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2fe0));
             callee::LOBBY_MAN_GET_LANGUAGE.call(c, 0x0025_bb6c)?;
             c.g[A0][0] = c.g[SP][0];
@@ -24204,7 +24212,7 @@ pub fn lobby_man_create_account(c: &mut Cpu) {
             c.g[A0][0] = c.g[S4][0];
             c.g[A2][0] |= 0x6374;
             callee::LOBBY_MAN_SEND_REQUEST.call(c, 0x0025_bba8)?;
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.g[A0][0] = 0x8;
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
             c.g[A2][0] = 0x2000_0000;
@@ -24212,10 +24220,10 @@ pub fn lobby_man_create_account(c: &mut Cpu) {
             callee::EA_MEM_ALLOC.call(c, 0x0025_bbc0)?;
             c.g[S0][0] = c.g[V0][0];
             c.g[V1][0] = c.lw((c.g[S4][0] as u32).wrapping_add(LOBBY_MSG_LIST));
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.sw(c.g[S0][0] as u32, c.g[S1][0]);
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
-            c.g[A1][0] = 0x480000;
+            c.g[A1][0] = RODATA_PAGE;
             c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
             c.sw((c.g[SP][0] as u32).wrapping_add(0x240), c.g[V1][0]);
@@ -24280,7 +24288,7 @@ pub fn lobby_man_on_create_account_reply(c: &mut Cpu) {
                             break 'status;
                         }
                         c.cycles += 20;
-                        c.g[A1][0] = 0x480000;
+                        c.g[A1][0] = RODATA_PAGE;
                         c.g[A2][0] = 0x2000_0000;
                         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
                         c.g[A0][0] = 0x8;
@@ -24288,12 +24296,12 @@ pub fn lobby_man_on_create_account_reply(c: &mut Cpu) {
                         callee::EA_MEM_ALLOC.call(c, 0x0025_bd7c)?;
                         c.g[S0][0] = c.g[V0][0];
                         c.g[A2][0] = c.lw((c.g[S3][0] as u32).wrapping_add(LOBBY_MSG_LIST));
-                        c.g[V0][0] = 0x480000;
+                        c.g[V0][0] = RODATA_PAGE;
                         c.g[V1][0] = 0xcb;
                         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
                         c.sw(c.g[S0][0] as u32, c.g[V1][0]);
                         c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
-                        c.g[A1][0] = 0x480000;
+                        c.g[A1][0] = RODATA_PAGE;
                         c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[A2][0]);
                         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                         c.g[A0][0] = 0xc;
@@ -24311,13 +24319,13 @@ pub fn lobby_man_on_create_account_reply(c: &mut Cpu) {
                         }
                         c.cycles += 34;
                         c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                        c.g[A1][0] = 0x4a0000;
+                        c.g[A1][0] = LOBBY_STRINGS_PAGE;
                         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3098));
                         callee::TAG_FIELD_FIND.call(c, 0x0025_bdd0)?;
                         c.g[A1][0] = 0;
                         c.g[A0][0] = c.g[V0][0];
                         callee::TAG_FIELD_GET_NUMBER.call(c, 0x0025_bddc)?;
-                        c.g[A1][0] = 0x480000;
+                        c.g[A1][0] = RODATA_PAGE;
                         c.g[S0][0] = c.g[V0][0];
                         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
                         c.g[A0][0] = 0x10;
@@ -24326,12 +24334,12 @@ pub fn lobby_man_on_create_account_reply(c: &mut Cpu) {
                         callee::EA_MEM_ALLOC.call(c, 0x0025_bdf8)?;
                         c.g[S1][0] = c.g[V0][0];
                         c.g[T0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(LOBBY_MSG_LIST));
-                        c.g[V0][0] = 0x480000;
+                        c.g[V0][0] = RODATA_PAGE;
                         c.g[V1][0] = 0x102;
                         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x11f0));
                         c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                         c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[S2][0]);
-                        c.g[A1][0] = 0x480000;
+                        c.g[A1][0] = RODATA_PAGE;
                         c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                         c.sw((c.g[S1][0] as u32).wrapping_add(0xc), c.g[S0][0]);
@@ -24354,7 +24362,7 @@ pub fn lobby_man_on_create_account_reply(c: &mut Cpu) {
                         c.cycles += 3;
                         c.g[V0][0] |= 0x706c;
                         let not_dupl = c.g[S2][0] != c.g[V0][0];
-                        c.g[A1][0] = 0x480000;
+                        c.g[A1][0] = RODATA_PAGE;
                         if not_dupl {
                             break 'check_dupl;
                         }
@@ -24362,7 +24370,7 @@ pub fn lobby_man_on_create_account_reply(c: &mut Cpu) {
                         c.g[A0][0] = c.g[S3][0];
                         c.g[A1][0] = c.g[S1][0];
                         callee::LOBBY_MAN_PARSE_NAME_SUGGESTIONS.call(c, 0x0025_be68)?;
-                        c.g[A1][0] = 0x480000;
+                        c.g[A1][0] = RODATA_PAGE;
                         break 'check_dupl;
                     }
                     c.cycles += 20;
@@ -24373,12 +24381,12 @@ pub fn lobby_man_on_create_account_reply(c: &mut Cpu) {
                     callee::EA_MEM_ALLOC.call(c, 0x0025_be80)?;
                     c.g[S0][0] = c.g[V0][0];
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                    c.g[V0][0] = 0x480000;
+                    c.g[V0][0] = RODATA_PAGE;
                     c.g[A2][0] = c.lw((c.g[S3][0] as u32).wrapping_add(LOBBY_MSG_LIST));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1290));
                     c.g[V1][0] = 0x102;
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[A0][0]);
-                    c.g[A1][0] = 0x480000;
+                    c.g[A1][0] = RODATA_PAGE;
                     c.sw(c.g[S0][0] as u32, c.g[V1][0]);
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
@@ -24544,7 +24552,7 @@ pub fn lobby_man_login(c: &mut Cpu) {
         let frame = Frame::open(c, 0x2c0);
         'sent: {
             c.cycles += 53;
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             frame.save(c, S0, 0x2b0);
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2f58));
             frame.save(c, S1, 0x2a0);
@@ -24565,18 +24573,18 @@ pub fn lobby_man_login(c: &mut Cpu) {
             c.sb(c.g[SP][0] as u32, 0);
             call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_c664)?;
             c.g[A3][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4c));
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A0][0] = c.g[SP][0];
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3040));
             c.g[A1][0] = 0x200;
             call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_c67c)?;
-            c.g[A2][0] = 0x4a0000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
             c.g[A0][0] = c.g[SP][0];
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x30c0));
             c.g[A1][0] = 0x200;
             c.g[A3][0] = 0x1;
             callee::TAG_FIELD_SET_NUMBER.call(c, 0x0025_c694)?;
-            c.g[S0][0] = 0x4a0000;
+            c.g[S0][0] = LOBBY_STRINGS_PAGE;
             c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x30c8));
             callee::NET_CONN_MAC.call(c, 0x0025_c6a0)?;
             c.g[A2][0] = c.g[S0][0];
@@ -24584,8 +24592,8 @@ pub fn lobby_man_login(c: &mut Cpu) {
             c.g[A0][0] = c.g[SP][0];
             c.g[A1][0] = 0x200;
             call_ptr(c, callee::TAG_FIELD_SET_STRING, 0x0025_c6b4)?;
-            c.g[A2][0] = 0x4a0000;
-            c.g[A3][0] = 0x480000;
+            c.g[A2][0] = LOBBY_STRINGS_PAGE;
+            c.g[A3][0] = RODATA_PAGE;
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x30d0));
             c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x13a0));
             c.g[A0][0] = c.g[SP][0];
@@ -24630,11 +24638,11 @@ pub fn lobby_man_login(c: &mut Cpu) {
                 c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x304));
                 c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x88));
                 c.g[A2][0] = c.g[V1][0];
-                c.g[S4][0] = 0x4a0000;
-                c.g[S5][0] = 0x4a0000;
+                c.g[S4][0] = LOBBY_STRINGS_PAGE;
+                c.g[S5][0] = LOBBY_STRINGS_PAGE;
                 c.g[V0][0] &= 0x1;
                 c.g[S6][0] = 0x270000;
-                c.g[S7][0] = 0x480000;
+                c.g[S7][0] = RODATA_PAGE;
                 let first_flagged = c.g[V0][0] != 0;
                 c.g[FP][0] = sx((c.g[S3][0] as u32).wrapping_add(0xec));
                 if first_flagged {
@@ -24703,13 +24711,13 @@ pub fn lobby_man_login(c: &mut Cpu) {
             c.g[A3][0] = 0;
             callee::EA_MEM_ALLOC.call(c, 0x0025_c7dc)?;
             c.g[S1][0] = c.g[V0][0];
-            c.g[A0][0] = 0x480000;
+            c.g[A0][0] = RODATA_PAGE;
             c.g[V1][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x4));
             c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x12b0));
             c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
             c.g[A0][0] = 0xc;
             c.sw(c.g[S1][0] as u32, c.g[S0][0]);
-            c.g[V0][0] = 0x480000;
+            c.g[V0][0] = RODATA_PAGE;
             c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4a8));
             c.sw((c.g[SP][0] as u32).wrapping_add(0x210), c.g[V1][0]);
             c.g[A2][0] = 0x2000_0000;
@@ -24854,12 +24862,12 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                             frame.save(c, S3, 0x3f0);
                             c.g[S2][0] = c.g[A0][0];
                             frame.save(c, S4, 0x3e0);
-                            c.g[A1][0] = 0x4a0000;
+                            c.g[A1][0] = LOBBY_STRINGS_PAGE;
                             frame.save_ra(c, 0x3d0);
                             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2f38));
                             c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0xc)).lw(c);
                             call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0025_9b44)?;
-                            c.g[S0][0] = 0x4a0000;
+                            c.g[S0][0] = LOBBY_STRINGS_PAGE;
                             c.g[A1][0] = sx(frame.at(c, 0x40));
                             c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x2f40));
                             c.g[A2][0] = 0x100;
@@ -24867,7 +24875,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                             c.g[A0][0] = c.g[V0][0];
                             call_ptr(c, callee::TAG_FIELD_GET_STRING.addr, 0x0025_9b60)?;
                             c.g[A0][0] = Addr(r32(c, S1).wrapping_add(0xc)).lw(c);
-                            c.g[A1][0] = 0x4a0000;
+                            c.g[A1][0] = LOBBY_STRINGS_PAGE;
                             c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2f48));
                             call_ptr(c, callee::TAG_FIELD_FIND.addr, 0x0025_9b70)?;
                             c.g[S3][0] = sx(frame.at(c, 0x140));
@@ -24944,7 +24952,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                         c.g[T4][0] = sx(frame.at(c, 0x3cc));
                                         Addr(frame.at(c, 0x10)).sw(c, c.g[T0][0]);
                                         Addr(frame.at(c, 0x20)).sw(c, c.g[T1][0]);
-                                        c.g[A1][0] = 0x480000;
+                                        c.g[A1][0] = RODATA_PAGE;
                                         Addr(frame.at(c, 0x28)).sw(c, c.g[T2][0]);
                                         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x620));
                                         Addr(frame.at(c, 0x30)).sw(c, c.g[T3][0]);
@@ -24960,12 +24968,12 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                         Addr(frame.at(c, 0x38)).sw(c, c.g[T4][0]);
                                         Addr(frame.at(c, 0x18)).sw(c, c.g[S1][0]);
                                         call_ptr(c, callee::SSCANF, 0x0025_9c58)?;
-                                        c.g[A1][0] = 0x480000;
+                                        c.g[A1][0] = RODATA_PAGE;
                                         c.g[A0][0] = c.g[S0][0];
                                         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x610));
                                         call_ptr(c, callee::STRCMP, 0x0025_9c68)?;
                                         let cmd_differs = c.g[V0][0] != 0;
-                                        c.g[A1][0] = 0x480000;
+                                        c.g[A1][0] = RODATA_PAGE;
                                         if cmd_differs {
                                             break 'b_259de0;
                                         }
@@ -24980,7 +24988,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                             c.g[A1][0] = c.g[V0][0];
                                             call_ptr(c, callee::STRCMP, 0x0025_9c84)?;
                                             let version_equal = c.g[V0][0] == 0;
-                                            c.g[A2][0] = 0x480000;
+                                            c.g[A2][0] = RODATA_PAGE;
                                             if version_equal {
                                                 break 'b_259c98;
                                             }
@@ -25000,7 +25008,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                             c.g[A1][0] = sx(frame.at(c, 0x40));
                                             call_ptr(c, callee::BUDDY_MAN_IS_BLOCKED, 0x0025_9ce4)?;
                                             let not_blocked = c.g[V0][0] == 0;
-                                            c.g[A2][0] = 0x4a0000;
+                                            c.g[A2][0] = LOBBY_STRINGS_PAGE;
                                             if not_blocked {
                                                 break 'b_259cf8;
                                             }
@@ -25087,7 +25095,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x670));
                                     call_ptr(c, callee::STRCMP, 0x0025_9dec)?;
                                     if c.g[V0][0] != 0 {
-                                        c.g[A1][0] = 0x4a0000;
+                                        c.g[A1][0] = LOBBY_STRINGS_PAGE;
                                         break 'b_259e64;
                                     }
                                     'b_259e30: {
@@ -25122,7 +25130,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                     'b_259e4c: {
                                         c.cycles += 2;
                                         let not_state17 = c.g[V1][0] != c.g[V0][0];
-                                        c.g[A2][0] = 0x480000;
+                                        c.g[A2][0] = RODATA_PAGE;
                                         if not_state17 {
                                             break 'b_259e4c;
                                         }
@@ -25156,7 +25164,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2ef8));
                                     call_ptr(c, callee::STRCMP, 0x0025_9e70)?;
                                     let differs = c.g[V0][0] != 0;
-                                    c.g[A1][0] = 0x480000;
+                                    c.g[A1][0] = RODATA_PAGE;
                                     if differs {
                                         break 'b_259eb8;
                                     }
@@ -25165,7 +25173,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                         c.g[V1][0] = Addr(r32(c, S2)).lw(c);
                                         c.g[V0][0] = 0x16;
                                         let not_state16 = c.g[V1][0] != c.g[V0][0];
-                                        c.g[A1][0] = 0x480000;
+                                        c.g[A1][0] = RODATA_PAGE;
                                         if not_state16 {
                                             break 'b_259e90;
                                         }
@@ -25181,7 +25189,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                     call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_9ea4)?;
                                     c.g[S0][0] = c.g[V0][0];
                                     c.g[A2][0] = Addr(r32(c, S2).wrapping_add(0xf0)).lw(c);
-                                    c.g[V0][0] = 0x480000;
+                                    c.g[V0][0] = RODATA_PAGE;
                                     c.g[V1][0] = 0xed;
                                     break 'b_25a094;
                                 }
@@ -25191,7 +25199,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x660));
                                     call_ptr(c, callee::STRCMP, 0x0025_9ec4)?;
                                     let differs = c.g[V0][0] != 0;
-                                    c.g[A1][0] = 0x4a0000;
+                                    c.g[A1][0] = LOBBY_STRINGS_PAGE;
                                     if differs {
                                         break 'b_259ff0;
                                     }
@@ -25278,14 +25286,14 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                         break 'b_25a1b0;
                                     }
                                     c.cycles += 10;
-                                    c.g[A1][0] = 0x480000;
+                                    c.g[A1][0] = RODATA_PAGE;
                                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
                                     c.g[A0][0] = 0x8;
                                     c.g[A3][0] = 0;
                                     call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_9fdc)?;
                                     c.g[S0][0] = c.g[V0][0];
                                     c.g[A2][0] = Addr(r32(c, S2).wrapping_add(0xf0)).lw(c);
-                                    c.g[V0][0] = 0x480000;
+                                    c.g[V0][0] = RODATA_PAGE;
                                     c.g[V1][0] = 0xee;
                                     break 'b_25a094;
                                 }
@@ -25295,7 +25303,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2f00));
                                     call_ptr(c, callee::STRCMP, 0x0025_9ffc)?;
                                     let differs = c.g[V0][0] != 0;
-                                    c.g[A1][0] = 0x480000;
+                                    c.g[A1][0] = RODATA_PAGE;
                                     if differs {
                                         break 'b_25a044;
                                     }
@@ -25304,7 +25312,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                         c.g[V1][0] = Addr(r32(c, S2)).lw(c);
                                         c.g[V0][0] = 0x16;
                                         let not_state16 = c.g[V1][0] != c.g[V0][0];
-                                        c.g[A1][0] = 0x480000;
+                                        c.g[A1][0] = RODATA_PAGE;
                                         if not_state16 {
                                             break 'b_25a01c;
                                         }
@@ -25320,7 +25328,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                     call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_a030)?;
                                     c.g[S0][0] = c.g[V0][0];
                                     c.g[A2][0] = Addr(r32(c, S2).wrapping_add(0xf0)).lw(c);
-                                    c.g[V0][0] = 0x480000;
+                                    c.g[V0][0] = RODATA_PAGE;
                                     c.g[V1][0] = 0xf0;
                                     break 'b_25a094;
                                 }
@@ -25338,7 +25346,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                     c.g[V1][0] = Addr(r32(c, S2)).lw(c);
                                     c.g[V0][0] = 0x16;
                                     let not_state16 = c.g[V1][0] != c.g[V0][0];
-                                    c.g[A1][0] = 0x480000;
+                                    c.g[A1][0] = RODATA_PAGE;
                                     if not_state16 {
                                         break 'b_25a070;
                                     }
@@ -25354,7 +25362,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                 call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0025_a084)?;
                                 c.g[S0][0] = c.g[V0][0];
                                 c.g[A2][0] = Addr(r32(c, S2).wrapping_add(0xf0)).lw(c);
-                                c.g[V0][0] = 0x480000;
+                                c.g[V0][0] = RODATA_PAGE;
                                 c.g[V1][0] = 0xf2;
                             }
                             // Post the event object in s0 (kind in v1,
@@ -25364,7 +25372,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                                 c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
                                 Addr(r32(c, S0)).sw(c, c.g[V1][0]);
                                 Addr(r32(c, S0).wrapping_add(4)).sw(c, c.g[V0][0]);
-                                c.g[A1][0] = 0x480000;
+                                c.g[A1][0] = RODATA_PAGE;
                                 Addr(frame.at(c, 0x390)).sw(c, c.g[A2][0]);
                                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
                                 c.g[A0][0] = 0xc;
@@ -25414,7 +25422,7 @@ pub fn lobby_man_on_message(c: &mut Cpu) {
                     // "cast": post "*broadcast* " + the text as chat.
                     c.cycles += 20;
                     c.g[S0][0] = sx(frame.at(c, 0x250));
-                    c.g[A1][0] = 0x480000;
+                    c.g[A1][0] = RODATA_PAGE;
                     c.g[S1][0] = sx(frame.at(c, 0x240));
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x808));
                     c.g[A0][0] = c.g[S0][0];
@@ -26363,9 +26371,9 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::be::beintplayer::tests::r_u32;
     pub(crate) use crate::game::dirtysock::tags::tests::put_str;
-    pub(crate) use crate::game::main::gamestate::tests::base_3 as base_2;
-    pub(crate) use crate::game::main::gamestate::tests::SEEDS_5 as SEEDS;
-    pub(crate) use crate::game::movie::movieplayer::tests::base_3 as base;
+    pub(crate) use crate::game::main::gamestate::tests::base_3 as gamestate_base;
+    pub(crate) use crate::game::main::gamestate::tests::SEEDS_5 as GAMESTATE_SEEDS;
+    pub(crate) use crate::game::movie::movieplayer::tests::base_3 as movie_base;
 
     #[test]
     fn buddy_man_clear_login_matches() {
@@ -26402,7 +26410,7 @@ pub(crate) mod tests {
             tag_field_get_string_unescaped,
             24,
             &|c, seed| {
-                let _ = base(c, seed, 0x2593_10, 2);
+                let _ = movie_base(c, seed, 0x2593_10, 2);
                 let tag = DATA + 0x1000;
                 let dst = DATA + 0x2000;
                 let text: &[u8] = match seed % 4 {
@@ -26426,9 +26434,9 @@ pub(crate) mod tests {
         check(
             ee::s06::f_00259288__generated,
             tagfieldsetstringescaped,
-            SEEDS,
+            GAMESTATE_SEEDS,
             &|c, seed| {
-                base_2(c, seed, 0x59288, 0);
+                gamestate_base(c, seed, 0x59288, 0);
                 let s = DATA + 0x100;
                 let text = DATA + 0x800;
                 c.g[A0][0] = sx(s);
@@ -26456,28 +26464,27 @@ pub(crate) mod tests {
     use crate::difftest::GAME_GP;
     use crate::difftest::RA as SENTINEL_RA;
     use crate::difftest::RA as TEST_RA;
-    pub(crate) use crate::game::be::bedbprofile::tests::strict as strict_2;
+    pub(crate) use crate::game::be::bedbprofile::tests::strict as profile_strict;
     pub(crate) use crate::game::be::beintstat::tests::allocator;
     pub(crate) use crate::game::bx::bxstring::tests::heap;
-    pub(crate) use crate::game::bx::bxstring::tests::pool as pool_4;
-    pub(crate) use crate::game::bx::bxstring::tests::put_str_2 as put_str_m2;
-    pub(crate) use crate::game::bx::bxstringctor::tests::alloc_base as alloc_base_2;
+    pub(crate) use crate::game::bx::bxstring::tests::pool as bxstring_pool;
+    pub(crate) use crate::game::bx::bxstring::tests::put_str_2 as bxstring_put_str;
+    pub(crate) use crate::game::bx::bxstringctor::tests::alloc_base as ctor_alloc_base;
     pub(crate) use crate::game::bx::bxstringctor::tests::alloc_mutex;
     pub(crate) use crate::game::bx::bxstringctor::tests::be_library;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::world_2 as world_5;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::world_2 as trigger_set_world;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_setup;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base_10;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base_11;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_13 as base_12;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_14;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_16 as base_15;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_16;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as base_2_m2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as async_heap_base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as async_pool_base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_13 as async_iface_base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as async_quick_play_base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_16 as async_world_base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as async_rider_world_base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as async_alloc_base;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_6 as base_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_4 as be_library_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_7 as be_library_5;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_6 as async_ui_phase_base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_4 as async_be_library;
+    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as async_be_library_far;
     pub(crate) use crate::game::fe::feasyncfile::tests::call_machine;
     pub(crate) use crate::game::fe::feasyncfile::tests::check_all;
     pub(crate) use crate::game::fe::feasyncfile::tests::diff;
@@ -26485,16 +26492,16 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::fake_small;
     pub(crate) use crate::game::fe::feasyncfile::tests::fe_base;
     pub(crate) use crate::game::fe::feasyncfile::tests::game_globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_4 as globals_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_5 as heap_init_7;
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_4 as async_globals;
+    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_5 as async_heap_init;
     pub(crate) use crate::game::fe::feasyncfile::tests::pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_6 as pool_allocator_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::put_str_6 as put_str_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::slot_5 as slot_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::slot_8 as slot_5;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_6 as async_pool_allocator;
+    pub(crate) use crate::game::fe::feasyncfile::tests::put_str_6 as async_put_bytes;
+    pub(crate) use crate::game::fe::feasyncfile::tests::slot_5 as async_vslot_delta;
+    pub(crate) use crate::game::fe::feasyncfile::tests::slot_8 as async_vslot;
     pub(crate) use crate::game::fe::feasyncfile::tests::strict;
     pub(crate) use crate::game::fe::feasyncfile::tests::string_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::string_4 as string_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::string_4 as async_put_cstr;
     pub(crate) use crate::game::fe::feasyncfile::tests::w32;
     pub(crate) use crate::game::fe::feasyncfile::tests::w_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::w_3;
@@ -26506,46 +26513,44 @@ pub(crate) mod tests {
     pub(crate) use crate::game::fe::feasyncfile::tests::BE;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_3 as OBJ2_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_3 as RANK_ENTRY_OUT;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as QUICK_PLAY_ARG;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ3;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ4;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SCRATCH as SCRATCH_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_11 as SEEDS_12;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_12 as SEEDS_13;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_13 as SEEDS_14;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_14 as SEEDS_15;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SCRATCH as ASYNC_SCRATCH;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_11 as CHAL_SEEDS;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_12 as ROSTER_FIND_SEEDS;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_13 as DESTROY_SEEDS;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_14 as PEER_TABLE_SEEDS;
     pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_16;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as SEEDS_10;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as E5_CLONE_SEEDS;
     pub(crate) use crate::game::fe::fepopupmisc::tests::setup;
-    pub(crate) use crate::game::fe::festaterewards::tests::base_4 as base_7;
-    pub(crate) use crate::game::fe::festaterewards::tests::base_9 as base_17;
-    pub(crate) use crate::game::fe::festaterewards::tests::strict as strict_3;
+    pub(crate) use crate::game::fe::festaterewards::tests::base_4 as rewards_heap_base;
+    pub(crate) use crate::game::fe::festaterewards::tests::base_9 as rewards_queue_base;
+    pub(crate) use crate::game::fe::festaterewards::tests::strict as rewards_strict;
     pub(crate) use crate::game::fe::festatetrophyroom::tests::belib;
     pub(crate) use crate::game::fe::festatetrophyroom::tests::w;
-    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS as SEEDS_3;
-    pub(crate) use crate::game::main::gamemode::tests::SEEDS as SEEDS_2;
-    pub(crate) use crate::game::main::gamestate::tests::base_3 as base_5;
-    pub(crate) use crate::game::main::gamestate::tests::SEEDS_5 as SEEDS_11;
+    pub(crate) use crate::game::fe::festatetrophyroom::tests::SEEDS as DO_UPDATE_SEEDS;
+    pub(crate) use crate::game::main::gamemode::tests::SEEDS as GAMEMODE_SEEDS;
     pub(crate) use crate::game::movie::movieplayer::tests::globals;
-    pub(crate) use crate::game::object::railmodifier::tests::rng as rng_3;
-    pub(crate) use crate::game::object::railmodifier::tests::SEEDS_7 as SEEDS_8;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::base as base_6;
+    pub(crate) use crate::game::object::railmodifier::tests::rng as rail_rng;
+    pub(crate) use crate::game::object::railmodifier::tests::SEEDS_7 as CHANNEL_SEEDS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::base as script_base;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::belib_2;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::globals_4 as globals_5;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::globals_4 as script_globals;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::gp_at;
     pub(crate) use crate::game::scripter::ssxscriptengine::tests::heap_setup;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_10 as SEEDS_9;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_4 as SEEDS_5;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_10 as FEW_SEEDS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_4 as SCRIPT_SEEDS;
     pub(crate) use crate::game::sound::bankmanager::tests::rng;
-    pub(crate) use crate::game::sound::bankmanager::tests::SEEDS as SEEDS_m2;
+    pub(crate) use crate::game::sound::bankmanager::tests::SEEDS as DO_FINISH_SEEDS;
     pub(crate) use crate::game::sound::bankmonitor::tests::SEEDS_4;
-    pub(crate) use crate::game::wscript::wscriptman::tests::base_6 as base_9;
-    pub(crate) use crate::game::wscript::wscriptman::tests::clear_5 as clear_2;
+    pub(crate) use crate::game::wscript::wscriptman::tests::base_6 as wscript_base;
+    pub(crate) use crate::game::wscript::wscriptman::tests::clear_5 as wscript_clear;
     use ssx3_ee as ee;
     use ssx3_ee_rt::funcs::GuestFn;
 
@@ -26726,7 +26731,7 @@ pub(crate) mod tests {
         check(
             ee::s07::f_00265f00__generated,
             c_shared_login_man_do_finish,
-            SEEDS_m2,
+            DO_FINISH_SEEDS,
             &|c, seed| {
                 let mut r = rng(0x0026_5f00, seed);
                 scramble(c, &mut r);
@@ -27522,7 +27527,7 @@ pub(crate) mod tests {
         check(
             ssx3_ee::s07::f_00262400__generated,
             buddy_man_is_temp_at,
-            SEEDS_2,
+            GAMEMODE_SEEDS,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x262400, 0);
                 let buddy = DATA + 0x100;
@@ -27548,7 +27553,7 @@ pub(crate) mod tests {
         check(
             ssx3_ee::s07::f_00265ec8__generated,
             shared_login_do_delete,
-            SEEDS_2,
+            GAMEMODE_SEEDS,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x265ec8, 0);
                 let self_ = DATA + 0x100;
@@ -27730,7 +27735,7 @@ pub(crate) mod tests {
         check(
             ssx3_ee::s07::f_00265e40__generated,
             shared_login_man_do_update,
-            SEEDS_3,
+            DO_UPDATE_SEEDS,
             &|c, seed| {
                 machine(c, seed, 0x265e_40, 1);
                 belib(c);
@@ -28089,7 +28094,7 @@ pub(crate) mod tests {
         check(
             ee::s06::f_00261008__generated,
             buddy_man_destroy,
-            SEEDS_5,
+            SCRIPT_SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x2610_08, 2);
                 let buddy = DATA + 0x100;
@@ -28105,7 +28110,7 @@ pub(crate) mod tests {
         check(
             ee::s06::f_00261490__generated,
             buddy_man_update,
-            SEEDS_5,
+            SCRIPT_SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x2614_90, 2);
                 let this = DATA + 0x100;
@@ -28122,7 +28127,7 @@ pub(crate) mod tests {
         check(
             ee::s07::f_00265f18__generated,
             c_shared_login_man_set_account_name,
-            SEEDS_5,
+            SCRIPT_SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x265f_18, 0);
                 clear(c, 0x0053_6740, 0x40);
@@ -28142,7 +28147,7 @@ pub(crate) mod tests {
         check(
             ee::s07::f_00265f68__generated,
             c_shared_login_man_set_account_password,
-            SEEDS_5,
+            SCRIPT_SEEDS,
             &|c, seed| {
                 let _ = machine(c, seed, 0x265f_68, 0);
                 clear(c, 0x0053_6740, 0x40);
@@ -28678,9 +28683,9 @@ pub(crate) mod tests {
         check(
             ee::s07::f_00266348__generated,
             shared_login_man_mc_cb_state_0f,
-            SEEDS_8,
+            CHANNEL_SEEDS,
             &|c, seed| {
-                let mut r = rng_3(0x0026_6348, seed);
+                let mut r = rail_rng(0x0026_6348, seed);
                 scramble(c, &mut r);
                 c.g[GP][0] = GAME_GP as u64;
                 let v = r.next_u32();
@@ -28695,9 +28700,9 @@ pub(crate) mod tests {
         check(
             ee::s07::f_00267dd8__generated,
             dsock_channel_base_v05,
-            SEEDS_8,
+            CHANNEL_SEEDS,
             &|c, seed| {
-                let mut r = rng_3(0x0026_7dd8, seed);
+                let mut r = rail_rng(0x0026_7dd8, seed);
                 scramble(c, &mut r);
                 c.g[GP][0] = GAME_GP as u64;
                 let bits = if seed % 2 == 0 {
@@ -28716,9 +28721,9 @@ pub(crate) mod tests {
         check(
             ee::s07::f_00267e00__generated,
             dsock_channel_is_connected,
-            SEEDS_8,
+            CHANNEL_SEEDS,
             &|c, seed| {
-                let mut r = rng_3(0x0026_7e00, seed);
+                let mut r = rail_rng(0x0026_7e00, seed);
                 scramble(c, &mut r);
                 c.g[A0][0] = sx(DATA);
                 c.bus
@@ -28762,7 +28767,7 @@ pub(crate) mod tests {
             lobby_man_release_snapshot_lists,
             40,
             &|c, seed| {
-                let _ = base_2_m2(c, seed, 0x25a8_50);
+                let _ = async_alloc_base(c, seed, 0x25a8_50);
                 // `LobbyApi_DestroyList` destroys and frees each non-null list.
                 heap_init_6(c);
                 let s = DATA + 0x100;
@@ -28788,7 +28793,7 @@ pub(crate) mod tests {
             lobby_man_send_chat,
             32,
             &|c, seed| {
-                let mut r = base_2_m2(c, seed, 0x25aa_e0);
+                let mut r = async_alloc_base(c, seed, 0x25aa_e0);
                 let s = DATA + 0x100;
                 clear(c, s, 0x80);
                 w_2(c, s, if seed % 3 == 0 { 0 } else { 1 });
@@ -28807,7 +28812,7 @@ pub(crate) mod tests {
             chat_event_dtor,
             48,
             &|c, seed| {
-                let _ = base_2_m2(c, seed, 0x2680_48);
+                let _ = async_alloc_base(c, seed, 0x2680_48);
                 let s = DATA + 0x100;
                 clear(c, s, 0x40);
                 // Both embedded strings are the shared static empty string, so the
@@ -28829,7 +28834,7 @@ pub(crate) mod tests {
             net_event102_lock_dtor,
             48,
             &|c, seed| {
-                let _ = base_2_m2(c, seed, 0x2682_a8);
+                let _ = async_alloc_base(c, seed, 0x2682_a8);
                 let s = DATA + 0x100;
                 clear(c, s, 0x40);
                 w_2(c, s, seed as u32);
@@ -28848,7 +28853,7 @@ pub(crate) mod tests {
             net_event_e3_dtor,
             48,
             &|c, seed| {
-                let _ = base_2_m2(c, seed, 0x2684_60);
+                let _ = async_alloc_base(c, seed, 0x2684_60);
                 let s = DATA + 0x100;
                 clear(c, s, 0x40);
                 w_2(c, s, seed as u32);
@@ -28867,7 +28872,7 @@ pub(crate) mod tests {
             net_event_e2_clone,
             40,
             &|c, seed| {
-                let mut r = base_2_m2(c, seed, 0x2681_b0);
+                let mut r = async_alloc_base(c, seed, 0x2681_b0);
                 let s = DATA + 0x100;
                 clear(c, s, 0x40);
                 // A null source string: the `cBXString` ctor then skips the
@@ -28887,7 +28892,7 @@ pub(crate) mod tests {
             8,
             &|c, seed| {
                 machine(c, seed, 0x0025_cfe0, 2);
-                be_library_3(c);
+                async_be_library(c);
                 world(c);
                 pool(c);
                 c.g[A0][0] = DATA as u64;
@@ -28906,7 +28911,7 @@ pub(crate) mod tests {
             8,
             &|c, seed| {
                 machine(c, seed, 0x0026_67e8, 2);
-                be_library_3(c);
+                async_be_library(c);
                 world(c);
                 pool(c);
                 c.g[A0][0] = DATA as u64;
@@ -28922,7 +28927,7 @@ pub(crate) mod tests {
             8,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x0026_8688, 1);
-                be_library_3(c);
+                async_be_library(c);
                 world(c);
                 pool(c);
                 c.g[A0][0] = DATA as u64;
@@ -28940,7 +28945,7 @@ pub(crate) mod tests {
             30,
             &|c, seed| {
                 fakes::machine(c, seed, 0x268240, 0);
-                globals_2(c);
+                async_globals(c);
                 c.g[A0][0] = OBJ as u64;
                 w_3(c, OBJ + 0xc, if seed % 3 == 0 { 0 } else { 0x102 });
             },
@@ -28955,8 +28960,8 @@ pub(crate) mod tests {
             30,
             &|c, seed| {
                 fakes::machine(c, seed, 0x264030, 0);
-                globals_2(c);
-                pool_allocator_3(c);
+                async_globals(c);
+                async_pool_allocator(c);
                 c.g[A0][0] = OBJ as u64;
                 c.g[A1][0] = if seed % 2 == 0 { 0 } else { OBJ2 as u64 };
                 c.g[A2][0] = if seed % 3 == 0 { 0 } else { OBJ3 as u64 };
@@ -28972,7 +28977,7 @@ pub(crate) mod tests {
             20,
             &|c, seed| {
                 fakes::machine(c, seed, 0x266170, 0);
-                globals_2(c);
+                async_globals(c);
                 c.g[A0][0] = OBJ as u64;
                 c.g[A1][0] = OBJ2 as u64;
                 c.g[A2][0] = (seed & 7) as u64;
@@ -28991,7 +28996,7 @@ pub(crate) mod tests {
             20,
             &|c, seed| {
                 fakes::machine(c, seed, 0x2661d8, 0);
-                globals_2(c);
+                async_globals(c);
                 c.g[A0][0] = OBJ as u64;
                 c.g[A1][0] = OBJ2 as u64;
                 c.g[A2][0] = (seed & 7) as u64;
@@ -29035,8 +29040,8 @@ pub(crate) mod tests {
             10,
             &|c, seed| {
                 fakes::machine(c, seed, 0x265700, 0);
-                globals_2(c);
-                pool_allocator_3(c);
+                async_globals(c);
+                async_pool_allocator(c);
                 c.g[A0][0] = OBJ as u64;
                 w_3(
                     c,
@@ -29203,7 +29208,7 @@ pub(crate) mod tests {
         check(
             ee::s07::f_00262a38__generated,
             buddy_man_has_message_from,
-            SEEDS_9,
+            FEW_SEEDS,
             &|c, seed| {
                 machine(c, seed, 0x26_2a38, 3);
                 c.g[A0][0] = (DATA + 0x2000) as u64;
@@ -29230,7 +29235,7 @@ pub(crate) mod tests {
         check(
             ee::s07::f_002640c0__generated,
             c_setup_man_ctor,
-            SEEDS_9,
+            FEW_SEEDS,
             &|c, seed| {
                 machine(c, seed, 0x26_40c0, 3);
                 c.g[A0][0] = (DATA + 0x2000) as u64;
@@ -29247,7 +29252,7 @@ pub(crate) mod tests {
         check(
             ee::s07::f_00265688__generated,
             c_setup_man_send_brag_msg10,
-            SEEDS_9,
+            FEW_SEEDS,
             &|c, seed| {
                 machine(c, seed, 0x26_5688, 2);
                 belib_2(c);
@@ -29266,12 +29271,12 @@ pub(crate) mod tests {
         check(
             ee::s07::f_002685e0__generated,
             net_event_e5_clone,
-            SEEDS_10,
+            E5_CLONE_SEEDS,
             &|c, seed| {
                 machine(c, seed, 0x2685e0, 3);
-                be_library_4(c);
+                async_be_library_far(c);
                 world_3(c);
-                heap_init_7(c);
+                async_heap_init(c);
                 let src = DATA;
                 c.g[A0][0] = src as u64;
                 let s = DATA + 0x400;
@@ -29289,7 +29294,7 @@ pub(crate) mod tests {
             c_shared_login_man_mc_open,
             50,
             &|c, seed| {
-                let _ = base_4(c, seed, 0x2660, 3);
+                let _ = async_ui_phase_base(c, seed, 0x2660, 3);
                 w(
                     c,
                     GAME_GP.wrapping_add(0x2e8),
@@ -29311,9 +29316,9 @@ pub(crate) mod tests {
         check(
             ee::s06::f_00260f80__generated,
             buddyman_create,
-            SEEDS_11,
+            GAMESTATE_SEEDS,
             &|c, seed| {
-                base_5(c, seed, 0x60f80, 0);
+                gamestate_base(c, seed, 0x60f80, 0);
                 c.bus.write32(GAME_GP + 0xda0, seed);
             },
         );
@@ -29327,15 +29332,15 @@ pub(crate) mod tests {
         check(
             ssx3_ee::s06::f_0025fa48__generated,
             lobby_man_chal_request_host,
-            SEEDS_12,
+            CHAL_SEEDS,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x25fa48, 3);
-                be_library_5(c);
+                async_be_library_far(c);
                 world_4(c);
                 let this = DATA + 0x100;
                 c.g[A0][0] = this as u64;
                 let name = DATA + 0x200;
-                string_3(c, name, "rider");
+                async_put_cstr(c, name, "rider");
                 c.g[A1][0] = name as u64;
                 let _ = r.next_u32();
             },
@@ -29347,15 +29352,15 @@ pub(crate) mod tests {
         check(
             ssx3_ee::s06::f_0025fad0__generated,
             lobby_man_chal_request_join,
-            SEEDS_12,
+            CHAL_SEEDS,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x25fad0, 3);
-                be_library_5(c);
+                async_be_library_far(c);
                 world_4(c);
                 let this = DATA + 0x100;
                 c.g[A0][0] = this as u64;
                 let name = DATA + 0x200;
-                string_3(c, name, "rider");
+                async_put_cstr(c, name, "rider");
                 c.g[A1][0] = name as u64;
                 let _ = r.next_u32();
             },
@@ -29367,10 +29372,10 @@ pub(crate) mod tests {
         check(
             ssx3_ee::s07::f_002635a8__generated,
             buddy_man_delete_message_at,
-            SEEDS_12,
+            CHAL_SEEDS,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x2635a8, 4);
-                be_library_5(c);
+                async_be_library_far(c);
                 world_4(c);
                 let man = DATA + 0x100;
                 let ring = DATA + 0x200;
@@ -29385,8 +29390,8 @@ pub(crate) mod tests {
                     w(c, ring + 4 * i, msg);
                     let vt = DATA + 0x800 + 0x40 * i;
                     w(c, msg + 0xc, vt);
-                    slot_3(c, vt, 8, 0, FAKE + 0x10 * i);
-                    slot_3(c, vt, 0xc, 0, FAKE + 0x10 * i + 4);
+                    async_vslot_delta(c, vt, 8, 0, FAKE + 0x10 * i);
+                    async_vslot_delta(c, vt, 0xc, 0, FAKE + 0x10 * i + 4);
                 }
             },
         );
@@ -29472,9 +29477,9 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA);
                 c.g[A1][0] = (seed % 16) as u64;
                 let _ = iface;
-                // `gp-0x848` -> a world_5 whose `+0x78` is the interface slot.
+                // `gp-0x848` -> a trigger_set_world whose `+0x78` is the interface slot.
                 let w = DATA + 0x5000;
-                world_5(c, w);
+                trigger_set_world(c, w);
                 c.bus.write32(w + 0x78, DATA + 0x5100);
             },
         );
@@ -29487,9 +29492,9 @@ pub(crate) mod tests {
             net_event102_lock_clone,
             200,
             &|c, seed| {
-                let mut r = base_6(c, seed, 0x26_8308);
-                globals_5(c);
-                pool_4(c);
+                let mut r = script_base(c, seed, 0x26_8308);
+                script_globals(c);
+                bxstring_pool(c);
                 w(c, DATA, if seed % 2 == 0 { 0x102 } else { r.next_u32() });
                 w(c, DATA + 0x4, [0, 0x4811d0][seed as usize % 2]);
                 w(c, DATA + 0x8, 0x6c6f636b);
@@ -29519,7 +29524,7 @@ pub(crate) mod tests {
         check(
             ee::s07::f_00262468__generated,
             buddy_man_find_roster_entry,
-            SEEDS_13,
+            ROSTER_FIND_SEEDS,
             &|c, seed| {
                 machine(c, seed, 0x2624, 0);
                 env(c);
@@ -29553,7 +29558,7 @@ pub(crate) mod tests {
             buddy_man_is_same_product_at,
             40,
             &|c, seed| {
-                let mut r = base_7(c, seed, 0x2633f8, 3);
+                let mut r = rewards_heap_base(c, seed, 0x2633f8, 3);
                 let obj = DATA + 0x1000;
                 c.g[A0][0] = obj as u64;
                 c.g[A1][0] = match seed % 3 {
@@ -29573,7 +29578,7 @@ pub(crate) mod tests {
         check(
             ee::s06::f_0025a8b0__generated,
             lobby_man_destroy_lists,
-            SEEDS_14,
+            DESTROY_SEEDS,
             &alloc_base_setup(|c, seed, _r| {
                 let this = DATA;
                 w(c, this + 0x54, DATA + 0x800);
@@ -29597,7 +29602,7 @@ pub(crate) mod tests {
                 } else {
                     let pending = DATA + 0x1400;
                     w(c, this + 0x58, pending);
-                    slot_5(c, pending, 0xc, FAKE);
+                    async_vslot(c, pending, 0xc, FAKE);
                 }
                 c.g[A0][0] = this as u64;
             }),
@@ -29609,7 +29614,7 @@ pub(crate) mod tests {
         check(
             ee::s06::f_00261530__generated,
             buddy_man_destroy_api,
-            SEEDS_14,
+            DESTROY_SEEDS,
             &alloc_base_setup(|c, seed, r| {
                 let this = DATA;
                 let api = DATA + 0x800;
@@ -29670,16 +29675,16 @@ pub(crate) mod tests {
             lobby_man_send_private_message,
             8,
             &|c, seed| {
-                let _ = base_9(c, seed, 0x0025_fb80);
+                let _ = wscript_base(c, seed, 0x0025_fb80);
                 elf_image(c);
                 heap(c);
                 pool_7(c);
                 let lobby = DATA + 0x100;
                 let service = DATA + 0x4000;
-                clear_2(c, lobby, 0x60);
-                clear_2(c, service, 0x600);
-                put_str_m2(c, DATA + 0x3000, "player_one");
-                put_str_m2(c, DATA + 0x3100, "hello there");
+                wscript_clear(c, lobby, 0x60);
+                wscript_clear(c, service, 0x600);
+                bxstring_put_str(c, DATA + 0x3000, "player_one");
+                bxstring_put_str(c, DATA + 0x3100, "hello there");
                 w(c, lobby + 0x54, service);
                 w(c, service + 0xc, 0x6964_6c65); // "idle"
                 c.g[A0][0] = sx(lobby);
@@ -29703,7 +29708,7 @@ pub(crate) mod tests {
             buddy_man_find_challenger_index,
             30,
             &|c, seed| {
-                let _r = base_10(c, seed, 0x262e20, 2);
+                let _r = async_heap_base(c, seed, 0x262e20, 2);
                 let this = DATA + 0x1000;
                 let name = DATA + 0x5000;
                 c.g[A0][0] = this as u64;
@@ -29737,7 +29742,7 @@ pub(crate) mod tests {
             c_voip_man_start,
             10,
             &|c, seed| {
-                let _r = base_10(c, seed, 0x266d58, 2);
+                let _r = async_heap_base(c, seed, 0x266d58, 2);
                 let this = DATA + 0x1000;
                 c.g[A0][0] = this as u64;
                 c.g[A1][0] = (DATA + 0x2000) as u64;
@@ -29773,11 +29778,11 @@ pub(crate) mod tests {
             lobby_man_get_rank_list_entry,
             6,
             &|c, seed| {
-                let _ = base_11(c, seed, 0x25f388, 2);
+                let _ = async_pool_base(c, seed, 0x25f388, 2);
                 c.g[A0][0] = OBJ_3 as u64;
                 c.g[A1][0] = 0;
-                c.g[A2][0] = OBJ2_2 as u64;
-                c.g[A3][0] = (OBJ2_2 + 4) as u64;
+                c.g[A2][0] = RANK_ENTRY_OUT as u64;
+                c.g[A3][0] = (RANK_ENTRY_OUT + 4) as u64;
                 w(c, OBJ_3, (seed % 4 != 0) as u32);
                 w(c, OBJ_3 + 0xf8, (seed % 3) as u32);
                 w(c, OBJ_3 + 0x1ec, LIST);
@@ -29797,7 +29802,7 @@ pub(crate) mod tests {
             c_setup_man_pop_packet,
             8,
             &|c, seed| {
-                let _ = base_11(c, seed, 0x2649b0, 3);
+                let _ = async_pool_base(c, seed, 0x2649b0, 3);
                 c.g[A0][0] = OBJ_3 as u64;
                 c.g[A1][0] = DST as u64;
                 w(c, OBJ_3 + 0xc, 5);
@@ -29818,10 +29823,10 @@ pub(crate) mod tests {
         check(
             ee::s06::f_0025a650__generated,
             lobby_man_create_peer_table,
-            SEEDS_15,
+            PEER_TABLE_SEEDS,
             &|c, seed| {
-                let _ = base_12(c, seed, 0x25a6_50, 8);
-                let obj = SCRATCH_2;
+                let _ = async_iface_base(c, seed, 0x25a6_50, 8);
+                let obj = ASYNC_SCRATCH;
                 c.g[A0][0] = obj as u64;
                 w(c, obj + 0xc, if seed % 4 == 0 { 0 } else { 1 });
                 w(c, obj + 0xf4, if seed % 3 == 0 { obj + 0x1000 } else { 0 });
@@ -29840,7 +29845,7 @@ pub(crate) mod tests {
             chat_event_clone,
             40,
             &|c, seed| {
-                let _r = alloc_base_2(c, seed, 0x2680);
+                let _r = ctor_alloc_base(c, seed, 0x2680);
                 c.g[A0][0] = sx(DATA);
                 c.bus.write32(DATA + 8, 0);
                 c.bus.write32(DATA + 0xc, 0);
@@ -29857,9 +29862,9 @@ pub(crate) mod tests {
             lobby_man_start_quick_play,
             6,
             &|c, seed| {
-                let _ = base_14(c, seed, 0x0025_ee20, 3);
+                let _ = async_quick_play_base(c, seed, 0x0025_ee20, 3);
                 c.g[A0][0] = OBJ_4 as u64;
-                c.g[A1][0] = OBJ2_3 as u64;
+                c.g[A1][0] = QUICK_PLAY_ARG as u64;
                 c.g[A2][0] = (seed % 3) as u64;
                 w(c, OBJ_4, if seed % 4 == 0 { 1 } else { (seed % 3) as u32 });
                 w(c, OBJ_4 + 0xa4, 0);
@@ -29877,7 +29882,7 @@ pub(crate) mod tests {
             buddy_man_has_challenger,
             60,
             &|c, seed| {
-                let mut r = base_15(c, seed, 0x2631, 3);
+                let mut r = async_world_base(c, seed, 0x2631, 3);
                 c.g[A0][0] = DATA as u64;
                 c.pc = 0x0026_3128;
                 // Two challengers; the second one's name matches.
@@ -30021,12 +30026,12 @@ pub(crate) mod tests {
 
     #[test]
     fn csetup_man_set_remote_character_matches() {
-        strict_2(
+        profile_strict(
             ee::s07::f_00264d80__generated,
             csetup_man_set_remote_character,
             80,
             &|c, seed| {
-                let _r = base_16(c, seed, 0x264d);
+                let _r = async_rider_world_base(c, seed, 0x264d);
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (DATA + 0x1000) as u64;
                 c.g[A2][0] = if seed % 2 == 0 {
@@ -30053,7 +30058,7 @@ pub(crate) mod tests {
             40,
             &|c, seed| {
                 let mut r = fe_base(c, seed, 0x25_fc70);
-                put_str_2(c, DATA + 0x300, b"chal");
+                async_put_bytes(c, DATA + 0x300, b"chal");
                 c.g[A0][0] = sx(DATA);
                 c.g[A1][0] = if seed % 2 == 0 { sx(DATA + 0x300) } else { 1 };
                 c.g[A2][0] = (seed % 4) as u64;
@@ -30095,7 +30100,7 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA);
                 c.g[A1][0] = sx(DATA + 0x2000);
                 w(c, DATA + 0x200c, DATA + 0x200);
-                put_str_2(c, DATA + 0x200, b"a,b,c");
+                async_put_bytes(c, DATA + 0x200, b"a,b,c");
                 w(c, DATA + 0x204, r.next_u32());
                 for i in 0..8 {
                     w(c, DATA + 0x220 + 4 * i, r.next_u32());
@@ -30108,12 +30113,12 @@ pub(crate) mod tests {
 
     #[test]
     fn lobby_man_on_quick_play_reply_matches() {
-        strict_3(
+        rewards_strict(
             ee::s06::f_0025f030__generated,
             lobby_man_on_quick_play_reply,
             60,
             &|c, seed| {
-                let _ = base_17(c, seed, 0x25f0, 6);
+                let _ = rewards_queue_base(c, seed, 0x25f0, 6);
                 allocator(c);
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (DATA + 0x800) as u64;

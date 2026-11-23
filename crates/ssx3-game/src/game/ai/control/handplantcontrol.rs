@@ -4677,6 +4677,7 @@ pub fn rider_railslide_state_post_update(c: &mut Cpu) {
         const SAVED_STATE: u32 = 0x20;
         /// gp-0x7114: 1/30, the slew-5 return step when leaving a rail.
         const GP_SLEW5_RETURN: u32 = 0x7114;
+        const RIDER_RAILSLIDE_STATE_COLLIDE_WALLS: u32 = 0x0013_c140;
         c.cycles += 10;
         let frame = Frame::open(c, 0x30);
         c.g[A1][0] = 0;
@@ -4743,7 +4744,7 @@ pub fn rider_railslide_state_post_update(c: &mut Cpu) {
         c.g[A0][0] = c.g[S0][0];
         c.g[V0][0] = Addr(r32(c, V1)).off(R_HULL).lw(c);
         Addr(r32(c, V0)).off(COLLISION_MASK).sw(c, c.g[A1][0]);
-        call_ptr(c, 0x0013_c140, 0x0013_c084)?;
+        call_ptr(c, RIDER_RAILSLIDE_STATE_COLLIDE_WALLS, 0x0013_c084)?;
         c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
         c.g[V0][0] = u64::MAX;
         c.g[V1][0] = Addr(r32(c, A0)).off(R_HULL).lw(c);
@@ -14487,16 +14488,18 @@ pub(crate) mod tests {
     #[test]
     fn rider_railslide_state_return_follows_the_rate() {
         const STEP: u32 = 0x0049_bfdc;
+        /// The executable's step: 1/30.
+        const STOCK_STEP: u32 = 0x3d08_8889;
 
         crate::tick::assert_slew_follows_the_rate(crate::difftest::DATA + 0x122c, &|hz| {
             let mut c = crate::difftest::fresh();
             railslide_post_setup(&mut c, 1);
             c.bus
-                .write32(STEP, crate::tick::per_tick_at(hz, STEP, 0x3d08_8889));
+                .write32(STEP, crate::tick::per_tick_at(hz, STEP, STOCK_STEP));
             crate::difftest::run_generated(&mut c, rider_railslide_state_post_update);
             assert_eq!(c.pc, crate::difftest::RA);
             let stored = c.bus.read32(crate::difftest::DATA + 0x1230);
-            assert_eq!(stored, crate::tick::per_tick_at(hz, STEP, 0x3d08_8889));
+            assert_eq!(stored, crate::tick::per_tick_at(hz, STEP, STOCK_STEP));
             c
         });
     }
