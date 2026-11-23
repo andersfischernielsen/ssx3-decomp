@@ -219,8 +219,12 @@ The whole patch is checked in a unit test against synthetic input and, with the 
 "parse, patch with zero rows, re-encode, decode equals original screen" round trip (skipped without a
 disc, like other disc-dependent tests).
 
-`OV.LUI` (pause-menu map) is not patched: plugin rows exist only in the front end (flow 0/1); every
-branch below is gated by `FLOW < 2` and by the plugin widgets being present (find returns 0 otherwise).
+`OV.LUI` is patched the same way (the Event Select screen of the in-game file, same `patch_lui`):
+"Next event" on the results screen shows it, in flow 1 like the front end, so the front-end start
+tail works there unchanged (2026-11-23). The hooks are no longer gated by `FLOW < 2`; accepts of plugin
+rows in flows 3/4 (the overlay hand-over to a running game module, not reached from single events)
+are refused with the denied sound. Every branch is still gated by the plugin widgets being present
+(find returns 0 otherwise).
 
 ### 3.4 Hooks (chained on existing slots; all these functions are already ported, so `Hooks::chain`
 (S2) applies; in-tree they are installed by `pluginmenu::install()` after the built-in overrides, only
@@ -467,6 +471,9 @@ Where the run differs from the design:
 - **The plugin needs the base disc only.** The generated `FE.LUI` and `MAPGFX.BIG` come from the SSX 3
   image; a plugin's pictures come from its own content folder (for a plugin with `[prepare]`, the
   importer's output folder).
+- **After a race (OV.LUI).** Done: scenarios `next_event_plugin` (race to the results, Next event,
+  plugin peak, event, second race in `BAX`), `next_event_retail` and `next_event_no_plugin` in
+  `tools/plugin_menu_test.py`. Flows 3/4 are untested (no way found to reach them).
 - **Not covered by the scripted test:** the `name_key` label (seen on screen once: menu-test's `keyed`
   event shows the game's "Select Peak"; a unit test covers the choice of label), other languages, a
   plugin quitting a race to the front end and then a game event (see above), and two plugin folders at

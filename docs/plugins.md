@@ -158,6 +158,11 @@ entries are left out, with a line in the log naming the plugin:
 A "More" row that pages the list is not built; ask for it if a map pack needs
 more than four peaks.
 
+**After a race.** The Select Peak screen of the results menu ("Next event",
+`OV.LUI`) lists the plugin peaks too, and a plugin event can be picked and
+started there. The in-game hand-over used by flows 3 and 4 (not reached from
+single events) is not supported: the rows show, the accept is refused.
+
 **What the engine does not do.** Plugin peaks are always unlocked, show no
 medals or best times, and there are no info panels for them. Career records
 (medals, best times, unlocks) are not written for plugin events: the events
@@ -172,7 +177,7 @@ Freeride kind are not offered.
 content from your SSX 3 disc into the cache folder, and drives the menus
 headless with scripted pad input (`SSX3_INPUT`): into a plugin event, the
 game's own event with the plugin installed and with plugins off, back
-navigation, the limits. The same input strings work for your plugin: the
+navigation, the limits, and the in-game screen after a race. The same input strings work for your plugin: the
 Select Peak screen is up at about frame 2850, and the plugin peaks follow the
 game's three (Down from Peak 1).
 

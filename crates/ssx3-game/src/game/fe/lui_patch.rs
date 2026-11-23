@@ -856,13 +856,17 @@ mod tests {
     // ------------------------------------------- the real screen (needs the disc)
 
     fn real_fe_lui() -> Option<Vec<u8>> {
+        real_lui("DATA/UI/FE.LUI")
+    }
+
+    fn real_lui(path: &str) -> Option<Vec<u8>> {
         let iso = ssx3_core::platform_paths::data_file(
             "SSX3_ISO",
             "SSX 3 (USA).iso",
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../SSX 3 (USA).iso"),
         );
         let mut disc = ssx3_core::iso::Disc::open(&iso).ok()?;
-        let e = disc.find("DATA/UI/FE.LUI")?;
+        let e = disc.find(path)?;
         let data = disc.read_vec(e.sector, e.size.div_ceil(2048));
         Some(data[..e.size as usize].to_vec())
     }
@@ -954,5 +958,20 @@ mod tests {
         );
         // Everything after the screen is byte for byte what it was.
         assert_eq!(file[end..], out[e2..]);
+    }
+
+    /// The in-game screen (`OV.LUI`, shown after a race: "Next event") is
+    /// patched like `FE.LUI`.
+    #[test]
+    fn the_in_game_lui_takes_plugin_rows_too() {
+        let Some(file) = real_lui("DATA/UI/OV.LUI") else {
+            eprintln!("skipped: no SSX 3 disc image");
+            return;
+        };
+        let plan = MenuPlan::build(&catalog(&[("alpha", &[Kind::Race, Kind::Freestyle])]));
+        let out = patch_lui(&file, &plan).unwrap();
+        assert_eq!((out.len() - file.len()) % 16, 0);
+        assert!(out.len() > file.len());
+        assert_eq!(&out[..4], b"IYF\0");
     }
 }

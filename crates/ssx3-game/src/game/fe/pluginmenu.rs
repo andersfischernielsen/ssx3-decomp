@@ -344,18 +344,22 @@ pub fn install() {
             p.freestyle.len()
         );
     }
-    crate::native_files::register_generator(
-        "DATA/UI/FE.LUI",
-        Box::new(
-            |original| match super::lui_patch::patch_lui(original, self::plan()) {
-                Ok(bytes) => Some(bytes),
-                Err(e) => {
-                    eprintln!("[plugin-menu] FE.LUI not patched, the plugin peaks stay off the screen: {e}");
-                    None
-                }
-            },
-        ),
-    );
+    // The front end's screen (`FE.LUI`) and the in-game one (`OV.LUI`, shown
+    // after a race: "Next event") both carry the Event Select screen.
+    for (path, name) in [("DATA/UI/FE.LUI", "FE.LUI"), ("DATA/UI/OV.LUI", "OV.LUI")] {
+        crate::native_files::register_generator(
+            path,
+            Box::new(
+                move |original| match super::lui_patch::patch_lui(original, self::plan()) {
+                    Ok(bytes) => Some(bytes),
+                    Err(e) => {
+                        eprintln!("[plugin-menu] {name} not patched, the plugin peaks stay off the screen: {e}");
+                        None
+                    }
+                },
+            ),
+        );
+    }
     crate::event_boot::install_world_swap();
     let pictures: Vec<bool> = self::plan()
         .peaks
@@ -437,10 +441,16 @@ fn after(c: &mut Cpu, prev: &Prev, extra: impl FnOnce(&mut Cpu, u32) -> Flow) {
     }
 }
 
-/// Plugin rows only exist in the front end (flows 0 and 1), outside the
-/// confirm popup.
+/// Plugin rows are on `FE.LUI`'s screen and on `OV.LUI`'s (the screen after a
+/// race, "Next event", runs in flow 1 too), outside the confirm popup.
 fn front_end(c: &mut Cpu, this: u32) -> bool {
-    c.bus.read32(gp(c, GP_FLOW)) < 2 && c.bus.read32(this + THIS_CONFIRM) == 0
+    c.bus.read32(this + THIS_CONFIRM) == 0
+}
+
+/// Flows 3 and 4: the overlay hands the chosen event to a game module that is
+/// already running; the front end's start tail does not apply.
+fn in_game(c: &mut Cpu) -> bool {
+    c.bus.read32(gp(c, GP_FLOW)) >= 2
 }
 
 fn widget_id(w: Widget) -> u32 {
@@ -848,6 +858,18 @@ fn on_widget_action(c: &mut Cpu) {
     if !matches!(action, 1 | 2 | 5) || !front_end(c, this) {
         return ACTION.call(c);
     }
+    if action == 5 && in_game(c) {
+        // Flows 3 and 4 (the overlay's own event hand-over) cannot start a
+        // plugin event: the row is shown, the accept is refused.
+        let (g, f) = (c.g, c.f);
+        if sound(c, this, 4, back).is_ok() {
+            c.g = g;
+            c.f = f;
+            c.g[V0][0] = 0;
+            c.pc = back;
+        }
+        return;
+    }
     let (g, f) = (c.g, c.f);
     match row_action(c, this, w, row, action, back) {
         Ok(v0) => {
@@ -1233,7 +1255,7 @@ mod tests {
             ("Peak1", 1, 0, 0),
             (names::peak(0).leak() as &str, 6, 0, 0), // back stays the game's
             (names::peak(0).leak() as &str, 7, 0, 0),
-            (names::peak(0).leak() as &str, 5, 2, 0), // overlay flows have no plugin rows
+            (names::peak(0).leak() as &str, 6, 3, 0), // back stays the game's
             (names::peak(0).leak() as &str, 1, 0, 1), // confirm popup up
         ] {
             let w = widget_with(&mut c, 0x0100_0000, name);

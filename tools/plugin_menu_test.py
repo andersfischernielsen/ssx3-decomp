@@ -96,6 +96,21 @@ def style_only():
     return ",".join(ev), 3600
 
 
+def next_event(plugin):
+    """Run the first event to the end (about frame 19500), results: Up to
+    "Next event", X: the in-game Select Peak (OV.LUI). With `plugin`: Down to
+    the first plugin peak, peak, Race, first event; else Peak 1 and its first
+    event (the game's own)."""
+    ev = plugin_event()[0] if plugin else retail_snow_jam()[0]
+    press(ev := ev.split(","), 20400, UP, 4)
+    press(ev, 20700, X)
+    if plugin:
+        press(ev, 21000, DOWN, 6)
+    for f in (21200, 21400, 21600) if plugin else (21200, 21400, 21600, 21800):
+        press(ev, f, X)
+    return ",".join(ev), 23800
+
+
 def words(path):
     return open(path, errors="replace").read() if os.path.exists(path) else ""
 
@@ -135,7 +150,8 @@ def halted(run):
 def main():
     names = sys.argv[1:]
     all_scenarios = ["plugin_event", "retail_with_plugin", "no_plugin", "back_and_forth",
-                     "limits", "style_only", "event_boot_frames"]
+                     "limits", "style_only", "event_boot_frames", "next_event_plugin", "next_event_retail",
+                     "next_event_no_plugin"]
     if names == ["list"]:
         print("\n".join(all_scenarios))
         return 0
@@ -209,6 +225,33 @@ def main():
         b = Run(work, "event_boot_none", {"SSX3_PLUGINS": "0", "SSX3_EVENT": "ARA1"}, "", 1300, 1300, 1300)
         check(os.path.exists(a.shot(1300)) and os.path.exists(b.shot(1300)) and md5(a.shot(1300)) == md5(b.shot(1300)),
               "race frame 1300 is identical")
+    if "next_event_plugin" in names:
+        print("next_event_plugin: race, results, Next event: the in-game Select Peak lists the plugin peak")
+        i, n = next_event(True)
+        r = Run(work, "next_event_plugin", env, i, n, 20800, every=200)
+        check(not halted(r), "the game does not halt")
+        check("DATA/UI/OV.LUI generated" in r.out, "OV.LUI is generated in memory")
+        check(r.out.count("[plugin-menu] start menu-test/copy") == 2,
+              "the plugin event starts a second time from the in-game screen")
+        check(r.files.count("data/worlds/BAX.big") >= 2 and "data/worlds/BAM.big" not in r.files,
+              "the second race loads the plugin's world (BAX)")
+        print(f"  look at {r.shot(21000)} (rows) and {r.shot(21400)} (events)")
+    if "next_event_retail" in names:
+        print("next_event_retail: race, results, Next event, the game's own Peak 1 event (plugin installed)")
+        i, n = next_event(False)
+        r = Run(work, "next_event_retail", env, i, n, 20800, every=200)
+        check(not halted(r), "the game does not halt")
+        check("DATA/UI/OV.LUI generated" in r.out, "OV.LUI is generated in memory")
+        check("[plugin-menu] start" not in r.out, "no plugin event starts")
+        check("data/worlds/BAM.big" in r.files and "data/worlds/BAX.big" not in r.files,
+              "the game's own world is loaded again")
+    if "next_event_no_plugin" in names:
+        print("next_event_no_plugin: the same screen with plugins off")
+        i, n = next_event(False)
+        r = Run(work, "next_event_no_plugin", {"SSX3_PLUGINS": "0", "SSX3_PLUGIN_DIR": plugins}, i, n, 20800, every=200)
+        check(not halted(r), "the game does not halt")
+        check("generated" not in r.out, "nothing is generated")
+        check("data/worlds/BAM.big" in r.files, "the game's own world is loaded")
     print(f"screenshots and logs: {work}")
     if FAILED:
         print(f"{len(FAILED)} check(s) failed")
