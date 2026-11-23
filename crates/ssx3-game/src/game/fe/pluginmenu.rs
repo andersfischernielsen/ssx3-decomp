@@ -11,6 +11,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use ssx3_plugin::catalog::Catalog;
 use ssx3_plugin::manifest::Kind;
@@ -236,6 +237,48 @@ impl MenuPlan {
     pub fn event(&self, peak: usize, tab: usize, row: usize) -> Option<&EventPlan> {
         self.peaks.get(peak)?.events(tab).get(row)
     }
+}
+
+// ------------------------------------------------------------------ runtime
+
+static PLAN: OnceLock<MenuPlan> = OnceLock::new();
+
+/// The plan of this run (empty without plugins).
+pub fn plan() -> &'static MenuPlan {
+    PLAN.get_or_init(MenuPlan::default)
+}
+
+/// Build the plan from the plugins' catalog and, when it has peaks, make the
+/// patched `FE.LUI` available to the file layer. Call once at boot, after the
+/// catalog is published and before the game opens the file. Does nothing
+/// (touches no slot, registers nothing) without plugin peaks.
+pub fn install() {
+    let plan = MenuPlan::build(crate::plugin_host::catalog());
+    for w in &plan.warnings {
+        eprintln!("[plugin-menu] {w}");
+    }
+    if plan.is_empty() || PLAN.set(plan).is_err() {
+        return;
+    }
+    for p in &self::plan().peaks {
+        eprintln!(
+            "[plugin-menu] peak {} ({}): {} race, {} freestyle events",
+            p.id,
+            p.name,
+            p.race.len(),
+            p.freestyle.len()
+        );
+    }
+    crate::native_files::register_generator(
+        "DATA/UI/FE.LUI",
+        Box::new(|original| match super::lui_patch::patch_lui(original, self::plan()) {
+            Ok(bytes) => Some(bytes),
+            Err(e) => {
+                eprintln!("[plugin-menu] FE.LUI not patched, the plugin peaks stay off the screen: {e}");
+                None
+            }
+        }),
+    );
 }
 
 #[cfg(test)]

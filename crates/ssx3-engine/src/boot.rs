@@ -102,6 +102,8 @@ pub(crate) fn boot(
     if ssx3_game::native_files::install() {
         eprintln!("[ssx3-game] native files on");
     }
+    // The plugins' peaks and events on the Select Peak screen (nothing without them).
+    ssx3_game::game::fe::pluginmenu::install();
     // Plugins, phase 2: hooks wrap what the installers above left in the slots.
     crate::plugins::install_hooks(&mut plugins, &code_plugins);
     // Recompiled IOP sound modules; used when SSX3_IOP=1 (see iop_bridge.rs).
