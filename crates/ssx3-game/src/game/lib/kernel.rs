@@ -2,10 +2,12 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::call::Unwound;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use ssx3_ee as ee;
@@ -46,7 +48,284 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_47d8, invalid_dcache_2, "InvalidDCache"),
     (0x0042_4698, sync_dcache_2, "SyncDCache"),
     (0x0010_01c8, crt_exit, "_exit"),
+    (0x0042_c628, init_tlb_2, "InitTLB"),
+    (0x0042_c6a0, load_exec_ps2_2, "LoadExecPS2"),
+    (0x0042_c6e8, exit_2, "Exit"),
+    (0x0042_c710, exec_osd_2, "ExecOSD"),
+    (0x0042_cd58, init_tlb_3, "InitTLB"),
+    (
+        0x0042_c0d8,
+        libkernl_init_malloc_sema,
+        "libkernl_InitMallocSema",
+    ),
+    (0x0042_c120, kcopy, "kCopy"),
+    (0x0042_c1a8, find_address, "FindAddress"),
+    (0x0042_c1b8, get_syscall_handler, "GetSyscallHandler"),
+    (
+        0x0042_c1f0,
+        libkernl_init_syscall_table,
+        "libkernl_InitSyscallTable",
+    ),
+    (0x0042_c2f0, rfu116_set_syscall_5, "RFU116_SetSyscall"),
+    (0x0042_c340, rfu116_set_syscall_4, "RFU116_SetSyscall"),
+    (0x0042_c350, kcopy_2, "kCopy_2"),
+    (0x0042_c398, rfu091_3, "RFU091"),
+    (
+        0x0042_c3a8,
+        libkernl_is_old_osd_config,
+        "libkernl_IsOldOsdConfig",
+    ),
+    (0x0042_c410, init_osd, "InitOsd"),
+    (0x0042_c4c0, kcopy_3, "kCopy_3"),
+    (0x0042_c500, rfu116_set_syscall_3, "RFU116_SetSyscall"),
+    (
+        0x0042_c510,
+        libkernl_copy_args_to_kernel,
+        "libkernl_CopyArgsToKernel",
+    ),
+    (0x0042_c760, rfu116_set_syscall_2, "RFU116_SetSyscall"),
+    (0x0042_c770, kcopy_4, "kCopy_4"),
+    (0x0042_c7b8, rfu091_2, "RFU091"),
+    (0x0042_c7c8, init_alarm, "InitAlarm"),
+    (
+        0x0042_ca80,
+        libkernl_install_tlb_refill_handlers,
+        "libkernl_InstallTLBRefillHandlers",
+    ),
+    (0x0042_cb68, kcopy_5, "kCopy_5"),
+    (0x0042_cbb0, rfu091, "RFU091"),
+    (0x0042_cbc0, rfu116_set_syscall, "RFU116_SetSyscall"),
+    (0x0042_cbd0, init_exec_ps2, "InitExecPS2"),
+    (0x0042_ccb8, rfu086_wait_evnet_flag, "RFU086_WaitEvnetFlag"),
+    (0x0042_ccc8, set_tlb_entry, "SetTLBEntry"),
+    (0x0042_cd98, libkernl_setup_tlb, "libkernl_SetupTLB"),
+    (0x0042_c300, init_sys, "_InitSys"),
+    (
+        0x0042_e508,
+        rcmp_av_ms_timer_update,
+        "RCMP_AV_MS_TIMER_Update",
+    ),
 ];
+
+// ---------------------------------------------------------------------------
+// Shared direct-call targets (address, readable alias in the generated shard).
+
+pub(crate) mod callee {
+    use super::ee;
+    use super::Callee;
+
+    pub(super) use crate::game::lib::libc::callee::STRLEN;
+
+    /// Direct-call target: f_00423a50 (0x0042_3a50).
+    pub(crate) const SET_HANDLER: Callee = Callee {
+        addr: 0x0042_3a50,
+        f: ee::s15::f_00423a50,
+    };
+
+    /// Direct-call target: CreateSema (0x0042_3da0).
+    pub(crate) const CREATE_SEMA: Callee = Callee {
+        addr: 0x0042_3da0,
+        f: ee::s15::CreateSema,
+    };
+
+    /// Direct-call target: f_00423e40 (0x0042_3e40).
+    pub(crate) const SET_PARAM: Callee = Callee {
+        addr: 0x0042_3e40,
+        f: ee::s15::f_00423e40,
+    };
+
+    /// Direct-call target: f_00423e50 (0x0042_3e50).
+    pub(crate) const GET_PARAM: Callee = Callee {
+        addr: 0x0042_3e50,
+        f: ee::s15::f_00423e50,
+    };
+
+    /// Direct-call target: f_00424020 (0x0042_4020).
+    pub(crate) const FLUSH_CACHE: Callee = Callee {
+        addr: 0x0042_4020,
+        f: ee::s15::f_00424020,
+    };
+
+    /// Direct-call target: f_00424200 (0x0042_4200).
+    pub(crate) const GET_MEM_SIZE: Callee = Callee {
+        addr: 0x0042_4200,
+        f: ee::s15::f_00424200,
+    };
+
+    /// Direct-call target: f_00424210 (0x0042_4210).
+    pub(crate) const WRITE_TLB: Callee = Callee {
+        addr: 0x0042_4210,
+        f: ee::s15::f_00424210,
+    };
+
+    /// Direct-call target: f_004245f0 (0x0042_45f0).
+    pub(crate) const SYNC_DCACHE_LINES: Callee = Callee {
+        addr: 0x0042_45f0,
+        f: ee::s15::f_004245f0,
+    };
+
+    /// Direct-call target: f_00424b78 (0x0042_4b78).
+    pub(crate) const INIT_THREAD_HELPER: Callee = Callee {
+        addr: 0x0042_4b78,
+        f: ee::s15::f_00424b78,
+    };
+
+    /// Direct-call target: f_00425c28 (0x0042_5c28).
+    pub(crate) const PRINTF: Callee = Callee {
+        addr: 0x0042_5c28,
+        f: ee::s15::f_00425c28,
+    };
+
+    /// Direct-call target: f_0042c0d8 (0x0042_c0d8).
+    pub(crate) const INIT_MALLOC_SEMA: Callee = Callee {
+        addr: 0x0042_c0d8,
+        f: ee::s15::f_0042c0d8,
+    };
+
+    /// Direct-call target: kCopy (0x0042_c120).
+    pub(crate) const KCOPY: Callee = Callee {
+        addr: 0x0042_c120,
+        f: ee::s15::kCopy,
+    };
+
+    /// Direct-call target: f_0042c1a8 (0x0042_c1a8).
+    pub(crate) const FIND_ADDRESS: Callee = Callee {
+        addr: 0x0042_c1a8,
+        f: ee::s15::f_0042c1a8,
+    };
+
+    /// Direct-call target: libkernl_InitSyscallTable (0x0042_c1f0).
+    pub(crate) const INIT_SYSCALL_TABLE: Callee = Callee {
+        addr: 0x0042_c1f0,
+        f: ee::s15::libkernl_InitSyscallTable,
+    };
+
+    /// RFU116 set-syscall stub. (`0x0042_c2f0`).
+    pub(crate) const RFU116_SET_SYSCALL_C2F0: Callee = Callee {
+        addr: 0x0042_c2f0,
+        f: ee::s15::f_0042c2f0,
+    };
+
+    /// RFU116 set-syscall stub. (`0x0042_c340`).
+    pub(crate) const RFU116_SET_SYSCALL_C340: Callee = Callee {
+        addr: 0x0042_c340,
+        f: ee::s15::f_0042c340,
+    };
+
+    /// Direct-call target: kCopy_2 (0x0042_c350).
+    pub(crate) const KCOPY_2: Callee = Callee {
+        addr: 0x0042_c350,
+        f: ee::s15::kCopy_2,
+    };
+
+    /// RFU091 wait stub. (`0x0042_c398`).
+    pub(crate) const RFU091_3: Callee = Callee {
+        addr: 0x0042_c398,
+        f: ee::s15::f_0042c398,
+    };
+
+    /// Direct-call target: libkernl_IsOldOsdConfig (0x0042_c3a8).
+    pub(crate) const IS_OLD: Callee = Callee {
+        addr: 0x0042_c3a8,
+        f: ee::s15::libkernl_IsOldOsdConfig,
+    };
+
+    /// Direct-call target: f_0042c410 (0x0042_c410).
+    pub(crate) const INIT_OSD: Callee = Callee {
+        addr: 0x0042_c410,
+        f: ee::s15::f_0042c410,
+    };
+
+    /// Direct-call target: kCopy_3 (0x0042_c4c0).
+    pub(crate) const KCOPY_3: Callee = Callee {
+        addr: 0x0042_c4c0,
+        f: ee::s15::kCopy_3,
+    };
+
+    /// RFU116 set-syscall stub. (`0x0042_c500`).
+    pub(crate) const RFU116_SET_SYSCALL_C500: Callee = Callee {
+        addr: 0x0042_c500,
+        f: ee::s15::f_0042c500,
+    };
+
+    /// Direct-call target: libkernl_CopyArgsToKernel (0x0042_c510).
+    pub(crate) const COPY_ARGS: Callee = Callee {
+        addr: 0x0042_c510,
+        f: ee::s15::libkernl_CopyArgsToKernel,
+    };
+
+    /// Direct-call target: f_0042c628 (0x0042_c628).
+    pub(crate) const INIT_TLB_FWD: Callee = Callee {
+        addr: 0x0042_c628,
+        f: ee::s15::f_0042c628,
+    };
+
+    /// Direct-call target: f_0042c6e8 (0x0042_c6e8).
+    pub(crate) const EXIT_NOW: Callee = Callee {
+        addr: 0x0042_c6e8,
+        f: ee::s15::f_0042c6e8,
+    };
+
+    /// RFU116 set-syscall stub. (`0x0042_c760`).
+    pub(crate) const RFU116_SET_SYSCALL_C760: Callee = Callee {
+        addr: 0x0042_c760,
+        f: ee::s15::f_0042c760,
+    };
+
+    /// Direct-call target: kCopy_4 (0x0042_c770).
+    pub(crate) const KCOPY_4: Callee = Callee {
+        addr: 0x0042_c770,
+        f: ee::s15::kCopy_4,
+    };
+
+    /// RFU091 wait stub. (`0x0042_c7b8`).
+    pub(crate) const RFU091_2: Callee = Callee {
+        addr: 0x0042_c7b8,
+        f: ee::s15::f_0042c7b8,
+    };
+
+    /// Direct-call target: f_0042c7c8 (0x0042_c7c8).
+    pub(crate) const INIT_ALARM: Callee = Callee {
+        addr: 0x0042_c7c8,
+        f: ee::s15::f_0042c7c8,
+    };
+
+    /// Direct-call target: kCopy_5 (0x0042_cb68).
+    pub(crate) const KCOPY_5: Callee = Callee {
+        addr: 0x0042_cb68,
+        f: ee::s15::kCopy_5,
+    };
+
+    /// RFU091 wait stub. (`0x0042_cbb0`).
+    pub(crate) const RFU091: Callee = Callee {
+        addr: 0x0042_cbb0,
+        f: ee::s15::f_0042cbb0,
+    };
+
+    /// RFU116 set-syscall stub. (`0x0042_cbc0`).
+    pub(crate) const RFU116_SET_SYSCALL_CBC0: Callee = Callee {
+        addr: 0x0042_cbc0,
+        f: ee::s15::f_0042cbc0,
+    };
+
+    /// Direct-call target: f_0042cbd0 (0x0042_cbd0).
+    pub(crate) const INIT_EXEC: Callee = Callee {
+        addr: 0x0042_cbd0,
+        f: ee::s15::f_0042cbd0,
+    };
+
+    /// Wait for the TLB event flag (RFU086). (`0x0042_ccb8`).
+    pub(crate) const WAIT_FLAG: Callee = Callee {
+        addr: 0x0042_ccb8,
+        f: ee::s15::RFU086_WaitEvnetFlag,
+    };
+
+    /// Direct-call target: libkernl_SetupTLB (0x0042_cd98).
+    pub(crate) const SETUP_TLB: Callee = Callee {
+        addr: 0x0042_cd98,
+        f: ee::s15::libkernl_SetupTLB,
+    };
+}
 
 // ---------------------------------------------------------------------------
 // Kernel syscall wrappers. Each sets the syscall code in `v1`, traps (the
@@ -420,10 +699,7 @@ pub fn invalid_dcache_2(c: &mut Cpu) {
 /// COP0 r12 bit 16). Same shape as `InvalidDCache`.
 pub fn sync_dcache_2(c: &mut Cpu) {
     use crate::game::lib::kernel::{DINTR, EINTR};
-    const SYNC_DCACHE_LINES: Callee = Callee {
-        addr: 0x0042_45f0,
-        f: ee::s15::f_004245f0,
-    };
+
     guest(c, |c| {
         c.cycles += 12;
         let frame = Frame::open(c, 0x40);
@@ -449,7 +725,7 @@ pub fn sync_dcache_2(c: &mut Cpu) {
         c.g[A0][0] = LINE_MASK;
         c.g[A1][0] = c.g[S1][0] & LINE_MASK;
         c.g[A0][0] = c.g[S2][0] & LINE_MASK;
-        SYNC_DCACHE_LINES.call(c, 0x0042_46e4)?;
+        callee::SYNC_DCACHE_LINES.call(c, 0x0042_46e4)?;
         frame.restore_ra(c, 0x30);
         c.cycles += 5;
         c.g[S2][0] = c.ld(frame.at(c, 0x20));
@@ -481,10 +757,1116 @@ pub fn crt_exit(c: &mut Cpu) {
     ssx3_ee_rt::funcs::call_indirect(c, CRT_EXIT_KERNEL);
 }
 
+/// InitTLB (0x42cd58): when the machine has 32 MB (`GetMemorySize`), set up
+/// the kernel TLB tables; otherwise write the fallback TLB and return.
+pub fn init_tlb_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        callee::GET_MEM_SIZE.call(c, 0x0042_cd68)?;
+        c.g[V1][0] = 0x2000000;
+        let big = c.g[V0][0] != c.g[V1][0];
+        if !big {
+            c.cycles += 4;
+            callee::SETUP_TLB.call(c, 0x0042_cd7c)?;
+            c.cycles += 2;
+            frame.restore_ra(c, 0);
+            frame.close(c);
+            return Ok(());
+        }
+        c.cycles += 3;
+        callee::WRITE_TLB.call(c, 0x0042_cd8c)?;
+        c.cycles += 2;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// ExecOSD (0x42c710): copies the OSD arguments into kernel RAM, runs the
+/// `InitTLB` forwarder, then tail-calls the already-ported `_ExecOSD`.
+pub fn exec_osd_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x20);
+        c.g[A2][0] = c.g[A1][0];
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = 0x4a0000;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x5270));
+        callee::COPY_ARGS.call(c, 0x0042_c734)?;
+        callee::INIT_TLB_FWD.call(c, 0x0042_c73c)?;
+        c.g[V0][0] = 0x450000;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x6538));
+        c.g[RA][0] = c.ld(frame.at(c, 0x10));
+        c.g[S0][0] = c.ld(frame.at(c, 0));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4));
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x20));
+        c.pc = 0x0042_41c0;
+        ee::s15::f_004241c0(c);
+        Ok(())
+    })
+}
+
+/// Exit (0x42c6e8): runs the `InitTLB` forwarder, then tail-calls the
+/// already-ported `_Exit` with the saved `a0`.
+pub fn exit_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        frame.save_ra(c, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        callee::INIT_TLB_FWD.call(c, 0x0042_c6fc)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[RA][0] = c.ld(frame.at(c, 0x10));
+        c.g[S0][0] = c.ld(frame.at(c, 0));
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x20));
+        c.pc = 0x0042_39c0;
+        ee::s15::f_004239c0(c);
+        Ok(())
+    })
+}
+
+/// LoadExecPS2 (0x42c6a0): copies the boot arguments into kernel RAM, runs the
+/// `InitTLB` forwarder, then tail-calls the already-ported `_LoadExecPS2`
+/// with the executable path and the relocated argument vector.
+pub fn load_exec_ps2_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x30);
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        frame.save_ra(c, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        callee::COPY_ARGS.call(c, 0x0042_c6b8)?;
+        c.g[S0][0] = c.g[V0][0];
+        callee::INIT_TLB_FWD.call(c, 0x0042_c6c0)?;
+        c.g[V0][0] = 0x450000;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x6538));
+        c.g[A1][0] = c.g[S1][0];
+        c.g[RA][0] = c.ld(frame.at(c, 0x20));
+        c.g[S1][0] = c.ld(frame.at(c, 0x10));
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4));
+        c.g[S0][0] = c.ld(frame.at(c, 0));
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x30));
+        c.pc = 0x0042_39e0;
+        ee::s15::f_004239e0(c);
+        Ok(())
+    })
+}
+
+/// InitTLB (0x42c628): 8-byte forwarder that tail-calls the real `InitTLB`
+/// (0x42cd58, which gates on `GetMemorySize`).
+pub fn init_tlb_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 2;
+        c.pc = 0x0042_cd58;
+        ee::s15::f_0042cd58(c);
+        Ok(())
+    })
+}
+
+/// libkernl_InitMallocSema (0x42c0d8): creates the kernel heap semaphore and
+/// the malloc semaphore, publishing both semaphore ids at `0x455248` and `0x45524c`.
+pub fn libkernl_init_malloc_sema(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = 0x1;
+        c.sd(frame.at(c, 0x40), c.g[RA][0]);
+        c.g[A0][0] = c.g[SP][0];
+        c.sw(sp(c).wrapping_add(0x28), c.g[V0][0]);
+        c.sw(sp(c).wrapping_add(0x4), c.g[V0][0]);
+        c.sw(sp(c).wrapping_add(0x8), c.g[V0][0]);
+        c.sw(sp(c).wrapping_add(0x24), c.g[V0][0]);
+        callee::CREATE_SEMA.call(c, 0x0042_c0fc)?;
+        c.g[V1][0] = 0x450000;
+        c.g[A0][0] = sx(sp(c).wrapping_add(0x20));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x5248), c.g[V0][0]);
+        callee::CREATE_SEMA.call(c, 0x0042_c10c)?;
+        c.g[V1][0] = 0x450000;
+        c.g[RA][0] = c.ld(frame.at(c, 0x40));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x524c), c.g[V0][0]);
+        let ret = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x50));
+        c.pc = ret;
+        Ok(())
+    })
+}
+
+/// Kernel copy syscall 0x5a (`kCopy`, 0x42c120): sets `v1`, traps, delivers
+/// a due event and returns through `ra`.
+pub fn kcopy(c: &mut Cpu) {
+    syscall_wrapper(c, 0x5a, 0x0042_c124, 0x0042_c128);
+}
+
+/// FindAddress (0x42c1a8): reserved syscall 0x83: sets `v1`, traps, delivers
+/// a due event and returns through `ra`.
+pub fn find_address(c: &mut Cpu) {
+    syscall_wrapper(c, 0x83, 0x0042_c1ac, 0x0042_c1b0);
+}
+
+/// GetSyscallHandler (0x42c1b8): reads one word through the pointer at
+/// `0x455230` (plus `a0 * 4`) with `kCopy` and returns it.
+pub fn get_syscall_handler(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        c.g[V0][0] = 0x450000;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x5230));
+        c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A2][0] = 0x4;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        callee::KCOPY.call(c, 0x0042_c1dc)?;
+        c.g[V0][0] = c.lw(sp(c));
+        c.g[RA][0] = c.ld(frame.at(c, 0x10));
+        let ret = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x20));
+        c.pc = ret;
+        Ok(())
+    })
+}
+
+/// libkernl_InitSyscallTable (0x42c1f0): installs two handlers from the
+/// table at `0x455238`, then alternates two `FindAddress` searches until
+/// they agree and stores the result.
+pub fn libkernl_init_syscall_table(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 33;
+        let frame = Frame::open(c, 0x80);
+        c.g[V0][0] = 0x450000;
+        c.sd(frame.at(c, 0x50), c.g[S5][0]);
+        c.sd(frame.at(c, 0x40), c.g[S4][0]);
+        c.g[S5][0] = 0x430000;
+        c.sd(frame.at(c, 0x30), c.g[S3][0]);
+        c.g[S4][0] = 0x430000;
+        c.sd(frame.at(c, 0x20), c.g[S2][0]);
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        frame.save_ra(c, 0x70);
+        c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5238));
+        c.sd(frame.at(c, 0x60), c.g[S6][0]);
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x5238));
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+        callee::RFU116_SET_SYSCALL_C2F0.call(c, 0x0042_c230)?;
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+        callee::RFU116_SET_SYSCALL_C2F0.call(c, 0x0042_c23c)?;
+        c.g[A0][0] = 0xffffffff80000000;
+        c.g[A1][0] = 0xffffffff80080000;
+        c.g[A2][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x3e98));
+        callee::FIND_ADDRESS.call(c, 0x0042_c24c)?;
+        c.g[S3][0] = c.g[V0][0];
+        c.g[A0][0] = 0xffffffff80000000;
+        c.g[A1][0] = 0xffffffff80080000;
+        c.g[A2][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x3ed0));
+        callee::FIND_ADDRESS.call(c, 0x0042_c260)?;
+        c.g[S1][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x20c));
+        c.g[S2][0] = c.g[V0][0];
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x168));
+        let converged = c.g[S1][0] == c.g[S0][0];
+        c.g[S6][0] = 0x450000;
+        if converged {
+            c.cycles += 1;
+            c.sw((c.g[S6][0] as u32).wrapping_add(0x5230), c.g[S1][0]);
+        } else {
+            c.cycles += 1;
+            c.g[V0][0] = (c.g[S1][0] < c.g[S0][0]) as u64;
+            loop {
+                c.cycles += 2;
+                let at_end = c.g[V0][0] == 0u64;
+                c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x4));
+                if !at_end {
+                    c.cycles += 6;
+                    c.g[A1][0] = 0xffffffff80080000;
+                    c.g[A2][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x3e98));
+                    callee::FIND_ADDRESS.call(c, 0x0042_c28c)?;
+                    c.g[S3][0] = c.g[V0][0];
+                    c.g[S1][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x20c));
+                } else {
+                    c.cycles += 6;
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x4));
+                    c.g[A1][0] = 0xffffffff80080000;
+                    c.g[A2][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x3ed0));
+                    callee::FIND_ADDRESS.call(c, 0x0042_c2a8)?;
+                    c.g[S2][0] = c.g[V0][0];
+                    c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x168));
+                }
+                c.cycles += 2;
+                let done = c.g[S1][0] != c.g[S0][0];
+                c.g[V0][0] = (c.g[S1][0] < c.g[S0][0]) as u64;
+                if !done {
+                    c.cycles += 2;
+                    c.sw((c.g[S6][0] as u32).wrapping_add(0x5230), c.g[S1][0]);
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0042_c278);
+                }
+            }
+        }
+        c.cycles += 10;
+        c.g[RA][0] = c.ld(frame.at(c, 0x70));
+        c.g[S6][0] = c.ld(frame.at(c, 0x60));
+        c.g[S5][0] = c.ld(frame.at(c, 0x50));
+        c.g[S4][0] = c.ld(frame.at(c, 0x40));
+        c.g[S3][0] = c.ld(frame.at(c, 0x30));
+        c.g[S2][0] = c.ld(frame.at(c, 0x20));
+        c.g[S1][0] = c.ld(frame.at(c, 0x10));
+        c.g[S0][0] = c.ld(frame.at(c, 0));
+        frame.restore_ra(c, 0x70);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Reserved syscall 0x74 (`RFU116_SetSyscall`, 0x42c2f0): sets `v1`, traps,
+/// delivers a due event and returns through `ra`.
+pub fn rfu116_set_syscall_5(c: &mut Cpu) {
+    syscall_wrapper(c, 0x74, 0x0042_c2f4, 0x0042_c2f8);
+}
+
+/// Reserved syscall 0x74 (`RFU116_SetSyscall`, 0x42c340): sets `v1`, traps,
+/// delivers a due event and returns through `ra`.
+pub fn rfu116_set_syscall_4(c: &mut Cpu) {
+    syscall_wrapper(c, 0x74, 0x0042_c344, 0x0042_c348);
+}
+
+/// Reserved syscall 0x74 (`RFU116_SetSyscall`, 0x42c500): sets `v1`, traps,
+/// delivers a due event and returns through `ra`.
+pub fn rfu116_set_syscall_3(c: &mut Cpu) {
+    syscall_wrapper(c, 0x74, 0x0042_c504, 0x0042_c508);
+}
+
+/// Kernel copy syscall 0x5a (`kCopy_2`, 0x42c350): sets `v1`, traps, delivers
+/// a due event and returns through `ra`.
+pub fn kcopy_2(c: &mut Cpu) {
+    syscall_wrapper(c, 0x5a, 0x0042_c354, 0x0042_c358);
+}
+
+/// Reserved syscall 0x5b (`RFU091`, 0x42c398): sets `v1`, traps, delivers a
+/// due event and returns through `ra`.
+pub fn rfu091_3(c: &mut Cpu) {
+    syscall_wrapper(c, 0x5b, 0x0042_c39c, 0x0042_c3a0);
+}
+
+/// libkernl_IsOldOsdConfig (0x42c3a8): probes the OSD config version by
+/// writing a test pattern through `SetOsdConfigParam` / `GetOsdConfigParam`;
+/// returns whether the stored version predates the current one.
+pub fn libkernl_is_old_osd_config(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x30);
+        c.sd(frame.at(c, 0x10), c.g[S0][0]);
+        frame.save_ra(c, 0x20);
+        c.g[A0][0] = c.g[SP][0];
+        callee::GET_PARAM.call(c, 0x0042_c3bc)?;
+        c.g[V1][0] = c.lw(c.g[SP][0] as u32);
+        c.g[V0][0] = 0xffffffffffff0000;
+        c.g[V0][0] = c.g[V0][0] | 0x1fff;
+        c.g[S0][0] = sx(sp(c).wrapping_add(0x4));
+        c.g[V1][0] = c.g[V1][0] & c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[V1][0] = c.g[V1][0] | 0x2000;
+        c.sw(sp(c).wrapping_add(0x4), c.g[V1][0]);
+        callee::SET_PARAM.call(c, 0x0042_c3e0)?;
+        c.g[A0][0] = c.g[S0][0];
+        callee::GET_PARAM.call(c, 0x0042_c3e8)?;
+        c.g[A0][0] = c.g[SP][0];
+        callee::SET_PARAM.call(c, 0x0042_c3f0)?;
+        c.g[V0][0] = c.lw(sp(c).wrapping_add(0x4));
+        c.g[RA][0] = c.ld(frame.at(c, 0x20));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) >> 13);
+        c.g[S0][0] = c.ld(frame.at(c, 0x10));
+        c.g[V0][0] = c.g[V0][0] & 0x7;
+        c.g[V0][0] = (c.g[V0][0] < 0x1u64) as u64;
+        let ret = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x30));
+        c.pc = ret;
+        Ok(())
+    })
+}
+
+/// InitOsd (0x42c410): if the OSD config is old, installs the OSD boot
+/// handler (a `kCopy` of the handler template, cache flushes, then
+/// `RFU116`/`RFU091` syscalls) and returns through the entry epilogue.
+pub fn init_osd(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x40);
+        frame.save_ra(c, 0x30);
+        c.sd(frame.at(c, 0x20), c.g[S2][0]);
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        callee::IS_OLD.call(c, 0x0042_c428)?;
+        let fresh = c.g[V0][0] == 0u64;
+        c.g[V0][0] = 0x450000;
+        if !fresh {
+            c.cycles += 20;
+            c.g[S2][0] = 0x2;
+            c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x59f8));
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x59f8));
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+            callee::RFU116_SET_SYSCALL_C340.call(c, 0x0042_c448)?;
+            c.g[A1][0] = 0x450000;
+            c.g[A0][0] = 0xffffffff80070000;
+            c.g[A2][0] = 0x7a8;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x5250));
+            c.g[A0][0] = c.g[A0][0] | 0x4000;
+            callee::KCOPY_2.call(c, 0x0042_c460)?;
+            c.g[A0][0] = 0u64;
+            callee::FLUSH_CACHE.call(c, 0x0042_c468)?;
+            c.g[A0][0] = 0x2;
+            callee::FLUSH_CACHE.call(c, 0x0042_c470)?;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+            callee::RFU116_SET_SYSCALL_C340.call(c, 0x0042_c47c)?;
+            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+            loop {
+                c.cycles += 9;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                callee::RFU091_3.call(c, 0x0042_c488)?;
+                c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                c.g[A1][0] = c.g[V0][0];
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
+                callee::RFU116_SET_SYSCALL_C340.call(c, 0x0042_c498)?;
+                c.g[V0][0] = (c.g[S2][0] < 0x3u64) as u64;
+                if c.g[V0][0] != 0u64 {
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0042_c480);
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+        c.cycles += 6;
+        c.g[RA][0] = c.ld(frame.at(c, 0x30));
+        c.g[S2][0] = c.ld(frame.at(c, 0x20));
+        c.g[S1][0] = c.ld(frame.at(c, 0x10));
+        c.g[S0][0] = c.ld(frame.at(c, 0));
+        let ret = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x40));
+        c.pc = ret;
+        Ok(())
+    })
+}
+
+/// Kernel copy syscall 0x5a (`kCopy_3`, 0x42c4c0): sets `v1`, traps, delivers
+/// a due event and returns through `ra`.
+pub fn kcopy_3(c: &mut Cpu) {
+    syscall_wrapper(c, 0x5a, 0x0042_c4c4, 0x0042_c4c8);
+}
+
+/// libkernl_CopyArgsToKernel (0x42c510): copies the boot argument strings
+/// into the kernel argument area (at most 15 arguments besides the program
+/// name), measuring each with `strlen` and copying with the `kCopy` syscall.
+/// Returns `s5`, set to the area base + 0x40 before any copy; the area is
+/// where the word at `0x456538` points.
+pub fn libkernl_copy_args_to_kernel(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 40;
+        let frame = Frame::open(c, 0x80);
+        c.g[V0][0] = 0x450000;
+        c.sd(frame.at(c, 0x40), c.g[S3][0]);
+        c.g[V1][0] = 0x450000;
+        c.g[S3][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x6538));
+        c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_add(0x5a10));
+        c.sd(frame.at(c, 0x60), c.g[S5][0]);
+        c.sd(frame.at(c, 0x50), c.g[S4][0]);
+        c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x40));
+        c.sd(frame.at(c, 0x30), c.g[S2][0]);
+        c.g[S5][0] = c.g[V0][0];
+        c.sd(frame.at(c, 0x20), c.g[S1][0]);
+        c.g[S2][0] = c.g[A1][0];
+        c.sd(frame.at(c, 0x10), c.g[S0][0]);
+        c.g[S4][0] = c.g[A2][0];
+        frame.save_ra(c, 0x70);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5a10));
+        c.g[A1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
+        c.sw(sp(c), c.g[V0][0]);
+        callee::RFU116_SET_SYSCALL_C500.call(c, 0x0042_c564)?;
+        c.g[V1][0] = ((c.g[S2][0] as i64) < 16i64) as u64;
+        c.g[V0][0] = 0xf;
+        c.g[A0][0] = c.g[S3][0];
+        if c.g[V1][0] == 0 {
+            c.g[S2][0] = c.g[V0][0];
+        }
+        c.g[A1][0] = sx(sp(c));
+        c.g[A2][0] = 0x4;
+        callee::KCOPY_3.call(c, 0x0042_c580)?;
+        c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x4));
+        c.g[A0][0] = c.g[S0][0];
+        callee::STRLEN.call(c, 0x0042_c58c)?;
+        c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+        c.g[A0][0] = c.lw(sp(c));
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S1][0];
+        callee::KCOPY_3.call(c, 0x0042_c5a0)?;
+        c.g[V1][0] = c.lw(sp(c));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S1][0] as u32));
+        let done = (c.g[S2][0] as i64) <= 0;
+        c.sw(sp(c), c.g[V1][0]);
+        if done {
+            // Epilogue: no more arguments.
+        } else {
+            c.cycles += 2;
+            c.g[S0][0] = c.g[S4][0];
+            loop {
+                c.cycles += 18;
+                c.g[A0][0] = c.g[S3][0];
+                c.g[A1][0] = sx(sp(c));
+                c.g[A2][0] = 0x4;
+                c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x4));
+                callee::KCOPY_3.call(c, 0x0042_c5cc)?;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                callee::STRLEN.call(c, 0x0042_c5d8)?;
+                c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                c.g[A1][0] = c.lw(c.g[S0][0] as u32);
+                c.g[A0][0] = c.lw(sp(c));
+                c.g[A2][0] = c.g[S1][0];
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                callee::KCOPY_3.call(c, 0x0042_c5f0)?;
+                c.g[V1][0] = c.lw(sp(c));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                let more = c.g[S2][0] != 0u64;
+                c.sw(sp(c), c.g[V1][0]);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0042_c5b8);
+                }
+            }
+        }
+        c.cycles += 10;
+        c.g[V0][0] = c.g[S5][0];
+        c.g[RA][0] = c.ld(frame.at(c, 0x70));
+        c.g[S5][0] = c.ld(frame.at(c, 0x60));
+        c.g[S4][0] = c.ld(frame.at(c, 0x50));
+        c.g[S3][0] = c.ld(frame.at(c, 0x40));
+        c.g[S2][0] = c.ld(frame.at(c, 0x30));
+        c.g[S1][0] = c.ld(frame.at(c, 0x20));
+        c.g[S0][0] = c.ld(frame.at(c, 0x10));
+        frame.restore_ra(c, 0x70);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Reserved syscall 0x74 (`RFU116_SetSyscall`, 0x42c760): sets `v1`, traps,
+/// delivers a due event and returns through `ra`.
+pub fn rfu116_set_syscall_2(c: &mut Cpu) {
+    syscall_wrapper(c, 0x74, 0x0042_c764, 0x0042_c768);
+}
+
+/// Kernel copy syscall 0x5a (`kCopy_4`, 0x42c770): sets `v1`, traps, delivers
+/// a due event and returns through `ra`.
+pub fn kcopy_4(c: &mut Cpu) {
+    syscall_wrapper(c, 0x5a, 0x0042_c774, 0x0042_c778);
+}
+
+/// Reserved syscall 0x5b (`RFU091`, 0x42c7b8): sets `v1`, traps, delivers a
+/// due event and returns through `ra`.
+pub fn rfu091_2(c: &mut Cpu) {
+    syscall_wrapper(c, 0x5b, 0x0042_c7bc, 0x0042_c7c0);
+}
+
+/// InitAlarm (0x42c7c8): when Timer 3 mode (bit 8 of `0x10001810`) is clear,
+/// installs the kernel alarm handler (one `RFU116`, two `kCopy`s of the
+/// handler template, cache flushes, then `RFU091`/`RFU116` rounds) and
+/// returns through the entry epilogue.
+pub fn init_alarm(c: &mut Cpu) {
+    const ALARM_FLAG: u32 = 0x1000_1810;
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = 0x10000000;
+        frame.save_ra(c, 0x30);
+        c.g[V0][0] = c.g[V0][0] | 0x1810;
+        c.sd(frame.at(c, 0x20), c.g[S2][0]);
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.g[V1][0] = c.lw(ALARM_FLAG);
+        c.g[V1][0] = c.g[V1][0] & 0x100;
+        let armed = c.g[V1][0] != 0u64;
+        frame.restore_ra(c, 0x30);
+        if !armed {
+            c.cycles += 27;
+            c.g[V0][0] = 0x450000;
+            c.g[S2][0] = 0x2;
+            c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6180));
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x6180));
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+            callee::RFU116_SET_SYSCALL_C760.call(c, 0x0042_c810)?;
+            c.g[A1][0] = 0x450000;
+            c.g[A0][0] = 0xffffffff80070000;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x5a18));
+            c.g[A0][0] = c.g[A0][0] | 0x6000;
+            c.g[A2][0] = 0x740;
+            callee::KCOPY_4.call(c, 0x0042_c828)?;
+            c.g[A1][0] = 0x450000;
+            c.g[A0][0] = 0x80000;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6158));
+            c.g[A0][0] = c.g[A0][0] | 0x2000;
+            c.g[A2][0] = 0x28;
+            callee::KCOPY_4.call(c, 0x0042_c840)?;
+            c.g[A0][0] = 0u64;
+            callee::FLUSH_CACHE.call(c, 0x0042_c848)?;
+            c.g[A0][0] = 0x2;
+            callee::FLUSH_CACHE.call(c, 0x0042_c850)?;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+            callee::RFU116_SET_SYSCALL_C760.call(c, 0x0042_c85c)?;
+            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+            loop {
+                c.cycles += 9;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                callee::RFU091_2.call(c, 0x0042_c868)?;
+                c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                c.g[A1][0] = c.g[V0][0];
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
+                callee::RFU116_SET_SYSCALL_C760.call(c, 0x0042_c878)?;
+                c.g[V0][0] = (c.g[S2][0] < 0x8u64) as u64;
+                if c.g[V0][0] == 0u64 {
+                    c.cycles += 1;
+                    break;
+                }
+                c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0042_c860);
+                }
+            }
+        }
+        c.cycles += 5;
+        c.g[S2][0] = c.ld(frame.at(c, 0x20));
+        c.g[S1][0] = c.ld(frame.at(c, 0x10));
+        c.g[S0][0] = c.ld(frame.at(c, 0));
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// libkernl_InstallTLBRefillHandlers (0x42ca80): stores the caller's
+/// handler address (`a0`) at `0x4564f0` and installs the fixed handler
+/// `0x42cfc0` for exceptions 1..3. Returns the stored address.
+pub fn libkernl_install_tlb_refill_handlers(c: &mut Cpu) {
+    const HANDLER_SLOT: u32 = 0x0045_64f0;
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x450000;
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        c.g[S0][0] = 0x430000;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x3040));
+        c.g[S1][0] = c.g[A0][0];
+        c.sw(HANDLER_SLOT, c.g[S1][0]);
+        c.g[A1][0] = c.g[S0][0];
+        frame.save_ra(c, 0x20);
+        c.g[A0][0] = 0x1;
+        callee::SET_HANDLER.call(c, 0x0042_cab0)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = 0x2;
+        callee::SET_HANDLER.call(c, 0x0042_cabc)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = 0x3;
+        callee::SET_HANDLER.call(c, 0x0042_cac8)?;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore_ra(c, 0x20);
+        c.g[S1][0] = c.ld(frame.at(c, 0x10));
+        c.g[S0][0] = c.ld(frame.at(c, 0));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Kernel copy syscall 0x5a (`kCopy_5`, 0x42cb68): sets `v1`, traps, delivers
+/// a due event and returns through `ra`.
+pub fn kcopy_5(c: &mut Cpu) {
+    syscall_wrapper(c, 0x5a, 0x0042_cb6c, 0x0042_cb70);
+}
+
+/// Reserved syscall 0x5b (`RFU091`, 0x42cbb0): sets `v1`, traps, delivers a
+/// due event and returns through `ra`.
+pub fn rfu091(c: &mut Cpu) {
+    syscall_wrapper(c, 0x5b, 0x0042_cbb4, 0x0042_cbb8);
+}
+
+/// Reserved syscall 0x74 (`RFU116_SetSyscall`, 0x42cbc0): sets `v1`, traps,
+/// delivers a due event and returns through `ra`.
+pub fn rfu116_set_syscall(c: &mut Cpu) {
+    syscall_wrapper(c, 0x74, 0x0042_cbc4, 0x0042_cbc8);
+}
+
+/// InitExecPS2 (0x42cbd0): copies a 0x330-byte kernel template into RAM,
+/// flushes the data cache, then installs the boot syscall handlers (three
+/// `RFU116` calls, then five trips of one `RFU091` plus one `RFU116` each)
+/// for the loaded executable.
+pub fn init_exec_ps2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = 0x450000;
+        c.sd(frame.at(c, 0x20), c.g[S2][0]);
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        c.g[S2][0] = 0x3;
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        frame.save_ra(c, 0x30);
+        c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6540));
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x6540));
+        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+        callee::RFU116_SET_SYSCALL_CBC0.call(c, 0x0042_cc00)?;
+        c.g[A1][0] = 0x450000;
+        c.g[A0][0] = 0xffffffff80070000;
+        c.g[A2][0] = 0x330;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x61c0));
+        c.g[A0][0] = c.g[A0][0] | 0x5000;
+        callee::KCOPY_5.call(c, 0x0042_cc18)?;
+        c.g[A0][0] = 0u64;
+        callee::FLUSH_CACHE.call(c, 0x0042_cc20)?;
+        c.g[A0][0] = 0x2;
+        callee::FLUSH_CACHE.call(c, 0x0042_cc28)?;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+        callee::RFU116_SET_SYSCALL_CBC0.call(c, 0x0042_cc34)?;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+        callee::RFU116_SET_SYSCALL_CBC0.call(c, 0x0042_cc40)?;
+        c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+        loop {
+            c.cycles += 9;
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+            callee::RFU091.call(c, 0x0042_cc50)?;
+            c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+            c.g[A1][0] = c.g[V0][0];
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
+            callee::RFU116_SET_SYSCALL_CBC0.call(c, 0x0042_cc60)?;
+            c.g[V0][0] = (c.g[S2][0] < 0x8u64) as u64;
+            if c.g[V0][0] != 0u64 {
+                c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0042_cc48);
+                }
+            } else {
+                c.cycles += 10;
+                c.g[A0][0] = 0x3;
+                callee::RFU091.call(c, 0x0042_cc74)?;
+                c.g[V1][0] = 0x450000;
+                c.g[RA][0] = c.ld(frame.at(c, 0x30));
+                c.g[S2][0] = c.ld(frame.at(c, 0x20));
+                c.g[S1][0] = c.ld(frame.at(c, 0x10));
+                c.g[S0][0] = c.ld(frame.at(c, 0));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x6538), c.g[V0][0]);
+                let ret = c.g[RA][0] as u32;
+                c.g[SP][0] = sx(sp(c).wrapping_add(0x40));
+                c.pc = ret;
+                return Ok(());
+            }
+        }
+    })
+}
+
+/// Reserved syscall 0x56 (`RFU086_WaitEvnetFlag`, 0x42ccb8): sets `v1`, traps,
+/// delivers a due event and returns through `ra`.
+pub fn rfu086_wait_evnet_flag(c: &mut Cpu) {
+    syscall_wrapper(c, 0x56, 0x0042_ccbc, 0x0042_ccc0);
+}
+
+/// SetTLBEntry (0x42ccc8): with the entry index (`a0 - 13`) below 35, wait
+/// for the TLB event flag; otherwise report -1. Returns the flag result, or
+/// -1 when the index is out of range.
+pub fn set_tlb_entry(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xd));
+        c.g[V0][0] = (c.g[V0][0] < 0x23u64) as u64;
+        let in_range = c.g[V0][0] != 0u64;
+        frame.save_ra(c, 0);
+        if !in_range {
+            c.cycles += 2;
+            c.g[V0][0] = 0xffffffffffffffff;
+            c.cycles += 3;
+            frame.restore_ra(c, 0);
+            frame.close(c);
+            return Ok(());
+        }
+        c.cycles += 2;
+        callee::WAIT_FLAG.call(c, 0x0042_ccec)?;
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// libkernl_SetupTLB (0x42cd98): builds the kernel TLB tables from the config
+/// at `0x4567f0` (entry count, per-entry `{key, ...}` words), one
+/// `RFU086` syscall per entry word, then enables the tables (two `mtc0`
+/// writes to CP0 register 6, Wired). Prints and `Exit(1)`s when the table
+/// overflows 48 entries.
+pub fn libkernl_setup_tlb(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x40);
+        c.g[A0][0] = 0x4a0000;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x5268));
+        c.sd(frame.at(c, 0x20), c.g[S2][0]);
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        c.g[S2][0] = 0x450000;
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        frame.save_ra(c, 0x30);
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x67f0));
+        c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x67f0));
+        c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+        c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+        c.g[A2][0] = c.g[A1][0];
+        c.g[A3][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+        c.g[T1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[T1][0] as u32));
+        c.g[T0][0] = c.g[A3][0];
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
+        c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_sub(0x1));
+        c.g[RA][0] = sx(0x0042cde8);
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x1));
+        c.pc = callee::PRINTF.addr;
+        (callee::PRINTF.f)(c);
+        if c.pc != 0x0042cde8 {
+            return Err(Unwound);
+        }
+        c.mtc0(0, 6);
+        c.g[S1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x67f0));
+        c.g[V0][0] = ((c.g[S1][0] as i64) < 49i64) as u64;
+        let fits = c.g[V0][0] != 0u64;
+        c.g[T9][0] = 0u64;
+        if !fits {
+            c.cycles += 5;
+            c.g[A0][0] = 0x4a0000;
+            c.g[RA][0] = sx(0x0042ce0c);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x5230));
+            c.pc = callee::PRINTF.addr;
+            (callee::PRINTF.f)(c);
+            if c.pc != 0x0042ce0c {
+                return Err(Unwound);
+            }
+            c.g[RA][0] = sx(0x0042ce14);
+            c.g[A0][0] = 0x1;
+            c.pc = callee::EXIT_NOW.addr;
+            (callee::EXIT_NOW.f)(c);
+            if c.pc != 0x0042ce14 {
+                return Err(Unwound);
+            }
+        }
+        // First entry list: words at `[s0 + 0x10]`, `t9` entries.
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[T9][0] as i64) < (c.g[S1][0] as i64)) as u64;
+        let run_first = c.g[V0][0] == 0u64;
+        c.g[S0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+        if !run_first {
+            c.cycles += 2;
+            c.g[A1][0] = c.lw(c.g[S0][0] as u32);
+            loop {
+                c.cycles += 10;
+                c.g[A0][0] = c.g[T9][0];
+                c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                callee::WAIT_FLAG.call(c, 0x0042_ce40)?;
+                c.g[T9][0] = sx((c.g[T9][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = ((c.g[T9][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                if c.g[V0][0] == 0u64 {
+                    break;
+                }
+                c.g[A1][0] = c.lw(c.g[S0][0] as u32);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0042_ce28);
+                }
+            }
+        }
+        // Recompute the bound from the second list head; same walk.
+        c.cycles += 6;
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x67f0));
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+        c.g[S1][0] = sx((c.g[T9][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V1][0] = ((c.g[S1][0] as i64) < 49i64) as u64;
+        let ok = c.g[V1][0] != 0u64;
+        c.g[V0][0] = ((c.g[T9][0] as i64) < (c.g[S1][0] as i64)) as u64;
+        if !ok {
+            c.cycles += 6;
+            c.g[A0][0] = 0x4a0000;
+            c.g[RA][0] = sx(0x0042ce74);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x5218));
+            c.pc = callee::PRINTF.addr;
+            (callee::PRINTF.f)(c);
+            if c.pc != 0x0042ce74 {
+                return Err(Unwound);
+            }
+            c.g[RA][0] = sx(0x0042ce7c);
+            c.g[A0][0] = 0x1;
+            c.pc = callee::EXIT_NOW.addr;
+            (callee::EXIT_NOW.f)(c);
+            if c.pc != 0x0042ce7c {
+                return Err(Unwound);
+            }
+            c.g[V0][0] = ((c.g[T9][0] as i64) < (c.g[S1][0] as i64)) as u64;
+        }
+        c.cycles += 2;
+        let run_second = c.g[V0][0] == 0u64;
+        c.g[S0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+        if !run_second {
+            c.cycles += 2;
+            c.g[A1][0] = c.lw(c.g[S0][0] as u32);
+            loop {
+                c.cycles += 10;
+                c.g[A0][0] = c.g[T9][0];
+                c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                callee::WAIT_FLAG.call(c, 0x0042_cea8)?;
+                c.g[T9][0] = sx((c.g[T9][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = ((c.g[T9][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                if c.g[V0][0] == 0u64 {
+                    break;
+                }
+                c.g[A1][0] = c.lw(c.g[S0][0] as u32);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0042_ce90);
+                }
+            }
+        }
+        // Enable the tables and walk the third list.
+        c.cycles += 7;
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x67f0));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[T9][0]);
+        c.mtc0(25, 6);
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+        if (c.g[V0][0] as i64) <= 0 {
+            c.g[S0][0] = c.g[T9][0];
+        } else {
+            c.cycles += 4;
+            c.g[S1][0] = sx((c.g[T9][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V0][0] = ((c.g[S1][0] as i64) < 49i64) as u64;
+            let ok3 = c.g[V0][0] != 0u64;
+            c.g[V0][0] = ((c.g[T9][0] as i64) < (c.g[S1][0] as i64)) as u64;
+            if !ok3 {
+                c.cycles += 6;
+                c.g[A0][0] = 0x4a0000;
+                c.g[RA][0] = sx(0x0042cef0);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x5200));
+                c.pc = callee::PRINTF.addr;
+                (callee::PRINTF.f)(c);
+                if c.pc != 0x0042cef0 {
+                    return Err(Unwound);
+                }
+                c.g[RA][0] = sx(0x0042cef8);
+                c.g[A0][0] = 0x1;
+                c.pc = callee::EXIT_NOW.addr;
+                (callee::EXIT_NOW.f)(c);
+                if c.pc != 0x0042cef8 {
+                    return Err(Unwound);
+                }
+                c.g[V0][0] = ((c.g[T9][0] as i64) < (c.g[S1][0] as i64)) as u64;
+            }
+            c.cycles += 2;
+            let run_third = c.g[V0][0] == 0u64;
+            c.g[S0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+            if !run_third {
+                c.cycles += 1;
+                c.g[A1][0] = c.lw(c.g[S0][0] as u32);
+                loop {
+                    c.cycles += 10;
+                    c.g[A0][0] = c.g[T9][0];
+                    c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                    c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                    callee::WAIT_FLAG.call(c, 0x0042_cf20)?;
+                    c.g[T9][0] = sx((c.g[T9][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = ((c.g[T9][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                    if c.g[V0][0] == 0u64 {
+                        break;
+                    }
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0042_cf08);
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[S0][0] = c.g[T9][0];
+        }
+        // Final table: one syscall per remaining entry up to 48.
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[S0][0] as i64) < 48i64) as u64;
+        let run_last = c.g[V0][0] == 0u64;
+        c.g[T9][0] = sx((c.g[T9][0] as u32) << 13);
+        if !run_last {
+            c.cycles += 2;
+            c.g[V0][0] = 0xffffffffe0000000;
+            c.g[S1][0] = sx((c.g[T9][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            loop {
+                c.cycles += 10;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A2][0] = c.g[S1][0];
+                c.g[A1][0] = 0u64;
+                c.g[A3][0] = 0u64;
+                c.g[T0][0] = 0u64;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                callee::WAIT_FLAG.call(c, 0x0042_cf64)?;
+                c.g[V0][0] = ((c.g[S0][0] as i64) < 48i64) as u64;
+                let more = c.g[V0][0] != 0u64;
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x2000));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0042_cf48);
+                }
+            }
+        }
+        c.cycles += 7;
+        c.g[RA][0] = c.ld(frame.at(c, 0x30));
+        c.g[V0][0] = c.g[T9][0];
+        c.g[S2][0] = c.ld(frame.at(c, 0x20));
+        c.g[S1][0] = c.ld(frame.at(c, 0x10));
+        c.g[S0][0] = c.ld(frame.at(c, 0));
+        let ret = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x40));
+        c.pc = ret;
+        Ok(())
+    })
+}
+
+/// _InitSys (0x42c300): kernel start-up: heap-semaphore, syscall table, alarm,
+/// thread helper and OSD init, then tail-calls `InitExecPS2` to boot.
+pub fn init_sys(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        callee::INIT_MALLOC_SEMA.call(c, 0x0042_c310)?;
+        callee::INIT_SYSCALL_TABLE.call(c, 0x0042_c318)?;
+        callee::INIT_ALARM.call(c, 0x0042_c320)?;
+        callee::INIT_THREAD_HELPER.call(c, 0x0042_c328)?;
+        callee::INIT_OSD.call(c, 0x0042_c330)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        c.pc = callee::INIT_EXEC.addr;
+        (callee::INIT_EXEC.f)(c);
+        Ok(())
+    })
+}
+
+/// RCMP_AV_MS_TIMER_Update (0x42e508): calls `EATimer_GetTicks` (`0x3e4e98`)
+/// with `a0`, then folds the tick delta into the accumulator at `a0 + 8`
+/// (a 64-bit `multu` of the delta by the word at `a0 + 0x10`, shifted `>> 12`
+/// when that word is not `0x1000`) and stores the tick count at `[a0]`.
+pub fn rcmp_av_ms_timer_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        const TIMER_CB: u32 = 0x003e_4e98;
+        call_ptr(c, TIMER_CB, 0x0042_e51c)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = 0x1000;
+        let use_mult = c.g[A0][0] != c.g[V0][0];
+        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+        if use_mult {
+            c.cycles += 10;
+            c.g[V1][0] = c.ld((c.g[S0][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+            c.multu(0, 0, 4, 2);
+            c.g[A2][0] = c.lo[0];
+            c.g[V0][0] = c.hi[0];
+            c.g[A2][0] = c.g[A2][0] << 32;
+            c.g[V0][0] = c.g[V0][0] << 32;
+            c.g[A2][0] = c.g[A2][0] >> 32;
+            c.g[V0][0] = c.g[V0][0] | c.g[A2][0];
+            c.g[V0][0] = c.g[V0][0] >> 12;
+        } else {
+            c.cycles += 5;
+            c.g[V1][0] = c.ld((c.g[S0][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+            c.g[V0][0] = c.g[V0][0] << 32;
+            c.g[V0][0] = c.g[V0][0] >> 32;
+        }
+        c.cycles += 7;
+        c.g[V1][0] = c.g[V1][0].wrapping_add(c.g[V0][0]);
+        c.sd((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+        c.sw(c.g[S0][0] as u32, c.g[A1][0]);
+        frame.restore(c, 16, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use crate::difftest::require_paths;
+
+    /// Bounded TLB config: entry count 48-52 (49+ takes the overflow-`Exit`
+    /// path), small second/third bounds, and the three entry lists in
+    /// scratch RAM, so every walk terminates (used only by the setup_tlb
+    /// tests below.)
+    pub(crate) fn setup_tlb_tables(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        c.bus.write32(0x0045_67f0, 48 + (seed % 5));
+        c.bus.write32(0x0045_67f4, 3);
+        c.bus.write32(0x0045_67f8, 2);
+        c.bus.write32(0x0045_6800, DATA + 0x204);
+        c.bus.write32(0x0045_6804, DATA + 0x404);
+        c.bus.write32(0x0045_6808, DATA + 0x604);
+        crate::difftest::put_words(
+            c,
+            DATA + 0x204,
+            &[
+                r.next_u32(),
+                r.next_u32(),
+                r.next_u32(),
+                r.next_u32(),
+                DATA + 0x244,
+                r.next_u32(),
+            ],
+        );
+    }
+
+    /// Craft an argv table: `argc` NUL-terminated strings after the pointer
+    /// array, all in scratch RAM (used only by the copy_args tests below.)
+    pub(crate) fn craft_argv(c: &mut Cpu, r: &mut Rng, argc: u32) {
+        let base = DATA + 0x104;
+        for i in 0..argc.min(8) {
+            let s = base + 0x100 + i * 0x20;
+            c.bus.write32(base + 4 * i, s);
+            let len = 1 + r.next_u32() % 12;
+            for j in 0..len {
+                c.bus.write8(s + j, b'x' + ((i + j) % 20) as u8);
+            }
+            c.bus.write8(s + len, 0);
+        }
+    }
 
     use crate::difftest::events::check_events;
     use crate::difftest::events::schedule;
@@ -755,5 +2137,527 @@ pub(crate) mod tests {
             machine(c, seed, 0x0010_01c8, 3);
             c.pc = 0x0010_01c8;
         });
+    }
+    use crate::difftest::check_lohi;
+    use crate::difftest::put_words;
+
+    #[test]
+    fn init_tlb_3_matches() {
+        check(
+            ee::s15::f_0042cd58__generated,
+            init_tlb_3,
+            SEEDS,
+            &|c, seed| {
+                use crate::difftest::fakes::LOG_RESULTS;
+                machine(c, seed, 121003, 1);
+                c.pc = 0x0042_cd58;
+                // Force `GetMemorySize` to answer 32 MB on even seeds so the
+                // `SetupTLB` arm runs; odd seeds take the fallback-TLB arm.
+                if seed % 2 == 0 {
+                    c.bus.write32(LOG_RESULTS, 0x2000000);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn exec_osd_2_matches() {
+        check(
+            ee::s15::f_0042c710__generated,
+            exec_osd_2,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 121204, 1);
+                c.pc = 0x0042_c710;
+                c.g[A0][0] = (DATA + 4 + (r.next_u32() & 0xf_ff0)) as u64;
+                c.g[A1][0] = (DATA + 0x104 + (r.next_u32() & 0xf0)) as u64;
+                let _ = r;
+            },
+        );
+    }
+
+    #[test]
+    fn exit_2_matches() {
+        check(ee::s15::f_0042c6e8__generated, exit_2, SEEDS, &|c, seed| {
+            let mut r = machine(c, seed, 121205, 1);
+            c.pc = 0x0042_c6e8;
+            c.g[A0][0] = (DATA + 4 + (r.next_u32() & 0xf_ff0)) as u64;
+            let _ = r;
+        });
+    }
+
+    #[test]
+    fn load_exec_ps2_2_matches() {
+        check(
+            ee::s15::f_0042c6a0__generated,
+            load_exec_ps2_2,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 121206, 1);
+                c.pc = 0x0042_c6a0;
+                c.g[A0][0] = (DATA + 4 + (r.next_u32() & 0xf_ff0)) as u64;
+                c.g[A1][0] = (DATA + 0x104 + (r.next_u32() & 0xf0)) as u64;
+                let _ = r;
+            },
+        );
+    }
+
+    #[test]
+    fn init_tlb_2_matches() {
+        check(
+            ee::s15::f_0042c628__generated,
+            init_tlb_2,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 121207, 1);
+                c.pc = 0x0042_c628;
+            },
+        );
+    }
+
+    #[test]
+    fn libkernl_init_malloc_sema_matches() {
+        check(
+            ee::s15::f_0042c0d8__generated,
+            libkernl_init_malloc_sema,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 121302, 1);
+                c.pc = 0x0042_c0d8;
+            },
+        );
+    }
+
+    #[test]
+    fn kcopy_matches() {
+        syscall_test(ee::s15::f_0042c120__generated, kcopy, 121221);
+    }
+
+    #[test]
+    fn find_address_matches() {
+        syscall_test(ee::s15::f_0042c1a8__generated, find_address, 121220);
+    }
+
+    #[test]
+    fn get_syscall_handler_matches() {
+        check(
+            ee::s15::f_0042c1b8__generated,
+            get_syscall_handler,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 121219, 1);
+                c.pc = 0x0042_c1b8;
+                c.g[A0][0] = (r.next_u32() % 64) as u64;
+                let _ = r;
+            },
+        );
+    }
+
+    #[test]
+    fn libkernl_init_syscall_table_matches() {
+        let setup = &|c: &mut Cpu, seed: u32| {
+            use crate::difftest::fakes::LOG_RESULTS;
+            machine(c, seed, 121218, 1);
+            c.pc = 0x0042_c1f0;
+            // Force the two `FindAddress` results to agree, so the walk
+            // converges immediately instead of wandering on fake hashes.
+            put_words(c, LOG_RESULTS + 8, &[0x1000, 0xf5c]);
+        };
+        check(
+            ee::s15::f_0042c1f0__generated,
+            libkernl_init_syscall_table,
+            SEEDS,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_0042c1f0__generated,
+            SEEDS,
+            // Converged walk (90) + unwind (43).
+            &[43, 90],
+            setup,
+        );
+    }
+
+    #[test]
+    fn libkernl_init_syscall_table_events() {
+        check_events(
+            ee::s15::f_0042c1f0__generated,
+            libkernl_init_syscall_table,
+            300,
+            &|c, seed| {
+                use crate::difftest::fakes::LOG_RESULTS;
+                let mut r = machine(c, seed, 121218, 0);
+                c.pc = 0x0042_c1f0;
+                // First miss, then agree after one trip round the loop
+                // head, so the walk stays far under the call-trace cap:
+                // even seeds exit through the first arm, odd seeds take
+                // one trip through each arm and exit through the second.
+                // n=0,1 (the two `RFU116` setups) read unwritten words and
+                // return hashes, which the walk discards.
+                if seed % 2 == 0 {
+                    put_words(c, LOG_RESULTS + 8, &[0x1000, 0x1000, 0x10a4]);
+                } else {
+                    put_words(c, LOG_RESULTS + 8, &[0x1000, 0x1000, 0x900000, 0x8fff5c]);
+                }
+                schedule(c, &mut r, seed, 0x0042_c1f0)
+            },
+        );
+    }
+
+    #[test]
+    fn rfu116_set_syscall_5_matches() {
+        syscall_test(ee::s15::f_0042c2f0__generated, rfu116_set_syscall_5, 121217);
+    }
+
+    #[test]
+    fn rfu116_set_syscall_4_matches() {
+        syscall_test(ee::s15::f_0042c340__generated, rfu116_set_syscall_4, 121215);
+    }
+
+    #[test]
+    fn kcopy_2_matches() {
+        syscall_test(ee::s15::f_0042c350__generated, kcopy_2, 121214);
+    }
+
+    #[test]
+    fn rfu091_3_matches() {
+        syscall_test(ee::s15::f_0042c398__generated, rfu091_3, 121213);
+    }
+
+    #[test]
+    fn libkernl_is_old_osd_config_matches() {
+        check(
+            ee::s15::f_0042c3a8__generated,
+            libkernl_is_old_osd_config,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 121212, 1);
+                c.pc = 0x0042_c3a8;
+            },
+        );
+    }
+
+    #[test]
+    fn init_osd_matches() {
+        check(
+            ee::s15::f_0042c410__generated,
+            init_osd,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 121211, 1);
+                c.pc = 0x0042_c410;
+            },
+        );
+    }
+
+    #[test]
+    fn init_osd_events() {
+        check_events(ee::s15::f_0042c410__generated, init_osd, 300, &|c, seed| {
+            let mut r = machine(c, seed, 121211, 0);
+            c.pc = 0x0042_c410;
+            schedule(c, &mut r, seed, 0x0042_c410)
+        });
+    }
+
+    #[test]
+    fn kcopy_3_matches() {
+        syscall_test(ee::s15::f_0042c4c0__generated, kcopy_3, 121210);
+    }
+
+    #[test]
+    fn libkernl_copy_args_to_kernel_matches() {
+        let setup = &|c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 121208, 1);
+            c.pc = 0x0042_c510;
+            // argc==16 exercises the S2<16 boundary (clamps to 0xf).
+            let argc = if seed % 11 == 10 {
+                16
+            } else if seed % 2 == 0 {
+                0
+            } else {
+                1 + seed % 3
+            };
+            c.g[A0][0] = (DATA + 0x84) as u64;
+            c.g[A1][0] = argc as u64;
+            c.g[A2][0] = (DATA + 0x104) as u64;
+            put_words(c, DATA + 0x84, &[0x7a00_7a00, 0x7a00_7a00, 0]);
+            craft_argv(c, &mut r, argc);
+            // craft_argv caps the table at 8 entries; materialise the rest so
+            // large argc values read valid pointers, not zero RAM.
+            for i in 8..argc {
+                let s = DATA + 0x104 + 0x100 + i * 0x20;
+                c.bus.write32(DATA + 0x104 + 4 * i, s);
+                c.bus.write32(s, 0x00787878);
+            }
+        };
+        check(
+            ee::s15::f_0042c510__generated,
+            libkernl_copy_args_to_kernel,
+            SEEDS,
+            setup,
+        );
+    }
+
+    #[test]
+    fn libkernl_copy_args_to_kernel_events() {
+        check_events(
+            ee::s15::f_0042c510__generated,
+            libkernl_copy_args_to_kernel,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 121208, 0);
+                c.pc = 0x0042_c510;
+                c.g[A0][0] = (DATA + 0x84) as u64;
+                c.g[A1][0] = 3;
+                c.g[A2][0] = (DATA + 0x104) as u64;
+                put_words(c, DATA + 0x84, &[0x7a00_7a00, 0x7a00_7a00, 0]);
+                craft_argv(c, &mut r, 3);
+                schedule(c, &mut r, seed, 0x0042_c510)
+            },
+        );
+    }
+
+    #[test]
+    fn rfu116_set_syscall_2_matches() {
+        syscall_test(ee::s15::f_0042c760__generated, rfu116_set_syscall_2, 121203);
+    }
+
+    #[test]
+    fn kcopy_4_matches() {
+        syscall_test(ee::s15::f_0042c770__generated, kcopy_4, 121202);
+    }
+
+    #[test]
+    fn rfu091_2_matches() {
+        syscall_test(ee::s15::f_0042c7b8__generated, rfu091_2, 121201);
+    }
+
+    #[test]
+    fn init_alarm_matches() {
+        check(
+            ee::s15::f_0042c7c8__generated,
+            init_alarm,
+            SEEDS,
+            &|c, seed| {
+                let r = machine(c, seed, 121020, 1);
+                c.pc = 0x0042_c7c8;
+                // Set Timer 3 mode on some seeds so the armed/skip arm runs:
+                // the skip arm returns the 0x10001810 address it built.
+                if seed % 9 == 8 {
+                    c.bus.write32(0x1000_1810, 0x100);
+                }
+                let _ = r;
+            },
+        );
+    }
+
+    #[test]
+    fn init_alarm_events() {
+        check_events(
+            ee::s15::f_0042c7c8__generated,
+            init_alarm,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 121020, 0);
+                // Clear the alarm flag on even seeds so the install path
+                // (and its loop head) runs.
+                if seed % 2 == 0 {
+                    c.bus.write32(0x1000_1810, 0);
+                }
+                schedule(c, &mut r, seed, 0x0042_c7c8)
+            },
+        );
+    }
+
+    #[test]
+    fn libkernl_install_tlb_refill_handlers_matches() {
+        check(
+            ee::s15::f_0042ca80__generated,
+            libkernl_install_tlb_refill_handlers,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 121010, 0);
+                c.pc = 0x0042_ca80;
+                c.g[A0][0] = (DATA + 4 + (r.next_u32() & 0xf_ff0)) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn kcopy_5_matches() {
+        syscall_test(ee::s15::f_0042cb68__generated, kcopy_5, 121009);
+    }
+
+    #[test]
+    fn rfu091_matches() {
+        syscall_test(ee::s15::f_0042cbb0__generated, rfu091, 121008);
+    }
+
+    #[test]
+    fn rfu116_set_syscall_matches() {
+        syscall_test(ee::s15::f_0042cbc0__generated, rfu116_set_syscall, 121007);
+    }
+
+    #[test]
+    fn init_exec_ps2_matches() {
+        check(
+            ee::s15::f_0042cbd0__generated,
+            init_exec_ps2,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 121006, 1);
+                c.pc = 0x0042_cbd0;
+            },
+        );
+    }
+
+    #[test]
+    fn init_exec_ps2_events() {
+        check_events(
+            ee::s15::f_0042cbd0__generated,
+            init_exec_ps2,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 121006, 0);
+                schedule(c, &mut r, seed, 0x0042_cbd0)
+            },
+        );
+    }
+
+    #[test]
+    fn rfu086_wait_evnet_flag_matches() {
+        syscall_test(
+            ee::s15::f_0042ccb8__generated,
+            rfu086_wait_evnet_flag,
+            121005,
+        );
+    }
+
+    #[test]
+    fn set_tlb_entry_matches() {
+        check(
+            ee::s15::f_0042ccc8__generated,
+            set_tlb_entry,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 121004, 0);
+                c.pc = 0x0042_ccc8;
+                // Steer the index in and out of range on alternating seeds.
+                c.g[A0][0] = if seed % 9 == 8 {
+                    // Boundary index: (0x30-0xd)==0x23, exercises the == edge of the <0x23 range check.
+                    0x30
+                } else if seed % 2 == 0 {
+                    13 + (r.next_u32() % 35) as u64
+                } else {
+                    0x100 + (r.next_u32() % 0x100) as u64
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn libkernl_setup_tlb_matches() {
+        let setup = &|c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 121002, 1);
+            c.pc = 0x0042_cd98;
+            setup_tlb_tables(c, &mut r, seed);
+            if seed % 11 == 10 {
+                // All-zero config: every list empty so T9 stays 0 into the
+                // final table, exercising the S0<48 enter arm.
+                for w in 0..16u32 {
+                    c.bus.write32(0x0045_67f0 + 4 * w, 0);
+                }
+            } else if seed % 13 == 12 {
+                // Count-48 config: walk exactly 48 entries so T9==48 at the
+                // final pre-check (the `< 49` bound sees exact equality),
+                // with zeroed per-list bounds so lists 2+ don't advance T9
+                // further.
+                c.bus.write32(0x0045_67f0, 48);
+                c.bus.write32(0x0045_67f4, 0);
+                c.bus.write32(0x0045_67f8, 0);
+            } else if seed % 7 == 6 {
+                // Count-0 config: S1==0 with the other bounds intact, so the
+                // first-list (T9<S1) boundary check sees exact equality.
+                c.bus.write32(0x0045_67f0, 0);
+            }
+        };
+        check(
+            ee::s15::f_0042cd98__generated,
+            libkernl_setup_tlb,
+            SEEDS,
+            setup,
+        );
+    }
+
+    #[test]
+    fn libkernl_setup_tlb_events() {
+        check_events(
+            ee::s15::f_0042cd98__generated,
+            libkernl_setup_tlb,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 121002, 0);
+                c.pc = 0x0042_cd98;
+                // Drive the table through all four entry-list walks.
+                setup_tlb_tables(c, &mut r, seed);
+                schedule(c, &mut r, seed, 0x0042_cd98)
+            },
+        );
+    }
+
+    #[test]
+    fn init_sys_matches() {
+        let setup = &|c: &mut Cpu, seed: u32| {
+            use crate::difftest::fakes::LOG_RESULTS;
+            machine(c, seed, 121216, 1);
+            c.pc = 0x0042_c300;
+            // Bound the nested `InitSyscallTable` walk (its `FIND`s are
+            // the 5th/6th syscalls: two `CreateSema`s + two setups first).
+            put_words(c, LOG_RESULTS + 16, &[0x1000, 0xf5c]);
+        };
+        check(ee::s15::f_0042c300__generated, init_sys, SEEDS, setup);
+        require_paths(
+            ee::s15::f_0042c300__generated,
+            SEEDS,
+            // Bounded walk termination: full path (862, 864 config
+            // variants), short unwind/config paths (40-47).
+            &[40, 41, 42, 43, 44, 45, 46, 47, 862, 864],
+            setup,
+        );
+    }
+
+    #[test]
+    fn rcmp_av_ms_timer_update_matches() {
+        check_lohi(
+            ee::s15::f_0042e508__generated,
+            rcmp_av_ms_timer_update,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 121001, 1);
+                c.pc = 0x0042_e508;
+                c.g[A0][0] = (DATA + 4 + (r.next_u32() & 0xf_ff0)) as u64;
+                let base = c.g[A0][0] as u32;
+                c.bus.write32(base, DATA + 0x204);
+                c.bus.write32(base + 8, (r.next_u32() & 0xffffff) as u32);
+                // Third word value (5) takes the use_mult arm with a nonzero
+                // product, so the 64-bit combine and `>> 12` shift run on
+                // nonzero values (0x1000/0 seeds take the skip arm).
+                c.bus.write32(
+                    base + 0x10,
+                    if seed % 3 == 2 {
+                        5
+                    } else if seed % 2 == 0 {
+                        0x1000
+                    } else {
+                        0x0
+                    },
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn rfu116_set_syscall_3_matches() {
+        syscall_test(ee::s15::f_0042c500__generated, rfu116_set_syscall_3, 121209);
     }
 }
