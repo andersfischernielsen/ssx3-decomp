@@ -328,8 +328,8 @@ fn spawn_depth_thread(
                         //
                         // A map requested after the GPU had finished with
                         // the buffer can go unanswered, even by a wait on
-                        // its submission: asked again after a short while
-                        // it is answered. A map still pending after
+                        // its submission: asked again every few
+                        // milliseconds it is answered. A map still pending after
                         // `DEPTH_GIVE_UP` is given up: no depth for the
                         // frame, not a game waiting for it.
                         let mut mapped = map_depth(&buf, Some(std::thread::current()));
@@ -337,7 +337,7 @@ fn spawn_depth_thread(
                             m.load(std::sync::atomic::Ordering::Acquire)
                         };
                         let t0 = web_time::Instant::now();
-                        let mut asked_again = false;
+                        let mut next_ask = DEPTH_ASK_AGAIN;
                         while state(&mapped) == MAP_PENDING {
                             let waited = t0.elapsed();
                             if waited > DEPTH_GIVE_UP {
@@ -345,8 +345,8 @@ fn spawn_depth_thread(
                                 buf.unmap();
                                 break;
                             }
-                            if !asked_again && waited > DEPTH_ASK_AGAIN {
-                                asked_again = true;
+                            if waited > next_ask {
+                                next_ask += DEPTH_ASK_AGAIN;
                                 buf.unmap();
                                 mapped = map_depth(&buf, Some(std::thread::current()));
                             }
@@ -383,7 +383,7 @@ const DEPTH_POLL: std::time::Duration = std::time::Duration::from_millis(1);
 /// How long a pending depth map waits before it is asked for again, and
 /// before it is given up.
 const DEPTH_ASK_AGAIN: std::time::Duration = std::time::Duration::from_millis(2);
-const DEPTH_GIVE_UP: std::time::Duration = std::time::Duration::from_millis(250);
+const DEPTH_GIVE_UP: std::time::Duration = std::time::Duration::from_millis(60);
 const DEPTH_POLL_WANTED: std::time::Duration = std::time::Duration::from_micros(100);
 static DEPTH_POLLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
