@@ -222,6 +222,7 @@ pub fn restore_name(c: &mut Cpu) {
 
 /// The plugin event is over: the next world and names are the game's own.
 pub fn end_plugin_event(c: &mut Cpu) {
+    crate::plugin_host::event_ended(c);
     set_world(None);
     restore_name(c);
 }

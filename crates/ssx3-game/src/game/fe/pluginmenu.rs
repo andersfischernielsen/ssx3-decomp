@@ -1000,6 +1000,7 @@ fn start_event(
         "[plugin-menu] start {} (template {}, world {})",
         event.id, event.template, event.world
     );
+    crate::plugin_host::event_started(c, &event.id, back)?;
     c.g[A0][0] = sx(this);
     call_ptr(c, HIDE_MAP_PIC, back)?;
     Ok(1)

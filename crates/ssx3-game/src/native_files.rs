@@ -76,6 +76,8 @@ enum Source {
 }
 
 struct OpenFile {
+    /// The upper-case path the game opened (`DATA/AUDIO/AUDIO.BIG`).
+    name: String,
     size: u32,
     loc: Loc,
 }
@@ -116,6 +118,21 @@ static STATE: Mutex<Option<State>> = Mutex::new(None);
 static LOG: Mutex<Option<File>> = Mutex::new(None);
 static OVERLAYS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 static GENERATORS: Mutex<Vec<(String, Generator)>> = Mutex::new(Vec::new());
+static READ_PATCHES: Mutex<Vec<ReadPatch>> = Mutex::new(Vec::new());
+
+/// Changes the bytes the game reads from a file: gets the file's path (upper
+/// case, `DATA/AUDIO/AUDIO.BIG`), the offset of the read and the bytes just
+/// read (to change in place). Returns `false` to fail the read.
+pub type ReadPatch = fn(&str, u32, &mut [u8]) -> bool;
+
+/// Run `patch` on every read the game makes through the native file layer,
+/// after the bytes are read (not on the generators' own reads of originals).
+/// Patches run in the order they were added. A plugin uses this to serve a
+/// part of a file differently depending on its state, such as a sound bank
+/// that changes with the course played.
+pub fn add_read_patch(patch: ReadPatch) {
+    READ_PATCHES.lock().unwrap().push(patch);
+}
 
 /// Serve `path` (`DATA/UI/FE.LUI`, any case) as `generate` makes it from the
 /// original bytes, in memory: nothing derived from the disc is written
@@ -274,6 +291,7 @@ impl State {
     fn open(&mut self, name: &str) -> Option<OpenFile> {
         if let Some(mem) = self.generate(name) {
             return Some(OpenFile {
+                name: name.to_string(),
                 size: mem.len() as u32,
                 loc: Loc::Mem(mem),
             });
@@ -316,6 +334,7 @@ impl State {
                 if let Some(f) = File::open(&path).ok().and_then(|f| {
                     let size = f.metadata().ok()?.len() as u32;
                     Some(OpenFile {
+                        name: name.to_string(),
                         size,
                         loc: Loc::Host(f),
                     })
@@ -333,6 +352,7 @@ impl State {
                 });
                 let (sector, size) = hit?;
                 Some(OpenFile {
+                    name: name.to_string(),
                     size,
                     loc: Loc::Sector(sector),
                 })
@@ -342,6 +362,7 @@ impl State {
                 let f = File::open(&path).ok()?;
                 let size = f.metadata().ok()?.len() as u32;
                 Some(OpenFile {
+                    name: name.to_string(),
                     size,
                     loc: Loc::Host(f),
                 })
@@ -522,12 +543,18 @@ fn read_into(c: &mut Cpu, handle: u32, buf: u32, off: u32, size: u32) -> bool {
         return false;
     };
     let mut data = vec![0u8; size as usize];
-    let ok = STATE
-        .lock()
-        .unwrap()
-        .as_mut()
-        .unwrap()
-        .read(idx, off, &mut data);
+    let ok = {
+        let mut g = STATE.lock().unwrap();
+        let st = g.as_mut().unwrap();
+        let ok = st.read(idx, off, &mut data);
+        let patches = READ_PATCHES.lock().unwrap();
+        match st.files.get(idx) {
+            Some(Some(f)) if ok && !patches.is_empty() => {
+                patches.iter().all(|patch| patch(&f.name, off, &mut data))
+            }
+            _ => ok,
+        }
+    };
     if ok {
         c.bus.write_bytes(buf, &data);
     }

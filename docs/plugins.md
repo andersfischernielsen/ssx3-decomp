@@ -221,6 +221,32 @@ pub fn plugin() -> Box<dyn Plugin> { Box::new(Mine) }
 - The plugin API is `0.x`: pin the commit of `ssx3-decomp` your plugin builds
   against.
 
+### Host hooks for plugin code
+
+Small generic hooks the engine offers next to the function hooks. All are
+no-ops without a plugin that uses them (the race replay gate stays identical).
+
+- `plugin_host::add_event_listener(EventListener { started, ended })`: be told
+  when an event of the catalog is started from the Select Peak screen
+  (`started(c, event, back)`, after the world and course name are set and before
+  the load; `back` is the return address for guest calls, as in the game's own
+  hooks) and when it ends (`ended(c)`: the front end is back, or another event
+  starts). `SSX3_EVENT=<plugin>/<event>` boots do not call `started`; the plugin
+  knows its event from the variable. A plugin that needs per-event state (a
+  record, a rule set) switches it here.
+- `native_files::add_read_patch(fn(&str, u32, &mut [u8]) -> bool)`: change the
+  bytes the game reads from a file, in place, after they are read: the file's
+  upper-case path, the read's offset and the bytes. For a file whose content
+  depends on the plugin's state, such as a sound bank that follows the course.
+- `packetless::set_opaque_blend_hook(fn(&mut Cpu, inst, material_table) ->
+  Option<(u32, u32)>)`: decide the blend of one model's opaque materials in the
+  native renderer's model draw (`base_state`'s pair; `None` keeps the game's).
+  Such a model skips the fast bucket path. For models that are not ordinary
+  textures, such as a screen playing a movie.
+- Mid-function edits of a draw call can often be made at the callee: when
+  `PS2GraphicsMan_DrawModel` is entered, `RA` says which caller made the call
+  and the caller's saved registers (`S0`..`S7`) are still in place.
+
 ## Rules
 
 - No game data in a plugin repository: the importer reads the user's disc and

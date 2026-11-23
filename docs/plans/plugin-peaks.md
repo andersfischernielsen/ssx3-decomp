@@ -438,8 +438,8 @@ Where the run differs from the design:
   against the plan's map, not by `+0x18` (the id): the id is written at creation for the game's
   own code, but the UIMenu can hand ids out again.
 - **`GetEventRecord` is not hooked.** Plugin rows never reach the stock accept; the stock refreshes
-  that still run on the game's peak 1 (stored as peak 0) read its tables only. `hookable.txt` keeps the
-  address for plugins that want it.
+  that still run on the game's peak 1 (stored as peak 0) read its tables only. a plugin that wants it adds the
+  address to `hookable.txt`.
 - **Starting.** `start_event` repeats the front-end tail of `es_start_event` with the template's
   record from `event_boot::events` (`BENewRaceInt_SetEventType/SetEvent`, commit, flow 1: `SetPhase`,
   the rule flags clear and `GameModule_QuitToLoadScreen`). The world swap (`event_boot::set_world`)

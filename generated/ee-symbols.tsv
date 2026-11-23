@@ -2331,7 +2331,7 @@ s03	001a39d8	001a39ec	o	FEAsyncManager_SetState
 s03	001a39f0	001a3bf0	o	FEAsyncManager_Update
 s03	001a3bf0	001a3c4c	o	FEAsyncManager_FindFreeSlot
 s03	001a3c50	001a3cd8	o	FEAsyncManager_FreeAll
-s03	001a3cd8	001a3dc8	o	FEAsyncManager_LoadSlot
+s03	001a3cd8	001a3dc8	-	FEAsyncManager_LoadSlot
 s03	001a3dc8	001a3e30	o	cFEStateNetMessenger_ctor
 s03	001a3e30	001a3e9c	-	cFEStateNetMessenger_v32
 s03	001a3ea0	001a3f64	o	cFEStateNetMessenger_dtor
@@ -3883,7 +3883,7 @@ s05	001ffd08	001fff74	-	OVScreenRewardList_ShowPage
 s05	001fff78	00200218	-	OVScreenRewardList_TransitionIn
 s05	00200218	00200284	o	OVScreenRewardsListPopup_Init
 s05	00200288	00200384	-	OVScreenRewardsListPopup_OnWidgetAction
-s05	00200388	002006b8	o	EventSelect_GetEventRecord
+s05	00200388	002006b8	-	EventSelect_GetEventRecord
 s05	002006b8	002006fc	o	EventSelect_ctor
 s05	00200700	002009d0	-	EventSelect_Init
 s05	002009d0	00200a6c	o	EventSelect_OnWidgetCreated
@@ -4308,7 +4308,7 @@ s06	002302a8	00230338	o	GameModule_QuickRestart
 s06	00230338	0023035c	o	GameModule_InvalidateFocus
 s06	00230360	0023042c	o	GameModule_OnSectionUnload
 s06	00230430	00230484	o	GameModule_CreateSectionScriptTable
-s06	00230488	00230558	o	GameModule_QuitToLoadScreen
+s06	00230488	00230558	-	GameModule_QuitToLoadScreen
 s06	00230558	002305c8	-	GameModule_BeginReplayPlayback
 s06	002305c8	0023063c	o	GameModule_EndReplayPlayback
 s06	00230640	00230698	o	GameModule_RenderProcessLists
@@ -4364,7 +4364,7 @@ s06	00232d18	00232d50	o	StartScreen_Update
 s06	00232d50	00232da8	o	StartScreen_Unload
 s06	00232da8	00232e1c	o	StartScreen_Render
 s06	00232e20	00233048	o	cGameLoadScreen_Load
-s06	00233048	00233260	o	cGameLoadScreen_LoadPictures
+s06	00233048	00233260	-	cGameLoadScreen_LoadPictures
 s06	00233260	002332c4	o	cGameLoadScreen_Enter
 s06	002332c8	002332e8	o	cGameLoadScreen_TryExit
 s06	002332e8	00233390	o	cGameLoadScreen_Unload
@@ -4412,12 +4412,12 @@ s06	00234f40	00235080	o	GameStateReset_OverlayEnter
 s06	00235080	0023556c	oe	GameStateReset_OverlayUpdate
 s06	00235570	002355ac	o	GameStateReset_OverlayExit
 s06	002355b0	002355c0	o	GameStateReset_v08
-s06	002355c0	002357f4	o	GameStateReset_Enter
+s06	002355c0	002357f4	-	GameStateReset_Enter
 s06	002357f8	00235868	o	GameStateReset_Update
 s06	00235868	00235990	o	GameStateReset_Exit
 s06	00235990	00235a14	o	GameStateReset_SaveState
 s06	00235a18	00235a9c	o	GameStateReset_LoadState
-s06	00235aa0	00235cc8	o	GameStateRestartRace_Enter
+s06	00235aa0	00235cc8	-	GameStateRestartRace_Enter
 s06	00235cc8	00235f20	o	GameStateRestartRace_Update
 s06	00235f20	00235f48	o	GameStateRestartRace_Exit
 s06	00235f48	00235fcc	o	GameStateRestartRace_SaveState
@@ -5885,7 +5885,7 @@ s07	0027a6b0	0027a720	o	ScriptEngine_OnSeqStart
 s07	0027a720	0027a798	o	ScriptEngine_OnSeqAdvance
 s07	0027a798	0027a7f0	o	ScriptEngine_OnSeqEnd
 s07	0027a7f0	0027a860	o	ScriptEngine_OnSeqStopped
-s07	0027a860	0027a9f0	o	ScriptEngine_QueueFinishScripts
+s07	0027a860	0027a9f0	-	ScriptEngine_QueueFinishScripts
 s07	0027a9f0	0027aa7c	e	ScriptEngine_SkipFinishScript
 s07	0027aa80	0027aaf4	o	ScriptEngine_IsFinishScriptActive
 s07	0027aaf8	0027ac60	o	ScriptEngine_QueueIntroScripts
@@ -7742,7 +7742,7 @@ s09	002db980	002db9c4	-	cCrowdAnim2D_Create
 s09	002db9c8	002dba08	o	cCrowdAnim2D_ctor
 s09	002dba08	002dbac0	oe	cCrowdAnim2D_StepFrame
 s09	002dbac0	002dbd0c	o	cCrowdAnim2D_Update
-s09	002dbd10	002dbee0	o	FXLoader_ctor
+s09	002dbd10	002dbee0	-	FXLoader_ctor
 s09	002dbee0	002dbf80	-	FXLoader_dtor
 s09	002dbf80	002dbf98	o	cPS2FogParticleMan_BaseCtor
 s09	002dbf98	002dc164	o	cPS2FogParticleMan_Render
@@ -10408,7 +10408,7 @@ s13	00397df8	00398014	o	UIEngine_Render
 s13	00398018	00398034	o	UIEngine_RenderStateMgr
 s13	00398038	00398078	o	UIEngine_Update
 s13	00398078	00398134	o	UIEngine_TextureSet_dtor
-s13	00398138	0039837c	o	UIEngine_LoadTextures
+s13	00398138	0039837c	-	UIEngine_LoadTextures
 s13	00398380	003983b8	o	UITextureSet_Find
 s13	003983f0	00398438	o	UIFontSet_FindFont
 s13	00398438	003984ac	o	UIFontSet_FreeFonts
@@ -10915,7 +10915,7 @@ s13	003ad230	003ad24c	o	World_ChunkResolveHook
 s13	003ad250	003ad28c	-	World_ReturnSelf
 s13	003ad290	003adc14	-	World_StaticInitDestroy
 s13	003adc18	003adc48	o	cPS2ChunkResolve_BaseDtor
-s13	003adc48	003adc50	o	cPS2ChunkResolve_v08
+s13	003adc48	003adc50	-	cPS2ChunkResolve_v08
 s13	003adc50	003adc7c	o	tWScriptCache_GetTableEntry
 s13	003adc80	003adcac	o	tWScriptCache_GetGlobalCount
 s13	003adcb0	003adcdc	o	tWScriptCache_GetGlobals

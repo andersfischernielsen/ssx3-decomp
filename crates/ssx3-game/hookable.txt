@@ -5,13 +5,3 @@
 # adds it here in its pull request; its CI checks that its addresses are listed.
 # Run `python3 tools/integrate_wave.py regen` after changing this file.
 0x00282a80    ScriptEngine_FindCommandHandler    # script command lookup; first hookable example
-0x00233048    cGameLoadScreen_loadTexture    # SSX Tricky plugin: course-card and rider-picture loading
-0x001a3cd8    cFEAsyncManager_LoadDataFile   # SSX Tricky plugin: front-end texture-file slot loading
-0x002355c0    GameStateReset_Enter           # SSX Tricky plugin: restart of the presentation lists
-0x00235aa0    GameStateRestartRace_Enter     # SSX Tricky plugin: race restart entry
-0x00230488    GameModule_QuitToLoadScreen    # SSX Tricky plugin: world to front-end transition
-0x0027a860    ScriptEngine_QueueFinishScripts # SSX Tricky plugin: finish presentation lists
-0x00398138    cUITextureBank_setData         # SSX Tricky plugin: UI texture banks and image mappings
-0x003adc48    cPS2ChunkResolve_v08           # SSX Tricky plugin: mesh-group traversal
-0x002dbd10    FXLoader_ctor                  # SSX Tricky plugin: shared FX texture-bank loading
-0x00200388    EventSelect_GetEventRecord     # SSX Tricky plugin: template event record for a plugin course
