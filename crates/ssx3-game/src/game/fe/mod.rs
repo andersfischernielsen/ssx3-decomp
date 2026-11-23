@@ -37,7 +37,6 @@ pub mod festateselectmp;
 pub mod festatestore;
 pub mod festatetransition;
 pub mod festatetrophyroom;
-pub mod lui_patch;
 pub mod messagecenter;
 pub mod ovstateenterlodge;
 pub mod ovstatehud;
@@ -52,8 +51,6 @@ pub mod ovstates;
 pub mod ovstatetrophy;
 pub mod ovtemplatedialog;
 pub mod ovtemplatepausemenu;
-pub mod pluginmenu;
-pub mod pluginpic;
 pub mod splashmanager;
 pub mod uitemplatemap;
 

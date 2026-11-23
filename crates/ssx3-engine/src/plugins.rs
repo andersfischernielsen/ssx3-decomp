@@ -58,7 +58,6 @@ pub(crate) fn resolve(code: &[Box<dyn Plugin>]) -> Loaded {
         ssx3_game::native_files::add_overlay(overlay.clone());
     }
     ssx3_game::plugin_host::set_catalog(loaded.catalog.clone());
-    ssx3_game::plugin_host::set_overlays(loaded.overlays.clone());
     loaded
 }
 

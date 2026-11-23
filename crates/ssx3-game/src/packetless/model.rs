@@ -118,22 +118,6 @@ fn base_state(c: &mut Cpu, gm: u32, blend: (u32, u32), sort: u32, ztst: u32, are
     w32(c, st + 4, w1);
 }
 
-/// Decides how one model's opaque materials are blended: gets the model
-/// instance and its material table, answers the two blend words (the
-/// `base_state` pair, such as `(4, 0x180)` for the game's own) or `None` for
-/// the game's. See [`set_opaque_blend_hook`].
-pub type OpaqueBlendHook = fn(&mut Cpu, u32, u32) -> Option<(u32, u32)>;
-
-static OPAQUE_BLEND: std::sync::OnceLock<OpaqueBlendHook> = std::sync::OnceLock::new();
-
-/// A plugin's hook on the blend of a model's opaque materials (plain
-/// `m & 0x66_0000 == 0` ones), for models whose pictures are not ordinary
-/// textures, such as a movie screen that draws with its own alpha equation.
-/// Such a model skips the fast bucket path. Set once; the first call wins.
-pub fn set_opaque_blend_hook(hook: OpaqueBlendHook) {
-    let _ = OPAQUE_BLEND.set(hook);
-}
-
 /// `PS2GraphicsMan_DrawModel(f12 alpha, gm, inst, texTable, world,
 /// nodeMatrices, matrix2, flags)` (slot 95, 0x37e238).
 pub fn draw_model(c: &mut Cpu) {
@@ -295,8 +279,7 @@ pub fn draw_model(c: &mut Cpu) {
     }
     let count = r32(c, desc + 4) as i32;
     let nodes = r32(c, desc + 8);
-    let own_blend = OPAQUE_BLEND.get().and_then(|hook| hook(c, inst, textab));
-    let fast_allowed = (flags as i32 >> 11) & 1 != 0 && own_blend.is_none();
+    let fast_allowed = (flags as i32 >> 11) & 1 != 0;
     for i in 0..count.max(0) as u32 {
         let ml = r32(c, nodes + 0x10 * i + 4);
         if ml == 0 || r32(c, ml + 0x1c) == 0 {
@@ -382,8 +365,7 @@ pub fn draw_model(c: &mut Cpu) {
                         if fast {
                             base = r32(c, dm + 0x57488);
                         } else {
-                            let blend = own_blend.unwrap_or((4, 0x180));
-                            base_state(c, gm, blend, 0, 0, 0x1_4000);
+                            base_state(c, gm, (4, 0x180), 0, 0, 0x1_4000);
                         }
                     }
                     0x60_0000 => {

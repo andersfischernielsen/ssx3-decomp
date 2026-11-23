@@ -60,9 +60,8 @@ picture = "ui/peak.png"   # inside the content folder: relative, no '..', no ':'
 id = "garibaldi-race"
 peak = "tricky"
 kind = "race"             # or "freestyle"
-template = "ARA1"  # the native event (`SSX3_EVENT=list`) whose rules and flow it takes
-world = "garibaldi"  # data/worlds/<world>.big; letters, digits, '_', at most 15
-# career = true       # optional: let the result land in the template's career record (see "Career and saves")
+template = "peak1-race1"  # the native event whose rules and flow it takes
+world = "garibaldi"       # the location name: data/worlds/garibaldi.big
 ```
 
 Ids are local; the engine names them `<plugin>/<id>` (`tricky/garibaldi-race`).
@@ -91,129 +90,6 @@ Derived data must never go anywhere else, and never into git.
 
 **The overlay** is served before the disc's own files, case-insensitively, as
 if it were part of the disc (`SSX3_FILE_LOG` shows which source served a read).
-
-## Peaks and events on the Select Peak screen
-
-A plugin gets its peaks and events onto the game's Select Peak screen with
-`plugin.toml` alone: no menu code, no game data. This is how SSX Tricky,
-SSX On Tour and community-made maps are listed. Try it with
-`examples/plugins/menu-test` (see "Testing a menu" below).
-
-```toml
-[[peak]]
-id = "alps"
-name = "Alps"                # shown in the peak list; ASCII, 31 characters
-picture = "ui/alps.png"      # optional, in the content folder (a plugin with
-                             # [prepare]: where the importer writes, $SSX3_PLUGIN_OUT)
-
-[[event]]
-id = "col-run"
-name = "Col Run"             # shown in the event list; or name_key = "kT_..."
-peak = "alps"
-kind = "race"                # or "freestyle"
-template = "ARA1"            # the game's event whose rules it takes
-world = "alps"               # data/worlds/alps.big, served from the overlay
-```
-
-**What the player sees.** Every plugin peak is a row in the peak list, after
-the game's three. Picking it shows a Race and a Freestyle row (only the kinds
-the peak has events of), then the events of that kind, in manifest order;
-picking an event starts it: the rules screen, the load and the race are the
-`template` event's own, in the world `world`. The loading screen shows the
-event's `name`. The game's own peaks and events, and the Mountain, behave as
-before. Several plugins coexist: peaks are listed in plugin id order, then
-manifest order.
-
-**Community maps need no official disc.** A folder with `plugin.toml`,
-`content/DATA/WORLDS/<world>.big` (and optionally `content/ui/<picture>.png`,
-audio) and the `[[peak]]`/`[[event]]` tables is a complete plugin (no
-`[inputs]` or `[prepare]`). The only disc it needs is the SSX 3 image the
-game runs from. To pick `template`, run `SSX3_EVENT=list`; the template
-decides the rules, rider count, scoring and the section names its world must
-have (`docs/plans/plugins.md`, "What a world needs").
-
-**Text.** `name` is shown as is, in the game's font (ASCII: other characters
-show as `?`). `name_key` names a string of the game's own text table
-(`CMNAMER.LOC`, such as `kT_240SelectPeak`) and shows it in the player's
-language; the key wins over `name` when both are given.
-
-**Pictures.** `picture` is a PNG (any colour type and size up to 4,096
-pixels a side and 16 MB). The engine scales it to 256x256, reduces it to 256
-colours and serves it as a member of `MAPGFX.BIG`, in memory, next to the
-peak list (while the peak is highlighted or picked). Without a picture, or
-with one that cannot be read, the mountain's picture is shown, and the log
-says why (`[plugin-menu]`). The picture is made at boot from your own SSX 3
-disc and kept in memory; nothing is written to disk.
-
-**Limits.** The screen has no scrolling; more would run off it. Surplus
-entries are left out, with a line in the log naming the plugin:
-
-| What | Limit |
-| --- | --- |
-| plugin peaks on the screen, all plugins together | 4 |
-| events in one list (a peak's race or freestyle events) | 10 |
-| name length | 31 ASCII characters |
-| peaks without events | not listed |
-| the same `world` in two plugins | the first plugin keeps it, the other's events are left out |
-
-A "More" row that pages the list is not built; ask for it if a map pack needs
-more than four peaks.
-
-**After a race.** The Select Peak screen of the results menu ("Next event",
-`OV.LUI`) lists the plugin peaks too, and a plugin event can be picked and
-started there. The in-game hand-over used by flows 3 and 4 (not reached from
-single events) is not supported: the rows show, the accept is refused.
-
-**What the engine does not do.** Plugin peaks are always unlocked, show no
-medals or best times, and there are no info panels for them. Multiplayer events,
-rider gating and the Freeride kind are not offered.
-
-**Career and saves.** A plugin event runs on its template event (say ARA1), so
-the game would file its result under the template: the event's high-score table
-(the "Records" screen), and in career-mode rules also best times, medals,
-rewards and unlocks, all of which the next save writes to the player's memory
-card. The engine keeps plugin events out of that by default. While a plugin
-event is the one being played (from the pick on the Select Peak screen, through
-restarts, until the world is left or a game event is picked) it skips:
-
-- `BEScoreInt_SubmitRaceResult` (0x154ab8, called by
-  `GameModeMan_OnRiderFinished` 0x238358): the best stats, the high-score table,
-  the records and the profile score. The race stats still go to the score object
-  the results screen reads.
-- `BEScoreInt_SubmitPlacement` (0x154ee8): the event-result messages, the medal
-  and the reward. The place is still stored for the results screen.
-- `BERewardInt_GrantReward` (0x159cd0, the mountain award in
-  `OnRiderFinished`), `BERewardInt_OnCollectibleCollected` (0x1599a0) and
-  `OnMissionCompleted` (0x159b08): nothing granted or recorded.
-
-The results screen, Restart, Replay, Quit and "Next event" work as in the game;
-a game event started from the in-game Select Peak after a plugin event records
-as always (`event_boot::end_plugin_event` ends the guard). The hooks exist only
-when the loaded plugins add events; without them the game runs its own code.
-`tools/plugin_menu_test.py career_*` checks it on a copy of the memory card.
-
-A plugin that keeps its own records (a map pack with times of its own) reads the
-result from the game (`GameModeMan_OnRiderFinished`, the score object) or from
-its event listener and writes its own file; the guard keeps the template's
-record clean for it. **To opt out** (the event really should write the template's
-record), set `career = true` on the `[[event]]` in `plugin.toml`, or call
-`ssx3_game::career_guard::set_career_allowed(true)` from the `started` function
-of the event listener (`plugin_host::add_event_listener`); the engine switches
-it off again when the event ends. The guard keys on the event being a plugin
-event, so a plugin that starts a game event itself is not covered.
-
-Not covered: anything else the game itself saves while a plugin event is up,
-such as an autosave that the player's own progress triggers; those write the
-career state as it is, which the guard has left untouched.
-
-**Testing a menu.** `tools/plugin_menu_test.py` copies
-`examples/plugins/menu-test` and `world-copy` to a scratch folder, makes their
-content from your SSX 3 disc into the cache folder, and drives the menus
-headless with scripted pad input (`SSX3_INPUT`): into a plugin event, the
-game's own event with the plugin installed and with plugins off, back
-navigation, the limits, and the in-game screen after a race. The same input strings work for your plugin: the
-Select Peak screen is up at about frame 2850, and the plugin peaks follow the
-game's three (Down from Peak 1).
 
 ## Writing a plugin: Rust code
 
@@ -260,61 +136,9 @@ pub fn plugin() -> Box<dyn Plugin> { Box::new(Mine) }
 - The plugin API is `0.x`: pin the commit of `ssx3-decomp` your plugin builds
   against.
 
-### Host hooks for plugin code
-
-Small generic hooks the engine offers next to the function hooks. All are
-no-ops without a plugin that uses them (the race replay gate stays identical).
-
-- `plugin_host::add_event_listener(EventListener { started, ended })`: be told
-  when an event of the catalog is started from the Select Peak screen
-  (`started(c, event, back)`, after the world and course name are set and before
-  the load; `back` is the return address for guest calls, as in the game's own
-  hooks) and when it ends (`ended(c)`: the front end is back, or another event
-  starts). `SSX3_EVENT=<plugin>/<event>` boots do not call `started`; the plugin
-  knows its event from the variable. A plugin that needs per-event state (a
-  record, a rule set) switches it here.
-- `native_files::add_read_patch(fn(&str, u32, &mut [u8]) -> bool)`: change the
-  bytes the game reads from a file, in place, after they are read: the file's
-  upper-case path, the read's offset and the bytes. For a file whose content
-  depends on the plugin's state, such as a sound bank that follows the course.
-- `packetless::set_opaque_blend_hook(fn(&mut Cpu, inst, material_table) ->
-  Option<(u32, u32)>)`: decide the blend of one model's opaque materials in the
-  native renderer's model draw (`base_state`'s pair; `None` keeps the game's).
-  Such a model skips the fast bucket path. For models that are not ordinary
-  textures, such as a screen playing a movie.
-- Mid-function edits of a draw call can often be made at the callee: when
-  `PS2GraphicsMan_DrawModel` is entered, `RA` says which caller made the call
-  and the caller's saved registers (`S0`..`S7`) are still in place.
-
-## Hazards for converted and community worlds
-
-- **Guest heap.** Converted worlds can leave only a few hundred KB of the
-  guest heap free where Snow Jam leaves about 2 MB. When UI allocation then
-  overlaps world streaming, the game hangs in the screen-data lookup with no
-  error. Mostly it is the same textures repeated per stream group:
-  de-duplicate them in the importer.
-- **Dense collision.** `0x334888` appends query hits to the 64-entry stack
-  buffer from `0x104e70` without checking the room left; past it, saved
-  registers are overwritten and the game jumps to 0. Keep the hit count of a
-  world's collision queries low until the engine clamps it.
-
 ## Rules
 
 - No game data in a plugin repository: the importer reads the user's disc and
   writes to the cache. The same CI check as this repository.
 - Code plugins run with the rights of the process, so the user builds them
   from source; nothing loads a binary from elsewhere.
-
-## Playing a plugin event
-
-`SSX3_EVENT=<plugin>/<event>` boots straight into a plugin's event: the game
-sets up its `template` event and, at the world load, reads `data/worlds/<world>`
-(from your overlay) in place of the template's own. The name is put back at
-the start of the next world load (and swapped in again while the plugin event
-is still the active one). Verified: a copy of Snow Jam's world played as `ARA1` leaves
-the race RAM identical except for the world's name.
-
-From code, `ssx3_game::event_boot::set_world(Some(name))` makes the world
-loads from now on use `name` (it stays set, so a reload keeps it),
-`set_world(None)` goes back to the course's own; whoever starts
-a native event after a plugin event must clear it.

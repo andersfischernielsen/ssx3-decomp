@@ -78,7 +78,6 @@ pub fn resolve(roots: &Roots, filter: &Filter, code: &[Box<dyn Plugin>]) -> Load
             .cloned()
             .collect::<Vec<_>>(),
     );
-    log.extend(catalog.problems.iter().cloned());
     Loaded {
         found,
         catalog,

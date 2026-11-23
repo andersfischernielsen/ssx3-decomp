@@ -2329,7 +2329,6 @@ dependencies = [
 name = "ssx3-game"
 version = "0.1.0"
 dependencies = [
- "png",
  "ssx3-core",
  "ssx3-ee",
  "ssx3-ee-rt",

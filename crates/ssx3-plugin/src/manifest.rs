@@ -19,7 +19,7 @@
 //! id = "garibaldi-race"
 //! peak = "tricky"
 //! kind = "race"
-//! template = "ARA1"
+//! template = "peak1-race1"
 //! world = "garibaldi"
 //! ```
 //!
@@ -131,11 +131,6 @@ pub struct Event {
     /// The location name the game loads: `data/worlds/<world>.big`, served
     /// from the plugin's overlay.
     pub world: String,
-    /// `true`: the event's result lands in the template event's career record
-    /// on the player's save (medals, best times, unlocks). Default `false`:
-    /// the engine keeps plugin events out of the career and the memory card.
-    #[serde(default)]
-    pub career: bool,
 }
 
 /// Parse and check a manifest; the errors are all of its problems.
@@ -182,7 +177,7 @@ fn id_ok(s: &str) -> bool {
 
 /// A location name becomes a file name in a guest buffer: plain, and short.
 fn world_ok(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 15 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    !s.is_empty() && s.len() <= 16 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
 impl Manifest {
@@ -267,7 +262,7 @@ impl Manifest {
             }
             if !world_ok(&ev.world) {
                 e.push(format!(
-                    "event {:?}: world {:?} (letters, digits and '_', at most 15)",
+                    "event {:?}: world {:?} (letters, digits and '_', at most 16)",
                     ev.id, ev.world
                 ));
             }
@@ -299,7 +294,7 @@ name = "Peak Tricky"
 id = "garibaldi-race"
 peak = "tricky"
 kind = "race"
-template = "ARA1"
+template = "peak1-race1"
 world = "garibaldi"
 "#;
 
@@ -309,21 +304,7 @@ world = "garibaldi"
         assert_eq!(m.plugin.id, "tricky");
         assert_eq!(m.peaks.len(), 1);
         assert_eq!(m.events[0].kind, Kind::Race);
-        assert!(
-            !m.events[0].career,
-            "events stay out of the career by default"
-        );
         assert_eq!(m.inputs.disc.unwrap().serials, ["SLUS-20326"]);
-    }
-
-    #[test]
-    fn an_event_can_opt_into_the_career() {
-        let m = parse(&GOOD.replace(
-            "world = \"garibaldi\"",
-            "world = \"garibaldi\"\ncareer = true",
-        ))
-        .unwrap();
-        assert!(m.events[0].career);
     }
 
     #[test]

@@ -18,8 +18,6 @@ ssx3-vu = { path = "../ssx3-vu" }
 # Draw capture (capture.rs) records `ssx3_render::direct` commands.
 ssx3-render = { path = "../ssx3-render" }
 ssx3-mpeg = { path = "../ssx3-mpeg" }
-# Plugin peak pictures (game/fe/pluginpic.rs).
-png = "0.18.1"
 
 # Work packages from eaaa404^:docs/investigation/phase2-candidates.md. Each is its own
 # module behind a feature so packages can be developed in parallel without

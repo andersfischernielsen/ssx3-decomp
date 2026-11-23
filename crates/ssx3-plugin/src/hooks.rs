@@ -65,12 +65,6 @@ impl Prev {
         }
     }
 
-    /// For the host's own wrappers (not plugins): record the function a
-    /// wrapper replaced.
-    pub fn set_for_host(&self, f: GuestFn) {
-        self.set(f)
-    }
-
     fn set(&self, f: GuestFn) {
         self.0.store(f as usize, Ordering::Relaxed);
     }

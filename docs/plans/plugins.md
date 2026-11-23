@@ -236,7 +236,7 @@ plugin prefers them over raw hooks. Raw hooks stay as the escape hatch.
 | S2 | `hookable.txt`, `Hooks::chain`, `call_prev` | **done** (#67): two chained hooks end at the generated body; a missing slot is an error |
 | S3 | Folder discovery, `plugin.toml`, `prepare`, `ssx3 plugins build`, the built-in test plugin | **done** (#67): the test plugin loads, hooks and serves an overlay file |
 | S4 | Port the front-end and game-state functions the Tricky fork overrides and are still generated (32 at 2026-11-22: `EventSelect_*`, `GameStatePreRaceLoad_*`, `GameStateFinish_Update`, `GameStateResults_Enter`, `GameModeMan_OnRiderFinished`, UI text and screen creation, `BEScoreInt_SubmitRaceResult`, ...) | each has a differential test |
-| S5 | `Catalog`; the Peak and event lists read it | **done** (#73): peaks and events on the Select Peak screen from the catalog alone (`docs/plans/plugin-peaks.md`); `examples/plugins/menu-test`, `tools/plugin_menu_test.py` |
+| S5 | `Catalog`; the Peak and event lists read it | the test plugin adds a peak with one event to the menu |
 | S6 | Tricky as the first real plugin, with its author | the 19 events start, run and finish |
 | S7 | A second source (On Tour first) | its first course runs, proving the design is general |
 
