@@ -7,9 +7,11 @@ use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::call::Unwound;
 use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
@@ -6274,29 +6276,23 @@ pub fn mc_manager_set_slot(c: &mut Cpu) {
 /// `void *MCManager_SetDataSize_Wrapper(MCManager *self)` (0x23cc58): call
 /// through to `MCManager_SetDataSize` and return.
 pub fn mc_manager_set_data_size_wrapper(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        callee::MC_MANAGER_SET_DATA_SIZE.call(c, 0x0023_cc68)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(callee::MC_MANAGER_SET_DATA_SIZE),
+        0x0023_cc68,
+    );
 }
 
 /// `void *MCManager_State2F(MCManager *self)` (0x240f10): reset the manager
 /// through `MCManager_Reset` and return.
 pub fn mc_manager_state2f(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        callee::MC_MANAGER_RESET.call(c, 0x0024_0f20)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(callee::MC_MANAGER_RESET),
+        0x0024_0f20,
+    );
 }
 
 /// `void *MCManager_ReadCurrentDirInfo(MCManager *self)` (0x241fb0): reread
@@ -6431,41 +6427,23 @@ pub fn mc_manager_next_file(c: &mut Cpu) {
 }
 
 /// `void MCManager_WriteSaveByName(MCManager *self, int a, int b, int c)`
-/// (0x240fb0): flag the save pending at `gp-0x478`, run the backend's
-/// by-name write hook (driver at `mcus::CARD`, method `+0x120/0x124`) and
-/// keep `c` at `self+0xe4`.
+/// (0x240fb0): write the save through the driver's by-name hook (method
+/// `+0x120`), see [`mc_manager_write_save`].
 pub fn mc_manager_write_save_by_name(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 20;
-        let frame = Frame::open(c, 0x30);
-        c.g[V0][0] = 1;
-        frame.save(c, S0, 0x20);
-        frame.save(c, S1, 0x10);
-        frame.save_ra(c, 0);
-        c.g[S0][0] = c.g[A3][0];
-        c.g[S1][0] = c.g[A0][0];
-        c.g[T0][0] = Addr(c.g[S1][0] as u32).off(0x434).lw(c);
-        Addr((c.g[GP][0] as u32).wrapping_sub(0x478)).sw(c, c.g[V0][0]);
-        c.g[V1][0] = Addr(c.g[T0][0] as u32).lw(c);
-        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x120).lh(c);
-        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x124).lw(c);
-        let target = r32(c, V0);
-        c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
-        call_ptr(c, target, 0x0024_0fe8)?;
-        Addr(c.g[S1][0] as u32).off(0xe4).sw(c, c.g[S0][0]);
-        frame.restore(c, S0, 0x20);
-        frame.restore(c, S1, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
+    mc_manager_write_save(c, 0x0024_0fb0, 0x120);
 }
 
 /// `void MCManager_WriteSaveBySlot(MCManager *self, int a, int b, int c)`
-/// (0x241050): flag the save pending at `gp-0x478`, run the backend's
-/// by-slot write hook (driver at `mcus::CARD`, method `+0x130/0x134`) and
-/// keep `c` at `self+0xe4`.
+/// (0x241050): write the save through the driver's by-slot hook (method
+/// `+0x130`), see [`mc_manager_write_save`].
 pub fn mc_manager_write_save_by_slot(c: &mut Cpu) {
+    mc_manager_write_save(c, 0x0024_1050, 0x130);
+}
+
+/// The two save writes: flag the save pending at `gp-0x478`, call the driver
+/// at `mcus::CARD` through its `{short delta; fn}` slot at `method` and keep
+/// `c` at `self+0xe4`.
+fn mc_manager_write_save(c: &mut Cpu, entry: u32, method: u32) {
     guest(c, |c| {
         c.cycles += 20;
         let frame = Frame::open(c, 0x30);
@@ -6478,11 +6456,11 @@ pub fn mc_manager_write_save_by_slot(c: &mut Cpu) {
         c.g[T0][0] = Addr(c.g[S1][0] as u32).off(0x434).lw(c);
         Addr((c.g[GP][0] as u32).wrapping_sub(0x478)).sw(c, c.g[V0][0]);
         c.g[V1][0] = Addr(c.g[T0][0] as u32).lw(c);
-        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x130).lh(c);
-        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x134).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(method).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(method + 4).lw(c);
         let target = r32(c, V0);
         c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
-        call_ptr(c, target, 0x0024_1088)?;
+        call_ptr(c, target, entry + 0x38)?;
         Addr(c.g[S1][0] as u32).off(0xe4).sw(c, c.g[S0][0]);
         frame.restore(c, S0, 0x20);
         frame.restore(c, S1, 0x10);

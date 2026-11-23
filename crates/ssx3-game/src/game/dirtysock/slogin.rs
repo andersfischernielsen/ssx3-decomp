@@ -9,8 +9,10 @@ use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::call::Unwound;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
@@ -1822,15 +1824,12 @@ pub fn slogin_on_step_error(c: &mut Cpu) {
 
 /// End a shared-login sequence after its final step reports an error.
 pub fn slogin_on_final_error(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        callee::SLOGIN_END_SEQUENCE.call(c, 0x003f_7208)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    });
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(callee::SLOGIN_END_SEQUENCE),
+        0x003f_7208,
+    );
 }
 
 /// Advance the login sequence after one store step finishes.
@@ -2442,15 +2441,12 @@ pub fn slogin_fetch_store_info(c: &mut Cpu) {
 
 /// Continue the login sequence after the card-store file opens.
 pub fn slogin_on_open_done(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        callee::SLOGIN_FETCH_STORE_INFO.call(c, 0x003f_7830)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    });
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(callee::SLOGIN_FETCH_STORE_INFO),
+        0x003f_7830,
+    );
 }
 
 /// Copy the account record into the login state, then release its card-store block.
@@ -3635,49 +3631,35 @@ pub fn slogin_mc_get_error(c: &mut Cpu) {
 /// put the card state in state 11, phase 0x18, and call the interface method
 /// at +0x38 with the open file's handle. Returns 0.
 pub fn slogin_mc_abort_at_flush(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 17;
-        let frame = Frame::open(c, 0x10);
-        c.g[V0][0] = 1;
-        frame.save_ra(c, 0);
-        c.g[A0][0] = 11;
-        c.sw(c.g[A1][0] as u32, c.g[V0][0]);
-        c.g[V1][0] = 0x18;
-        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(card::STATE_GP)).lw(c);
-        c.g[A1][0] = Addr((c.g[GP][0] as u32).wrapping_add(card::IFACE_GP)).lw(c);
-        c.sw(c.g[V0][0] as u32, c.g[A0][0]);
-        c.sw((c.g[V0][0] as u32).wrapping_add(card::PHASE), c.g[V1][0]);
-        c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x38)).lw(c);
-        let target = c.g[V1][0] as u32;
-        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(card::FILE_HANDLE)).lw(c);
-        call_ptr(c, target, 0x003f_8754)?;
-        frame.restore_ra(c, 0);
-        c.g[V0][0] = 0;
-        frame.close(c);
-        Ok(())
-    });
+    slogin_mc_abort_file(c, callee::SLOGIN_MC_ABORT_AT_FLUSH.addr, 11, 0x18, 0x38);
 }
 
 /// `int SLoginMc_AbortAtClose(int, int* done)` (0x3f8768): set `*done = 1`,
 /// put the card state in state 12, phase 0x19, and call the interface method
 /// at +0x1c with the open file's handle. Returns 0.
 pub fn slogin_mc_abort_at_close(c: &mut Cpu) {
+    slogin_mc_abort_file(c, callee::SLOGIN_MC_ABORT_AT_CLOSE.addr, 12, 0x19, 0x1c);
+}
+
+/// The shared body of `SLoginMc_AbortAtFlush` and `SLoginMc_AbortAtClose`:
+/// enter `state`/`phase` and call interface method `method` on the open file.
+fn slogin_mc_abort_file(c: &mut Cpu, entry: u32, state: u64, phase: u64, method: u32) {
     guest(c, |c| {
         c.cycles += 17;
         let frame = Frame::open(c, 0x10);
         c.g[V0][0] = 1;
         frame.save_ra(c, 0);
-        c.g[A0][0] = 12;
+        c.g[A0][0] = state;
         c.sw(c.g[A1][0] as u32, c.g[V0][0]);
-        c.g[V1][0] = 0x19;
+        c.g[V1][0] = phase;
         c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(card::STATE_GP)).lw(c);
         c.g[A1][0] = Addr((c.g[GP][0] as u32).wrapping_add(card::IFACE_GP)).lw(c);
         c.sw(c.g[V0][0] as u32, c.g[A0][0]);
         c.sw((c.g[V0][0] as u32).wrapping_add(card::PHASE), c.g[V1][0]);
-        c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x1c)).lw(c);
+        c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(method)).lw(c);
         let target = c.g[V1][0] as u32;
         c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(card::FILE_HANDLE)).lw(c);
-        call_ptr(c, target, 0x003f_879c)?;
+        call_ptr(c, target, entry + 0x34)?;
         frame.restore_ra(c, 0);
         c.g[V0][0] = 0;
         frame.close(c);
@@ -6429,29 +6411,23 @@ pub fn slogin_mc_get_file_state(c: &mut Cpu) {
 /// `SLoginMc_IsAvailable_Wrapper` (0x3fa360): forward the memory-card
 /// availability query to the card interface.
 pub fn slogin_mc_is_available_wrapper(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        call_ptr(c, callee::SLOGIN_MC_IS_AVAILABLE.addr, 0x003f_a370)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    });
+    tail_wrapper(
+        c,
+        None,
+        Target::Table(callee::SLOGIN_MC_IS_AVAILABLE.addr),
+        0x003f_a370,
+    );
 }
 
 /// `SLoginMc_CalcSaveSize` (0x3fa6a8): compute the memory-card space needed for
 /// a shared-login save.
 pub fn slogin_mc_calc_save_size(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        call_ptr(c, callee::SLOGIN_MC_CALC_SAVE_SIZE_IMPL.addr, 0x003f_a6b8)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    });
+    tail_wrapper(
+        c,
+        None,
+        Target::Table(callee::SLOGIN_MC_CALC_SAVE_SIZE_IMPL.addr),
+        0x003f_a6b8,
+    );
 }
 
 /// `SLoginMc_GetPortSlot` (0x3fa1d0): resolve a shared-login memory-card device
@@ -7260,33 +7236,23 @@ pub fn slogin_mc_create_step(c: &mut Cpu) {
 /// `const ChecksumIface* SLoginMc_GetChecksumIface(const ChecksumIface** out)`
 /// (0x3fa6c8): forward to `SLoginMc_GetChecksumIfaceImpl`.
 pub fn slogin_mc_get_checksum_iface(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        call_ptr(
-            c,
-            callee::SLOGIN_MC_GET_CHECKSUM_IFACE_IMPL.addr,
-            0x003f_a6d8,
-        )?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    });
+    tail_wrapper(
+        c,
+        None,
+        Target::Table(callee::SLOGIN_MC_GET_CHECKSUM_IFACE_IMPL.addr),
+        0x003f_a6d8,
+    );
 }
 
 /// `int SLoginMc_GetDataOffset(void)` (0x3fa6e8): forward to
 /// `SLoginMc_GetDataOffsetImpl` (the offset of the login data in the save).
 pub fn slogin_mc_get_data_offset(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        call_ptr(c, callee::SLOGIN_MC_GET_DATA_OFFSET_IMPL.addr, 0x003f_a6f8)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    });
+    tail_wrapper(
+        c,
+        None,
+        Target::Table(callee::SLOGIN_MC_GET_DATA_OFFSET_IMPL.addr),
+        0x003f_a6f8,
+    );
 }
 
 /// The device-index jump table (8 words in the game's data).

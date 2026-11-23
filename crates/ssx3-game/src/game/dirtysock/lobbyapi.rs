@@ -1196,21 +1196,21 @@ pub fn net_game_util_create(c: &mut Cpu) {
     })
 }
 
-/// `void NetGameUtilDestroy(long ctx)` (0x3e6e70): issue the `gmut/dest`
-/// RPC for `ctx`.
-pub fn net_game_util_destroy(c: &mut Cpu) {
+/// The body of the `NetGameUtil*` calls that issue `gmut/<tag>` for `ctx` (`a0`)
+/// and read no reply; `entry` is the port's address.
+fn net_game_util_ctx_rpc(c: &mut Cpu, entry: u32, tag: u32) {
     guest(c, |c| {
         c.cycles += 26;
         let frame = Frame::open(c, 0x40);
         c.g[A1][0] = 0x676d0000;
         frame.save(c, S0, 0x30);
-        c.g[A2][0] = 0x64650000;
+        c.g[A2][0] = u64::from(tag & 0xffff_0000);
         c.g[S0][0] = c.g[A0][0];
         frame.save_ra(c, 0x20);
         c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
         c.g[A1][0] = c.g[A1][0] | 0x7574;
-        c.g[A2][0] = c.g[A2][0] | 0x7374;
-        callee::DIRTY_RPC_INIT_REQUEST.call(c, 0x003e_6e98)?;
+        c.g[A2][0] = c.g[A2][0] | u64::from(tag & 0xffff);
+        callee::DIRTY_RPC_INIT_REQUEST.call(c, entry + 0x28)?;
         c.g[V1][0] = 0x1;
         c.g[A2][0] = c.g[S0][0];
         c.sw(c.g[SP][0] as u32, c.g[V1][0]);
@@ -1222,7 +1222,7 @@ pub fn net_game_util_destroy(c: &mut Cpu) {
         c.g[T1][0] = 0u64;
         c.g[T2][0] = 0u64;
         c.g[T3][0] = 0u64;
-        callee::DIRTY_RPC_CALL.call(c, 0x003e_6ec8)?;
+        callee::DIRTY_RPC_CALL.call(c, entry + 0x58)?;
         frame.restore(c, S0, 0x30);
         frame.restore_ra(c, 0x20);
         frame.close(c);
@@ -1230,38 +1230,16 @@ pub fn net_game_util_destroy(c: &mut Cpu) {
     })
 }
 
+/// `void NetGameUtilDestroy(long ctx)` (0x3e6e70): issue the `gmut/dest`
+/// RPC for `ctx`.
+pub fn net_game_util_destroy(c: &mut Cpu) {
+    net_game_util_ctx_rpc(c, 0x003e_6e70, u32::from_be_bytes(*b"dest"));
+}
+
 /// `void NetGameUtilReset(long ctx)` (0x3e6ed8): issue the `gmut/rset`
 /// RPC for `ctx`.
 pub fn net_game_util_reset(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 26;
-        let frame = Frame::open(c, 0x40);
-        c.g[A1][0] = 0x676d0000;
-        frame.save(c, S0, 0x30);
-        c.g[A2][0] = 0x72730000;
-        c.g[S0][0] = c.g[A0][0];
-        frame.save_ra(c, 0x20);
-        c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[A1][0] = c.g[A1][0] | 0x7574;
-        c.g[A2][0] = c.g[A2][0] | 0x6574;
-        callee::DIRTY_RPC_INIT_REQUEST.call(c, 0x003e_6f00)?;
-        c.g[V1][0] = 0x1;
-        c.g[A2][0] = c.g[S0][0];
-        c.sw(c.g[SP][0] as u32, c.g[V1][0]);
-        c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
-        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
-        c.g[A1][0] = 0x1;
-        c.g[A3][0] = 0u64;
-        c.g[T0][0] = 0u64;
-        c.g[T1][0] = 0u64;
-        c.g[T2][0] = 0u64;
-        c.g[T3][0] = 0u64;
-        callee::DIRTY_RPC_CALL.call(c, 0x003e_6f30)?;
-        frame.restore(c, S0, 0x30);
-        frame.restore_ra(c, 0x20);
-        frame.close(c);
-        Ok(())
-    })
+    net_game_util_ctx_rpc(c, 0x003e_6ed8, u32::from_be_bytes(*b"rset"));
 }
 
 /// `long NetGameUtilConnect(long a, long b, long c)` (0x3e6f40): issue the
@@ -1385,35 +1363,7 @@ pub fn net_game_util_status(c: &mut Cpu) {
 /// `void NetGameUtilStat(long ctx)` (0x3e70b8): issue the `gmut/stat` RPC
 /// for `ctx` (no reply read back).
 pub fn net_game_util_stat(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 26;
-        let frame = Frame::open(c, 0x40);
-        c.g[A1][0] = 0x676d0000;
-        frame.save(c, S0, 0x30);
-        c.g[A2][0] = 0x73740000;
-        c.g[S0][0] = c.g[A0][0];
-        frame.save_ra(c, 0x20);
-        c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[A1][0] = c.g[A1][0] | 0x7574;
-        c.g[A2][0] = c.g[A2][0] | 0x6174;
-        callee::DIRTY_RPC_INIT_REQUEST.call(c, 0x003e_70e0)?;
-        c.g[V1][0] = 0x1;
-        c.g[A2][0] = c.g[S0][0];
-        c.sw(c.g[SP][0] as u32, c.g[V1][0]);
-        c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
-        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
-        c.g[A1][0] = 0x1;
-        c.g[A3][0] = 0u64;
-        c.g[T0][0] = 0u64;
-        c.g[T1][0] = 0u64;
-        c.g[T2][0] = 0u64;
-        c.g[T3][0] = 0u64;
-        callee::DIRTY_RPC_CALL.call(c, 0x003e_7110)?;
-        frame.restore(c, S0, 0x30);
-        frame.restore_ra(c, 0x20);
-        frame.close(c);
-        Ok(())
-    })
+    net_game_util_ctx_rpc(c, 0x003e_70b8, u32::from_be_bytes(*b"stat"));
 }
 
 /// `void NetGameUtilAdvert(long ctx, const char* a, const char* b)`
@@ -1464,35 +1414,7 @@ pub fn net_game_util_advert(c: &mut Cpu) {
 /// `void NetGameUtilWithdraw(long ctx)` (0x3e71b0): issue the `gmut/with`
 /// RPC for `ctx`.
 pub fn net_game_util_withdraw(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 26;
-        let frame = Frame::open(c, 0x40);
-        c.g[A1][0] = 0x676d0000;
-        frame.save(c, S0, 0x30);
-        c.g[A2][0] = 0x77690000;
-        c.g[S0][0] = c.g[A0][0];
-        frame.save_ra(c, 0x20);
-        c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[A1][0] = c.g[A1][0] | 0x7574;
-        c.g[A2][0] = c.g[A2][0] | 0x7468;
-        callee::DIRTY_RPC_INIT_REQUEST.call(c, 0x003e_71d8)?;
-        c.g[V1][0] = 0x1;
-        c.g[A2][0] = c.g[S0][0];
-        c.sw(c.g[SP][0] as u32, c.g[V1][0]);
-        c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
-        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
-        c.g[A1][0] = 0x1;
-        c.g[A3][0] = 0u64;
-        c.g[T0][0] = 0u64;
-        c.g[T1][0] = 0u64;
-        c.g[T2][0] = 0u64;
-        c.g[T3][0] = 0u64;
-        callee::DIRTY_RPC_CALL.call(c, 0x003e_7208)?;
-        frame.restore(c, S0, 0x30);
-        frame.restore_ra(c, 0x20);
-        frame.close(c);
-        Ok(())
-    })
+    net_game_util_ctx_rpc(c, 0x003e_71b0, u32::from_be_bytes(*b"with"));
 }
 
 /// `long NetGameUtilLocate(long ctx, ?, const char* name)` (0x3e7218):

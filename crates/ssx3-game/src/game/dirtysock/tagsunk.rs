@@ -7,9 +7,11 @@ use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
@@ -10060,57 +10062,37 @@ pub fn lobby_man_on_recv_debug(c: &mut Cpu) {
 /// `int cVoipMan_GetSharedStatus(cVoipMan *self)` (0x266f38): return the
 /// shared voice status word behind the voice global (`gp+0x2a28`).
 pub fn c_voip_man_get_shared_status(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        call_ptr(c, 0x003f_6c40, 0x0026_6f48)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
+    tail_wrapper(c, None, Target::Table(0x003f_6c40), 0x0026_6f48);
 }
 
 /// `void cDSockChannel_BaseDisconnect(cDSockChannel *self)` (0x267da8):
 /// reset the channel state, dropping any half-open connection.
 pub fn c_dsock_channel_base_disconnect(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        call_ptr(c, 0x0025_5840, 0x0026_7db8)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
+    tail_wrapper(c, None, Target::Table(0x0025_5840), 0x0026_7db8);
 }
 
 /// `int LobbyMan_CompareUserNames(void *a, void *b)` (0x259398): compare the
 /// user names at `a2+0x1c` and `a3+0x1c` case-insensitively.
 pub fn lobby_man_compare_user_names(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 8;
-        let frame = Frame::open(c, 0x10);
-        c.g[A0][0] = sx(r32(c, A2).wrapping_add(0x1c));
-        frame.save_ra(c, 0);
-        c.g[A1][0] = sx(r32(c, A3).wrapping_add(0x1c));
-        call_ptr(c, 0x0041_aa88, 0x0025_93ac)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
+    lobby_man_compare_names(c, 0x0025_9398, 0x1c);
 }
 
 /// `int LobbyMan_CompareRoomNames(void *a, void *b)` (0x2593b8): compare the
 /// room names at `a2+0x8` and `a3+0x8` case-insensitively.
 pub fn lobby_man_compare_room_names(c: &mut Cpu) {
+    lobby_man_compare_names(c, 0x0025_93b8, 0x8);
+}
+
+/// Shared body of the name comparators: compare the strings at `a2+field`
+/// and `a3+field` case-insensitively.
+fn lobby_man_compare_names(c: &mut Cpu, entry: u32, field: u32) {
     guest(c, |c| {
         c.cycles += 8;
         let frame = Frame::open(c, 0x10);
-        c.g[A0][0] = sx(r32(c, A2).wrapping_add(0x8));
+        c.g[A0][0] = sx(r32(c, A2).wrapping_add(field));
         frame.save_ra(c, 0);
-        c.g[A1][0] = sx(r32(c, A3).wrapping_add(0x8));
-        call_ptr(c, 0x0041_aa88, 0x0025_93cc)?;
+        c.g[A1][0] = sx(r32(c, A3).wrapping_add(field));
+        call_ptr(c, 0x0041_aa88, entry + 0x14)?;
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -10137,26 +10119,23 @@ pub fn lobby_man_send_decline(c: &mut Cpu) {
 /// `bool BuddyMan_IsBuddyAt(BuddyMan *self, int idx)` (0x262390): whether
 /// the roster entry at `idx` is a buddy (flag 4 at `entry+0xa8`).
 pub fn buddy_man_is_buddy_at(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 8;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        call_ptr(c, 0x0026_2620, 0x0026_23a0)?;
-        frame.restore_ra(c, 0);
-        c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
-        frame.close(c);
-        Ok(())
-    })
+    buddy_man_entry_at_exists(c, 0x0026_2390, 0x0026_2620);
 }
 
 /// `bool BuddyMan_IsBlockedAt(BuddyMan *self, int idx)` (0x2623e0): whether
 /// the roster entry at `idx` is blocked (flag 0x200 at `entry+0xa8`).
 pub fn buddy_man_is_blocked_at(c: &mut Cpu) {
+    buddy_man_entry_at_exists(c, 0x0026_23e0, 0x0026_2658);
+}
+
+/// Shared body of the roster flag tests: call the entry getter `get` and
+/// return whether it found a non-null entry.
+fn buddy_man_entry_at_exists(c: &mut Cpu, entry: u32, get: u32) {
     guest(c, |c| {
         c.cycles += 8;
         let frame = Frame::open(c, 0x10);
         frame.save_ra(c, 0);
-        call_ptr(c, 0x0026_2658, 0x0026_23f0)?;
+        call_ptr(c, get, entry + 0x10)?;
         frame.restore_ra(c, 0);
         c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
         frame.close(c);
@@ -17933,6 +17912,11 @@ pub fn buddy_man_add_message(c: &mut Cpu) {
 /// message list headed at lobby+0xF0. 29 + 14 cycles plus the two
 /// allocations.
 pub fn buddy_man_on_roster_remove_reply(c: &mut Cpu) {
+    post_roster_reply_event(c, 0x0026_1970, 0x10b);
+}
+
+/// Shared body of the roster add/remove replies: post a `kind` event.
+fn post_roster_reply_event(c: &mut Cpu, entry: u32, kind: u64) {
     guest(c, |c| {
         c.cycles += 29;
         let frame = Frame::open(c, 0x50);
@@ -17944,9 +17928,9 @@ pub fn buddy_man_on_roster_remove_reply(c: &mut Cpu) {
         c.g[A2][0] = 0x2000_0000;
         c.g[S0][0] = Addr(gp_8(c, LOBBY_INSTANCE_GP)).lw(c);
         c.g[A3][0] = 0;
-        call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_199c)?;
+        call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, entry + 0x2c)?;
         c.g[S1][0] = c.g[V0][0];
-        c.g[V1][0] = 0x10b;
+        c.g[V1][0] = kind;
         c.g[V0][0] = RODATA_PAGE;
         Addr(r32(c, S1)).sw(c, c.g[V1][0]);
         c.g[V0][0] = sx(NET_EVENT_VTABLE);
@@ -17958,7 +17942,7 @@ pub fn buddy_man_on_roster_remove_reply(c: &mut Cpu) {
         c.g[V0][0] = Addr(r32(c, S0).wrapping_add(0xf0)).lw(c);
         c.g[A3][0] = 0;
         Addr(frame.at(c, 0x10)).sw(c, c.g[V0][0]);
-        call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_19d4)?;
+        call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, entry + 0x64)?;
         c.g[A1][0] = c.g[V0][0];
         c.g[V0][0] = sx(r32(c, A1).wrapping_add(8));
         if c.g[V0][0] != 0 {
@@ -19380,56 +19364,9 @@ pub fn buddy_man_add_message_senders_to_roster(c: &mut Cpu) {
 /// roster-add event: allocate the 8-byte event (kind 0x10A, the net-event
 /// vtable), wrap it in a 12-byte list node and splice the node into the
 /// message list headed at lobby+0xF0. 29 + 14 cycles plus the two
-/// allocations. (Sibling of the remove reply: kind and return addresses
-/// differ, nothing else.)
+/// allocations.
 pub fn buddy_man_on_roster_add_reply(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 29;
-        let frame = Frame::open(c, 0x50);
-        c.g[A1][0] = sx(NET_EVENT_TAG);
-        frame.save(c, S0, 0x40);
-        frame.save(c, S1, 0x30);
-        c.g[A0][0] = 8;
-        frame.save_ra(c, 0x20);
-        c.g[A2][0] = 0x2000_0000;
-        c.g[S0][0] = Addr(gp_8(c, LOBBY_INSTANCE_GP)).lw(c);
-        c.g[A3][0] = 0;
-        call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_18ec)?;
-        c.g[S1][0] = c.g[V0][0];
-        c.g[V1][0] = 0x10a;
-        c.g[V0][0] = RODATA_PAGE;
-        Addr(r32(c, S1)).sw(c, c.g[V1][0]);
-        c.g[V0][0] = sx(NET_EVENT_VTABLE);
-        c.g[A1][0] = RODATA_PAGE;
-        Addr(r32(c, S1).wrapping_add(4)).sw(c, c.g[V0][0]);
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
-        c.g[A0][0] = 0xc;
-        c.g[A2][0] = 0x2000_0000;
-        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(0xf0)).lw(c);
-        c.g[A3][0] = 0;
-        Addr(frame.at(c, 0x10)).sw(c, c.g[V0][0]);
-        call_ptr(c, callee::EA_MEM_ALLOC_NAMED.addr, 0x0026_1924)?;
-        c.g[A1][0] = c.g[V0][0];
-        c.g[V0][0] = sx(r32(c, A1).wrapping_add(8));
-        if c.g[V0][0] != 0 {
-            Addr(r32(c, A1).wrapping_add(8)).sw(c, c.g[S1][0]);
-        }
-        c.cycles += 14;
-        c.g[V0][0] = Addr(frame.at(c, 0x10)).lw(c);
-        frame.restore(c, S0, 0x40);
-        Addr(r32(c, A1)).sw(c, c.g[V0][0]);
-        frame.restore(c, S1, 0x30);
-        c.g[V1][0] = Addr(r32(c, V0).wrapping_add(4)).lw(c);
-        frame.restore_ra(c, 0x20);
-        Addr(r32(c, A1).wrapping_add(4)).sw(c, c.g[V1][0]);
-        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(4)).lw(c);
-        Addr(r32(c, A0)).sw(c, c.g[A1][0]);
-        c.g[V0][0] = Addr(frame.at(c, 0x10)).lw(c);
-        Addr(r32(c, V0).wrapping_add(4)).sw(c, c.g[A1][0]);
-        Addr(frame.at(c, 0)).sw(c, c.g[A1][0]);
-        frame.close(c);
-        Ok(())
-    })
+    post_roster_reply_event(c, 0x0026_18c0, 0x10a);
 }
 
 // ---------------------------------------------------------------------------
