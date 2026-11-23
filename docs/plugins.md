@@ -91,6 +91,91 @@ Derived data must never go anywhere else, and never into git.
 **The overlay** is served before the disc's own files, case-insensitively, as
 if it were part of the disc (`SSX3_FILE_LOG` shows which source served a read).
 
+## Peaks and events on the Select Peak screen
+
+A plugin gets its peaks and events onto the game's Select Peak screen with
+`plugin.toml` alone: no menu code, no game data. This is how SSX Tricky,
+SSX On Tour and community-made maps are listed. Try it with
+`examples/plugins/menu-test` (see "Testing a menu" below).
+
+```toml
+[[peak]]
+id = "alps"
+name = "Alps"                # shown in the peak list; ASCII, 31 characters
+picture = "ui/alps.png"      # optional, in the content folder (a plugin with
+                             # [prepare]: where the importer writes, $SSX3_PLUGIN_OUT)
+
+[[event]]
+id = "col-run"
+name = "Col Run"             # shown in the event list; or name_key = "kT_..."
+peak = "alps"
+kind = "race"                # or "freestyle"
+template = "ARA1"            # the game's event whose rules it takes
+world = "alps"               # data/worlds/alps.big, served from the overlay
+```
+
+**What the player sees.** Every plugin peak is a row in the peak list, after
+the game's three. Picking it shows a Race and a Freestyle row (only the kinds
+the peak has events of), then the events of that kind, in manifest order;
+picking an event starts it: the rules screen, the load and the race are the
+`template` event's own, in the world `world`. The loading screen shows the
+event's `name`. The game's own peaks and events, and the Mountain, behave as
+before. Several plugins coexist: peaks are listed in plugin id order, then
+manifest order.
+
+**Community maps need no official disc.** A folder with `plugin.toml`,
+`content/DATA/WORLDS/<world>.big` (and optionally `content/ui/<picture>.png`,
+audio) and the `[[peak]]`/`[[event]]` tables is a complete plugin (no
+`[inputs]` or `[prepare]`). The only disc it needs is the SSX 3 image the
+game runs from. To pick `template`, run `SSX3_EVENT=list`; the template
+decides the rules, rider count, scoring and the section names its world must
+have (`docs/plans/plugins.md`, "What a world needs").
+
+**Text.** `name` is shown as is, in the game's font (ASCII: other characters
+show as `?`). `name_key` names a string of the game's own text table
+(`CMNAMER.LOC`, such as `kT_240SelectPeak`) and shows it in the player's
+language; the key wins over `name` when both are given.
+
+**Pictures.** `picture` is a PNG (any colour type and size up to 4,096
+pixels a side and 16 MB). The engine scales it to 256x256, reduces it to 256
+colours and serves it as a member of `MAPGFX.BIG`, in memory, next to the
+peak list (while the peak is highlighted or picked). Without a picture, or
+with one that cannot be read, the mountain's picture is shown, and the log
+says why (`[plugin-menu]`). The picture is made at boot from your own SSX 3
+disc and kept in memory; nothing is written to disk.
+
+**Limits.** The screen has no scrolling; more would run off it. Surplus
+entries are left out, with a line in the log naming the plugin:
+
+| What | Limit |
+| --- | --- |
+| plugin peaks on the screen, all plugins together | 4 |
+| events in one list (a peak's race or freestyle events) | 10 |
+| name length | 31 ASCII characters |
+| peaks without events | not listed |
+| the same `world` in two plugins | the first plugin keeps it, the other's events are left out |
+
+A "More" row that pages the list is not built; ask for it if a map pack needs
+more than four peaks.
+
+**What the engine does not do.** Plugin peaks are always unlocked, show no
+medals or best times, and there are no info panels for them. Career records
+(medals, best times, unlocks) are not written for plugin events: the events
+run on their template, so a result would be recorded under the template's own
+record. A plugin that wants records hooks the result functions itself (for
+example `BEScoreInt_SubmitRaceResult`) and keeps them in its own file; the
+host provides the menu only. Multiplayer events, rider gating and the
+Freeride kind are not offered.
+
+**Testing a menu.** `tools/plugin_menu_test.py` copies
+`examples/plugins/menu-test` and `world-copy` to a scratch folder, makes their
+content from your SSX 3 disc into the cache folder, and drives the menus
+headless with scripted pad input (`SSX3_INPUT`): into a plugin event, the
+game's own event with the plugin installed and with plugins off, back
+navigation, the limits. The same input strings work for your plugin: the
+Select Peak screen is up at about frame 2850, and the plugin peaks follow the
+game's three (Down from Peak 1).
+
 ## Writing a plugin: Rust code
 
 The package exports `plugin()`:

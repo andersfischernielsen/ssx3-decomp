@@ -34,7 +34,10 @@ type R<T> = Result<T, String>;
 /// Decode a PNG to RGBA8, refusing anything large.
 pub fn decode_png(data: &[u8]) -> R<(u32, u32, Vec<u8>)> {
     if data.len() > MAX_BYTES {
-        return Err(format!("picture is {} bytes (at most {MAX_BYTES})", data.len()));
+        return Err(format!(
+            "picture is {} bytes (at most {MAX_BYTES})",
+            data.len()
+        ));
     }
     let mut dec = png::Decoder::new(std::io::Cursor::new(data));
     dec.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
@@ -47,7 +50,9 @@ pub fn decode_png(data: &[u8]) -> R<(u32, u32, Vec<u8>)> {
         return Err(format!("picture is {w}x{h} (at most {MAX_SIDE} per side)"));
     }
     let mut buf = vec![0u8; reader.output_buffer_size().ok_or("picture too large")?];
-    let frame = reader.next_frame(&mut buf).map_err(|e| format!("bad PNG: {e}"))?;
+    let frame = reader
+        .next_frame(&mut buf)
+        .map_err(|e| format!("bad PNG: {e}"))?;
     let px = &buf[..frame.buffer_size()];
     let rgba: Vec<u8> = match frame.color_type {
         png::ColorType::Rgba => px.to_vec(),
@@ -100,7 +105,10 @@ pub fn resize_square(w: usize, h: usize, rgba: &[u8]) -> Vec<u8> {
                 let fx = ((x * 2 + 1) * w) as f64 / (SIDE * 2) as f64 - 0.5;
                 let fy = ((y * 2 + 1) * h) as f64 / (SIDE * 2) as f64 - 0.5;
                 let (ix, iy) = (fx.floor().max(0.0) as usize, fy.floor().max(0.0) as usize);
-                let (tx, ty) = ((fx - ix as f64).clamp(0.0, 1.0), (fy - iy as f64).clamp(0.0, 1.0));
+                let (tx, ty) = (
+                    (fx - ix as f64).clamp(0.0, 1.0),
+                    (fy - iy as f64).clamp(0.0, 1.0),
+                );
                 for (dx, dy, wgt) in [
                     (0, 0, (1.0 - tx) * (1.0 - ty)),
                     (1, 0, tx * (1.0 - ty)),
@@ -180,7 +188,10 @@ pub fn quantize(rgba: &[u8]) -> (Vec<u8>, Vec<[u8; 4]>) {
         let total: u64 = b.iter().map(|&k| colours[k].1 as u64).sum::<u64>().max(1);
         let mut avg = [0u8; 3];
         for ch in 0..3 {
-            let s: u64 = b.iter().map(|&k| colours[k].0[ch] as u64 * colours[k].1 as u64).sum();
+            let s: u64 = b
+                .iter()
+                .map(|&k| colours[k].0[ch] as u64 * colours[k].1 as u64)
+                .sum();
             avg[ch] = ((s + total / 2) / total) as u8;
         }
         palette.push([avg[0], avg[1], avg[2], 255]);
@@ -265,8 +276,12 @@ pub fn ssh_from_png(png: &[u8], template: &[u8]) -> R<Vec<u8>> {
     for (i, c) in palette.iter().enumerate() {
         let slot = clut_slot(i);
         // PS2 alpha: 0x80 is opaque.
-        out[pal + slot * 4..pal + slot * 4 + 4]
-            .copy_from_slice(&[c[0], c[1], c[2], if c[3] >= 128 { 0x80 } else { 0 }]);
+        out[pal + slot * 4..pal + slot * 4 + 4].copy_from_slice(&[
+            c[0],
+            c[1],
+            c[2],
+            if c[3] >= 128 { 0x80 } else { 0 },
+        ]);
     }
     Ok(out)
 }
@@ -336,7 +351,11 @@ pub fn pack_bigf(members: &[(String, Vec<u8>)]) -> Vec<u8> {
 /// `MAPGFX.BIG` with a picture member per plugin peak that has a readable
 /// picture. A peak whose picture cannot be used is logged and keeps the
 /// mountain's.
-pub fn patch_mapgfx(original: &[u8], plan: &MenuPlan, read: &dyn Fn(&std::path::Path) -> std::io::Result<Vec<u8>>) -> R<Vec<u8>> {
+pub fn patch_mapgfx(
+    original: &[u8],
+    plan: &MenuPlan,
+    read: &dyn Fn(&std::path::Path) -> std::io::Result<Vec<u8>>,
+) -> R<Vec<u8>> {
     let mut members = parse_bigf(original)?;
     let template = members
         .iter()
@@ -417,7 +436,12 @@ mod tests {
         let (w, h, px) = decode_png(&ok).unwrap();
         assert_eq!((w, h, px.len()), (2, 2, 16));
         assert_eq!(&px[4..8], &[64, 64, 64, 255]);
-        let big = png_of(MAX_SIDE + 1, 1, png::ColorType::Grayscale, &vec![0; MAX_SIDE as usize + 1]);
+        let big = png_of(
+            MAX_SIDE + 1,
+            1,
+            png::ColorType::Grayscale,
+            &vec![0; MAX_SIDE as usize + 1],
+        );
         assert!(decode_png(&big).unwrap_err().contains("at most"));
         let huge = vec![0u8; MAX_BYTES + 1];
         assert!(decode_png(&huge).unwrap_err().contains("bytes"));
@@ -465,9 +489,17 @@ mod tests {
         let err: u64 = rgba
             .chunks(4)
             .zip(&t)
-            .map(|(px, &i)| (0..3).map(|c| (px[c] as i32 - p[i as usize][c] as i32).unsigned_abs() as u64).sum::<u64>())
+            .map(|(px, &i)| {
+                (0..3)
+                    .map(|c| (px[c] as i32 - p[i as usize][c] as i32).unsigned_abs() as u64)
+                    .sum::<u64>()
+            })
             .sum();
-        assert!(err / (SIDE * SIDE) as u64 <= 40, "mean error {}", err / (SIDE * SIDE) as u64);
+        assert!(
+            err / (SIDE * SIDE) as u64 <= 40,
+            "mean error {}",
+            err / (SIDE * SIDE) as u64
+        );
         // Transparency gets its own entry.
         let mut rgba = vec![200u8; SIDE * SIDE * 4];
         rgba[3] = 0;
@@ -503,9 +535,15 @@ mod tests {
             let slot = clut_slot(ssh[tex + i] as usize);
             let c = &ssh[pal + slot * 4..pal + slot * 4 + 4];
             assert_eq!(c[3], 0x80);
-            err += (0..3).map(|k| (c[k] as i32 - src[i * 4 + k] as i32).unsigned_abs() as u64).sum::<u64>();
+            err += (0..3)
+                .map(|k| (c[k] as i32 - src[i * 4 + k] as i32).unsigned_abs() as u64)
+                .sum::<u64>();
         }
-        assert!(err / (SIDE * SIDE) as u64 <= 18, "mean error {}", err / (SIDE * SIDE) as u64);
+        assert!(
+            err / (SIDE * SIDE) as u64 <= 18,
+            "mean error {}",
+            err / (SIDE * SIDE) as u64
+        );
         // Deterministic.
         assert_eq!(ssh, ssh_from_png(&gradient_png(300, 200), &t).unwrap());
         // A template that is not a shape is refused.
@@ -520,7 +558,10 @@ mod tests {
         ];
         let big = pack_bigf(&members);
         assert_eq!(&big[..4], b"BIGF");
-        assert_eq!(u32::from_le_bytes(big[4..8].try_into().unwrap()) as usize, big.len());
+        assert_eq!(
+            u32::from_le_bytes(big[4..8].try_into().unwrap()) as usize,
+            big.len()
+        );
         assert_eq!(parse_bigf(&big).unwrap(), members);
         let mut more = members.clone();
         more.push((member_name(0), vec![9u8; 5]));
@@ -571,7 +612,9 @@ mod tests {
         assert_eq!(members[2].1.len(), template().len());
         assert_eq!(members[0], parse_bigf(&original).unwrap()[0]);
         // A picture that cannot be read or decoded: no member, an error for the caller to leave the archive alone.
-        let missing = patch_mapgfx(&original, &plan, &|_| Err(std::io::ErrorKind::NotFound.into()));
+        let missing = patch_mapgfx(&original, &plan, &|_| {
+            Err(std::io::ErrorKind::NotFound.into())
+        });
         assert!(missing.is_err());
         assert!(patch_mapgfx(&original, &plan, &|_| Ok(b"junk".to_vec())).is_err());
         // No picture: nothing to add.

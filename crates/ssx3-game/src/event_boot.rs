@@ -206,7 +206,8 @@ pub fn set_course_name(c: &mut Cpu, track: u32, name: &str) {
     let bytes = name.as_bytes();
     let n = bytes.len().min(NAME_FIELD - 1);
     for i in 0..NAME_FIELD {
-        c.bus.write8(addr + i as u32, if i < n { bytes[i] } else { 0 });
+        c.bus
+            .write8(addr + i as u32, if i < n { bytes[i] } else { 0 });
     }
 }
 
@@ -353,7 +354,11 @@ fn init_load_screen_update(c: &mut Cpu) {
         PHASE.store(RACING, Ordering::Relaxed);
         return;
     };
-    if let Some(name) = plugin_event.as_ref().filter(|pe| pe.name_key.is_none()).and_then(|pe| pe.name.as_deref()) {
+    if let Some(name) = plugin_event
+        .as_ref()
+        .filter(|pe| pe.name_key.is_none())
+        .and_then(|pe| pe.name.as_deref())
+    {
         set_course_name(c, ev.track, &crate::game::fe::pluginmenu::clean_name(name));
     }
     set_world(plugin_event.map(|pe| pe.world));

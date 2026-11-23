@@ -73,7 +73,9 @@ pub fn refpack_decode(data: &[u8]) -> R<Vec<u8>> {
     }
     let mut out: Vec<u8> = Vec::with_capacity(expected);
     let take = |pos: &mut usize, n: usize| -> R<&[u8]> {
-        let s = data.get(*pos..*pos + n).ok_or("truncated RefPack command")?;
+        let s = data
+            .get(*pos..*pos + n)
+            .ok_or("truncated RefPack command")?;
         *pos += n;
         Ok(s)
     };
@@ -263,13 +265,7 @@ fn set_y(row: &mut [u8], y: i16) {
 /// `children` (names), inserting the new rows and the menu before `parent` and
 /// linking the menu into the parent group. Layout rows follow the game's: the
 /// children one below the other, the menu as tall as its rows.
-fn add_list(
-    s: &mut Screen,
-    root: u32,
-    menu: &str,
-    children: &[String],
-    parent: u32,
-) -> R<()> {
+fn add_list(s: &mut Screen, root: u32, menu: &str, children: &[String], parent: u32) -> R<()> {
     let ri = find(&s.widgets, root)?;
     let template_child = u32_at(&s.widgets[ri], 36)?;
     let child_w = s.widgets[find(&s.widgets, template_child)?].clone();
@@ -451,13 +447,18 @@ pub fn patch_lui(file: &[u8], plan: &MenuPlan) -> R<Vec<u8>> {
         .filter(|o| *o > begin)
         .min()
         .ok_or("cannot find the end of the Event Select screen")?;
-    let mut screen = Screen::parse(&refpack_decode(file.get(begin..end).ok_or("bad screen offset")?)?)?;
+    let mut screen = Screen::parse(&refpack_decode(
+        file.get(begin..end).ok_or("bad screen offset")?,
+    )?)?;
     add_peak_rows(&mut screen, plan)?;
     let mut replacement = refpack_encode_literals(&screen.to_bytes());
     // The game's word loads align down: every following block keeps its
     // original alignment (16 bytes).
     let old = end - begin;
-    replacement.resize(replacement.len() + (old as i64 - replacement.len() as i64).rem_euclid(16) as usize, 0);
+    replacement.resize(
+        replacement.len() + (old as i64 - replacement.len() as i64).rem_euclid(16) as usize,
+        0,
+    );
     let delta = replacement.len() as i64 - old as i64;
     let mut out = Vec::with_capacity((file.len() as i64 + delta) as usize);
     out.extend_from_slice(&file[..begin]);
@@ -489,7 +490,9 @@ mod tests {
         set_name(&mut w, name);
         if class == 0x10 || class == 0x13 {
             put_u32(&mut w, 32, extra.len() as u32);
-            extra.iter().for_each(|e| w.extend_from_slice(&e.to_le_bytes()));
+            extra
+                .iter()
+                .for_each(|e| w.extend_from_slice(&e.to_le_bytes()));
         } else {
             w.extend_from_slice(&0x1234_5678u32.to_le_bytes());
         }
@@ -520,18 +523,38 @@ mod tests {
             text("Peak2"),
             text("Peak1"),
             text("Mountain"),
-            widget(0x13, "SP_PeakList", &hs(&["Peak3", "Peak2", "Peak1", "Mountain"])),
+            widget(
+                0x13,
+                "SP_PeakList",
+                &hs(&["Peak3", "Peak2", "Peak1", "Mountain"]),
+            ),
             widget(0x10, "SelectPeak", &hs(&["SP_PeakList"])),
             text("Peak1RaceGoal"),
             text("Peak1FreeGoal"),
-            widget(0x13, "SPG_Peak1Goals", &hs(&["Peak1RaceGoal", "Peak1FreeGoal"])),
+            widget(
+                0x13,
+                "SPG_Peak1Goals",
+                &hs(&["Peak1RaceGoal", "Peak1FreeGoal"]),
+            ),
             widget(0x10, "SelectPeakGoal", &hs(&["SPG_Peak1Goals"])),
             text("Peak1RaceLoc0"),
             text("Peak1RaceLoc1"),
-            widget(0x13, "Peak1RaceLocations", &hs(&["Peak1RaceLoc0", "Peak1RaceLoc1"])),
+            widget(
+                0x13,
+                "Peak1RaceLocations",
+                &hs(&["Peak1RaceLoc0", "Peak1RaceLoc1"]),
+            ),
             text("Peak1FreestyleLoc0"),
-            widget(0x13, "Peak1FreestyleLocations", &hs(&["Peak1FreestyleLoc0"])),
-            widget(0x10, "SelectEvent", &hs(&["Peak1RaceLocations", "Peak1FreestyleLocations"])),
+            widget(
+                0x13,
+                "Peak1FreestyleLocations",
+                &hs(&["Peak1FreestyleLoc0"]),
+            ),
+            widget(
+                0x10,
+                "SelectEvent",
+                &hs(&["Peak1RaceLocations", "Peak1FreestyleLocations"]),
+            ),
         ];
         let props = vec![
             prop("Peak3", 0, 180, 20),
@@ -633,7 +656,14 @@ mod tests {
         // Peak list: the new rows follow Peak1, before the Mountain.
         assert_eq!(
             s.children(h("SP_PeakList")).unwrap(),
-            hs(&["Peak3", "Peak2", "Peak1", "PlugPeak0", "PlugPeak1", "Mountain"])
+            hs(&[
+                "Peak3",
+                "Peak2",
+                "Peak1",
+                "PlugPeak0",
+                "PlugPeak1",
+                "Mountain"
+            ])
         );
         assert_eq!(s.layout(h("PlugPeak0")).unwrap().0, 75);
         assert_eq!(s.layout(h("PlugPeak1")).unwrap().0, 100);
@@ -668,13 +698,28 @@ mod tests {
         // menu before its container.
         let order: Vec<u32> = s.widgets.iter().map(|w| name_of(w)).collect();
         let pos = |n: u32| order.iter().position(|x| *x == n).unwrap();
-        for menu in ["PlugGoals0", "Plug0RaceLocs", "Plug0FreeLocs", "Plug1RaceLocs"] {
+        for menu in [
+            "PlugGoals0",
+            "Plug0RaceLocs",
+            "Plug0FreeLocs",
+            "Plug1RaceLocs",
+        ] {
             for child in s.children(h(menu)).unwrap() {
                 assert!(pos(child) < pos(h(menu)), "{menu}");
             }
         }
-        for menu in ["PlugGoals0", "PlugGoals1", "Plug0RaceLocs", "Plug0FreeLocs", "Plug1RaceLocs"] {
-            let parent = if menu.starts_with("PlugGoals") { "SelectPeakGoal" } else { "SelectEvent" };
+        for menu in [
+            "PlugGoals0",
+            "PlugGoals1",
+            "Plug0RaceLocs",
+            "Plug0FreeLocs",
+            "Plug1RaceLocs",
+        ] {
+            let parent = if menu.starts_with("PlugGoals") {
+                "SelectPeakGoal"
+            } else {
+                "SelectEvent"
+            };
             assert!(pos(h(menu)) < pos(h(parent)), "{menu}");
         }
         // Rows are one below the other and wide enough for a name.
@@ -687,7 +732,10 @@ mod tests {
         assert_eq!(back.to_bytes(), bytes);
         assert_eq!(back.widget_count(), s.widget_count());
         // The tail (script data) is untouched.
-        assert_eq!(&bytes[bytes.len() - 50..], &(0..50).collect::<Vec<u8>>()[..]);
+        assert_eq!(
+            &bytes[bytes.len() - 50..],
+            &(0..50).collect::<Vec<u8>>()[..]
+        );
         // The clone keeps the template's class and text hash.
         let w = &s.widgets[find(&s.widgets, h("PlugPeak0")).unwrap()];
         assert_eq!(u16_at(w, 0).unwrap(), 0x17);
@@ -707,7 +755,8 @@ mod tests {
     fn a_screen_missing_what_the_patch_needs_is_an_error() {
         let plan = MenuPlan::build(&catalog(&[("alpha", &[Kind::Race])]));
         let mut s = synthetic();
-        s.widgets.remove(find(&s.widgets, str_hash(b"Peak1")).unwrap());
+        s.widgets
+            .remove(find(&s.widgets, str_hash(b"Peak1")).unwrap());
         assert!(add_peak_rows(&mut s, &plan).is_err());
     }
 
@@ -763,20 +812,39 @@ mod tests {
         let delta = out.len() - file.len();
         assert_eq!(delta % 16, 0, "later blocks keep their alignment");
         let table = u32_at(&out, 12).unwrap() as usize;
-        let (n0, o0) = (u32_at(&out, table + 4).unwrap(), u32_at(&out, table + 8).unwrap());
-        let (n1, o1) = (u32_at(&out, table + 12).unwrap(), u32_at(&out, table + 16).unwrap());
-        let (n2, o2) = (u32_at(&out, table + 20).unwrap(), u32_at(&out, table + 24).unwrap());
+        let (n0, o0) = (
+            u32_at(&out, table + 4).unwrap(),
+            u32_at(&out, table + 8).unwrap(),
+        );
+        let (n1, o1) = (
+            u32_at(&out, table + 12).unwrap(),
+            u32_at(&out, table + 16).unwrap(),
+        );
+        let (n2, o2) = (
+            u32_at(&out, table + 20).unwrap(),
+            u32_at(&out, table + 24).unwrap(),
+        );
         assert_eq!((n0, n1, n2), (0x111, EVENT_SELECT_SCREEN, 0x222));
         assert_eq!(o0, u32_at(&file, table + 8).unwrap());
         assert_eq!(o1, u32_at(&file, table + 16).unwrap());
-        assert_eq!(o2 as usize, u32_at(&file, table + 24).unwrap() as usize + delta);
-        assert_eq!(u32_at(&out, 16).unwrap() as usize, u32_at(&file, 16).unwrap() as usize + delta);
-        assert_eq!(u32_at(&out, 20).unwrap() as usize, u32_at(&file, 20).unwrap() as usize + delta);
+        assert_eq!(
+            o2 as usize,
+            u32_at(&file, table + 24).unwrap() as usize + delta
+        );
+        assert_eq!(
+            u32_at(&out, 16).unwrap() as usize,
+            u32_at(&file, 16).unwrap() as usize + delta
+        );
+        assert_eq!(
+            u32_at(&out, 20).unwrap() as usize,
+            u32_at(&file, 20).unwrap() as usize + delta
+        );
         // The later screen's bytes moved unchanged; the patched screen decodes
         // and has the plugin rows.
         let a = table + o2 as usize;
         assert_eq!(&out[a..a + 48], &[0xbb; 48][..]);
-        let patched = Screen::parse(&refpack_decode(&out[table + o1 as usize..a]).unwrap()).unwrap();
+        let patched =
+            Screen::parse(&refpack_decode(&out[table + o1 as usize..a]).unwrap()).unwrap();
         assert!(patched.has_widget(str_hash(b"PlugPeak0")));
         // Not a LUI, or no such screen: errors.
         assert!(patch_lui(b"nope", &plan).is_err());
@@ -808,7 +876,12 @@ mod tests {
         let table = u32_at(&file, 12).unwrap() as usize;
         let count = u32_at(&file, table).unwrap() as usize;
         let (_, off) = (0..count)
-            .map(|i| (u32_at(&file, table + 4 + i * 8).unwrap(), u32_at(&file, table + 8 + i * 8).unwrap()))
+            .map(|i| {
+                (
+                    u32_at(&file, table + 4 + i * 8).unwrap(),
+                    u32_at(&file, table + 8 + i * 8).unwrap(),
+                )
+            })
             .find(|(n, _)| *n == EVENT_SELECT_SCREEN)
             .unwrap();
         let begin = table + off as usize;
@@ -824,7 +897,16 @@ mod tests {
         assert_eq!(screen.to_bytes(), raw);
         // The game's own rows the patch clones are all there.
         let h = |n: &str| str_hash(n.as_bytes());
-        for n in ["Peak1", "Mountain", "SP_PeakList", "SPG_Peak1Goals", "Peak1RaceLocations", "Peak1FreestyleLocations", "SelectPeakGoal", "SelectEvent"] {
+        for n in [
+            "Peak1",
+            "Mountain",
+            "SP_PeakList",
+            "SPG_Peak1Goals",
+            "Peak1RaceLocations",
+            "Peak1FreestyleLocations",
+            "SelectPeakGoal",
+            "SelectEvent",
+        ] {
             assert!(screen.has_widget(h(n)), "{n}");
         }
         assert_eq!(screen.layout(h("Mountain")).unwrap().0, 75);
@@ -832,15 +914,24 @@ mod tests {
         // No plan: the same screen.
         assert_eq!(refpack_decode(&refpack_encode_literals(&raw)).unwrap(), raw);
         // One plugin peak with 2 race and 1 freestyle events.
-        let plan = MenuPlan::build(&catalog(&[("alpha", &[Kind::Race, Kind::Race, Kind::Freestyle])]));
+        let plan = MenuPlan::build(&catalog(&[(
+            "alpha",
+            &[Kind::Race, Kind::Race, Kind::Freestyle],
+        )]));
         let out = patch_lui(&file, &plan).unwrap();
         assert_eq!((out.len() - file.len()) % 16, 0);
         let t2 = u32_at(&out, 12).unwrap() as usize;
-        let b2 = t2 + (0..count)
-            .map(|i| (u32_at(&out, t2 + 4 + i * 8).unwrap(), u32_at(&out, t2 + 8 + i * 8).unwrap()))
-            .find(|(n, _)| *n == EVENT_SELECT_SCREEN)
-            .unwrap()
-            .1 as usize;
+        let b2 = t2
+            + (0..count)
+                .map(|i| {
+                    (
+                        u32_at(&out, t2 + 4 + i * 8).unwrap(),
+                        u32_at(&out, t2 + 8 + i * 8).unwrap(),
+                    )
+                })
+                .find(|(n, _)| *n == EVENT_SELECT_SCREEN)
+                .unwrap()
+                .1 as usize;
         let e2 = (0..count)
             .map(|i| t2 + u32_at(&out, t2 + 8 + i * 8).unwrap() as usize)
             .filter(|o| *o > b2)
@@ -853,7 +944,13 @@ mod tests {
         assert_eq!(patched.layout(h("SP_PeakList")).unwrap().2, 145);
         assert_eq!(
             patched.children(h("SP_PeakList")).unwrap(),
-            vec![h("Peak3"), h("Peak2"), h("Peak1"), h("PlugPeak0"), h("Mountain")]
+            vec![
+                h("Peak3"),
+                h("Peak2"),
+                h("Peak1"),
+                h("PlugPeak0"),
+                h("Mountain")
+            ]
         );
         // Everything after the screen is byte for byte what it was.
         assert_eq!(file[end..], out[e2..]);

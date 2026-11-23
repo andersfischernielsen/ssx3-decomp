@@ -205,10 +205,7 @@ impl MenuPlan {
             for tab in p.tabs() {
                 map.insert(
                     str_hash(names::goal(p.index, tab).as_bytes()),
-                    Widget::Goal {
-                        peak: p.index,
-                        tab,
-                    },
+                    Widget::Goal { peak: p.index, tab },
                 );
                 for row in 0..p.events(tab).len() {
                     map.insert(
@@ -349,13 +346,15 @@ pub fn install() {
     }
     crate::native_files::register_generator(
         "DATA/UI/FE.LUI",
-        Box::new(|original| match super::lui_patch::patch_lui(original, self::plan()) {
-            Ok(bytes) => Some(bytes),
-            Err(e) => {
-                eprintln!("[plugin-menu] FE.LUI not patched, the plugin peaks stay off the screen: {e}");
-                None
-            }
-        }),
+        Box::new(
+            |original| match super::lui_patch::patch_lui(original, self::plan()) {
+                Ok(bytes) => Some(bytes),
+                Err(e) => {
+                    eprintln!("[plugin-menu] FE.LUI not patched, the plugin peaks stay off the screen: {e}");
+                    None
+                }
+            },
+        ),
     );
     crate::event_boot::install_world_swap();
     let pictures: Vec<bool> = self::plan()
@@ -363,10 +362,17 @@ pub fn install() {
         .iter()
         .map(|p| match &p.picture {
             None => false,
-            Some(path) => match std::fs::read(path).map_err(|e| e.to_string()).and_then(|b| pluginpic::decode_png(&b).map(|_| ())) {
+            Some(path) => match std::fs::read(path)
+                .map_err(|e| e.to_string())
+                .and_then(|b| pluginpic::decode_png(&b).map(|_| ()))
+            {
                 Ok(()) => true,
                 Err(e) => {
-                    eprintln!("[plugin-menu] picture of {} ({}): {e}; the mountain is shown instead", p.id, path.display());
+                    eprintln!(
+                        "[plugin-menu] picture of {} ({}): {e}; the mountain is shown instead",
+                        p.id,
+                        path.display()
+                    );
                     false
                 }
             },
@@ -560,7 +566,9 @@ fn set_mode(c: &mut Cpu) {
         SELECTED.store(NONE, Ordering::Relaxed);
         crate::event_boot::end_plugin_event(c);
     }
-    after(c, &SET_MODE_PREV, |c, back| sync_panels(c, this, mode, back));
+    after(c, &SET_MODE_PREV, |c, back| {
+        sync_panels(c, this, mode, back)
+    });
 }
 
 fn sync_panels(c: &mut Cpu, this: u32, mode: u32, back: u32) -> Flow {
@@ -574,7 +582,16 @@ fn sync_panels(c: &mut Cpu, this: u32, mode: u32, back: u32) -> Flow {
         set_ascii(c, obj, &p.name, back)?;
         for tab in p.tabs() {
             let obj = find_object(c, this, &names::goal(p.index, tab), back)?;
-            set_ascii(c, obj, if tab == FREESTYLE { "Freestyle" } else { "Race" }, back)?;
+            set_ascii(
+                c,
+                obj,
+                if tab == FREESTYLE {
+                    "Freestyle"
+                } else {
+                    "Race"
+                },
+                back,
+            )?;
             for (row, e) in p.events(tab).iter().enumerate() {
                 let obj = find_object(c, this, &names::event(p.index, tab, row), back)?;
                 set_label(c, obj, &e.label, back)?;
@@ -672,7 +689,11 @@ fn context(c: &mut Cpu, this: u32, back: u32) -> Flow {
         // The peak highlight bar sits under the row (the game's own code
         // places it for its rows only).
         let list = find_object(c, this, "SP_PeakList", back)?;
-        let row = if list == 0 { 0 } else { c.bus.read32(list + 0xa0) };
+        let row = if list == 0 {
+            0
+        } else {
+            c.bus.read32(list + 0xa0)
+        };
         let bar = find_object(c, this, "phl", back)?;
         if row != 0 && bar != 0 {
             let y = f32::from_bits(c.bus.read32(row + 0x48)) + 100.0;
@@ -688,11 +709,11 @@ fn context(c: &mut Cpu, this: u32, back: u32) -> Flow {
         set_named_visible(c, this, name, false, back)?;
     }
     let tab = c.bus.read32(gp(c, GP_TAB));
-    let key = (this as u64) << 32 | (p as u64) << 16 | (mode as u64) << 8 | tab as u64 & 0xff | 1 << 63;
+    let key =
+        (this as u64) << 32 | (p as u64) << 16 | (mode as u64) << 8 | tab as u64 & 0xff | 1 << 63;
     let caption = find_object(c, this, "PEAKno", back)?;
     // The stock refresh puts a locale text back (+0xb0 set); ours has none.
-    if HEADING.load(Ordering::Relaxed) != key
-        || (caption != 0 && c.bus.read32(caption + 0xb0) != 0)
+    if HEADING.load(Ordering::Relaxed) != key || (caption != 0 && c.bus.read32(caption + 0xb0) != 0)
     {
         let text = if mode == 2 {
             if tab as usize == FREESTYLE {
@@ -746,7 +767,11 @@ fn request_picture(c: &mut Cpu, this: u32, p: usize, back: u32) -> Flow {
     if c.bus.read32(this + THIS_VARIANT) == variant {
         return Ok(());
     }
-    let own = PICTURES.get().and_then(|v| v.get(p)).copied().unwrap_or(false);
+    let own = PICTURES
+        .get()
+        .and_then(|v| v.get(p))
+        .copied()
+        .unwrap_or(false);
     let member = if own {
         pluginpic::member_name(p)
     } else {
@@ -764,7 +789,11 @@ fn request_picture(c: &mut Cpu, this: u32, p: usize, back: u32) -> Flow {
     c.g[A3][0] = 1;
     call_ptr(c, LOAD_1_PEAK_PIC, back)?;
     let request = manager + slot * 0x11c;
-    for (i, b) in format!("|{member}").bytes().chain(std::iter::once(0)).enumerate() {
+    for (i, b) in format!("|{member}")
+        .bytes()
+        .chain(std::iter::once(0))
+        .enumerate()
+    {
         c.bus.write8(request + i as u32, b);
     }
     c.bus.write32(this + THIS_VARIANT, variant);
@@ -831,14 +860,25 @@ fn on_widget_action(c: &mut Cpu) {
     }
 }
 
-fn row_action(c: &mut Cpu, this: u32, w: u32, row: Widget, action: u32, back: u32) -> Result<u64, Unwound> {
+fn row_action(
+    c: &mut Cpu,
+    this: u32,
+    w: u32,
+    row: Widget,
+    action: u32,
+    back: u32,
+) -> Result<u64, Unwound> {
     let mode = c.bus.read32(gp(c, GP_MODE));
     match action {
         1 | 2 => {
             c.g[A0][0] = sx(this);
             c.g[A1][0] = sx(w);
             c.g[A2][0] = 1;
-            let colour = if action == 1 { SET_HIGHLIGHT_COLOR } else { SET_UNLOCKED_COLOR };
+            let colour = if action == 1 {
+                SET_HIGHLIGHT_COLOR
+            } else {
+                SET_UNLOCKED_COLOR
+            };
             call_ptr(c, colour, back)?;
             if action == 1 && matches!(mode, 1 | 2) {
                 grow_highlight(c, this, w, if mode == 1 { "pghl" } else { "ehl" }, back)?;
@@ -900,7 +940,14 @@ fn show_mode(c: &mut Cpu, this: u32, mode: u32, back: u32) -> Flow {
 
 /// The front-end tail of the stock event accept (`es_start_event`) with the
 /// plugin event's template event in place of the record table.
-fn start_event(c: &mut Cpu, this: u32, peak: usize, tab: usize, row: usize, back: u32) -> Result<u64, Unwound> {
+fn start_event(
+    c: &mut Cpu,
+    this: u32,
+    peak: usize,
+    tab: usize,
+    row: usize,
+    back: u32,
+) -> Result<u64, Unwound> {
     let Some(event) = plan().event(peak, tab, row) else {
         return Ok(0);
     };
@@ -923,8 +970,18 @@ fn start_event(c: &mut Cpu, this: u32, peak: usize, tab: usize, row: usize, back
     c.bus.write32(NEW_RACE_INFO + 0x40, template.track);
     let was = c.bus.read8(NEW_RACE_INFO + 0x48);
     c.bus.write32(gp(c, GP_EVENT_STARTED), 1);
-    call(c, crate::event_boot::BE_NEW_RACE_INT_SET_EVENT_TYPE, &[race, template.kind], back)?;
-    call(c, crate::event_boot::BE_NEW_RACE_INT_SET_EVENT, &[race, template.event], back)?;
+    call(
+        c,
+        crate::event_boot::BE_NEW_RACE_INT_SET_EVENT_TYPE,
+        &[race, template.kind],
+        back,
+    )?;
+    call(
+        c,
+        crate::event_boot::BE_NEW_RACE_INT_SET_EVENT,
+        &[race, template.event],
+        back,
+    )?;
     commit(c, race, back)?;
     if flow == 1 {
         if c.bus.read8(NEW_RACE_INFO + 0x48) != was {
@@ -939,7 +996,10 @@ fn start_event(c: &mut Cpu, this: u32, peak: usize, tab: usize, row: usize, back
     if let Label::Ascii(name) = &event.label {
         crate::event_boot::set_course_name(c, template.track, name);
     }
-    eprintln!("[plugin-menu] start {} (template {}, world {})", event.id, event.template, event.world);
+    eprintln!(
+        "[plugin-menu] start {} (template {}, world {})",
+        event.id, event.template, event.world
+    );
     c.g[A0][0] = sx(this);
     call_ptr(c, HIDE_MAP_PIC, back)?;
     Ok(1)
@@ -983,7 +1043,11 @@ mod tests {
     #[test]
     fn peaks_keep_catalog_order_and_two_plugins_coexist() {
         let cat = Catalog {
-            peaks: vec![peak("a", "one", "One"), peak("a", "two", "Two"), peak("b", "x", "X")],
+            peaks: vec![
+                peak("a", "one", "One"),
+                peak("a", "two", "Two"),
+                peak("b", "x", "X"),
+            ],
             events: vec![
                 event("a", "r1", "one", Kind::Race),
                 event("a", "f1", "one", Kind::Freestyle),
@@ -1062,16 +1126,29 @@ mod tests {
         assert!(p.peaks.iter().all(|x| x.name.len() == MAX_NAME));
         // 1 empty peak, 4 peaks x 2 surplus events, 2 surplus peaks x 2 surplus events (peaks past the
         // cap still count their rows first), 2 surplus peaks.
-        assert!(p.warnings.iter().any(|w| w.contains("a/empty has no events")), "{:?}", p.warnings);
-        assert!(p.warnings.iter().any(|w| w.contains("a/p4 left out")), "{:?}", p.warnings);
-        assert!(p.warnings.iter().any(|w| w.contains("a/e0-12 left out")), "{:?}", p.warnings);
+        assert!(
+            p.warnings
+                .iter()
+                .any(|w| w.contains("a/empty has no events")),
+            "{:?}",
+            p.warnings
+        );
+        assert!(
+            p.warnings.iter().any(|w| w.contains("a/p4 left out")),
+            "{:?}",
+            p.warnings
+        );
+        assert!(
+            p.warnings.iter().any(|w| w.contains("a/e0-12 left out")),
+            "{:?}",
+            p.warnings
+        );
         // Non-ASCII and control characters become '?'.
         assert_eq!(
             p.peaks[0].race[0].label,
             Label::Ascii("Name??0".to_string())
         );
     }
-
 
     // ---- the hooks, on a bare machine (no UI object is touched)
 
@@ -1151,7 +1228,7 @@ mod tests {
         let gp = crate::difftest::GAME_GP;
         let this = 0x0180_0000;
         for (name, action, flow, popup) in [
-            ("Peak1", 5, 0, 0),                // the game's own row
+            ("Peak1", 5, 0, 0), // the game's own row
             ("Peak1", 1, 0, 0),
             (names::peak(0).leak() as &str, 6, 0, 0), // back stays the game's
             (names::peak(0).leak() as &str, 7, 0, 0),
@@ -1167,7 +1244,10 @@ mod tests {
             c.g[RA][0] = 0x0010_0000;
             c.g[V0][0] = 0;
             on_widget_action(&mut c);
-            assert_eq!(c.g[V0][0], 0x1234, "{name} action {action} flow {flow} popup {popup}");
+            assert_eq!(
+                c.g[V0][0], 0x1234,
+                "{name} action {action} flow {flow} popup {popup}"
+            );
         }
         // No widget at all.
         c.bus.write32(this + THIS_CONFIRM, 0);
@@ -1183,7 +1263,14 @@ mod tests {
         assert_eq!(widget_id(Widget::Peak { peak: 0 }), 4);
         assert_eq!(widget_id(Widget::Peak { peak: 3 }), 7);
         assert_eq!(widget_id(Widget::Goal { peak: 2, tab: 1 }), 1);
-        assert_eq!(widget_id(Widget::Event { peak: 0, tab: 1, row: 11 }), 11);
+        assert_eq!(
+            widget_id(Widget::Event {
+                peak: 0,
+                tab: 1,
+                row: 11
+            }),
+            11
+        );
         // The game treats a peak id of 3 or more as the Mountain's, never as its tables' index.
         assert!((0..MAX_PEAKS).all(|p| widget_id(Widget::Peak { peak: p }) >= 4));
     }

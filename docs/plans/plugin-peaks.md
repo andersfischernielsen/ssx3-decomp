@@ -1,8 +1,9 @@
 # Plugin peaks and events on the Select Peak screen
 
-Status: design, 2026-11-22. Nothing here is implemented. "(verified)" means read in this
-repository's code, in the fork or in Ghidra (`SLUS_207.72`, second pass the same night); "(unverified)"
-means inferred and needing a run.
+Status: implemented on `feat/plugin-events` (PR #73), 2026-11-23; section 6 says what was built,
+what a run showed and where it differs from the design below. Sections 1 to 5 are the design as
+written on 2026-11-22: "(verified)" means read in this repository's code, in the fork or in Ghidra
+(`SLUS_207.72`), "(unverified)" means inferred (several of those are now settled in section 6).
 
 Goal: a plugin's `plugin.toml` (`[[peak]]` id/name/picture, `[[event]]` id/peak/kind/template/world,
 `crates/ssx3-plugin/src/catalog.rs`) is enough to get its peaks onto the Select Peak screen and its
@@ -409,3 +410,65 @@ installed, and a unit test where stated. One heavy process at a time.
   start tail, `UIText_SetString`/`RefreshText`. Not settled by Ghidra (needs data or a run): the second
   block's record format and the real FE.LUI contents, whether the fork's re-ports are needed, the
   picture CLUT swizzle, the async picture slot behaviour with a long name.
+
+## 6. Status and what the run showed (2026-11-23)
+
+Built (`crates/ssx3-game/src/game/fe/pluginmenu.rs`, `lui_patch.rs`, `pluginpic.rs`,
+`native_files.rs`, `catalog.rs`) and checked with `tools/plugin_menu_test.py` (scripted pad input,
+headless, the SSX 3 disc and `examples/plugins/menu-test`):
+
+| Step | State |
+| --- | --- |
+| 1 `MenuPlan` | done, unit tests |
+| 2 in-memory file source (`native_files::register_generator`, `Loc::Mem`) | done, unit test; the log shows `DATA/UI/FE.LUI generated` |
+| 3 `lui_patch.rs` | done, unit tests on a synthetic screen and on the real screen 0x5380 (377 records round trip byte for byte; with a plan, 377 + added) |
+| 4 boot wiring | done: `pluginmenu::install()` (engine boot, before the plugins' phase 2), only with plugin peaks |
+| 5 creation hook | done (ids by name hash, `EventSelect_OnWidgetCreated`); texts are set at each `SetMode` |
+| 6 hooks and the accept path | done: scripted input reaches the plugin event, `data/worlds/BAX.big` is read, the race runs |
+| 7 retail unaffected | done for the game's own rows (BAM loaded, no plugin event, back navigation restores the game's picture and panels); frames are **not** identical through the menus, see below |
+| 8 pictures | done: PNG to `map_mtn.ssh`-shaped member, generated `MAPGFX.BIG`; seen on screen |
+| 9 track name | done for names (the course record's name field is swapped for the event's `name` and put back); records are not hooked, see `docs/plugins.md` |
+| 10 limits | 4 peaks, 10 events per list, 31 characters, world names unique across plugins (`Catalog::problems`), empty peaks and empty kinds not listed. **Not done:** scrolling or paging beyond 4 peaks |
+| 11 Tricky drops its menu hooks | not touched here (`../ssx3-tricky-plugin`) |
+| 12 browser smoke test | not run (last step, lowest priority) |
+
+Where the run differs from the design:
+
+- **Identifying rows.** The hooks find a plugin row by the hash of the widget's name (`widget+0x38`)
+  against the plan's map, not by `+0x18` (the id): the id is written at creation for the game's
+  own code, but the UIMenu can hand ids out again.
+- **`GetEventRecord` is not hooked.** Plugin rows never reach the stock accept; the stock refreshes
+  that still run on the game's peak 1 (stored as peak 0) read its tables only. `hookable.txt` keeps the
+  address for plugins that want it.
+- **Starting.** `start_event` repeats the front-end tail of `es_start_event` with the template's
+  record from `event_boot::events` (`BENewRaceInt_SetEventType/SetEvent`, commit, flow 1: `SetPhase`,
+  the rule flags clear and `GameModule_QuitToLoadScreen`). The world swap (`event_boot::set_world`)
+  is applied by a wrapper of the world load that `pluginmenu::install()` now installs too (before, only
+  `SSX3_EVENT` did). It is cleared when a plugin event ends or another starts: at `SetMode(0)`, at any
+  accept of a game row, and in `GameModule_QuitToLoadScreen` (leaving a world). (Not run: a plugin race
+  quit to the front end, then a game event; the hook is one line in `quit_to_load_screen`.)
+- **Highlight bar.** The game places the peak list's highlight bar `phl` only for its own rows; the
+  hook puts it at the row's y + 100 every frame (as the fork). Tab and event bars `pghl`/`ehl` are moved the
+  way `es_grow_highlight` does.
+- **Help line.** The object is `HelpText`; the game writes the template event's help there on mode
+  change; the hook replaces it with the highlighted event's name.
+- **Info panels.** `peak3outline` is named with three trailing spaces in the game's string table
+  (the fork's name is right); `SP_Info`, `SP_GameInfo`, `SE_Info`, `Indicators` and the three outlines
+  are hidden every frame while a plugin peak is picked or highlighted.
+- **Row cap.** 10 events per list, not 12: twelve rows run into the help line.
+- **Frames with a plugin installed.** Through the menus the plugin's longer screen changes the
+  load timing, and the race (an AI rider, the snow tracks) starts a few frames apart: no frame of the
+  plugin run equals a frame of the run without it within 22 frames either way, and RAM differs (widgets are
+  allocated). The same race started with `SSX3_EVENT=ARA1` (no menus) with the plugin installed and
+  without gives byte-identical frames (frame 1300). With no plugin installed nothing runs and
+  `python3 tools/integrate_wave.py gate` prints `GATE: race replay RAM identical to the baseline`.
+- **Race frames from the menu equal `SSX3_EVENT=<plugin>/<event>` frames:** not checked (the start
+  frame differs, as above).
+- **The plugin needs the base disc only.** The generated `FE.LUI` and `MAPGFX.BIG` come from the SSX 3
+  image; a plugin's pictures come from its own content folder (for a plugin with `[prepare]`, the
+  importer's output folder).
+- **Not covered by the scripted test:** the `name_key` label (seen on screen once: menu-test's `keyed`
+  event shows the game's "Select Peak"; a unit test covers the choice of label), other languages, a
+  plugin quitting a race to the front end and then a game event (see above), and two plugin folders at
+  once (coexistence is unit tested, not run).
+

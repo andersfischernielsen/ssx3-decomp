@@ -675,10 +675,7 @@ mod tests {
             "data/ui/gen.lui",
             Box::new(|o| Some([o, b" + generated"].concat())),
         );
-        register_generator(
-            "DATA/UI/GEN2.LUI",
-            Box::new(|o| Some([o, b"!"].concat())),
-        );
+        register_generator("DATA/UI/GEN2.LUI", Box::new(|o| Some([o, b"!"].concat())));
         register_generator("DATA/UI/SAME.LUI", Box::new(|_| None));
         register_generator("DATA/UI/GONE.LUI", Box::new(|_| Some(b"never".to_vec())));
         let mut st = state(&base, vec![overlay.clone()]);
@@ -698,8 +695,14 @@ mod tests {
         assert_eq!(st.generated.len(), 2);
         // A generator that declines, a file nobody generates, a generated file
         // the disc does not have: the disc's answer.
-        assert_eq!(contents(&mut st, "DATA/UI/SAME.LUI").as_deref(), Some("same"));
-        assert_eq!(contents(&mut st, "DATA/UI/KEEP.LUI").as_deref(), Some("kept"));
+        assert_eq!(
+            contents(&mut st, "DATA/UI/SAME.LUI").as_deref(),
+            Some("same")
+        );
+        assert_eq!(
+            contents(&mut st, "DATA/UI/KEEP.LUI").as_deref(),
+            Some("kept")
+        );
         assert_eq!(contents(&mut st, "DATA/UI/GONE.LUI"), None);
         // Reads past the end fail instead of panicking.
         let f = st.open("DATA/UI/GEN.LUI").unwrap();
