@@ -339,7 +339,9 @@ fn spawn_depth_thread(
                         let t0 = web_time::Instant::now();
                         while state(&mapped) == MAP_PENDING {
                             if t0.elapsed() > DEPTH_GIVE_UP {
-                                eprintln!("[gfx] depth of frame {frame}: the readback never completed");
+                                eprintln!(
+                                    "[gfx] depth of frame {frame}: the readback never completed"
+                                );
                                 buf.unmap();
                                 break;
                             }
