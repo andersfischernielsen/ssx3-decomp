@@ -1344,10 +1344,9 @@ pub fn tag_field_copy_tag(c: &mut Cpu) {
 
 /// `int TagFieldSetRaw(char* record, int len, const char* temp)` (0x3eb1e0):
 /// add or replace the `name=value` term `temp` in the record, returning
-/// the whole term's length, 0 for an identical term, or -1.
-/// Names compare through the class table at
-/// `0x4964c0`; fields are separated by the byte at `gp+0x1980`, and `~…`
-/// terms are appended at the end.
+/// the whole term's length, 0 for an identical term, or -1. Names compare
+/// through `CLASS_TABLE`; fields are separated by the byte at gp +
+/// `FIELD_SEP_GP`, and `~…` terms are appended at the end.
 pub fn tag_field_set_raw(c: &mut Cpu) {
     match c.pc {
         0x003e_b1e0 | 0x003e_b250 | 0x003e_b2e0 | 0x003e_b338 | 0x003e_b390 | 0x003e_b3c0
@@ -2542,7 +2541,7 @@ pub fn tag_field_delete(c: &mut Cpu) {
 }
 
 /// `int TagFieldRename(char* record, int len, const char* name, const char* value)`
-/// (0x003e_b9e8): rename the `name` field to `value` (the 4th argument is the
+/// (0x3eb9e8): rename the `name` field to `value` (the 4th argument is the
 /// new name), shifting the record in place; 0 on success, -1 when the field
 /// or room is missing. On a shrink with a non-empty tail the original loops
 /// forever; this port reproduces that.
@@ -2733,7 +2732,7 @@ pub fn tag_field_rename(c: &mut Cpu) {
 }
 
 /// `int TagFieldSetAddress(char* record, int len, const char* name, unsigned int addr)`
-/// (0x003e_bfc8): store an IPv4 address field in dotted-decimal form.
+/// (0x3ebfc8): store an IPv4 address field in dotted-decimal form.
 pub fn tag_field_set_address(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 26;
@@ -2839,7 +2838,7 @@ pub fn tag_field_set_address(c: &mut Cpu) {
 }
 
 /// `int TagFieldSetString(char* record, int len, const char* name, const char* value)`
-/// (0x003e_c180): store a string value, quoting it when it contains a space
+/// (0x3ec180): store a string value, quoting it when it contains a space
 /// byte (0x20); a null value deletes the field. `=`, `"`, `:` and `%` itself
 /// (and any byte outside 0x20..=0x7e) are written as `%` followed by the two
 /// hex encode-table chars of the byte, whether or not the value is quoted.
@@ -3724,7 +3723,7 @@ pub fn tag_field_set_date_packed(c: &mut Cpu) {
 }
 
 /// `int TagFieldCopyField(char* record, int len, const char* name, char* data)`
-/// (0x003e_ca88): find `name` in `data` and copy the whole field into the record.
+/// (0x3eca88): find `name` in `data` and copy the whole field into the record.
 pub fn tag_field_copy_field(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 14;

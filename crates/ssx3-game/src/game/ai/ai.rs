@@ -1840,6 +1840,9 @@ pub fn rider_uber_grind_sub_handle_input(c: &mut Cpu) {
     })
 }
 
+/// The body between the frame saves: return on a reset or a new railslide
+/// (playing the interrupt animation if it cut the hold short), else apply the
+/// boost and steering input and run the current phase (0 enter, 1 hold, 2 exit).
 fn uber_grind_input(c: &mut Cpu) -> Flow {
     use uber_input::*;
     c.g[A1][0] = Addr(r32(c, S1)).lw(c);
@@ -2013,6 +2016,8 @@ fn uber_grind_hold(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
+/// Hold with unchanged input: aim the pose at the rail's target on a railslide
+/// (main state 4), else at 0, then pick the hold or lean animation by its size.
 fn uber_grind_pose(c: &mut Cpu) -> Flow {
     use uber_input::*;
     c.cycles += 5;
@@ -23266,6 +23271,9 @@ pub(crate) mod tests {
         );
     }
 
+    /// 20 cases (`seed % 20`) set the phase and the branch inputs, and
+    /// `seed / 20 % 3` picks one of three values for every pool slot read.
+    /// Real callees run; only the animation layer selector is fake.
     fn finish_line_input_setup(c: &mut Cpu, seed: u32) {
         use crate::difftest::fakes::{machine, FAKE, LOG_RESULTS};
         use crate::difftest::{put_vec, DATA, GAME_GP};

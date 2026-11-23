@@ -11432,7 +11432,6 @@ pub(crate) mod tests {
         FLUSH_ROSTER_HAND_RESUMES.with(|n| n.set(0));
         check_events(gen, hand, 60, &setup);
         let resumed = FLUSH_ROSTER_HAND_RESUMES.with(|n| n.get());
-        eprintln!("BuddyApi_FlushRoster: hand re-entered at 0x3f0c08 {resumed} times");
         assert!(resumed > 0, "the hand side never resumed at 0x3f0c08");
         // Both sides must deliver at the same cycles (equal `next_event`):
         // a delivery the port's own loop check misses or adds shows here.

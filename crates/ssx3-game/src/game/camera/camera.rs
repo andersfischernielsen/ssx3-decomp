@@ -5472,7 +5472,8 @@ pub fn mid_left_chase_camera_reset_for_rider(c: &mut Cpu) {
 /// to the target's forward vector and then the global direction. Smooth
 /// the focus against the previous focus (+0x3b0), place the eye on the
 /// angle/radius orbit, then smooth its offset (+0x3a0). The first update
-/// (+0x394 == 0) initializes both histories without blending.
+/// (+0x394 == 0) initializes both histories without blending. The offset
+/// blend's two shares are a [`crate::tick::PER_TICK`] entry.
 pub fn relative_chase_camera_algorithm_update(c: &mut Cpu) {
     const FOCUS: u32 = 0x20;
     const EYE: u32 = 0x40;
@@ -11945,10 +11946,8 @@ pub(crate) mod tests {
             out
         };
         let stock = sample(60);
-        println!("RELATIVE_RATE eye hz=60 samples={stock:?}");
         for hz in [120, 240] {
             let actual = sample(hz);
-            println!("RELATIVE_RATE eye hz={hz} samples={actual:?}");
             for (n, (a, b)) in actual.iter().zip(&stock).enumerate() {
                 for axis in 0..3 {
                     assert!(
@@ -12682,12 +12681,8 @@ pub(crate) mod tests {
                     out
                 };
                 let stock = sample(60);
-                println!("HEADING_RATE state={state} filter={filtered} hz=60 samples={stock:?}");
                 for hz in [120, 240] {
                     let actual = sample(hz);
-                    println!(
-                        "HEADING_RATE state={state} filter={filtered} hz={hz} samples={actual:?}"
-                    );
                     for (n, (a, b)) in actual.iter().zip(&stock).enumerate() {
                         for axis in 0..4 {
                             assert!((a[axis] - b[axis]).abs() < 0.001,

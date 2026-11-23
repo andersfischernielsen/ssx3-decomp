@@ -2940,7 +2940,8 @@ pub fn spoke_chase_camera_algorithm_compute_desired_eye(c: &mut Cpu) {
 /// gather the rider state and blend the eye toward the spoke camera's desired
 /// eye. Retention falls with the focus-to-eye distance and is square-rooted
 /// in handplant state 5. The focus is the target's focus point plus 37 units
-/// along the world up vector. All tuning remains loaded from the pool.
+/// along the world up vector. At other rates the retained share is raised to
+/// the power 60/hz, so the eye keeps as much per 1/60 s as at 60 Hz.
 pub fn spoke_chase_camera_algorithm_update(c: &mut Cpu) {
     use crate::game::camera::camera::{chase, chase_info};
     const RIG_RIDER: u32 = 4;
@@ -7719,6 +7720,7 @@ pub(crate) mod tests {
         v.map(|x| x * len / n)
     }
 
+    /// Writes `v` at `at` as four f32s.
     fn spoke_put(c: &mut Cpu, at: u32, v: [f64; 4]) {
         put_vec(c, at, v.map(|x| (x as f32).to_bits()));
     }
@@ -7929,10 +7931,8 @@ pub(crate) mod tests {
                     out
                 };
                 let stock = sample(60);
-                println!("SPOKE_RATE state={state} start={start} hz=60 samples={stock:?}");
                 for hz in [120, 240] {
                     let actual = sample(hz);
-                    println!("SPOKE_RATE state={state} start={start} hz={hz} samples={actual:?}");
                     for (n, (a, b)) in actual.iter().zip(&stock).enumerate() {
                         for axis in 0..3 {
                             assert!((a[axis] - b[axis]).abs() < tolerance,

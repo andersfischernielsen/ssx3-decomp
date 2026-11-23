@@ -1218,8 +1218,10 @@ pub(crate) mod store {
     pub(crate) const CONFIG_HEAP: u32 = 0x18;
 }
 
+/// The store configuration template `SLogin_InitStore` copies.
 pub(crate) const LOGIN_STORE_TEMPLATE: u32 = 0x0049_7060;
 
+/// The step-function table `SLogin_StepUpdate` indexes by step.
 pub(crate) const STEP_TABLE: u32 = 0x0049_7080;
 
 /// The address of the `gp`-relative word at `off` (the `STATE_GP` and
@@ -1548,6 +1550,8 @@ pub fn slogin_op_update(c: &mut Cpu) {
     });
 }
 
+/// Copy the three step-result doublewords at login +0xec to +0x120 through
+/// the `scratch` registers.
 pub(crate) fn slogin_copy_step_snapshot(c: &mut Cpu, login: u32, scratch: [usize; 3]) {
     for (index, register) in scratch.into_iter().enumerate() {
         let source = login.wrapping_add(0xec + 8 * index as u32);
@@ -1772,6 +1776,8 @@ pub fn slogin_step_update(c: &mut Cpu) {
     });
 }
 
+/// The failed-step tail of `SLogin_StepUpdate`: snapshot the step result, call
+/// the login's +0xdc callback, then clear the step callbacks.
 pub(crate) fn slogin_step_failure_cleanup(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
     c.cycles += 20;
     let login = c.g[V0][0] as u32;
@@ -2031,6 +2037,8 @@ pub fn slogin_begin_sequence(c: &mut Cpu) {
     });
 }
 
+/// The shared body of the create, open and delete steps: set or clear the done
+/// callback, then run one card-store file call and map its result.
 pub(crate) fn slogin_file_step(
     c: &mut Cpu,
     callback: Option<u32>,
@@ -2104,6 +2112,7 @@ pub fn slogin_step_delete(c: &mut Cpu) {
     );
 }
 
+/// The shared body of the account and password write steps.
 pub(crate) fn slogin_write_record_step(
     c: &mut Cpu,
     release: u32,
@@ -2203,6 +2212,7 @@ pub fn slogin_step_write_pass(c: &mut Cpu) {
     );
 }
 
+/// The shared body of the account and password read steps.
 pub(crate) fn slogin_step_read_record(
     c: &mut Cpu,
     release: u32,
@@ -2295,6 +2305,7 @@ pub fn slogin_step_close(c: &mut Cpu) {
     });
 }
 
+/// The shared epilogue of `SLogin_StepPoll`: return `a0`.
 pub(crate) fn slogin_poll_finish(c: &mut Cpu, frame: Frame) {
     c.cycles += 5;
     c.g[V0][0] = c.g[A0][0];
@@ -2524,6 +2535,7 @@ pub fn slogin_on_write_pass_done(c: &mut Cpu) {
     });
 }
 
+/// Free the login's card-store block and map the store result (both record kinds).
 pub(crate) fn slogin_free_record(c: &mut Cpu, first_return: u32, second_return: u32) {
     guest(c, |c| {
         c.cycles += 13;
@@ -5012,6 +5024,7 @@ pub fn slogin_mc_start_open(c: &mut Cpu) {
     slogin_mc_start_named(c, true);
 }
 
+/// The shared body of `SLoginMc_StartDelete` and `SLoginMc_StartOpen`.
 pub(crate) fn slogin_mc_start_named(c: &mut Cpu, open: bool) {
     guest(c, |c| {
         // StartOpen's return addresses sit at the same offsets from its start
@@ -5771,6 +5784,7 @@ pub fn slogin_mc_start_write(c: &mut Cpu) {
     slogin_mc_start_transfer(c, true);
 }
 
+/// The shared body of `SLoginMc_StartWrite` and `SLoginMc_StartRead`.
 pub(crate) fn slogin_mc_start_transfer(c: &mut Cpu, write: bool) {
     guest(c, |c| {
         let initialized_ret = if write { 0x003f_9f24 } else { 0x003f_9de4 };
@@ -6486,6 +6500,7 @@ pub fn slogin_mc_get_port_slot(c: &mut Cpu) {
     });
 }
 
+/// The phase dispatch table of `SLoginMc_CreateStep`.
 pub(crate) const CREATE_CALLBACK_TABLE: u32 = 0x0049_7430;
 
 #[derive(Clone, Copy)]
@@ -6502,6 +6517,7 @@ pub(crate) enum CreateExit {
     FinishDevice,
 }
 
+/// The shared epilogue of `SLoginMc_CreateStep`, with or without `s0`.
 pub(crate) fn create_step_epilogue(c: &mut Cpu, frame: Frame, restore_s0: bool) {
     if restore_s0 {
         c.cycles += 1;
@@ -8086,21 +8102,21 @@ pub fn slogin_store_find_record(c: &mut Cpu) {
     ret(c);
 }
 
-// Directory entry words (`store::RECORD_STRIDE` bytes each).
+/// Directory entry words (`store::RECORD_STRIDE` bytes each).
 pub(crate) const RECORD_OFFSET: u32 = 4;
 
 pub(crate) const RECORD_SIZE: u32 = 8;
 
 pub(crate) const RECORD_CRC: u32 = 0xc;
 
-// Checksum interface slots (`Crc32_GetInterface`'s table).
+/// Checksum interface slots (`Crc32_GetInterface`'s table).
 pub(crate) const HASH_BEGIN: u32 = 0xc;
 
 pub(crate) const HASH_UPDATE: u32 = 0x10;
 
 pub(crate) const HASH_FINAL: u32 = 0x14;
 
-// Cipher interface slots (`SLoginStore_GetCipherIface`'s table).
+/// Cipher interface slots (`SLoginStore_GetCipherIface`'s table).
 pub(crate) const CIPHER_SET_KEY: u32 = 0xc;
 
 pub(crate) const CIPHER_ENCRYPT: u32 = 0x10;
@@ -9477,6 +9493,7 @@ pub fn slogin_store_read(c: &mut Cpu) {
     });
 }
 
+/// The DNAS relay block and its init, update and exit entry slots.
 pub(crate) const DNAS_RELAY_BASE: u32 = 0x0045_0000;
 
 pub(crate) const DNAS_INIT_SLOT: u32 = 0x152c;
@@ -9485,12 +9502,15 @@ pub(crate) const DNAS_UPDATE_SLOT: u32 = 0x1530;
 
 pub(crate) const DNAS_EXIT_SLOT: u32 = 0x1534;
 
+/// `"\x7fELF"` as a little-endian word.
 pub(crate) const ELF_MAGIC: u64 = 0x464c_457f;
 
+/// ELF header word `e_shoff` and the section header size.
 pub(crate) const ELF_SECTION_OFFSET: u32 = 0x20;
 
 pub(crate) const ELF_SECTION_SIZE: u64 = 0x28;
 
+/// The last ordinary section index (`SHN_LORESERVE - 1`) and `SHN_ABS`.
 pub(crate) const ELF_SPECIAL_SECTION_END: u64 = 0xfeff;
 
 pub(crate) const ELF_SECTION_ABS: u64 = 0xfff1;
@@ -9513,6 +9533,7 @@ pub(crate) const DNAS_RODATA_NAME: u32 = 0x0049_7630;
 
 pub(crate) const DNAS_RODATA_RELOCS: u32 = 0x0049_7638;
 
+/// ELF header word +0x10: `e_type` ET_REL (1) and `e_machine` EM_MIPS (8).
 pub(crate) const ELF_RELAY_TYPE: u64 = 0x0008_0001;
 
 /// ELF header halfwords: `e_shnum`, the section count, and `e_shstrndx`, the
@@ -9548,6 +9569,7 @@ pub(crate) const REL_PENDING_OFFSET: u32 = 0x100;
 
 pub(crate) const REL_COUNT_SLOT: u32 = 0x200;
 
+/// Call the relay entry stored in `slot` of the DNAS relay block.
 pub(crate) fn dnas_relay_call(c: &mut Cpu, slot: u32, ret: u32) {
     guest(c, |c| {
         c.cycles += 9;
@@ -10266,6 +10288,7 @@ pub fn dnas_rel_find_symbol(c: &mut Cpu) {
     });
 }
 
+/// `SLoginMc_DeleteStep` entry and end (its `jump_out` range).
 pub(crate) const DELETE_ENTRY: u32 = 0x003f_ae50;
 
 /// The back-edge head an unwind resumes at (restart on the next card).
@@ -13364,9 +13387,6 @@ pub(crate) mod tests {
             },
         );
         let resumed = mc_hand_resumes().with(|n| n.get());
-        eprintln!(
-            "SLoginMc_OpenStep: hand re-entered at {MC_OPEN_STEP_RETRY_HEAD:#x} {resumed} times"
-        );
         assert!(resumed > 0, "the hand side never resumed at the retry head");
     }
 
@@ -16551,7 +16571,6 @@ pub(crate) mod tests {
             },
         );
         let resumed = DNAS_FIND_SYMBOL_HAND_RESUMES.load(Ordering::Relaxed) - before;
-        eprintln!("DnasRel_FindSymbol: hand re-entered at 0x3fd7a0 {resumed} times");
         assert!(resumed > 0, "the hand side never resumed at 0x3fd7a0");
     }
 
@@ -16937,7 +16956,6 @@ pub(crate) mod tests {
             },
         );
         let resumed = mc_hand_resumes().with(|n| n.get());
-        eprintln!("SLoginMc_DeleteStep: hand re-entered at {DELETE_RETRY_HEAD:#x} {resumed} times");
         assert!(resumed > 0, "the hand side never resumed at the retry head");
     }
 

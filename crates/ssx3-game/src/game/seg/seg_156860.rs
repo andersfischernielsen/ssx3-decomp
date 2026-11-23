@@ -437,6 +437,8 @@ pub(crate) mod tests {
         }
     }
 
+    /// The comm object at `DATA` in state `seed % STATE_CASES`, with the state
+    /// table planted and the (timer, reply) case `seed / STATE_CASES`.
     fn comm_update_setup(c: &mut Cpu, seed: u32) {
         use crate::difftest::{fakes, GAME_GP};
         use comm_system::*;

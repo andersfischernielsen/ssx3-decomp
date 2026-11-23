@@ -8245,8 +8245,8 @@ pub fn lobby_man_create_peer_table(c: &mut Cpu) {
 // Buddy manager: roster replies.
 
 // ---------------------------------------------------------------------------
-// `ChatEvent_Clone` (0x2680a8): deep-copy a chat event, cloning its two
-// strings and returning the new object.
+/// `ChatEvent_Clone` (0x2680a8): deep-copy a chat event, cloning its two
+/// strings and returning the new object.
 pub fn chat_event_clone(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 44;

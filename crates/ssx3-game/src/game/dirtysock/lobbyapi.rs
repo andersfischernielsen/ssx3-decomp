@@ -604,10 +604,9 @@ pub fn net_game_link_destroy(c: &mut Cpu) {
 /// `NetGameLink_CopyStats` (0x3e6878): the stats RPC's completion step.
 /// Takes the link from the caller's `0(sp)` word (the RPC callback's
 /// argument; nothing in `a0`) and copies 0x150 bytes from its stats
-/// block (uncached) to the stat area at `link + 8`: 32 bytes per pass with
-/// unaligned loads and stores when either address is not 8-byte aligned,
-/// with 64-bit loads and stores otherwise, then a 16-byte tail. Clears
-/// `+4` (no stats request in flight). Returns 0.
+/// block (uncached) to the stat area at `link + 8`, with unaligned loads and
+/// stores when either address is not 8-byte aligned. Clears `+4` (no stats
+/// request in flight). Returns 0.
 pub fn net_game_link_copy_stats(c: &mut Cpu) {
     c.cycles += 12;
     c.g[A2][0] = c.lw(c.g[SP][0] as u32);
@@ -6834,7 +6833,7 @@ pub(crate) mod tests {
     }
 
     /// `check_events`, then require that the hand side itself was re-entered
-    /// at each of `heads` (pass a [`counted!`] hand). Prints the counts.
+    /// at each of `heads` (pass a [`counted!`] hand).
     pub(crate) fn check_resumes(
         name: &str,
         generated: GuestFn,
@@ -6846,7 +6845,6 @@ pub(crate) mod tests {
         HAND_RESUMES.with(|r| r.borrow_mut().clear());
         check_events(generated, hand, seeds, setup);
         let got = HAND_RESUMES.with(|r| std::mem::take(&mut *r.borrow_mut()));
-        eprintln!("{name}: hand re-entries per head {got:x?}");
         for h in heads {
             assert!(
                 got.get(h).copied().unwrap_or(0) > 0,

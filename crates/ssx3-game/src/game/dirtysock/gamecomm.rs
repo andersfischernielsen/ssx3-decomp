@@ -389,6 +389,8 @@ pub(crate) mod tests {
         case * FLAG_COMBINATIONS + flags
     }
 
+    /// Seed bits 0 to 4 set the `FLAG_*` fields; `seed / FLAG_COMBINATIONS`
+    /// picks the counter row: zero, below each limit, at it, or `u32::MAX`.
     fn peer_timeout_setup(c: &mut Cpu, seed: u32) {
         use game_comm::*;
         let mut rng = Rng(0x257a_8000 ^ seed as u64);
