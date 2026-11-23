@@ -591,6 +591,7 @@ mod tests {
                 kind: Kind::Race,
                 template: "ARA1".into(),
                 world: "w".into(),
+                career: false,
             }],
             problems: vec![],
         };

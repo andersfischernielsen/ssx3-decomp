@@ -189,6 +189,12 @@ pub fn set_world(world: Option<String>) {
     *WORLD.lock().unwrap() = world;
 }
 
+/// A plugin event is the one being played (its world is set): the career
+/// guard (`career_guard`) keys on this.
+pub fn plugin_event_active() -> bool {
+    WORLD.lock().unwrap().is_some()
+}
+
 /// The course name a plugin event shows (loading screens, results) in place
 /// of its template course's: the record's name field (`+4`, 48 bytes), as it
 /// was before, and where.
@@ -224,6 +230,7 @@ pub fn restore_name(c: &mut Cpu) {
 
 /// The plugin event is over: the next world and names are the game's own.
 pub fn end_plugin_event(c: &mut Cpu) {
+    crate::career_guard::set_career_allowed(false);
     crate::plugin_host::event_ended(c);
     set_world(None);
     restore_name(c);
@@ -364,6 +371,7 @@ fn init_load_screen_update(c: &mut Cpu) {
     {
         set_course_name(c, ev.track, &crate::game::fe::pluginmenu::clean_name(name));
     }
+    crate::career_guard::set_career_allowed(plugin_event.as_ref().is_some_and(|pe| pe.career));
     set_world(plugin_event.map(|pe| pe.world));
     eprintln!(
         "[event] booting into {}:{} (track {}, type {}){}",

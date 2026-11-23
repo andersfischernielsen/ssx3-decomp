@@ -45,6 +45,8 @@ pub struct EventPlan {
     pub template: String,
     /// The location name loaded for it (`data/worlds/<world>.big`).
     pub world: String,
+    /// The event may write the template's career record (`career = true`).
+    pub career: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -165,6 +167,7 @@ impl MenuPlan {
                     label,
                     template: e.template.clone(),
                     world: e.world.clone(),
+                    career: e.career,
                 });
             }
             if race.is_empty() && freestyle.is_empty() {
@@ -1015,6 +1018,7 @@ fn start_event(
     }
     // After the quit above, which ends the previous plugin event's world.
     crate::event_boot::set_world(Some(event.world.clone()));
+    crate::career_guard::set_career_allowed(event.career);
     if let Label::Ascii(name) = &event.label {
         crate::event_boot::set_course_name(c, template.track, name);
     }
@@ -1053,6 +1057,7 @@ mod tests {
             kind,
             template: "ARA1".to_string(),
             world: format!("w{id}"),
+            career: false,
         }
     }
 

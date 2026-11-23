@@ -13,6 +13,11 @@ your disc into the cache folder, and drives the menus with scripted pad input
 (`SSX3_INPUT`, libpad bits). Each scenario checks the log and the file reads;
 the screenshots stay in the scratch folder for a look.
 
+The career scenarios (`career_*`) check that a plugin event leaves the
+player's save alone (docs/plugins.md, "Career and saves"): they run on a copy of
+`saves/ssx3-mc0.ps2` (the tree's card is never written) and compare the RAM
+the game's save blocks are built from (`SAVE_REGIONS`) before and after a race.
+
 Frames are compared only where the path is the same with and without the
 plugin (`SSX3_EVENT`): through the menus the plugin's longer screen shifts
 the load timing, so the race starts a few frames apart.
@@ -111,12 +116,30 @@ def next_event(plugin):
     return ",".join(ev), 23800
 
 
+# The RAM the game's save blocks are made of (BESaveInt_BuildSystemSave 0x152758 and
+# BuildProfileSave 0x152950, beintsavefile.cpp): the system header, the score
+# tables, the player flags and the two profiles. What a save would write to the
+# memory card is a function of these bytes (plus a CRC).
+SAVE_REGIONS = [("system header", 0x535898, 0x288), ("score tables", 0x535C18, 0xA28),
+                ("player flags", 0x535B20, 0xA8), ("profiles", 0x4A6CA8, 2 * 0x9B50)]
+
+
+def save_bytes(ram):
+    return {name: ram[a:a + n] for name, a, n in SAVE_REGIONS}
+
+
+def changed(a, b):
+    """The names of the save regions that differ between two RAM images."""
+    x, y = save_bytes(a), save_bytes(b)
+    return [name for name in x if x[name] != y[name]]
+
+
 def words(path):
     return open(path, errors="replace").read() if os.path.exists(path) else ""
 
 
 class Run:
-    def __init__(self, work, name, env, input_, frames, shots_from, every=100):
+    def __init__(self, work, name, env, input_, frames, shots_from, every=100, dump=None):
         self.dir = os.path.join(work, name)
         shutil.rmtree(self.dir, ignore_errors=True)
         os.makedirs(self.dir)
@@ -124,11 +147,18 @@ class Run:
                  SSX3_FILE_LOG=os.path.join(self.dir, "files.log"), **env)
         if input_:
             e["SSX3_INPUT"] = input_
+        self.ram = None
+        if dump:
+            self.ram_path = os.path.join(self.dir, "ram.bin")
+            e["SSX3_RAM_DUMP"] = self.ram_path
         p = subprocess.run([HEADLESS, str(frames), "--shot-every", str(every)], cwd=ROOT, env=e,
                            capture_output=True, text=True)
         self.out = p.stdout + p.stderr
         open(os.path.join(self.dir, "out.log"), "w").write(self.out)
         self.files = words(os.path.join(self.dir, "files.log"))
+        if dump:
+            self.ram = open(self.ram_path, "rb").read()
+            os.remove(self.ram_path)
 
     def shot(self, frame):
         return os.path.join(self.dir, f"frame{frame:05d}.png")
@@ -149,7 +179,8 @@ def halted(run):
 
 def main():
     names = sys.argv[1:]
-    all_scenarios = ["plugin_event", "retail_with_plugin", "no_plugin", "back_and_forth",
+    all_scenarios = ["career_plugin", "career_optout", "career_retail", "career_next_event",
+                     "plugin_event", "retail_with_plugin", "no_plugin", "back_and_forth",
                      "limits", "style_only", "event_boot_frames", "next_event_plugin", "next_event_retail",
                      "next_event_no_plugin"]
     if names == ["list"]:
@@ -170,6 +201,85 @@ def main():
     if prep.returncode != 0:
         sys.exit(f"prepare failed:\n{prep.stdout}{prep.stderr}")
     print(f"scratch folder: {work}")
+
+    career_names = [n for n in names if n.startswith("career_")]
+    if career_names:
+        real = os.path.join(ROOT, "saves/ssx3-mc0.ps2")
+        if not os.path.exists(real):
+            print("career scenarios skipped: no saves/ssx3-mc0.ps2")
+        else:
+            real_md5 = md5(real)
+            # The card the runs use is a copy: the tree's card is never touched.
+            card = os.path.join(work, "card.ps2")
+            shutil.copy(real, card)
+            card_md5 = md5(card)
+            cenv = dict(env, SSX3_MEMCARD=card)
+            optout = os.path.join(work, "plugins-optout")
+            shutil.copytree(plugins, optout)
+            mf = os.path.join(optout, "menu-test/plugin.toml")
+            text = open(mf).read()
+            marker = 'template = "ARA1"\nworld = "BAX"\n'
+            assert marker in text
+            open(mf, "w").write(text.replace(marker, marker + "career = true\n", 1))
+            prep = subprocess.run([SSX3, "plugins", "prepare", "menu-test"], cwd=ROOT,
+                                  env=dict(os.environ, **dict(env, SSX3_PLUGIN_DIR=optout)),
+                                  capture_output=True, text=True)
+            if prep.returncode != 0:
+                sys.exit(f"prepare (opt-out copy) failed:\n{prep.stdout}{prep.stderr}")
+
+            def career_pair(name, run_env, event):
+                """RAM at the start of the race and after it (frame 17000, the player
+                has finished): which save regions changed, and the career-guard log."""
+                run_env = dict(run_env, SSX3_EVENT=event)
+                a = Run(work, name + "-start", run_env, "", 1500, 99999, dump=True)
+                b = Run(work, name + "-end", run_env, "", 17000, 99999, dump=True)
+                return a, b, changed(a.ram, b.ram)
+
+            def lines(run, what):
+                return [l for l in run.out.splitlines() if "[career-guard]" in l and what in l]
+
+            if "career_plugin" in career_names:
+                print("career_plugin: a plugin event's race (SSX3_EVENT=menu-test/copy): the save regions stay as they were")
+                a, b, diff = career_pair("career_plugin", cenv, "menu-test/copy")
+                check(not halted(b), "the game does not halt")
+                check(diff == [], f"no save region changed (changed: {diff})")
+                check(len(lines(b, "race result of rider 0 kept out")) == 1 and len(lines(b, "placement of rider 0 kept out")) == 1,
+                      "the player's result and placement were kept out of the career")
+                check(not lines(b, "recorded"), "nothing was recorded")
+                check(md5(card) == card_md5, "the memory card file is unchanged")
+            if "career_optout" in career_names:
+                print("career_optout: the same event with `career = true`: the game records it as it would for its template")
+                oenv = dict(cenv, SSX3_PLUGIN_DIR=optout)
+                a, b, diff = career_pair("career_optout", oenv, "menu-test/copy")
+                check(not halted(b), "the game does not halt")
+                check(len(lines(b, "race result of rider 0 recorded")) == 1 and len(lines(b, "placement of rider 0 recorded")) == 1,
+                      "the player's result and placement were recorded (not kept out)")
+                check(not lines(b, "kept out"), "nothing was kept out")
+            if "career_retail" in career_names:
+                print("career_retail: the game's own ARA1 with the plugin installed: recorded as ever")
+                a, b, diff = career_pair("career_retail", cenv, "ARA1")
+                check(not halted(b), "the game does not halt")
+                check(len(lines(b, "race result of rider 0 recorded")) == 1 and len(lines(b, "placement of rider 0 recorded")) == 1,
+                      "the player's result and placement were recorded")
+                check(not lines(b, "kept out"), "nothing was kept out")
+                print(f"  (save regions changed by this race: {diff or 'none: a last place records no best time or medal'})")
+            if "career_next_event" in career_names:
+                print("career_next_event: a plugin race, results, Next event, the game's own event: the second race is recorded")
+                ev = plugin_event()[0].split(",")
+                press(ev, 20400, UP, 4)
+                press(ev, 20700, X)
+                for f in (21200, 21400, 21600, 21800, 24600, 24900, 25200):  # last three: the race card
+                    press(ev, f, X)
+                i = ",".join(ev)
+                r = Run(work, "career_next_event", cenv, i, 46000, 99999, every=1000)
+                check(not halted(r), "the game does not halt")
+                kept = lines(r, "placement of rider 0 kept out")
+                recorded = lines(r, "placement of rider 0 recorded")
+                check(len(kept) == 1, "the plugin race's placement was kept out")
+                check(len(recorded) == 1, "the game's own race after it was recorded")
+                check("data/worlds/BAM.big" in r.files, "the second race loaded the game's own world")
+            check(md5(real) == real_md5, "saves/ssx3-mc0.ps2 in the tree is unchanged")
+            print(f"  card copy: {card}")
 
     if "plugin_event" in names:
         print("plugin_event: Select Peak -> Peak Spike -> Race -> Copy of Snow Jam -> race")

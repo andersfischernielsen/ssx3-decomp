@@ -434,7 +434,8 @@ headless, the SSX 3 disc and `examples/plugins/menu-test`):
 | 9 track name | done for names (the course record's name field is swapped for the event's `name` and put back); records are not hooked, see `docs/plugins.md` |
 | 10 limits | 4 peaks, 10 events per list, 31 characters, world names unique across plugins (`Catalog::problems`), empty peaks and empty kinds not listed. **Not done:** scrolling or paging beyond 4 peaks |
 | 11 Tricky drops its menu hooks | done in `ssx3-tricky-plugin` (branch plugin-conversion): the plugin has no menu code; `Peak Tricky` and its 19 events come from `plugin.toml`; started and ended events reach the plugin through `plugin_host::add_event_listener` |
-| 12 browser smoke test | not run (last step, lowest priority) |
+| 12 career guard | done (`career_guard.rs`): a plugin event's result stays out of the career and the save by default, `career = true` opts out; see `docs/plugins.md`, "Career and saves"; scenarios `career_*` in `tools/plugin_menu_test.py` |
+| 13 browser smoke test | not run (last step, lowest priority) |
 
 Where the run differs from the design:
 

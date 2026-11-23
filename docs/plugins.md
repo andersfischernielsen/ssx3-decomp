@@ -62,6 +62,7 @@ peak = "tricky"
 kind = "race"             # or "freestyle"
 template = "ARA1"  # the native event (`SSX3_EVENT=list`) whose rules and flow it takes
 world = "garibaldi"  # data/worlds/<world>.big; letters, digits, '_', at most 15
+# career = true       # optional: let the result land in the template's career record (see "Career and saves")
 ```
 
 Ids are local; the engine names them `<plugin>/<id>` (`tricky/garibaldi-race`).
@@ -164,16 +165,46 @@ started there. The in-game hand-over used by flows 3 and 4 (not reached from
 single events) is not supported: the rows show, the accept is refused.
 
 **What the engine does not do.** Plugin peaks are always unlocked, show no
-medals or best times, and there are no info panels for them. Career records
-(medals, best times, unlocks) are **not kept out** of a plugin event: the
-event runs on its template, so the engine lets the result land in the
-template event's record on the player's save. Keeping plugin courses out of
-the career is the plugin's job, with hooks on `BEScoreInt_SubmitRaceResult`
-(0x154ab8), `BEScoreInt_SubmitPlacement` (0x154ee8) and
-`GameModeMan_OnRiderFinished` (0x238358), plus the finish and results states;
-"Next Event" on the results screen needs care too. A plugin that wants its own
-records keeps them in its own file. The host provides the menu only. Multiplayer events, rider gating and the
-Freeride kind are not offered.
+medals or best times, and there are no info panels for them. Multiplayer events,
+rider gating and the Freeride kind are not offered.
+
+**Career and saves.** A plugin event runs on its template event (say ARA1), so
+the game would file its result under the template: the event's high-score table
+(the "Records" screen), and in career-mode rules also best times, medals,
+rewards and unlocks, all of which the next save writes to the player's memory
+card. The engine keeps plugin events out of that by default. While a plugin
+event is the one being played (from the pick on the Select Peak screen, through
+restarts, until the world is left or a game event is picked) it skips:
+
+- `BEScoreInt_SubmitRaceResult` (0x154ab8, called by
+  `GameModeMan_OnRiderFinished` 0x238358): the best stats, the high-score table,
+  the records and the profile score. The race stats still go to the score object
+  the results screen reads.
+- `BEScoreInt_SubmitPlacement` (0x154ee8): the event-result messages, the medal
+  and the reward. The place is still stored for the results screen.
+- `BERewardInt_GrantReward` (0x159cd0, the mountain award in
+  `OnRiderFinished`), `BERewardInt_OnCollectibleCollected` (0x1599a0) and
+  `OnMissionCompleted` (0x159b08): nothing granted or recorded.
+
+The results screen, Restart, Replay, Quit and "Next event" work as in the game;
+a game event started from the in-game Select Peak after a plugin event records
+as always (`event_boot::end_plugin_event` ends the guard). The hooks exist only
+when the loaded plugins add events; without them the game runs its own code.
+`tools/plugin_menu_test.py career_*` checks it on a copy of the memory card.
+
+A plugin that keeps its own records (a map pack with times of its own) reads the
+result from the game (`GameModeMan_OnRiderFinished`, the score object) or from
+its event listener and writes its own file; the guard keeps the template's
+record clean for it. **To opt out** (the event really should write the template's
+record), set `career = true` on the `[[event]]` in `plugin.toml`, or call
+`ssx3_game::career_guard::set_career_allowed(true)` from the `started` function
+of the event listener (`plugin_host::add_event_listener`); the engine switches
+it off again when the event ends. The guard keys on the event being a plugin
+event, so a plugin that starts a game event itself is not covered.
+
+Not covered: anything else the game itself saves while a plugin event is up,
+such as an autosave that the player's own progress triggers; those write the
+career state as it is, which the guard has left untouched.
 
 **Testing a menu.** `tools/plugin_menu_test.py` copies
 `examples/plugins/menu-test` and `world-copy` to a scratch folder, makes their

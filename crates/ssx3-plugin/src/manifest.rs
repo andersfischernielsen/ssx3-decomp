@@ -131,6 +131,11 @@ pub struct Event {
     /// The location name the game loads: `data/worlds/<world>.big`, served
     /// from the plugin's overlay.
     pub world: String,
+    /// `true`: the event's result lands in the template event's career record
+    /// on the player's save (medals, best times, unlocks). Default `false`:
+    /// the engine keeps plugin events out of the career and the memory card.
+    #[serde(default)]
+    pub career: bool,
 }
 
 /// Parse and check a manifest; the errors are all of its problems.
@@ -304,7 +309,21 @@ world = "garibaldi"
         assert_eq!(m.plugin.id, "tricky");
         assert_eq!(m.peaks.len(), 1);
         assert_eq!(m.events[0].kind, Kind::Race);
+        assert!(
+            !m.events[0].career,
+            "events stay out of the career by default"
+        );
         assert_eq!(m.inputs.disc.unwrap().serials, ["SLUS-20326"]);
+    }
+
+    #[test]
+    fn an_event_can_opt_into_the_career() {
+        let m = parse(&GOOD.replace(
+            "world = \"garibaldi\"",
+            "world = \"garibaldi\"\ncareer = true",
+        ))
+        .unwrap();
+        assert!(m.events[0].career);
     }
 
     #[test]

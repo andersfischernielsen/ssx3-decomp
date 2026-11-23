@@ -192,6 +192,7 @@ mod tests {
             kind: ssx3_plugin::manifest::Kind::Race,
             template: "ARA1".into(),
             world: "W".into(),
+            career: false,
         };
         let mut c = fresh();
         notify_started(&mut c, &event, 0x1234).unwrap();

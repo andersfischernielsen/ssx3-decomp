@@ -30,6 +30,9 @@ pub struct Event {
     pub template: String,
     /// The location name the game loads (`data/worlds/<world>.big`).
     pub world: String,
+    /// The event may write the template's career record (opt-out of the
+    /// engine's career guard; manifest `career = true`).
+    pub career: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -85,6 +88,7 @@ impl Catalog {
                     kind: e.kind,
                     template: e.template.clone(),
                     world: e.world.clone(),
+                    career: e.career,
                 });
             }
         }

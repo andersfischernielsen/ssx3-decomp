@@ -601,6 +601,7 @@ mod tests {
                     kind: *k,
                     template: "ARA1".into(),
                     world: format!("{name}{i}"),
+                    career: false,
                 });
             }
         }
