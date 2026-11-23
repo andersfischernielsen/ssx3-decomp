@@ -175,8 +175,8 @@ pub struct Inner {
         Arc<std::sync::atomic::AtomicU8>,
         u64,
     )>,
-    /// This frame's number if it has no depth (handed over as none).
-    pending_none: Option<u64>,
+    /// The numbers of the frames without depth, not yet handed over (as none).
+    pending_none: Vec<u64>,
     /// With a render thread: the depth thread, which hands each frame's
     /// depth over as soon as the GPU has written it (in frame order).
     depth_tx: Option<std::sync::mpsc::Sender<DepthPost>>,
@@ -243,7 +243,6 @@ enum DepthPost {
         zs: f32,
         w: u32,
         h: u32,
-        mapped: Arc<std::sync::atomic::AtomicU8>,
         frame: u64,
     },
 }
@@ -319,7 +318,6 @@ fn spawn_depth_thread(
                         zs,
                         w,
                         h,
-                        mapped,
                         frame,
                     } => {
                         // Not a device wait (`gpu_wait`): the map is
@@ -327,11 +325,34 @@ fn spawn_depth_thread(
                         // the copy finished, and its callback wakes us.
                         // While the game waits for this depth, polled
                         // more often.
-                        let state = || mapped.load(std::sync::atomic::Ordering::Acquire);
-                        while state() == MAP_PENDING {
+                        //
+                        // A map requested after the GPU had finished with
+                        // the buffer can go unanswered, even by a wait on
+                        // its submission: asked again after a short while
+                        // it is answered. A map still pending after
+                        // `DEPTH_GIVE_UP` is given up: no depth for the
+                        // frame, not a game waiting for it.
+                        let mut mapped = map_depth(&buf, Some(std::thread::current()));
+                        let state = |m: &Arc<std::sync::atomic::AtomicU8>| {
+                            m.load(std::sync::atomic::Ordering::Acquire)
+                        };
+                        let t0 = web_time::Instant::now();
+                        let mut asked_again = false;
+                        while state(&mapped) == MAP_PENDING {
+                            let waited = t0.elapsed();
+                            if waited > DEPTH_GIVE_UP {
+                                eprintln!("[gfx] depth of frame {frame}: the readback never completed");
+                                buf.unmap();
+                                break;
+                            }
+                            if !asked_again && waited > DEPTH_ASK_AGAIN {
+                                asked_again = true;
+                                buf.unmap();
+                                mapped = map_depth(&buf, Some(std::thread::current()));
+                            }
                             let _ = dev.poll(wgpu::PollType::Poll);
                             DEPTH_POLLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            if state() != MAP_PENDING {
+                            if state(&mapped) != MAP_PENDING {
                                 break;
                             }
                             let wanted =
@@ -342,7 +363,7 @@ fn spawn_depth_thread(
                                 DEPTH_POLL
                             });
                         }
-                        let d = (state() == MAP_OK)
+                        let d = (state(&mapped) == MAP_OK)
                             .then(|| buf.slice(..).get_mapped_range())
                             .and_then(|r| r.ok())
                             .map(|v| depth_from(v.to_vec(), zs, w, h));
@@ -359,6 +380,10 @@ fn spawn_depth_thread(
 /// How often the depth thread looks for a readback the GPU may have
 /// finished since the last submit, and how often it did.
 const DEPTH_POLL: std::time::Duration = std::time::Duration::from_millis(1);
+/// How long a pending depth map waits before it is asked for again, and
+/// before it is given up.
+const DEPTH_ASK_AGAIN: std::time::Duration = std::time::Duration::from_millis(2);
+const DEPTH_GIVE_UP: std::time::Duration = std::time::Duration::from_millis(250);
 const DEPTH_POLL_WANTED: std::time::Duration = std::time::Duration::from_micros(100);
 static DEPTH_POLLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -526,7 +551,7 @@ impl Renderer {
                 want_depth: false,
                 depth_query,
                 pending_depth: None,
-                pending_none: None,
+                pending_none: Vec::new(),
                 depth_tx: None,
                 frames_in: 0,
                 zscale: 16777216.0,
@@ -736,7 +761,7 @@ impl Inner {
             Some(tx) => {
                 let _ = tx.send(DepthPost::None(self.frames_in - 1));
             }
-            None => self.pending_none = Some(self.frames_in - 1),
+            None => self.pending_none.push(self.frames_in - 1),
         }
     }
 
@@ -2680,7 +2705,7 @@ impl Inner {
         // Hand over the previous frame's depth (none if it had none; a
         // frame without depth still does, and its own none next frame).
         fn finish_depth(this: &mut Inner) {
-            if let Some(f) = this.pending_none.take() {
+            for f in std::mem::take(&mut this.pending_none) {
                 this.shared.post_depth(f, None);
             }
             if let Some((prev, prev_idx, zs, lw, lh, mapped, prev_frame)) =
@@ -2709,14 +2734,15 @@ impl Inner {
                 this.depth_parts[1] += t_copy.elapsed().as_secs_f64() * 1e3;
             }
         }
-        if let (Some(buf), Some(tx)) = (&depth_buf, &self.depth_tx) {
-            let mapped = map_depth(buf, self.shared.depth_thread.get().cloned());
+        if let (Some(buf), Some(tx)) = (&depth_buf, self.depth_tx.clone()) {
+            // Frames rendered before the depth thread started left theirs
+            // for the next frame to hand over: nothing else does now.
+            finish_depth(self);
             let _ = tx.send(DepthPost::Buf {
                 buf: buf.clone(),
                 zs: self.zscale,
                 w,
                 h,
-                mapped,
                 frame: self.frames_in - 1,
             });
             self.timing.1[3] += t_sub.elapsed().as_secs_f64() * 1e3;
@@ -3609,14 +3635,12 @@ mod tests {
             let mut enc = dev.create_command_encoder(&Default::default());
             enc.copy_buffer_to_buffer(&src, 0, &buf, 0, 8);
             queue.submit(std::iter::once(enc.finish()));
-            let mapped = map_depth(&buf, shared.depth_thread.get().cloned());
             let (zs, w, h) = (1.0, 2, 1);
             tx.send(DepthPost::Buf {
                 buf,
                 zs,
                 w,
                 h,
-                mapped,
                 frame,
             })
             .unwrap();
