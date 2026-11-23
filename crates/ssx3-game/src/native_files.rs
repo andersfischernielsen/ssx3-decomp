@@ -32,7 +32,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use ssx3_core::iso::Disc;
 use ssx3_ee_rt::cpu::reg::*;
@@ -76,6 +76,8 @@ enum Source {
 }
 
 struct OpenFile {
+    /// The upper-case path the game opened (`DATA/AUDIO/AUDIO.BIG`).
+    name: String,
     size: u32,
     loc: Loc,
 }
@@ -84,7 +86,13 @@ enum Loc {
     /// First sector on the disc image.
     Sector(u32),
     Host(File),
+    /// A file made in memory by a registered generator ([`register_generator`]).
+    Mem(Arc<[u8]>),
 }
+
+/// Makes a file from the one the disc and the overlays would serve: gets its
+/// bytes, returns the replacement (`None`: serve the original).
+pub type Generator = Box<dyn Fn(&[u8]) -> Option<Vec<u8>> + Send + Sync>;
 
 struct State {
     src: Source,
@@ -94,6 +102,8 @@ struct State {
     files: Vec<Option<OpenFile>>,
     /// Name lookups (upper-case path -> disc entry), cached.
     found: HashMap<String, Option<(u32, u32)>>,
+    /// Generated files, made once (`None`: the generator kept the original).
+    generated: HashMap<String, Option<Arc<[u8]>>>,
     /// A read issued while a native read is being completed (from the
     /// completion callback): run by the loop in [`platform_read`] instead of
     /// recursing.
@@ -107,6 +117,34 @@ struct State {
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 static LOG: Mutex<Option<File>> = Mutex::new(None);
 static OVERLAYS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+static GENERATORS: Mutex<Vec<(String, Generator)>> = Mutex::new(Vec::new());
+static READ_PATCHES: Mutex<Vec<ReadPatch>> = Mutex::new(Vec::new());
+
+/// Changes the bytes the game reads from a file: gets the file's path (upper
+/// case, `DATA/AUDIO/AUDIO.BIG`), the offset of the read and the bytes just
+/// read (to change in place). Returns `false` to fail the read.
+pub type ReadPatch = fn(&str, u32, &mut [u8]) -> bool;
+
+/// Run `patch` on every read the game makes through the native file layer,
+/// after the bytes are read (not on the generators' own reads of originals).
+/// Patches run in the order they were added. A plugin uses this to serve a
+/// part of a file differently depending on its state, such as a sound bank
+/// that changes with the course played.
+pub fn add_read_patch(patch: ReadPatch) {
+    READ_PATCHES.lock().unwrap().push(patch);
+}
+
+/// Serve `path` (`DATA/UI/FE.LUI`, any case) as `generate` makes it from the
+/// original bytes, in memory: nothing derived from the disc is written
+/// anywhere. A generator that returns `None` leaves the original. Register
+/// before the game opens the file; the first registration of a path wins.
+pub fn register_generator(path: &str, generate: Generator) {
+    let key = cd_name(path);
+    let mut g = GENERATORS.lock().unwrap();
+    if !g.iter().any(|(p, _)| *p == key) {
+        g.push((key, generate));
+    }
+}
 
 /// Serve files from `dir` before the disc's: `DATA/WORLDS/FOO.BIG` on the disc
 /// is replaced by (or added as) `dir/DATA/WORLDS/FOO.BIG`, any case. Call
@@ -192,6 +230,7 @@ pub fn install() -> bool {
         overlays,
         files: Vec::new(),
         found: HashMap::new(),
+        generated: HashMap::new(),
         pending: None,
         stranded: None,
         busy: false,
@@ -250,11 +289,52 @@ fn cd_name(full: &str) -> String {
 
 impl State {
     fn open(&mut self, name: &str) -> Option<OpenFile> {
+        if let Some(mem) = self.generate(name) {
+            return Some(OpenFile {
+                name: name.to_string(),
+                size: mem.len() as u32,
+                loc: Loc::Mem(mem),
+            });
+        }
+        self.open_plain(name)
+    }
+
+    /// The registered generator's file for `name`, if there is one.
+    fn generate(&mut self, name: &str) -> Option<Arc<[u8]>> {
+        if let Some(done) = self.generated.get(name) {
+            return done.clone();
+        }
+        let gens = GENERATORS.lock().unwrap();
+        let (_, generate) = gens.iter().find(|(p, _)| p == name)?;
+        let mem: Option<Arc<[u8]>> = self.open_plain(name).and_then(|f| {
+            let mut original = vec![0u8; f.size as usize];
+            let idx = self.files.len();
+            self.files.push(Some(f));
+            let ok = self.read(idx, 0, &mut original);
+            self.files.truncate(idx);
+            if ok {
+                generate(&original).map(|v| Arc::<[u8]>::from(v))
+            } else {
+                None
+            }
+        });
+        if mem.is_some() {
+            eprintln!(
+                "[native files] {name} generated ({} bytes)",
+                mem.as_ref().map_or(0, |m| m.len())
+            );
+        }
+        self.generated.insert(name.to_string(), mem.clone());
+        mem
+    }
+
+    fn open_plain(&mut self, name: &str) -> Option<OpenFile> {
         for dir in &self.overlays {
             if let Some(path) = find_ci(dir, name) {
                 if let Some(f) = File::open(&path).ok().and_then(|f| {
                     let size = f.metadata().ok()?.len() as u32;
                     Some(OpenFile {
+                        name: name.to_string(),
                         size,
                         loc: Loc::Host(f),
                     })
@@ -272,6 +352,7 @@ impl State {
                 });
                 let (sector, size) = hit?;
                 Some(OpenFile {
+                    name: name.to_string(),
                     size,
                     loc: Loc::Sector(sector),
                 })
@@ -281,6 +362,7 @@ impl State {
                 let f = File::open(&path).ok()?;
                 let size = f.metadata().ok()?.len() as u32;
                 Some(OpenFile {
+                    name: name.to_string(),
                     size,
                     loc: Loc::Host(f),
                 })
@@ -304,6 +386,16 @@ impl State {
             }
             (Loc::Host(file), _) => {
                 file.seek(SeekFrom::Start(off as u64)).is_ok() && file.read_exact(out).is_ok()
+            }
+            (Loc::Mem(bytes), _) => {
+                let (start, end) = (off as usize, off as usize + out.len());
+                match bytes.get(start..end) {
+                    Some(src) => {
+                        out.copy_from_slice(src);
+                        true
+                    }
+                    None => false,
+                }
             }
             _ => false,
         }
@@ -451,12 +543,18 @@ fn read_into(c: &mut Cpu, handle: u32, buf: u32, off: u32, size: u32) -> bool {
         return false;
     };
     let mut data = vec![0u8; size as usize];
-    let ok = STATE
-        .lock()
-        .unwrap()
-        .as_mut()
-        .unwrap()
-        .read(idx, off, &mut data);
+    let ok = {
+        let mut g = STATE.lock().unwrap();
+        let st = g.as_mut().unwrap();
+        let ok = st.read(idx, off, &mut data);
+        let patches = READ_PATCHES.lock().unwrap();
+        match st.files.get(idx) {
+            Some(Some(f)) if ok && !patches.is_empty() => {
+                patches.iter().all(|patch| patch(&f.name, off, &mut data))
+            }
+            _ => ok,
+        }
+    };
     if ok {
         c.bus.write_bytes(buf, &data);
     }
@@ -542,6 +640,7 @@ mod tests {
             overlays,
             files: Vec::new(),
             found: HashMap::new(),
+            generated: HashMap::new(),
             pending: None,
             stranded: None,
             busy: false,
@@ -587,6 +686,60 @@ mod tests {
         );
         assert_eq!(contents(&mut plain, "DATA/NEW.BIG"), None);
         for d in [base, first, second] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    #[test]
+    fn a_generated_file_shadows_the_disc_and_everything_else_falls_back() {
+        let (base, overlay) = (scratch("gen-base"), scratch("gen-overlay"));
+        put(&base, "DATA/UI/GEN.LUI", "original");
+        put(&base, "DATA/UI/KEEP.LUI", "kept");
+        put(&base, "DATA/UI/SAME.LUI", "same");
+        put(&overlay, "data/ui/gen2.lui", "overlay version");
+        // Names are what the game's path resolution gives: upper case.
+        register_generator(
+            "data/ui/gen.lui",
+            Box::new(|o| Some([o, b" + generated"].concat())),
+        );
+        register_generator("DATA/UI/GEN2.LUI", Box::new(|o| Some([o, b"!"].concat())));
+        register_generator("DATA/UI/SAME.LUI", Box::new(|_| None));
+        register_generator("DATA/UI/GONE.LUI", Box::new(|_| Some(b"never".to_vec())));
+        let mut st = state(&base, vec![overlay.clone()]);
+        assert_eq!(
+            contents(&mut st, "DATA/UI/GEN.LUI").as_deref(),
+            Some("original + generated")
+        );
+        // The generator sees what the overlays would serve, and runs once.
+        assert_eq!(
+            contents(&mut st, "DATA/UI/GEN2.LUI").as_deref(),
+            Some("overlay version!")
+        );
+        assert_eq!(
+            contents(&mut st, "DATA/UI/GEN.LUI").as_deref(),
+            Some("original + generated")
+        );
+        assert_eq!(st.generated.len(), 2);
+        // A generator that declines, a file nobody generates, a generated file
+        // the disc does not have: the disc's answer.
+        assert_eq!(
+            contents(&mut st, "DATA/UI/SAME.LUI").as_deref(),
+            Some("same")
+        );
+        assert_eq!(
+            contents(&mut st, "DATA/UI/KEEP.LUI").as_deref(),
+            Some("kept")
+        );
+        assert_eq!(contents(&mut st, "DATA/UI/GONE.LUI"), None);
+        // Reads past the end fail instead of panicking.
+        let f = st.open("DATA/UI/GEN.LUI").unwrap();
+        st.files.push(Some(f));
+        let idx = st.files.len() - 1;
+        let mut buf = [0u8; 4];
+        assert!(!st.read(idx, 100, &mut buf));
+        assert!(st.read(idx, 3, &mut buf));
+        assert_eq!(&buf, b"gina");
+        for d in [base, overlay] {
             let _ = std::fs::remove_dir_all(d);
         }
     }

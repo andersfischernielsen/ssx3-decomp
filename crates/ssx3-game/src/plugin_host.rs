@@ -29,6 +29,68 @@ pub fn set_catalog(c: Catalog) {
     let _ = CATALOG.set(c);
 }
 
+static OVERLAYS: OnceLock<Vec<std::path::PathBuf>> = OnceLock::new();
+
+/// The overlay folders of the loaded plugins (`<content>/overlay`), in load
+/// order. Set once, at boot, by the engine; the first call wins.
+pub fn set_overlays(v: Vec<std::path::PathBuf>) {
+    let _ = OVERLAYS.set(v);
+}
+
+/// The overlay folders of the loaded plugins; a plugin finds its derived
+/// content (the importer's files) next to its own overlay folder.
+pub fn overlays() -> &'static [std::path::PathBuf] {
+    OVERLAYS.get().map(Vec::as_slice).unwrap_or(&[])
+}
+
+/// What a plugin hears about its events: [`add_event_listener`].
+#[derive(Clone, Copy)]
+pub struct EventListener {
+    /// A plugin event was picked (Select Peak screen): its world and course
+    /// name are set, the load comes next. `back` is the return address for
+    /// guest calls, as in the game's own hooks.
+    pub started: fn(&mut ssx3_ee_rt::Cpu, &ssx3_plugin::catalog::Event, u32) -> crate::call::Flow,
+    /// The plugin event is over (the front end is back, or another event
+    /// starts): the next world and names are the game's own.
+    pub ended: fn(&mut ssx3_ee_rt::Cpu),
+}
+
+static LISTENERS: std::sync::Mutex<Vec<EventListener>> = std::sync::Mutex::new(Vec::new());
+
+/// Be told when an event of the catalog is started from the menu and when it
+/// ends (`SSX3_EVENT=<plugin>/<event>` boots do not call `started`: the
+/// plugin knows its event from the variable). A plugin calls this from
+/// `Plugin::install`.
+pub fn add_event_listener(l: EventListener) {
+    LISTENERS.lock().unwrap().push(l);
+}
+
+pub(crate) fn event_started(c: &mut ssx3_ee_rt::Cpu, event: &str, back: u32) -> crate::call::Flow {
+    let Some(e) = catalog().event(event) else {
+        return Ok(());
+    };
+    notify_started(c, e, back)
+}
+
+fn notify_started(
+    c: &mut ssx3_ee_rt::Cpu,
+    e: &ssx3_plugin::catalog::Event,
+    back: u32,
+) -> crate::call::Flow {
+    let all: Vec<EventListener> = LISTENERS.lock().unwrap().clone();
+    for l in all {
+        (l.started)(c, e, back)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn event_ended(c: &mut ssx3_ee_rt::Cpu) {
+    let all: Vec<EventListener> = LISTENERS.lock().unwrap().clone();
+    for l in all {
+        (l.ended)(c);
+    }
+}
+
 /// The plugins' catalog (empty without plugins).
 pub fn catalog() -> &'static Catalog {
     CATALOG.get_or_init(Catalog::default)
@@ -96,6 +158,46 @@ mod tests {
             0x100c,
             "transparent when not active"
         );
+    }
+
+    thread_local! {
+        static HEARD: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    fn heard_started(
+        _c: &mut Cpu,
+        e: &ssx3_plugin::catalog::Event,
+        back: u32,
+    ) -> crate::call::Flow {
+        HEARD.with(|h| h.borrow_mut().push(format!("start {} {back:#x}", e.id)));
+        Ok(())
+    }
+
+    fn heard_ended(_c: &mut Cpu) {
+        HEARD.with(|h| h.borrow_mut().push("end".into()));
+    }
+
+    #[test]
+    fn event_listeners_hear_the_start_and_the_end() {
+        add_event_listener(EventListener {
+            started: heard_started,
+            ended: heard_ended,
+        });
+        let event = ssx3_plugin::catalog::Event {
+            id: "p/e".into(),
+            plugin: "p".into(),
+            name: Some("E".into()),
+            name_key: None,
+            peak: "p/k".into(),
+            kind: ssx3_plugin::manifest::Kind::Race,
+            template: "ARA1".into(),
+            world: "W".into(),
+            career: false,
+        };
+        let mut c = fresh();
+        notify_started(&mut c, &event, 0x1234).unwrap();
+        event_ended(&mut c);
+        HEARD.with(|h| assert_eq!(*h.borrow(), ["start p/e 0x1234", "end"]));
     }
 
     #[test]
