@@ -13,7 +13,7 @@ system: a folder with a manifest (`plugin.toml`), an importer that builds the co
 > code. Everything game related is generated on your machine from your own discs, goes to the
 > plugin cache folder, and must never be shared or committed.
 
-Status: see [`PLAN_STATUS.md`](PLAN_STATUS.md) for what is converted and what is not.
+Status: see [`PLAN_STATUS.md`](PLAN_STATUS.md) for what was verified and what is not.
 
 ## What you need
 

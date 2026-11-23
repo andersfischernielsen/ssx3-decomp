@@ -1,55 +1,68 @@
 # Plugin conversion status
 
-Base: fork `npiriou/ssx3-decomp-more` (commit 941d4b6, based on ssx3-decomp 5082230) converted to a
-plugin of ssx3-decomp `feat/plugin-events`. Nothing here was verified beyond what the
-"Verified" section says.
+Base: fork `npiriou/ssx3-decomp-more` (commit 941d4b6) converted to a plugin of ssx3-decomp
+`feat/plugin-events`. Everything below was checked by running (macOS, Garibaldi first, then all
+19 events); "not verified" lists what was not.
 
-## Verified
+## Verified (headless, scripted pad input, `tools/menu_run.py`)
 
-- `ssx3 plugins list` finds the plugin; `ssx3 plugins prepare tricky` (with
-  `SSX3_TRICKY_COURSES=garibaldi`) imports Garibaldi race and freestyle from the Tricky disc
-  into the cache folder (importer needed two Python 3.9 fixes).
-- `ssx3 plugins build` compiles the crate; 107 hooks install, every address has a slot.
-- `SSX3_EVENT=tricky/garibaldi target/game/ssx3-custom-headless 900`: boots into the event, reads
-  `data/worlds/TR_GARI_R.*` from the overlay (292 reads in the file log, no `BAM` world), the
-  Tricky course rules and rail code run (log lines `[tricky] ...`), the run ends without a halt
-  or panic. Not looked at: the picture, a full race, the finish.
-- Not run: the other 18 events, the menu flow ("Peak Tricky" rows), the gate (the plugin is not
-  loaded by it), any differential test.
+- `ssx3 plugins prepare tricky` imports all 19 course archives in about 2 minutes (and
+  `ui/tricky.png`, the peak picture). `ssx3 plugins build` links 38 hooks.
+- Menu: Single Event, character, Continue shows **Peak Tricky** after the game's three peaks with
+  the Tricky logo; Race (9 events) and Freestyle (10) lists. The rows are built by the engine from
+  `plugin.toml`; the plugin has no menu code. Frames were looked at.
+- All 19 events start from the menu, load and run 7,500 frames: no halt, no panic
+  (garibaldi, snowdream, elysium-alps, mesablanca, merqury-city, tokyo-megaplex, aloha-ice-jam,
+  alaska, untracked + the freestyle of each + pipedream, trick-tutorial). Frames of several were
+  looked at (mesablanca, pipedream, tokyo, alaska).
+- Garibaldi race, no steering input, ridden to the finish and the results screen ("Garibaldi -
+  Race", 5th of 6, about 36,000 frames). Garibaldi freestyle to its results screen. Restart from
+  the results works (rules screen again). Quit returns to Select Peak and a game event then
+  starts normally (Snow Jam world BAM).
+- Retail untouched: `SSX3_EVENT=ARA1` (full race to results, 45,000 frames) and `ASS1` with the
+  plugin loaded give the same RAM as with every plugin hook off (except the two TexMan table-size
+  hooks, which differ by design when courses need more than 1500 texture slots).
+- Upstream (ssx3-decomp `feat/plugin-events`): the no-plugin gate prints `GATE: race replay RAM
+  identical to the baseline`, 0 warnings, `tools/plugin_menu_test.py` all checks pass.
 
-## Module status
+## Not verified / known gaps
 
-| group | count | status |
-| --- | --- | --- |
-| `custom_*` modules installed by the fork (`lib.rs overrides()`) | 65 override tables (about 66 functions) | converted: `Hooks::replace` (or `chain` for the 4 that call the wrapped body: `custom_rail_diagnostics`, `custom_tricky_rail_probe`, `custom_snap_ai`, `custom_results_enter`). 57 of the addresses are now ported upstream too: the plugin's version replaces upstream's. Not differentially compared. |
-| helper modules (`custom_tracks`, `_course_rules`, `_movies`, `_crowds`, `_fences`, ...) | 25 | converted (compile), called from the hooks |
-| `bonus_menu_mode` | 1 | converted (compile); menu not run |
-| retained audit ports (never installed in the fork) | 133 | moved to `retained/`, not compiled (they call `ssx3_ee::...` generated paths) |
-| test-only modules of the fork (`custom_multi_spline_nodes`, `custom_texman_release`) | 2 | moved to `retained/`: need upstream's cfg(test) `difftest` |
-| unit tests of the modules | 3 | dropped (`custom_course_rules`, `custom_nash_insert` need `difftest`); the catalog test is kept |
+- No steering input: races were not won, only ridden out. The sound of the Mtn bank patch was not
+  listened to (the log shows the bank is served: `[tricky audio] mountain bank of GARI ...`).
+  Movie screens and crowds were not looked at specifically.
+- After quitting a Tricky event the game shows the in-game Select Peak (`OV.LUI`), which the
+  engine does not patch: no Peak Tricky row there (needs upstream `lui_patch` for OV.LUI and the
+  `FLOW < 2` gates of `pluginmenu.rs` lifted).
+- Plugin events record no medals or times (engine rule, `docs/plugins.md`).
+- `cargo test` of this crate on its own does not build (it needs the engine workspace's generated
+  code); the unit tests that existed need the upstream `difftest` (cfg(test)) and were dropped.
+- `ssx3-gfx`/`ssx3-ps2`/front-end edits of the fork (GS alpha/gpu edits, ground-mark trace,
+  settings) are not converted: not generic hooks; they need either their own upstream change or
+  stay out.
 
-## The fork's in-place edits of core files
+## Hooks (38)
 
-Written by `src/core_boot.rs` (mine), `core_object.rs`, `core_race.rs`, `core_ui.rs`
-(each has a table in its module doc). W = wrapper (`chain`), R = replacement.
+Hooks that wrap the engine's ported function with Tricky rules (`core_*.rs`, 33 chains and
+replacements: boot, objects, race, results/finish, world texture slots, lazy block pools) and
+the Tricky-only replacements `custom_finish_update`, `custom_snap_ai`, `custom_tricky_rail_probe`
+and a few more (see `lib.rs tables()`).
 
-| edit | status |
-| --- | --- |
-| `native_files.rs`: asset roots, world texture slots, archive redirect | roots: `core_boot::configure`; archive redirect: replaced by the engine's world swap + overlay (importer names archives `TR_<CODE>_<R/F>.BIG`, `prepare_track_info` writes the name in the course record). World texture slots: read from the importer's per-course json (`core_boot::configure`), not by scanning the archives |
-| `native_files.rs`: object-sound bank patching on reads (`custom_audio_banks`) | NOT converted: needs a file-read hook in the engine |
-| `event_boot.rs` (`SSX3_EVENT=<course>`, track info) | engine's `SSX3_EVENT=tricky/<id>` + `core_boot` chain on `FE_SetOnlineMode` |
-| `state.rs`, `beintnewrace.rs`, `belibrary.rs` (track info/name, commit, high score) | W |
-| `ai.rs`, `computer.rs` (restart, distance, far-behind/ahead, path events) | W. `Rider_UpdateRaceProgress` boost: runs BEFORE the function instead of mid-function (timing differs) |
-| `camera.rs` `GameCamera_AvoidCollision` chase logic | W as a post-step; cycle count approximate |
-| `riderspheretree.rs`, `worldsphtree.rs`, `ssxscriptengine.rs`, `capture.rs` | W; the per-candidate contact trace (diagnostic) skipped |
-| `railmodifier.rs`, `debouncenode.rs`, `flagset.rs`, `movenode.rs` call sites | W/R: ModObj_v41, Counter_Update/HandleEvent, Fence_Update, TexMan_InitTable, RollerModifier_Update, Emitter_Render. NOT converted: `ModObj_Render` (crowd and movie-screen materials mid-function; needs an upstream hook or copying 333 lines with private helpers) |
-| `packetless/model.rs` movie-screen blend | NOT converted: needs an upstream hook in `packetless::draw_model` |
-| `uitemplatemap.rs`, `festateload.rs`, `ovstates5.rs`, `uitext.rs` (Tricky menu) | W with recomputed conditions (`EventSelect_OnWidgetAction` is approximate); not run |
-| `game.rs`, `worldcache.rs`, `ps2graphicsman.rs`, `gamestate.rs`, `loadscreens_prestart.rs` | W (section remap, lazy world blocks, results exit) ; not run |
-| `containers.rs` heap diagnostics | skipped (diagnostic) |
-| `ssx3-gfx`, `ssx3-ps2`, `ssx3-render`, `ssx3` (front end) edits | NOT converted: rendering and front-end changes outside the game-function layer (GS alpha/gpu edits, ground-mark trace, settings), see the fork diff |
+Dropped in this round (49 plus the menu modules): every `custom_*` replacement of a function
+that upstream now ports, and the 7 replacements of generated code, were compared with the
+engine's own function by skipping the hook (`SSX3_TRICKY_SKIP=0xaddr,...`) and comparing the whole
+of EE RAM after full runs (Garibaldi race to results and restart 52,000 frames, Garibaldi
+freestyle 30,000, 12 other events 8,000 frames). Identical RAM: the hook was redundant, upstream
+is authoritative. The ones whose removal changed RAM stayed (chains with Tricky rules, finish
+update, AI snap, rail probe). Not covered: code paths no run reached (other courses beyond 8,000
+frames, retail multiplayer).
 
-## Upstream changes (ssx3-decomp, branch feat/plugin-events)
+## Upstream changes used (ssx3-decomp, branch feat/plugin-events)
 
-- `hookable.txt`: 10 addresses (9 Tricky functions that were not ported + `EventSelect_GetEventRecord`), regenerated.
-- `plugin_host::overlays()` (+ engine call): the plugin finds its derived content next to its overlay.
+- `plugin_host::add_event_listener` (started/ended events from the menu), used by `core_boot`.
+- `native_files::add_read_patch`: the mountain sound bank follows the course
+  (`custom_audio_banks`, `core_boot::read_patch`).
+- `packetless::set_opaque_blend_hook`: movie-screen blend (`core_race::screen_blend`).
+- `ModObj_Render`'s crowd/movie material table is set at the entry of the draw call it makes
+  (`core_race::draw_model`), no upstream change.
+- `hookable.txt`: only `GameModule_QuitToLoadScreen` (the engine's own menu) is left.
+- `plugin_host::overlays()`.
