@@ -22,8 +22,8 @@ use crate::game::hashvalue::str_hash;
 /// Peaks that fit on the screen next to the three of the game (the list has no
 /// scrolling: it is as tall as its rows).
 pub const MAX_PEAKS: usize = 4;
-/// Rows in one event list (22 lines each).
-pub const MAX_ROWS: usize = 12;
+/// Rows in one event list (22 lines each; more would run into the help line).
+pub const MAX_ROWS: usize = 10;
 /// Longest name shown, in ASCII characters.
 pub const MAX_NAME: usize = 31;
 
@@ -668,6 +668,18 @@ fn context(c: &mut Cpu, this: u32, back: u32) -> Flow {
         return Ok(());
     };
     request_picture(c, this, p, back)?;
+    if mode == 0 {
+        // The peak highlight bar sits under the row (the game's own code
+        // places it for its rows only).
+        let list = find_object(c, this, "SP_PeakList", back)?;
+        let row = if list == 0 { 0 } else { c.bus.read32(list + 0xa0) };
+        let bar = find_object(c, this, "phl", back)?;
+        if row != 0 && bar != 0 {
+            let y = f32::from_bits(c.bus.read32(row + 0x48)) + 100.0;
+            c.bus.write32(bar + 0x48, y.to_bits());
+            set_visible(c, bar, true, back)?;
+        }
+    }
     let Some(peak) = plan().peaks.get(p) else {
         return Ok(());
     };
@@ -1058,6 +1070,122 @@ mod tests {
             p.peaks[0].race[0].label,
             Label::Ascii("Name??0".to_string())
         );
+    }
+
+
+    // ---- the hooks, on a bare machine (no UI object is touched)
+
+    use crate::difftest::fresh;
+
+    /// Stands in for the game's function in a slot: counts and returns.
+    fn stock(c: &mut Cpu) {
+        c.g[V0][0] = 0x1234;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// The process-wide plan the hook tests share: peak 0 with two race events
+    /// and one freestyle event, peak 1 with one race event.
+    fn shared_plan() -> &'static MenuPlan {
+        let cat = Catalog {
+            peaks: vec![peak("t", "a", "A"), peak("t", "b", "B")],
+            events: vec![
+                event("t", "r0", "a", Kind::Race),
+                event("t", "r1", "a", Kind::Race),
+                event("t", "f0", "a", Kind::Freestyle),
+                event("t", "r2", "b", Kind::Race),
+            ],
+            problems: vec![],
+        };
+        let _ = PLAN.set(MenuPlan::build(&cat));
+        plan()
+    }
+
+    /// A widget record in guest memory with this name.
+    fn widget_with(c: &mut Cpu, at: u32, name: &str) -> u32 {
+        c.bus.write32(at + 0x38, str_hash(name.as_bytes()));
+        c.bus.write32(at + 0x18, 0xdead);
+        at
+    }
+
+    #[test]
+    fn plugin_rows_get_their_ids_when_created() {
+        shared_plan();
+        CREATED.set_for_host(stock);
+        let mut c = fresh();
+        let cases = [
+            (names::peak(0), 4),
+            (names::peak(1), 5),
+            (names::goal(0, RACE), 0),
+            (names::goal(0, FREESTYLE), 1),
+            (names::event(0, RACE, 1), 1),
+            (names::event(0, FREESTYLE, 0), 0),
+            (names::event(1, RACE, 0), 0),
+        ];
+        for (i, (name, id)) in cases.iter().enumerate() {
+            let w = widget_with(&mut c, 0x0100_0000 + i as u32 * 0x100, name);
+            c.g[A0][0] = 0x0200_0000;
+            c.g[A1][0] = w as u64;
+            c.g[RA][0] = 0x0010_0000;
+            c.g[V0][0] = 0;
+            on_widget_created(&mut c);
+            assert_eq!(c.bus.read32(w + 0x18), *id, "{name}");
+            assert_eq!(c.g[V0][0], 0x1234, "the game's code still runs");
+        }
+        // The game's own widgets and a missing widget are left alone.
+        for name in ["Peak1", "Mountain", "PlugPeak9", "Plug0RaceLoc7"] {
+            let w = widget_with(&mut c, 0x0100_2000, name);
+            c.g[A1][0] = w as u64;
+            on_widget_created(&mut c);
+            assert_eq!(c.bus.read32(w + 0x18), 0xdead, "{name}");
+        }
+        c.g[A1][0] = 0;
+        on_widget_created(&mut c);
+    }
+
+    #[test]
+    fn actions_the_plugin_does_not_own_go_to_the_game() {
+        shared_plan();
+        ACTION.set_for_host(stock);
+        let mut c = fresh();
+        c.g[GP][0] = crate::difftest::GAME_GP as u64;
+        let gp = crate::difftest::GAME_GP;
+        let this = 0x0180_0000;
+        for (name, action, flow, popup) in [
+            ("Peak1", 5, 0, 0),                // the game's own row
+            ("Peak1", 1, 0, 0),
+            (names::peak(0).leak() as &str, 6, 0, 0), // back stays the game's
+            (names::peak(0).leak() as &str, 7, 0, 0),
+            (names::peak(0).leak() as &str, 5, 2, 0), // overlay flows have no plugin rows
+            (names::peak(0).leak() as &str, 1, 0, 1), // confirm popup up
+        ] {
+            let w = widget_with(&mut c, 0x0100_0000, name);
+            c.bus.write32(gp - GP_FLOW, flow);
+            c.bus.write32(this + THIS_CONFIRM, popup);
+            c.g[A0][0] = this as u64;
+            c.g[A1][0] = w as u64;
+            c.g[A2][0] = action;
+            c.g[RA][0] = 0x0010_0000;
+            c.g[V0][0] = 0;
+            on_widget_action(&mut c);
+            assert_eq!(c.g[V0][0], 0x1234, "{name} action {action} flow {flow} popup {popup}");
+        }
+        // No widget at all.
+        c.bus.write32(this + THIS_CONFIRM, 0);
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 5;
+        c.g[V0][0] = 0;
+        on_widget_action(&mut c);
+        assert_eq!(c.g[V0][0], 0x1234);
+    }
+
+    #[test]
+    fn widget_ids_are_distinct_from_the_games_own() {
+        assert_eq!(widget_id(Widget::Peak { peak: 0 }), 4);
+        assert_eq!(widget_id(Widget::Peak { peak: 3 }), 7);
+        assert_eq!(widget_id(Widget::Goal { peak: 2, tab: 1 }), 1);
+        assert_eq!(widget_id(Widget::Event { peak: 0, tab: 1, row: 11 }), 11);
+        // The game treats a peak id of 3 or more as the Mountain's, never as its tables' index.
+        assert!((0..MAX_PEAKS).all(|p| widget_id(Widget::Peak { peak: p }) >= 4));
     }
 
     #[test]
