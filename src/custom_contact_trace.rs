@@ -33,12 +33,3 @@ pub fn query(c: &mut Cpu, list: u32, query: u32, mode: u32) {
     let present = (0..count.min(128)).any(|i| c.bus.read32(list + 12 + i * 4) == instance);
     eprintln!("[object volume] {rid:08x} mode={mode} present={present}/{count} flags={:08x} query={qlow:?}..{qhigh:?} object={low:?}..{high:?}", c.bus.read32(instance + 8));
 }
-
-pub fn candidate(c: &mut Cpu, instance: u32, mode: u32, result: Option<u32>) {
-    let Some(rid) = target() else { return };
-    if c.bus.read32(instance + 0x78) != rid { return }
-    static COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    if COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 96 {
-        eprintln!("[object volume] candidate {rid:08x} mode={mode}, hits={result:?}");
-    }
-}

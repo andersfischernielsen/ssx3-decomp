@@ -48,15 +48,25 @@ SSX3_EVENT=tricky/garibaldi target/game/ssx3-custom
 
 Event ids: `garibaldi`, `garibaldi-freestyle`, `snowdream`, `elysium-alps`, `mesablanca`,
 `merqury-city`, `tokyo-megaplex`, `aloha-ice-jam`, `alaska`, `untracked`, `pipedream`,
-`trick-tutorial` (each course with a `-freestyle` variant where it has one). The Single Event
-menu rows ("Peak Tricky") are the fork's own menu code; see `PLAN_STATUS.md`.
+`trick-tutorial` (each course with a `-freestyle` variant where it has one).
+
+From the menus: Single Event, character, Continue, then **Peak Tricky** (the row after the game's
+three peaks), Race or Freestyle, and the course. The rows come from the `[[peak]]` and `[[event]]`
+tables of `plugin.toml`; the engine builds the screen, so this plugin has no menu code. The peak's
+picture, `ui/tricky.png` (the Tricky logo), is made by the importer into the cache folder.
+`tools/menu_run.py` drives the menus with scripted pad input (headless) to start an event.
+
+Known limit: after quitting a Tricky event the game returns to the in-game version of Select Peak
+(`OV.LUI`), which the engine does not patch: Peak Tricky is not listed there until you go back
+through the main menu.
 
 ## Layout
 
 | path | what |
 | --- | --- |
-| `plugin.toml` | id, disc serial, importer, peak, 19 events |
-| `prepare/prepare.py` | importer entry point, run by `ssx3 plugins prepare` |
+| `plugin.toml` | id, disc serial, importer, peak (with picture), 19 events |
+| `prepare/prepare.py` | importer entry point, run by `ssx3 plugins prepare` (also writes `ui/tricky.png`) |
+| `tools/menu_run.py` | scripted menu run: start a Tricky event headless |
 | `tools/` | the converters (terrain, textures, collision, splines, AI paths, scripts, sky, movies, UI) |
 | `src/` | the plugin crate `ssx3-plugin-tricky`: hooks on game functions |
 | `retained/` | audit ports the fork kept but never installed (not compiled) |

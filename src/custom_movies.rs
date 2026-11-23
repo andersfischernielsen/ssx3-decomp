@@ -119,31 +119,6 @@ fn live_texture(c: &mut Cpu, texture: Texture) -> bool {
         && valid(texture.pixels, PICTURE_BYTES as u32)
 }
 
-/// Capture an explicitly tagged image after the ordinary native shape load.
-/// The TexMan `this` adjustment is the same vtable178 entry used by that load;
-/// no guessed PS2GraphicsMan field offset or substitute texture is used.
-pub fn published(c: &mut Cpu, shape: u32, graphics: u32, index: u32) {
-    if crate::custom_tracks::active().is_none() || !valid(shape, 128)
-        || c.bus.read32(shape + 32) != MOVIE_MAGIC || c.bus.read32(shape + 36) != 1
-        || index >= 2000 || c.bus.read32(shape + 40) != index
-        || c.bus.read8(shape) != 3 || c.bus.read16(shape + 4) != 128
-        || c.bus.read16(shape + 6) != 64 || !valid(graphics, 0x10dc) { return }
-    let frames = c.bus.read32(shape + 44) as usize;
-    if !(1..=3600).contains(&frames) { return }
-    let vtable = c.bus.read32(graphics + 0x10d8);
-    if !valid(vtable, 0x180) { return }
-    let adjustment = c.bus.read16(vtable + 0x178) as i16 as i32 as u32;
-    let manager = graphics.wrapping_add(adjustment);
-    let entry = manager.wrapping_add(8 + index * 4);
-    if !valid(entry, 4) { return }
-    let info = c.bus.read32(entry);
-    if !valid(info, 0x38) { return }
-    let texture = Texture { manager, index, info, pixels: c.bus.read32(info + 0x1c), frames };
-    if !live_texture(c, texture) { return }
-    let mut state = STATE.lock().unwrap();
-    if sync(&mut state) { state.texture = Some(texture); }
-}
-
 /// Builtin135 follows native Object creation: owner RID and private storage.
 /// Source1ff6f0 exposes four pointers to the same material (flags1). These
 /// supplied screen models each use one material; retain one private pointer.

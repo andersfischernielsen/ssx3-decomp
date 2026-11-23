@@ -12,6 +12,8 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
 use ssx3_ee_rt::Cpu;
 
+/// Installed by `core_object` (the guard around it), not through a table of its own.
+#[allow(dead_code)]
 pub const OVERRIDES: &[(u32, GuestFn, &str)] =
     &[(ENTRY, roller_modifier_update, "RollerModifier_Update")];
 const ENTRY: u32 = 0x0035_e850;

@@ -26,7 +26,7 @@
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
-use ssx3_game::call::{call_ptr, guest, sp, Flow, Frame, Unwound};
+use ssx3_game::call::{call_ptr, guest, sp, Frame};
 use ssx3_game::events::{deliver_event_here, event_due};
 use ssx3_plugin::Prev;
 
@@ -267,8 +267,14 @@ const HEAP_FREE: u32 = 0x0031_7e98;
 // megabytes in the pool (Alaska uses only 27), starving its final lightmaps.
 // Keep the native block count/packing; allocate only claimed payloads and
 // return them when their section is released, including across course swaps.
-fn lazy_geometry_pool(c: &mut Cpu, pool: u32) -> bool {
-    crate::custom_tracks::assets_available() && c.bus.read32(pool) == 0x20000
+//
+// Only pools made while a Tricky course is active are lazy: the game's own
+// courses keep the game's pools (a plugin that is merely installed must not
+// change them). The pools made lazy are remembered by address.
+static LAZY_POOLS: std::sync::Mutex<Vec<u32>> = std::sync::Mutex::new(Vec::new());
+
+fn lazy_geometry_pool(_c: &mut Cpu, pool: u32) -> bool {
+    LAZY_POOLS.lock().unwrap().contains(&pool)
 }
 
 /// A heap call can yield. Returning to the entry with its own address in RA
@@ -382,9 +388,18 @@ fn restore_lazy_block_frame(c: &mut Cpu) {
 /// custom assets present) is initialised by this copy of the body, which
 /// allocates no per-block payload (`+0` stays 0 until the block is claimed).
 fn world_block_pool_init(c: &mut Cpu) {
-    if c.pc == POOL_INIT && crate::custom_tracks::assets_available() && r(c, A2) == 0x20000 {
-        lazy_pool_init(c);
-        return;
+    if c.pc == POOL_INIT {
+        let pool = r(c, A0);
+        let lazy = crate::custom_tracks::active().is_some() && r(c, A2) == 0x20000;
+        let mut pools = LAZY_POOLS.lock().unwrap();
+        pools.retain(|p| *p != pool);
+        if lazy {
+            pools.push(pool);
+            drop(pools);
+            eprintln!("[tricky] pool {pool:#x}: payloads are allocated when claimed");
+            lazy_pool_init(c);
+            return;
+        }
     }
     PREV_POOL_INIT.call(c);
 }
