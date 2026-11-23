@@ -53,6 +53,7 @@ pub mod ovstatetrophy;
 pub mod ovtemplatedialog;
 pub mod ovtemplatepausemenu;
 pub mod pluginmenu;
+pub mod pluginpic;
 pub mod splashmanager;
 pub mod uitemplatemap;
 

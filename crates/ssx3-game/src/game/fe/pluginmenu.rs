@@ -16,6 +16,7 @@ use std::sync::OnceLock;
 use ssx3_plugin::catalog::Catalog;
 use ssx3_plugin::manifest::Kind;
 
+use crate::game::fe::pluginpic;
 use crate::game::hashvalue::str_hash;
 
 /// Peaks that fit on the screen next to the three of the game (the list has no
@@ -252,6 +253,9 @@ use ssx3_plugin::hooks::Prev;
 use crate::call::{call_ptr, Flow, Unwound, VSlot};
 
 static PLAN: OnceLock<MenuPlan> = OnceLock::new();
+/// Which peaks have a usable picture of their own (`plug_<n>.ssh` in the
+/// generated `MAPGFX.BIG`); the others show the mountain.
+static PICTURES: OnceLock<Vec<bool>> = OnceLock::new();
 
 /// The plan of this run (empty without plugins).
 pub fn plan() -> &'static MenuPlan {
@@ -267,6 +271,8 @@ const SHUTDOWN: u32 = 0x0020_0af0;
 const QUIT_TO_LOAD_SCREEN: u32 = 0x0023_0488;
 const HIDE_MAP_PIC: u32 = 0x0020_1868;
 const LOAD_MAP_IMAGE: u32 = 0x0020_3990;
+const UNLOAD_FE_ASYNC_FILE: u32 = 0x001a_38c0;
+const LOAD_1_PEAK_PIC: u32 = 0x001a_3768;
 const SET_HIGHLIGHT_COLOR: u32 = 0x0020_83d8;
 const SET_UNLOCKED_COLOR: u32 = 0x0020_8438;
 const FIND_OBJECT: u32 = 0x0039_d860;
@@ -283,6 +289,14 @@ const NEW_RACE_INFO: u32 = 0x0053_5bc8;
 const THIS_CONFIRM: u32 = 0x2cc;
 const THIS_SCREEN: u32 = 0x2e8;
 const THIS_STATE: u32 = 0x2ec;
+/// The picture variant loaded (the game's own are 1 to 5), the async slot it
+/// was requested in, whether it has been bound, and the "no picture" flag.
+const THIS_VARIANT: u32 = 0x2d4;
+const THIS_SLOT: u32 = 0x2d8;
+const THIS_BOUND: u32 = 0x2dc;
+const THIS_NO_PICTURE: u32 = 0x2f0;
+/// Plugin peak `p` is picture variant `PICTURE_VARIANT + p`.
+const PICTURE_VARIANT: u32 = 0x100;
 // `gp`-relative globals.
 const GP_FLOW: u32 = 0xb5c;
 const GP_MODE: u32 = 0xb54;
@@ -299,6 +313,8 @@ static SELECTED: AtomicU32 = AtomicU32::new(NONE);
 static LAST_ACCEPT: AtomicU32 = AtomicU32::new(NONE);
 /// What the heading text was last set for (screen, peak, mode, tab).
 static HEADING: AtomicU64 = AtomicU64::new(0);
+/// What the help text was last set for (screen, peak, tab, row).
+static HELP: AtomicU64 = AtomicU64::new(0);
 
 static CREATED: Prev = Prev::new();
 static ACTION: Prev = Prev::new();
@@ -307,6 +323,7 @@ static PANELS: Prev = Prev::new();
 static UPDATE_PREV: Prev = Prev::new();
 static SHUTDOWN_PREV: Prev = Prev::new();
 static QUIT_PREV: Prev = Prev::new();
+static LOAD_PIC: Prev = Prev::new();
 
 /// Build the plan from the plugins' catalog and, when it has peaks, make the
 /// patched `FE.LUI` available to the file layer and hook the screen. Call once
@@ -341,6 +358,36 @@ pub fn install() {
         }),
     );
     crate::event_boot::install_world_swap();
+    let pictures: Vec<bool> = self::plan()
+        .peaks
+        .iter()
+        .map(|p| match &p.picture {
+            None => false,
+            Some(path) => match std::fs::read(path).map_err(|e| e.to_string()).and_then(|b| pluginpic::decode_png(&b).map(|_| ())) {
+                Ok(()) => true,
+                Err(e) => {
+                    eprintln!("[plugin-menu] picture of {} ({}): {e}; the mountain is shown instead", p.id, path.display());
+                    false
+                }
+            },
+        })
+        .collect();
+    if pictures.iter().any(|b| *b) {
+        crate::native_files::register_generator(
+            "DATA/UI/MAPGFX.BIG",
+            Box::new(|original| {
+                match pluginpic::patch_mapgfx(original, self::plan(), &|p| std::fs::read(p)) {
+                    Ok(bytes) => Some(bytes),
+                    Err(e) => {
+                        eprintln!("[plugin-menu] MAPGFX.BIG not patched, plugin peaks show the mountain: {e}");
+                        None
+                    }
+                }
+            }),
+        );
+    }
+    let _ = PICTURES.set(pictures);
+    chain(LOAD_MAP_IMAGE, load_map_image, &LOAD_PIC);
     chain(ON_WIDGET_CREATED, on_widget_created, &CREATED);
     chain(ON_WIDGET_ACTION, on_widget_action, &ACTION);
     chain(SET_MODE, set_mode, &SET_MODE_PREV);
@@ -565,7 +612,11 @@ fn sync_panels(c: &mut Cpu, this: u32, mode: u32, back: u32) -> Flow {
 /// The headings and info panels of the peak a plugin row is about.
 fn update_mode_panels(c: &mut Cpu) {
     let this = c.g[A0][0] as u32;
-    after(c, &PANELS, |c, back| context(c, this, back));
+    after(c, &PANELS, |c, back| {
+        // The game has just written its own help text for its own event.
+        HELP.store(0, Ordering::Relaxed);
+        context(c, this, back)
+    });
 }
 
 fn update(c: &mut Cpu) {
@@ -608,8 +659,14 @@ fn context(c: &mut Cpu, this: u32, back: u32) -> Flow {
     let mode = c.bus.read32(gp(c, GP_MODE));
     let Some(p) = context_peak(c, this, mode, back)? else {
         HEADING.store(0, Ordering::Relaxed);
+        if c.bus.read32(this + THIS_VARIANT) >= PICTURE_VARIANT {
+            // Back on the game's own row: its picture again.
+            c.g[A0][0] = sx(this);
+            call_ptr(c, LOAD_MAP_IMAGE, back)?;
+        }
         return Ok(());
     };
+    request_picture(c, this, p, back)?;
     let Some(peak) = plan().peaks.get(p) else {
         return Ok(());
     };
@@ -636,7 +693,90 @@ fn context(c: &mut Cpu, this: u32, back: u32) -> Flow {
         set_ascii(c, caption, text, back)?;
         HEADING.store(key, Ordering::Relaxed);
     }
+    if mode == 2 {
+        help_text(c, this, p, tab as usize, back)?;
+    }
     Ok(())
+}
+
+/// The help line under the list: the highlighted event's own name (the game
+/// writes the help of the template event it starts, which is not what the
+/// player picked).
+fn help_text(c: &mut Cpu, this: u32, p: usize, tab: usize, back: u32) -> Flow {
+    let menu = find_object(c, this, &names::locs(p, tab), back)?;
+    if menu == 0 {
+        return Ok(());
+    }
+    let item = c.bus.read32(menu + 0xa0);
+    let Some(Widget::Event { row, .. }) = row_of(c, item) else {
+        return Ok(());
+    };
+    let key = (this as u64) << 32 | (p as u64) << 24 | (tab as u64) << 16 | row as u64 | 1 << 63;
+    if HELP.load(Ordering::Relaxed) == key {
+        return Ok(());
+    }
+    let Some(event) = plan().event(p, tab, row) else {
+        return Ok(());
+    };
+    let help = find_object(c, this, "HelpText", back)?;
+    set_label(c, help, &event.label, back)?;
+    HELP.store(key, Ordering::Relaxed);
+    Ok(())
+}
+
+/// Ask the front end's async loader for the peak's picture, as the game does
+/// for its own (`Load1PeakPic` in the screen's slot), then name our member in
+/// the request: the `|` prefix is a member of `DATA/UI/MAPGFX.BIG`.
+fn request_picture(c: &mut Cpu, this: u32, p: usize, back: u32) -> Flow {
+    let variant = PICTURE_VARIANT + p as u32;
+    c.bus.write32(this + THIS_NO_PICTURE, 0);
+    if c.bus.read32(this + THIS_VARIANT) == variant {
+        return Ok(());
+    }
+    let own = PICTURES.get().and_then(|v| v.get(p)).copied().unwrap_or(false);
+    let member = if own {
+        pluginpic::member_name(p)
+    } else {
+        pluginpic::FALLBACK_MEMBER.to_string()
+    };
+    let world = c.bus.read32(gp(c, GP_WORLD));
+    let manager = c.bus.read32(world + 0x11c);
+    let slot = c.bus.read32(this + THIS_SLOT);
+    c.g[A0][0] = sx(manager);
+    c.g[A1][0] = sx(slot);
+    call_ptr(c, UNLOAD_FE_ASYNC_FILE, back)?;
+    c.g[A0][0] = sx(manager);
+    c.g[A1][0] = 0;
+    c.g[A2][0] = sx(slot);
+    c.g[A3][0] = 1;
+    call_ptr(c, LOAD_1_PEAK_PIC, back)?;
+    let request = manager + slot * 0x11c;
+    for (i, b) in format!("|{member}").bytes().chain(std::iter::once(0)).enumerate() {
+        c.bus.write8(request + i as u32, b);
+    }
+    c.bus.write32(this + THIS_VARIANT, variant);
+    c.bus.write32(this + THIS_BOUND, 0);
+    Ok(())
+}
+
+/// The map picture: ours for a plugin peak, the game's otherwise.
+fn load_map_image(c: &mut Cpu) {
+    let this = c.g[A0][0] as u32;
+    let back = c.g[RA][0] as u32;
+    let plugin = front_end(c, this) && {
+        let mode = c.bus.read32(gp(c, GP_MODE));
+        mode != 0 && SELECTED.load(Ordering::Relaxed) != NONE
+    };
+    if !plugin {
+        return LOAD_PIC.call(c);
+    }
+    let p = SELECTED.load(Ordering::Relaxed) as usize;
+    let (g, f) = (c.g, c.f);
+    if request_picture(c, this, p, back).is_ok() {
+        c.g = g;
+        c.f = f;
+        c.pc = back;
+    }
 }
 
 fn shutdown(c: &mut Cpu) {
