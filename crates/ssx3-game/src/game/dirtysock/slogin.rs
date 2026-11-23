@@ -4751,6 +4751,7 @@ pub fn slogin_mc_init(c: &mut Cpu) {
                         c.cycles += 2;
                         c.g[A0][0] = c.g[T0][0];
                     } else {
+                        c.g[V1][0] = c.lhu(c.g[A0][0] as u32);
                         c.cycles += 7;
                         c.g[T0][0] = sx((c.g[A0][0] as u32).wrapping_add(4));
                         c.g[V0][0] = c.lhu(c.g[T3][0] as u32);
@@ -9645,7 +9646,8 @@ pub fn dnas_rel_get_section_addr(c: &mut Cpu) {
         c.cycles += 5;
         let frame = Frame::open(c, 0x10);
         c.g[V0][0] = ELF_SPECIAL_SECTION_END;
-        let special = c.g[V0][0] < c.g[A1][0];
+        c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
+        let special = c.g[V0][0] != 0;
         frame.save_ra(c, 0);
         if special {
             c.cycles += 3;
@@ -9760,9 +9762,9 @@ pub fn dnas_rel_elf_open(c: &mut Cpu) {
             c.cycles += 4;
             c.g[V1][0] = Addr((c.g[S3][0] as u32).wrapping_add(0x10)).lw(c);
             c.g[V0][0] = ELF_RELAY_TYPE;
-            if c.g[V1][0] != c.g[V0][0] {
-                c.g[V0][0] = c.g[S4][0];
-            } else {
+            let wrong_type = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = c.g[S4][0];
+            if !wrong_type {
                 c.cycles += 19;
                 c.sw((c.g[S0][0] as u32).wrapping_add(4), c.g[S1][0]);
                 c.g[A1][0] = DNAS_TEXT_NAME as u64;

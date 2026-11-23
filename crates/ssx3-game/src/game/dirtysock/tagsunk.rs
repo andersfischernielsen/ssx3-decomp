@@ -10047,16 +10047,7 @@ pub fn fe_net_hook2_ctor(c: &mut Cpu) {
 /// `void LobbyMan_OnRecvDebug(LobbyMan *self)` (0x2598a8): call
 /// `LobbyApi_DebugPacket(self->api, packet)` on the lobby API at `self+0x54`.
 pub fn lobby_man_on_recv_debug(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        c.g[A0][0] = Addr(r32(c, A0)).off(0x54).lw(c);
-        frame.save_ra(c, 0);
-        call_ptr(c, 0x003e_8fd0, 0x0025_98b8)?;
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
+    tail_wrapper(c, Some(0x54), Target::Table(0x003e_8fd0), 0x0025_98b8);
 }
 
 /// `int cVoipMan_GetSharedStatus(cVoipMan *self)` (0x266f38): return the
@@ -10282,8 +10273,8 @@ pub fn lobby_man_create(c: &mut Cpu) {
         call_ptr(c, 0x0031_7d70, 0x0025_b670)?;
         c.g[A0][0] = c.g[V0][0];
         call_ptr(c, 0x0025_94d0, 0x0025_b678)?;
-        Addr(gp_8(c, LOBBY_INSTANCE_GP)).sw(c, c.g[V0][0]);
         frame.restore_ra(c, 0);
+        Addr(gp_8(c, LOBBY_INSTANCE_GP)).sw(c, c.g[V0][0]);
         frame.close(c);
         Ok(())
     })
@@ -12198,13 +12189,14 @@ pub fn lobby_man_list_clear(c: &mut Cpu) {
                 break;
             }
         }
+        // Both exits restore `s0` before the tail, as generated.
+        frame.restore(c, S0, 0x20);
         c.cycles += 7;
         Addr(c.g[V0][0] as u32).sw(c, c.g[V0][0]);
         frame.restore_ra(c, 0);
         c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_add(LOBBY_LIST_HEAD)).lw(c);
         frame.restore(c, S1, 0x10);
         Addr((c.g[V1][0] as u32).wrapping_add(0x4)).sw(c, c.g[V1][0]);
-        frame.restore(c, S0, 0x20);
         frame.close(c);
         Ok(())
     })
@@ -14874,9 +14866,9 @@ pub fn c_setup_man_send_packet(c: &mut Cpu) {
         c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x238)).lw(c);
         c.g[A1][0] = Addr(c.g[S2][0] as u32).off(SETUP_CHANNEL).lw(c);
         call_ptr(c, callee::C_COMM_SYSTEM_CHANNEL_SEND.addr, 0x0026_4c40)?;
-        if c.g[V0][0] != 0 {
-            c.g[V0][0] = 0x1;
-        } else {
+        let sent = c.g[V0][0] != 0;
+        c.g[V0][0] = 0x1;
+        if !sent {
             c.cycles += 22;
             c.g[A0][0] = c.g[S2][0];
             callee::SETUP_MAN_ALLOC_PACKET.call(c, 0x0026_4c50)?;
@@ -20065,6 +20057,8 @@ pub fn lobby_man_on_user_stats_reply(c: &mut Cpu) {
             c.g[A0][0] = sx(out_msg.wrapping_add(0x48));
             c.g[A1][0] = c.g[S4][0];
             call_ptr(c, callee::STRCPY_2, 0x0025_ecdc)?;
+            let head = Addr(self_).off(LOBBY_MSG_LIST).lw(c);
+            c.g[V1][0] = head;
             // Copy the five-word stat block (frame +0x360) to `msg + 0x150`,
             // with the generated body's unaligned `ldl/ldr` pair (through
             // v0/a0, which stay clobbered exactly as generated).
@@ -20078,8 +20072,6 @@ pub fn lobby_man_on_user_stats_reply(c: &mut Cpu) {
             c.sdl(4, out_msg.wrapping_add(0x15f));
             c.sdr(4, out_msg.wrapping_add(0x158));
             Addr(out_msg).off(0x160).sw(c, c.g[A2][0]);
-            let head = Addr(self_).off(LOBBY_MSG_LIST).lw(c);
-            c.g[V1][0] = head;
             Addr(frame.at(c, 0x390)).sw(c, head);
             c.g[A0][0] = 0xc;
             c.g[A1][0] = sx(STL_BLOCK_TAG);

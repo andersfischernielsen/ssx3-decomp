@@ -6428,14 +6428,14 @@ pub fn mc_manager_next_file(c: &mut Cpu) {
 
 /// `void MCManager_WriteSaveByName(MCManager *self, int a, int b, int c)`
 /// (0x240fb0): write the save through the driver's by-name hook (method
-/// `+0x120`), see [`mc_manager_write_save`].
+/// `+0x120`), see `mc_manager_write_save`.
 pub fn mc_manager_write_save_by_name(c: &mut Cpu) {
     mc_manager_write_save(c, 0x0024_0fb0, 0x120);
 }
 
 /// `void MCManager_WriteSaveBySlot(MCManager *self, int a, int b, int c)`
 /// (0x241050): write the save through the driver's by-slot hook (method
-/// `+0x130`), see [`mc_manager_write_save`].
+/// `+0x130`), see `mc_manager_write_save`.
 pub fn mc_manager_write_save_by_slot(c: &mut Cpu) {
     mc_manager_write_save(c, 0x0024_1050, 0x130);
 }
@@ -6626,12 +6626,9 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
         c.g[V1][0] = Addr(dev).off(0x350).lw(c);
         let missing = c.g[V1][0] == 0;
         c.g[S3][0] = c.g[A2][0];
-        // 7 cycles for the two skipped block tails, 6 for the middle one, 5
-        // for the outer one (see the generated nesting).
-        let mut tail = 7u64;
-        // The generated body also restores s0 just after the +0x344 load
-        // and s1 inside the +0x348 arm; the tail restores stay (the loads
-        // are idempotent, and s0 is reused as scratch on the full path).
+        // The compiled tail block a path joins: 0x2419b8 reloads s0 and s1,
+        // 0x2419bc only s1, 0x2419c0 neither (those arms reloaded them early).
+        let (mut reload_s0, mut reload_s1) = (true, true);
         'checks: {
             if missing {
                 break 'checks;
@@ -6641,14 +6638,14 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
             let missing = c.g[V1][0] == 0;
             frame.restore(c, S0, 0x440);
             if missing {
-                tail = 6;
+                reload_s0 = false;
                 break 'checks;
             }
             c.cycles += 3;
             c.g[V1][0] = Addr(dev).off(0x348).lw(c);
             if c.g[V1][0] == 0 {
                 frame.restore(c, S1, 0x430);
-                tail = 5;
+                (reload_s0, reload_s1) = (false, false);
                 break 'checks;
             }
             c.cycles += 3;
@@ -6656,7 +6653,7 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
             let missing = c.g[V1][0] == 0;
             c.g[A1][0] = MC_STRINGS_PAGE;
             if missing {
-                tail = 6;
+                reload_s0 = false;
                 break 'checks;
             }
             // Two wide strings then the formatted line.
@@ -6676,9 +6673,15 @@ pub fn mc_manager_format_slot_free_space(c: &mut Cpu) {
             c.g[A3][0] = c.g[SP][0];
             callee::U_STR_SPRINTF.call(c, 0x0024_19b8)?;
         }
-        c.cycles += tail;
-        frame.restore(c, S0, 0x440);
-        frame.restore(c, S1, 0x430);
+        if reload_s0 {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x440);
+        }
+        if reload_s1 {
+            c.cycles += 1;
+            frame.restore(c, S1, 0x430);
+        }
+        c.cycles += 5;
         frame.restore(c, S2, 0x420);
         frame.restore(c, S3, 0x410);
         frame.restore_ra(c, 0x400);
@@ -9294,11 +9297,11 @@ pub fn mc_manager_get_card_error_text(c: &mut Cpu) {
             callee::MC_MANAGER_FORMAT_SLOT_NAME.call(c, 0x0024_18cc)?;
             mc_card_error_sprintf(
                 c,
-                frame,
                 MC_TEXT_NOT_DETECTED,
                 [0x0024_18ec, 0x0024_18fc, 0x0024_190c],
             )?;
             c.cycles += 1;
+            frame.restore(c, S0, 0x230);
             mc_card_error_epilogue(c, frame);
             return Ok(());
         }
@@ -9336,10 +9339,10 @@ pub fn mc_manager_get_card_error_text(c: &mut Cpu) {
             c.cycles += 15;
             mc_card_error_sprintf(
                 c,
-                frame,
                 MC_TEXT_NOT_DETECTED,
                 [0x0024_1884, 0x0024_1894, 0x0024_18a4],
             )?;
+            frame.restore(c, S0, 0x230);
             mc_card_error_epilogue(c, frame);
             return Ok(());
         }
@@ -9358,10 +9361,10 @@ pub fn mc_manager_get_card_error_text(c: &mut Cpu) {
             c.cycles += 15;
             mc_card_error_sprintf(
                 c,
-                frame,
                 MC_TEXT_NOT_FORMATTED,
                 [0x0024_1884, 0x0024_1894, 0x0024_18a4],
             )?;
+            frame.restore(c, S0, 0x230);
             mc_card_error_epilogue(c, frame);
             return Ok(());
         }
@@ -9403,26 +9406,24 @@ pub fn mc_manager_get_card_error_text(c: &mut Cpu) {
         c.cycles += 15;
         mc_card_error_sprintf(
             c,
-            frame,
             MC_TEXT_MEM_DEVICE,
             [0x0024_1884, 0x0024_1894, 0x0024_18a4],
         )?;
+        frame.restore(c, S0, 0x230);
         mc_card_error_epilogue(c, frame);
         Ok(())
     })
 }
 
 /// `UStr_Sprintf(dst, text(key), slot_name)` into `dst` (`s2`), the slot
-/// name in the frame's buffer; then reload `s0` as the compiled tail does.
-/// `rets`: the hash, lookup and format calls' return addresses.
-pub(crate) fn mc_card_error_sprintf(c: &mut Cpu, frame: Frame, key: u32, rets: [u32; 3]) -> Flow {
+/// name in the frame's buffer. `rets`: the hash, lookup and format calls'
+/// return addresses.
+pub(crate) fn mc_card_error_sprintf(c: &mut Cpu, key: u32, rets: [u32; 3]) -> Flow {
     memcard_text(c, key, [rets[0], rets[1]])?;
     c.g[A0][0] = c.g[S2][0];
     c.g[A1][0] = c.g[V0][0];
     c.g[A2][0] = c.g[SP][0];
-    callee::U_STR_SPRINTF.call(c, rets[2])?;
-    frame.restore(c, S0, 0x230);
-    Ok(())
+    callee::U_STR_SPRINTF.call(c, rets[2])
 }
 
 /// Reload s1, s2 and `ra`, pop the 0x240 frame and return.

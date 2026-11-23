@@ -205,6 +205,8 @@ pub fn c_comm_system_update(c: &mut Cpu) {
                     c.g[A2][0] = 0;
                     call_ptr(c, NET_CONN_STATUS, 0x0025_5abc)?;
                     let online = c.g[V0][0] != 0;
+                    // The delay slot loads the `'host'` page on both paths.
+                    c.g[A0][0] = (STATUS_HOST & 0xffff_0000) as u64;
                     if online {
                         c.cycles += 6;
                         c.g[A1][0] = 0;
