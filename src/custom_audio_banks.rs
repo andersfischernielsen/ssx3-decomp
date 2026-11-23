@@ -65,6 +65,8 @@ impl AudioBanks {
                 file.metadata().is_ok_and(|meta| meta.len() == self.size));
             if file.is_none() {
                 eprintln!("[tricky audio] missing/incomplete mountain bank: {}", path.display());
+            } else {
+                eprintln!("[tricky audio] mountain bank of {} serves the Mtn sound bank", track.world_location);
             }
             file
         });

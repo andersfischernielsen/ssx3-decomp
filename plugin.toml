@@ -87,7 +87,7 @@ world = "TR_MESA_F"
 
 [[event]]
 id = "merqury-city"
-name = "Merqury City Meltdown"
+name = "Merqury City"
 peak = "tricky"
 kind = "race"
 template = "ARA1"
@@ -95,7 +95,7 @@ world = "TR_MERQUER_R"
 
 [[event]]
 id = "merqury-city-freestyle"
-name = "Merqury City Meltdown"
+name = "Merqury City"
 peak = "tricky"
 kind = "freestyle"
 template = "ASS1"

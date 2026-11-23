@@ -8,7 +8,7 @@
 //! | `SSX3_EVENT=<course>` | `event_boot::install` | engine's `SSX3_EVENT=tricky/<id>`; [`configure`] activates the course |
 //! | `prepare_track_info` at boot | `event_boot::start` | chain on `FE_SetOnlineMode` |
 //! | world archive redirect | `native_files::open` | the engine's plugin world swap + overlay (the importer names the archive `<world>.BIG`) |
-//! | object-sound bank patching | `native_files::read` | NOT converted (needs a file-read hook in the engine) |
+//! | object-sound bank patching | `native_files::read` | `native_files::add_read_patch` ([`read_patch`]) |
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -16,6 +16,18 @@ use ssx3_plugin::reg::*;
 use ssx3_plugin::{Cpu, Prev};
 
 use crate::{custom_course_rules, custom_movies, custom_tracks, Chain};
+
+static AUDIO: std::sync::Mutex<Option<crate::custom_audio_banks::AudioBanks>> =
+    std::sync::Mutex::new(None);
+
+/// The engine's read patch: the course's mountain sound bank replaces the
+/// bytes of `mtn.bnk` inside `AUDIO.BIG` while a Tricky course is active.
+fn read_patch(name: &str, offset: u32, out: &mut [u8]) -> bool {
+    match AUDIO.lock().unwrap().as_mut() {
+        Some(banks) => banks.apply(name, offset, out),
+        None => true,
+    }
+}
 
 static PREPARE_PENDING: AtomicBool = AtomicBool::new(false);
 
@@ -33,6 +45,10 @@ pub fn configure() {
     let Some(root) = overlay() else { return };
     let ready = root.join("DATA/WORLDS").is_dir();
     custom_tracks::set_assets_available(ready);
+    if ready {
+        *AUDIO.lock().unwrap() = crate::custom_audio_banks::AudioBanks::open(&root);
+        ssx3_game::native_files::add_read_patch(read_patch);
+    }
     custom_movies::set_root(ready.then(|| root.clone()));
     custom_course_rules::set_root(ready.then(|| root.clone()));
     // The world texture slots the prepared courses need (the importer records

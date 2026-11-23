@@ -22,8 +22,8 @@
 //! | `CollSegment_ctor` | 0x0032e100 | wrapper | `custom_tricky_recovery::prepare_ground_query` first | none |
 //! | `OverlapList_CollideObjects` | 0x00334458 | wrapper | `custom_contact_trace::query` at entry; the per-candidate trace calls (before/after `CollideVolumeObject`) are SKIPPED (diagnostics, env-gated) | none |
 //! | `ScriptEngine_QueueIntroScripts` | 0x0027aaf8 | wrapper | custom course: return without queueing | none |
-//! | `PS2GraphicsMan_DrawModel` (capture.rs part) | 0x0037e238 | wrapper | movie screens always take the native path | only useful when the capture fallback is selected; the native path itself needs the upstream hook below |
-//! | `packetless::draw_model` (is_screen part) | n/a | NOT FEASIBLE | `fast_allowed = .. && !source_movie` and the `(5 << 2, 5 << 7)` blend inside the model loop | needs an upstream hook in `packetless/model.rs` (see the report) |
+//! | `PS2GraphicsMan_DrawModel` (capture.rs part) | 0x0037e238 | wrapper | movie screens always take the native path; `ModObj_Render`'s draw (RA 0x3565d8, object in S4) gets the crowd/movie material table in A2 | none |
+//! | `packetless::draw_model` (is_screen part) | n/a | `packetless::set_opaque_blend_hook` | `fast_allowed = .. && !source_movie` and the `(5 << 2, 5 << 7)` blend inside the model loop | [`screen_blend`] |
 //! | `containers.rs` heap diagnostics | n/a | skipped | diagnostics | |
 
 use ssx3_ee_rt::cpu::{reg::*, sx};
@@ -395,13 +395,37 @@ fn queue_intro_scripts(c: &mut Cpu) {
 // ---------------------------------------------------------------------------
 // capture.rs
 
-/// `PS2GraphicsMan_DrawModel` (0x37e238): imported movies use their source
-/// alpha equation through the native model path even when the optional
-/// packet-capture fallback is selected.
+/// The return address of `ModObj_Render`'s draw call (graphics manager slot
+/// 0x2f8 = `PS2GraphicsMan_DrawModel`); `ModObj_Render` keeps its object in S4.
+const MOD_OBJ_DRAW_RETURN: u32 = 0x0035_65d8;
+
+/// `PS2GraphicsMan_DrawModel` (0x37e238), two Tricky edits:
+/// - `ModObj_Render`'s draw of a crowd or movie-screen object gets the
+///   course's private material table (the fork patched `A2` inside
+///   `ModObj_Render`; the draw call's entry sees the same registers);
+/// - imported movies use their source alpha equation through the native model
+///   path even when the optional packet-capture fallback is selected (the
+///   blend itself: [`screen_blend`], installed as the engine's opaque-blend
+///   hook).
 fn draw_model(c: &mut Cpu) {
+    if c.pc == 0x0037_e238 && c.g[RA][0] as u32 == MOD_OBJ_DRAW_RETURN {
+        let object = c.g[S4][0] as u32;
+        let table = crate::custom_crowds::materials(c, object)
+            .or_else(|| crate::custom_movies::materials(c, object));
+        if let Some(table) = table {
+            c.g[A2][0] = table as i32 as i64 as u64;
+        }
+    }
     if crate::custom_movies::is_screen(c, c.g[A1][0] as u32, c.g[A2][0] as u32) {
         ssx3_game::packetless::draw_model(c);
         return;
     }
     PREV_DRAW_MODEL.call(c);
+}
+
+/// The engine's opaque-blend hook (`packetless::set_opaque_blend_hook`): a
+/// movie screen keeps the source alpha equation `(Cs - Cd) * As + Cd`
+/// (blend preset 5) instead of the opaque preset.
+pub fn screen_blend(c: &mut Cpu, instance: u32, table: u32) -> Option<(u32, u32)> {
+    crate::custom_movies::is_screen(c, instance, table).then_some((5 << 2, 5 << 7))
 }

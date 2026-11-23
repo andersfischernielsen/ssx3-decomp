@@ -11,7 +11,7 @@
 //! | TexMan_InitTable | 0x3670e0 | chain, own body when `world_texture_slots() != 1500` | first free-list entry at `8 + slots * 4`, `1999 - slots` links | at 1500 slots (the default) PREV runs unchanged |
 //! | RollerModifier_Update | 0x35e850 | replacement | `custom_roller_runtime::sleeping` guard, else `custom_roller_update::roller_modifier_update` | do NOT also install `custom_roller_update::OVERRIDES` (same address) |
 //! | Emitter_Render | 0x3708c0 | replacement | `0x4250xxxx` kinds use `kind & 31` as the layer; `0x5458xxxx` sprite values are resident world texture ids | copied from upstream's current body (equal to the fork's except the edits) |
-//! | ModObj_Render | 0x356298 | NOT FEASIBLE here | `A2 = custom_crowds::materials or custom_movies::materials` before the draw call, mid-function | needs a pluggable upstream hook, or a copy of the 333-line body with private helpers |
+//! | ModObj_Render | 0x356298 | in `core_race::draw_model` | `A2 = custom_crowds::materials or custom_movies::materials` before the draw call | done at the entry of the draw call it makes (graphics manager slot 0x2f8, RA 0x3565d8, the object in S4) |
 //!
 //! Not converted, nothing to hook: `ModObj_AddRollerModifier` (0x355db8) and
 //! `Counter_ctor` (0x343768) changed in the fork only to be re-enterable at

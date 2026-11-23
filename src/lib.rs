@@ -88,7 +88,7 @@ pub mod custom_section_alloc;
 
 pub mod core_boot;
 mod core_object;
-mod core_race;
+pub mod core_race;
 mod core_ui;
 
 /// A hook that wraps the function in the slot (`Hooks::chain`): it runs the
@@ -201,6 +201,7 @@ impl Plugin for Tricky {
 
     fn install(&self, hooks: &mut Hooks<'_>) -> Result<(), HookError> {
         core_boot::configure();
+        ssx3_game::packetless::set_opaque_blend_hook(core_race::screen_blend);
         // Events picked on the Select Peak screen (built from plugin.toml by
         // the engine): the course becomes the active one.
         ssx3_game::plugin_host::add_event_listener(ssx3_game::plugin_host::EventListener {
