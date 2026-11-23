@@ -61,7 +61,7 @@ id = "garibaldi-race"
 peak = "tricky"
 kind = "race"             # or "freestyle"
 template = "ARA1"  # the native event (`SSX3_EVENT=list`) whose rules and flow it takes
-world = "garibaldi"  # data/worlds/<world>.big; letters, digits, '_', at most 15       # the location name: data/worlds/garibaldi.big
+world = "garibaldi"  # data/worlds/<world>.big; letters, digits, '_', at most 15
 ```
 
 Ids are local; the engine names them `<plugin>/<id>` (`tricky/garibaldi-race`).
@@ -165,11 +165,14 @@ single events) is not supported: the rows show, the accept is refused.
 
 **What the engine does not do.** Plugin peaks are always unlocked, show no
 medals or best times, and there are no info panels for them. Career records
-(medals, best times, unlocks) are not written for plugin events: the events
-run on their template, so a result would be recorded under the template's own
-record. A plugin that wants records hooks the result functions itself (for
-example `BEScoreInt_SubmitRaceResult`) and keeps them in its own file; the
-host provides the menu only. Multiplayer events, rider gating and the
+(medals, best times, unlocks) are **not kept out** of a plugin event: the
+event runs on its template, so the engine lets the result land in the
+template event's record on the player's save. Keeping plugin courses out of
+the career is the plugin's job, with hooks on `BEScoreInt_SubmitRaceResult`
+(0x154ab8), `BEScoreInt_SubmitPlacement` (0x154ee8) and
+`GameModeMan_OnRiderFinished` (0x238358), plus the finish and results states;
+"Next Event" on the results screen needs care too. A plugin that wants its own
+records keeps them in its own file. The host provides the menu only. Multiplayer events, rider gating and the
 Freeride kind are not offered.
 
 **Testing a menu.** `tools/plugin_menu_test.py` copies
@@ -252,6 +255,18 @@ no-ops without a plugin that uses them (the race replay gate stays identical).
   `PS2GraphicsMan_DrawModel` is entered, `RA` says which caller made the call
   and the caller's saved registers (`S0`..`S7`) are still in place.
 
+## Hazards for converted and community worlds
+
+- **Guest heap.** Converted worlds can leave only a few hundred KB of the
+  guest heap free where Snow Jam leaves about 2 MB. When UI allocation then
+  overlaps world streaming, the game hangs in the screen-data lookup with no
+  error. Mostly it is the same textures repeated per stream group:
+  de-duplicate them in the importer.
+- **Dense collision.** `0x334888` appends query hits to the 64-entry stack
+  buffer from `0x104e70` without checking the room left; past it, saved
+  registers are overwritten and the game jumps to 0. Keep the hit count of a
+  world's collision queries low until the engine clamps it.
+
 ## Rules
 
 - No game data in a plugin repository: the importer reads the user's disc and
@@ -263,10 +278,12 @@ no-ops without a plugin that uses them (the race replay gate stays identical).
 
 `SSX3_EVENT=<plugin>/<event>` boots straight into a plugin's event: the game
 sets up its `template` event and, at the world load, reads `data/worlds/<world>`
-(from your overlay) in place of the template's own. The swap is undone at the
-next world load. Verified: a copy of Snow Jam's world played as `ARA1` leaves
+(from your overlay) in place of the template's own. The name is put back at
+the start of the next world load (and swapped in again while the plugin event
+is still the active one). Verified: a copy of Snow Jam's world played as `ARA1` leaves
 the race RAM identical except for the world's name.
 
-From code, `ssx3_game::event_boot::set_world(Some(name))` makes the next world
-load use `name`, `set_world(None)` goes back to the course's own; whoever starts
+From code, `ssx3_game::event_boot::set_world(Some(name))` makes the world
+loads from now on use `name` (it stays set, so a reload keeps it),
+`set_world(None)` goes back to the course's own; whoever starts
 a native event after a plugin event must clear it.

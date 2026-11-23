@@ -181,8 +181,10 @@ const GAME_MODULE_LOAD_WORLD: u32 = 0x0022_f6b0;
 const NAME_LEN: usize = 16;
 const TRACK_INDEX: u32 = 0x0053_5c08;
 
-/// Play `world` (a folder under `data/worlds`) for the next world load, or
-/// the course's own world with `None`. Native events must clear it.
+/// Play `world` (a folder under `data/worlds`) in the world loads from now
+/// on (every load swaps it in until it is cleared, so a restart that reloads
+/// keeps the plugin's world), or the course's own world with `None`. Whoever
+/// starts a native event after a plugin event must clear it.
 pub fn set_world(world: Option<String>) {
     *WORLD.lock().unwrap() = world;
 }
