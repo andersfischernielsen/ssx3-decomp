@@ -41,11 +41,7 @@ pub mod custom_anim_object_ctor;
 pub mod custom_race_path_select;
 pub mod custom_race_distance;
 pub mod custom_base_path_read;
-pub mod bonus_menu_mode;
 pub mod custom_path_reader;
-pub mod custom_peak_widgets;
-pub mod custom_ui_objects;
-pub mod custom_ui_screen;
 pub mod custom_instance_dma;
 pub mod custom_collision_leaves;
 pub mod custom_collision_resolve;
@@ -76,10 +72,8 @@ pub mod custom_resource_alloc;
 pub mod custom_timer_dispatch;
 pub mod custom_timer_init;
 pub mod custom_timer_add;
-pub mod custom_ui_texture_bank;
 pub mod custom_model_relocate;
 pub mod custom_model_parts;
-pub mod custom_menu_panels;
 pub mod custom_model_dma_nodes;
 pub mod custom_load_shape_texture;
 pub mod custom_anger_render;
@@ -89,14 +83,8 @@ pub mod custom_temp_texture;
 pub mod custom_luno_execute;
 pub mod custom_sky_render;
 pub mod custom_loading_texture;
-pub mod custom_peak_refresh;
-pub mod custom_async_data;
-pub mod custom_event_menu_update;
-pub mod custom_menu_selection;
-pub mod custom_text_id;
 pub mod custom_camera_stream;
 pub mod custom_section_alloc;
-pub mod custom_text_id_string;
 
 pub mod core_boot;
 mod core_object;
@@ -127,25 +115,15 @@ fn tables() -> Vec<&'static [(u32, GuestFn, &'static str)]> {
         core_object::OVERRIDES,
         core_race::OVERRIDES,
         core_ui::OVERRIDES,
-        bonus_menu_mode::OVERRIDES,
         custom_rail_diagnostics::OBSERVERS,
         custom_sky_render::OVERRIDES,
         custom_loading_texture::OVERRIDES,
-        custom_peak_refresh::OVERRIDES,
-        custom_async_data::OVERRIDES,
-        custom_event_menu_update::OVERRIDES,
-        custom_menu_selection::OVERRIDES,
-        custom_text_id::OVERRIDES,
         custom_race_path_select::OVERRIDES,
         custom_race_distance::OVERRIDES,
         custom_base_path_read::OVERRIDES,
         custom_camera_stream::OVERRIDES,
         custom_section_alloc::OVERRIDES,
-        custom_text_id_string::OVERRIDES,
         custom_path_reader::OVERRIDES,
-        custom_peak_widgets::OVERRIDES,
-        custom_ui_objects::OVERRIDES,
-        custom_ui_screen::OVERRIDES,
         custom_instance_dma::OVERRIDES,
         custom_collision_leaves::OVERRIDES,
         custom_collision_resolve::OVERRIDES,
@@ -181,10 +159,8 @@ fn tables() -> Vec<&'static [(u32, GuestFn, &'static str)]> {
         custom_timer_dispatch::OVERRIDES,
         custom_timer_init::OVERRIDES,
         custom_timer_add::OVERRIDES,
-        custom_ui_texture_bank::OVERRIDES,
         custom_model_relocate::OVERRIDES,
         custom_model_parts::OVERRIDES,
-        custom_menu_panels::OVERRIDES,
         custom_model_dma_nodes::OVERRIDES,
         custom_load_shape_texture::OVERRIDES,
         custom_anger_render::OVERRIDES,
@@ -225,6 +201,12 @@ impl Plugin for Tricky {
 
     fn install(&self, hooks: &mut Hooks<'_>) -> Result<(), HookError> {
         core_boot::configure();
+        // Events picked on the Select Peak screen (built from plugin.toml by
+        // the engine): the course becomes the active one.
+        ssx3_game::plugin_host::add_event_listener(ssx3_game::plugin_host::EventListener {
+            started: core_boot::event_started,
+            ended: core_boot::event_ended,
+        });
         let mut missing = Vec::new();
         for chain in all_chains() {
             if hooks.has_slot(chain.addr) {

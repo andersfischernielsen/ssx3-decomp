@@ -54,7 +54,7 @@ def main() -> None:
         reports = prepare_audio(args.ssx3_iso, args.tricky_iso, args.overlay)
         print(f"Prepared {len(reports)} native object-sound banks", flush=True)
     sources = sorted(Path(__file__).parent.glob("ssx3_*.py")) + sorted(Path(__file__).parent.glob("tricky_*.py"))
-    sources = [p for p in sources if p.name not in ("ssx3_bonus_menu.py", "tricky_ui_assets.py")]
+    sources = [p for p in sources if p.name not in ("tricky_ui_assets.py",)]
     sources += [Path(__file__).with_name("build_tricky_world.py")]
     fingerprint = hashlib.sha256(b"".join(p.name.encode() + p.read_bytes() for p in sources)).hexdigest()
     results = []
@@ -87,14 +87,6 @@ def main() -> None:
     if not args.worlds_only:
         from tricky_ui_assets import prepare
         prepare(args.tricky_iso, args.overlay, args.ssx3_iso)
-        from ssx3_bonus_menu import add_bonus_locale, add_bonus_screen
-        from tricky_assets import read_iso_file
-        for name, convert in (("DATA/UI/FE.LUI", add_bonus_screen),
-                              ("DATA/UI/OV.LUI", add_bonus_screen),
-                              ("DATA/LOCALE/CMNAMER.LOC", add_bonus_locale)):
-            target = args.overlay / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(convert(read_iso_file(args.ssx3_iso, name)))
         (args.overlay / "custom-tracks.ready").write_text(
             json.dumps({"version": 2, "tracks": results}, indent=2), encoding="utf-8")
     print(f"Prepared {len(results)} course/mode archives", flush=True)

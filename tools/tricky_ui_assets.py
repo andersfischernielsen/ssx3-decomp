@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import struct
+import zlib
 
 from ssx3_world_archive import pack_bigf
 from ssx3_world_probe import bigf_members
@@ -45,8 +46,8 @@ def native_shps(entry: bytes, template: bytes) -> bytes:
     return bytes(result)
 
 
-def prepare(tricky_iso: Path, overlay: Path, ssx3_iso: Path = Path("SSX 3 (USA).iso")) -> None:
-    loading = read_iso_file(tricky_iso, "DATA/TEXTURES/PS2LOAD.BIG")
+def _logo_card(tricky_iso: Path) -> bytearray:
+    """The Tricky logo as a 256x256 indexed card (see `prepare`)."""
     logo_container = read_iso_file(tricky_iso, "DATA/TEXTURES/LOADING.SSH")
     logo = bytearray(image_entry(logo_container, b"loa2"))
     width, height = struct.unpack_from("<2H", logo, 4)
@@ -61,13 +62,48 @@ def prepare(tricky_iso: Path, overlay: Path, ssx3_iso: Path = Path("SSX 3 (USA).
     pixels = bytes(logo[16:16 + 256 * 148])
     logo[16:image_end] = bytes([transparent]) * (256 * 256)
     logo[16 + 54 * 256:16 + 202 * 256] = pixels
+    return logo
+
+
+def _png_rgba(width: int, height: int, rgba: bytes) -> bytes:
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    raw = b"".join(b"\0" + rgba[y * width * 4:(y + 1) * width * 4] for y in range(height))
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, 9))
+            + chunk(b"IEND", b""))
+
+
+def peak_picture(tricky_iso: Path, out_png: Path) -> None:
+    """The picture of `[[peak]] picture` in plugin.toml: the Tricky logo card as
+    a PNG (made from the user's disc into the cache folder, never into git)."""
+    logo = _logo_card(tricky_iso)
+    size = int.from_bytes(logo[1:4], "little")
+    colors = bytes(logo[size + 16:size + 16 + 1024])
+    if not struct.unpack_from("<I", logo, size + 12)[0] & 0x2000:
+        colors = _psmt8_palette(colors)
+    pixels = logo[16:16 + 65536]
+    rgba = bytearray()
+    for index in pixels:
+        r, g, b, a = colors[index * 4:index * 4 + 4]
+        rgba += bytes((r, g, b, min(255, a * 2)))
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    out_png.write_bytes(_png_rgba(256, 256, bytes(rgba)))
+
+
+def prepare(tricky_iso: Path, overlay: Path, ssx3_iso: Path = Path("SSX 3 (USA).iso")) -> None:
+    """The loading-screen cards of the courses: `DATA/UI/TRICKY/<code>.BIG`
+    (served as COURSPIC.BIG while a Tricky course is active)."""
+    loading = read_iso_file(tricky_iso, "DATA/TEXTURES/PS2LOAD.BIG")
+    logo = _logo_card(tricky_iso)
     ui = overlay / "DATA/UI/TRICKY"
     ui.mkdir(parents=True, exist_ok=True)
     maps = bigf_members(read_iso_file(ssx3_iso, "DATA/UI/MAPGFX.BIG"))
     template = maps["map_mtn.ssh"]
     logo_ssh = native_shps(bytes(logo), template)
-    (ui / "logo.ssh").write_bytes(logo_ssh)
-    maps["tricky_logo.ssh"] = logo_ssh
     for course in COURSES:
         if course.preview:
             source = read_cofb_member(loading, f"ldtrack{course.preview}.ssh")
@@ -75,12 +111,10 @@ def prepare(tricky_iso: Path, overlay: Path, ssx3_iso: Path = Path("SSX 3 (USA).
         else:
             ssh = logo_ssh
         (ui / f"{course.code}.ssh").write_bytes(ssh)
-        maps[f"tricky_{course.code.lower()}.ssh"] = ssh
         # The game requests a native template's name inside courspic.big.
         # Keep both names, so Race and Freestyle share the source card.
         (ui / f"{course.code}.BIG").write_bytes(pack_bigf([
             ("ara1.ssh", ssh), ("ass1.ssh", ssh)]))
-    (overlay / "DATA/UI/MAPGFX.BIG").write_bytes(pack_bigf(list(maps.items())))
 
 
 if __name__ == "__main__":

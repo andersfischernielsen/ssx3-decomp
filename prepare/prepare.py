@@ -31,6 +31,9 @@ def main() -> None:
         argv.append("--force")
     sys.argv = argv
     prepare_tricky_tracks.main()
+    # The picture of the peak on the Select Peak screen (plugin.toml `picture`).
+    from tricky_ui_assets import peak_picture
+    peak_picture(Path(os.environ["SSX3_PLUGIN_DISC"]), out / "ui" / "tricky.png")
     (out / "ready").write_text("")
 
 

@@ -61,6 +61,32 @@ pub fn configure() {
     }
 }
 
+/// The engine's menu started `tricky/<id>`: make the course active and build
+/// its track record before the load screen.
+pub fn event_started(
+    c: &mut Cpu,
+    event: &ssx3_plugin::catalog::Event,
+    back: u32,
+) -> ssx3_game::call::Flow {
+    if event.plugin != "tricky" {
+        return Ok(());
+    }
+    let id = event.id.strip_prefix("tricky/").unwrap_or(&event.id);
+    if custom_tracks::activate_in_game(c, id).is_none() {
+        eprintln!("[tricky] no course {id}");
+        return Ok(());
+    }
+    eprintln!("[tricky] active course {id} (menu)");
+    custom_tracks::prepare_track_info(c, back)
+}
+
+/// A plugin event ended (back in the front end, or another event starts).
+pub fn event_ended(c: &mut Cpu) {
+    if custom_tracks::active().is_some() {
+        custom_tracks::deactivate(c);
+    }
+}
+
 static PREV_ONLINE: Prev = Prev::new();
 
 /// `FE_SetOnlineMode` (0x1a86e8) is the first call of the boot into an event:

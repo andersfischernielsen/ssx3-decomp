@@ -1,21 +1,17 @@
-//! Hooks for the fork's in-place edits of the front-end, load-screen, world
-//! cache and texture code. Every row of the table is one upstream function
+//! Hooks for the fork's in-place edits of the load-screen, results, world
+//! cache and texture code (the Select Peak menu edits are gone: the engine's
+//! plugin menu builds the rows from `plugin.toml`). Every row of the table is one upstream function
 //! the SSX Tricky fork changed inside its body; here each becomes a hook.
 //!
 //! Almost everything is a wrapper (`CHAINS`): code before and/or after
 //! `PREV.call(c)`. A wrapper is entered at the function's address
 //! (`c.pc == entry`); when a callee unwound and the function is re-entered in
 //! the middle, the wrapper forwards to `PREV` untouched. Only the plugin's own
-//! paths (custom course active, custom menu rows) deviate from the retail
+//! paths (custom course active) deviate from the retail
 //! cycle and register contract.
 //!
 //! | function | address | kind | what changed | uncertain |
 //! |---|---|---|---|---|
-//! | `cFEStateEventSelect_Update` | 0x001869d8 | chain, after | `refresh_catalog_preview(widget = self+0x48)` after `EventSelect_Update` | runs after the whole function, not before its epilogue; a yield inside the refresh resumes in the caller |
-//! | `EventSelect_LoadMapImage` | 0x00203990 | chain, replaces PREV while a Tricky preview is set | `load_catalog_preview` instead of the retail map image | none |
-//! | `EventSelect_OnWidgetAction` | 0x002018a8 | chain, before (+ own handling) | widget row id remap; custom peak row highlight / unlocked colour / accept; tab and event accept of the Tricky peak; `deactivate` on retail peak accept; debug log | big: see below |
-//! | `EventSelect_UpdateModePanels` | 0x00202ad8 | chain, after (RA-selected) | `refresh_catalog_panels` after the two OnWidgetAction call sites (`es_refresh_mode`, `es_show_mode`) | selected by return address 0x0020_21fc / 0x0020_23c4 |
-//! | `EventSelect_GetEventRecord` | 0x00200388 | chain, replaces PREV for one call site | record of the template event while a custom course is active (OnWidgetAction's `es_start_event`, return address 0x0020_1e10) | **no slot yet: needs a hookable.txt entry** |
 //! | `GameStateFinish_Enter` | 0x00233c50 | chain (diagnostic) | finish trace `finish-enter`, `finish-delay-armed` | the second observation is made at the function's end |
 //! | `GameUI_OpenFinishScreen` | 0x0020cc60 | chain (diagnostic) | finish trace; the per-branch `request`/`returned` details (0xc, 0xd) are reduced to enter/returned | diagnostic only |
 //! | `SectionMan_Init` | 0x0022cd40 | chain, after | `remap_section(section_man)` | the fork called it before `SectionMan_InitNodePool`; it only reads memory and writes the slot map, so after is equivalent; a resumed call takes the manager from S2 |
@@ -23,32 +19,10 @@
 //! | `GameStateResults_Update` | 0x00236e60 | chain, handles two custom cases itself | pending results screen retry; custom course leaves through `GameModule_QuitToLoadScreen(module, 0)` | cycles of the custom paths are approximate |
 //! | `cPreFELoadScreen_Update` | 0x00232a08 | chain, before | `deactivate` when the app has no next module | the fork deactivated after the fade step of the same call |
 //! | `TexMan_FreeNBTexInfo` | 0x003671c8 | chain, before | world texture slots 1500..world_texture_slots go to `TexMan_FreeBTexInfo` | none |
-//! | `cUITextScroll_SetTextId` | 0x003a1f18 | chain, before | `a1 = menu_text_id(a1)` | none |
 //! | `WorldBlockPool_AllocBlock` | 0x003a7768 | chain, before/after | lazy geometry blocks (128 KiB pools): allocate the payload on claim | none |
 //! | `WorldBlockPool_FreeBlock` | 0x003a7790 | chain, before/after | free that payload on release | none |
 //! | `WorldBlockPool_Init` | 0x003a7598 | chain; own copy of upstream's body for lazy pools only | no per-block payload allocation for lazy pools; other pools run PREV | the copy follows upstream at the time of writing |
 //!
-//! `EventSelect_OnWidgetAction`: the fork edited the helpers `es_highlight`,
-//! `es_unlocked`, `es_accept_peak`, `es_accept_tab`, `es_accept_event` and
-//! `es_start_event` inside the function. They are not separate guest
-//! functions, so the wrapper decides the custom cases itself from the same
-//! conditions (`action`, the `gp-0xb54` mode, flow `gp-0xb5c`, widget name
-//! 0x0056b7e4) and either finishes with its own result (`Handled`) or lets
-//! the retail body run:
-//! - highlight (1) and unlocked (2) of a custom row: its own colour call,
-//!   preview and highlight grow, return 0;
-//! - accept (5) of the Tricky peak row, and of a tab row of that peak: own
-//!   code (sound, mode switch), return 0;
-//! - accept of an event row of that peak: the wrapper activates the track
-//!   and sets the selected peak to 0, then lets the retail body start the
-//!   event with the row's "unlocked" word (`self + 4*row + 0x20*tab + 0x20`)
-//!   forced to 1 for the call (restored afterwards; left set if the call
-//!   unwinds). `EventSelect_GetEventRecord` is hooked to deliver the template
-//!   record at that call site.
-//!
-//! Not handled here: `ScriptEngine_QueueIntroScripts` (not in the files of
-//! this module).
-
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -59,11 +33,6 @@ use ssx3_plugin::Prev;
 /// No full replacements: everything is a wrapper.
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[];
 
-static PREV_FE_STATE_EVENT_SELECT_UPDATE: Prev = Prev::new();
-static PREV_LOAD_MAP_IMAGE: Prev = Prev::new();
-static PREV_ON_WIDGET_ACTION: Prev = Prev::new();
-static PREV_UPDATE_MODE_PANELS: Prev = Prev::new();
-static PREV_GET_EVENT_RECORD: Prev = Prev::new();
 static PREV_FINISH_ENTER: Prev = Prev::new();
 static PREV_OPEN_FINISH_SCREEN: Prev = Prev::new();
 static PREV_SECTION_MAN_INIT: Prev = Prev::new();
@@ -71,42 +40,11 @@ static PREV_SECTION_EVENT_WORLD: Prev = Prev::new();
 static PREV_RESULTS_UPDATE: Prev = Prev::new();
 static PREV_PRE_FE_UPDATE: Prev = Prev::new();
 static PREV_FREE_NB_TEX_INFO: Prev = Prev::new();
-static PREV_TEXT_SCROLL_SET_TEXT_ID: Prev = Prev::new();
 static PREV_ALLOC_BLOCK: Prev = Prev::new();
 static PREV_FREE_BLOCK: Prev = Prev::new();
 static PREV_POOL_INIT: Prev = Prev::new();
 
 pub static CHAINS: &[crate::Chain] = &[
-    crate::Chain {
-        addr: 0x0018_69d8,
-        f: fe_state_event_select_update,
-        prev: &PREV_FE_STATE_EVENT_SELECT_UPDATE,
-        name: "cFEStateEventSelect_Update",
-    },
-    crate::Chain {
-        addr: 0x0020_3990,
-        f: event_select_load_map_image,
-        prev: &PREV_LOAD_MAP_IMAGE,
-        name: "EventSelect_LoadMapImage",
-    },
-    crate::Chain {
-        addr: 0x0020_18a8,
-        f: event_select_on_widget_action,
-        prev: &PREV_ON_WIDGET_ACTION,
-        name: "EventSelect_OnWidgetAction",
-    },
-    crate::Chain {
-        addr: 0x0020_2ad8,
-        f: event_select_update_mode_panels,
-        prev: &PREV_UPDATE_MODE_PANELS,
-        name: "EventSelect_UpdateModePanels",
-    },
-    crate::Chain {
-        addr: 0x0020_0388,
-        f: event_select_get_event_record,
-        prev: &PREV_GET_EVENT_RECORD,
-        name: "EventSelect_GetEventRecord",
-    },
     crate::Chain {
         addr: 0x0023_3c50,
         f: game_state_finish_enter,
@@ -150,12 +88,6 @@ pub static CHAINS: &[crate::Chain] = &[
         name: "TexMan_FreeNBTexInfo",
     },
     crate::Chain {
-        addr: 0x003a_1f18,
-        f: c_ui_text_scroll_set_text_id,
-        prev: &PREV_TEXT_SCROLL_SET_TEXT_ID,
-        name: "cUITextScroll_SetTextId",
-    },
-    crate::Chain {
         addr: 0x003a_7768,
         f: world_block_pool_alloc_block,
         prev: &PREV_ALLOC_BLOCK,
@@ -187,368 +119,6 @@ fn r(c: &Cpu, register: usize) -> u32 {
 fn gp_word(c: &mut Cpu, negative_offset: u32) -> u32 {
     let address = r(c, GP).wrapping_sub(negative_offset);
     c.bus.read32(address)
-}
-
-// ------------------------------------------- cFEStateEventSelect_Update
-
-const FE_STATE_EVENT_SELECT_UPDATE: u32 = 0x0018_69d8;
-
-/// After the base state's update and the widget's, redraw a Tricky preview
-/// (the widget is the state's `+0x48` member).
-fn fe_state_event_select_update(c: &mut Cpu) {
-    if c.pc != FE_STATE_EVENT_SELECT_UPDATE {
-        PREV_FE_STATE_EVENT_SELECT_UPDATE.call(c);
-        return;
-    }
-    let this = r(c, A0);
-    let back = r(c, RA);
-    PREV_FE_STATE_EVENT_SELECT_UPDATE.call(c);
-    if c.pc != back || crate::custom_tracks::menu_preview().is_none() {
-        return;
-    }
-    guest(c, |c| {
-        crate::bonus_menu_mode::refresh_catalog_preview(c, this.wrapping_add(0x48), back)
-    });
-}
-
-// ------------------------------------------------- EventSelect_LoadMapImage
-
-fn event_select_load_map_image(c: &mut Cpu) {
-    if c.pc == LOAD_MAP_IMAGE && crate::custom_tracks::menu_preview().is_some() {
-        let this = r(c, A0);
-        let back = r(c, RA);
-        guest(c, |c| crate::bonus_menu_mode::load_catalog_preview(c, this, back));
-        return;
-    }
-    PREV_LOAD_MAP_IMAGE.call(c);
-}
-
-// --------------------------------------------- EventSelect_OnWidgetAction
-
-const ON_WIDGET_ACTION: u32 = 0x0020_18a8;
-const LOAD_MAP_IMAGE: u32 = 0x0020_3990;
-const UPDATE_MODE_PANELS: u32 = 0x0020_2ad8;
-const SET_MODE: u32 = 0x0020_30a0;
-const SET_HIGHLIGHT_COLOR: u32 = 0x0020_83d8;
-const SET_UNLOCKED_COLOR: u32 = 0x0020_8438;
-const STR_HASH: u32 = 0x0031_7670;
-const FIND_SCREEN_OBJECT: u32 = 0x0039_d860;
-
-/// `gp`-relative globals (negative offsets) of the event-select screen.
-const GP_MODE: u32 = 0xb54;
-const GP_TAB: u32 = 0xb50;
-const GP_PEAK: u32 = 0xb4c;
-const GP_FLOW: u32 = 0xb5c;
-
-/// Name hash word of the "Peak4" row (the Tricky peak) in the peak panel.
-const TRICKY_PEAK_ROW: u32 = 0x0056_b7e4;
-
-/// What a custom case of OnWidgetAction decided.
-enum Step {
-    /// Finished: return this value.
-    Handled(u32),
-    /// Run the retail body (A0..A2, RA restored).
-    Original,
-    /// Run the retail body with the event row's unlocked word forced on.
-    EventStart { flag: u32, old: u32 },
-}
-
-/// Play front-end sound `n` through the screen's sound player (the screen
-/// state's, else the default one at `gp + 0x2968`).
-fn es_sound(c: &mut Cpu, this: u32, n: u32, back: u32) -> Flow {
-    let mut player = r(c, GP).wrapping_add(0x2968);
-    let state = c.bus.read32(this.wrapping_add(0x2ec));
-    let owner = c.bus.read32(state.wrapping_add(0x10));
-    let custom_player = c.bus.read32(owner.wrapping_add(0x14));
-    if custom_player != 0 {
-        player = custom_player;
-    }
-    let table = c.bus.read32(player);
-    let delta = c.bus.read16(table.wrapping_add(0x10)) as i16 as i32;
-    let target = c.bus.read32(table.wrapping_add(0x14));
-    c.g[A1][0] = n as u64;
-    c.g[A0][0] = sx(player.wrapping_add(delta as u32));
-    call_ptr(c, target, back)
-}
-
-/// The panels of the new mode, then the map image (`es_show_mode`). The
-/// UpdateModePanels hook below is selected by return address, so the custom
-/// panel refresh is made here.
-fn es_show_mode(c: &mut Cpu, this: u32, back: u32) -> Flow {
-    c.g[A0][0] = sx(this);
-    call_ptr(c, UPDATE_MODE_PANELS, back)?;
-    let mode = gp_word(c, GP_MODE);
-    crate::bonus_menu_mode::refresh_catalog_panels(c, this, mode, back)?;
-    c.g[A0][0] = sx(this);
-    call_ptr(c, LOAD_MAP_IMAGE, back)
-}
-
-/// Move a highlight object (named by the string at `name`) to the row's
-/// y + 100 (`es_grow_highlight`).
-fn es_grow_highlight(c: &mut Cpu, this: u32, row: u32, name: u32, back: u32) -> Flow {
-    c.g[A0][0] = sx(name);
-    call_ptr(c, STR_HASH, back)?;
-    c.g[A0][0] = sx(c.bus.read32(this.wrapping_add(0x2e8)));
-    c.g[A1][0] = c.g[V0][0];
-    call_ptr(c, FIND_SCREEN_OBJECT, back)?;
-    let object = r(c, V0);
-    if object == 0 {
-        return Ok(());
-    }
-    let y = f32::from_bits(c.bus.read32(row.wrapping_add(0x48))) + 100.0;
-    c.bus.write32(object.wrapping_add(0x48), y.to_bits());
-    Ok(())
-}
-
-fn custom_action(
-    c: &mut Cpu,
-    this: u32,
-    w: u32,
-    action: u32,
-    back: u32,
-) -> Result<Step, Unwound> {
-    let flow = gp_word(c, GP_FLOW);
-    let mode = gp_word(c, GP_MODE);
-    let name = c.bus.read32(w.wrapping_add(0x38));
-    let assets = crate::custom_tracks::assets_available();
-    let front = flow < 2;
-    let custom_row = assets
-        && front
-        && ((mode == 0 && name == TRICKY_PEAK_ROW)
-            || (crate::custom_tracks::bonus_peak_selected() && (mode == 1 || mode == 2)));
-    match action {
-        // Colour the row as highlighted.
-        1 => {
-            if assets && front {
-                if custom_row {
-                    if mode == 2 {
-                        let tab = gp_word(c, GP_TAB);
-                        let row = c.bus.read32(w.wrapping_add(0x18)) as usize;
-                        if let Some(track) = crate::custom_tracks::menu_tracks(tab).nth(row) {
-                            crate::custom_tracks::preview_track(track);
-                        }
-                    } else {
-                        crate::custom_tracks::preview_logo();
-                    }
-                } else if mode == 0 && crate::custom_tracks::menu_preview().is_some() {
-                    // Retail peak hovers share the mountain picture. After a
-                    // custom picture, request the shared image again before
-                    // the retail highlight.
-                    crate::custom_tracks::clear_preview();
-                    let registers = c.g;
-                    let floats = c.f;
-                    c.g[A0][0] = sx(this);
-                    call_ptr(c, LOAD_MAP_IMAGE, back)?;
-                    c.g = registers;
-                    c.f = floats;
-                }
-            }
-            if custom_row {
-                c.g[A0][0] = sx(this);
-                c.g[A1][0] = sx(w);
-                c.g[A2][0] = 1;
-                call_ptr(c, SET_HIGHLIGHT_COLOR, back)?;
-                crate::bonus_menu_mode::load_catalog_preview(c, this, back)?;
-                let mode = gp_word(c, GP_MODE);
-                if mode == 1 || mode == 2 {
-                    let highlight = if mode == 1 { 0x004a_25f8 } else { 0x004a_2600 };
-                    es_grow_highlight(c, this, w, highlight, back)?;
-                }
-                return Ok(Step::Handled(0));
-            }
-            Ok(Step::Original)
-        }
-        // Colour the row as unlocked.
-        2 => {
-            if custom_row {
-                c.g[A0][0] = sx(this);
-                c.g[A1][0] = sx(w);
-                c.g[A2][0] = 1;
-                call_ptr(c, SET_UNLOCKED_COLOR, back)?;
-                return Ok(Step::Handled(0));
-            }
-            Ok(Step::Original)
-        }
-        // Accept.
-        5 => {
-            let confirm = c.bus.read32(this.wrapping_add(0x2cc));
-            match mode {
-                0 => {
-                    if confirm != 0 {
-                        return Ok(Step::Original);
-                    }
-                    if assets && front && name == TRICKY_PEAK_ROW {
-                        if !crate::custom_tracks::accept_menu_step(c) {
-                            return Ok(Step::Handled(0));
-                        }
-                        crate::custom_tracks::select_bonus_peak();
-                        es_sound(c, this, 6, back)?;
-                        // The host category chooses its own one-item panels
-                        // in EventSelect_SetMode.
-                        let peak = r(c, GP).wrapping_sub(GP_PEAK);
-                        c.bus.write32(peak, 0);
-                        c.g[A0][0] = sx(this);
-                        c.g[A1][0] = 1;
-                        call_ptr(c, SET_MODE, back)?;
-                        es_show_mode(c, this, back)?;
-                        return Ok(Step::Handled(0));
-                    }
-                    let row = c.bus.read32(w.wrapping_add(0x18));
-                    if row < 3 {
-                        crate::custom_tracks::deactivate(c);
-                    }
-                    Ok(Step::Original)
-                }
-                1 if crate::custom_tracks::bonus_peak_selected() && front => {
-                    if !crate::custom_tracks::accept_menu_step(c) {
-                        return Ok(Step::Handled(0));
-                    }
-                    let tab = c.bus.read32(w.wrapping_add(0x18));
-                    if tab > 1 {
-                        es_sound(c, this, 4, back)?;
-                        return Ok(Step::Handled(0));
-                    }
-                    es_sound(c, this, 6, back)?;
-                    let tab_global = r(c, GP).wrapping_sub(GP_TAB);
-                    c.bus.write32(tab_global, tab);
-                    c.g[A0][0] = sx(this);
-                    c.g[A1][0] = 2;
-                    call_ptr(c, SET_MODE, back)?;
-                    es_show_mode(c, this, back)?;
-                    Ok(Step::Handled(0))
-                }
-                2 if crate::custom_tracks::bonus_peak_selected() && front => {
-                    if !crate::custom_tracks::accept_menu_step(c) {
-                        return Ok(Step::Handled(0));
-                    }
-                    let row = c.bus.read32(w.wrapping_add(0x18));
-                    let tab = gp_word(c, GP_TAB);
-                    let Some(track) = crate::custom_tracks::menu_tracks(tab).nth(row as usize)
-                    else {
-                        es_sound(c, this, 4, back)?;
-                        return Ok(Step::Handled(0));
-                    };
-                    crate::custom_tracks::activate_in_game(c, track.id);
-                    crate::custom_tracks::prepare_track_info(c, back)?;
-                    let peak = r(c, GP).wrapping_sub(GP_PEAK);
-                    c.bus.write32(peak, 0);
-                    // The retail event start reads the row's "unlocked"
-                    // word at self + 4*row + 0x20*tab + 0x60*peak + 0x20.
-                    let flag = this
-                        .wrapping_add(row.wrapping_mul(4))
-                        .wrapping_add(tab.wrapping_mul(0x20))
-                        .wrapping_add(0x20);
-                    let old = c.bus.read32(flag);
-                    c.bus.write32(flag, 1);
-                    Ok(Step::EventStart { flag, old })
-                }
-                _ => Ok(Step::Original),
-            }
-        }
-        _ => Ok(Step::Original),
-    }
-}
-
-fn event_select_on_widget_action(c: &mut Cpu) {
-    if c.pc != ON_WIDGET_ACTION {
-        PREV_ON_WIDGET_ACTION.call(c);
-        return;
-    }
-    let this = r(c, A0);
-    let w = r(c, A1);
-    let action = r(c, A2);
-    let back = r(c, RA);
-    let registers = c.g;
-    let floats = c.f;
-    let mut step = Step::Original;
-    if w != 0 {
-        if crate::custom_tracks::assets_available() {
-            let name = c.bus.read32(w.wrapping_add(0x38));
-            if let Some(id) = crate::custom_tracks::widget_row_id(name) {
-                c.bus.write32(w.wrapping_add(0x18), id);
-            }
-        }
-        if std::env::var_os("SSX3_CUSTOM_MENU_LOG").is_some() && action != 2 {
-            let mode = gp_word(c, GP_MODE);
-            let id = c.bus.read32(w.wrapping_add(0x18));
-            let name = c.bus.read32(w.wrapping_add(0x38));
-            eprintln!(
-                "[tricky-menu] mode={mode} action={action} widget={w:#x} name={name:#x} id={id} preview={:?}",
-                crate::custom_tracks::menu_preview()
-            );
-        }
-        step = match custom_action(c, this, w, action, back) {
-            Ok(step) => step,
-            Err(Unwound) => return,
-        };
-    }
-    match step {
-        Step::Handled(value) => {
-            c.g[V0][0] = sx(value);
-            c.g[RA][0] = sx(back);
-            c.pc = back;
-        }
-        Step::Original => {
-            c.g = registers;
-            c.f = floats;
-            c.pc = ON_WIDGET_ACTION;
-            PREV_ON_WIDGET_ACTION.call(c);
-        }
-        Step::EventStart { flag, old } => {
-            c.g = registers;
-            c.f = floats;
-            c.pc = ON_WIDGET_ACTION;
-            PREV_ON_WIDGET_ACTION.call(c);
-            if c.pc == back {
-                c.bus.write32(flag, old);
-            }
-        }
-    }
-}
-
-// ------------------------------------------- EventSelect_UpdateModePanels
-
-/// OnWidgetAction's `es_refresh_mode` and `es_show_mode` return addresses.
-const REFRESH_MODE_RETURN: u32 = 0x0020_21fc;
-const SHOW_MODE_RETURN: u32 = 0x0020_23c4;
-
-fn event_select_update_mode_panels(c: &mut Cpu) {
-    let back = r(c, RA);
-    if c.pc != UPDATE_MODE_PANELS || !matches!(back, REFRESH_MODE_RETURN | SHOW_MODE_RETURN) {
-        PREV_UPDATE_MODE_PANELS.call(c);
-        return;
-    }
-    let this = r(c, A0);
-    PREV_UPDATE_MODE_PANELS.call(c);
-    if c.pc != back {
-        return;
-    }
-    let mode = gp_word(c, GP_MODE);
-    guest(c, |c| crate::bonus_menu_mode::refresh_catalog_panels(c, this, mode, back));
-}
-
-// ---------------------------------------------- EventSelect_GetEventRecord
-
-/// The `GetEventRecord` call of OnWidgetAction's `es_start_event`.
-const START_EVENT_RETURN: u32 = 0x0020_1e10;
-
-/// While a custom course is active, the event start resolves a bounded
-/// native template record instead of indexing the retail event array.
-fn event_select_get_event_record(c: &mut Cpu) {
-    if r(c, RA) == START_EVENT_RETURN {
-        if let Some(track) = crate::custom_tracks::active() {
-            let events = ssx3_game::event_boot::events(c);
-            let template = ssx3_game::event_boot::find(&events, track.template_event)
-                .expect("native template event is absent");
-            let record = r(c, A0);
-            c.bus.write32(record, template.track);
-            c.bus.write32(record.wrapping_add(4), template.kind);
-            c.bus.write32(record.wrapping_add(8), template.event);
-            ssx3_game::abi::ret(c);
-            return;
-        }
-    }
-    PREV_GET_EVENT_RECORD.call(c);
 }
 
 // ------------------------------------------------------ finish traces
@@ -682,15 +252,6 @@ fn tex_man_free_nb_tex_info(c: &mut Cpu) {
         }
     }
     PREV_FREE_NB_TEX_INFO.call(c);
-}
-
-// ------------------------------------------- cUITextScroll_SetTextId
-
-fn c_ui_text_scroll_set_text_id(c: &mut Cpu) {
-    if c.pc == 0x003a_1f18 {
-        c.g[A1][0] = sx(crate::custom_tracks::menu_text_id(r(c, A1)));
-    }
-    PREV_TEXT_SCROLL_SET_TEXT_ID.call(c);
 }
 
 // ------------------------------------------------------- WorldBlockPool
