@@ -5,3 +5,4 @@
 # adds it here in its pull request; its CI checks that its addresses are listed.
 # Run `python3 tools/integrate_wave.py regen` after changing this file.
 0x00282a80    ScriptEngine_FindCommandHandler    # script command lookup; first hookable example
+0x00230488    GameModule_QuitToLoadScreen    # plugin menu (engine): ends a plugin event when a world is left

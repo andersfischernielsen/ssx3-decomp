@@ -4308,7 +4308,7 @@ s06	002302a8	00230338	o	GameModule_QuickRestart
 s06	00230338	0023035c	o	GameModule_InvalidateFocus
 s06	00230360	0023042c	o	GameModule_OnSectionUnload
 s06	00230430	00230484	o	GameModule_CreateSectionScriptTable
-s06	00230488	00230558	-	GameModule_QuitToLoadScreen
+s06	00230488	00230558	o	GameModule_QuitToLoadScreen
 s06	00230558	002305c8	-	GameModule_BeginReplayPlayback
 s06	002305c8	0023063c	o	GameModule_EndReplayPlayback
 s06	00230640	00230698	o	GameModule_RenderProcessLists
