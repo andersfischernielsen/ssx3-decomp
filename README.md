@@ -86,6 +86,14 @@ saves go to `saves/ssx3-mc0.ps2`. Every option is also an environment variable, 
 boots straight into an event (here Metro City as Moby), skipping the memory card, the title and the menus. Full list, texture packs and the
 emulated reference paths: [`docs/options.md`](docs/options.md).
 
+## Plugins
+
+The game stays SSX 3; other content comes as plugins in `plugins/<name>/`: a `plugin.toml`
+(peaks, events, what to import from your own disc) plus optional Rust hooks, built from source
+with `cargo run --profile game -p ssx3 --bin ssx3 -- plugins build`. Plugin peaks and events
+appear on Select Peak, and plugin events stay out of your career and saves by default. SSX
+Tricky is the first one. No game data is shipped. See [`docs/plugins.md`](docs/plugins.md).
+
 ## Architecture
 
 | Crate | Role |
