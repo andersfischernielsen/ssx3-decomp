@@ -2,9 +2,14 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::call::Target;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -23,6 +28,54 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "BigFile_GetHeaderSize",
     ),
     (0x003e_2610, big_file_get_footer, "BigFile_GetFooter"),
+    (
+        0x003e_2740,
+        big_file_get_footer_version,
+        "BigFile_GetFooterVersion",
+    ),
+    (0x003e_2ce0, big_file_find_entry, "BigFile_FindEntry"),
+    (
+        0x003e_2d00,
+        big_file_get_entry_offset,
+        "BigFile_GetEntryOffset",
+    ),
+    (
+        0x003e_2d30,
+        big_file_get_entry_offset_2,
+        "BigFile_GetEntryOffset_2",
+    ),
+    (
+        0x003e_2d60,
+        big_file_get_entry_data_by_index,
+        "BigFile_GetEntryDataByIndex",
+    ),
+    (
+        0x003e_2da8,
+        big_file_get_entry_data_by_index_2,
+        "BigFile_GetEntryDataByIndex_2",
+    ),
+    (0x003e_2df0, big_file_get_entry_data, "BigFile_GetEntryData"),
+    (
+        0x003e_2e20,
+        big_file_get_entry_data_2,
+        "BigFile_GetEntryData_2",
+    ),
+    (
+        0x003e_2e50,
+        big_file_get_entry_data_list,
+        "BigFile_GetEntryDataList",
+    ),
+    (
+        0x003e_2ee0,
+        big_file_get_entry_count,
+        "BigFile_GetEntryCount",
+    ),
+    (0x003e_2f70, big_file_get_entry_name, "BigFile_GetEntryName"),
+    (
+        0x003e_2fc8,
+        big_file_get_entry_name_2,
+        "BigFile_GetEntryName_2",
+    ),
 ];
 
 /// `BigFile *BigFile_ctor(BigFile *this)` (0x316898): mark empty with size -1.
@@ -255,14 +308,438 @@ pub fn big_file_get_footer(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod callee {
+    pub(crate) use crate::game::lib::eafile::callee::BIG_FILE_FIND_ENTRY;
+    pub(crate) use crate::game::lib::eafile::callee::BIG_FILE_GET_ENTRY_DATA;
+    pub(crate) use crate::game::lib::eafile::callee::BIG_FILE_GET_ENTRY_OFFSET;
+    pub(crate) use crate::game::lib::eafile::callee::BIG_FILE_GET_ENTRY_OFFSET_2;
+    pub(crate) use crate::game::lib::eafile::callee::BIG_FILE_GET_FOOTER;
+    pub(crate) use crate::game::lib::eafile::callee::BIG_FILE_GET_TYPE;
+    pub(crate) use crate::game::lib::eafile::callee::EA_FILE_BIG_FIND_ENTRY;
+    pub(crate) use crate::game::lib::eafile::callee::STRCHR;
+    pub(crate) use crate::game::lib::eafile::callee::STRCPY;
+}
+
+/// `u32 BigFile_GetFooterVersion(...)` (0x3e2740): reads the footer
+/// version word through BigFile_GetFooter.
+pub fn big_file_get_footer_version(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0x10);
+        c.g[A1][0] = c.g[SP][0];
+        c.g[RA][0] = sx(0x003e_2758);
+        c.sw(c.g[SP][0] as u32, 0);
+        callee::BIG_FILE_GET_FOOTER.call(c, 0x003e_2758)?;
+        c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `char *BigFile_FindEntry(big, name, index, out_offset, out_size)`
+/// (0x3e2ce0): forwards to `EAFile_BigFindEntry`.
+pub fn big_file_find_entry(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(callee::EA_FILE_BIG_FIND_ENTRY),
+        0x003e_2cf0,
+    );
+}
+
+/// `u32 BigFile_GetEntryOffset(path, name)` (0x3e2d00): finds an entry
+/// and reports the offset word it wrote to the out slot.
+pub fn big_file_get_entry_offset(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x20);
+        frame.save_ra(c, 0x10);
+        let missing = c.g[A1][0] == 0;
+        c.sw(c.g[SP][0] as u32, 0);
+        if !missing {
+            c.cycles += 4;
+            c.g[A2][0] = 0;
+            c.g[A3][0] = c.g[SP][0];
+            c.g[RA][0] = sx(0x003e_2d20);
+            c.g[T0][0] = 0;
+            callee::BIG_FILE_FIND_ENTRY.call(c, 0x003e_2d20)?;
+        }
+        c.cycles += 4;
+        c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u32 BigFile_GetEntryOffset_2(path, name)` (0x3e2d30): same via the
+/// EAFile entry point.
+pub fn big_file_get_entry_offset_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x20);
+        frame.save_ra(c, 0x10);
+        let missing = c.g[A1][0] == 0;
+        c.sw(c.g[SP][0] as u32, 0);
+        if !missing {
+            c.cycles += 4;
+            c.g[A2][0] = 0;
+            c.g[A3][0] = c.g[SP][0];
+            c.g[RA][0] = sx(0x003e_2d50);
+            c.g[T0][0] = 0;
+            callee::EA_FILE_BIG_FIND_ENTRY.call(c, 0x003e_2d50)?;
+        }
+        c.cycles += 4;
+        c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u32 BigFile_GetEntryDataByIndex(...)` (0x3e2d60): finds an entry by
+/// index and returns base plus the stored offset.
+pub fn big_file_get_entry_data_by_index(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x30);
+        c.g[A2][0] = c.g[A1][0];
+        frame.save(c, S0, 0x20);
+        c.g[A1][0] = 0;
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        c.g[A3][0] = c.g[SP][0];
+        c.g[RA][0] = sx(0x003e_2d84);
+        c.g[T0][0] = 0;
+        callee::BIG_FILE_FIND_ENTRY.call(c, 0x003e_2d84)?;
+        let found = c.g[V0][0] != 0;
+        c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+        if found {
+            c.cycles += 1;
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u32 BigFile_GetEntryDataByIndex_2(...)` (0x3e2da8): same via the
+/// EAFile entry point.
+pub fn big_file_get_entry_data_by_index_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x30);
+        c.g[A2][0] = c.g[A1][0];
+        frame.save(c, S0, 0x20);
+        c.g[A1][0] = 0;
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        c.g[A3][0] = c.g[SP][0];
+        c.g[RA][0] = sx(0x003e_2dcc);
+        c.g[T0][0] = 0;
+        callee::EA_FILE_BIG_FIND_ENTRY.call(c, 0x003e_2dcc)?;
+        let found = c.g[V0][0] != 0;
+        c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+        if found {
+            c.cycles += 1;
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u32 BigFile_GetEntryData(header, name)` (0x3e2df0): entry address
+/// through the offset helper, or 0 for a missing name.
+pub fn big_file_get_entry_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x003e_2e04);
+        c.g[S0][0] = c.g[A0][0];
+        callee::BIG_FILE_GET_ENTRY_OFFSET.call(c, 0x003e_2e04)?;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        if c.g[V0][0] == 0 {
+            c.g[S0][0] = 0;
+        }
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u32 BigFile_GetEntryData_2(header, name)` (0x3e2e20): same through
+/// the second offset helper.
+pub fn big_file_get_entry_data_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x003e_2e34);
+        c.g[S0][0] = c.g[A0][0];
+        callee::BIG_FILE_GET_ENTRY_OFFSET_2.call(c, 0x003e_2e34)?;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        if c.g[V0][0] == 0 {
+            c.g[S0][0] = 0;
+        }
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void BigFile_GetEntryDataList(header, names, out)` (0x3e2e50):
+/// comma-split list lookup, one address per name.
+pub fn big_file_get_entry_data_list(c: &mut Cpu) {
+    guest(c, |c| {
+        const HEAD_80: u32 = 0x003e_2e80;
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S4, 0x10);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S0, 0x50);
+        c.g[S4][0] = 0x2c;
+        frame.save_ra(c, 0);
+        'l_3e2e80: loop {
+            'b_3e2e98: {
+                c.cycles += 6;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[RA][0] = sx(0x003e_2e8c);
+                c.g[A1][0] = 0x2c;
+                call_ptr(c, callee::STRCHR, 0x003e_2e8c)?;
+                c.g[S0][0] = c.g[V0][0];
+                if c.g[S0][0] != 0 {
+                    c.sb(c.g[S0][0] as u32, 0);
+                }
+                break 'b_3e2e98;
+            }
+            'b_3e2ec0: {
+                c.cycles += 6;
+                c.g[A1][0] = c.g[S1][0];
+                c.g[RA][0] = sx(0x003e_2ea4);
+                c.g[A0][0] = c.g[S3][0];
+                callee::BIG_FILE_GET_ENTRY_DATA.call(c, 0x003e_2ea4)?;
+                c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+                let done = c.g[S0][0] == 0;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x4));
+                if done {
+                    break 'b_3e2ec0;
+                }
+                c.cycles += 4;
+                c.sb(c.g[S0][0] as u32, c.g[S4][0]);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                let more = c.g[S0][0] != 0;
+                c.g[S1][0] = c.g[S0][0];
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, HEAD_80);
+                    }
+                    continue 'l_3e2e80;
+                }
+                break 'b_3e2ec0;
+            }
+            // Both break arms converge here, inside the loop: the epilogue
+            // returns, so the loop only repeats via `continue`.
+            c.cycles += 8;
+            frame.restore(c, S0, 0x50);
+            frame.restore(c, S1, 0x40);
+            frame.restore(c, S2, 0x30);
+            frame.restore(c, S3, 0x20);
+            frame.restore(c, S4, 0x10);
+            frame.restore_ra(c, 0);
+            frame.close(c);
+            return Ok(());
+        }
+    })
+}
+
+/// `u32 BigFile_GetEntryCount(header)` (0x3e2ee0): entry count from the
+/// header words, by header type.
+pub fn big_file_get_entry_count(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x003e_2ef8);
+        c.g[S0][0] = c.g[A0][0];
+        callee::BIG_FILE_GET_TYPE.call(c, 0x003e_2ef8)?;
+        c.g[V1][0] = c.g[V0][0];
+        c.g[V0][0] = 0x1;
+        let not_one = c.g[V1][0] != c.g[V0][0];
+        c.g[S1][0] = 0;
+        'b_3e2f54: {
+            'b_3e2f1c: {
+                if not_one {
+                    break 'b_3e2f1c;
+                }
+                c.cycles += 5;
+                c.g[V0][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0x4));
+                c.g[V1][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0x5));
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 8);
+                c.g[S1][0] = c.g[V0][0] | c.g[V1][0];
+                break 'b_3e2f54;
+            }
+            // Tail: gen re-tests V1/V0 here (not S1): the t==1 arm above
+            // leaves V1 = type and V0 = 1, so the fall-through reuses them.
+            c.cycles += 2;
+            let small = (c.g[V1][0] as i64) <= 0;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 4) as u64;
+            if small {
+                break 'b_3e2f54;
+            }
+            c.cycles += 2;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8));
+            if c.g[V0][0] == 0 {
+                break 'b_3e2f54;
+            }
+            c.cycles += 10;
+            c.g[V0][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = c.lbu((c.g[A0][0] as u32).wrapping_add(0x1));
+            c.g[A1][0] = c.lbu((c.g[A0][0] as u32).wrapping_add(0x2));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 16);
+            c.g[A2][0] = c.lbu((c.g[A0][0] as u32).wrapping_add(0x3));
+            c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
+            c.g[A1][0] = sx((c.g[A1][0] as u32) << 8);
+            c.g[V0][0] = c.g[V0][0] | c.g[A1][0];
+            c.g[S1][0] = c.g[V0][0] | c.g[A2][0];
+        }
+        c.cycles += 6;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `char *BigFile_GetEntryName(header, index, dst)` (0x3e2f70): copies the
+/// name of entry `index` (through BigFile_FindEntry) to `dst` and returns
+/// `dst`; a missing entry clears `dst[0]` and returns 0.
+pub fn big_file_get_entry_name(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x20);
+        c.g[A3][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[T0][0] = 0;
+        c.g[S0][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = c.g[A1][0];
+        c.g[RA][0] = sx(0x003e_2f94);
+        c.g[A1][0] = 0;
+        callee::BIG_FILE_FIND_ENTRY.call(c, 0x003e_2f94)?;
+        let found = c.g[V0][0] != 0;
+        c.g[A1][0] = c.g[V0][0];
+        'b_3e2fb4: {
+            if !found {
+                c.cycles += 3;
+                c.sb(c.g[S0][0] as u32, 0);
+                c.g[V0][0] = 0;
+                break 'b_3e2fb4;
+            }
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, callee::STRCPY, 0x003e_2fb0)?;
+            c.g[V0][0] = c.g[S0][0];
+            break 'b_3e2fb4;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `char *BigFile_GetEntryName_2(header, index, dst)` (0x3e2fc8): same
+/// through EAFile_BigFindEntry.
+pub fn big_file_get_entry_name_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x20);
+        c.g[A3][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[T0][0] = 0;
+        c.g[S0][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = c.g[A1][0];
+        c.g[RA][0] = sx(0x003e_2fec);
+        c.g[A1][0] = 0;
+        callee::EA_FILE_BIG_FIND_ENTRY.call(c, 0x003e_2fec)?;
+        let found = c.g[V0][0] != 0;
+        c.g[A1][0] = c.g[V0][0];
+        'b_3e300c: {
+            if !found {
+                c.cycles += 3;
+                c.sb(c.g[S0][0] as u32, 0);
+                c.g[V0][0] = 0;
+                break 'b_3e300c;
+            }
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, callee::STRCPY, 0x003e_3008)?;
+            c.g[V0][0] = c.g[S0][0];
+            break 'b_3e300c;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::difftest::check_paths;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    use crate::difftest::fakes::machine;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
+    pub(crate) use crate::game::lib::eafile::tests::ea_install_fakes;
+    pub(crate) use crate::game::lib::eafile::tests::put_ascii;
+    pub(crate) use crate::game::lib::eafile::tests::stream_block;
+    pub(crate) use crate::game::lib::eafile::tests::zero_block;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_CTRL;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_MAGIC;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_RET_BIGTYPE;
 
     #[test]
     fn big_file_ctor_matches() {
@@ -310,8 +787,6 @@ pub(crate) mod tests {
             },
         );
     }
-
-    use crate::difftest::fakes::machine;
 
     use crate::difftest::RA as SENTINEL;
 
@@ -434,4 +909,501 @@ pub(crate) mod tests {
             },
         );
     }
+
+    /// `EAFile_StrICmp`'s ctype table (upper-case letters flagged).
+    const CTYPE: u32 = 0x0049_9c81;
+
+    /// The entry names of the test archive (`put_big`).
+    const NAMES: [&str; 4] = ["alpha", "Beta", "gamma", "d"];
+
+    /// Where the lookup tests put the archive and the looked-up name.
+    const BIG: u32 = DATA + 0x700;
+
+    const NAME_AT: u32 = DATA + 0x400;
+
+    /// Write `v` big-endian at `at` (any alignment).
+    fn put_be(c: &mut Cpu, at: u32, v: u32, width: u32) {
+        for i in 0..width {
+            c.bus.write8(at + i, (v >> (8 * (width - 1 - i))) as u8);
+        }
+    }
+
+    /// A BIG archive at `big` holding `NAMES` (entry `i` at offset
+    /// `0x100 * (i + 1)`, size `0x10 + i`): kind 0 `BIGF` (4-byte fields,
+    /// count at +8, header size at +0xc), kind 1 `C0FB` (3-byte fields, count
+    /// at +4, header size - 4 at +2), anything else no archive (zeroed).
+    fn put_big(c: &mut Cpu, big: u32, kind: u32) {
+        for b in b'A'..=b'Z' {
+            c.bus.write8(CTYPE + b as u32, 1);
+        }
+        zero_block(c, big, 0x40);
+        let (start, width) = match kind {
+            0 => (big + 0x10, 4),
+            1 => (big + 6, 3),
+            _ => return,
+        };
+        let mut at = start;
+        for (i, name) in NAMES.iter().enumerate() {
+            put_be(c, at, 0x100 * (i as u32 + 1), width);
+            put_be(c, at + width, 0x10 + i as u32, width);
+            put_ascii(c, at + 2 * width, name);
+            at += 2 * width + name.len() as u32 + 1;
+        }
+        let header = at - big;
+        if kind == 0 {
+            put_ascii(c, big, "BIGF");
+            put_be(c, big + 8, NAMES.len() as u32, 4);
+            put_be(c, big + 0xc, header, 4);
+        } else {
+            c.bus.write8(big, 0xc0);
+            c.bus.write8(big + 1, 0xfb);
+            put_be(c, big + 2, header - 4, 2);
+            put_be(c, big + 4, NAMES.len() as u32, 2);
+        }
+    }
+
+    /// The name looked up for `digit`: an entry's (exact), another's in
+    /// swapped case, a missing one, or null.
+    fn lookup_name(c: &mut Cpu, digit: u32) -> u64 {
+        let name = match digit % 4 {
+            0 => NAMES[2].to_string(),
+            1 => NAMES[1].to_ascii_uppercase(),
+            2 => "zeta".to_string(),
+            _ => return 0,
+        };
+        put_ascii(c, NAME_AT, &name);
+        sx(NAME_AT)
+    }
+
+    /// [`check`] that also requires equal scratch registers (`STRICT=args`
+    /// alone does not compare them).
+    fn check_exact(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
+        check(generated, hand, seeds, setup);
+        for seed in 0..crate::difftest::seed_count(seeds) {
+            let r = crate::difftest::compare(generated, hand, &|c| setup(c, seed));
+            let soft: Vec<&String> = r
+                .soft
+                .iter()
+                .filter(|m| !m.starts_with("vu0 ctrl 1"))
+                .collect();
+            assert!(soft.is_empty(), "seed {seed} (soft): {soft:#?}");
+        }
+    }
+
+    driven!(gen_big_file_find_entry, ee::s14::f_003e2ce0__generated);
+
+    driven!(hand_big_file_find_entry, big_file_find_entry);
+
+    /// Forwards the lookup: a `BIGF`, `C0FB` or no archive; a found, other
+    /// case, missing or null name with an index; real out pointers.
+    #[test]
+    fn big_file_find_entry_matches() {
+        check(
+            gen_big_file_find_entry,
+            hand_big_file_find_entry,
+            48,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e_2ce0, 0);
+                put_big(c, BIG, seed % 3);
+                c.g[A0][0] = sx(BIG);
+                c.g[A1][0] = lookup_name(c, seed / 3);
+                c.g[A2][0] = (r.next_u32() % 6) as u64;
+                c.g[A3][0] = sx(DATA + 0x500);
+                c.g[T0][0] = sx(DATA + 0x504);
+                c.pc = 0x003e_2ce0;
+            },
+        );
+    }
+
+    driven!(gen_big_file_get_entry_count, ee::s14::f_003e2ee0__generated);
+
+    driven!(hand_big_file_get_entry_count, big_file_get_entry_count);
+
+    /// The header type selects the count: `C0FB` (bytes 4-5), `BIGF`,
+    /// `BIG0` and other `BIG<c>` (bytes 8-11 for types 2-3), unknown
+    /// magic (0). Scratch registers are compared (the BIGF arm leaves
+    /// `A0 = header + 8`).
+    fn big_file_get_entry_count_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3e_2ee0, 0);
+        let block = DATA + 0x700;
+        zero_block(c, block, 16);
+        for i in 4..12u32 {
+            c.bus.write8(block + i, r.next_u32() as u8);
+        }
+        match seed % 7 {
+            0 => {
+                c.bus.write8(block, 0xc0);
+                c.bus.write8(block + 1, 0xfb);
+            }
+            1 => put_ascii(c, block, "BIGF"),
+            2 => put_ascii(c, block, "BIG0"),
+            3 => put_ascii(c, block, "BIG4"),
+            4 => put_ascii(c, block, "BIG:"),
+            5 => c.bus.write8(block, (r.next_u32() % 251) as u8 + 1),
+            // A header type of 4 or more, forced through the type fake.
+            _ => {
+                ea_install_fakes();
+                c.bus.write32(EAF_CTRL, EAF_MAGIC);
+                c.bus.write32(EAF_RET_BIGTYPE, 4 + r.next_u32() % 2);
+            }
+        }
+        c.g[A0][0] = sx(block);
+        c.pc = 0x003e_2ee0;
+    }
+
+    #[test]
+    fn big_file_get_entry_count_matches() {
+        check_exact(
+            gen_big_file_get_entry_count,
+            hand_big_file_get_entry_count,
+            48,
+            &big_file_get_entry_count_setup,
+        );
+        crate::difftest::require_paths(
+            gen_big_file_get_entry_count,
+            48,
+            &PATHS_ENTRY_COUNT,
+            &big_file_get_entry_count_setup,
+        );
+    }
+
+    driven!(hand_big_file_get_entry_data_2, big_file_get_entry_data_2);
+
+    /// Same via the second offset helper.
+    fn big_file_get_entry_data_2_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3e_2e20, 0);
+        put_big(c, BIG, seed % 3);
+        c.g[A0][0] = sx(BIG);
+        c.g[A1][0] = lookup_name(c, seed / 3);
+        c.pc = 0x003e_2e20;
+    }
+
+    #[test]
+    fn big_file_get_entry_data_2_matches() {
+        check_paths(
+            gen_big_file_get_entry_data_2,
+            hand_big_file_get_entry_data_2,
+            48,
+            &PATHS_ENTRY_DATA_2,
+            &big_file_get_entry_data_2_setup,
+        );
+    }
+
+    /// Indexed lookups (in range or not) in a `BIGF`, `C0FB` or no archive.
+    fn by_index_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        let mut r = machine(c, seed, salt, 0);
+        put_big(c, BIG, seed % 3);
+        c.g[A0][0] = sx(BIG);
+        c.g[A1][0] = (seed / 3 % 6) as u64;
+        c.g[A2][0] = r.next_u32() as u64;
+        c.g[A3][0] = sx(DATA + 0x500);
+        c.pc = entry;
+    }
+
+    fn big_file_get_entry_data_by_index_2_setup(c: &mut Cpu, seed: u32) {
+        by_index_setup(c, seed, 0x3e_2da8, 0x003e_2da8);
+    }
+
+    /// Same via the EAFile entry point.
+    #[test]
+    fn big_file_get_entry_data_by_index_2_matches() {
+        check_paths(
+            gen_big_file_get_entry_data_by_index_2,
+            hand_big_file_get_entry_data_by_index_2,
+            36,
+            &PATHS_BY_INDEX_2,
+            &big_file_get_entry_data_by_index_2_setup,
+        );
+    }
+
+    fn big_file_get_entry_data_by_index_setup(c: &mut Cpu, seed: u32) {
+        by_index_setup(c, seed, 0x3e_2d60, 0x003e_2d60);
+    }
+
+    /// Indexed lookups add the base to the stored offset; misses return 0.
+    #[test]
+    fn big_file_get_entry_data_by_index_matches() {
+        check_paths(
+            gen_big_file_get_entry_data_by_index,
+            hand_big_file_get_entry_data_by_index,
+            36,
+            &PATHS_BY_INDEX,
+            &big_file_get_entry_data_by_index_setup,
+        );
+    }
+
+    /// Comma lists of one to four names (found or missing) in a `BIGF` or
+    /// `C0FB` archive; one address per name.
+    fn data_list_fixture(c: &mut Cpu, seed: u32) {
+        put_big(c, BIG, seed % 2);
+        let names = [
+            "alpha",
+            "alpha,Beta",
+            "gamma,zz,d",
+            "x",
+            "d,GAMMA,alpha,Beta",
+        ][seed as usize / 2 % 5];
+        // Poison RAM[0]: the no-comma path must not write (a
+        // `==`-for-`!=` slip would `sb(0, 0)` here and be caught).
+        c.bus.write8(0, 0xa5);
+        put_ascii(c, DATA + 0x500, names);
+        zero_block(c, DATA + 0x600, 8);
+        c.g[A0][0] = sx(BIG);
+        c.g[A1][0] = sx(DATA + 0x500);
+        c.g[A2][0] = sx(DATA + 0x600);
+        c.pc = 0x003e_2e50;
+    }
+
+    #[test]
+    fn big_file_get_entry_data_list_matches() {
+        check_paths(
+            gen_big_file_get_entry_data_list,
+            hand_big_file_get_entry_data_list,
+            20,
+            &PATHS_DATA_LIST,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3e_2e50, 0);
+                data_list_fixture(c, seed);
+            },
+        );
+    }
+
+    /// The comma walk with events, delivered without unwinding (schedule
+    /// modes off and deliver): an unwind would land first in the strchr or
+    /// lookup callees, which cannot resume mid-call in the test machine.
+    #[test]
+    fn big_file_get_entry_data_list_events() {
+        check_events(
+            gen_big_file_get_entry_data_list,
+            hand_big_file_get_entry_data_list,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e_2e50, 0);
+                data_list_fixture(c, seed / 2);
+                schedule(c, &mut r, seed % 2 * 2, 0x003e_2e50)
+            },
+        );
+    }
+
+    driven!(gen_big_file_get_entry_data, ee::s14::f_003e2df0__generated);
+
+    driven!(hand_big_file_get_entry_data, big_file_get_entry_data);
+
+    /// Found names report header + offset; missing and null ones 0.
+    fn big_file_get_entry_data_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3e_2df0, 0);
+        put_big(c, BIG, seed % 3);
+        c.g[A0][0] = sx(BIG);
+        c.g[A1][0] = lookup_name(c, seed / 3);
+        c.pc = 0x003e_2df0;
+    }
+
+    #[test]
+    fn big_file_get_entry_data_matches() {
+        check_paths(
+            gen_big_file_get_entry_data,
+            hand_big_file_get_entry_data,
+            48,
+            &PATHS_ENTRY_DATA,
+            &big_file_get_entry_data_setup,
+        );
+    }
+
+    /// Indexed name lookups: hits copy the name to `dst`, misses clear its
+    /// first byte.
+    fn entry_name_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        let _r = machine(c, seed, salt, 0);
+        put_big(c, BIG, seed % 3);
+        for i in 0..4u32 {
+            c.bus.write32(DATA + 0x500 + 4 * i, 0xa5a5_a5a5);
+        }
+        c.g[A0][0] = sx(BIG);
+        c.g[A1][0] = (seed / 3 % 6) as u64;
+        c.g[A2][0] = sx(DATA + 0x500);
+        c.pc = entry;
+    }
+
+    driven!(hand_big_file_get_entry_name_2, big_file_get_entry_name_2);
+
+    fn big_file_get_entry_name_2_setup(c: &mut Cpu, seed: u32) {
+        entry_name_setup(c, seed, 0x3e_2fc8, 0x003e_2fc8);
+    }
+
+    /// Same through the EAFile finder.
+    #[test]
+    fn big_file_get_entry_name_2_matches() {
+        check_paths(
+            gen_big_file_get_entry_name_2,
+            hand_big_file_get_entry_name_2,
+            36,
+            &PATHS_ENTRY_NAME_2,
+            &big_file_get_entry_name_2_setup,
+        );
+    }
+
+    driven!(gen_big_file_get_entry_name, ee::s14::f_003e2f70__generated);
+
+    driven!(hand_big_file_get_entry_name, big_file_get_entry_name);
+
+    fn big_file_get_entry_name_setup(c: &mut Cpu, seed: u32) {
+        entry_name_setup(c, seed, 0x3e_2f70, 0x003e_2f70);
+    }
+
+    #[test]
+    fn big_file_get_entry_name_matches() {
+        check_paths(
+            gen_big_file_get_entry_name,
+            hand_big_file_get_entry_name,
+            36,
+            &PATHS_ENTRY_NAME,
+            &big_file_get_entry_name_setup,
+        );
+    }
+
+    /// Found, other-case, missing and null names; the offset word.
+    fn offset_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        let _r = machine(c, seed, salt, 0);
+        put_big(c, BIG, seed % 3);
+        c.g[A0][0] = sx(BIG);
+        c.g[A1][0] = lookup_name(c, seed / 3);
+        c.pc = entry;
+    }
+
+    fn big_file_get_entry_offset_2_setup(c: &mut Cpu, seed: u32) {
+        offset_setup(c, seed, 0x3e_2d30, 0x003e_2d30);
+    }
+
+    /// Same via the EAFile entry point.
+    #[test]
+    fn big_file_get_entry_offset_2_matches() {
+        check_paths(
+            gen_big_file_get_entry_offset_2,
+            hand_big_file_get_entry_offset_2,
+            48,
+            &PATHS_OFFSET_2,
+            &big_file_get_entry_offset_2_setup,
+        );
+    }
+
+    driven!(hand_big_file_get_entry_offset, big_file_get_entry_offset);
+
+    fn big_file_get_entry_offset_setup(c: &mut Cpu, seed: u32) {
+        offset_setup(c, seed, 0x3e_2d00, 0x003e_2d00);
+    }
+
+    #[test]
+    fn big_file_get_entry_offset_matches() {
+        check_paths(
+            gen_big_file_get_entry_offset,
+            hand_big_file_get_entry_offset,
+            48,
+            &PATHS_OFFSET,
+            &big_file_get_entry_offset_setup,
+        );
+    }
+
+    /// Reads the footer version word through the footer helper.
+    #[test]
+    fn big_file_get_footer_version_matches() {
+        check(
+            gen_big_file_get_footer_version,
+            hand_big_file_get_footer_version,
+            32,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3e_2740, 0);
+                let block = DATA + 0x400;
+                stream_block(c, block);
+                c.bus
+                    .write32(block + 8, [0u32, 0x38, 0x100][seed as usize % 3]);
+                c.g[A0][0] = block as u64;
+                c.pc = 0x003e_2740;
+            },
+        );
+    }
+
+    // Arm totals (cycles of the generated body) each fixture must reach.
+    const PATHS_ENTRY_COUNT: [u64; 8] = [33, 53, 58, 46, 23, 25, 29, 30];
+
+    const PATHS_ENTRY_DATA_2: [u64; 6] = [564, 517, 471, 557, 20, 234];
+
+    const PATHS_BY_INDEX_2: [u64; 4] = [264, 217, 483, 227];
+
+    const PATHS_BY_INDEX: [u64; 4] = [271, 224, 490, 234];
+
+    const PATHS_DATA_LIST: [u64; 6] = [502, 455, 1037, 1907, 648, 2349];
+
+    const PATHS_ENTRY_DATA: [u64; 6] = [571, 524, 478, 564, 20, 241];
+
+    const PATHS_ENTRY_NAME_2: [u64; 4] = [313, 246, 484, 228];
+
+    const PATHS_ENTRY_NAME: [u64; 4] = [320, 253, 491, 235];
+
+    const PATHS_OFFSET_2: [u64; 6] = [552, 505, 459, 545, 8, 222];
+
+    const PATHS_OFFSET: [u64; 6] = [559, 512, 466, 552, 8, 229];
+
+    driven!(
+        gen_big_file_get_entry_data_2,
+        ee::s14::f_003e2e20__generated
+    );
+
+    driven!(
+        gen_big_file_get_entry_data_by_index,
+        ee::s14::f_003e2d60__generated
+    );
+
+    driven!(
+        gen_big_file_get_entry_data_by_index_2,
+        ee::s14::f_003e2da8__generated
+    );
+
+    driven!(
+        gen_big_file_get_entry_data_list,
+        ee::s14::f_003e2e50__generated
+    );
+
+    driven!(
+        gen_big_file_get_entry_name_2,
+        ee::s14::f_003e2fc8__generated
+    );
+
+    driven!(
+        gen_big_file_get_entry_offset,
+        ee::s14::f_003e2d00__generated
+    );
+
+    driven!(
+        gen_big_file_get_entry_offset_2,
+        ee::s14::f_003e2d30__generated
+    );
+
+    driven!(
+        gen_big_file_get_footer_version,
+        ee::s14::f_003e2740__generated
+    );
+
+    driven!(
+        hand_big_file_get_entry_data_by_index,
+        big_file_get_entry_data_by_index
+    );
+
+    driven!(
+        hand_big_file_get_entry_data_by_index_2,
+        big_file_get_entry_data_by_index_2
+    );
+
+    driven!(
+        hand_big_file_get_entry_data_list,
+        big_file_get_entry_data_list
+    );
+
+    driven!(
+        hand_big_file_get_entry_offset_2,
+        big_file_get_entry_offset_2
+    );
+
+    driven!(
+        hand_big_file_get_footer_version,
+        big_file_get_footer_version
+    );
 }
