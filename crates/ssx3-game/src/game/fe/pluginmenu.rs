@@ -241,6 +241,16 @@ impl MenuPlan {
 
 // ------------------------------------------------------------------ runtime
 
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::Cpu;
+use ssx3_plugin::hooks::Prev;
+
+use crate::call::{call_ptr, Flow, Unwound, VSlot};
+
 static PLAN: OnceLock<MenuPlan> = OnceLock::new();
 
 /// The plan of this run (empty without plugins).
@@ -248,10 +258,61 @@ pub fn plan() -> &'static MenuPlan {
     PLAN.get_or_init(MenuPlan::default)
 }
 
+const ON_WIDGET_CREATED: u32 = 0x0020_09d0;
+const ON_WIDGET_ACTION: u32 = 0x0020_18a8;
+const SET_MODE: u32 = 0x0020_30a0;
+const UPDATE_MODE_PANELS: u32 = 0x0020_2ad8;
+const UPDATE: u32 = 0x0020_2828;
+const SHUTDOWN: u32 = 0x0020_0af0;
+const QUIT_TO_LOAD_SCREEN: u32 = 0x0023_0488;
+const HIDE_MAP_PIC: u32 = 0x0020_1868;
+const LOAD_MAP_IMAGE: u32 = 0x0020_3990;
+const SET_HIGHLIGHT_COLOR: u32 = 0x0020_83d8;
+const SET_UNLOCKED_COLOR: u32 = 0x0020_8438;
+const FIND_OBJECT: u32 = 0x0039_d860;
+const SET_STRING: u32 = 0x003a_0c50;
+const SET_TEXT_ID: u32 = 0x003a_1000;
+const REFRESH_TEXT: u32 = 0x003a_0528;
+const BE_LIBRARY_SET_PHASE: u32 = 0x0014_de68;
+const EA_MEM_SET: u32 = 0x003e_6448;
+
+/// The new-race settings: the track at +0x40, the event-type byte at +0x48.
+const NEW_RACE_INFO: u32 = 0x0053_5bc8;
+
+// `EventSelect` (`this`) fields.
+const THIS_CONFIRM: u32 = 0x2cc;
+const THIS_SCREEN: u32 = 0x2e8;
+const THIS_STATE: u32 = 0x2ec;
+// `gp`-relative globals.
+const GP_FLOW: u32 = 0xb5c;
+const GP_MODE: u32 = 0xb54;
+const GP_TAB: u32 = 0xb50;
+const GP_PEAK: u32 = 0xb4c;
+const GP_EVENT_STARTED: u32 = 0x1f38;
+const GP_WORLD: u32 = 0x848;
+
+/// The plugin peak whose goals or events are shown (none: `u32::MAX`).
+const NONE: u32 = u32::MAX;
+static SELECTED: AtomicU32 = AtomicU32::new(NONE);
+/// The frame of the last plugin accept: a menu shown by an accept is next in
+/// the same frame's input traversal, and must not take the same press.
+static LAST_ACCEPT: AtomicU32 = AtomicU32::new(NONE);
+/// What the heading text was last set for (screen, peak, mode, tab).
+static HEADING: AtomicU64 = AtomicU64::new(0);
+
+static CREATED: Prev = Prev::new();
+static ACTION: Prev = Prev::new();
+static SET_MODE_PREV: Prev = Prev::new();
+static PANELS: Prev = Prev::new();
+static UPDATE_PREV: Prev = Prev::new();
+static SHUTDOWN_PREV: Prev = Prev::new();
+static QUIT_PREV: Prev = Prev::new();
+
 /// Build the plan from the plugins' catalog and, when it has peaks, make the
-/// patched `FE.LUI` available to the file layer. Call once at boot, after the
-/// catalog is published and before the game opens the file. Does nothing
-/// (touches no slot, registers nothing) without plugin peaks.
+/// patched `FE.LUI` available to the file layer and hook the screen. Call once
+/// at boot, after the catalog is published, the game's own installers have run
+/// and before the game opens the file. Does nothing (touches no slot,
+/// registers nothing) without plugin peaks.
 pub fn install() {
     let plan = MenuPlan::build(crate::plugin_host::catalog());
     for w in &plan.warnings {
@@ -279,6 +340,453 @@ pub fn install() {
             }
         }),
     );
+    crate::event_boot::install_world_swap();
+    chain(ON_WIDGET_CREATED, on_widget_created, &CREATED);
+    chain(ON_WIDGET_ACTION, on_widget_action, &ACTION);
+    chain(SET_MODE, set_mode, &SET_MODE_PREV);
+    chain(UPDATE_MODE_PANELS, update_mode_panels, &PANELS);
+    chain(UPDATE, update, &UPDATE_PREV);
+    chain(SHUTDOWN, shutdown, &SHUTDOWN_PREV);
+    chain(QUIT_TO_LOAD_SCREEN, quit_to_load_screen, &QUIT_PREV);
+}
+
+/// Wrap the function in a slot: what it held (the hand-written port, else the
+/// generated body) is what `prev` calls.
+fn chain(addr: u32, f: GuestFn, prev: &Prev) {
+    let was = ssx3_ee::get_override(addr)
+        .or_else(|| ssx3_ee::generated_body(addr))
+        .expect("plugin menu: no function to wrap");
+    prev.set_for_host(was);
+    assert!(
+        ssx3_ee::set_override(addr, f),
+        "plugin menu: {addr:#x} has no override slot"
+    );
+}
+
+fn gp(c: &Cpu, off: u32) -> u32 {
+    (c.g[GP][0] as u32).wrapping_sub(off)
+}
+
+/// Run what the slot held, then `extra` with every register as the function
+/// left it (the function's caller sees nothing of the extra calls).
+fn after(c: &mut Cpu, prev: &Prev, extra: impl FnOnce(&mut Cpu, u32) -> Flow) {
+    let back = c.g[RA][0] as u32;
+    prev.call(c);
+    if c.pc != back {
+        // The function was switched away from (a guest thread switch).
+        return;
+    }
+    let (g, f) = (c.g, c.f);
+    if extra(c, back).is_ok() {
+        c.g = g;
+        c.f = f;
+        c.pc = back;
+    }
+}
+
+/// Plugin rows only exist in the front end (flows 0 and 1), outside the
+/// confirm popup.
+fn front_end(c: &mut Cpu, this: u32) -> bool {
+    c.bus.read32(gp(c, GP_FLOW)) < 2 && c.bus.read32(this + THIS_CONFIRM) == 0
+}
+
+fn widget_id(w: Widget) -> u32 {
+    match w {
+        Widget::Peak { peak } => 4 + peak as u32,
+        Widget::Goal { tab, .. } => tab as u32,
+        Widget::Event { row, .. } => row as u32,
+    }
+}
+
+/// Our row for a widget pointer.
+fn row_of(c: &mut Cpu, widget: u32) -> Option<Widget> {
+    if widget == 0 {
+        return None;
+    }
+    plan().widget(c.bus.read32(widget + 0x38))
+}
+
+// ---- calling the game's UI
+
+fn find_object(c: &mut Cpu, this: u32, name: &str, back: u32) -> Result<u32, Unwound> {
+    c.g[A0][0] = sx(c.bus.read32(this + THIS_SCREEN));
+    c.g[A1][0] = sx(str_hash(name.as_bytes()));
+    call_ptr(c, FIND_OBJECT, back)?;
+    Ok(c.g[V0][0] as u32)
+}
+
+/// Show or hide an object through its own vtable, as the stock `SetMode` does.
+fn set_visible(c: &mut Cpu, obj: u32, visible: bool, back: u32) -> Flow {
+    if obj == 0 {
+        return Ok(());
+    }
+    if visible {
+        let flags = c.bus.read32(obj + 0x14);
+        c.bus.write32(obj + 0x14, flags | 1);
+    }
+    let slots = if visible { [0x48, 0x38] } else { [0x38, 0x48] };
+    for slot in slots {
+        let table = c.bus.read32(obj + 8);
+        let delta = c.bus.read16(table + slot) as i16 as i32;
+        let target = c.bus.read32(table + slot + 4);
+        c.g[A0][0] = sx(obj.wrapping_add(delta as u32));
+        c.g[A1][0] = visible as u64;
+        call_ptr(c, target, back)?;
+    }
+    Ok(())
+}
+
+fn set_named_visible(c: &mut Cpu, this: u32, name: &str, visible: bool, back: u32) -> Flow {
+    let obj = find_object(c, this, name, back)?;
+    set_visible(c, obj, visible, back)
+}
+
+/// Text from a string of ours: copied below the stack pointer for the call.
+fn set_ascii(c: &mut Cpu, obj: u32, text: &str, back: u32) -> Flow {
+    if obj == 0 {
+        return Ok(());
+    }
+    let sp = (c.g[SP][0] as u32).wrapping_sub(0x40);
+    c.g[SP][0] = sx(sp);
+    for (i, b) in text.bytes().chain(std::iter::once(0)).enumerate() {
+        c.bus.write8(sp + 0x10 + i as u32, b);
+    }
+    c.g[A0][0] = sx(obj);
+    c.g[A1][0] = sx(sp + 0x10);
+    let r = call_ptr(c, SET_STRING, back);
+    if r.is_ok() {
+        c.g[SP][0] = sx(sp.wrapping_add(0x40));
+    }
+    r
+}
+
+fn set_label(c: &mut Cpu, obj: u32, label: &Label, back: u32) -> Flow {
+    if obj == 0 {
+        return Ok(());
+    }
+    match label {
+        Label::Ascii(s) => set_ascii(c, obj, s, back),
+        Label::Key(hash) => {
+            c.g[A0][0] = sx(obj);
+            c.g[A1][0] = sx(*hash);
+            call_ptr(c, SET_TEXT_ID, back)?;
+            c.g[A0][0] = sx(obj);
+            call_ptr(c, REFRESH_TEXT, back)
+        }
+    }
+}
+
+/// Front-end sound `n` through the screen state's sound player (else the
+/// default one), as the stock accept does.
+fn sound(c: &mut Cpu, this: u32, n: u32, back: u32) -> Flow {
+    let mut player = (c.g[GP][0] as u32).wrapping_add(0x2968);
+    let state = c.bus.read32(this + THIS_STATE);
+    let owner = c.bus.read32(state + 0x10);
+    let own = c.bus.read32(owner + 0x14);
+    if own != 0 {
+        player = own;
+    }
+    let vt = c.bus.read32(player);
+    let m = VSlot::read(c, vt as u64, 0x10);
+    c.g[A0][0] = sx(player.wrapping_add(m.delta as u32));
+    c.g[A1][0] = n as u64;
+    call_ptr(c, m.func as u32, back)
+}
+
+// ---- the hooks
+
+/// Plugin rows get their id (the stock code reads it from `+0x18`; the screen
+/// data has none for them).
+fn on_widget_created(c: &mut Cpu) {
+    let w = c.g[A1][0] as u32;
+    if let Some(row) = row_of(c, w) {
+        c.bus.write32(w + 0x18, widget_id(row));
+    }
+    CREATED.call(c)
+}
+
+/// The rows' texts, panels and headings follow the mode.
+fn set_mode(c: &mut Cpu) {
+    let this = c.g[A0][0] as u32;
+    let mode = c.g[A1][0] as u32;
+    if mode == 0 {
+        SELECTED.store(NONE, Ordering::Relaxed);
+    }
+    after(c, &SET_MODE_PREV, |c, back| sync_panels(c, this, mode, back));
+}
+
+fn sync_panels(c: &mut Cpu, this: u32, mode: u32, back: u32) -> Flow {
+    if !front_end(c, this) {
+        return Ok(());
+    }
+    let plan = plan();
+    // Texts: set again at every mode change (the screen rebuilds its rows).
+    for p in &plan.peaks {
+        let obj = find_object(c, this, &names::peak(p.index), back)?;
+        set_ascii(c, obj, &p.name, back)?;
+        for tab in p.tabs() {
+            let obj = find_object(c, this, &names::goal(p.index, tab), back)?;
+            set_ascii(c, obj, if tab == FREESTYLE { "Freestyle" } else { "Race" }, back)?;
+            for (row, e) in p.events(tab).iter().enumerate() {
+                let obj = find_object(c, this, &names::event(p.index, tab, row), back)?;
+                set_label(c, obj, &e.label, back)?;
+            }
+        }
+    }
+    // Panels: ours hidden, then the selected peak's shown in place of the
+    // stock panel (peak 1's) the stock code chose.
+    let selected = SELECTED.load(Ordering::Relaxed);
+    let tab = c.bus.read32(gp(c, GP_TAB)) as usize;
+    for p in &plan.peaks {
+        let mine = p.index as u32 == selected;
+        set_named_visible(c, this, &names::goals(p.index), mine && mode == 1, back)?;
+        for t in p.tabs() {
+            let show = mine && mode == 2 && t == tab;
+            set_named_visible(c, this, &names::locs(p.index, t), show, back)?;
+        }
+    }
+    if selected != NONE {
+        match mode {
+            1 => set_named_visible(c, this, "SPG_Peak1Goals", false, back)?,
+            2 => {
+                let stock = if tab == FREESTYLE {
+                    "Peak1FreestyleLocations"
+                } else {
+                    "Peak1RaceLocations"
+                };
+                set_named_visible(c, this, stock, false, back)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// The headings and info panels of the peak a plugin row is about.
+fn update_mode_panels(c: &mut Cpu) {
+    let this = c.g[A0][0] as u32;
+    after(c, &PANELS, |c, back| context(c, this, back));
+}
+
+fn update(c: &mut Cpu) {
+    let this = c.g[A0][0] as u32;
+    after(c, &UPDATE_PREV, |c, back| context(c, this, back));
+}
+
+/// The plugin peak the screen is about: the one picked (modes 1 and 2), or
+/// the highlighted row of the peak list (mode 0).
+fn context_peak(c: &mut Cpu, this: u32, mode: u32, back: u32) -> Result<Option<usize>, Unwound> {
+    if mode != 0 {
+        let s = SELECTED.load(Ordering::Relaxed);
+        return Ok((s != NONE).then_some(s as usize));
+    }
+    let list = find_object(c, this, "SP_PeakList", back)?;
+    if list == 0 {
+        return Ok(None);
+    }
+    let row = c.bus.read32(list + 0xa0);
+    Ok(match row_of(c, row) {
+        Some(Widget::Peak { peak }) => Some(peak),
+        _ => None,
+    })
+}
+
+const INFO_PANELS: [&str; 7] = [
+    "SP_Info",
+    "SP_GameInfo",
+    "SE_Info",
+    "Indicators",
+    "peak1outline",
+    "peak2outline",
+    "peak3outline   ",
+];
+
+fn context(c: &mut Cpu, this: u32, back: u32) -> Flow {
+    if !front_end(c, this) {
+        return Ok(());
+    }
+    let mode = c.bus.read32(gp(c, GP_MODE));
+    let Some(p) = context_peak(c, this, mode, back)? else {
+        HEADING.store(0, Ordering::Relaxed);
+        return Ok(());
+    };
+    let Some(peak) = plan().peaks.get(p) else {
+        return Ok(());
+    };
+    // The game's own info panels talk about its peaks.
+    for name in INFO_PANELS {
+        set_named_visible(c, this, name, false, back)?;
+    }
+    let tab = c.bus.read32(gp(c, GP_TAB));
+    let key = (this as u64) << 32 | (p as u64) << 16 | (mode as u64) << 8 | tab as u64 & 0xff | 1 << 63;
+    let caption = find_object(c, this, "PEAKno", back)?;
+    // The stock refresh puts a locale text back (+0xb0 set); ours has none.
+    if HEADING.load(Ordering::Relaxed) != key
+        || (caption != 0 && c.bus.read32(caption + 0xb0) != 0)
+    {
+        let text = if mode == 2 {
+            if tab as usize == FREESTYLE {
+                "Freestyle"
+            } else {
+                "Race"
+            }
+        } else {
+            &peak.name
+        };
+        set_ascii(c, caption, text, back)?;
+        HEADING.store(key, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+fn shutdown(c: &mut Cpu) {
+    SELECTED.store(NONE, Ordering::Relaxed);
+    SHUTDOWN_PREV.call(c)
+}
+
+/// Leaving a world ends the plugin event: the next load is the game's own.
+fn quit_to_load_screen(c: &mut Cpu) {
+    crate::event_boot::set_world(None);
+    QUIT_PREV.call(c)
+}
+
+/// `EventSelect_OnWidgetAction(this, widget, action)`: plugin rows are ours,
+/// everything else (and the actions that only change mode) is the game's.
+fn on_widget_action(c: &mut Cpu) {
+    let (this, w, action) = (c.g[A0][0] as u32, c.g[A1][0] as u32, c.g[A2][0] as u32);
+    let back = c.g[RA][0] as u32;
+    let row = row_of(c, w);
+    if row.is_none() && action == 5 {
+        // A native accept: whatever it starts is not a plugin's event.
+        crate::event_boot::set_world(None);
+    }
+    let Some(row) = row else {
+        return ACTION.call(c);
+    };
+    if !matches!(action, 1 | 2 | 5) || !front_end(c, this) {
+        return ACTION.call(c);
+    }
+    let (g, f) = (c.g, c.f);
+    match row_action(c, this, w, row, action, back) {
+        Ok(v0) => {
+            c.g = g;
+            c.f = f;
+            c.g[V0][0] = v0;
+            c.pc = back;
+        }
+        Err(Unwound) => {}
+    }
+}
+
+fn row_action(c: &mut Cpu, this: u32, w: u32, row: Widget, action: u32, back: u32) -> Result<u64, Unwound> {
+    let mode = c.bus.read32(gp(c, GP_MODE));
+    match action {
+        1 | 2 => {
+            c.g[A0][0] = sx(this);
+            c.g[A1][0] = sx(w);
+            c.g[A2][0] = 1;
+            let colour = if action == 1 { SET_HIGHLIGHT_COLOR } else { SET_UNLOCKED_COLOR };
+            call_ptr(c, colour, back)?;
+            if action == 1 && matches!(mode, 1 | 2) {
+                grow_highlight(c, this, w, if mode == 1 { "pghl" } else { "ehl" }, back)?;
+            }
+            Ok(0)
+        }
+        _ => accept(c, this, row, mode, back),
+    }
+}
+
+/// The tab or event highlight bar goes to the row (y + 100), as the stock code
+/// does.
+fn grow_highlight(c: &mut Cpu, this: u32, w: u32, name: &str, back: u32) -> Flow {
+    let bar = find_object(c, this, name, back)?;
+    if bar != 0 {
+        let y = f32::from_bits(c.bus.read32(w + 0x48)) + 100.0;
+        c.bus.write32(bar + 0x48, y.to_bits());
+    }
+    Ok(())
+}
+
+fn accept(c: &mut Cpu, this: u32, row: Widget, mode: u32, back: u32) -> Result<u64, Unwound> {
+    let frame = crate::tick::vsync_count(c);
+    if LAST_ACCEPT.swap(frame, Ordering::Relaxed) == frame {
+        return Ok(0);
+    }
+    let gp_peak = gp(c, GP_PEAK);
+    let gp_tab = gp(c, GP_TAB);
+    match (row, mode) {
+        (Widget::Peak { peak }, 0) => {
+            sound(c, this, 6, back)?;
+            SELECTED.store(peak as u32, Ordering::Relaxed);
+            // The game's own state sees peak 1; our hooks swap its panels.
+            c.bus.write32(gp_peak, 0);
+            show_mode(c, this, 1, back)?;
+            Ok(0)
+        }
+        (Widget::Goal { tab, .. }, 1) => {
+            sound(c, this, 6, back)?;
+            c.bus.write32(gp_tab, tab as u32);
+            show_mode(c, this, 2, back)?;
+            Ok(0)
+        }
+        (Widget::Event { peak, tab, row }, 2) => start_event(c, this, peak, tab, row, back),
+        _ => Ok(0),
+    }
+}
+
+/// `SetMode`, the panel headings, and the map picture.
+fn show_mode(c: &mut Cpu, this: u32, mode: u32, back: u32) -> Flow {
+    c.g[A0][0] = sx(this);
+    c.g[A1][0] = mode as u64;
+    call_ptr(c, SET_MODE, back)?;
+    c.g[A0][0] = sx(this);
+    call_ptr(c, UPDATE_MODE_PANELS, back)?;
+    c.g[A0][0] = sx(this);
+    call_ptr(c, LOAD_MAP_IMAGE, back)
+}
+
+/// The front-end tail of the stock event accept (`es_start_event`) with the
+/// plugin event's template event in place of the record table.
+fn start_event(c: &mut Cpu, this: u32, peak: usize, tab: usize, row: usize, back: u32) -> Result<u64, Unwound> {
+    let Some(event) = plan().event(peak, tab, row) else {
+        return Ok(0);
+    };
+    let template = crate::event_boot::find(&crate::event_boot::events(c), &event.template);
+    let Some(template) = template else {
+        eprintln!(
+            "[plugin-menu] {}: template event {:?} does not exist (SSX3_EVENT=list)",
+            event.id, event.template
+        );
+        sound(c, this, 4, back)?;
+        return Ok(0);
+    };
+    use crate::event_boot::{call, commit, interface};
+    let flow = c.bus.read32(gp(c, GP_FLOW));
+    let race = interface(c, 0, back)?;
+    sound(c, this, 6, back)?;
+    if flow == 1 {
+        call(c, BE_LIBRARY_SET_PHASE, &[0], back)?;
+    }
+    c.bus.write32(NEW_RACE_INFO + 0x40, template.track);
+    let was = c.bus.read8(NEW_RACE_INFO + 0x48);
+    c.bus.write32(gp(c, GP_EVENT_STARTED), 1);
+    call(c, crate::event_boot::BE_NEW_RACE_INT_SET_EVENT_TYPE, &[race, template.kind], back)?;
+    call(c, crate::event_boot::BE_NEW_RACE_INT_SET_EVENT, &[race, template.event], back)?;
+    commit(c, race, back)?;
+    if flow == 1 {
+        if c.bus.read8(NEW_RACE_INFO + 0x48) != was {
+            call(c, EA_MEM_SET, &[0x0053_08b8, 0, 0x20], back)?;
+        }
+        let world = c.bus.read32(gp(c, GP_WORLD));
+        let manager = c.bus.read32(world + 0x84);
+        call(c, QUIT_TO_LOAD_SCREEN, &[manager, 1], back)?;
+    }
+    // After the quit above, which ends the previous plugin event's world.
+    crate::event_boot::set_world(Some(event.world.clone()));
+    eprintln!("[plugin-menu] start {} (template {}, world {})", event.id, event.template, event.world);
+    c.g[A0][0] = sx(this);
+    call_ptr(c, HIDE_MAP_PIC, back)?;
+    Ok(1)
 }
 
 #[cfg(test)]

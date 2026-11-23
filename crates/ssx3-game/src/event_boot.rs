@@ -43,8 +43,8 @@ const FE_SET_ONLINE_MODE: u32 = 0x001a_86e8;
 const BE_LIBRARY_GET_INSTANCE: u32 = 0x0014_dc80;
 const BE_LIBRARY_GET_INTERFACE: u32 = 0x0014_dd58;
 const BE_NEW_RACE_INT_SET_GAME_MODE: u32 = 0x0014_5108;
-const BE_NEW_RACE_INT_SET_EVENT_TYPE: u32 = 0x0014_4df0;
-const BE_NEW_RACE_INT_SET_EVENT: u32 = 0x0014_51e8;
+pub(crate) const BE_NEW_RACE_INT_SET_EVENT_TYPE: u32 = 0x0014_4df0;
+pub(crate) const BE_NEW_RACE_INT_SET_EVENT: u32 = 0x0014_51e8;
 const BE_NEW_PLAYER_INT_SET_CHARACTER: u32 = 0x0014_7338;
 const EA_MEM_ALLOC_NAMED: u32 = 0x0031_7d70;
 const EA_MEM_FREE: u32 = 0x0031_7e98;
@@ -187,7 +187,14 @@ pub fn set_world(world: Option<String>) {
     *WORLD.lock().unwrap() = world;
 }
 
-fn install_world_swap() {
+/// Wrap the world load (once): needed by `SSX3_EVENT=<plugin>/<event>` and by
+/// plugin events started from the Select Peak screen.
+pub(crate) fn install_world_swap() {
+    static DONE: std::sync::Once = std::sync::Once::new();
+    DONE.call_once(install_world_swap_once);
+}
+
+fn install_world_swap_once() {
     let was = ssx3_ee::get_override(GAME_MODULE_LOAD_WORLD)
         .or_else(|| ssx3_ee::generated_body(GAME_MODULE_LOAD_WORLD))
         .expect("event boot: no world load to wrap");
@@ -335,7 +342,7 @@ fn init_load_screen_update(c: &mut Cpu) {
     c.pc = back;
 }
 
-fn call(c: &mut Cpu, target: u32, args: &[u32], back: u32) -> Flow {
+pub(crate) fn call(c: &mut Cpu, target: u32, args: &[u32], back: u32) -> Flow {
     for (i, a) in args.iter().enumerate() {
         c.g[A0 + i][0] = sx(*a);
     }
@@ -343,14 +350,14 @@ fn call(c: &mut Cpu, target: u32, args: &[u32], back: u32) -> Flow {
 }
 
 /// `iface->commit()`: the `BEInterface` vtable (at +0xc) entry at +8.
-fn commit(c: &mut Cpu, iface: u32, back: u32) -> Flow {
+pub(crate) fn commit(c: &mut Cpu, iface: u32, back: u32) -> Flow {
     let vt = c.bus.read32(iface + 0xc);
     let delta = c.bus.read16(vt + 8) as i16 as i32;
     let f = c.bus.read32(vt + 0xc);
     call(c, f, &[iface.wrapping_add(delta as u32)], back)
 }
 
-fn interface(c: &mut Cpu, n: u32, back: u32) -> Result<u32, crate::call::Unwound> {
+pub(crate) fn interface(c: &mut Cpu, n: u32, back: u32) -> Result<u32, crate::call::Unwound> {
     call(c, BE_LIBRARY_GET_INSTANCE, &[], back)?;
     let lib = c.g[V0][0] as u32;
     call(c, BE_LIBRARY_GET_INTERFACE, &[lib, n], back)?;
