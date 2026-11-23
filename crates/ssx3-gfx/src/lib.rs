@@ -326,34 +326,35 @@ fn spawn_depth_thread(
                         // While the game waits for this depth, polled
                         // more often.
                         //
-                        // A map requested after the GPU had finished with
-                        // the buffer can go unanswered, even by a wait on
-                        // its submission: asked again every few
-                        // milliseconds it is answered. A map still pending after
-                        // `DEPTH_GIVE_UP` is given up: no depth for the
-                        // frame, not a game waiting for it.
+                        // A map the queue answers with "empty" and that is
+                        // still pending was lost (seen on the first frames
+                        // and on loading screens, where the readbacks come
+                        // back to back): asked again at once. A map still
+                        // pending after `DEPTH_GIVE_UP` is given up: no
+                        // depth for the frame, not a game waiting for it.
                         let mut mapped = map_depth(&buf, Some(std::thread::current()));
                         let state = |m: &Arc<std::sync::atomic::AtomicU8>| {
                             m.load(std::sync::atomic::Ordering::Acquire)
                         };
                         let t0 = web_time::Instant::now();
-                        let mut next_ask = DEPTH_ASK_AGAIN;
                         while state(&mapped) == MAP_PENDING {
-                            let waited = t0.elapsed();
-                            if waited > DEPTH_GIVE_UP {
+                            if t0.elapsed() > DEPTH_GIVE_UP {
                                 eprintln!("[gfx] depth of frame {frame}: the readback never completed");
                                 buf.unmap();
                                 break;
                             }
-                            if waited > next_ask {
-                                next_ask += DEPTH_ASK_AGAIN;
-                                buf.unmap();
-                                mapped = map_depth(&buf, Some(std::thread::current()));
-                            }
-                            let _ = dev.poll(wgpu::PollType::Poll);
+                            let idle = matches!(
+                                dev.poll(wgpu::PollType::Poll),
+                                Ok(wgpu::PollStatus::QueueEmpty)
+                            );
                             DEPTH_POLLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             if state(&mapped) != MAP_PENDING {
                                 break;
+                            }
+                            if idle {
+                                buf.unmap();
+                                mapped = map_depth(&buf, Some(std::thread::current()));
+                                continue;
                             }
                             let wanted =
                                 s.depth_wanted.load(std::sync::atomic::Ordering::Relaxed) > frame;
@@ -380,9 +381,7 @@ fn spawn_depth_thread(
 /// How often the depth thread looks for a readback the GPU may have
 /// finished since the last submit, and how often it did.
 const DEPTH_POLL: std::time::Duration = std::time::Duration::from_millis(1);
-/// How long a pending depth map waits before it is asked for again, and
-/// before it is given up.
-const DEPTH_ASK_AGAIN: std::time::Duration = std::time::Duration::from_millis(2);
+/// How long a pending depth map waits before it is given up.
 const DEPTH_GIVE_UP: std::time::Duration = std::time::Duration::from_millis(60);
 const DEPTH_POLL_WANTED: std::time::Duration = std::time::Duration::from_micros(100);
 static DEPTH_POLLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
