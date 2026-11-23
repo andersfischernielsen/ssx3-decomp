@@ -558,6 +558,7 @@ fn set_mode(c: &mut Cpu) {
     let mode = c.g[A1][0] as u32;
     if mode == 0 {
         SELECTED.store(NONE, Ordering::Relaxed);
+        crate::event_boot::end_plugin_event(c);
     }
     after(c, &SET_MODE_PREV, |c, back| sync_panels(c, this, mode, back));
 }
@@ -786,7 +787,7 @@ fn shutdown(c: &mut Cpu) {
 
 /// Leaving a world ends the plugin event: the next load is the game's own.
 fn quit_to_load_screen(c: &mut Cpu) {
-    crate::event_boot::set_world(None);
+    crate::event_boot::end_plugin_event(c);
     QUIT_PREV.call(c)
 }
 
@@ -798,7 +799,7 @@ fn on_widget_action(c: &mut Cpu) {
     let row = row_of(c, w);
     if row.is_none() && action == 5 {
         // A native accept: whatever it starts is not a plugin's event.
-        crate::event_boot::set_world(None);
+        crate::event_boot::end_plugin_event(c);
     }
     let Some(row) = row else {
         return ACTION.call(c);
@@ -923,6 +924,9 @@ fn start_event(c: &mut Cpu, this: u32, peak: usize, tab: usize, row: usize, back
     }
     // After the quit above, which ends the previous plugin event's world.
     crate::event_boot::set_world(Some(event.world.clone()));
+    if let Label::Ascii(name) = &event.label {
+        crate::event_boot::set_course_name(c, template.track, name);
+    }
     eprintln!("[plugin-menu] start {} (template {}, world {})", event.id, event.template, event.world);
     c.g[A0][0] = sx(this);
     call_ptr(c, HIDE_MAP_PIC, back)?;

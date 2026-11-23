@@ -187,6 +187,44 @@ pub fn set_world(world: Option<String>) {
     *WORLD.lock().unwrap() = world;
 }
 
+/// The course name a plugin event shows (loading screens, results) in place
+/// of its template course's: the record's name field (`+4`, 48 bytes), as it
+/// was before, and where.
+static NAME_SAVED: std::sync::Mutex<Option<(u32, [u8; NAME_FIELD])>> = std::sync::Mutex::new(None);
+const NAME_FIELD: usize = 48;
+
+/// Show `name` as the name of course `track` until [`restore_name`]; the
+/// course's own name is put back first (a second call replaces the first).
+pub fn set_course_name(c: &mut Cpu, track: u32, name: &str) {
+    restore_name(c);
+    let addr = COURSES + track.min(COURSE_COUNT - 1) * 100 + 4;
+    let mut old = [0u8; NAME_FIELD];
+    for (i, b) in old.iter_mut().enumerate() {
+        *b = c.bus.read8(addr + i as u32);
+    }
+    *NAME_SAVED.lock().unwrap() = Some((addr, old));
+    let bytes = name.as_bytes();
+    let n = bytes.len().min(NAME_FIELD - 1);
+    for i in 0..NAME_FIELD {
+        c.bus.write8(addr + i as u32, if i < n { bytes[i] } else { 0 });
+    }
+}
+
+/// The course's own name again (nothing to do when none was replaced).
+pub fn restore_name(c: &mut Cpu) {
+    if let Some((addr, old)) = NAME_SAVED.lock().unwrap().take() {
+        for (i, b) in old.iter().enumerate() {
+            c.bus.write8(addr + i as u32, *b);
+        }
+    }
+}
+
+/// The plugin event is over: the next world and names are the game's own.
+pub fn end_plugin_event(c: &mut Cpu) {
+    set_world(None);
+    restore_name(c);
+}
+
 /// Wrap the world load (once): needed by `SSX3_EVENT=<plugin>/<event>` and by
 /// plugin events started from the Select Peak screen.
 pub(crate) fn install_world_swap() {
@@ -315,6 +353,9 @@ fn init_load_screen_update(c: &mut Cpu) {
         PHASE.store(RACING, Ordering::Relaxed);
         return;
     };
+    if let Some(name) = plugin_event.as_ref().filter(|pe| pe.name_key.is_none()).and_then(|pe| pe.name.as_deref()) {
+        set_course_name(c, ev.track, &crate::game::fe::pluginmenu::clean_name(name));
+    }
     set_world(plugin_event.map(|pe| pe.world));
     eprintln!(
         "[event] booting into {}:{} (track {}, type {}){}",
