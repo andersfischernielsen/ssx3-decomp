@@ -30,18 +30,28 @@ pub struct Event {
     pub template: String,
     /// The location name the game loads (`data/worlds/<world>.big`).
     pub world: String,
+    /// The event may write the template's career record (opt-out of the
+    /// engine's career guard; manifest `career = true`).
+    pub career: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Catalog {
     pub peaks: Vec<Peak>,
     pub events: Vec<Event>,
+    /// What was left out and why (a world another plugin already uses): the
+    /// engine logs these at boot.
+    pub problems: Vec<String>,
 }
 
 impl Catalog {
     /// The peaks and events of the plugins that are ready, in plugin id order.
     pub fn from_found(found: &[Found]) -> Catalog {
         let mut c = Catalog::default();
+        // The world name space is global (`data/worlds/<world>.big`): the first
+        // plugin to use a name keeps it, a later plugin's events with it are
+        // left out (two plugins could not both be served from the overlay).
+        let mut worlds: std::collections::HashMap<String, String> = Default::default();
         for f in found.iter().filter(|f| f.status == Status::Ready) {
             let Some(m) = &f.manifest else { continue };
             let plugin = m.plugin.id.clone();
@@ -55,6 +65,20 @@ impl Catalog {
                 });
             }
             for e in &m.events {
+                let key = e.world.to_ascii_uppercase();
+                match worlds.get(&key) {
+                    Some(owner) if *owner != plugin => {
+                        c.problems.push(format!(
+                            "plugin {plugin}: event {:?} left out: world {:?} is already used by plugin {owner}",
+                            e.id, e.world
+                        ));
+                        continue;
+                    }
+                    Some(_) => {}
+                    None => {
+                        worlds.insert(key, plugin.clone());
+                    }
+                }
                 c.events.push(Event {
                     id: global(&e.id),
                     plugin: plugin.clone(),
@@ -64,6 +88,7 @@ impl Catalog {
                     kind: e.kind,
                     template: e.template.clone(),
                     world: e.world.clone(),
+                    career: e.career,
                 });
             }
         }
@@ -77,5 +102,36 @@ impl Catalog {
     /// The events listed under a peak.
     pub fn events_of<'a>(&'a self, peak: &'a str) -> impl Iterator<Item = &'a Event> + 'a {
         self.events.iter().filter(move |e| e.peak == peak)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::manifest::{self, Manifest};
+
+    fn found(id: &str, world: &str) -> Found {
+        let text = format!(
+            "[plugin]\nid = \"{id}\"\napi = \"0.1\"\n[[peak]]\nid = \"p\"\nname = \"P\"\n\
+             [[event]]\nid = \"e\"\npeak = \"p\"\nkind = \"race\"\ntemplate = \"ARA1\"\nworld = \"{world}\"\n"
+        );
+        let m: Manifest = manifest::parse(&text).unwrap();
+        Found {
+            id: id.to_string(),
+            dir: PathBuf::from(id),
+            content: PathBuf::from(id).join("content"),
+            manifest: Some(m),
+            disc: None,
+            status: Status::Ready,
+        }
+    }
+
+    #[test]
+    fn a_world_name_belongs_to_the_first_plugin_that_uses_it() {
+        let c = Catalog::from_found(&[found("a", "Alps"), found("b", "ALPS"), found("c", "other")]);
+        let ids: Vec<&str> = c.events.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, ["a/e", "c/e"]);
+        assert_eq!(c.problems.len(), 1);
+        assert!(c.problems[0].contains("plugin b") && c.problems[0].contains("plugin a"));
     }
 }

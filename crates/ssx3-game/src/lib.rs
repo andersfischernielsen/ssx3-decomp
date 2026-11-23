@@ -29,6 +29,8 @@ pub mod call;
 pub mod camera;
 /// Debug-only overrides behind environment switches.
 pub mod capture;
+/// `SSX3_EVENT`: boot straight into an event (a development aid).
+pub mod career_guard;
 #[cfg(feature = "chase")]
 pub mod chase;
 #[cfg(feature = "containers")]
@@ -38,7 +40,6 @@ pub mod debug;
 pub mod difftest;
 #[cfg(feature = "dispatch")]
 pub mod dispatch;
-/// `SSX3_EVENT`: boot straight into an event (a development aid).
 pub mod event_boot;
 pub mod events;
 /// The replacements, laid out like the C++ source tree (`src/<dir>/<unit>`).

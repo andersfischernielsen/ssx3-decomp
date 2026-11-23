@@ -43,8 +43,8 @@ const FE_SET_ONLINE_MODE: u32 = 0x001a_86e8;
 const BE_LIBRARY_GET_INSTANCE: u32 = 0x0014_dc80;
 const BE_LIBRARY_GET_INTERFACE: u32 = 0x0014_dd58;
 const BE_NEW_RACE_INT_SET_GAME_MODE: u32 = 0x0014_5108;
-const BE_NEW_RACE_INT_SET_EVENT_TYPE: u32 = 0x0014_4df0;
-const BE_NEW_RACE_INT_SET_EVENT: u32 = 0x0014_51e8;
+pub(crate) const BE_NEW_RACE_INT_SET_EVENT_TYPE: u32 = 0x0014_4df0;
+pub(crate) const BE_NEW_RACE_INT_SET_EVENT: u32 = 0x0014_51e8;
 const BE_NEW_PLAYER_INT_SET_CHARACTER: u32 = 0x0014_7338;
 const EA_MEM_ALLOC_NAMED: u32 = 0x0031_7d70;
 const EA_MEM_FREE: u32 = 0x0031_7e98;
@@ -122,6 +122,7 @@ pub fn install() {
             .unwrap_or_else(|| panic!("SSX3_RIDER: unknown rider {r:?} (one of {RIDERS:?})"))
     });
     let _ = CONFIG.set(Config { want, rider });
+    install_world_swap();
     let installed = crate::overrides();
     let inner = std::iter::once(INIT_LOAD_SCREEN_UPDATE)
         .chain(RACE_STARTED)
@@ -166,6 +167,122 @@ fn freeride_update(c: &mut Cpu) {
 
 fn race_started() {
     let _ = PHASE.compare_exchange(LOADING, RACING, Ordering::Relaxed, Ordering::Relaxed);
+}
+
+/// The world of the plugin event being played, swapped in for the template
+/// event's location name at the next world load.
+static WORLD: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+/// The location name the swap overwrote: its address and bytes.
+static SAVED: std::sync::Mutex<Option<(u32, [u8; 16])>> = std::sync::Mutex::new(None);
+static LOAD_WORLD_PREV: ssx3_plugin::hooks::Prev = ssx3_plugin::hooks::Prev::new();
+
+const GAME_MODULE_LOAD_WORLD: u32 = 0x0022_f6b0;
+/// The race record's location name field: 16 bytes.
+const NAME_LEN: usize = 16;
+const TRACK_INDEX: u32 = 0x0053_5c08;
+
+/// Play `world` (a folder under `data/worlds`) in the world loads from now
+/// on (every load swaps it in until it is cleared, so a restart that reloads
+/// keeps the plugin's world), or the course's own world with `None`. Whoever
+/// starts a native event after a plugin event must clear it.
+pub fn set_world(world: Option<String>) {
+    *WORLD.lock().unwrap() = world;
+}
+
+/// A plugin event is the one being played (its world is set): the career
+/// guard (`career_guard`) keys on this.
+pub fn plugin_event_active() -> bool {
+    WORLD.lock().unwrap().is_some()
+}
+
+/// The course name a plugin event shows (loading screens, results) in place
+/// of its template course's: the record's name field (`+4`, 48 bytes), as it
+/// was before, and where.
+static NAME_SAVED: std::sync::Mutex<Option<(u32, [u8; NAME_FIELD])>> = std::sync::Mutex::new(None);
+const NAME_FIELD: usize = 48;
+
+/// Show `name` as the name of course `track` until [`restore_name`]; the
+/// course's own name is put back first (a second call replaces the first).
+pub fn set_course_name(c: &mut Cpu, track: u32, name: &str) {
+    restore_name(c);
+    let addr = COURSES + track.min(COURSE_COUNT - 1) * 100 + 4;
+    let mut old = [0u8; NAME_FIELD];
+    for (i, b) in old.iter_mut().enumerate() {
+        *b = c.bus.read8(addr + i as u32);
+    }
+    *NAME_SAVED.lock().unwrap() = Some((addr, old));
+    let bytes = name.as_bytes();
+    let n = bytes.len().min(NAME_FIELD - 1);
+    for i in 0..NAME_FIELD {
+        c.bus
+            .write8(addr + i as u32, if i < n { bytes[i] } else { 0 });
+    }
+}
+
+/// The course's own name again (nothing to do when none was replaced).
+pub fn restore_name(c: &mut Cpu) {
+    if let Some((addr, old)) = NAME_SAVED.lock().unwrap().take() {
+        for (i, b) in old.iter().enumerate() {
+            c.bus.write8(addr + i as u32, *b);
+        }
+    }
+}
+
+/// The plugin event is over: the next world and names are the game's own.
+pub fn end_plugin_event(c: &mut Cpu) {
+    crate::career_guard::set_career_allowed(false);
+    crate::plugin_host::event_ended(c);
+    set_world(None);
+    restore_name(c);
+}
+
+/// Wrap the world load (once): needed by `SSX3_EVENT=<plugin>/<event>` and by
+/// plugin events started from the Select Peak screen.
+pub(crate) fn install_world_swap() {
+    static DONE: std::sync::Once = std::sync::Once::new();
+    DONE.call_once(install_world_swap_once);
+}
+
+fn install_world_swap_once() {
+    let was = ssx3_ee::get_override(GAME_MODULE_LOAD_WORLD)
+        .or_else(|| ssx3_ee::generated_body(GAME_MODULE_LOAD_WORLD))
+        .expect("event boot: no world load to wrap");
+    LOAD_WORLD_PREV.set_for_host(was);
+    assert!(ssx3_ee::set_override(GAME_MODULE_LOAD_WORLD, load_world));
+}
+
+/// Put the original location name back, then swap the next one in. Only at
+/// the function's entry: resumes inside it go straight on.
+fn load_world(c: &mut Cpu) {
+    if c.pc == GAME_MODULE_LOAD_WORLD {
+        if let Some((addr, old)) = SAVED.lock().unwrap().take() {
+            for (i, b) in old.iter().enumerate() {
+                c.bus.write8(addr + i as u32, *b);
+            }
+        }
+        if let Some(world) = WORLD.lock().unwrap().clone() {
+            let gp = c.g[GP][0] as u32;
+            let idx = c.bus.read32(TRACK_INDEX);
+            let field = if c.bus.read32(gp.wrapping_sub(0x1f38)) == 0 {
+                0x34
+            } else {
+                0x44
+            };
+            let addr = COURSES + idx * 100 + field;
+            let mut old = [0u8; NAME_LEN];
+            for (i, b) in old.iter_mut().enumerate() {
+                *b = c.bus.read8(addr + i as u32);
+            }
+            *SAVED.lock().unwrap() = Some((addr, old));
+            let mut name = [0u8; NAME_LEN];
+            let n = world.len().min(NAME_LEN - 1);
+            name[..n].copy_from_slice(&world.as_bytes()[..n]);
+            for (i, b) in name.iter().enumerate() {
+                c.bus.write8(addr + i as u32, *b);
+            }
+        }
+    }
+    LOAD_WORLD_PREV.call(c)
 }
 
 /// Every event of the event select tables, read from guest memory.
@@ -234,7 +351,12 @@ fn init_load_screen_update(c: &mut Cpu) {
         PHASE.store(RACING, Ordering::Relaxed);
         return;
     }
-    let Some(ev) = find(&all, &cfg.want) else {
+    let plugin_event = crate::plugin_host::catalog().event(&cfg.want).cloned();
+    let want = match &plugin_event {
+        Some(pe) => pe.template.as_str(),
+        None => cfg.want.as_str(),
+    };
+    let Some(ev) = find(&all, want) else {
         eprintln!(
             "[event] SSX3_EVENT={:?}: no such event (SSX3_EVENT=list lists them)",
             cfg.want
@@ -242,6 +364,15 @@ fn init_load_screen_update(c: &mut Cpu) {
         PHASE.store(RACING, Ordering::Relaxed);
         return;
     };
+    if let Some(name) = plugin_event
+        .as_ref()
+        .filter(|pe| pe.name_key.is_none())
+        .and_then(|pe| pe.name.as_deref())
+    {
+        set_course_name(c, ev.track, &crate::game::fe::pluginmenu::clean_name(name));
+    }
+    crate::career_guard::set_career_allowed(plugin_event.as_ref().is_some_and(|pe| pe.career));
+    set_world(plugin_event.map(|pe| pe.world));
     eprintln!(
         "[event] booting into {}:{} (track {}, type {}){}",
         ev.code,
@@ -268,7 +399,7 @@ fn init_load_screen_update(c: &mut Cpu) {
     c.pc = back;
 }
 
-fn call(c: &mut Cpu, target: u32, args: &[u32], back: u32) -> Flow {
+pub(crate) fn call(c: &mut Cpu, target: u32, args: &[u32], back: u32) -> Flow {
     for (i, a) in args.iter().enumerate() {
         c.g[A0 + i][0] = sx(*a);
     }
@@ -276,14 +407,14 @@ fn call(c: &mut Cpu, target: u32, args: &[u32], back: u32) -> Flow {
 }
 
 /// `iface->commit()`: the `BEInterface` vtable (at +0xc) entry at +8.
-fn commit(c: &mut Cpu, iface: u32, back: u32) -> Flow {
+pub(crate) fn commit(c: &mut Cpu, iface: u32, back: u32) -> Flow {
     let vt = c.bus.read32(iface + 0xc);
     let delta = c.bus.read16(vt + 8) as i16 as i32;
     let f = c.bus.read32(vt + 0xc);
     call(c, f, &[iface.wrapping_add(delta as u32)], back)
 }
 
-fn interface(c: &mut Cpu, n: u32, back: u32) -> Result<u32, crate::call::Unwound> {
+pub(crate) fn interface(c: &mut Cpu, n: u32, back: u32) -> Result<u32, crate::call::Unwound> {
     call(c, BE_LIBRARY_GET_INSTANCE, &[], back)?;
     let lib = c.g[V0][0] as u32;
     call(c, BE_LIBRARY_GET_INTERFACE, &[lib, n], back)?;

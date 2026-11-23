@@ -1279,7 +1279,7 @@ s01	00159818	0015999c	-	BERewardInt_AddPoints
 s01	001599a0	00159b04	o	BERewardInt_OnCollectibleCollected
 s01	00159b08	00159c68	o	BERewardInt_OnMissionCompleted
 s01	00159c68	00159cd0	-	BERewardInt_GrantRewardForRider
-s01	00159cd0	0015a2e0	-	BERewardInt_GrantReward
+s01	00159cd0	0015a2e0	o	BERewardInt_GrantReward
 s01	0015a2e0	0015a320	o	BERewardInt_IsRewardGranted
 s01	0015a320	0015a354	o	BERewardInt_TestGrantedBit
 s01	0015a358	0015a394	o	BERewardInt_SetGrantedBit
@@ -4308,7 +4308,7 @@ s06	002302a8	00230338	o	GameModule_QuickRestart
 s06	00230338	0023035c	o	GameModule_InvalidateFocus
 s06	00230360	0023042c	o	GameModule_OnSectionUnload
 s06	00230430	00230484	o	GameModule_CreateSectionScriptTable
-s06	00230488	00230558	-	GameModule_QuitToLoadScreen
+s06	00230488	00230558	o	GameModule_QuitToLoadScreen
 s06	00230558	002305c8	-	GameModule_BeginReplayPlayback
 s06	002305c8	0023063c	o	GameModule_EndReplayPlayback
 s06	00230640	00230698	o	GameModule_RenderProcessLists
