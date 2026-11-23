@@ -38,6 +38,8 @@ pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_4;
 pub(crate) use crate::game::fe::festatetrophyroom::r;
 pub(crate) use crate::game::fe::ovstates::at as at_6;
 pub(crate) use crate::game::fe::ovstates::close;
+use crate::game::lib::eafile::EA_BSS_HI;
+use crate::game::lib::eafile::EA_DATA_HI;
 pub(crate) use crate::game::main::gamemode::gpo;
 pub(crate) use crate::game::main::gamemode::low as low_3;
 pub(crate) use crate::game::main::gamemode::sp_2;
@@ -1261,6 +1263,35 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         fe_async_manager_update,
         "FEAsyncManager_Update",
     ),
+    (0x003d_ee70, async_file_pool_push, "AsyncFile_PoolPush"),
+    (0x003d_eed8, async_file_pool_pop, "AsyncFile_PoolPop"),
+    (0x003d_efc0, async_file_free, "AsyncFile_Free"),
+    (0x003d_f028, async_file_finish, "AsyncFile_Finish"),
+    (0x003d_f0b8, async_file_on_close, "AsyncFile_OnClose"),
+    (
+        0x003d_f0f0,
+        async_file_on_read_chunk,
+        "AsyncFile_OnReadChunk",
+    ),
+    (0x003d_f1e0, async_file_on_size, "AsyncFile_OnSize"),
+    (0x003d_f2c0, async_file_on_open, "AsyncFile_OnOpen"),
+    (
+        0x003d_f3c0,
+        async_file_on_read_range_chunk,
+        "AsyncFile_OnReadRangeChunk",
+    ),
+    (0x003d_f488, async_file_init, "AsyncFile_Init"),
+    (0x003d_f570, async_file_shutdown, "AsyncFile_Shutdown"),
+    (0x003d_f690, async_file_load, "AsyncFile_Load"),
+    (0x003d_f748, async_file_load_into, "AsyncFile_LoadInto"),
+    (0x003d_f808, async_file_read_range, "AsyncFile_ReadRange"),
+    (
+        0x003d_f8e8,
+        async_file_set_callback,
+        "AsyncFile_SetCallback",
+    ),
+    (0x003d_f9d8, async_file_get_result, "AsyncFile_GetResult"),
+    (0x003d_faf0, async_file_cancel, "AsyncFile_Cancel"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3482,6 +3513,44 @@ pub(crate) mod callee {
     pub const START_SCREEN_CTOR: Callee = Callee {
         addr: 0x0023_2ae0,
         f: ee::s06::StartScreen_ctor,
+    };
+    pub(crate) use crate::game::lib::eafile::callee::ASYNC_FILE_FINISH;
+    pub(crate) use crate::game::lib::eafile::callee::ASYNC_FILE_FREE;
+    pub(crate) use crate::game::lib::eafile::callee::ASYNC_FILE_POOL_PUSH;
+    pub(crate) use crate::game::lib::eafile::callee::EA_FILE_CANCEL_REQUEST;
+    pub(crate) use crate::game::lib::eafile::callee::EA_FILE_QUEUE_CLOSE;
+    pub(crate) use crate::game::lib::eafile::callee::EA_FILE_QUEUE_GET_SIZE;
+    pub(crate) use crate::game::lib::eafile::callee::EA_FILE_QUEUE_OPEN;
+    pub(crate) use crate::game::lib::eafile::callee::EA_FILE_QUEUE_READ;
+    pub(crate) use crate::game::lib::eafile::callee::EA_FILE_RELEASE_REQUEST;
+    pub(crate) use crate::game::lib::eafile::callee::EA_FILE_SET_REQUEST_CALLBACK;
+    pub(crate) use crate::game::lib::eafile::callee::EA_FILE_WAIT_REQUEST;
+    pub(crate) use crate::game::lib::eafile::callee::EA_MUTEX_LOCK;
+    pub(crate) use crate::game::lib::eafile::callee::EA_MUTEX_UNLOCK;
+    pub(crate) use crate::game::lib::eafile::callee::EA_THREAD_IS_CURRENT;
+    pub(crate) use crate::game::lib::eafile::callee::EA_THREAD_YIELD;
+    pub(crate) use crate::game::lib::eafile::callee::EA_TIMER_SERVICE_CALLBACKS;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::EA_MUTEX_DESTROY;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::EA_MUTEX_INIT;
+
+    pub(crate) const ASYNC_FILE_ASSIGN_SERIAL: Callee = Callee {
+        addr: 0x003d_ef40,
+        f: ee::s14::AsyncFile_AssignSerial,
+    };
+
+    pub(crate) const ASYNC_FILE_FROM_HANDLE: Callee = Callee {
+        addr: 0x003d_ef70,
+        f: ee::s14::AsyncFile_FromHandle,
+    };
+
+    pub(crate) const ASYNC_FILE_POOL_POP: Callee = Callee {
+        addr: 0x003d_eed8,
+        f: ee::s14::AsyncFile_PoolPop,
+    };
+
+    pub(crate) const ASYNC_FILE_CANCEL: Callee = Callee {
+        addr: 0x003d_faf0,
+        f: ee::s14::AsyncFile_Cancel,
     };
 }
 
@@ -18363,6 +18432,1322 @@ pub fn fe_async_manager_load_slot(c: &mut Cpu) {
     })
 }
 
+/// `void AsyncFile_PoolPush(pool, node)` (0x3dee70): appends `node` at the
+/// tail of the pool's list (`pool` = head, tail) under the pool mutex.
+pub fn async_file_pool_push(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = EA_BSS_HI;
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A1][0];
+        c.g[RA][0] = sx(0x003d_ee98);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x63f8));
+        callee::EA_MUTEX_LOCK.call(c, 0x003d_ee98)?;
+        c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+        let chained = c.g[V0][0] != 0;
+        if chained {
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+            c.cycles += 1;
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[S2][0]);
+        } else {
+            c.cycles += 2;
+            c.sw(c.g[S1][0] as u32, c.g[S2][0]);
+        }
+        // Shared tail: link the node second and unlock.
+        c.cycles += 10;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[S2][0]);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x63f8));
+        c.g[RA][0] = sx(0x003d_eec0);
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x4), 0);
+        callee::EA_MUTEX_UNLOCK.call(c, 0x003d_eec0)?;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u32 AsyncFile_PoolPop(pool)` (0x3deed8): unlinks and returns the head
+/// of the async pool under its mutex, or 0 when empty.
+pub fn async_file_pool_pop(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = EA_BSS_HI;
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x63f8));
+        frame.save(c, S0, 0x30);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x003d_ef00);
+        c.g[A0][0] = c.g[S2][0];
+        callee::EA_MUTEX_LOCK.call(c, 0x003d_ef00)?;
+        c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+        let empty = c.g[V0][0] == 0;
+        c.g[S0][0] = 0;
+        if !empty {
+            c.cycles += 3;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+            c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+        }
+        c.cycles += 9;
+        c.g[RA][0] = sx(0x003d_ef20);
+        c.g[A0][0] = c.g[S2][0];
+        callee::EA_MUTEX_UNLOCK.call(c, 0x003d_ef20)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AsyncFile_Free(block)` (0x3defc0): runs the block's free
+/// callback when its generation says so, then returns it to the pool.
+pub fn async_file_free(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = c.lbu(c.g[S0][0] as u32);
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+            c.g[V0][0] = (c.g[A0][0] < 0x2u64) as u64;
+            if c.g[V0][0] != 0 {
+                c.g[V0][0] = c.lbu(c.g[S0][0] as u32);
+            } else {
+                c.cycles += 5;
+                c.g[V1][0] = EA_DATA_HI;
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc18));
+                let free_cb = c.g[V0][0] as u32;
+                c.g[RA][0] = sx(0x003d_effc);
+                c.pc = free_cb;
+                call_ptr(c, free_cb, 0x003d_effc)?;
+                c.g[V0][0] = c.lbu(c.g[S0][0] as u32);
+            }
+        }
+        c.cycles += 10;
+        c.g[A0][0] = EA_BSS_HI;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), 0);
+        c.g[A1][0] = c.g[S0][0];
+        c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+        c.g[RA][0] = sx(0x003d_f018);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x6408));
+        callee::ASYNC_FILE_POOL_PUSH.call(c, 0x003d_f018)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AsyncFile_Finish(block)` (0x3df028): detaches a finished block
+/// and either frees it or runs its done callback.
+pub fn async_file_finish(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = EA_BSS_HI;
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x63f8));
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x003d_f054);
+        c.g[A0][0] = c.g[S0][0];
+        callee::EA_MUTEX_LOCK.call(c, 0x003d_f054)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x1c), 0);
+        c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+        c.g[S3][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+        c.g[RA][0] = sx(0x003d_f06c);
+        c.g[S2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+        callee::EA_MUTEX_UNLOCK.call(c, 0x003d_f06c)?;
+        let pending = c.g[S0][0] != 0;
+        if pending {
+            c.cycles += 2;
+            let queued = c.g[S2][0] != 0;
+            frame.restore(c, S0, 0x40);
+            if !queued {
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x003d_f084);
+                c.g[A0][0] = c.g[S1][0];
+                callee::ASYNC_FILE_FREE.call(c, 0x003d_f084)?;
+                frame.restore(c, S0, 0x40);
+            }
+        } else {
+            c.cycles += 2;
+            let done_cb = c.g[S3][0] != 0;
+            frame.restore(c, S0, 0x40);
+            if done_cb {
+                c.cycles += 3;
+                let t = c.g[S3][0] as u32;
+                c.g[RA][0] = sx(0x003d_f09c);
+                c.g[A0][0] = c.lw(c.g[S1][0] as u32);
+                c.pc = t;
+                call_ptr(c, t, 0x003d_f09c)?;
+                frame.restore(c, S0, 0x40);
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AsyncFile_OnClose(block)` (0x3df0b8): releases the close request
+/// and finishes the block.
+pub fn async_file_on_close(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A2][0];
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+        c.g[RA][0] = sx(0x003d_f0d4);
+        callee::EA_FILE_RELEASE_REQUEST.call(c, 0x003d_f0d4)?;
+        c.g[RA][0] = sx(0x003d_f0dc);
+        c.g[A0][0] = c.g[S0][0];
+        callee::ASYNC_FILE_FINISH.call(c, 0x003d_f0dc)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AsyncFile_OnReadChunk(block)` (0x3df0f0): releases the read
+/// request and either closes a short chunk or queues the next read.
+pub fn async_file_on_read_chunk(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A2][0];
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+        c.g[RA][0] = sx(0x003d_f10c);
+        callee::EA_FILE_RELEASE_REQUEST.call(c, 0x003d_f10c)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2c));
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+        c.g[V1][0] = 0x7fff;
+        c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[A1][0] as i64)) as u64;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), c.g[A2][0]);
+        let short = c.g[V1][0] == 0;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        // A long chunk with a clear flag queues the next read; every other
+        // shape closes the chunk (generated `break 'b_3df140` vs `break
+        // 'b_3df178` out of the flag block).
+        let mut close_chunk = short;
+        if !short {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+            if c.g[V0][0] == 0 {
+                c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x28));
+            } else {
+                close_chunk = true;
+            }
+        }
+        if close_chunk {
+            c.cycles += 8;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
+            c.g[A1][0] = 0x63;
+            c.g[RA][0] = sx(0x003d_f150);
+            c.g[A2][0] = c.g[S0][0];
+            callee::EA_FILE_QUEUE_CLOSE.call(c, 0x003d_f150)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+            if c.g[V0][0] == 0 {
+                frame.restore(c, S0, 0x10);
+            } else {
+                c.cycles += 6;
+                c.g[A1][0] = 0x3e0000;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                c.g[RA][0] = sx(0x003d_f170);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xf48));
+                callee::EA_FILE_SET_REQUEST_CALLBACK.call(c, 0x003d_f170)?;
+                frame.restore(c, S0, 0x10);
+            }
+        } else {
+            c.cycles += 17;
+            c.g[A3][0] = 0x8000;
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+            c.g[T0][0] = 0x63;
+            c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
+            c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[T1][0] as i64)) as u64;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            if c.g[V0][0] == 0 {
+                c.g[A3][0] = c.g[T1][0];
+            }
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[T1][0]);
+            c.g[A1][0] = c.g[V1][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x24), c.g[V1][0]);
+            c.g[RA][0] = sx(0x003d_f1ac);
+            c.g[T1][0] = c.g[S0][0];
+            callee::EA_FILE_QUEUE_READ.call(c, 0x003d_f1ac)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+            if c.g[V0][0] == 0 {
+                frame.restore(c, S0, 0x10);
+            } else {
+                c.cycles += 5;
+                c.g[A1][0] = 0x3e0000;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                c.g[RA][0] = sx(0x003d_f1cc);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xf10));
+                callee::EA_FILE_SET_REQUEST_CALLBACK.call(c, 0x003d_f1cc)?;
+                frame.restore(c, S0, 0x10);
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AsyncFile_OnSize(block)` (0x3df1e0): releases the size request
+/// and either closes a short block or queues the next read.
+pub fn async_file_on_size(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A2][0];
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+        c.g[RA][0] = sx(0x003d_f1fc);
+        callee::EA_FILE_RELEASE_REQUEST.call(c, 0x003d_f1fc)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+        let empty = c.g[V0][0] == 0;
+        if !empty {
+            c.cycles += 8;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
+            c.g[A1][0] = 0x63;
+            c.g[RA][0] = sx(0x003d_f21c);
+            c.g[A2][0] = c.g[S0][0];
+            callee::EA_FILE_QUEUE_CLOSE.call(c, 0x003d_f21c)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+            if c.g[V0][0] == 0 {
+                frame.restore(c, S0, 0x10);
+            } else {
+                c.cycles += 6;
+                c.g[A1][0] = 0x3e0000;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                c.g[RA][0] = sx(0x003d_f23c);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xf48));
+                callee::EA_FILE_SET_REQUEST_CALLBACK.call(c, 0x003d_f23c)?;
+                frame.restore(c, S0, 0x10);
+            }
+        } else {
+            c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x28));
+            c.cycles += 22;
+            c.g[V1][0] = EA_DATA_HI;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[A1][0]);
+            c.g[A0][0] = 0x490000;
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc14));
+            let alloc_cb = c.g[V0][0] as u32;
+            c.g[RA][0] = sx(0x003d_f25c);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5da8));
+            c.pc = alloc_cb;
+            call_ptr(c, alloc_cb, 0x003d_f25c)?;
+            c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x28));
+            c.g[A3][0] = 0x8000;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
+            c.g[T0][0] = 0x63;
+            c.g[V1][0] = ((c.g[A3][0] as i64) < (c.g[A2][0] as i64)) as u64;
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+            if c.g[V1][0] == 0 {
+                c.g[A3][0] = c.g[A2][0];
+            }
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+            c.g[A2][0] = c.g[V0][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), c.g[V0][0]);
+            c.g[RA][0] = sx(0x003d_f28c);
+            c.g[T1][0] = c.g[S0][0];
+            callee::EA_FILE_QUEUE_READ.call(c, 0x003d_f28c)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+            if c.g[V0][0] == 0 {
+                frame.restore(c, S0, 0x10);
+            } else {
+                c.cycles += 5;
+                c.g[A1][0] = 0x3e0000;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                c.g[RA][0] = sx(0x003d_f2ac);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xf10));
+                callee::EA_FILE_SET_REQUEST_CALLBACK.call(c, 0x003d_f2ac)?;
+                frame.restore(c, S0, 0x10);
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AsyncFile_OnOpen(block)` (0x3df2c0): releases the open request
+/// and either finishes a failed open or chains close/size/read steps.
+pub fn async_file_on_open(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A2][0];
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+        c.g[RA][0] = sx(0x003d_f2dc);
+        callee::EA_FILE_RELEASE_REQUEST.call(c, 0x003d_f2dc)?;
+        c.g[A0][0] = c.g[V0][0];
+        let failed = c.g[A0][0] != 0;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[A0][0]);
+        if !failed {
+            c.cycles += 4;
+            c.g[RA][0] = sx(0x003d_f2f0);
+            c.g[A0][0] = c.g[S0][0];
+            callee::ASYNC_FILE_FINISH.call(c, 0x003d_f2f0)?;
+            frame.restore(c, S0, 0x10);
+        } else {
+            // Only an unflagged, chained block reaches the size query; the
+            // close and read arms go straight to the epilogue whatever
+            // their queue result (generated `break 'b_3df3b4`).
+            let mut done = false;
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+            let empty = c.g[V0][0] == 0;
+            c.g[A1][0] = 0x63;
+            if !empty {
+                c.cycles += 6;
+                c.g[RA][0] = sx(0x003d_f30c);
+                c.g[A2][0] = c.g[S0][0];
+                callee::EA_FILE_QUEUE_CLOSE.call(c, 0x003d_f30c)?;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                if c.g[V0][0] != 0 {
+                    c.cycles += 6;
+                    c.g[A1][0] = 0x3e0000;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                    c.g[RA][0] = sx(0x003d_f32c);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xf48));
+                    callee::EA_FILE_SET_REQUEST_CALLBACK.call(c, 0x003d_f32c)?;
+                }
+                frame.restore(c, S0, 0x10);
+                done = true;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                let chained = c.g[V0][0] != 0;
+                c.g[A3][0] = 0x8000;
+                if !chained {
+                    c.cycles += 12;
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x28));
+                    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+                    c.g[T0][0] = 0x63;
+                    c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2c));
+                    if c.g[V0][0] == 0 {
+                        c.g[A3][0] = c.g[V1][0];
+                    }
+                    c.g[RA][0] = sx(0x003d_f360);
+                    c.g[T1][0] = c.g[S0][0];
+                    callee::EA_FILE_QUEUE_READ.call(c, 0x003d_f360)?;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 6;
+                        c.g[A1][0] = 0x3e0000;
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                        c.g[RA][0] = sx(0x003d_f380);
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xf10));
+                        callee::EA_FILE_SET_REQUEST_CALLBACK.call(c, 0x003d_f380)?;
+                    }
+                    frame.restore(c, S0, 0x10);
+                    done = true;
+                }
+            }
+            // Chain the size query after the open steps.
+            if !done {
+                c.cycles += 6;
+                c.g[RA][0] = sx(0x003d_f390);
+                c.g[A2][0] = c.g[S0][0];
+                callee::EA_FILE_QUEUE_GET_SIZE.call(c, 0x003d_f390)?;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                if c.g[V0][0] == 0 {
+                    frame.restore(c, S0, 0x10);
+                } else {
+                    c.cycles += 5;
+                    c.g[A1][0] = 0x3e0000;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                    c.g[RA][0] = sx(0x003d_f3b0);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xe20));
+                    callee::EA_FILE_SET_REQUEST_CALLBACK.call(c, 0x003d_f3b0)?;
+                    frame.restore(c, S0, 0x10);
+                }
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AsyncFile_OnReadRangeChunk(block)` (0x3df3c0): releases the read
+/// request and queues the next range chunk, or finishes short chunks.
+pub fn async_file_on_read_range_chunk(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A2][0];
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+        c.g[RA][0] = sx(0x003d_f3dc);
+        callee::EA_FILE_RELEASE_REQUEST.call(c, 0x003d_f3dc)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x2c));
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+        c.g[V1][0] = 0x7fff;
+        c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[A1][0] as i64)) as u64;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), c.g[A2][0]);
+        let short = c.g[V1][0] == 0;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        // Short chunks and live-flagged long chunks both finish the block;
+        // only cleared long chunks queue the next range read.
+        let mut finished = short;
+        if !short {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+            if c.g[V0][0] != 0 {
+                finished = true;
+            } else {
+                c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x28));
+            }
+        }
+        if finished {
+            c.cycles += 4;
+            c.g[RA][0] = sx(0x003d_f418);
+            c.g[A0][0] = c.g[S0][0];
+            callee::ASYNC_FILE_FINISH.call(c, 0x003d_f418)?;
+            frame.restore(c, S0, 0x10);
+        } else {
+            // Long chunk, cleared flag: queue the next range read.
+            c.cycles += 17;
+            c.g[A3][0] = 0x8000;
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+            c.g[T0][0] = 0x63;
+            c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
+            c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[T1][0] as i64)) as u64;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            if c.g[V0][0] == 0 {
+                c.g[A3][0] = c.g[T1][0];
+            }
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[T1][0]);
+            c.g[A1][0] = c.g[V1][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x24), c.g[V1][0]);
+            c.g[RA][0] = sx(0x003d_f454);
+            c.g[T1][0] = c.g[S0][0];
+            callee::EA_FILE_QUEUE_READ.call(c, 0x003d_f454)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+            if c.g[V0][0] == 0 {
+                frame.restore(c, S0, 0x10);
+            } else {
+                c.cycles += 5;
+                c.g[A1][0] = 0x3e0000;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                c.g[RA][0] = sx(0x003d_f474);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xc40));
+                callee::EA_FILE_SET_REQUEST_CALLBACK.call(c, 0x003d_f474)?;
+                frame.restore(c, S0, 0x10);
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AsyncFile_Init(count, alloc_arg)` (0x3df488): unless already
+/// initialized, allocates `count` (at most 256) 0x30-byte blocks through
+/// the allocator hook (`alloc_arg` its third argument), links them into the
+/// free pool and initializes the pool mutex.
+pub fn async_file_init(c: &mut Cpu) {
+    guest(c, |c| {
+        const HEAD: u32 = 0x003d_f520;
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = EA_DATA_HI;
+        frame.save(c, S1, 0x20);
+        c.g[A2][0] = c.g[A1][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc34));
+        c.g[S2][0] = c.g[V0][0];
+        frame.save(c, S0, 0x30);
+        let initialized = c.g[V1][0] != 0;
+        frame.save_ra(c, 0);
+        if !initialized {
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[S1][0] as i64) < 257) as u64;
+            let skip = c.g[V0][0] == 0;
+            c.g[S0][0] = 0x30;
+            if !skip {
+                c.cycles += 21;
+                c.g[V1][0] = EA_DATA_HI;
+                c.mult(0, 16, 17, 16);
+                c.g[A1][0] = EA_BSS_HI;
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc14));
+                c.g[A0][0] = 0x490000;
+                c.sw((c.g[A1][0] as u32).wrapping_sub(0x6410), c.g[S1][0]);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5db8));
+                let alloc = c.g[V0][0] as u32;
+                c.g[RA][0] = sx(0x003d_f4e4);
+                c.g[A1][0] = c.g[S0][0];
+                c.pc = alloc;
+                call_ptr(c, alloc, 0x003d_f4e4)?;
+                c.g[A1][0] = EA_BSS_HI;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x30));
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x6408));
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[S0][0]);
+                c.g[A0][0] = EA_BSS_HI;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x63f8));
+                c.sw((c.g[A1][0] as u32).wrapping_sub(0x6408), c.g[V0][0]);
+                c.g[RA][0] = sx(0x003d_f50c);
+                c.sw((c.g[S2][0] as u32).wrapping_add(0xc34), c.g[V0][0]);
+                callee::EA_MUTEX_INIT.call(c, 0x003d_f50c)?;
+                let no_handles = (c.g[S1][0] as i64) <= 0;
+                c.g[A0][0] = 0;
+                if !no_handles {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc34));
+                    c.g[V1][0] = c.g[V0][0];
+                    c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x30));
+                    'l_3df520: loop {
+                        c.cycles += 8;
+                        c.sw(c.g[V1][0] as u32, c.g[A0][0]);
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[A1][0]);
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        c.sw((c.g[V1][0] as u32).wrapping_add(0x1c), 0);
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x30));
+                        c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                        let more = c.g[V0][0] != 0;
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
+                        if more {
+                            if event_due(c) {
+                                deliver_event_here(c, HEAD);
+                            }
+                            continue 'l_3df520;
+                        }
+                        break;
+                    }
+                }
+                c.cycles += 5;
+                c.g[V0][0] = 0x30;
+                c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc34));
+                c.mult(0, 2, 17, 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.sw((c.g[V0][0] as u32).wrapping_sub(0x2c), 0);
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AsyncFile_Shutdown()` (0x3df570): cancels every async block, then,
+/// while any block still has a live request, services the timer callbacks
+/// (on the current thread) and yields; then frees the pool and destroys its
+/// mutex. Does nothing without a pool.
+pub fn async_file_shutdown(c: &mut Cpu) {
+    guest(c, |c| {
+        const HEAD_CANCEL: u32 = 0x003d_f5b8;
+        const HEAD_DRAIN: u32 = 0x003d_f5e8;
+        const HEAD_INNER: u32 = 0x003d_f600;
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x60);
+        c.g[V1][0] = EA_DATA_HI;
+        frame.save(c, S3, 0x20);
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc34));
+        c.g[S3][0] = c.g[V1][0];
+        frame.save(c, S2, 0x30);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        let idle = c.g[V0][0] == 0;
+        if !idle {
+            c.cycles += 5;
+            c.g[V1][0] = EA_BSS_HI;
+            c.g[S0][0] = 0;
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x6410));
+            let empty = (c.g[V0][0] as i64) <= 0;
+            c.g[S2][0] = c.g[V1][0];
+            if !empty {
+                c.cycles += 2;
+                c.g[S1][0] = 0;
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc34));
+                'l_3df5b8: loop {
+                    c.cycles += 9;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                    c.g[RA][0] = sx(0x003d_f5cc);
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x30));
+                    callee::ASYNC_FILE_CANCEL.call(c, 0x003d_f5cc)?;
+                    c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_sub(0x6410));
+                    c.g[V1][0] = ((c.g[S0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    let more = c.g[V1][0] != 0;
+                    c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc34));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, HEAD_CANCEL);
+                        }
+                        continue 'l_3df5b8;
+                    }
+                    break;
+                }
+            }
+            c.cycles += 3;
+            c.g[S4][0] = EA_BSS_HI;
+            c.g[S1][0] = EA_DATA_HI;
+            c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_sub(0x6410));
+            loop {
+                c.cycles += 2;
+                let drained = (c.g[V0][0] as i64) <= 0;
+                c.g[A0][0] = 0;
+                if !drained {
+                    // Scan the blocks: A0 = 1 while any request is live.
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc34));
+                    c.g[A1][0] = 0x1;
+                    c.g[S0][0] = c.lw((c.g[S2][0] as u32).wrapping_sub(0x6410));
+                    'l_3df600: loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
+                        let more = c.g[S0][0] != 0;
+                        if c.g[V0][0] != 0 {
+                            c.g[A0][0] = c.g[A1][0];
+                        }
+                        if more {
+                            if event_due(c) {
+                                deliver_event_here(c, HEAD_INNER);
+                            }
+                            continue 'l_3df600;
+                        }
+                        break;
+                    }
+                }
+                c.cycles += 2;
+                let idle = c.g[A0][0] == 0;
+                c.g[V1][0] = EA_DATA_HI;
+                if idle {
+                    break;
+                }
+                // Busy: service the timers when on the current thread, then
+                // yield and look again.
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x003d_f62c);
+                c.g[A0][0] = 0;
+                callee::EA_THREAD_IS_CURRENT.call(c, 0x003d_f62c)?;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 2;
+                    c.g[RA][0] = sx(0x003d_f63c);
+                    c.g[A0][0] = 0;
+                    callee::EA_TIMER_SERVICE_CALLBACKS.call(c, 0x003d_f63c)?;
+                }
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x003d_f644);
+                c.g[A0][0] = 0;
+                callee::EA_THREAD_YIELD.call(c, 0x003d_f644)?;
+                c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_sub(0x6410));
+                if event_due(c) {
+                    deliver_event_here(c, HEAD_DRAIN);
+                }
+            }
+            c.cycles += 8;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xc10));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+            let free_cb = c.g[V0][0] as u32;
+            c.g[RA][0] = sx(0x003d_f65c);
+            c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc34));
+            c.pc = free_cb;
+            call_ptr(c, free_cb, 0x003d_f65c)?;
+            c.g[A0][0] = EA_BSS_HI;
+            c.g[RA][0] = sx(0x003d_f668);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x63f8));
+            callee::EA_MUTEX_DESTROY.call(c, 0x003d_f668)?;
+            c.sw((c.g[S3][0] as u32).wrapping_add(0xc34), 0);
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u32 AsyncFile_Load(path, a1)` (0x3df690): pops a pool block, assigns
+/// it a serial and queues the open of a load into an allocated buffer
+/// (`a1` in `+0x28`); returns the block's handle, or 0 when the pool is
+/// empty or the open cannot be queued.
+pub fn async_file_load(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S2, 0x10);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x20);
+        c.g[A0][0] = EA_BSS_HI;
+        frame.save(c, S0, 0x30);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[RA][0] = sx(0x003d_f6b8);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x6408));
+        callee::ASYNC_FILE_POOL_POP.call(c, 0x003d_f6b8)?;
+        c.g[S0][0] = c.g[V0][0];
+        let empty = c.g[S0][0] == 0;
+        c.g[V0][0] = 0;
+        if !empty {
+            c.cycles += 20;
+            c.g[RA][0] = sx(0x003d_f6cc);
+            c.g[A0][0] = c.g[S0][0];
+            callee::ASYNC_FILE_ASSIGN_SERIAL.call(c, 0x003d_f6cc)?;
+            c.g[V0][0] = 0x1;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[S1][0]);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x8), 0);
+            c.g[A0][0] = c.g[S2][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0);
+            c.g[A1][0] = 0x1;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0);
+            c.g[A2][0] = 0x64;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x18), 0);
+            c.g[A3][0] = c.g[S0][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x24), 0);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), 0);
+            c.g[RA][0] = sx(0x003d_f704);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+            callee::EA_FILE_QUEUE_OPEN.call(c, 0x003d_f704)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+            let queued = c.g[V0][0] != 0;
+            c.g[A1][0] = 0x3e0000;
+            if queued {
+                c.cycles += 5;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                c.g[RA][0] = sx(0x003d_f720);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xd40));
+                callee::EA_FILE_SET_REQUEST_CALLBACK.call(c, 0x003d_f720)?;
+                c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+            } else {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u32 AsyncFile_LoadInto(path, buffer, size)` (0x3df748): like Load but
+/// into the caller's `buffer` (`+0x2c`) of `size` bytes (`+0x28`); returns
+/// the block's handle, or 0.
+pub fn async_file_load_into(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S3, 0x10);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[A0][0] = EA_BSS_HI;
+        frame.save(c, S0, 0x40);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        c.g[RA][0] = sx(0x003d_f778);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x6408));
+        callee::ASYNC_FILE_POOL_POP.call(c, 0x003d_f778)?;
+        c.g[S0][0] = c.g[V0][0];
+        let empty = c.g[S0][0] == 0;
+        c.g[V0][0] = 0;
+        if !empty {
+            c.cycles += 19;
+            c.g[RA][0] = sx(0x003d_f78c);
+            c.g[A0][0] = c.g[S0][0];
+            callee::ASYNC_FILE_ASSIGN_SERIAL.call(c, 0x003d_f78c)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[S1][0]);
+            c.g[A0][0] = c.g[S3][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), c.g[S2][0]);
+            c.g[A1][0] = 0x1;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x8), 0);
+            c.g[A2][0] = 0x64;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0);
+            c.g[A3][0] = c.g[S0][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), 0);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x18), 0);
+            c.g[RA][0] = sx(0x003d_f7c0);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x24), 0);
+            callee::EA_FILE_QUEUE_OPEN.call(c, 0x003d_f7c0)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+            let queued = c.g[V0][0] != 0;
+            c.g[A1][0] = 0x3e0000;
+            if queued {
+                c.cycles += 5;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                c.g[RA][0] = sx(0x003d_f7dc);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xd40));
+                callee::EA_FILE_SET_REQUEST_CALLBACK.call(c, 0x003d_f7dc)?;
+                c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+            } else {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u32 AsyncFile_ReadRange(file, offset, buffer, length)` (0x3df808):
+/// pops a block, assigns it and queues the first read (at most 0x8000
+/// bytes) of `length` bytes at `offset` into `buffer`; returns the block's
+/// handle, or 0 when the pool is empty or the read cannot be queued.
+pub fn async_file_read_range(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S2, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x40);
+        frame.save(c, S3, 0x20);
+        c.g[A0][0] = EA_BSS_HI;
+        frame.save(c, S0, 0x50);
+        frame.save(c, S4, 0x10);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S4][0] = c.g[A2][0];
+        c.g[S1][0] = c.g[A3][0];
+        c.g[RA][0] = sx(0x003d_f840);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x6408));
+        callee::ASYNC_FILE_POOL_POP.call(c, 0x003d_f840)?;
+        c.g[S0][0] = c.g[V0][0];
+        let empty = c.g[S0][0] == 0;
+        c.g[V0][0] = 0;
+        if !empty {
+            c.cycles += 24;
+            c.g[RA][0] = sx(0x003d_f854);
+            c.g[A0][0] = c.g[S0][0];
+            callee::ASYNC_FILE_ASSIGN_SERIAL.call(c, 0x003d_f854)?;
+            c.g[A3][0] = 0x8000;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x8), 0);
+            c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[S1][0] as i64)) as u64;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0);
+            if c.g[V0][0] == 0 {
+                c.g[A3][0] = c.g[S1][0];
+            }
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), 0);
+            c.g[A0][0] = c.g[S2][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+            c.g[A1][0] = c.g[S3][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x18), 0);
+            c.g[A2][0] = c.g[S4][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x24), c.g[S3][0]);
+            c.g[T0][0] = 0x64;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[S1][0]);
+            c.g[T1][0] = c.g[S0][0];
+            c.g[RA][0] = sx(0x003d_f89c);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), c.g[S4][0]);
+            callee::EA_FILE_QUEUE_READ.call(c, 0x003d_f89c)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+            let queued = c.g[V0][0] != 0;
+            c.g[A1][0] = 0x3e0000;
+            if queued {
+                c.cycles += 5;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                c.g[RA][0] = sx(0x003d_f8b8);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xc40));
+                callee::EA_FILE_SET_REQUEST_CALLBACK.call(c, 0x003d_f8b8)?;
+                c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+            } else {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AsyncFile_SetCallback(handle, fn)` (0x3df8e8): gives a block
+/// without one the done callback `fn` (under the pool mutex) and calls
+/// `fn(handle)` at once when no request is pending.
+pub fn async_file_set_callback(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S3, 0x20);
+        frame.save(c, S4, 0x10);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S2, 0x30);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S0, 0x50);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x003d_f910);
+        c.g[S4][0] = c.g[A1][0];
+        callee::ASYNC_FILE_FROM_HANDLE.call(c, 0x003d_f910)?;
+        c.g[S2][0] = c.g[V0][0];
+        let missing = c.g[S2][0] == 0;
+        frame.restore(c, S0, 0x50);
+        // The live-callback path jumps straight to the epilogue; the
+        // others share the +1/S1-restore tail.
+        let mut direct = false;
+        if !missing {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x18));
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S1, 0x40);
+                direct = true;
+            } else {
+                c.cycles += 11;
+                c.g[S0][0] = EA_BSS_HI;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x63f8));
+                c.g[RA][0] = sx(0x003d_f938);
+                c.g[A0][0] = c.g[S0][0];
+                callee::EA_MUTEX_LOCK.call(c, 0x003d_f938)?;
+                c.g[S1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x1c));
+                c.g[A0][0] = c.g[S0][0];
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x18), c.g[S4][0]);
+                c.g[RA][0] = sx(0x003d_f94c);
+                c.g[S1][0] = (c.g[S1][0] < 0x1) as u64;
+                callee::EA_MUTEX_UNLOCK.call(c, 0x003d_f94c)?;
+                let armed = c.g[S1][0] != 0;
+                frame.restore(c, S0, 0x50);
+                if armed {
+                    c.cycles += 3;
+                    let user_cb = c.g[S4][0] as u32;
+                    c.g[RA][0] = sx(0x003d_f95c);
+                    c.g[A0][0] = c.g[S3][0];
+                    c.pc = user_cb;
+                    call_ptr(c, user_cb, 0x003d_f95c)?;
+                    frame.restore(c, S0, 0x50);
+                }
+            }
+        }
+        if !direct {
+            c.cycles += 1;
+            frame.restore(c, S1, 0x40);
+        }
+        c.cycles += 6;
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int AsyncFile_GetResult(handle, data_out, size_out)` (0x3df9d8): for
+/// a block not cancelled (`+0x10` clear), waits while its request is live,
+/// then reports the loaded data's start and size through the non-null out
+/// pointers and frees the block (1); a block cancelled meanwhile gets zeroed
+/// outs and is freed (-1). -1 too for an unknown or cancelled handle.
+pub fn async_file_get_result(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = EA_BSS_HI;
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S4, 0x10);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x003d_fa0c);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x63f8));
+        callee::EA_MUTEX_LOCK.call(c, 0x003d_fa0c)?;
+        c.g[S4][0] = 0;
+        c.g[RA][0] = sx(0x003d_fa18);
+        c.g[A0][0] = c.g[S1][0];
+        callee::ASYNC_FILE_FROM_HANDLE.call(c, 0x003d_fa18)?;
+        c.g[S1][0] = c.g[V0][0];
+        // Fast classification: missing handle or live block returns now.
+        if c.g[S1][0] != 0 {
+            c.cycles += 3;
+            c.g[S4][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+            c.g[V0][0] = 0x1;
+            if c.g[S4][0] == 0 {
+                c.cycles += 1;
+                c.sw((c.g[S1][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+            }
+        }
+        'b_3dfad4: {
+            'b_3dfad0: {
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x003d_fa3c);
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x63f8));
+                callee::EA_MUTEX_UNLOCK.call(c, 0x003d_fa3c)?;
+                c.g[V0][0] = 0xffffffffffffffff;
+                if c.g[S1][0] == 0 {
+                    break 'b_3dfad0;
+                }
+                c.cycles += 2;
+                if c.g[S4][0] != 0 {
+                    frame.restore(c, S0, 0x50);
+                    break 'b_3dfad4;
+                }
+                // The request is live: wait for its word, then report.
+                const HEAD: u32 = 0x003d_fa58;
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                if c.g[V0][0] == 0 {
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                } else {
+                    loop {
+                        c.cycles += 6;
+                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                        c.g[RA][0] = sx(0x003d_fa64);
+                        callee::EA_FILE_WAIT_REQUEST.call(c, 0x003d_fa64)?;
+                        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                        if c.g[V1][0] == 0 {
+                            c.cycles += 1;
+                            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, HEAD);
+                        }
+                    }
+                }
+                c.cycles += 2;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 2;
+                    if c.g[S2][0] != 0 {
+                        c.sw(c.g[S2][0] as u32, 0);
+                    }
+                    c.cycles += 2;
+                    if c.g[S3][0] != 0 {
+                        c.sw(c.g[S3][0] as u32, 0);
+                    }
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x003d_fa94);
+                    c.g[A0][0] = c.g[S1][0];
+                    callee::ASYNC_FILE_FREE.call(c, 0x003d_fa94)?;
+                    c.g[V0][0] = 0xffffffffffffffff;
+                    break 'b_3dfad0;
+                }
+                c.cycles += 2;
+                let has_out = c.g[S2][0] != 0;
+                if has_out {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x2c));
+                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                    c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+                }
+                c.cycles += 2;
+                let has_size = c.g[S3][0] != 0;
+                if has_size {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.sw(c.g[S3][0] as u32, c.g[V0][0]);
+                }
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x003d_facc);
+                c.g[A0][0] = c.g[S1][0];
+                callee::ASYNC_FILE_FREE.call(c, 0x003d_facc)?;
+                c.g[V0][0] = 0x1;
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x50);
+        }
+        c.cycles += 7;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u32 AsyncFile_Cancel(handle)` (0x3dfaf0): cancels a queued request;
+/// 1 if the handle was live, the block itself if it was stale with a
+/// result pending, 0xffffffff when unknown.
+pub fn async_file_cancel(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = EA_BSS_HI;
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x63f8));
+        frame.save(c, S4, 0x10);
+        c.g[S3][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x003d_fb24);
+        c.g[S4][0] = 0;
+        callee::EA_MUTEX_LOCK.call(c, 0x003d_fb24)?;
+        c.g[S2][0] = 0;
+        c.g[RA][0] = sx(0x003d_fb30);
+        c.g[A0][0] = c.g[S0][0];
+        callee::ASYNC_FILE_FROM_HANDLE.call(c, 0x003d_fb30)?;
+        c.g[S0][0] = c.g[V0][0];
+        // Fast path out: unknown handle keeps V0 zero; a live block is
+        // marked done; a stale block with no result pending is freed.
+        let mut done = c.g[S0][0] == 0;
+        if !done {
+            c.cycles += 4;
+            c.g[S3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+            c.g[S4][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+            let live = c.g[S3][0] != 0;
+            c.g[S2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+            if !live {
+                c.cycles += 2;
+                done = c.g[S2][0] != 0;
+            }
+        }
+        if !done {
+            c.cycles += 2;
+            c.g[V0][0] = 0x1;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+        }
+        c.cycles += 4;
+        c.g[RA][0] = sx(0x003d_fb64);
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x63f8));
+        callee::EA_MUTEX_UNLOCK.call(c, 0x003d_fb64)?;
+        // The live-done path jumps straight to the epilogue; every other
+        // path runs the +1/S0-restore tail first.
+        let mut skip_tail = false;
+        if c.g[S0][0] == 0 {
+            c.g[V0][0] = 0xffffffffffffffff;
+        } else {
+            c.cycles += 2;
+            if c.g[S4][0] != 0 {
+                frame.restore(c, S0, 0x50);
+                c.g[V0][0] = 0xffffffffffffffff;
+                skip_tail = true;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                let finished = c.g[V0][0] == 0;
+                c.g[V0][0] = 0xffffffffffffffff;
+                if !finished {
+                    c.cycles += 2;
+                    let queued = c.g[S3][0] == 0;
+                    if !queued {
+                        c.cycles += 4;
+                        c.g[RA][0] = sx(0x003d_fb90);
+                        c.g[A0][0] = c.g[S3][0];
+                        callee::EA_FILE_CANCEL_REQUEST.call(c, 0x003d_fb90)?;
+                        c.g[V0][0] = 0x1;
+                    } else {
+                        c.cycles += 2;
+                        let done = c.g[S2][0] != 0;
+                        c.g[V0][0] = 0x1;
+                        if !done {
+                            c.cycles += 3;
+                            c.g[RA][0] = sx(0x003d_fba8);
+                            c.g[A0][0] = c.g[S0][0];
+                            callee::ASYNC_FILE_FREE.call(c, 0x003d_fba8)?;
+                            c.g[V0][0] = 0x1;
+                        }
+                    }
+                }
+            }
+        }
+        if !skip_tail {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x50);
+        }
+        c.cycles += 7;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -18370,6 +19755,10 @@ pub(crate) mod tests {
     use crate::difftest::check_lohi;
     use crate::difftest::compare;
     use crate::difftest::elf_image;
+    pub(crate) use crate::game::lib::eafile::tests::ea_fixed_results;
+    pub(crate) use crate::game::lib::eafile::tests::ea_install_fakes;
+    pub(crate) use crate::game::lib::eafile::tests::ea_set_type_rets;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_RET_FH;
 
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
@@ -18466,6 +19855,18 @@ pub(crate) mod tests {
 
     pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS_4;
 
+    use crate::difftest::check_paths;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    pub(crate) use crate::game::lib::eafile::tests::put_ascii;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_CTRL;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_MAGIC;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_REQ;
+    use crate::game::lib::eafile::tests::EAF_RET_QCLOSE;
+    use crate::game::lib::eafile::tests::EAF_RET_QREAD;
+    use crate::game::lib::eafile::tests::EAF_RET_RELEASE;
+    pub(crate) use crate::game::lib::eafile::tests::EAF_RET_SETCB;
     use ssx3_ee as ee;
     use ssx3_ee_rt::funcs::GuestFn;
 
@@ -25712,4 +27113,822 @@ pub(crate) mod tests {
             },
         );
     }
+
+    driven!(gen_async_file_finish, ee::s14::f_003df028__generated);
+
+    driven!(hand_async_file_finish, async_file_finish);
+
+    /// Pending and detached blocks; queued and unqueued; null and live
+    /// done callbacks (unmapped targets miss identically both sides).
+    #[test]
+    fn async_file_finish_matches() {
+        crate::difftest::check_paths(
+            gen_async_file_finish,
+            hand_async_file_finish,
+            96,
+            &[96, 43, 40, 50],
+            &async_file_finish_matches_setup,
+        );
+    }
+
+    fn async_file_finish_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_f028, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_fixture(c, base, 0);
+        let blk = base + 0x80;
+        c.bus.write32(blk, 0x50 + seed % 2);
+        c.bus.write32(blk + 0x10, [0u32, 1][seed as usize / 2 % 2]);
+        c.bus.write32(blk + 0xc, [0u32, 1][seed as usize / 4 % 2]);
+        c.bus
+            .write32(blk + 0x18, if seed / 8 % 3 == 0 { 0 } else { 0x00c0_0000 });
+        c.bus.write32(0x0045_0c18, 0);
+        c.g[A0][0] = blk as u64;
+        c.pc = 0x003d_f028;
+    }
+
+    driven!(gen_async_file_free, ee::s14::f_003defc0__generated);
+
+    driven!(hand_async_file_free, async_file_free);
+
+    /// Live and dead blocks; young and old generations; null and live
+    /// free callbacks (unmapped targets miss identically both sides).
+    #[test]
+    fn async_file_free_matches() {
+        crate::difftest::check_paths(
+            gen_async_file_free,
+            hand_async_file_free,
+            96,
+            &[48, 59, 70],
+            &async_file_free_matches_setup,
+        );
+    }
+
+    fn async_file_free_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_efc0, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_fixture(c, base, 0);
+        let blk = base + 0x80;
+        c.bus.write32(blk, 0x40 + seed % 4);
+        c.bus
+            .write32(blk + 0x10, [0u32, 1, 2][seed as usize / 4 % 3]);
+        c.bus
+            .write32(blk + 0x14, [0u32, 1, 2, 3][seed as usize / 12 % 4]);
+        c.bus.write32(
+            0x0045_0c18,
+            if seed / 48 % 2 == 0 { 0 } else { 0x00c0_0000 },
+        );
+        c.g[A0][0] = blk as u64;
+        c.pc = 0x003d_efc0;
+    }
+
+    driven!(gen_async_file_on_close, ee::s14::f_003df0b8__generated);
+
+    driven!(hand_async_file_on_close, async_file_on_close);
+
+    /// Null and live release results; finish runs on the block.
+    #[test]
+    fn async_file_on_close_matches() {
+        check(
+            gen_async_file_on_close,
+            hand_async_file_on_close,
+            64,
+            &async_file_on_close_matches_setup,
+        );
+    }
+
+    fn async_file_on_close_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_f0b8, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_fixture(c, base, 0);
+        let blk = base + 0x80;
+        c.bus.write32(blk, 0x60 + seed % 2);
+        c.bus.write32(blk + 0x10, [0u32, 1][seed as usize / 2 % 2]);
+        c.bus.write32(blk + 0xc, [0u32, 1][seed as usize / 4 % 2]);
+        c.bus.write32(blk + 0x18, 0);
+        c.bus.write32(blk + 0x1c, 0x70 + seed % 2);
+        ea_set_type_rets(c, if seed / 8 % 2 == 0 { 0 } else { 0x80 + seed });
+        c.g[A0][0] = 0;
+        c.g[A1][0] = 0;
+        c.g[A2][0] = blk as u64;
+        c.pc = 0x003d_f0b8;
+    }
+
+    driven!(gen_async_file_on_open, ee::s14::f_003df2c0__generated);
+
+    driven!(hand_async_file_on_open, async_file_on_open);
+
+    /// A null open result finishes the block; otherwise a flagged block
+    /// queues a close, an unflagged unchained one a read (short and
+    /// over-0x8000 sizes), each with a null result (straight to the
+    /// epilogue) or a live one (callback set), and an unflagged chained one
+    /// the size query (its result is never null: the real QueueGetSize
+    /// returns the request word with bit 22 set).
+    fn async_file_on_open_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3d_f2c0, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_fixture(c, base, 0);
+        let blk = base + 0x80;
+        c.bus.write32(blk, 0x90 + r.next_u32() % 2);
+        c.bus.write32(blk + 0x1c, 0xa0 + r.next_u32() % 2);
+        c.bus.write32(blk + 0x10, seed % 2);
+        c.bus.write32(blk + 0x14, seed / 2 % 2);
+        c.bus.write32(blk + 0x20, 0x300 + r.next_u32() % 5);
+        c.bus.write32(blk + 0x24, 0x400 + r.next_u32() % 7);
+        c.bus.write32(
+            blk + 0x28,
+            [0x100u32, 0x8000, 0x9000][seed as usize / 4 % 3],
+        );
+        c.bus.write32(blk + 0x2c, 0x600 + r.next_u32() % 3);
+        let live = |on: bool| if on { 0xb0 + seed } else { 0 };
+        c.bus.write32(EAF_RET_RELEASE, live(seed / 12 % 4 != 0));
+        c.bus.write32(EAF_RET_QCLOSE, live(seed / 48 % 2 == 1));
+        c.bus.write32(EAF_RET_QREAD, live(seed / 48 % 2 == 1));
+        c.bus.write32(EAF_RET_SETCB, r.next_u32() % 2);
+        c.g[A0][0] = 0;
+        c.g[A1][0] = 0;
+        c.g[A2][0] = blk as u64;
+        c.pc = 0x003d_f2c0;
+    }
+
+    #[test]
+    fn async_file_on_open_matches() {
+        check_paths(
+            gen_async_file_on_open,
+            hand_async_file_on_open,
+            120,
+            &PATHS_ON_OPEN,
+            &async_file_on_open_setup,
+        );
+    }
+
+    driven!(gen_async_file_on_read_chunk, ee::s14::f_003df0f0__generated);
+
+    driven!(hand_async_file_on_read_chunk, async_file_on_read_chunk);
+
+    /// A read-chunk block: the chunk length is the released request's
+    /// result (`EAF_RET_RELEASE`: empty, short, 0x7fff, exactly 0x8000, long); a
+    /// set or clear flag; a remaining size below or above 0x8000; null or
+    /// live close/read results and callbacks.
+    fn read_chunk_block(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        let mut r = machine(c, seed, salt, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_fixture(c, base, 0);
+        let blk = base + 0x80;
+        c.bus.write32(blk, 0x70 + r.next_u32() % 2);
+        c.bus.write32(blk + 0x1c, 0x80 + r.next_u32() % 2);
+        c.bus.write32(blk + 0x2c, 0x100 * (r.next_u32() % 3));
+        c.bus.write32(blk + 0x8, 0x200 * (r.next_u32() % 3));
+        c.bus.write32(blk + 0x10, seed / 4 % 2);
+        c.bus.write32(blk + 0x20, 0x300 + r.next_u32() % 5);
+        c.bus.write32(blk + 0x24, 0x400 + r.next_u32() % 7);
+        c.bus
+            .write32(blk + 0x28, [0x9000u32, 0x2_0000][seed as usize / 8 % 2]);
+        c.bus.write32(blk + 0x14, 0x600 + r.next_u32() % 3);
+        // Seeds 64 and up: a chunk of 0x7fff, one below the long-chunk bound.
+        let chunk = if seed >= 64 {
+            0x7fff
+        } else {
+            [0u32, 0x100, 0x8000, 0x1_0000][seed as usize % 4]
+        };
+        let queued = if seed / 16 % 2 == 0 { 0 } else { 0x90 + seed };
+        c.bus.write32(EAF_RET_RELEASE, chunk);
+        c.bus.write32(EAF_RET_QCLOSE, queued);
+        c.bus.write32(EAF_RET_QREAD, queued);
+        c.bus.write32(EAF_RET_SETCB, r.next_u32() % 2);
+        c.g[A0][0] = 0;
+        c.g[A1][0] = 0;
+        c.g[A2][0] = blk as u64;
+        c.pc = entry;
+    }
+
+    fn async_file_on_read_chunk_setup(c: &mut Cpu, seed: u32) {
+        read_chunk_block(c, seed, 0x3d_f0f0, 0x003d_f0f0);
+    }
+
+    #[test]
+    fn async_file_on_read_chunk_matches() {
+        check_paths(
+            gen_async_file_on_read_chunk,
+            hand_async_file_on_read_chunk,
+            80,
+            &PATHS_ON_READ_CHUNK,
+            &async_file_on_read_chunk_setup,
+        );
+    }
+
+    driven!(gen_async_file_on_size, ee::s14::f_003df1e0__generated);
+
+    driven!(hand_async_file_on_size, async_file_on_size);
+
+    /// Empty and live blocks; close and read continuations; null and
+    /// live results and callbacks.
+    #[test]
+    fn async_file_on_size_matches() {
+        crate::difftest::check_paths(
+            gen_async_file_on_size,
+            hand_async_file_on_size,
+            120,
+            &[30, 47, 54, 65],
+            &async_file_on_size_matches_setup,
+        );
+    }
+
+    fn async_file_on_size_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_f1e0, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_fixture(c, base, 0);
+        let blk = base + 0x80;
+        c.bus.write32(blk, 0x80 + seed % 2);
+        c.bus.write32(blk + 0x1c, 0x90 + seed % 2);
+        c.bus.write32(blk + 0x10, [0u32, 1][seed as usize / 2 % 2]);
+        c.bus.write32(blk + 0x20, 0x300 + seed % 5);
+        c.bus.write32(blk + 0x24, 0x400 + seed % 7);
+        c.bus.write32(blk + 0x28, 0x100 * (seed / 4 % 3) as u32);
+        c.bus.write32(blk + 0x14, 0x600 + seed % 3);
+        c.bus.write32(0x0045_0c14, 0);
+        ea_set_type_rets(c, if seed / 12 % 3 == 0 { 0 } else { 0xa0 + seed });
+        c.bus.write32(EAF_RET_SETCB, (seed / 36 % 2) as u32);
+        c.g[A0][0] = 0;
+        c.g[A1][0] = (seed / 72 % 3) as u64;
+        c.g[A2][0] = blk as u64;
+        c.pc = 0x003d_f1e0;
+    }
+
+    driven!(gen_async_file_pool_pop, ee::s14::f_003deed8__generated);
+
+    driven!(hand_async_file_pool_pop, async_file_pool_pop);
+
+    /// Empty, single-node and two-node pools.
+    #[test]
+    fn async_file_pool_pop_matches() {
+        crate::difftest::check_paths(
+            gen_async_file_pool_pop,
+            hand_async_file_pool_pop,
+            48,
+            &[30, 38, 33],
+            &async_file_pool_pop_matches_setup,
+        );
+    }
+
+    fn async_file_pool_pop_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_eed8, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        let node = base + 0x80;
+        let node2 = base + 0xc0;
+        let mode = seed % 3;
+        pool_fixture(c, base, if mode == 0 { 0 } else { node });
+        c.bus.write32(node + 0x4, if mode == 2 { node2 } else { 0 });
+        c.bus.write32(node2 + 0x4, 0xbeef_0000 + seed);
+        c.g[A0][0] = base as u64;
+        c.pc = 0x003d_eed8;
+    }
+
+    driven!(gen_async_file_pool_push, ee::s14::f_003dee70__generated);
+
+    driven!(hand_async_file_pool_push, async_file_pool_push);
+
+    /// Empty and chained pools; nodes second or fresh.
+    #[test]
+    fn async_file_pool_push_matches() {
+        crate::difftest::check_paths(
+            gen_async_file_pool_push,
+            hand_async_file_pool_push,
+            48,
+            &[36, 32],
+            &async_file_pool_push_matches_setup,
+        );
+    }
+
+    fn async_file_pool_push_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_ee70, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        let node = base + 0x80;
+        let node2 = base + 0xc0;
+        pool_fixture(c, base, if seed % 2 == 0 { 0 } else { node2 });
+        c.bus
+            .write32(node2 + 0x4, if seed / 2 % 2 == 0 { 0 } else { node });
+        c.bus.write32(node + 0x4, 0xbeef_0000 + seed);
+        c.g[A0][0] = base as u64;
+        c.g[A1][0] = node as u64;
+        c.pc = 0x003d_ee70;
+    }
+
+    driven!(gen_async_file_cancel, ee::s14::f_003dfaf0__generated);
+
+    driven!(hand_async_file_cancel, async_file_cancel);
+
+    /// The request table (`[0x519ad8]`) selecting the request record at
+    /// `DATA + 0x1000` for handles with top byte 0 and low bits `0x42`.
+    fn request_record(c: &mut Cpu) {
+        c.bus.write32(0x0051_9ad8, DATA + 0x1000);
+        for i in 0..12u32 {
+            c.bus.write32(DATA + 0x1000 + 4 * i, 0);
+        }
+        c.bus.write32(DATA + 0x1000, 0x42);
+    }
+
+    /// `check`, and both sides call the same callees in the same order
+    /// (`SSX3_DIFF_STRICT=args` alone lets a different sequence pass).
+    fn check_same_calls(
+        generated: GuestFn,
+        hand: GuestFn,
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, u32),
+    ) {
+        check(generated, hand, seeds, setup);
+        for seed in 0..seed_count(seeds) {
+            let r = compare(generated, hand, &|c| setup(c, seed));
+            let calls: Vec<&String> = r.soft.iter().filter(|m| m.starts_with("call")).collect();
+            assert!(calls.is_empty(), "seed {seed}: {calls:#?}");
+        }
+    }
+
+    /// Missing handles; blocks with a queued request (cancelled through
+    /// `EAFile_CancelRequest`, a live record in state 0 or 3), none (freed
+    /// when idle) and pending results.
+    fn async_file_cancel_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3d_faf0, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_block(c, base);
+        request_record(c);
+        let blk = base + 0x80;
+        c.bus
+            .write32(EAF_RET_FH, if seed % 4 == 0 { 0 } else { blk });
+        c.bus.write32(blk, 0xb0 + r.next_u32() % 2);
+        c.bus.write32(blk + 0x10, seed / 4 % 2);
+        c.bus.write32(blk + 0xc, seed / 8 % 2);
+        c.bus.write32(
+            blk + 0x1c,
+            [0u32, 0x42, 0x0030_0042][seed as usize / 16 % 3],
+        );
+        c.g[A0][0] = (r.next_u32() % 251) as u64;
+        c.pc = 0x003d_faf0;
+    }
+
+    #[test]
+    fn async_file_cancel_matches() {
+        check_same_calls(
+            gen_async_file_cancel,
+            hand_async_file_cancel,
+            96,
+            &async_file_cancel_setup,
+        );
+        crate::difftest::require_paths(
+            gen_async_file_cancel,
+            96,
+            &PATHS_CANCEL,
+            &async_file_cancel_setup,
+        );
+    }
+
+    driven!(gen_async_file_get_result, ee::s14::f_003df9d8__generated);
+
+    driven!(hand_async_file_get_result, async_file_get_result);
+
+    /// The EA timer table (`EATimer_ServiceCallbacks`: 16 timers of
+    /// function, period, due tick, running flag) and the current tick.
+    const TIMERS: u32 = 0x0051_ed98;
+
+    const TIMER_NOW: u32 = 0x0045_0dd0;
+
+    /// The current-thread word `EAThread_IsCurrent(0)` compares the
+    /// GetThreadId result with.
+    const THREAD_CURRENT: u32 = 0x0045_0dfc;
+
+    /// An async block laid over the timer table so its request word
+    /// (`+0x1c`) is timer 2's due tick and its `+0x14` timer 2's function.
+    /// While the block is busy (request `0x42`, due at tick 0x42 <= now),
+    /// the first `EATimer_ServiceCallbacks` pass runs timer 2 and reschedules
+    /// it to `now + period` = 0, which clears the request word: a wait loop
+    /// then ends. Timers 1 and 3 (the other block fields) stay empty.
+    const TBLK: u32 = TIMERS + 0xc;
+
+    /// Zero the timer table and set up `TBLK`: `busy` arms timer 2 with
+    /// `callback` (a fake, or a guest function).
+    fn timer_block(c: &mut Cpu, busy: bool, callback: u32) {
+        for i in 0..0x40u32 {
+            c.bus.write32(TIMERS + 4 * i, 0);
+        }
+        c.bus.write32(TIMER_NOW, 0x100);
+        if busy {
+            c.bus.write32(TIMERS + 0x20, callback);
+            c.bus.write32(TIMERS + 0x24, 0xffff_ff00);
+            c.bus.write32(TIMERS + 0x28, 0x42);
+        }
+    }
+
+    /// Force the results of the first eight fake calls so a GetThreadId
+    /// among them reports the current thread (`EAThread_IsCurrent(0)` is 1)
+    /// from call `from` on, and another thread before it; later calls get
+    /// a hashed result, never the current id, so a wait loop yields.
+    fn current_at(c: &mut Cpu, from: Option<u32>) {
+        c.bus.write32(THREAD_CURRENT, 0x7777_0001);
+        for k in 0..8u32 {
+            let on = from.is_some_and(|n| k >= n);
+            c.bus.write32(
+                LOG_RESULTS + 4 * k,
+                if on { 0x7777_0001 } else { 0x7777_0002 },
+            );
+        }
+    }
+
+    /// Missing handles; finished (`+0x10` set) blocks; live blocks with a
+    /// clear request word, or a busy one (the wait loop: `EAFile_WaitRequest`
+    /// on the live record, whose timer pass clears the word through
+    /// `TBLK`'s timer 2, a fake callback, or `AsyncFile_Cancel`, which marks
+    /// the block done while it is waited on: the error arm); with and
+    /// without result/size out-words.
+    fn async_file_get_result_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3d_f9d8, 0);
+        get_result_fixture(c, &mut r, seed);
+    }
+
+    fn get_result_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        ea_install_fakes();
+        pool_block(c, DATA + 0x600);
+        request_record(c);
+        let mode = seed % 5;
+        let callback = if seed / 5 % 2 == 0 { FAKE } else { 0x003d_faf0 };
+        timer_block(c, mode >= 3, callback);
+        // Lock, FromHandle, Unlock, then WaitRequest's first GetThreadId.
+        current_at(c, Some(3));
+        let blk = TBLK;
+        c.bus.write32(EAF_RET_FH, if mode == 0 { 0 } else { blk });
+        c.bus.write32(blk, 0xa0 + r.next_u32() % 2);
+        c.bus.write32(blk + 0x10, (mode == 1) as u32);
+        c.bus.write32(blk + 0x8, 0x400 + r.next_u32() % 5);
+        c.bus.write32(blk + 0x2c, 0x500 + r.next_u32() % 3);
+        c.g[A0][0] = (r.next_u32() % 251) as u64;
+        c.g[A1][0] = if seed / 10 % 2 == 0 {
+            0
+        } else {
+            sx(DATA + 0x300)
+        };
+        c.g[A2][0] = if seed / 20 % 2 == 0 {
+            0
+        } else {
+            sx(DATA + 0x310)
+        };
+        // Sentinels in the out-words and at address 0, so a dropped or
+        // misdirected zero store shows.
+        c.bus.write32(DATA + 0x300, 0x5e17_0001);
+        c.bus.write32(DATA + 0x310, 0x5e17_0002);
+        c.bus.write32(0, 0x5e17_0003);
+        c.pc = 0x003d_f9d8;
+    }
+
+    #[test]
+    fn async_file_get_result_matches() {
+        check_paths(
+            gen_async_file_get_result,
+            hand_async_file_get_result,
+            80,
+            &PATHS_GET_RESULT,
+            &async_file_get_result_setup,
+        );
+    }
+
+    /// The same fixture with events: the wait loop's callees (WaitRequest's
+    /// and the timer pass's loops) deliver them.
+    #[test]
+    fn async_file_get_result_events() {
+        check_events(
+            gen_async_file_get_result,
+            hand_async_file_get_result,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d_f9d8, 0);
+                get_result_fixture(c, &mut r, seed / 3);
+                schedule(c, &mut r, seed, 0x003d_f9d8)
+            },
+        );
+    }
+
+    driven!(gen_async_file_init, ee::s14::f_003df488__generated);
+
+    driven!(hand_async_file_init, async_file_init);
+
+    /// Uninitialized and initialized pools; counts of none, one, a few,
+    /// the 256 maximum and too many (no allocation); the allocator hook (a
+    /// fake) hands out `DATA + 0x4000`.
+    fn init_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        ea_install_fakes();
+        c.bus.write32(0x0045_0c34, seed % 2);
+        c.bus
+            .write32(0x0045_0c14, 0x7700_0000 + r.next_u32() % 0x100);
+        c.bus.write32(0x0051_9bf0, 0);
+        c.bus.write32(LOG_RESULTS, DATA + 0x4000);
+        c.g[A0][0] = [0u32, 1, 5, 0x40, 0x100, 0x101][seed as usize / 2 % 6] as u64;
+        c.g[A1][0] = r.next_u32() as u64;
+        c.pc = 0x003d_f488;
+    }
+
+    #[test]
+    fn async_file_init_matches() {
+        check_paths(
+            gen_async_file_init,
+            hand_async_file_init,
+            48,
+            &PATHS_INIT,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d_f488, 0);
+                init_fixture(c, &mut r, seed);
+            },
+        );
+    }
+
+    /// The pool-zeroing loop with events (counts up to 256).
+    #[test]
+    fn async_file_init_events() {
+        check_events(gen_async_file_init, hand_async_file_init, 72, &|c, seed| {
+            let mut r = machine(c, seed, 0x3d_f488, 0);
+            init_fixture(c, &mut r, seed / 3);
+            schedule(c, &mut r, seed, 0x003d_f488)
+        });
+    }
+
+    driven!(gen_async_file_load_into, ee::s14::f_003df748__generated);
+
+    driven!(hand_async_file_load_into, async_file_load_into);
+
+    /// Empty and stocked pools; null and live queue results.
+    #[test]
+    fn async_file_load_into_matches() {
+        crate::difftest::check_paths(
+            gen_async_file_load_into,
+            hand_async_file_load_into,
+            64,
+            &[64, 111, 98],
+            &async_file_load_into_matches_setup,
+        );
+    }
+
+    fn async_file_load_into_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_f748, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        let node = base + 0x80;
+        pool_block(c, base);
+        let mode = seed % 3;
+        c.bus.write32(0x0051_9bf8, if mode == 0 { 0 } else { node });
+        c.bus.write32(node, 0x40 + seed % 4);
+        c.bus.write32(node + 0x4, 0);
+        ea_set_type_rets(c, if mode == 1 { EAF_REQ } else { 0 });
+        c.bus.write32(EAF_RET_SETCB, (seed / 3 % 2) as u32);
+        put_ascii(c, DATA + 0x400, "file.dat");
+        c.g[A0][0] = sx(DATA + 0x400);
+        c.g[A1][0] = sx(DATA + 0x500);
+        c.g[A2][0] = (seed / 6 % 4) as u64;
+        c.g[A3][0] = 0x1234 + seed as u64;
+        c.pc = 0x003d_f748;
+    }
+
+    driven!(gen_async_file_load, ee::s14::f_003df690__generated);
+
+    driven!(hand_async_file_load, async_file_load);
+
+    /// Empty and stocked pools; null and live queue results.
+    #[test]
+    fn async_file_load_matches() {
+        crate::difftest::check_paths(
+            gen_async_file_load,
+            hand_async_file_load,
+            64,
+            &[50, 102, 89],
+            &async_file_load_matches_setup,
+        );
+    }
+
+    fn async_file_load_matches_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_f690, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        let node = base + 0x80;
+        pool_block(c, base);
+        let mode = seed % 3;
+        c.bus.write32(0x0051_9bf8, if mode == 0 { 0 } else { node });
+        c.bus.write32(node, 0x40 + seed % 4);
+        c.bus.write32(node + 0x4, 0);
+        ea_set_type_rets(c, if mode == 1 { EAF_REQ } else { 0 });
+        c.bus.write32(EAF_RET_SETCB, (seed / 3 % 2) as u32);
+        put_ascii(c, DATA + 0x400, "file.dat");
+        c.g[A0][0] = sx(DATA + 0x400);
+        c.g[A1][0] = (seed / 6 % 4) as u64;
+        c.pc = 0x003d_f690;
+    }
+
+    /// The read-chunk block (`read_chunk_block`): short chunks and flagged
+    /// long ones finish the block, clear long ones queue the next range
+    /// read (null or live result and callback).
+    fn async_file_on_read_range_chunk_setup(c: &mut Cpu, seed: u32) {
+        read_chunk_block(c, seed, 0x3d_f3c0, 0x003d_f3c0);
+    }
+
+    #[test]
+    fn async_file_on_read_range_chunk_matches() {
+        check_paths(
+            gen_async_file_on_read_range_chunk,
+            hand_async_file_on_read_range_chunk,
+            80,
+            &PATHS_ON_READ_RANGE_CHUNK,
+            &async_file_on_read_range_chunk_setup,
+        );
+    }
+
+    driven!(gen_async_file_read_range, ee::s14::f_003df808__generated);
+
+    driven!(hand_async_file_read_range, async_file_read_range);
+
+    /// Empty and stocked pools; lengths below, at and above 0x8000; null
+    /// and live QueueRead results; null and live callbacks.
+    fn async_file_read_range_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3d_f808, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        let node = base + 0x80;
+        pool_block(c, base);
+        c.bus
+            .write32(0x0051_9bf8, if seed % 2 == 0 { 0 } else { node });
+        c.bus.write32(node, 0x40 + r.next_u32() % 4);
+        c.bus.write32(node + 0x4, 0);
+        c.bus
+            .write32(EAF_RET_QREAD, if seed / 2 % 2 == 0 { 0 } else { EAF_REQ });
+        c.bus.write32(EAF_RET_SETCB, seed / 4 % 2);
+        c.g[A0][0] = EAF_REQ as u64;
+        c.g[A1][0] = 0x3000 + (r.next_u32() % 0x100) as u64;
+        c.g[A2][0] = 0x40 + (r.next_u32() % 3) as u64 * 0x10;
+        c.g[A3][0] = [0x100u32, 0x8000, 0x1_0000][seed as usize / 8 % 3] as u64;
+        c.pc = 0x003d_f808;
+    }
+
+    #[test]
+    fn async_file_read_range_matches() {
+        check_paths(
+            gen_async_file_read_range,
+            hand_async_file_read_range,
+            48,
+            &PATHS_READ_RANGE,
+            &async_file_read_range_setup,
+        );
+    }
+
+    driven!(gen_async_file_set_callback, ee::s14::f_003df8e8__generated);
+
+    driven!(hand_async_file_set_callback, async_file_set_callback);
+
+    /// Missing handles; blocks that already have a callback (kept); blocks
+    /// without one get it, and it runs at once when no request is pending
+    /// (`+0x1c` clear) or waits for the request; callbacks at null, small and
+    /// fake addresses (unmapped targets miss identically both sides).
+    fn async_file_set_callback_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x3d_f8e8, 0);
+        ea_install_fakes();
+        let base = DATA + 0x600;
+        pool_block(c, base);
+        let blk = base + 0x80;
+        c.bus
+            .write32(EAF_RET_FH, if seed % 4 == 0 { 0 } else { blk });
+        c.bus.write32(blk, 0x90 + r.next_u32() % 2);
+        c.bus.write32(blk + 0x18, seed / 4 % 2);
+        // Pending word: none or a live handle; seeds 48 and up exactly 1.
+        let pending = if seed >= 48 {
+            1
+        } else if seed / 8 % 2 == 0 {
+            0
+        } else {
+            0x7700_1234
+        };
+        c.bus.write32(blk + 0x1c, pending);
+        c.g[A0][0] = (r.next_u32() % 256) as u64;
+        c.g[A1][0] = [0u32, 2, FAKE][seed as usize / 16 % 3] as u64;
+        c.pc = 0x003d_f8e8;
+    }
+
+    #[test]
+    fn async_file_set_callback_matches() {
+        check_paths(
+            gen_async_file_set_callback,
+            hand_async_file_set_callback,
+            64,
+            &PATHS_SET_CALLBACK,
+            &async_file_set_callback_setup,
+        );
+    }
+
+    driven!(gen_async_file_shutdown, ee::s14::f_003df570__generated);
+
+    driven!(hand_async_file_shutdown, async_file_shutdown);
+
+    /// No pool; an empty pool; one or two idle blocks (cancelled, then torn
+    /// down); a busy block (`TBLK`, request word = timer 2's due tick) that
+    /// the drain loop waits on: `EAThread_IsCurrent` true at once (timer
+    /// pass, which clears it, then Yield) or false first (Yield only, then
+    /// the timer pass on the next round), with one or two blocks.
+    fn shutdown_fixture(c: &mut Cpu, seed: u32) {
+        ea_install_fakes();
+        c.bus.write32(EAF_CTRL, EAF_MAGIC);
+        c.bus.write32(EAF_RET_FH, 0);
+        let mode = seed % 7;
+        let (count, busy, current) = match mode {
+            0 | 1 => (0, false, None),
+            2 => (1, false, None),
+            3 => (2, false, None),
+            // One Cancel is Lock, FromHandle, Unlock; then GetThreadId.
+            4 => (1, true, Some(3)),
+            5 => (1, true, Some(5)),
+            _ => (2, true, Some(6)),
+        };
+        timer_block(c, busy, FAKE);
+        current_at(c, current);
+        c.bus.write32(0x0045_0c34, if mode == 0 { 0 } else { TBLK });
+        c.bus.write32(0x0051_9bf0, count);
+        c.bus.write32(0x0045_0c18, 0);
+        c.pc = 0x003d_f570;
+    }
+
+    #[test]
+    fn async_file_shutdown_matches() {
+        check_paths(
+            gen_async_file_shutdown,
+            hand_async_file_shutdown,
+            28,
+            &PATHS_SHUTDOWN,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3d_f570, 0);
+                shutdown_fixture(c, seed);
+            },
+        );
+    }
+
+    /// The cancel, scan and drain loops with events.
+    #[test]
+    fn async_file_shutdown_events() {
+        check_events(
+            gen_async_file_shutdown,
+            hand_async_file_shutdown,
+            84,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d_f570, 0);
+                shutdown_fixture(c, seed / 3);
+                schedule(c, &mut r, seed, 0x003d_f570)
+            },
+        );
+    }
+
+    // Arm totals (cycles of the generated body) each fixture must reach.
+    const PATHS_ON_OPEN: [u64; 6] = [68, 31, 47, 46, 57, 85];
+
+    const PATHS_ON_READ_CHUNK: [u64; 10] = [37, 49, 41, 55, 53, 48, 64, 40, 42, 43];
+
+    const PATHS_ON_READ_RANGE_CHUNK: [u64; 11] = [72, 140, 53, 70, 66, 71, 139, 141, 142, 144, 151];
+
+    const PATHS_CANCEL: [u64; 7] = [52, 67, 107, 90, 56, 133, 68];
+
+    const PATHS_GET_RESULT: [u64; 7] = [48, 56, 130, 128, 830, 777, 787];
+
+    const PATHS_INIT: [u64; 7] = [17, 79, 90, 118, 590, 2130, 20];
+
+    const PATHS_READ_RANGE: [u64; 5] = [65, 105, 114, 122, 106];
+
+    const PATHS_SET_CALLBACK: [u64; 13] = [26, 28, 66, 63, 56, 25, 27, 30, 31, 50, 52, 54, 57];
+
+    const PATHS_SHUTDOWN: [u64; 7] = [19, 58, 135, 193, 338, 385, 405];
+
+    /// A zeroed async pool block of two nodes at `base`.
+    pub(crate) fn pool_fixture(c: &mut Cpu, base: u32, head: u32) {
+        for i in 0..16u32 {
+            c.bus.write32(base + 4 * i, 0);
+            c.bus.write32(base + 0x40 + 4 * i, 0);
+        }
+        c.bus.write32(base, head);
+        c.bus.write32(0x0051_9c08, 0);
+        c.bus.write32(EAF_CTRL, EAF_MAGIC);
+        ea_fixed_results(c);
+    }
+
+    /// A zeroed async pool block with a valid header word.
+    pub(crate) fn pool_block(c: &mut Cpu, base: u32) {
+        for i in 0..16u32 {
+            c.bus.write32(base + 4 * i, 0);
+        }
+        c.bus.write32(EAF_CTRL, EAF_MAGIC);
+    }
+    driven!(
+        gen_async_file_on_read_range_chunk,
+        ee::s14::f_003df3c0__generated
+    );
+
+    driven!(
+        hand_async_file_on_read_range_chunk,
+        async_file_on_read_range_chunk
+    );
 }
