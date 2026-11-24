@@ -2,14 +2,18 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Frame;
+use crate::call::Target;
 pub(crate) use crate::game::fe::debugfe::at;
 pub(crate) use crate::game::fe::feasyncfile::at as at_2;
 pub(crate) use crate::game::fe::feasyncfile::at_5 as at_3;
+pub(crate) use crate::game::fe::feasyncfile::fe_ctor_with_vtable;
 pub(crate) use crate::game::fe::feasyncfile::lw_6 as lw;
 pub(crate) use crate::game::fe::feasyncfile::p;
+pub(crate) use crate::game::fe::festatebonusmaterial::FE_UI_STATE_CTOR;
 pub(crate) use crate::game::fe::festatecharsetup::oc437_fe_state_dtor;
 pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::lw_r;
@@ -53,6 +57,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001d_e668,
         fe_state_transition_dtor,
         "cFEStateTransition_dtor",
+    ),
+    (
+        0x001d_e590,
+        c_fe_state_background_ctor_3,
+        "cFEStateBackground_ctor_3",
+    ),
+    (
+        0x001d_e628,
+        c_fe_state_transition_ctor_3,
+        "cFEStateTransition_ctor_3",
     ),
 ];
 
@@ -324,6 +338,47 @@ pub fn fe_state_background_dtor(c: &mut Cpu) {
     oc437_fe_state_dtor(c, 0x43a8, 0x001d_e5e4)
 }
 
+/// `cFEStateBackground` constructor (0x1de590): `UIState_ctor` with the
+/// caller's `a1`, then the vtable at `+8`.
+pub fn c_fe_state_background_ctor_3(c: &mut Cpu) {
+    guest(c, |c| {
+        fe_ctor_with_vtable(
+            c,
+            13,
+            false,
+            false,
+            Target::Table(FE_UI_STATE_CTOR),
+            0x001d_e5a4,
+            0x43a8,
+        )
+    });
+}
+
+/// `cFEStateTransition` constructor (0x1de628): `UIState_ctor` with the
+/// caller's `a1`, then the vtable at `+8` and zeroed words at `+0x48`/`+0x4c`.
+pub fn c_fe_state_transition_ctor_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, FE_UI_STATE_CTOR, 0x001d_e63c)?;
+        c.g[V1][0] = 0x47_0000;
+        c.g[V0][0] = c.g[S0][0];
+        c.g[V1][0] = sx(0x47_0000u32.wrapping_sub(0x4478));
+        let s0 = r32(c, S0);
+        Addr(s0.wrapping_add(0x48)).sw(c, 0);
+        let vtable = c.g[V1][0];
+        Addr(s0.wrapping_add(8)).sw(c, vtable);
+        Addr(s0.wrapping_add(0x4c)).sw(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -444,6 +499,26 @@ pub(crate) mod tests {
                 w_3(c, obj + 0x1c, (seed as u32) & 0xff);
                 w_3(c, obj + 0x1000 + 0x54, (seed.wrapping_mul(3)) & 0xff);
             },
+        );
+    }
+
+    pub(crate) use crate::game::fe::festatebonusmaterial::tests::ui_state_case;
+
+    #[test]
+    fn c_fe_state_background_ctor_3_matches() {
+        ui_state_case(
+            ee::s04::f_001de590__generated,
+            c_fe_state_background_ctor_3,
+            0x001d_e590,
+        );
+    }
+
+    #[test]
+    fn c_fe_state_transition_ctor_3_matches() {
+        ui_state_case(
+            ee::s04::f_001de628__generated,
+            c_fe_state_transition_ctor_3,
+            0x001d_e628,
         );
     }
 }

@@ -12,6 +12,7 @@ pub(crate) use crate::game::be::beprepoststate::ea;
 pub(crate) use crate::game::dirtysock::tagsunk::at_3 as at;
 pub(crate) use crate::game::dirtysock::tagsunk::gp_5 as gp;
 pub(crate) use crate::game::fe::feasyncfile::p as p_2;
+pub(crate) use crate::game::fe::fepopup::oc508_vtable_dtor;
 pub(crate) use crate::game::fe::fepopupmisc::transition_in;
 pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_ACTIVATED;
 pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_IGNORED;
@@ -53,6 +54,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0018_5a18,
         cfe_options_credits_ctor,
         "cFEOptionsCredits_ctor",
+    ),
+    (
+        0x001d_d8f0,
+        c_fe_state_uber_trick_dtor,
+        "cFEStateUberTrick_dtor",
     ),
 ];
 
@@ -282,6 +288,13 @@ pub fn cfe_uber_trick_show_buy_buttons(c: &mut Cpu) {
     })
 }
 
+/// `cFEStateUberTrick::~cFEStateUberTrick(this)` (0x1dd8f0).
+pub fn c_fe_state_uber_trick_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        oc508_vtable_dtor(c, sx(0x0047_0000 - 0x2f30), 0x0039_e390, 0x001d_d90c)
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -428,6 +441,20 @@ pub(crate) mod tests {
                 w(c, ENT + 4, if seed % 3 == 0 { ENT } else { 0 });
                 w(c, 0x004a_1458, 0);
                 w(c, 0x004a_1460, 0);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::fepopup::tests::oc508_setup;
+
+    #[test]
+    fn c_fe_state_uber_trick_dtor_matches() {
+        check(
+            ee::s04::f_001dd8f0__generated,
+            c_fe_state_uber_trick_dtor,
+            200,
+            &|c, seed| {
+                oc508_setup(c, seed, 0x1dd8f0);
             },
         );
     }

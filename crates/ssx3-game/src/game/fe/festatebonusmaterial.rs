@@ -6,7 +6,10 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Frame;
+use crate::call::Target;
 pub(crate) use crate::game::fe::feasyncfile::at;
+pub(crate) use crate::game::fe::feasyncfile::fe_ctor_with_vtable;
+pub(crate) use crate::game::fe::feasyncfile::fe_dtor_with_vtable;
 pub(crate) use crate::game::fe::feasyncfile::lw_at_2 as lw_at;
 pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::lw_r;
@@ -45,6 +48,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001d_2598,
         cfe_state_video_player_set_movie,
         "cFEStateVideoPlayer_SetMovie",
+    ),
+    (
+        0x001d_e750,
+        c_fe_state_bonus_material_ctor_2,
+        "cFEStateBonusMaterial_ctor_2",
+    ),
+    (
+        0x001d_e788,
+        c_fe_state_bonus_material_dtor,
+        "cFEStateBonusMaterial_dtor",
     ),
 ];
 
@@ -270,6 +283,36 @@ pub fn c_fe_state_video_player_ctor(c: &mut Cpu) {
     })
 }
 
+/// `UIState_ctor` (0x39e2a0), reached through the function table.
+pub(crate) const FE_UI_STATE_CTOR: u32 = 0x0039_e2a0;
+
+/// `UIState_dtor` (0x39e390), reached through the function table.
+pub(crate) const FE_UI_STATE_DTOR: u32 = 0x0039_e390;
+
+/// `cFEStateBonusMaterial` constructor (0x1de750): `UIState_ctor(this, 0)`,
+/// vtable at `+8`.
+pub fn c_fe_state_bonus_material_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        fe_ctor_with_vtable(
+            c,
+            14,
+            true,
+            false,
+            Target::Table(FE_UI_STATE_CTOR),
+            0x001d_e768,
+            0x46e8,
+        )
+    });
+}
+
+/// `cFEStateBonusMaterial` destructor (0x1de788): vtable at `+8`, then
+/// `UIState_dtor(this)`.
+pub fn c_fe_state_bonus_material_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        fe_dtor_with_vtable(c, 10, Target::Table(FE_UI_STATE_DTOR), 0x2f30, 0x001d_e7a4)
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -406,6 +449,34 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(DATA + 0x2000);
                 c.g[A3][0] = (-(seed as i32 % 100) as u64) & 0xff;
             },
+        );
+    }
+
+    /// A UI-state constructor or destructor: the base helpers are real ports
+    /// (`UIState_ctor`, `UIState_dtor`), so the plain machine is enough.
+    pub(crate) fn ui_state_case(generated: GuestFn, hand: GuestFn, entry: u32) {
+        check(generated, hand, 200, &|c, seed| {
+            machine(c, seed, entry as u64, 0);
+            c.g[A0][0] = (DATA + 0x2000) as u64;
+            c.pc = entry;
+        });
+    }
+
+    #[test]
+    fn c_fe_state_bonus_material_ctor_2_matches() {
+        ui_state_case(
+            ee::s04::f_001de750__generated,
+            c_fe_state_bonus_material_ctor_2,
+            0x001d_e750,
+        );
+    }
+
+    #[test]
+    fn c_fe_state_bonus_material_dtor_matches() {
+        ui_state_case(
+            ee::s04::f_001de788__generated,
+            c_fe_state_bonus_material_dtor,
+            0x001d_e788,
         );
     }
 }

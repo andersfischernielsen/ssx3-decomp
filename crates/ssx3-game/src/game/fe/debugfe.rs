@@ -27,6 +27,7 @@ pub(crate) use crate::game::fe::feasyncfile::sw_7 as sw_2;
 pub(crate) use crate::game::fe::fepopup::at as at_4;
 pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::fe::fepopup::lw_9 as lw_4;
+pub(crate) use crate::game::fe::fepopup::oc508_at;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw_3;
 pub(crate) use crate::game::fe::festateoptions::gpa;
 pub(crate) use crate::game::fe::festaterewards::gp_4 as gp_5;
@@ -307,6 +308,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001d_d398,
         lobby_menu_destroy_chat_page,
         "LobbyMenu_DestroyChatPage",
+    ),
+    (
+        0x001d_d440,
+        lobby_menu_destroy_challenge_page,
+        "LobbyMenu_DestroyChallengePage",
+    ),
+    (
+        0x001d_d4c0,
+        lobby_menu_destroy_abort_page,
+        "LobbyMenu_DestroyAbortPage",
     ),
 ];
 
@@ -3616,6 +3627,69 @@ pub fn lobby_menu_init_challenge_page(c: &mut Cpu) {
     })
 }
 
+/// `void LobbyMenu_DestroyChallengePage(LobbyMenu* page, int flags)`
+/// (0x1dd440): destroy the six menu items of the challenge-response page
+/// (`cMenuItem` at `page + 0x138 .. 0x1c8`, flags 2), then the page menu
+/// itself at `page` with the caller's flags.
+pub fn lobby_menu_destroy_challenge_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 32;
+        const ITEMS: [(u32, u32); 6] = [
+            (0x1c8, 0x001d_d464),
+            (0x1a4, 0x001d_d470),
+            (0x18c, 0x001d_d47c),
+            (0x170, 0x001d_d488),
+            (0x154, 0x001d_d494),
+            (0x138, 0x001d_d4a0),
+        ];
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        for &(off, back) in ITEMS.iter() {
+            c.g[A0][0] = sx(oc508_at(c, S0, off));
+            c.g[A1][0] = 0x2;
+            call_ptr(c, 0x002c_a280, back)?;
+        }
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x002c_aa80, 0x001d_d4ac)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void LobbyMenu_DestroyAbortPage(LobbyMenu* page, int flags)` (0x1dd4c0):
+/// destroy the abort page's menu item (`page + 0x134`, flags 2), then the
+/// page menu at `page` with the caller's flags.
+pub fn lobby_menu_destroy_abort_page(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(oc508_at(c, S0, 0x134));
+        c.g[A1][0] = 0x2;
+        call_ptr(c, 0x002c_a280, 0x001d_d4e4)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x002c_aa80, 0x001d_d4f0)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5428,6 +5502,34 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(OC507_ARG);
                 c.bus
                     .write32(OC507_ARG, seed.wrapping_mul(0x9e37_79b9) ^ 0x55);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::fepopup::tests::oc508_setup;
+
+    #[test]
+    fn lobby_menu_destroy_challenge_page_matches() {
+        check(
+            ee::s04::f_001dd440__generated,
+            lobby_menu_destroy_challenge_page,
+            200,
+            &|c, seed| {
+                oc508_setup(c, seed, 0x1dd440);
+                c.g[A1][0] = if seed % 2 == 0 { 2 } else { 0 };
+            },
+        );
+    }
+
+    #[test]
+    fn lobby_menu_destroy_abort_page_matches() {
+        check(
+            ee::s04::f_001dd4c0__generated,
+            lobby_menu_destroy_abort_page,
+            200,
+            &|c, seed| {
+                oc508_setup(c, seed, 0x1dd4c0);
+                c.g[A1][0] = if seed % 2 == 0 { 2 } else { 0 };
             },
         );
     }

@@ -13,6 +13,7 @@ pub(crate) use crate::game::ai::ai::virtual_call_slot;
 pub(crate) use crate::game::fe::feasyncfile::at;
 pub(crate) use crate::game::fe::feasyncfile::lw_3 as lw;
 pub(crate) use crate::game::fe::feasyncfile::p_5 as p_2;
+pub(crate) use crate::game::fe::fepopup::oc508_at;
 pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::sp_2;
 pub(crate) use crate::game::main::gamemode::sw_r;
@@ -76,6 +77,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "UIVector_SetAnimParam",
     ),
     (0x003a_39f8, ui_vector_render, "UIVector_Render"),
+    (
+        0x001d_d950,
+        ui_object_set_vec3_at_9c,
+        "UIObject_SetVec3At9c",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1284,6 +1290,27 @@ pub fn ui_vector_set_anim_param(c: &mut Cpu) {
     })
 }
 
+/// `void UIObject_SetVec3At9c(UIObject* self, const Vec3* v)` (0x1dd950):
+/// copy the 12-byte vector at `v` to `self + 0x9c`, as an unaligned 8-byte
+/// move plus one word, through a stack temporary.
+pub fn ui_object_set_vec3_at_9c(c: &mut Cpu) {
+    c.cycles += 15;
+    let frame = Frame::open(c, 0x10);
+    c.ldl(2, oc508_at(c, A1, 0x7));
+    c.ldr(2, oc508_at(c, A1, 0x0));
+    c.g[V1][0] = c.lw(oc508_at(c, A1, 0x8));
+    c.sdl(2, oc508_at(c, SP, 0x7));
+    c.sdr(2, oc508_at(c, SP, 0x0));
+    c.sw(oc508_at(c, SP, 0x8), c.g[V1][0]);
+    c.ldl(2, oc508_at(c, SP, 0x7));
+    c.ldr(2, oc508_at(c, SP, 0x0));
+    c.g[V1][0] = c.lw(oc508_at(c, SP, 0x8));
+    c.sdl(2, oc508_at(c, A0, 0xa3));
+    c.sdr(2, oc508_at(c, A0, 0x9c));
+    c.sw(oc508_at(c, A0, 0xa4), c.g[V1][0]);
+    frame.close(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2009,6 +2036,22 @@ pub(crate) mod tests {
                 c.g[A1][0] =
                     (r.next_u32() as u64) << 32 | (r.next_u32() & 0xffff_0000) as u64 | key as u64;
                 c.f[12] = r.f32(100.0);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::fepopup::tests::oc508_setup;
+
+    #[test]
+    fn ui_object_set_vec3_at_9c_matches() {
+        check(
+            ee::s04::f_001dd950__generated,
+            ui_object_set_vec3_at_9c,
+            200,
+            &|c, seed| {
+                let mut r = oc508_setup(c, seed, 0x1dd950);
+                fill(c, &mut r, DATA + 0x2000, 4);
+                c.g[A1][0] = sx(DATA + 0x2000);
             },
         );
     }

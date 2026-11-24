@@ -25,6 +25,7 @@ pub(crate) use crate::game::fe::feasyncfile::lh_3 as lh_2;
 pub(crate) use crate::game::fe::feasyncfile::lw_9 as lw_4;
 pub(crate) use crate::game::fe::feasyncfile::sw_7 as sw_3;
 pub(crate) use crate::game::fe::feasyncfile::STR_HASH;
+pub(crate) use crate::game::fe::fepopup::oc508_at;
 pub(crate) use crate::game::fe::fepopupmisc::gp_2 as gp;
 pub(crate) use crate::game::fe::fepopupmisc::lh;
 pub(crate) use crate::game::fe::fepopupmisc::lw_2;
@@ -279,6 +280,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001d_8700,
         mem_card_state_base_on_child_event,
         "MemCardStateBase_OnChildEvent",
+    ),
+    (
+        0x001d_de18,
+        mem_card_state_base_ctor_3,
+        "MemCardStateBase_ctor_3",
     ),
 ];
 
@@ -4632,6 +4638,38 @@ pub fn mem_card_state_base_update(c: &mut Cpu) {
     })
 }
 
+/// `MemCardStateBase` constructor variant (0x1dde18): the base UI state
+/// (0x39e2a0), then the fields at +0x48, +0x4c, +0x54 and +0x98 are cleared,
+/// the vtable is written at +8 (0x474e08, then 0x46c980 at the end), and the
+/// halfword at 0x4a1390 is stored at +0x58. Returns `this`.
+pub fn mem_card_state_base_ctor_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0039_e2a0, 0x001d_de30)?;
+        c.sw(oc508_at(c, S0, 0x98), 0);
+        c.g[V1][0] = sx(0x0047_0000 + 0x4e08);
+        c.sw(oc508_at(c, S0, 0x48), 0);
+        c.sw(oc508_at(c, S0, 0x8), c.g[V1][0]);
+        c.g[A1][0] = 0x004a_0000;
+        c.sw(oc508_at(c, S0, 0x4c), 0);
+        c.sw(oc508_at(c, S0, 0x54), 0);
+        c.g[V1][0] = sx(0x0047_0000 - 0x3680);
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        c.g[A0][0] = c.lhu(oc508_at(c, A1, 0x1390));
+        c.sw(oc508_at(c, S0, 0x8), c.g[V1][0]);
+        c.sh(oc508_at(c, S0, 0x58), c.g[A0][0]);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6110,6 +6148,21 @@ pub(crate) mod tests {
                     .write32(MEMCARD_T_FE + MEMCARD_FE_HAS_SAVE, r.next_u32() % 2);
                 c.bus.write32(MEMCARD_T_FE + MEMCARD_FE_REPLY_PENDING, flag);
                 c.pc = 0x001d_8700;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::fepopup::tests::oc508_setup;
+
+    #[test]
+    fn mem_card_state_base_ctor_3_matches() {
+        check(
+            ee::s04::f_001dde18__generated,
+            mem_card_state_base_ctor_3,
+            200,
+            &|c, seed| {
+                let mut r = oc508_setup(c, seed, 0x1dde18);
+                c.bus.write16(0x004a_1390, r.next_u32() as u16);
             },
         );
     }

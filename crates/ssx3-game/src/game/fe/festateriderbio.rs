@@ -11,6 +11,7 @@ use crate::call::Flow;
 use crate::call::Frame;
 pub(crate) use crate::game::fe::feasyncfile::lh_2 as lh;
 pub(crate) use crate::game::fe::feasyncfile::lw;
+pub(crate) use crate::game::fe::fepopup::oc508_vtable_dtor;
 pub(crate) use crate::game::fe::festateloadhint::lqsp;
 pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
@@ -54,6 +55,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0018_3d08,
         cfestateubertrick_set_button_icon,
         "cFEStateUberTrick_SetButtonIcon",
+    ),
+    (
+        0x001d_d8c8,
+        c_fe_state_rider_detail_dtor,
+        "cFEStateRiderDetail_dtor",
     ),
 ];
 
@@ -399,6 +405,13 @@ pub fn c_fe_state_rider_detail_on_activate(c: &mut Cpu) {
 // ---------------------------------------------------------------------------
 // SndPlayParams_dtor.
 
+/// `cFEStateRiderDetail::~cFEStateRiderDetail(this)` (0x1dd8c8).
+pub fn c_fe_state_rider_detail_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        oc508_vtable_dtor(c, sx(0x0047_0000 - 0x2f30), 0x0039_e390, 0x001d_d8e4)
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -552,6 +565,20 @@ pub(crate) mod tests {
                 let this = DATA + 0x1000;
                 w(c, this + 0x40, 0);
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::fepopup::tests::oc508_setup;
+
+    #[test]
+    fn c_fe_state_rider_detail_dtor_matches() {
+        check(
+            ee::s04::f_001dd8c8__generated,
+            c_fe_state_rider_detail_dtor,
+            200,
+            &|c, seed| {
+                oc508_setup(c, seed, 0x1dd8c8);
             },
         );
     }

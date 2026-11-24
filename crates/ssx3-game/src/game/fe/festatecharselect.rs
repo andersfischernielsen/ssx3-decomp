@@ -14,6 +14,7 @@ pub(crate) use crate::game::bx::bxstringctor::gp_4 as gp;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw as lw_2;
 pub(crate) use crate::game::fe::feasyncfile::at_2 as at;
 pub(crate) use crate::game::fe::feasyncfile::gpr;
+pub(crate) use crate::game::fe::fepopup::oc508_vtable_dtor;
 pub(crate) use crate::game::fe::fereal::close;
 pub(crate) use crate::game::fe::fereal::open;
 pub(crate) use crate::game::fe::festatenethelppopup::fe_state_screen_init;
@@ -75,6 +76,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001d_d840,
         fe_state_char_select_dtor,
         "cFEStateCharSelect_dtor",
+    ),
+    (
+        0x001d_d868,
+        c_fe_state_cheat_char_select_dtor,
+        "cFEStateCheatCharSelect_dtor",
     ),
 ];
 
@@ -643,6 +649,13 @@ pub fn fe_state_char_select_dtor(c: &mut Cpu) {
     })
 }
 
+/// `cFEStateCheatCharSelect::~cFEStateCheatCharSelect(this)` (0x1dd868).
+pub fn c_fe_state_cheat_char_select_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        oc508_vtable_dtor(c, sx(0x0047_0000 - 0x2f30), 0x0039_e390, 0x001d_d884)
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -949,6 +962,20 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = oc438_machine(c, seed, 0x001d_d840, 1);
                 c.g[A0][0] = (DATA + (r.next_u32() & 0xff0)) as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::fepopup::tests::oc508_setup;
+
+    #[test]
+    fn c_fe_state_cheat_char_select_dtor_matches() {
+        check(
+            ee::s04::f_001dd868__generated,
+            c_fe_state_cheat_char_select_dtor,
+            200,
+            &|c, seed| {
+                oc508_setup(c, seed, 0x1dd868);
             },
         );
     }

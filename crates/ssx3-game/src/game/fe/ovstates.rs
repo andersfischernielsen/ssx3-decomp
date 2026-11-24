@@ -8,13 +8,16 @@ use crate::call::guest;
 use crate::call::sp;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::beintplayer::lh;
 pub(crate) use crate::game::be::beprepoststate::ea;
 pub(crate) use crate::game::dirtysock::tagsunk::const_reg;
 pub(crate) use crate::game::dirtysock::tagsunk::sw;
+pub(crate) use crate::game::fe::feasyncfile::fe_ctor_with_vtable;
 pub(crate) use crate::game::fe::feasyncfile::p as p_4;
+pub(crate) use crate::game::fe::festatebonusmaterial::FE_UI_STATE_CTOR;
 pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_ACTIVATED;
 pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_IGNORED;
 pub(crate) use crate::game::fe::festatecharsetup::oc437_fe_state_dtor;
@@ -85,6 +88,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001d_e728,
         fe_state_main_menu_dtor,
         "cFEStateMainMenu_dtor",
+    ),
+    (0x001d_e690, c_fe_state_title_ctor_2, "cFEStateTitle_ctor_2"),
+    (
+        0x001d_e6f0,
+        c_fe_state_main_menu_ctor_2,
+        "cFEStateMainMenu_ctor_2",
     ),
 ];
 
@@ -731,6 +740,36 @@ pub fn fe_state_title_dtor(c: &mut Cpu) {
     oc437_fe_state_dtor(c, 0x2f30, 0x001d_e6e4)
 }
 
+/// `cFEStateTitle` constructor (0x1de690): `UIState_ctor(this, 0)`, vtable at `+8`.
+pub fn c_fe_state_title_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        fe_ctor_with_vtable(
+            c,
+            14,
+            true,
+            false,
+            Target::Table(FE_UI_STATE_CTOR),
+            0x001d_e6a8,
+            0x4548,
+        )
+    });
+}
+
+/// `cFEStateMainMenu` constructor (0x1de6f0): `UIState_ctor(this, 0)`, vtable at `+8`.
+pub fn c_fe_state_main_menu_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        fe_ctor_with_vtable(
+            c,
+            14,
+            true,
+            false,
+            Target::Table(FE_UI_STATE_CTOR),
+            0x001d_e708,
+            0x4618,
+        )
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1189,5 +1228,25 @@ pub(crate) mod tests {
         for (generated, hand, entry) in all {
             oc437_covered(generated, hand, entry, 1, &|_, _, _| {});
         }
+    }
+
+    pub(crate) use crate::game::fe::festatebonusmaterial::tests::ui_state_case;
+
+    #[test]
+    fn c_fe_state_title_ctor_2_matches() {
+        ui_state_case(
+            ee::s04::f_001de690__generated,
+            c_fe_state_title_ctor_2,
+            0x001d_e690,
+        );
+    }
+
+    #[test]
+    fn c_fe_state_main_menu_ctor_2_matches() {
+        ui_state_case(
+            ee::s04::f_001de6f0__generated,
+            c_fe_state_main_menu_ctor_2,
+            0x001d_e6f0,
+        );
     }
 }

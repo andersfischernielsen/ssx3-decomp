@@ -18,6 +18,7 @@ pub(crate) use crate::game::fe::feasyncfile::p as p_5;
 pub(crate) use crate::game::fe::feasyncfile::p as p_6;
 pub(crate) use crate::game::fe::feasyncfile::r;
 pub(crate) use crate::game::fe::feasyncfile::sb_r;
+pub(crate) use crate::game::fe::fepopup::oc508_vtable_dtor;
 pub(crate) use crate::game::fe::fepopupmisc::lb;
 pub(crate) use crate::game::fe::fepopupmisc::p_2;
 pub(crate) use crate::game::main::gamestate::gw;
@@ -76,6 +77,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x001d_cc40, fe_locale_init_flags, "FELocale_InitFlags"),
     (0x001d_cbd8, felocale_dtor, "FELocale_dtor"),
     (0x001d_cc08, felocale_v02, "FELocale_v02"),
+    (0x001d_d750, c_fe_state_dtor, "cFEState_dtor"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -922,6 +924,14 @@ pub fn felocale_v02(c: &mut Cpu) {
     })
 }
 
+/// `cFEState::~cFEState(this)` (0x1dd750): vtable 0x46d0d0, then the base
+/// state destructor (0x39e390).
+pub fn c_fe_state_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        oc508_vtable_dtor(c, sx(0x0047_0000 - 0x2f30), 0x0039_e390, 0x001d_d76c)
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1282,6 +1292,20 @@ pub(crate) mod tests {
                 let mut r = oc506_arm(c, seed, 0x1dcc08, 2);
                 c.g[A0][0] = OC506_THIS as u64;
                 c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::fepopup::tests::oc508_setup;
+
+    #[test]
+    fn c_fe_state_dtor_matches() {
+        check(
+            ee::s04::f_001dd750__generated,
+            c_fe_state_dtor,
+            200,
+            &|c, seed| {
+                oc508_setup(c, seed, 0x1dd750);
             },
         );
     }
