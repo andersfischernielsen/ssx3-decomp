@@ -14155,9 +14155,13 @@ pub(crate) mod tests {
                 w32(c, this + 0x108, (seed % 3) as u32);
                 // seed%16==1: e4 >= f0 (the CardSetState18 path);
                 // seed%16==5: e4 < f0 (the +4 hook path, hook returns 0);
-                // seed%16==13: e4 < f0 with the hook non-zero (early return).
+                // seed%16==13: e4 < f0 with the hook non-zero (early return);
+                // seed%16==9: e4 == f0 (progress at its total, the
+                // CardSetState18 path).
                 let (e4, f0) = if seed % 16 == 1 {
                     (5, 3)
+                } else if seed % 16 == 9 {
+                    (4, 4)
                 } else if seed % 16 == 5 || seed % 16 == 13 {
                     (3, 5)
                 } else {
@@ -14409,10 +14413,21 @@ pub(crate) mod tests {
 
     #[test]
     fn mc_manager_update_mode1_matches() {
+        // One digit per steering value: seed%2 the first poll, seed/2%2 the
+        // slot-0x58 result, seed/4%2 the +0x338 reload flag, seed/8%2 a -1
+        // slot count at +0x424 (the GetNumSlots branch) and seed/16%6 the
+        // mode word at +0x130 (every compared mode, 0x34 posting nothing,
+        // and one that matches none).
+        const SEEDS: u32 = 96;
+        assert_eq!(
+            SEEDS,
+            2 * 2 * 2 * 2 * 6,
+            "poll x slot 0x58 x reload x count x mode"
+        );
         check(
             ee::s06::f_0023d660__generated,
             mc_manager_update_mode1,
-            64,
+            SEEDS,
             &|c, seed| {
                 let _ = mgr(
                     c,
@@ -14422,29 +14437,23 @@ pub(crate) mod tests {
                 );
                 let this = DATA + 0x400;
                 let vt = DATA + 0x1100;
-                ret_slot(c, vt, 0x58, if seed % 4 < 2 { RET_ZERO } else { FAKE });
+                ret_slot(
+                    c,
+                    vt,
+                    0x58,
+                    if (seed / 2) % 2 == 0 { RET_ZERO } else { FAKE },
+                );
                 ret_slot(c, vt, 0x18, FAKE);
-                w32(c, this + 0x338, if seed % 3 == 0 { 0 } else { 1 });
-                // -1 at +0x424 reaches the GetNumSlots branch.
+                w32(c, this + 0x338, (seed / 4) % 2);
                 w32(
                     c,
                     this + 0x424,
-                    if seed % 5 == 4 {
-                        0xffff_ffff
-                    } else {
-                        (seed % 4) as u32
-                    },
+                    if (seed / 8) % 2 == 0 { 2 } else { 0xffff_ffff },
                 );
                 w32(
                     c,
                     this + 0x130,
-                    match seed % 5 {
-                        0 => 0x31,
-                        1 => 0x32,
-                        2 => 0x33,
-                        3 => 0x36,
-                        _ => 0x40,
-                    },
+                    [0x31, 0x32, 0x33, 0x34, 0x36, 0x40][((seed / 16) % 6) as usize],
                 );
             },
         );

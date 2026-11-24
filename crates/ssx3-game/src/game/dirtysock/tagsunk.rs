@@ -29108,6 +29108,8 @@ pub(crate) mod tests {
             8,
             &|c, seed| {
                 let _ = base_3(c, seed, 0x0026_2280, 4);
+                // The shared counter dispatches on `pc`: enter at the start.
+                c.pc = 0x0026_2280;
                 c.g[A0][0] = OBJ_2 as u64;
                 roster(c, seed % 5, seed);
             },
@@ -29122,10 +29124,91 @@ pub(crate) mod tests {
             8,
             &|c, seed| {
                 let _ = base_3(c, seed, 0x0026_22f0, 4);
+                // The shared counter dispatches on `pc`: enter at the start.
+                c.pc = 0x0026_22f0;
                 c.g[A0][0] = OBJ_2 as u64;
                 roster(c, seed % 5, seed);
             },
         );
+    }
+
+    fn hand_count_permanent(c: &mut Cpu) {
+        count_resume(c, 0x0026_2280);
+        buddy_man_count_permanent_entries(c);
+    }
+
+    fn hand_count_temp(c: &mut Cpu) {
+        count_resume(c, 0x0026_22f0);
+        buddy_man_count_temp_entries(c);
+    }
+
+    /// Both roster counters with a due event (off, unwinding or delivered by
+    /// `seed % 3`) over rosters of 0-4 entries (`seed / 3 % 5`); the loop's
+    /// only event check is its back edge, so the hand side resumes at the
+    /// body head.
+    #[test]
+    fn buddy_man_count_entries_events() {
+        driven!(gen_permanent, ee::s07::f_00262280__generated);
+        driven!(gen_temp, ee::s07::f_002622f0__generated);
+        driven!(hand_permanent, hand_count_permanent);
+        driven!(hand_temp, hand_count_temp);
+        for (name, generated, hand, entry, body) in [
+            (
+                "BuddyMan_CountPermanentEntries",
+                gen_permanent as GuestFn,
+                hand_permanent as GuestFn,
+                0x0026_2280u32,
+                0x0026_22a8u32,
+            ),
+            (
+                "BuddyMan_CountTempEntries",
+                gen_temp,
+                hand_temp,
+                0x0026_22f0,
+                0x0026_2318,
+            ),
+        ] {
+            check_resumes(name, generated, hand, 150, &[body], &|c, seed| {
+                let mut r = base_3(c, seed, entry as u64 ^ 0xe7, 4);
+                c.g[A0][0] = OBJ_2 as u64;
+                roster(c, seed / 3 % 5, seed);
+                schedule(c, &mut r, seed, entry)
+            });
+        }
+    }
+
+    /// Both roster counters entered at each of the shared loop's heads with
+    /// the frame already open: `seed % 3` the head (loop test, body, the
+    /// branch's delay slot), `seed / 3 % 5` the roster size, `seed / 15 % 2`
+    /// the index already reached (30 seeds, the full 3x5x2 cross).
+    #[test]
+    fn buddy_man_count_heads_matches() {
+        const SEEDS: u32 = 30;
+        assert_eq!(SEEDS, 3 * 5 * 2, "head x roster size x index");
+        for (generated, hand, entry, heads) in [
+            (
+                ee::s07::f_00262280__generated as GuestFn,
+                buddy_man_count_permanent_entries as GuestFn,
+                0x0026_2280u32,
+                [0x0026_22bcu32, 0x0026_22a8, 0x0026_22a4],
+            ),
+            (
+                ee::s07::f_002622f0__generated,
+                buddy_man_count_temp_entries,
+                0x0026_22f0,
+                [0x0026_232c, 0x0026_2318, 0x0026_2314],
+            ),
+        ] {
+            check(generated, hand, SEEDS, &|c, seed| {
+                let _ = base_3(c, seed, entry as u64 ^ 0x4ead, 4);
+                roster(c, seed / 3 % 5, seed);
+                c.pc = heads[(seed % 3) as usize];
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                c.g[S2][0] = OBJ_2 as u64;
+                c.g[S0][0] = (seed / 15 % 2) as u64;
+                c.g[S1][0] = 0;
+            });
+        }
     }
 
     #[test]
@@ -30378,10 +30461,16 @@ pub(crate) mod tests {
                 c.g[A3][0] = sx(modifier);
                 for i in 0..4u32 {
                     let chan = kb + i * CHANNEL_SIZE as u32;
-                    let read = match r.next_u32() % 4 {
-                        0 => (r.next_u32() % 200).wrapping_neg(),
-                        1 => r.next_u32() % 1000,
-                        _ => r.next_u32() % 64,
+                    // seed%10 == 9: every read counter at -1, the one
+                    // negative count whose remainder rounds the other way.
+                    let read = if seed % 10 == 9 {
+                        u32::MAX
+                    } else {
+                        match r.next_u32() % 4 {
+                            0 => (r.next_u32() % 200).wrapping_neg(),
+                            1 => r.next_u32() % 1000,
+                            _ => r.next_u32() % 64,
+                        }
                     };
                     let count = if r.next_u32() % 4 == 0 {
                         read
@@ -31007,11 +31096,30 @@ pub(crate) mod tests {
         ret(c);
     }
 
+    /// `Net_DisconnectAll` (0x2636f0) for the net tests: the real one runs
+    /// the whole lobby shutdown, so this logs a0/a1 at `NET_CTRL + 0x80` and
+    /// returns.
+    pub(crate) fn net_fake_disconnect_all(c: &mut Cpu) {
+        use crate::difftest::fakes::{fall_back, prev_cell};
+        if c.bus.read32(NET_CTRL) != NET_MAGIC {
+            return fall_back(
+                c,
+                prev_cell(net_fake_disconnect_all),
+                ee::s07::f_002636f0__generated,
+            );
+        }
+        c.bus.write32(NET_CTRL + 0x80, c.g[A0][0] as u32);
+        c.bus.write32(NET_CTRL + 0x84, c.g[A1][0] as u32);
+        c.cycles += 7;
+        ret(c);
+    }
+
     /// Net_UpdateConnect: idle, connecting (the comm system up: the message
-    /// post through a fake allocator; or still waiting: the timer counts
-    /// down), connected (no failure) and unknown states. Not reached: the
-    /// three disconnect paths (comm failure, timeout): the real
-    /// Net_DisconnectAll runs the whole lobby shutdown.
+    /// post through a fake allocator; failed: the disconnect through a fake;
+    /// or still waiting: the timer counts down or has run out), connected
+    /// (no failure) and unknown states. One digit per steering value:
+    /// seed%6 the state, seed/6%6 the comm system's state, seed/36%2 a timer
+    /// already below zero (72 seeds, the full cross).
     #[test]
     fn net_update_connect_matches() {
         use crate::difftest::fakes::{hook, prev_cell};
@@ -31020,10 +31128,17 @@ pub(crate) mod tests {
             net_fake_mem_alloc,
             prev_cell(net_fake_mem_alloc),
         );
+        hook(
+            std::ptr::addr_of_mut!(ee::s07::OVERRIDE_002636F0),
+            net_fake_disconnect_all,
+            prev_cell(net_fake_disconnect_all),
+        );
+        const SEEDS: u32 = 72;
+        assert_eq!(SEEDS, 6 * 6 * 2, "state x comm state x timer");
         check(
             ee::s07::f_00263828__generated,
             net_update_connect,
-            200,
+            SEEDS,
             &|c, seed| {
                 let mut r = machine(c, seed, 0x263828, 0);
                 c.pc = 0x0026_3828;
@@ -31039,16 +31154,13 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 let state = [0u32, 1, 1, 2, 3, 0xffff_ffff][(seed % 6) as usize];
                 c.bus.write32(this + NET_CONNECT_STATE, state);
+                let timer = 0.01 + (r.next_u32() % 100) as f32;
                 c.bus.write32(
                     this + NET_CONNECT_TIMER,
-                    (0.01 + (r.next_u32() % 100) as f32).to_bits(),
+                    if seed / 36 % 2 == 0 { timer } else { -timer }.to_bits(),
                 );
                 c.bus.write32(GAME_GP - NET_COMM_SYSTEM_GP, comm);
-                let comm_state = if seed % 3 == 0 {
-                    5
-                } else {
-                    [0u32, 2, 4, 7][(seed / 3 % 4) as usize]
-                };
+                let comm_state = [5u32, 0, 2, 4, 7, 6][(seed / 6 % 6) as usize];
                 c.bus.write32(comm + 0x20, comm_state);
                 c.bus.write32(comm + 0x28, r.next_u32());
                 c.bus.write32(GAME_GP - NET_LOBBY_MAN_GP, lobby);
@@ -31069,6 +31181,7 @@ pub(crate) mod tests {
     use crate::difftest::fakes::hook;
     use crate::difftest::fakes::prev_cell;
     use crate::difftest::fakes::LOG_UNWIND_AT;
+    use crate::game::dirtysock::lobbyapi::tests::{check_resumes, count_resume};
     use std::ptr::addr_of_mut;
     use std::sync::atomic::AtomicUsize;
 
@@ -31677,15 +31790,39 @@ pub(crate) mod tests {
     /// 0/4/11 nothing).
     pub(crate) const MC_POLL_MODES: [u32; 14] = [10, 3, 15, 16, 20, 0, 1, 2, 4, 5, 6, 9, 11, 14];
 
+    /// Gate of the `cPS2MemCard_GetPortError` fake below.
+    pub(crate) const MC_PORT_FAKE_CTRL: u32 = DATA + 0xf_d000;
+
+    pub(crate) const MC_PORT_FAKE_MAGIC: u32 = 0x706f_7274;
+
+    pub(crate) const MC_PORT_FAKE_CALLS: u32 = MC_PORT_FAKE_CTRL + 4;
+
+    /// `cPS2MemCard_GetPortError` with its gate set: no error on the first
+    /// call, -3 from the second on.
+    fn mc_fake_port_error(c: &mut Cpu) {
+        if c.bus.read32(MC_PORT_FAKE_CTRL) != MC_PORT_FAKE_MAGIC {
+            let prev = prev_cell(mc_fake_port_error);
+            return fall_back(c, prev, ee::s08::f_002c51d0__generated);
+        }
+        let n = c.bus.read32(MC_PORT_FAKE_CALLS);
+        c.bus.write32(MC_PORT_FAKE_CALLS, n + 1);
+        c.cycles += 4;
+        c.g[V0][0] = if n == 0 { 0 } else { sx(-3i32 as u32) };
+        ret(c);
+    }
+
     /// `cSharedLoginMan_McPoll`: mode `MC_POLL_MODES[seed % 14]`; by
-    /// `seed / 14 % 5`: 0 the card answers (slot 0x58 is a fake, non-zero),
+    /// `seed / 14 % 6`: 0 the card answers (slot 0x58 is a fake, non-zero),
     /// 1 port error -3, 2 port error word 1 (reported as -10), 3 no error with
     /// no retries and no directory entries, 4 no error with two retries and
-    /// three entries.
+    /// three entries, 5 the mode's table word is the function's start (the
+    /// shipped table has no such word, so this is the reference path for
+    /// it: the poll re-runs from the prologue) and the port reports no error
+    /// on the first pass, -3 on the second.
     pub(crate) fn mc_poll_fixture(c: &mut Cpu, seed: u32) {
         let mut r = machine(c, seed, 0x266358, 0);
         c.pc = 0x0026_6358;
-        let class = seed / 14 % 5;
+        let class = seed / 14 % 6;
         let answer = if class == 0 {
             FAKE
         } else {
@@ -31708,10 +31845,20 @@ pub(crate) mod tests {
             GAME_GP.wrapping_add(MC_SAVED_RESULT_GP as u32),
             r.next_u32(),
         );
-        c.bus.write32(
-            GAME_GP.wrapping_add(MC_MODE_GP as u32),
-            MC_POLL_MODES[(seed % 14) as usize],
-        );
+        let mode = MC_POLL_MODES[(seed % 14) as usize];
+        c.bus.write32(GAME_GP.wrapping_add(MC_MODE_GP as u32), mode);
+        if class == 5 {
+            hook(
+                std::ptr::addr_of_mut!(ee::s08::OVERRIDE_002C51D0),
+                mc_fake_port_error,
+                prev_cell(mc_fake_port_error),
+            );
+            c.bus.write32(MC_PORT_FAKE_CTRL, MC_PORT_FAKE_MAGIC);
+            c.bus.write32(MC_PORT_FAKE_CALLS, 0);
+            if mode < 15 {
+                c.bus.write32(MC_POLL_TABLE + 4 * mode, 0x0026_6358);
+            }
+        }
         c.g[A0][0] = DATA as u64;
         c.g[A1][0] = (DATA + 0x800) as u64;
     }
@@ -31721,7 +31868,7 @@ pub(crate) mod tests {
         check(
             ee::s07::f_00266358__generated,
             c_shared_login_man_mc_poll,
-            70,
+            84,
             &|c, seed| mc_poll_fixture(c, seed),
         );
     }
@@ -32189,6 +32336,40 @@ pub(crate) mod tests {
                 let stats = seed / 160 % 2 == 1;
                 let unwind_at = if seed >= 320 { seed / 7 % 8 } else { u32::MAX };
                 setup_man_update_fixture(c, seed, state, host, stats, kind, 1, 3, true, unwind_at);
+            },
+        );
+    }
+
+    /// The client's type-5 packet (`cSetupMan_ClientRecvMsg5`) before state
+    /// 7, with each fake call in turn unwinding, so the handler's first
+    /// allocation unwinds with the dispatch compare still in v0: `seed % 2`
+    /// the state (0 or the handshake state 5), `seed / 2 % 2` the stats
+    /// flag, `seed / 4 % 8` the fake call that unwinds.
+    #[test]
+    fn c_setup_man_update_client_msg5_unwind_matches() {
+        const SEEDS: u32 = 32;
+        assert_eq!(SEEDS, 2 * 2 * 8, "state x stats x unwinding call");
+        setup_man_update_hooks();
+        check(
+            ee::s07::f_002642b8__generated,
+            c_setup_man_update,
+            SEEDS,
+            &|c, seed| {
+                let state = [0, 5][(seed % 2) as usize];
+                let stats = seed / 2 % 2 == 1;
+                let unwind_at = seed / 4 % 8;
+                setup_man_update_fixture(
+                    c,
+                    seed,
+                    state,
+                    false,
+                    stats,
+                    Some(5),
+                    1,
+                    3,
+                    true,
+                    unwind_at,
+                );
             },
         );
     }
@@ -34490,8 +34671,26 @@ pub(crate) mod tests {
     /// Non-zero: `BuddyMan_AddMessage` runs for real; zero: it stores nothing.
     pub(crate) const BUDDY_FAKE_ADD_REAL: u32 = BUDDY_FAKES_CTRL + 0x14;
 
+    /// `BUDDY_DROP_MAGIC`: `BuddyMan_Reconnect` tears the manager down
+    /// (gp+0x238 cleared, as `BuddyMan_Destroy` leaves it); otherwise it
+    /// runs for real.
+    pub(crate) const BUDDY_FAKE_DROP: u32 = BUDDY_FAKES_CTRL + 0x18;
+
+    pub(crate) const BUDDY_DROP_MAGIC: u32 = 0x6472_6f70;
+
     fn buddy_fakes_gated(c: &mut Cpu) -> bool {
         c.bus.read32(BUDDY_FAKES_CTRL) == BUDDY_FAKES_MAGIC
+    }
+
+    fn buddy_fake_reconnect(c: &mut Cpu) {
+        if !buddy_fakes_gated(c) || c.bus.read32(BUDDY_FAKE_DROP) != BUDDY_DROP_MAGIC {
+            let prev = prev_cell(buddy_fake_reconnect);
+            return fall_back(c, prev, ee::s06::f_002613c8__generated);
+        }
+        c.cycles += 11;
+        let gp = c.g[GP][0] as u32;
+        c.bus.write32(gp.wrapping_add(BUDDY_MAN_GP as u32), 0);
+        ret(c);
     }
 
     fn buddy_fake_is_blocked(c: &mut Cpu) {
@@ -34577,7 +34776,7 @@ pub(crate) mod tests {
 
     /// Hook the fakes above (once per process) and open their gate in `c`.
     pub(crate) fn buddy_fakes_on(c: &mut Cpu) {
-        let slots: [(*mut fn(&mut Cpu), fn(&mut Cpu)); 8] = [
+        let slots: [(*mut fn(&mut Cpu), fn(&mut Cpu)); 9] = [
             (
                 addr_of_mut!(ee::s01::OVERRIDE_0014DD58),
                 lobby_fake_get_interface,
@@ -34609,6 +34808,10 @@ pub(crate) mod tests {
             (
                 addr_of_mut!(ee::s06::OVERRIDE_0025FC70),
                 lobby_fake_send_lock_chal,
+            ),
+            (
+                addr_of_mut!(ee::s06::OVERRIDE_002613C8),
+                buddy_fake_reconnect,
             ),
         ];
         for (slot, fake) in slots {
@@ -34930,7 +35133,11 @@ pub(crate) mod tests {
     /// `BuddyMan_Reconnect` returns at once) by `seed / 4 % 2`; the roster
     /// lookups faked, bit `i` of `seed / 8 % 4` = the `i`th
     /// `BuddyMan_FindRosterEntry` call finds the sender on the roster; and `seed / 32 % 4 == 3`: no manager at
-    /// gp+0x238 (the first getter creates an empty one).
+    /// gp+0x238 (the first getter creates an empty one), `== 2`: the manager
+    /// is torn down whenever it reconnects, so with +0xD8 = 1 every getter
+    /// is left without one (create, reconnect, then `LobbyMan_Disconnect`)
+    /// and the walk runs on the null manager, whose words at 0xAC..0xB0 and
+    /// 0xC8 hold the same messages and buddy API.
     pub(crate) fn roster_fixture(c: &mut Cpu, seed: u32) {
         buddy_fakes_on(c);
         c.bus.write32(BUDDY_FAKE_FOUND, seed / 8 % 4);
@@ -34938,6 +35145,12 @@ pub(crate) mod tests {
         let begin = BUDDY_MGR_MESSAGES;
         let n = seed % 4;
         let have_mgr = seed / 32 % 4 != 3;
+        if seed / 32 % 4 == 2 {
+            c.bus.write32(BUDDY_FAKE_DROP, BUDDY_DROP_MAGIC);
+            c.bus.write32(BUDDY_MESSAGES_BEGIN, begin);
+            c.bus.write32(BUDDY_MESSAGES_END, begin + 4 * n);
+            c.bus.write32(0xc8, 1);
+        }
         c.bus.write32(
             GAME_GP + BUDDY_MAN_GP as u32,
             if have_mgr { mgr } else { 0 },
@@ -34964,7 +35177,11 @@ pub(crate) mod tests {
             ee::s06::f_002610d0__generated,
             buddy_man_add_message_senders_to_roster,
             128,
-            &[42, 53, 136, 180, 932, 987, 230, 307, 1822, 1921, 247],
+            // 79, 880, 1912: the torn-down manager with no message, one
+            // sender already on the roster, one sender added.
+            &[
+                42, 53, 136, 180, 932, 987, 230, 307, 1822, 1921, 247, 79, 880, 1912,
+            ],
             &|c, seed| {
                 let _r = buddy_lobby_base(c, seed, 0x2610_d000, 0x0026_10d0, false);
                 roster_fixture(c, seed);
