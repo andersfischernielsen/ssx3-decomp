@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -107,6 +108,19 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_bf68, sce_sif_reboot_iop, "sceSifRebootIop"),
     (0x0042_b840, _sce_sif_load_module, "_sceSifLoadModule"),
     (0x0042_baa8, _sce_sif_load_elf_part, "_sceSifLoadElfPart"),
+    (0x0040_b130, sce_sif_minit_rpc, "sceSifMInitRpc"),
+    (0x0040_b1f8, sce_sif_mexit_rpc, "sceSifMExitRpc"),
+    (
+        0x0040_b3d8,
+        sce_sif_mbind_rpc_default,
+        "sceSifMBindRpcDefault",
+    ),
+    (0x0040_b400, sce_sif_mbind_rpc, "sceSifMBindRpc"),
+    (0x0040_b5b0, sce_sif_mterm_rpc, "sceSifMTermRpc"),
+    (0x0040_b6d0, sce_sif_mcall_rpc, "sceSifMCallRpc"),
+    (0x0040_b208, libmrpc_get_packet, "libmrpc_GetPacket"),
+    (0x0040_b2b0, libmrpc_free_packet, "libmrpc_FreePacket"),
+    (0x0040_b2d0, libmrpc_request_end, "libmrpc_RequestEnd"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -255,6 +269,51 @@ pub(crate) mod callee {
         addr: 0x0042_c0c0,
         f: ee::s15::f_0042c0c0,
     };
+    /// `libmrpc_GetPacket` (`0x0040_b208`).
+    pub(crate) const MRPC_GET_PACKET: Callee = Callee {
+        addr: 0x0040_b208,
+        f: ee::s15::libmrpc_GetPacket,
+    };
+
+    /// `libmrpc_FreePacket` (`0x0040_b2b0`).
+    pub(crate) const MRPC_FREE_PACKET: Callee = Callee {
+        addr: 0x0040_b2b0,
+        f: ee::s15::libmrpc_FreePacket,
+    };
+
+    /// `sceSifMBindRpc` (`0x0040_b400`).
+    pub(crate) const MBIND_RPC: Callee = Callee {
+        addr: 0x0040_b400,
+        f: ee::s15::sceSifMBindRpc,
+    };
+
+    pub(super) use crate::game::lib::kernel::callee::CREATE_SEMA;
+
+    /// `DeleteSema` (`0x0042_3db0`).
+    pub(crate) const DELETE_SEMA: Callee = Callee {
+        addr: 0x0042_3db0,
+        f: ee::s15::DeleteSema,
+    };
+
+    pub(super) use crate::game::lib::cdvd::callee::ISIGNAL_SEMA;
+
+    pub(super) use crate::game::lib::usbkb::callee::WAIT_SEMA;
+
+    /// `sceSifGetSreg` (`0x0042_5cf0`).
+    pub(crate) const GET_SREG: Callee = Callee {
+        addr: 0x0042_5cf0,
+        f: ee::s15::sceSifGetSreg,
+    };
+
+    pub(super) use crate::game::lib::cdvd::callee::ADD_CMD_HANDLER;
+
+    /// `sceSifSendCmd` (`0x0042_61b0`).
+    pub(crate) const SEND_CMD: Callee = Callee {
+        addr: 0x0042_61b0,
+        f: ee::s15::sceSifSendCmd,
+    };
+
+    pub(super) use crate::game::lib::cdvd::callee::DINTR;
 }
 
 /// The `syscall` trap: `pc = ret`, invoke the hook at `at`; `false` when the
@@ -2873,14 +2932,837 @@ pub fn _sce_sif_load_elf_part(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Shared SIF-RPC / memory-card RPC layout.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// `int sceSifMCallRpc(client, sub, mode, send, send_size, recv, recv_size,
+// tid, end_cb, end_param)` (0x40b6d0): nonzero mode prints and returns
+// -1; misaligned send/recv sizes print and return -1; no free packet
+// returns -1. Mode&1 sends fire-and-forget (0, or -2 when the send
+// fails); mode 0 waits on a fresh sema after a successful send.
+pub fn sce_sif_mcall_rpc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xc0);
+        c.sd(frame.at(c, 0xa0), c.g[FP][0]);
+        c.sd(frame.at(c, 0x90), c.g[S7][0]);
+        c.g[FP][0] = c.g[A2][0];
+        c.sd(frame.at(c, 0x80), c.g[S6][0]);
+        c.g[S7][0] = c.g[T3][0];
+        c.sd(frame.at(c, 0x70), c.g[S5][0]);
+        c.g[S6][0] = c.g[A1][0];
+        c.sd(frame.at(c, 0x60), c.g[S4][0]);
+        c.g[S5][0] = c.g[T1][0];
+        c.sd(frame.at(c, 0x50), c.g[S3][0]);
+        c.g[S4][0] = c.g[A3][0];
+        c.sd(frame.at(c, 0x40), c.g[S2][0]);
+        c.g[S3][0] = c.g[T0][0];
+        c.sd(frame.at(c, 0x30), c.g[S1][0]);
+        c.g[S2][0] = c.g[A0][0];
+        c.sd(frame.at(c, 0xb0), c.g[RA][0]);
+        c.g[S1][0] = c.g[T2][0];
+        c.sd(frame.at(c, 0x20), c.g[S0][0]);
+        if c.g[FP][0] != 0 {
+            // Nonzero mode: print and fail.
+            c.cycles += 5;
+            c.g[A0][0] = sx(0x0049_8178);
+            c.g[RA][0] = sx(0x0040_b72c);
+            callee::PRINTF.call(c, 0x0040_b72c)?;
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        } else {
+            // Mode 0: wait on the client sema first, then check sizes.
+            c.cycles += 5;
+            c.g[RA][0] = sx(0x0040_b73c);
+            c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x28));
+            callee::WAIT_SEMA.call(c, 0x0040_b73c)?;
+            c.g[V1][0] = c.g[S4][0] & 0x3f;
+            c.g[A0][0] = 0x4a_0000;
+            if c.g[V1][0] != 0 {
+                // Misaligned send size: print and fail.
+                c.cycles += 5;
+                c.g[A1][0] = sx(0x0049_81d8);
+                c.g[A0][0] = sx(0x0049_81a0);
+                c.g[A2][0] = c.g[S4][0];
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x0040_b780);
+                callee::PRINTF.call(c, 0x0040_b780)?;
+                c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+            } else if {
+                c.cycles += 3;
+                c.g[V0][0] = c.g[S5][0] & 0x3f;
+                c.g[A1][0] = 0x4a0000;
+                c.g[V0][0] != 0
+            } {
+                // Misaligned receive size: print and fail.
+                c.cycles += 4;
+                c.g[A0][0] = sx(0x0049_81e8);
+                c.g[A1][0] = sx(0x0049_81d8);
+                c.g[A2][0] = c.g[S5][0];
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x0040_b780);
+                callee::PRINTF.call(c, 0x0040_b780)?;
+                c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+            } else {
+                // Aligned: take a packet and fill it in.
+                c.cycles += 6;
+                c.g[A0][0] = sx(MRPC_POOL);
+                c.g[RA][0] = sx(0x0040_b794);
+                callee::MRPC_GET_PACKET.call(c, 0x0040_b794)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[V1][0] = c.lw(frame.at(c, 0xc0));
+                if c.g[S0][0] == 0 {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+                } else {
+                    c.cycles += 14;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x20), c.g[V1][0]);
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    c.sw(c.g[S2][0] as u32, c.g[S0][0]);
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x1c), c.g[S7][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[S6][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[S0][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x24), c.g[S3][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[S5][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), c.g[S1][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[S2][0]);
+                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x24));
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x34), c.g[V0][0]);
+                    if c.g[S4][0] != c.g[S5][0] {
+                        c.cycles += 2;
+                        c.g[A0][0] = c.g[S4][0];
+                        if (c.g[S3][0] as i64) > 0 {
+                            c.cycles += 2;
+                            c.g[RA][0] = sx(0x0040_b80c);
+                            c.g[A1][0] = c.g[S3][0];
+                            callee::WRITEBACK.call(c, 0x0040_b80c)?;
+                        }
+                        c.cycles += 2;
+                        c.g[A0][0] = c.g[S5][0];
+                        if (c.g[S1][0] as i64) > 0 {
+                            c.cycles += 2;
+                            c.g[RA][0] = sx(0x0040_b81c);
+                            c.g[A1][0] = c.g[S1][0];
+                            callee::WRITEBACK.call(c, 0x0040_b81c)?;
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = c.g[FP][0] & 0x1;
+                    } else {
+                        c.cycles += 7;
+                        c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                        c.g[A1][0] = c.g[S1][0];
+                        c.g[A0][0] = c.g[S4][0];
+                        c.g[RA][0] = sx(0x0040_b7f4);
+                        if c.g[V0][0] == 0 {
+                            c.g[A1][0] = c.g[S3][0];
+                        }
+                        callee::WRITEBACK.call(c, 0x0040_b7f4)?;
+                        c.g[V0][0] = c.g[FP][0] & 0x1;
+                    }
+                    c.cycles += 2;
+                    if c.g[V0][0] == 0 {
+                        // Synchronous completion: wait on a fresh sema.
+                        c.g[S5][0] = 0x1;
+                        c.cycles += 8;
+                        c.sw(frame.at(c, 0x8), 0u64);
+                        c.sw(frame.at(c, 0x4), c.g[S5][0]);
+                        c.g[A0][0] = c.g[SP][0];
+                        c.g[RA][0] = sx(0x0040_b890);
+                        c.sw(frame.at(c, 0x14), 0u64);
+                        callee::CREATE_SEMA.call(c, 0x0040_b890)?;
+                        c.g[S1][0] = c.g[V0][0];
+                        c.sw((c.g[S2][0] as u32).wrapping_add(0x8), c.g[S1][0]);
+                        if (c.g[S1][0] as i64) >= 0 {
+                            c.cycles += 11;
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x30), c.g[S5][0]);
+                            c.g[A0][0] = 0xffff_ffff_8000_001a;
+                            c.g[A3][0] = c.g[S4][0];
+                            c.g[T1][0] = c.g[S3][0];
+                            c.g[T0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x14));
+                            c.g[A1][0] = c.g[S0][0];
+                            c.g[RA][0] = sx(0x0040_b8d0);
+                            c.g[A2][0] = 0x40;
+                            callee::SEND_CMD.call(c, 0x0040_b8d0)?;
+                            if c.g[V0][0] == 0 {
+                                c.cycles += 6;
+                                c.g[RA][0] = sx(0x0040_b8e0);
+                                c.g[A0][0] = c.g[S0][0];
+                                callee::MRPC_FREE_PACKET.call(c, 0x0040_b8e0)?;
+                                c.g[RA][0] = sx(0x0040_b8e8);
+                                c.g[A0][0] = c.g[S1][0];
+                                callee::DELETE_SEMA.call(c, 0x0040_b8e8)?;
+                                c.g[V0][0] = 0xffff_ffff_ffff_fffe;
+                            } else {
+                                c.cycles += 5;
+                                c.g[RA][0] = sx(0x0040_b8f8);
+                                c.g[A0][0] = c.g[S1][0];
+                                callee::WAIT_SEMA.call(c, 0x0040_b8f8)?;
+                                c.g[RA][0] = sx(0x0040_b900);
+                                c.g[A0][0] = c.g[S1][0];
+                                callee::DELETE_SEMA.call(c, 0x0040_b900)?;
+                                c.g[V0][0] = 0u64;
+                            }
+                        } else {
+                            c.cycles += 4;
+                            c.g[RA][0] = sx(0x0040_b8a4);
+                            c.g[A0][0] = c.g[S0][0];
+                            callee::MRPC_FREE_PACKET.call(c, 0x0040_b8a4)?;
+                            c.g[V0][0] = 0xffff_ffff_ffff_fffd;
+                        }
+                    } else {
+                        // Callback completion: flag the packet and send.
+                        c.cycles += 2;
+                        c.g[V0][0] = 0x1;
+                        if c.g[S7][0] == 0 {
+                            c.cycles += 2;
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x30), 0u64);
+                        } else {
+                            c.cycles += 1;
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x30), c.g[V0][0]);
+                        }
+                        c.cycles += 12;
+                        c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+                        c.g[A0][0] = 0xffff_ffff_8000_001a;
+                        c.g[T0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x14));
+                        c.g[A3][0] = c.g[S4][0];
+                        c.sw((c.g[S2][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                        c.g[T1][0] = c.g[S3][0];
+                        c.g[A0][0] = c.g[A0][0] | 0x1a;
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[RA][0] = sx(0x0040_b864);
+                        c.g[A2][0] = 0x40;
+                        callee::SEND_CMD.call(c, 0x0040_b864)?;
+                        if c.g[V0][0] != 0 {
+                            c.g[V0][0] = 0u64;
+                        } else {
+                            c.cycles += 4;
+                            c.g[RA][0] = sx(0x0040_b874);
+                            c.g[A0][0] = c.g[S0][0];
+                            callee::MRPC_FREE_PACKET.call(c, 0x0040_b874)?;
+                            c.g[V0][0] = 0xffff_ffff_ffff_fffe;
+                        }
+                    }
+                }
+            }
+        }
+        c.cycles += 12;
+        frame.restore_ra(c, 0xb0);
+        c.g[FP][0] = c.ld(frame.at(c, 0xa0));
+        c.g[S7][0] = c.ld(frame.at(c, 0x90));
+        c.g[S6][0] = c.ld(frame.at(c, 0x80));
+        c.g[S5][0] = c.ld(frame.at(c, 0x70));
+        c.g[S4][0] = c.ld(frame.at(c, 0x60));
+        c.g[S3][0] = c.ld(frame.at(c, 0x50));
+        c.g[S2][0] = c.ld(frame.at(c, 0x40));
+        c.g[S1][0] = c.ld(frame.at(c, 0x30));
+        c.g[S0][0] = c.ld(frame.at(c, 0x20));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// `int sceSifMTermRpc(client, mode)` (0x40b5b0): nonzero mode prints and
+// returns -1. Otherwise waits on the client sema, takes a packet (none:
+// -1), and sends the 0x1d terminate command. A failed send frees the
+// packet, deletes the sema and returns -2; a sent command waits, deletes
+// both semas and returns the client's return word.
+pub fn sce_sif_mterm_rpc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x60);
+        c.sd(frame.at(c, 0x30), c.g[S1][0]);
+        c.sd(frame.at(c, 0x50), c.g[RA][0]);
+        c.g[S1][0] = c.g[A0][0];
+        c.sd(frame.at(c, 0x40), c.g[S2][0]);
+        c.sd(frame.at(c, 0x20), c.g[S0][0]);
+        if c.g[A1][0] == 0 {
+            c.cycles += 8;
+            c.g[RA][0] = sx(0x0040_b5e8);
+            c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+            callee::WAIT_SEMA.call(c, 0x0040_b5e8)?;
+            c.g[A0][0] = sx(MRPC_POOL);
+            c.g[RA][0] = sx(0x0040_b5f4);
+            callee::MRPC_GET_PACKET.call(c, 0x0040_b5f4)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+            if c.g[S0][0] != 0 {
+                c.cycles += 18;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                c.g[A1][0] = 0x1;
+                c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                c.g[A0][0] = sp(c) as u64;
+                c.sw(c.g[S1][0] as u32, c.g[S0][0]);
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[V1][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[S0][0]);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[S1][0]);
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x24), c.g[V0][0]);
+                c.sw(frame.at(c, 0x4), c.g[A1][0]);
+                c.sw(frame.at(c, 0x8), 0u64);
+                c.g[RA][0] = sx(0x0040_b63c);
+                c.sw(frame.at(c, 0x14), 0u64);
+                callee::CREATE_SEMA.call(c, 0x0040_b63c)?;
+                c.g[S2][0] = c.g[V0][0];
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[S2][0]);
+                if (c.g[S2][0] as i64) >= 0 {
+                    c.cycles += 10;
+                    c.g[A0][0] = 0xffff_ffff_8000_001d;
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = c.g[A0][0] | 0x1d;
+                    c.g[A2][0] = 0x40;
+                    c.g[A3][0] = 0u64;
+                    c.g[T0][0] = 0u64;
+                    c.g[RA][0] = sx(0x0040_b678);
+                    c.g[T1][0] = 0u64;
+                    callee::SEND_CMD.call(c, 0x0040_b678)?;
+                    if c.g[V0][0] == 0 {
+                        c.cycles += 6;
+                        c.g[RA][0] = sx(0x0040_b688);
+                        c.g[A0][0] = c.g[S0][0];
+                        callee::MRPC_FREE_PACKET.call(c, 0x0040_b688)?;
+                        c.g[RA][0] = sx(0x0040_b690);
+                        c.g[A0][0] = c.g[S2][0];
+                        callee::DELETE_SEMA.call(c, 0x0040_b690)?;
+                        c.g[V0][0] = 0xffff_ffff_ffff_fffe;
+                    } else {
+                        c.cycles += 7;
+                        c.g[RA][0] = sx(0x0040_b6a0);
+                        c.g[A0][0] = c.g[S2][0];
+                        callee::WAIT_SEMA.call(c, 0x0040_b6a0)?;
+                        c.g[RA][0] = sx(0x0040_b6a8);
+                        c.g[A0][0] = c.g[S2][0];
+                        callee::DELETE_SEMA.call(c, 0x0040_b6a8)?;
+                        c.g[RA][0] = sx(0x0040_b6b0);
+                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                        callee::DELETE_SEMA.call(c, 0x0040_b6b0)?;
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x2c));
+                    }
+                } else {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x0040_b650);
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::MRPC_FREE_PACKET.call(c, 0x0040_b650)?;
+                    c.g[V0][0] = 0xffff_ffff_ffff_fffd;
+                }
+            }
+        } else {
+            c.cycles += 5;
+            c.g[A0][0] = sx(0x0049_8178);
+            c.g[RA][0] = sx(0x0040_b5d8);
+            callee::PRINTF.call(c, 0x0040_b5d8)?;
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        }
+        c.cycles += 6;
+        frame.restore_ra(c, 0x50);
+        c.g[S2][0] = c.ld(frame.at(c, 0x40));
+        c.g[S1][0] = c.ld(frame.at(c, 0x30));
+        c.g[S0][0] = c.ld(frame.at(c, 0x20));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// `int sceSifMBindRpc(client, rpc_id, mode, arg1, arg2, arg3)` (0x40b400):
+// nonzero mode prints and returns -1. Otherwise creates the bind sema
+// (-3 when exhausted), waits on it, takes a packet (none: deletes the
+// sema, -1), creates the completion sema (-3 on exhaustion, freeing the
+// packet and deleting the bind sema), and sends the 0x19 bind command.
+// A failed send frees the packet, deletes both semas and returns -2; a
+// sent command waits, deletes the completion sema, and deletes the bind
+// sema too when the bind failed.
+pub fn sce_sif_mbind_rpc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0xa0);
+        c.sd(frame.at(c, 0x80), c.g[S6][0]);
+        c.sd(frame.at(c, 0x70), c.g[S5][0]);
+        c.g[S6][0] = c.g[T1][0];
+        c.sd(frame.at(c, 0x60), c.g[S4][0]);
+        c.g[S5][0] = c.g[T0][0];
+        c.sd(frame.at(c, 0x50), c.g[S3][0]);
+        c.g[S4][0] = c.g[A3][0];
+        c.sd(frame.at(c, 0x30), c.g[S1][0]);
+        c.g[S3][0] = c.g[A1][0];
+        c.sd(frame.at(c, 0x90), c.g[RA][0]);
+        c.g[S1][0] = c.g[A0][0];
+        c.sd(frame.at(c, 0x40), c.g[S2][0]);
+        c.sd(frame.at(c, 0x20), c.g[S0][0]);
+        if c.g[A2][0] == 0 {
+            c.cycles += 8;
+            c.g[S2][0] = 0x1;
+            c.sw(frame.at(c, 0x14), 0u64);
+            c.sw(frame.at(c, 0x8), c.g[S2][0]);
+            c.g[A0][0] = sp(c) as u64;
+            c.g[RA][0] = sx(0x0040_b468);
+            c.sw(frame.at(c, 0x4), c.g[S2][0]);
+            callee::CREATE_SEMA.call(c, 0x0040_b468)?;
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x28), c.g[V0][0]);
+            if (c.g[V0][0] as i64) >= 0 {
+                c.cycles += 13;
+                c.g[RA][0] = sx(0x0040_b480);
+                c.g[A0][0] = c.g[V0][0];
+                callee::WAIT_SEMA.call(c, 0x0040_b480)?;
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x10), c.g[S3][0]);
+                c.g[A0][0] = sx(MRPC_POOL);
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x24), 0u64);
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x30), c.g[S4][0]);
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x34), c.g[S5][0]);
+                c.g[RA][0] = sx(0x0040_b4a0);
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x38), c.g[S6][0]);
+                callee::MRPC_GET_PACKET.call(c, 0x0040_b4a0)?;
+                c.g[S0][0] = c.g[V0][0];
+                if c.g[S0][0] != 0 {
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                    c.cycles += 16;
+                    c.g[A0][0] = sp(c) as u64;
+                    c.sw(c.g[S1][0] as u32, c.g[S0][0]);
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[S3][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x24), c.g[S4][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[S5][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), c.g[S6][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[S0][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[S1][0]);
+                    c.sw(frame.at(c, 0x4), c.g[S2][0]);
+                    c.sw(frame.at(c, 0x8), 0u64);
+                    c.g[RA][0] = sx(0x0040_b4f0);
+                    c.sw(frame.at(c, 0x14), 0u64);
+                    callee::CREATE_SEMA.call(c, 0x0040_b4f0)?;
+                    c.g[S2][0] = c.g[V0][0];
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[S2][0]);
+                    if (c.g[S2][0] as i64) >= 0 {
+                        c.cycles += 10;
+                        c.g[A0][0] = 0xffff_ffff_8000_0019;
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A0][0] = c.g[A0][0] | 0x19;
+                        c.g[A2][0] = 0x40;
+                        c.g[A3][0] = 0u64;
+                        c.g[T0][0] = 0u64;
+                        c.g[RA][0] = sx(0x0040_b534);
+                        c.g[T1][0] = 0u64;
+                        callee::SEND_CMD.call(c, 0x0040_b534)?;
+                        if c.g[V0][0] == 0 {
+                            c.cycles += 8;
+                            c.g[RA][0] = sx(0x0040_b544);
+                            c.g[A0][0] = c.g[S0][0];
+                            callee::MRPC_FREE_PACKET.call(c, 0x0040_b544)?;
+                            c.g[RA][0] = sx(0x0040_b54c);
+                            c.g[A0][0] = c.g[S2][0];
+                            callee::DELETE_SEMA.call(c, 0x0040_b54c)?;
+                            c.g[RA][0] = sx(0x0040_b554);
+                            c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                            callee::DELETE_SEMA.call(c, 0x0040_b554)?;
+                            c.g[V0][0] = 0xffff_ffff_ffff_fffe;
+                        } else {
+                            c.cycles += 7;
+                            c.g[RA][0] = sx(0x0040_b564);
+                            c.g[A0][0] = c.g[S2][0];
+                            callee::WAIT_SEMA.call(c, 0x0040_b564)?;
+                            c.g[RA][0] = sx(0x0040_b56c);
+                            c.g[A0][0] = c.g[S2][0];
+                            callee::DELETE_SEMA.call(c, 0x0040_b56c)?;
+                            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+                            c.g[V0][0] = 0u64;
+                            if c.g[V1][0] == 0 {
+                                c.cycles += 3;
+                                c.g[RA][0] = sx(0x0040_b580);
+                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                                callee::DELETE_SEMA.call(c, 0x0040_b580)?;
+                                c.g[V0][0] = 0u64;
+                            }
+                        }
+                    } else {
+                        c.cycles += 6;
+                        c.g[RA][0] = sx(0x0040_b504);
+                        c.g[A0][0] = c.g[S0][0];
+                        callee::MRPC_FREE_PACKET.call(c, 0x0040_b504)?;
+                        c.g[RA][0] = sx(0x0040_b50c);
+                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                        callee::DELETE_SEMA.call(c, 0x0040_b50c)?;
+                        c.g[V0][0] = 0xffff_ffff_ffff_fffd;
+                    }
+                } else {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x0040_b4b4);
+                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                    callee::DELETE_SEMA.call(c, 0x0040_b4b4)?;
+                    c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+                }
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = 0xffff_ffff_ffff_fffd;
+            }
+        } else {
+            c.cycles += 5;
+            c.g[A0][0] = sx(0x0049_8178);
+            c.g[RA][0] = sx(0x0040_b448);
+            callee::PRINTF.call(c, 0x0040_b448)?;
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+        }
+        c.cycles += 10;
+        frame.restore_ra(c, 0x90);
+        c.g[S6][0] = c.ld(frame.at(c, 0x80));
+        c.g[S5][0] = c.ld(frame.at(c, 0x70));
+        c.g[S4][0] = c.ld(frame.at(c, 0x60));
+        c.g[S3][0] = c.ld(frame.at(c, 0x50));
+        c.g[S2][0] = c.ld(frame.at(c, 0x40));
+        c.g[S1][0] = c.ld(frame.at(c, 0x30));
+        c.g[S0][0] = c.ld(frame.at(c, 0x20));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// `int sceSifMBindRpcDefault(client, rpc_id, mode)` (0x40b3d8): bind with
+// the default arguments (arg1 0x800, arg2 0x2000, arg3 0x20).
+pub fn sce_sif_mbind_rpc_default(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = 0x800;
+        frame.save_ra(c, 0);
+        c.g[T0][0] = 0x2000;
+        c.g[RA][0] = sx(0x0040_b3f0);
+        c.g[T1][0] = 0x20;
+        callee::MBIND_RPC.call(c, 0x0040_b3f0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// `void sceSifMExitRpc(void)` (0x40b1f8): shut the SIF RPC manager down.
+pub fn sce_sif_mexit_rpc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 3;
+        c.g[V0][0] = 0x450000;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x33e0), 0u64);
+        ret(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// `void sceSifMInitRpc(int mode)` (0x40b130): start the SIF RPC manager
+// (idempotent: returns at once when already up). Registers the 0x18
+// command handler, announces the manager with a 0x1 broadcast, then
+// spins until SREG 1 comes up (preset in tests so the loop exits).
+pub fn sce_sif_minit_rpc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x30);
+        c.sd(frame.at(c, 0x20), c.g[RA][0]);
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        c.g[V1][0] = 0x450000;
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x33e0));
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        if c.g[V0][0] == 0 {
+            c.cycles += 33;
+            c.g[S1][0] = 0x1;
+            c.g[RA][0] = sx(0x0040_b158);
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x33e0), c.g[S1][0]);
+            callee::DINTR.call(c, 0x0040_b158)?;
+            c.g[A3][0] = 0x530000;
+            c.g[A2][0] = 0x20;
+            c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x7040));
+            c.g[S0][0] = 0x530000;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x7840));
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[A2][0]);
+            c.g[V0][0] = 0x20000000;
+            c.sw((c.g[A3][0] as u32).wrapping_sub(0x7040), c.g[S1][0]);
+            c.g[V0][0] = c.g[S0][0] | c.g[V0][0];
+            c.g[A1][0] = sx(0x0040_b2d0);
+            c.g[A0][0] = 0xffff_ffff_8000_0000;
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+            c.g[A2][0] = c.g[V1][0];
+            c.sw((c.g[V1][0] as u32).wrapping_add(0xc), 0u64);
+            c.g[A0][0] = c.g[A0][0] | 0x18;
+            c.g[RA][0] = sx(0x0040_b1a0);
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x10), 0u64);
+            callee::ADD_CMD_HANDLER.call(c, 0x0040_b1a0)?;
+            c.g[RA][0] = sx(0x0040_b1a8);
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x40));
+            callee::EINTR.call(c, 0x0040_b1a8)?;
+            c.g[A0][0] = 0xffff_ffff_8000_0000;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[S1][0]);
+            c.g[A1][0] = c.g[S0][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+            c.g[A0][0] = c.g[A0][0] | 0x1;
+            c.g[A2][0] = 0x18;
+            c.g[A3][0] = 0u64;
+            c.g[T0][0] = 0u64;
+            c.g[RA][0] = sx(0x0040_b1d0);
+            c.g[T1][0] = 0u64;
+            callee::SEND_CMD.call(c, 0x0040_b1d0)?;
+            'l_wait: loop {
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x0040_b1d8);
+                c.g[A0][0] = 0x1;
+                callee::GET_SREG.call(c, 0x0040_b1d8)?;
+                if c.g[V0][0] == 0 {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0040_b1d0);
+                    }
+                    continue 'l_wait;
+                } else {
+                    break 'l_wait;
+                }
+            }
+        }
+        c.cycles += 5;
+        frame.restore_ra(c, 0x20);
+        c.g[S1][0] = c.ld(frame.at(c, 0x10));
+        c.g[S0][0] = c.ld(frame.at(c, 0));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The RPC manager's packet pool (`libmrpc_GetPacket`): a counter, the
+/// packet array and its length.
+pub(crate) const MRPC_POOL: u32 = 0x0052_8fc0;
+
+pub fn libmrpc_free_packet(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = 0xffff_ffff_ffff_0000;
+        c.g[V0][0] = c.g[V0][0] | 0xfffe;
+        c.sw((c.g[A0][0] as u32).wrapping_add(0x18), 0u64);
+        c.g[V1][0] = c.g[V1][0] & c.g[V0][0];
+        c.sw((c.g[A0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
+        ret(c);
+        Ok(())
+    })
+}
+
+pub fn libmrpc_get_packet(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.sd(frame.at(c, 0x20), c.g[RA][0]);
+        c.g[RA][0] = sx(0x0040_b220);
+        c.g[S1][0] = c.g[A0][0];
+        callee::DINTR.call(c, 0x0040_b220)?;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+        c.g[V1][0] = 0u64;
+        c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+        'b_found: {
+            if (c.g[A0][0] as i64) > 0 {
+                c.cycles += 2;
+                c.g[A1][0] = 0x1;
+                'l_scan: loop {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10)) & 0x1;
+                    if c.g[V0][0] == 0 {
+                        // Free slot: mark it, bump the pool total, done.
+                        c.cycles += 7;
+                        c.g[V0][0] = sx((c.g[V1][0] as u32) << 16);
+                        c.g[V0][0] = c.g[V0][0] | 0x5;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+                        c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                        let wrapped = c.g[V1][0] == c.g[A1][0];
+                        c.sw(c.g[S1][0] as u32, c.g[V1][0]);
+                        if wrapped {
+                            c.cycles += 3;
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2));
+                            c.g[V1][0] = 0x1;
+                            c.sw(c.g[S1][0] as u32, c.g[V0][0]);
+                        }
+                        c.cycles += 5;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[S0][0]);
+                        c.g[RA][0] = sx(0x0040_b27c);
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x18), c.g[V1][0]);
+                        callee::EINTR.call(c, 0x0040_b27c)?;
+                        c.g[V0][0] = c.g[S0][0];
+                        break 'b_found;
+                    }
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x40));
+                    if c.g[V0][0] != 0 {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0040_b238);
+                        }
+                        continue 'l_scan;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            c.cycles += 3;
+            c.g[RA][0] = sx(0x0040_b298);
+            callee::EINTR.call(c, 0x0040_b298)?;
+            c.g[V0][0] = 0u64;
+            break 'b_found;
+        }
+        c.cycles += 5;
+        frame.restore_ra(c, 0x20);
+        c.g[S1][0] = c.ld(frame.at(c, 0x10));
+        c.g[S0][0] = c.ld(frame.at(c, 0));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void libmrpc_RequestEnd(packet *reply)` (0x40b2d0): the SIF command
+/// handler for the RPC manager's replies. By the reply's command id: a call
+/// completion runs the client's end callback (with its argument) and wakes
+/// the caller's sema, a bind completion copies the server's reply words
+/// into the client, a terminate completion stores the result word; then the
+/// owner's sema is signalled (when valid) and the packet freed.
+pub fn libmrpc_request_end(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0xffff_ffff_8000_001a;
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        frame.save_ra(c, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
+        let call = c.g[V1][0] == c.g[V0][0];
+        c.g[V0][0] = (c.g[V0][0] < c.g[V1][0]) as u64;
+        // The command id (v1) picks the completion: each known one copies
+        // what its waiter needs and wakes it, then the owner (packet's
+        // client +8) is signalled and the packet freed.
+        'owner: {
+            'reload: {
+                'terminate: {
+                    'bind: {
+                        'call: {
+                            if call {
+                                break 'call;
+                            }
+                            'above: {
+                                c.cycles += 2;
+                                if c.g[V0][0] != 0 {
+                                    break 'above;
+                                }
+                                c.cycles += 4;
+                                c.g[V0][0] = 0xffff_ffff_8000_0019;
+                                let bind = c.g[V1][0] == c.g[V0][0];
+                                c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                                if bind {
+                                    break 'bind;
+                                }
+                                c.cycles += 2;
+                                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                break 'owner;
+                            }
+                            c.cycles += 4;
+                            c.g[V0][0] = 0xffff_ffff_8000_001c;
+                            let signal_only = c.g[V1][0] == c.g[V0][0];
+                            c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                            if signal_only {
+                                break 'reload;
+                            }
+                            c.cycles += 4;
+                            c.g[V0][0] = 0xffff_ffff_8000_001d;
+                            if c.g[V1][0] == c.g[V0][0] {
+                                break 'terminate;
+                            }
+                            c.cycles += 2;
+                            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                            break 'owner;
+                        }
+                        // Call completion: the end callback, then the waiter.
+                        c.cycles += 4;
+                        c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                        if c.g[V0][0] != 0 {
+                            c.cycles += 2;
+                            let target = c.g[V0][0] as u32;
+                            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
+                            call_ptr(c, target, 0x0040_b358)?;
+                        }
+                        c.cycles += 4;
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x28));
+                        callee::ISIGNAL_SEMA.call(c, 0x0040_b360)?;
+                        c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                        break 'reload;
+                    }
+                    // Bind completion: the server's reply words, then the waiter.
+                    c.cycles += 10;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x28));
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x24), c.g[V0][0]);
+                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[V1][0]);
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x2c));
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+                    callee::ISIGNAL_SEMA.call(c, 0x0040_b388)?;
+                    c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                    break 'reload;
+                }
+                // Terminate completion: the result word, then the waiter.
+                c.cycles += 5;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x28));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), c.g[V0][0]);
+                callee::ISIGNAL_SEMA.call(c, 0x0040_b3a0)?;
+                c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+            }
+            c.cycles += 1;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+        }
+        c.cycles += 2;
+        if (c.g[A0][0] as i64) >= 0 {
+            c.cycles += 2;
+            callee::ISIGNAL_SEMA.call(c, 0x0040_b3b8)?;
+        }
+        c.cycles += 8;
+        c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+        callee::MRPC_FREE_PACKET.call(c, 0x0040_b3c0)?;
+        c.sw(c.g[S0][0] as u32, 0u64);
+        frame.restore_ra(c, 0x20);
+        c.g[S1][0] = c.ld(frame.at(c, 0x10));
+        c.g[S0][0] = c.ld(frame.at(c, 0));
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::events::driven;
 
+    /// `sceSifGetSreg` result address for SREG 1 (`sceSifMInitRpc` spins on
+    /// it): `sceSifGetSreg(n)` returns `[0x52be00 + 4*n]`, so SREG 1 is
+    /// `[0x52be04]` (not `0x52bec4`, which is SREG 49 and never polled here).
+    pub(crate) const SREG1: u32 = 0x0052_be04;
+
+    /// The SIF RPC packet pool `sceSifCallRpc` and `sceSifBindRpc` take packets
+    /// from (`sceSifRpc_GetPacket`): a counter, the packet array and its length.
+    pub(crate) const SIF_RPC_POOL: u32 = 0x0052_d680;
+
+    /// [`SIF_RPC_POOL`]'s length (0 in a test machine: the calls fail at once).
+    pub(crate) const SIF_RPC_POOL_COUNT: u32 = 0x0052_d688;
+
+    /// SIF RPC manager state word: nonzero while `sceSifMInitRpc` is active
+    /// (cleared by `sceSifMExitRpc`).
+    pub(crate) const SIF_INIT: u32 = 0x0045_33e0;
+
+    use crate::difftest::elf_image;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
+    use crate::difftest::Rng;
+    use crate::difftest::GAME_GP;
 
     use crate::difftest::put_words;
+    use crate::difftest::scramble;
 
     use crate::difftest::DATA;
 
@@ -3923,4 +4805,554 @@ pub(crate) mod tests {
             },
         );
     }
+    use super::ee;
+    use crate::difftest::SP;
+
+    /// Client struct for the SIF manager tests (`sceSifMCallRpc` et al.).
+    pub(crate) const SIF_CLIENT: u32 = DATA + 0x100;
+
+    /// MCallRpc: nonzero mode (-1); mode 0 with a misaligned send or
+    /// receive buffer (-1), or aligned buffers (equal or not, sizes zero or
+    /// not) with an empty pool (-1) or a free packet, which is filled in and
+    /// sent synchronously: the completion wait blocks (no IOP answers), or,
+    /// on the guest thread, returns at once (the IOP answered, 0) or the
+    /// send fails (DMA queue full: -2, the packet freed), or its `CreateSema`
+    /// fails (on the guest thread: -3, the packet freed). The callback arm
+    /// (mode bit 0) cannot follow the mode-0 check and is not reached.
+    #[test]
+    fn sce_sif_mcall_rpc_matches() {
+        let call: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mrpc_setup(c, seed, 0x0040_b6d0);
+            c.pc = 0x0040_b6d0;
+            for i in 0..16 {
+                c.bus.write32(SIF_CLIENT + i * 4, 0);
+            }
+            c.bus.write32(SIF_CLIENT + 0x28, 0x1234);
+            c.bus.write32(SIF_CLIENT + 0x14, (DATA + 0x80) as u32);
+            c.g[A0][0] = SIF_CLIENT as u64;
+            c.g[A1][0] = (DATA + 0x200) as u64;
+            // Ninth stack argument (end_param) above the 0xc0 frame.
+            c.bus.write32(SP, (DATA + 0x300) as u32);
+            c.g[A2][0] = (seed % 2 * 3) as u64;
+            let (send, recv) = [
+                (DATA + 0x401, DATA + 0x500),
+                (DATA + 0x400, DATA + 0x501),
+                (DATA + 0x400, DATA + 0x500),
+                (DATA + 0x440, DATA + 0x440),
+            ][(seed / 2 % 4) as usize];
+            c.g[A3][0] = send as u64;
+            c.g[T1][0] = recv as u64;
+            c.g[T0][0] = (seed / 16 % 2 * 0x80) as u64;
+            c.g[T2][0] = (seed / 32 % 2 * 0x40) as u64;
+            c.g[T3][0] = (seed / 64 % 2 * 0x0041_2345) as u64;
+            if seed / 8 % 2 == 1 {
+                // A free packet: the fill, writeback and send path.
+                c.bus.write32(MRPC_POOL, seed / 64 % 2);
+                c.bus.write32(MRPC_POOL + 4, SIF_PACKET);
+                c.bus.write32(MRPC_POOL + 8, 1);
+                packet_slots(c, SIF_PACKET, 1, &|_| false);
+                match seed / 128 {
+                    1 => answered_on_thread(c, DMA_GATE),
+                    2 => answered_on_thread(c, WAIT_GATE),
+                    3 => create_sema_fails_after(c, 0),
+                    _ => {}
+                }
+            }
+        };
+        check(ee::s15::f_0040b6d0__generated, sce_sif_mcall_rpc, 512, call);
+        require_paths(
+            ee::s15::f_0040b6d0__generated,
+            512,
+            &[
+                84, 148, 151, 156, 159, 174, 177, 181, 184, 207, 210, 236, 239, 244, 247, 259, 262,
+                263, 265, 266, 267, 270, 271, 274, 278, 281, 285, 288, 289, 292, 301, 304, 305,
+                307, 308, 327, 330, 331, 334, 1359, 1375, 2717, 2733, 2836, 2852,
+            ],
+            call,
+        );
+    }
+
+    /// MTermRpc: nonzero mode (-1); empty pool after the wait (-1); a
+    /// free packet: the terminate command is sent and the completion wait
+    /// blocks (no IOP answers), or, on the guest thread, the wait returns
+    /// at once (the IOP answered: both semas deleted, the client's return
+    /// word) or the send fails (DMA queue full: -2, the packet freed). On
+    /// seeds 120 and up, on the guest thread, its `CreateSema` fails (-3,
+    /// the packet freed).
+    #[test]
+    fn sce_sif_mterm_rpc_matches() {
+        let sif_mterm_rpc_call: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mrpc_setup(c, seed, 0x0040_b5b0);
+            c.pc = 0x0040_b5b0;
+            for i in 0..16 {
+                c.bus.write32(SIF_CLIENT + i * 4, 0);
+            }
+            c.bus.write32(SIF_CLIENT + 0x28, 0x1234);
+            c.g[A0][0] = SIF_CLIENT as u64;
+            c.g[A1][0] = (seed % 3 == 0) as u64;
+            if seed % 3 == 1 {
+                c.bus.write32(MRPC_POOL, 0);
+                c.bus.write32(MRPC_POOL + 4, SIF_PACKET);
+                c.bus.write32(MRPC_POOL + 8, 1);
+                packet_slots(c, SIF_PACKET, 1, &|_| false);
+                match seed / 3 % 3 {
+                    1 => answered_on_thread(c, WAIT_GATE),
+                    2 => answered_on_thread(c, DMA_GATE),
+                    _ => {}
+                }
+            }
+            if seed >= 120 {
+                create_sema_fails_after(c, 0);
+            }
+        };
+        check(
+            ee::s15::f_0040b5b0__generated,
+            sce_sif_mterm_rpc,
+            240,
+            sif_mterm_rpc_call,
+        );
+        require_paths(
+            ee::s15::f_0040b5b0__generated,
+            240,
+            &[57, 64, 115, 210, 229, 231, 1340, 1356],
+            sif_mterm_rpc_call,
+        );
+    }
+
+    /// MBindRpc: nonzero mode (-1); sema creation is real; empty pool (on
+    /// the guest thread: -1 after deleting the bind sema); a free packet:
+    /// the bind command is sent and the completion wait blocks (no IOP
+    /// answers), or, on the guest thread, the wait returns at once (the IOP
+    /// answered: 0, both semas deleted) or the send fails (DMA queue full:
+    /// -2, the packet freed, both semas deleted). On seeds 120 and up, on
+    /// the guest thread, the bind sema's or the completion sema's
+    /// `CreateSema` fails (-3; the second frees the packet and deletes the
+    /// bind sema).
+    #[test]
+    fn sce_sif_mbind_rpc_matches() {
+        let sif_mbind_rpc_call: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mrpc_setup(c, seed, 0x0040_b400);
+            c.pc = 0x0040_b400;
+            for i in 0..16 {
+                c.bus.write32(SIF_CLIENT + i * 4, 0);
+            }
+            c.g[A0][0] = SIF_CLIENT as u64;
+            c.g[A1][0] = 0x2222;
+            c.g[A2][0] = (seed % 3 == 0) as u64;
+            c.g[A3][0] = 0x11;
+            c.g[T0][0] = 0x22;
+            c.g[T1][0] = 0x33;
+            if seed % 3 == 1 {
+                c.bus.write32(MRPC_POOL, 0);
+                c.bus.write32(MRPC_POOL + 4, SIF_PACKET);
+                c.bus.write32(MRPC_POOL + 8, 1);
+                packet_slots(c, SIF_PACKET, 1, &|_| false);
+                match seed / 3 % 3 {
+                    1 => answered_on_thread(c, WAIT_GATE),
+                    2 => answered_on_thread(c, DMA_GATE),
+                    _ => {}
+                }
+            } else if seed % 3 == 2 {
+                on_thread(c);
+            }
+            if seed >= 120 {
+                create_sema_fails_after(c, seed / 3 % 2);
+            }
+        };
+        check(
+            ee::s15::f_0040b400__generated,
+            sce_sif_mbind_rpc,
+            240,
+            sif_mbind_rpc_call,
+        );
+        require_paths(
+            ee::s15::f_0040b400__generated,
+            240,
+            &[39, 101, 148, 233, 261, 262, 1352, 1368],
+            sif_mbind_rpc_call,
+        );
+    }
+
+    /// Gate words for [`fake_wait_sema`] and [`fake_set_dma`] (in the
+    /// machine's RAM).
+    const WAIT_GATE: u32 = DATA + 0x6200;
+    const DMA_GATE: u32 = DATA + 0x6204;
+    const GATE_MAGIC: u32 = 0x4d42_4e44;
+
+    /// `WaitSema` with its gate set: the sema is already signalled (the
+    /// IOP answered at once), so the wait returns its id without blocking.
+    fn fake_wait_sema(c: &mut Cpu) {
+        if c.bus.read32(WAIT_GATE) != GATE_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(fake_wait_sema),
+                ee::s15::f_00423de0__generated,
+            );
+        }
+        c.g[V0][0] = sx(c.g[A0][0] as u32);
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `sceSifSetDma` with its gate set: the DMA queue is full, so it
+    /// returns 0 and nothing is sent.
+    fn fake_set_dma(c: &mut Cpu) {
+        if c.bus.read32(DMA_GATE) != GATE_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                crate::difftest::fakes::prev_cell(fake_set_dma),
+                ee::s15::f_00424160__generated,
+            );
+        }
+        c.g[V0][0] = 0;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// Run on the main guest thread (a test machine has none), so the kernel
+    /// calls that reschedule (`DeleteSema`) come back to the caller instead
+    /// of the idle loop.
+    fn on_thread(c: &mut Cpu) {
+        let saved = (c.pc, c.g[A0], c.g[A1], c.g[RA]);
+        ssx3_ps2::kernel::start_main_thread(c, saved.0, 0, 0);
+        (c.pc, c.g[A0], c.g[A1], c.g[RA]) = saved;
+    }
+
+    /// Hook both fakes, open the gate at `gate`, and run on the main guest
+    /// thread.
+    fn answered_on_thread(c: &mut Cpu, gate: u32) {
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00423DE0),
+            fake_wait_sema,
+            crate::difftest::fakes::prev_cell(fake_wait_sema),
+        );
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00424160),
+            fake_set_dma,
+            crate::difftest::fakes::prev_cell(fake_set_dma),
+        );
+        c.bus.write32(gate, GATE_MAGIC);
+        on_thread(c);
+    }
+
+    /// Gate words for [`create_sema_fails`].
+    const SEMA_FAIL_GATE: u32 = DATA + 0x6208;
+    const SEMA_FAIL_SKIP: u32 = DATA + 0x620c;
+
+    /// The syscall hook with its gate set: after `SEMA_FAIL_SKIP` more
+    /// `CreateSema` calls (syscall 0x40), one fails with -1 (the kernel is
+    /// out of semas); every other syscall goes to the machine's hook.
+    fn create_sema_fails(c: &mut Cpu, at: u32) {
+        if c.bus.read32(SEMA_FAIL_GATE) == GATE_MAGIC && c.g[V1][0] as u32 == 0x40 {
+            let skip = c.bus.read32(SEMA_FAIL_SKIP);
+            c.bus.write32(SEMA_FAIL_SKIP, skip.wrapping_sub(1));
+            if skip == 0 {
+                c.g[V0][0] = u64::MAX;
+                return;
+            }
+        }
+        (ssx3_ps2::platform::HOOKS.syscall)(c, at)
+    }
+
+    /// Make the `CreateSema` after `skip` successful ones fail, on the main
+    /// guest thread.
+    fn create_sema_fails_after(c: &mut Cpu, skip: u32) {
+        c.hooks.syscall = create_sema_fails;
+        c.bus.write32(SEMA_FAIL_GATE, GATE_MAGIC);
+        c.bus.write32(SEMA_FAIL_SKIP, skip);
+        on_thread(c);
+    }
+
+    /// MBindRpcDefault: forwards to the real `sceSifMBindRpc` with a
+    /// nonzero mode, which prints and returns -1. The bind path itself
+    /// is that function's test.
+    #[test]
+    fn sce_sif_mbind_rpc_default_matches() {
+        let sif_mbind_rpc_default_call: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mrpc_setup(c, seed, 0x0040_b3d8);
+            c.pc = 0x0040_b3d8;
+            c.g[A0][0] = (DATA + 0x100) as u64;
+            c.g[A1][0] = 0x45;
+            c.g[A2][0] = 1 + (seed % 3) as u64;
+        };
+        check(
+            ee::s15::f_0040b3d8__generated,
+            sce_sif_mbind_rpc_default,
+            60,
+            sif_mbind_rpc_default_call,
+        );
+        require_paths(
+            ee::s15::f_0040b3d8__generated,
+            60,
+            &[1361],
+            sif_mbind_rpc_default_call,
+        );
+    }
+
+    /// MExitRpc: clears the init word and returns its old address. Fully
+    /// covered (leaf).
+    #[test]
+    fn sce_sif_mexit_rpc_matches() {
+        let sif_mexit_rpc_call: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mrpc_setup(c, seed, 0x0040_b1f8);
+            c.pc = 0x0040_b1f8;
+            c.bus.write32(SIF_INIT, (seed % 2) as u32);
+        };
+        check(
+            ee::s15::f_0040b1f8__generated,
+            sce_sif_mexit_rpc,
+            60,
+            sif_mexit_rpc_call,
+        );
+        require_paths(ee::s15::f_0040b1f8__generated, 60, &[3], sif_mexit_rpc_call);
+    }
+
+    /// MInitRpc: already-up early return, and the full bring-up (SREG 1
+    /// preset so the wait loop exits at once). Fully covered.
+    #[test]
+    fn sce_sif_minit_rpc_matches() {
+        let sif_minit_rpc_call: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mrpc_setup(c, seed, 0x0040_b130);
+            c.pc = 0x0040_b130;
+            if seed % 2 == 0 {
+                c.bus.write32(SIF_INIT, 0x77);
+            } else {
+                c.bus.write32(SIF_INIT, 0);
+                c.bus.write32(SREG1, 1);
+            }
+        };
+        check(
+            ee::s15::f_0040b130__generated,
+            sce_sif_minit_rpc,
+            60,
+            sif_minit_rpc_call,
+        );
+        require_paths(
+            ee::s15::f_0040b130__generated,
+            60,
+            &[12, 176],
+            sif_minit_rpc_call,
+        );
+    }
+
+    /// Request-owner struct for the `libmrpc_RequestEnd` test.
+    pub(crate) const RPC_OWNER: u32 = DATA + 0x300;
+
+    /// Freed packet for the `libmrpc_RequestEnd` tail.
+    pub(crate) const RPC_PACKET: u32 = DATA + 0x500;
+
+    /// Request struct for the `libmrpc_RequestEnd` test.
+    pub(crate) const RPC_REQUEST: u32 = DATA + 0x200;
+
+    /// Scratch packet used to back crafted `libmrpc_GetPacket` pools.
+    pub(crate) const SIF_PACKET: u32 = DATA + 0x400;
+
+    /// Write `len` bytes of packet slots at `base` (stride 0x40), with
+    /// the used/free flag of slot `i` from `used(i)`.
+    pub(crate) fn packet_slots(c: &mut Cpu, base: u32, len: u32, used: &dyn Fn(u32) -> bool) {
+        for i in 0..len {
+            for w in 0..16 {
+                c.bus.write32(base + i * 0x40 + w * 4, 0);
+            }
+            if used(i) {
+                c.bus.write32(base + i * 0x40 + 0x10, 1);
+            }
+            c.bus.write32(base + i * 0x40 + 0x18, 0x1000 + i);
+        }
+    }
+
+    /// Common fixture: ELF image (format strings, tables), scrambled
+    /// registers, game-like gp, the SIF RPC pool drained (the real
+    /// `sceSifCallRpc` fails fast with -1), the MC client down, and the
+    /// SIF packet pool zeroed. Each test raises what its seeds need.
+    pub(crate) fn mrpc_setup(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = Rng(0x0040_b6d0 ^ (seed as u64) << 12 ^ salt);
+        elf_image(c);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        c.bus.write32(SIF_RPC_POOL_COUNT, 0);
+        c.bus.write32(crate::game::lib::mc::LIBMC_CLIENT + 0x24, 0);
+        c.bus.write32(MRPC_POOL, 0);
+        c.bus.write32(MRPC_POOL + 4, 0);
+        c.bus.write32(MRPC_POOL + 8, 0);
+        r
+    }
+
+    /// FreePacket: random flag/owner words; clears the owner word and
+    /// masks the flags word down to bit 0. Fully covered (leaf).
+    #[test]
+    fn libmrpc_free_packet_matches() {
+        let mrpc_free_packet_call: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = mrpc_setup(c, seed, 0x0040_b2b0);
+            c.pc = 0x0040_b2b0;
+            c.g[A0][0] = RPC_PACKET as u64;
+            c.bus.write32(RPC_PACKET + 0x10, r.next_u32());
+            c.bus.write32(RPC_PACKET + 0x18, r.next_u32());
+        };
+        check(
+            ee::s15::f_0040b2b0__generated,
+            libmrpc_free_packet,
+            200,
+            mrpc_free_packet_call,
+        );
+        require_paths(
+            ee::s15::f_0040b2b0__generated,
+            200,
+            &[7],
+            mrpc_free_packet_call,
+        );
+    }
+
+    /// GetPacket: empty pool, all-used pool (both return 0), and free
+    /// slots at several positions with both pool-total arms. Fully
+    /// covered (the event hook never fires in tests).
+    #[test]
+    fn libmrpc_get_packet_matches() {
+        let mrpc_get_packet_call: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mrpc_setup(c, seed, 0x0040_b208);
+            c.pc = 0x0040_b208;
+            let (total, base, count, used) = match seed % 6 {
+                0 => (0u32, 0u32, 0u32, 0u32),
+                1 => (0, SIF_PACKET, 1, 1),
+                2 => (5, SIF_PACKET, 2, 2),
+                3 => (0, SIF_PACKET, 3, 0),
+                4 => (5, SIF_PACKET, 3, 1),
+                _ => (0, SIF_PACKET, 3, 2),
+            };
+            c.bus.write32(DATA + 0x200, total);
+            c.bus.write32(DATA + 0x204, base);
+            c.bus.write32(DATA + 0x208, count);
+            // `used` leading slots busy, the rest free.
+            packet_slots(c, SIF_PACKET, 3, &|i| i < used);
+            c.g[A0][0] = (DATA + 0x200) as u64;
+        };
+        check(
+            ee::s15::f_0040b208__generated,
+            libmrpc_get_packet,
+            200,
+            mrpc_get_packet_call,
+        );
+        require_paths(
+            ee::s15::f_0040b208__generated,
+            200,
+            &[32, 41, 48, 50, 54, 64],
+            mrpc_get_packet_call,
+        );
+    }
+
+    /// RequestEnd: every command id (0x1a with and without the
+    /// completion callback, 0x19, 0x1c, 0x1d, lower and higher
+    /// leftovers), with the tail sema negative (skipped) and live-bogus
+    /// (signalled, fails fast). Fully covered.
+    #[test]
+    fn libmrpc_request_end_matches() {
+        let mrpc_request_end_call: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mrpc_setup(c, seed, 0x0040_b2d0);
+            c.pc = 0x0040_b2d0;
+            let cmd = [
+                0x8000_001au32,
+                0x8000_001a,
+                0x8000_0019,
+                0x8000_001c,
+                0x8000_001d,
+                0x8000_0010,
+                0x8000_0020,
+                0x5,
+            ][seed as usize % 8];
+            c.bus.write32(RPC_REQUEST + 0x20, cmd);
+            c.bus.write32(RPC_REQUEST + 0x1c, RPC_OWNER);
+            c.bus.write32(RPC_REQUEST + 0x24, 0xaaaa_0001);
+            c.bus.write32(RPC_REQUEST + 0x28, 0xbbbb_0002);
+            c.bus.write32(RPC_REQUEST + 0x2c, 0xcccc_0003);
+            for w in [0x0u32, 0x8, 0x14, 0x18, 0x1c, 0x20, 0x24, 0x28, 0x2c] {
+                if w != 0x1c || seed % 2 == 0 {
+                    c.bus.write32(RPC_OWNER + w, 0);
+                }
+            }
+            c.bus.write32(RPC_OWNER, RPC_PACKET);
+            c.bus.write32(
+                RPC_OWNER + 8,
+                if seed % 3 == 2 { 0xffff_ffff } else { 0x1234 },
+            );
+            c.bus.write32(
+                RPC_OWNER + 0x1c,
+                if seed % 4 == 1 { 0x0014_06c0 } else { 0 },
+            );
+            c.bus.write32(RPC_OWNER + 0x20, (DATA + 0x600) as u32);
+            c.bus.write32(RPC_OWNER + 0x28, 0x1234);
+            for w in [0x10u32, 0x18] {
+                c.bus.write32(RPC_PACKET + w, 0);
+            }
+            c.g[A0][0] = RPC_REQUEST as u64;
+        };
+        check(
+            ee::s15::f_0040b2d0__generated,
+            libmrpc_request_end,
+            200,
+            mrpc_request_end_call,
+        );
+        require_paths(
+            ee::s15::f_0040b2d0__generated,
+            200,
+            &[34, 35, 39, 40, 41, 44, 45, 46, 47, 48, 50, 53, 54],
+            mrpc_request_end_call,
+        );
+    }
+
+    driven!(
+        libmrpc_get_packet_gen_driven,
+        ee::s15::f_0040b208__generated
+    );
+    driven!(libmrpc_get_packet_hand_driven, libmrpc_get_packet);
+
+    /// Header `{total, base, count}` of the long packet pool.
+    const LONG_POOL: u32 = DATA + 0x1204;
+
+    /// Slots (stride 0x40) of the long packet pool.
+    const LONG_POOL_SLOTS: u32 = DATA + 0x1440;
+
+    /// Taking a SIF RPC packet from a pool whose leading slots are all
+    /// busy: the scan steps over them with a live event, then takes the
+    /// first free slot (last or second to last) or, none free, returns 0.
+    #[test]
+    fn libmrpc_get_packet_events() {
+        check_events(
+            libmrpc_get_packet_gen_driven,
+            libmrpc_get_packet_hand_driven,
+            144,
+            &|c, seed| {
+                let mut r = mrpc_setup(c, seed, 0x0040_b238);
+                c.pc = 0x0040_b208;
+                let count = 8 + 4 * (seed / 3 % 4);
+                // At least six busy slots lead: the first back edge comes
+                // about 34 cycles in, the sixth about 69.
+                let busy = count - seed / 3 / 4 % 3;
+                // Pool total zero (the skip-zero arm) or not.
+                let total = if seed / 3 / 12 % 2 == 0 {
+                    0
+                } else {
+                    0x0011_0005
+                };
+                c.bus.write32(LONG_POOL, total);
+                c.bus.write32(LONG_POOL + 4, LONG_POOL_SLOTS);
+                c.bus.write32(LONG_POOL + 8, count);
+                for i in 0..count {
+                    let slot = LONG_POOL_SLOTS + i * 0x40;
+                    for w in 0..16u32 {
+                        c.bus.write32(slot + w * 4, r.next_u32() | 0x0101_0101);
+                    }
+                    let flags = c.bus.read32(slot + 0x10);
+                    c.bus.write32(
+                        slot + 0x10,
+                        if i < busy { flags | 1 } else { flags & !1 | 2 },
+                    );
+                }
+                c.g[A0][0] = LONG_POOL as u64;
+                schedule(c, &mut r, seed, 0x0040_b208)
+            },
+        );
+    }
+
+    // sceSifMInitRpc (0x40b130): no events test; the SREG 1 wait at
+    // 0x40b1d0 cannot loop and still end in the harness (see the table).
 }
